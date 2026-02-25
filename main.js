@@ -1128,22 +1128,22 @@ function create_each_block(ctx) {
   );
   let t1;
   let t2;
-  let p;
+  let div0;
+  let div0_class_value;
   let t3;
-  let t4_value = formatDate(
+  let p;
+  let t4;
+  let t5_value = formatDate(
     /*card*/
     ctx[24].mtime
   ) + "";
-  let t4;
   let t5;
-  let t6_value = formatDate(
+  let t6;
+  let t7_value = formatDate(
     /*card*/
     ctx[24].ctime
   ) + "";
-  let t6;
   let t7;
-  let div0;
-  let div0_class_value;
   let div2_class_value;
   let mounted;
   let dispose;
@@ -1188,17 +1188,17 @@ function create_each_block(ctx) {
       h4 = element("h4");
       t1 = text(t1_value);
       t2 = space();
-      p = element("p");
-      t3 = text("Modified ");
-      t4 = text(t4_value);
-      t5 = text(" \xB7 Created ");
-      t6 = text(t6_value);
-      t7 = space();
       div0 = element("div");
       if_block1.c();
-      attr(p, "class", "fce-meta");
+      t3 = space();
+      p = element("p");
+      t4 = text("Modified ");
+      t5 = text(t5_value);
+      t6 = text(" \xB7 Created ");
+      t7 = text(t7_value);
       attr(div0, "class", div0_class_value = "fce-excerpt " + /*card*/
       (ctx[24].previewMode === "code" ? "is-code" : ""));
+      attr(p, "class", "fce-meta");
       attr(div1, "class", "fce-card-body");
       attr(div2, "class", div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
@@ -1214,14 +1214,14 @@ function create_each_block(ctx) {
       append(div1, h4);
       append(h4, t1);
       append(div1, t2);
+      append(div1, div0);
+      if_block1.m(div0, null);
+      append(div1, t3);
       append(div1, p);
-      append(p, t3);
       append(p, t4);
       append(p, t5);
       append(p, t6);
-      append(div1, t7);
-      append(div1, div0);
-      if_block1.m(div0, null);
+      append(p, t7);
       if (!mounted) {
         dispose = [
           listen(div2, "click", click_handler),
@@ -1250,16 +1250,6 @@ function create_each_block(ctx) {
       if (dirty & /*visibleCards*/
       32 && t1_value !== (t1_value = /*card*/
       ctx[24].title + "")) set_data(t1, t1_value);
-      if (dirty & /*visibleCards*/
-      32 && t4_value !== (t4_value = formatDate(
-        /*card*/
-        ctx[24].mtime
-      ) + "")) set_data(t4, t4_value);
-      if (dirty & /*visibleCards*/
-      32 && t6_value !== (t6_value = formatDate(
-        /*card*/
-        ctx[24].ctime
-      ) + "")) set_data(t6, t6_value);
       if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block1) {
         if_block1.p(ctx, dirty);
       } else {
@@ -1275,6 +1265,16 @@ function create_each_block(ctx) {
       (ctx[24].previewMode === "code" ? "is-code" : ""))) {
         attr(div0, "class", div0_class_value);
       }
+      if (dirty & /*visibleCards*/
+      32 && t5_value !== (t5_value = formatDate(
+        /*card*/
+        ctx[24].mtime
+      ) + "")) set_data(t5, t5_value);
+      if (dirty & /*visibleCards*/
+      32 && t7_value !== (t7_value = formatDate(
+        /*card*/
+        ctx[24].ctime
+      ) + "")) set_data(t7, t7_value);
       if (dirty & /*selectedPath, visibleCards*/
       36 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
