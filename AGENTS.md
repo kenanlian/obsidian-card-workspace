@@ -21,9 +21,30 @@ esbuild.config.mjs               # Build config — CJS output to main.js
 manifest.json                    # Obsidian plugin manifest
 ```
 
+## Shell / Terminal Requirements
+
+**Always use PowerShell (`pwsh`) for all commands** — this is a Windows environment.
+Do NOT use bash, sh, cmd, or Unix-style commands.
+
+```powershell
+# Correct — PowerShell syntax
+pwsh -Command "npm run build"
+
+# Or directly in a pwsh session
+npm run build
+Get-Content .\package.json
+```
+
+- Use `Get-Content` instead of `cat`
+- Use `Get-ChildItem` / `ls` instead of `ls -la`
+- Use `Remove-Item` instead of `rm -rf`
+- Use `Copy-Item` instead of `cp`
+- Use `$env:VAR` instead of `$VAR` or `export VAR=`
+- Path separators: use `\` or PowerShell's `/` (both work in pwsh)
+
 ## Build / Check Commands
 
-```bash
+```powershell
 npm install                # Install dependencies
 npm run build              # Production build (esbuild, outputs main.js)
 npm run dev                # Watch mode with live rebuild
@@ -34,7 +55,7 @@ npm run check              # TypeScript type-check only (tsc --noEmit)
 
 Run **both** of these and fix any errors before considering the task done:
 
-```bash
+```powershell
 npm run check              # Must pass with zero errors
 npm run build              # Must complete without build failures
 ```
