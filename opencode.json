@@ -1,0 +1,35 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "mcp": {
+        "serena": {
+            "type": "local",
+            "command": [
+                "uvx",
+                "--from",
+                "git+https://github.com/oraios/serena",
+                "serena",
+                "start-mcp-server",
+                "--context",
+                "ide",
+                "--project-from-cwd"
+            ],
+            "enabled": true
+        },
+        "context7": {
+            "type": "remote",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {
+                "Authorization": "ctx7sk-d4452e4b-3eb0-443f-b7ea-f33a1bb08f2e"
+            },
+            "enabled": true
+        },
+        "tavily": {
+            "type": "remote",
+            "url": "https://mcp.tavily.com/mcp",
+            "headers": {
+                "Authorization": "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"
+            },
+            "enabled": true
+        }
+    }
+}

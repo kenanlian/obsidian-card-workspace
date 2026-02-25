@@ -1,0 +1,118 @@
+.folder-card-view,
+.folder-card-view .fce-shell {
+  height: 100%;
+}
+
+.folder-card-view .fce-shell {
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
+    radial-gradient(circle at 20% 20%, rgba(222, 193, 146, 0.25), transparent 35%),
+    #f6f3f1;
+  color: #4b3526;
+}
+
+.folder-card-view .fce-header {
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(126, 89, 49, 0.18);
+  background: rgba(255, 248, 234, 0.78);
+}
+
+.folder-card-view .fce-header h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: #5a402e;
+}
+
+.folder-card-view .fce-folder {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6a4f3c;
+  word-break: break-word;
+}
+
+.folder-card-view .fce-count {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #8b6543;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.folder-card-view .fce-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.folder-card-view .fce-empty {
+  margin: 20px 8px;
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(255, 247, 236, 0.72);
+  border: 1px dashed rgba(141, 103, 62, 0.35);
+  color: #6f543f;
+  text-align: center;
+}
+
+.folder-card-view .fce-card {
+  border-radius: 14px;
+  border: 1px solid rgba(158, 117, 72, 0.24);
+  background: #fff8ea;
+  box-shadow:
+    0 5px 18px rgba(78, 53, 31, 0.1),
+    0 1px 1px rgba(104, 72, 45, 0.06);
+  margin-bottom: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.folder-card-view .fce-card:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 24px rgba(90, 61, 38, 0.16),
+    0 1px 1px rgba(104, 72, 45, 0.08);
+}
+
+.folder-card-view .fce-card.is-selected {
+  border-color: rgba(217, 139, 61, 0.72);
+  box-shadow:
+    0 0 0 2px rgba(228, 163, 84, 0.33),
+    0 9px 26px rgba(90, 61, 38, 0.18);
+}
+
+.folder-card-view .fce-cover {
+  width: 100%;
+  height: 112px;
+  object-fit: cover;
+  border-bottom: 1px solid rgba(158, 117, 72, 0.2);
+  filter: saturate(0.92);
+}
+
+.folder-card-view .fce-card-body {
+  padding: 11px 12px 13px;
+}
+
+.folder-card-view .fce-card h4 {
+  margin: 0;
+  color: #4a3425;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.folder-card-view .fce-meta {
+  margin: 7px 0 0;
+  font-size: 11px;
+  color: #7d5e46;
+}
+
+.folder-card-view .fce-excerpt {
+  margin: 8px 0 0;
+  color: #5e4331;
+  font-size: 12px;
+  line-height: 1.42;
+}
+

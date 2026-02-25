@@ -1,0 +1,20 @@
+{
+  "name": "folder-card-explorer",
+  "version": "0.1.0",
+  "description": "Obsidian plugin that renders clicked folders as a card stream in the right sidebar.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs --watch",
+    "build": "node esbuild.config.mjs --production",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "esbuild": "^0.25.0",
+    "esbuild-svelte": "^0.9.1",
+    "obsidian": "^1.8.7",
+    "svelte": "^4.2.20",
+    "typescript": "^5.8.2"
+  }
+}
+
