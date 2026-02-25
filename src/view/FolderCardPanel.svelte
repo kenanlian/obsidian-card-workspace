@@ -5,6 +5,7 @@
   export let folderPath = "";
   export let selectedPath = null;
   export let loading = false;
+  export let generation = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -17,6 +18,7 @@
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
+  let lastHydrateGeneration = -1;
 
   $: visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2);
   $: startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN);
@@ -24,6 +26,12 @@
   $: topPadding = startIndex * CARD_HEIGHT;
   $: bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT);
   $: visibleCards = cards.slice(startIndex, endIndex);
+
+  $: if (generation !== lastHydrateGeneration) {
+    lastHydrateGeneration = generation;
+    lastRangeStart = -1;
+    lastRangeEnd = -1;
+  }
 
   $: {
     if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {

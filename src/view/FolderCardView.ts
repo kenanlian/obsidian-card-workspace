@@ -47,7 +47,8 @@ export class FolderCardView extends ItemView {
         cards: this.cards,
         folderPath: this.folderPath ?? "",
         selectedPath: this.selectedPath,
-        loading: this.loading
+        loading: this.loading,
+        generation: this.generation
       }
     });
 
@@ -204,7 +205,8 @@ export class FolderCardView extends ItemView {
       cards: [...this.cards],
       folderPath: this.folderPath ?? "",
       selectedPath: this.selectedPath,
-      loading: this.loading
+      loading: this.loading,
+      generation: this.generation
     });
   }
 }

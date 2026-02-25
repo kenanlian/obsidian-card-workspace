@@ -3,40 +3,49 @@
   height: 100%;
 }
 
+.folder-card-view {
+  --fce-bg: var(--background-primary);
+  --fce-surface: var(--background-secondary);
+  --fce-surface-alt: var(--background-secondary-alt, var(--background-secondary));
+  --fce-text: var(--text-normal);
+  --fce-text-muted: var(--text-muted);
+  --fce-border: var(--background-modifier-border);
+  --fce-hover: var(--background-modifier-hover);
+  --fce-accent: var(--interactive-accent);
+  --fce-accent-hover: var(--interactive-accent-hover, var(--interactive-accent));
+}
+
 .folder-card-view .fce-shell {
   display: flex;
   flex-direction: column;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
-    radial-gradient(circle at 20% 20%, rgba(222, 193, 146, 0.25), transparent 35%),
-    #f6f3f1;
-  color: #4b3526;
+  background: var(--fce-bg);
+  color: var(--fce-text);
 }
 
 .folder-card-view .fce-header {
   padding: 14px 14px 10px;
-  border-bottom: 1px solid rgba(126, 89, 49, 0.18);
-  background: rgba(255, 248, 234, 0.78);
+  border-bottom: 1px solid var(--fce-border);
+  background: var(--fce-surface-alt);
 }
 
 .folder-card-view .fce-header h3 {
   margin: 0;
   font-size: 16px;
   letter-spacing: 0.02em;
-  color: #5a402e;
+  color: var(--fce-text);
 }
 
 .folder-card-view .fce-folder {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #6a4f3c;
+  color: var(--fce-text-muted);
   word-break: break-word;
 }
 
 .folder-card-view .fce-count {
   margin: 6px 0 0;
   font-size: 11px;
-  color: #8b6543;
+  color: var(--fce-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -51,45 +60,41 @@
   margin: 20px 8px;
   padding: 18px;
   border-radius: 12px;
-  background: rgba(255, 247, 236, 0.72);
-  border: 1px dashed rgba(141, 103, 62, 0.35);
-  color: #6f543f;
+  background: var(--fce-surface);
+  border: 1px dashed var(--fce-border);
+  color: var(--fce-text-muted);
   text-align: center;
 }
 
 .folder-card-view .fce-card {
   border-radius: 14px;
-  border: 1px solid rgba(158, 117, 72, 0.24);
-  background: #fff8ea;
-  box-shadow:
-    0 5px 18px rgba(78, 53, 31, 0.1),
-    0 1px 1px rgba(104, 72, 45, 0.06);
+  border: 1px solid var(--fce-border);
+  background: var(--fce-surface);
+  box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.12));
   margin-bottom: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
 }
 
 .folder-card-view .fce-card:hover {
   transform: translateY(-1px);
-  box-shadow:
-    0 8px 24px rgba(90, 61, 38, 0.16),
-    0 1px 1px rgba(104, 72, 45, 0.08);
+  border-color: var(--fce-accent-hover);
+  background: var(--fce-hover);
+  box-shadow: var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
 }
 
 .folder-card-view .fce-card.is-selected {
-  border-color: rgba(217, 139, 61, 0.72);
-  box-shadow:
-    0 0 0 2px rgba(228, 163, 84, 0.33),
-    0 9px 26px rgba(90, 61, 38, 0.18);
+  border-color: var(--fce-accent);
+  background: var(--fce-hover);
+  box-shadow: 0 0 0 1px var(--fce-accent), var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
 }
 
 .folder-card-view .fce-cover {
   width: 100%;
   height: 112px;
   object-fit: cover;
-  border-bottom: 1px solid rgba(158, 117, 72, 0.2);
-  filter: saturate(0.92);
+  border-bottom: 1px solid var(--fce-border);
 }
 
 .folder-card-view .fce-card-body {
@@ -98,7 +103,7 @@
 
 .folder-card-view .fce-card h4 {
   margin: 0;
-  color: #4a3425;
+  color: var(--fce-text);
   font-size: 14px;
   line-height: 1.3;
 }
@@ -106,13 +111,12 @@
 .folder-card-view .fce-meta {
   margin: 7px 0 0;
   font-size: 11px;
-  color: #7d5e46;
+  color: var(--fce-text-muted);
 }
 
 .folder-card-view .fce-excerpt {
   margin: 8px 0 0;
-  color: #5e4331;
+  color: var(--fce-text);
   font-size: 12px;
   line-height: 1.42;
 }
-

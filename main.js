@@ -685,7 +685,7 @@ if (typeof window !== "undefined")
 // src/view/FolderCardPanel.svelte
 function get_each_context(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[22] = list[i];
+  child_ctx[24] = list[i];
   return child_ctx;
 }
 function create_else_block_2(ctx) {
@@ -892,9 +892,9 @@ function create_if_block_3(ctx) {
       img = element("img");
       attr(img, "class", "fce-cover");
       if (!src_url_equal(img.src, img_src_value = /*card*/
-      ctx[22].cover)) attr(img, "src", img_src_value);
+      ctx[24].cover)) attr(img, "src", img_src_value);
       attr(img, "alt", img_alt_value = /*card*/
-      ctx[22].title);
+      ctx[24].title);
       attr(img, "loading", "lazy");
     },
     m(target, anchor) {
@@ -903,12 +903,12 @@ function create_if_block_3(ctx) {
     p(ctx2, dirty) {
       if (dirty & /*visibleCards*/
       32 && !src_url_equal(img.src, img_src_value = /*card*/
-      ctx2[22].cover)) {
+      ctx2[24].cover)) {
         attr(img, "src", img_src_value);
       }
       if (dirty & /*visibleCards*/
       32 && img_alt_value !== (img_alt_value = /*card*/
-      ctx2[22].title)) {
+      ctx2[24].title)) {
         attr(img, "alt", img_alt_value);
       }
     },
@@ -939,7 +939,7 @@ function create_else_block_1(ctx) {
 function create_if_block_2(ctx) {
   let t_value = (
     /*card*/
-    ctx[22].excerpt + ""
+    ctx[24].excerpt + ""
   );
   let t;
   return {
@@ -952,7 +952,7 @@ function create_if_block_2(ctx) {
     p(ctx2, dirty) {
       if (dirty & /*visibleCards*/
       32 && t_value !== (t_value = /*card*/
-      ctx2[22].excerpt + "")) set_data(t, t_value);
+      ctx2[24].excerpt + "")) set_data(t, t_value);
     },
     d(detaching) {
       if (detaching) {
@@ -968,7 +968,7 @@ function create_each_block(ctx) {
   let h4;
   let t1_value = (
     /*card*/
-    ctx[22].title + ""
+    ctx[24].title + ""
   );
   let t1;
   let t2;
@@ -976,13 +976,13 @@ function create_each_block(ctx) {
   let t3;
   let t4_value = formatDate(
     /*card*/
-    ctx[22].mtime
+    ctx[24].mtime
   ) + "";
   let t4;
   let t5;
   let t6_value = formatDate(
     /*card*/
-    ctx[22].ctime
+    ctx[24].ctime
   ) + "";
   let t6;
   let t7;
@@ -992,13 +992,13 @@ function create_each_block(ctx) {
   let dispose;
   let if_block0 = (
     /*card*/
-    ctx[22].cover && create_if_block_3(ctx)
+    ctx[24].cover && create_if_block_3(ctx)
   );
   function select_block_type_2(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[22].hydrated && /*card*/
-      ctx2[22].excerpt
+      ctx2[24].hydrated && /*card*/
+      ctx2[24].excerpt
     ) return create_if_block_2;
     return create_else_block_1;
   }
@@ -1007,18 +1007,18 @@ function create_each_block(ctx) {
   function click_handler() {
     return (
       /*click_handler*/
-      ctx[18](
+      ctx[20](
         /*card*/
-        ctx[22]
+        ctx[24]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[19](
+      ctx[21](
         /*card*/
-        ctx[22],
+        ctx[24],
         ...args
       )
     );
@@ -1045,7 +1045,7 @@ function create_each_block(ctx) {
       attr(div0, "class", "fce-card-body");
       attr(div1, "class", div1_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[22].path ? "is-selected" : ""));
+      ctx[24].path ? "is-selected" : ""));
       attr(div1, "role", "button");
       attr(div1, "tabindex", "0");
     },
@@ -1077,7 +1077,7 @@ function create_each_block(ctx) {
       ctx = new_ctx;
       if (
         /*card*/
-        ctx[22].cover
+        ctx[24].cover
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -1092,16 +1092,16 @@ function create_each_block(ctx) {
       }
       if (dirty & /*visibleCards*/
       32 && t1_value !== (t1_value = /*card*/
-      ctx[22].title + "")) set_data(t1, t1_value);
+      ctx[24].title + "")) set_data(t1, t1_value);
       if (dirty & /*visibleCards*/
       32 && t4_value !== (t4_value = formatDate(
         /*card*/
-        ctx[22].mtime
+        ctx[24].mtime
       ) + "")) set_data(t4, t4_value);
       if (dirty & /*visibleCards*/
       32 && t6_value !== (t6_value = formatDate(
         /*card*/
-        ctx[22].ctime
+        ctx[24].ctime
       ) + "")) set_data(t6, t6_value);
       if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block1) {
         if_block1.p(ctx, dirty);
@@ -1116,7 +1116,7 @@ function create_each_block(ctx) {
       if (dirty & /*selectedPath, visibleCards*/
       36 && div1_class_value !== (div1_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[22].path ? "is-selected" : ""))) {
+      ctx[24].path ? "is-selected" : ""))) {
         attr(div1, "class", div1_class_value);
       }
     },
@@ -1186,7 +1186,7 @@ function create_fragment(ctx) {
       append(div1, t2);
       append(div1, div0);
       if_block1.m(div0, null);
-      ctx[20](div0);
+      ctx[22](div0);
       if (!mounted) {
         dispose = listen(
           div0,
@@ -1227,7 +1227,7 @@ function create_fragment(ctx) {
       }
       if_block0.d();
       if_block1.d();
-      ctx[20](null);
+      ctx[22](null);
       mounted = false;
       dispose();
     }
@@ -1249,18 +1249,20 @@ function instance($$self, $$props, $$invalidate) {
   let { folderPath = "" } = $$props;
   let { selectedPath = null } = $$props;
   let { loading = false } = $$props;
+  let { generation = 0 } = $$props;
   const dispatch = createEventDispatcher();
   let viewportEl = null;
   let viewportHeight = 0;
   let scrollTop = 0;
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
+  let lastHydrateGeneration = -1;
   function onScroll() {
     if (!viewportEl) {
       return;
     }
-    $$invalidate(12, scrollTop = viewportEl.scrollTop);
-    $$invalidate(11, viewportHeight = viewportEl.clientHeight);
+    $$invalidate(13, scrollTop = viewportEl.scrollTop);
+    $$invalidate(12, viewportHeight = viewportEl.clientHeight);
   }
   function openNote(path) {
     dispatch("open-note", { path });
@@ -1284,38 +1286,47 @@ function instance($$self, $$props, $$invalidate) {
     if ("folderPath" in $$props2) $$invalidate(1, folderPath = $$props2.folderPath);
     if ("selectedPath" in $$props2) $$invalidate(2, selectedPath = $$props2.selectedPath);
     if ("loading" in $$props2) $$invalidate(3, loading = $$props2.loading);
+    if ("generation" in $$props2) $$invalidate(11, generation = $$props2.generation);
   };
   $$self.$$.update = () => {
     if ($$self.$$.dirty & /*viewportHeight*/
-    2048) {
-      $: $$invalidate(17, visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2));
+    4096) {
+      $: $$invalidate(19, visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2));
     }
     if ($$self.$$.dirty & /*scrollTop*/
-    4096) {
-      $: $$invalidate(16, startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN));
+    8192) {
+      $: $$invalidate(18, startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN));
     }
     if ($$self.$$.dirty & /*cards, startIndex, visibleCount*/
-    196609) {
-      $: $$invalidate(15, endIndex = Math.min(cards.length, startIndex + visibleCount));
+    786433) {
+      $: $$invalidate(17, endIndex = Math.min(cards.length, startIndex + visibleCount));
     }
     if ($$self.$$.dirty & /*startIndex*/
-    65536) {
+    262144) {
       $: $$invalidate(7, topPadding = startIndex * CARD_HEIGHT);
     }
     if ($$self.$$.dirty & /*cards, endIndex*/
-    32769) {
+    131073) {
       $: $$invalidate(6, bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT));
     }
     if ($$self.$$.dirty & /*cards, startIndex, endIndex*/
-    98305) {
+    393217) {
       $: $$invalidate(5, visibleCards = cards.slice(startIndex, endIndex));
     }
+    if ($$self.$$.dirty & /*generation, lastHydrateGeneration*/
+    67584) {
+      $: if (generation !== lastHydrateGeneration) {
+        $$invalidate(16, lastHydrateGeneration = generation);
+        $$invalidate(14, lastRangeStart = -1);
+        $$invalidate(15, lastRangeEnd = -1);
+      }
+    }
     if ($$self.$$.dirty & /*startIndex, lastRangeStart, endIndex, lastRangeEnd*/
-    122880) {
+    442368) {
       $: {
         if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {
-          $$invalidate(13, lastRangeStart = startIndex);
-          $$invalidate(14, lastRangeEnd = endIndex);
+          $$invalidate(14, lastRangeStart = startIndex);
+          $$invalidate(15, lastRangeEnd = endIndex);
           dispatch("hydrate-range", { start: startIndex, end: endIndex });
         }
       }
@@ -1333,10 +1344,12 @@ function instance($$self, $$props, $$invalidate) {
     onScroll,
     openNote,
     onCardKeydown,
+    generation,
     viewportHeight,
     scrollTop,
     lastRangeStart,
     lastRangeEnd,
+    lastHydrateGeneration,
     endIndex,
     startIndex,
     visibleCount,
@@ -1352,7 +1365,8 @@ var FolderCardPanel = class extends SvelteComponent {
       cards: 0,
       folderPath: 1,
       selectedPath: 2,
-      loading: 3
+      loading: 3,
+      generation: 11
     });
   }
 };
@@ -1477,7 +1491,8 @@ var FolderCardView = class extends import_obsidian2.ItemView {
         cards: this.cards,
         folderPath: (_b = this.folderPath) != null ? _b : "",
         selectedPath: this.selectedPath,
-        loading: this.loading
+        loading: this.loading,
+        generation: this.generation
       }
     });
     this.component.$on("open-note", (event) => {
@@ -1611,7 +1626,8 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       cards: [...this.cards],
       folderPath: (_a = this.folderPath) != null ? _a : "",
       selectedPath: this.selectedPath,
-      loading: this.loading
+      loading: this.loading,
+      generation: this.generation
     });
   }
 };
