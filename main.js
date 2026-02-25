@@ -142,11 +142,17 @@ function destroy_each(iterations, detaching) {
 function element(name) {
   return document.createElement(name);
 }
+function svg_element(name) {
+  return document.createElementNS("http://www.w3.org/2000/svg", name);
+}
 function text(data) {
   return document.createTextNode(data);
 }
 function space() {
   return text(" ");
+}
+function empty() {
+  return text("");
 }
 function listen(node, event, handler, options) {
   node.addEventListener(event, handler, options);
@@ -168,6 +174,89 @@ function set_data(text2, data) {
 function custom_event(type, detail, { bubbles = false, cancelable = false } = {}) {
   return new CustomEvent(type, { detail, bubbles, cancelable });
 }
+var HtmlTag = class {
+  constructor(is_svg = false) {
+    /**
+     * @private
+     * @default false
+     */
+    __publicField(this, "is_svg", false);
+    /** parent for creating node */
+    __publicField(this, "e");
+    /** html tag nodes */
+    __publicField(this, "n");
+    /** target */
+    __publicField(this, "t");
+    /** anchor */
+    __publicField(this, "a");
+    this.is_svg = is_svg;
+    this.e = this.n = null;
+  }
+  /**
+   * @param {string} html
+   * @returns {void}
+   */
+  c(html) {
+    this.h(html);
+  }
+  /**
+   * @param {string} html
+   * @param {HTMLElement | SVGElement} target
+   * @param {HTMLElement | SVGElement} anchor
+   * @returns {void}
+   */
+  m(html, target, anchor = null) {
+    if (!this.e) {
+      if (this.is_svg)
+        this.e = svg_element(
+          /** @type {keyof SVGElementTagNameMap} */
+          target.nodeName
+        );
+      else
+        this.e = element(
+          /** @type {keyof HTMLElementTagNameMap} */
+          target.nodeType === 11 ? "TEMPLATE" : target.nodeName
+        );
+      this.t = target.tagName !== "TEMPLATE" ? target : (
+        /** @type {HTMLTemplateElement} */
+        target.content
+      );
+      this.c(html);
+    }
+    this.i(anchor);
+  }
+  /**
+   * @param {string} html
+   * @returns {void}
+   */
+  h(html) {
+    this.e.innerHTML = html;
+    this.n = Array.from(
+      this.e.nodeName === "TEMPLATE" ? this.e.content.childNodes : this.e.childNodes
+    );
+  }
+  /**
+   * @returns {void} */
+  i(anchor) {
+    for (let i = 0; i < this.n.length; i += 1) {
+      insert(this.t, this.n[i], anchor);
+    }
+  }
+  /**
+   * @param {string} html
+   * @returns {void}
+   */
+  p(html) {
+    this.d();
+    this.h(html);
+    this.i(this.a);
+  }
+  /**
+   * @returns {void} */
+  d() {
+    this.n.forEach(detach);
+  }
+};
 function get_custom_elements_slots(element2) {
   const result = {};
   element2.childNodes.forEach(
@@ -688,7 +777,7 @@ function get_each_context(ctx, list, i) {
   child_ctx[24] = list[i];
   return child_ctx;
 }
-function create_else_block_2(ctx) {
+function create_else_block_3(ctx) {
   let p;
   return {
     c() {
@@ -707,7 +796,7 @@ function create_else_block_2(ctx) {
     }
   };
 }
-function create_if_block_4(ctx) {
+function create_if_block_5(ctx) {
   let p0;
   let t0;
   let t1;
@@ -883,7 +972,7 @@ function create_if_block(ctx) {
     }
   };
 }
-function create_if_block_3(ctx) {
+function create_if_block_4(ctx) {
   let img;
   let img_src_value;
   let img_alt_value;
@@ -919,52 +1008,119 @@ function create_if_block_3(ctx) {
     }
   };
 }
-function create_else_block_1(ctx) {
-  let t;
+function create_else_block_2(ctx) {
+  let p;
   return {
     c() {
-      t = text("Loading preview...");
+      p = element("p");
+      p.textContent = "Loading preview...";
+      attr(p, "class", "fce-preview-empty");
     },
     m(target, anchor) {
-      insert(target, t, anchor);
+      insert(target, p, anchor);
     },
     p: noop,
     d(detaching) {
       if (detaching) {
-        detach(t);
+        detach(p);
       }
     }
   };
 }
 function create_if_block_2(ctx) {
-  let t_value = (
-    /*card*/
-    ctx[24].excerpt + ""
-  );
-  let t;
+  let if_block_anchor;
+  function select_block_type_3(ctx2, dirty) {
+    if (
+      /*card*/
+      ctx2[24].previewMode === "empty" || !/*card*/
+      ctx2[24].previewHtml
+    ) return create_if_block_3;
+    return create_else_block_1;
+  }
+  let current_block_type = select_block_type_3(ctx, -1);
+  let if_block = current_block_type(ctx);
   return {
     c() {
-      t = text(t_value);
+      if_block.c();
+      if_block_anchor = empty();
     },
     m(target, anchor) {
-      insert(target, t, anchor);
+      if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty & /*visibleCards*/
-      32 && t_value !== (t_value = /*card*/
-      ctx2[24].excerpt + "")) set_data(t, t_value);
+      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
+        if_block.p(ctx2, dirty);
+      } else {
+        if_block.d(1);
+        if_block = current_block_type(ctx2);
+        if (if_block) {
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      }
     },
     d(detaching) {
       if (detaching) {
-        detach(t);
+        detach(if_block_anchor);
+      }
+      if_block.d(detaching);
+    }
+  };
+}
+function create_else_block_1(ctx) {
+  let html_tag;
+  let raw_value = (
+    /*card*/
+    ctx[24].previewHtml + ""
+  );
+  let html_anchor;
+  return {
+    c() {
+      html_tag = new HtmlTag(false);
+      html_anchor = empty();
+      html_tag.a = html_anchor;
+    },
+    m(target, anchor) {
+      html_tag.m(raw_value, target, anchor);
+      insert(target, html_anchor, anchor);
+    },
+    p(ctx2, dirty) {
+      if (dirty & /*visibleCards*/
+      32 && raw_value !== (raw_value = /*card*/
+      ctx2[24].previewHtml + "")) html_tag.p(raw_value);
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(html_anchor);
+        html_tag.d();
+      }
+    }
+  };
+}
+function create_if_block_3(ctx) {
+  let p;
+  return {
+    c() {
+      p = element("p");
+      p.textContent = "No previewable text near the top.";
+      attr(p, "class", "fce-preview-empty");
+    },
+    m(target, anchor) {
+      insert(target, p, anchor);
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching) {
+        detach(p);
       }
     }
   };
 }
 function create_each_block(ctx) {
-  let div1;
+  let div2;
   let t0;
-  let div0;
+  let div1;
   let h4;
   let t1_value = (
     /*card*/
@@ -972,7 +1128,7 @@ function create_each_block(ctx) {
   );
   let t1;
   let t2;
-  let p0;
+  let p;
   let t3;
   let t4_value = formatDate(
     /*card*/
@@ -986,21 +1142,21 @@ function create_each_block(ctx) {
   ) + "";
   let t6;
   let t7;
-  let p1;
-  let div1_class_value;
+  let div0;
+  let div0_class_value;
+  let div2_class_value;
   let mounted;
   let dispose;
   let if_block0 = (
     /*card*/
-    ctx[24].cover && create_if_block_3(ctx)
+    ctx[24].cover && create_if_block_4(ctx)
   );
   function select_block_type_2(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[24].hydrated && /*card*/
-      ctx2[24].excerpt
+      ctx2[24].hydrated
     ) return create_if_block_2;
-    return create_else_block_1;
+    return create_else_block_2;
   }
   let current_block_type = select_block_type_2(ctx, -1);
   let if_block1 = current_block_type(ctx);
@@ -1025,50 +1181,51 @@ function create_each_block(ctx) {
   }
   return {
     c() {
-      div1 = element("div");
+      div2 = element("div");
       if (if_block0) if_block0.c();
       t0 = space();
-      div0 = element("div");
+      div1 = element("div");
       h4 = element("h4");
       t1 = text(t1_value);
       t2 = space();
-      p0 = element("p");
+      p = element("p");
       t3 = text("Modified ");
       t4 = text(t4_value);
       t5 = text(" \xB7 Created ");
       t6 = text(t6_value);
       t7 = space();
-      p1 = element("p");
+      div0 = element("div");
       if_block1.c();
-      attr(p0, "class", "fce-meta");
-      attr(p1, "class", "fce-excerpt");
-      attr(div0, "class", "fce-card-body");
-      attr(div1, "class", div1_class_value = "fce-card " + /*selectedPath*/
+      attr(p, "class", "fce-meta");
+      attr(div0, "class", div0_class_value = "fce-excerpt " + /*card*/
+      (ctx[24].previewMode === "code" ? "is-code" : ""));
+      attr(div1, "class", "fce-card-body");
+      attr(div2, "class", div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
       ctx[24].path ? "is-selected" : ""));
-      attr(div1, "role", "button");
-      attr(div1, "tabindex", "0");
+      attr(div2, "role", "button");
+      attr(div2, "tabindex", "0");
     },
     m(target, anchor) {
-      insert(target, div1, anchor);
-      if (if_block0) if_block0.m(div1, null);
-      append(div1, t0);
-      append(div1, div0);
-      append(div0, h4);
+      insert(target, div2, anchor);
+      if (if_block0) if_block0.m(div2, null);
+      append(div2, t0);
+      append(div2, div1);
+      append(div1, h4);
       append(h4, t1);
-      append(div0, t2);
-      append(div0, p0);
-      append(p0, t3);
-      append(p0, t4);
-      append(p0, t5);
-      append(p0, t6);
-      append(div0, t7);
-      append(div0, p1);
-      if_block1.m(p1, null);
+      append(div1, t2);
+      append(div1, p);
+      append(p, t3);
+      append(p, t4);
+      append(p, t5);
+      append(p, t6);
+      append(div1, t7);
+      append(div1, div0);
+      if_block1.m(div0, null);
       if (!mounted) {
         dispose = [
-          listen(div1, "click", click_handler),
-          listen(div1, "keydown", keydown_handler)
+          listen(div2, "click", click_handler),
+          listen(div2, "keydown", keydown_handler)
         ];
         mounted = true;
       }
@@ -1082,9 +1239,9 @@ function create_each_block(ctx) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
         } else {
-          if_block0 = create_if_block_3(ctx);
+          if_block0 = create_if_block_4(ctx);
           if_block0.c();
-          if_block0.m(div1, t0);
+          if_block0.m(div2, t0);
         }
       } else if (if_block0) {
         if_block0.d(1);
@@ -1110,19 +1267,24 @@ function create_each_block(ctx) {
         if_block1 = current_block_type(ctx);
         if (if_block1) {
           if_block1.c();
-          if_block1.m(p1, null);
+          if_block1.m(div0, null);
         }
       }
+      if (dirty & /*visibleCards*/
+      32 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
+      (ctx[24].previewMode === "code" ? "is-code" : ""))) {
+        attr(div0, "class", div0_class_value);
+      }
       if (dirty & /*selectedPath, visibleCards*/
-      36 && div1_class_value !== (div1_class_value = "fce-card " + /*selectedPath*/
+      36 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
       ctx[24].path ? "is-selected" : ""))) {
-        attr(div1, "class", div1_class_value);
+        attr(div2, "class", div2_class_value);
       }
     },
     d(detaching) {
       if (detaching) {
-        detach(div1);
+        detach(div2);
       }
       if (if_block0) if_block0.d();
       if_block1.d();
@@ -1144,8 +1306,8 @@ function create_fragment(ctx) {
     if (
       /*folderPath*/
       ctx2[1]
-    ) return create_if_block_4;
-    return create_else_block_2;
+    ) return create_if_block_5;
+    return create_else_block_3;
   }
   let current_block_type = select_block_type(ctx, -1);
   let if_block0 = current_block_type(ctx);
@@ -1375,12 +1537,166 @@ var FolderCardPanel_default = FolderCardPanel;
 // src/view/markdown-utils.ts
 var import_obsidian = require("obsidian");
 var FRONTMATTER_IMAGE_KEYS = ["cover", "image", "banner", "thumbnail", "hero", "cardImage"];
-function stripMarkdownToText(markdown, maxLength = 260) {
-  const text2 = markdown.replace(/^---[\s\S]*?---\s*/m, "").replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/!\[[^\]]*]\([^)]+\)/g, " ").replace(/!\[\[[^\]]+]]/g, " ").replace(/\[([^\]]+)]\([^)]+\)/g, "$1").replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_, link, alias) => alias != null ? alias : link).replace(/^#{1,6}\s+/gm, "").replace(/^\s*[-*+]\s+/gm, "").replace(/^\s*\d+\.\s+/gm, "").replace(/[>*_~]/g, " ").replace(/\r?\n+/g, " ").replace(/\s+/g, " ").trim();
-  if (text2.length <= maxLength) {
-    return text2;
+var MAX_PREVIEW_SCAN_LINES = 400;
+function buildLightPreview(markdown, maxVisibleChars = 200, codePreviewLines = 4) {
+  var _a;
+  const content = stripFrontmatter(markdown).replace(/\r\n/g, "\n");
+  const lines = content.split("\n");
+  const scanLimit = Math.min(lines.length, MAX_PREVIEW_SCAN_LINES);
+  let index = 0;
+  while (index < scanLimit) {
+    const trimmed = lines[index].trim();
+    if (trimmed.length === 0 || isImageOnlyLine(trimmed)) {
+      index += 1;
+      continue;
+    }
+    const fence = getFenceInfo(trimmed);
+    if (fence) {
+      const codeBlock = readFenceCodeBlock(lines, index, scanLimit, fence.marker, fence.size, codePreviewLines);
+      if (codeBlock.previewText.length > 0) {
+        const clipped = clipTextWithLimit(codeBlock.previewText, maxVisibleChars);
+        let display = clipped.text.trimEnd();
+        if ((clipped.truncated || codeBlock.truncatedByLines) && display.length > 0) {
+          display = display.includes("\n") ? `${display}
+...` : `${display}...`;
+        }
+        if (display.length > 0) {
+          return {
+            html: `<pre class="fce-preview-code"><code>${escapeHtml(display)}</code></pre>`,
+            mode: "code"
+          };
+        }
+      }
+      index = codeBlock.nextIndex;
+      continue;
+    }
+    break;
   }
-  return `${text2.slice(0, maxLength).trimEnd()}...`;
+  let remainingChars = maxVisibleChars;
+  const htmlParts = [];
+  let listMode = null;
+  while (index < scanLimit && remainingChars > 0) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      if (listMode) {
+        htmlParts.push(`</${listMode}>`);
+        listMode = null;
+      }
+      index += 1;
+      continue;
+    }
+    if (isImageOnlyLine(trimmed)) {
+      index += 1;
+      continue;
+    }
+    const fence = getFenceInfo(trimmed);
+    if (fence) {
+      index = skipFenceCodeBlock(lines, index, scanLimit, fence.marker, fence.size);
+      continue;
+    }
+    const headingMatch = trimmed.match(/^#{1,6}\s+(.*)$/);
+    if (headingMatch == null ? void 0 : headingMatch[1]) {
+      if (listMode) {
+        htmlParts.push(`</${listMode}>`);
+        listMode = null;
+      }
+      const rendered2 = renderInlineWithLimit(headingMatch[1], remainingChars);
+      if (rendered2.consumedChars > 0) {
+        htmlParts.push(`<p class="fce-preview-heading">${rendered2.html}</p>`);
+        remainingChars -= rendered2.consumedChars;
+      }
+      if (rendered2.truncated) {
+        break;
+      }
+      index += 1;
+      continue;
+    }
+    const ulMatch = trimmed.match(/^[-*+]\s+(.*)$/);
+    if (ulMatch == null ? void 0 : ulMatch[1]) {
+      if (listMode !== "ul") {
+        if (listMode) {
+          htmlParts.push(`</${listMode}>`);
+        }
+        htmlParts.push("<ul>");
+        listMode = "ul";
+      }
+      const rendered2 = renderInlineWithLimit(ulMatch[1], remainingChars);
+      if (rendered2.consumedChars > 0) {
+        htmlParts.push(`<li>${rendered2.html}</li>`);
+        remainingChars -= rendered2.consumedChars;
+      }
+      if (rendered2.truncated) {
+        break;
+      }
+      index += 1;
+      continue;
+    }
+    const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (olMatch == null ? void 0 : olMatch[1]) {
+      if (listMode !== "ol") {
+        if (listMode) {
+          htmlParts.push(`</${listMode}>`);
+        }
+        htmlParts.push("<ol>");
+        listMode = "ol";
+      }
+      const rendered2 = renderInlineWithLimit(olMatch[1], remainingChars);
+      if (rendered2.consumedChars > 0) {
+        htmlParts.push(`<li>${rendered2.html}</li>`);
+        remainingChars -= rendered2.consumedChars;
+      }
+      if (rendered2.truncated) {
+        break;
+      }
+      index += 1;
+      continue;
+    }
+    if (listMode) {
+      htmlParts.push(`</${listMode}>`);
+      listMode = null;
+    }
+    const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+    if (quoteMatch) {
+      const quoteText = (_a = quoteMatch[1]) != null ? _a : "";
+      const rendered2 = renderInlineWithLimit(quoteText, remainingChars);
+      if (rendered2.consumedChars > 0) {
+        htmlParts.push(`<blockquote>${rendered2.html}</blockquote>`);
+        remainingChars -= rendered2.consumedChars;
+      }
+      if (rendered2.truncated) {
+        break;
+      }
+      index += 1;
+      continue;
+    }
+    const paragraphLines = [trimmed];
+    let cursor = index + 1;
+    while (cursor < scanLimit) {
+      const next = lines[cursor].trim();
+      if (next.length === 0 || isBlockStarter(next)) {
+        break;
+      }
+      paragraphLines.push(next);
+      cursor += 1;
+    }
+    const rendered = renderInlineWithLimit(paragraphLines.join(" "), remainingChars);
+    if (rendered.consumedChars > 0) {
+      htmlParts.push(`<p>${rendered.html}</p>`);
+      remainingChars -= rendered.consumedChars;
+    }
+    if (rendered.truncated) {
+      break;
+    }
+    index = cursor;
+  }
+  if (listMode) {
+    htmlParts.push(`</${listMode}>`);
+  }
+  if (htmlParts.length === 0) {
+    return { html: "", mode: "empty" };
+  }
+  return { html: htmlParts.join(""), mode: "text" };
 }
 function pickFrontmatterImage(frontmatter) {
   if (!frontmatter) {
@@ -1431,6 +1747,180 @@ function resolveImageSource(app, source, contextFile) {
     return app.vault.getResourcePath(byPath);
   }
   return null;
+}
+function stripFrontmatter(markdown) {
+  return markdown.replace(/^---[\s\S]*?---\s*/m, "");
+}
+function isBlockStarter(line) {
+  return isImageOnlyLine(line) || /^#{1,6}\s+/.test(line) || /^[-*+]\s+/.test(line) || /^\d+\.\s+/.test(line) || /^>\s?/.test(line) || !!getFenceInfo(line);
+}
+function isImageOnlyLine(line) {
+  const trimmed = line.trim();
+  if (/^!\[\[[^\]]+]]$/.test(trimmed)) {
+    return true;
+  }
+  if (/^!\[[^\]]*]\([^)]+\)$/.test(trimmed)) {
+    return true;
+  }
+  return /^<img\s[^>]*>$/i.test(trimmed);
+}
+function getFenceInfo(line) {
+  const match = line.match(/^\s*(`{3,}|~{3,})/);
+  if (!(match == null ? void 0 : match[1])) {
+    return null;
+  }
+  const token = match[1];
+  const marker = token[0];
+  return { marker, size: token.length };
+}
+function readFenceCodeBlock(lines, startIndex, scanLimit, marker, size, previewLines = 4) {
+  const body = [];
+  let cursor = startIndex + 1;
+  while (cursor < scanLimit) {
+    const line = lines[cursor];
+    if (isFenceClosingLine(line.trim(), marker, size)) {
+      cursor += 1;
+      break;
+    }
+    body.push(line);
+    cursor += 1;
+  }
+  const selected = body.slice(0, previewLines);
+  return {
+    previewText: selected.join("\n").trimEnd(),
+    truncatedByLines: body.length > previewLines,
+    nextIndex: cursor
+  };
+}
+function skipFenceCodeBlock(lines, startIndex, scanLimit, marker, size) {
+  let cursor = startIndex + 1;
+  while (cursor < scanLimit) {
+    if (isFenceClosingLine(lines[cursor].trim(), marker, size)) {
+      return cursor + 1;
+    }
+    cursor += 1;
+  }
+  return cursor;
+}
+function renderInlineWithLimit(source, limit) {
+  if (limit <= 0) {
+    return { html: "", consumedChars: 0, truncated: true };
+  }
+  const normalized = normalizeInlineSource(source);
+  if (normalized.length === 0) {
+    return { html: "", consumedChars: 0, truncated: false };
+  }
+  const segments = parseInlineSegments(normalized);
+  let remaining = limit;
+  let consumedChars = 0;
+  const htmlParts = [];
+  let truncated = false;
+  for (const segment of segments) {
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    const slice = segment.text.slice(0, remaining);
+    if (slice.length === 0) {
+      continue;
+    }
+    consumedChars += slice.length;
+    remaining -= slice.length;
+    const escaped = escapeHtml(slice);
+    if (segment.type === "strong") {
+      htmlParts.push(`<strong>${escaped}</strong>`);
+    } else if (segment.type === "em") {
+      htmlParts.push(`<em>${escaped}</em>`);
+    } else if (segment.type === "code") {
+      htmlParts.push(`<code>${escaped}</code>`);
+    } else {
+      htmlParts.push(escaped);
+    }
+    if (slice.length < segment.text.length) {
+      truncated = true;
+      break;
+    }
+  }
+  if (!truncated && consumedChars < normalized.length) {
+    truncated = true;
+  }
+  if (truncated && htmlParts.length > 0) {
+    htmlParts.push("...");
+  }
+  return {
+    html: htmlParts.join(""),
+    consumedChars,
+    truncated
+  };
+}
+function normalizeInlineSource(source) {
+  return source.replace(/!\[[^\]]*]\([^)]+\)/g, " ").replace(/!\[\[[^\]]+]]/g, " ").replace(/<img\s[^>]*>/gi, " ").replace(/\[([^\]]+)]\([^)]+\)/g, "$1").replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_match, link, alias) => alias != null ? alias : link).replace(/\s+/g, " ").trim();
+}
+function parseInlineSegments(source) {
+  const segments = [];
+  let index = 0;
+  while (index < source.length) {
+    if (source.startsWith("**", index) || source.startsWith("__", index)) {
+      const marker = source.slice(index, index + 2);
+      const close = source.indexOf(marker, index + 2);
+      if (close > index + 2) {
+        segments.push({ type: "strong", text: source.slice(index + 2, close) });
+        index = close + 2;
+        continue;
+      }
+    }
+    if (source[index] === "*" || source[index] === "_") {
+      const marker = source[index];
+      const close = source.indexOf(marker, index + 1);
+      if (close > index + 1) {
+        segments.push({ type: "em", text: source.slice(index + 1, close) });
+        index = close + 1;
+        continue;
+      }
+    }
+    if (source[index] === "`") {
+      const close = source.indexOf("`", index + 1);
+      if (close > index + 1) {
+        segments.push({ type: "code", text: source.slice(index + 1, close) });
+        index = close + 1;
+        continue;
+      }
+    }
+    let next = index + 1;
+    while (next < source.length && !startsInlineMarker(source, next)) {
+      next += 1;
+    }
+    segments.push({ type: "text", text: source.slice(index, next) });
+    index = next;
+  }
+  return segments;
+}
+function startsInlineMarker(source, index) {
+  return source.startsWith("**", index) || source.startsWith("__", index) || source[index] === "*" || source[index] === "_" || source[index] === "`";
+}
+function isFenceClosingLine(line, marker, size) {
+  const trimmed = line.trim();
+  if (trimmed.length < size) {
+    return false;
+  }
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== marker) {
+      return false;
+    }
+  }
+  return true;
+}
+function clipTextWithLimit(text2, limit) {
+  if (text2.length <= limit) {
+    return { text: text2, truncated: false };
+  }
+  return {
+    text: text2.slice(0, limit),
+    truncated: true
+  };
+}
+function escapeHtml(input) {
+  return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function cleanupImageTarget(input) {
   let value = input.trim().replace(/^["']|["']$/g, "");
@@ -1528,6 +2018,8 @@ var FolderCardView = class extends import_obsidian2.ItemView {
         mtime: file.stat.mtime,
         cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
         excerpt: "",
+        previewHtml: "",
+        previewMode: "empty",
         hydrated: false
       };
     });
@@ -1607,7 +2099,9 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       if (generation !== this.generation) {
         return;
       }
-      card.excerpt = stripMarkdownToText(markdown, 240);
+      const preview = buildLightPreview(markdown, 200, 4);
+      card.previewHtml = preview.html;
+      card.previewMode = preview.mode;
       if (!card.cover) {
         const firstInlineImage = extractFirstInlineImage(markdown);
         if (firstInlineImage) {
@@ -1617,6 +2111,8 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       card.hydrated = true;
     } catch (e) {
       card.excerpt = "";
+      card.previewHtml = "";
+      card.previewMode = "empty";
       card.hydrated = true;
     }
   }

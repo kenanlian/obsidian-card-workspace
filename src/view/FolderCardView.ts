@@ -1,6 +1,6 @@
 import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
-import { extractFirstInlineImage, pickFrontmatterImage, resolveImageSource, stripMarkdownToText } from "./markdown-utils";
+import { buildLightPreview, extractFirstInlineImage, pickFrontmatterImage, resolveImageSource } from "./markdown-utils";
 import type { NoteCardRecord } from "./types";
 import type FolderCardExplorerPlugin from "../main";
 
@@ -89,6 +89,8 @@ export class FolderCardView extends ItemView {
         mtime: file.stat.mtime,
         cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
         excerpt: "",
+        previewHtml: "",
+        previewMode: "empty",
         hydrated: false
       };
     });
@@ -186,7 +188,9 @@ export class FolderCardView extends ItemView {
         return;
       }
 
-      card.excerpt = stripMarkdownToText(markdown, 240);
+      const preview = buildLightPreview(markdown, 200, 4);
+      card.previewHtml = preview.html;
+      card.previewMode = preview.mode;
       if (!card.cover) {
         const firstInlineImage = extractFirstInlineImage(markdown);
         if (firstInlineImage) {
@@ -196,6 +200,8 @@ export class FolderCardView extends ItemView {
       card.hydrated = true;
     } catch {
       card.excerpt = "";
+      card.previewHtml = "";
+      card.previewMode = "empty";
       card.hydrated = true;
     }
   }

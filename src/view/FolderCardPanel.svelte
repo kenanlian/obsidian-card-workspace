@@ -97,13 +97,17 @@
           <div class="fce-card-body">
             <h4>{card.title}</h4>
             <p class="fce-meta">Modified {formatDate(card.mtime)} · Created {formatDate(card.ctime)}</p>
-            <p class="fce-excerpt">
-              {#if card.hydrated && card.excerpt}
-                {card.excerpt}
+            <div class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''}">
+              {#if card.hydrated}
+                {#if card.previewMode === "empty" || !card.previewHtml}
+                  <p class="fce-preview-empty">No previewable text near the top.</p>
+                {:else}
+                  {@html card.previewHtml}
+                {/if}
               {:else}
-                Loading preview...
+                <p class="fce-preview-empty">Loading preview...</p>
               {/if}
-            </p>
+            </div>
           </div>
         </div>
       {/each}

@@ -8,6 +8,7 @@ export interface NoteCardRecord {
   mtime: number;
   cover: string | null;
   excerpt: string;
+  previewHtml: string;
+  previewMode: "text" | "code" | "empty";
   hydrated: boolean;
 }
-
