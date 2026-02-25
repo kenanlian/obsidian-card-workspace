@@ -119,7 +119,9 @@
   color: var(--fce-text);
   font-size: 13px;
   line-height: 1.52;
-  max-height: 94px;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
