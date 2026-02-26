@@ -1,188 +1,151 @@
 # AGENTS.md — Folder Card Explorer (Obsidian Plugin)
+## Purpose
+This repo is an Obsidian plugin.
+It listens for folder clicks in File Explorer and renders notes from that folder
+as a virtualized card stream in the right sidebar.
 
-## Project Overview
-
-An Obsidian plugin that renders notes from a clicked folder as a card stream
-in the right sidebar. Built with TypeScript (strict) and Svelte 4, bundled
-via esbuild.
+## Tech Stack
+- TypeScript (`strict: true`)
+- Svelte 4 (`.svelte` component UI)
+- esbuild + esbuild-svelte (bundle output: `main.js`)
 
 ## Repository Layout
-
-```
+```text
 src/
-  main.ts                        # Plugin entry point (FolderCardExplorerPlugin)
+  main.ts                        # Plugin entry (extends Plugin)
   view/
-    FolderCardView.ts            # ItemView subclass — card state & lazy hydration
-    FolderCardPanel.svelte       # Svelte 4 component — virtualized card list
-    markdown-utils.ts            # Pure functions: markdown stripping, image extraction
-    types.ts                     # Shared interfaces (NoteCardRecord)
-styles.css                       # Global CSS (warm retro-paper palette)
-esbuild.config.mjs               # Build config — CJS output to main.js
+    FolderCardView.ts            # ItemView + card state + hydration
+    FolderCardPanel.svelte       # Virtualized list renderer
+    markdown-utils.ts            # Preview/image helper functions
+    types.ts                     # Shared interfaces
+styles.css                       # Global styles (scoped under .folder-card-view)
+esbuild.config.mjs               # Build config
 manifest.json                    # Obsidian plugin manifest
 ```
 
-## Shell / Terminal Requirements
+## Cursor / Copilot Rule Files
+Checked paths:
+- `.cursor/rules/` -> not found
+- `.cursorrules` -> not found
+- `.github/copilot-instructions.md` -> not found
+No Cursor/Copilot instruction files are currently active in this repo.
 
-**Always use PowerShell (`pwsh`) for all commands** — this is a Windows environment.
-Do NOT use bash, sh, cmd, or Unix-style commands.
-
+## Terminal Conventions (Windows)
+Prefer PowerShell command examples:
 ```powershell
-# Correct — PowerShell syntax
-pwsh -Command "npm run build"
+pwsh -Command "npm run check"
+```
+Common equivalents:
+- Read file: `Get-Content .\path\to\file`
+- List files: `Get-ChildItem` (or `ls` inside pwsh)
+- Remove recursively: `Remove-Item -Recurse -Force <path>`
+- Environment vars: `$env:NAME`
 
-# Or directly in a pwsh session
+## Build / Lint / Test Commands
+### Install
+```powershell
+npm install
+```
+### Build & Dev
+```powershell
+npm run dev      # watch mode
+npm run build    # production bundle -> main.js
+npm run check    # TypeScript check (tsc --noEmit)
+```
+### Lint / Format / Test Status
+- Lint: no ESLint configured.
+- Format: no Prettier configured.
+- Tests: no test framework configured.
+Do not add lint/format/test tooling unless explicitly requested.
+
+### Single-Test Command (Important)
+Current state: no test runner, so a true single-test command does not exist.
+If a runner is later added (recommended: Vitest), use:
+```powershell
+# run one test file
+npx vitest run src/view/markdown-utils.test.ts
+
+# run one test case by name
+npx vitest run src/view/markdown-utils.test.ts -t "buildLightPreview handles code fences"
+```
+Until then, the minimum validation is:
+```powershell
+npm run check
 npm run build
-Get-Content .\package.json
 ```
 
-- Use `Get-Content` instead of `cat`
-- Use `Get-ChildItem` / `ls` instead of `ls -la`
-- Use `Remove-Item` instead of `rm -rf`
-- Use `Copy-Item` instead of `cp`
-- Use `$env:VAR` instead of `$VAR` or `export VAR=`
-- Path separators: use `\` or PowerShell's `/` (both work in pwsh)
-
-## Build / Check Commands
-
+## Required Validation Before Completion
+After any code or docs change, run both and ensure they pass:
 ```powershell
-npm install                # Install dependencies
-npm run build              # Production build (esbuild, outputs main.js)
-npm run dev                # Watch mode with live rebuild
-npm run check              # TypeScript type-check only (tsc --noEmit)
+npm run check
+npm run build
 ```
+If either command fails, task is incomplete.
 
-### After Every Change
+## Code Style Guidelines
+### Formatting
+- Use 2-space indentation in TS/Svelte/CSS.
+- Use double quotes in TS/JS string literals.
+- End TS/JS statements with semicolons.
+- Prefer trailing commas in multi-line arrays/objects/args.
 
-Run **both** of these and fix any errors before considering the task done:
+### Types
+- Keep strict typing; avoid implicit `any`.
+- Add explicit return types for exported/public methods.
+- Prefer `interface` for object shapes.
+- Use `type` for unions/intersections/type aliases.
+- Prefer `null` (not `undefined`) for explicit "no value" state.
 
-```powershell
-npm run check              # Must pass with zero errors
-npm run build              # Must complete without build failures
-```
-
-### Testing
-
-There is **no test framework** configured. No test runner, no test files.
-If you add tests, use a framework compatible with esbuild (e.g., vitest).
-
-### Linting / Formatting
-
-There is **no ESLint or Prettier** configured. Follow the conventions below
-manually. Do not add linter/formatter config unless explicitly asked.
-
-## TypeScript Conventions
-
-### Strict Mode
-
-`tsconfig.json` has `"strict": true`. All code must satisfy strict checking:
-- No implicit `any`
-- Strict null checks enabled
-- Strict function types
-
-### Types & Interfaces
-
-- Use `interface` for object shapes, `type` for unions/intersections/aliases.
-- Use `type` imports (`import type { ... }`) for type-only imports.
-- Use `null` (not `undefined`) for "no value" in data structures.
-- Provide explicit return types on all exported/public methods:
-  ```ts
-  async onload(): Promise<void> { ... }
-  getViewType(): string { ... }
-  ```
-
-### Naming
-
-| Kind                  | Convention       | Example                       |
-|-----------------------|------------------|-------------------------------|
-| Classes               | PascalCase       | `FolderCardView`              |
-| Interfaces            | PascalCase       | `NoteCardRecord`              |
-| Methods / functions   | camelCase        | `stripMarkdownToText`         |
-| Local variables       | camelCase        | `buildGeneration`             |
-| Module-level constants| UPPER_SNAKE_CASE | `FOLDER_CARD_VIEW`, `CARD_HEIGHT` |
-| Files (classes/components) | PascalCase  | `FolderCardView.ts`           |
-| Files (utilities)     | kebab-case       | `markdown-utils.ts`           |
-
-### Access Modifiers
-
-- Use the `private` keyword for non-public members (not `#` private fields).
-- Class fields are initialized at declaration when possible.
-
-### Async Patterns
-
-- Prefix fire-and-forget async calls with `void`:
-  ```ts
-  void this.refreshFolderCards();
-  void view.setFolder(folder);
-  ```
-- Always use explicit `async` / `await` with `Promise<T>` return types.
-- Use parameterless `catch` blocks for non-critical failures:
-  ```ts
-  } catch {
-    card.excerpt = "";
-  }
-  ```
-
-### Error Handling
-
-- Guard with early returns and `instanceof` checks rather than try/catch:
-  ```ts
-  if (!(target instanceof TFile)) {
-    return;
-  }
-  ```
-- Use try/catch only around truly fallible operations (e.g., `decodeURIComponent`).
-- Empty catch blocks are acceptable for graceful degradation.
-
-## Import Order & Style
-
-1. **Obsidian SDK** imports first (from `"obsidian"`), destructured.
-2. **Local imports** second, using relative paths (`"./view/FolderCardView"`).
-3. Group type-only imports with `import type { ... }`.
-
+### Imports
+Use import order:
+1. Obsidian SDK imports from `obsidian`
+2. Local runtime imports
+3. Local type-only imports (`import type`)
+Example:
 ```ts
 import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import type { NoteCardRecord } from "./types";
 ```
 
-## Svelte Conventions
+### Naming
+- Classes/interfaces: `PascalCase`
+- Functions/methods/locals: `camelCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Class/component files: `PascalCase.ts` / `PascalCase.svelte`
+- Utility files: `kebab-case.ts`
 
-- **Svelte 4** syntax (NOT Svelte 5 runes). Use `$:` reactive declarations.
-- Use `createEventDispatcher()` for custom component events.
-- Props are declared with `export let`.
-- No TypeScript in `.svelte` files (plain `<script>`, not `<script lang="ts">`).
+### Async and Error Handling
+- Prefix fire-and-forget async calls with `void`.
+- Use `async`/`await` with explicit `Promise<T>` return types.
+- Prefer guard clauses + `instanceof` checks before fallible operations.
+- Use `try/catch` only around true failure boundaries.
+- Parameterless `catch` is acceptable for non-critical degradation.
 
-## CSS Conventions
+### Svelte Guidelines
+- Use Svelte 4 syntax (`$:` reactive declarations), not Svelte 5 runes.
+- Use `createEventDispatcher()` for component events.
+- Declare props with `export let`.
 
-- All selectors scoped under `.folder-card-view` to avoid Obsidian conflicts.
-- Class prefix: `fce-` (Folder Card Explorer).
-- Flat class structure (no deep BEM nesting).
-- No CSS preprocessor — plain CSS in `styles.css`.
-- Selection state class: `is-selected`.
+### CSS Guidelines
+- Scope selectors under `.folder-card-view`.
+- Prefix plugin classes with `fce-`.
+- Keep class structure flat and readable.
+- Keep styling in plain `styles.css` (no preprocessors).
+- Selected state class is `is-selected`.
 
-## Architecture Notes
+## Obsidian Plugin Architecture Notes
+- Entry point extends `Plugin`; right-side view extends `ItemView`.
+- Register view via `registerView(VIEW_TYPE, factory)`.
+- Use `registerEvent` and `registerDomEvent` for cleanup-safe listeners.
+- Read note content through `this.app.vault.cachedRead(file)`.
 
-- **Generation tracking**: Async operations carry a `generation` counter to
-  detect staleness after folder switches. Always check `generation` after
-  awaiting.
-- **Lazy hydration**: Card excerpts and inline cover images are loaded
-  on-demand via viewport-driven `hydrate-range` events, not eagerly.
-- **Virtualized scrolling**: Only visible cards (plus OVERSCAN) are rendered.
-  The Svelte component manages a virtual window with padding divs.
-- **Debounced vault observers**: File create/modify/delete/rename events are
-  debounced (250ms) before refreshing cards.
+## Performance and Behavior Invariants
+- Preserve generation-based stale async result checks.
+- Preserve viewport-driven lazy hydration (`hydrate-range`).
+- Preserve virtualized rendering assumptions (fixed-height window math).
+- Keep vault refresh listeners debounced (~250ms).
 
-## Obsidian Plugin API Patterns
-
-- Extend `Plugin` for the entry point; extend `ItemView` for sidebar views.
-- Register views with `this.registerView(VIEW_TYPE, factory)`.
-- Use `this.registerEvent(...)` and `this.registerDomEvent(...)` for
-  auto-cleanup on plugin unload.
-- Access vault via `this.app.vault`, metadata via `this.app.metadataCache`.
-- Use `this.app.vault.cachedRead(file)` for reading note content.
-
-## External Dependencies (marked external in esbuild)
-
-Do NOT import from these — they are provided by the Obsidian runtime:
-`obsidian`, `electron`, `@codemirror/state`, `@codemirror/view`,
-`@codemirror/language`.
+## Runtime-Provided Externals
+Do not treat these as bundled/local runtime deps in plugin code:
+`obsidian`, `electron`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language`.
