@@ -25,10 +25,72 @@ __export(main_exports, {
   default: () => FolderCardExplorerPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
+
+// src/settings.ts
+var DEFAULT_SETTINGS = {
+  sort: {
+    field: "mtime",
+    direction: "desc"
+  },
+  filter: {
+    tags: []
+  },
+  includeSubfolders: true,
+  defaultView: "cards"
+};
+function isRecord(value) {
+  return typeof value === "object" && value !== null;
+}
+function normalizeSortField(value) {
+  return value === "ctime" ? "ctime" : "mtime";
+}
+function normalizeSortDirection(value) {
+  return value === "asc" ? "asc" : "desc";
+}
+function normalizeTags(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((tag) => typeof tag === "string" && tag.trim().length > 0);
+}
+function normalizeDefaultView(value) {
+  return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
+}
+function normalizeSettings(raw) {
+  const data = isRecord(raw) ? raw : {};
+  const sort = isRecord(data.sort) ? data.sort : {};
+  const filter = isRecord(data.filter) ? data.filter : {};
+  return {
+    sort: {
+      field: normalizeSortField(sort.field),
+      direction: normalizeSortDirection(sort.direction)
+    },
+    filter: {
+      tags: normalizeTags(filter.tags)
+    },
+    includeSubfolders: typeof data.includeSubfolders === "boolean" ? data.includeSubfolders : DEFAULT_SETTINGS.includeSubfolders,
+    defaultView: normalizeDefaultView(data.defaultView)
+  };
+}
+function mergeSettings(current, patch) {
+  var _a, _b;
+  return normalizeSettings({
+    ...current,
+    ...patch,
+    sort: {
+      ...current.sort,
+      ...(_a = patch.sort) != null ? _a : {}
+    },
+    filter: {
+      ...current.filter,
+      ...(_b = patch.filter) != null ? _b : {}
+    }
+  });
+}
 
 // src/view/FolderCardView.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // node_modules/svelte/src/runtime/internal/utils.js
 function noop() {
@@ -59,6 +121,9 @@ function src_url_equal(element_src, url) {
 }
 function is_empty(obj) {
   return Object.keys(obj).length === 0;
+}
+function action_destroyer(action_result) {
+  return action_result && is_function(action_result.destroy) ? action_result.destroy : noop;
 }
 
 // node_modules/svelte/src/runtime/internal/globals.js
@@ -772,10 +837,85 @@ if (typeof window !== "undefined")
   (window.__svelte || (window.__svelte = { v: /* @__PURE__ */ new Set() })).v.add(PUBLIC_VERSION);
 
 // src/view/FolderCardPanel.svelte
+var import_obsidian = require("obsidian");
 function get_each_context(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[24] = list[i];
+  child_ctx[31] = list[i];
   return child_ctx;
+}
+function get_each_context_1(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[34] = list[i];
+  return child_ctx;
+}
+function create_each_block_1(ctx) {
+  let button;
+  let span;
+  let t1;
+  let button_class_value;
+  let button_aria_label_value;
+  let applyIcon_action;
+  let mounted;
+  let dispose;
+  function click_handler() {
+    return (
+      /*click_handler*/
+      ctx[26](
+        /*action*/
+        ctx[34]
+      )
+    );
+  }
+  return {
+    c() {
+      button = element("button");
+      span = element("span");
+      span.textContent = `${/*action*/
+      ctx[34].label}`;
+      t1 = space();
+      attr(span, "class", "fce-sr-only");
+      attr(button, "type", "button");
+      attr(button, "class", button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
+      (ctx[4] === /*action*/
+      ctx[34].id ? "is-selected" : ""));
+      attr(button, "aria-label", button_aria_label_value = /*action*/
+      ctx[34].title);
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      append(button, span);
+      append(button, t1);
+      if (!mounted) {
+        dispose = [
+          listen(button, "click", click_handler),
+          action_destroyer(applyIcon_action = /*applyIcon*/
+          ctx[14].call(
+            null,
+            button,
+            /*action*/
+            ctx[34].icon
+          ))
+        ];
+        mounted = true;
+      }
+    },
+    p(new_ctx, dirty) {
+      ctx = new_ctx;
+      if (dirty[0] & /*activeToolbarAction*/
+      16 && button_class_value !== (button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
+      (ctx[4] === /*action*/
+      ctx[34].id ? "is-selected" : ""))) {
+        attr(button, "class", button_class_value);
+      }
+    },
+    d(detaching) {
+      if (detaching) {
+        detach(button);
+      }
+      mounted = false;
+      run_all(dispose);
+    }
+  };
 }
 function create_else_block_3(ctx) {
   let p;
@@ -830,13 +970,13 @@ function create_if_block_5(ctx) {
       append(p1, t3);
     },
     p(ctx2, dirty) {
-      if (dirty & /*folderPath*/
+      if (dirty[0] & /*folderPath*/
       2) set_data(
         t0,
         /*folderPath*/
         ctx2[1]
       );
-      if (dirty & /*cards*/
+      if (dirty[0] & /*cards*/
       1 && t2_value !== (t2_value = /*cards*/
       ctx2[0].length + "")) set_data(t2, t2_value);
     },
@@ -858,7 +998,7 @@ function create_else_block(ctx) {
   let div1_style_value;
   let each_value = ensure_array_like(
     /*visibleCards*/
-    ctx[5]
+    ctx[8]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value.length; i += 1) {
@@ -874,9 +1014,9 @@ function create_else_block(ctx) {
       t1 = space();
       div1 = element("div");
       attr(div0, "style", div0_style_value = `height: ${/*topPadding*/
-      ctx[7]}px;`);
+      ctx[10]}px;`);
       attr(div1, "style", div1_style_value = `height: ${/*bottomPadding*/
-      ctx[6]}px;`);
+      ctx[9]}px;`);
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -890,16 +1030,16 @@ function create_else_block(ctx) {
       insert(target, div1, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty & /*topPadding*/
-      128 && div0_style_value !== (div0_style_value = `height: ${/*topPadding*/
-      ctx2[7]}px;`)) {
+      if (dirty[0] & /*topPadding*/
+      1024 && div0_style_value !== (div0_style_value = `height: ${/*topPadding*/
+      ctx2[10]}px;`)) {
         attr(div0, "style", div0_style_value);
       }
-      if (dirty & /*selectedPath, visibleCards, openNote, onCardKeydown, formatDate*/
-      1572) {
+      if (dirty[0] & /*selectedPath, visibleCards, openNote, onCardKeydown*/
+      73988) {
         each_value = ensure_array_like(
           /*visibleCards*/
-          ctx2[5]
+          ctx2[8]
         );
         let i;
         for (i = 0; i < each_value.length; i += 1) {
@@ -917,9 +1057,9 @@ function create_else_block(ctx) {
         }
         each_blocks.length = each_value.length;
       }
-      if (dirty & /*bottomPadding*/
-      64 && div1_style_value !== (div1_style_value = `height: ${/*bottomPadding*/
-      ctx2[6]}px;`)) {
+      if (dirty[0] & /*bottomPadding*/
+      512 && div1_style_value !== (div1_style_value = `height: ${/*bottomPadding*/
+      ctx2[9]}px;`)) {
         attr(div1, "style", div1_style_value);
       }
     },
@@ -981,23 +1121,23 @@ function create_if_block_4(ctx) {
       img = element("img");
       attr(img, "class", "fce-cover");
       if (!src_url_equal(img.src, img_src_value = /*card*/
-      ctx[24].cover)) attr(img, "src", img_src_value);
+      ctx[31].cover)) attr(img, "src", img_src_value);
       attr(img, "alt", img_alt_value = /*card*/
-      ctx[24].title);
+      ctx[31].title);
       attr(img, "loading", "lazy");
     },
     m(target, anchor) {
       insert(target, img, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty & /*visibleCards*/
-      32 && !src_url_equal(img.src, img_src_value = /*card*/
-      ctx2[24].cover)) {
+      if (dirty[0] & /*visibleCards*/
+      256 && !src_url_equal(img.src, img_src_value = /*card*/
+      ctx2[31].cover)) {
         attr(img, "src", img_src_value);
       }
-      if (dirty & /*visibleCards*/
-      32 && img_alt_value !== (img_alt_value = /*card*/
-      ctx2[24].title)) {
+      if (dirty[0] & /*visibleCards*/
+      256 && img_alt_value !== (img_alt_value = /*card*/
+      ctx2[31].title)) {
         attr(img, "alt", img_alt_value);
       }
     },
@@ -1032,12 +1172,12 @@ function create_if_block_2(ctx) {
   function select_block_type_3(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[24].previewMode === "empty" || !/*card*/
-      ctx2[24].previewHtml
+      ctx2[31].previewMode === "empty" || !/*card*/
+      ctx2[31].previewHtml
     ) return create_if_block_3;
     return create_else_block_1;
   }
-  let current_block_type = select_block_type_3(ctx, -1);
+  let current_block_type = select_block_type_3(ctx, [-1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
@@ -1072,7 +1212,7 @@ function create_else_block_1(ctx) {
   let html_tag;
   let raw_value = (
     /*card*/
-    ctx[24].previewHtml + ""
+    ctx[31].previewHtml + ""
   );
   let html_anchor;
   return {
@@ -1086,9 +1226,9 @@ function create_else_block_1(ctx) {
       insert(target, html_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty & /*visibleCards*/
-      32 && raw_value !== (raw_value = /*card*/
-      ctx2[24].previewHtml + "")) html_tag.p(raw_value);
+      if (dirty[0] & /*visibleCards*/
+      256 && raw_value !== (raw_value = /*card*/
+      ctx2[31].previewHtml + "")) html_tag.p(raw_value);
     },
     d(detaching) {
       if (detaching) {
@@ -1124,7 +1264,7 @@ function create_each_block(ctx) {
   let h4;
   let t1_value = (
     /*card*/
-    ctx[24].title + ""
+    ctx[31].title + ""
   );
   let t1;
   let t2;
@@ -1135,13 +1275,13 @@ function create_each_block(ctx) {
   let t4;
   let t5_value = formatDate(
     /*card*/
-    ctx[24].mtime
+    ctx[31].mtime
   ) + "";
   let t5;
   let t6;
   let t7_value = formatDate(
     /*card*/
-    ctx[24].ctime
+    ctx[31].ctime
   ) + "";
   let t7;
   let div2_class_value;
@@ -1149,32 +1289,32 @@ function create_each_block(ctx) {
   let dispose;
   let if_block0 = (
     /*card*/
-    ctx[24].cover && create_if_block_4(ctx)
+    ctx[31].cover && create_if_block_4(ctx)
   );
   function select_block_type_2(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[24].hydrated
+      ctx2[31].hydrated
     ) return create_if_block_2;
     return create_else_block_2;
   }
-  let current_block_type = select_block_type_2(ctx, -1);
+  let current_block_type = select_block_type_2(ctx, [-1, -1]);
   let if_block1 = current_block_type(ctx);
-  function click_handler() {
+  function click_handler_1() {
     return (
-      /*click_handler*/
-      ctx[20](
+      /*click_handler_1*/
+      ctx[27](
         /*card*/
-        ctx[24]
+        ctx[31]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[21](
+      ctx[28](
         /*card*/
-        ctx[24],
+        ctx[31],
         ...args
       )
     );
@@ -1197,12 +1337,12 @@ function create_each_block(ctx) {
       t6 = text(" \xB7 Created ");
       t7 = text(t7_value);
       attr(div0, "class", div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[24].previewMode === "code" ? "is-code" : ""));
+      (ctx[31].previewMode === "code" ? "is-code" : ""));
       attr(p, "class", "fce-meta");
       attr(div1, "class", "fce-card-body");
       attr(div2, "class", div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[24].path ? "is-selected" : ""));
+      ctx[31].path ? "is-selected" : ""));
       attr(div2, "role", "button");
       attr(div2, "tabindex", "0");
     },
@@ -1224,7 +1364,7 @@ function create_each_block(ctx) {
       append(p, t7);
       if (!mounted) {
         dispose = [
-          listen(div2, "click", click_handler),
+          listen(div2, "click", click_handler_1),
           listen(div2, "keydown", keydown_handler)
         ];
         mounted = true;
@@ -1234,7 +1374,7 @@ function create_each_block(ctx) {
       ctx = new_ctx;
       if (
         /*card*/
-        ctx[24].cover
+        ctx[31].cover
       ) {
         if (if_block0) {
           if_block0.p(ctx, dirty);
@@ -1247,9 +1387,9 @@ function create_each_block(ctx) {
         if_block0.d(1);
         if_block0 = null;
       }
-      if (dirty & /*visibleCards*/
-      32 && t1_value !== (t1_value = /*card*/
-      ctx[24].title + "")) set_data(t1, t1_value);
+      if (dirty[0] & /*visibleCards*/
+      256 && t1_value !== (t1_value = /*card*/
+      ctx[31].title + "")) set_data(t1, t1_value);
       if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block1) {
         if_block1.p(ctx, dirty);
       } else {
@@ -1260,25 +1400,25 @@ function create_each_block(ctx) {
           if_block1.m(div0, null);
         }
       }
-      if (dirty & /*visibleCards*/
-      32 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[24].previewMode === "code" ? "is-code" : ""))) {
+      if (dirty[0] & /*visibleCards*/
+      256 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
+      (ctx[31].previewMode === "code" ? "is-code" : ""))) {
         attr(div0, "class", div0_class_value);
       }
-      if (dirty & /*visibleCards*/
-      32 && t5_value !== (t5_value = formatDate(
+      if (dirty[0] & /*visibleCards*/
+      256 && t5_value !== (t5_value = formatDate(
         /*card*/
-        ctx[24].mtime
+        ctx[31].mtime
       ) + "")) set_data(t5, t5_value);
-      if (dirty & /*visibleCards*/
-      32 && t7_value !== (t7_value = formatDate(
+      if (dirty[0] & /*visibleCards*/
+      256 && t7_value !== (t7_value = formatDate(
         /*card*/
-        ctx[24].ctime
+        ctx[31].ctime
       ) + "")) set_data(t7, t7_value);
-      if (dirty & /*selectedPath, visibleCards*/
-      36 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
+      if (dirty[0] & /*selectedPath, visibleCards*/
+      260 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[24].path ? "is-selected" : ""))) {
+      ctx[31].path ? "is-selected" : ""))) {
         attr(div2, "class", div2_class_value);
       }
     },
@@ -1294,14 +1434,34 @@ function create_each_block(ctx) {
   };
 }
 function create_fragment(ctx) {
-  let div1;
+  let div4;
   let header;
-  let h3;
+  let div1;
+  let div0;
+  let t0;
+  let div2;
+  let p0;
+  let t1_value = (
+    /*activeToolbarConfig*/
+    ctx[5].title + ""
+  );
   let t1;
   let t2;
-  let div0;
+  let p1;
+  let t3;
+  let t4;
+  let t5;
+  let div3;
   let mounted;
   let dispose;
+  let each_value_1 = ensure_array_like(
+    /*TOOLBAR_ACTIONS*/
+    ctx[11]
+  );
+  let each_blocks = [];
+  for (let i = 0; i < each_value_1.length; i += 1) {
+    each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
+  }
   function select_block_type(ctx2, dirty) {
     if (
       /*folderPath*/
@@ -1309,7 +1469,7 @@ function create_fragment(ctx) {
     ) return create_if_block_5;
     return create_else_block_3;
   }
-  let current_block_type = select_block_type(ctx, -1);
+  let current_block_type = select_block_type(ctx, [-1, -1]);
   let if_block0 = current_block_type(ctx);
   function select_block_type_1(ctx2, dirty) {
     if (
@@ -1322,44 +1482,108 @@ function create_fragment(ctx) {
     ) return create_if_block_1;
     return create_else_block;
   }
-  let current_block_type_1 = select_block_type_1(ctx, -1);
+  let current_block_type_1 = select_block_type_1(ctx, [-1, -1]);
   let if_block1 = current_block_type_1(ctx);
   return {
     c() {
-      div1 = element("div");
+      div4 = element("div");
       header = element("header");
-      h3 = element("h3");
-      h3.textContent = "Folder Card Explorer";
-      t1 = space();
-      if_block0.c();
-      t2 = space();
+      div1 = element("div");
       div0 = element("div");
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
+      t0 = space();
+      div2 = element("div");
+      p0 = element("p");
+      t1 = text(t1_value);
+      t2 = space();
+      p1 = element("p");
+      t3 = text(
+        /*activeToolbarDescription*/
+        ctx[7]
+      );
+      t4 = space();
+      if_block0.c();
+      t5 = space();
+      div3 = element("div");
       if_block1.c();
+      attr(div0, "class", "fce-toolbar-buttons");
+      attr(div1, "class", "fce-toolbar");
+      attr(div1, "role", "toolbar");
+      attr(div1, "aria-label", "Folder card actions");
+      attr(p0, "class", "fce-toolbar-title");
+      attr(p1, "class", "fce-toolbar-description");
+      attr(div2, "class", "fce-toolbar-content");
       attr(header, "class", "fce-header");
-      attr(div0, "class", "fce-list");
-      attr(div1, "class", "fce-shell");
+      attr(div3, "class", "fce-list");
+      attr(div4, "class", "fce-shell");
     },
     m(target, anchor) {
-      insert(target, div1, anchor);
-      append(div1, header);
-      append(header, h3);
-      append(header, t1);
-      if_block0.m(header, null);
-      append(div1, t2);
+      insert(target, div4, anchor);
+      append(div4, header);
+      append(header, div1);
       append(div1, div0);
-      if_block1.m(div0, null);
-      ctx[22](div0);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div0, null);
+        }
+      }
+      append(header, t0);
+      append(header, div2);
+      append(div2, p0);
+      append(p0, t1);
+      append(div2, t2);
+      append(div2, p1);
+      append(p1, t3);
+      append(div2, t4);
+      if_block0.m(div2, null);
+      append(div4, t5);
+      append(div4, div3);
+      if_block1.m(div3, null);
+      ctx[29](div3);
       if (!mounted) {
         dispose = listen(
-          div0,
+          div3,
           "scroll",
           /*onScroll*/
-          ctx[8]
+          ctx[12]
         );
         mounted = true;
       }
     },
-    p(ctx2, [dirty]) {
+    p(ctx2, dirty) {
+      if (dirty[0] & /*activeToolbarAction, TOOLBAR_ACTIONS, selectToolbarAction*/
+      34832) {
+        each_value_1 = ensure_array_like(
+          /*TOOLBAR_ACTIONS*/
+          ctx2[11]
+        );
+        let i;
+        for (i = 0; i < each_value_1.length; i += 1) {
+          const child_ctx = get_each_context_1(ctx2, each_value_1, i);
+          if (each_blocks[i]) {
+            each_blocks[i].p(child_ctx, dirty);
+          } else {
+            each_blocks[i] = create_each_block_1(child_ctx);
+            each_blocks[i].c();
+            each_blocks[i].m(div0, null);
+          }
+        }
+        for (; i < each_blocks.length; i += 1) {
+          each_blocks[i].d(1);
+        }
+        each_blocks.length = each_value_1.length;
+      }
+      if (dirty[0] & /*activeToolbarConfig*/
+      32 && t1_value !== (t1_value = /*activeToolbarConfig*/
+      ctx2[5].title + "")) set_data(t1, t1_value);
+      if (dirty[0] & /*activeToolbarDescription*/
+      128) set_data(
+        t3,
+        /*activeToolbarDescription*/
+        ctx2[7]
+      );
       if (current_block_type === (current_block_type = select_block_type(ctx2, dirty)) && if_block0) {
         if_block0.p(ctx2, dirty);
       } else {
@@ -1367,7 +1591,7 @@ function create_fragment(ctx) {
         if_block0 = current_block_type(ctx2);
         if (if_block0) {
           if_block0.c();
-          if_block0.m(header, null);
+          if_block0.m(div2, null);
         }
       }
       if (current_block_type_1 === (current_block_type_1 = select_block_type_1(ctx2, dirty)) && if_block1) {
@@ -1377,7 +1601,7 @@ function create_fragment(ctx) {
         if_block1 = current_block_type_1(ctx2);
         if (if_block1) {
           if_block1.c();
-          if_block1.m(div0, null);
+          if_block1.m(div3, null);
         }
       }
     },
@@ -1385,11 +1609,12 @@ function create_fragment(ctx) {
     o: noop,
     d(detaching) {
       if (detaching) {
-        detach(div1);
+        detach(div4);
       }
+      destroy_each(each_blocks, detaching);
       if_block0.d();
       if_block1.d();
-      ctx[22](null);
+      ctx[29](null);
       mounted = false;
       dispose();
     }
@@ -1400,6 +1625,21 @@ var OVERSCAN = 5;
 function formatDate(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
+function describeToolbarAction(actionId, currentFolderPath) {
+  if (actionId === "pick-folder") {
+    return currentFolderPath ? "Current folder can be changed from File Explorer." : "Click a folder in File Explorer to load cards.";
+  }
+  if (actionId === "new-note") {
+    return currentFolderPath ? "Create note action will be mounted here in next tasks." : "Select a folder first, then create note in place.";
+  }
+  if (actionId === "sort") {
+    return "Sort controls will be mounted here.";
+  }
+  if (actionId === "filter") {
+    return "Filter controls will be mounted here.";
+  }
+  return "Bulk selection actions will be mounted here.";
+}
 function instance($$self, $$props, $$invalidate) {
   let visibleCount;
   let startIndex;
@@ -1407,15 +1647,50 @@ function instance($$self, $$props, $$invalidate) {
   let topPadding;
   let bottomPadding;
   let visibleCards;
+  let activeToolbarConfig;
+  let activeToolbarDescription;
   let { cards = [] } = $$props;
   let { folderPath = "" } = $$props;
   let { selectedPath = null } = $$props;
   let { loading = false } = $$props;
   let { generation = 0 } = $$props;
   const dispatch = createEventDispatcher();
+  const TOOLBAR_ACTIONS = [
+    {
+      id: "pick-folder",
+      label: "Pick folder",
+      title: "Folder scope",
+      icon: "folder-open"
+    },
+    {
+      id: "new-note",
+      label: "New",
+      title: "Create note",
+      icon: "file-plus"
+    },
+    {
+      id: "sort",
+      label: "Sort",
+      title: "Sort cards",
+      icon: "arrow-up-down"
+    },
+    {
+      id: "filter",
+      label: "Filter",
+      title: "Filter cards",
+      icon: "list-filter"
+    },
+    {
+      id: "bulk",
+      label: "Bulk",
+      title: "Bulk actions",
+      icon: "check-check"
+    }
+  ];
   let viewportEl = null;
   let viewportHeight = 0;
   let scrollTop = 0;
+  let activeToolbarAction = TOOLBAR_ACTIONS[0].id;
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
   let lastHydrateGeneration = -1;
@@ -1423,11 +1698,23 @@ function instance($$self, $$props, $$invalidate) {
     if (!viewportEl) {
       return;
     }
-    $$invalidate(13, scrollTop = viewportEl.scrollTop);
-    $$invalidate(12, viewportHeight = viewportEl.clientHeight);
+    $$invalidate(19, scrollTop = viewportEl.scrollTop);
+    $$invalidate(18, viewportHeight = viewportEl.clientHeight);
   }
   function openNote(path) {
     dispatch("open-note", { path });
+  }
+  function applyIcon(node, iconName) {
+    (0, import_obsidian.setIcon)(node, iconName);
+    return {
+      update(nextIconName) {
+        (0, import_obsidian.setIcon)(node, nextIconName);
+      }
+    };
+  }
+  function selectToolbarAction(actionId) {
+    $$invalidate(4, activeToolbarAction = actionId);
+    dispatch("toolbar-action", { action: actionId });
   }
   function onCardKeydown(event, path) {
     if (event.key === "Enter" || event.key === " ") {
@@ -1435,12 +1722,13 @@ function instance($$self, $$props, $$invalidate) {
       openNote(path);
     }
   }
-  const click_handler = (card) => openNote(card.path);
+  const click_handler = (action) => selectToolbarAction(action.id);
+  const click_handler_1 = (card) => openNote(card.path);
   const keydown_handler = (card, event) => onCardKeydown(event, card.path);
-  function div0_binding($$value) {
+  function div3_binding($$value) {
     binding_callbacks[$$value ? "unshift" : "push"](() => {
       viewportEl = $$value;
-      $$invalidate(4, viewportEl);
+      $$invalidate(6, viewportEl);
     });
   }
   $$self.$$set = ($$props2) => {
@@ -1448,47 +1736,56 @@ function instance($$self, $$props, $$invalidate) {
     if ("folderPath" in $$props2) $$invalidate(1, folderPath = $$props2.folderPath);
     if ("selectedPath" in $$props2) $$invalidate(2, selectedPath = $$props2.selectedPath);
     if ("loading" in $$props2) $$invalidate(3, loading = $$props2.loading);
-    if ("generation" in $$props2) $$invalidate(11, generation = $$props2.generation);
+    if ("generation" in $$props2) $$invalidate(17, generation = $$props2.generation);
   };
   $$self.$$.update = () => {
-    if ($$self.$$.dirty & /*viewportHeight*/
-    4096) {
-      $: $$invalidate(19, visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2));
-    }
-    if ($$self.$$.dirty & /*scrollTop*/
-    8192) {
-      $: $$invalidate(18, startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN));
-    }
-    if ($$self.$$.dirty & /*cards, startIndex, visibleCount*/
-    786433) {
-      $: $$invalidate(17, endIndex = Math.min(cards.length, startIndex + visibleCount));
-    }
-    if ($$self.$$.dirty & /*startIndex*/
+    var _a;
+    if ($$self.$$.dirty[0] & /*viewportHeight*/
     262144) {
-      $: $$invalidate(7, topPadding = startIndex * CARD_HEIGHT);
+      $: $$invalidate(25, visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2));
     }
-    if ($$self.$$.dirty & /*cards, endIndex*/
-    131073) {
-      $: $$invalidate(6, bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT));
+    if ($$self.$$.dirty[0] & /*scrollTop*/
+    524288) {
+      $: $$invalidate(24, startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN));
     }
-    if ($$self.$$.dirty & /*cards, startIndex, endIndex*/
-    393217) {
-      $: $$invalidate(5, visibleCards = cards.slice(startIndex, endIndex));
+    if ($$self.$$.dirty[0] & /*cards, startIndex, visibleCount*/
+    50331649) {
+      $: $$invalidate(23, endIndex = Math.min(cards.length, startIndex + visibleCount));
     }
-    if ($$self.$$.dirty & /*generation, lastHydrateGeneration*/
-    67584) {
+    if ($$self.$$.dirty[0] & /*startIndex*/
+    16777216) {
+      $: $$invalidate(10, topPadding = startIndex * CARD_HEIGHT);
+    }
+    if ($$self.$$.dirty[0] & /*cards, endIndex*/
+    8388609) {
+      $: $$invalidate(9, bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT));
+    }
+    if ($$self.$$.dirty[0] & /*cards, startIndex, endIndex*/
+    25165825) {
+      $: $$invalidate(8, visibleCards = cards.slice(startIndex, endIndex));
+    }
+    if ($$self.$$.dirty[0] & /*activeToolbarAction*/
+    16) {
+      $: $$invalidate(5, activeToolbarConfig = (_a = TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction)) != null ? _a : TOOLBAR_ACTIONS[0]);
+    }
+    if ($$self.$$.dirty[0] & /*activeToolbarConfig, folderPath*/
+    34) {
+      $: $$invalidate(7, activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath));
+    }
+    if ($$self.$$.dirty[0] & /*generation, lastHydrateGeneration*/
+    4325376) {
       $: if (generation !== lastHydrateGeneration) {
-        $$invalidate(16, lastHydrateGeneration = generation);
-        $$invalidate(14, lastRangeStart = -1);
-        $$invalidate(15, lastRangeEnd = -1);
+        $$invalidate(22, lastHydrateGeneration = generation);
+        $$invalidate(20, lastRangeStart = -1);
+        $$invalidate(21, lastRangeEnd = -1);
       }
     }
-    if ($$self.$$.dirty & /*startIndex, lastRangeStart, endIndex, lastRangeEnd*/
-    442368) {
+    if ($$self.$$.dirty[0] & /*startIndex, lastRangeStart, endIndex, lastRangeEnd*/
+    28311552) {
       $: {
         if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {
-          $$invalidate(14, lastRangeStart = startIndex);
-          $$invalidate(15, lastRangeEnd = endIndex);
+          $$invalidate(20, lastRangeStart = startIndex);
+          $$invalidate(21, lastRangeEnd = endIndex);
           dispatch("hydrate-range", { start: startIndex, end: endIndex });
         }
       }
@@ -1499,12 +1796,18 @@ function instance($$self, $$props, $$invalidate) {
     folderPath,
     selectedPath,
     loading,
+    activeToolbarAction,
+    activeToolbarConfig,
     viewportEl,
+    activeToolbarDescription,
     visibleCards,
     bottomPadding,
     topPadding,
+    TOOLBAR_ACTIONS,
     onScroll,
     openNote,
+    applyIcon,
+    selectToolbarAction,
     onCardKeydown,
     generation,
     viewportHeight,
@@ -1516,26 +1819,36 @@ function instance($$self, $$props, $$invalidate) {
     startIndex,
     visibleCount,
     click_handler,
+    click_handler_1,
     keydown_handler,
-    div0_binding
+    div3_binding
   ];
 }
 var FolderCardPanel = class extends SvelteComponent {
   constructor(options) {
     super();
-    init(this, options, instance, create_fragment, safe_not_equal, {
-      cards: 0,
-      folderPath: 1,
-      selectedPath: 2,
-      loading: 3,
-      generation: 11
-    });
+    init(
+      this,
+      options,
+      instance,
+      create_fragment,
+      safe_not_equal,
+      {
+        cards: 0,
+        folderPath: 1,
+        selectedPath: 2,
+        loading: 3,
+        generation: 17
+      },
+      null,
+      [-1, -1]
+    );
   }
 };
 var FolderCardPanel_default = FolderCardPanel;
 
 // src/view/markdown-utils.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 var FRONTMATTER_IMAGE_KEYS = ["cover", "image", "banner", "thumbnail", "hero", "cardImage"];
 var MAX_PREVIEW_SCAN_LINES = 400;
 function buildLightPreview(markdown, maxVisibleChars = 200, codePreviewLines = 4) {
@@ -1738,12 +2051,12 @@ function resolveImageSource(app, source, contextFile) {
     return cleaned;
   }
   const local = app.metadataCache.getFirstLinkpathDest(cleaned, contextFile.path);
-  if (local instanceof import_obsidian.TFile) {
+  if (local instanceof import_obsidian2.TFile) {
     return app.vault.getResourcePath(local);
   }
   const absolutePath = cleaned.replace(/^\//, "");
   const byPath = app.vault.getAbstractFileByPath(absolutePath);
-  if (byPath instanceof import_obsidian.TFile) {
+  if (byPath instanceof import_obsidian2.TFile) {
     return app.vault.getResourcePath(byPath);
   }
   return null;
@@ -1948,7 +2261,7 @@ function decodeURIComponentSafe(value) {
 
 // src/view/FolderCardView.ts
 var FOLDER_CARD_VIEW = "folder-card-view";
-var FolderCardView = class extends import_obsidian2.ItemView {
+var FolderCardView = class extends import_obsidian3.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.component = null;
@@ -2006,7 +2319,8 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     this.pendingHydration.clear();
     this.pushState();
     const buildGeneration = this.generation;
-    const files = this.collectMarkdownFiles(folder);
+    const settings = this.plugin.getSettings();
+    const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
     const records = files.map((file) => {
       const cache = this.app.metadataCache.getFileCache(file);
       const frontmatterCover = pickFrontmatterImage(cache == null ? void 0 : cache.frontmatter);
@@ -2026,7 +2340,9 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     if (buildGeneration !== this.generation) {
       return;
     }
-    records.sort((a, b) => b.mtime - a.mtime);
+    records.sort(
+      (left, right) => this.compareCards(left, right, settings.sort.field, settings.sort.direction)
+    );
     this.cards = records;
     this.loading = false;
     this.pushState();
@@ -2040,11 +2356,20 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       return;
     }
     const folder = this.app.vault.getAbstractFileByPath(this.folderPath);
-    if (folder instanceof import_obsidian2.TFolder) {
+    if (folder instanceof import_obsidian3.TFolder) {
       await this.setFolder(folder);
     }
   }
-  collectMarkdownFiles(root) {
+  collectMarkdownFiles(root, includeSubfolders) {
+    if (!includeSubfolders) {
+      const directFiles = [];
+      for (const child of root.children) {
+        if (child instanceof import_obsidian3.TFile && child.extension.toLowerCase() === "md") {
+          directFiles.push(child);
+        }
+      }
+      return directFiles;
+    }
     const result = [];
     const stack = [root];
     while (stack.length > 0) {
@@ -2053,16 +2378,25 @@ var FolderCardView = class extends import_obsidian2.ItemView {
         continue;
       }
       for (const child of folder.children) {
-        if (child instanceof import_obsidian2.TFolder) {
+        if (child instanceof import_obsidian3.TFolder) {
           stack.push(child);
           continue;
         }
-        if (child instanceof import_obsidian2.TFile && child.extension.toLowerCase() === "md") {
+        if (child instanceof import_obsidian3.TFile && child.extension.toLowerCase() === "md") {
           result.push(child);
         }
       }
     }
     return result;
+  }
+  compareCards(left, right, field, direction) {
+    const leftValue = field === "ctime" ? left.ctime : left.mtime;
+    const rightValue = field === "ctime" ? right.ctime : right.mtime;
+    const difference = leftValue - rightValue;
+    if (difference !== 0) {
+      return direction === "asc" ? difference : -difference;
+    }
+    return left.path.localeCompare(right.path);
   }
   async hydrateRange(start, end) {
     if (this.cards.length === 0 || this.loading) {
@@ -2129,11 +2463,12 @@ var FolderCardView = class extends import_obsidian2.ItemView {
 };
 
 // src/main.ts
-var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
+var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.selectedFolderPath = null;
-    this.debouncedRefresh = (0, import_obsidian3.debounce)(
+    this.settings = normalizeSettings(DEFAULT_SETTINGS);
+    this.debouncedRefresh = (0, import_obsidian4.debounce)(
       () => {
         void this.refreshFolderCards();
       },
@@ -2142,6 +2477,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     );
   }
   async onload() {
+    await this.loadSettings();
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addCommand({
       id: "open-folder-card-explorer",
@@ -2155,7 +2491,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     });
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
-        this.syncSelection(file instanceof import_obsidian3.TFile ? file.path : null);
+        this.syncSelection(file instanceof import_obsidian4.TFile ? file.path : null);
       })
     );
     this.app.workspace.onLayoutReady(() => {
@@ -2170,15 +2506,25 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
   }
   async openNoteFromCard(path) {
     const target = this.app.vault.getAbstractFileByPath(path);
-    if (!(target instanceof import_obsidian3.TFile)) {
+    if (!(target instanceof import_obsidian4.TFile)) {
       return;
     }
     const leaf = this.resolveTargetLeaf();
     await leaf.openFile(target, { active: true });
     this.syncSelection(target.path);
   }
+  getSettings() {
+    return normalizeSettings(this.settings);
+  }
+  async saveSettings(patch) {
+    this.settings = mergeSettings(this.settings, patch);
+    await this.saveData(this.settings);
+    this.withFolderViews((view) => {
+      void view.refresh();
+    });
+  }
   resolveTargetLeaf() {
-    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
     if (activeMarkdown) {
       return activeMarkdown.leaf;
     }
@@ -2198,7 +2544,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
       return;
     }
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof import_obsidian3.TFolder)) {
+    if (!(folder instanceof import_obsidian4.TFolder)) {
       return;
     }
     this.selectedFolderPath = folder.path;
@@ -2270,7 +2616,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian3.TFolder && this.selectedFolderPath === oldPath) {
+        if (file instanceof import_obsidian4.TFolder && this.selectedFolderPath === oldPath) {
           this.selectedFolderPath = file.path;
         }
         if (this.shouldRefreshForPath(file.path) || this.shouldRefreshForPath(oldPath)) {
@@ -2278,6 +2624,10 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
         }
       })
     );
+  }
+  async loadSettings() {
+    const rawData = await this.loadData();
+    this.settings = normalizeSettings(rawData);
   }
   shouldRefreshForPath(path) {
     if (!this.selectedFolderPath) {
@@ -2290,7 +2640,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
       return;
     }
     const folder = this.app.vault.getAbstractFileByPath(this.selectedFolderPath);
-    if (!(folder instanceof import_obsidian3.TFolder)) {
+    if (!(folder instanceof import_obsidian4.TFolder)) {
       return;
     }
     this.withFolderViews((view) => {

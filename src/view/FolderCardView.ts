@@ -1,6 +1,7 @@
 import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { buildLightPreview, extractFirstInlineImage, pickFrontmatterImage, resolveImageSource } from "./markdown-utils";
+import type { SortDirection, SortField } from "../settings";
 import type { NoteCardRecord } from "./types";
 import type FolderCardExplorerPlugin from "../main";
 
@@ -75,7 +76,8 @@ export class FolderCardView extends ItemView {
     this.pushState();
 
     const buildGeneration = this.generation;
-    const files = this.collectMarkdownFiles(folder);
+    const settings = this.plugin.getSettings();
+    const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
 
     const records: NoteCardRecord[] = files.map((file) => {
       const cache = this.app.metadataCache.getFileCache(file);
@@ -99,7 +101,9 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    records.sort((a, b) => b.mtime - a.mtime);
+    records.sort((left, right) =>
+      this.compareCards(left, right, settings.sort.field, settings.sort.direction),
+    );
     this.cards = records;
     this.loading = false;
     this.pushState();
@@ -120,7 +124,18 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private collectMarkdownFiles(root: TFolder): TFile[] {
+  private collectMarkdownFiles(root: TFolder, includeSubfolders: boolean): TFile[] {
+    if (!includeSubfolders) {
+      const directFiles: TFile[] = [];
+      for (const child of root.children) {
+        if (child instanceof TFile && child.extension.toLowerCase() === "md") {
+          directFiles.push(child);
+        }
+      }
+
+      return directFiles;
+    }
+
     const result: TFile[] = [];
     const stack: TFolder[] = [root];
 
@@ -143,6 +158,23 @@ export class FolderCardView extends ItemView {
     }
 
     return result;
+  }
+
+  private compareCards(
+    left: NoteCardRecord,
+    right: NoteCardRecord,
+    field: SortField,
+    direction: SortDirection,
+  ): number {
+    const leftValue = field === "ctime" ? left.ctime : left.mtime;
+    const rightValue = field === "ctime" ? right.ctime : right.mtime;
+    const difference = leftValue - rightValue;
+
+    if (difference !== 0) {
+      return direction === "asc" ? difference : -difference;
+    }
+
+    return left.path.localeCompare(right.path);
   }
 
   private async hydrateRange(start: number, end: number): Promise<void> {

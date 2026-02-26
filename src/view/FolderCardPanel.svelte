@@ -1,4 +1,5 @@
 <script>
+  import { setIcon } from "obsidian";
   import { createEventDispatcher } from "svelte";
 
   export let cards = [];
@@ -11,10 +12,43 @@
 
   const CARD_HEIGHT = 220;
   const OVERSCAN = 5;
+  const TOOLBAR_ACTIONS = [
+    {
+      id: "pick-folder",
+      label: "Pick folder",
+      title: "Folder scope",
+      icon: "folder-open",
+    },
+    {
+      id: "new-note",
+      label: "New",
+      title: "Create note",
+      icon: "file-plus",
+    },
+    {
+      id: "sort",
+      label: "Sort",
+      title: "Sort cards",
+      icon: "arrow-up-down",
+    },
+    {
+      id: "filter",
+      label: "Filter",
+      title: "Filter cards",
+      icon: "list-filter",
+    },
+    {
+      id: "bulk",
+      label: "Bulk",
+      title: "Bulk actions",
+      icon: "check-check",
+    },
+  ];
 
   let viewportEl = null;
   let viewportHeight = 0;
   let scrollTop = 0;
+  let activeToolbarAction = TOOLBAR_ACTIONS[0].id;
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
@@ -26,6 +60,9 @@
   $: topPadding = startIndex * CARD_HEIGHT;
   $: bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT);
   $: visibleCards = cards.slice(startIndex, endIndex);
+  $: activeToolbarConfig =
+    TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction) ?? TOOLBAR_ACTIONS[0];
+  $: activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath);
 
   $: if (generation !== lastHydrateGeneration) {
     lastHydrateGeneration = generation;
@@ -53,6 +90,21 @@
     dispatch("open-note", { path });
   }
 
+  function applyIcon(node, iconName) {
+    setIcon(node, iconName);
+
+    return {
+      update(nextIconName) {
+        setIcon(node, nextIconName);
+      },
+    };
+  }
+
+  function selectToolbarAction(actionId) {
+    activeToolbarAction = actionId;
+    dispatch("toolbar-action", { action: actionId });
+  }
+
   function onCardKeydown(event, path) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -63,17 +115,60 @@
   function formatDate(timestamp) {
     return new Date(timestamp).toLocaleDateString();
   }
+
+  function describeToolbarAction(actionId, currentFolderPath) {
+    if (actionId === "pick-folder") {
+      return currentFolderPath
+        ? "Current folder can be changed from File Explorer."
+        : "Click a folder in File Explorer to load cards.";
+    }
+
+    if (actionId === "new-note") {
+      return currentFolderPath
+        ? "Create note action will be mounted here in next tasks."
+        : "Select a folder first, then create note in place.";
+    }
+
+    if (actionId === "sort") {
+      return "Sort controls will be mounted here.";
+    }
+
+    if (actionId === "filter") {
+      return "Filter controls will be mounted here.";
+    }
+
+    return "Bulk selection actions will be mounted here.";
+  }
 </script>
 
 <div class="fce-shell">
   <header class="fce-header">
-    <h3>Folder Card Explorer</h3>
-    {#if folderPath}
-      <p class="fce-folder">{folderPath}</p>
-      <p class="fce-count">{cards.length} notes</p>
-    {:else}
-      <p class="fce-folder">Click a folder in File Explorer to preview notes.</p>
-    {/if}
+    <div class="fce-toolbar" role="toolbar" aria-label="Folder card actions">
+      <div class="fce-toolbar-buttons">
+        {#each TOOLBAR_ACTIONS as action}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button {activeToolbarAction === action.id ? 'is-selected' : ''}"
+            aria-label={action.title}
+            on:click={() => selectToolbarAction(action.id)}
+            use:applyIcon={action.icon}
+          >
+            <span class="fce-sr-only">{action.label}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="fce-toolbar-content">
+      <p class="fce-toolbar-title">{activeToolbarConfig.title}</p>
+      <p class="fce-toolbar-description">{activeToolbarDescription}</p>
+      {#if folderPath}
+        <p class="fce-folder">{folderPath}</p>
+        <p class="fce-count">{cards.length} notes</p>
+      {:else}
+        <p class="fce-folder">Click a folder in File Explorer to preview notes.</p>
+      {/if}
+    </div>
   </header>
 
   <div class="fce-list" bind:this={viewportEl} on:scroll={onScroll}>

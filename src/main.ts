@@ -4,21 +4,26 @@ import {
   TFile,
   TFolder,
   WorkspaceLeaf,
-  debounce
+  debounce,
 } from "obsidian";
+import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
+import type { PartialPluginSettings, PluginSettings } from "./settings";
 
 export default class FolderCardExplorerPlugin extends Plugin {
   private selectedFolderPath: string | null = null;
+  private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private debouncedRefresh = debounce(
     () => {
       void this.refreshFolderCards();
     },
     250,
-    false
+    false,
   );
 
   async onload(): Promise<void> {
+    await this.loadSettings();
+
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
 
     this.addCommand({
@@ -26,7 +31,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       name: "Open Folder Card Explorer view",
       callback: () => {
         void this.activateView();
-      }
+      },
     });
 
     this.registerDomEvent(document, "click", (event: MouseEvent) => {
@@ -36,7 +41,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         this.syncSelection(file instanceof TFile ? file.path : null);
-      })
+      }),
     );
 
     this.app.workspace.onLayoutReady(() => {
@@ -59,6 +64,19 @@ export default class FolderCardExplorerPlugin extends Plugin {
     const leaf = this.resolveTargetLeaf();
     await leaf.openFile(target, { active: true });
     this.syncSelection(target.path);
+  }
+
+  getSettings(): PluginSettings {
+    return normalizeSettings(this.settings);
+  }
+
+  async saveSettings(patch: PartialPluginSettings): Promise<void> {
+    this.settings = mergeSettings(this.settings, patch);
+    await this.saveData(this.settings);
+
+    this.withFolderViews((view) => {
+      void view.refresh();
+    });
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {
@@ -125,7 +143,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       }
       await leaf.setViewState({
         type: FOLDER_CARD_VIEW,
-        active: true
+        active: true,
       });
     }
 
@@ -153,7 +171,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
         if (this.shouldRefreshForPath(file.path)) {
           this.debouncedRefresh();
         }
-      })
+      }),
     );
 
     this.registerEvent(
@@ -161,7 +179,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
         if (this.shouldRefreshForPath(file.path)) {
           this.debouncedRefresh();
         }
-      })
+      }),
     );
 
     this.registerEvent(
@@ -169,7 +187,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
         if (this.shouldRefreshForPath(file.path)) {
           this.debouncedRefresh();
         }
-      })
+      }),
     );
 
     this.registerEvent(
@@ -181,8 +199,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
         if (this.shouldRefreshForPath(file.path) || this.shouldRefreshForPath(oldPath)) {
           this.debouncedRefresh();
         }
-      })
+      }),
     );
+  }
+
+  private async loadSettings(): Promise<void> {
+    const rawData = await this.loadData();
+    this.settings = normalizeSettings(rawData);
   }
 
   private shouldRefreshForPath(path: string): boolean {
