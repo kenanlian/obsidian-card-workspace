@@ -1,4 +1,12 @@
 node_modules/
 dist/
+build/
 *.tsbuildinfo
-
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

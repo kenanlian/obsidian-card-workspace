@@ -1,0 +1,217 @@
+openapi: 3.1.0
+info:
+  title: Folder Card Explorer Click-Debounce Local Contract
+  version: 1.0.0
+  description: |
+    Local runtime contract for same-folder short-circuit and refresh dedupe.
+    This is an internal design contract (no external network transport).
+servers:
+  - url: local://folder-card-explorer
+    description: In-process plugin runtime only
+paths:
+  /view/folder-selection:
+    post:
+      summary: Handle folder selection intent
+      description: |
+        Accepts folder click/programmatic selection and decides whether to short-circuit,
+        start refresh, queue latest request, or reuse in-flight refresh.
+      operationId: handleFolderSelection
+      x-requirements:
+        - FR-001
+        - FR-002
+        - FR-003
+        - FR-004
+        - FR-006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderSelectionRequest'
+      responses:
+        '200':
+          description: Selection handled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionResult'
+  /view/refresh:
+    post:
+      summary: Trigger forced/automatic refresh
+      description: |
+        Used by vault events/settings changes/manual refresh to refresh current folder even when unchanged.
+      operationId: triggerRefresh
+      x-requirements:
+        - FR-005
+        - FR-007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Refresh action resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResult'
+  /events/vault-mutation:
+    post:
+      summary: Process vault mutation event
+      description: |
+        Normalizes create/modify/delete/rename events and decides whether to enqueue refresh.
+      operationId: handleVaultMutation
+      x-requirements:
+        - FR-005
+        - FR-007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VaultMutationEvent'
+      responses:
+        '200':
+          description: Event classified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultMutationResult'
+  /lifecycle/unload:
+    post:
+      summary: Cleanup pending async work on view/plugin unload
+      operationId: cleanupLifecycle
+      x-requirements:
+        - FR-007
+      responses:
+        '200':
+          description: Cleanup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CleanupResult'
+components:
+  schemas:
+    FolderSelectionRequest:
+      type: object
+      required:
+        - requestId
+        - folderPath
+        - source
+        - requestedAtMs
+      properties:
+        requestId:
+          type: integer
+          minimum: 1
+        folderPath:
+          type: string
+          minLength: 1
+        source:
+          type: string
+          enum: [explorer-click, programmatic]
+        requestedAtMs:
+          type: integer
+          minimum: 0
+        forceRefresh:
+          type: boolean
+          default: false
+    SelectionResult:
+      type: object
+      required:
+        - action
+        - folderPath
+        - generationChanged
+      properties:
+        action:
+          type: string
+          enum:
+            - noop
+            - started
+            - queued_latest
+            - reused_inflight
+            - rejected_invalid
+        folderPath:
+          type: string
+        generationChanged:
+          type: boolean
+        preserveUiState:
+          type: boolean
+          description: True when no card reset/scroll reset should occur
+    RefreshRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          enum: [vault-change, settings-change, manual]
+        folderPath:
+          type: string
+        forceRefresh:
+          type: boolean
+          default: true
+    RefreshResult:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - started
+            - queued_latest
+            - skipped_no_folder
+            - skipped_invalid_folder
+        inFlightKey:
+          type: string
+          nullable: true
+    VaultMutationEvent:
+      type: object
+      required:
+        - eventType
+        - path
+        - isFolder
+        - isMarkdown
+      properties:
+        eventType:
+          type: string
+          enum: [create, modify, delete, rename]
+        path:
+          type: string
+          minLength: 1
+        oldPath:
+          type: string
+          nullable: true
+        isFolder:
+          type: boolean
+        isMarkdown:
+          type: boolean
+    VaultMutationResult:
+      type: object
+      required:
+        - shouldRefresh
+        - queueAction
+      properties:
+        shouldRefresh:
+          type: boolean
+        queueAction:
+          type: string
+          enum: [ignored, enqueued, deferred_while_inflight]
+        selectedFolderPathAfterRename:
+          type: string
+          nullable: true
+    CleanupResult:
+      type: object
+      required:
+        - cancelledDebounce
+        - clearedQueuedRequest
+        - clearedPendingHydration
+      properties:
+        cancelledDebounce:
+          type: boolean
+        clearedQueuedRequest:
+          type: boolean
+        clearedPendingHydration:
+          type: boolean

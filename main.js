@@ -2267,11 +2267,17 @@ var FolderCardView = class extends import_obsidian3.ItemView {
     this.component = null;
     this.hostEl = null;
     this.folderPath = null;
+    this.folderLoadKey = null;
     this.cards = [];
     this.selectedPath = null;
     this.loading = false;
     this.generation = 0;
     this.pendingHydration = /* @__PURE__ */ new Set();
+    this.requestSeq = 0;
+    this.inFlight = null;
+    this.inFlightKey = null;
+    this.queuedRequest = null;
+    this.refreshQueued = false;
     this.plugin = plugin;
   }
   getViewType() {
@@ -2307,11 +2313,183 @@ var FolderCardView = class extends import_obsidian3.ItemView {
   }
   async onClose() {
     var _a;
+    this.cleanupLifecycle();
     (_a = this.component) == null ? void 0 : _a.$destroy();
     this.component = null;
     this.hostEl = null;
   }
   async setFolder(folder) {
+    const request = this.createProgrammaticSelectionRequest(folder.path, false);
+    return this.handleFolderSelection(request);
+  }
+  async handleFolderSelection(request) {
+    var _a;
+    const folder = this.app.vault.getAbstractFileByPath(request.folderPath);
+    if (!(folder instanceof import_obsidian3.TFolder)) {
+      return {
+        action: "rejected_invalid",
+        folderPath: request.folderPath,
+        generationChanged: false,
+        preserveUiState: true
+      };
+    }
+    const forceRefresh = (_a = request.forceRefresh) != null ? _a : false;
+    const loadKey = this.serializeLoadKey(this.buildLoadKey(folder.path));
+    if (this.inFlight) {
+      if (!forceRefresh && this.inFlightKey === loadKey) {
+        return {
+          action: "reused_inflight",
+          folderPath: folder.path,
+          generationChanged: false,
+          preserveUiState: true
+        };
+      }
+      this.queuedRequest = request;
+      return {
+        action: "queued_latest",
+        folderPath: folder.path,
+        generationChanged: false,
+        preserveUiState: true
+      };
+    }
+    if (!forceRefresh && this.folderLoadKey === loadKey) {
+      return {
+        action: "noop",
+        folderPath: folder.path,
+        generationChanged: false,
+        preserveUiState: true
+      };
+    }
+    await this.runLoad(folder, loadKey);
+    await this.drainQueuedRequest();
+    return {
+      action: "started",
+      folderPath: folder.path,
+      generationChanged: true,
+      preserveUiState: false
+    };
+  }
+  async refresh(request = { reason: "manual" }) {
+    var _a, _b;
+    const targetPath = (_a = request.folderPath) != null ? _a : this.folderPath;
+    if (!targetPath) {
+      return {
+        action: "skipped_no_folder",
+        inFlightKey: this.inFlightKey
+      };
+    }
+    if (request.reason === "vault-change") {
+      this.refreshQueued = false;
+    }
+    const selectionRequest = this.createProgrammaticSelectionRequest(
+      targetPath,
+      (_b = request.forceRefresh) != null ? _b : true
+    );
+    const selectionResult = await this.handleFolderSelection(selectionRequest);
+    if (selectionResult.action === "rejected_invalid") {
+      return {
+        action: "skipped_invalid_folder",
+        inFlightKey: this.inFlightKey
+      };
+    }
+    if (selectionResult.action === "started") {
+      return {
+        action: "started",
+        inFlightKey: this.inFlightKey
+      };
+    }
+    return {
+      action: "queued_latest",
+      inFlightKey: this.inFlightKey
+    };
+  }
+  handleVaultMutation(event) {
+    let selectedFolderPathAfterRename = null;
+    if (event.eventType === "rename" && event.isFolder && event.oldPath) {
+      const renamedPath = this.rewritePathAfterRename(this.folderPath, event.oldPath, event.path);
+      if (renamedPath !== this.folderPath) {
+        this.folderPath = renamedPath;
+        this.folderLoadKey = renamedPath ? this.serializeLoadKey(this.buildLoadKey(renamedPath)) : null;
+        selectedFolderPathAfterRename = renamedPath;
+      }
+    }
+    if (!this.shouldRefreshForVaultEvent(event)) {
+      return {
+        shouldRefresh: false,
+        queueAction: "ignored",
+        selectedFolderPathAfterRename
+      };
+    }
+    const queueAction = this.inFlight ? "deferred_while_inflight" : "enqueued";
+    this.refreshQueued = true;
+    return {
+      shouldRefresh: true,
+      queueAction,
+      selectedFolderPathAfterRename
+    };
+  }
+  cleanupLifecycle() {
+    const hadQueuedRequest = this.queuedRequest !== null || this.refreshQueued;
+    const hadPendingHydration = this.pendingHydration.size > 0;
+    this.queuedRequest = null;
+    this.refreshQueued = false;
+    this.pendingHydration.clear();
+    this.inFlight = null;
+    this.inFlightKey = null;
+    this.loading = false;
+    this.generation += 1;
+    return {
+      cancelledDebounce: false,
+      clearedQueuedRequest: hadQueuedRequest,
+      clearedPendingHydration: hadPendingHydration
+    };
+  }
+  setSelectedFile(path) {
+    if (this.selectedPath === path) {
+      return;
+    }
+    this.selectedPath = path;
+    this.pushState(false);
+  }
+  getCurrentFolderPath() {
+    return this.folderPath;
+  }
+  createProgrammaticSelectionRequest(folderPath, forceRefresh) {
+    this.requestSeq += 1;
+    return {
+      requestId: this.requestSeq,
+      folderPath,
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+      forceRefresh
+    };
+  }
+  buildLoadKey(folderPath) {
+    const settings = this.plugin.getSettings();
+    return {
+      folderPath,
+      includeSubfolders: settings.includeSubfolders,
+      sortField: settings.sort.field,
+      sortDirection: settings.sort.direction
+    };
+  }
+  serializeLoadKey(loadKey) {
+    return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
+  }
+  async runLoad(folder, loadKey) {
+    const task = this.loadFolder(folder, loadKey);
+    this.inFlight = task;
+    this.inFlightKey = loadKey;
+    try {
+      await task;
+    } finally {
+      if (this.inFlight === task) {
+        this.inFlight = null;
+        this.inFlightKey = null;
+      }
+    }
+  }
+  async loadFolder(folder, loadKey) {
     this.folderPath = folder.path;
     this.loading = true;
     this.cards = [];
@@ -2320,45 +2498,93 @@ var FolderCardView = class extends import_obsidian3.ItemView {
     this.pushState();
     const buildGeneration = this.generation;
     const settings = this.plugin.getSettings();
-    const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
-    const records = files.map((file) => {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const frontmatterCover = pickFrontmatterImage(cache == null ? void 0 : cache.frontmatter);
-      return {
-        file,
-        path: file.path,
-        title: file.basename,
-        ctime: file.stat.ctime,
-        mtime: file.stat.mtime,
-        cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
-        excerpt: "",
-        previewHtml: "",
-        previewMode: "empty",
-        hydrated: false
-      };
-    });
-    if (buildGeneration !== this.generation) {
+    try {
+      const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
+      const records = files.map((file) => {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const frontmatterCover = pickFrontmatterImage(
+          cache == null ? void 0 : cache.frontmatter
+        );
+        return {
+          file,
+          path: file.path,
+          title: file.basename,
+          ctime: file.stat.ctime,
+          mtime: file.stat.mtime,
+          cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
+          excerpt: "",
+          previewHtml: "",
+          previewMode: "empty",
+          hydrated: false
+        };
+      });
+      if (buildGeneration !== this.generation) {
+        return;
+      }
+      records.sort(
+        (left, right) => this.compareCards(left, right, settings.sort.field, settings.sort.direction)
+      );
+      this.cards = records;
+      this.folderLoadKey = loadKey;
+    } finally {
+      if (buildGeneration === this.generation) {
+        this.loading = false;
+        this.pushState();
+      }
+    }
+  }
+  async drainQueuedRequest() {
+    if (this.inFlight) {
       return;
     }
-    records.sort(
-      (left, right) => this.compareCards(left, right, settings.sort.field, settings.sort.direction)
-    );
-    this.cards = records;
-    this.loading = false;
-    this.pushState();
+    const queued = this.queuedRequest;
+    if (!queued) {
+      return;
+    }
+    this.queuedRequest = null;
+    await this.handleFolderSelection(queued);
   }
-  setSelectedFile(path) {
-    this.selectedPath = path;
-    this.pushState();
-  }
-  async refresh() {
+  shouldRefreshForVaultEvent(event) {
     if (!this.folderPath) {
-      return;
+      return false;
     }
-    const folder = this.app.vault.getAbstractFileByPath(this.folderPath);
-    if (folder instanceof import_obsidian3.TFolder) {
-      await this.setFolder(folder);
+    if (!event.isFolder && !event.isMarkdown) {
+      return false;
     }
+    const includeSubfolders = this.plugin.getSettings().includeSubfolders;
+    const pathInScope = this.isPathInScope(event.path, includeSubfolders);
+    const oldPathInScope = typeof event.oldPath === "string" && event.oldPath.length > 0 ? this.isPathInScope(event.oldPath, includeSubfolders) : false;
+    return pathInScope || oldPathInScope;
+  }
+  isPathInScope(path, includeSubfolders) {
+    if (!this.folderPath) {
+      return false;
+    }
+    if (path === this.folderPath) {
+      return true;
+    }
+    const prefix = `${this.folderPath}/`;
+    if (!path.startsWith(prefix)) {
+      return false;
+    }
+    if (includeSubfolders) {
+      return true;
+    }
+    const relative = path.slice(prefix.length);
+    return !relative.includes("/");
+  }
+  rewritePathAfterRename(currentPath, oldPath, newPath) {
+    if (!currentPath) {
+      return currentPath;
+    }
+    if (currentPath === oldPath) {
+      return newPath;
+    }
+    const prefix = `${oldPath}/`;
+    if (!currentPath.startsWith(prefix)) {
+      return currentPath;
+    }
+    return `${newPath}${currentPath.slice(oldPath.length)}`;
   }
   collectMarkdownFiles(root, includeSubfolders) {
     if (!includeSubfolders) {
@@ -2450,10 +2676,10 @@ var FolderCardView = class extends import_obsidian3.ItemView {
       card.hydrated = true;
     }
   }
-  pushState() {
+  pushState(cloneCards = true) {
     var _a, _b;
     (_b = this.component) == null ? void 0 : _b.$set({
-      cards: [...this.cards],
+      cards: cloneCards ? [...this.cards] : this.cards,
       folderPath: (_a = this.folderPath) != null ? _a : "",
       selectedPath: this.selectedPath,
       loading: this.loading,
@@ -2468,9 +2694,11 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     super(...arguments);
     this.selectedFolderPath = null;
     this.settings = normalizeSettings(DEFAULT_SETTINGS);
+    this.selectionRequestSeq = 0;
+    this.latestHandledRequestId = 0;
     this.debouncedRefresh = (0, import_obsidian4.debounce)(
       () => {
-        void this.refreshFolderCards();
+        void this.requestRefreshForViews("vault-change");
       },
       250,
       false
@@ -2502,6 +2730,12 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     });
   }
   async onunload() {
+    var _a;
+    const debouncedRefresh = this.debouncedRefresh;
+    (_a = debouncedRefresh.cancel) == null ? void 0 : _a.call(debouncedRefresh);
+    this.withFolderViews((view) => {
+      view.cleanupLifecycle();
+    });
     this.app.workspace.detachLeavesOfType(FOLDER_CARD_VIEW);
   }
   async openNoteFromCard(path) {
@@ -2519,9 +2753,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
   async saveSettings(patch) {
     this.settings = mergeSettings(this.settings, patch);
     await this.saveData(this.settings);
-    this.withFolderViews((view) => {
-      void view.refresh();
-    });
+    await this.requestRefreshForViews("settings-change");
   }
   resolveTargetLeaf() {
     const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
@@ -2547,11 +2779,12 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     if (!(folder instanceof import_obsidian4.TFolder)) {
       return;
     }
-    this.selectedFolderPath = folder.path;
+    const request = this.createSelectionRequest(folder.path, "explorer-click");
     await this.activateView();
-    this.withFolderViews((view) => {
-      void view.setFolder(folder);
-    });
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
   }
   extractFolderPathFromTarget(target) {
     var _a, _b, _c;
@@ -2595,33 +2828,22 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
   registerVaultObservers() {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("create", file, null));
       })
     );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("modify", file, null));
       })
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("delete", file, null));
       })
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian4.TFolder && this.selectedFolderPath === oldPath) {
-          this.selectedFolderPath = file.path;
-        }
-        if (this.shouldRefreshForPath(file.path) || this.shouldRefreshForPath(oldPath)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("rename", file, oldPath));
       })
     );
   }
@@ -2629,22 +2851,82 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     const rawData = await this.loadData();
     this.settings = normalizeSettings(rawData);
   }
-  shouldRefreshForPath(path) {
-    if (!this.selectedFolderPath) {
-      return false;
-    }
-    return path === this.selectedFolderPath || path.startsWith(`${this.selectedFolderPath}/`);
+  createSelectionRequest(folderPath, source, forceRefresh = false) {
+    this.selectionRequestSeq += 1;
+    const request = {
+      requestId: this.selectionRequestSeq,
+      folderPath,
+      source,
+      requestedAtMs: Date.now(),
+      forceRefresh
+    };
+    this.latestHandledRequestId = request.requestId;
+    return request;
   }
-  async refreshFolderCards() {
-    if (!this.selectedFolderPath) {
+  dispatchSelectionRequest(request) {
+    this.withFolderViews((view) => {
+      void this.handleSelectionResult(view, request);
+    });
+  }
+  async handleSelectionResult(view, request) {
+    const result = await view.handleFolderSelection(request);
+    if (result.action === "rejected_invalid") {
       return;
     }
-    const folder = this.app.vault.getAbstractFileByPath(this.selectedFolderPath);
-    if (!(folder instanceof import_obsidian4.TFolder)) {
+    if (request.source === "explorer-click" && request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.selectedFolderPath = result.folderPath;
+  }
+  buildVaultMutationEvent(eventType, file, oldPath) {
+    return {
+      eventType,
+      path: file.path,
+      oldPath,
+      isFolder: file instanceof import_obsidian4.TFolder,
+      isMarkdown: file instanceof import_obsidian4.TFile && file.extension.toLowerCase() === "md"
+    };
+  }
+  dispatchVaultMutation(event) {
+    this.reconcileSelectedFolderPath(event);
+    let shouldQueueRefresh = false;
+    this.withFolderViews((view) => {
+      const result = view.handleVaultMutation(event);
+      if (result.selectedFolderPathAfterRename) {
+        this.selectedFolderPath = result.selectedFolderPathAfterRename;
+      }
+      if (result.shouldRefresh) {
+        shouldQueueRefresh = true;
+      }
+    });
+    if (shouldQueueRefresh) {
+      this.debouncedRefresh();
+    }
+  }
+  reconcileSelectedFolderPath(event) {
+    if (event.eventType !== "rename" || !event.isFolder || !this.selectedFolderPath || !event.oldPath) {
+      return;
+    }
+    if (this.selectedFolderPath === event.oldPath) {
+      this.selectedFolderPath = event.path;
+      return;
+    }
+    const prefix = `${event.oldPath}/`;
+    if (this.selectedFolderPath.startsWith(prefix)) {
+      this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
+    }
+  }
+  async requestRefreshForViews(reason) {
+    if (!this.selectedFolderPath) {
       return;
     }
     this.withFolderViews((view) => {
-      void view.refresh();
+      var _a;
+      void view.refresh({
+        reason,
+        folderPath: (_a = this.selectedFolderPath) != null ? _a : void 0,
+        forceRefresh: true
+      });
     });
   }
 };

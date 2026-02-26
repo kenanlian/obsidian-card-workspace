@@ -1,6 +1,7 @@
 import {
   MarkdownView,
   Plugin,
+  TAbstractFile,
   TFile,
   TFolder,
   WorkspaceLeaf,
@@ -8,14 +9,17 @@ import {
 } from "obsidian";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
+import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
 
 export default class FolderCardExplorerPlugin extends Plugin {
   private selectedFolderPath: string | null = null;
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
+  private selectionRequestSeq = 0;
+  private latestHandledRequestId = 0;
   private debouncedRefresh = debounce(
     () => {
-      void this.refreshFolderCards();
+      void this.requestRefreshForViews("vault-change");
     },
     250,
     false,
@@ -52,6 +56,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    const debouncedRefresh = this.debouncedRefresh as (() => void) & {
+      cancel?: () => void;
+    };
+    debouncedRefresh.cancel?.();
+    this.withFolderViews((view) => {
+      view.cleanupLifecycle();
+    });
     this.app.workspace.detachLeavesOfType(FOLDER_CARD_VIEW);
   }
 
@@ -73,10 +84,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
     this.settings = mergeSettings(this.settings, patch);
     await this.saveData(this.settings);
-
-    this.withFolderViews((view) => {
-      void view.refresh();
-    });
+    await this.requestRefreshForViews("settings-change");
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {
@@ -109,11 +117,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
       return;
     }
 
-    this.selectedFolderPath = folder.path;
+    const request = this.createSelectionRequest(folder.path, "explorer-click");
     await this.activateView();
-    this.withFolderViews((view) => {
-      void view.setFolder(folder);
-    });
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+
+    this.dispatchSelectionRequest(request);
   }
 
   private extractFolderPathFromTarget(target: Element): string | null {
@@ -168,37 +178,25 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private registerVaultObservers(): void {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("create", file, null));
       }),
     );
 
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("modify", file, null));
       }),
     );
 
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        if (this.shouldRefreshForPath(file.path)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("delete", file, null));
       }),
     );
 
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof TFolder && this.selectedFolderPath === oldPath) {
-          this.selectedFolderPath = file.path;
-        }
-
-        if (this.shouldRefreshForPath(file.path) || this.shouldRefreshForPath(oldPath)) {
-          this.debouncedRefresh();
-        }
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("rename", file, oldPath));
       }),
     );
   }
@@ -208,26 +206,113 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.settings = normalizeSettings(rawData);
   }
 
-  private shouldRefreshForPath(path: string): boolean {
-    if (!this.selectedFolderPath) {
-      return false;
-    }
+  private createSelectionRequest(
+    folderPath: string,
+    source: FolderSelectionSource,
+    forceRefresh = false,
+  ): FolderSelectionRequest {
+    this.selectionRequestSeq += 1;
+    const request: FolderSelectionRequest = {
+      requestId: this.selectionRequestSeq,
+      folderPath,
+      source,
+      requestedAtMs: Date.now(),
+      forceRefresh,
+    };
 
-    return path === this.selectedFolderPath || path.startsWith(`${this.selectedFolderPath}/`);
+    this.latestHandledRequestId = request.requestId;
+    return request;
   }
 
-  private async refreshFolderCards(): Promise<void> {
-    if (!this.selectedFolderPath) {
+  private dispatchSelectionRequest(request: FolderSelectionRequest): void {
+    this.withFolderViews((view) => {
+      void this.handleSelectionResult(view, request);
+    });
+  }
+
+  private async handleSelectionResult(
+    view: FolderCardView,
+    request: FolderSelectionRequest,
+  ): Promise<void> {
+    const result = await view.handleFolderSelection(request);
+    if (result.action === "rejected_invalid") {
       return;
     }
 
-    const folder = this.app.vault.getAbstractFileByPath(this.selectedFolderPath);
-    if (!(folder instanceof TFolder)) {
+    if (request.source === "explorer-click" && request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+
+    this.selectedFolderPath = result.folderPath;
+  }
+
+  private buildVaultMutationEvent(
+    eventType: VaultMutationEventType,
+    file: TAbstractFile,
+    oldPath: string | null,
+  ): VaultMutationEvent {
+    return {
+      eventType,
+      path: file.path,
+      oldPath,
+      isFolder: file instanceof TFolder,
+      isMarkdown: file instanceof TFile && file.extension.toLowerCase() === "md",
+    };
+  }
+
+  private dispatchVaultMutation(event: VaultMutationEvent): void {
+    this.reconcileSelectedFolderPath(event);
+
+    let shouldQueueRefresh = false;
+    this.withFolderViews((view) => {
+      const result = view.handleVaultMutation(event);
+      if (result.selectedFolderPathAfterRename) {
+        this.selectedFolderPath = result.selectedFolderPathAfterRename;
+      }
+      if (result.shouldRefresh) {
+        shouldQueueRefresh = true;
+      }
+    });
+
+    if (shouldQueueRefresh) {
+      this.debouncedRefresh();
+    }
+  }
+
+  private reconcileSelectedFolderPath(event: VaultMutationEvent): void {
+    if (
+      event.eventType !== "rename" ||
+      !event.isFolder ||
+      !this.selectedFolderPath ||
+      !event.oldPath
+    ) {
+      return;
+    }
+
+    if (this.selectedFolderPath === event.oldPath) {
+      this.selectedFolderPath = event.path;
+      return;
+    }
+
+    const prefix = `${event.oldPath}/`;
+    if (this.selectedFolderPath.startsWith(prefix)) {
+      this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
+    }
+  }
+
+  private async requestRefreshForViews(
+    reason: "vault-change" | "settings-change" | "manual",
+  ): Promise<void> {
+    if (!this.selectedFolderPath) {
       return;
     }
 
     this.withFolderViews((view) => {
-      void view.refresh();
+      void view.refresh({
+        reason,
+        folderPath: this.selectedFolderPath ?? undefined,
+        forceRefresh: true,
+      });
     });
   }
 }
