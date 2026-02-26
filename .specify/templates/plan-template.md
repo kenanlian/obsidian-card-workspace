@@ -31,7 +31,15 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- **Performance First**: Identify main-thread hotspots and define async/chunked mitigation.
+- **Local-first & Privacy**: Confirm no external network access, or document approved need,
+  data scope, consent, and offline fallback.
+- **Native Feel**: List impacted Obsidian UI surfaces and required theme/CSS variable
+  compatibility checks.
+- **Modular Design**: Define separation between domain logic, Svelte presentation, and
+  Obsidian runtime adapters; list logic that remains testable outside Obsidian.
+- **Lifecycle Safety**: Document `onMount`/`onDestroy` and plugin unload cleanup strategy
+  for all listeners, commands, and registered resources.
 
 ## Project Structure
 

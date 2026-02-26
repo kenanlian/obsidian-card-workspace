@@ -65,6 +65,20 @@
 
 [Add more user stories as needed, each with an assigned priority]
 
+## Constitution Alignment *(mandatory)*
+
+<!--
+  ACTION REQUIRED: Prove the feature complies with the project constitution.
+  If a gate does not pass, resolve it before planning/implementation begins.
+-->
+
+- **Performance First**: [Describe expected runtime cost, main-thread impact, and
+  async/chunking strategy]
+- **Local-first & Privacy**: [Confirm whether any network request is required; if yes,
+  justify user value, data scope, consent, and offline fallback]
+- **Native Feel**: [List Obsidian-native UI patterns/classes and theme variable impacts]
+- **Modular Design**: [Describe boundaries between TS logic, Svelte UI, and Obsidian APIs]
+
 ### Edge Cases
 
 <!--
@@ -89,11 +103,13 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-006**: System MUST [state performance budget or responsiveness target]
+- **FR-007**: System MUST [state lifecycle cleanup behavior for listeners/resources]
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-008**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-009**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 

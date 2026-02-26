@@ -13,6 +13,13 @@ An Obsidian plugin that listens for folder clicks in File Explorer and renders n
   - Switching note in editor -> corresponding card gets selected.
 - Warm Retro Paper aesthetic using `styles.css`.
 
+## Governing Principles
+
+- Performance First: avoid main-thread blocking; keep folder loads and scrolling responsive.
+- Local-first & Privacy: process vault data locally; avoid external network requests by default.
+- Native Feel: align with Obsidian interaction patterns and theme variables.
+- Modular Design: keep TypeScript logic decoupled from Svelte rendering and Obsidian wiring.
+
 ## Development
 
 ```bash
@@ -25,4 +32,3 @@ For watch mode:
 ```bash
 npm run dev
 ```
-

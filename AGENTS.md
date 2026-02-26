@@ -4,6 +4,14 @@ This repo is an Obsidian plugin.
 It listens for folder clicks in File Explorer and renders notes from that folder
 as a virtualized card stream in the right sidebar.
 
+## Project Governing Principles
+- Performance First: avoid blocking the main thread; keep UI interactions responsive.
+- Local-first & Privacy: keep vault processing local; do not add network requests unless
+  explicitly approved by the feature spec.
+- Native Feel: prioritize Obsidian theme variables and native UI class patterns.
+- Modular Design: separate TypeScript business logic from Svelte presentation and Obsidian
+  runtime bindings so logic remains independently testable.
+
 ## Tech Stack
 - TypeScript (`strict: true`)
 - Svelte 4 (`.svelte` component UI)
