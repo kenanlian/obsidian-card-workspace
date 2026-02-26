@@ -250,4 +250,8 @@
 .folder-card-view .fce-excerpt.is-code {
   font-size: 12px;
   line-height: 1.45;
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  overflow: visible;
 }
