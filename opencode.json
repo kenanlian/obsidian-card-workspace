@@ -23,12 +23,9 @@
             },
             "enabled": true
         },
-        "tavily": {
+        "exa": {
             "type": "remote",
-            "url": "https://mcp.tavily.com/mcp",
-            "headers": {
-                "Authorization": "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"
-            },
+            "url": "https://mcp.exa.ai/mcp?exaApiKey=89783ef9-fa70-4034-9348-69a7da54bf54",
             "enabled": true
         }
     }
