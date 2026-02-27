@@ -2,6 +2,7 @@ import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { buildLightPreview } from "./markdown-utils";
 import type { SortDirection, SortField } from "../settings";
+import { ALL_NOTES_PATH } from "./types";
 import type {
   CleanupResult,
   FolderLoadKey,
@@ -99,8 +100,12 @@ export class FolderCardView extends ItemView {
   }
 
   async handleFolderSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
-    const folder = this.app.vault.getAbstractFileByPath(request.folderPath);
-    if (!(folder instanceof TFolder)) {
+    const isAllNotes = request.folderPath === ALL_NOTES_PATH;
+    const folder = isAllNotes
+      ? null
+      : this.app.vault.getAbstractFileByPath(request.folderPath);
+
+    if (!isAllNotes && !(folder instanceof TFolder)) {
       return {
         action: "rejected_invalid",
         folderPath: request.folderPath,
@@ -110,13 +115,13 @@ export class FolderCardView extends ItemView {
     }
 
     const forceRefresh = request.forceRefresh ?? false;
-    const loadKey = this.serializeLoadKey(this.buildLoadKey(folder.path));
+    const loadKey = this.serializeLoadKey(this.buildLoadKey(request.folderPath));
 
     if (this.inFlight) {
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
           action: "reused_inflight",
-          folderPath: folder.path,
+          folderPath: request.folderPath,
           generationChanged: false,
           preserveUiState: true,
         };
@@ -125,7 +130,7 @@ export class FolderCardView extends ItemView {
       this.queuedRequest = request;
       return {
         action: "queued_latest",
-        folderPath: folder.path,
+        folderPath: request.folderPath,
         generationChanged: false,
         preserveUiState: true,
       };
@@ -134,18 +139,18 @@ export class FolderCardView extends ItemView {
     if (!forceRefresh && this.folderLoadKey === loadKey) {
       return {
         action: "noop",
-        folderPath: folder.path,
+        folderPath: request.folderPath,
         generationChanged: false,
         preserveUiState: true,
       };
     }
 
-    await this.runLoad(folder, loadKey);
+    await this.runLoad(request.folderPath, loadKey);
     await this.drainQueuedRequest();
 
     return {
       action: "started",
-      folderPath: folder.path,
+      folderPath: request.folderPath,
       generationChanged: true,
       preserveUiState: false,
     };
@@ -294,8 +299,8 @@ export class FolderCardView extends ItemView {
     return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
   }
 
-  private async runLoad(folder: TFolder, loadKey: string): Promise<void> {
-    const task = this.loadFolder(folder, loadKey);
+  private async runLoad(folderPath: string, loadKey: string): Promise<void> {
+    const task = this.loadFolder(folderPath, loadKey);
     this.inFlight = task;
     this.inFlightKey = loadKey;
 
@@ -309,8 +314,8 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private async loadFolder(folder: TFolder, loadKey: string): Promise<void> {
-    this.folderPath = folder.path;
+  private async loadFolder(folderPath: string, loadKey: string): Promise<void> {
+    this.folderPath = folderPath;
     this.loading = true;
     this.cards = [];
     this.generation += 1;
@@ -321,7 +326,7 @@ export class FolderCardView extends ItemView {
     const settings = this.plugin.getSettings();
 
     try {
-      const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
+      const files = this.collectMarkdownFiles(folderPath, settings.includeSubfolders);
       const records: NoteCardRecord[] = files.map((file) => {
         return {
           file,
@@ -391,6 +396,11 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
+    // All-notes mode: every markdown file is in scope
+    if (this.folderPath === ALL_NOTES_PATH) {
+      return true;
+    }
+
     if (path === this.folderPath) {
       return true;
     }
@@ -429,8 +439,17 @@ export class FolderCardView extends ItemView {
     return `${newPath}${currentPath.slice(oldPath.length)}`;
   }
 
-  private collectMarkdownFiles(root: TFolder, includeSubfolders: boolean): TFile[] {
-    if (!includeSubfolders) {
+  private collectMarkdownFiles(folderPath: string, includeSubfolders: boolean): TFile[] {
+    const isAllNotes = folderPath === ALL_NOTES_PATH;
+    const root = isAllNotes
+      ? this.app.vault.getRoot()
+      : this.app.vault.getAbstractFileByPath(folderPath);
+
+    if (!(root instanceof TFolder)) {
+      return [];
+    }
+
+    if (!isAllNotes && !includeSubfolders) {
       const directFiles: TFile[] = [];
       for (const child of root.children) {
         if (child instanceof TFile && child.extension.toLowerCase() === "md") {
@@ -441,6 +460,7 @@ export class FolderCardView extends ItemView {
       return directFiles;
     }
 
+    // recursive (all-notes always recurses)
     const result: TFile[] = [];
     const stack: TFolder[] = [root];
 
@@ -756,9 +776,13 @@ export class FolderCardView extends ItemView {
   }
 
   private pushState(): void {
+    const displayFolderPath = this.folderPath === ALL_NOTES_PATH
+      ? "All Notes"
+      : (this.folderPath ?? "");
+
     this.component?.$set({
       cards: this.cards,
-      folderPath: this.folderPath ?? "",
+      folderPath: displayFolderPath,
       selectedPath: this.selectedPath,
       loading: this.loading,
       generation: this.generation,
