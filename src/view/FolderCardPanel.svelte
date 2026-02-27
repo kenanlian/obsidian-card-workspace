@@ -200,8 +200,8 @@
   function describeToolbarAction(actionId, currentFolderPath) {
     if (actionId === "pick-folder") {
       return currentFolderPath
-        ? "Current folder can be changed from File Explorer."
-        : "Click a folder in File Explorer to load cards.";
+        ? "Click to change folder, or pick from File Explorer."
+        : "Click to pick a folder, or select one in File Explorer.";
     }
 
     if (actionId === "new-note") {
@@ -247,7 +247,7 @@
         <p class="fce-folder">{folderPath}</p>
         <p class="fce-count">{cards.length} notes</p>
       {:else}
-        <p class="fce-folder">Click a folder in File Explorer to preview notes.</p>
+        <p class="fce-folder">Pick a folder to preview notes.</p>
       {/if}
     </div>
   </header>
