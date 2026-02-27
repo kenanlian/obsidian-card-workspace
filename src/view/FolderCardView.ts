@@ -589,6 +589,86 @@ export class FolderCardView extends ItemView {
       return { handled: true, action: "hydration_reset" };
     }
 
+    if (event.eventType === "rename" && !event.isFolder) {
+      const settings = this.plugin.getSettings();
+      const oldIndex = event.oldPath
+        ? this.cards.findIndex((c) => c.path === event.oldPath)
+        : -1;
+
+      const newInScope = this.isPathInScope(event.path, settings.includeSubfolders);
+
+      if (oldIndex !== -1) {
+        if (!newInScope) {
+          // File moved out of scope — remove it
+          const shifted = new Set<number>();
+          for (const idx of this.pendingHydration) {
+            if (idx !== oldIndex) {
+              shifted.add(idx > oldIndex ? idx - 1 : idx);
+            }
+          }
+          this.pendingHydration = shifted;
+          this.cards.splice(oldIndex, 1);
+          return { handled: true, action: "removed" };
+        }
+
+        // Update in-place
+        const card = this.cards[oldIndex];
+        if (!card) {
+          return { handled: false, action: "deferred_full_reload" };
+        }
+
+        const file = this.app.vault.getAbstractFileByPath(event.path);
+        if (!(file instanceof TFile)) {
+          return { handled: false, action: "deferred_full_reload" };
+        }
+
+        card.file = file;
+        card.path = file.path;
+        card.title = file.basename;
+        return { handled: true, action: "updated" };
+      }
+
+      // Old path not in cards — file may have moved into scope
+      if (newInScope) {
+        const alreadyExists = this.cards.some((c) => c.path === event.path);
+        if (!alreadyExists) {
+          const file = this.app.vault.getAbstractFileByPath(event.path);
+          if (!(file instanceof TFile)) {
+            return { handled: false, action: "deferred_full_reload" };
+          }
+
+          const newCard: NoteCardRecord = {
+            file,
+            path: file.path,
+            title: file.basename,
+            ctime: file.stat.ctime,
+            mtime: file.stat.mtime,
+            excerpt: "",
+            previewHtml: "",
+            previewMode: "empty",
+            hydrated: false,
+          };
+
+          const insertIndex = this.findSortedInsertIndex(newCard);
+          this.cards.splice(insertIndex, 0, newCard);
+
+          const shifted = new Set<number>();
+          for (const idx of this.pendingHydration) {
+            shifted.add(idx >= insertIndex ? idx + 1 : idx);
+          }
+          this.pendingHydration = shifted;
+
+          void this.hydrateCard(insertIndex, this.generation).then(() => {
+            this.pushState();
+          });
+
+          return { handled: true, action: "inserted" };
+        }
+      }
+
+      return { handled: true, action: "skipped_not_found" };
+    }
+
     return { handled: false, action: "deferred_full_reload" };
   }
 
