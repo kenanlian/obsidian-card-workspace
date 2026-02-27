@@ -235,7 +235,7 @@ export class FolderCardView extends ItemView {
     }
 
     this.selectedPath = path;
-    this.pushState(false);
+    this.pushState();
   }
 
   getCurrentFolderPath(): string | null {
@@ -513,9 +513,9 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private pushState(cloneCards = true): void {
+  private pushState(): void {
     this.component?.$set({
-      cards: cloneCards ? [...this.cards] : this.cards,
+      cards: this.cards,
       folderPath: this.folderPath ?? "",
       selectedPath: this.selectedPath,
       loading: this.loading,
