@@ -14,6 +14,7 @@ export interface PluginSettings {
   };
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
+  lastFolderPath: string | null;
 }
 
 export interface PartialPluginSettings {
@@ -26,6 +27,7 @@ export interface PartialPluginSettings {
   };
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
+  lastFolderPath?: string | null;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   },
   includeSubfolders: true,
   defaultView: "cards",
+  lastFolderPath: null,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,6 +85,10 @@ export function normalizeSettings(raw: unknown): PluginSettings {
         ? data.includeSubfolders
         : DEFAULT_SETTINGS.includeSubfolders,
     defaultView: normalizeDefaultView(data.defaultView),
+    lastFolderPath:
+      typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
+        ? data.lastFolderPath
+        : null,
   };
 }
 
