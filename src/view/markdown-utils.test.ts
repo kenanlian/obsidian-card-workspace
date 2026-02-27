@@ -72,3 +72,98 @@ describe("stripMarkdownToText", () => {
     expect(stripMarkdownToText(short, 20)).toBe("hello");
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildLightPreview
+// ---------------------------------------------------------------------------
+describe("buildLightPreview", () => {
+  it("returns mode=empty for blank content", () => {
+    const result = buildLightPreview("");
+    expect(result.mode).toBe("empty");
+    expect(result.html).toBe("");
+  });
+
+  it("returns mode=empty for whitespace-only content", () => {
+    const result = buildLightPreview("   \n\n  ");
+    expect(result.mode).toBe("empty");
+  });
+
+  it("renders a paragraph as mode=text", () => {
+    const result = buildLightPreview("Hello world");
+    expect(result.mode).toBe("text");
+    expect(result.html).toContain("Hello world");
+    expect(result.html).toContain("<p>");
+  });
+
+  it("strips frontmatter before rendering", () => {
+    const md = "---\ntitle: Test\n---\nActual content";
+    const result = buildLightPreview(md);
+    expect(result.html).not.toContain("title");
+    expect(result.html).toContain("Actual content");
+  });
+
+  it("renders a heading with fce-preview-heading class", () => {
+    const result = buildLightPreview("## Section Title");
+    expect(result.html).toContain("fce-preview-heading");
+    expect(result.html).toContain("Section Title");
+  });
+
+  it("renders an unordered list as <ul><li>", () => {
+    const result = buildLightPreview("- item one\n- item two");
+    expect(result.html).toContain("<ul>");
+    expect(result.html).toContain("<li>");
+    expect(result.html).toContain("item one");
+  });
+
+  it("renders an ordered list as <ol><li>", () => {
+    const result = buildLightPreview("1. first\n2. second");
+    expect(result.html).toContain("<ol>");
+    expect(result.html).toContain("first");
+  });
+
+  it("renders a blockquote as <blockquote>", () => {
+    const result = buildLightPreview("> quoted text");
+    expect(result.html).toContain("<blockquote>");
+    expect(result.html).toContain("quoted text");
+  });
+
+  it("returns mode=code for fenced code block at top", () => {
+    const result = buildLightPreview("```js\nconst x = 1;\n```");
+    expect(result.mode).toBe("code");
+    expect(result.html).toContain("<pre");
+    expect(result.html).toContain("const x = 1;");
+  });
+
+  it("escapes HTML special chars in code preview", () => {
+    const result = buildLightPreview("```\n<script>alert('xss')</script>\n```");
+    expect(result.html).not.toContain("<script>");
+    expect(result.html).toContain("&lt;script&gt;");
+  });
+
+  it("skips image-only lines", () => {
+    const result = buildLightPreview("![[photo.png]]\nReal content");
+    expect(result.html).not.toContain("photo.png");
+    expect(result.html).toContain("Real content");
+  });
+
+  it("truncates content at maxVisibleChars and appends ellipsis", () => {
+    const long = "word ".repeat(100);
+    const result = buildLightPreview(long, 20);
+    expect(result.html).toContain("...");
+  });
+
+  it("renders inline bold as <strong>", () => {
+    const result = buildLightPreview("some **bold** text");
+    expect(result.html).toContain("<strong>bold</strong>");
+  });
+
+  it("renders inline em as <em>", () => {
+    const result = buildLightPreview("some _italic_ text");
+    expect(result.html).toContain("<em>italic</em>");
+  });
+
+  it("renders inline code as <code>", () => {
+    const result = buildLightPreview("use `fn()` here");
+    expect(result.html).toContain("<code>fn()</code>");
+  });
+});
