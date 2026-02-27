@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs --production",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
@@ -14,7 +16,7 @@
     "esbuild-svelte": "^0.9.1",
     "obsidian": "^1.8.7",
     "svelte": "^4.2.20",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
   }
 }
-
