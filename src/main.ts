@@ -9,6 +9,7 @@ import {
 } from "obsidian";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
+import { FolderPickerModal } from "./FolderPickerModal";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
 
@@ -77,6 +78,28 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.syncSelection(target.path);
   }
 
+  openFolderPicker(): void {
+    new FolderPickerModal(this.app, (folder) => {
+      void this.selectFolder(folder, "panel-picker");
+    }).open();
+  }
+
+  private async selectFolder(
+    folder: TFolder,
+    source: FolderSelectionSource,
+  ): Promise<void> {
+    const request = this.createSelectionRequest(folder.path, source);
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
+    await this.saveData(
+      mergeSettings(this.settings, { lastFolderPath: folder.path }),
+    );
+    this.settings = mergeSettings(this.settings, { lastFolderPath: folder.path });
+  }
+
   getSettings(): PluginSettings {
     return normalizeSettings(this.settings);
   }
@@ -117,13 +140,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       return;
     }
 
-    const request = this.createSelectionRequest(folder.path, "explorer-click");
-    await this.activateView();
-    if (request.requestId !== this.latestHandledRequestId) {
-      return;
-    }
-
-    this.dispatchSelectionRequest(request);
+    await this.selectFolder(folder, "explorer-click");
   }
 
   private extractFolderPathFromTarget(target: Element): string | null {
