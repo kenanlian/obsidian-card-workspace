@@ -462,6 +462,30 @@ export class FolderCardView extends ItemView {
     return left.path.localeCompare(right.path);
   }
 
+  private findSortedInsertIndex(newCard: NoteCardRecord): number {
+    let low = 0;
+    let high = this.cards.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      const existingCard = this.cards[mid];
+      if (!existingCard) {
+        break;
+      }
+      const cmp = this.compareCards(
+        existingCard,
+        newCard,
+        this.plugin.getSettings().sort.field,
+        this.plugin.getSettings().sort.direction,
+      );
+      if (cmp <= 0) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+
   private async hydrateRange(start: number, end: number): Promise<void> {
     if (this.cards.length === 0 || this.loading) {
       return;
