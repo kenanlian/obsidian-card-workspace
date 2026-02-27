@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import { FolderPickerModal } from "./FolderPickerModal";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
+import { ALL_NOTES_PATH } from "./view/types";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
 
 export default class FolderCardExplorerPlugin extends Plugin {
@@ -53,7 +54,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection(activeFile?.path ?? null);
-      void this.restoreLastFolder();
+      void this.restoreLastSession();
     });
   }
 
@@ -85,6 +86,20 @@ export default class FolderCardExplorerPlugin extends Plugin {
     }).open();
   }
 
+  async selectAllNotes(): Promise<void> {
+    const request = this.createSelectionRequest(ALL_NOTES_PATH, "panel-picker");
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
+    this.selectedFolderPath = ALL_NOTES_PATH;
+    await this.saveData(
+      mergeSettings(this.settings, { lastViewMode: "all-notes" }),
+    );
+    this.settings = mergeSettings(this.settings, { lastViewMode: "all-notes" });
+  }
+
   private async selectFolder(
     folder: TFolder,
     source: FolderSelectionSource,
@@ -96,9 +111,12 @@ export default class FolderCardExplorerPlugin extends Plugin {
     }
     this.dispatchSelectionRequest(request);
     await this.saveData(
-      mergeSettings(this.settings, { lastFolderPath: folder.path }),
+      mergeSettings(this.settings, { lastFolderPath: folder.path, lastViewMode: "folder" }),
     );
-    this.settings = mergeSettings(this.settings, { lastFolderPath: folder.path });
+    this.settings = mergeSettings(this.settings, {
+      lastFolderPath: folder.path,
+      lastViewMode: "folder",
+    });
   }
 
   getSettings(): PluginSettings {
@@ -224,7 +242,12 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.settings = normalizeSettings(rawData);
   }
 
-  private async restoreLastFolder(): Promise<void> {
+  private async restoreLastSession(): Promise<void> {
+    if (this.settings.lastViewMode === "all-notes") {
+      await this.selectAllNotes();
+      return;
+    }
+
     const lastPath = this.settings.lastFolderPath;
     if (!lastPath) {
       return;

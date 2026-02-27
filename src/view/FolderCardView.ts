@@ -83,6 +83,8 @@ export class FolderCardView extends ItemView {
     this.component.$on("toolbar-action", (event: any) => {
       if (event.detail.action === "pick-folder") {
         this.plugin.openFolderPicker();
+      } else if (event.detail.action === "all-notes") {
+        void this.plugin.selectAllNotes();
       }
     });
   }
