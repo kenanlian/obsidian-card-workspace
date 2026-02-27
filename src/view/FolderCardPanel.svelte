@@ -20,6 +20,12 @@
       icon: "folder-open",
     },
     {
+      id: "all-notes",
+      label: "All notes",
+      title: "All notes",
+      icon: "library",
+    },
+    {
       id: "new-note",
       label: "New",
       title: "Create note",
@@ -202,6 +208,10 @@
       return currentFolderPath
         ? "Click to change folder, or pick from File Explorer."
         : "Click to pick a folder, or select one in File Explorer.";
+    }
+
+    if (actionId === "all-notes") {
+      return "Showing all Markdown notes in the vault.";
     }
 
     if (actionId === "new-note") {
