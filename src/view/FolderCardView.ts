@@ -79,6 +79,11 @@ export class FolderCardView extends ItemView {
     this.component.$on("hydrate-range", (event: any) => {
       void this.hydrateRange(event.detail.start, event.detail.end);
     });
+    this.component.$on("toolbar-action", (event: any) => {
+      if (event.detail.action === "pick-folder") {
+        this.plugin.openFolderPicker();
+      }
+    });
   }
 
   async onClose(): Promise<void> {
