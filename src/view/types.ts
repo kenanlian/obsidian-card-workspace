@@ -13,7 +13,7 @@ export interface NoteCardRecord {
   hydrated: boolean;
 }
 
-export type FolderSelectionSource = "explorer-click" | "programmatic";
+export type FolderSelectionSource = "explorer-click" | "programmatic" | "panel-picker";
 
 export interface FolderSelectionRequest {
   requestId: number;
