@@ -6,6 +6,7 @@ import type {
   CleanupResult,
   FolderLoadKey,
   FolderSelectionRequest,
+  IncrementalMutationResult,
   NoteCardRecord,
   RefreshRequest,
   RefreshResult,
@@ -484,6 +485,41 @@ export class FolderCardView extends ItemView {
       }
     }
     return low;
+  }
+
+  private applyIncrementalMutation(event: VaultMutationEvent): IncrementalMutationResult {
+    if (!this.folderPath) {
+      return { handled: false, action: "skipped_no_folder" };
+    }
+
+    if (event.isFolder) {
+      // Folder-level events (other than rename path-rewrite already handled above)
+      // are deferred to full reload for safety.
+      return { handled: false, action: "skipped_folder_event" };
+    }
+
+    if (!event.isMarkdown) {
+      return { handled: false, action: "skipped_folder_event" };
+    }
+
+    if (event.eventType === "delete") {
+      const targetPath = event.path;
+      const index = this.cards.findIndex((c) => c.path === targetPath);
+      if (index === -1) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      this.pendingHydration.delete(index);
+      // Rebuild pendingHydration indices for cards after the removed one
+      const shifted = new Set<number>();
+      for (const idx of this.pendingHydration) {
+        shifted.add(idx > index ? idx - 1 : idx);
+      }
+      this.pendingHydration = shifted;
+      this.cards.splice(index, 1);
+      return { handled: true, action: "removed" };
+    }
+
+    return { handled: false, action: "deferred_full_reload" };
   }
 
   private async hydrateRange(start: number, end: number): Promise<void> {
