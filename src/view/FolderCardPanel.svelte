@@ -58,15 +58,24 @@
   let positions = [];
   let totalHeight = 0;
 
-  $: {
-    let y = 0;
-    let newPositions = new Array(cards.length);
-    for (let i = 0; i < cards.length; i++) {
-      newPositions[i] = y;
-      y += heights[i] || ESTIMATED_CARD_HEIGHT;
+  function rebuildPositionsFrom(fromIndex) {
+    const start = Math.max(0, fromIndex);
+    if (start === 0) {
+      let y = 0;
+      for (let i = 0; i < cards.length; i++) {
+        positions[i] = y;
+        y += heights[i] || ESTIMATED_CARD_HEIGHT;
+      }
+      totalHeight = y;
+    } else {
+      let y = positions[start] ?? 0;
+      for (let i = start; i < cards.length; i++) {
+        positions[i] = y;
+        y += heights[i] || ESTIMATED_CARD_HEIGHT;
+      }
+      totalHeight = y;
     }
-    positions = newPositions;
-    totalHeight = y;
+    positions = positions; // single reactive assignment to trigger viewport recalc
   }
 
   function findStartIndex(scrollTopValue, posArray) {
@@ -103,6 +112,13 @@
     lastRangeStart = -1;
     lastRangeEnd = -1;
     heights = [];
+    positions = [];
+    totalHeight = 0;
+    rebuildPositionsFrom(0);
+  }
+
+  $: if (cards.length !== positions.length) {
+    rebuildPositionsFrom(0);
   }
 
   $: {
@@ -148,7 +164,7 @@
         
         if (heights[index] !== roundedHeight) {
           heights[index] = roundedHeight;
-          heights = heights; // trigger reactivity
+          rebuildPositionsFrom(index);
         }
       }
     });
