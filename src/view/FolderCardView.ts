@@ -569,6 +569,26 @@ export class FolderCardView extends ItemView {
       return { handled: true, action: "inserted" };
     }
 
+    if (event.eventType === "modify") {
+      const index = this.cards.findIndex((c) => c.path === event.path);
+      if (index === -1) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+
+      const card = this.cards[index];
+      if (!card) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+
+      // Reset hydration so viewport pass re-reads content
+      card.hydrated = false;
+      card.previewHtml = "";
+      card.previewMode = "empty";
+      this.pendingHydration.delete(index);
+
+      return { handled: true, action: "hydration_reset" };
+    }
+
     return { handled: false, action: "deferred_full_reload" };
   }
 
