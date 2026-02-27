@@ -1,12 +1,28 @@
+# Dependencies
 node_modules/
+.opencode/node_modules/
+.opencode/bun.lock
+
+# Build artifacts
 dist/
 build/
 *.tsbuildinfo
+
+# Logs & temp
 *.log
-.env*
-.DS_Store
-Thumbs.db
 *.tmp
 *.swp
+
+# Environment
+.env*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
 .vscode/
 .idea/
+
+# Serena runtime cache (memories are tracked, cache is not)
+.serena/cache/

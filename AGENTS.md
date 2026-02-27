@@ -38,24 +38,13 @@ Checked paths:
 - `.github/copilot-instructions.md` -> not found
 No Cursor/Copilot instruction files are currently active in this repo.
 
-## Terminal Conventions (Windows)
-Prefer PowerShell command examples:
-```powershell
-pwsh -Command "npm run check"
-```
-Common equivalents:
-- Read file: `Get-Content .\path\to\file`
-- List files: `Get-ChildItem` (or `ls` inside pwsh)
-- Remove recursively: `Remove-Item -Recurse -Force <path>`
-- Environment vars: `$env:NAME`
-
 ## Build / Lint / Test Commands
 ### Install
-```powershell
+```shell
 npm install
 ```
 ### Build & Dev
-```powershell
+```shell
 npm run dev      # watch mode
 npm run build    # production bundle -> main.js
 npm run check    # TypeScript check (tsc --noEmit)
@@ -69,7 +58,7 @@ Do not add lint/format/test tooling unless explicitly requested.
 ### Single-Test Command (Important)
 Current state: no test runner, so a true single-test command does not exist.
 If a runner is later added (recommended: Vitest), use:
-```powershell
+```shell
 # run one test file
 npx vitest run src/view/markdown-utils.test.ts
 
@@ -77,14 +66,14 @@ npx vitest run src/view/markdown-utils.test.ts
 npx vitest run src/view/markdown-utils.test.ts -t "buildLightPreview handles code fences"
 ```
 Until then, the minimum validation is:
-```powershell
+```shell
 npm run check
 npm run build
 ```
 
 ## Required Validation Before Completion
 After any code or docs change, run both and ensure they pass:
-```powershell
+```shell
 npm run check
 npm run build
 ```

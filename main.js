@@ -25,7 +25,7 @@ __export(main_exports, {
   default: () => FolderCardExplorerPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian4 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // src/settings.ts
 var DEFAULT_SETTINGS = {
@@ -90,7 +90,7 @@ function mergeSettings(current, patch) {
 }
 
 // src/view/FolderCardView.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // node_modules/svelte/src/runtime/internal/utils.js
 function noop() {
@@ -109,15 +109,6 @@ function is_function(thing) {
 }
 function safe_not_equal(a, b) {
   return a != a ? b == b : a !== b || a && typeof a === "object" || typeof a === "function";
-}
-var src_url_equal_anchor;
-function src_url_equal(element_src, url) {
-  if (element_src === url) return true;
-  if (!src_url_equal_anchor) {
-    src_url_equal_anchor = document.createElement("a");
-  }
-  src_url_equal_anchor.href = url;
-  return element_src === src_url_equal_anchor.href;
 }
 function is_empty(obj) {
   return Object.keys(obj).length === 0;
@@ -840,12 +831,13 @@ if (typeof window !== "undefined")
 var import_obsidian = require("obsidian");
 function get_each_context(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[31] = list[i];
+  child_ctx[36] = list[i];
+  child_ctx[38] = i;
   return child_ctx;
 }
 function get_each_context_1(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[34] = list[i];
+  child_ctx[39] = list[i];
   return child_ctx;
 }
 function create_each_block_1(ctx) {
@@ -860,9 +852,9 @@ function create_each_block_1(ctx) {
   function click_handler() {
     return (
       /*click_handler*/
-      ctx[26](
+      ctx[31](
         /*action*/
-        ctx[34]
+        ctx[39]
       )
     );
   }
@@ -871,15 +863,15 @@ function create_each_block_1(ctx) {
       button = element("button");
       span = element("span");
       span.textContent = `${/*action*/
-      ctx[34].label}`;
+      ctx[39].label}`;
       t1 = space();
       attr(span, "class", "fce-sr-only");
       attr(button, "type", "button");
       attr(button, "class", button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
       (ctx[4] === /*action*/
-      ctx[34].id ? "is-selected" : ""));
+      ctx[39].id ? "is-selected" : ""));
       attr(button, "aria-label", button_aria_label_value = /*action*/
-      ctx[34].title);
+      ctx[39].title);
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -889,11 +881,11 @@ function create_each_block_1(ctx) {
         dispose = [
           listen(button, "click", click_handler),
           action_destroyer(applyIcon_action = /*applyIcon*/
-          ctx[14].call(
+          ctx[15].call(
             null,
             button,
             /*action*/
-            ctx[34].icon
+            ctx[39].icon
           ))
         ];
         mounted = true;
@@ -904,7 +896,7 @@ function create_each_block_1(ctx) {
       if (dirty[0] & /*activeToolbarAction*/
       16 && button_class_value !== (button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
       (ctx[4] === /*action*/
-      ctx[34].id ? "is-selected" : ""))) {
+      ctx[39].id ? "is-selected" : ""))) {
         attr(button, "class", button_class_value);
       }
     },
@@ -936,7 +928,7 @@ function create_else_block_3(ctx) {
     }
   };
 }
-function create_if_block_5(ctx) {
+function create_if_block_4(ctx) {
   let p0;
   let t0;
   let t1;
@@ -998,7 +990,7 @@ function create_else_block(ctx) {
   let div1_style_value;
   let each_value = ensure_array_like(
     /*visibleCards*/
-    ctx[8]
+    ctx[9]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value.length; i += 1) {
@@ -1014,9 +1006,9 @@ function create_else_block(ctx) {
       t1 = space();
       div1 = element("div");
       attr(div0, "style", div0_style_value = `height: ${/*topPadding*/
-      ctx[10]}px;`);
+      ctx[11]}px;`);
       attr(div1, "style", div1_style_value = `height: ${/*bottomPadding*/
-      ctx[9]}px;`);
+      ctx[10]}px;`);
     },
     m(target, anchor) {
       insert(target, div0, anchor);
@@ -1031,15 +1023,15 @@ function create_else_block(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*topPadding*/
-      1024 && div0_style_value !== (div0_style_value = `height: ${/*topPadding*/
-      ctx2[10]}px;`)) {
+      2048 && div0_style_value !== (div0_style_value = `height: ${/*topPadding*/
+      ctx2[11]}px;`)) {
         attr(div0, "style", div0_style_value);
       }
-      if (dirty[0] & /*selectedPath, visibleCards, openNote, onCardKeydown*/
-      73988) {
+      if (dirty[0] & /*selectedPath, visibleCards, startIndex, openNote, onCardKeydown*/
+      279076) {
         each_value = ensure_array_like(
           /*visibleCards*/
-          ctx2[8]
+          ctx2[9]
         );
         let i;
         for (i = 0; i < each_value.length; i += 1) {
@@ -1058,8 +1050,8 @@ function create_else_block(ctx) {
         each_blocks.length = each_value.length;
       }
       if (dirty[0] & /*bottomPadding*/
-      512 && div1_style_value !== (div1_style_value = `height: ${/*bottomPadding*/
-      ctx2[9]}px;`)) {
+      1024 && div1_style_value !== (div1_style_value = `height: ${/*bottomPadding*/
+      ctx2[10]}px;`)) {
         attr(div1, "style", div1_style_value);
       }
     },
@@ -1112,42 +1104,6 @@ function create_if_block(ctx) {
     }
   };
 }
-function create_if_block_4(ctx) {
-  let img;
-  let img_src_value;
-  let img_alt_value;
-  return {
-    c() {
-      img = element("img");
-      attr(img, "class", "fce-cover");
-      if (!src_url_equal(img.src, img_src_value = /*card*/
-      ctx[31].cover)) attr(img, "src", img_src_value);
-      attr(img, "alt", img_alt_value = /*card*/
-      ctx[31].title);
-      attr(img, "loading", "lazy");
-    },
-    m(target, anchor) {
-      insert(target, img, anchor);
-    },
-    p(ctx2, dirty) {
-      if (dirty[0] & /*visibleCards*/
-      256 && !src_url_equal(img.src, img_src_value = /*card*/
-      ctx2[31].cover)) {
-        attr(img, "src", img_src_value);
-      }
-      if (dirty[0] & /*visibleCards*/
-      256 && img_alt_value !== (img_alt_value = /*card*/
-      ctx2[31].title)) {
-        attr(img, "alt", img_alt_value);
-      }
-    },
-    d(detaching) {
-      if (detaching) {
-        detach(img);
-      }
-    }
-  };
-}
 function create_else_block_2(ctx) {
   let p;
   return {
@@ -1172,8 +1128,8 @@ function create_if_block_2(ctx) {
   function select_block_type_3(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[31].previewMode === "empty" || !/*card*/
-      ctx2[31].previewHtml
+      ctx2[36].previewMode === "empty" || !/*card*/
+      ctx2[36].previewHtml
     ) return create_if_block_3;
     return create_else_block_1;
   }
@@ -1212,7 +1168,7 @@ function create_else_block_1(ctx) {
   let html_tag;
   let raw_value = (
     /*card*/
-    ctx[31].previewHtml + ""
+    ctx[36].previewHtml + ""
   );
   let html_anchor;
   return {
@@ -1227,8 +1183,8 @@ function create_else_block_1(ctx) {
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*visibleCards*/
-      256 && raw_value !== (raw_value = /*card*/
-      ctx2[31].previewHtml + "")) html_tag.p(raw_value);
+      512 && raw_value !== (raw_value = /*card*/
+      ctx2[36].previewHtml + "")) html_tag.p(raw_value);
     },
     d(detaching) {
       if (detaching) {
@@ -1259,62 +1215,58 @@ function create_if_block_3(ctx) {
 }
 function create_each_block(ctx) {
   let div2;
-  let t0;
   let div1;
   let h4;
-  let t1_value = (
+  let t0_value = (
     /*card*/
-    ctx[31].title + ""
+    ctx[36].title + ""
   );
+  let t0;
   let t1;
-  let t2;
   let div0;
   let div0_class_value;
-  let t3;
+  let t2;
   let p;
+  let t3;
+  let t4_value = formatDate(
+    /*card*/
+    ctx[36].mtime
+  ) + "";
   let t4;
-  let t5_value = formatDate(
-    /*card*/
-    ctx[31].mtime
-  ) + "";
   let t5;
-  let t6;
-  let t7_value = formatDate(
+  let t6_value = formatDate(
     /*card*/
-    ctx[31].ctime
+    ctx[36].ctime
   ) + "";
-  let t7;
+  let t6;
   let div2_class_value;
+  let measureHeight_action;
   let mounted;
   let dispose;
-  let if_block0 = (
-    /*card*/
-    ctx[31].cover && create_if_block_4(ctx)
-  );
   function select_block_type_2(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[31].hydrated
+      ctx2[36].hydrated
     ) return create_if_block_2;
     return create_else_block_2;
   }
   let current_block_type = select_block_type_2(ctx, [-1, -1]);
-  let if_block1 = current_block_type(ctx);
+  let if_block = current_block_type(ctx);
   function click_handler_1() {
     return (
       /*click_handler_1*/
-      ctx[27](
+      ctx[32](
         /*card*/
-        ctx[31]
+        ctx[36]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[28](
+      ctx[33](
         /*card*/
-        ctx[31],
+        ctx[36],
         ...args
       )
     );
@@ -1322,112 +1274,107 @@ function create_each_block(ctx) {
   return {
     c() {
       div2 = element("div");
-      if (if_block0) if_block0.c();
-      t0 = space();
       div1 = element("div");
       h4 = element("h4");
-      t1 = text(t1_value);
-      t2 = space();
+      t0 = text(t0_value);
+      t1 = space();
       div0 = element("div");
-      if_block1.c();
-      t3 = space();
+      if_block.c();
+      t2 = space();
       p = element("p");
-      t4 = text("Modified ");
-      t5 = text(t5_value);
-      t6 = text(" \xB7 Created ");
-      t7 = text(t7_value);
+      t3 = text("Modified ");
+      t4 = text(t4_value);
+      t5 = text(" \xB7 Created ");
+      t6 = text(t6_value);
       attr(div0, "class", div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[31].previewMode === "code" ? "is-code" : ""));
+      (ctx[36].previewMode === "code" ? "is-code" : ""));
       attr(p, "class", "fce-meta");
       attr(div1, "class", "fce-card-body");
       attr(div2, "class", div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[31].path ? "is-selected" : ""));
+      ctx[36].path ? "is-selected" : ""));
       attr(div2, "role", "button");
       attr(div2, "tabindex", "0");
     },
     m(target, anchor) {
       insert(target, div2, anchor);
-      if (if_block0) if_block0.m(div2, null);
-      append(div2, t0);
       append(div2, div1);
       append(div1, h4);
-      append(h4, t1);
-      append(div1, t2);
+      append(h4, t0);
+      append(div1, t1);
       append(div1, div0);
-      if_block1.m(div0, null);
-      append(div1, t3);
+      if_block.m(div0, null);
+      append(div1, t2);
       append(div1, p);
+      append(p, t3);
       append(p, t4);
       append(p, t5);
       append(p, t6);
-      append(p, t7);
       if (!mounted) {
         dispose = [
           listen(div2, "click", click_handler_1),
-          listen(div2, "keydown", keydown_handler)
+          listen(div2, "keydown", keydown_handler),
+          action_destroyer(measureHeight_action = /*measureHeight*/
+          ctx[16].call(
+            null,
+            div2,
+            /*startIndex*/
+            ctx[5] + /*i*/
+            ctx[38]
+          ))
         ];
         mounted = true;
       }
     },
     p(new_ctx, dirty) {
       ctx = new_ctx;
-      if (
-        /*card*/
-        ctx[31].cover
-      ) {
-        if (if_block0) {
-          if_block0.p(ctx, dirty);
-        } else {
-          if_block0 = create_if_block_4(ctx);
-          if_block0.c();
-          if_block0.m(div2, t0);
-        }
-      } else if (if_block0) {
-        if_block0.d(1);
-        if_block0 = null;
-      }
       if (dirty[0] & /*visibleCards*/
-      256 && t1_value !== (t1_value = /*card*/
-      ctx[31].title + "")) set_data(t1, t1_value);
-      if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block1) {
-        if_block1.p(ctx, dirty);
+      512 && t0_value !== (t0_value = /*card*/
+      ctx[36].title + "")) set_data(t0, t0_value);
+      if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block) {
+        if_block.p(ctx, dirty);
       } else {
-        if_block1.d(1);
-        if_block1 = current_block_type(ctx);
-        if (if_block1) {
-          if_block1.c();
-          if_block1.m(div0, null);
+        if_block.d(1);
+        if_block = current_block_type(ctx);
+        if (if_block) {
+          if_block.c();
+          if_block.m(div0, null);
         }
       }
       if (dirty[0] & /*visibleCards*/
-      256 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[31].previewMode === "code" ? "is-code" : ""))) {
+      512 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
+      (ctx[36].previewMode === "code" ? "is-code" : ""))) {
         attr(div0, "class", div0_class_value);
       }
       if (dirty[0] & /*visibleCards*/
-      256 && t5_value !== (t5_value = formatDate(
+      512 && t4_value !== (t4_value = formatDate(
         /*card*/
-        ctx[31].mtime
-      ) + "")) set_data(t5, t5_value);
+        ctx[36].mtime
+      ) + "")) set_data(t4, t4_value);
       if (dirty[0] & /*visibleCards*/
-      256 && t7_value !== (t7_value = formatDate(
+      512 && t6_value !== (t6_value = formatDate(
         /*card*/
-        ctx[31].ctime
-      ) + "")) set_data(t7, t7_value);
+        ctx[36].ctime
+      ) + "")) set_data(t6, t6_value);
       if (dirty[0] & /*selectedPath, visibleCards*/
-      260 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
+      516 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[31].path ? "is-selected" : ""))) {
+      ctx[36].path ? "is-selected" : ""))) {
         attr(div2, "class", div2_class_value);
       }
+      if (measureHeight_action && is_function(measureHeight_action.update) && dirty[0] & /*startIndex*/
+      32) measureHeight_action.update.call(
+        null,
+        /*startIndex*/
+        ctx[5] + /*i*/
+        ctx[38]
+      );
     },
     d(detaching) {
       if (detaching) {
         detach(div2);
       }
-      if (if_block0) if_block0.d();
-      if_block1.d();
+      if_block.d();
       mounted = false;
       run_all(dispose);
     }
@@ -1443,7 +1390,7 @@ function create_fragment(ctx) {
   let p0;
   let t1_value = (
     /*activeToolbarConfig*/
-    ctx[5].title + ""
+    ctx[6].title + ""
   );
   let t1;
   let t2;
@@ -1456,7 +1403,7 @@ function create_fragment(ctx) {
   let dispose;
   let each_value_1 = ensure_array_like(
     /*TOOLBAR_ACTIONS*/
-    ctx[11]
+    ctx[12]
   );
   let each_blocks = [];
   for (let i = 0; i < each_value_1.length; i += 1) {
@@ -1466,7 +1413,7 @@ function create_fragment(ctx) {
     if (
       /*folderPath*/
       ctx2[1]
-    ) return create_if_block_5;
+    ) return create_if_block_4;
     return create_else_block_3;
   }
   let current_block_type = select_block_type(ctx, [-1, -1]);
@@ -1501,7 +1448,7 @@ function create_fragment(ctx) {
       p1 = element("p");
       t3 = text(
         /*activeToolbarDescription*/
-        ctx[7]
+        ctx[8]
       );
       t4 = space();
       if_block0.c();
@@ -1541,23 +1488,23 @@ function create_fragment(ctx) {
       append(div4, t5);
       append(div4, div3);
       if_block1.m(div3, null);
-      ctx[29](div3);
+      ctx[34](div3);
       if (!mounted) {
         dispose = listen(
           div3,
           "scroll",
           /*onScroll*/
-          ctx[12]
+          ctx[13]
         );
         mounted = true;
       }
     },
     p(ctx2, dirty) {
       if (dirty[0] & /*activeToolbarAction, TOOLBAR_ACTIONS, selectToolbarAction*/
-      34832) {
+      135184) {
         each_value_1 = ensure_array_like(
           /*TOOLBAR_ACTIONS*/
-          ctx2[11]
+          ctx2[12]
         );
         let i;
         for (i = 0; i < each_value_1.length; i += 1) {
@@ -1576,13 +1523,13 @@ function create_fragment(ctx) {
         each_blocks.length = each_value_1.length;
       }
       if (dirty[0] & /*activeToolbarConfig*/
-      32 && t1_value !== (t1_value = /*activeToolbarConfig*/
-      ctx2[5].title + "")) set_data(t1, t1_value);
+      64 && t1_value !== (t1_value = /*activeToolbarConfig*/
+      ctx2[6].title + "")) set_data(t1, t1_value);
       if (dirty[0] & /*activeToolbarDescription*/
-      128) set_data(
+      256) set_data(
         t3,
         /*activeToolbarDescription*/
-        ctx2[7]
+        ctx2[8]
       );
       if (current_block_type === (current_block_type = select_block_type(ctx2, dirty)) && if_block0) {
         if_block0.p(ctx2, dirty);
@@ -1614,14 +1561,30 @@ function create_fragment(ctx) {
       destroy_each(each_blocks, detaching);
       if_block0.d();
       if_block1.d();
-      ctx[29](null);
+      ctx[34](null);
       mounted = false;
       dispose();
     }
   };
 }
-var CARD_HEIGHT = 220;
+var ESTIMATED_CARD_HEIGHT = 220;
 var OVERSCAN = 5;
+function findStartIndex(scrollTopValue, posArray) {
+  if (posArray.length === 0) return 0;
+  let low = 0;
+  let high = posArray.length - 1;
+  let match = 0;
+  while (low <= high) {
+    let mid = Math.floor((low + high) / 2);
+    if (posArray[mid] <= scrollTopValue) {
+      match = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return match;
+}
 function formatDate(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
@@ -1641,7 +1604,8 @@ function describeToolbarAction(actionId, currentFolderPath) {
   return "Bulk selection actions will be mounted here.";
 }
 function instance($$self, $$props, $$invalidate) {
-  let visibleCount;
+  let baseStartIndex;
+  let baseEndIndex;
   let startIndex;
   let endIndex;
   let topPadding;
@@ -1694,12 +1658,15 @@ function instance($$self, $$props, $$invalidate) {
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
   let lastHydrateGeneration = -1;
+  let heights = [];
+  let positions = [];
+  let totalHeight = 0;
   function onScroll() {
     if (!viewportEl) {
       return;
     }
-    $$invalidate(19, scrollTop = viewportEl.scrollTop);
-    $$invalidate(18, viewportHeight = viewportEl.clientHeight);
+    $$invalidate(21, scrollTop = viewportEl.scrollTop);
+    $$invalidate(20, viewportHeight = viewportEl.clientHeight);
   }
   function openNote(path) {
     dispatch("open-note", { path });
@@ -1709,6 +1676,28 @@ function instance($$self, $$props, $$invalidate) {
     return {
       update(nextIconName) {
         (0, import_obsidian.setIcon)(node, nextIconName);
+      }
+    };
+  }
+  function measureHeight(node, index) {
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        let height = entry.borderBoxSize && entry.borderBoxSize.length > 0 ? entry.borderBoxSize[0].blockSize : entry.target.getBoundingClientRect().height;
+        height += 12;
+        const roundedHeight = Math.round(height);
+        if (heights[index] !== roundedHeight) {
+          $$invalidate(25, heights[index] = roundedHeight, heights);
+          $$invalidate(25, heights), $$invalidate(19, generation), $$invalidate(24, lastHydrateGeneration);
+        }
+      }
+    });
+    resizeObserver.observe(node);
+    return {
+      update(newIndex) {
+        index = newIndex;
+      },
+      destroy() {
+        resizeObserver.disconnect();
       }
     };
   }
@@ -1728,7 +1717,7 @@ function instance($$self, $$props, $$invalidate) {
   function div3_binding($$value) {
     binding_callbacks[$$value ? "unshift" : "push"](() => {
       viewportEl = $$value;
-      $$invalidate(6, viewportEl);
+      $$invalidate(7, viewportEl);
     });
   }
   $$self.$$set = ($$props2) => {
@@ -1736,56 +1725,74 @@ function instance($$self, $$props, $$invalidate) {
     if ("folderPath" in $$props2) $$invalidate(1, folderPath = $$props2.folderPath);
     if ("selectedPath" in $$props2) $$invalidate(2, selectedPath = $$props2.selectedPath);
     if ("loading" in $$props2) $$invalidate(3, loading = $$props2.loading);
-    if ("generation" in $$props2) $$invalidate(17, generation = $$props2.generation);
+    if ("generation" in $$props2) $$invalidate(19, generation = $$props2.generation);
   };
   $$self.$$.update = () => {
     var _a;
-    if ($$self.$$.dirty[0] & /*viewportHeight*/
-    262144) {
-      $: $$invalidate(25, visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2));
+    if ($$self.$$.dirty[0] & /*generation, lastHydrateGeneration*/
+    17301504) {
+      $: if (generation !== lastHydrateGeneration) {
+        $$invalidate(24, lastHydrateGeneration = generation);
+        $$invalidate(22, lastRangeStart = -1);
+        $$invalidate(23, lastRangeEnd = -1);
+        $$invalidate(25, heights = []);
+      }
     }
-    if ($$self.$$.dirty[0] & /*scrollTop*/
-    524288) {
-      $: $$invalidate(24, startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN));
+    if ($$self.$$.dirty[0] & /*cards, heights*/
+    33554433) {
+      $: {
+        let y = 0;
+        let newPositions = new Array(cards.length);
+        for (let i = 0; i < cards.length; i++) {
+          newPositions[i] = y;
+          y += heights[i] || ESTIMATED_CARD_HEIGHT;
+        }
+        $$invalidate(26, positions = newPositions);
+        $$invalidate(27, totalHeight = y);
+      }
     }
-    if ($$self.$$.dirty[0] & /*cards, startIndex, visibleCount*/
-    50331649) {
-      $: $$invalidate(23, endIndex = Math.min(cards.length, startIndex + visibleCount));
+    if ($$self.$$.dirty[0] & /*scrollTop, positions*/
+    69206016) {
+      $: $$invalidate(30, baseStartIndex = findStartIndex(scrollTop, positions));
     }
-    if ($$self.$$.dirty[0] & /*startIndex*/
-    16777216) {
-      $: $$invalidate(10, topPadding = startIndex * CARD_HEIGHT);
+    if ($$self.$$.dirty[0] & /*scrollTop, viewportHeight, positions*/
+    70254592) {
+      $: $$invalidate(29, baseEndIndex = findStartIndex(scrollTop + viewportHeight, positions));
     }
-    if ($$self.$$.dirty[0] & /*cards, endIndex*/
-    8388609) {
-      $: $$invalidate(9, bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT));
+    if ($$self.$$.dirty[0] & /*baseStartIndex*/
+    1073741824) {
+      $: $$invalidate(5, startIndex = Math.max(0, baseStartIndex - OVERSCAN));
+    }
+    if ($$self.$$.dirty[0] & /*cards, baseEndIndex*/
+    536870913) {
+      $: $$invalidate(28, endIndex = Math.min(cards.length, baseEndIndex + 1 + OVERSCAN));
+    }
+    if ($$self.$$.dirty[0] & /*positions, startIndex*/
+    67108896) {
+      $: $$invalidate(11, topPadding = positions[startIndex] || 0);
+    }
+    if ($$self.$$.dirty[0] & /*endIndex, cards, totalHeight, positions*/
+    469762049) {
+      $: $$invalidate(10, bottomPadding = endIndex < cards.length ? totalHeight - (positions[endIndex] || 0) : 0);
     }
     if ($$self.$$.dirty[0] & /*cards, startIndex, endIndex*/
-    25165825) {
-      $: $$invalidate(8, visibleCards = cards.slice(startIndex, endIndex));
+    268435489) {
+      $: $$invalidate(9, visibleCards = cards.slice(startIndex, endIndex));
     }
     if ($$self.$$.dirty[0] & /*activeToolbarAction*/
     16) {
-      $: $$invalidate(5, activeToolbarConfig = (_a = TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction)) != null ? _a : TOOLBAR_ACTIONS[0]);
+      $: $$invalidate(6, activeToolbarConfig = (_a = TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction)) != null ? _a : TOOLBAR_ACTIONS[0]);
     }
     if ($$self.$$.dirty[0] & /*activeToolbarConfig, folderPath*/
-    34) {
-      $: $$invalidate(7, activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath));
-    }
-    if ($$self.$$.dirty[0] & /*generation, lastHydrateGeneration*/
-    4325376) {
-      $: if (generation !== lastHydrateGeneration) {
-        $$invalidate(22, lastHydrateGeneration = generation);
-        $$invalidate(20, lastRangeStart = -1);
-        $$invalidate(21, lastRangeEnd = -1);
-      }
+    66) {
+      $: $$invalidate(8, activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath));
     }
     if ($$self.$$.dirty[0] & /*startIndex, lastRangeStart, endIndex, lastRangeEnd*/
-    28311552) {
+    281018400) {
       $: {
         if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {
-          $$invalidate(20, lastRangeStart = startIndex);
-          $$invalidate(21, lastRangeEnd = endIndex);
+          $$invalidate(22, lastRangeStart = startIndex);
+          $$invalidate(23, lastRangeEnd = endIndex);
           dispatch("hydrate-range", { start: startIndex, end: endIndex });
         }
       }
@@ -1797,6 +1804,7 @@ function instance($$self, $$props, $$invalidate) {
     selectedPath,
     loading,
     activeToolbarAction,
+    startIndex,
     activeToolbarConfig,
     viewportEl,
     activeToolbarDescription,
@@ -1807,6 +1815,7 @@ function instance($$self, $$props, $$invalidate) {
     onScroll,
     openNote,
     applyIcon,
+    measureHeight,
     selectToolbarAction,
     onCardKeydown,
     generation,
@@ -1815,9 +1824,12 @@ function instance($$self, $$props, $$invalidate) {
     lastRangeStart,
     lastRangeEnd,
     lastHydrateGeneration,
+    heights,
+    positions,
+    totalHeight,
     endIndex,
-    startIndex,
-    visibleCount,
+    baseEndIndex,
+    baseStartIndex,
     click_handler,
     click_handler_1,
     keydown_handler,
@@ -1838,7 +1850,7 @@ var FolderCardPanel = class extends SvelteComponent {
         folderPath: 1,
         selectedPath: 2,
         loading: 3,
-        generation: 17
+        generation: 19
       },
       null,
       [-1, -1]
@@ -1848,8 +1860,6 @@ var FolderCardPanel = class extends SvelteComponent {
 var FolderCardPanel_default = FolderCardPanel;
 
 // src/view/markdown-utils.ts
-var import_obsidian2 = require("obsidian");
-var FRONTMATTER_IMAGE_KEYS = ["cover", "image", "banner", "thumbnail", "hero", "cardImage"];
 var MAX_PREVIEW_SCAN_LINES = 400;
 function buildLightPreview(markdown, maxVisibleChars = 200, codePreviewLines = 4) {
   var _a;
@@ -2010,56 +2020,6 @@ function buildLightPreview(markdown, maxVisibleChars = 200, codePreviewLines = 4
     return { html: "", mode: "empty" };
   }
   return { html: htmlParts.join(""), mode: "text" };
-}
-function pickFrontmatterImage(frontmatter) {
-  if (!frontmatter) {
-    return null;
-  }
-  for (const key of FRONTMATTER_IMAGE_KEYS) {
-    const value = frontmatter[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-    if (Array.isArray(value)) {
-      const first = value.find((item) => typeof item === "string" && item.trim().length > 0);
-      if (typeof first === "string") {
-        return first.trim();
-      }
-    }
-  }
-  return null;
-}
-function extractFirstInlineImage(markdown) {
-  var _a;
-  const wiki = markdown.match(/!\[\[([^\]]+)]]/);
-  if (wiki == null ? void 0 : wiki[1]) {
-    return wiki[1];
-  }
-  const md = markdown.match(/!\[[^\]]*]\(([^)]+)\)/);
-  if (md == null ? void 0 : md[1]) {
-    return md[1];
-  }
-  const html = markdown.match(/<img\s[^>]*src=["']([^"']+)["']/i);
-  return (_a = html == null ? void 0 : html[1]) != null ? _a : null;
-}
-function resolveImageSource(app, source, contextFile) {
-  const cleaned = cleanupImageTarget(source);
-  if (!cleaned) {
-    return null;
-  }
-  if (/^(https?:\/\/|data:)/i.test(cleaned)) {
-    return cleaned;
-  }
-  const local = app.metadataCache.getFirstLinkpathDest(cleaned, contextFile.path);
-  if (local instanceof import_obsidian2.TFile) {
-    return app.vault.getResourcePath(local);
-  }
-  const absolutePath = cleaned.replace(/^\//, "");
-  const byPath = app.vault.getAbstractFileByPath(absolutePath);
-  if (byPath instanceof import_obsidian2.TFile) {
-    return app.vault.getResourcePath(byPath);
-  }
-  return null;
 }
 function stripFrontmatter(markdown) {
   return markdown.replace(/^---[\s\S]*?---\s*/m, "");
@@ -2235,33 +2195,10 @@ function clipTextWithLimit(text2, limit) {
 function escapeHtml(input) {
   return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function cleanupImageTarget(input) {
-  let value = input.trim().replace(/^["']|["']$/g, "");
-  const titleDivider = value.search(/\s+"[^"]*"$/);
-  if (titleDivider > -1) {
-    value = value.slice(0, titleDivider);
-  }
-  const pipeIndex = value.indexOf("|");
-  if (pipeIndex > -1) {
-    value = value.slice(0, pipeIndex);
-  }
-  const hashIndex = value.indexOf("#");
-  if (hashIndex > -1) {
-    value = value.slice(0, hashIndex);
-  }
-  return decodeURIComponentSafe(value).trim();
-}
-function decodeURIComponentSafe(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch (e) {
-    return value;
-  }
-}
 
 // src/view/FolderCardView.ts
 var FOLDER_CARD_VIEW = "folder-card-view";
-var FolderCardView = class extends import_obsidian3.ItemView {
+var FolderCardView = class extends import_obsidian2.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.component = null;
@@ -2325,7 +2262,7 @@ var FolderCardView = class extends import_obsidian3.ItemView {
   async handleFolderSelection(request) {
     var _a;
     const folder = this.app.vault.getAbstractFileByPath(request.folderPath);
-    if (!(folder instanceof import_obsidian3.TFolder)) {
+    if (!(folder instanceof import_obsidian2.TFolder)) {
       return {
         action: "rejected_invalid",
         folderPath: request.folderPath,
@@ -2501,17 +2438,12 @@ var FolderCardView = class extends import_obsidian3.ItemView {
     try {
       const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
       const records = files.map((file) => {
-        const cache = this.app.metadataCache.getFileCache(file);
-        const frontmatterCover = pickFrontmatterImage(
-          cache == null ? void 0 : cache.frontmatter
-        );
         return {
           file,
           path: file.path,
           title: file.basename,
           ctime: file.stat.ctime,
           mtime: file.stat.mtime,
-          cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
           excerpt: "",
           previewHtml: "",
           previewMode: "empty",
@@ -2590,7 +2522,7 @@ var FolderCardView = class extends import_obsidian3.ItemView {
     if (!includeSubfolders) {
       const directFiles = [];
       for (const child of root.children) {
-        if (child instanceof import_obsidian3.TFile && child.extension.toLowerCase() === "md") {
+        if (child instanceof import_obsidian2.TFile && child.extension.toLowerCase() === "md") {
           directFiles.push(child);
         }
       }
@@ -2604,11 +2536,11 @@ var FolderCardView = class extends import_obsidian3.ItemView {
         continue;
       }
       for (const child of folder.children) {
-        if (child instanceof import_obsidian3.TFolder) {
+        if (child instanceof import_obsidian2.TFolder) {
           stack.push(child);
           continue;
         }
-        if (child instanceof import_obsidian3.TFile && child.extension.toLowerCase() === "md") {
+        if (child instanceof import_obsidian2.TFile && child.extension.toLowerCase() === "md") {
           result.push(child);
         }
       }
@@ -2662,12 +2594,6 @@ var FolderCardView = class extends import_obsidian3.ItemView {
       const preview = buildLightPreview(markdown, 200, 4);
       card.previewHtml = preview.html;
       card.previewMode = preview.mode;
-      if (!card.cover) {
-        const firstInlineImage = extractFirstInlineImage(markdown);
-        if (firstInlineImage) {
-          card.cover = resolveImageSource(this.app, firstInlineImage, card.file);
-        }
-      }
       card.hydrated = true;
     } catch (e) {
       card.excerpt = "";
@@ -2689,14 +2615,14 @@ var FolderCardView = class extends import_obsidian3.ItemView {
 };
 
 // src/main.ts
-var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
+var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.selectedFolderPath = null;
     this.settings = normalizeSettings(DEFAULT_SETTINGS);
     this.selectionRequestSeq = 0;
     this.latestHandledRequestId = 0;
-    this.debouncedRefresh = (0, import_obsidian4.debounce)(
+    this.debouncedRefresh = (0, import_obsidian3.debounce)(
       () => {
         void this.requestRefreshForViews("vault-change");
       },
@@ -2719,7 +2645,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     });
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
-        this.syncSelection(file instanceof import_obsidian4.TFile ? file.path : null);
+        this.syncSelection(file instanceof import_obsidian3.TFile ? file.path : null);
       })
     );
     this.app.workspace.onLayoutReady(() => {
@@ -2740,7 +2666,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
   }
   async openNoteFromCard(path) {
     const target = this.app.vault.getAbstractFileByPath(path);
-    if (!(target instanceof import_obsidian4.TFile)) {
+    if (!(target instanceof import_obsidian3.TFile)) {
       return;
     }
     const leaf = this.resolveTargetLeaf();
@@ -2756,7 +2682,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     await this.requestRefreshForViews("settings-change");
   }
   resolveTargetLeaf() {
-    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
     if (activeMarkdown) {
       return activeMarkdown.leaf;
     }
@@ -2776,7 +2702,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
       return;
     }
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof import_obsidian4.TFolder)) {
+    if (!(folder instanceof import_obsidian3.TFolder)) {
       return;
     }
     const request = this.createSelectionRequest(folder.path, "explorer-click");
@@ -2883,8 +2809,8 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
       eventType,
       path: file.path,
       oldPath,
-      isFolder: file instanceof import_obsidian4.TFolder,
-      isMarkdown: file instanceof import_obsidian4.TFile && file.extension.toLowerCase() === "md"
+      isFolder: file instanceof import_obsidian3.TFolder,
+      isMarkdown: file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "md"
     };
   }
   dispatchVaultMutation(event) {
@@ -2914,6 +2840,23 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     const prefix = `${event.oldPath}/`;
     if (this.selectedFolderPath.startsWith(prefix)) {
       this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
+    }
+  }
+  async requestRefreshForViews(reason) {
+    if (!this.selectedFolderPath) {
+      return;
+    }
+    this.withFolderViews((view) => {
+      var _a;
+      void view.refresh({
+        reason,
+        folderPath: (_a = this.selectedFolderPath) != null ? _a : void 0,
+        forceRefresh: true
+      });
+    });
+  }
+};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ectedFolderPath.slice(event.oldPath.length)}`;
     }
   }
   async requestRefreshForViews(reason) {
