@@ -519,6 +519,56 @@ export class FolderCardView extends ItemView {
       return { handled: true, action: "removed" };
     }
 
+    if (event.eventType === "create") {
+      const settings = this.plugin.getSettings();
+      if (!this.isPathInScope(event.path, settings.includeSubfolders)) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+
+      // Avoid duplicates (e.g. rapid create+modify)
+      const alreadyExists = this.cards.some((c) => c.path === event.path);
+      if (alreadyExists) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+
+      const file = this.app.vault.getAbstractFileByPath(event.path);
+      if (!(file instanceof TFile)) {
+        return { handled: false, action: "deferred_full_reload" };
+      }
+
+      const newCard: NoteCardRecord = {
+        file,
+        path: file.path,
+        title: file.basename,
+        ctime: file.stat.ctime,
+        mtime: file.stat.mtime,
+        excerpt: "",
+        previewHtml: "",
+        previewMode: "empty",
+        hydrated: false,
+      };
+
+      const insertIndex = this.findSortedInsertIndex(newCard);
+      this.cards.splice(insertIndex, 0, newCard);
+
+      // Shift pendingHydration indices for cards after insertion point
+      const shifted = new Set<number>();
+      for (const idx of this.pendingHydration) {
+        shifted.add(idx >= insertIndex ? idx + 1 : idx);
+      }
+      this.pendingHydration = shifted;
+
+      // Hydrate the new card immediately
+      const capturedGeneration = this.generation;
+      void this.hydrateCard(insertIndex, capturedGeneration).then(() => {
+        if (capturedGeneration === this.generation) {
+          this.pushState();
+        }
+      });
+
+      return { handled: true, action: "inserted" };
+    }
+
     return { handled: false, action: "deferred_full_reload" };
   }
 
