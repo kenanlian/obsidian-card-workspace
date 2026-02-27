@@ -52,8 +52,8 @@ npm run check    # TypeScript check (tsc --noEmit)
 ### Lint / Format / Test Status
 - Lint: no ESLint configured.
 - Format: no Prettier configured.
-- Tests: no test framework configured.
-Do not add lint/format/test tooling unless explicitly requested.
+- Tests: Vitest (`npm test` / `npx vitest run`).
+Do not add lint/format tooling unless explicitly requested.
 
 ### Single-Test Command (Important)
 Current state: no test runner, so a true single-test command does not exist.
@@ -69,15 +69,17 @@ Until then, the minimum validation is:
 ```shell
 npm run check
 npm run build
+npm test
 ```
 
 ## Required Validation Before Completion
-After any code or docs change, run both and ensure they pass:
+After any code or docs change, run all three and ensure they pass:
 ```shell
 npm run check
 npm run build
+npm test
 ```
-If either command fails, task is incomplete.
+If any command fails, task is incomplete.
 
 ## Code Style Guidelines
 ### Formatting
