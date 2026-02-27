@@ -91,10 +91,26 @@ export interface RefreshResult {
 
 export type VaultMutationQueueAction = "ignored" | "enqueued" | "deferred_while_inflight";
 
+export type IncrementalAction =
+  | "inserted"
+  | "removed"
+  | "updated"
+  | "hydration_reset"
+  | "skipped_not_found"
+  | "skipped_no_folder"
+  | "skipped_folder_event"
+  | "deferred_full_reload";
+
+export interface IncrementalMutationResult {
+  handled: boolean;
+  action: IncrementalAction;
+}
+
 export interface VaultMutationResult {
   shouldRefresh: boolean;
   queueAction: VaultMutationQueueAction;
   selectedFolderPathAfterRename: string | null;
+  incrementalResult: IncrementalMutationResult | null;
 }
 
 export interface CleanupResult {

@@ -200,6 +200,7 @@ export class FolderCardView extends ItemView {
         shouldRefresh: false,
         queueAction: "ignored",
         selectedFolderPathAfterRename,
+        incrementalResult: null,
       };
     }
 
@@ -210,6 +211,7 @@ export class FolderCardView extends ItemView {
       shouldRefresh: true,
       queueAction,
       selectedFolderPathAfterRename,
+      incrementalResult: null,
     };
   }
 
