@@ -53,6 +53,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection(activeFile?.path ?? null);
+      void this.restoreLastFolder();
     });
   }
 
@@ -221,6 +222,25 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private async loadSettings(): Promise<void> {
     const rawData = await this.loadData();
     this.settings = normalizeSettings(rawData);
+  }
+
+  private async restoreLastFolder(): Promise<void> {
+    const lastPath = this.settings.lastFolderPath;
+    if (!lastPath) {
+      return;
+    }
+
+    const folder = this.app.vault.getAbstractFileByPath(lastPath);
+    if (!(folder instanceof TFolder)) {
+      return;
+    }
+
+    const request = this.createSelectionRequest(folder.path, "programmatic");
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
   }
 
   private createSelectionRequest(
