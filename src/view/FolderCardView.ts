@@ -205,6 +205,20 @@ export class FolderCardView extends ItemView {
       };
     }
 
+    // Attempt incremental update. Only fall back to full reload if not handled.
+    if (!this.inFlight && !this.loading) {
+      const incrementalResult = this.applyIncrementalMutation(event);
+      if (incrementalResult.handled) {
+        this.pushState();
+        return {
+          shouldRefresh: false,
+          queueAction: "ignored",
+          selectedFolderPathAfterRename,
+          incrementalResult,
+        };
+      }
+    }
+
     const queueAction = this.inFlight ? "deferred_while_inflight" : "enqueued";
     this.refreshQueued = true;
 
