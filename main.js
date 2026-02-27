@@ -25,7 +25,7 @@ __export(main_exports, {
   default: () => FolderCardExplorerPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/settings.ts
 var DEFAULT_SETTINGS = {
@@ -37,7 +37,8 @@ var DEFAULT_SETTINGS = {
     tags: []
   },
   includeSubfolders: true,
-  defaultView: "cards"
+  defaultView: "cards",
+  lastFolderPath: null
 };
 function isRecord(value) {
   return typeof value === "object" && value !== null;
@@ -70,7 +71,8 @@ function normalizeSettings(raw) {
       tags: normalizeTags(filter.tags)
     },
     includeSubfolders: typeof data.includeSubfolders === "boolean" ? data.includeSubfolders : DEFAULT_SETTINGS.includeSubfolders,
-    defaultView: normalizeDefaultView(data.defaultView)
+    defaultView: normalizeDefaultView(data.defaultView),
+    lastFolderPath: typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0 ? data.lastFolderPath : null
   };
 }
 function mergeSettings(current, patch) {
@@ -831,13 +833,13 @@ if (typeof window !== "undefined")
 var import_obsidian = require("obsidian");
 function get_each_context(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[36] = list[i];
-  child_ctx[38] = i;
+  child_ctx[37] = list[i];
+  child_ctx[39] = i;
   return child_ctx;
 }
 function get_each_context_1(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[39] = list[i];
+  child_ctx[40] = list[i];
   return child_ctx;
 }
 function create_each_block_1(ctx) {
@@ -852,9 +854,9 @@ function create_each_block_1(ctx) {
   function click_handler() {
     return (
       /*click_handler*/
-      ctx[31](
+      ctx[30](
         /*action*/
-        ctx[39]
+        ctx[40]
       )
     );
   }
@@ -863,15 +865,15 @@ function create_each_block_1(ctx) {
       button = element("button");
       span = element("span");
       span.textContent = `${/*action*/
-      ctx[39].label}`;
+      ctx[40].label}`;
       t1 = space();
       attr(span, "class", "fce-sr-only");
       attr(button, "type", "button");
       attr(button, "class", button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
       (ctx[4] === /*action*/
-      ctx[39].id ? "is-selected" : ""));
+      ctx[40].id ? "is-selected" : ""));
       attr(button, "aria-label", button_aria_label_value = /*action*/
-      ctx[39].title);
+      ctx[40].title);
     },
     m(target, anchor) {
       insert(target, button, anchor);
@@ -885,7 +887,7 @@ function create_each_block_1(ctx) {
             null,
             button,
             /*action*/
-            ctx[39].icon
+            ctx[40].icon
           ))
         ];
         mounted = true;
@@ -896,7 +898,7 @@ function create_each_block_1(ctx) {
       if (dirty[0] & /*activeToolbarAction*/
       16 && button_class_value !== (button_class_value = "clickable-icon fce-toolbar-button " + /*activeToolbarAction*/
       (ctx[4] === /*action*/
-      ctx[39].id ? "is-selected" : ""))) {
+      ctx[40].id ? "is-selected" : ""))) {
         attr(button, "class", button_class_value);
       }
     },
@@ -914,7 +916,7 @@ function create_else_block_3(ctx) {
   return {
     c() {
       p = element("p");
-      p.textContent = "Click a folder in File Explorer to preview notes.";
+      p.textContent = "Pick a folder to preview notes.";
       attr(p, "class", "fce-folder");
     },
     m(target, anchor) {
@@ -1128,8 +1130,8 @@ function create_if_block_2(ctx) {
   function select_block_type_3(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[36].previewMode === "empty" || !/*card*/
-      ctx2[36].previewHtml
+      ctx2[37].previewMode === "empty" || !/*card*/
+      ctx2[37].previewHtml
     ) return create_if_block_3;
     return create_else_block_1;
   }
@@ -1168,7 +1170,7 @@ function create_else_block_1(ctx) {
   let html_tag;
   let raw_value = (
     /*card*/
-    ctx[36].previewHtml + ""
+    ctx[37].previewHtml + ""
   );
   let html_anchor;
   return {
@@ -1184,7 +1186,7 @@ function create_else_block_1(ctx) {
     p(ctx2, dirty) {
       if (dirty[0] & /*visibleCards*/
       512 && raw_value !== (raw_value = /*card*/
-      ctx2[36].previewHtml + "")) html_tag.p(raw_value);
+      ctx2[37].previewHtml + "")) html_tag.p(raw_value);
     },
     d(detaching) {
       if (detaching) {
@@ -1219,7 +1221,7 @@ function create_each_block(ctx) {
   let h4;
   let t0_value = (
     /*card*/
-    ctx[36].title + ""
+    ctx[37].title + ""
   );
   let t0;
   let t1;
@@ -1230,13 +1232,13 @@ function create_each_block(ctx) {
   let t3;
   let t4_value = formatDate(
     /*card*/
-    ctx[36].mtime
+    ctx[37].mtime
   ) + "";
   let t4;
   let t5;
   let t6_value = formatDate(
     /*card*/
-    ctx[36].ctime
+    ctx[37].ctime
   ) + "";
   let t6;
   let div2_class_value;
@@ -1246,7 +1248,7 @@ function create_each_block(ctx) {
   function select_block_type_2(ctx2, dirty) {
     if (
       /*card*/
-      ctx2[36].hydrated
+      ctx2[37].hydrated
     ) return create_if_block_2;
     return create_else_block_2;
   }
@@ -1255,18 +1257,18 @@ function create_each_block(ctx) {
   function click_handler_1() {
     return (
       /*click_handler_1*/
-      ctx[32](
+      ctx[31](
         /*card*/
-        ctx[36]
+        ctx[37]
       )
     );
   }
   function keydown_handler(...args) {
     return (
       /*keydown_handler*/
-      ctx[33](
+      ctx[32](
         /*card*/
-        ctx[36],
+        ctx[37],
         ...args
       )
     );
@@ -1287,12 +1289,12 @@ function create_each_block(ctx) {
       t5 = text(" \xB7 Created ");
       t6 = text(t6_value);
       attr(div0, "class", div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[36].previewMode === "code" ? "is-code" : ""));
+      (ctx[37].previewMode === "code" ? "is-code" : ""));
       attr(p, "class", "fce-meta");
       attr(div1, "class", "fce-card-body");
       attr(div2, "class", div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[36].path ? "is-selected" : ""));
+      ctx[37].path ? "is-selected" : ""));
       attr(div2, "role", "button");
       attr(div2, "tabindex", "0");
     },
@@ -1320,7 +1322,7 @@ function create_each_block(ctx) {
             div2,
             /*startIndex*/
             ctx[5] + /*i*/
-            ctx[38]
+            ctx[39]
           ))
         ];
         mounted = true;
@@ -1330,7 +1332,7 @@ function create_each_block(ctx) {
       ctx = new_ctx;
       if (dirty[0] & /*visibleCards*/
       512 && t0_value !== (t0_value = /*card*/
-      ctx[36].title + "")) set_data(t0, t0_value);
+      ctx[37].title + "")) set_data(t0, t0_value);
       if (current_block_type === (current_block_type = select_block_type_2(ctx, dirty)) && if_block) {
         if_block.p(ctx, dirty);
       } else {
@@ -1343,23 +1345,23 @@ function create_each_block(ctx) {
       }
       if (dirty[0] & /*visibleCards*/
       512 && div0_class_value !== (div0_class_value = "fce-excerpt " + /*card*/
-      (ctx[36].previewMode === "code" ? "is-code" : ""))) {
+      (ctx[37].previewMode === "code" ? "is-code" : ""))) {
         attr(div0, "class", div0_class_value);
       }
       if (dirty[0] & /*visibleCards*/
       512 && t4_value !== (t4_value = formatDate(
         /*card*/
-        ctx[36].mtime
+        ctx[37].mtime
       ) + "")) set_data(t4, t4_value);
       if (dirty[0] & /*visibleCards*/
       512 && t6_value !== (t6_value = formatDate(
         /*card*/
-        ctx[36].ctime
+        ctx[37].ctime
       ) + "")) set_data(t6, t6_value);
       if (dirty[0] & /*selectedPath, visibleCards*/
       516 && div2_class_value !== (div2_class_value = "fce-card " + /*selectedPath*/
       (ctx[2] === /*card*/
-      ctx[36].path ? "is-selected" : ""))) {
+      ctx[37].path ? "is-selected" : ""))) {
         attr(div2, "class", div2_class_value);
       }
       if (measureHeight_action && is_function(measureHeight_action.update) && dirty[0] & /*startIndex*/
@@ -1367,7 +1369,7 @@ function create_each_block(ctx) {
         null,
         /*startIndex*/
         ctx[5] + /*i*/
-        ctx[38]
+        ctx[39]
       );
     },
     d(detaching) {
@@ -1488,7 +1490,7 @@ function create_fragment(ctx) {
       append(div4, t5);
       append(div4, div3);
       if_block1.m(div3, null);
-      ctx[34](div3);
+      ctx[33](div3);
       if (!mounted) {
         dispose = listen(
           div3,
@@ -1561,7 +1563,7 @@ function create_fragment(ctx) {
       destroy_each(each_blocks, detaching);
       if_block0.d();
       if_block1.d();
-      ctx[34](null);
+      ctx[33](null);
       mounted = false;
       dispose();
     }
@@ -1590,7 +1592,7 @@ function formatDate(timestamp) {
 }
 function describeToolbarAction(actionId, currentFolderPath) {
   if (actionId === "pick-folder") {
-    return currentFolderPath ? "Current folder can be changed from File Explorer." : "Click a folder in File Explorer to load cards.";
+    return currentFolderPath ? "Click to change folder, or pick from File Explorer." : "Click to pick a folder, or select one in File Explorer.";
   }
   if (actionId === "new-note") {
     return currentFolderPath ? "Create note action will be mounted here in next tasks." : "Select a folder first, then create note in place.";
@@ -1661,6 +1663,26 @@ function instance($$self, $$props, $$invalidate) {
   let heights = [];
   let positions = [];
   let totalHeight = 0;
+  function rebuildPositionsFrom(fromIndex) {
+    var _a;
+    const start = Math.max(0, fromIndex);
+    if (start === 0) {
+      let y = 0;
+      for (let i = 0; i < cards.length; i++) {
+        $$invalidate(25, positions[i] = y, positions);
+        y += heights[i] || ESTIMATED_CARD_HEIGHT;
+      }
+      $$invalidate(26, totalHeight = y);
+    } else {
+      let y = (_a = positions[start]) != null ? _a : 0;
+      for (let i = start; i < cards.length; i++) {
+        $$invalidate(25, positions[i] = y, positions);
+        y += heights[i] || ESTIMATED_CARD_HEIGHT;
+      }
+      $$invalidate(26, totalHeight = y);
+    }
+    $$invalidate(25, positions), $$invalidate(19, generation), $$invalidate(24, lastHydrateGeneration);
+  }
   function onScroll() {
     if (!viewportEl) {
       return;
@@ -1686,8 +1708,8 @@ function instance($$self, $$props, $$invalidate) {
         height += 12;
         const roundedHeight = Math.round(height);
         if (heights[index] !== roundedHeight) {
-          $$invalidate(25, heights[index] = roundedHeight, heights);
-          $$invalidate(25, heights), $$invalidate(19, generation), $$invalidate(24, lastHydrateGeneration);
+          heights[index] = roundedHeight;
+          rebuildPositionsFrom(index);
         }
       }
     });
@@ -1735,48 +1757,38 @@ function instance($$self, $$props, $$invalidate) {
         $$invalidate(24, lastHydrateGeneration = generation);
         $$invalidate(22, lastRangeStart = -1);
         $$invalidate(23, lastRangeEnd = -1);
-        $$invalidate(25, heights = []);
-      }
-    }
-    if ($$self.$$.dirty[0] & /*cards, heights*/
-    33554433) {
-      $: {
-        let y = 0;
-        let newPositions = new Array(cards.length);
-        for (let i = 0; i < cards.length; i++) {
-          newPositions[i] = y;
-          y += heights[i] || ESTIMATED_CARD_HEIGHT;
-        }
-        $$invalidate(26, positions = newPositions);
-        $$invalidate(27, totalHeight = y);
+        heights = [];
+        $$invalidate(25, positions = []);
+        $$invalidate(26, totalHeight = 0);
+        rebuildPositionsFrom(0);
       }
     }
     if ($$self.$$.dirty[0] & /*scrollTop, positions*/
-    69206016) {
-      $: $$invalidate(30, baseStartIndex = findStartIndex(scrollTop, positions));
+    35651584) {
+      $: $$invalidate(29, baseStartIndex = findStartIndex(scrollTop, positions));
     }
     if ($$self.$$.dirty[0] & /*scrollTop, viewportHeight, positions*/
-    70254592) {
-      $: $$invalidate(29, baseEndIndex = findStartIndex(scrollTop + viewportHeight, positions));
+    36700160) {
+      $: $$invalidate(28, baseEndIndex = findStartIndex(scrollTop + viewportHeight, positions));
     }
     if ($$self.$$.dirty[0] & /*baseStartIndex*/
-    1073741824) {
+    536870912) {
       $: $$invalidate(5, startIndex = Math.max(0, baseStartIndex - OVERSCAN));
     }
     if ($$self.$$.dirty[0] & /*cards, baseEndIndex*/
-    536870913) {
-      $: $$invalidate(28, endIndex = Math.min(cards.length, baseEndIndex + 1 + OVERSCAN));
+    268435457) {
+      $: $$invalidate(27, endIndex = Math.min(cards.length, baseEndIndex + 1 + OVERSCAN));
     }
     if ($$self.$$.dirty[0] & /*positions, startIndex*/
-    67108896) {
+    33554464) {
       $: $$invalidate(11, topPadding = positions[startIndex] || 0);
     }
     if ($$self.$$.dirty[0] & /*endIndex, cards, totalHeight, positions*/
-    469762049) {
+    234881025) {
       $: $$invalidate(10, bottomPadding = endIndex < cards.length ? totalHeight - (positions[endIndex] || 0) : 0);
     }
     if ($$self.$$.dirty[0] & /*cards, startIndex, endIndex*/
-    268435489) {
+    134217761) {
       $: $$invalidate(9, visibleCards = cards.slice(startIndex, endIndex));
     }
     if ($$self.$$.dirty[0] & /*activeToolbarAction*/
@@ -1787,8 +1799,14 @@ function instance($$self, $$props, $$invalidate) {
     66) {
       $: $$invalidate(8, activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath));
     }
+    if ($$self.$$.dirty[0] & /*cards, positions*/
+    33554433) {
+      $: if (cards.length !== positions.length) {
+        rebuildPositionsFrom(0);
+      }
+    }
     if ($$self.$$.dirty[0] & /*startIndex, lastRangeStart, endIndex, lastRangeEnd*/
-    281018400) {
+    146800672) {
       $: {
         if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {
           $$invalidate(22, lastRangeStart = startIndex);
@@ -1824,7 +1842,6 @@ function instance($$self, $$props, $$invalidate) {
     lastRangeStart,
     lastRangeEnd,
     lastHydrateGeneration,
-    heights,
     positions,
     totalHeight,
     endIndex,
@@ -2198,7 +2215,7 @@ function escapeHtml(input) {
 
 // src/view/FolderCardView.ts
 var FOLDER_CARD_VIEW = "folder-card-view";
-var FolderCardView = class extends import_obsidian2.ItemView {
+var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.component = null;
@@ -2246,6 +2263,11 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     });
     this.component.$on("hydrate-range", (event) => {
       void this.hydrateRange(event.detail.start, event.detail.end);
+    });
+    this.component.$on("toolbar-action", (event) => {
+      if (event.detail.action === "pick-folder") {
+        this.plugin.openFolderPicker();
+      }
     });
   }
   async onClose() {
@@ -2354,15 +2376,29 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       return {
         shouldRefresh: false,
         queueAction: "ignored",
-        selectedFolderPathAfterRename
+        selectedFolderPathAfterRename,
+        incrementalResult: null
       };
+    }
+    if (!this.inFlight && !this.loading) {
+      const incrementalResult = this.applyIncrementalMutation(event);
+      if (incrementalResult.handled) {
+        this.pushState();
+        return {
+          shouldRefresh: false,
+          queueAction: "ignored",
+          selectedFolderPathAfterRename,
+          incrementalResult
+        };
+      }
     }
     const queueAction = this.inFlight ? "deferred_while_inflight" : "enqueued";
     this.refreshQueued = true;
     return {
       shouldRefresh: true,
       queueAction,
-      selectedFolderPathAfterRename
+      selectedFolderPathAfterRename,
+      incrementalResult: null
     };
   }
   cleanupLifecycle() {
@@ -2386,7 +2422,7 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       return;
     }
     this.selectedPath = path;
-    this.pushState(false);
+    this.pushState();
   }
   getCurrentFolderPath() {
     return this.folderPath;
@@ -2556,6 +2592,172 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     }
     return left.path.localeCompare(right.path);
   }
+  findSortedInsertIndex(newCard) {
+    let low = 0;
+    let high = this.cards.length;
+    while (low < high) {
+      const mid = low + high >>> 1;
+      const existingCard = this.cards[mid];
+      if (!existingCard) {
+        break;
+      }
+      const cmp = this.compareCards(
+        existingCard,
+        newCard,
+        this.plugin.getSettings().sort.field,
+        this.plugin.getSettings().sort.direction
+      );
+      if (cmp <= 0) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+  applyIncrementalMutation(event) {
+    if (!this.folderPath) {
+      return { handled: false, action: "skipped_no_folder" };
+    }
+    if (event.isFolder) {
+      return { handled: false, action: "skipped_folder_event" };
+    }
+    if (!event.isMarkdown) {
+      return { handled: false, action: "skipped_folder_event" };
+    }
+    if (event.eventType === "delete") {
+      const targetPath = event.path;
+      const index = this.cards.findIndex((c) => c.path === targetPath);
+      if (index === -1) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      this.pendingHydration.delete(index);
+      const shifted = /* @__PURE__ */ new Set();
+      for (const idx of this.pendingHydration) {
+        shifted.add(idx > index ? idx - 1 : idx);
+      }
+      this.pendingHydration = shifted;
+      this.cards.splice(index, 1);
+      return { handled: true, action: "removed" };
+    }
+    if (event.eventType === "create") {
+      const settings = this.plugin.getSettings();
+      if (!this.isPathInScope(event.path, settings.includeSubfolders)) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      const alreadyExists = this.cards.some((c) => c.path === event.path);
+      if (alreadyExists) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      const file = this.app.vault.getAbstractFileByPath(event.path);
+      if (!(file instanceof import_obsidian2.TFile)) {
+        return { handled: false, action: "deferred_full_reload" };
+      }
+      const newCard = {
+        file,
+        path: file.path,
+        title: file.basename,
+        ctime: file.stat.ctime,
+        mtime: file.stat.mtime,
+        excerpt: "",
+        previewHtml: "",
+        previewMode: "empty",
+        hydrated: false
+      };
+      const insertIndex = this.findSortedInsertIndex(newCard);
+      this.cards.splice(insertIndex, 0, newCard);
+      const shifted = /* @__PURE__ */ new Set();
+      for (const idx of this.pendingHydration) {
+        shifted.add(idx >= insertIndex ? idx + 1 : idx);
+      }
+      this.pendingHydration = shifted;
+      const capturedGeneration = this.generation;
+      void this.hydrateCard(insertIndex, capturedGeneration).then(() => {
+        if (capturedGeneration === this.generation) {
+          this.pushState();
+        }
+      });
+      return { handled: true, action: "inserted" };
+    }
+    if (event.eventType === "modify") {
+      const index = this.cards.findIndex((c) => c.path === event.path);
+      if (index === -1) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      const card = this.cards[index];
+      if (!card) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+      card.hydrated = false;
+      card.previewHtml = "";
+      card.previewMode = "empty";
+      this.pendingHydration.delete(index);
+      return { handled: true, action: "hydration_reset" };
+    }
+    if (event.eventType === "rename" && !event.isFolder) {
+      const settings = this.plugin.getSettings();
+      const oldIndex = event.oldPath ? this.cards.findIndex((c) => c.path === event.oldPath) : -1;
+      const newInScope = this.isPathInScope(event.path, settings.includeSubfolders);
+      if (oldIndex !== -1) {
+        if (!newInScope) {
+          const shifted = /* @__PURE__ */ new Set();
+          for (const idx of this.pendingHydration) {
+            if (idx !== oldIndex) {
+              shifted.add(idx > oldIndex ? idx - 1 : idx);
+            }
+          }
+          this.pendingHydration = shifted;
+          this.cards.splice(oldIndex, 1);
+          return { handled: true, action: "removed" };
+        }
+        const card = this.cards[oldIndex];
+        if (!card) {
+          return { handled: false, action: "deferred_full_reload" };
+        }
+        const file = this.app.vault.getAbstractFileByPath(event.path);
+        if (!(file instanceof import_obsidian2.TFile)) {
+          return { handled: false, action: "deferred_full_reload" };
+        }
+        card.file = file;
+        card.path = file.path;
+        card.title = file.basename;
+        return { handled: true, action: "updated" };
+      }
+      if (newInScope) {
+        const alreadyExists = this.cards.some((c) => c.path === event.path);
+        if (!alreadyExists) {
+          const file = this.app.vault.getAbstractFileByPath(event.path);
+          if (!(file instanceof import_obsidian2.TFile)) {
+            return { handled: false, action: "deferred_full_reload" };
+          }
+          const newCard = {
+            file,
+            path: file.path,
+            title: file.basename,
+            ctime: file.stat.ctime,
+            mtime: file.stat.mtime,
+            excerpt: "",
+            previewHtml: "",
+            previewMode: "empty",
+            hydrated: false
+          };
+          const insertIndex = this.findSortedInsertIndex(newCard);
+          this.cards.splice(insertIndex, 0, newCard);
+          const shifted = /* @__PURE__ */ new Set();
+          for (const idx of this.pendingHydration) {
+            shifted.add(idx >= insertIndex ? idx + 1 : idx);
+          }
+          this.pendingHydration = shifted;
+          void this.hydrateCard(insertIndex, this.generation).then(() => {
+            this.pushState();
+          });
+          return { handled: true, action: "inserted" };
+        }
+      }
+      return { handled: true, action: "skipped_not_found" };
+    }
+    return { handled: false, action: "deferred_full_reload" };
+  }
   async hydrateRange(start, end) {
     if (this.cards.length === 0 || this.loading) {
       return;
@@ -2575,10 +2777,17 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     if (targets.length === 0) {
       return;
     }
-    await Promise.all(targets.map((index) => this.hydrateCard(index, generation)));
-    targets.forEach((index) => this.pendingHydration.delete(index));
-    if (generation === this.generation) {
-      this.pushState();
+    const batchSize = _FolderCardView.HYDRATION_BATCH_SIZE;
+    for (let batchStart = 0; batchStart < targets.length; batchStart += batchSize) {
+      if (generation !== this.generation) {
+        break;
+      }
+      const batch = targets.slice(batchStart, batchStart + batchSize);
+      await Promise.all(batch.map((index) => this.hydrateCard(index, generation)));
+      batch.forEach((index) => this.pendingHydration.delete(index));
+      if (generation === this.generation) {
+        this.pushState();
+      }
     }
   }
   async hydrateCard(index, generation) {
@@ -2602,10 +2811,10 @@ var FolderCardView = class extends import_obsidian2.ItemView {
       card.hydrated = true;
     }
   }
-  pushState(cloneCards = true) {
+  pushState() {
     var _a, _b;
     (_b = this.component) == null ? void 0 : _b.$set({
-      cards: cloneCards ? [...this.cards] : this.cards,
+      cards: this.cards,
       folderPath: (_a = this.folderPath) != null ? _a : "",
       selectedPath: this.selectedPath,
       loading: this.loading,
@@ -2613,16 +2822,52 @@ var FolderCardView = class extends import_obsidian2.ItemView {
     });
   }
 };
+_FolderCardView.HYDRATION_BATCH_SIZE = 5;
+var FolderCardView = _FolderCardView;
+
+// src/FolderPickerModal.ts
+var import_obsidian3 = require("obsidian");
+var FolderPickerModal = class extends import_obsidian3.FuzzySuggestModal {
+  constructor(app, onSelect) {
+    super(app);
+    this.onSelect = onSelect;
+    this.folders = this.collectAllFolders();
+    this.setPlaceholder("Type to search folders...");
+  }
+  getItems() {
+    return this.folders;
+  }
+  getItemText(folder) {
+    return folder.path === "/" ? "/" : folder.path;
+  }
+  onChooseItem(folder) {
+    this.onSelect(folder);
+  }
+  collectAllFolders() {
+    const result = [];
+    const stack = [this.app.vault.getRoot()];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      result.push(current);
+      for (const child of current.children) {
+        if (child instanceof import_obsidian3.TFolder) {
+          stack.push(child);
+        }
+      }
+    }
+    return result.sort((a, b) => a.path.localeCompare(b.path));
+  }
+};
 
 // src/main.ts
-var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
+var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.selectedFolderPath = null;
     this.settings = normalizeSettings(DEFAULT_SETTINGS);
     this.selectionRequestSeq = 0;
     this.latestHandledRequestId = 0;
-    this.debouncedRefresh = (0, import_obsidian3.debounce)(
+    this.debouncedRefresh = (0, import_obsidian4.debounce)(
       () => {
         void this.requestRefreshForViews("vault-change");
       },
@@ -2645,7 +2890,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     });
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
-        this.syncSelection(file instanceof import_obsidian3.TFile ? file.path : null);
+        this.syncSelection(file instanceof import_obsidian4.TFile ? file.path : null);
       })
     );
     this.app.workspace.onLayoutReady(() => {
@@ -2653,6 +2898,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection((_a = activeFile == null ? void 0 : activeFile.path) != null ? _a : null);
+      void this.restoreLastFolder();
     });
   }
   async onunload() {
@@ -2666,12 +2912,29 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
   }
   async openNoteFromCard(path) {
     const target = this.app.vault.getAbstractFileByPath(path);
-    if (!(target instanceof import_obsidian3.TFile)) {
+    if (!(target instanceof import_obsidian4.TFile)) {
       return;
     }
     const leaf = this.resolveTargetLeaf();
     await leaf.openFile(target, { active: true });
     this.syncSelection(target.path);
+  }
+  openFolderPicker() {
+    new FolderPickerModal(this.app, (folder) => {
+      void this.selectFolder(folder, "panel-picker");
+    }).open();
+  }
+  async selectFolder(folder, source) {
+    const request = this.createSelectionRequest(folder.path, source);
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
+    await this.saveData(
+      mergeSettings(this.settings, { lastFolderPath: folder.path })
+    );
+    this.settings = mergeSettings(this.settings, { lastFolderPath: folder.path });
   }
   getSettings() {
     return normalizeSettings(this.settings);
@@ -2682,7 +2945,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     await this.requestRefreshForViews("settings-change");
   }
   resolveTargetLeaf() {
-    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+    const activeMarkdown = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
     if (activeMarkdown) {
       return activeMarkdown.leaf;
     }
@@ -2702,15 +2965,10 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
       return;
     }
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof import_obsidian3.TFolder)) {
+    if (!(folder instanceof import_obsidian4.TFolder)) {
       return;
     }
-    const request = this.createSelectionRequest(folder.path, "explorer-click");
-    await this.activateView();
-    if (request.requestId !== this.latestHandledRequestId) {
-      return;
-    }
-    this.dispatchSelectionRequest(request);
+    await this.selectFolder(folder, "explorer-click");
   }
   extractFolderPathFromTarget(target) {
     var _a, _b, _c;
@@ -2777,111 +3035,21 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     const rawData = await this.loadData();
     this.settings = normalizeSettings(rawData);
   }
-  createSelectionRequest(folderPath, source, forceRefresh = false) {
-    this.selectionRequestSeq += 1;
-    const request = {
-      requestId: this.selectionRequestSeq,
-      folderPath,
-      source,
-      requestedAtMs: Date.now(),
-      forceRefresh
-    };
-    this.latestHandledRequestId = request.requestId;
-    return request;
-  }
-  dispatchSelectionRequest(request) {
-    this.withFolderViews((view) => {
-      void this.handleSelectionResult(view, request);
-    });
-  }
-  async handleSelectionResult(view, request) {
-    const result = await view.handleFolderSelection(request);
-    if (result.action === "rejected_invalid") {
+  async restoreLastFolder() {
+    const lastPath = this.settings.lastFolderPath;
+    if (!lastPath) {
       return;
     }
-    if (request.source === "explorer-click" && request.requestId !== this.latestHandledRequestId) {
+    const folder = this.app.vault.getAbstractFileByPath(lastPath);
+    if (!(folder instanceof import_obsidian4.TFolder)) {
       return;
     }
-    this.selectedFolderPath = result.folderPath;
-  }
-  buildVaultMutationEvent(eventType, file, oldPath) {
-    return {
-      eventType,
-      path: file.path,
-      oldPath,
-      isFolder: file instanceof import_obsidian3.TFolder,
-      isMarkdown: file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "md"
-    };
-  }
-  dispatchVaultMutation(event) {
-    this.reconcileSelectedFolderPath(event);
-    let shouldQueueRefresh = false;
-    this.withFolderViews((view) => {
-      const result = view.handleVaultMutation(event);
-      if (result.selectedFolderPathAfterRename) {
-        this.selectedFolderPath = result.selectedFolderPathAfterRename;
-      }
-      if (result.shouldRefresh) {
-        shouldQueueRefresh = true;
-      }
-    });
-    if (shouldQueueRefresh) {
-      this.debouncedRefresh();
-    }
-  }
-  reconcileSelectedFolderPath(event) {
-    if (event.eventType !== "rename" || !event.isFolder || !this.selectedFolderPath || !event.oldPath) {
+    const request = this.createSelectionRequest(folder.path, "programmatic");
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
-    if (this.selectedFolderPath === event.oldPath) {
-      this.selectedFolderPath = event.path;
-      return;
-    }
-    const prefix = `${event.oldPath}/`;
-    if (this.selectedFolderPath.startsWith(prefix)) {
-      this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
-    }
-  }
-  async requestRefreshForViews(reason) {
-    if (!this.selectedFolderPath) {
-      return;
-    }
-    this.withFolderViews((view) => {
-      var _a;
-      void view.refresh({
-        reason,
-        folderPath: (_a = this.selectedFolderPath) != null ? _a : void 0,
-        forceRefresh: true
-      });
-    });
-  }
-};
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ectedFolderPath.slice(event.oldPath.length)}`;
-    }
-  }
-  async requestRefreshForViews(reason) {
-    if (!this.selectedFolderPath) {
-      return;
-    }
-    this.withFolderViews((view) => {
-      var _a;
-      void view.refresh({
-        reason,
-        folderPath: (_a = this.selectedFolderPath) != null ? _a : void 0,
-        forceRefresh: true
-      });
-    });
-  }
-};
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           (
-      this.app.vault.on("rename", (file, oldPath) => {
-        this.dispatchVaultMutation(this.buildVaultMutationEvent("rename", file, oldPath));
-      })
-    );
-  }
-  async loadSettings() {
-    const rawData = await this.loadData();
-    this.settings = normalizeSettings(rawData);
+    this.dispatchSelectionRequest(request);
   }
   createSelectionRequest(folderPath, source, forceRefresh = false) {
     this.selectionRequestSeq += 1;
@@ -2915,8 +3083,8 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
       eventType,
       path: file.path,
       oldPath,
-      isFolder: file instanceof import_obsidian3.TFolder,
-      isMarkdown: file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "md"
+      isFolder: file instanceof import_obsidian4.TFolder,
+      isMarkdown: file instanceof import_obsidian4.TFile && file.extension.toLowerCase() === "md"
     };
   }
   dispatchVaultMutation(event) {
