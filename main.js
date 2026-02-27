@@ -2873,3 +2873,92 @@ var FolderCardExplorerPlugin = class extends import_obsidian3.Plugin {
     });
   }
 };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           (
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.dispatchVaultMutation(this.buildVaultMutationEvent("rename", file, oldPath));
+      })
+    );
+  }
+  async loadSettings() {
+    const rawData = await this.loadData();
+    this.settings = normalizeSettings(rawData);
+  }
+  createSelectionRequest(folderPath, source, forceRefresh = false) {
+    this.selectionRequestSeq += 1;
+    const request = {
+      requestId: this.selectionRequestSeq,
+      folderPath,
+      source,
+      requestedAtMs: Date.now(),
+      forceRefresh
+    };
+    this.latestHandledRequestId = request.requestId;
+    return request;
+  }
+  dispatchSelectionRequest(request) {
+    this.withFolderViews((view) => {
+      void this.handleSelectionResult(view, request);
+    });
+  }
+  async handleSelectionResult(view, request) {
+    const result = await view.handleFolderSelection(request);
+    if (result.action === "rejected_invalid") {
+      return;
+    }
+    if (request.source === "explorer-click" && request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.selectedFolderPath = result.folderPath;
+  }
+  buildVaultMutationEvent(eventType, file, oldPath) {
+    return {
+      eventType,
+      path: file.path,
+      oldPath,
+      isFolder: file instanceof import_obsidian3.TFolder,
+      isMarkdown: file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "md"
+    };
+  }
+  dispatchVaultMutation(event) {
+    this.reconcileSelectedFolderPath(event);
+    let shouldQueueRefresh = false;
+    this.withFolderViews((view) => {
+      const result = view.handleVaultMutation(event);
+      if (result.selectedFolderPathAfterRename) {
+        this.selectedFolderPath = result.selectedFolderPathAfterRename;
+      }
+      if (result.shouldRefresh) {
+        shouldQueueRefresh = true;
+      }
+    });
+    if (shouldQueueRefresh) {
+      this.debouncedRefresh();
+    }
+  }
+  reconcileSelectedFolderPath(event) {
+    if (event.eventType !== "rename" || !event.isFolder || !this.selectedFolderPath || !event.oldPath) {
+      return;
+    }
+    if (this.selectedFolderPath === event.oldPath) {
+      this.selectedFolderPath = event.path;
+      return;
+    }
+    const prefix = `${event.oldPath}/`;
+    if (this.selectedFolderPath.startsWith(prefix)) {
+      this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
+    }
+  }
+  async requestRefreshForViews(reason) {
+    if (!this.selectedFolderPath) {
+      return;
+    }
+    this.withFolderViews((view) => {
+      var _a;
+      void view.refresh({
+        reason,
+        folderPath: (_a = this.selectedFolderPath) != null ? _a : void 0,
+        forceRefresh: true
+      });
+    });
+  }
+};
