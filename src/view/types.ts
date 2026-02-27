@@ -1,6 +1,8 @@
 import type { TFile } from "obsidian";
 import type { SortDirection, SortField } from "../settings";
 
+export const ALL_NOTES_PATH = "__all__";
+
 export interface NoteCardRecord {
   file: TFile;
   path: string;

@@ -4,6 +4,8 @@ export type SortDirection = "desc" | "asc";
 
 export type DefaultViewMode = "cards";
 
+export type ViewMode = "folder" | "all-notes";
+
 export interface PluginSettings {
   sort: {
     field: SortField;
@@ -15,6 +17,7 @@ export interface PluginSettings {
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
   lastFolderPath: string | null;
+  lastViewMode: ViewMode;
 }
 
 export interface PartialPluginSettings {
@@ -28,6 +31,7 @@ export interface PartialPluginSettings {
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
   lastFolderPath?: string | null;
+  lastViewMode?: ViewMode;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -41,6 +45,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   includeSubfolders: true,
   defaultView: "cards",
   lastFolderPath: null,
+  lastViewMode: "folder",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +72,10 @@ function normalizeDefaultView(value: unknown): DefaultViewMode {
   return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
 }
 
+function normalizeViewMode(value: unknown): ViewMode {
+  return value === "all-notes" ? "all-notes" : "folder";
+}
+
 export function normalizeSettings(raw: unknown): PluginSettings {
   const data = isRecord(raw) ? raw : {};
   const sort = isRecord(data.sort) ? data.sort : {};
@@ -89,6 +98,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
       typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
         ? data.lastFolderPath
         : null,
+    lastViewMode: normalizeViewMode(data.lastViewMode),
   };
 }
 
