@@ -32,6 +32,8 @@ export class FolderCardView extends ItemView {
   private pendingHydration = new Set<number>();
   private requestSeq = 0;
 
+  private static readonly HYDRATION_BATCH_SIZE = 5;
+
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
   private queuedRequest: FolderSelectionRequest | null = null;
@@ -481,11 +483,20 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    await Promise.all(targets.map((index) => this.hydrateCard(index, generation)));
+    const batchSize = FolderCardView.HYDRATION_BATCH_SIZE;
+    for (let batchStart = 0; batchStart < targets.length; batchStart += batchSize) {
+      if (generation !== this.generation) {
+        break;
+      }
 
-    targets.forEach((index) => this.pendingHydration.delete(index));
-    if (generation === this.generation) {
-      this.pushState();
+      const batch = targets.slice(batchStart, batchStart + batchSize);
+      await Promise.all(batch.map((index) => this.hydrateCard(index, generation)));
+
+      batch.forEach((index) => this.pendingHydration.delete(index));
+
+      if (generation === this.generation) {
+        this.pushState();
+      }
     }
   }
 
