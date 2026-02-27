@@ -154,13 +154,6 @@
   box-shadow: 0 0 0 1px var(--fce-accent), var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
 }
 
-.folder-card-view .fce-cover {
-  width: 100%;
-  height: 112px;
-  object-fit: cover;
-  border-bottom: 1px solid var(--fce-border);
-}
-
 .folder-card-view .fce-card-body {
   padding: 11px 12px 13px;
 }

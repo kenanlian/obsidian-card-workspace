@@ -10,7 +10,7 @@
 
   const dispatch = createEventDispatcher();
 
-  const CARD_HEIGHT = 220;
+  const ESTIMATED_CARD_HEIGHT = 220;
   const OVERSCAN = 5;
   const TOOLBAR_ACTIONS = [
     {
@@ -54,11 +54,45 @@
   let lastRangeEnd = -1;
   let lastHydrateGeneration = -1;
 
-  $: visibleCount = Math.max(1, Math.ceil(viewportHeight / CARD_HEIGHT) + OVERSCAN * 2);
-  $: startIndex = Math.max(0, Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN);
-  $: endIndex = Math.min(cards.length, startIndex + visibleCount);
-  $: topPadding = startIndex * CARD_HEIGHT;
-  $: bottomPadding = Math.max(0, (cards.length - endIndex) * CARD_HEIGHT);
+  let heights = [];
+  let positions = [];
+  let totalHeight = 0;
+
+  $: {
+    let y = 0;
+    let newPositions = new Array(cards.length);
+    for (let i = 0; i < cards.length; i++) {
+      newPositions[i] = y;
+      y += heights[i] || ESTIMATED_CARD_HEIGHT;
+    }
+    positions = newPositions;
+    totalHeight = y;
+  }
+
+  function findStartIndex(scrollTopValue, posArray) {
+    if (posArray.length === 0) return 0;
+    let low = 0;
+    let high = posArray.length - 1;
+    let match = 0;
+    while (low <= high) {
+      let mid = Math.floor((low + high) / 2);
+      if (posArray[mid] <= scrollTopValue) {
+        match = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return match;
+  }
+
+  $: baseStartIndex = findStartIndex(scrollTop, positions);
+  $: baseEndIndex = findStartIndex(scrollTop + viewportHeight, positions);
+
+  $: startIndex = Math.max(0, baseStartIndex - OVERSCAN);
+  $: endIndex = Math.min(cards.length, baseEndIndex + 1 + OVERSCAN);
+  $: topPadding = positions[startIndex] || 0;
+  $: bottomPadding = endIndex < cards.length ? totalHeight - (positions[endIndex] || 0) : 0;
   $: visibleCards = cards.slice(startIndex, endIndex);
   $: activeToolbarConfig =
     TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction) ?? TOOLBAR_ACTIONS[0];
@@ -68,6 +102,7 @@
     lastHydrateGeneration = generation;
     lastRangeStart = -1;
     lastRangeEnd = -1;
+    heights = [];
   }
 
   $: {
@@ -97,6 +132,36 @@
       update(nextIconName) {
         setIcon(node, nextIconName);
       },
+    };
+  }
+
+  function measureHeight(node, index) {
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        // use borderBoxSize if available, fallback to getBoundingClientRect
+        let height = entry.borderBoxSize && entry.borderBoxSize.length > 0 
+          ? entry.borderBoxSize[0].blockSize 
+          : entry.target.getBoundingClientRect().height;
+        
+        height += 12; // Add margin-bottom (12px)
+        const roundedHeight = Math.round(height);
+        
+        if (heights[index] !== roundedHeight) {
+          heights[index] = roundedHeight;
+          heights = heights; // trigger reactivity
+        }
+      }
+    });
+    
+    resizeObserver.observe(node);
+    
+    return {
+      update(newIndex) {
+        index = newIndex;
+      },
+      destroy() {
+        resizeObserver.disconnect();
+      }
     };
   }
 
@@ -178,17 +243,15 @@
       <div class="fce-empty">No Markdown notes found in this folder.</div>
     {:else}
       <div style={`height: ${topPadding}px;`} />
-      {#each visibleCards as card}
+      {#each visibleCards as card, i}
         <div
           class="fce-card {selectedPath === card.path ? 'is-selected' : ''}"
           role="button"
           tabindex="0"
           on:click={() => openNote(card.path)}
           on:keydown={(event) => onCardKeydown(event, card.path)}
+          use:measureHeight={startIndex + i}
         >
-          {#if card.cover}
-            <img class="fce-cover" src={card.cover} alt={card.title} loading="lazy" />
-          {/if}
           <div class="fce-card-body">
             <h4>{card.title}</h4>
             <div class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''}">

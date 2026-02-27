@@ -1,6 +1,6 @@
 import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
-import { buildLightPreview, extractFirstInlineImage, pickFrontmatterImage, resolveImageSource } from "./markdown-utils";
+import { buildLightPreview } from "./markdown-utils";
 import type { SortDirection, SortField } from "../settings";
 import type {
   CleanupResult,
@@ -299,18 +299,12 @@ export class FolderCardView extends ItemView {
     try {
       const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
       const records: NoteCardRecord[] = files.map((file) => {
-        const cache = this.app.metadataCache.getFileCache(file);
-        const frontmatterCover = pickFrontmatterImage(
-          cache?.frontmatter as Record<string, unknown> | undefined,
-        );
-
         return {
           file,
           path: file.path,
           title: file.basename,
           ctime: file.stat.ctime,
           mtime: file.stat.mtime,
-          cover: frontmatterCover ? resolveImageSource(this.app, frontmatterCover, file) : null,
           excerpt: "",
           previewHtml: "",
           previewMode: "empty",
@@ -510,12 +504,6 @@ export class FolderCardView extends ItemView {
       const preview = buildLightPreview(markdown, 200, 4);
       card.previewHtml = preview.html;
       card.previewMode = preview.mode;
-      if (!card.cover) {
-        const firstInlineImage = extractFirstInlineImage(markdown);
-        if (firstInlineImage) {
-          card.cover = resolveImageSource(this.app, firstInlineImage, card.file);
-        }
-      }
       card.hydrated = true;
     } catch {
       card.excerpt = "";
