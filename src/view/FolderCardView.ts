@@ -623,11 +623,16 @@ export class FolderCardView extends ItemView {
         return { handled: true, action: "skipped_not_found" };
       }
 
-      // Reset hydration so viewport pass re-reads content
-      card.hydrated = false;
-      card.previewHtml = "";
-      card.previewMode = "empty";
       this.pendingHydration.delete(index);
+
+      // Re-hydrate immediately; Obsidian already debounces modify events.
+      // Keep old preview visible until new content is ready.
+      const capturedGeneration = this.generation;
+      void this.hydrateCard(index, capturedGeneration).then(() => {
+        if (capturedGeneration === this.generation) {
+          this.pushState();
+        }
+      });
 
       return { handled: true, action: "hydration_reset" };
     }

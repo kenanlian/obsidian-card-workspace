@@ -4,6 +4,7 @@ node_modules/
 .opencode/bun.lock
 
 # Build artifacts
+main.js
 dist/
 build/
 *.tsbuildinfo
