@@ -123,12 +123,6 @@
   $: topPadding = positions[startIndex] || 0;
   $: bottomPadding = endIndex < cards.length ? totalHeight - (positions[endIndex] || 0) : 0;
   $: visibleCards = cards.slice(startIndex, endIndex);
-  $: activeToolbarConfig =
-    TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction) ?? TOOLBAR_ACTIONS[0];
-  $: activeToolbarDescription = describeToolbarAction(
-    activeToolbarConfig.id,
-    folderPath,
-  );
 
   $: if (generation !== lastHydrateGeneration) {
     lastHydrateGeneration = generation;
@@ -231,33 +225,6 @@
     return new Date(timestamp).toLocaleDateString();
   }
 
-  function describeToolbarAction(
-    actionId,
-    currentFolderPath,
-  ) {
-    if (actionId === "pick-folder") {
-      return currentFolderPath
-        ? "Click to change folder, or pick from File Explorer."
-        : "Click to pick a folder, or select one in File Explorer.";
-    }
-
-    if (actionId === "all-notes") {
-      return "Showing all Markdown notes in the vault.";
-    }
-
-    if (actionId === "new-note") {
-      return currentFolderPath
-        ? "Create a new note in the current folder."
-        : "Select a folder first, then create a note.";
-    }
-
-    if (actionId === "filter") {
-      return "Filter controls will be mounted here.";
-    }
-
-    return "Bulk selection actions will be mounted here.";
-  }
-
   function selectSortOption(option) {
     showSortMenu = false;
 
@@ -340,13 +307,10 @@
     </div>
 
     <div class="fce-toolbar-content">
-      <p class="fce-toolbar-title">{activeToolbarConfig.title}</p>
-      <p class="fce-toolbar-description">{activeToolbarDescription}</p>
       {#if folderPath}
-        <p class="fce-folder">{folderPath}</p>
-        <p class="fce-count">{cards.length} notes</p>
+        {folderPath}
       {:else}
-        <p class="fce-folder">Pick a folder to preview notes.</p>
+        Pick a folder to preview notes.
       {/if}
     </div>
   </header>
