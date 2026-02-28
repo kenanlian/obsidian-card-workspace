@@ -7,8 +7,18 @@
   export let selectedPath = null;
   export let loading = false;
   export let generation = 0;
+  export let sortField = "mtime";
+  export let sortDirection = "desc";
 
   const dispatch = createEventDispatcher();
+
+  const SORT_OPTIONS = [
+    { field: "mtime", direction: "desc", label: "编辑时间（从新到旧）" },
+    { field: "mtime", direction: "asc", label: "编辑时间（从旧到新）" },
+    { type: "separator" },
+    { field: "ctime", direction: "desc", label: "创建时间（从新到旧）" },
+    { field: "ctime", direction: "asc", label: "创建时间（从旧到新）" },
+  ];
 
   const ESTIMATED_CARD_HEIGHT = 220;
   const OVERSCAN = 5;
@@ -55,6 +65,10 @@
   let viewportHeight = 0;
   let scrollTop = 0;
   let activeToolbarAction = TOOLBAR_ACTIONS[0].id;
+  let showSortMenu = false;
+  let sortButtonEl = null;
+  let sortMenuX = 0;
+  let sortMenuY = 0;
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
@@ -111,7 +125,10 @@
   $: visibleCards = cards.slice(startIndex, endIndex);
   $: activeToolbarConfig =
     TOOLBAR_ACTIONS.find((action) => action.id === activeToolbarAction) ?? TOOLBAR_ACTIONS[0];
-  $: activeToolbarDescription = describeToolbarAction(activeToolbarConfig.id, folderPath);
+  $: activeToolbarDescription = describeToolbarAction(
+    activeToolbarConfig.id,
+    folderPath,
+  );
 
   $: if (generation !== lastHydrateGeneration) {
     lastHydrateGeneration = generation;
@@ -187,7 +204,18 @@
     };
   }
 
-  function selectToolbarAction(actionId) {
+  function selectToolbarAction(actionId, event) {
+    if (actionId === "sort") {
+      if (showSortMenu) {
+        showSortMenu = false;
+      } else {
+        sortMenuX = event.clientX;
+        sortMenuY = event.clientY;
+        showSortMenu = true;
+      }
+      return;
+    }
+    showSortMenu = false;
     activeToolbarAction = actionId;
     dispatch("toolbar-action", { action: actionId });
   }
@@ -203,7 +231,10 @@
     return new Date(timestamp).toLocaleDateString();
   }
 
-  function describeToolbarAction(actionId, currentFolderPath) {
+  function describeToolbarAction(
+    actionId,
+    currentFolderPath,
+  ) {
     if (actionId === "pick-folder") {
       return currentFolderPath
         ? "Click to change folder, or pick from File Explorer."
@@ -220,15 +251,60 @@
         : "Select a folder first, then create a note.";
     }
 
-    if (actionId === "sort") {
-      return "Sort controls will be mounted here.";
-    }
-
     if (actionId === "filter") {
       return "Filter controls will be mounted here.";
     }
 
     return "Bulk selection actions will be mounted here.";
+  }
+
+  function selectSortOption(option) {
+    showSortMenu = false;
+
+    if (option.field === sortField && option.direction === sortDirection) {
+      return;
+    }
+
+    dispatch("sort-change", {
+      field: option.field,
+      direction: option.direction,
+    });
+  }
+
+  let sortMenuEl = null;
+
+  function onSortMenuClickOutside(event) {
+    if (sortButtonEl && sortButtonEl.contains(event.target)) {
+      return;
+    }
+    if (sortMenuEl && sortMenuEl.contains(event.target)) {
+      return;
+    }
+    showSortMenu = false;
+  }
+
+  function captureSortButton(node) {
+    sortButtonEl = node;
+    return {
+      destroy() {
+        sortButtonEl = null;
+      },
+    };
+  }
+
+  function sortMenuAction(node) {
+    sortMenuEl = node;
+    document.body.appendChild(node);
+    document.addEventListener("click", onSortMenuClickOutside, true);
+    return {
+      destroy() {
+        document.removeEventListener("click", onSortMenuClickOutside, true);
+        sortMenuEl = null;
+        if (node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      },
+    };
   }
 </script>
 
@@ -237,15 +313,28 @@
     <div class="fce-toolbar" role="toolbar" aria-label="Folder card actions">
       <div class="fce-toolbar-buttons">
         {#each TOOLBAR_ACTIONS as action}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button {activeToolbarAction === action.id ? 'is-selected' : ''}"
-            aria-label={action.title}
-            on:click={() => selectToolbarAction(action.id)}
-            use:applyIcon={action.icon}
-          >
-            <span class="fce-sr-only">{action.label}</span>
-          </button>
+          {#if action.id === "sort"}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+              aria-label={action.title}
+              on:click={(e) => selectToolbarAction(action.id, e)}
+              use:applyIcon={action.icon}
+              use:captureSortButton
+            >
+              <span class="fce-sr-only">{action.label}</span>
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {activeToolbarAction === action.id ? 'is-selected' : ''}"
+              aria-label={action.title}
+              on:click={(e) => selectToolbarAction(action.id, e)}
+              use:applyIcon={action.icon}
+            >
+              <span class="fce-sr-only">{action.label}</span>
+            </button>
+          {/if}
         {/each}
       </div>
     </div>
@@ -299,3 +388,32 @@
     {/if}
   </div>
 </div>
+
+{#if showSortMenu}
+  <div
+    class="fce-sort-menu"
+    role="menu"
+    style="left: {sortMenuX}px; top: {sortMenuY}px;"
+    use:sortMenuAction
+  >
+    {#each SORT_OPTIONS as option}
+      {#if option.type === "separator"}
+        <div class="fce-sort-menu-separator"></div>
+      {:else}
+        {@const selected = sortField === option.field && sortDirection === option.direction}
+        <button
+          type="button"
+          class="fce-sort-menu-item"
+          role="menuitemradio"
+          aria-checked={selected}
+          on:click={() => selectSortOption(option)}
+        >
+          <span class="fce-sort-menu-item-label">{option.label}</span>
+          {#if selected}
+            <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
+          {/if}
+        </button>
+      {/if}
+    {/each}
+  </div>
+{/if}

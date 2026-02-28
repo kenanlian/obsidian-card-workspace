@@ -102,6 +102,61 @@
   line-height: 1.4;
 }
 
+.fce-sort-menu {
+  position: fixed;
+  z-index: var(--layer-menu, 10);
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border-hover, var(--background-modifier-border));
+  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+}
+
+.fce-sort-menu-separator {
+  height: 0;
+  margin: 4px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.fce-sort-menu .fce-sort-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  box-shadow: none;
+  outline: none;
+}
+
+.fce-sort-menu .fce-sort-menu-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.fce-sort-menu-item-label {
+  flex: 1;
+}
+
+.fce-sort-menu-item-check {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-normal);
+}
+
 .folder-card-view .fce-sr-only {
   position: absolute;
   width: 1px;

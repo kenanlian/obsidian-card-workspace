@@ -71,6 +71,8 @@ export class FolderCardView extends ItemView {
         selectedPath: this.selectedPath,
         loading: this.loading,
         generation: this.generation,
+        sortField: this.plugin.getSettings().sort.field,
+        sortDirection: this.plugin.getSettings().sort.direction,
       },
     });
 
@@ -88,6 +90,9 @@ export class FolderCardView extends ItemView {
       } else if (event.detail.action === "new-note") {
         void this.plugin.createNoteInCurrentFolder();
       }
+    });
+    this.component.$on("sort-change", (event: any) => {
+      void this.onSortChange(event.detail);
     });
   }
 
@@ -784,10 +789,36 @@ export class FolderCardView extends ItemView {
     }
   }
 
+  private async onSortChange(detail: {
+    field?: unknown;
+    direction?: unknown;
+  }): Promise<void> {
+    const nextField: SortField = detail.field === "ctime" ? "ctime" : "mtime";
+    const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
+    const currentSettings = this.plugin.getSettings();
+
+    if (
+      currentSettings.sort.field === nextField &&
+      currentSettings.sort.direction === nextDirection
+    ) {
+      return;
+    }
+
+    await this.plugin.saveSettings({
+      sort: {
+        field: nextField,
+        direction: nextDirection,
+      },
+    });
+
+    this.pushState();
+  }
+
   private pushState(): void {
     const displayFolderPath = this.folderPath === ALL_NOTES_PATH
       ? "All Notes"
       : (this.folderPath ?? "");
+    const settings = this.plugin.getSettings();
 
     this.component?.$set({
       cards: this.cards,
@@ -795,6 +826,8 @@ export class FolderCardView extends ItemView {
       selectedPath: this.selectedPath,
       loading: this.loading,
       generation: this.generation,
+      sortField: settings.sort.field,
+      sortDirection: settings.sort.direction,
     });
   }
 }
