@@ -38,7 +38,8 @@ var DEFAULT_SETTINGS = {
   },
   includeSubfolders: true,
   defaultView: "cards",
-  lastFolderPath: null
+  lastFolderPath: null,
+  lastViewMode: "folder"
 };
 function isRecord(value) {
   return typeof value === "object" && value !== null;
@@ -58,6 +59,9 @@ function normalizeTags(value) {
 function normalizeDefaultView(value) {
   return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
 }
+function normalizeViewMode(value) {
+  return value === "all-notes" ? "all-notes" : "folder";
+}
 function normalizeSettings(raw) {
   const data = isRecord(raw) ? raw : {};
   const sort = isRecord(data.sort) ? data.sort : {};
@@ -72,7 +76,8 @@ function normalizeSettings(raw) {
     },
     includeSubfolders: typeof data.includeSubfolders === "boolean" ? data.includeSubfolders : DEFAULT_SETTINGS.includeSubfolders,
     defaultView: normalizeDefaultView(data.defaultView),
-    lastFolderPath: typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0 ? data.lastFolderPath : null
+    lastFolderPath: typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0 ? data.lastFolderPath : null,
+    lastViewMode: normalizeViewMode(data.lastViewMode)
   };
 }
 function mergeSettings(current, patch) {
@@ -1594,6 +1599,9 @@ function describeToolbarAction(actionId, currentFolderPath) {
   if (actionId === "pick-folder") {
     return currentFolderPath ? "Click to change folder, or pick from File Explorer." : "Click to pick a folder, or select one in File Explorer.";
   }
+  if (actionId === "all-notes") {
+    return "Showing all Markdown notes in the vault.";
+  }
   if (actionId === "new-note") {
     return currentFolderPath ? "Create note action will be mounted here in next tasks." : "Select a folder first, then create note in place.";
   }
@@ -1627,6 +1635,12 @@ function instance($$self, $$props, $$invalidate) {
       label: "Pick folder",
       title: "Folder scope",
       icon: "folder-open"
+    },
+    {
+      id: "all-notes",
+      label: "All notes",
+      title: "All notes",
+      icon: "library"
     },
     {
       id: "new-note",
@@ -2213,6 +2227,9 @@ function escapeHtml(input) {
   return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// src/view/types.ts
+var ALL_NOTES_PATH = "__all__";
+
 // src/view/FolderCardView.ts
 var FOLDER_CARD_VIEW = "folder-card-view";
 var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
@@ -2267,6 +2284,8 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
     this.component.$on("toolbar-action", (event) => {
       if (event.detail.action === "pick-folder") {
         this.plugin.openFolderPicker();
+      } else if (event.detail.action === "all-notes") {
+        void this.plugin.selectAllNotes();
       }
     });
   }
@@ -2283,8 +2302,9 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
   }
   async handleFolderSelection(request) {
     var _a;
-    const folder = this.app.vault.getAbstractFileByPath(request.folderPath);
-    if (!(folder instanceof import_obsidian2.TFolder)) {
+    const isAllNotes = request.folderPath === ALL_NOTES_PATH;
+    const folder = isAllNotes ? null : this.app.vault.getAbstractFileByPath(request.folderPath);
+    if (!isAllNotes && !(folder instanceof import_obsidian2.TFolder)) {
       return {
         action: "rejected_invalid",
         folderPath: request.folderPath,
@@ -2293,12 +2313,12 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
       };
     }
     const forceRefresh = (_a = request.forceRefresh) != null ? _a : false;
-    const loadKey = this.serializeLoadKey(this.buildLoadKey(folder.path));
+    const loadKey = this.serializeLoadKey(this.buildLoadKey(request.folderPath));
     if (this.inFlight) {
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
           action: "reused_inflight",
-          folderPath: folder.path,
+          folderPath: request.folderPath,
           generationChanged: false,
           preserveUiState: true
         };
@@ -2306,7 +2326,7 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
       this.queuedRequest = request;
       return {
         action: "queued_latest",
-        folderPath: folder.path,
+        folderPath: request.folderPath,
         generationChanged: false,
         preserveUiState: true
       };
@@ -2314,16 +2334,16 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
     if (!forceRefresh && this.folderLoadKey === loadKey) {
       return {
         action: "noop",
-        folderPath: folder.path,
+        folderPath: request.folderPath,
         generationChanged: false,
         preserveUiState: true
       };
     }
-    await this.runLoad(folder, loadKey);
+    await this.runLoad(request.folderPath, loadKey);
     await this.drainQueuedRequest();
     return {
       action: "started",
-      folderPath: folder.path,
+      folderPath: request.folderPath,
       generationChanged: true,
       preserveUiState: false
     };
@@ -2449,8 +2469,8 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
   serializeLoadKey(loadKey) {
     return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
   }
-  async runLoad(folder, loadKey) {
-    const task = this.loadFolder(folder, loadKey);
+  async runLoad(folderPath, loadKey) {
+    const task = this.loadFolder(folderPath, loadKey);
     this.inFlight = task;
     this.inFlightKey = loadKey;
     try {
@@ -2462,8 +2482,8 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
       }
     }
   }
-  async loadFolder(folder, loadKey) {
-    this.folderPath = folder.path;
+  async loadFolder(folderPath, loadKey) {
+    this.folderPath = folderPath;
     this.loading = true;
     this.cards = [];
     this.generation += 1;
@@ -2472,7 +2492,7 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
     const buildGeneration = this.generation;
     const settings = this.plugin.getSettings();
     try {
-      const files = this.collectMarkdownFiles(folder, settings.includeSubfolders);
+      const files = this.collectMarkdownFiles(folderPath, settings.includeSubfolders);
       const records = files.map((file) => {
         return {
           file,
@@ -2528,6 +2548,9 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
     if (!this.folderPath) {
       return false;
     }
+    if (this.folderPath === ALL_NOTES_PATH) {
+      return true;
+    }
     if (path === this.folderPath) {
       return true;
     }
@@ -2554,8 +2577,13 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
     }
     return `${newPath}${currentPath.slice(oldPath.length)}`;
   }
-  collectMarkdownFiles(root, includeSubfolders) {
-    if (!includeSubfolders) {
+  collectMarkdownFiles(folderPath, includeSubfolders) {
+    const isAllNotes = folderPath === ALL_NOTES_PATH;
+    const root = isAllNotes ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(folderPath);
+    if (!(root instanceof import_obsidian2.TFolder)) {
+      return [];
+    }
+    if (!isAllNotes && !includeSubfolders) {
       const directFiles = [];
       for (const child of root.children) {
         if (child instanceof import_obsidian2.TFile && child.extension.toLowerCase() === "md") {
@@ -2813,9 +2841,10 @@ var _FolderCardView = class _FolderCardView extends import_obsidian2.ItemView {
   }
   pushState() {
     var _a, _b;
+    const displayFolderPath = this.folderPath === ALL_NOTES_PATH ? "All Notes" : (_a = this.folderPath) != null ? _a : "";
     (_b = this.component) == null ? void 0 : _b.$set({
       cards: this.cards,
-      folderPath: (_a = this.folderPath) != null ? _a : "",
+      folderPath: displayFolderPath,
       selectedPath: this.selectedPath,
       loading: this.loading,
       generation: this.generation
@@ -2898,7 +2927,7 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection((_a = activeFile == null ? void 0 : activeFile.path) != null ? _a : null);
-      void this.restoreLastFolder();
+      void this.restoreLastSession();
     });
   }
   async onunload() {
@@ -2924,6 +2953,19 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
       void this.selectFolder(folder, "panel-picker");
     }).open();
   }
+  async selectAllNotes() {
+    const request = this.createSelectionRequest(ALL_NOTES_PATH, "panel-picker");
+    await this.activateView();
+    if (request.requestId !== this.latestHandledRequestId) {
+      return;
+    }
+    this.dispatchSelectionRequest(request);
+    this.selectedFolderPath = ALL_NOTES_PATH;
+    await this.saveData(
+      mergeSettings(this.settings, { lastViewMode: "all-notes" })
+    );
+    this.settings = mergeSettings(this.settings, { lastViewMode: "all-notes" });
+  }
   async selectFolder(folder, source) {
     const request = this.createSelectionRequest(folder.path, source);
     await this.activateView();
@@ -2932,9 +2974,12 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     }
     this.dispatchSelectionRequest(request);
     await this.saveData(
-      mergeSettings(this.settings, { lastFolderPath: folder.path })
+      mergeSettings(this.settings, { lastFolderPath: folder.path, lastViewMode: "folder" })
     );
-    this.settings = mergeSettings(this.settings, { lastFolderPath: folder.path });
+    this.settings = mergeSettings(this.settings, {
+      lastFolderPath: folder.path,
+      lastViewMode: "folder"
+    });
   }
   getSettings() {
     return normalizeSettings(this.settings);
@@ -3035,7 +3080,11 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     const rawData = await this.loadData();
     this.settings = normalizeSettings(rawData);
   }
-  async restoreLastFolder() {
+  async restoreLastSession() {
+    if (this.settings.lastViewMode === "all-notes") {
+      await this.selectAllNotes();
+      return;
+    }
     const lastPath = this.settings.lastFolderPath;
     if (!lastPath) {
       return;
@@ -3130,3 +3179,4 @@ var FolderCardExplorerPlugin = class extends import_obsidian4.Plugin {
     });
   }
 };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         

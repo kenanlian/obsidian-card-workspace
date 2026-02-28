@@ -69,6 +69,55 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(FOLDER_CARD_VIEW);
   }
 
+  async createNoteInCurrentFolder(): Promise<void> {
+    const folderPath = this.resolveNewNoteFolderPath();
+    if (folderPath === null) {
+      return;
+    }
+
+    const fullPath = this.generateUniqueNotePath(folderPath);
+    const file = await this.app.vault.create(fullPath, "");
+    await this.openNoteFromCard(file.path);
+  }
+
+  private resolveNewNoteFolderPath(): string | null {
+    // If viewing a specific folder, use it directly
+    if (this.selectedFolderPath && this.selectedFolderPath !== ALL_NOTES_PATH) {
+      return this.selectedFolderPath;
+    }
+
+    // "All Notes" mode: create in vault root
+    if (this.selectedFolderPath === ALL_NOTES_PATH) {
+      return "";
+    }
+
+    // No folder selected at all
+    return null;
+  }
+
+  private generateUniqueNotePath(folderPath: string): string {
+    const baseName = "Untitled";
+    const extension = "md";
+    const prefix = folderPath ? `${folderPath}/` : "";
+
+    // Try "Untitled.md" first
+    const firstCandidate = `${prefix}${baseName}.${extension}`;
+    if (!this.app.vault.getAbstractFileByPath(firstCandidate)) {
+      return firstCandidate;
+    }
+
+    // Try "Untitled 1.md", "Untitled 2.md", ...
+    for (let counter = 1; counter < 10000; counter += 1) {
+      const candidate = `${prefix}${baseName} ${counter}.${extension}`;
+      if (!this.app.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Fallback: use timestamp
+    return `${prefix}${baseName} ${Date.now()}.${extension}`;
+  }
+
   async openNoteFromCard(path: string): Promise<void> {
     const target = this.app.vault.getAbstractFileByPath(path);
     if (!(target instanceof TFile)) {

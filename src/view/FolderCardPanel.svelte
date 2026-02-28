@@ -216,8 +216,8 @@
 
     if (actionId === "new-note") {
       return currentFolderPath
-        ? "Create note action will be mounted here in next tasks."
-        : "Select a folder first, then create note in place.";
+        ? "Create a new note in the current folder."
+        : "Select a folder first, then create a note.";
     }
 
     if (actionId === "sort") {

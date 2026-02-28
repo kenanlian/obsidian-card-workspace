@@ -85,6 +85,8 @@ export class FolderCardView extends ItemView {
         this.plugin.openFolderPicker();
       } else if (event.detail.action === "all-notes") {
         void this.plugin.selectAllNotes();
+      } else if (event.detail.action === "new-note") {
+        void this.plugin.createNoteInCurrentFolder();
       }
     });
   }
