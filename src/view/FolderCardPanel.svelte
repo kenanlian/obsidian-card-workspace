@@ -1,5 +1,6 @@
 <script>
   import { setIcon } from "obsidian";
+  import { computeScrollAnchorDelta } from "./scroll-anchoring";
   import { createEventDispatcher } from "svelte";
 
   export let cards = [];
@@ -22,6 +23,7 @@
 
   const ESTIMATED_CARD_HEIGHT = 220;
   const OVERSCAN = 5;
+  const USER_SCROLL_LOCK_MS = 180;
   const TOOLBAR_ACTIONS = [
     {
       id: "pick-folder",
@@ -77,8 +79,14 @@
   let heights = [];
   let positions = [];
   let totalHeight = 0;
+  let isAdjustingScroll = false;
+  let userScrollLockUntilMs = 0;
 
-  function rebuildPositionsFrom(fromIndex) {
+  function markUserScrolling() {
+    userScrollLockUntilMs = Date.now() + USER_SCROLL_LOCK_MS;
+  }
+
+  function rebuildPositionsFrom(fromIndex, heightDelta) {
     const start = Math.max(0, fromIndex);
     if (start === 0) {
       let y = 0;
@@ -95,6 +103,24 @@
       }
       totalHeight = y;
     }
+
+    // Scroll anchoring: if a card at or above the first visible card changed
+    // height, compensate scrollTop so the visible content stays in place.
+    const anchorDelta = computeScrollAnchorDelta({
+      heightDelta: heightDelta ?? 0,
+      changedIndex: start,
+      firstVisibleIndex: baseStartIndex,
+      nowMs: Date.now(),
+      userScrollLockUntilMs,
+    });
+
+    if (anchorDelta !== 0 && viewportEl) {
+      isAdjustingScroll = true;
+      viewportEl.scrollTop += anchorDelta;
+      scrollTop = viewportEl.scrollTop;
+      isAdjustingScroll = false;
+    }
+
     positions = positions; // single reactive assignment to trigger viewport recalc
   }
 
@@ -150,6 +176,11 @@
     if (!viewportEl) {
       return;
     }
+
+    if (!isAdjustingScroll) {
+      markUserScrolling();
+    }
+
     scrollTop = viewportEl.scrollTop;
     viewportHeight = viewportEl.clientHeight;
   }
@@ -171,6 +202,16 @@
   function measureHeight(node, index) {
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
+        // Skip measurement for cards that haven't been hydrated yet.
+        // Their placeholder height ("Loading preview...") is much smaller
+        // than the estimated height, and recording it causes totalHeight
+        // to fluctuate wildly during scrolling, which destabilizes the
+        // scroll position.
+        const card = cards[index];
+        if (card && !card.hydrated) {
+          continue;
+        }
+
         // use borderBoxSize if available, fallback to getBoundingClientRect
         let height = entry.borderBoxSize && entry.borderBoxSize.length > 0 
           ? entry.borderBoxSize[0].blockSize 
@@ -179,9 +220,10 @@
         height += 12; // Add margin-bottom (12px)
         const roundedHeight = Math.round(height);
         
-        if (heights[index] !== roundedHeight) {
+        const oldHeight = heights[index] || ESTIMATED_CARD_HEIGHT;
+        if (oldHeight !== roundedHeight) {
           heights[index] = roundedHeight;
-          rebuildPositionsFrom(index);
+          rebuildPositionsFrom(index, roundedHeight - oldHeight);
         }
       }
     });
@@ -315,7 +357,7 @@
     </div>
   </header>
 
-  <div class="fce-list" bind:this={viewportEl} on:scroll={onScroll}>
+  <div class="fce-list" bind:this={viewportEl} on:scroll={onScroll} on:wheel={markUserScrolling}>
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
     {:else if cards.length === 0}
