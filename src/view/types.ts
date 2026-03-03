@@ -120,3 +120,10 @@ export interface CleanupResult {
   clearedQueuedRequest: boolean;
   clearedPendingHydration: boolean;
 }
+
+export interface FolderTreeNode {
+  name: string;                       // Leaf folder name (e.g., "Q1")
+  path: string;                       // Full vault path (e.g., "Projects/2024/Q1") — "/" for vault root
+  children: FolderTreeNode[];         // Sorted alphabetically by name
+  depth: number;                      // 0 for root, 1 for top-level folders, etc.
+}

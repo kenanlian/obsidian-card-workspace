@@ -117,6 +117,82 @@
   color: var(--text-normal);
 }
 
+.folder-card-view .fce-folder-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small, 13px);
+  color: var(--text-normal);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.folder-card-view .fce-folder-button:hover,
+.folder-card-view .fce-folder-button:active {
+  background: var(--background-modifier-hover);
+}
+
+.folder-card-view .fce-folder-button-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.fce-folder-menu {
+  position: fixed;
+  z-index: var(--layer-menu, 10);
+  min-width: 200px;
+  padding: var(--size-2-3, 6px) 0;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.fce-folder-tree-item {
+  display: flex;
+  align-items: center;
+  padding: var(--size-2-2, 4px) var(--size-4-4, 16px);
+  cursor: pointer;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+}
+
+.fce-folder-tree-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.fce-folder-tree-item.is-selected {
+  color: var(--text-accent);
+}
+
+.fce-folder-tree-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: none;
+}
+
+.fce-folder-tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .folder-card-view .fce-sr-only {
   position: absolute;
   width: 1px;

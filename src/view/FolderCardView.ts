@@ -7,6 +7,7 @@ import type {
   CleanupResult,
   FolderLoadKey,
   FolderSelectionRequest,
+  FolderTreeNode,
   IncrementalMutationResult,
   NoteCardRecord,
   RefreshRequest,
@@ -84,7 +85,7 @@ export class FolderCardView extends ItemView {
     });
     this.component.$on("toolbar-action", (event: any) => {
       if (event.detail.action === "pick-folder") {
-        this.plugin.openFolderPicker();
+        this.component?.$set({ folderTree: this.buildFolderTree() });
       } else if (event.detail.action === "all-notes") {
         void this.plugin.selectAllNotes();
       } else if (event.detail.action === "new-note") {
@@ -93,6 +94,9 @@ export class FolderCardView extends ItemView {
     });
     this.component.$on("sort-change", (event: any) => {
       void this.onSortChange(event.detail);
+    });
+    this.component.$on("select-folder", (event: any) => {
+      void this.plugin.selectFolderByPath(event.detail.path, "panel-picker");
     });
   }
 
@@ -812,6 +816,35 @@ export class FolderCardView extends ItemView {
     });
 
     this.pushState();
+  }
+
+  private buildFolderTree(): FolderTreeNode[] {
+    const root = this.app.vault.getRoot();
+    const rootNode: FolderTreeNode = {
+      name: root.name || "/",
+      path: "/",
+      children: [],
+      depth: 0,
+    };
+
+    function buildNode(folder: TFolder, depth: number): FolderTreeNode {
+      const subfolders = folder.children
+        .filter((c): c is TFolder => c instanceof TFolder)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return {
+        name: folder.name || "/",
+        path: folder.path === "" ? "/" : folder.path,
+        children: subfolders.map((sf) => buildNode(sf, depth + 1)),
+        depth,
+      };
+    }
+
+    const subfolders = root.children
+      .filter((c): c is TFolder => c instanceof TFolder)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    rootNode.children = subfolders.map((sf) => buildNode(sf, 1));
+    return [rootNode];
   }
 
   private pushState(): void {

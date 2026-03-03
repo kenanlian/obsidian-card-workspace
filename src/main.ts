@@ -9,7 +9,6 @@ import {
 } from "obsidian";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
-import { FolderPickerModal } from "./FolderPickerModal";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import { ALL_NOTES_PATH } from "./view/types";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
@@ -129,10 +128,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.syncSelection(target.path);
   }
 
-  openFolderPicker(): void {
-    new FolderPickerModal(this.app, (folder) => {
-      void this.selectFolder(folder, "panel-picker");
-    }).open();
+
+  async selectFolderByPath(path: string, source: FolderSelectionSource): Promise<void> {
+    const folder = path === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(path);
+    if (!(folder instanceof TFolder)) {
+      return;
+    }
+    await this.selectFolder(folder, source);
   }
 
   async selectAllNotes(): Promise<void> {
