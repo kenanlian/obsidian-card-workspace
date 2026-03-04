@@ -556,7 +556,7 @@
         {:else}
           <span class="fce-folder-tree-chevron" style="pointer-events: none; visibility: hidden;"></span>
         {/if}
-        <span class="fce-folder-tree-name">{node.name}</span>
+        <span class="fce-folder-tree-name" title={node.name}>{node.name}</span>
       </div>
     {/each}
   </div>

@@ -138,6 +138,12 @@
   background: var(--background-modifier-hover);
 }
 
+.folder-card-view .fce-folder-button > span:last-child {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .folder-card-view .fce-folder-button-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -149,18 +155,20 @@
   position: fixed;
   z-index: var(--layer-menu, 10);
   min-width: 200px;
+  max-width: 250px;
   padding: var(--size-2-3, 6px) 0;
   border-radius: var(--radius-m, 8px);
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
-  max-height: 400px;
+  max-height: 444px;
   overflow-y: auto;
 }
 
 .fce-folder-tree-item {
   display: flex;
   align-items: center;
+  gap: 4px;
   padding: var(--size-2-2, 4px) var(--size-4-4, 16px);
   cursor: pointer;
   color: var(--text-normal);
@@ -184,6 +192,11 @@
   align-items: center;
   justify-content: center;
   transition: none;
+}
+
+.fce-folder-tree-chevron:hover {
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s, 4px);
 }
 
 .fce-folder-tree-name {

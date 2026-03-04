@@ -843,8 +843,8 @@ export class FolderCardView extends ItemView {
       .filter((c): c is TFolder => c instanceof TFolder)
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    rootNode.children = subfolders.map((sf) => buildNode(sf, 1));
-    return [rootNode];
+    rootNode.children = subfolders.map((sf) => buildNode(sf, 0));
+    return rootNode.children;
   }
 
   private pushState(): void {
