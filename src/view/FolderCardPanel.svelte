@@ -1,5 +1,5 @@
 <script>
-  import { setIcon } from "obsidian";
+  import { setIcon, setTooltip } from "obsidian";
   import { computeScrollAnchorDelta } from "./scroll-anchoring";
   import { createEventDispatcher } from "svelte";
 
@@ -11,6 +11,7 @@
   export let sortField = "mtime";
   export let sortDirection = "desc";
   export let folderTree = [];
+  export let tooltipSide = "right";
 
   const dispatch = createEventDispatcher();
 
@@ -233,6 +234,16 @@
     return {
       update(nextIconName) {
         setIcon(node, nextIconName);
+      },
+    };
+  }
+
+  function applyTooltip(node, text) {
+    setTooltip(node, text, { placement: tooltipSide, gap: 8 });
+
+    return {
+      update(nextText) {
+        setTooltip(node, nextText, { placement: tooltipSide, gap: 8 });
       },
     };
   }
@@ -539,6 +550,7 @@
         class="fce-folder-tree-item {node.path === folderPath ? 'is-selected' : ''}"
         role="menuitem"
         style="padding-left: {node.depth * 16 + 8}px;"
+        use:applyTooltip={node.name}
         on:click={() => {
           dispatch("select-folder", { path: node.path });
           showFolderMenu = false;
@@ -561,7 +573,7 @@
         {:else}
           <span class="fce-folder-tree-chevron" style="pointer-events: none; visibility: hidden;"></span>
         {/if}
-        <span class="fce-folder-tree-name" title={node.name}>{node.name}</span>
+        <span class="fce-folder-tree-name">{node.name}</span>
       </div>
     {/each}
   </div>

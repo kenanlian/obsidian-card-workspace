@@ -59,6 +59,11 @@ export class FolderCardView extends ItemView {
     return "gallery-horizontal";
   }
 
+  private getTooltipSide(): "left" | "right" {
+    const root = this.leaf.getRoot();
+    return root === this.app.workspace.leftSplit ? "right" : "left";
+  }
+
   async onOpen(): Promise<void> {
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
@@ -74,6 +79,7 @@ export class FolderCardView extends ItemView {
         generation: this.generation,
         sortField: this.plugin.getSettings().sort.field,
         sortDirection: this.plugin.getSettings().sort.direction,
+        tooltipSide: this.getTooltipSide(),
       },
     });
 
