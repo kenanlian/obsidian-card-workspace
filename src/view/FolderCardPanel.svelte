@@ -78,6 +78,7 @@
   let folderButtonEl = null;
   let folderMenuEl = null;
   let expandedPaths = new Set();
+  let folderMenuExpandedForPath = null;
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
@@ -186,15 +187,19 @@
     rebuildPositionsFrom(0);
   }
 
-  $: if (showFolderMenu && folderTree.length > 0 && folderPath) {
-    const toExpand = new Set(expandedPaths);
+  $: if (showFolderMenu && folderTree.length > 0 && folderPath && folderMenuExpandedForPath !== folderPath) {
+    folderMenuExpandedForPath = folderPath;
     const segments = folderPath.split("/").filter(Boolean);
     let cumPath = "";
     for (const seg of segments) {
       cumPath = cumPath ? `${cumPath}/${seg}` : seg;
-      toExpand.add(cumPath);
+      expandedPaths.add(cumPath);
     }
-    expandedPaths = toExpand;
+    expandedPaths = expandedPaths;
+  }
+
+  $: if (!showFolderMenu) {
+    folderMenuExpandedForPath = null;
   }
 
   $: {
