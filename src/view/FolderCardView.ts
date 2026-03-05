@@ -27,12 +27,13 @@ export class FolderCardView extends ItemView {
 
   private folderPath: string | null = null;
   private folderLoadKey: string | null = null;
-  private cards: NoteCardRecord[] = [];
+  private baseCards: NoteCardRecord[] = [];
+  private visibleCards: NoteCardRecord[] = [];
   private selectedPath: string | null = null;
   private loading = false;
 
   private generation = 0;
-  private pendingHydration = new Set<number>();
+  private pendingHydration = new Set<string>();
   private requestSeq = 0;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
@@ -72,7 +73,7 @@ export class FolderCardView extends ItemView {
     this.component = new FolderCardPanel({
       target: this.hostEl,
       props: {
-        cards: this.cards,
+        cards: this.visibleCards,
         folderPath: this.folderPath ?? "",
         selectedPath: this.selectedPath,
         loading: this.loading,
@@ -336,7 +337,7 @@ export class FolderCardView extends ItemView {
   private async loadFolder(folderPath: string, loadKey: string): Promise<void> {
     this.folderPath = folderPath;
     this.loading = true;
-    this.cards = [];
+    this.baseCards = [];
     this.generation += 1;
     this.pendingHydration.clear();
     this.pushState();
@@ -367,7 +368,7 @@ export class FolderCardView extends ItemView {
       records.sort((left, right) =>
         this.compareCards(left, right, settings.sort.field, settings.sort.direction),
       );
-      this.cards = records;
+      this.baseCards = records;
       this.folderLoadKey = loadKey;
     } finally {
       if (buildGeneration === this.generation) {
@@ -523,10 +524,10 @@ export class FolderCardView extends ItemView {
 
   private findSortedInsertIndex(newCard: NoteCardRecord): number {
     let low = 0;
-    let high = this.cards.length;
+    let high = this.baseCards.length;
     while (low < high) {
       const mid = (low + high) >>> 1;
-      const existingCard = this.cards[mid];
+      const existingCard = this.baseCards[mid];
       if (!existingCard) {
         break;
       }
@@ -562,18 +563,12 @@ export class FolderCardView extends ItemView {
 
     if (event.eventType === "delete") {
       const targetPath = event.path;
-      const index = this.cards.findIndex((c) => c.path === targetPath);
+      const index = this.baseCards.findIndex((c) => c.path === targetPath);
       if (index === -1) {
         return { handled: true, action: "skipped_not_found" };
       }
-      this.pendingHydration.delete(index);
-      // Rebuild pendingHydration indices for cards after the removed one
-      const shifted = new Set<number>();
-      for (const idx of this.pendingHydration) {
-        shifted.add(idx > index ? idx - 1 : idx);
-      }
-      this.pendingHydration = shifted;
-      this.cards.splice(index, 1);
+      this.pendingHydration.delete(targetPath);
+      this.baseCards.splice(index, 1);
       return { handled: true, action: "removed" };
     }
 
@@ -584,7 +579,7 @@ export class FolderCardView extends ItemView {
       }
 
       // Avoid duplicates (e.g. rapid create+modify)
-      const alreadyExists = this.cards.some((c) => c.path === event.path);
+      const alreadyExists = this.baseCards.some((c) => c.path === event.path);
       if (alreadyExists) {
         return { handled: true, action: "skipped_not_found" };
       }
@@ -607,18 +602,11 @@ export class FolderCardView extends ItemView {
       };
 
       const insertIndex = this.findSortedInsertIndex(newCard);
-      this.cards.splice(insertIndex, 0, newCard);
-
-      // Shift pendingHydration indices for cards after insertion point
-      const shifted = new Set<number>();
-      for (const idx of this.pendingHydration) {
-        shifted.add(idx >= insertIndex ? idx + 1 : idx);
-      }
-      this.pendingHydration = shifted;
+      this.baseCards.splice(insertIndex, 0, newCard);
 
       // Hydrate the new card immediately
       const capturedGeneration = this.generation;
-      void this.hydrateCard(insertIndex, capturedGeneration).then(() => {
+      void this.hydrateCard(newCard.path, capturedGeneration).then(() => {
         if (capturedGeneration === this.generation) {
           this.pushState();
         }
@@ -628,22 +616,22 @@ export class FolderCardView extends ItemView {
     }
 
     if (event.eventType === "modify") {
-      const index = this.cards.findIndex((c) => c.path === event.path);
+      const index = this.baseCards.findIndex((c) => c.path === event.path);
       if (index === -1) {
         return { handled: true, action: "skipped_not_found" };
       }
 
-      const card = this.cards[index];
+      const card = this.baseCards[index];
       if (!card) {
         return { handled: true, action: "skipped_not_found" };
       }
 
-      this.pendingHydration.delete(index);
+      this.pendingHydration.delete(card.path);
 
       // Re-hydrate immediately; Obsidian already debounces modify events.
       // Keep old preview visible until new content is ready.
       const capturedGeneration = this.generation;
-      void this.hydrateCard(index, capturedGeneration).then(() => {
+      void this.hydrateCard(card.path, capturedGeneration).then(() => {
         if (capturedGeneration === this.generation) {
           this.pushState();
         }
@@ -655,7 +643,7 @@ export class FolderCardView extends ItemView {
     if (event.eventType === "rename" && !event.isFolder) {
       const settings = this.plugin.getSettings();
       const oldIndex = event.oldPath
-        ? this.cards.findIndex((c) => c.path === event.oldPath)
+        ? this.baseCards.findIndex((c) => c.path === event.oldPath)
         : -1;
 
       const newInScope = this.isPathInScope(event.path, settings.includeSubfolders);
@@ -663,19 +651,16 @@ export class FolderCardView extends ItemView {
       if (oldIndex !== -1) {
         if (!newInScope) {
           // File moved out of scope — remove it
-          const shifted = new Set<number>();
-          for (const idx of this.pendingHydration) {
-            if (idx !== oldIndex) {
-              shifted.add(idx > oldIndex ? idx - 1 : idx);
-            }
+          const removedCard = this.baseCards[oldIndex];
+          if (removedCard) {
+            this.pendingHydration.delete(removedCard.path);
           }
-          this.pendingHydration = shifted;
-          this.cards.splice(oldIndex, 1);
+          this.baseCards.splice(oldIndex, 1);
           return { handled: true, action: "removed" };
         }
 
         // Update in-place
-        const card = this.cards[oldIndex];
+        const card = this.baseCards[oldIndex];
         if (!card) {
           return { handled: false, action: "deferred_full_reload" };
         }
@@ -693,7 +678,7 @@ export class FolderCardView extends ItemView {
 
       // Old path not in cards — file may have moved into scope
       if (newInScope) {
-        const alreadyExists = this.cards.some((c) => c.path === event.path);
+        const alreadyExists = this.baseCards.some((c) => c.path === event.path);
         if (!alreadyExists) {
           const file = this.app.vault.getAbstractFileByPath(event.path);
           if (!(file instanceof TFile)) {
@@ -713,15 +698,9 @@ export class FolderCardView extends ItemView {
           };
 
           const insertIndex = this.findSortedInsertIndex(newCard);
-          this.cards.splice(insertIndex, 0, newCard);
+          this.baseCards.splice(insertIndex, 0, newCard);
 
-          const shifted = new Set<number>();
-          for (const idx of this.pendingHydration) {
-            shifted.add(idx >= insertIndex ? idx + 1 : idx);
-          }
-          this.pendingHydration = shifted;
-
-          void this.hydrateCard(insertIndex, this.generation).then(() => {
+          void this.hydrateCard(newCard.path, this.generation).then(() => {
             this.pushState();
           });
 
@@ -736,22 +715,22 @@ export class FolderCardView extends ItemView {
   }
 
   private async hydrateRange(start: number, end: number): Promise<void> {
-    if (this.cards.length === 0 || this.loading) {
+    if (this.visibleCards.length === 0 || this.loading) {
       return;
     }
 
     const generation = this.generation;
-    const targets: number[] = [];
+    const targets: string[] = [];
     const safeStart = Math.max(0, start);
-    const safeEnd = Math.min(this.cards.length, end);
+    const safeEnd = Math.min(this.visibleCards.length, end);
 
     for (let index = safeStart; index < safeEnd; index += 1) {
-      const card = this.cards[index];
-      if (!card || card.hydrated || this.pendingHydration.has(index)) {
+      const card = this.visibleCards[index];
+      if (!card || card.hydrated || this.pendingHydration.has(card.path)) {
         continue;
       }
-      this.pendingHydration.add(index);
-      targets.push(index);
+      this.pendingHydration.add(card.path);
+      targets.push(card.path);
     }
 
     if (targets.length === 0) {
@@ -765,9 +744,9 @@ export class FolderCardView extends ItemView {
       }
 
       const batch = targets.slice(batchStart, batchStart + batchSize);
-      await Promise.all(batch.map((index) => this.hydrateCard(index, generation)));
+      await Promise.all(batch.map((path) => this.hydrateCard(path, generation)));
 
-      batch.forEach((index) => this.pendingHydration.delete(index));
+      batch.forEach((path) => this.pendingHydration.delete(path));
 
       if (generation === this.generation) {
         this.pushState();
@@ -775,8 +754,8 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private async hydrateCard(index: number, generation: number): Promise<void> {
-    const card = this.cards[index];
+  private async hydrateCard(cardPath: string, generation: number): Promise<void> {
+    const card = this.baseCards.find((c) => c.path === cardPath);
     if (!card) {
       return;
     }
@@ -853,14 +832,22 @@ export class FolderCardView extends ItemView {
     return rootNode.children;
   }
 
+  private deriveVisibleCards(): NoteCardRecord[] {
+    // Future: apply tag filters, search query, pin-to-top here.
+    // For now, return the full sorted list.
+    return this.baseCards;
+  }
+
   private pushState(): void {
+    this.visibleCards = this.deriveVisibleCards();
+
     const displayFolderPath = this.folderPath === ALL_NOTES_PATH
       ? "All Notes"
       : (this.folderPath ?? "");
     const settings = this.plugin.getSettings();
 
     this.component?.$set({
-      cards: this.cards,
+      cards: this.visibleCards,
       folderPath: displayFolderPath,
       selectedPath: this.selectedPath,
       loading: this.loading,
