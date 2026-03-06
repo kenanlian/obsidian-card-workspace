@@ -1,6 +1,8 @@
 import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { buildLightPreview } from "./markdown-utils";
+import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
+import type { PipelineContext } from "./pipeline";
 import type { SortDirection, SortField } from "../settings";
 import { ALL_NOTES_PATH } from "./types";
 import type {
@@ -833,9 +835,11 @@ export class FolderCardView extends ItemView {
   }
 
   private deriveVisibleCards(): NoteCardRecord[] {
-    // Future: apply tag filters, search query, pin-to-top here.
-    // For now, return the full sorted list.
-    return this.baseCards;
+    const context: PipelineContext = {
+      app: this.app,
+      settings: this.plugin.getSettings(),
+    };
+    return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
   }
 
   private pushState(): void {
