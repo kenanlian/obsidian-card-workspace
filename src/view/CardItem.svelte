@@ -18,6 +18,11 @@
     dispatch("card-keydown", { event, path: card.path });
   }
 
+  function onCardContextMenu(event) {
+    event.preventDefault();
+    dispatch("card-context-menu", { path: card.path, mouseEvent: event });
+  }
+
   function formatDate(timestamp) {
     return new Date(timestamp).toLocaleDateString();
   }
@@ -29,6 +34,7 @@
   tabindex="0"
   on:click={onCardClick}
   on:keydown={onCardKeydown}
+  on:contextmenu={onCardContextMenu}
 >
   <div class="fce-card-body">
     <h4>{card.title}</h4>

@@ -201,15 +201,16 @@
       <div class="fce-empty">No Markdown notes found in this folder.</div>
     {:else}
       <div style={`height: ${topPadding}px;`} />
-      {#each visibleCards as card, i}
-        <div use:measureHeight={card.path}>
-          <CardItem
-            {card}
-            selected={selectedPath === card.path}
-            on:open-note
-          />
-        </div>
-      {/each}
+       {#each visibleCards as card, i}
+         <div use:measureHeight={card.path}>
+           <CardItem
+             {card}
+             selected={selectedPath === card.path}
+             on:open-note
+             on:card-context-menu
+           />
+         </div>
+       {/each}
       <div style={`height: ${bottomPadding}px;`} />
     {/if}
   </div>

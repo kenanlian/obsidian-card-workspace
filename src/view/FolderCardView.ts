@@ -1,6 +1,7 @@
-import { ItemView, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
-import FolderCardPanel from "./FolderCardPanel.svelte";
+import { ItemView, Menu, Notice, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
+import { FolderPickerModal } from "../FolderPickerModal";
 import { buildLightPreview } from "./markdown-utils";
+import { copyNoteToClipboard, moveFile } from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
 import type { PipelineContext } from "./pipeline";
 import type { SortDirection, SortField } from "../settings";
@@ -22,9 +23,22 @@ import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
+type CardMenuAction = "move" | "copy";
+
+type FolderCardPanelInstance = {
+  $on(event: string, handler: (event: any) => void): () => void;
+  $set(props: Record<string, unknown>): void;
+  $destroy(): void;
+};
+
+type FolderCardPanelConstructor = new (options: {
+  target: HTMLElement;
+  props: Record<string, unknown>;
+}) => FolderCardPanelInstance;
+
 export class FolderCardView extends ItemView {
   private plugin: FolderCardExplorerPlugin;
-  private component: InstanceType<typeof FolderCardPanel> | null = null;
+  private component: FolderCardPanelInstance | null = null;
   private hostEl: HTMLElement | null = null;
 
   private folderPath: string | null = null;
@@ -39,6 +53,7 @@ export class FolderCardView extends ItemView {
   private requestSeq = 0;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
+  private static readonly STARTUP_HYDRATION_CARD_COUNT = 12;
 
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
@@ -68,6 +83,9 @@ export class FolderCardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    const panelModule = await import("./FolderCardPanel.svelte");
+    const FolderCardPanel = panelModule.default as FolderCardPanelConstructor;
+
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
 
@@ -89,6 +107,9 @@ export class FolderCardView extends ItemView {
     this.component.$on("open-note", (event: any) => {
       this.plugin.openNoteFromCard(event.detail.path);
     });
+    this.component.$on("card-context-menu", (event: any) => {
+      this.openCardContextMenu(event.detail.path, event.detail.mouseEvent);
+    });
     this.component.$on("hydrate-range", (event: any) => {
       void this.hydrateRange(event.detail.start, event.detail.end);
     });
@@ -107,6 +128,8 @@ export class FolderCardView extends ItemView {
     this.component.$on("select-folder", (event: any) => {
       void this.plugin.selectFolderByPath(event.detail.path, "panel-picker");
     });
+
+    this.hydrateVisibleCardsOnOpen();
   }
 
   async onClose(): Promise<void> {
@@ -291,6 +314,93 @@ export class FolderCardView extends ItemView {
 
   getCurrentFolderPath(): string | null {
     return this.folderPath;
+  }
+
+  private openCardContextMenu(notePath: unknown, mouseEvent: unknown): void {
+    if (typeof notePath !== "string" || !this.isMouseEventLike(mouseEvent)) {
+      return;
+    }
+
+    const menu = new Menu();
+    this.addCardContextMenuItems(menu, notePath);
+    menu.showAtMouseEvent(mouseEvent);
+  }
+
+  private isMouseEventLike(event: unknown): event is MouseEvent {
+    if (typeof event !== "object" || event === null) {
+      return false;
+    }
+
+    return "clientX" in event && "clientY" in event;
+  }
+
+  private addCardContextMenuItems(menu: Menu, notePath: string): void {
+    menu.addItem((item) => {
+      item.setTitle("Move to…").onClick(() => {
+        void this.routeCardMenuAction("move", notePath);
+      });
+    });
+
+    menu.addItem((item) => {
+      item.setTitle("Copy").onClick(() => {
+        void this.routeCardMenuAction("copy", notePath);
+      });
+    });
+  }
+
+  private async routeCardMenuAction(action: CardMenuAction, notePath: string): Promise<void> {
+    if (action === "copy") {
+      await this.copyCardNote(notePath);
+      return;
+    }
+
+    this.moveCardNote(notePath);
+  }
+
+  private async copyCardNote(notePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    await copyNoteToClipboard(this.app, file);
+  }
+
+  private moveCardNote(notePath: string): void {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    this.openMoveFolderPicker(file);
+  }
+
+  private openMoveFolderPicker(file: TFile): void {
+    const modal = new FolderPickerModal(this.app, (targetFolder: TFolder) => {
+      void this.onMoveTargetChosen(file.path, targetFolder);
+    });
+    modal.open();
+  }
+
+  private async onMoveTargetChosen(filePath: string, targetFolder: TFolder | null): Promise<void> {
+    if (!(targetFolder instanceof TFolder)) {
+      return;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    const parentPath = file.parent?.path ?? "";
+    if (parentPath === targetFolder.path) {
+      return;
+    }
+
+    const result = await moveFile(this.app, file, targetFolder);
+    if (!result.ok) {
+      new Notice(`Failed to move note: ${result.error}`);
+    }
   }
 
   private createProgrammaticSelectionRequest(
@@ -754,6 +864,18 @@ export class FolderCardView extends ItemView {
         this.pushState();
       }
     }
+  }
+
+  private hydrateVisibleCardsOnOpen(): void {
+    if (this.loading || this.visibleCards.length === 0) {
+      return;
+    }
+
+    const end = Math.min(
+      this.visibleCards.length,
+      FolderCardView.STARTUP_HYDRATION_CARD_COUNT,
+    );
+    void this.hydrateRange(0, end);
   }
 
   private async hydrateCard(cardPath: string, generation: number): Promise<void> {
