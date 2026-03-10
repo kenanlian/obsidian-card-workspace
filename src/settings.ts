@@ -14,6 +14,7 @@ export interface PluginSettings {
   filter: {
     tags: string[];
   };
+  pinnedPaths: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
   lastFolderPath: string | null;
@@ -28,6 +29,7 @@ export interface PartialPluginSettings {
   filter?: {
     tags?: string[];
   };
+  pinnedPaths?: string[];
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
   lastFolderPath?: string | null;
@@ -42,6 +44,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   filter: {
     tags: [],
   },
+  pinnedPaths: [],
   includeSubfolders: true,
   defaultView: "cards",
   lastFolderPath: null,
@@ -68,6 +71,14 @@ function normalizeTags(value: unknown): string[] {
   return value.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
 }
 
+function normalizePinnedPaths(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((path): path is string => typeof path === "string" && path.trim().length > 0);
+}
+
 function normalizeDefaultView(value: unknown): DefaultViewMode {
   return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
 }
@@ -89,6 +100,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     filter: {
       tags: normalizeTags(filter.tags),
     },
+    pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
     includeSubfolders:
       typeof data.includeSubfolders === "boolean"
         ? data.includeSubfolders
