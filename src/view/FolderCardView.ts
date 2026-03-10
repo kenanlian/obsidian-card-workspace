@@ -1,6 +1,7 @@
 import { ItemView, Menu, Notice, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import { FolderPickerModal } from "../FolderPickerModal";
 import { buildLightPreview } from "./markdown-utils";
+import { collectAllTags } from "./metadata-utils";
 import { copyNoteToClipboard, moveFile } from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
 import type { PipelineContext } from "./pipeline";
@@ -100,6 +101,9 @@ export class FolderCardView extends ItemView {
         generation: this.generation,
         sortField: this.plugin.getSettings().sort.field,
         sortDirection: this.plugin.getSettings().sort.direction,
+        availableTags: this.deriveAvailableTags(),
+        activeFilterTags: this.plugin.getSettings().filter.tags,
+        pinnedPaths: this.plugin.getSettings().pinnedPaths,
         tooltipSide: this.getTooltipSide(),
       },
     });
@@ -124,6 +128,12 @@ export class FolderCardView extends ItemView {
     });
     this.component.$on("sort-change", (event: any) => {
       void this.onSortChange(event.detail);
+    });
+    this.component.$on("filter-change", (event: any) => {
+      void this.onFilterChange(event.detail);
+    });
+    this.component.$on("pin-toggle", (event: any) => {
+      void this.onPinToggle(event.detail);
     });
     this.component.$on("select-folder", (event: any) => {
       void this.plugin.selectFolderByPath(event.detail.path, "panel-picker");
@@ -990,6 +1000,24 @@ export class FolderCardView extends ItemView {
     return rootNode.children;
   }
 
+  private deriveAvailableTags(): string[] {
+    const metadataCache = (this.app as unknown as { metadataCache?: unknown }).metadataCache;
+    const hasGetFileCache =
+      typeof metadataCache === "object" &&
+      metadataCache !== null &&
+      "getFileCache" in metadataCache &&
+      typeof (metadataCache as { getFileCache?: unknown }).getFileCache === "function";
+
+    if (!hasGetFileCache) {
+      return [];
+    }
+
+    return collectAllTags(
+      this.app,
+      this.baseCards.map((card) => card.file),
+    );
+  }
+
   private deriveVisibleCards(): NoteCardRecord[] {
     const context: PipelineContext = {
       app: this.app,
@@ -1014,6 +1042,54 @@ export class FolderCardView extends ItemView {
       generation: this.generation,
       sortField: settings.sort.field,
       sortDirection: settings.sort.direction,
+      availableTags: this.deriveAvailableTags(),
+      activeFilterTags: settings.filter.tags,
+      pinnedPaths: settings.pinnedPaths,
+    });
+  }
+
+  private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
+    const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
+    const nextTags = rawTags
+      .filter((tag): tag is string => typeof tag === "string")
+      .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
+      .filter((tag) => tag.length > 0);
+    const currentTags = this.plugin.getSettings().filter.tags;
+
+    if (
+      currentTags.length === nextTags.length &&
+      currentTags.every((tag, index) => tag === nextTags[index])
+    ) {
+      return;
+    }
+
+    await this.plugin.saveSettings({
+      filter: {
+        tags: nextTags,
+      },
+    });
+  }
+
+  private async onPinToggle(detail: { path?: unknown; pinned?: unknown }): Promise<void> {
+    const path = typeof detail.path === "string" ? detail.path : "";
+    if (path.length === 0) {
+      return;
+    }
+
+    const currentPinnedPaths = this.plugin.getSettings().pinnedPaths;
+    const currentlyPinned = currentPinnedPaths.includes(path);
+    const shouldPin = typeof detail.pinned === "boolean" ? detail.pinned : !currentlyPinned;
+
+    if (shouldPin === currentlyPinned) {
+      return;
+    }
+
+    const nextPinnedPaths = shouldPin
+      ? [...currentPinnedPaths, path]
+      : currentPinnedPaths.filter((pinnedPath) => pinnedPath !== path);
+
+    await this.plugin.saveSettings({
+      pinnedPaths: nextPinnedPaths,
     });
   }
 }

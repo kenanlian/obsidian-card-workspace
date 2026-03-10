@@ -11,6 +11,9 @@
   export let generation = 0;
   export let sortField = "mtime";
   export let sortDirection = "desc";
+  export let availableTags = [];
+  export let activeFilterTags = [];
+  export let pinnedPaths = [];
   export let folderTree = [];
   export let tooltipSide = "right";
 
@@ -187,10 +190,13 @@
     {folderPath}
     {sortField}
     {sortDirection}
+    {availableTags}
+    {activeFilterTags}
     {folderTree}
     {tooltipSide}
     on:toolbar-action
     on:sort-change
+    on:filter-change
     on:select-folder
   />
 
@@ -203,12 +209,14 @@
       <div style={`height: ${topPadding}px;`} />
        {#each visibleCards as card, i}
          <div use:measureHeight={card.path}>
-           <CardItem
-             {card}
-             selected={selectedPath === card.path}
-             on:open-note
-             on:card-context-menu
-           />
+            <CardItem
+              {card}
+              {pinnedPaths}
+              selected={selectedPath === card.path}
+              on:open-note
+              on:card-context-menu
+              on:pin-toggle
+            />
          </div>
        {/each}
       <div style={`height: ${bottomPadding}px;`} />

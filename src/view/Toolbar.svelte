@@ -7,6 +7,15 @@
   export let sortDirection = "desc";
   export let folderTree = [];
   export let tooltipSide = "right";
+  export let availableTags = [];
+  export let activeFilterTags = [];
+
+  let localActiveFilterTags = [];
+  $: {
+    if (!showFilterMenu) {
+      localActiveFilterTags = activeFilterTags;
+    }
+  }
 
   const dispatch = createEventDispatcher();
 
@@ -35,6 +44,11 @@
   let folderMenuX = 0;
   let folderMenuY = 0;
   let showFolderMenu = false;
+  let showFilterMenu = false;
+  let filterButtonEl = null;
+  let filterMenuEl = null;
+  let filterMenuX = 0;
+  let filterMenuY = 0;
   let folderButtonEl = null;
   let folderMenuEl = null;
   let sortMenuEl = null;
@@ -99,6 +113,20 @@
         sortMenuY = event.clientY;
         showSortMenu = true;
         showFolderMenu = false;
+        showFilterMenu = false;
+      }
+      return;
+    }
+    if (actionId === "filter") {
+      if (showFilterMenu) {
+        showFilterMenu = false;
+      } else {
+        filterMenuX = event.clientX;
+        filterMenuY = event.clientY;
+        localActiveFilterTags = [...activeFilterTags];
+        showFilterMenu = true;
+        showSortMenu = false;
+        showFolderMenu = false;
       }
       return;
     }
@@ -110,14 +138,28 @@
         folderMenuY = event.clientY;
         showFolderMenu = true;
         showSortMenu = false;
+        showFilterMenu = false;
         dispatch("toolbar-action", { action: actionId });
       }
       return;
     }
     showSortMenu = false;
     showFolderMenu = false;
+    showFilterMenu = false;
     activeToolbarAction = actionId;
     dispatch("toolbar-action", { action: actionId });
+  }
+
+  function toggleFilterTag(tag) {
+    const normalized = tag.trim().toLowerCase().replace(/^#/, "");
+    let nextTags;
+    if (localActiveFilterTags.includes(normalized)) {
+      nextTags = localActiveFilterTags.filter((t) => t !== normalized);
+    } else {
+      nextTags = [...localActiveFilterTags, normalized];
+    }
+    localActiveFilterTags = nextTags;
+    dispatch("filter-change", { tags: nextTags });
   }
 
   function selectSortOption(option) {
@@ -167,6 +209,40 @@
       destroy() {
         document.removeEventListener("click", onSortMenuClickOutside, true);
         sortMenuEl = null;
+        if (node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      },
+    };
+  }
+
+  function onFilterMenuClickOutside(event) {
+    if (filterButtonEl && filterButtonEl.contains(event.target)) {
+      return;
+    }
+    if (filterMenuEl && filterMenuEl.contains(event.target)) {
+      return;
+    }
+    showFilterMenu = false;
+  }
+
+  function captureFilterButton(node) {
+    filterButtonEl = node;
+    return {
+      destroy() {
+        filterButtonEl = null;
+      },
+    };
+  }
+
+  function filterMenuAction(node) {
+    filterMenuEl = node;
+    document.body.appendChild(node);
+    document.addEventListener("click", onFilterMenuClickOutside, true);
+    return {
+      destroy() {
+        document.removeEventListener("click", onFilterMenuClickOutside, true);
+        filterMenuEl = null;
         if (node.parentNode) {
           node.parentNode.removeChild(node);
         }
@@ -229,6 +305,17 @@
             on:click={(e) => selectToolbarAction(action.id, e)}
             use:applyIcon={action.icon}
             use:captureSortButton
+          >
+            <span class="fce-sr-only">{action.label}</span>
+          </button>
+        {:else if action.id === "filter"}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button {showFilterMenu || localActiveFilterTags.length > 0 ? 'is-selected' : ''}"
+            aria-label={action.title}
+            on:click={(e) => selectToolbarAction(action.id, e)}
+            use:applyIcon={action.icon}
+            use:captureFilterButton
           >
             <span class="fce-sr-only">{action.label}</span>
           </button>
@@ -323,5 +410,38 @@
         <span class="fce-folder-tree-name">{node.name}</span>
       </div>
     {/each}
+  </div>
+{/if}
+
+
+{#if showFilterMenu}
+  <div
+    class="fce-filter-menu fce-sort-menu"
+    role="menu"
+    style="left: {filterMenuX}px; top: {filterMenuY}px;"
+    use:filterMenuAction
+  >
+    {#if availableTags.length === 0}
+      <div class="fce-sort-menu-item" style="cursor: default; color: var(--text-muted);">
+        <span class="fce-sort-menu-item-label">No tags found</span>
+      </div>
+    {:else}
+      {#each availableTags as tag}
+        {@const normalizedTag = tag.trim().toLowerCase().replace(/^#/, "")}
+        {@const selected = localActiveFilterTags.includes(normalizedTag)}
+        <button
+          type="button"
+          class="fce-sort-menu-item"
+          role="menuitemcheckbox"
+          aria-checked={selected}
+          on:click={() => toggleFilterTag(tag)}
+        >
+          <span class="fce-sort-menu-item-label">{tag}</span>
+          {#if selected}
+            <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
+          {/if}
+        </button>
+      {/each}
+    {/if}
   </div>
 {/if}
