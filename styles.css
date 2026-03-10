@@ -353,3 +353,7 @@
   -webkit-box-orient: initial;
   overflow: visible;
 }
+
+.menu.fce-card-context-menu {
+  min-width: 220px;
+}

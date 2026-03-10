@@ -324,6 +324,34 @@ export class FolderCardView extends ItemView {
     const menu = new Menu();
     this.addCardContextMenuItems(menu, notePath);
     menu.showAtMouseEvent(mouseEvent);
+
+    const menuDom = this.getMenuDom(menu);
+    if (menuDom) {
+      menuDom.classList.add("fce-card-context-menu");
+    }
+  }
+
+  private getMenuDom(menu: Menu): { classList: { add: (token: string) => void } } | null {
+    const candidate = menu as unknown as { dom?: unknown };
+    if (typeof candidate.dom !== "object" || candidate.dom === null) {
+      return null;
+    }
+
+    if (!("classList" in candidate.dom)) {
+      return null;
+    }
+
+    const classList = candidate.dom.classList;
+    if (
+      typeof classList !== "object" ||
+      classList === null ||
+      !("add" in classList) ||
+      typeof classList.add !== "function"
+    ) {
+      return null;
+    }
+
+    return { classList: { add: classList.add.bind(classList) } };
   }
 
   private isMouseEventLike(event: unknown): event is MouseEvent {
@@ -336,15 +364,21 @@ export class FolderCardView extends ItemView {
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
     menu.addItem((item) => {
-      item.setTitle("Move to…").onClick(() => {
-        void this.routeCardMenuAction("move", notePath);
-      });
+      item
+        .setTitle("Move to…")
+        .setIcon("folder-input")
+        .onClick(() => {
+          void this.routeCardMenuAction("move", notePath);
+        });
     });
 
     menu.addItem((item) => {
-      item.setTitle("Copy").onClick(() => {
-        void this.routeCardMenuAction("copy", notePath);
-      });
+      item
+        .setTitle("Copy")
+        .setIcon("documents")
+        .onClick(() => {
+          void this.routeCardMenuAction("copy", notePath);
+        });
     });
   }
 

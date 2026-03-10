@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockState = vi.hoisted(() => {
+  if (typeof HTMLElement === "undefined") {
+    (globalThis as any).HTMLElement = class HTMLElement {};
+  }
+
   const menuInstances: MockMenu[] = [];
   const folderPickerInstances: MockFolderPickerModal[] = [];
   const noticeMessages: string[] = [];
@@ -41,10 +45,16 @@ const mockState = vi.hoisted(() => {
 
   class MockMenuItem {
     title = "";
+    icon = "";
     clickHandler: (() => void) | null = null;
 
     setTitle(title: string): this {
       this.title = title;
+      return this;
+    }
+
+    setIcon(icon: string): this {
+      this.icon = icon;
       return this;
     }
 
@@ -57,8 +67,11 @@ const mockState = vi.hoisted(() => {
   class MockMenu {
     items: MockMenuItem[] = [];
     showAtMouseEvent = vi.fn();
+    dom: any;
 
     constructor() {
+      this.dom = new (globalThis as any).HTMLElement();
+      this.dom.classList = { add: vi.fn() };
       menuInstances.push(this);
     }
 
@@ -355,8 +368,20 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.menuInstances).toHaveLength(1);
     const [menu] = mockState.menuInstances;
     expect(menu?.items.map((item) => item.title)).toEqual(["Move to…", "Copy"]);
+    expect(menu?.items.map((item) => item.icon)).toEqual(["folder-input", "documents"]);
     expect(menu?.showAtMouseEvent).toHaveBeenCalledTimes(1);
     expect(menu?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+    expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+  });
+
+  it("openCardContextMenu aborts and does not render menu on invalid inputs", () => {
+    const { view } = createViewWithFile();
+    
+    (view as any).openCardContextMenu(123, { clientX: 12, clientY: 24 });
+    (view as any).openCardContextMenu("path.md", null);
+    (view as any).openCardContextMenu("path.md", { clientX: 12 });
+    
+    expect(mockState.menuInstances).toHaveLength(0);
   });
 
 
