@@ -1,0 +1,95 @@
+# START HERE
+
+## 这个项目现在在解决什么问题？
+
+`Folder Card Explorer` 是一个 Obsidian 插件。它把“在文件管理器里点文件夹”这件事，转换成右侧侧边栏里的卡片流浏览体验，让用户可以在不离开当前笔记上下文的情况下快速预览、筛选、排序、置顶并打开一组笔记。
+
+当前它已经不只是“文件夹点击 → 卡片预览”原型，而是进入了**可持续扩展的功能型 MVP**：基础浏览链路稳定，交互入口、设置持久化、增量刷新和卡片级操作已经成型，后续工作主要集中在批量操作、搜索索引和视觉/可访问性收尾。
+
+## 当前处于什么阶段？
+
+项目处于 **功能骨架已稳定、继续向完整工作台演进** 的阶段。
+
+- 已实现：文件夹点击联动、右侧视图、虚拟滚动、懒加载 hydration、增量刷新、面板内文件夹选择、`All Notes`、新建笔记、排序、标签筛选、置顶、卡片右键操作、复制、单条移动。
+- 已规划但未落地：子文件夹开关的 Toolbar 入口、批量选择/批量操作、搜索索引（Plan E / IndexedDB + MiniSearch）、视觉一致化、i18n / a11y。
+
+## 回来看代码前先记住这 3 件事
+
+1. **性能约束是真的，不是装饰。** 视图依赖虚拟滚动、视口驱动 hydration、generation 防陈旧结果、约 250ms debounce 的 vault 观察者。不要轻易把任何功能改回“全量重建 + 全量渲染”。
+2. **`FolderCardView` 是运行时中枢，Svelte 组件不是状态源。** `FolderCardPanel.svelte` / `Toolbar.svelte` / `CardItem.svelte` 负责展示和事件抛出；真正的数据采集、状态推进、Obsidian API 交互、设置持久化都在 `src/view/FolderCardView.ts` 和 `src/main.ts`。
+3. **筛选与置顶已经进入统一投影链路。** 当前可见卡片不是“原始列表”，而是 `baseCards -> tag filter -> search placeholder -> pin reorder -> visibleCards`。置顶只改变顺序，不绕过筛选。
+
+## 系统大致怎么拼起来的
+
+- `src/main.ts`
+  - 插件入口。
+  - 注册右侧视图、文件管理器点击监听、`file-open` 同步、vault 观察者、设置读写。
+  - 负责把“外部事件”转成视图选择请求和刷新请求。
+- `src/view/FolderCardView.ts`
+  - 运行时核心。
+  - 负责收集 Markdown 文件、排序、构建文件夹树、维护 `baseCards` / `visibleCards` / 选中项 / generation、处理增量刷新、推送状态到面板。
+- `src/view/FolderCardPanel.svelte`
+  - 负责虚拟滚动、滚动锚定、可见范围计算、向上抛出 `hydrate-range` / `sort-change` / `filter-change` / `pin-toggle` 等事件。
+- `src/view/Toolbar.svelte` 与 `src/view/CardItem.svelte`
+  - 前者承载顶部操作入口和菜单；后者承载单卡片 UI、打开笔记、右键菜单、pin/unpin。
+- `src/view/pipeline.ts`
+  - 纯函数投影层。当前已接入 tag filter 和 pin reorder，搜索步骤仍是 pass-through 占位。
+- `src/settings.ts`
+  - 统一设置 schema 与归一化入口，当前关键字段包括 `sort`、`filter.tags`、`pinnedPaths`、`includeSubfolders`、`lastFolderPath`、`lastViewMode`。
+- `src/view/metadata-utils.ts` / `src/view/note-ops.ts`
+  - 前者处理 metadata/tag/search 基础能力，后者处理复制、移动、删除、批量操作等笔记级动作。
+
+## 一条主流程怎么走
+
+以“用户在文件管理器点击一个文件夹”为例：
+
+1. `src/main.ts` 监听文档点击，识别 `.nav-folder-title` 对应路径。
+2. 插件激活或复用右侧 `FOLDER_CARD_VIEW`，向视图分发选择请求。
+3. `FolderCardView` 收集目标范围内 Markdown 文件，按设置排序并生成 `baseCards`。
+4. `runPipeline()` 计算 `visibleCards`；同时派生可用标签、选中态、置顶态等 UI 状态。
+5. `FolderCardPanel.svelte` 根据滚动位置只渲染窗口区卡片，并在卡片进入可见范围时请求 hydration。
+6. 点击卡片后，插件在主编辑区域打开对应笔记，并把选中态同步回卡片视图。
+
+## 怎么运行与做基本验证
+
+安装依赖：
+
+```bash
+npm install
+```
+
+开发与验证：
+
+```bash
+npm run check
+npm run build
+npm test
+```
+
+如果只是本地开发观察插件构建：
+
+```bash
+npm run dev
+```
+
+## 当前最重要的配置值
+
+- `sort.field` / `sort.direction`：控制卡片排序。
+- `filter.tags`：标签筛选条件；当前语义是 **AND**。
+- `pinnedPaths`：置顶笔记路径列表；只影响顺序，不恢复已被过滤的卡片。
+- `includeSubfolders`：数据采集层开关，当前默认 `true`，但 Toolbar 中的显式开关还没接完。
+- `lastFolderPath` / `lastViewMode`：用于恢复上次会话。
+
+## 当前风险 / 阻塞 / 下一步
+
+- **搜索还没有真正接入。** `src/view/pipeline.ts` 的 `applySearchFilter()` 仍是占位实现，相关设计文档在 `docs/dev-feature/task-21` 到 `task-27`。
+- **`includeSubfolders` 已进入设置层，但 UI 入口还未完成。** 这是一个容易让文档与实际 UI 产生错觉的点。
+- **批量操作仍停留在计划层。** `note-ops.ts` 已有部分批量能力，但多选框架和用户可见入口尚未完成。
+- **现有规划文档很多，且混合了“已实现”和“未来任务”。** 回来看项目时，不要只读 `docs/dev-feature/`；先读本文件，再读 `docs/architecture.md`。
+
+## 接下来先读哪里
+
+1. `docs/architecture.md` —— 建立稳定的系统模型。
+2. `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md` —— 理解最近一轮结构性变化的原因。
+3. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
+4. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。
