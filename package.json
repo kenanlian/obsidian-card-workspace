@@ -13,9 +13,9 @@
   "devDependencies": {
     "@types/node": "^22.10.7",
     "esbuild": "^0.25.0",
-    "esbuild-svelte": "^0.9.1",
+    "esbuild-svelte": "^0.9.4",
     "obsidian": "^1.8.7",
-    "svelte": "^4.2.20",
+    "svelte": "^5.55.1",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
