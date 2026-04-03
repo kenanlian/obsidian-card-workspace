@@ -19,7 +19,7 @@
 
 ### 3A：管线骨架（阻塞后续筛选/置顶/搜索）
 
-- [ ] Task 12. [P1] `deriveVisibleCards()` 筛选管线——将 `deriveVisibleCards()` 从 stub 改造为同步链式投影：`baseCards → tag filter → search filter (optional) → pin reorder → visibleCards`。**保持最小化**：定义清晰的步骤接口，各步骤为纯函数；无 filter 激活时 = pass-through，行为不变。
+- [x] Task 12. [P1] `deriveVisibleCards()` 筛选管线——将 `deriveVisibleCards()` 从 stub 改造为同步链式投影：`baseCards → tag filter → search filter (optional) → pin reorder → visibleCards`。**保持最小化**：定义清晰的步骤接口，各步骤为纯函数；无 filter 激活时 = pass-through，行为不变。
   - **前置**：无（当前 L835 已有 stub）
   - **产出**：管线骨架 + 步骤类型定义；现有行为不变
   - **工作量**：0.5–1 天
@@ -31,12 +31,12 @@
   - **产出**：Toolbar 开关 + 设置持久化 + 卡片列表响应
   - **工作量**：0.5 天
 
-- [ ] Task 15. [P1] 单条笔记移动——`note-ops.ts` 中 `moveFile()` 已实现。需：(1) 卡片右键菜单或操作按钮；(2) `FolderPickerModal` 选择目标文件夹；(3) 调用 `moveFile()` 后增量刷新卡片列表。
+- [x] Task 15. [P1] 单条笔记移动——`note-ops.ts` 中 `moveFile()` 已实现。需：(1) 卡片右键菜单或操作按钮；(2) `FolderPickerModal` 选择目标文件夹；(3) 调用 `moveFile()` 后增量刷新卡片列表。
   - **前置**：无
   - **产出**：右键菜单 "Move to…" + FolderPickerModal 联动 + 增量刷新
   - **工作量**：1–1.5 天
 
-- [ ] Task 16. [P1] 复制"标题 + 全文"——`note-ops.ts` 中 `copyNoteToClipboard()` / `buildClipboardText()` 已实现，仅需在卡片右键菜单或操作栏添加入口。
+- [x] Task 16. [P1] 复制"标题 + 全文"——`note-ops.ts` 中 `copyNoteToClipboard()` / `buildClipboardText()` 已实现，仅需在卡片右键菜单或操作栏添加入口。
   - **前置**：无
   - **产出**：右键菜单 "Copy" + 复制成功 toast
   - **工作量**：0.5 天
@@ -55,12 +55,12 @@
 
 ### 4A：管线依赖（需 T12 完成）
 
-- [ ] Task 14. [P1] 标签筛选——后端 `matchesTagFilter()`、`collectAllTags()`、`getFileTags()` 均已实现，仅需：(1) Toolbar filter 按钮展开标签选择 UI；(2) 将选中标签写入 `settings.filter.tags`；(3) 在管线中接入 `matchesTagFilter()`。标签不纳入 MiniSearch 索引——metadata 层面过滤更快且语义明确。
+- [x] Task 14. [P1] 标签筛选——后端 `matchesTagFilter()`、`collectAllTags()`、`getFileTags()` 均已实现，仅需：(1) Toolbar filter 按钮展开标签选择 UI；(2) 将选中标签写入 `settings.filter.tags`；(3) 在管线中接入 `matchesTagFilter()`。标签不纳入 MiniSearch 索引——metadata 层面过滤更快且语义明确。
   - **前置**：Task 12（管线中 tag filter 步骤）
   - **产出**：标签选择面板 + 管线接入 + 设置持久化
   - **工作量**：1–2 天
 
-- [ ] Task 17. [P2] 置顶能力（含持久化策略）——需：(1) `PluginSettings` 增加 `pinnedPaths: string[]` 字段；(2) `NoteCardRecord` 增加 `pinned` 计算属性；(3) 管线中 pin reorder 步骤（置顶卡片排在最前）；(4) 卡片 UI 上的 pin/unpin 按钮。**设计约束**：置顶只影响排序，不绕过筛选——被 tag filter 过滤掉的置顶笔记仍然隐藏。
+- [x] Task 17. [P2] 置顶能力（含持久化策略）——需：(1) `PluginSettings` 增加 `pinnedPaths: string[]` 字段；(2) `NoteCardRecord` 增加 `pinned` 计算属性；(3) 管线中 pin reorder 步骤（置顶卡片排在最前）；(4) 卡片 UI 上的 pin/unpin 按钮。**设计约束**：置顶只影响排序，不绕过筛选——被 tag filter 过滤掉的置顶笔记仍然隐藏。
   - **前置**：Task 12（管线中 pin reorder 步骤）
   - **产出**：pin/unpin 交互 + 持久化 + 管线集成
   - **工作量**：1–2 天

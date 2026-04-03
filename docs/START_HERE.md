@@ -92,4 +92,5 @@ npm run dev
 1. `docs/architecture.md` —— 建立稳定的系统模型。
 2. `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md` —— 理解最近一轮结构性变化的原因。
 3. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
-4. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。
+4. `docs/explore/README.md` 与 `docs/explore/notebook-navigator.md` —— 需要外部对标与方案参考时再读。
+5. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。

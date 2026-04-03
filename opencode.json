@@ -22,19 +22,7 @@
         "Authorization": "ctx7sk-d4452e4b-3eb0-443f-b7ea-f33a1bb08f2e"
       },
       "enabled": true
-    },
-    "exa": {
-      "type": "remote",
-      "url": "https://mcp.exa.ai/mcp?exaApiKey=89783ef9-fa70-4034-9348-69a7da54bf54",
-      "enabled": true
     }
   },
-  "agent": {
-    "explore": {
-      "model": "github-copilot/claude-sonnet-4.6"
-    },
-    "general": {
-      "model": "github-copilot/claude-sonnet-4.6"
-    }
-  }
+  "plugin": ["oh-my-opencode@latest"]
 }
