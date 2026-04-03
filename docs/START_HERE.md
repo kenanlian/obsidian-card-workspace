@@ -16,7 +16,7 @@
 ## 回来看代码前先记住这 3 件事
 
 1. **性能约束是真的，不是装饰。** 视图依赖虚拟滚动、视口驱动 hydration、generation 防陈旧结果、约 250ms debounce 的 vault 观察者。不要轻易把任何功能改回“全量重建 + 全量渲染”。
-2. **`FolderCardView` 是运行时中枢，Svelte 组件不是状态源。** `FolderCardPanel.svelte` / `Toolbar.svelte` / `CardItem.svelte` 负责展示和事件抛出；真正的数据采集、状态推进、Obsidian API 交互、设置持久化都在 `src/view/FolderCardView.ts` 和 `src/main.ts`。
+2. **`FolderCardView` 是运行时中枢，Svelte 组件不是状态源。** 项目现在运行在 **Svelte 5 + legacy component API compatibility** 上，但 `FolderCardPanel.svelte` / `Toolbar.svelte` / `CardItem.svelte` 仍保持“负责展示和事件抛出”的角色；真正的数据采集、状态推进、Obsidian API 交互、设置持久化都在 `src/view/FolderCardView.ts` 和 `src/main.ts`。
 3. **筛选与置顶已经进入统一投影链路。** 当前可见卡片不是“原始列表”，而是 `baseCards -> tag filter -> search placeholder -> pin reorder -> visibleCards`。置顶只改变顺序，不绕过筛选。
 
 ## 系统大致怎么拼起来的
@@ -30,6 +30,7 @@
   - 负责收集 Markdown 文件、排序、构建文件夹树、维护 `baseCards` / `visibleCards` / 选中项 / generation、处理增量刷新、推送状态到面板。
 - `src/view/FolderCardPanel.svelte`
   - 负责虚拟滚动、滚动锚定、可见范围计算、向上抛出 `hydrate-range` / `sort-change` / `filter-change` / `pin-toggle` 等事件。
+  - 当前由 Svelte 5 编译，但通过 `compatibility.componentApi = 4` 继续兼容宿主侧 `new / $on / $set / $destroy` 接口。
 - `src/view/Toolbar.svelte` 与 `src/view/CardItem.svelte`
   - 前者承载顶部操作入口和菜单；后者承载单卡片 UI、打开笔记、右键菜单、pin/unpin。
 - `src/view/pipeline.ts`
@@ -85,12 +86,16 @@ npm run dev
 - **搜索还没有真正接入。** `src/view/pipeline.ts` 的 `applySearchFilter()` 仍是占位实现，相关设计文档在 `docs/dev-feature/task-21` 到 `task-27`。
 - **`includeSubfolders` 已进入设置层，但 UI 入口还未完成。** 这是一个容易让文档与实际 UI 产生错觉的点。
 - **批量操作仍停留在计划层。** `note-ops.ts` 已有部分批量能力，但多选框架和用户可见入口尚未完成。
+- **产品路线需要统一口径。** 当前已补充 `docs/roadmap/v1-product-roadmap.md`，后续应按“card-wall-first workbench”边界推进，而不是滑向综合导航平台。
 - **现有规划文档很多，且混合了“已实现”和“未来任务”。** 回来看项目时，不要只读 `docs/dev-feature/`；先读本文件，再读 `docs/architecture.md`。
+- **Svelte 已升级到 5，但还没有做 runes 级源码迁移。** 现阶段的设计目标是先把运行时与构建链路升级到 Svelte 5，同时保留现有组件语法与宿主集成接口，避免把框架升级和视图模型重写绑在一次改动里。
 
 ## 接下来先读哪里
 
 1. `docs/architecture.md` —— 建立稳定的系统模型。
-2. `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md` —— 理解最近一轮结构性变化的原因。
-3. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
-4. `docs/explore/README.md` 与 `docs/explore/notebook-navigator.md` —— 需要外部对标与方案参考时再读。
-5. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。
+2. `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md` —— 理解为什么这次只升级到 Svelte 5 运行时/编译器，而不同时重写成 runes 模式。
+3. `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md` —— 理解最近一轮结构性变化的原因。
+4. `docs/roadmap/v1-product-roadmap.md` —— 先理解 V1 想把产品推进到哪里，以及明确不做什么。
+5. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
+6. `docs/explore/README.md` 与 `docs/explore/notebook-navigator.md` —— 需要外部对标与方案参考时再读。
+7. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。

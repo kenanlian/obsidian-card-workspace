@@ -47,7 +47,7 @@ src/view/Toolbar.svelte / CardItem.svelte
 运行时依赖几乎全部来自 Obsidian 宿主：
 
 - `obsidian` API：`Plugin`、`ItemView`、`TFile`、`TFolder`、`FuzzySuggestModal`、`Menu`、`Notice`、`MetadataCache` 等。
-- Svelte 4：仅用于视图展示与交互编排。
+- Svelte 5：仅用于视图展示与交互编排；当前通过 legacy component API compatibility 继续兼容现有宿主接入方式。
 - esbuild + esbuild-svelte：构建 `main.js`。
 - Vitest：单元测试与视图事件契约测试。
 
@@ -59,9 +59,11 @@ src/view/Toolbar.svelte / CardItem.svelte
 
 项目把设置、事件、刷新动作和卡片记录都显式类型化，这是为了让后续的搜索、批量、多视图状态扩展可以继续在边界上受约束，而不是靠运行时猜测。
 
-### Svelte 4 只负责视图，不负责主状态
+### Svelte 5 只负责视图，不负责主状态
 
-当前没有把 Svelte 当成全局状态容器。主要原因是插件要和 Obsidian 运行时深度耦合：Vault 事件、文件打开、菜单、视图激活、设置持久化都更适合由 `FolderCardView` 统一管理。Svelte 组件保持“接 props + 发事件”的轻状态角色，降低了视图层和宿主 API 的耦合。
+当前没有把 Svelte 当成全局状态容器。主要原因是插件要和 Obsidian 运行时深度耦合：Vault 事件、文件打开、菜单、视图激活、设置持久化都更适合由 `FolderCardView` 统一管理。升级到 Svelte 5 后，这一点没有改变：Svelte 组件仍保持“接 props + 发事件”的轻状态角色，降低了视图层和宿主 API 的耦合。
+
+这次迁移刻意采用 **Svelte 5 编译器/运行时 + `compatibility.componentApi = 4`** 的方式，保留 `FolderCardView.ts` 里的 `new Component(...)`、`$on(...)`、`$set(...)`、`$destroy()` 接口。这样做的目的不是长期停留在 legacy 语法，而是把“框架升级”和“组件源码改写为 runes/callback props”拆成两步，先确保现有 Obsidian 宿主接入面稳定。
 
 ### 纯函数 pipeline 负责可见卡片投影
 
@@ -103,6 +105,8 @@ src/view/Toolbar.svelte / CardItem.svelte
 - 组合 Toolbar 与 CardItem
 
 它不拥有 vault 数据源，也不直接调用设置持久化。
+
+当前它虽然由 Svelte 5 编译，但仍维持原先的 props / 事件协议，以便继续被 `FolderCardView` 作为类组件实例管理。
 
 ### `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
 
@@ -229,6 +233,7 @@ baseCards
 3. **标签筛选使用 AND 语义。** 这是当前测试和实现共同约束，不应随意改成 OR。
 4. **置顶只影响顺序，不改变可见性。** 这保证筛选规则是主规则，置顶是次规则。
 5. **当前搜索是规划中的能力，不应在文档里当成已实现。**
+6. **当前 Svelte 5 迁移停留在 compatibility 模式。** 后续如果要改成 `$props` / callback props / runes，应当作为单独的结构性演进处理，而不是顺手夹带在功能开发里。
 
 ## 历史问题与当前折中
 
@@ -246,3 +251,4 @@ baseCards
 ## 相关决策
 
 - `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md`
+- `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md`
