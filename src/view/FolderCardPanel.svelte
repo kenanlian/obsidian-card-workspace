@@ -206,7 +206,7 @@
     {:else if cards.length === 0}
       <div class="fce-empty">No Markdown notes found in this folder.</div>
     {:else}
-      <div style={`height: ${topPadding}px;`} />
+      <div style={`height: ${topPadding}px;`}></div>
        {#each visibleCards as card, i}
          <div use:measureHeight={card.path}>
             <CardItem
@@ -219,7 +219,7 @@
             />
          </div>
        {/each}
-      <div style={`height: ${bottomPadding}px;`} />
+      <div style={`height: ${bottomPadding}px;`}></div>
     {/if}
   </div>
 </div>

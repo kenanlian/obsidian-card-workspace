@@ -138,6 +138,10 @@ vi.mock("obsidian", () => {
 vi.mock("./FolderCardPanel.svelte", () => {
   return {
     default: class MockFolderCardPanel {
+      constructor(_options: unknown) {
+        return;
+      }
+
       $on(eventName: string, handler: (event: any) => void): () => void {
         mockState.panelEventHandlers[eventName] = handler;
         return () => {
@@ -592,6 +596,91 @@ describe("FolderCardView card context actions", () => {
         expect(mockState.panelEventHandlers["filter-change"]).toBeDefined();
         expect(mockState.panelEventHandlers["pin-toggle"]).toBeDefined();
         expect(typeof mockState.panelEventHandlers["pin-toggle"]).toBe("function");
+      });
+
+      it("sort-change subscription persists the requested sort settings", async () => {
+        const { view, plugin } = createViewWithFile("notes/sort-change.md");
+
+        await (view as any).onOpen();
+
+        const sortChangeHandler = mockState.panelEventHandlers["sort-change"];
+        expect(sortChangeHandler).toBeDefined();
+
+        sortChangeHandler({ detail: { field: "ctime", direction: "asc" } });
+
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          sort: {
+            field: "ctime",
+            direction: "asc",
+          },
+        });
+      });
+
+      it("select-folder subscription routes to plugin.selectFolderByPath with panel-picker source", async () => {
+        const { view, plugin } = createViewWithFile("notes/select-folder.md");
+
+        await (view as any).onOpen();
+
+        const selectFolderHandler = mockState.panelEventHandlers["select-folder"];
+        expect(selectFolderHandler).toBeDefined();
+
+        selectFolderHandler({ detail: { path: "projects/archive" } });
+
+        expect(plugin.selectFolderByPath).toHaveBeenCalledTimes(1);
+        expect(plugin.selectFolderByPath).toHaveBeenCalledWith("projects/archive", "panel-picker");
+      });
+
+      it("hydrate-range subscription forwards visible window to hydrateRange", async () => {
+        const { view, app, file } = createViewWithFile("notes/hydrate-range.md");
+        const card = createCardRecord(file);
+
+        app.vault.cachedRead = vi.fn(async () => "# Hydrate me\nBody");
+        (view as any).baseCards = [card];
+        (view as any).visibleCards = [card];
+        (view as any).loading = false;
+
+        await (view as any).onOpen();
+
+        const hydrateRangeHandler = mockState.panelEventHandlers["hydrate-range"];
+        expect(hydrateRangeHandler).toBeDefined();
+
+        hydrateRangeHandler({ detail: { start: 0, end: 1 } });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
+        expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
+        expect(card.hydrated).toBe(true);
+      });
+
+      it("onClose destroys the panel instance and clears registered handlers", async () => {
+        const { view } = createViewWithFile("notes/close-cleanup.md");
+
+        (view as any).queuedRequest = { requestId: 1 };
+        (view as any).refreshQueued = true;
+        (view as any).pendingHydration = new Set(["notes/close-cleanup.md"]);
+        (view as any).inFlight = Promise.resolve();
+        (view as any).inFlightKey = "notes/close-cleanup.md";
+        (view as any).loading = true;
+        const generationBeforeClose = (view as any).generation;
+
+        await (view as any).onOpen();
+
+        const componentDestroySpy = vi.spyOn((view as any).component, "$destroy");
+
+        await (view as any).onClose();
+
+        expect(componentDestroySpy).toHaveBeenCalledTimes(1);
+        expect((view as any).component).toBeNull();
+        expect((view as any).hostEl).toBeNull();
+        expect((view as any).queuedRequest).toBeNull();
+        expect((view as any).refreshQueued).toBe(false);
+        expect((view as any).pendingHydration.size).toBe(0);
+        expect((view as any).inFlight).toBeNull();
+        expect((view as any).inFlightKey).toBeNull();
+        expect((view as any).loading).toBe(false);
+        expect((view as any).generation).toBe(generationBeforeClose + 1);
       });
     });
 
