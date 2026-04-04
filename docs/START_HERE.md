@@ -83,11 +83,11 @@ npm run dev
 
 ## 当前风险 / 阻塞 / 下一步
 
-- **搜索还没有真正接入。** `src/view/pipeline.ts` 的 `applySearchFilter()` 仍是占位实现，相关设计文档在 `docs/dev-feature/task-21` 到 `task-27`。
+- **搜索还没有真正接入。** `src/view/pipeline.ts` 的 `applySearchFilter()` 仍是占位实现；后续实现以 `docs/plan/v1-development-plan.md` 为主，不再依赖缺失的 `docs/dev-feature/` 任务文档。
 - **`includeSubfolders` 已进入设置层，但 UI 入口还未完成。** 这是一个容易让文档与实际 UI 产生错觉的点。
 - **批量操作仍停留在计划层。** `note-ops.ts` 已有部分批量能力，但多选框架和用户可见入口尚未完成。
 - **产品路线需要统一口径。** 当前已补充 `docs/roadmap/v1-product-roadmap.md`，后续应按“card-wall-first workbench”边界推进，而不是滑向综合导航平台。
-- **现有规划文档很多，且混合了“已实现”和“未来任务”。** 回来看项目时，不要只读 `docs/dev-feature/`；先读本文件，再读 `docs/architecture.md`。
+- **现有规划文档很多，且混合了“已实现”和“未来任务”。** 回来看项目时，不要从缺失的 `docs/dev-feature/` 路径开始；先读本文件、`docs/architecture.md`，再读 `docs/plan/v1-development-plan.md`。
 - **Svelte 已升级到 5，但还没有做 runes 级源码迁移。** 现阶段的设计目标是先把运行时与构建链路升级到 Svelte 5，同时保留现有组件语法与宿主集成接口，避免把框架升级和视图模型重写绑在一次改动里。
 
 ## 接下来先读哪里
@@ -96,6 +96,7 @@ npm run dev
 2. `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md` —— 理解为什么这次只升级到 Svelte 5 运行时/编译器，而不同时重写成 runes 模式。
 3. `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md` —— 理解最近一轮结构性变化的原因。
 4. `docs/roadmap/v1-product-roadmap.md` —— 先理解 V1 想把产品推进到哪里，以及明确不做什么。
-5. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
-6. `docs/explore/README.md` 与 `docs/explore/notebook-navigator.md` —— 需要外部对标与方案参考时再读。
-7. `dev_plan.md` 与 `docs/dev-feature/` —— 只在你要继续做未完成功能时再读。
+5. `docs/plan/v1-development-plan.md` —— 需要继续推进 V1 实现时，优先按这里的阶段、依赖和验收标准执行。
+6. `src/main.ts` → `src/view/FolderCardView.ts` → `src/view/FolderCardPanel.svelte` —— 按运行链路阅读代码。
+7. `docs/explore/README.md` 与 `docs/explore/notebook-navigator.md` —— 需要外部对标与方案参考时再读。
+8. `dev_plan.md` —— 只在你要追溯历史任务拆分时再读，不要把缺失的 `docs/dev-feature/` 当成当前执行入口。
