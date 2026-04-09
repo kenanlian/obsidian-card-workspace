@@ -29,10 +29,12 @@ src/view/FolderCardView.ts (运行时中枢)
   ├─ 收集文件 / 排序 / 构建 baseCards
   ├─ 增量刷新 / generation 防陈旧
   ├─ 生成 folder tree / available tags
+  ├─ 管理 scope / filter / includeSubfolders 的持久化真值
   ├─ 运行 pipeline → visibleCards
   └─ pushState 给 Svelte 面板
           ↓
 src/view/FolderCardPanel.svelte (视口层)
+  ├─ row-projected 响应式布局
   ├─ 虚拟滚动
   ├─ 滚动锚定
   ├─ hydrate-range 事件
@@ -99,18 +101,30 @@ src/view/Toolbar.svelte / CardItem.svelte
 
 拥有纯视口职责：
 
+- 根据 viewport width 计算列数并将扁平 `cards` 投影成 rows
 - 计算可见窗口
 - 发出 `hydrate-range`
-- 维护滚动位置、测量卡片高度、执行滚动锚定
+- 维护滚动位置、测量 row 高度、执行滚动锚定
 - 组合 Toolbar 与 CardItem
 
 它不拥有 vault 数据源，也不直接调用设置持久化。
 
 当前它虽然由 Svelte 5 编译，但仍维持原先的 props / 事件协议，以便继续被 `FolderCardView` 作为类组件实例管理。
 
+### `src/view/row-projection.ts`
+
+承载纯计算层的响应式 wall 几何逻辑：
+
+- 根据可用宽度推导 `columnCount`
+- 将扁平 card 序列稳定分组成 rows
+- 将 visible rows 反向映射为扁平 `hydrate-range`
+- 复用 binary-search 友好的 offset lookup
+
+它不触碰 Svelte state，也不触碰 Obsidian runtime。
+
 ### `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
 
-- `Toolbar.svelte`：顶部动作入口、排序菜单、文件夹菜单、标签筛选菜单。
+- `Toolbar.svelte`：顶部动作入口、排序菜单、文件夹菜单、标签筛选菜单，以及当前 scope / tag filter / `includeSubfolders` 的紧凑状态提示。
 - `CardItem.svelte`：单卡片展示、键盘/鼠标打开、右键菜单入口、pin toggle。
 
 这两个组件是交互表面层，不应演化成业务状态源。
@@ -146,14 +160,28 @@ src/view/Toolbar.svelte / CardItem.svelte
 1. `main.ts` 生成选择请求并确保右侧视图已激活。
 2. `FolderCardView` 处理选择请求，决定是否保留 UI 状态、是否强制刷新。
 3. 重新采集文件、排序、生成 `baseCards`。
-4. 根据设置和 pipeline 产出 `visibleCards`，再同步给 Svelte 面板。
+4. 根据设置和 pipeline 产出 `visibleCards`，再把 `folderPath`、`activeFilterTags`、`includeSubfolders`、`isAllNotesScope` 等真实状态同步给 Svelte 面板。
+
+### 1.1 范围提示与 `includeSubfolders` 开关
+
+T32 之后，顶部 Toolbar 的范围相关语义统一遵守下面这条链路：
+
+1. `FolderCardView` 仍然持有真实范围状态：当前是 folder scope 还是 `All Notes`、`includeSubfolders` 是否开启、tag filter 是否生效。
+2. `pushState()` 和 `onOpen()` 会把 `includeSubfolders` 与 `isAllNotesScope` 作为 props 传给 `FolderCardPanel.svelte` / `Toolbar.svelte`。
+3. `Toolbar.svelte` 只负责把这些状态显示成紧凑 summary，并且**只在 folder scope 下**显示 `includeSubfolders` toggle。
+4. 用户点击 toggle 时，Toolbar 只抛出 `include-subfolders-change`；真正决定是否合法、是否持久化、是否触发刷新的人仍是 `FolderCardView`。
+
+这样做的核心目的是避免两个错觉：
+
+- 不让 `All Notes` 看起来像是也支持“关闭子文件夹”。
+- 不让 Svelte 组件自己维护一个和设置层分叉的范围真值。
 
 ### 2. 卡片 hydration
 
 卡片并不是一次性把全部正文预览都读出来。实际流程是：
 
 1. 初次加载时先构建轻量卡片记录。
-2. 面板依据可见范围发出 `hydrate-range`。
+2. 面板依据当前 rows 的可见范围发出 `hydrate-range`。
 3. `FolderCardView` 对窗口范围内卡片批量执行 hydration。
 4. generation 变化时，旧结果会被丢弃，避免异步回写污染新状态。
 
@@ -203,6 +231,11 @@ baseCards
 
 这些状态由 `main.ts` 读写，并通过 `getSettings()` / `saveSettings()` 提供给 `FolderCardView` 使用。
 
+其中 `includeSubfolders` 需要特别记住：
+
+- 它是**持久化范围设置**，不是瞬时 UI 勾选框。
+- 它只对 folder scope 生效；在 `All Notes` 下只是被保留，不应该被渲染成一个误导性的当前状态。
+
 ### 视图级运行时状态
 
 来源：`FolderCardView`
@@ -226,29 +259,33 @@ baseCards
 
 这些状态可以被重建，不应持久化到插件设置。
 
+Toolbar 里的 summary 文案和 `includeSubfolders` 按钮也属于这一层：它们是对上层真值的展示，不是新的状态源。
+
 ## 关键约束与假设
 
 1. **generation-based staleness 是必需约束。** 所有异步加载都可能在用户快速切换文件夹后变成陈旧结果。
-2. **虚拟滚动依赖固定估算 + 实测回填。** 如果未来引入高度波动更大的内容，必须同步维护滚动锚定逻辑。
+2. **虚拟滚动现在依赖 row projection + row height measurement。** 如果未来引入高度波动更大的内容，必须同步维护 row 级滚动锚定与 resize anchoring 逻辑。
 3. **标签筛选使用 AND 语义。** 这是当前测试和实现共同约束，不应随意改成 OR。
 4. **置顶只影响顺序，不改变可见性。** 这保证筛选规则是主规则，置顶是次规则。
 5. **当前搜索是规划中的能力，不应在文档里当成已实现。**
 6. **当前 Svelte 5 迁移停留在 compatibility 模式。** 后续如果要改成 `$props` / callback props / runes，应当作为单独的结构性演进处理，而不是顺手夹带在功能开发里。
+7. **`includeSubfolders` 只在 folder scope 下有 UI 语义。** `All Notes` 必须隐藏这个开关，而不是展示一个看起来可切换的伪状态。
 
 ## 历史问题与当前折中
 
 - 早期插件重点是“文件夹点击后显示卡片”，后续才逐步补齐面板内闭环交互。
-- 最近一轮实现把 folder picker、context actions、tag filter、pin state 都接入了同一视图状态体系，这让结构更稳定，但 `FolderCardView.ts` 也因此继续变大。
+- 最近一轮实现把 folder picker、context actions、tag filter、pin state，以及 Toolbar 中的范围提示和 `includeSubfolders` 控制都接入了同一视图状态体系，这让结构更稳定，但 `FolderCardView.ts` 也因此继续变大。
 - 目前批量与搜索还没进入主干实现，因此一些基础能力已在工具层或计划文档中存在，但用户可见工作流尚未完整闭环。
 
 ## 优化与演进方向
 
-1. 完成 `includeSubfolders` 的 Toolbar 接入，使设置层与 UI 层一致。
-2. 在现有 pipeline 挂点上接入真正的搜索服务，而不是在视图层做临时过滤分支。
-3. 为批量操作补齐多选状态源和确认/错误反馈链路。
-4. 在保持原生感的前提下再做视觉一致化与无障碍收尾。
+1. 在现有 pipeline 挂点上接入真正的搜索服务，而不是在视图层做临时过滤分支。
+2. 为批量操作补齐多选状态源和确认/错误反馈链路。
+3. 在保持原生感的前提下再做视觉一致化与无障碍收尾，并处理当前 `Toolbar.svelte` 的 a11y warnings。
 
 ## 相关决策
 
 - `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md`
 - `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md`
+- `docs/decisions/2026-04-04-row-projected-responsive-card-wall.md`
+- `docs/decisions/2026-04-09-toolbar-scope-summary-and-folder-only-subfolder-toggle.md`
