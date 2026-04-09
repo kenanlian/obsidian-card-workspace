@@ -2,18 +2,41 @@ const DEFAULT_MAX_ANCHOR_DELTA = 80;
 
 export interface ScrollAnchorInput {
   heightDelta: number;
-  changedIndex: number;
-  firstVisibleIndex: number;
+  changedRowIndex: number;
+  firstVisibleRowIndex: number;
   nowMs: number;
   userScrollLockUntilMs: number;
   maxAnchorDelta?: number;
 }
 
+export interface ScrollAnchorRow {
+  startIndex: number;
+}
+
+export interface LayoutScrollAnchorInput {
+  scrollTop: number;
+  rowPositions: readonly number[];
+  rows: readonly ScrollAnchorRow[];
+}
+
+export interface LayoutScrollAnchor {
+  anchorCardIndex: number;
+  anchorOffset: number;
+}
+
+export interface AnchoredScrollTopInput {
+  anchorCardIndex: number;
+  anchorOffset: number;
+  columnCount: number;
+  rowPositions: readonly number[];
+  cardCount: number;
+}
+
 export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
   const {
     heightDelta,
-    changedIndex,
-    firstVisibleIndex,
+    changedRowIndex,
+    firstVisibleRowIndex,
     nowMs,
     userScrollLockUntilMs,
     maxAnchorDelta = DEFAULT_MAX_ANCHOR_DELTA,
@@ -23,7 +46,7 @@ export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
     return 0;
   }
 
-  if (changedIndex >= firstVisibleIndex) {
+  if (changedRowIndex >= firstVisibleRowIndex) {
     return 0;
   }
 
@@ -37,4 +60,59 @@ export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
   }
 
   return Math.sign(heightDelta) * maxAnchorDelta;
+}
+
+export function captureScrollAnchor(input: LayoutScrollAnchorInput): LayoutScrollAnchor | null {
+  const { scrollTop, rowPositions, rows } = input;
+
+  if (rowPositions.length === 0 || rows.length === 0) {
+    return null;
+  }
+
+  const rowIndex = findRowIndexAtOffset(scrollTop, rowPositions);
+  const row = rows[rowIndex];
+  if (!row) {
+    return null;
+  }
+
+  const rowTop = rowPositions[rowIndex] ?? 0;
+  return {
+    anchorCardIndex: row.startIndex,
+    anchorOffset: Math.max(0, scrollTop - rowTop),
+  };
+}
+
+export function computeAnchoredScrollTop(input: AnchoredScrollTopInput): number {
+  const { anchorCardIndex, anchorOffset, columnCount, rowPositions, cardCount } = input;
+  if (rowPositions.length === 0 || cardCount <= 0) {
+    return 0;
+  }
+
+  const safeColumnCount = Math.max(1, Math.trunc(columnCount) || 1);
+  const safeCardIndex = Math.max(0, Math.min(cardCount - 1, Math.trunc(anchorCardIndex) || 0));
+  const rowIndex = Math.min(rowPositions.length - 1, Math.floor(safeCardIndex / safeColumnCount));
+  const rowTop = rowPositions[rowIndex] ?? 0;
+
+  return Math.max(0, rowTop + Math.max(0, anchorOffset));
+}
+
+function findRowIndexAtOffset(offset: number, rowPositions: readonly number[]): number {
+  const safeOffset = Number.isFinite(offset) ? offset : 0;
+  let low = 0;
+  let high = rowPositions.length - 1;
+  let match = 0;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const position = rowPositions[mid] ?? 0;
+
+    if (position <= safeOffset) {
+      match = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return match;
 }
