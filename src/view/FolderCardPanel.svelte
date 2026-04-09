@@ -1,6 +1,18 @@
 <script>
-  import { computeScrollAnchorDelta } from "./scroll-anchoring";
   import { createEventDispatcher } from "svelte";
+  import {
+    captureScrollAnchor,
+    computeAnchoredScrollTop,
+    computeScrollAnchorDelta,
+  } from "./scroll-anchoring";
+  import {
+    computeColumnCount,
+    FALLBACK_GRID_GAP,
+    FALLBACK_MIN_CARD_WIDTH,
+    findIndexAtOffset,
+    getHydrateRangeForRows,
+    projectCardsToRows,
+  } from "./row-projection";
   import Toolbar from "./Toolbar.svelte";
   import CardItem from "./CardItem.svelte";
 
@@ -15,116 +27,270 @@
   export let activeFilterTags = [];
   export let pinnedPaths = [];
   export let folderTree = [];
+  export let includeSubfolders = true;
+  export let isAllNotesScope = false;
   export let tooltipSide = "right";
 
   const dispatch = createEventDispatcher();
 
-  const ESTIMATED_CARD_HEIGHT = 220;
+  const ESTIMATED_ROW_HEIGHT = 232;
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
 
   let viewportEl = null;
   let viewportHeight = 0;
+  let viewportWidth = 0;
   let scrollTop = 0;
+  let columnCount = 1;
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
   let lastHydrateGeneration = -1;
 
-  let heightMap = new Map();
-  let positions = [];
+  let pendingLayoutAnchor = null;
+  let projectedRows = [];
+  let projectedRowKeys = [];
+  let rowHeightMap = new Map();
+  let rowKeys = [];
+  let rowPositions = [];
   let totalHeight = 0;
+  let visibleRows = [];
+  let hydrateRange = { start: 0, end: 0 };
+  let baseStartRowIndex = 0;
+  let baseEndRowIndex = 0;
+  let startRowIndex = 0;
+  let endRowIndex = 0;
+  let topPadding = 0;
+  let bottomPadding = 0;
   let isAdjustingScroll = false;
   let userScrollLockUntilMs = 0;
+  let lastMeasuredColumnCount = 1;
 
   function markUserScrolling() {
     userScrollLockUntilMs = Date.now() + USER_SCROLL_LOCK_MS;
   }
 
+  function applyScrollTop(nextScrollTop) {
+    if (!viewportEl) {
+      return;
+    }
+
+    isAdjustingScroll = true;
+    viewportEl.scrollTop = Math.max(0, nextScrollTop);
+    scrollTop = viewportEl.scrollTop;
+    isAdjustingScroll = false;
+  }
+
   function rebuildPositionsFrom(fromIndex, heightDelta) {
     const start = Math.max(0, fromIndex);
+    rowPositions.length = projectedRows.length;
+
     if (start === 0) {
       let y = 0;
-      for (let i = 0; i < cards.length; i++) {
-        positions[i] = y;
-        y += heightMap.get(cards[i]?.path) || ESTIMATED_CARD_HEIGHT;
+      for (let i = 0; i < projectedRows.length; i++) {
+        const row = projectedRows[i];
+        rowPositions[i] = y;
+        y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
       }
       totalHeight = y;
     } else {
-      let y = positions[start] ?? 0;
-      for (let i = start; i < cards.length; i++) {
-        positions[i] = y;
-        y += heightMap.get(cards[i]?.path) || ESTIMATED_CARD_HEIGHT;
+      let y = rowPositions[start] ?? 0;
+      for (let i = start; i < projectedRows.length; i++) {
+        const row = projectedRows[i];
+        rowPositions[i] = y;
+        y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
       }
       totalHeight = y;
     }
 
-    // Scroll anchoring: if a card at or above the first visible card changed
-    // height, compensate scrollTop so the visible content stays in place.
     const anchorDelta = computeScrollAnchorDelta({
       heightDelta: heightDelta ?? 0,
-      changedIndex: start,
-      firstVisibleIndex: baseStartIndex,
+      changedRowIndex: start,
+      firstVisibleRowIndex: baseStartRowIndex,
       nowMs: Date.now(),
       userScrollLockUntilMs,
     });
 
     if (anchorDelta !== 0 && viewportEl) {
-      isAdjustingScroll = true;
-      viewportEl.scrollTop += anchorDelta;
-      scrollTop = viewportEl.scrollTop;
-      isAdjustingScroll = false;
+      applyScrollTop(viewportEl.scrollTop + anchorDelta);
     }
 
-    positions = positions; // single reactive assignment to trigger viewport recalc
+    rowPositions = rowPositions;
   }
 
-  function findStartIndex(scrollTopValue, posArray) {
-    if (posArray.length === 0) return 0;
-    let low = 0;
-    let high = posArray.length - 1;
-    let match = 0;
-    while (low <= high) {
-      let mid = Math.floor((low + high) / 2);
-      if (posArray[mid] <= scrollTopValue) {
-        match = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
+  function readNumber(value, fallbackValue) {
+    const parsedValue = Number.parseFloat(value);
+    return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
+  }
+
+  function syncViewportMetrics(node) {
+    const styles = getComputedStyle(node);
+    const horizontalPadding = readNumber(styles.paddingLeft, 0) + readNumber(styles.paddingRight, 0);
+    const availableWidth = Math.max(0, node.clientWidth - horizontalPadding);
+    const nextColumnCount = computeColumnCount({
+      availableWidth,
+      minCardWidth: readNumber(
+        styles.getPropertyValue("--fce-card-min-width"),
+        FALLBACK_MIN_CARD_WIDTH,
+      ),
+      columnGap: readNumber(styles.getPropertyValue("--fce-wall-gap"), FALLBACK_GRID_GAP),
+    });
+
+    if (nextColumnCount !== columnCount && projectedRows.length > 0) {
+      pendingLayoutAnchor = captureScrollAnchor({
+        scrollTop,
+        rowPositions,
+        rows: projectedRows,
+      });
     }
-    return match;
+
+    viewportWidth = availableWidth;
+    viewportHeight = node.clientHeight;
+    columnCount = nextColumnCount;
   }
 
-  $: baseStartIndex = findStartIndex(scrollTop, positions);
-  $: baseEndIndex = findStartIndex(scrollTop + viewportHeight, positions);
+  function bindViewport(node) {
+    viewportEl = node;
+    syncViewportMetrics(node);
 
-  $: startIndex = Math.max(0, baseStartIndex - OVERSCAN);
-  $: endIndex = Math.min(cards.length, baseEndIndex + 1 + OVERSCAN);
-  $: topPadding = positions[startIndex] || 0;
-  $: bottomPadding = endIndex < cards.length ? totalHeight - (positions[endIndex] || 0) : 0;
-  $: visibleCards = cards.slice(startIndex, endIndex);
+    const resizeObserver = new ResizeObserver(() => {
+      syncViewportMetrics(node);
+    });
+
+    resizeObserver.observe(node);
+
+    return {
+      destroy() {
+        resizeObserver.disconnect();
+        if (viewportEl === node) {
+          viewportEl = null;
+        }
+      },
+    };
+  }
+
+  $: projectedRows = projectCardsToRows(cards, columnCount);
+  $: projectedRowKeys = projectedRows.map((row) => row.key);
+  $: baseStartRowIndex = findIndexAtOffset(scrollTop, rowPositions);
+  $: baseEndRowIndex = findIndexAtOffset(scrollTop + viewportHeight, rowPositions);
+
+  $: startRowIndex = Math.max(0, baseStartRowIndex - OVERSCAN);
+  $: endRowIndex = Math.min(projectedRows.length, baseEndRowIndex + 1 + OVERSCAN);
+  $: topPadding = rowPositions[startRowIndex] || 0;
+  $: bottomPadding = endRowIndex < projectedRows.length ? totalHeight - (rowPositions[endRowIndex] || 0) : 0;
+  $: visibleRows = projectedRows.slice(startRowIndex, endRowIndex);
+  $: hydrateRange = getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex);
 
   $: if (generation !== lastHydrateGeneration) {
     lastHydrateGeneration = generation;
     lastRangeStart = -1;
     lastRangeEnd = -1;
-    heightMap = new Map();
-    positions = [];
+    pendingLayoutAnchor = null;
+    rowHeightMap = new Map();
+    rowKeys = [];
+    rowPositions = [];
     totalHeight = 0;
+    lastMeasuredColumnCount = columnCount;
     rebuildPositionsFrom(0);
   }
 
-  $: if (cards.length !== positions.length) {
+  $: if (columnCount !== lastMeasuredColumnCount) {
+    lastMeasuredColumnCount = columnCount;
+    rowHeightMap = new Map();
+  }
+
+  $: if (
+    projectedRowKeys.length !== rowKeys.length ||
+    projectedRowKeys.some((key, index) => key !== rowKeys[index])
+  ) {
+    rowKeys = projectedRowKeys;
     rebuildPositionsFrom(0);
   }
 
   $: {
-    if (startIndex !== lastRangeStart || endIndex !== lastRangeEnd) {
-      lastRangeStart = startIndex;
-      lastRangeEnd = endIndex;
-      dispatch("hydrate-range", { start: startIndex, end: endIndex });
+    if (hydrateRange.start !== lastRangeStart || hydrateRange.end !== lastRangeEnd) {
+      lastRangeStart = hydrateRange.start;
+      lastRangeEnd = hydrateRange.end;
+      dispatch("hydrate-range", hydrateRange);
     }
+  }
+
+  $: if (pendingLayoutAnchor && viewportEl) {
+    applyScrollTop(
+      computeAnchoredScrollTop({
+        anchorCardIndex: pendingLayoutAnchor.anchorCardIndex,
+        anchorOffset: pendingLayoutAnchor.anchorOffset,
+        columnCount,
+        rowPositions,
+        cardCount: cards.length,
+      }),
+    );
+    pendingLayoutAnchor = null;
+  }
+
+  $: if (cards.length === 0 && pendingLayoutAnchor) {
+    pendingLayoutAnchor = null;
+  }
+
+  $: if (viewportWidth === 0 && viewportEl) {
+    syncViewportMetrics(viewportEl);
+  }
+
+  function rowNeedsMeasuredHeight(row) {
+    return row.cards.every((card) => card.hydrated);
+  }
+
+  function measureRow(node, row) {
+    let currentRow = row;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (!rowNeedsMeasuredHeight(currentRow)) {
+          continue;
+        }
+
+        const height = entry.borderBoxSize && entry.borderBoxSize.length > 0
+          ? entry.borderBoxSize[0].blockSize
+          : entry.target.getBoundingClientRect().height;
+        const roundedHeight = Math.round(height);
+        const oldHeight = rowHeightMap.get(currentRow.key) || ESTIMATED_ROW_HEIGHT;
+
+        if (oldHeight !== roundedHeight) {
+          rowHeightMap.set(currentRow.key, roundedHeight);
+          rebuildPositionsFrom(currentRow.index, roundedHeight - oldHeight);
+        }
+      }
+    });
+
+    resizeObserver.observe(node);
+
+    return {
+      update(nextRow) {
+        currentRow = nextRow;
+      },
+      destroy() {
+        resizeObserver.disconnect();
+      },
+    };
+  }
+
+  function isLastRow(rowIndex) {
+    return rowIndex === projectedRows.length - 1;
+  }
+
+  function getSpacerStyle(height) {
+    return `height: ${height}px;`;
+  }
+
+  function getRowClass(rowIndex) {
+    return `fce-wall-row${isLastRow(rowIndex) ? " is-last" : ""}`;
+  }
+
+  function getTopPaddingStyle() {
+    return getSpacerStyle(topPadding);
+  }
+
+  function getBottomPaddingStyle() {
+    return getSpacerStyle(bottomPadding);
   }
 
   function onScroll() {
@@ -139,50 +305,6 @@
     scrollTop = viewportEl.scrollTop;
     viewportHeight = viewportEl.clientHeight;
   }
-
-  function measureHeight(node, cardPath) {
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        // Skip measurement for cards that haven't been hydrated yet.
-        // Their placeholder height ("Loading preview...") is much smaller
-        // than the estimated height, and recording it causes totalHeight
-        // to fluctuate wildly during scrolling, which destabilizes the
-        // scroll position.
-        const card = cards.find((c) => c.path === cardPath);
-        if (card && !card.hydrated) {
-          continue;
-        }
-
-        // use borderBoxSize if available, fallback to getBoundingClientRect
-        let height = entry.borderBoxSize && entry.borderBoxSize.length > 0 
-          ? entry.borderBoxSize[0].blockSize 
-          : entry.target.getBoundingClientRect().height;
-        
-        height += 12; // Add margin-bottom (12px)
-        const roundedHeight = Math.round(height);
-        
-        const oldHeight = heightMap.get(cardPath) || ESTIMATED_CARD_HEIGHT;
-        if (oldHeight !== roundedHeight) {
-          heightMap.set(cardPath, roundedHeight);
-          const cardIndex = cards.findIndex((c) => c.path === cardPath);
-          if (cardIndex !== -1) {
-            rebuildPositionsFrom(cardIndex, roundedHeight - oldHeight);
-          }
-        }
-      }
-    });
-    
-    resizeObserver.observe(node);
-    
-    return {
-      update(newCardPath) {
-        cardPath = newCardPath;
-      },
-      destroy() {
-        resizeObserver.disconnect();
-      }
-    };
-  }
 </script>
 
 <div class="fce-shell">
@@ -193,33 +315,46 @@
     {availableTags}
     {activeFilterTags}
     {folderTree}
+    {includeSubfolders}
+    {isAllNotesScope}
     {tooltipSide}
     on:toolbar-action
     on:sort-change
     on:filter-change
+    on:include-subfolders-change
     on:select-folder
   />
 
-  <div class="fce-list" bind:this={viewportEl} on:scroll={onScroll} on:wheel={markUserScrolling}>
+  <div
+    class="fce-list"
+    bind:this={viewportEl}
+    use:bindViewport
+    on:scroll={onScroll}
+    on:wheel={markUserScrolling}
+  >
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
     {:else if cards.length === 0}
       <div class="fce-empty">No Markdown notes found in this folder.</div>
     {:else}
-      <div style={`height: ${topPadding}px;`}></div>
-       {#each visibleCards as card, i}
-         <div use:measureHeight={card.path}>
-            <CardItem
-              {card}
-              {pinnedPaths}
-              selected={selectedPath === card.path}
-              on:open-note
-              on:card-context-menu
-              on:pin-toggle
-            />
-         </div>
-       {/each}
-      <div style={`height: ${bottomPadding}px;`}></div>
+      <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
+      {#each visibleRows as row (row.key)}
+        <div class={getRowClass(row.index)} use:measureRow={row}>
+          <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
+            {#each row.cards as card (card.path)}
+              <CardItem
+                {card}
+                {pinnedPaths}
+                selected={selectedPath === card.path}
+                on:open-note
+                on:card-context-menu
+                on:pin-toggle
+              />
+            {/each}
+          </div>
+        </div>
+      {/each}
+      <div class="fce-virtual-spacer" style={getBottomPaddingStyle()}></div>
     {/if}
   </div>
 </div>
