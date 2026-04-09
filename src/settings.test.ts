@@ -98,6 +98,31 @@ describe("normalizeSettings — pinnedPaths", () => {
   });
 });
 
+describe("normalizeSettings — includeSubfolders and view mode", () => {
+  it("defaults includeSubfolders to true when the raw value is not boolean", () => {
+    const raw = {
+      ...DEFAULT_SETTINGS,
+      includeSubfolders: "nope",
+    } as unknown;
+
+    expect(normalizeSettings(raw).includeSubfolders).toBe(true);
+  });
+
+  it("preserves explicit includeSubfolders false", () => {
+    const raw = {
+      ...DEFAULT_SETTINGS,
+      includeSubfolders: false,
+    } as unknown;
+
+    expect(normalizeSettings(raw).includeSubfolders).toBe(false);
+  });
+
+  it("normalizes lastViewMode to all-notes only for the known value", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "all-notes" }).lastViewMode).toBe("all-notes");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "unexpected" }).lastViewMode).toBe("folder");
+  });
+});
+
 
 // ---------------------------------------------------------------------------
 // mergeSettings — pinnedPaths updates
@@ -216,5 +241,22 @@ describe("mergeSettings — pinnedPaths", () => {
     expect((result as unknown as { pinnedPaths: string[] }).pinnedPaths).toEqual(["newFolder"]);
     expect(result.sort.field).toBe("ctime");
     expect(result.sort.direction).toBe("asc");
+  });
+
+  it("updates includeSubfolders while preserving pinned paths and filter tags", () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      pinnedPaths: ["notes/pinned.md"],
+      filter: {
+        tags: ["active"],
+      },
+      includeSubfolders: true,
+    } as unknown;
+
+    const result = mergeSettings(current as never, { includeSubfolders: false } as never);
+
+    expect(result.includeSubfolders).toBe(false);
+    expect(result.pinnedPaths).toEqual(["notes/pinned.md"]);
+    expect(result.filter.tags).toEqual(["active"]);
   });
 });

@@ -246,6 +246,14 @@ describe("stub steps (remaining)", () => {
     const result = applySearchFilter(cards, context);
     expect(result).toBe(cards);
   });
+
+  it("applySearchFilter stays a pass-through even when includeSubfolders changes", () => {
+    const cards = [createMockCard("nested/test.md")];
+    const context = createMockContext();
+    context.settings.includeSubfolders = false;
+
+    expect(applySearchFilter(cards, context)).toBe(cards);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -257,6 +265,48 @@ describe("applyPinReorder", () => {
     const context = createMockContext();
     const result = applyPinReorder([], context);
     expect(result).toEqual([]);
+  });
+
+  it("does not reintroduce pinned cards removed by tag filtering in the default pipeline", () => {
+    const cards = [
+      createMockCard("visible-pinned.md"),
+      createMockCard("filtered-pinned.md"),
+      createMockCard("visible-unpinned.md"),
+    ];
+    const context = createMockContext();
+    context.settings.filter.tags = ["project"];
+    context.settings.pinnedPaths = ["filtered-pinned.md", "visible-pinned.md"];
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
+      return file.path !== "filtered-pinned.md";
+    });
+
+    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+      "visible-pinned.md",
+      "visible-unpinned.md",
+    ]);
+  });
+
+  it("preserves relative order within pinned and unpinned segments after filtering", () => {
+    const cards = [
+      createMockCard("a.md"),
+      createMockCard("b.md"),
+      createMockCard("c.md"),
+      createMockCard("d.md"),
+    ];
+    const context = createMockContext();
+    context.settings.filter.tags = ["active"];
+    context.settings.pinnedPaths = ["c.md", "a.md", "duplicate-missing.md", "c.md"];
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
+      return file.path !== "b.md";
+    });
+
+    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+      "a.md",
+      "c.md",
+      "d.md",
+    ]);
   });
 
   it("returns cards unchanged when no pinnedPaths in settings", () => {
