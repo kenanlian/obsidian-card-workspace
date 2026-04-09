@@ -86,6 +86,7 @@ export class FolderCardView extends ItemView {
   async onOpen(): Promise<void> {
     const panelModule = await import("./FolderCardPanel.svelte");
     const FolderCardPanel = panelModule.default as FolderCardPanelConstructor;
+    const settings = this.plugin.getSettings();
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
@@ -95,15 +96,17 @@ export class FolderCardView extends ItemView {
       target: this.hostEl,
       props: {
         cards: this.visibleCards,
-        folderPath: this.folderPath ?? "",
+        folderPath: this.getDisplayFolderPath(),
         selectedPath: this.selectedPath,
         loading: this.loading,
         generation: this.generation,
-        sortField: this.plugin.getSettings().sort.field,
-        sortDirection: this.plugin.getSettings().sort.direction,
+        sortField: settings.sort.field,
+        sortDirection: settings.sort.direction,
         availableTags: this.deriveAvailableTags(),
-        activeFilterTags: this.plugin.getSettings().filter.tags,
-        pinnedPaths: this.plugin.getSettings().pinnedPaths,
+        activeFilterTags: settings.filter.tags,
+        pinnedPaths: settings.pinnedPaths,
+        includeSubfolders: settings.includeSubfolders,
+        isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
         tooltipSide: this.getTooltipSide(),
       },
     });
@@ -131,6 +134,9 @@ export class FolderCardView extends ItemView {
     });
     this.component.$on("filter-change", (event: any) => {
       void this.onFilterChange(event.detail);
+    });
+    this.component.$on("include-subfolders-change", (event: any) => {
+      void this.onIncludeSubfoldersChange(event.detail);
     });
     this.component.$on("pin-toggle", (event: any) => {
       void this.onPinToggle(event.detail);
@@ -1026,17 +1032,26 @@ export class FolderCardView extends ItemView {
     return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
   }
 
+  private getDisplayFolderPath(): string {
+    if (this.folderPath === ALL_NOTES_PATH) {
+      return "All Notes";
+    }
+
+    if (this.folderPath === "") {
+      return "/";
+    }
+
+    return this.folderPath ?? "";
+  }
+
   private pushState(): void {
     this.visibleCards = this.deriveVisibleCards();
 
-    const displayFolderPath = this.folderPath === ALL_NOTES_PATH
-      ? "All Notes"
-      : (this.folderPath ?? "");
     const settings = this.plugin.getSettings();
 
     this.component?.$set({
       cards: this.visibleCards,
-      folderPath: displayFolderPath,
+      folderPath: this.getDisplayFolderPath(),
       selectedPath: this.selectedPath,
       loading: this.loading,
       generation: this.generation,
@@ -1045,6 +1060,8 @@ export class FolderCardView extends ItemView {
       availableTags: this.deriveAvailableTags(),
       activeFilterTags: settings.filter.tags,
       pinnedPaths: settings.pinnedPaths,
+      includeSubfolders: settings.includeSubfolders,
+      isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
     });
   }
 
@@ -1067,6 +1084,20 @@ export class FolderCardView extends ItemView {
       filter: {
         tags: nextTags,
       },
+    });
+  }
+
+  private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
+    if (this.folderPath === ALL_NOTES_PATH || typeof detail.value !== "boolean") {
+      return;
+    }
+
+    if (this.plugin.getSettings().includeSubfolders === detail.value) {
+      return;
+    }
+
+    await this.plugin.saveSettings({
+      includeSubfolders: detail.value,
     });
   }
 

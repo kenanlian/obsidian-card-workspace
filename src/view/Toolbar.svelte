@@ -9,6 +9,8 @@
   export let tooltipSide = "right";
   export let availableTags = [];
   export let activeFilterTags = [];
+  export let includeSubfolders = true;
+  export let isAllNotesScope = false;
 
   let localActiveFilterTags = [];
   $: {
@@ -55,6 +57,20 @@
   let expandedPaths = new Set();
   let folderMenuExpandedForPath = null;
 
+  $: hasFolderScope = !isAllNotesScope && folderPath.length > 0;
+  $: hasTagFilter = localActiveFilterTags.length > 0;
+  $: scopeSummary = isAllNotesScope
+    ? "All Notes"
+    : hasFolderScope
+      ? folderPath
+      : "No folder selected";
+  $: tagSummary = hasTagFilter
+    ? `Tag filter: ${localActiveFilterTags.length} active`
+    : "Tag filter: off";
+  $: subfolderSummary = hasFolderScope
+    ? `Subfolders: ${includeSubfolders ? "included" : "direct only"}`
+    : "";
+
   function flattenVisibleTree(tree, expanded) {
     const result = [];
     function walk(nodes) {
@@ -71,7 +87,7 @@
 
   $: visibleFolderNodes = flattenVisibleTree(folderTree, expandedPaths);
 
-  $: if (showFolderMenu && folderTree.length > 0 && folderPath && folderMenuExpandedForPath !== folderPath) {
+  $: if (showFolderMenu && hasFolderScope && folderTree.length > 0 && folderMenuExpandedForPath !== folderPath) {
     folderMenuExpandedForPath = folderPath;
     const segments = folderPath.split("/").filter(Boolean);
     let cumPath = "";
@@ -274,6 +290,22 @@
       },
     };
   }
+
+  function getFolderButtonText() {
+    if (hasFolderScope) {
+      return folderPath.split("/").filter(Boolean).pop() || folderPath;
+    }
+
+    return "Select folder";
+  }
+
+  function toggleIncludeSubfolders() {
+    if (!hasFolderScope) {
+      return;
+    }
+
+    dispatch("include-subfolders-change", { value: !includeSubfolders });
+  }
 </script>
 
 <header class="fce-header">
@@ -283,17 +315,13 @@
         {#if action.id === "pick-folder"}
           <button
             type="button"
-            class="fce-folder-button {showFolderMenu ? 'is-selected' : ''}"
+            class="fce-folder-button {showFolderMenu || hasFolderScope ? 'is-selected' : ''}"
             aria-label={action.title}
             on:click={(e) => selectToolbarAction(action.id, e)}
             use:captureFolderButton
           >
             <span class="fce-folder-button-text">
-              {#if folderPath && folderPath !== "All Notes"}
-                {folderPath.split("/").filter(Boolean).pop() || folderPath}
-              {:else}
-                Select folder
-              {/if}
+              {getFolderButtonText()}
             </span>
             <span use:applyIcon={"chevron-down"}></span>
           </button>
@@ -322,7 +350,7 @@
         {:else}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {activeToolbarAction === action.id ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {(action.id === 'all-notes' ? isAllNotesScope : activeToolbarAction === action.id) ? 'is-selected' : ''}"
             aria-label={action.title}
             on:click={(e) => selectToolbarAction(action.id, e)}
             use:applyIcon={action.icon}
@@ -334,11 +362,26 @@
     </div>
   </div>
 
-  <div class="fce-toolbar-content">
-    {#if folderPath}
-      {folderPath}
-    {:else}
-      Pick a folder to preview notes.
+  <div class="fce-toolbar-content-row">
+    <div class="fce-toolbar-content">
+      <span class="fce-toolbar-summary-segment"><strong>Scope:</strong> {scopeSummary}</span>
+      <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>
+      {#if hasFolderScope}
+        <span class="fce-toolbar-summary-segment">{subfolderSummary}</span>
+      {/if}
+    </div>
+
+    {#if hasFolderScope}
+      <button
+        type="button"
+        class="fce-toolbar-toggle {includeSubfolders ? 'is-selected' : ''}"
+        aria-label={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
+        aria-pressed={includeSubfolders}
+        on:click={toggleIncludeSubfolders}
+      >
+        <span class="fce-toolbar-toggle-label">Subfolders</span>
+        <span class="fce-toolbar-toggle-value">{includeSubfolders ? "On" : "Off"}</span>
+      </button>
     {/if}
   </div>
 </header>

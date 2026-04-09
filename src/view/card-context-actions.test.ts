@@ -9,8 +9,34 @@ const mockState = vi.hoisted(() => {
   const folderPickerInstances: MockFolderPickerModal[] = [];
   const noticeMessages: string[] = [];
   const panelEventHandlers: Record<string, (event: any) => void> = {};
+  const panelInstances: MockFolderCardPanel[] = [];
 
   (globalThis as any).__mockState = { panelEventHandlers };
+
+  class MockFolderCardPanel {
+    initialProps: Record<string, unknown>;
+    setCalls: Array<Record<string, unknown>> = [];
+
+    constructor(options: { props?: Record<string, unknown> } = {}) {
+      this.initialProps = options.props ?? {};
+      panelInstances.push(this);
+    }
+
+    $on(eventName: string, handler: (event: any) => void): () => void {
+      panelEventHandlers[eventName] = handler;
+      return () => {
+        delete panelEventHandlers[eventName];
+      };
+    }
+
+    $set(props: Record<string, unknown>): void {
+      this.setCalls.push(props);
+    }
+
+    $destroy(): void {
+      return;
+    }
+  }
 
   class MockTFile {
     path: string;
@@ -118,10 +144,12 @@ const mockState = vi.hoisted(() => {
     MockTFile,
     MockTFolder,
     MockFolderPickerModal,
+    MockFolderCardPanel,
     menuInstances,
     folderPickerInstances,
     noticeMessages,
     panelEventHandlers,
+    panelInstances,
   };
 });
 
@@ -137,26 +165,7 @@ vi.mock("obsidian", () => {
 
 vi.mock("./FolderCardPanel.svelte", () => {
   return {
-    default: class MockFolderCardPanel {
-      constructor(_options: unknown) {
-        return;
-      }
-
-      $on(eventName: string, handler: (event: any) => void): () => void {
-        mockState.panelEventHandlers[eventName] = handler;
-        return () => {
-          delete mockState.panelEventHandlers[eventName];
-        };
-      }
-
-      $set(): void {
-        return;
-      }
-
-      $destroy(): void {
-        return;
-      }
-    },
+    default: mockState.MockFolderCardPanel,
   };
 });
 
@@ -181,6 +190,26 @@ function createFolder(path: string): InstanceType<typeof mockState.MockTFolder> 
   return new mockState.MockTFolder(path);
 }
 
+function createMarkdownFile(path: string): InstanceType<typeof mockState.MockTFile> {
+  const file = new mockState.MockTFile(path);
+  (file as unknown as { extension: string }).extension = "md";
+  return file;
+}
+
+function createNonMarkdownFile(path: string, extension: string = "png"): InstanceType<typeof mockState.MockTFile> {
+  const file = new mockState.MockTFile(path);
+  (file as unknown as { extension: string }).extension = extension;
+  return file;
+}
+
+function attachChildren(
+  folder: InstanceType<typeof mockState.MockTFolder>,
+  children: unknown[],
+): InstanceType<typeof mockState.MockTFolder> {
+  folder.children = children;
+  return folder;
+}
+
 function createViewWithFile(path: string = "notes/a.md"): {
   view: FolderCardView;
   app: any;
@@ -189,6 +218,9 @@ function createViewWithFile(path: string = "notes/a.md"): {
 } {
   const file = new mockState.MockTFile(path);
   const app = {
+    metadataCache: {
+      getFileCache: vi.fn(() => null),
+    },
     vault: {
       getAbstractFileByPath: vi.fn((requestedPath: string) => {
         return requestedPath === path ? file : null;
@@ -238,6 +270,7 @@ describe("FolderCardView card context actions", () => {
     mockState.menuInstances.length = 0;
     mockState.folderPickerInstances.length = 0;
     mockState.noticeMessages.length = 0;
+    mockState.panelInstances.length = 0;
     Object.keys(mockState.panelEventHandlers).forEach((key) => {
       delete mockState.panelEventHandlers[key];
     });
@@ -594,8 +627,96 @@ describe("FolderCardView card context actions", () => {
         expect(mockState.panelEventHandlers["open-note"]).toBeDefined();
         expect(mockState.panelEventHandlers["card-context-menu"]).toBeDefined();
         expect(mockState.panelEventHandlers["filter-change"]).toBeDefined();
+        expect(mockState.panelEventHandlers["include-subfolders-change"]).toBeDefined();
         expect(mockState.panelEventHandlers["pin-toggle"]).toBeDefined();
         expect(typeof mockState.panelEventHandlers["pin-toggle"]).toBe("function");
+      });
+
+      it("onOpen passes includeSubfolders and folder scope props to the panel", async () => {
+        const { view } = createViewWithFile("notes/folder-scope-props.md");
+
+        (view as any).folderPath = "projects/active";
+
+        await (view as any).onOpen();
+
+        expect(mockState.panelInstances).toHaveLength(1);
+        expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
+          folderPath: "projects/active",
+          includeSubfolders: true,
+          isAllNotesScope: false,
+        });
+      });
+
+      it("onOpen passes a legible all-notes scope state to the panel", async () => {
+        const { view } = createViewWithFile("notes/all-notes-props.md");
+
+        (view as any).folderPath = ALL_NOTES_PATH;
+
+        await (view as any).onOpen();
+
+        expect(mockState.panelInstances).toHaveLength(1);
+        expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
+          folderPath: "All Notes",
+          includeSubfolders: true,
+          isAllNotesScope: true,
+        });
+      });
+
+      it("include-subfolders-change persists valid boolean values in folder scope", async () => {
+        const { view, plugin } = createViewWithFile("notes/include-subfolders.md");
+
+        (view as any).folderPath = "projects/active";
+
+        await (view as any).onOpen();
+
+        const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
+        expect(includeSubfoldersHandler).toBeDefined();
+
+        includeSubfoldersHandler({ detail: { value: false } });
+
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          includeSubfolders: false,
+        });
+      });
+
+      it("include-subfolders-change ignores invalid values", async () => {
+        const { view, plugin } = createViewWithFile("notes/include-subfolders-invalid.md");
+
+        (view as any).folderPath = "projects/active";
+
+        await (view as any).onOpen();
+
+        const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
+        includeSubfoldersHandler({ detail: { value: "nope" } });
+
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+      });
+
+      it("include-subfolders-change is ignored in all-notes scope", async () => {
+        const { view, plugin } = createViewWithFile("notes/include-subfolders-all-notes.md");
+
+        (view as any).folderPath = ALL_NOTES_PATH;
+
+        await (view as any).onOpen();
+
+        const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
+        includeSubfoldersHandler({ detail: { value: false } });
+
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+      });
+
+      it("include-subfolders-change is a no-op when the requested value already matches settings", async () => {
+        const { view, plugin } = createViewWithFile("notes/include-subfolders-same-value.md");
+
+        (view as any).folderPath = "projects/active";
+
+        await (view as any).onOpen();
+
+        const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
+        includeSubfoldersHandler({ detail: { value: true } });
+
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
       });
 
       it("sort-change subscription persists the requested sort settings", async () => {
@@ -629,6 +750,18 @@ describe("FolderCardView card context actions", () => {
 
         expect(plugin.selectFolderByPath).toHaveBeenCalledTimes(1);
         expect(plugin.selectFolderByPath).toHaveBeenCalledWith("projects/archive", "panel-picker");
+      });
+
+      it("toolbar-action all-notes routes to plugin.selectAllNotes exactly once", async () => {
+        const { view, plugin } = createViewWithFile("notes/all-notes-action.md");
+
+        await (view as any).onOpen();
+
+        const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+        toolbarActionHandler({ detail: { action: "all-notes" } });
+
+        expect(plugin.selectAllNotes).toHaveBeenCalledTimes(1);
+        expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
       });
 
       it("hydrate-range subscription forwards visible window to hydrateRange", async () => {
@@ -862,6 +995,193 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).baseCards[0]?.title).toBe("move-me");
       expect((view as any).baseCards[0]?.file).toBe(movedFile);
       expect((view as any).refreshQueued).toBe(false);
+    });
+  });
+
+  describe("Phase 1 regression hardening", () => {
+    it("pushState updates the panel to all-notes while preserving sort, filter, and pinned props", () => {
+      const { view, plugin } = createViewWithFile("notes/push-state-all-notes.md");
+
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: false,
+        sort: { field: "ctime", direction: "asc" },
+        filter: { tags: ["alpha", "beta"] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "all-notes",
+        pinnedPaths: ["notes/pinned.md"],
+      }));
+
+      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).folderPath = ALL_NOTES_PATH;
+      (view as any).baseCards = [createCardRecord(createMarkdownFile("notes/pinned.md"))];
+
+      (view as any).pushState();
+
+      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+        folderPath: "All Notes",
+        isAllNotesScope: true,
+        sortField: "ctime",
+        sortDirection: "asc",
+        activeFilterTags: ["alpha", "beta"],
+        pinnedPaths: ["notes/pinned.md"],
+        includeSubfolders: false,
+      });
+    });
+
+    it("collectMarkdownFiles returns only direct markdown files when includeSubfolders is false", () => {
+      const { view, app } = createViewWithFile("projects/active/direct.md");
+      const root = attachChildren(createFolder("projects/active"), [
+        createMarkdownFile("projects/active/direct.md"),
+        createNonMarkdownFile("projects/active/image.png"),
+        attachChildren(createFolder("projects/active/nested"), [
+          createMarkdownFile("projects/active/nested/deep.md"),
+        ]),
+      ]);
+
+      app.vault.getAbstractFileByPath = vi.fn(() => root);
+
+      expect((view as any).collectMarkdownFiles("projects/active", false).map((file: { path: string }) => file.path)).toEqual([
+        "projects/active/direct.md",
+      ]);
+    });
+
+    it("collectMarkdownFiles recurses nested markdown files when includeSubfolders is true", () => {
+      const { view, app } = createViewWithFile("projects/active/direct.md");
+      const root = attachChildren(createFolder("projects/active"), [
+        createMarkdownFile("projects/active/direct.md"),
+        attachChildren(createFolder("projects/active/nested"), [
+          createMarkdownFile("projects/active/nested/deep.md"),
+        ]),
+      ]);
+
+      app.vault.getAbstractFileByPath = vi.fn(() => root);
+
+      expect((view as any).collectMarkdownFiles("projects/active", true).map((file: { path: string }) => file.path)).toEqual([
+        "projects/active/direct.md",
+        "projects/active/nested/deep.md",
+      ]);
+    });
+
+    it("collectMarkdownFiles treats all-notes as recursive regardless of includeSubfolders", () => {
+      const { view, app } = createViewWithFile("projects/active/direct.md");
+      const root = attachChildren(createFolder(""), [
+        createMarkdownFile("projects/active/direct.md"),
+        attachChildren(createFolder("projects/active/nested"), [
+          createMarkdownFile("projects/active/nested/deep.md"),
+        ]),
+      ]);
+
+      app.vault.getRoot = vi.fn(() => root);
+
+      expect((view as any).collectMarkdownFiles(ALL_NOTES_PATH, false).map((file: { path: string }) => file.path)).toEqual([
+        "projects/active/direct.md",
+        "projects/active/nested/deep.md",
+      ]);
+    });
+
+    it("isPathInScope excludes nested descendants when includeSubfolders is false and includes them otherwise", () => {
+      const { view } = createViewWithFile("projects/active/direct.md");
+
+      (view as any).folderPath = "projects/active";
+
+      expect((view as any).isPathInScope("projects/active/direct.md", false)).toBe(true);
+      expect((view as any).isPathInScope("projects/active/nested/deep.md", false)).toBe(false);
+      expect((view as any).isPathInScope("projects/active/nested/deep.md", true)).toBe(true);
+    });
+
+    it("isPathInScope always includes markdown files in all-notes scope", () => {
+      const { view } = createViewWithFile("notes/root.md");
+
+      (view as any).folderPath = ALL_NOTES_PATH;
+
+      expect((view as any).isPathInScope("archive/nested.md", false)).toBe(true);
+    });
+
+    it("vault mutations ignore nested descendants when includeSubfolders is false", () => {
+      const { view, plugin } = createViewWithFile("projects/active/direct.md");
+
+      (view as any).folderPath = "projects/active";
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: false,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+      }));
+
+      expect(
+        (view as any).shouldRefreshForVaultEvent({
+          eventType: "create",
+          path: "projects/active/nested/deep.md",
+          isFolder: false,
+          isMarkdown: true,
+        }),
+      ).toBe(false);
+    });
+
+    it("vault mutations include nested descendants when includeSubfolders is true", () => {
+      const { view, plugin } = createViewWithFile("projects/active/direct.md");
+
+      (view as any).folderPath = "projects/active";
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+      }));
+
+      expect(
+        (view as any).shouldRefreshForVaultEvent({
+          eventType: "create",
+          path: "projects/active/nested/deep.md",
+          isFolder: false,
+          isMarkdown: true,
+        }),
+      ).toBe(true);
+    });
+
+    it("open-note, sort-change, filter-change, and pin-toggle still work after switching to all-notes scope", async () => {
+      const { view, plugin } = createViewWithFile("notes/phase1-regression.md");
+
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "all-notes",
+        pinnedPaths: [],
+      }));
+
+      (view as any).folderPath = ALL_NOTES_PATH;
+      await (view as any).onOpen();
+
+      mockState.panelEventHandlers["open-note"]({ detail: { path: "notes/phase1-regression.md" } });
+      mockState.panelEventHandlers["sort-change"]({ detail: { field: "ctime", direction: "asc" } });
+      mockState.panelEventHandlers["filter-change"]({ detail: { tags: ["#Project"] } });
+      mockState.panelEventHandlers["pin-toggle"]({ detail: { path: "notes/phase1-regression.md", pinned: true } });
+
+      expect(plugin.openNoteFromCard).toHaveBeenCalledWith("notes/phase1-regression.md");
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(1, {
+        sort: {
+          field: "ctime",
+          direction: "asc",
+        },
+      });
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(2, {
+        filter: {
+          tags: ["project"],
+        },
+      });
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
+        pinnedPaths: ["notes/phase1-regression.md"],
+      });
     });
   });
 });
