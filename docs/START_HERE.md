@@ -86,7 +86,7 @@ npm run dev
 ## 当前风险 / 阻塞 / 下一步
 
 - **搜索还没有真正接入。** `src/view/pipeline.ts` 的 `applySearchFilter()` 仍是占位实现；后续实现以 `docs/plan/v1-development-plan.md` 为主，不再依赖缺失的 `docs/dev-feature/` 任务文档。
-- **Phase 1 的 T31/T32 已完成。** 响应式 card wall 与范围入口提示已经落地；下一步更适合继续推进 T33 以后真正会扩展工作台能力的内容，而不是回头重做范围状态归属。
+- **Phase 1 已完成（T31/T32/T33）。** 响应式 card wall、范围入口提示与回归加固均已落地；下一步应继续推进 Phase 2 的多选与批量操作能力。
 - **`includeSubfolders` 现在有 UI 入口，但语义只在 folder scope 下成立。** 未来如果继续扩展范围切换，必须保留“`All Notes` 不展示误导性 toggle 状态”这个约束。
 - **批量操作仍停留在计划层。** `note-ops.ts` 已有部分批量能力，但多选框架和用户可见入口尚未完成。
 - **产品路线需要统一口径。** 当前已补充 `docs/roadmap/v1-product-roadmap.md`，后续应按“card-wall-first workbench”边界推进，而不是滑向综合导航平台。

@@ -107,11 +107,6 @@ V1 继续沿用当前项目已经验证过的四个原则：
 - 支持范围选中、全选/取消选择、选中计数
 - 补齐批量移动、批量删除、批量合并的用户可见工作流
 
-对应任务基础：
-
-- `docs/dev-feature/task-18-batch-select-framework.md`
-- `docs/dev-feature/task-19-batch-move-delete.md`
-- `docs/dev-feature/task-20-batch-merge.md`
 
 重点产出：
 
@@ -134,15 +129,6 @@ V1 继续沿用当前项目已经验证过的四个原则：
 - 搜索与现有 tag filter、pin reorder、默认排序规则正确组合
 - 在索引未就绪时可降级，而不是直接失效
 
-对应任务基础：
-
-- `docs/dev-feature/task-21-plan-e-spike.md`
-- `docs/dev-feature/task-22-search-service-contract.md`
-- `docs/dev-feature/task-23-index-store.md`
-- `docs/dev-feature/task-24-minisearch-manager.md`
-- `docs/dev-feature/task-25-index-build-incremental.md`
-- `docs/dev-feature/task-26-index-health-rebuild.md`
-- `docs/dev-feature/task-27-search-ui.md`
 
 路线原则：
 
@@ -172,11 +158,6 @@ V1 继续沿用当前项目已经验证过的四个原则：
 - 完成视觉一致化、间距与层级整理
 - 补齐 i18n、键盘导航和 ARIA 基线
 
-对应任务基础：
-
-- `docs/dev-feature/task-28-visual-consistency.md`
-- `docs/dev-feature/task-29-card-appearance.md`
-- `docs/dev-feature/task-30-i18n-a11y.md`
 
 这里的一个重要原则是：
 
