@@ -6,6 +6,10 @@ export type DefaultViewMode = "cards";
 
 export type ViewMode = "folder" | "all-notes";
 
+export const PREVIEW_LINES_MIN = 3;
+export const PREVIEW_LINES_MAX = 10;
+export const DEFAULT_PREVIEW_LINES = 5;
+
 export interface PluginSettings {
   sort: {
     field: SortField;
@@ -17,6 +21,7 @@ export interface PluginSettings {
   pinnedPaths: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
+  previewLines: number;
   lastFolderPath: string | null;
   lastViewMode: ViewMode;
 }
@@ -32,6 +37,7 @@ export interface PartialPluginSettings {
   pinnedPaths?: string[];
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
+  previewLines?: number;
   lastFolderPath?: string | null;
   lastViewMode?: ViewMode;
 }
@@ -47,6 +53,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   pinnedPaths: [],
   includeSubfolders: true,
   defaultView: "cards",
+  previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: null,
   lastViewMode: "folder",
 };
@@ -87,6 +94,21 @@ function normalizeViewMode(value: unknown): ViewMode {
   return value === "all-notes" ? "all-notes" : "folder";
 }
 
+function normalizePreviewLines(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_PREVIEW_LINES;
+  }
+
+  const rounded = Math.round(value);
+  if (rounded < PREVIEW_LINES_MIN) {
+    return PREVIEW_LINES_MIN;
+  }
+  if (rounded > PREVIEW_LINES_MAX) {
+    return PREVIEW_LINES_MAX;
+  }
+  return rounded;
+}
+
 export function normalizeSettings(raw: unknown): PluginSettings {
   const data = isRecord(raw) ? raw : {};
   const sort = isRecord(data.sort) ? data.sort : {};
@@ -106,6 +128,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
         ? data.includeSubfolders
         : DEFAULT_SETTINGS.includeSubfolders,
     defaultView: normalizeDefaultView(data.defaultView),
+    previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath:
       typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
         ? data.lastFolderPath

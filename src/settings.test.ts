@@ -123,6 +123,50 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
   });
 });
 
+describe("normalizeSettings — previewLines", () => {
+  it("defaults previewLines to 5 when value is missing", () => {
+    const raw = {
+      ...DEFAULT_SETTINGS,
+    } as unknown;
+
+    const result = normalizeSettings(raw);
+
+    expect(result.previewLines).toBe(5);
+  });
+
+  it("clamps previewLines within inclusive bounds for raw values 2, 3, 5, 10, 11", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 2 } as unknown).previewLines).toBe(3);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 3 } as unknown).previewLines).toBe(3);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 5 } as unknown).previewLines).toBe(5);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 10 } as unknown).previewLines).toBe(10);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 11 } as unknown).previewLines).toBe(10);
+  });
+
+  it("falls back to default for null and non-number previewLines inputs", () => {
+    const invalidValues: unknown[] = [null, "5", false, { value: 5 }, [5]];
+
+    for (const invalidValue of invalidValues) {
+      const raw = {
+        ...DEFAULT_SETTINGS,
+        previewLines: invalidValue,
+      } as unknown;
+
+      expect(normalizeSettings(raw).previewLines).toBe(5);
+    }
+  });
+
+  it("only uses the exact previewLines key", () => {
+    const raw = {
+      ...DEFAULT_SETTINGS,
+      previewLine: 10,
+    } as unknown;
+
+    const result = normalizeSettings(raw);
+
+    expect(result.previewLines).toBe(5);
+  });
+});
+
 
 // ---------------------------------------------------------------------------
 // mergeSettings — pinnedPaths updates
@@ -258,5 +302,65 @@ describe("mergeSettings — pinnedPaths", () => {
     expect(result.includeSubfolders).toBe(false);
     expect(result.pinnedPaths).toEqual(["notes/pinned.md"]);
     expect(result.filter.tags).toEqual(["active"]);
+  });
+});
+
+describe("mergeSettings — previewLines", () => {
+  it("updates previewLines while preserving unrelated settings fields", () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      sort: {
+        field: "ctime",
+        direction: "asc",
+      },
+      filter: {
+        tags: ["tag-a", "tag-b"],
+      },
+      pinnedPaths: ["folder/note-1.md", "folder/note-2.md"],
+      includeSubfolders: false,
+      defaultView: "cards",
+      lastViewMode: "all-notes",
+    } as unknown;
+
+    const result = mergeSettings(current as never, { previewLines: 10 });
+
+    expect(result.previewLines).toBe(10);
+    expect(result.sort.field).toBe("ctime");
+    expect(result.sort.direction).toBe("asc");
+    expect(result.filter.tags).toEqual(["tag-a", "tag-b"]);
+    expect(result.pinnedPaths).toEqual(["folder/note-1.md", "folder/note-2.md"]);
+    expect(result.includeSubfolders).toBe(false);
+    expect(result.defaultView).toBe("cards");
+    expect(result.lastViewMode).toBe("all-notes");
+  });
+
+  it("normalizes previewLines in patch for raw values 2, 3, 5, 10, 11", () => {
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 2 }).previewLines).toBe(3);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 3 }).previewLines).toBe(3);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 5 }).previewLines).toBe(5);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 10 }).previewLines).toBe(10);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 11 }).previewLines).toBe(10);
+  });
+
+  it("falls back to default when patch.previewLines is null or non-number", () => {
+    const invalidValues: unknown[] = [null, "5", true, { value: 5 }, [5]];
+
+    for (const invalidValue of invalidValues) {
+      const patch = {
+        previewLines: invalidValue,
+      } as unknown;
+
+      expect(mergeSettings(DEFAULT_SETTINGS, patch as never).previewLines).toBe(5);
+    }
+  });
+
+  it("only accepts previewLines key in patch", () => {
+    const patch = {
+      previewLine: 10,
+    } as unknown;
+
+    const result = mergeSettings(DEFAULT_SETTINGS, patch as never);
+
+    expect(result.previewLines).toBe(5);
   });
 });
