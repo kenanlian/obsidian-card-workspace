@@ -7,6 +7,7 @@ import {
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
+import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
@@ -30,6 +31,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     await this.loadSettings();
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
+    this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
 
     this.addCommand({
       id: "open-folder-card-explorer",
