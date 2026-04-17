@@ -1,8 +1,20 @@
+import {
+  DEFAULT_PREVIEW_LINES,
+  PREVIEW_LINES_MAX,
+  PREVIEW_LINES_MIN,
+} from "../settings";
+
 const MAX_PREVIEW_SCAN_LINES = 400;
+
+// Contract preset for preview normalization workstream: unified summary with weak cues only.
+export const PREVIEW_STYLE_PRESET = "unified-summary-weak-cues" as const;
+export const DEFAULT_PREVIEW_MAX_VISIBLE_CHARS = 200;
+
+export type PreviewMode = "text" | "code" | "empty";
 
 export interface LightPreviewResult {
   html: string;
-  mode: "text" | "code" | "empty";
+  mode: PreviewMode;
 }
 
 interface InlineSegment {
@@ -20,7 +32,13 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
   const text = markdown
     .replace(/^---[\s\S]*?---\s*/m, "")
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
+    .replace(/`([^`]*)`/g, (_match: string, codeText: string) => {
+      return /^[A-Za-z0-9 _-]+$/.test(codeText) ? codeText : " ";
+    })
+    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
+    .replace(/\$([^$\n]+)\$/g, "$1")
+    .replace(/\\\((.*?)\\\)/g, "$1")
+    .replace(/\\\[(.*?)\\\]/g, "$1")
     .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
     .replace(/!\[\[[^\]]+]]/g, " ")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
@@ -28,7 +46,7 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/[>*_~]/g, " ")
+    .replace(/[*_~=>]/g, " ")
     .replace(/\r?\n+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -39,10 +57,15 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
   return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
-export function buildLightPreview(markdown: string, maxVisibleChars = 200, codePreviewLines = 4): LightPreviewResult {
+export function buildLightPreview(
+  markdown: string,
+  maxVisibleChars = DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
+  previewLines = DEFAULT_PREVIEW_LINES,
+): LightPreviewResult {
   const content = stripFrontmatter(markdown).replace(/\r\n/g, "\n");
   const lines = content.split("\n");
   const scanLimit = Math.min(lines.length, MAX_PREVIEW_SCAN_LINES);
+  const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
 
   let index = 0;
   while (index < scanLimit) {
@@ -54,7 +77,14 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
 
     const fence = getFenceInfo(trimmed);
     if (fence) {
-      const codeBlock = readFenceCodeBlock(lines, index, scanLimit, fence.marker, fence.size, codePreviewLines);
+      const codeBlock = readFenceCodeBlock(
+        lines,
+        index,
+        scanLimit,
+        fence.marker,
+        fence.size,
+        normalizedPreviewLines,
+      );
       if (codeBlock.previewText.length > 0) {
         const clipped = clipTextWithLimit(codeBlock.previewText, maxVisibleChars);
         let display = clipped.text.trimEnd();
@@ -63,7 +93,7 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
         }
         if (display.length > 0) {
           return {
-            html: `<pre class="fce-preview-code"><code>${escapeHtml(display)}</code></pre>`,
+            html: `<p class="fce-preview-code"><code>${escapeHtml(display)}</code></p>`,
             mode: "code"
           };
         }
@@ -76,18 +106,14 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
   }
 
   let remainingChars = maxVisibleChars;
+  let remainingBlocks = normalizedPreviewLines;
   const htmlParts: string[] = [];
-  let listMode: "ul" | "ol" | null = null;
 
-  while (index < scanLimit && remainingChars > 0) {
+  while (index < scanLimit && remainingChars > 0 && remainingBlocks > 0) {
     const line = lines[index];
     const trimmed = line.trim();
 
     if (trimmed.length === 0) {
-      if (listMode) {
-        htmlParts.push(`</${listMode}>`);
-        listMode = null;
-      }
       index += 1;
       continue;
     }
@@ -105,15 +131,11 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
 
     const headingMatch = trimmed.match(/^#{1,6}\s+(.*)$/);
     if (headingMatch?.[1]) {
-      if (listMode) {
-        htmlParts.push(`</${listMode}>`);
-        listMode = null;
-      }
-
       const rendered = renderInlineWithLimit(headingMatch[1], remainingChars);
       if (rendered.consumedChars > 0) {
         htmlParts.push(`<p class="fce-preview-heading">${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
+        remainingBlocks -= 1;
       }
       if (rendered.truncated) {
         break;
@@ -124,18 +146,11 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
 
     const ulMatch = trimmed.match(/^[-*+]\s+(.*)$/);
     if (ulMatch?.[1]) {
-      if (listMode !== "ul") {
-        if (listMode) {
-          htmlParts.push(`</${listMode}>`);
-        }
-        htmlParts.push("<ul>");
-        listMode = "ul";
-      }
-
       const rendered = renderInlineWithLimit(ulMatch[1], remainingChars);
       if (rendered.consumedChars > 0) {
-        htmlParts.push(`<li>${rendered.html}</li>`);
+        htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
+        remainingBlocks -= 1;
       }
       if (rendered.truncated) {
         break;
@@ -146,18 +161,11 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
 
     const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
     if (olMatch?.[1]) {
-      if (listMode !== "ol") {
-        if (listMode) {
-          htmlParts.push(`</${listMode}>`);
-        }
-        htmlParts.push("<ol>");
-        listMode = "ol";
-      }
-
       const rendered = renderInlineWithLimit(olMatch[1], remainingChars);
       if (rendered.consumedChars > 0) {
-        htmlParts.push(`<li>${rendered.html}</li>`);
+        htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
+        remainingBlocks -= 1;
       }
       if (rendered.truncated) {
         break;
@@ -166,18 +174,14 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
       continue;
     }
 
-    if (listMode) {
-      htmlParts.push(`</${listMode}>`);
-      listMode = null;
-    }
-
     const quoteMatch = trimmed.match(/^>\s?(.*)$/);
     if (quoteMatch) {
       const quoteText = quoteMatch[1] ?? "";
       const rendered = renderInlineWithLimit(quoteText, remainingChars);
       if (rendered.consumedChars > 0) {
-        htmlParts.push(`<blockquote>${rendered.html}</blockquote>`);
+        htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
+        remainingBlocks -= 1;
       }
       if (rendered.truncated) {
         break;
@@ -188,7 +192,7 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
 
     const paragraphLines: string[] = [trimmed];
     let cursor = index + 1;
-    while (cursor < scanLimit) {
+    while (cursor < scanLimit && paragraphLines.length < remainingBlocks) {
       const next = lines[cursor].trim();
       if (next.length === 0 || isBlockStarter(next)) {
         break;
@@ -201,6 +205,7 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
     if (rendered.consumedChars > 0) {
       htmlParts.push(`<p>${rendered.html}</p>`);
       remainingChars -= rendered.consumedChars;
+      remainingBlocks -= paragraphLines.length;
     }
     if (rendered.truncated) {
       break;
@@ -209,11 +214,8 @@ export function buildLightPreview(markdown: string, maxVisibleChars = 200, codeP
     index = cursor;
   }
 
-  if (listMode) {
-    htmlParts.push(`</${listMode}>`);
-  }
-
   if (htmlParts.length === 0) {
+    // Explicit empty handling: only truly non-previewable/syntactically empty notes return `empty`.
     return { html: "", mode: "empty" };
   }
 
@@ -255,7 +257,7 @@ function readFenceCodeBlock(
   scanLimit: number,
   marker: "`" | "~",
   size: number,
-  previewLines: number = 4
+  previewLines: number,
 ): { previewText: string; truncatedByLines: boolean; nextIndex: number } {
   const body: string[] = [];
   let cursor = startIndex + 1;
@@ -358,7 +360,14 @@ function renderInlineWithLimit(source: string, limit: number): InlineRenderResul
 }
 
 function normalizeInlineSource(source: string): string {
+  // Inline-only normalization scope: drop inline media artifacts and keep lightweight textual cues.
   return source
+    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
+    .replace(/\$([^$\n]+)\$/g, "$1")
+    .replace(/\\\((.*?)\\\)/g, "$1")
+    .replace(/\\\[(.*?)\\\]/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/==([^=]+)==/g, "$1")
     .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
     .replace(/!\[\[[^\]]+]]/g, " ")
     .replace(/<img\s[^>]*>/gi, " ")
@@ -366,6 +375,21 @@ function normalizeInlineSource(source: string): string {
     .replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_match: string, link: string, alias: string | undefined) => alias ?? link)
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizePreviewLineBudget(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PREVIEW_LINES;
+  }
+
+  const rounded = Math.round(value);
+  if (rounded < PREVIEW_LINES_MIN) {
+    return PREVIEW_LINES_MIN;
+  }
+  if (rounded > PREVIEW_LINES_MAX) {
+    return PREVIEW_LINES_MAX;
+  }
+  return rounded;
 }
 
 function parseInlineSegments(source: string): InlineSegment[] {

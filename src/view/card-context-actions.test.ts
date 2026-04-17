@@ -185,6 +185,7 @@ vi.mock("../FolderPickerModal", () => {
 import { FolderCardView } from "./FolderCardView";
 import { copyNoteToClipboard, moveFile } from "./note-ops";
 import { ALL_NOTES_PATH } from "./types";
+import * as markdownUtils from "./markdown-utils";
 
 function createFolder(path: string): InstanceType<typeof mockState.MockTFolder> {
   return new mockState.MockTFolder(path);
@@ -232,14 +233,15 @@ function createViewWithFile(path: string = "notes/a.md"): {
   const leaf = { app, getRoot: vi.fn(() => ({})) };
    const plugin = {
      getSettings: vi.fn(() => ({
-       includeSubfolders: true,
-       sort: { field: "mtime", direction: "desc" },
-       filter: { tags: [] },
-       defaultView: "cards",
-       lastFolderPath: null,
-       lastViewMode: "folder",
-       pinnedPaths: [],
-     })),
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+        previewLines: 5,
+      })),
      openNoteFromCard: vi.fn(),
      selectAllNotes: vi.fn(),
      createNoteInCurrentFolder: vi.fn(),
@@ -644,6 +646,7 @@ describe("FolderCardView card context actions", () => {
           folderPath: "projects/active",
           includeSubfolders: true,
           isAllNotesScope: false,
+          previewLines: 5,
         });
       });
 
@@ -814,6 +817,335 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).inFlightKey).toBeNull();
         expect((view as any).loading).toBe(false);
         expect((view as any).generation).toBe(generationBeforeClose + 1);
+      });
+
+      describe("Task 6: preview settings refresh wiring and generation safety", () => {
+        it("hydrates with updated previewLines after settings-change refresh", async () => {
+          const { view, app, plugin } = createViewWithFile("notes/preview-refresh.md");
+          const file = createMarkdownFile("notes/preview-refresh.md");
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 1,
+            mtime: 1,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [file]);
+          let previewLines = 3;
+          const previewSpy = vi.spyOn(markdownUtils, "buildLightPreview");
+
+          plugin.getSettings = vi.fn(() => ({
+            includeSubfolders: true,
+            sort: { field: "mtime", direction: "desc" },
+            filter: { tags: [] },
+            defaultView: "cards",
+            lastFolderPath: null,
+            lastViewMode: "folder",
+            pinnedPaths: [],
+            previewLines,
+          }));
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            if (requestedPath === file.path) {
+              return file;
+            }
+            return null;
+          });
+          app.vault.cachedRead = vi.fn(async () => "line1\nline2\nline3\nline4");
+
+          await (view as any).handleFolderSelection({
+            requestId: 1,
+            folderPath: "notes",
+            source: "programmatic",
+            requestedAtMs: Date.now(),
+            forceRefresh: false,
+          });
+          await (view as any).hydrateRange(0, 1);
+
+          expect(previewSpy).toHaveBeenLastCalledWith(
+            "line1\nline2\nline3\nline4",
+            expect.any(Number),
+            3,
+          );
+
+          previewLines = 9;
+
+          await (view as any).refresh({
+            reason: "settings-change",
+            folderPath: "notes",
+            forceRefresh: true,
+          });
+          await (view as any).hydrateRange(0, 1);
+
+          expect(previewSpy).toHaveBeenLastCalledWith(
+            "line1\nline2\nline3\nline4",
+            expect.any(Number),
+            9,
+          );
+        });
+
+        it("ignores stale hydration errors after previewLines change bumps generation", async () => {
+          const { view, app, plugin } = createViewWithFile("notes/stale-refresh.md");
+          const file = createMarkdownFile("notes/stale-refresh.md");
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 1,
+            mtime: 1,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [file]);
+          const firstReadError = new Error("stale read failed");
+          const firstReadControl: { reject: ((reason?: unknown) => void) | null } = {
+            reject: null,
+          };
+          let previewLines = 4;
+          const previewSpy = vi.spyOn(markdownUtils, "buildLightPreview");
+
+          plugin.getSettings = vi.fn(() => ({
+            includeSubfolders: true,
+            sort: { field: "mtime", direction: "desc" },
+            filter: { tags: [] },
+            defaultView: "cards",
+            lastFolderPath: null,
+            lastViewMode: "folder",
+            pinnedPaths: [],
+            previewLines,
+          }));
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            if (requestedPath === file.path) {
+              return file;
+            }
+            return null;
+          });
+
+          app.vault.cachedRead = vi
+            .fn()
+            .mockImplementationOnce(
+              () =>
+                new Promise<string>((_resolve, reject) => {
+                  firstReadControl.reject = reject;
+                }),
+            )
+            .mockImplementation(async () => "fresh\npreview\ncontent");
+
+          await (view as any).handleFolderSelection({
+            requestId: 2,
+            folderPath: "notes",
+            source: "programmatic",
+            requestedAtMs: Date.now(),
+            forceRefresh: false,
+          });
+
+          const staleHydration = (view as any).hydrateRange(0, 1);
+          await Promise.resolve();
+
+          previewLines = 8;
+          await (view as any).refresh({
+            reason: "settings-change",
+            folderPath: "notes",
+            forceRefresh: true,
+          });
+
+          if (firstReadControl.reject) {
+            firstReadControl.reject(firstReadError);
+          }
+          await staleHydration;
+
+          const currentCard = (view as any).baseCards[0];
+          expect(currentCard?.hydrated).toBe(false);
+          expect(currentCard?.previewHtml).toBe("");
+          expect(currentCard?.previewMode).toBe("empty");
+
+          await (view as any).hydrateRange(0, 1);
+
+          expect(previewSpy).toHaveBeenCalledTimes(1);
+          expect(previewSpy).toHaveBeenLastCalledWith(
+            "fresh\npreview\ncontent",
+            expect.any(Number),
+            8,
+          );
+          expect((view as any).baseCards[0]?.hydrated).toBe(true);
+        });
+
+        it("settings-change previewLines refresh keeps sort/filter/includeSubfolders panel props stable", async () => {
+          const { view, app, plugin } = createViewWithFile("notes/preview-props.md");
+          const file = createMarkdownFile("notes/preview-props.md");
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 2,
+            mtime: 2,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [file]);
+          const pinnedPaths = [file.path];
+          let previewLines = 4;
+          const previewSpy = vi.spyOn(markdownUtils, "buildLightPreview");
+
+          plugin.getSettings = vi.fn(() => ({
+            includeSubfolders: false,
+            sort: { field: "ctime", direction: "asc" },
+            filter: { tags: [] },
+            defaultView: "cards",
+            lastFolderPath: null,
+            lastViewMode: "folder",
+            pinnedPaths,
+            previewLines,
+          }));
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            if (requestedPath === file.path) {
+              return file;
+            }
+            return null;
+          });
+          app.vault.cachedRead = vi.fn(async () => "only\none\ntwo\nthree");
+
+          await (view as any).onOpen();
+          await (view as any).handleFolderSelection({
+            requestId: 3,
+            folderPath: "notes",
+            source: "programmatic",
+            requestedAtMs: Date.now(),
+            forceRefresh: false,
+          });
+          await (view as any).hydrateRange(0, 1);
+
+          expect(previewSpy).toHaveBeenLastCalledWith(
+            "only\none\ntwo\nthree",
+            expect.any(Number),
+            4,
+          );
+          expect(mockState.panelInstances).toHaveLength(1);
+          expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+            sortField: "ctime",
+            sortDirection: "asc",
+            activeFilterTags: [],
+            pinnedPaths,
+            includeSubfolders: false,
+            previewLines: 4,
+          });
+
+          previewLines = 10;
+          await (view as any).refresh({
+            reason: "settings-change",
+            folderPath: "notes",
+            forceRefresh: true,
+          });
+          await (view as any).hydrateRange(0, 1);
+
+          expect(previewSpy).toHaveBeenLastCalledWith(
+            "only\none\ntwo\nthree",
+            expect.any(Number),
+            10,
+          );
+          expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+            sortField: "ctime",
+            sortDirection: "asc",
+            activeFilterTags: [],
+            pinnedPaths,
+            includeSubfolders: false,
+            previewLines: 10,
+          });
+        });
+
+        it("hydrateRange keeps sparse content non-empty while empty markdown remains empty", async () => {
+          const { view, app } = createViewWithFile("notes/preview-sparse-empty.md");
+          const emptyFile = createMarkdownFile("notes/empty.md");
+          const sparseFile = createMarkdownFile("notes/sparse.md");
+          (emptyFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 3,
+            mtime: 3,
+          };
+          (sparseFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 4,
+            mtime: 4,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [emptyFile, sparseFile]);
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            if (requestedPath === emptyFile.path) {
+              return emptyFile;
+            }
+            if (requestedPath === sparseFile.path) {
+              return sparseFile;
+            }
+            return null;
+          });
+
+          app.vault.cachedRead = vi.fn(async (file: { path: string }) => {
+            if (file.path === emptyFile.path) {
+              return "\n  \n\t";
+            }
+            if (file.path === sparseFile.path) {
+              return "single real preview line";
+            }
+            return "";
+          });
+
+          await (view as any).handleFolderSelection({
+            requestId: 4,
+            folderPath: "notes",
+            source: "programmatic",
+            requestedAtMs: Date.now(),
+            forceRefresh: false,
+          });
+          await (view as any).hydrateRange(0, 2);
+
+          const emptyCard = (view as any).baseCards.find((card: { path: string }) => card.path === emptyFile.path);
+          const sparseCard = (view as any).baseCards.find((card: { path: string }) => card.path === sparseFile.path);
+
+          expect(emptyCard?.hydrated).toBe(true);
+          expect(emptyCard?.previewMode).toBe("empty");
+          expect(emptyCard?.previewHtml).toBe("");
+
+          expect(sparseCard?.hydrated).toBe(true);
+          expect(sparseCard?.previewMode).not.toBe("empty");
+          expect(sparseCard?.previewHtml).not.toBe("");
+        });
+
+        it("hydrateRange keeps code previews in the normalized paragraph clamp surface", async () => {
+          const { view, app } = createViewWithFile("notes/preview-code-clamp.md");
+          const codeFile = createMarkdownFile("notes/code.md");
+          (codeFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 5,
+            mtime: 5,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [codeFile]);
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            if (requestedPath === codeFile.path) {
+              return codeFile;
+            }
+            return null;
+          });
+
+          app.vault.cachedRead = vi.fn(async () => "```ts\nconst alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n```");
+
+          await (view as any).handleFolderSelection({
+            requestId: 5,
+            folderPath: "notes",
+            source: "programmatic",
+            requestedAtMs: Date.now(),
+            forceRefresh: false,
+          });
+          await (view as any).hydrateRange(0, 1);
+
+          const codeCard = (view as any).baseCards.find((card: { path: string }) => card.path === codeFile.path);
+
+          expect(codeCard?.hydrated).toBe(true);
+          expect(codeCard?.previewMode).toBe("code");
+          expect(codeCard?.previewHtml).toContain('<p class="fce-preview-code">');
+          expect(codeCard?.previewHtml).not.toContain("<pre");
+        });
       });
     });
 

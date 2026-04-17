@@ -19,6 +19,12 @@
   --fce-accent-hover: var(--interactive-accent-hover, var(--interactive-accent));
   --fce-wall-gap: 12px;
   --fce-card-min-width: 280px;
+  --fce-title-font-size: var(--font-ui-medium, 14px);
+  --fce-title-line-height: 1.35;
+  --fce-preview-font-size: var(--font-ui-small, 13px);
+  --fce-preview-line-height: 1.5;
+  --fce-preview-line-clamp: 5;
+  --fce-meta-font-size: 11px;
 }
 
 .folder-card-view .fce-shell {
@@ -332,7 +338,11 @@
 }
 
 .folder-card-view .fce-card-body {
-  padding: 11px 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  padding: 11px 12px 12px;
 }
 
 .folder-card-view .fce-card-header {
@@ -345,8 +355,13 @@
 .folder-card-view .fce-card h4 {
   margin: 0;
   color: var(--fce-text);
-  font-size: 14px;
-  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fce-title-font-size);
+  line-height: var(--fce-title-line-height);
+  font-weight: 600;
   flex: 1;
 }
 
@@ -382,19 +397,20 @@
 }
 
 .folder-card-view .fce-meta {
-  margin: 7px 0 0;
-  font-size: 12px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--fce-border);
+  font-size: var(--fce-meta-font-size);
+  line-height: 1.35;
   color: var(--fce-text-muted);
 }
 
 .folder-card-view .fce-excerpt {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--fce-text);
-  font-size: 13px;
-  line-height: 1.52;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
+  font-size: var(--fce-preview-font-size);
+  line-height: var(--fce-preview-line-height);
+  max-block-size: calc(var(--fce-preview-line-clamp) * 1em * var(--fce-preview-line-height));
   overflow: hidden;
 }
 
@@ -403,51 +419,41 @@
   color: var(--fce-text-muted);
 }
 
-.folder-card-view .fce-excerpt p {
-  margin: 0 0 7px;
+.folder-card-view .fce-excerpt.is-empty,
+.folder-card-view .fce-excerpt.is-loading {
+  display: flex;
+  align-items: flex-start;
 }
 
-.folder-card-view .fce-excerpt p:last-child {
-  margin-bottom: 0;
+.folder-card-view .fce-excerpt p {
+  margin: 0;
 }
 
 .folder-card-view .fce-excerpt .fce-preview-heading {
-  font-size: 14px;
+  font-size: inherit;
+  line-height: inherit;
   font-weight: 600;
 }
 
-.folder-card-view .fce-excerpt ul,
-.folder-card-view .fce-excerpt ol {
-  margin: 0 0 7px;
-  padding-left: 18px;
-}
-
-.folder-card-view .fce-excerpt li {
-  margin: 0 0 3px;
-}
-
-.folder-card-view .fce-excerpt blockquote {
-  margin: 0 0 7px;
-  padding: 2px 0 2px 9px;
-  border-left: 2px solid var(--fce-border);
-  color: var(--fce-text-muted);
-}
-
 .folder-card-view .fce-excerpt code {
-  padding: 0 4px;
+  padding: 0 3px;
   border-radius: 4px;
   font-family: var(--font-monospace);
+  font-size: 0.96em;
+  line-height: inherit;
   background: var(--fce-surface-alt);
 }
 
 .folder-card-view .fce-excerpt .fce-preview-code {
   margin: 0;
-  padding: 8px 9px;
-  border: 1px solid var(--fce-border);
-  border-radius: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: var(--fce-surface-alt);
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .folder-card-view .fce-excerpt .fce-preview-code code {
@@ -457,12 +463,8 @@
 }
 
 .folder-card-view .fce-excerpt.is-code {
-  font-size: 12px;
-  line-height: 1.45;
-  display: block;
-  -webkit-line-clamp: unset;
-  -webkit-box-orient: initial;
-  overflow: visible;
+  font-size: var(--fce-preview-font-size);
+  line-height: var(--fce-preview-line-height);
 }
 
 .menu.fce-card-context-menu {

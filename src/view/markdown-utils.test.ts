@@ -108,29 +108,35 @@ describe("buildLightPreview", () => {
     expect(result.html).toContain("Section Title");
   });
 
-  it("renders an unordered list as <ul><li>", () => {
+  it("renders unordered lists as normalized summary lines", () => {
     const result = buildLightPreview("- item one\n- item two");
-    expect(result.html).toContain("<ul>");
-    expect(result.html).toContain("<li>");
-    expect(result.html).toContain("item one");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>item one</p><p>item two</p>");
+    expect(result.html).not.toContain("<ul>");
+    expect(result.html).not.toContain("<li>");
   });
 
-  it("renders an ordered list as <ol><li>", () => {
+  it("renders ordered lists as normalized summary lines", () => {
     const result = buildLightPreview("1. first\n2. second");
-    expect(result.html).toContain("<ol>");
-    expect(result.html).toContain("first");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>first</p><p>second</p>");
+    expect(result.html).not.toContain("<ol>");
+    expect(result.html).not.toContain("<li>");
   });
 
-  it("renders a blockquote as <blockquote>", () => {
+  it("renders quotes with only a weak body-text cue", () => {
     const result = buildLightPreview("> quoted text");
-    expect(result.html).toContain("<blockquote>");
-    expect(result.html).toContain("quoted text");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>quoted text</p>");
+    expect(result.html).not.toContain("<blockquote>");
+    expect(result.html).not.toContain("> quoted text");
   });
 
   it("returns mode=code for fenced code block at top", () => {
     const result = buildLightPreview("```js\nconst x = 1;\n```");
     expect(result.mode).toBe("code");
-    expect(result.html).toContain("<pre");
+    expect(result.html).toContain('<p class="fce-preview-code">');
+    expect(result.html).not.toContain("<pre");
     expect(result.html).toContain("const x = 1;");
   });
 
@@ -165,5 +171,123 @@ describe("buildLightPreview", () => {
   it("renders inline code as <code>", () => {
     const result = buildLightPreview("use `fn()` here");
     expect(result.html).toContain("<code>fn()</code>");
+  });
+
+  it("keeps sparse one-line content as standard text preview", () => {
+    const result = buildLightPreview("Only one truthful line.");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>Only one truthful line.</p>");
+  });
+
+  it("keeps sparse two-line content as standard text preview", () => {
+    const result = buildLightPreview("First truthful line.\nSecond truthful line.");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>First truthful line. Second truthful line.</p>");
+  });
+
+  it("treats image-only note as explicit empty", () => {
+    const result = buildLightPreview("![[photo.png]]\n![alt](img.png)");
+    expect(result.mode).toBe("empty");
+    expect(result.html).toBe("");
+  });
+
+  it("treats embed-only note as explicit empty", () => {
+    const result = buildLightPreview("![[diagram.excalidraw]]\n![[audio.mp3]]");
+    expect(result.mode).toBe("empty");
+    expect(result.html).toBe("");
+  });
+
+  it("renders later body text after frontmatter, not empty", () => {
+    const md = "---\ntitle: Sample\ntags:\n  - note\n---\n\nAfter metadata this content must preview.";
+    const result = buildLightPreview(md);
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>After metadata this content must preview.</p>");
+  });
+
+  it("applies the same previewLines budget policy to text content", () => {
+    const md = "line one\nline two\nline three\nline four\nline five";
+    const result = buildLightPreview(md, 500, 3);
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toContain("line one");
+    expect(result.html).toContain("line two");
+    expect(result.html).toContain("line three");
+    expect(result.html).not.toContain("line four");
+    expect(result.html).not.toContain("line five");
+  });
+
+  it("applies the same previewLines budget policy to code content", () => {
+    const md = "```ts\nline one\nline two\nline three\nline four\nline five\n```";
+    const result = buildLightPreview(md, 500, 3);
+
+    expect(result.mode).toBe("code");
+    expect(result.html).toContain("line one");
+    expect(result.html).toContain("line two");
+    expect(result.html).toContain("line three");
+    expect(result.html).not.toContain("line four");
+    expect(result.html).not.toContain("line five");
+  });
+
+  it("keeps multi-block text previews in a margin-free summary shape", () => {
+    const result = buildLightPreview("First block\n- Second block\n> Third block", 500, 3);
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>First block</p><p>Second block</p><p>Third block</p>");
+  });
+
+  it("renders code previews in the same paragraph-shaped clamp surface", () => {
+    const result = buildLightPreview("```ts\nconst one = 1;\nconst two = 2;\n```", 500, 2);
+
+    expect(result.mode).toBe("code");
+    expect(result.html).toContain('<p class="fce-preview-code">');
+    expect(result.html).toContain("<code>");
+    expect(result.html).not.toContain("<pre");
+  });
+
+  it("normalizes weak-cue inline markers without leaking raw delimiters", () => {
+    const result = buildLightPreview("**Bold** _Italic_ ~~Strike~~ ==Highlight== `Code` plain");
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toContain("Bold");
+    expect(result.html).toContain("Italic");
+    expect(result.html).toContain("Strike");
+    expect(result.html).toContain("Highlight");
+    expect(result.html).toContain("Code");
+    expect(result.html).toContain("plain");
+
+    expect(result.html).not.toContain("**");
+    expect(result.html).not.toContain("_");
+    expect(result.html).not.toContain("~~");
+    expect(result.html).not.toContain("==");
+    expect(result.html).not.toContain("`");
+  });
+
+  it("normalizes inline math delimiters while keeping math text", () => {
+    const result = buildLightPreview("Energy is $E=mc^2$ and block $$a^2+b^2=c^2$$ math.");
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toContain("E=mc^2");
+    expect(result.html).toContain("a^2+b^2=c^2");
+    expect(result.html).not.toContain("$");
+    expect(result.html).not.toContain("\\(");
+    expect(result.html).not.toContain("\\)");
+    expect(result.html).not.toContain("\\[");
+    expect(result.html).not.toContain("\\]");
+  });
+
+  it("does not leak inline marker delimiters in stripped summary text", () => {
+    const text = stripMarkdownToText("**Bold** _Italic_ ~~Strike~~ ==Highlight== `Code` $Math$");
+    expect(text).toContain("Bold");
+    expect(text).toContain("Italic");
+    expect(text).toContain("Strike");
+    expect(text).toContain("Highlight");
+    expect(text).toContain("Code");
+    expect(text).toContain("Math");
+    expect(text).not.toContain("**");
+    expect(text).not.toContain("_");
+    expect(text).not.toContain("~~");
+    expect(text).not.toContain("==");
+    expect(text).not.toContain("`");
+    expect(text).not.toContain("$");
   });
 });
