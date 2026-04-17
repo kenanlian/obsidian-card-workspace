@@ -1,0 +1,29 @@
+Task 4 Inline Normalization Evidence
+Date: 2026-04-16
+
+Scope inspected:
+- `src/view/markdown-utils.ts`
+- `src/view/markdown-utils.test.ts`
+
+Implemented normalization coverage in preview generation (`buildLightPreview()` path):
+- Inline strikethrough markers normalize: `~~text~~` -> `text`
+- Inline highlight markers normalize: `==text==` -> `text`
+- Inline/block math delimiters normalize: `$...$`, `$$...$$`, `\(...\)`, `\[...\]` -> inner text
+- Inline code delimiters are parsed without leaking raw backticks in HTML output
+
+Implemented stripped-summary alignment (`stripMarkdownToText()`):
+- Math delimiters removed while retaining inner text
+- Marker leakage eliminated for supported weak-cue delimiters (`**`, `_`, `~~`, `==`, backticks, `$`)
+- Inline code text normalization now keeps plain word-like code tokens while preserving legacy stripping for punctuation-heavy snippets
+
+Budget parity evidence:
+- Text paragraph aggregation now consumes and decrements by source line count.
+- Paragraph merge loop is capped by remaining line budget.
+- Code preview already uses `previewLines`; unchanged class contract remains `<pre class="fce-preview-code"><code>...`.
+
+Verification assertion source:
+- `normalizes weak-cue inline markers without leaking raw delimiters`
+- `normalizes inline math delimiters while keeping math text`
+- `does not leak inline marker delimiters in stripped summary text`
+- `applies the same previewLines budget policy to text content`
+- `applies the same previewLines budget policy to code content`

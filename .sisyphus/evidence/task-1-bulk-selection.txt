@@ -1,0 +1,10 @@
+npx vitest run src/view/bulk-selection.test.ts
+
+RUN  v4.0.18 /home/kenan/Secret-Projects/obsidian-cards-explorer
+
+✓ src/view/bulk-selection.test.ts (8 tests) 7ms
+
+Test Files  1 passed (1)
+Tests       8 passed (8)
+Start at    00:10:51
+Duration    321ms (transform 84ms, setup 0ms, import 113ms, tests 7ms, environment 0ms)

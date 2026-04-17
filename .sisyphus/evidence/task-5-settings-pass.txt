@@ -1,0 +1,15 @@
+Task 5 verification evidence (settings schema/persistence pass)
+Date: 2026-04-16
+
+Command:
+  npx vitest run src/settings.test.ts
+
+Result:
+  ✓ src/settings.test.ts (26 tests)
+  Test Files: 1 passed
+  Tests: 26 passed
+
+Notes:
+  - `src/settings.ts` already satisfies the Task 3 contract.
+  - `previewLines` remains the only preview settings key.
+  - Normalization behavior remains integer clamp to 3..10 with default 5.

@@ -31,6 +31,16 @@
   export let includeSubfolders = true;
   export let isAllNotesScope = false;
   export let tooltipSide = "right";
+  export let bulkMode = false;
+  export let selectedPaths = [];
+  export let selectedCount = 0;
+  export let bulkAnchorPath = null;
+  export let canBulkSelectAll = false;
+  export let canBulkClearSelection = false;
+  export let canBulkMoveSelected = false;
+  export let canBulkTrashSelected = false;
+  export let canBulkDeleteSelected = false;
+  export let canBulkMergeSelected = false;
 
   const dispatch = createEventDispatcher();
 
@@ -308,7 +318,7 @@
   }
 </script>
 
-<div class="fce-shell">
+<div class="fce-shell {bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
     {folderPath}
     {sortField}
@@ -319,6 +329,15 @@
     {includeSubfolders}
     {isAllNotesScope}
     {tooltipSide}
+    {bulkMode}
+    {selectedCount}
+    {bulkAnchorPath}
+    {canBulkSelectAll}
+    {canBulkClearSelection}
+    {canBulkMoveSelected}
+    {canBulkTrashSelected}
+    {canBulkDeleteSelected}
+    {canBulkMergeSelected}
     on:toolbar-action
     on:sort-change
     on:filter-change
@@ -327,7 +346,7 @@
   />
 
   <div
-    class="fce-list"
+    class="fce-list {bulkMode ? 'is-bulk-mode' : ''}"
     bind:this={viewportEl}
     use:bindViewport
     on:scroll={onScroll}
@@ -343,14 +362,17 @@
         <div class={getRowClass(row.index)} use:measureRow={row}>
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
             {#each row.cards as card (card.path)}
-                <CardItem
-                  {card}
-                  {pinnedPaths}
-                  {previewLines}
-                  selected={selectedPath === card.path}
-                  on:open-note
-                  on:card-context-menu
-                  on:pin-toggle
+              <CardItem
+                {card}
+                {pinnedPaths}
+                {previewLines}
+                {bulkMode}
+                bulkSelected={bulkMode && selectedPaths.includes(card.path)}
+                selected={selectedPath === card.path}
+                on:open-note
+                on:bulk-select-card
+                on:card-context-menu
+                on:pin-toggle
               />
             {/each}
           </div>

@@ -1,0 +1,8 @@
+src/view/CardItem.svelte
+src/view/FolderCardPanel.svelte
+src/view/FolderCardView.ts
+src/view/Toolbar.svelte
+src/view/card-context-actions.test.ts
+src/view/note-ops.ts
+src/view/types.ts
+styles.css

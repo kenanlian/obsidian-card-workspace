@@ -1,0 +1,18 @@
+Task 8 Evidence — Required repository validation
+Date: 2026-04-16
+
+Command:
+`npm run check && npm run build && npm test`
+
+Result summary:
+- `npm run check` ✅ passed (`tsc --noEmit`)
+- `npm run build` ✅ passed (`main.js` emitted)
+- `npm test` ✅ passed (8 files, 180 tests)
+
+Notable build output:
+- Svelte a11y warnings in `src/view/Toolbar.svelte` (pre-existing; non-blocking)
+- 4 warnings total; build still exits successfully
+
+Test totals:
+- Test Files: 8 passed
+- Tests: 180 passed

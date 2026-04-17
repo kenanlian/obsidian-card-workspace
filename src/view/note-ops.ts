@@ -249,7 +249,8 @@ export async function mergeNotes(
     }
 
     const merged = sections.join(separator);
-    const fileName = `${mergedTitle}.md`;
+    const safeMergedTitle = normalizeMergedTitle(mergedTitle);
+    const fileName = `${safeMergedTitle}.md`;
     const newPath = resolveUniquePath(app, fileName, targetFolder.path);
     const created = await app.vault.create(newPath, merged);
 
@@ -262,6 +263,15 @@ export async function mergeNotes(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function normalizeMergedTitle(mergedTitle: string): string {
+  const collapsed = mergedTitle
+    .replace(/[\\/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return collapsed.length > 0 ? collapsed : "Merged notes";
+}
 
 /**
  * Generate a unique file path inside `folderPath`. If `fileName` already

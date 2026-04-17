@@ -32,6 +32,25 @@ export interface FolderLoadKey {
   sortDirection: SortDirection;
 }
 
+export interface BulkRuntimeState {
+  bulkMode: boolean;
+  selectedPaths: Set<string>;
+  bulkAnchorPath: string | null;
+}
+
+export interface BulkRuntimePanelState {
+  bulkMode: boolean;
+  selectedPaths: string[];
+  selectedCount: number;
+  bulkAnchorPath: string | null;
+  canBulkSelectAll: boolean;
+  canBulkClearSelection: boolean;
+  canBulkMoveSelected: boolean;
+  canBulkTrashSelected: boolean;
+  canBulkDeleteSelected: boolean;
+  canBulkMergeSelected: boolean;
+}
+
 export interface FolderLoadSnapshot {
   folderPath: string | null;
   loadKey: string | null;
@@ -39,6 +58,9 @@ export interface FolderLoadSnapshot {
   cards: NoteCardRecord[];
   selectedPath: string | null;
   loading: boolean;
+  bulkMode: boolean;
+  selectedPaths: Set<string>;
+  bulkAnchorPath: string | null;
 }
 
 export interface RefreshQueueState {

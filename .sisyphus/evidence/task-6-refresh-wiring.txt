@@ -1,0 +1,18 @@
+Task 6 evidence: preview line budget propagates through settings-change refresh and hydration.
+
+Code evidence
+- `src/view/card-context-actions.test.ts` adds test: "hydrates with updated previewLines after settings-change refresh".
+- The test performs this flow on a real `FolderCardView` instance:
+  1) initial load + hydration with `previewLines = 3`
+  2) settings update simulation (`previewLines = 9`) + `refresh({ reason: "settings-change", forceRefresh: true })`
+  3) re-hydration verifies `buildLightPreview(..., previewLines)` receives `9`
+
+Validation evidence
+- Command: `npx vitest run src/view/card-context-actions.test.ts -t "Task 6: preview settings refresh wiring and generation safety"`
+  - Result: PASS (2 passed)
+- Command: `npm run check`
+  - Result: PASS
+- Command: `npm run build`
+  - Result: PASS (existing Svelte a11y warnings only)
+- Command: `npm test`
+  - Result: PASS (7 files, 176 tests)

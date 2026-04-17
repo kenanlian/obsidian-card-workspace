@@ -1,0 +1,17 @@
+Task 6 evidence: stale hydration results remain ignored across generation changes.
+
+Code evidence
+- `src/view/FolderCardView.ts`: `hydrateCard()` catch path now also checks generation before mutating card state.
+  - Added guard:
+    - `if (generation !== this.generation) { return; }`
+- `src/view/card-context-actions.test.ts` adds test: "ignores stale hydration errors after previewLines change bumps generation".
+  - The test starts an in-flight hydration read that rejects later.
+  - Mid-flight, it simulates preview settings change and calls `refresh({ reason: "settings-change", forceRefresh: true })` to bump generation.
+  - It then rejects the stale read and verifies current-generation card remains unhydrated until a fresh hydration runs.
+  - It also verifies only the fresh hydration invokes `buildLightPreview` and uses updated `previewLines = 8`.
+
+Validation evidence
+- Command: `npx vitest run src/view/card-context-actions.test.ts -t "Task 6: preview settings refresh wiring and generation safety"`
+  - Result: PASS (2 passed)
+- Command: `npm test`
+  - Result: PASS (7 files, 176 tests)

@@ -1,0 +1,319 @@
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("obsidian", () => {
+  class MockTFile {
+    path: string;
+    basename: string;
+    name: string;
+    extension: string;
+    parent: { path: string } | null;
+
+    constructor(path: string = "") {
+      this.path = path;
+      this.name = path.replace(/.*\//, "");
+      this.basename = this.name.replace(/\.md$/, "");
+      this.extension = "md";
+      const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      this.parent = { path: parentPath };
+    }
+  }
+
+  class MockTFolder {
+    path: string;
+    name: string;
+    children: unknown[];
+
+    constructor(path: string = "") {
+      this.path = path;
+      this.name = path === "" ? "/" : path.replace(/.*\//, "");
+      this.children = [];
+    }
+  }
+
+  class MockNotice {
+    constructor(_message: string) {
+      return;
+    }
+  }
+
+  return {
+    App: class MockApp {},
+    Notice: MockNotice,
+    TFile: MockTFile,
+    TFolder: MockTFolder,
+  };
+});
+
+import { TFile, TFolder } from "obsidian";
+import { batchDeleteFiles, batchMoveFiles, batchTrashFiles, mergeNotes } from "./note-ops";
+
+interface MockAppForMove {
+  vault: {
+    getAbstractFileByPath: (path: string) => unknown;
+  };
+  fileManager: {
+    renameFile: (file: TFile, newPath: string) => Promise<void>;
+  };
+}
+
+interface MockAppForTrash {
+  vault: {
+    trash: (file: TFile, system: boolean) => Promise<void>;
+  };
+}
+
+interface MockAppForDelete {
+  vault: {
+    delete: (file: TFile) => Promise<void>;
+  };
+}
+
+interface MockAppForMerge {
+  vault: {
+    read: (file: TFile) => Promise<string>;
+    create: (path: string, content: string) => Promise<TFile>;
+    getAbstractFileByPath: (path: string) => unknown;
+  };
+}
+
+function createFile(path: string): TFile {
+  const file = new TFile();
+  (file as unknown as { path: string }).path = path;
+  (file as unknown as { name: string }).name = path.replace(/.*\//, "");
+  (file as unknown as { basename: string }).basename = path.replace(/.*\//, "").replace(/\.md$/, "");
+  (file as unknown as { extension: string }).extension = "md";
+  const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  (file as unknown as { parent: { path: string } }).parent = { path: parentPath };
+  return file;
+}
+
+describe("batchMoveFiles", () => {
+  it("returns a partial-failure summary while continuing remaining moves", async () => {
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+    (targetFolder as unknown as { name: string }).name = "archive";
+    (targetFolder as unknown as { children: unknown[] }).children = [];
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const files = [first, second, third];
+
+    const fileMap = new Map<string, TFile>([
+      [first.path, first],
+      [second.path, second],
+      [third.path, third],
+    ]);
+
+    const app: MockAppForMove = {
+      vault: {
+        getAbstractFileByPath: (path: string): unknown => {
+          return fileMap.get(path) ?? null;
+        },
+      },
+      fileManager: {
+        renameFile: vi.fn(async (file: TFile, newPath: string): Promise<void> => {
+          if (file.path === second.path) {
+            throw new Error("permission denied");
+          }
+
+          fileMap.delete(file.path);
+          (file as unknown as { path: string }).path = newPath;
+          (file as unknown as { name: string }).name = newPath.replace(/.*\//, "");
+          (file as unknown as { basename: string }).basename = newPath
+            .replace(/.*\//, "")
+            .replace(/\.md$/, "");
+          (file as unknown as { parent: { path: string } }).parent = { path: "archive" };
+          fileMap.set(newPath, file);
+        }),
+      },
+    };
+
+    const summary = await batchMoveFiles(app as unknown as any, files, targetFolder);
+
+    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+      "archive/first.md",
+      "archive/third.md",
+    ]);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({
+      ok: false,
+      path: "notes/second.md",
+    });
+    expect(vi.mocked(app.fileManager.renameFile)).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("batchTrashFiles", () => {
+  it("returns a partial-failure summary while continuing remaining trash operations", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const app: MockAppForTrash = {
+      vault: {
+        trash: vi.fn(async (file: TFile): Promise<void> => {
+          if (file.path === second.path) {
+            throw new Error("trash blocked");
+          }
+        }),
+      },
+    };
+
+    const summary = await batchTrashFiles(app as unknown as any, [first, second, third]);
+
+    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+      "notes/first.md",
+      "notes/third.md",
+    ]);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({
+      ok: false,
+      path: "notes/second.md",
+    });
+    expect(vi.mocked(app.vault.trash)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.vault.trash).mock.calls[0]).toEqual([first, true]);
+    expect(vi.mocked(app.vault.trash).mock.calls[1]).toEqual([second, true]);
+    expect(vi.mocked(app.vault.trash).mock.calls[2]).toEqual([third, true]);
+  });
+});
+
+describe("batchDeleteFiles", () => {
+  it("returns a partial-failure summary while continuing remaining delete operations", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const app: MockAppForDelete = {
+      vault: {
+        delete: vi.fn(async (file: TFile): Promise<void> => {
+          if (file.path === second.path) {
+            throw new Error("delete blocked");
+          }
+        }),
+      },
+    };
+
+    const summary = await batchDeleteFiles(app as unknown as any, [first, second, third]);
+
+    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+      "notes/first.md",
+      "notes/third.md",
+    ]);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({
+      ok: false,
+      path: "notes/second.md",
+    });
+    expect(vi.mocked(app.vault.delete)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(1, first);
+    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(2, second);
+    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(3, third);
+  });
+});
+
+describe("mergeNotes", () => {
+  it("merges notes using provided order and separator", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+    const separator = "\n\n***\n\n";
+
+    const bodyByPath: Record<string, string> = {
+      [first.path]: "First body",
+      [second.path]: "Second body",
+    };
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (file: TFile): Promise<string> => {
+          return bodyByPath[file.path] ?? "";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(
+      app as unknown as any,
+      [second, first],
+      targetFolder,
+      "Merged Title",
+      separator,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.sourceCount).toBe(2);
+      expect(result.mergedFile.path).toBe("archive/Merged Title.md");
+    }
+
+    expect(vi.mocked(app.vault.read)).toHaveBeenNthCalledWith(1, second);
+    expect(vi.mocked(app.vault.read)).toHaveBeenNthCalledWith(2, first);
+    expect(vi.mocked(app.vault.create)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[0]).toBe("archive/Merged Title.md");
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
+      "# second\n\nSecond body\n\n***\n\n# first\n\nFirst body",
+    );
+  });
+
+  it("normalizes merge title path separators to keep merged note in target folder", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (file: TFile): Promise<string> => {
+          return `${file.basename} body`;
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(
+      app as unknown as any,
+      [first, second],
+      targetFolder,
+      "..\\outside/merged",
+      "\n\n---\n\n",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[0]).toBe("archive/.. outside merged.md");
+  });
+
+  it("falls back to default merged title when sanitized title is empty", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (): Promise<string> => {
+          return "body";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(
+      app as unknown as any,
+      [first, second],
+      targetFolder,
+      "///\\\\",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[0]).toBe("archive/Merged notes.md");
+  });
+});

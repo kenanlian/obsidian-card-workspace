@@ -1,0 +1,18 @@
+> folder-card-explorer@0.1.0 test
+> vitest run
+
+RUN  v4.0.18 /home/kenan/Secret-Projects/obsidian-cards-explorer
+
+✓ src/view/scroll-anchoring.test.ts (14 tests)
+✓ src/FolderCardExplorerSettingTab.test.ts (2 tests)
+✓ src/settings.test.ts (26 tests)
+✓ src/FolderPickerModal.test.ts (7 tests)
+✓ src/view/markdown-utils.test.ts (42 tests)
+✓ src/view/row-projection.test.ts (5 tests)
+✓ src/view/bulk-selection.test.ts (8 tests)
+✓ src/view/note-ops.test.ts (6 tests)
+✓ src/view/pipeline.test.ts (27 tests)
+✓ src/view/card-context-actions.test.ts (87 tests)
+
+Test Files  10 passed (10)
+Tests  224 passed (224)

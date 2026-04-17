@@ -7,6 +7,7 @@ const mockState = vi.hoisted(() => {
 
   const menuInstances: MockMenu[] = [];
   const folderPickerInstances: MockFolderPickerModal[] = [];
+  const modalInstances: MockModal[] = [];
   const noticeMessages: string[] = [];
   const panelEventHandlers: Record<string, (event: any) => void> = {};
   const panelInstances: MockFolderCardPanel[] = [];
@@ -121,6 +122,160 @@ const mockState = vi.hoisted(() => {
     }
   }
 
+  interface MockModalButton {
+    text: string;
+    warning: boolean;
+    cta: boolean;
+    onClick: (() => void) | null;
+  }
+
+  interface MockModalTextInput {
+    value: string;
+    onChange: ((value: string) => void) | null;
+  }
+
+  class MockModal {
+    app: unknown;
+    title = "";
+    descriptions: string[] = [];
+    messages: string[] = [];
+    renderedPreviewText = "";
+    buttons: MockModalButton[] = [];
+    textInputs: MockModalTextInput[] = [];
+    contentEl: {
+      __ownerModal: MockModal;
+      empty: () => void;
+      createEl: (tag: string, attrs?: { text?: string }) => Record<string, unknown>;
+      createDiv: () => Record<string, unknown>;
+    };
+
+    constructor(app: unknown) {
+      this.app = app;
+      this.contentEl = {
+        __ownerModal: this,
+        empty: () => {
+          this.descriptions = [];
+          this.messages = [];
+          this.renderedPreviewText = "";
+          this.buttons = [];
+          this.textInputs = [];
+        },
+        createEl: (tag: string, attrs?: { text?: string }) => {
+          if (tag === "p" && typeof attrs?.text === "string") {
+            this.messages.push(attrs.text);
+          }
+          if (tag === "pre" && typeof attrs?.text === "string") {
+            this.renderedPreviewText = attrs.text;
+          }
+          return {};
+        },
+        createDiv: () => ({}),
+      };
+    }
+
+    setTitle(title: string): this {
+      this.title = title;
+      return this;
+    }
+
+    open(): void {
+      modalInstances.push(this);
+      if ("onOpen" in this && typeof (this as any).onOpen === "function") {
+        (this as any).onOpen();
+      }
+    }
+
+    close(): void {
+      if ("onClose" in this && typeof (this as any).onClose === "function") {
+        (this as any).onClose();
+      }
+    }
+  }
+
+  class MockSetting {
+    private modal: MockModal | null;
+
+    constructor(containerEl: unknown) {
+      const owner = (containerEl as { __ownerModal?: MockModal } | null)?.__ownerModal;
+      this.modal = owner ?? null;
+    }
+
+    setName(_name: string): this {
+      return this;
+    }
+
+    setDesc(description: string): this {
+      this.modal?.descriptions.push(description);
+      return this;
+    }
+
+    addText(configure: (text: {
+      setValue: (value: string) => unknown;
+      setPlaceholder: (value: string) => unknown;
+      onChange: (handler: (value: string) => void) => unknown;
+    }) => void): this {
+      const record: MockModalTextInput = {
+        value: "",
+        onChange: null,
+      };
+
+      const chain = {
+        setValue: (value: string) => {
+          record.value = value;
+          return chain;
+        },
+        setPlaceholder: (_value: string) => {
+          return chain;
+        },
+        onChange: (handler: (value: string) => void) => {
+          record.onChange = handler;
+          return chain;
+        },
+      };
+
+      configure(chain);
+      this.modal?.textInputs.push(record);
+      return this;
+    }
+
+    addButton(configure: (button: {
+      setButtonText: (text: string) => unknown;
+      onClick: (handler: () => void) => unknown;
+      setWarning: () => unknown;
+      setCta: () => unknown;
+    }) => void): this {
+      const record: MockModalButton = {
+        text: "",
+        warning: false,
+        cta: false,
+        onClick: null,
+      };
+
+      const chain = {
+        setButtonText: (text: string) => {
+          record.text = text;
+          return chain;
+        },
+        onClick: (handler: () => void) => {
+          record.onClick = handler;
+          return chain;
+        },
+        setWarning: () => {
+          record.warning = true;
+          return chain;
+        },
+        setCta: () => {
+          record.cta = true;
+          return chain;
+        },
+      };
+
+      configure(chain);
+      this.modal?.buttons.push(record);
+      return this;
+    }
+  }
+
   class MockItemView {
     app: any;
     leaf: any;
@@ -140,13 +295,16 @@ const mockState = vi.hoisted(() => {
   return {
     MockItemView,
     MockMenu,
+    MockModal,
     MockNotice,
+    MockSetting,
     MockTFile,
     MockTFolder,
     MockFolderPickerModal,
     MockFolderCardPanel,
     menuInstances,
     folderPickerInstances,
+    modalInstances,
     noticeMessages,
     panelEventHandlers,
     panelInstances,
@@ -157,7 +315,9 @@ vi.mock("obsidian", () => {
   return {
     ItemView: mockState.MockItemView,
     Menu: mockState.MockMenu,
+    Modal: mockState.MockModal,
     Notice: mockState.MockNotice,
+    Setting: mockState.MockSetting,
     TFile: mockState.MockTFile,
     TFolder: mockState.MockTFolder,
   };
@@ -171,7 +331,15 @@ vi.mock("./FolderCardPanel.svelte", () => {
 
 vi.mock("./note-ops", () => {
   return {
+    batchDeleteFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
+    mergeNotes: vi.fn(async () => ({
+      ok: true,
+      mergedFile: new mockState.MockTFile("notes/Merged notes.md"),
+      sourceCount: 2,
+    })),
     moveFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
   };
 });
@@ -183,7 +351,14 @@ vi.mock("../FolderPickerModal", () => {
 });
 
 import { FolderCardView } from "./FolderCardView";
-import { copyNoteToClipboard, moveFile } from "./note-ops";
+import {
+  batchDeleteFiles,
+  batchMoveFiles,
+  batchTrashFiles,
+  copyNoteToClipboard,
+  mergeNotes,
+  moveFile,
+} from "./note-ops";
 import { ALL_NOTES_PATH } from "./types";
 import * as markdownUtils from "./markdown-utils";
 
@@ -267,10 +442,47 @@ function createCardRecord(file: InstanceType<typeof mockState.MockTFile>) {
   };
 }
 
+function createCardRecordFromPath(path: string) {
+  const file = createMarkdownFile(path);
+  (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+    ctime: 1,
+    mtime: 1,
+  };
+  return createCardRecord(file);
+}
+
+function clickLatestModalButton(buttonText: string, occurrence: number = 0): void {
+  const modal = mockState.modalInstances.at(-1);
+  expect(modal).toBeDefined();
+
+  const buttons = modal?.buttons.filter((candidate) => candidate.text === buttonText) ?? [];
+  const button = buttons[occurrence];
+  expect(button).toBeDefined();
+  expect(typeof button?.onClick).toBe("function");
+  button?.onClick?.();
+}
+
+function setLatestModalTextInput(index: number, value: string): void {
+  const modal = mockState.modalInstances.at(-1);
+  expect(modal).toBeDefined();
+
+  const input = modal?.textInputs[index];
+  expect(input).toBeDefined();
+  input!.value = value;
+  input?.onChange?.(value);
+}
+
+async function flushAsyncWork(iterations: number = 5): Promise<void> {
+  for (let index = 0; index < iterations; index += 1) {
+    await Promise.resolve();
+  }
+}
+
 describe("FolderCardView card context actions", () => {
   beforeEach(() => {
     mockState.menuInstances.length = 0;
     mockState.folderPickerInstances.length = 0;
+    mockState.modalInstances.length = 0;
     mockState.noticeMessages.length = 0;
     mockState.panelInstances.length = 0;
     Object.keys(mockState.panelEventHandlers).forEach((key) => {
@@ -290,8 +502,7 @@ describe("FolderCardView card context actions", () => {
       (view as any).loading = false;
 
       await (view as any).onOpen();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushAsyncWork();
 
       expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
       expect(card.hydrated).toBe(true);
@@ -634,6 +845,259 @@ describe("FolderCardView card context actions", () => {
         expect(typeof mockState.panelEventHandlers["pin-toggle"]).toBe("function");
       });
 
+      it("registers bulk subscriptions", async () => {
+        const { view } = createViewWithFile("notes/bulk-subscriptions.md");
+
+        (view as any).bulkMode = true;
+        (view as any).selectedPaths = new Set(["notes/bulk-subscriptions.md"]);
+        (view as any).bulkAnchorPath = "notes/bulk-subscriptions.md";
+
+        await (view as any).onOpen();
+
+        expect(mockState.panelEventHandlers["toolbar-action"]).toBeDefined();
+        expect(mockState.panelEventHandlers["bulk-select-card"]).toBeDefined();
+        expect(typeof mockState.panelEventHandlers["toolbar-action"]).toBe("function");
+        expect(typeof mockState.panelEventHandlers["bulk-select-card"]).toBe("function");
+        expect(mockState.panelInstances).toHaveLength(1);
+        expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
+          bulkMode: true,
+          selectedPaths: ["notes/bulk-subscriptions.md"],
+          selectedCount: 1,
+          bulkAnchorPath: "notes/bulk-subscriptions.md",
+          canBulkSelectAll: false,
+          canBulkClearSelection: true,
+          canBulkMoveSelected: true,
+          canBulkTrashSelected: true,
+          canBulkDeleteSelected: true,
+          canBulkMergeSelected: false,
+        });
+      });
+
+      it("normal mode and bulk mode click behavior stay distinct", async () => {
+        const { view, plugin } = createViewWithFile("notes/click-distinction.md");
+        const visibleCards = [createCardRecordFromPath("notes/selected-in-bulk.md")];
+
+        (view as any).baseCards = visibleCards;
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+
+        await (view as any).onOpen();
+
+        const openNoteHandler = mockState.panelEventHandlers["open-note"];
+        const bulkSelectHandler = mockState.panelEventHandlers["bulk-select-card"];
+
+        openNoteHandler({ detail: { path: "notes/normal-open.md" } });
+        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
+        expect(plugin.openNoteFromCard).toHaveBeenLastCalledWith("notes/normal-open.md");
+
+        (view as any).bulkMode = true;
+        openNoteHandler({ detail: { path: "notes/should-not-open.md" } });
+        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
+
+        bulkSelectHandler({ detail: { path: "notes/selected-in-bulk.md", shiftKey: false } });
+
+        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
+        expect(Array.from((view as any).selectedPaths)).toEqual(["notes/selected-in-bulk.md"]);
+        expect((view as any).bulkAnchorPath).toBe("notes/selected-in-bulk.md");
+      });
+
+      it("shift-range selection uses visible order", async () => {
+        const { view, plugin } = createViewWithFile("notes/shift-visible-order.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/c.md"),
+          createCardRecordFromPath("notes/b.md"),
+          createCardRecordFromPath("notes/a.md"),
+          createCardRecordFromPath("notes/d.md"),
+        ];
+
+        (view as any).baseCards = [
+          createCardRecordFromPath("notes/a.md"),
+          createCardRecordFromPath("notes/b.md"),
+          createCardRecordFromPath("notes/c.md"),
+          createCardRecordFromPath("notes/d.md"),
+          createCardRecordFromPath("notes/hidden.md"),
+        ];
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).bulkMode = true;
+
+        await (view as any).onOpen();
+
+        const bulkSelectHandler = mockState.panelEventHandlers["bulk-select-card"];
+        bulkSelectHandler({ detail: { path: "notes/b.md", shiftKey: false } });
+        bulkSelectHandler({ detail: { path: "notes/d.md", shiftKey: true } });
+
+        expect(Array.from((view as any).selectedPaths)).toEqual([
+          "notes/b.md",
+          "notes/a.md",
+          "notes/d.md",
+        ]);
+        expect((view as any).bulkAnchorPath).toBe("notes/b.md");
+        expect((view as any).selectedPaths.has("notes/hidden.md")).toBe(false);
+        expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
+      });
+
+      it("bulk selection state machine", async () => {
+        const { view } = createViewWithFile("notes/bulk-state-machine.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/alpha.md"),
+          createCardRecordFromPath("notes/gamma.md"),
+          createCardRecordFromPath("notes/beta.md"),
+        ];
+
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).bulkMode = true;
+        (view as any).selectedPaths = new Set<string>(["notes/alpha.md"]);
+        (view as any).bulkAnchorPath = "notes/alpha.md";
+
+        await (view as any).onOpen();
+
+        const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+        toolbarActionHandler({ detail: { action: "bulk-select-all" } });
+
+        expect(Array.from((view as any).selectedPaths)).toEqual([
+          "notes/alpha.md",
+          "notes/gamma.md",
+          "notes/beta.md",
+        ]);
+        expect((view as any).bulkAnchorPath).toBe("notes/alpha.md");
+
+        const afterSelectAll = mockState.panelInstances[0]?.setCalls.at(-1);
+        expect(afterSelectAll).toMatchObject({
+          selectedPaths: ["notes/alpha.md", "notes/gamma.md", "notes/beta.md"],
+          selectedCount: 3,
+          bulkAnchorPath: "notes/alpha.md",
+          canBulkSelectAll: true,
+          canBulkClearSelection: true,
+          canBulkMoveSelected: true,
+          canBulkTrashSelected: true,
+          canBulkDeleteSelected: true,
+          canBulkMergeSelected: true,
+        });
+
+        toolbarActionHandler({ detail: { action: "bulk-clear-selection" } });
+
+        expect((view as any).selectedPaths.size).toBe(0);
+        expect((view as any).bulkAnchorPath).toBeNull();
+
+        const afterClear = mockState.panelInstances[0]?.setCalls.at(-1);
+        expect(afterClear).toMatchObject({
+          selectedPaths: [],
+          selectedCount: 0,
+          bulkAnchorPath: null,
+          canBulkSelectAll: true,
+          canBulkClearSelection: false,
+          canBulkMoveSelected: false,
+          canBulkTrashSelected: false,
+          canBulkDeleteSelected: false,
+          canBulkMergeSelected: false,
+        });
+      });
+
+      it("bulk toolbar actions and enablement", async () => {
+        const { view } = createViewWithFile("notes/bulk-toolbar.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/alpha.md"),
+          createCardRecordFromPath("notes/beta.md"),
+          createCardRecordFromPath("notes/gamma.md"),
+        ];
+
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).bulkMode = true;
+
+        await (view as any).onOpen();
+
+        expect(mockState.panelInstances).toHaveLength(1);
+        expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
+          bulkMode: true,
+          selectedPaths: [],
+          selectedCount: 0,
+          bulkAnchorPath: null,
+          canBulkSelectAll: true,
+          canBulkClearSelection: false,
+          canBulkMoveSelected: false,
+          canBulkTrashSelected: false,
+          canBulkDeleteSelected: false,
+          canBulkMergeSelected: false,
+        });
+
+        (view as any).selectedPaths = new Set(["notes/beta.md"]);
+        (view as any).bulkAnchorPath = "notes/beta.md";
+        (view as any).pushState();
+
+        const afterSingleSelect = mockState.panelInstances[0]?.setCalls.at(-1);
+        expect(afterSingleSelect).toMatchObject({
+          selectedPaths: ["notes/beta.md"],
+          selectedCount: 1,
+          bulkAnchorPath: "notes/beta.md",
+          canBulkSelectAll: true,
+          canBulkClearSelection: true,
+          canBulkMoveSelected: true,
+          canBulkTrashSelected: true,
+          canBulkDeleteSelected: true,
+          canBulkMergeSelected: false,
+        });
+
+        const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+        toolbarActionHandler({ detail: { action: "bulk-select-all" } });
+
+        expect(Array.from((view as any).selectedPaths)).toEqual([
+          "notes/alpha.md",
+          "notes/beta.md",
+          "notes/gamma.md",
+        ]);
+
+        const afterSelectAll = mockState.panelInstances[0]?.setCalls.at(-1);
+        expect(afterSelectAll).toMatchObject({
+          selectedPaths: ["notes/alpha.md", "notes/beta.md", "notes/gamma.md"],
+          selectedCount: 3,
+          bulkAnchorPath: "notes/beta.md",
+          canBulkSelectAll: true,
+          canBulkClearSelection: true,
+          canBulkMoveSelected: true,
+          canBulkTrashSelected: true,
+          canBulkDeleteSelected: true,
+          canBulkMergeSelected: true,
+        });
+      });
+
+      it("exiting bulk mode clears selection", async () => {
+        const { view } = createViewWithFile("notes/bulk-exit.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/alpha.md"),
+          createCardRecordFromPath("notes/beta.md"),
+        ];
+
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).bulkMode = true;
+        (view as any).selectedPaths = new Set(["notes/alpha.md", "notes/beta.md"]);
+        (view as any).bulkAnchorPath = "notes/alpha.md";
+
+        await (view as any).onOpen();
+
+        const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+        toolbarActionHandler({ detail: { action: "bulk" } });
+
+        expect((view as any).bulkMode).toBe(false);
+        expect((view as any).selectedPaths.size).toBe(0);
+        expect((view as any).bulkAnchorPath).toBeNull();
+        expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+          bulkMode: false,
+          selectedPaths: [],
+          selectedCount: 0,
+          bulkAnchorPath: null,
+          canBulkSelectAll: true,
+          canBulkClearSelection: false,
+          canBulkMoveSelected: false,
+          canBulkTrashSelected: false,
+          canBulkDeleteSelected: false,
+          canBulkMergeSelected: false,
+        });
+      });
+
       it("onOpen passes includeSubfolders and folder scope props to the panel", async () => {
         const { view } = createViewWithFile("notes/folder-scope-props.md");
 
@@ -782,8 +1246,8 @@ describe("FolderCardView card context actions", () => {
         expect(hydrateRangeHandler).toBeDefined();
 
         hydrateRangeHandler({ detail: { start: 0, end: 1 } });
-        await Promise.resolve();
-        await Promise.resolve();
+        await flushAsyncWork(1);
+        await flushAsyncWork(1);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
         expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
@@ -939,7 +1403,7 @@ describe("FolderCardView card context actions", () => {
           });
 
           const staleHydration = (view as any).hydrateRange(0, 1);
-          await Promise.resolve();
+          await flushAsyncWork(1);
 
           previewLines = 8;
           await (view as any).refresh({
@@ -1280,6 +1744,582 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.noticeMessages).toEqual(["Failed to move note: permission denied"]);
   });
 
+  describe("batch move workflow", () => {
+    it("resolves selected paths to live files in selection order before batch execution", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const third = createMarkdownFile("notes/third.md");
+      const destination = createFolder("archive");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === third.path) {
+          return third;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([
+        second.path,
+        "notes/missing.md",
+        first.path,
+        third.path,
+      ]);
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(third.path),
+      ]);
+
+      vi.mocked(batchMoveFiles).mockResolvedValueOnce({
+        succeeded: [
+          { ok: true, file: second as unknown as any },
+          { ok: true, file: first as unknown as any },
+          { ok: true, file: third as unknown as any },
+        ],
+        failed: [],
+      } as any);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
+
+      const picker = mockState.folderPickerInstances.at(-1);
+      await picker?.onChoose(destination);
+
+      expect(batchMoveFiles).toHaveBeenCalledTimes(1);
+      expect(batchMoveFiles).toHaveBeenCalledWith(
+        app,
+        [second, first, third] as unknown as any,
+        destination,
+      );
+    });
+
+    it("bulk move workflow reconciles selection after execution", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const successA = createMarkdownFile("notes/success-a.md");
+      const failedB = createMarkdownFile("notes/failed-b.md");
+      const successC = createMarkdownFile("notes/success-c.md");
+      const destination = createFolder("archive");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === successA.path) {
+          return successA;
+        }
+        if (requestedPath === failedB.path) {
+          return failedB;
+        }
+        if (requestedPath === successC.path) {
+          return successC;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([
+        successA.path,
+        "notes/stale.md",
+        failedB.path,
+        successC.path,
+      ]);
+      (view as any).bulkAnchorPath = successA.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ]);
+
+      vi.mocked(batchMoveFiles).mockResolvedValueOnce({
+        succeeded: [
+          { ok: true, file: successA as unknown as any },
+          { ok: true, file: successC as unknown as any },
+        ],
+        failed: [{ ok: false, error: "permission denied", path: failedB.path }],
+      } as any);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
+
+      const picker = mockState.folderPickerInstances.at(-1);
+      await picker?.onChoose(destination);
+
+      expect(Array.from((view as any).selectedPaths)).toEqual([failedB.path]);
+      expect((view as any).bulkAnchorPath).toBe(failedB.path);
+      expect(mockState.noticeMessages).toEqual(["Moved 2 notes; 1 failed."]);
+    });
+
+    it("clears stale selections when bulk move resolves to zero live files", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const destination = createFolder("archive");
+
+      app.vault.getAbstractFileByPath = vi.fn(() => null);
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
+      (view as any).bulkAnchorPath = "notes/stale-a.md";
+      (view as any).baseCards = [
+        createCardRecordFromPath("notes/stale-a.md"),
+        createCardRecordFromPath("notes/stale-b.md"),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath("notes/stale-a.md"),
+        createCardRecordFromPath("notes/stale-b.md"),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => []);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
+
+      const picker = mockState.folderPickerInstances.at(-1);
+      await picker?.onChoose(destination);
+
+      expect(batchMoveFiles).not.toHaveBeenCalled();
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(mockState.noticeMessages).toEqual(["No selected notes are available to move."]);
+    });
+
+    it("clears stale selections when bulk move resolves to already-target live files", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const alreadyFirst = createMarkdownFile("archive/already-first.md");
+      const alreadySecond = createMarkdownFile("archive/already-second.md");
+      const destination = createFolder("archive");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === alreadyFirst.path) {
+          return alreadyFirst;
+        }
+        if (requestedPath === alreadySecond.path) {
+          return alreadySecond;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([
+        "notes/stale-before.md",
+        alreadySecond.path,
+        "notes/stale-middle.md",
+        alreadyFirst.path,
+      ]);
+      (view as any).bulkAnchorPath = "notes/stale-before.md";
+      (view as any).baseCards = [
+        createCardRecordFromPath(alreadyFirst.path),
+        createCardRecordFromPath(alreadySecond.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(alreadySecond.path),
+        createCardRecordFromPath(alreadyFirst.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(alreadySecond.path),
+        createCardRecordFromPath(alreadyFirst.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
+
+      const picker = mockState.folderPickerInstances.at(-1);
+      await picker?.onChoose(destination);
+
+      expect(batchMoveFiles).not.toHaveBeenCalled();
+      expect(Array.from((view as any).selectedPaths)).toEqual([
+        alreadySecond.path,
+        alreadyFirst.path,
+      ]);
+      expect((view as any).bulkAnchorPath).toBe(alreadySecond.path);
+      expect(mockState.noticeMessages).toEqual(["All selected notes are already in the target folder."]);
+    });
+  });
+
+  describe("bulk trash and delete workflows", () => {
+    it("runs bulk trash using confirmed ordered live-file resolution and reconciles failed selections", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const successA = createMarkdownFile("notes/success-a.md");
+      const failedB = createMarkdownFile("notes/failed-b.md");
+      const successC = createMarkdownFile("notes/success-c.md");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === successA.path) {
+          return successA;
+        }
+        if (requestedPath === failedB.path) {
+          return failedB;
+        }
+        if (requestedPath === successC.path) {
+          return successC;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([
+        successA.path,
+        "notes/stale.md",
+        failedB.path,
+        successC.path,
+      ]);
+      (view as any).bulkAnchorPath = successA.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(successA.path),
+        createCardRecordFromPath(failedB.path),
+        createCardRecordFromPath(successC.path),
+      ]);
+
+      vi.mocked(batchTrashFiles).mockResolvedValueOnce({
+        succeeded: [
+          { ok: true, file: successA as unknown as any },
+          { ok: true, file: successC as unknown as any },
+        ],
+        failed: [{ ok: false, error: "trash denied", path: failedB.path }],
+      } as any);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
+      await flushAsyncWork(1);
+
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+      expect(mockState.modalInstances).toHaveLength(1);
+      expect(mockState.modalInstances[0]?.title).toBe("Move notes to trash?");
+      expect(mockState.modalInstances[0]?.messages).toEqual(["Move 3 selected notes to trash?"]);
+
+      clickLatestModalButton("Move to trash");
+      await flushAsyncWork();
+
+      expect(batchTrashFiles).toHaveBeenCalledTimes(1);
+      expect(batchTrashFiles).toHaveBeenCalledWith(
+        app,
+        [successA, failedB, successC] as unknown as any,
+      );
+      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(Array.from((view as any).selectedPaths)).toEqual([failedB.path]);
+      expect((view as any).bulkAnchorPath).toBe(failedB.path);
+      expect(mockState.noticeMessages).toEqual(["Trashed 2 notes; 1 failed."]);
+
+    });
+
+    it("reconciles stale selection and no-ops when bulk delete has no live files at confirm time", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+
+      app.vault.getAbstractFileByPath = vi.fn(() => null);
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
+      (view as any).bulkAnchorPath = "notes/stale-a.md";
+      (view as any).baseCards = [
+        createCardRecordFromPath("notes/stale-a.md"),
+        createCardRecordFromPath("notes/stale-b.md"),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath("notes/stale-a.md"),
+        createCardRecordFromPath("notes/stale-b.md"),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => []);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
+      await flushAsyncWork(1);
+
+      expect(mockState.modalInstances).toHaveLength(0);
+      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(Array.from((view as any).selectedPaths)).toEqual([]);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(mockState.noticeMessages).toEqual(["No selected notes are available to delete."]);
+
+    });
+  });
+
+  describe("bulk trash and delete workflows require confirmation", () => {
+    it("does not execute batch trash/delete helpers when confirmation is denied", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
+      await flushAsyncWork(1);
+
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+      expect(mockState.modalInstances).toHaveLength(1);
+      expect(mockState.modalInstances[0]?.title).toBe("Move notes to trash?");
+      expect(mockState.modalInstances[0]?.messages).toEqual(["Move 2 selected notes to trash?"]);
+
+      clickLatestModalButton("Cancel");
+      await flushAsyncWork();
+
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+
+      toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
+      await flushAsyncWork(1);
+
+      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(mockState.modalInstances).toHaveLength(2);
+      expect(mockState.modalInstances[1]?.title).toBe("Permanently delete notes?");
+      expect(mockState.modalInstances[1]?.messages).toEqual([
+        "Permanently delete 2 selected notes? This cannot be undone.",
+      ]);
+
+      clickLatestModalButton("Cancel");
+      await flushAsyncWork();
+
+      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(Array.from((view as any).selectedPaths)).toEqual([first.path, second.path]);
+      expect((view as any).bulkAnchorPath).toBe(first.path);
+      expect(mockState.noticeMessages).toEqual([]);
+
+    });
+  });
+
+  describe("merge workflow", () => {
+    it("uses frozen visible-order selection, supports reorder, and keeps preview aligned with merge inputs", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const third = createMarkdownFile("notes/third.md");
+      const notesFolder = createFolder("notes");
+      const bodyByPath: Record<string, string> = {
+        [first.path]: "First body",
+        [second.path]: "Second body",
+        [third.path]: "Third body",
+      };
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return bodyByPath[file.path] ?? "";
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === third.path) {
+          return third;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      vi.mocked(mergeNotes).mockResolvedValueOnce({
+        ok: true,
+        mergedFile: createMarkdownFile("notes/Merged notes.md") as unknown as any,
+        sourceCount: 3,
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([third.path, first.path, second.path]);
+      (view as any).bulkAnchorPath = third.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      expect(mockState.modalInstances).toHaveLength(1);
+      expect(mockState.modalInstances[0]?.title).toBe("Merge selected notes");
+
+      clickLatestModalButton("Down", 0);
+      await flushAsyncWork();
+
+      setLatestModalTextInput(1, "\n\n***\n\n");
+      await flushAsyncWork();
+
+      const expectedPreview = [
+        "# second\n\nSecond body",
+        "# first\n\nFirst body",
+        "# third\n\nThird body",
+      ].join("\n\n***\n\n");
+
+      expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe(expectedPreview);
+      expect(mergeNotes).not.toHaveBeenCalled();
+
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(mergeNotes).toHaveBeenCalledTimes(1);
+      expect(mergeNotes).toHaveBeenCalledWith(
+        app,
+        [second, first, third],
+        notesFolder,
+        "Merged notes",
+        "\n\n***\n\n",
+      );
+    });
+
+    it("runs post-merge trash only after merge success", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return `${file.path} body`;
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+
+      vi.mocked(mergeNotes).mockReset();
+      vi.mocked(mergeNotes).mockResolvedValue({ ok: false, error: "merge failed" } as any);
+      vi.mocked(batchTrashFiles).mockClear();
+
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+      clickLatestModalButton("Trash source notes after merge");
+      await flushAsyncWork(1);
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(mergeNotes).toHaveBeenCalledTimes(1);
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+
+      vi.mocked(mergeNotes).mockResolvedValueOnce({
+        ok: true,
+        mergedFile: createMarkdownFile("notes/Merged notes.md") as unknown as any,
+        sourceCount: 2,
+      });
+      vi.mocked(batchTrashFiles).mockResolvedValueOnce({
+        succeeded: [{ ok: true, file: first as unknown as any }],
+        failed: [{ ok: false, error: "trash blocked", path: second.path }],
+      });
+
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+      clickLatestModalButton("Trash source notes after merge");
+      await flushAsyncWork(1);
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(batchTrashFiles).toHaveBeenCalledTimes(1);
+      expect(batchTrashFiles).toHaveBeenCalledWith(app, [first, second]);
+      expect(Array.from((view as any).selectedPaths)).toEqual([second.path]);
+      expect((view as any).bulkAnchorPath).toBe(second.path);
+    });
+  });
+
   describe("rename-driven incremental refresh after move", () => {
     it("rename removes card when move leaves current folder scope", () => {
       const { view, file } = createViewWithFile("notes/inside.md");
@@ -1330,6 +2370,245 @@ describe("FolderCardView card context actions", () => {
     });
   });
 
+  describe("Phase 2 regression hardening", () => {
+    it("restores single-note open and context-menu behavior after exiting bulk mode", async () => {
+      const { view, plugin, file } = createViewWithFile("notes/single-note-after-bulk.md");
+      const mouseEvent = { clientX: 44, clientY: 99 };
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      const openNoteHandler = mockState.panelEventHandlers["open-note"];
+      const contextMenuHandler = mockState.panelEventHandlers["card-context-menu"];
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([file.path]);
+      (view as any).bulkAnchorPath = file.path;
+
+      openNoteHandler({ detail: { path: file.path } });
+      expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
+
+      toolbarActionHandler({ detail: { action: "bulk" } });
+
+      expect((view as any).bulkMode).toBe(false);
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+
+      openNoteHandler({ detail: { path: file.path } });
+      contextMenuHandler({ detail: { path: file.path, mouseEvent } });
+
+      expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
+      expect(plugin.openNoteFromCard).toHaveBeenCalledWith(file.path);
+      expect(mockState.menuInstances).toHaveLength(1);
+      expect(mockState.menuInstances[0]?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+    });
+
+    it("keeps filter, pin, include-subfolders, and all-notes toolbar actions functional after bulk mode toggles", async () => {
+      const { view, plugin } = createViewWithFile("projects/active/phase2-toggle.md");
+
+      (view as any).folderPath = "projects/active";
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      const filterChangeHandler = mockState.panelEventHandlers["filter-change"];
+      const pinToggleHandler = mockState.panelEventHandlers["pin-toggle"];
+      const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
+
+      toolbarActionHandler({ detail: { action: "bulk" } });
+      toolbarActionHandler({ detail: { action: "bulk" } });
+
+      filterChangeHandler({ detail: { tags: ["#Work"] } });
+      pinToggleHandler({ detail: { path: "projects/active/phase2-toggle.md", pinned: true } });
+      includeSubfoldersHandler({ detail: { value: false } });
+      toolbarActionHandler({ detail: { action: "all-notes" } });
+      await flushAsyncWork();
+
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(1, {
+        filter: {
+          tags: ["work"],
+        },
+      });
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(2, {
+        pinnedPaths: ["projects/active/phase2-toggle.md"],
+      });
+      expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
+        includeSubfolders: false,
+      });
+      expect(plugin.selectAllNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats zero-selection bulk actions as safe no-ops", async () => {
+      const { view } = createViewWithFile("notes/zero-selection.md");
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set<string>();
+      (view as any).bulkAnchorPath = null;
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
+      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
+      toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      expect(mockState.folderPickerInstances).toHaveLength(0);
+      expect(mockState.modalInstances).toHaveLength(0);
+      expect(batchMoveFiles).not.toHaveBeenCalled();
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(mergeNotes).not.toHaveBeenCalled();
+      expect(mockState.noticeMessages).toEqual([]);
+    });
+
+    it("avoids pipeline and tag recomputation for bulk selection-only state updates", async () => {
+      const { view } = createViewWithFile("notes/selection-hot-path.md");
+      const firstPath = "notes/first.md";
+      const secondPath = "notes/second.md";
+      const visibleCards = [
+        createCardRecordFromPath(firstPath),
+        createCardRecordFromPath(secondPath),
+      ];
+
+      (view as any).bulkMode = true;
+      (view as any).baseCards = visibleCards;
+      (view as any).visibleCards = visibleCards;
+      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+
+      await (view as any).onOpen();
+
+      const deriveVisibleCardsSpy = vi.spyOn(view as any, "deriveVisibleCards");
+      const deriveAvailableTagsSpy = vi.spyOn(view as any, "deriveAvailableTags");
+
+      const bulkSelectCardHandler = mockState.panelEventHandlers["bulk-select-card"];
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+
+      bulkSelectCardHandler({ detail: { path: firstPath, shiftKey: false } });
+      bulkSelectCardHandler({ detail: { path: secondPath, shiftKey: false } });
+      toolbarActionHandler({ detail: { action: "bulk-clear-selection" } });
+      toolbarActionHandler({ detail: { action: "bulk" } });
+      toolbarActionHandler({ detail: { action: "bulk" } });
+
+      expect(deriveVisibleCardsSpy).not.toHaveBeenCalled();
+      expect(deriveAvailableTagsSpy).not.toHaveBeenCalled();
+    });
+
+    it("reconciles stale selections before confirmed bulk trash and clears selection after success", async () => {
+      const { view, app } = createViewWithFile("notes/trash-stale.md");
+      const liveFile = createMarkdownFile("notes/live.md");
+      const stalePath = "notes/stale.md";
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === liveFile.path) {
+          return liveFile;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([stalePath, liveFile.path]);
+      (view as any).bulkAnchorPath = stalePath;
+      (view as any).baseCards = [
+        createCardRecordFromPath(stalePath),
+        createCardRecordFromPath(liveFile.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(stalePath),
+        createCardRecordFromPath(liveFile.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(stalePath),
+        createCardRecordFromPath(liveFile.path),
+      ]);
+
+      vi.mocked(batchTrashFiles).mockResolvedValueOnce({
+        succeeded: [{ ok: true, file: liveFile as unknown as any }],
+        failed: [],
+      } as any);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
+      await flushAsyncWork(1);
+
+      expect(Array.from((view as any).selectedPaths)).toEqual([liveFile.path]);
+      expect((view as any).bulkAnchorPath).toBe(liveFile.path);
+      expect(mockState.modalInstances).toHaveLength(1);
+
+      clickLatestModalButton("Move to trash");
+      await flushAsyncWork();
+
+      expect(batchTrashFiles).toHaveBeenCalledTimes(1);
+      expect(batchTrashFiles).toHaveBeenCalledWith(app, [liveFile] as unknown as any);
+      expect(Array.from((view as any).selectedPaths)).toEqual([]);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(mockState.noticeMessages).toEqual(["Trashed 1 note."]);
+    });
+
+    it("clears bulk selection after successful merge while keeping selectedPath stable", async () => {
+      const { view, app } = createViewWithFile("notes/merge-clears-selection.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+
+      app.vault.read = vi.fn(async () => "body");
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).selectedPath = "notes/editor-focused.md";
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      vi.mocked(mergeNotes).mockResolvedValueOnce({
+        ok: true,
+        mergedFile: createMarkdownFile("notes/Merged notes.md") as unknown as any,
+        sourceCount: 2,
+      });
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(mergeNotes).toHaveBeenCalledTimes(1);
+      expect(batchTrashFiles).not.toHaveBeenCalled();
+      expect(Array.from((view as any).selectedPaths)).toEqual([]);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).selectedPath).toBe("notes/editor-focused.md");
+      expect((view as any).bulkMode).toBe(true);
+    });
+  });
+
   describe("Phase 1 regression hardening", () => {
     it("pushState updates the panel to all-notes while preserving sort, filter, and pinned props", () => {
       const { view, plugin } = createViewWithFile("notes/push-state-all-notes.md");
@@ -1358,6 +2637,79 @@ describe("FolderCardView card context actions", () => {
         activeFilterTags: ["alpha", "beta"],
         pinnedPaths: ["notes/pinned.md"],
         includeSubfolders: false,
+      });
+    });
+
+    it("selectedPath stays independent from bulk selection", () => {
+      const { view } = createViewWithFile("notes/independent-selection.md");
+      const selectedPaths = new Set(["notes/a.md", "notes/b.md"]);
+      const visibleCards = [
+        createCardRecordFromPath("notes/a.md"),
+        createCardRecordFromPath("notes/b.md"),
+      ];
+
+      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).selectedPath = "notes/previous.md";
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = selectedPaths;
+      (view as any).bulkAnchorPath = "notes/a.md";
+      (view as any).baseCards = visibleCards;
+      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+
+      (view as any).setSelectedFile("notes/independent-selection.md");
+
+      expect((view as any).selectedPath).toBe("notes/independent-selection.md");
+      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/a.md", "notes/b.md"]);
+      expect((view as any).bulkAnchorPath).toBe("notes/a.md");
+      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+        selectedPath: "notes/independent-selection.md",
+        bulkMode: true,
+        selectedPaths: ["notes/a.md", "notes/b.md"],
+        selectedCount: 2,
+      });
+    });
+
+    it("pushState includes bulk runtime payload", () => {
+      const { view, plugin } = createViewWithFile("notes/bulk-runtime-payload.md");
+      const firstSelectedPath = "notes/first.md";
+      const secondSelectedPath = "notes/second.md";
+
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+        previewLines: 5,
+      }));
+
+      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).folderPath = "notes";
+      (view as any).selectedPath = "notes/editor-sync.md";
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
+      (view as any).bulkAnchorPath = firstSelectedPath;
+      (view as any).baseCards = [
+        createCardRecord(createMarkdownFile(firstSelectedPath)),
+        createCardRecord(createMarkdownFile(secondSelectedPath)),
+      ];
+
+      (view as any).pushState();
+
+      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+        selectedPath: "notes/editor-sync.md",
+        bulkMode: true,
+        selectedPaths: [firstSelectedPath, secondSelectedPath],
+        selectedCount: 2,
+        bulkAnchorPath: firstSelectedPath,
+        canBulkSelectAll: true,
+        canBulkClearSelection: true,
+        canBulkMoveSelected: true,
+        canBulkTrashSelected: true,
+        canBulkDeleteSelected: true,
+        canBulkMergeSelected: true,
       });
     });
 
@@ -1476,6 +2828,242 @@ describe("FolderCardView card context actions", () => {
           isMarkdown: true,
         }),
       ).toBe(true);
+    });
+
+    it("bulk selection reconciliation", () => {
+      const { view } = createViewWithFile("notes/reconcile-reorder.md");
+      const cardA = createCardRecordFromPath("notes/a.md");
+      const cardB = createCardRecordFromPath("notes/b.md");
+      const cardC = createCardRecordFromPath("notes/c.md");
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set(["notes/a.md", "notes/c.md"]);
+      (view as any).bulkAnchorPath = "notes/a.md";
+      (view as any).baseCards = [cardA, cardB, cardC];
+      (view as any).deriveVisibleCards = vi.fn(() => [cardC, cardA]);
+
+      (view as any).pushState();
+
+      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md", "notes/a.md"]);
+      expect((view as any).bulkAnchorPath).toBe("notes/a.md");
+
+      (view as any).deriveVisibleCards = vi.fn(() => [cardC]);
+      (view as any).pushState();
+
+      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md"]);
+      expect((view as any).bulkAnchorPath).toBe("notes/c.md");
+
+      (view as any).selectedPaths = new Set(["notes/stale.md"]);
+      (view as any).bulkAnchorPath = "notes/stale.md";
+      (view as any).cleanupLifecycle();
+
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).bulkMode).toBe(true);
+    });
+
+    it("filter and scope changes reconcile bulk selection", async () => {
+      const { view, app, plugin } = createViewWithFile("notes/scope-reconcile.md");
+      const directFile = createMarkdownFile("notes/direct.md");
+      const nestedFile = createMarkdownFile("notes/nested/deep.md");
+      (directFile as unknown as { stat: { ctime: number; mtime: number } }).stat = { ctime: 10, mtime: 10 };
+      (nestedFile as unknown as { stat: { ctime: number; mtime: number } }).stat = { ctime: 11, mtime: 11 };
+
+      const nestedFolder = attachChildren(createFolder("notes/nested"), [nestedFile]);
+      const notesFolder = attachChildren(createFolder("notes"), [directFile, nestedFolder]);
+      const rootFolder = attachChildren(createFolder(""), [notesFolder]);
+      let includeSubfolders = true;
+
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+        previewLines: 5,
+      }));
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        if (requestedPath === directFile.path) {
+          return directFile;
+        }
+        if (requestedPath === nestedFile.path) {
+          return nestedFile;
+        }
+        return null;
+      });
+      app.vault.getRoot = vi.fn(() => rootFolder);
+      app.vault.cachedRead = vi.fn(async () => "preview");
+
+      await (view as any).handleFolderSelection({
+        requestId: 21,
+        folderPath: "notes",
+        source: "programmatic",
+        requestedAtMs: Date.now(),
+        forceRefresh: false,
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set(["notes/direct.md", "notes/nested/deep.md"]);
+      (view as any).bulkAnchorPath = "notes/direct.md";
+      (view as any).deriveVisibleCards = vi.fn(() => [createCardRecordFromPath("notes/direct.md")]);
+
+      (view as any).pushState();
+
+      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/direct.md"]);
+      expect((view as any).bulkAnchorPath).toBe("notes/direct.md");
+
+      includeSubfolders = false;
+      await (view as any).handleFolderSelection({
+        requestId: 22,
+        folderPath: "notes",
+        source: "programmatic",
+        requestedAtMs: Date.now(),
+        forceRefresh: true,
+      });
+
+      expect((view as any).bulkMode).toBe(true);
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+
+      (view as any).selectedPaths = new Set(["notes/direct.md"]);
+      (view as any).bulkAnchorPath = "notes/direct.md";
+      await (view as any).handleFolderSelection({
+        requestId: 23,
+        folderPath: ALL_NOTES_PATH,
+        source: "programmatic",
+        requestedAtMs: Date.now(),
+        forceRefresh: true,
+      });
+
+      expect((view as any).bulkMode).toBe(true);
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+    });
+
+    it("scope changes clear bulk selection immediately while load is in flight", async () => {
+      const { view, app, plugin } = createViewWithFile("notes/inflight-scope-change.md");
+      const component = new mockState.MockFolderCardPanel();
+      const notesFolder = createFolder("notes");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        return requestedPath === "notes" ? notesFolder : null;
+      });
+
+      (view as any).component = component;
+      (view as any).bulkMode = true;
+      (view as any).folderPath = "notes";
+      (view as any).selectedPaths = new Set(["notes/keep.md", "notes/drop.md"]);
+      (view as any).bulkAnchorPath = "notes/keep.md";
+      (view as any).baseCards = [
+        createCardRecordFromPath("notes/keep.md"),
+        createCardRecordFromPath("notes/drop.md"),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath("notes/keep.md"),
+        createCardRecordFromPath("notes/drop.md"),
+      ]);
+      (view as any).inFlight = Promise.resolve();
+      (view as any).inFlightKey = "notes::true::mtime::desc";
+      (view as any).inFlightLoadScope = {
+        folderPath: "notes",
+        includeSubfolders: true,
+        sortField: "mtime",
+        sortDirection: "desc",
+      };
+
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: false,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: null,
+        lastViewMode: "folder",
+        pinnedPaths: [],
+        previewLines: 5,
+      }));
+
+      const result = await (view as any).handleFolderSelection({
+        requestId: 24,
+        folderPath: "notes",
+        source: "programmatic",
+        requestedAtMs: Date.now(),
+        forceRefresh: true,
+      });
+
+      expect(result.action).toBe("queued_latest");
+      expect((view as any).bulkMode).toBe(true);
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(component.setCalls.at(-1)).toMatchObject({
+        bulkMode: true,
+        selectedPaths: [],
+        selectedCount: 0,
+        bulkAnchorPath: null,
+      });
+    });
+
+    it("rename and delete mutations update selectedPaths", () => {
+      const { view, app } = createViewWithFile("notes/mutation-selected.md");
+      const fileA = createMarkdownFile("notes/mutation-selected.md");
+      const fileB = createMarkdownFile("notes/keep-or-delete.md");
+      const renamedFile = createMarkdownFile("notes/renamed-selected.md");
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === renamedFile.path) {
+          return renamedFile;
+        }
+        return null;
+      });
+
+      (view as any).folderPath = "notes";
+      (view as any).bulkMode = true;
+      (view as any).baseCards = [createCardRecord(fileA), createCardRecord(fileB)];
+      (view as any).selectedPaths = new Set([fileA.path, fileB.path]);
+      (view as any).bulkAnchorPath = fileA.path;
+
+      const renameResult = (view as any).handleVaultMutation({
+        eventType: "rename",
+        oldPath: fileA.path,
+        path: renamedFile.path,
+        isFolder: false,
+        isMarkdown: true,
+      });
+
+      expect(renameResult.shouldRefresh).toBe(false);
+      expect(renameResult.incrementalResult).toEqual({ handled: true, action: "updated" });
+      expect((view as any).selectedPaths.has(fileA.path)).toBe(false);
+      expect((view as any).selectedPaths.has(renamedFile.path)).toBe(true);
+      expect((view as any).bulkAnchorPath).toBe(renamedFile.path);
+
+      const deleteResult = (view as any).handleVaultMutation({
+        eventType: "delete",
+        path: fileB.path,
+        isFolder: false,
+        isMarkdown: true,
+      });
+
+      expect(deleteResult.shouldRefresh).toBe(false);
+      expect(deleteResult.incrementalResult).toEqual({ handled: true, action: "removed" });
+      expect(Array.from((view as any).selectedPaths)).toEqual([renamedFile.path]);
+
+      const movedOutOfScopeResult = (view as any).handleVaultMutation({
+        eventType: "rename",
+        oldPath: renamedFile.path,
+        path: "archive/renamed-selected.md",
+        isFolder: false,
+        isMarkdown: true,
+      });
+
+      expect(movedOutOfScopeResult.shouldRefresh).toBe(false);
+      expect(movedOutOfScopeResult.incrementalResult).toEqual({ handled: true, action: "removed" });
+      expect((view as any).selectedPaths.size).toBe(0);
+      expect((view as any).bulkAnchorPath).toBeNull();
     });
 
     it("open-note, sort-change, filter-change, and pin-toggle still work after switching to all-notes scope", async () => {

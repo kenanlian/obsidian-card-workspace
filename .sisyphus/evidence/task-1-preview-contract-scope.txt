@@ -1,0 +1,17 @@
+Task 1 scope report: preview contract only
+Date: 2026-04-16
+
+Primary scoped files updated:
+- `src/view/markdown-utils.ts`
+- `src/settings.ts`
+- `src/view/FolderCardView.ts`
+
+Necessary nearby compatibility update:
+- `src/view/pipeline.test.ts`
+  Reason: `PluginSettings` now requires `previewLines`; typed mock context needed this field for `npm run check` to pass.
+
+Out-of-scope confirmations:
+- No settings tab UI implementation added.
+- No CSS/layout/preview renderer dependency changes added.
+- No preview style selector or additional preview settings keys introduced.
+- No virtualization/hydration architecture changes beyond injecting the configured preview line budget into the existing `buildLightPreview` seam.

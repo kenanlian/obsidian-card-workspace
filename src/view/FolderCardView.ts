@@ -1,13 +1,40 @@
-import { ItemView, Menu, Notice, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
+import {
+  ItemView,
+  Menu,
+  Modal,
+  Notice,
+  Setting,
+  TFile,
+  TFolder,
+  type App,
+  type WorkspaceLeaf,
+} from "obsidian";
 import { FolderPickerModal } from "../FolderPickerModal";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
-import { copyNoteToClipboard, moveFile } from "./note-ops";
+import {
+  batchDeleteFiles,
+  batchMoveFiles,
+  batchTrashFiles,
+  copyNoteToClipboard,
+  mergeNotes,
+  moveFile,
+} from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
+import {
+  clearSelection,
+  migrateRenamedPath,
+  pruneRemovedPath,
+  rangeSelect,
+  reconcileToVisiblePaths,
+  selectAll,
+  toggleSelection,
+} from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
 import type { SortDirection, SortField } from "../settings";
 import { ALL_NOTES_PATH } from "./types";
 import type {
+  BulkRuntimePanelState,
   CleanupResult,
   FolderLoadKey,
   FolderSelectionRequest,
@@ -37,6 +64,277 @@ type FolderCardPanelConstructor = new (options: {
   props: Record<string, unknown>;
 }) => FolderCardPanelInstance;
 
+class BulkActionConfirmModal extends Modal {
+  private readonly titleText: string;
+  private readonly message: string;
+  private readonly confirmButtonText: string;
+  private readonly onDecision: (confirmed: boolean) => void;
+  private resolved = false;
+
+  constructor(
+    app: App,
+    options: {
+      title: string;
+      message: string;
+      confirmButtonText: string;
+    },
+    onDecision: (confirmed: boolean) => void,
+  ) {
+    super(app);
+    this.titleText = options.title;
+    this.message = options.message;
+    this.confirmButtonText = options.confirmButtonText;
+    this.onDecision = onDecision;
+  }
+
+  onOpen(): void {
+    this.setTitle(this.titleText);
+    this.contentEl.empty();
+    this.contentEl.createEl("p", { text: this.message });
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText("Cancel").onClick(() => {
+          this.resolve(false);
+        });
+      })
+      .addButton((button) => {
+        button
+          .setWarning()
+          .setButtonText(this.confirmButtonText)
+          .onClick(() => {
+            this.resolve(true);
+          });
+      });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+
+    if (!this.resolved) {
+      this.onDecision(false);
+    }
+  }
+
+  private resolve(confirmed: boolean): void {
+    if (this.resolved) {
+      return;
+    }
+
+    this.resolved = true;
+    this.close();
+    this.onDecision(confirmed);
+  }
+}
+
+type MergeCleanupMode = "keep" | "trash";
+
+interface MergeModalSubmitResult {
+  files: TFile[];
+  targetFolder: TFolder;
+  mergedTitle: string;
+  separator: string;
+  cleanupMode: MergeCleanupMode;
+}
+
+function buildMergedMarkdownContent(files: Array<{ file: TFile; content: string }>, separator: string): string {
+  return files
+    .map(({ file, content }) => {
+      return `# ${file.basename}\n\n${content}`;
+    })
+    .join(separator);
+}
+
+class BulkMergeModal extends Modal {
+  private readonly onSubmit: (result: MergeModalSubmitResult) => Promise<void>;
+  private orderedFiles: TFile[];
+  private targetFolder: TFolder;
+  private mergedTitle: string;
+  private separator = "\n\n---\n\n";
+  private cleanupMode: MergeCleanupMode = "keep";
+  private previewText = "Loading preview...";
+  private previewError: string | null = null;
+  private submitting = false;
+
+  constructor(
+    app: App,
+    options: {
+      files: TFile[];
+      initialTargetFolder: TFolder;
+      initialMergedTitle: string;
+    },
+    onSubmit: (result: MergeModalSubmitResult) => Promise<void>,
+  ) {
+    super(app);
+    this.orderedFiles = [...options.files];
+    this.targetFolder = options.initialTargetFolder;
+    this.mergedTitle = options.initialMergedTitle;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    void this.refreshPreview();
+    this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    this.setTitle("Merge selected notes");
+    this.contentEl.empty();
+    this.contentEl.createEl("p", {
+      text: `${this.orderedFiles.length} source note${this.orderedFiles.length === 1 ? "" : "s"}`,
+    });
+
+    new Setting(this.contentEl)
+      .setName("Merged title")
+      .addText((text) => {
+        text.setValue(this.mergedTitle).onChange((value) => {
+          this.mergedTitle = value;
+        });
+      });
+
+    new Setting(this.contentEl)
+      .setName("Target folder")
+      .setDesc(this.targetFolder.path === "" ? "/" : this.targetFolder.path)
+      .addButton((button) => {
+        button.setButtonText("Choose…").onClick(() => {
+          const picker = new FolderPickerModal(this.app, (folder: TFolder) => {
+            this.targetFolder = folder;
+            this.render();
+          });
+          picker.open();
+        });
+      });
+
+    new Setting(this.contentEl)
+      .setName("Separator")
+      .addText((text) => {
+        text.setValue(this.separator).onChange((value) => {
+          this.separator = value;
+          void this.refreshPreview();
+        });
+      });
+
+    this.contentEl.createEl("h4", { text: "Source order" });
+    this.orderedFiles.forEach((file, index) => {
+      new Setting(this.contentEl)
+        .setName(`${index + 1}. ${file.path}`)
+        .addButton((button) => {
+          button.setButtonText("Up").onClick(() => {
+            this.moveFile(index, -1);
+          });
+        })
+        .addButton((button) => {
+          button.setButtonText("Down").onClick(() => {
+            this.moveFile(index, 1);
+          });
+        });
+    });
+
+    new Setting(this.contentEl)
+      .setName("Source cleanup")
+      .setDesc(this.cleanupMode === "keep" ? "Keep source notes" : "Trash source notes after merge")
+      .addButton((button) => {
+        button
+          .setButtonText("Keep source notes")
+          .setCta()
+          .onClick(() => {
+            this.cleanupMode = "keep";
+            this.render();
+          });
+      })
+      .addButton((button) => {
+        button
+          .setButtonText("Trash source notes after merge")
+          .setWarning()
+          .onClick(() => {
+            this.cleanupMode = "trash";
+            this.render();
+          });
+      });
+
+    this.contentEl.createEl("h4", { text: "Preview" });
+    this.contentEl.createEl("pre", {
+      text: this.previewError ?? this.previewText,
+    });
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText("Cancel").onClick(() => {
+          this.close();
+        });
+      })
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(this.submitting ? "Merging…" : "Merge notes")
+          .onClick(() => {
+            void this.submit();
+          });
+      });
+  }
+
+  private moveFile(index: number, delta: -1 | 1): void {
+    const nextIndex = index + delta;
+    if (nextIndex < 0 || nextIndex >= this.orderedFiles.length) {
+      return;
+    }
+
+    const nextFiles = [...this.orderedFiles];
+    const [moved] = nextFiles.splice(index, 1);
+    if (!moved) {
+      return;
+    }
+    nextFiles.splice(nextIndex, 0, moved);
+    this.orderedFiles = nextFiles;
+    void this.refreshPreview();
+    this.render();
+  }
+
+  private async refreshPreview(): Promise<void> {
+    try {
+      const fileContents: Array<{ file: TFile; content: string }> = [];
+      for (const file of this.orderedFiles) {
+        const content = await this.app.vault.read(file);
+        fileContents.push({ file, content });
+      }
+      this.previewText = buildMergedMarkdownContent(fileContents, this.separator);
+      this.previewError = null;
+    } catch (error) {
+      this.previewError = `Failed to build preview: ${String(error)}`;
+    }
+
+    this.render();
+  }
+
+  private async submit(): Promise<void> {
+    if (this.submitting || this.orderedFiles.length < 2) {
+      return;
+    }
+
+    this.submitting = true;
+    this.render();
+
+    try {
+      const mergedTitle = this.mergedTitle.trim();
+      await this.onSubmit({
+        files: [...this.orderedFiles],
+        targetFolder: this.targetFolder,
+        mergedTitle: mergedTitle.length > 0 ? mergedTitle : "Merged notes",
+        separator: this.separator,
+        cleanupMode: this.cleanupMode,
+      });
+      this.close();
+    } finally {
+      this.submitting = false;
+      this.render();
+    }
+  }
+}
+
 export class FolderCardView extends ItemView {
   private plugin: FolderCardExplorerPlugin;
   private component: FolderCardPanelInstance | null = null;
@@ -44,9 +342,13 @@ export class FolderCardView extends ItemView {
 
   private folderPath: string | null = null;
   private folderLoadKey: string | null = null;
+  private lastLoadedIncludeSubfolders: boolean | null = null;
   private baseCards: NoteCardRecord[] = [];
   private visibleCards: NoteCardRecord[] = [];
   private selectedPath: string | null = null;
+  private bulkMode = false;
+  private selectedPaths = new Set<string>();
+  private bulkAnchorPath: string | null = null;
   private loading = false;
 
   private generation = 0;
@@ -58,6 +360,7 @@ export class FolderCardView extends ItemView {
 
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
+  private inFlightLoadScope: FolderLoadKey | null = null;
   private queuedRequest: FolderSelectionRequest | null = null;
   private refreshQueued = false;
 
@@ -87,6 +390,7 @@ export class FolderCardView extends ItemView {
     const panelModule = await import("./FolderCardPanel.svelte");
     const FolderCardPanel = panelModule.default as FolderCardPanelConstructor;
     const settings = this.plugin.getSettings();
+    const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
@@ -98,6 +402,7 @@ export class FolderCardView extends ItemView {
         cards: this.visibleCards,
         folderPath: this.getDisplayFolderPath(),
         selectedPath: this.selectedPath,
+        ...bulkRuntimeState,
         loading: this.loading,
         generation: this.generation,
         sortField: settings.sort.field,
@@ -113,7 +418,13 @@ export class FolderCardView extends ItemView {
     });
 
     this.component.$on("open-note", (event: any) => {
+      if (this.bulkMode) {
+        return;
+      }
       this.plugin.openNoteFromCard(event.detail.path);
+    });
+    this.component.$on("bulk-select-card", (event: any) => {
+      this.onBulkSelectCard(event.detail);
     });
     this.component.$on("card-context-menu", (event: any) => {
       this.openCardContextMenu(event.detail.path, event.detail.mouseEvent);
@@ -122,12 +433,55 @@ export class FolderCardView extends ItemView {
       void this.hydrateRange(event.detail.start, event.detail.end);
     });
     this.component.$on("toolbar-action", (event: any) => {
-      if (event.detail.action === "pick-folder") {
+      const action = event.detail.action;
+
+      if (action === "pick-folder") {
         this.component?.$set({ folderTree: this.buildFolderTree() });
-      } else if (event.detail.action === "all-notes") {
+        return;
+      }
+
+      if (action === "all-notes") {
         void this.plugin.selectAllNotes();
-      } else if (event.detail.action === "new-note") {
+        return;
+      }
+
+      if (action === "new-note") {
         void this.plugin.createNoteInCurrentFolder();
+        return;
+      }
+
+      if (action === "bulk") {
+        this.toggleBulkMode();
+        return;
+      }
+
+      if (action === "bulk-select-all") {
+        this.bulkSelectAll();
+        return;
+      }
+
+      if (action === "bulk-clear-selection") {
+        this.bulkClearSelection();
+        return;
+      }
+
+      if (action === "bulk-move-selected") {
+        this.bulkMoveSelected();
+        return;
+      }
+
+      if (action === "bulk-trash-selected") {
+        void this.bulkTrashSelected();
+        return;
+      }
+
+      if (action === "bulk-delete-selected") {
+        void this.bulkDeleteSelected();
+        return;
+      }
+
+      if (action === "bulk-merge-selected") {
+        this.bulkMergeSelected();
       }
     });
     this.component.$on("sort-change", (event: any) => {
@@ -177,9 +531,14 @@ export class FolderCardView extends ItemView {
     }
 
     const forceRefresh = request.forceRefresh ?? false;
-    const loadKey = this.serializeLoadKey(this.buildLoadKey(request.folderPath));
+    const nextLoadScope = this.buildLoadScope(request.folderPath);
+    const loadKey = this.serializeLoadKey(nextLoadScope);
+    const clearedBulkSelection = this.reconcileBulkSelectionBeforeLoad(nextLoadScope);
 
     if (this.inFlight) {
+      if (clearedBulkSelection) {
+        this.pushSelectionState();
+      }
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
           action: "reused_inflight",
@@ -207,7 +566,7 @@ export class FolderCardView extends ItemView {
       };
     }
 
-    await this.runLoad(request.folderPath, loadKey);
+    await this.runLoad(request.folderPath, nextLoadScope, loadKey);
     await this.drainQueuedRequest();
 
     return {
@@ -263,7 +622,7 @@ export class FolderCardView extends ItemView {
       const renamedPath = this.rewritePathAfterRename(this.folderPath, event.oldPath, event.path);
       if (renamedPath !== this.folderPath) {
         this.folderPath = renamedPath;
-        this.folderLoadKey = renamedPath ? this.serializeLoadKey(this.buildLoadKey(renamedPath)) : null;
+        this.folderLoadKey = renamedPath ? this.serializeLoadKey(this.buildLoadScope(renamedPath)) : null;
         selectedFolderPathAfterRename = renamedPath;
       }
     }
@@ -310,7 +669,11 @@ export class FolderCardView extends ItemView {
     this.pendingHydration.clear();
     this.inFlight = null;
     this.inFlightKey = null;
+    this.inFlightLoadScope = null;
     this.loading = false;
+    this.lastLoadedIncludeSubfolders = null;
+    this.selectedPaths = new Set<string>();
+    this.bulkAnchorPath = null;
     this.generation += 1;
 
     return {
@@ -454,6 +817,48 @@ export class FolderCardView extends ItemView {
     }
   }
 
+  private reconcileBulkSelectionBeforeLoad(nextLoadScope: FolderLoadKey): boolean {
+    if (!this.shouldClearBulkSelectionForScopeChange(nextLoadScope)) {
+      return false;
+    }
+
+    this.selectedPaths = new Set<string>();
+    this.bulkAnchorPath = null;
+    return true;
+  }
+
+  private shouldClearBulkSelectionForScopeChange(nextLoadScope: FolderLoadKey): boolean {
+    if (this.inFlightLoadScope) {
+      if (this.inFlightLoadScope.folderPath !== nextLoadScope.folderPath) {
+        return true;
+      }
+
+      if (nextLoadScope.folderPath === ALL_NOTES_PATH) {
+        return false;
+      }
+
+      return this.inFlightLoadScope.includeSubfolders !== nextLoadScope.includeSubfolders;
+    }
+
+    if (!this.folderPath) {
+      return false;
+    }
+
+    if (this.folderPath !== nextLoadScope.folderPath) {
+      return true;
+    }
+
+    // All Notes ignores includeSubfolders and should not clear selection for that setting change.
+    if (nextLoadScope.folderPath === ALL_NOTES_PATH) {
+      return false;
+    }
+
+    return (
+      this.lastLoadedIncludeSubfolders !== null &&
+      this.lastLoadedIncludeSubfolders !== nextLoadScope.includeSubfolders
+    );
+  }
+
   private createProgrammaticSelectionRequest(
     folderPath: string,
     forceRefresh: boolean,
@@ -468,7 +873,7 @@ export class FolderCardView extends ItemView {
     };
   }
 
-  private buildLoadKey(folderPath: string): FolderLoadKey {
+  private buildLoadScope(folderPath: string): FolderLoadKey {
     const settings = this.plugin.getSettings();
     return {
       folderPath,
@@ -482,10 +887,15 @@ export class FolderCardView extends ItemView {
     return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
   }
 
-  private async runLoad(folderPath: string, loadKey: string): Promise<void> {
-    const task = this.loadFolder(folderPath, loadKey);
+  private async runLoad(
+    folderPath: string,
+    loadScope: FolderLoadKey,
+    loadKey: string,
+  ): Promise<void> {
+    const task = this.loadFolder(folderPath, loadScope, loadKey);
     this.inFlight = task;
     this.inFlightKey = loadKey;
+    this.inFlightLoadScope = loadScope;
 
     try {
       await task;
@@ -493,23 +903,26 @@ export class FolderCardView extends ItemView {
       if (this.inFlight === task) {
         this.inFlight = null;
         this.inFlightKey = null;
+        this.inFlightLoadScope = null;
       }
     }
   }
 
-  private async loadFolder(folderPath: string, loadKey: string): Promise<void> {
+  private async loadFolder(
+    folderPath: string,
+    loadScope: FolderLoadKey,
+    loadKey: string,
+  ): Promise<void> {
     this.folderPath = folderPath;
     this.loading = true;
-    this.baseCards = [];
     this.generation += 1;
     this.pendingHydration.clear();
     this.pushState();
 
     const buildGeneration = this.generation;
-    const settings = this.plugin.getSettings();
 
     try {
-      const files = this.collectMarkdownFiles(folderPath, settings.includeSubfolders);
+      const files = this.collectMarkdownFiles(folderPath, loadScope.includeSubfolders);
       const records: NoteCardRecord[] = files.map((file) => {
         return {
           file,
@@ -529,10 +942,11 @@ export class FolderCardView extends ItemView {
       }
 
       records.sort((left, right) =>
-        this.compareCards(left, right, settings.sort.field, settings.sort.direction),
+        this.compareCards(left, right, loadScope.sortField, loadScope.sortDirection),
       );
       this.baseCards = records;
       this.folderLoadKey = loadKey;
+      this.lastLoadedIncludeSubfolders = loadScope.includeSubfolders;
     } finally {
       if (buildGeneration === this.generation) {
         this.loading = false;
@@ -732,6 +1146,15 @@ export class FolderCardView extends ItemView {
       }
       this.pendingHydration.delete(targetPath);
       this.baseCards.splice(index, 1);
+      const bulkResult = pruneRemovedPath(
+        {
+          selectedPaths: this.selectedPaths,
+          anchorPath: this.bulkAnchorPath,
+        },
+        targetPath,
+      );
+      this.selectedPaths = bulkResult.selectedPaths;
+      this.bulkAnchorPath = bulkResult.anchorPath;
       return { handled: true, action: "removed" };
     }
 
@@ -819,6 +1242,17 @@ export class FolderCardView extends ItemView {
             this.pendingHydration.delete(removedCard.path);
           }
           this.baseCards.splice(oldIndex, 1);
+          if (event.oldPath) {
+            const bulkResult = pruneRemovedPath(
+              {
+                selectedPaths: this.selectedPaths,
+                anchorPath: this.bulkAnchorPath,
+              },
+              event.oldPath,
+            );
+            this.selectedPaths = bulkResult.selectedPaths;
+            this.bulkAnchorPath = bulkResult.anchorPath;
+          }
           return { handled: true, action: "removed" };
         }
 
@@ -836,6 +1270,18 @@ export class FolderCardView extends ItemView {
         card.file = file;
         card.path = file.path;
         card.title = file.basename;
+        if (event.oldPath) {
+          const bulkResult = migrateRenamedPath(
+            {
+              selectedPaths: this.selectedPaths,
+              anchorPath: this.bulkAnchorPath,
+            },
+            event.oldPath,
+            file.path,
+          );
+          this.selectedPaths = bulkResult.selectedPaths;
+          this.bulkAnchorPath = bulkResult.anchorPath;
+        }
         return { handled: true, action: "updated" };
       }
 
@@ -1042,6 +1488,371 @@ export class FolderCardView extends ItemView {
     return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
   }
 
+  private getOrderedVisiblePaths(): string[] {
+    return this.visibleCards.map((card) => card.path);
+  }
+
+  private reconcileBulkSelectionToVisibleCards(): void {
+    const result = reconcileToVisiblePaths(
+      {
+        selectedPaths: this.selectedPaths,
+        anchorPath: this.bulkAnchorPath,
+      },
+      this.getOrderedVisiblePaths(),
+    );
+
+    this.selectedPaths = result.selectedPaths;
+    this.bulkAnchorPath = result.anchorPath;
+  }
+
+  private applyBulkSelectionFromResult(result: {
+    selectedPaths: Set<string>;
+    anchorPath: string | null;
+    changed: boolean;
+  }): void {
+    this.selectedPaths = result.selectedPaths;
+    this.bulkAnchorPath = result.anchorPath;
+
+    if (result.changed) {
+      this.pushSelectionState();
+    }
+  }
+
+  private toggleBulkMode(): void {
+    this.bulkMode = !this.bulkMode;
+
+    if (!this.bulkMode) {
+      this.selectedPaths = new Set<string>();
+      this.bulkAnchorPath = null;
+    }
+
+    this.pushSelectionState();
+  }
+
+  private bulkSelectAll(): void {
+    if (!this.bulkMode) {
+      return;
+    }
+
+    const result = selectAll(
+      {
+        selectedPaths: this.selectedPaths,
+        anchorPath: this.bulkAnchorPath,
+      },
+      this.getOrderedVisiblePaths(),
+    );
+    this.applyBulkSelectionFromResult(result);
+  }
+
+  private bulkClearSelection(): void {
+    if (!this.bulkMode) {
+      return;
+    }
+
+    const result = clearSelection({
+      selectedPaths: this.selectedPaths,
+      anchorPath: this.bulkAnchorPath,
+    });
+    this.applyBulkSelectionFromResult(result);
+  }
+
+  private bulkMoveSelected(): void {
+    if (!this.bulkMode || this.selectedPaths.size === 0) {
+      return;
+    }
+
+    const modal = new FolderPickerModal(this.app, (targetFolder: TFolder) => {
+      void this.onBulkMoveTargetChosen(targetFolder);
+    });
+    modal.open();
+  }
+
+  private async onBulkMoveTargetChosen(targetFolder: TFolder | null): Promise<void> {
+    if (!(targetFolder instanceof TFolder)) {
+      return;
+    }
+
+    const selectedPathsInOrder = Array.from(this.selectedPaths);
+    const filesToMove: TFile[] = [];
+
+    for (const selectedPath of selectedPathsInOrder) {
+      const file = this.app.vault.getAbstractFileByPath(selectedPath);
+      if (file instanceof TFile) {
+        filesToMove.push(file);
+      }
+    }
+
+    if (filesToMove.length === 0) {
+      this.selectedPaths = new Set<string>();
+      this.bulkAnchorPath = null;
+      this.pushSelectionState();
+      new Notice("No selected notes are available to move.");
+      return;
+    }
+
+    const filesAlreadyInTarget = filesToMove.filter((file) => {
+      return (file.parent?.path ?? "") === targetFolder.path;
+    });
+    const movableFiles = filesToMove.filter((file) => {
+      return (file.parent?.path ?? "") !== targetFolder.path;
+    });
+
+    if (movableFiles.length === 0) {
+      const alreadyTargetPathsInOrder = selectedPathsInOrder.filter((selectedPath) => {
+        return filesAlreadyInTarget.some((file) => file.path === selectedPath);
+      });
+      this.selectedPaths = new Set<string>(alreadyTargetPathsInOrder);
+      this.bulkAnchorPath = alreadyTargetPathsInOrder[0] ?? null;
+      this.pushSelectionState();
+      new Notice("All selected notes are already in the target folder.");
+      return;
+    }
+
+    const summary = await batchMoveFiles(this.app, movableFiles, targetFolder);
+    const failedPathsInOrder = selectedPathsInOrder.filter((selectedPath) => {
+      return (
+        filesAlreadyInTarget.some((file) => file.path === selectedPath) ||
+        summary.failed.some((failed) => failed.path === selectedPath)
+      );
+    });
+
+    this.selectedPaths = new Set<string>(failedPathsInOrder);
+    this.bulkAnchorPath = failedPathsInOrder[0] ?? null;
+    this.pushSelectionState();
+
+    const succeededCount = summary.succeeded.length;
+    const failedCount = summary.failed.length + filesAlreadyInTarget.length;
+
+    if (failedCount === 0) {
+      new Notice(`Moved ${succeededCount} note${succeededCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    if (succeededCount === 0) {
+      new Notice(`Failed to move ${failedCount} note${failedCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    new Notice(
+      `Moved ${succeededCount} note${succeededCount === 1 ? "" : "s"}; ${failedCount} failed.`,
+    );
+  }
+
+  private async bulkTrashSelected(): Promise<void> {
+    if (!this.bulkMode || this.selectedPaths.size === 0) {
+      return;
+    }
+
+    await this.executeBulkDestructiveAction({
+      successVerb: "Trashed",
+      failureVerb: "trash",
+      noLiveFilesMessage: "No selected notes are available to trash.",
+      confirmTitle: "Move notes to trash?",
+      confirmButtonText: "Move to trash",
+      confirmMessageBuilder: (count) => {
+        return `Move ${count} selected note${count === 1 ? "" : "s"} to trash?`;
+      },
+      runBatch: (files) => batchTrashFiles(this.app, files),
+    });
+  }
+
+  private async bulkDeleteSelected(): Promise<void> {
+    if (!this.bulkMode || this.selectedPaths.size === 0) {
+      return;
+    }
+
+    await this.executeBulkDestructiveAction({
+      successVerb: "Deleted",
+      failureVerb: "delete",
+      noLiveFilesMessage: "No selected notes are available to delete.",
+      confirmTitle: "Permanently delete notes?",
+      confirmButtonText: "Delete permanently",
+      confirmMessageBuilder: (count) => {
+        return `Permanently delete ${count} selected note${count === 1 ? "" : "s"}? This cannot be undone.`;
+      },
+      runBatch: (files) => batchDeleteFiles(this.app, files),
+    });
+  }
+
+  private resolveSelectedLiveFilesInOrder(): { selectedPathsInOrder: string[]; filesInOrder: TFile[] } {
+    const selectedPathsInOrder = Array.from(this.selectedPaths);
+    const filesInOrder: TFile[] = [];
+
+    for (const selectedPath of selectedPathsInOrder) {
+      const file = this.app.vault.getAbstractFileByPath(selectedPath);
+      if (file instanceof TFile) {
+        filesInOrder.push(file);
+      }
+    }
+
+    return { selectedPathsInOrder, filesInOrder };
+  }
+
+  private reconcileSelectionToOrderedPaths(pathsInOrder: string[]): void {
+    this.selectedPaths = new Set<string>(pathsInOrder);
+    this.bulkAnchorPath = pathsInOrder[0] ?? null;
+    this.pushSelectionState();
+  }
+
+  private requestDestructiveConfirmation(options: {
+    title: string;
+    message: string;
+    confirmButtonText: string;
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = new BulkActionConfirmModal(this.app, options, resolve);
+      modal.open();
+    });
+  }
+
+  private async executeBulkDestructiveAction(options: {
+    successVerb: string;
+    failureVerb: string;
+    noLiveFilesMessage: string;
+    confirmTitle: string;
+    confirmButtonText: string;
+    confirmMessageBuilder: (count: number) => string;
+    runBatch: (files: TFile[]) => Promise<{ succeeded: Array<{ file: TFile }>; failed: Array<{ path: string }> }>;
+  }): Promise<void> {
+    const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveFilesInOrder();
+    const livePathsInOrder = filesInOrder.map((file) => file.path);
+
+    if (filesInOrder.length === 0) {
+      this.reconcileSelectionToOrderedPaths([]);
+      new Notice(options.noLiveFilesMessage);
+      return;
+    }
+
+    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
+      this.reconcileSelectionToOrderedPaths(livePathsInOrder);
+    }
+
+    const confirmed = await this.requestDestructiveConfirmation({
+      title: options.confirmTitle,
+      message: options.confirmMessageBuilder(filesInOrder.length),
+      confirmButtonText: options.confirmButtonText,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    const summary = await options.runBatch(filesInOrder);
+    const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
+    const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
+
+    this.reconcileSelectionToOrderedPaths(failedPathsInOrder);
+
+    const succeededCount = summary.succeeded.length;
+    const failedCount = summary.failed.length;
+
+    if (failedCount === 0) {
+      new Notice(`${options.successVerb} ${succeededCount} note${succeededCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    if (succeededCount === 0) {
+      new Notice(`Failed to ${options.failureVerb} ${failedCount} note${failedCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    new Notice(
+      `${options.successVerb} ${succeededCount} note${succeededCount === 1 ? "" : "s"}; ${failedCount} failed.`,
+    );
+  }
+
+  private bulkMergeSelected(): void {
+    if (!this.bulkMode || this.selectedPaths.size < 2) {
+      return;
+    }
+
+    const selectedPathSet = new Set(this.selectedPaths);
+    const selectedPathsInVisibleOrder = this.visibleCards
+      .map((card) => card.path)
+      .filter((path) => selectedPathSet.has(path));
+    const filesInFrozenOrder: TFile[] = [];
+
+    for (const path of selectedPathsInVisibleOrder) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) {
+        filesInFrozenOrder.push(file);
+      }
+    }
+
+    const livePathsInFrozenOrder = filesInFrozenOrder.map((file) => file.path);
+    if (livePathsInFrozenOrder.length !== this.selectedPaths.size) {
+      this.reconcileSelectionToOrderedPaths(livePathsInFrozenOrder);
+    }
+
+    if (filesInFrozenOrder.length < 2) {
+      new Notice("Select at least 2 available notes to merge.");
+      return;
+    }
+
+    const firstParentPath = filesInFrozenOrder[0]?.parent?.path ?? "";
+    const initialTargetFolder = this.app.vault.getAbstractFileByPath(firstParentPath);
+    const targetFolder = initialTargetFolder instanceof TFolder ? initialTargetFolder : this.app.vault.getRoot();
+
+    const modal = new BulkMergeModal(
+      this.app,
+      {
+        files: filesInFrozenOrder,
+        initialTargetFolder: targetFolder,
+        initialMergedTitle: "Merged notes",
+      },
+      async (result) => {
+        await this.executeBulkMerge(result);
+      },
+    );
+    modal.open();
+  }
+
+  private async executeBulkMerge(result: MergeModalSubmitResult): Promise<void> {
+    const mergeResult = await mergeNotes(
+      this.app,
+      result.files,
+      result.targetFolder,
+      result.mergedTitle,
+      result.separator,
+    );
+
+    if (!mergeResult.ok) {
+      new Notice(`Failed to merge notes: ${mergeResult.error}`);
+      return;
+    }
+
+    new Notice(`Merged ${mergeResult.sourceCount} notes into "${mergeResult.mergedFile.basename}".`);
+
+    if (result.cleanupMode === "keep") {
+      this.reconcileSelectionToOrderedPaths([]);
+      return;
+    }
+
+    const trashSummary = await batchTrashFiles(this.app, result.files);
+    const failedPathSet = new Set(trashSummary.failed.map((failed) => failed.path));
+    const failedPathsInOrder = result.files
+      .map((file) => file.path)
+      .filter((path) => failedPathSet.has(path));
+
+    this.reconcileSelectionToOrderedPaths(failedPathsInOrder);
+
+    const trashedCount = trashSummary.succeeded.length;
+    const failedCount = trashSummary.failed.length;
+
+    if (failedCount === 0) {
+      new Notice(`Trashed ${trashedCount} source note${trashedCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    if (trashedCount === 0) {
+      new Notice(`Failed to trash ${failedCount} source note${failedCount === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    new Notice(
+      `Trashed ${trashedCount} source note${trashedCount === 1 ? "" : "s"}; ${failedCount} failed.`,
+    );
+  }
+
   private getDisplayFolderPath(): string {
     if (this.folderPath === ALL_NOTES_PATH) {
       return "All Notes";
@@ -1054,15 +1865,60 @@ export class FolderCardView extends ItemView {
     return this.folderPath ?? "";
   }
 
-  private pushState(): void {
-    this.visibleCards = this.deriveVisibleCards();
+  private buildBulkRuntimePanelState(): BulkRuntimePanelState {
+    const selectedPaths = Array.from(this.selectedPaths);
+    const selectedCount = selectedPaths.length;
+    const hasSelection = selectedCount > 0;
+
+    return {
+      bulkMode: this.bulkMode,
+      selectedPaths,
+      selectedCount,
+      bulkAnchorPath: this.bulkAnchorPath,
+      canBulkSelectAll: this.visibleCards.length > 0,
+      canBulkClearSelection: hasSelection,
+      canBulkMoveSelected: hasSelection,
+      canBulkTrashSelected: hasSelection,
+      canBulkDeleteSelected: hasSelection,
+      canBulkMergeSelected: selectedCount > 1,
+    };
+  }
+
+  private pushSelectionState(): void {
+    this.reconcileBulkSelectionToVisibleCards();
 
     const settings = this.plugin.getSettings();
+    const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
     this.component?.$set({
       cards: this.visibleCards,
       folderPath: this.getDisplayFolderPath(),
       selectedPath: this.selectedPath,
+      ...bulkRuntimeState,
+      loading: this.loading,
+      generation: this.generation,
+      sortField: settings.sort.field,
+      sortDirection: settings.sort.direction,
+      activeFilterTags: settings.filter.tags,
+      pinnedPaths: settings.pinnedPaths,
+      previewLines: settings.previewLines,
+      includeSubfolders: settings.includeSubfolders,
+      isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
+    });
+  }
+
+  private pushState(): void {
+    this.visibleCards = this.deriveVisibleCards();
+    this.reconcileBulkSelectionToVisibleCards();
+
+    const settings = this.plugin.getSettings();
+    const bulkRuntimeState = this.buildBulkRuntimePanelState();
+
+    this.component?.$set({
+      cards: this.visibleCards,
+      folderPath: this.getDisplayFolderPath(),
+      selectedPath: this.selectedPath,
+      ...bulkRuntimeState,
       loading: this.loading,
       generation: this.generation,
       sortField: settings.sort.field,
@@ -1133,5 +1989,33 @@ export class FolderCardView extends ItemView {
     await this.plugin.saveSettings({
       pinnedPaths: nextPinnedPaths,
     });
+  }
+
+  private onBulkSelectCard(detail: { path?: unknown; shiftKey?: unknown }): void {
+    const path = typeof detail.path === "string" ? detail.path : "";
+    if (path.length === 0) {
+      return;
+    }
+
+    if (!this.bulkMode) {
+      this.plugin.openNoteFromCard(path);
+      return;
+    }
+
+    const orderedVisiblePaths = this.getOrderedVisiblePaths();
+    if (!orderedVisiblePaths.includes(path)) {
+      return;
+    }
+
+    const selectionState = {
+      selectedPaths: this.selectedPaths,
+      anchorPath: this.bulkAnchorPath,
+    };
+
+    const result = detail.shiftKey === true
+      ? rangeSelect(selectionState, this.bulkAnchorPath, path, orderedVisiblePaths)
+      : toggleSelection(selectionState, path);
+
+    this.applyBulkSelectionFromResult(result);
   }
 }

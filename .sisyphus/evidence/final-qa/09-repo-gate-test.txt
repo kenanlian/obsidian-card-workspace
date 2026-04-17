@@ -1,0 +1,18 @@
+
+> folder-card-explorer@0.1.0 test
+> vitest run
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Projects/obsidian-cards-view-plugin[39m
+
+ [32m✓[39m src/view/scroll-anchoring.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m src/view/pipeline.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/view/markdown-utils.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/FolderPickerModal.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/view/card-context-actions.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m71 passed[39m[22m[90m (71)[39m
+[2m   Start at [22m 16:35:35
+[2m   Duration [22m 505ms[2m (transform 830ms, setup 0ms, import 974ms, tests 90ms, environment 2ms)[22m
+

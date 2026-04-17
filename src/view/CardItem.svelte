@@ -4,6 +4,8 @@
 
   export let card;
   export let selected = false;
+  export let bulkMode = false;
+  export let bulkSelected = false;
   export let pinnedPaths = [];
   export let previewLines = 5;
 
@@ -20,14 +22,23 @@
     };
   }
 
-  function onCardClick() {
+  function onCardClick(event) {
+    if (bulkMode) {
+      dispatchBulkSelect(event.shiftKey);
+      return;
+    }
+
     dispatch("open-note", { path: card.path });
   }
 
   function onCardKeydown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      dispatch("open-note", { path: card.path });
+      if (bulkMode) {
+        dispatchBulkSelect(event.shiftKey);
+      } else {
+        dispatch("open-note", { path: card.path });
+      }
     }
     dispatch("card-keydown", { event, path: card.path });
   }
@@ -35,6 +46,23 @@
   function onCardContextMenu(event) {
     event.preventDefault();
     dispatch("card-context-menu", { path: card.path, mouseEvent: event });
+  }
+
+  function dispatchBulkSelect(shiftKey) {
+    dispatch("bulk-select-card", { path: card.path, shiftKey });
+  }
+
+  function onBulkSelectClick(event) {
+    event.stopPropagation();
+    dispatchBulkSelect(event.shiftKey);
+  }
+
+  function onBulkSelectKeydown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.stopPropagation();
+      event.preventDefault();
+      dispatchBulkSelect(event.shiftKey);
+    }
   }
 
   function onPinClick(event) {
@@ -60,7 +88,7 @@
 </script>
 
 <div
-  class="fce-card {selected ? 'is-selected' : ''} {isPinned ? 'is-pinned' : ''}"
+  class="fce-card {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
   role="button"
   tabindex="0"
   on:click={onCardClick}
@@ -70,15 +98,30 @@
   <div class="fce-card-body">
     <div class="fce-card-header">
       <h4>{card.title}</h4>
-      <button
-        type="button"
-        class="clickable-icon fce-card-pin-btn"
-        aria-label={isPinned ? "Unpin note" : "Pin note"}
-        aria-pressed={isPinned}
-        on:click={onPinClick}
-        on:keydown={onPinKeydown}
-        use:applyIcon={isPinned ? "pin-off" : "pin"}
-      ></button>
+      <div class="fce-card-actions">
+        {#if bulkMode}
+          <button
+            type="button"
+            class="fce-card-bulk-toggle {bulkSelected ? 'is-selected' : ''}"
+            aria-label={bulkSelected ? "Deselect note from bulk selection" : "Add note to bulk selection"}
+            aria-pressed={bulkSelected}
+            on:click={onBulkSelectClick}
+            on:keydown={onBulkSelectKeydown}
+          >
+            {bulkSelected ? "Selected" : "Select"}
+          </button>
+        {/if}
+
+        <button
+          type="button"
+          class="clickable-icon fce-card-pin-btn"
+          aria-label={isPinned ? "Unpin note" : "Pin note"}
+          aria-pressed={isPinned}
+          on:click={onPinClick}
+          on:keydown={onPinKeydown}
+          use:applyIcon={isPinned ? "pin-off" : "pin"}
+        ></button>
+      </div>
     </div>
     <div
       class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''} {card.hydrated ? '' : 'is-loading'} {(card.previewMode === 'empty' || !card.previewHtml) && card.hydrated ? 'is-empty' : ''}"

@@ -38,6 +38,12 @@
   padding: 0;
 }
 
+.folder-card-view .fce-header.is-bulk-mode {
+  border-bottom: 1px solid var(--fce-border);
+  background:
+    linear-gradient(180deg, var(--fce-surface-alt) 0%, var(--fce-bg) 100%);
+}
+
 
 
 .folder-card-view .fce-toolbar-buttons {
@@ -64,6 +70,10 @@
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px 4px;
+}
+
+.folder-card-view .fce-toolbar-content-row.is-bulk-mode {
+  padding-bottom: 6px;
 }
 
 .folder-card-view .fce-toolbar-content {
@@ -115,6 +125,92 @@
 
 .folder-card-view .fce-toolbar-toggle-value {
   color: inherit;
+}
+
+.folder-card-view .fce-toolbar-bulk-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--fce-border);
+  background: var(--fce-surface-alt);
+}
+
+.folder-card-view .fce-toolbar-bulk-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  color: var(--fce-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.folder-card-view .fce-toolbar-bulk-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border: 1px solid var(--fce-accent);
+  border-radius: 999px;
+  color: var(--fce-accent);
+  font-weight: 600;
+}
+
+.folder-card-view .fce-toolbar-bulk-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--fce-border);
+  border-radius: 999px;
+  background: var(--fce-surface-alt);
+  color: var(--fce-text);
+  font-weight: 600;
+}
+
+.folder-card-view .fce-toolbar-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.folder-card-view .fce-toolbar-bulk-button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--fce-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fce-text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.folder-card-view .fce-toolbar-bulk-button:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-toolbar-bulk-button.is-exit {
+  border-color: var(--fce-accent);
+  color: var(--fce-accent);
+}
+
+.folder-card-view .fce-toolbar-bulk-button.is-exit:hover:not(:disabled) {
+  background: var(--fce-hover);
+  color: var(--fce-accent-hover);
+}
+
+.folder-card-view .fce-toolbar-bulk-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 
@@ -282,6 +378,10 @@
   padding: var(--fce-wall-gap);
 }
 
+.folder-card-view .fce-list.is-bulk-mode {
+  background: linear-gradient(180deg, var(--fce-bg) 0%, var(--fce-surface-alt) 100%);
+}
+
 .folder-card-view .fce-virtual-spacer {
   width: 100%;
 }
@@ -337,6 +437,21 @@
   box-shadow: 0 0 0 1px var(--fce-accent), var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
 }
 
+.folder-card-view .fce-card.is-bulk-selected {
+  border-color: var(--fce-accent);
+  background: var(--fce-surface-alt);
+  box-shadow: inset 0 0 0 1px var(--fce-accent), var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.12));
+}
+
+.folder-card-view .fce-card.is-selected.is-bulk-selected {
+  background: var(--fce-hover);
+  box-shadow:
+    0 0 0 1px var(--fce-accent),
+    inset 0 0 0 2px var(--fce-bg),
+    inset 0 0 0 3px var(--fce-accent),
+    var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
+}
+
 .folder-card-view .fce-card-body {
   display: flex;
   flex-direction: column;
@@ -352,6 +467,13 @@
   gap: 8px;
 }
 
+.folder-card-view .fce-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 .folder-card-view .fce-card h4 {
   margin: 0;
   color: var(--fce-text);
@@ -363,6 +485,32 @@
   line-height: var(--fce-title-line-height);
   font-weight: 600;
   flex: 1;
+}
+
+.folder-card-view .fce-card-bulk-toggle {
+  border: 1px solid var(--fce-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fce-text-muted);
+  box-shadow: none;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.folder-card-view .fce-card-bulk-toggle:hover {
+  background: var(--fce-surface-alt);
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-card-bulk-toggle.is-selected {
+  border-color: var(--fce-accent);
+  background: var(--fce-hover);
+  color: var(--fce-accent);
 }
 
 .folder-card-view .fce-card-pin-btn {

@@ -1,0 +1,26 @@
+Task 1: Lock preview normalization contract
+Date: 2026-04-16
+
+Implemented contract points:
+- Canonical settings key: `previewLines`.
+- Bounds/default encoded in settings normalization: min=3, max=10, default=5.
+- Preset contract encoded in code-facing constants near preview builder: `PREVIEW_STYLE_PRESET = "unified-summary-weak-cues"`.
+- `previewMode` compatibility preserved as `"text" | "code" | "empty"`.
+- Line-budget parity encoded by passing configured `previewLines` from FolderCardView hydration seam into `buildLightPreview()` and using it for both code and text block budgeting.
+- Sparse handling preserved: short 1-2 line content remains normal text/code preview output.
+- Explicit empty handling preserved: returns `empty` only when no previewable output is produced.
+- Inline normalization scope documented at inline normalizer boundary.
+
+Verification evidence:
+1) Grep: only one preview settings key in settings contract
+   - `src/settings.ts` contains `previewLines` in interface, partial interface, defaults, and normalization.
+2) Grep: seam wiring
+   - `src/view/FolderCardView.ts` calls `buildLightPreview(markdown, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS, settings.previewLines)`.
+3) LSP diagnostics (errors) on touched files
+   - `src/settings.ts`: none
+   - `src/view/markdown-utils.ts`: none
+   - `src/view/FolderCardView.ts`: none
+4) Required project validation commands run
+   - `npm run check`: pass
+   - `npm run build`: pass (existing Svelte a11y warnings only)
+   - `npm test`: pass (7 files, 156 tests)

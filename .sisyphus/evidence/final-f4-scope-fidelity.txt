@@ -1,0 +1,17 @@
+Phase 2 scope audit summary:
+
+- Source diff paths are limited to the planned Phase 2 touchpoints:
+  - src/view/FolderCardView.ts
+  - src/view/FolderCardPanel.svelte
+  - src/view/CardItem.svelte
+  - src/view/Toolbar.svelte
+  - src/view/types.ts
+  - src/view/note-ops.ts
+  - Phase-2-specific test files under src/view/
+  - styles.css
+- `git diff --name-only -- docs/` returned no changed docs paths.
+- No forbidden `src/search/` paths appear in the diff.
+- No settings persistence for `selectedPaths` was introduced.
+- No drag-and-drop reorder files or unrelated keyboard-navigation / preview-system rewrites appear in the diff.
+
+Conclusion: the changed file set remains within planned Phase 2 scope.

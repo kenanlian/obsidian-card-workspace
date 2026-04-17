@@ -1,0 +1,4 @@
+
+> folder-card-explorer@0.1.0 check
+> tsc --noEmit
+

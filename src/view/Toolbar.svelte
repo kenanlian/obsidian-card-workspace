@@ -11,7 +11,16 @@
   export let activeFilterTags = [];
   export let includeSubfolders = true;
   export let isAllNotesScope = false;
-
+  export let bulkMode = false;
+  export let selectedCount = 0;
+  export let bulkAnchorPath = null;
+  export let canBulkSelectAll = false;
+  export let canBulkClearSelection = false;
+  export let canBulkMoveSelected = false;
+  export let canBulkTrashSelected = false;
+  export let canBulkDeleteSelected = false;
+  export let canBulkMergeSelected = false;
+  
   let localActiveFilterTags = [];
   $: {
     if (!showFilterMenu) {
@@ -36,6 +45,22 @@
     { id: "sort", label: "Sort", title: "Sort cards", icon: "arrow-up-down" },
     { id: "filter", label: "Filter", title: "Filter cards", icon: "list-filter" },
     { id: "bulk", label: "Bulk", title: "Bulk actions", icon: "check-check" },
+  ];
+
+  $: bulkSelectionSummary = selectedCount === 1 ? "1 selected" : `${selectedCount} selected`;
+  $: bulkModeStatus = bulkMode ? "Bulk mode active" : "Browsing notes";
+  $: bulkActionHint = selectedCount === 0
+    ? "Select notes to enable move, trash, delete, and merge."
+    : selectedCount === 1
+      ? "Move, trash, and delete are ready. Merge unlocks with 2 notes."
+      : "All bulk actions are ready.";
+  $: bulkActions = [
+    { id: "bulk-select-all", label: "Select all", disabled: !canBulkSelectAll },
+    { id: "bulk-clear-selection", label: "Clear", disabled: !canBulkClearSelection },
+    { id: "bulk-move-selected", label: "Move", disabled: !canBulkMoveSelected },
+    { id: "bulk-trash-selected", label: "Trash", disabled: !canBulkTrashSelected },
+    { id: "bulk-delete-selected", label: "Delete", disabled: !canBulkDeleteSelected },
+    { id: "bulk-merge-selected", label: "Merge", disabled: !canBulkMergeSelected },
   ];
 
   let activeToolbarAction = TOOLBAR_ACTIONS[0].id;
@@ -306,9 +331,13 @@
 
     dispatch("include-subfolders-change", { value: !includeSubfolders });
   }
+
+  function dispatchToolbarAction(actionId) {
+    dispatch("toolbar-action", { action: actionId });
+  }
 </script>
 
-<header class="fce-header">
+<header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
   <div class="fce-toolbar" role="toolbar" aria-label="Folder card actions">
     <div class="fce-toolbar-buttons">
       {#each TOOLBAR_ACTIONS as action}
@@ -350,7 +379,7 @@
         {:else}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {(action.id === 'all-notes' ? isAllNotesScope : activeToolbarAction === action.id) ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {(action.id === 'all-notes' ? isAllNotesScope : action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
             aria-label={action.title}
             on:click={(e) => selectToolbarAction(action.id, e)}
             use:applyIcon={action.icon}
@@ -362,10 +391,13 @@
     </div>
   </div>
 
-  <div class="fce-toolbar-content-row">
+  <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
     <div class="fce-toolbar-content">
       <span class="fce-toolbar-summary-segment"><strong>Scope:</strong> {scopeSummary}</span>
       <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>
+      {#if bulkMode}
+        <span class="fce-toolbar-summary-segment"><strong>Status:</strong> {bulkModeStatus}</span>
+      {/if}
       {#if hasFolderScope}
         <span class="fce-toolbar-summary-segment">{subfolderSummary}</span>
       {/if}
@@ -384,6 +416,38 @@
       </button>
     {/if}
   </div>
+
+  {#if bulkMode}
+    <div class="fce-toolbar-bulk-strip" role="group" aria-label="Bulk actions">
+      <div class="fce-toolbar-bulk-summary">
+        <span class="fce-toolbar-bulk-mode-pill">Bulk mode</span>
+        <span class="fce-toolbar-bulk-count">{selectedCount}</span>
+        <span>{bulkSelectionSummary}</span>
+        <span class="fce-toolbar-summary-segment">{bulkAnchorPath ? "Range anchor ready" : "Range anchor idle"}</span>
+        <span class="fce-toolbar-summary-segment">{bulkActionHint}</span>
+      </div>
+
+      <div class="fce-toolbar-bulk-actions">
+        {#each bulkActions as action}
+          <button
+            type="button"
+            class="fce-toolbar-bulk-button"
+            disabled={action.disabled}
+            on:click={() => dispatchToolbarAction(action.id)}
+          >
+            {action.label}
+          </button>
+        {/each}
+        <button
+          type="button"
+          class="fce-toolbar-bulk-button is-exit"
+          on:click={() => dispatchToolbarAction("bulk")}
+        >
+          Exit Bulk
+        </button>
+      </div>
+    </div>
+  {/if}
 </header>
 
 {#if showSortMenu}

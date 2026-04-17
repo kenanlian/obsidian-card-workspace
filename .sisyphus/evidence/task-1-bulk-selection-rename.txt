@@ -1,0 +1,10 @@
+npx vitest run src/view/bulk-selection.test.ts -t "migrates renamed path and prunes removed path"
+
+RUN  v4.0.18 /home/kenan/Secret-Projects/obsidian-cards-explorer
+
+✓ src/view/bulk-selection.test.ts (8 tests | 7 skipped) 4ms
+
+Test Files  1 passed (1)
+Tests       1 passed | 7 skipped (8)
+Start at    00:11:01
+Duration    242ms (transform 63ms, setup 0ms, import 80ms, tests 4ms, environment 0ms)
