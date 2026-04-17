@@ -5,6 +5,7 @@
   export let card;
   export let selected = false;
   export let pinnedPaths = [];
+  export let previewLines = 5;
 
   const dispatch = createEventDispatcher();
 
@@ -52,6 +53,10 @@
   function formatDate(timestamp) {
     return new Date(timestamp).toLocaleDateString();
   }
+
+  function getPreviewStyle() {
+    return `--fce-preview-line-clamp: ${previewLines};`;
+  }
 </script>
 
 <div
@@ -75,7 +80,10 @@
         use:applyIcon={isPinned ? "pin-off" : "pin"}
       ></button>
     </div>
-    <div class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''}">
+    <div
+      class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''} {card.hydrated ? '' : 'is-loading'} {(card.previewMode === 'empty' || !card.previewHtml) && card.hydrated ? 'is-empty' : ''}"
+      style={getPreviewStyle()}
+    >
       {#if card.hydrated}
         {#if card.previewMode === "empty" || !card.previewHtml}
           <p class="fce-preview-empty">No previewable text near the top.</p>

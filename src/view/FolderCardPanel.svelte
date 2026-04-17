@@ -26,6 +26,7 @@
   export let availableTags = [];
   export let activeFilterTags = [];
   export let pinnedPaths = [];
+  export let previewLines = 5;
   export let folderTree = [];
   export let includeSubfolders = true;
   export let isAllNotesScope = false;
@@ -342,13 +343,14 @@
         <div class={getRowClass(row.index)} use:measureRow={row}>
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
             {#each row.cards as card (card.path)}
-              <CardItem
-                {card}
-                {pinnedPaths}
-                selected={selectedPath === card.path}
-                on:open-note
-                on:card-context-menu
-                on:pin-toggle
+                <CardItem
+                  {card}
+                  {pinnedPaths}
+                  {previewLines}
+                  selected={selectedPath === card.path}
+                  on:open-note
+                  on:card-context-menu
+                  on:pin-toggle
               />
             {/each}
           </div>
