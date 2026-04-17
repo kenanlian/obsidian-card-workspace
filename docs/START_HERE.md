@@ -92,6 +92,7 @@ npm run dev
 - **产品路线需要统一口径。** 当前已补充 `docs/roadmap/v1-product-roadmap.md`，后续应按“card-wall-first workbench”边界推进，而不是滑向综合导航平台。
 - **现有规划文档很多，且混合了“已实现”和“未来任务”。** 回来看项目时，不要从缺失的 `docs/dev-feature/` 路径开始；先读本文件、`docs/architecture.md`，再读 `docs/plan/v1-development-plan.md`。
 - **`Toolbar.svelte` 仍有已知 a11y warnings。** 当前 `npm run build` 会给出若干可访问性告警，但不影响 T31 的 check/build/test 通过；这部分应在后续 a11y 收尾任务中系统处理。
+- **preview 裁切预算现在有额外约束。** `previewLines` 不只是 parser 的逻辑预算，也是 excerpt 的物理高度预算。`styles.css` 中 `.fce-excerpt` 内部不要再随意加会额外占高的 `margin`、`padding`、`border`，否则很容易重新出现最后一行被裁切的问题。
 - **Svelte 已升级到 5，但还没有做 runes 级源码迁移。** 现阶段的设计目标是先把运行时与构建链路升级到 Svelte 5，同时保留现有组件语法与宿主集成接口，避免把框架升级和视图模型重写绑在一次改动里。
 
 ## 接下来先读哪里

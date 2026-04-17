@@ -270,11 +270,13 @@ Toolbar 里的 summary 文案和 `includeSubfolders` 按钮也属于这一层：
 5. **当前搜索是规划中的能力，不应在文档里当成已实现。**
 6. **当前 Svelte 5 迁移停留在 compatibility 模式。** 后续如果要改成 `$props` / callback props / runes，应当作为单独的结构性演进处理，而不是顺手夹带在功能开发里。
 7. **`includeSubfolders` 只在 folder scope 下有 UI 语义。** `All Notes` 必须隐藏这个开关，而不是展示一个看起来可切换的伪状态。
+8. **preview 的逻辑预算和物理裁切预算必须保持一致。** `src/view/markdown-utils.ts` 负责把 preview 归一化成可预算的轻量 HTML，`styles.css` 里的 `.fce-excerpt` 负责按 `previewLines` 做物理裁切；excerpt 内部如果重新引入未计入预算的段间距、代码块 padding 或 border，就会重新制造最后一行 clipping。
 
 ## 历史问题与当前折中
 
 - 早期插件重点是“文件夹点击后显示卡片”，后续才逐步补齐面板内闭环交互。
 - 最近一轮实现把 folder picker、context actions、tag filter、pin state，以及 Toolbar 中的范围提示和 `includeSubfolders` 控制都接入了同一视图状态体系，这让结构更稳定，但 `FolderCardView.ts` 也因此继续变大。
+- preview-normalization 落地后，又补了一次 clipping 修复：code preview 不再使用带额外 box chrome 的 `<pre>` 表面，excerpt 内部也不再依赖未计入 `previewLines` 预算的段间距。这个折中保持了 Scheme B 的 weak-cue 风格，但也新增了一条维护约束：不要在 excerpt 内部随意恢复垂直装饰性间距。
 - 目前批量与搜索还没进入主干实现，因此一些基础能力已在工具层或计划文档中存在，但用户可见工作流尚未完整闭环。
 
 ## 优化与演进方向
