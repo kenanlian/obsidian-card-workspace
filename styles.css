@@ -355,10 +355,10 @@
 .folder-card-view .fce-card h4 {
   margin: 0;
   color: var(--fce-text);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
   font-size: var(--fce-title-font-size);
   line-height: var(--fce-title-line-height);
   font-weight: 600;
