@@ -1,6 +1,6 @@
 import { ItemView, Menu, Notice, TFile, TFolder, type WorkspaceLeaf } from "obsidian";
 import { FolderPickerModal } from "../FolderPickerModal";
-import { buildLightPreview } from "./markdown-utils";
+import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
 import { copyNoteToClipboard, moveFile } from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
@@ -105,6 +105,7 @@ export class FolderCardView extends ItemView {
         availableTags: this.deriveAvailableTags(),
         activeFilterTags: settings.filter.tags,
         pinnedPaths: settings.pinnedPaths,
+        previewLines: settings.previewLines,
         includeSubfolders: settings.includeSubfolders,
         isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
         tooltipSide: this.getTooltipSide(),
@@ -940,11 +941,20 @@ export class FolderCardView extends ItemView {
         return;
       }
 
-      const preview = buildLightPreview(markdown, 200, 4);
+      const settings = this.plugin.getSettings();
+      const preview = buildLightPreview(
+        markdown,
+        DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
+        settings.previewLines,
+      );
       card.previewHtml = preview.html;
       card.previewMode = preview.mode;
       card.hydrated = true;
     } catch {
+      if (generation !== this.generation) {
+        return;
+      }
+
       card.excerpt = "";
       card.previewHtml = "";
       card.previewMode = "empty";
@@ -1060,6 +1070,7 @@ export class FolderCardView extends ItemView {
       availableTags: this.deriveAvailableTags(),
       activeFilterTags: settings.filter.tags,
       pinnedPaths: settings.pinnedPaths,
+      previewLines: settings.previewLines,
       includeSubfolders: settings.includeSubfolders,
       isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
     });
