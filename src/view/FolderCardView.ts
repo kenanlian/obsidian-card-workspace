@@ -9,6 +9,7 @@ import {
   type App,
   type WorkspaceLeaf,
 } from "obsidian";
+import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
@@ -33,6 +34,7 @@ import {
 import type { PipelineContext } from "./pipeline";
 import type { SortDirection, SortField } from "../settings";
 import { ALL_NOTES_PATH } from "./types";
+import { createPanelModel, type PanelModel, type PanelModelState } from "./panel-model";
 import type {
   BulkRuntimePanelState,
   CleanupResult,
@@ -52,17 +54,6 @@ import type FolderCardExplorerPlugin from "../main";
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
 type CardMenuAction = "move" | "copy";
-
-type FolderCardPanelInstance = {
-  $on(event: string, handler: (event: any) => void): () => void;
-  $set(props: Record<string, unknown>): void;
-  $destroy(): void;
-};
-
-type FolderCardPanelConstructor = new (options: {
-  target: HTMLElement;
-  props: Record<string, unknown>;
-}) => FolderCardPanelInstance;
 
 class BulkActionConfirmModal extends Modal {
   private readonly titleText: string;
@@ -337,8 +328,9 @@ class BulkMergeModal extends Modal {
 
 export class FolderCardView extends ItemView {
   private plugin: FolderCardExplorerPlugin;
-  private component: FolderCardPanelInstance | null = null;
+  private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null;
+  private readonly panelModel: PanelModel;
 
   private folderPath: string | null = null;
   private folderLoadKey: string | null = null;
@@ -367,6 +359,7 @@ export class FolderCardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: FolderCardExplorerPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.panelModel = createPanelModel(this.buildPanelModelState());
   }
 
   getViewType(): string {
@@ -388,116 +381,85 @@ export class FolderCardView extends ItemView {
 
   async onOpen(): Promise<void> {
     const panelModule = await import("./FolderCardPanel.svelte");
-    const FolderCardPanel = panelModule.default as FolderCardPanelConstructor;
-    const settings = this.plugin.getSettings();
-    const bulkRuntimeState = this.buildBulkRuntimePanelState();
+    const FolderCardPanel = panelModule.default;
+    this.panelModel.mutate((state) => {
+      const settings = this.plugin.getSettings();
+      const bulkRuntimeState = this.buildBulkRuntimePanelState();
+
+      state.cards = this.visibleCards;
+      state.folderPath = this.getDisplayFolderPath();
+      state.selectedPath = this.selectedPath;
+      state.bulkMode = bulkRuntimeState.bulkMode;
+      state.selectedPaths = bulkRuntimeState.selectedPaths;
+      state.selectedCount = bulkRuntimeState.selectedCount;
+      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
+      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
+      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
+      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
+      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
+      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
+      state.loading = this.loading;
+      state.generation = this.generation;
+      state.sortField = settings.sort.field;
+      state.sortDirection = settings.sort.direction;
+      state.availableTags = this.deriveAvailableTags();
+      state.activeFilterTags = settings.filter.tags;
+      state.pinnedPaths = settings.pinnedPaths;
+      state.previewLines = settings.previewLines;
+      state.includeSubfolders = settings.includeSubfolders;
+      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
+      state.tooltipSide = this.getTooltipSide();
+    });
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
 
     this.hostEl = target.createDiv({ cls: "folder-card-view" });
-    this.component = new FolderCardPanel({
+    this.component = mount(FolderCardPanel as any, {
       target: this.hostEl,
       props: {
-        cards: this.visibleCards,
-        folderPath: this.getDisplayFolderPath(),
-        selectedPath: this.selectedPath,
-        ...bulkRuntimeState,
-        loading: this.loading,
-        generation: this.generation,
-        sortField: settings.sort.field,
-        sortDirection: settings.sort.direction,
-        availableTags: this.deriveAvailableTags(),
-        activeFilterTags: settings.filter.tags,
-        pinnedPaths: settings.pinnedPaths,
-        previewLines: settings.previewLines,
-        includeSubfolders: settings.includeSubfolders,
-        isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
-        tooltipSide: this.getTooltipSide(),
+        panelModel: this.panelModel,
+        onOpenNote: (detail: { path?: unknown }) => {
+          if (this.bulkMode || typeof detail.path !== "string") {
+            return;
+          }
+          this.plugin.openNoteFromCard(detail.path);
+        },
+        onBulkSelectCard: (detail: { path?: unknown; shiftKey?: unknown }) => {
+          this.onBulkSelectCard(detail);
+        },
+        onCardContextMenu: (detail: { path?: unknown; mouseEvent?: unknown }) => {
+          this.openCardContextMenu(detail.path, detail.mouseEvent);
+        },
+        onHydrateRange: (detail: { start?: unknown; end?: unknown }) => {
+          if (typeof detail.start !== "number" || typeof detail.end !== "number") {
+            return;
+          }
+          void this.hydrateRange(detail.start, detail.end);
+        },
+        onToolbarAction: (detail: { action?: unknown }) => {
+          this.handleToolbarAction(detail);
+        },
+        onSortChange: (detail: { field?: unknown; direction?: unknown }) => {
+          void this.onSortChange(detail);
+        },
+        onFilterChange: (detail: { tags?: unknown }) => {
+          void this.onFilterChange(detail);
+        },
+        onIncludeSubfoldersChange: (detail: { value?: unknown }) => {
+          void this.onIncludeSubfoldersChange(detail);
+        },
+        onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => {
+          void this.onPinToggle(detail);
+        },
+        onSelectFolder: (detail: { path?: unknown }) => {
+          if (typeof detail.path !== "string") {
+            return;
+          }
+          void this.plugin.selectFolderByPath(detail.path, "panel-picker");
+        },
       },
-    });
-
-    this.component.$on("open-note", (event: any) => {
-      if (this.bulkMode) {
-        return;
-      }
-      this.plugin.openNoteFromCard(event.detail.path);
-    });
-    this.component.$on("bulk-select-card", (event: any) => {
-      this.onBulkSelectCard(event.detail);
-    });
-    this.component.$on("card-context-menu", (event: any) => {
-      this.openCardContextMenu(event.detail.path, event.detail.mouseEvent);
-    });
-    this.component.$on("hydrate-range", (event: any) => {
-      void this.hydrateRange(event.detail.start, event.detail.end);
-    });
-    this.component.$on("toolbar-action", (event: any) => {
-      const action = event.detail.action;
-
-      if (action === "pick-folder") {
-        this.component?.$set({ folderTree: this.buildFolderTree() });
-        return;
-      }
-
-      if (action === "all-notes") {
-        void this.plugin.selectAllNotes();
-        return;
-      }
-
-      if (action === "new-note") {
-        void this.plugin.createNoteInCurrentFolder();
-        return;
-      }
-
-      if (action === "bulk") {
-        this.toggleBulkMode();
-        return;
-      }
-
-      if (action === "bulk-select-all") {
-        this.bulkSelectAll();
-        return;
-      }
-
-      if (action === "bulk-clear-selection") {
-        this.bulkClearSelection();
-        return;
-      }
-
-      if (action === "bulk-move-selected") {
-        this.bulkMoveSelected();
-        return;
-      }
-
-      if (action === "bulk-trash-selected") {
-        void this.bulkTrashSelected();
-        return;
-      }
-
-      if (action === "bulk-delete-selected") {
-        void this.bulkDeleteSelected();
-        return;
-      }
-
-      if (action === "bulk-merge-selected") {
-        this.bulkMergeSelected();
-      }
-    });
-    this.component.$on("sort-change", (event: any) => {
-      void this.onSortChange(event.detail);
-    });
-    this.component.$on("filter-change", (event: any) => {
-      void this.onFilterChange(event.detail);
-    });
-    this.component.$on("include-subfolders-change", (event: any) => {
-      void this.onIncludeSubfoldersChange(event.detail);
-    });
-    this.component.$on("pin-toggle", (event: any) => {
-      void this.onPinToggle(event.detail);
-    });
-    this.component.$on("select-folder", (event: any) => {
-      void this.plugin.selectFolderByPath(event.detail.path, "panel-picker");
     });
 
     this.hydrateVisibleCardsOnOpen();
@@ -505,9 +467,68 @@ export class FolderCardView extends ItemView {
 
   async onClose(): Promise<void> {
     this.cleanupLifecycle();
-    this.component?.$destroy();
+
+    if (this.component) {
+      await unmount(this.component);
+    }
+
     this.component = null;
     this.hostEl = null;
+  }
+
+  private handleToolbarAction(detail: { action?: unknown }): void {
+    const action = detail.action;
+
+    if (action === "pick-folder") {
+      this.panelModel.mutate((state) => {
+        state.folderTree = this.buildFolderTree();
+      });
+      return;
+    }
+
+    if (action === "all-notes") {
+      void this.plugin.selectAllNotes();
+      return;
+    }
+
+    if (action === "new-note") {
+      void this.plugin.createNoteInCurrentFolder();
+      return;
+    }
+
+    if (action === "bulk") {
+      this.toggleBulkMode();
+      return;
+    }
+
+    if (action === "bulk-select-all") {
+      this.bulkSelectAll();
+      return;
+    }
+
+    if (action === "bulk-clear-selection") {
+      this.bulkClearSelection();
+      return;
+    }
+
+    if (action === "bulk-move-selected") {
+      this.bulkMoveSelected();
+      return;
+    }
+
+    if (action === "bulk-trash-selected") {
+      void this.bulkTrashSelected();
+      return;
+    }
+
+    if (action === "bulk-delete-selected") {
+      void this.bulkDeleteSelected();
+      return;
+    }
+
+    if (action === "bulk-merge-selected") {
+      this.bulkMergeSelected();
+    }
   }
 
   async setFolder(folder: TFolder): Promise<SelectionResult> {
@@ -1884,37 +1905,11 @@ export class FolderCardView extends ItemView {
     };
   }
 
-  private pushSelectionState(): void {
-    this.reconcileBulkSelectionToVisibleCards();
-
+  private buildPanelModelState(): PanelModelState {
     const settings = this.plugin.getSettings();
     const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
-    this.component?.$set({
-      cards: this.visibleCards,
-      folderPath: this.getDisplayFolderPath(),
-      selectedPath: this.selectedPath,
-      ...bulkRuntimeState,
-      loading: this.loading,
-      generation: this.generation,
-      sortField: settings.sort.field,
-      sortDirection: settings.sort.direction,
-      activeFilterTags: settings.filter.tags,
-      pinnedPaths: settings.pinnedPaths,
-      previewLines: settings.previewLines,
-      includeSubfolders: settings.includeSubfolders,
-      isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
-    });
-  }
-
-  private pushState(): void {
-    this.visibleCards = this.deriveVisibleCards();
-    this.reconcileBulkSelectionToVisibleCards();
-
-    const settings = this.plugin.getSettings();
-    const bulkRuntimeState = this.buildBulkRuntimePanelState();
-
-    this.component?.$set({
+    return {
       cards: this.visibleCards,
       folderPath: this.getDisplayFolderPath(),
       selectedPath: this.selectedPath,
@@ -1927,8 +1922,76 @@ export class FolderCardView extends ItemView {
       activeFilterTags: settings.filter.tags,
       pinnedPaths: settings.pinnedPaths,
       previewLines: settings.previewLines,
+      folderTree: [],
       includeSubfolders: settings.includeSubfolders,
       isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
+      tooltipSide: this.getTooltipSide(),
+    };
+  }
+
+  private pushSelectionState(): void {
+    this.reconcileBulkSelectionToVisibleCards();
+
+    const settings = this.plugin.getSettings();
+    const bulkRuntimeState = this.buildBulkRuntimePanelState();
+
+    this.panelModel.mutate((state) => {
+      state.cards = this.visibleCards;
+      state.folderPath = this.getDisplayFolderPath();
+      state.selectedPath = this.selectedPath;
+      state.bulkMode = bulkRuntimeState.bulkMode;
+      state.selectedPaths = bulkRuntimeState.selectedPaths;
+      state.selectedCount = bulkRuntimeState.selectedCount;
+      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
+      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
+      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
+      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
+      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
+      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
+      state.loading = this.loading;
+      state.generation = this.generation;
+      state.sortField = settings.sort.field;
+      state.sortDirection = settings.sort.direction;
+      state.activeFilterTags = settings.filter.tags;
+      state.pinnedPaths = settings.pinnedPaths;
+      state.previewLines = settings.previewLines;
+      state.includeSubfolders = settings.includeSubfolders;
+      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
+    });
+  }
+
+  private pushState(): void {
+    this.visibleCards = this.deriveVisibleCards();
+    this.reconcileBulkSelectionToVisibleCards();
+
+    const settings = this.plugin.getSettings();
+    const bulkRuntimeState = this.buildBulkRuntimePanelState();
+
+    this.panelModel.mutate((state) => {
+      state.cards = this.visibleCards;
+      state.folderPath = this.getDisplayFolderPath();
+      state.selectedPath = this.selectedPath;
+      state.bulkMode = bulkRuntimeState.bulkMode;
+      state.selectedPaths = bulkRuntimeState.selectedPaths;
+      state.selectedCount = bulkRuntimeState.selectedCount;
+      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
+      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
+      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
+      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
+      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
+      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
+      state.loading = this.loading;
+      state.generation = this.generation;
+      state.sortField = settings.sort.field;
+      state.sortDirection = settings.sort.direction;
+      state.availableTags = this.deriveAvailableTags();
+      state.activeFilterTags = settings.filter.tags;
+      state.pinnedPaths = settings.pinnedPaths;
+      state.previewLines = settings.previewLines;
+      state.includeSubfolders = settings.includeSubfolders;
+      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
     });
   }
 
