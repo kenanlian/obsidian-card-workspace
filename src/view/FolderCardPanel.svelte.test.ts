@@ -35,6 +35,8 @@ function createInitialPanelState(): PanelModelState {
     selectedPath: null,
     loading: false,
     generation: 0,
+    searchQuery: "",
+    searchStatus: "idle",
     sortField: "mtime",
     sortDirection: "desc",
     availableTags: [],

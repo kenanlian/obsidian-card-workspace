@@ -25,10 +25,20 @@ interface ToolbarActionPayload {
   action: string;
 }
 
+interface SearchQueryChangePayload {
+  query: string;
+}
+
+interface SearchQueryResetPayload {
+  source: "clear-button";
+}
+
 interface ToolbarCallbacks {
   onFilterChange?: (payload: FilterChangePayload) => void;
   onSortChange?: (payload: SortChangePayload) => void;
   onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
+  onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
+  onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
   onSelectFolder?: (payload: SelectFolderPayload) => void;
   onToolbarAction?: (payload: ToolbarActionPayload) => void;
 }
@@ -38,6 +48,8 @@ interface CapturedCallbacks {
   filterEvents: FilterChangePayload[];
   sortEvents: SortChangePayload[];
   includeEvents: IncludeSubfoldersChangePayload[];
+  searchQueryChangeEvents: SearchQueryChangePayload[];
+  searchQueryResetEvents: SearchQueryResetPayload[];
   selectFolderEvents: SelectFolderPayload[];
   toolbarActionEvents: ToolbarActionPayload[];
 }
@@ -65,6 +77,8 @@ function createCapturedCallbacks(): CapturedCallbacks {
   const filterEvents: FilterChangePayload[] = [];
   const sortEvents: SortChangePayload[] = [];
   const includeEvents: IncludeSubfoldersChangePayload[] = [];
+  const searchQueryChangeEvents: SearchQueryChangePayload[] = [];
+  const searchQueryResetEvents: SearchQueryResetPayload[] = [];
   const selectFolderEvents: SelectFolderPayload[] = [];
   const toolbarActionEvents: ToolbarActionPayload[] = [];
 
@@ -79,6 +93,12 @@ function createCapturedCallbacks(): CapturedCallbacks {
       onIncludeSubfoldersChange: (payload: IncludeSubfoldersChangePayload) => {
         includeEvents.push(payload);
       },
+      onSearchQueryChange: (payload: SearchQueryChangePayload) => {
+        searchQueryChangeEvents.push(payload);
+      },
+      onSearchQueryReset: (payload: SearchQueryResetPayload) => {
+        searchQueryResetEvents.push(payload);
+      },
       onSelectFolder: (payload: SelectFolderPayload) => {
         selectFolderEvents.push(payload);
       },
@@ -89,6 +109,8 @@ function createCapturedCallbacks(): CapturedCallbacks {
     filterEvents,
     sortEvents,
     includeEvents,
+    searchQueryChangeEvents,
+    searchQueryResetEvents,
     selectFolderEvents,
     toolbarActionEvents,
   };
@@ -110,6 +132,8 @@ function mountToolbar(
       availableTags: ["#Work", "#Idea"],
       activeFilterTags: [],
       includeSubfolders: true,
+      searchQuery: "",
+      searchStatus: "idle",
       isAllNotesScope: false,
       bulkMode: false,
       selectedCount: 0,
@@ -164,6 +188,42 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(captured.filterEvents).toEqual([{ tags: ["work"] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("search query emits intent-only change and reset callbacks", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ searchQuery: "existing" }, captured.callbacks);
+
+    const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).not.toBeNull();
+    if (!searchInput) {
+      throw new Error("Expected search input to exist");
+    }
+
+    searchInput.value = "roadmap";
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const clearButton = document.querySelector<HTMLButtonElement>('button[aria-label="Clear search query"]');
+    expect(clearButton).not.toBeNull();
+    clearButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.searchQueryChangeEvents).toEqual([{ query: "roadmap" }]);
+    expect(captured.searchQueryResetEvents).toEqual([{ source: "clear-button" }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("search query renders current query and status from props", async () => {
+    const { component } = mountToolbar({ searchQuery: "roadmap", searchStatus: "fallback" });
+
+    const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    const status = document.querySelector<HTMLElement>(".fce-search-status");
+
+    expect(searchInput?.value).toBe("roadmap");
+    expect(status?.textContent).toContain("Fallback search");
+    expect(status?.getAttribute("data-search-status")).toBe("fallback");
 
     await disposeMountedComponent(component);
   });

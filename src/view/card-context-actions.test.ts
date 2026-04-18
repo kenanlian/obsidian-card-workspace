@@ -24,6 +24,8 @@ const mockState = vi.hoisted(() => {
     onSortChange?: (payload: Record<string, unknown>) => void;
     onFilterChange?: (payload: Record<string, unknown>) => void;
     onIncludeSubfoldersChange?: (payload: Record<string, unknown>) => void;
+    onSearchQueryChange?: (payload: Record<string, unknown>) => void;
+    onSearchQueryReset?: (payload: Record<string, unknown>) => void;
     onSelectFolder?: (payload: Record<string, unknown>) => void;
     onHydrateRange?: (payload: Record<string, unknown>) => void;
   }
@@ -62,6 +64,8 @@ const mockState = vi.hoisted(() => {
       onSortChange: "sort-change",
       onFilterChange: "filter-change",
       onIncludeSubfoldersChange: "include-subfolders-change",
+      onSearchQueryChange: "search-query-change",
+      onSearchQueryReset: "search-query-reset",
       onSelectFolder: "select-folder",
       onHydrateRange: "hydrate-range",
     };
@@ -429,6 +433,7 @@ import {
   mergeNotes,
   moveFile,
 } from "./note-ops";
+import { NoIndexSearchService } from "../search";
 import { ALL_NOTES_PATH } from "./types";
 import * as markdownUtils from "./markdown-utils";
 
@@ -487,7 +492,8 @@ function createViewWithFile(path: string = "notes/a.md"): {
         pinnedPaths: [],
         previewLines: 5,
       })),
-     openNoteFromCard: vi.fn(),
+      getSearchService: vi.fn(() => null),
+      openNoteFromCard: vi.fn(),
      selectAllNotes: vi.fn(),
      createNoteInCurrentFolder: vi.fn(),
      selectFolderByPath: vi.fn(),
@@ -770,6 +776,168 @@ describe("FolderCardView card context actions", () => {
       });
     });
 
+    describe("Task 2: Search query coordinator ownership", () => {
+      it("search service integration boundary", async () => {
+        const { view, plugin } = createViewWithFile("notes/search-service-boundary.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/search-service-boundary.md"),
+          createCardRecordFromPath("notes/second.md"),
+        ];
+
+        const service = new NoIndexSearchService();
+        await service.initialize();
+        const querySpy = vi.spyOn(service, "query");
+        plugin.getSearchService = vi.fn(() => service);
+
+        (view as any).folderPath = "notes";
+        (view as any).baseCards = visibleCards;
+        (view as any).visibleCards = visibleCards;
+
+        await (view as any).onOpen();
+
+        const queryChangeHandler = mockState.panelEventHandlers["search-query-change"];
+        queryChangeHandler({ detail: { query: "roadmap" } });
+        await flushAsyncWork();
+
+        expect((view as any).searchQuery).toBe("roadmap");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+        expect(plugin.getSearchService).toHaveBeenCalled();
+        expect(querySpy).toHaveBeenCalledWith({
+          query: "roadmap",
+          scope: {
+            folderPath: "notes",
+            includeSubfolders: true,
+          },
+          candidatePaths: visibleCards.map((card) => card.path),
+        });
+        expect((view as any).searchStatus).toBe("fallback");
+        expect((view as any).searchOrderedPaths).toBeNull();
+      });
+
+      it("search query stays coordinator owned and does not persist settings", async () => {
+        const { view, plugin } = createViewWithFile("notes/search-owner.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/search-owner.md"),
+          createCardRecordFromPath("notes/second.md"),
+        ];
+
+        (view as any).baseCards = visibleCards;
+        (view as any).visibleCards = visibleCards;
+        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+
+        await (view as any).onOpen();
+
+        expect(mockState.panelInstances).toHaveLength(1);
+        expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
+          searchQuery: "",
+          searchStatus: "idle",
+        });
+
+        const queryChangeHandler = mockState.panelEventHandlers["search-query-change"];
+        const queryResetHandler = mockState.panelEventHandlers["search-query-reset"];
+        expect(queryChangeHandler).toBeDefined();
+        expect(queryResetHandler).toBeDefined();
+
+        queryChangeHandler({ detail: { query: "roadmap" } });
+        await flushAsyncWork();
+
+        expect((view as any).searchQuery).toBe("roadmap");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+        expect((view as any).deriveVisibleCards).toHaveBeenCalled();
+        expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
+          searchQuery: "roadmap",
+          searchStatus: "fallback",
+        });
+
+        queryResetHandler({ detail: { source: "clear-button" } });
+
+        expect((view as any).searchQuery).toBe("");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+        expect((view as any).deriveVisibleCards).toHaveBeenCalled();
+        expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
+          searchQuery: "",
+          searchStatus: "idle",
+        });
+      });
+
+      it("search query reset triggers projection refresh without settings persistence", async () => {
+        const { view, plugin } = createViewWithFile("notes/search-reset.md");
+        const visibleCards = [createCardRecordFromPath("notes/search-reset.md")];
+
+        const service = new NoIndexSearchService();
+        await service.initialize();
+        plugin.getSearchService = vi.fn(() => service);
+
+        (view as any).baseCards = visibleCards;
+        (view as any).visibleCards = visibleCards;
+
+        await (view as any).onOpen();
+
+        const generationBefore = (view as any).generation;
+        const queryChangeHandler = mockState.panelEventHandlers["search-query-change"];
+        const queryResetHandler = mockState.panelEventHandlers["search-query-reset"];
+
+        queryChangeHandler({ detail: { query: "alpha" } });
+        await flushAsyncWork();
+        queryResetHandler({ detail: { source: "clear-button" } });
+
+        expect((view as any).generation).toBe(generationBefore);
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+        expect((view as any).searchOrderedPaths).toBeNull();
+        expect((view as any).searchStatus).toBe("idle");
+      });
+
+      it("search stale result protection", async () => {
+        const { view, plugin } = createViewWithFile("notes/search-stale-protection.md");
+        const visibleCards = [
+          createCardRecordFromPath("notes/search-stale-protection.md"),
+          createCardRecordFromPath("notes/second.md"),
+        ];
+
+        const pending: Array<{ resolve: (result: any) => void }> = [];
+        const query = vi.fn((_request: unknown) => {
+          return new Promise((resolve) => {
+            pending.push({ resolve });
+          });
+        });
+
+        plugin.getSearchService = vi.fn(() => ({ query }));
+
+        (view as any).folderPath = "notes";
+        (view as any).baseCards = visibleCards;
+        (view as any).visibleCards = visibleCards;
+
+        await (view as any).onOpen();
+
+        const queryChangeHandler = mockState.panelEventHandlers["search-query-change"];
+        const queryResetHandler = mockState.panelEventHandlers["search-query-reset"];
+
+        queryChangeHandler({ detail: { query: "alpha" } });
+        queryChangeHandler({ detail: { query: "beta" } });
+
+        queryResetHandler({ detail: { source: "clear-button" } });
+
+        pending[0]?.resolve({ mode: "indexed", status: "ready", orderedPaths: [visibleCards[0].path] });
+        pending[1]?.resolve({ mode: "indexed", status: "ready", orderedPaths: [visibleCards[1].path] });
+        await flushAsyncWork();
+
+        expect((view as any).searchQuery).toBe("");
+        expect((view as any).searchStatus).toBe("idle");
+        expect((view as any).searchOrderedPaths).toBeNull();
+
+        queryChangeHandler({ detail: { query: "gamma" } });
+        (view as any).generation += 1;
+        (view as any).folderPath = "archive";
+
+        pending[2]?.resolve({ mode: "indexed", status: "ready", orderedPaths: [visibleCards[1].path] });
+        await flushAsyncWork();
+
+        expect((view as any).searchQuery).toBe("gamma");
+        expect((view as any).searchStatus).toBe("fallback");
+        expect((view as any).searchOrderedPaths).toBeNull();
+      });
+    });
+
     describe("Task 11: Event contract verification for pin-toggle persistence flow", () => {
       it("onOpen() registers pin-toggle subscription", async () => {
         const { view } = createViewWithFile("notes/pin-register.md");
@@ -911,6 +1079,8 @@ describe("FolderCardView card context actions", () => {
         expect(mockState.panelEventHandlers["card-context-menu"]).toBeDefined();
         expect(mockState.panelEventHandlers["filter-change"]).toBeDefined();
         expect(mockState.panelEventHandlers["include-subfolders-change"]).toBeDefined();
+        expect(mockState.panelEventHandlers["search-query-change"]).toBeDefined();
+        expect(mockState.panelEventHandlers["search-query-reset"]).toBeDefined();
         expect(mockState.panelEventHandlers["pin-toggle"]).toBeDefined();
         expect(typeof mockState.panelEventHandlers["pin-toggle"]).toBe("function");
       });
