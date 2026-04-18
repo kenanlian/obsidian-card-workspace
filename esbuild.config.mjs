@@ -17,9 +17,6 @@ const buildOptions = {
   plugins: [
     sveltePlugin({
       compilerOptions: {
-        compatibility: {
-          componentApi: 4,
-        },
         dev: !production,
         css: "injected",
       },
