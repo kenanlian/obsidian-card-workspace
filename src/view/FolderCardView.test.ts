@@ -238,12 +238,16 @@ vi.mock("./note-ops", () => {
 });
 
 import { FolderCardView } from "./FolderCardView";
+import type { SearchServiceSnapshot } from "../search";
 import type { NoteCardRecord } from "./types";
 
 interface TestHarness {
   view: FolderCardView;
   plugin: {
     getSettings: ReturnType<typeof vi.fn>;
+    getSearchService: ReturnType<typeof vi.fn>;
+    getSearchSnapshot: ReturnType<typeof vi.fn>;
+    subscribeSearchSnapshots: ReturnType<typeof vi.fn>;
     saveSettings: ReturnType<typeof vi.fn>;
     openNoteFromCard: ReturnType<typeof vi.fn>;
     selectAllNotes: ReturnType<typeof vi.fn>;
@@ -298,6 +302,9 @@ function createHarness(): TestHarness {
 
   const plugin = {
     getSettings: vi.fn(() => settings),
+    getSearchService: vi.fn(() => null),
+    getSearchSnapshot: vi.fn(() => null),
+    subscribeSearchSnapshots: vi.fn(() => () => undefined),
     saveSettings: vi.fn(async (partial: Record<string, unknown>) => {
       Object.assign(settings, partial);
     }),
@@ -378,5 +385,142 @@ describe("FolderCardView host contract", () => {
 
     expect(panelContainer.querySelectorAll(".folder-card-view")).toHaveLength(1);
     expect(panelContainer.querySelector(".fce-shell")).toBeNull();
+  });
+
+  it("debounces active query projection by 120ms and maps empty query status from snapshot", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const query = vi.fn(async () => ({
+        mode: "indexed",
+        status: "ready",
+        orderedPaths: ["notes/alpha.md"],
+      }));
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: {
+          outcome: "restored",
+          healthy: true,
+          rebuilding: false,
+          documentCount: 1,
+          lastIndexedAt: 1,
+          detail: "restored",
+        },
+      }));
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
+
+      await view.onOpen();
+      expect((view as any).searchStatus).toBe("ready");
+
+      (view as any).onSearchQueryChange({ query: "alpha" });
+      vi.advanceTimersByTime(119);
+      await Promise.resolve();
+      expect(query).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(query).toHaveBeenCalledTimes(1);
+
+      (view as any).resetSearchQuery();
+      expect((view as any).searchQuery).toBe("");
+      expect((view as any).searchOrderedPaths).toBeNull();
+      expect((view as any).searchStatus).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops stale query results after snapshot transition and clears snapshot subscription on close", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const pending: Array<{ resolve: (result: unknown) => void }> = [];
+      const query = vi.fn(() => {
+        return new Promise((resolve) => {
+          pending.push({ resolve });
+        });
+      });
+      const unsubscribe = vi.fn();
+      let snapshotListener: ((snapshot: SearchServiceSnapshot) => void) | null = null;
+      const emitSnapshot = (snapshot: SearchServiceSnapshot): void => {
+        const listener = snapshotListener;
+        if (!listener) {
+          return;
+        }
+
+        listener(snapshot);
+      };
+
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: {
+          outcome: "restored",
+          healthy: true,
+          rebuilding: false,
+          documentCount: 2,
+          lastIndexedAt: 1,
+          detail: "restored",
+        },
+      }));
+      plugin.subscribeSearchSnapshots = vi.fn((listener: (snapshot: SearchServiceSnapshot) => void) => {
+        snapshotListener = listener;
+        return unsubscribe;
+      });
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
+
+      await view.onOpen();
+
+      (view as any).onSearchQueryChange({ query: "beta" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      expect(query).toHaveBeenCalledTimes(1);
+
+      emitSnapshot({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "building",
+        lastError: null,
+        health: {
+          outcome: "rebuild-required",
+          healthy: false,
+          rebuilding: true,
+          documentCount: null,
+          lastIndexedAt: null,
+          detail: "rebuilding",
+        },
+      });
+
+      pending[0]?.resolve({
+        mode: "indexed",
+        status: "ready",
+        orderedPaths: ["notes/beta.md"],
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect((view as any).searchStatus).toBe("building");
+      expect((view as any).searchOrderedPaths).toBeNull();
+
+      await view.onClose();
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -73,6 +73,14 @@
 
   type SortMenuOption = SortOption | SortSeparatorOption;
 
+  const SEARCH_STATUS_LABELS: Record<SearchStatus, string> = {
+    idle: "Search idle",
+    building: "Building index",
+    ready: "Index ready",
+    fallback: "Fallback search",
+    error: "Search error",
+  };
+
   interface ToolbarActionOption {
     id: string;
     label: string;
@@ -190,17 +198,7 @@
       : "",
   );
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
-  const searchStatusLabel = $derived(
-    searchStatus === "idle"
-      ? "Search idle"
-      : searchStatus === "fallback"
-        ? "Fallback search"
-        : searchStatus === "ready"
-          ? "Index ready"
-          : searchStatus === "building"
-            ? "Building index"
-            : "Search error",
-  );
+  const searchStatusLabel = $derived(SEARCH_STATUS_LABELS[searchStatus]);
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
     const result: FolderTreeNode[] = [];

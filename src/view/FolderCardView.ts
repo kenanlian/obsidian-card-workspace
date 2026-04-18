@@ -50,7 +50,7 @@ import type {
   VaultMutationEvent,
   VaultMutationResult,
 } from "./types";
-import type { SearchQueryResult } from "../search";
+import type { SearchQueryResult, SearchServiceSnapshot } from "../search";
 import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
@@ -353,9 +353,14 @@ export class FolderCardView extends ItemView {
   private pendingHydration = new Set<string>();
   private requestSeq = 0;
   private searchRequestSeq = 0;
+  private searchSnapshotSeq = 0;
+  private searchSnapshot: SearchServiceSnapshot | null = null;
+  private searchSnapshotUnsubscribe: (() => void) | null = null;
+  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_HYDRATION_CARD_COUNT = 12;
+  private static readonly SEARCH_DEBOUNCE_MS = 120;
 
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
@@ -389,6 +394,7 @@ export class FolderCardView extends ItemView {
   async onOpen(): Promise<void> {
     const panelModule = await import("./FolderCardPanel.svelte");
     const FolderCardPanel = panelModule.default;
+    this.initializeSearchSnapshotState();
     this.panelModel.mutate((state) => {
       const settings = this.plugin.getSettings();
       const bulkRuntimeState = this.buildBulkRuntimePanelState();
@@ -700,6 +706,10 @@ export class FolderCardView extends ItemView {
   cleanupLifecycle(): CleanupResult {
     const hadQueuedRequest = this.queuedRequest !== null || this.refreshQueued;
     const hadPendingHydration = this.pendingHydration.size > 0;
+    const cancelledDebounce = this.clearSearchDebounce();
+
+    this.clearSearchSnapshotSubscription();
+    this.searchSnapshot = null;
     this.queuedRequest = null;
     this.refreshQueued = false;
     this.pendingHydration.clear();
@@ -714,10 +724,11 @@ export class FolderCardView extends ItemView {
     this.searchOrderedPaths = null;
     this.searchStatus = "idle";
     this.searchRequestSeq += 1;
+    this.searchSnapshotSeq += 1;
     this.generation += 1;
 
     return {
-      cancelledDebounce: false,
+      cancelledDebounce,
       clearedQueuedRequest: hadQueuedRequest,
       clearedPendingHydration: hadPendingHydration,
     };
@@ -734,6 +745,49 @@ export class FolderCardView extends ItemView {
 
   getCurrentFolderPath(): string | null {
     return this.folderPath;
+  }
+
+  onSearchSnapshot(searchSnapshot: SearchServiceSnapshot): void {
+    this.applySearchSnapshot(searchSnapshot, true);
+  }
+
+  private initializeSearchSnapshotState(): void {
+    this.clearSearchSnapshotSubscription();
+    this.applySearchSnapshot(this.plugin.getSearchSnapshot(), false);
+    this.searchSnapshotUnsubscribe = this.plugin.subscribeSearchSnapshots((snapshot) => {
+      this.applySearchSnapshot(snapshot, true);
+    });
+  }
+
+  private applySearchSnapshot(snapshot: SearchServiceSnapshot | null, pushState: boolean): void {
+    this.searchSnapshot = snapshot;
+    this.searchSnapshotSeq += 1;
+    this.searchRequestSeq += 1;
+
+    if (this.searchQuery.trim().length === 0) {
+      this.searchOrderedPaths = null;
+      this.searchStatus = this.deriveSearchStatus();
+      if (pushState) {
+        this.pushState();
+      }
+      return;
+    }
+
+    this.searchOrderedPaths = null;
+    this.searchStatus = this.deriveSearchStatus();
+
+    if (pushState) {
+      this.pushState();
+    }
+
+    if (snapshot?.mode === "indexed" && snapshot.status === "ready") {
+      void this.refreshSearchProjection();
+    }
+  }
+
+  private clearSearchSnapshotSubscription(): void {
+    this.searchSnapshotUnsubscribe?.();
+    this.searchSnapshotUnsubscribe = null;
   }
 
   private openCardContextMenu(notePath: unknown, mouseEvent: unknown): void {
@@ -958,8 +1012,9 @@ export class FolderCardView extends ItemView {
     this.generation += 1;
     this.pendingHydration.clear();
     this.searchOrderedPaths = null;
+    this.clearSearchDebounce();
     this.searchRequestSeq += 1;
-    this.searchStatus = this.searchQuery.trim().length === 0 ? "idle" : "fallback";
+    this.searchStatus = this.deriveSearchStatus();
     this.pushState();
 
     const buildGeneration = this.generation;
@@ -1543,6 +1598,63 @@ export class FolderCardView extends ItemView {
     return this.searchStatus;
   }
 
+  private clearSearchDebounce(): boolean {
+    if (!this.searchDebounceTimer) {
+      return false;
+    }
+
+    clearTimeout(this.searchDebounceTimer);
+    this.searchDebounceTimer = null;
+    return true;
+  }
+
+  private scheduleDebouncedSearchProjection(): void {
+    this.clearSearchDebounce();
+    this.searchDebounceTimer = setTimeout(() => {
+      this.searchDebounceTimer = null;
+      void this.refreshSearchProjection();
+    }, FolderCardView.SEARCH_DEBOUNCE_MS);
+  }
+
+  private deriveSearchStatus(): SearchStatus {
+    const query = this.searchQuery.trim();
+    if (query.length === 0) {
+      return this.deriveEmptyQuerySearchStatus();
+    }
+
+    const snapshot = this.searchSnapshot;
+    if (!snapshot) {
+      return "fallback";
+    }
+
+    if (snapshot.mode === "no-index") {
+      return "fallback";
+    }
+
+    if (snapshot.status === "error") {
+      return "error";
+    }
+
+    if (snapshot.status === "building") {
+      return "building";
+    }
+
+    if (this.searchOrderedPaths === null) {
+      return "fallback";
+    }
+
+    return "ready";
+  }
+
+  private deriveEmptyQuerySearchStatus(): SearchStatus {
+    const snapshot = this.searchSnapshot;
+    if (!snapshot || snapshot.mode === "no-index") {
+      return "idle";
+    }
+
+    return snapshot.status;
+  }
+
   private onSearchQueryChange(detail: { query?: unknown }): void {
     const nextQuery = typeof detail.query === "string" ? detail.query : "";
     if (nextQuery === this.searchQuery) {
@@ -1551,20 +1663,31 @@ export class FolderCardView extends ItemView {
 
     this.searchQuery = nextQuery;
     this.searchOrderedPaths = null;
-    this.searchStatus = this.searchQuery.trim().length === 0 ? "idle" : "fallback";
+    this.searchRequestSeq += 1;
+    this.searchStatus = this.deriveSearchStatus();
     this.pushState();
-    void this.refreshSearchProjection();
+
+    if (this.searchQuery.trim().length > 0) {
+      this.scheduleDebouncedSearchProjection();
+      return;
+    }
+
+    this.clearSearchDebounce();
   }
 
   private resetSearchQuery(): void {
-    if (this.searchQuery.length === 0) {
+    this.clearSearchDebounce();
+    this.searchRequestSeq += 1;
+
+    if (this.searchQuery.length === 0 && this.searchOrderedPaths === null) {
+      this.searchStatus = this.deriveSearchStatus();
+      this.pushState();
       return;
     }
 
     this.searchQuery = "";
     this.searchOrderedPaths = null;
-    this.searchStatus = "idle";
-    this.searchRequestSeq += 1;
+    this.searchStatus = this.deriveSearchStatus();
     this.pushState();
   }
 
@@ -1572,14 +1695,15 @@ export class FolderCardView extends ItemView {
     const query = this.searchQuery.trim();
     if (query.length === 0) {
       this.searchOrderedPaths = null;
-      this.searchStatus = "idle";
+      this.searchStatus = this.deriveSearchStatus();
+      this.pushState();
       return;
     }
 
     const service = this.plugin.getSearchService();
     if (!service) {
       this.searchOrderedPaths = null;
-      this.searchStatus = "fallback";
+      this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
     }
@@ -1588,6 +1712,7 @@ export class FolderCardView extends ItemView {
     this.searchRequestSeq = requestSeq;
     const requestGeneration = this.generation;
     const requestFolderPath = this.folderPath;
+    const requestSnapshotSeq = this.searchSnapshotSeq;
 
     try {
       const result = await service.query({
@@ -1599,7 +1724,7 @@ export class FolderCardView extends ItemView {
         candidatePaths: this.baseCards.map((card) => card.path),
       });
 
-      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, query)) {
+      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, requestSnapshotSeq, query)) {
         return;
       }
 
@@ -1607,12 +1732,12 @@ export class FolderCardView extends ItemView {
       this.searchStatus = this.toRuntimeSearchStatus(result);
       this.pushState();
     } catch {
-      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, query)) {
+      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, requestSnapshotSeq, query)) {
         return;
       }
 
       this.searchOrderedPaths = null;
-      this.searchStatus = "fallback";
+      this.searchStatus = this.deriveSearchStatus();
       this.pushState();
     }
   }
@@ -1621,6 +1746,7 @@ export class FolderCardView extends ItemView {
     requestSeq: number,
     requestGeneration: number,
     requestFolderPath: string | null,
+    requestSnapshotSeq: number,
     requestQuery: string,
   ): boolean {
     if (requestSeq !== this.searchRequestSeq) {
@@ -1635,15 +1761,31 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
+    if (requestSnapshotSeq !== this.searchSnapshotSeq) {
+      return false;
+    }
+
     return requestQuery === this.searchQuery.trim();
   }
 
   private toRuntimeSearchStatus(result: SearchQueryResult): SearchStatus {
-    if (result.mode === "no-index" || result.orderedPaths === null) {
+    if (result.mode === "no-index") {
       return "fallback";
     }
 
-    return result.status;
+    if (result.status === "building") {
+      return "building";
+    }
+
+    if (result.status === "error") {
+      return "error";
+    }
+
+    if (result.orderedPaths === null) {
+      return "fallback";
+    }
+
+    return "ready";
   }
 
   private getOrderedVisiblePaths(): string[] {

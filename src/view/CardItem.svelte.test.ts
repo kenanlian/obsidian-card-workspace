@@ -58,6 +58,10 @@ function createCard(path: string = "notes/a.md"): NoteCardRecord {
   };
 }
 
+function getExcerptHtml(target: HTMLDivElement): string {
+  return target.querySelector<HTMLElement>(".fce-excerpt")?.innerHTML ?? "";
+}
+
 function createCapturedCallbacks(): CapturedCallbacks {
   const openEvents: OpenNotePayload[] = [];
   const pinEvents: PinTogglePayload[] = [];
@@ -194,5 +198,41 @@ describe("CardItem.svelte", () => {
 
     remountedPinButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(captured.pinEvents[1]).toEqual({ path: "notes/a.md", pinned: false });
+  });
+
+  it("highlights title and excerpt matches from the current query", () => {
+    const { target } = mountCardItem({
+      searchQuery: "note preview",
+      card: createCard("notes/highlight.md"),
+    });
+
+    const title = target.querySelector("h4");
+    const excerpt = target.querySelector(".fce-excerpt");
+
+    expect(title?.innerHTML).toContain('<mark class="fce-search-hit">note</mark>');
+    expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">Preview</mark>');
+    expect(excerpt?.textContent).toContain("Preview text");
+  });
+
+  it("does not add highlighting when the query is empty", () => {
+    const { target } = mountCardItem({
+      searchQuery: "   ",
+      card: createCard("notes/no-query.md"),
+    });
+
+    expect(target.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
+    expect(target.querySelector("h4")?.textContent).toBe("A note");
+    expect(getExcerptHtml(target)).toContain("<p>Preview text</p>");
+  });
+
+  it("leaves non-matching content unchanged", () => {
+    const { target } = mountCardItem({
+      searchQuery: "missing token",
+      card: createCard("notes/non-match.md"),
+    });
+
+    expect(target.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
+    expect(target.querySelector("h4")?.innerHTML).toBe("A note");
+    expect(getExcerptHtml(target)).toContain("<p>Preview text</p>");
   });
 });

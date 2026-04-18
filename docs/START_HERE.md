@@ -2,57 +2,67 @@
 
 ## 这个项目现在在解决什么问题？
 
-`Folder Card Explorer` 是一个 Obsidian 插件。它把文件管理器里的文件夹选择，转换成右侧侧边栏里的卡片流浏览体验，让用户能在当前笔记上下文里快速预览、筛选、置顶、搜索并打开一组笔记。
+`Folder Card Explorer` 是一个 Obsidian 插件。它把文件管理器里的文件夹选择转换成右侧侧边栏里的卡片流，让用户在当前笔记上下文中浏览、筛选、置顶、搜索并打开一组笔记。
 
-现在的重点不是继续做 Svelte 迁移，而是把卡片工作台补到可持续演进的产品状态。`phase3 search architecture readiness` 已经完成，这意味着搜索已经接到正式运行时接缝里，但当前仍是 **readiness seam**，不是完整全文索引方案。
+当前项目的核心目标不是再搭搜索接缝，而是维护一套已经闭环的卡片工作台。`Phase 3 search capability` 已经完成，插件现在同时具备 fallback 搜索路径和 indexed 搜索路径，后续工作应围绕维护、演进和手动验证条件补齐，而不是重新设计搜索 ownership。
 
 ## 当前处于什么阶段？
 
-项目处于 **Svelte 5 宿主接缝稳定，phase3 搜索架构 readiness 已完成，准备进入后续搜索能力扩展** 的阶段。
+项目处于 **Phase 3 搜索能力已完成并收尾，文档进入长期维护态** 的阶段。
 
-- 已完成：`main.ts` 拥有 plugin-owned `SearchService` 生命周期，默认实例是 `NoIndexSearchService`。
-- 已完成：`FolderCardView.ts` 持有 per-view、runtime-only 的 `searchQuery` 与 `searchStatus`，并把状态桥接到 `panel-model`。
-- 已完成：`pipeline.ts` 不再把搜索当成 placeholder，当前正式链路是 `baseCards -> tag filter -> search filter -> pin reorder -> visibleCards`。
-- 已完成：当前构建和测试通过，标准验证结果是 `npm run check`、`npm run build`、`npm test` 通过。
-- 当前边界：还没有引入 IndexedDB、MiniSearch、rebuild commands、worker、ranking/tokenizer，也没有把 query 持久化到 settings。
+- 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和降级回退。
+- 已完成：`FolderCardView.ts` 持有 per-view 的 `searchQuery`、debounce、search status，并把结果统一送回 `pipeline.ts`。
+- 已完成：`pipeline.ts` 仍是唯一可见卡片投影链路，正式语义是 `baseCards -> tag filter -> search filter -> pin reorder -> visibleCards`。
+- 已完成：indexed 搜索相关能力已经具备 `IndexStore`、`SearchIndexManager`、`IndexedSearchService` 这条正式运行时链路。
+- 已完成：标准仓库验证是 `npm run check`、`npm run build`、`npm test`。
+- 已关闭：F3 的真实 Obsidian 手动 QA 因环境缺少可运行宿主而未执行，用户已明确豁免，因此 Phase 3 以仓库验证通过加文档收尾的状态关闭。
 
 ## 回来看代码前先记住这 3 件事
 
-1. **搜索查询是 runtime-only，而且是 per-view。** `searchQuery` 不写入 `PluginSettings`，也不是 plugin-global 状态。当前真值在 `FolderCardView.ts`，面板只消费投影状态。
-2. **`pipeline.ts` 仍是唯一可见卡片投影链路。** 搜索已经接到这条链上，但 pin 仍只负责重排，不绕过 tag filter 或 search filter。
-3. **`SearchService` 现在只是 fallback-first、no-index seam。** `main.ts` 持有服务生命周期，`orderedPaths: null` 代表继续使用本地 fallback filtering，不代表已有索引实现。
+1. **搜索查询仍是 runtime-only，而且是 per-view。** `searchQuery` 不写入 `PluginSettings`，真值仍在 `FolderCardView.ts`。
+2. **`pipeline.ts` 仍是唯一投影路径。** 搜索服务可以给出 indexed ordering，但最终哪些卡片可见、顺序如何变化，仍由 pipeline 决定。
+3. **`orderedPaths` 的语义已经锁定。** `orderedPaths: null` 表示继续走 fallback filtering，`orderedPaths: []` 表示 indexed 搜索已执行且结果为零，不能混用。
 
 ## 系统大致怎么拼起来的
 
 - `src/main.ts`
-  - 插件入口与运行时外壳。
-  - 负责视图注册、设置读写、vault 事件转发、`SearchService` 初始化与销毁。
+  - 插件入口与全局运行时外壳。
+  - 负责视图注册、设置读写、vault 事件转发、indexed 搜索服务初始化、恢复与 rebuild 命令。
 - `src/view/FolderCardView.ts`
-  - 视图级运行时协调器。
-  - 负责 `baseCards`、`visibleCards`、selection、generation、hydration、bulk state，以及当前 view 的 `searchQuery` / `searchStatus`。
-- `src/view/panel-model.ts`
-  - 宿主持有的面板状态边界。
-  - 把 cards、filter、pin、bulk、search 等运行时状态投影给 Svelte 面板。
-- `src/view/FolderCardPanel.svelte` 与 `src/view/Toolbar.svelte`
-  - 展示与交互表面。
-  - 负责把 query/status 显示出来，并把用户输入回传给 `FolderCardView.ts`。
+  - 每个视图实例的运行时协调器。
+  - 负责 `baseCards`、`visibleCards`、selection、generation、防陈旧刷新、hydration，以及当前 view 的搜索 query 和状态。
 - `src/view/pipeline.ts`
-  - 纯函数投影层。
-  - 继续负责 tag filter、search filter、pin reorder 的组合顺序。
-- `src/search/types.ts` / `src/search/NoIndexSearchService.ts`
-  - 搜索服务接缝。
-  - 当前提供 lifecycle-safe、fallback-first、no-index 的最小实现。
+  - 唯一的可见卡片投影层。
+  - 负责把 tag filter、search filter、pin reorder 组合成稳定输出。
+- `src/search/IndexStore.ts`
+  - IndexedDB 持久化边界。
+  - 保存每个 vault 的索引元数据和序列化索引体。
+- `src/search/SearchIndexManager.ts`
+  - 索引编排器。
+  - 负责 restore、full build、增量 mutation 应用、健康快照和 `rebuild-required` 判定。
+- `src/search/IndexedSearchService.ts`
+  - 服务层查询边界。
+  - 负责消费 manager 快照、裁剪 candidate paths、返回 indexed ordering，或在不可用时回退。
+- `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
+  - 展示与交互表面。
+  - 负责搜索输入、紧凑状态标签、标题和摘录命中高亮。
 
 ## 一条主流程怎么走
 
-以“用户在当前视图里输入搜索词”为例：
+以“用户在当前视图输入搜索词”为例：
 
 1. `Toolbar.svelte` 把 query 变化回传给 `FolderCardView.ts`。
-2. `FolderCardView.ts` 更新 runtime-only `searchQuery`，先把运行时状态切到 `fallback` 或 `idle`。
-3. `FolderCardView.ts` 向 plugin-owned `SearchService` 发起 query，请求里带上 query、scope 和当前 candidate paths。
-4. 如果服务返回 `orderedPaths: null`，视图继续走本地 fallback filtering。
-5. `runPipeline()` 仍按 `tag -> search -> pin` 顺序投影 `visibleCards`。
-6. `panel-model` 把新的 cards、`searchQuery`、`searchStatus` 推给面板，UI 随之更新。
+2. `FolderCardView.ts` 更新 runtime-only `searchQuery`，按当前视图范围做 debounce，并向搜索服务发起查询。
+3. `IndexedSearchService` 根据当前健康状态决定返回 indexed ordering，或返回 `orderedPaths: null` 让调用方继续 fallback。
+4. `pipeline.ts` 先执行 tag filter，再执行 search filter，最后执行 pin reorder。
+5. `FolderCardPanel.svelte` 和 `CardItem.svelte` 接收最新 cards、compact status 和高亮结果，UI 更新。
+
+以“vault 发生 unsafe folder rename”为例：
+
+1. `main.ts` 把 mutation 同时转发给视图和搜索服务。
+2. `SearchIndexManager` 若无法安全做路径前缀改写，则发布 `rebuild-required` 快照。
+3. `main.ts` 只调度一次 plugin-owned rebuild，不重复扇出快照。
+4. 视图仍通过单一路径接收搜索快照，避免重复通知和状态漂移。
 
 ## 怎么运行与做基本验证
 
@@ -70,15 +80,18 @@ npm run build
 npm test
 ```
 
-本次文档对应的代码状态里，这三条命令已经通过。
-
 开发观察构建：
 
 ```bash
 npm run dev
 ```
 
-## 当前最重要的配置值
+当前阶段要明确区分两类验证：
+
+- **仓库验证** 已完成，标准命令通过。
+- **真实 Obsidian 手动 QA** 未执行，不是因为实现未完成，而是因为当前环境没有可运行的 Obsidian 宿主，且用户已明确豁免 F3 的这项要求。
+
+## 哪些配置值最重要
 
 - `sort.field` / `sort.direction`：控制卡片排序。
 - `filter.tags`：标签筛选条件，语义是 **AND**。
@@ -86,23 +99,23 @@ npm run dev
 - `includeSubfolders`：folder scope 下的数据采集开关。
 - `lastFolderPath` / `lastViewMode`：会话恢复使用。
 
-要特别注意，**没有 `searchQuery` 配置项**。这不是遗漏，而是当前架构边界。
+需要特别注意：**没有 `searchQuery` 配置项。** 搜索 query 仍是当前视图的运行时状态，不属于插件设置。
 
 ## 当前风险 / 阻塞 / 下一步
 
-- **搜索 readiness 已完成，但完整索引搜索还没开始。** 当前只有 no-index seam 和 fallback-first 行为，不能把它说成已完成全文搜索。
-- **`SearchService` 仍是最小实现。** 还没有 IndexedDB、MiniSearch、worker、ranking/tokenizer，也没有 rebuild commands。
-- **查询状态仍归 `FolderCardView.ts` 单独持有。** 这是当前刻意保留的边界，后续如果引入 indexed mode，也要先尊重这个 ownership。
-- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 这不影响当前 build/test 通过，但仍是明确待办。
-- **后续工作重点** 应是把 indexed search 能力接到现有 seam，而不是重新发明并行搜索链路。
+- **F3 已关闭，但真实宿主手动验证仍是已知空白。** 这是用户批准的收尾条件，不是架构未知项。
+- **indexed 搜索已经存在，但边界不能被随意打破。** 后续改动必须继续尊重 `main.ts`、`FolderCardView.ts`、`pipeline.ts`、`SearchIndexManager` 之间的 ownership。
+- **`orderedPaths` contract 不能漂移。** `null` 与空数组代表不同语义，测试和文档都已锁定。
+- **unsafe folder rename 会触发 rebuild-required。** 这是刻意选择的保守策略，用来避免脏路径继续对外服务。
+- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 这不是 Phase 3 阻塞项，但仍是后续整理点。
 
 ## 接下来先读哪里
 
 1. `docs/architecture.md`
-2. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
-3. `docs/decisions/2026-04-18-finish-svelte-5-host-and-component-seam.md`
+2. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
+3. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
 4. `src/main.ts`
 5. `src/view/FolderCardView.ts`
-6. `src/view/panel-model.ts`
-7. `src/view/pipeline.ts`
-8. `src/search/types.ts`
+6. `src/view/pipeline.ts`
+7. `src/search/SearchIndexManager.ts`
+8. `src/search/IndexedSearchService.ts`

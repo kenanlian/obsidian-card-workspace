@@ -56,11 +56,13 @@ export function applySearchFilter(cards: NoteCardRecord[], context: PipelineCont
     return cards;
   }
 
-  if (Array.isArray(context.search.orderedPaths)) {
+  const orderedPaths = context.search.orderedPaths;
+  // `orderedPaths` array is authoritative indexed ordering, including explicit zero-results ([]).
+  if (orderedPaths !== null) {
     const cardsByPath = new Map(cards.map((card) => [card.path, card]));
     const orderedMatches: NoteCardRecord[] = [];
 
-    for (const path of context.search.orderedPaths) {
+    for (const path of orderedPaths) {
       const card = cardsByPath.get(path);
       if (card) {
         orderedMatches.push(card);
@@ -70,6 +72,7 @@ export function applySearchFilter(cards: NoteCardRecord[], context: PipelineCont
     return orderedMatches;
   }
 
+  // Fallback mode preserves the current sorted input order by filtering in-place.
   return cards.filter((card) => {
     const cachedContent = card.excerpt.trim().length > 0 ? card.excerpt : null;
     return matchesSearchQuery(card.file, query, cachedContent);

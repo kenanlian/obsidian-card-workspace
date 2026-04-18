@@ -22,7 +22,14 @@ export interface SearchOwnershipContract {
   readonly pipeline: "visible-card-filtering-only";
 }
 
-/** Runtime-only search inputs passed into visible-card projection. */
+/**
+ * Runtime-only search inputs passed into visible-card projection.
+ *
+ * - `orderedPaths: null` => service did not provide indexed ordering; `pipeline.ts` must fallback-filter.
+ * - `orderedPaths: []` => indexed search is ready and query produced zero matches.
+ *
+ * Score details remain internal to search runtime contracts and must not be surfaced on card records.
+ */
 export interface PipelineSearchInput {
   query: string;
   orderedPaths: string[] | null;

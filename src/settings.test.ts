@@ -168,6 +168,25 @@ describe("normalizeSettings — previewLines", () => {
 });
 
 
+describe("search query settings boundary", () => {
+  it("normalizeSettings ignores runtime search query fields", () => {
+    const raw = {
+      ...DEFAULT_SETTINGS,
+      searchQuery: "roadmap",
+    } as unknown;
+
+    const result = normalizeSettings(raw);
+
+    expect("searchQuery" in (result as unknown as Record<string, unknown>)).toBe(false);
+  });
+
+  it("mergeSettings ignores runtime search query fields in patch", () => {
+    const result = mergeSettings(DEFAULT_SETTINGS, { searchQuery: "roadmap" } as never);
+
+    expect("searchQuery" in (result as unknown as Record<string, unknown>)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // mergeSettings — pinnedPaths updates
 // ---------------------------------------------------------------------------

@@ -24,5 +24,8 @@
     "svelte-check": "^4.3.4",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "minisearch": "^7.2.0"
   }
 }

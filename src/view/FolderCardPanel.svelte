@@ -558,6 +558,7 @@
                 {card}
                 {pinnedPaths}
                 {previewLines}
+                {searchQuery}
                 {bulkMode}
                 bulkSelected={bulkMode && selectedPaths.includes(card.path)}
                 selected={selectedPath === card.path}

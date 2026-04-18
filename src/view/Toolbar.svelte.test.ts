@@ -228,6 +228,29 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("renders the exact compact search status labels and no rebuild controls", async () => {
+    const expectedLabels = [
+      { status: "idle", label: "Search idle" },
+      { status: "building", label: "Building index" },
+      { status: "ready", label: "Index ready" },
+      { status: "fallback", label: "Fallback search" },
+      { status: "error", label: "Search error" },
+    ] as const;
+
+    for (const expected of expectedLabels) {
+      const { component } = mountToolbar({ searchStatus: expected.status });
+      const status = document.querySelector<HTMLElement>(".fce-search-status");
+
+      expect(status?.textContent).toBe(expected.label);
+      expect(status?.getAttribute("data-search-status")).toBe(expected.status);
+      expect(document.body.textContent).not.toContain("Rebuild");
+      expect(document.body.textContent).not.toContain("Search settings");
+
+      await disposeMountedComponent(component);
+      document.body.innerHTML = "";
+    }
+  });
+
   it("emits sort-change with selected field and direction", async () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);

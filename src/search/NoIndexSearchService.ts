@@ -12,6 +12,14 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
   mode: "no-index",
   status: "building",
   lastError: null,
+  health: {
+    outcome: "none",
+    healthy: false,
+    rebuilding: true,
+    documentCount: null,
+    lastIndexedAt: null,
+    detail: "No index present; fallback filtering remains active.",
+  },
 };
 
 /**
@@ -29,6 +37,14 @@ export class NoIndexSearchService implements SearchService {
       mode: "no-index",
       status: "ready",
       lastError: null,
+      health: {
+        outcome: "none",
+        healthy: true,
+        rebuilding: false,
+        documentCount: null,
+        lastIndexedAt: null,
+        detail: "No index present; service is ready for fallback filtering.",
+      },
     };
     this.emit();
   }
@@ -43,6 +59,11 @@ export class NoIndexSearchService implements SearchService {
       initialized: false,
       disposed: true,
       status: "building",
+      health: {
+        ...this.snapshot.health,
+        healthy: false,
+        rebuilding: true,
+      },
     };
     this.emit();
     this.listeners.clear();
@@ -66,6 +87,7 @@ export class NoIndexSearchService implements SearchService {
     return {
       mode: "no-index",
       status,
+      execution: "fallback-filtering",
       orderedPaths: null,
     };
   }

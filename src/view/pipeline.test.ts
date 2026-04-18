@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, DEFAULT_PIPELINE_STEPS } from "./pipeline";
 import type { PipelineContext } from "./pipeline";
 import type { NoteCardRecord } from "./types";
+import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
 import * as metadataUtils from "./metadata-utils";
 
 // ---------------------------------------------------------------------------
@@ -273,6 +274,67 @@ describe("apply search filter behavior", () => {
     expect(applySearchFilter(cards, context)).toEqual(cards);
   });
 
+  it("uses fallback filtering when orderedPaths is null", () => {
+    const cards = [
+      createMockCard("Quarterly-Roadmap.md"),
+      createMockCard("Meeting-Notes.md"),
+    ];
+    const context = createMockContext();
+    context.search.query = "roadmap";
+    context.search.orderedPaths = null;
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["Quarterly-Roadmap.md"]);
+  });
+
+  it("treats orderedPaths empty array as indexed-ready zero results", () => {
+    const cards = [createMockCard("Quarterly-Roadmap.md"), createMockCard("Meeting-Notes.md")];
+    const context = createMockContext();
+    context.search.query = "roadmap";
+    context.search.orderedPaths = [];
+
+    expect(applySearchFilter(cards, context)).toEqual([]);
+  });
+
+  it("uses orderedPaths ordering when indexed results are provided", () => {
+    const cards = [
+      createMockCard("alpha.md", "alpha body"),
+      createMockCard("beta.md", "beta body"),
+      createMockCard("gamma.md", "gamma body"),
+    ];
+    const context = createMockContext();
+    context.search.query = "body";
+    context.search.orderedPaths = ["gamma.md", "missing.md", "alpha.md"];
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["gamma.md", "alpha.md"]);
+  });
+
+  it("preserves current sorted card order in fallback mode", () => {
+    const cards = [
+      createMockCard("zeta.md", "query-hit"),
+      createMockCard("alpha.md", "query-hit"),
+      createMockCard("beta.md", "nope"),
+      createMockCard("delta.md", "query-hit"),
+    ];
+    const context = createMockContext();
+    context.search.query = "query-hit";
+    context.search.orderedPaths = null;
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([
+      "zeta.md",
+      "alpha.md",
+      "delta.md",
+    ]);
+  });
+
+  it("restores unfiltered projection for empty query even when orderedPaths is []", () => {
+    const cards = [createMockCard("alpha.md"), createMockCard("beta.md")];
+    const context = createMockContext();
+    context.search.query = "";
+    context.search.orderedPaths = [];
+
+    expect(applySearchFilter(cards, context)).toEqual(cards);
+  });
+
   it("matches card title without requiring cached content", () => {
     const cards = [
       createMockCard("Quarterly-Roadmap.md"),
@@ -315,6 +377,21 @@ describe("apply search filter behavior", () => {
     context.search.query = "reTroSpeCtive";
 
     expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["notes.md"]);
+  });
+
+  it("locks the phase 3 indexed search MiniSearch contract", () => {
+    expect(PHASE3_MINISEARCH_CONTRACT.indexFields).toEqual(["title", "content"]);
+    expect(PHASE3_MINISEARCH_CONTRACT.storeFields).toEqual(["path", "title", "excerpt"]);
+    expect(PHASE3_MINISEARCH_CONTRACT.normalize).toBe("lowercase");
+    expect(PHASE3_MINISEARCH_CONTRACT.query).toEqual({
+      prefix: true,
+      fuzzy: false,
+      combineWith: "AND",
+    });
+    expect(PHASE3_MINISEARCH_CONTRACT.boost).toEqual({
+      title: 3,
+      content: 1,
+    });
   });
 });
 
@@ -384,6 +461,29 @@ describe("applyPinReorder", () => {
     expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
+    ]);
+  });
+
+  it("keeps tag -> indexed search -> pin sequencing in the default pipeline", () => {
+    const cards = [
+      createMockCard("a.md", "query-hit"),
+      createMockCard("b.md", "query-hit"),
+      createMockCard("c.md", "query-hit"),
+      createMockCard("d.md", "query-hit"),
+    ];
+    const baseContext = createMockContext();
+    baseContext.settings.filter.tags = ["project"];
+    baseContext.search.query = "query-hit";
+    baseContext.search.orderedPaths = ["d.md", "b.md", "a.md"];
+    const context = withPinnedPaths(baseContext, ["a.md", "b.md"]);
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
+      return file.path !== "b.md";
+    });
+
+    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+      "a.md",
+      "d.md",
     ]);
   });
 

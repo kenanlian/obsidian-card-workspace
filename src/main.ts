@@ -1,5 +1,6 @@
 import {
   MarkdownView,
+  Notice,
   Plugin,
   TAbstractFile,
   TFile,
@@ -8,13 +9,33 @@ import {
   debounce,
 } from "obsidian";
 import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
-import { NoIndexSearchService } from "./search";
+import {
+  IndexedSearchService,
+  IndexStore,
+  NoIndexSearchService,
+  SearchIndexManager,
+  prepareSearchableDocument,
+} from "./search";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
-import type { SearchService, SearchVaultMutation } from "./search";
+import type {
+  IndexStoreNamespaceMetadata,
+  SearchService,
+  SearchServiceSnapshot,
+  SearchVaultMutation,
+} from "./search";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
 import { ALL_NOTES_PATH } from "./view/types";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
+
+const SEARCH_SCHEMA_VERSION = "phase3-v1";
+const SEARCH_TOKENIZER_VERSION = "lowercase-v1";
+const SEARCH_MAX_CANDIDATE_PATHS = 10000;
+const UNSAFE_MUTATION_REBUILD_DETAIL = "Folder rename cannot be safely rewritten; full rebuild required.";
+
+type SearchRecoveryBoundaryState = "healthy" | "degraded";
+
+type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
 export default class FolderCardExplorerPlugin extends Plugin {
   private selectedFolderPath: string | null = null;
@@ -22,6 +43,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
   private searchService: SearchService | null = null;
+  private searchManager: SearchIndexManager | null = null;
+  private searchServiceUnsubscribe: (() => void) | null = null;
+  private searchSnapshot: SearchServiceSnapshot | null = null;
+  private readonly searchSnapshotListeners = new Set<SearchSnapshotListener>();
+  private searchRecoveryBoundaryState: SearchRecoveryBoundaryState = "healthy";
+  private shouldRunStartupSearchRebuild = false;
+  private pendingMutationRecoveryRebuild: Promise<void> | null = null;
   private debouncedRefresh = debounce(
     () => {
       void this.requestRefreshForViews("vault-change");
@@ -47,6 +75,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
         void this.activateView();
       },
     });
+    this.registerSearchCommands();
 
     this.registerDomEvent(document, "click", (event: MouseEvent) => {
       void this.onFileExplorerClick(event);
@@ -62,6 +91,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection(activeFile?.path ?? null);
+      if (this.shouldRunStartupSearchRebuild) {
+        this.shouldRunStartupSearchRebuild = false;
+        void this.rebuildSearchIndex("Startup restore required full search rebuild.");
+      }
       void this.restoreLastSession();
     });
   }
@@ -188,6 +221,25 @@ export default class FolderCardExplorerPlugin extends Plugin {
     return this.searchService;
   }
 
+  getSearchSnapshot(): SearchServiceSnapshot | null {
+    if (!this.searchSnapshot) {
+      return null;
+    }
+
+    return this.cloneSearchSnapshot(this.searchSnapshot);
+  }
+
+  subscribeSearchSnapshots(listener: SearchSnapshotListener): () => void {
+    this.searchSnapshotListeners.add(listener);
+    if (this.searchSnapshot) {
+      listener(this.cloneSearchSnapshot(this.searchSnapshot));
+    }
+
+    return () => {
+      this.searchSnapshotListeners.delete(listener);
+    };
+  }
+
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
     this.settings = mergeSettings(this.settings, patch);
     await this.saveData(this.settings);
@@ -276,6 +328,24 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.withFolderViews((view) => view.setSelectedFile(path));
   }
 
+  private registerSearchCommands(): void {
+    this.addCommand({
+      id: "rebuild-folder-card-search-index",
+      name: "Rebuild Folder Card Explorer search index",
+      callback: () => {
+        void this.rebuildSearchIndex("Manual rebuild command requested.");
+      },
+    });
+
+    this.addCommand({
+      id: "recover-folder-card-search-index",
+      name: "Recover Folder Card Explorer search index",
+      callback: () => {
+        void this.recoverSearchIndex();
+      },
+    });
+  }
+
   private registerVaultObservers(): void {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
@@ -303,26 +373,43 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async initializeSearchService(): Promise<void> {
-    const service = new NoIndexSearchService();
-    this.searchService = service;
+    this.disposeSearchService();
+
+    const indexed = this.createIndexedSearchService();
+    this.searchManager = indexed.manager;
+    this.bindSearchService(indexed.service);
 
     try {
-      await service.initialize();
+      await indexed.service.initialize();
+      const restoreResult = await indexed.manager.restore(this.createSearchMetadata(indexed.store.vaultNamespace));
+      if (restoreResult.outcome === "rebuild-required") {
+        this.shouldRunStartupSearchRebuild = true;
+      }
     } catch (error) {
-      // Keep search usable by degrading to pipeline fallback when service init fails.
-      service.dispose();
-      this.searchService = null;
-      console.warn("[Folder Card Explorer] Search service initialization failed; using fallback search.", error);
+      console.warn("[Folder Card Explorer] Indexed search initialization failed; using fallback search.", error);
+      this.bindSearchService(new NoIndexSearchService());
+      await this.searchService?.initialize();
+      this.searchManager = null;
+      this.shouldRunStartupSearchRebuild = false;
     }
   }
 
   private disposeSearchService(): void {
+    if (this.searchServiceUnsubscribe) {
+      this.searchServiceUnsubscribe();
+      this.searchServiceUnsubscribe = null;
+    }
+
     if (!this.searchService) {
+      this.searchManager = null;
+      this.searchSnapshot = null;
       return;
     }
 
     this.searchService.dispose();
     this.searchService = null;
+    this.searchManager = null;
+    this.searchSnapshot = null;
   }
 
   private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
@@ -333,6 +420,214 @@ export default class FolderCardExplorerPlugin extends Plugin {
       isMarkdown: event.isMarkdown,
       isFolder: event.isFolder,
     };
+  }
+
+  private createIndexedSearchService(): {
+    manager: SearchIndexManager;
+    service: IndexedSearchService;
+    store: IndexStore;
+  } {
+    const vaultNamespace = this.resolveVaultNamespace();
+    const store = new IndexStore({
+      vaultNamespace,
+    });
+    const manager = new SearchIndexManager({
+      store,
+      documentSource: {
+        readAllDocuments: async () => {
+          const getMarkdownFiles = (this.app.vault as { getMarkdownFiles?: () => TFile[] }).getMarkdownFiles;
+          if (typeof getMarkdownFiles !== "function") {
+            return [];
+          }
+
+          const files = getMarkdownFiles.call(this.app.vault);
+          const documents = await Promise.all(files.map((file) => this.prepareSearchableDocumentFromFile(file)));
+          return documents.filter((document): document is NonNullable<typeof document> => document !== null);
+        },
+        readDocument: async (path) => {
+          const target = this.app.vault.getAbstractFileByPath(path);
+          if (!(target instanceof TFile) || target.extension.toLowerCase() !== "md") {
+            return null;
+          }
+          return this.prepareSearchableDocumentFromFile(target);
+        },
+      },
+    });
+
+    const service = new IndexedSearchService(manager, {
+      maxCandidatePaths: SEARCH_MAX_CANDIDATE_PATHS,
+    });
+
+    return {
+      manager,
+      service,
+      store,
+    };
+  }
+
+  private async prepareSearchableDocumentFromFile(file: TFile) {
+    const cachedRead = (this.app.vault as { cachedRead?: (target: TFile) => Promise<string> }).cachedRead;
+    if (typeof cachedRead !== "function") {
+      return null;
+    }
+
+    try {
+      const markdown = await cachedRead.call(this.app.vault, file);
+      return prepareSearchableDocument({
+        path: file.path,
+        title: file.basename,
+        markdown,
+        mtime: file.stat.mtime,
+        ctime: file.stat.ctime,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveVaultNamespace(): string {
+    const adapter = this.app.vault.adapter as {
+      getBasePath?: () => string;
+      basePath?: string;
+    };
+    const basePath =
+      typeof adapter.getBasePath === "function"
+        ? adapter.getBasePath()
+        : typeof adapter.basePath === "string"
+          ? adapter.basePath
+          : "";
+    if (basePath.trim().length > 0) {
+      return `path:${basePath}`;
+    }
+
+    const getName = (this.app.vault as { getName?: () => string }).getName;
+    const vaultName = typeof getName === "function" ? getName.call(this.app.vault) : "unknown-vault";
+    return `name:${vaultName}`;
+  }
+
+  private createSearchMetadata(vaultNamespace: string): IndexStoreNamespaceMetadata {
+    const pluginVersion = (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0";
+    return {
+      vaultNamespace,
+      schemaVersion: SEARCH_SCHEMA_VERSION,
+      tokenizerVersion: SEARCH_TOKENIZER_VERSION,
+      pluginVersion,
+      documentCount: 0,
+      lastIndexedAt: 0,
+    };
+  }
+
+  private bindSearchService(service: SearchService): void {
+    if (this.searchServiceUnsubscribe) {
+      this.searchServiceUnsubscribe();
+      this.searchServiceUnsubscribe = null;
+    }
+
+    this.searchService = service;
+    this.searchServiceUnsubscribe = service.subscribe((snapshot) => {
+      this.handleSearchSnapshot(snapshot);
+    });
+  }
+
+  private handleSearchSnapshot(snapshot: SearchServiceSnapshot): void {
+    const nextSnapshot = this.cloneSearchSnapshot(snapshot);
+    this.searchSnapshot = nextSnapshot;
+
+    for (const listener of this.searchSnapshotListeners) {
+      listener(this.cloneSearchSnapshot(nextSnapshot));
+    }
+
+    if (this.shouldRunMutationRecoveryRebuild(nextSnapshot)) {
+      this.scheduleMutationRecoveryRebuild();
+    }
+
+    this.emitRecoveryBoundaryNotice(nextSnapshot);
+  }
+
+  private emitRecoveryBoundaryNotice(snapshot: SearchServiceSnapshot): void {
+    const isDegraded =
+      snapshot.status === "error" ||
+      snapshot.health.outcome === "rebuild-required" ||
+      snapshot.health.outcome === "failed";
+
+    if (isDegraded) {
+      if (this.searchRecoveryBoundaryState === "degraded") {
+        return;
+      }
+      this.searchRecoveryBoundaryState = "degraded";
+      new Notice("Folder Card Explorer search index requires recovery.");
+      return;
+    }
+
+    if (this.searchRecoveryBoundaryState === "degraded" && snapshot.status === "ready") {
+      this.searchRecoveryBoundaryState = "healthy";
+      new Notice("Folder Card Explorer search index is ready.");
+      return;
+    }
+
+    this.searchRecoveryBoundaryState = "healthy";
+  }
+
+  private cloneSearchSnapshot(snapshot: SearchServiceSnapshot): SearchServiceSnapshot {
+    return {
+      ...snapshot,
+      health: {
+        ...snapshot.health,
+      },
+    };
+  }
+
+  private shouldRunMutationRecoveryRebuild(snapshot: SearchServiceSnapshot): boolean {
+    return (
+      this.searchManager !== null &&
+      snapshot.mode === "indexed" &&
+      snapshot.status === "building" &&
+      snapshot.health.outcome === "rebuild-required" &&
+      snapshot.health.detail === UNSAFE_MUTATION_REBUILD_DETAIL
+    );
+  }
+
+  private scheduleMutationRecoveryRebuild(): void {
+    if (this.pendingMutationRecoveryRebuild) {
+      return;
+    }
+
+    this.pendingMutationRecoveryRebuild = this.rebuildSearchIndex(
+      "Unsafe vault mutation requires full search rebuild.",
+    )
+      .catch((error) => {
+        console.warn("[Folder Card Explorer] Search rebuild scheduling failed.", error);
+      })
+      .finally(() => {
+        this.pendingMutationRecoveryRebuild = null;
+      });
+  }
+
+  private async rebuildSearchIndex(detail: string): Promise<void> {
+    if (!this.searchManager) {
+      await this.recoverSearchIndex();
+      return;
+    }
+
+    await this.searchManager.rebuildFromSource(detail);
+  }
+
+  private async recoverSearchIndex(): Promise<void> {
+    if (!this.searchManager) {
+      await this.initializeSearchService();
+      if (this.shouldRunStartupSearchRebuild) {
+        this.shouldRunStartupSearchRebuild = false;
+        void this.rebuildSearchIndex("Recovery command requested full search rebuild.");
+      }
+      return;
+    }
+
+    const result = await this.searchManager.restore(
+      this.createSearchMetadata(this.resolveVaultNamespace()),
+    );
+    if (result.outcome === "rebuild-required") {
+      void this.rebuildSearchIndex("Recovery command requested full search rebuild.");
+    }
   }
 
   private async loadSettings(): Promise<void> {
