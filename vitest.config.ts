@@ -1,15 +1,42 @@
-import { defineConfig } from "vitest/config";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import path from "path";
+import { defineConfig, defineProject } from "vitest/config";
+
+const obsidianAlias = path.resolve(__dirname, "src/__mocks__/obsidian.ts");
+const folderCardPanelMockAlias = path.resolve(__dirname, "src/__mocks__/FolderCardPanel.svelte.ts");
 
 export default defineConfig({
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
-  },
-  resolve: {
-    alias: {
-      obsidian: path.resolve(__dirname, "src/__mocks__/obsidian.ts"),
-      "./FolderCardPanel.svelte": path.resolve(__dirname, "src/__mocks__/FolderCardPanel.svelte.ts"),
-    },
+    passWithNoTests: true,
+    projects: [
+      defineProject({
+        test: {
+          name: "node",
+          environment: "node",
+          include: ["src/**/*.test.ts"],
+          exclude: ["src/**/*.svelte.test.ts", "src/view/FolderCardView.test.ts"],
+        },
+        resolve: {
+          alias: {
+            obsidian: obsidianAlias,
+            "./FolderCardPanel.svelte": folderCardPanelMockAlias,
+          },
+        },
+      }),
+      defineProject({
+        plugins: [svelte()],
+        test: {
+          name: "jsdom",
+          environment: "jsdom",
+          include: ["src/**/*.svelte.test.ts", "src/view/FolderCardView.test.ts"],
+        },
+        resolve: {
+          conditions: ["browser"],
+          alias: {
+            obsidian: obsidianAlias,
+          },
+        },
+      }),
+    ],
   },
 });

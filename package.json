@@ -7,15 +7,21 @@
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs --production",
     "check": "tsc --noEmit",
+    "check:svelte": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
+    "test:node": "vitest run --project node",
+    "test:component": "vitest run --project jsdom",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@types/node": "^22.10.7",
     "esbuild": "^0.25.0",
     "esbuild-svelte": "^0.9.4",
+    "jsdom": "^27.0.1",
     "obsidian": "^1.8.7",
     "svelte": "^5.55.1",
+    "svelte-check": "^4.3.4",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
