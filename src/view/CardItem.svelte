@@ -1,88 +1,131 @@
-<script>
-  import { createEventDispatcher } from "svelte";
+<script lang="ts">
   import { setIcon } from "obsidian";
+  import type { NoteCardRecord } from "./types";
 
-  export let card;
-  export let selected = false;
-  export let bulkMode = false;
-  export let bulkSelected = false;
-  export let pinnedPaths = [];
-  export let previewLines = 5;
+  interface OpenNotePayload {
+    path: string;
+  }
 
-  const dispatch = createEventDispatcher();
+  interface BulkSelectCardPayload {
+    path: string;
+    shiftKey: boolean;
+  }
 
-  $: isPinned = pinnedPaths.includes(card.path);
+  interface CardContextMenuPayload {
+    path: string;
+    mouseEvent: MouseEvent;
+  }
 
-  function applyIcon(node, iconName) {
+  interface PinTogglePayload {
+    path: string;
+    pinned: boolean;
+  }
+
+  interface CardItemProps {
+    card: NoteCardRecord;
+    selected?: boolean;
+    bulkMode?: boolean;
+    bulkSelected?: boolean;
+    pinnedPaths?: string[];
+    previewLines?: number;
+    onOpenNote?: (payload: OpenNotePayload) => void;
+    onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
+    onCardContextMenu?: (payload: CardContextMenuPayload) => void;
+    onPinToggle?: (payload: PinTogglePayload) => void;
+  }
+
+  let {
+    card,
+    selected = false,
+    bulkMode = false,
+    bulkSelected = false,
+    pinnedPaths = [],
+    previewLines = 5,
+    onOpenNote,
+    onBulkSelectCard,
+    onCardContextMenu,
+    onPinToggle,
+  }: CardItemProps = $props();
+
+  const isPinned = $derived(pinnedPaths.includes(card.path));
+
+  function applyIcon(node: HTMLElement, iconName: string) {
     setIcon(node, iconName);
     return {
-      update(nextIconName) {
+      update(nextIconName: string) {
         setIcon(node, nextIconName);
       },
     };
   }
 
-  function onCardClick(event) {
+  function emitOpenNote(): void {
+    onOpenNote?.({ path: card.path });
+  }
+
+  function emitBulkSelect(shiftKey: boolean): void {
+    onBulkSelectCard?.({ path: card.path, shiftKey });
+  }
+
+  function emitPinToggle(pinned: boolean): void {
+    onPinToggle?.({ path: card.path, pinned });
+  }
+
+  function onCardClick(event: MouseEvent): void {
     if (bulkMode) {
-      dispatchBulkSelect(event.shiftKey);
+      emitBulkSelect(event.shiftKey);
       return;
     }
 
-    dispatch("open-note", { path: card.path });
+    emitOpenNote();
   }
 
-  function onCardKeydown(event) {
+  function onCardKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (bulkMode) {
-        dispatchBulkSelect(event.shiftKey);
+        emitBulkSelect(event.shiftKey);
       } else {
-        dispatch("open-note", { path: card.path });
+        emitOpenNote();
       }
     }
-    dispatch("card-keydown", { event, path: card.path });
   }
 
-  function onCardContextMenu(event) {
+  function onCardContextMenuAction(event: MouseEvent): void {
     event.preventDefault();
-    dispatch("card-context-menu", { path: card.path, mouseEvent: event });
+    onCardContextMenu?.({ path: card.path, mouseEvent: event });
   }
 
-  function dispatchBulkSelect(shiftKey) {
-    dispatch("bulk-select-card", { path: card.path, shiftKey });
-  }
-
-  function onBulkSelectClick(event) {
+  function onBulkSelectClick(event: MouseEvent): void {
     event.stopPropagation();
-    dispatchBulkSelect(event.shiftKey);
+    emitBulkSelect(event.shiftKey);
   }
 
-  function onBulkSelectKeydown(event) {
+  function onBulkSelectKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter" || event.key === " ") {
       event.stopPropagation();
       event.preventDefault();
-      dispatchBulkSelect(event.shiftKey);
+      emitBulkSelect(event.shiftKey);
     }
   }
 
-  function onPinClick(event) {
+  function onPinClick(event: MouseEvent): void {
     event.stopPropagation();
-    dispatch("pin-toggle", { path: card.path, pinned: !isPinned });
+    emitPinToggle(!isPinned);
   }
 
-  function onPinKeydown(event) {
+  function onPinKeydown(event: KeyboardEvent): void {
     if (event.key === "Enter" || event.key === " ") {
       event.stopPropagation();
       event.preventDefault();
-      dispatch("pin-toggle", { path: card.path, pinned: !isPinned });
+      emitPinToggle(!isPinned);
     }
   }
 
-  function formatDate(timestamp) {
+  function formatDate(timestamp: number): string {
     return new Date(timestamp).toLocaleDateString();
   }
 
-  function getPreviewStyle() {
+  function getPreviewStyle(): string {
     return `--fce-preview-line-clamp: ${previewLines};`;
   }
 </script>
@@ -91,9 +134,9 @@
   class="fce-card {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
   role="button"
   tabindex="0"
-  on:click={onCardClick}
-  on:keydown={onCardKeydown}
-  on:contextmenu={onCardContextMenu}
+  onclick={onCardClick}
+  onkeydown={onCardKeydown}
+  oncontextmenu={onCardContextMenuAction}
 >
   <div class="fce-card-body">
     <div class="fce-card-header">
@@ -105,8 +148,8 @@
             class="fce-card-bulk-toggle {bulkSelected ? 'is-selected' : ''}"
             aria-label={bulkSelected ? "Deselect note from bulk selection" : "Add note to bulk selection"}
             aria-pressed={bulkSelected}
-            on:click={onBulkSelectClick}
-            on:keydown={onBulkSelectKeydown}
+            onclick={onBulkSelectClick}
+            onkeydown={onBulkSelectKeydown}
           >
             {bulkSelected ? "Selected" : "Select"}
           </button>
@@ -117,8 +160,8 @@
           class="clickable-icon fce-card-pin-btn"
           aria-label={isPinned ? "Unpin note" : "Pin note"}
           aria-pressed={isPinned}
-          on:click={onPinClick}
-          on:keydown={onPinKeydown}
+          onclick={onPinClick}
+          onkeydown={onPinKeydown}
           use:applyIcon={isPinned ? "pin-off" : "pin"}
         ></button>
       </div>

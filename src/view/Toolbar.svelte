@@ -1,36 +1,100 @@
-<script>
+<script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
-  import { createEventDispatcher } from "svelte";
+  import type { FolderTreeNode } from "./types";
 
-  export let folderPath = "";
-  export let sortField = "mtime";
-  export let sortDirection = "desc";
-  export let folderTree = [];
-  export let tooltipSide = "right";
-  export let availableTags = [];
-  export let activeFilterTags = [];
-  export let includeSubfolders = true;
-  export let isAllNotesScope = false;
-  export let bulkMode = false;
-  export let selectedCount = 0;
-  export let bulkAnchorPath = null;
-  export let canBulkSelectAll = false;
-  export let canBulkClearSelection = false;
-  export let canBulkMoveSelected = false;
-  export let canBulkTrashSelected = false;
-  export let canBulkDeleteSelected = false;
-  export let canBulkMergeSelected = false;
-  
-  let localActiveFilterTags = [];
-  $: {
-    if (!showFilterMenu) {
-      localActiveFilterTags = activeFilterTags;
-    }
+  interface ToolbarActionPayload {
+    action: string;
   }
 
-  const dispatch = createEventDispatcher();
+  interface SortChangePayload {
+    field: string;
+    direction: string;
+  }
 
-  const SORT_OPTIONS = [
+  interface FilterChangePayload {
+    tags: string[];
+  }
+
+  interface IncludeSubfoldersChangePayload {
+    value: boolean;
+  }
+
+  interface SelectFolderPayload {
+    path: string;
+  }
+
+  interface ToolbarProps {
+    folderPath?: string;
+    sortField?: string;
+    sortDirection?: string;
+    folderTree?: FolderTreeNode[];
+    tooltipSide?: "top" | "right" | "bottom" | "left";
+    availableTags?: string[];
+    activeFilterTags?: string[];
+    includeSubfolders?: boolean;
+    isAllNotesScope?: boolean;
+    bulkMode?: boolean;
+    selectedCount?: number;
+    bulkAnchorPath?: string | null;
+    canBulkSelectAll?: boolean;
+    canBulkClearSelection?: boolean;
+    canBulkMoveSelected?: boolean;
+    canBulkTrashSelected?: boolean;
+    canBulkDeleteSelected?: boolean;
+    canBulkMergeSelected?: boolean;
+    onToolbarAction?: (payload: ToolbarActionPayload) => void;
+    onSortChange?: (payload: SortChangePayload) => void;
+    onFilterChange?: (payload: FilterChangePayload) => void;
+    onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
+    onSelectFolder?: (payload: SelectFolderPayload) => void;
+  }
+
+  interface SortOption {
+    field: string;
+    direction: string;
+    label: string;
+  }
+
+  interface SortSeparatorOption {
+    type: "separator";
+  }
+
+  type SortMenuOption = SortOption | SortSeparatorOption;
+
+  interface ToolbarActionOption {
+    id: string;
+    label: string;
+    title: string;
+    icon: string;
+  }
+
+  let {
+    folderPath = "",
+    sortField = "mtime",
+    sortDirection = "desc",
+    folderTree = [],
+    tooltipSide = "right",
+    availableTags = [],
+    activeFilterTags = [],
+    includeSubfolders = true,
+    isAllNotesScope = false,
+    bulkMode = false,
+    selectedCount = 0,
+    bulkAnchorPath = null,
+    canBulkSelectAll = false,
+    canBulkClearSelection = false,
+    canBulkMoveSelected = false,
+    canBulkTrashSelected = false,
+    canBulkDeleteSelected = false,
+    canBulkMergeSelected = false,
+    onToolbarAction,
+    onSortChange,
+    onFilterChange,
+    onIncludeSubfoldersChange,
+    onSelectFolder,
+  }: ToolbarProps = $props();
+
+  const SORT_OPTIONS: SortMenuOption[] = [
     { field: "mtime", direction: "desc", label: "编辑时间（从新到旧）" },
     { field: "mtime", direction: "asc", label: "编辑时间（从旧到新）" },
     { type: "separator" },
@@ -38,7 +102,7 @@
     { field: "ctime", direction: "asc", label: "创建时间（从旧到新）" },
   ];
 
-  const TOOLBAR_ACTIONS = [
+  const TOOLBAR_ACTIONS: ToolbarActionOption[] = [
     { id: "pick-folder", label: "Pick folder", title: "Folder scope", icon: "folder-open" },
     { id: "all-notes", label: "All notes", title: "All notes", icon: "library" },
     { id: "new-note", label: "New", title: "Create note", icon: "file-plus" },
@@ -47,58 +111,73 @@
     { id: "bulk", label: "Bulk", title: "Bulk actions", icon: "check-check" },
   ];
 
-  $: bulkSelectionSummary = selectedCount === 1 ? "1 selected" : `${selectedCount} selected`;
-  $: bulkModeStatus = bulkMode ? "Bulk mode active" : "Browsing notes";
-  $: bulkActionHint = selectedCount === 0
-    ? "Select notes to enable move, trash, delete, and merge."
-    : selectedCount === 1
-      ? "Move, trash, and delete are ready. Merge unlocks with 2 notes."
-      : "All bulk actions are ready.";
-  $: bulkActions = [
+  function isSortSeparatorOption(option: SortMenuOption): option is SortSeparatorOption {
+    return "type" in option;
+  }
+
+  let localActiveFilterTags = $state<string[]>([]);
+  let activeToolbarAction = $state(TOOLBAR_ACTIONS[0].id);
+  let showSortMenu = $state(false);
+  let sortMenuX = $state(0);
+  let sortMenuY = $state(0);
+  let folderMenuX = $state(0);
+  let folderMenuY = $state(0);
+  let showFolderMenu = $state(false);
+  let showFilterMenu = $state(false);
+  let filterMenuX = $state(0);
+  let filterMenuY = $state(0);
+  let expandedPaths = $state<Set<string>>(new Set());
+  let folderMenuExpandedForPath = $state<string | null>(null);
+
+  let sortButtonEl: HTMLElement | null = null;
+  let filterButtonEl: HTMLElement | null = null;
+  let filterMenuEl: HTMLElement | null = null;
+  let folderButtonEl: HTMLElement | null = null;
+  let folderMenuEl: HTMLElement | null = null;
+  let sortMenuEl: HTMLElement | null = null;
+
+  const bulkSelectionSummary = $derived(selectedCount === 1 ? "1 selected" : `${selectedCount} selected`);
+  const bulkModeStatus = $derived(bulkMode ? "Bulk mode active" : "Browsing notes");
+  const bulkActionHint = $derived(
+    selectedCount === 0
+      ? "Select notes to enable move, trash, delete, and merge."
+      : selectedCount === 1
+        ? "Move, trash, and delete are ready. Merge unlocks with 2 notes."
+        : "All bulk actions are ready.",
+  );
+  const bulkActions = $derived([
     { id: "bulk-select-all", label: "Select all", disabled: !canBulkSelectAll },
     { id: "bulk-clear-selection", label: "Clear", disabled: !canBulkClearSelection },
     { id: "bulk-move-selected", label: "Move", disabled: !canBulkMoveSelected },
     { id: "bulk-trash-selected", label: "Trash", disabled: !canBulkTrashSelected },
     { id: "bulk-delete-selected", label: "Delete", disabled: !canBulkDeleteSelected },
     { id: "bulk-merge-selected", label: "Merge", disabled: !canBulkMergeSelected },
-  ];
+  ]);
 
-  let activeToolbarAction = TOOLBAR_ACTIONS[0].id;
-  let showSortMenu = false;
-  let sortButtonEl = null;
-  let sortMenuX = 0;
-  let sortMenuY = 0;
-  let folderMenuX = 0;
-  let folderMenuY = 0;
-  let showFolderMenu = false;
-  let showFilterMenu = false;
-  let filterButtonEl = null;
-  let filterMenuEl = null;
-  let filterMenuX = 0;
-  let filterMenuY = 0;
-  let folderButtonEl = null;
-  let folderMenuEl = null;
-  let sortMenuEl = null;
-  let expandedPaths = new Set();
-  let folderMenuExpandedForPath = null;
+  const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
+  const hasTagFilter = $derived(localActiveFilterTags.length > 0);
+  const scopeSummary = $derived(
+    isAllNotesScope
+      ? "All Notes"
+      : hasFolderScope
+        ? folderPath
+        : "No folder selected",
+  );
+  const tagSummary = $derived(
+    hasTagFilter
+      ? `Tag filter: ${localActiveFilterTags.length} active`
+      : "Tag filter: off",
+  );
+  const subfolderSummary = $derived(
+    hasFolderScope
+      ? `Subfolders: ${includeSubfolders ? "included" : "direct only"}`
+      : "",
+  );
 
-  $: hasFolderScope = !isAllNotesScope && folderPath.length > 0;
-  $: hasTagFilter = localActiveFilterTags.length > 0;
-  $: scopeSummary = isAllNotesScope
-    ? "All Notes"
-    : hasFolderScope
-      ? folderPath
-      : "No folder selected";
-  $: tagSummary = hasTagFilter
-    ? `Tag filter: ${localActiveFilterTags.length} active`
-    : "Tag filter: off";
-  $: subfolderSummary = hasFolderScope
-    ? `Subfolders: ${includeSubfolders ? "included" : "direct only"}`
-    : "";
+  function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
+    const result: FolderTreeNode[] = [];
 
-  function flattenVisibleTree(tree, expanded) {
-    const result = [];
-    function walk(nodes) {
+    function walk(nodes: FolderTreeNode[]): void {
       for (const node of nodes) {
         result.push(node);
         if (node.children.length > 0 && expanded.has(node.path)) {
@@ -106,46 +185,59 @@
         }
       }
     }
+
     walk(tree);
     return result;
   }
 
-  $: visibleFolderNodes = flattenVisibleTree(folderTree, expandedPaths);
+  const visibleFolderNodes = $derived(flattenVisibleTree(folderTree, expandedPaths));
 
-  $: if (showFolderMenu && hasFolderScope && folderTree.length > 0 && folderMenuExpandedForPath !== folderPath) {
+  $effect(() => {
+    if (!showFilterMenu) {
+      localActiveFilterTags = activeFilterTags;
+    }
+  });
+
+  $effect(() => {
+    if (!showFolderMenu) {
+      folderMenuExpandedForPath = null;
+      return;
+    }
+
+    if (!hasFolderScope || folderTree.length === 0 || folderMenuExpandedForPath === folderPath) {
+      return;
+    }
+
     folderMenuExpandedForPath = folderPath;
     const segments = folderPath.split("/").filter(Boolean);
     let cumPath = "";
+    const nextExpanded = new Set(expandedPaths);
     for (const seg of segments) {
       cumPath = cumPath ? `${cumPath}/${seg}` : seg;
-      expandedPaths.add(cumPath);
+      nextExpanded.add(cumPath);
     }
-    expandedPaths = expandedPaths;
-  }
+    expandedPaths = nextExpanded;
+  });
 
-  $: if (!showFolderMenu) {
-    folderMenuExpandedForPath = null;
-  }
-
-  function applyIcon(node, iconName) {
+  function applyIcon(node: HTMLElement, iconName: string): { update: (nextIconName: string) => void } {
     setIcon(node, iconName);
     return {
-      update(nextIconName) {
+      update(nextIconName: string) {
         setIcon(node, nextIconName);
       },
     };
   }
 
-  function applyTooltip(node, text) {
+  function applyTooltip(node: HTMLElement, text: string): { update: (nextText: string) => void } {
     setTooltip(node, text, { placement: tooltipSide, gap: 8 });
     return {
-      update(nextText) {
+      update(nextText: string) {
         setTooltip(node, nextText, { placement: tooltipSide, gap: 8 });
       },
     };
   }
 
-  function selectToolbarAction(actionId, event) {
+  function selectToolbarAction(actionId: string, event: MouseEvent): void {
     if (actionId === "sort") {
       if (showSortMenu) {
         showSortMenu = false;
@@ -158,6 +250,7 @@
       }
       return;
     }
+
     if (actionId === "filter") {
       if (showFilterMenu) {
         showFilterMenu = false;
@@ -171,6 +264,7 @@
       }
       return;
     }
+
     if (actionId === "pick-folder") {
       if (showFolderMenu) {
         showFolderMenu = false;
@@ -180,51 +274,56 @@
         showFolderMenu = true;
         showSortMenu = false;
         showFilterMenu = false;
-        dispatch("toolbar-action", { action: actionId });
+        onToolbarAction?.({ action: actionId });
       }
       return;
     }
+
     showSortMenu = false;
     showFolderMenu = false;
     showFilterMenu = false;
     activeToolbarAction = actionId;
-    dispatch("toolbar-action", { action: actionId });
+    onToolbarAction?.({ action: actionId });
   }
 
-  function toggleFilterTag(tag) {
+  function toggleFilterTag(tag: string): void {
     const normalized = tag.trim().toLowerCase().replace(/^#/, "");
-    let nextTags;
+    let nextTags: string[];
     if (localActiveFilterTags.includes(normalized)) {
-      nextTags = localActiveFilterTags.filter((t) => t !== normalized);
+      nextTags = localActiveFilterTags.filter((candidateTag) => candidateTag !== normalized);
     } else {
       nextTags = [...localActiveFilterTags, normalized];
     }
     localActiveFilterTags = nextTags;
-    dispatch("filter-change", { tags: nextTags });
+    onFilterChange?.({ tags: nextTags });
   }
 
-  function selectSortOption(option) {
+  function selectSortOption(option: SortOption): void {
     showSortMenu = false;
     if (option.field === sortField && option.direction === sortDirection) {
       return;
     }
-    dispatch("sort-change", {
+
+    onSortChange?.({
       field: option.field,
       direction: option.direction,
     });
   }
 
-  function onSortMenuClickOutside(event) {
-    if (sortButtonEl && sortButtonEl.contains(event.target)) {
-      return;
-    }
-    if (sortMenuEl && sortMenuEl.contains(event.target)) {
-      return;
+  function onSortMenuClickOutside(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Node) {
+      if (sortButtonEl && sortButtonEl.contains(target)) {
+        return;
+      }
+      if (sortMenuEl && sortMenuEl.contains(target)) {
+        return;
+      }
     }
     showSortMenu = false;
   }
 
-  function captureSortButton(node) {
+  function captureSortButton(node: HTMLElement): { destroy: () => void } {
     sortButtonEl = node;
     return {
       destroy() {
@@ -233,7 +332,7 @@
     };
   }
 
-  function captureFolderButton(node) {
+  function captureFolderButton(node: HTMLElement): { destroy: () => void } {
     folderButtonEl = node;
     return {
       destroy() {
@@ -242,7 +341,7 @@
     };
   }
 
-  function sortMenuAction(node) {
+  function sortMenuAction(node: HTMLElement): { destroy: () => void } {
     sortMenuEl = node;
     document.body.appendChild(node);
     document.addEventListener("click", onSortMenuClickOutside, true);
@@ -257,17 +356,20 @@
     };
   }
 
-  function onFilterMenuClickOutside(event) {
-    if (filterButtonEl && filterButtonEl.contains(event.target)) {
-      return;
-    }
-    if (filterMenuEl && filterMenuEl.contains(event.target)) {
-      return;
+  function onFilterMenuClickOutside(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Node) {
+      if (filterButtonEl && filterButtonEl.contains(target)) {
+        return;
+      }
+      if (filterMenuEl && filterMenuEl.contains(target)) {
+        return;
+      }
     }
     showFilterMenu = false;
   }
 
-  function captureFilterButton(node) {
+  function captureFilterButton(node: HTMLElement): { destroy: () => void } {
     filterButtonEl = node;
     return {
       destroy() {
@@ -276,7 +378,7 @@
     };
   }
 
-  function filterMenuAction(node) {
+  function filterMenuAction(node: HTMLElement): { destroy: () => void } {
     filterMenuEl = node;
     document.body.appendChild(node);
     document.addEventListener("click", onFilterMenuClickOutside, true);
@@ -291,17 +393,20 @@
     };
   }
 
-  function onFolderMenuClickOutside(event) {
-    if (folderButtonEl && folderButtonEl.contains(event.target)) {
-      return;
-    }
-    if (folderMenuEl && folderMenuEl.contains(event.target)) {
-      return;
+  function onFolderMenuClickOutside(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Node) {
+      if (folderButtonEl && folderButtonEl.contains(target)) {
+        return;
+      }
+      if (folderMenuEl && folderMenuEl.contains(target)) {
+        return;
+      }
     }
     showFolderMenu = false;
   }
 
-  function folderMenuAction(node) {
+  function folderMenuAction(node: HTMLElement): { destroy: () => void } {
     folderMenuEl = node;
     document.body.appendChild(node);
     document.addEventListener("click", onFolderMenuClickOutside, true);
@@ -316,7 +421,7 @@
     };
   }
 
-  function getFolderButtonText() {
+  function getFolderButtonText(): string {
     if (hasFolderScope) {
       return folderPath.split("/").filter(Boolean).pop() || folderPath;
     }
@@ -324,16 +429,27 @@
     return "Select folder";
   }
 
-  function toggleIncludeSubfolders() {
+  function toggleIncludeSubfolders(): void {
     if (!hasFolderScope) {
       return;
     }
 
-    dispatch("include-subfolders-change", { value: !includeSubfolders });
+    onIncludeSubfoldersChange?.({ value: !includeSubfolders });
   }
 
-  function dispatchToolbarAction(actionId) {
-    dispatch("toolbar-action", { action: actionId });
+  function emitToolbarAction(actionId: string): void {
+    onToolbarAction?.({ action: actionId });
+  }
+
+  function onFolderChevronClick(event: MouseEvent, path: string): void {
+    event.stopPropagation();
+    const next = new Set(expandedPaths);
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+    }
+    expandedPaths = next;
   }
 </script>
 
@@ -346,7 +462,7 @@
             type="button"
             class="fce-folder-button {showFolderMenu || hasFolderScope ? 'is-selected' : ''}"
             aria-label={action.title}
-            on:click={(e) => selectToolbarAction(action.id, e)}
+            onclick={(event) => selectToolbarAction(action.id, event)}
             use:captureFolderButton
           >
             <span class="fce-folder-button-text">
@@ -359,7 +475,7 @@
             type="button"
             class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
             aria-label={action.title}
-            on:click={(e) => selectToolbarAction(action.id, e)}
+            onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
             use:captureSortButton
           >
@@ -370,7 +486,7 @@
             type="button"
             class="clickable-icon fce-toolbar-button {showFilterMenu || localActiveFilterTags.length > 0 ? 'is-selected' : ''}"
             aria-label={action.title}
-            on:click={(e) => selectToolbarAction(action.id, e)}
+            onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
             use:captureFilterButton
           >
@@ -381,7 +497,7 @@
             type="button"
             class="clickable-icon fce-toolbar-button {(action.id === 'all-notes' ? isAllNotesScope : action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
             aria-label={action.title}
-            on:click={(e) => selectToolbarAction(action.id, e)}
+            onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
           >
             <span class="fce-sr-only">{action.label}</span>
@@ -409,7 +525,7 @@
         class="fce-toolbar-toggle {includeSubfolders ? 'is-selected' : ''}"
         aria-label={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
         aria-pressed={includeSubfolders}
-        on:click={toggleIncludeSubfolders}
+        onclick={toggleIncludeSubfolders}
       >
         <span class="fce-toolbar-toggle-label">Subfolders</span>
         <span class="fce-toolbar-toggle-value">{includeSubfolders ? "On" : "Off"}</span>
@@ -433,7 +549,7 @@
             type="button"
             class="fce-toolbar-bulk-button"
             disabled={action.disabled}
-            on:click={() => dispatchToolbarAction(action.id)}
+            onclick={() => emitToolbarAction(action.id)}
           >
             {action.label}
           </button>
@@ -441,7 +557,7 @@
         <button
           type="button"
           class="fce-toolbar-bulk-button is-exit"
-          on:click={() => dispatchToolbarAction("bulk")}
+          onclick={() => emitToolbarAction("bulk")}
         >
           Exit Bulk
         </button>
@@ -458,7 +574,7 @@
     use:sortMenuAction
   >
     {#each SORT_OPTIONS as option}
-      {#if option.type === "separator"}
+      {#if isSortSeparatorOption(option)}
         <div class="fce-sort-menu-separator"></div>
       {:else}
         {@const selected = sortField === option.field && sortDirection === option.direction}
@@ -467,7 +583,7 @@
           class="fce-sort-menu-item"
           role="menuitemradio"
           aria-checked={selected}
-          on:click={() => selectSortOption(option)}
+          onclick={() => selectSortOption(option)}
         >
           <span class="fce-sort-menu-item-label">{option.label}</span>
           {#if selected}
@@ -492,23 +608,15 @@
         role="menuitem"
         style="padding-left: {node.depth * 16 + 8}px;"
         use:applyTooltip={node.name}
-        on:click={() => {
-          dispatch("select-folder", { path: node.path });
+        onclick={() => {
+          onSelectFolder?.({ path: node.path });
           showFolderMenu = false;
         }}
       >
         {#if node.children.length > 0}
           <span
             class="fce-folder-tree-chevron"
-            on:click|stopPropagation={() => {
-              const next = new Set(expandedPaths);
-              if (next.has(node.path)) {
-                next.delete(node.path);
-              } else {
-                next.add(node.path);
-              }
-              expandedPaths = next;
-            }}
+            onclick={(event) => onFolderChevronClick(event, node.path)}
             use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
           ></span>
         {:else}
@@ -541,7 +649,7 @@
           class="fce-sort-menu-item"
           role="menuitemcheckbox"
           aria-checked={selected}
-          on:click={() => toggleFilterTag(tag)}
+          onclick={() => toggleFilterTag(tag)}
         >
           <span class="fce-sort-menu-item-label">{tag}</span>
           {#if selected}
