@@ -2,15 +2,14 @@
 
 ## 架构目标与设计原则
 
-这个插件的架构目标不是做一个独立 Web 应用，而是在 Obsidian 运行时里提供一个响应快、状态可恢复、可以持续扩展的卡片工作台。
+这个插件不是独立 Web 应用，而是 Obsidian 里的右侧卡片工作台。当前架构由六个原则驱动：
 
-当前设计由五个原则驱动：
-
-1. **性能优先**，大量笔记场景下不能退化成整列表渲染或频繁全量刷新。
-2. **本地优先**，文件读取、metadata 判断、设置持久化都留在 Obsidian 本地运行时。
-3. **原生交互感**，优先复用 Obsidian 的 View、Menu、Vault、MetadataCache 等宿主能力。
-4. **宿主与面板解耦**，Obsidian 运行时状态留在宿主，Svelte 组件负责渲染和回调。
-5. **标准 Svelte 5 接缝**，项目已经离开 compatibility 过渡态，新的视图改动都应沿着 `mount/unmount + panel-model + callback props` 这条接缝扩展。
+1. **性能优先**。不能退回整列表渲染、整 vault 重扫、或绕开 generation guard 的异步回写。
+2. **本地优先**。文件处理、metadata 判断、搜索 fallback、设置持久化都留在本地运行时。
+3. **宿主拥有真值**。Obsidian 生命周期、设置、vault 观察、运行时搜索状态都归宿主协调层，不归 Svelte 组件。
+4. **`pipeline.ts` 统一投影**。哪些卡片可见，顺序如何变化，仍只通过一条纯函数链路决定。
+5. **搜索先锁接缝，再补索引实现**。本次 phase3 做的是 readiness seam，不是直接落完整全文索引系统。
+6. **扩展要沿现有边界前进**。后续 indexed search 也应接入 `SearchService` + `FolderCardView` + `pipeline.ts`，不要另起平行状态系统。
 
 ## 系统总览
 
@@ -23,65 +22,67 @@ Obsidian 事件源
 src/main.ts
   ├─ 视图注册 / 激活
   ├─ 设置加载与保存
-  ├─ 外部事件转选择/刷新请求
+  ├─ SearchService 生命周期
+  ├─ vault mutation 转发
   └─ 会话恢复
           ↓
 src/view/FolderCardView.ts
   ├─ 收集文件 / 排序 / 构建 baseCards
-  ├─ 增量刷新 / generation 防陈旧
-  ├─ 管理 scope / filter / pin / bulk state
+  ├─ generation / hydration / 刷新编排
+  ├─ runtime-only searchQuery / searchStatus
+  ├─ SearchService query 协调
   ├─ 运行 pipeline → visibleCards
-  ├─ 维护 panel-model
-  └─ mount/unmount 根面板
+  └─ 更新 panel-model
           ↓
 src/view/panel-model.ts
-  └─ 宿主持有、面板订阅的状态边界
+  └─ 面板订阅状态边界
           ↓
-src/view/FolderCardPanel.svelte
-  ├─ 订阅 panel-model
-  ├─ row-projected 响应式布局
-  ├─ 虚拟滚动
-  ├─ 滚动锚定
-  └─ 组合 Toolbar + CardItem
+src/view/FolderCardPanel.svelte / Toolbar.svelte / CardItem.svelte
+  └─ UI 展示、交互回调、viewport 相关逻辑
           ↓
-src/view/Toolbar.svelte / CardItem.svelte
-  └─ 交互表面与 callback props
+src/view/pipeline.ts
+  └─ tag filter -> search filter -> pin reorder
 ```
 
 ## 运行时拓扑与外部依赖
 
-运行时依赖主要来自三层：
+当前运行时依赖来自四层：
 
-- `obsidian` API，负责插件生命周期、视图容器、Vault、MetadataCache、菜单、提示等宿主能力。
-- Svelte 5 运行时，负责面板渲染和交互编排。当前使用标准 `mount/unmount` 接缝，不再启用 `compatibility.componentApi = 4`。
-- esbuild + esbuild-svelte，负责把插件打包成 `main.js`。
+- `obsidian` API，负责插件生命周期、视图容器、Vault、MetadataCache、Menu 等宿主能力。
+- Svelte 5 运行时，负责面板渲染和交互编排。
+- `SearchService` seam，负责把“未来可能有索引的搜索能力”和“当前 fallback 搜索”隔开。
+- esbuild + esbuild-svelte，负责构建 `main.js`。
 
-验证依赖也已经固定下来：
+当前没有网络依赖，没有外部服务，没有数据库持久化。需要特别明确的是：**IndexedDB 和 MiniSearch 不是当前运行时事实。**
 
-- `vitest.config.ts` 分成 node 和 jsdom 两个 project。node lane 保留纯逻辑和 mock 驱动测试，jsdom lane 负责真实 `.svelte.test.ts` 和宿主接缝测试。
-- `.github/workflows/ci.yml` 在 Node 20 上执行 `npx svelte-check --tsconfig ./tsconfig.json`、`npm run check`、`npm run build`、`npm test`。
+现在的搜索拓扑是：
 
-当前没有网络依赖，没有外部服务，没有持久化数据库。未来搜索方案仍可能引入 IndexedDB + MiniSearch，但这还不是当前运行时事实。
+- `main.ts` plugin-owned 持有 `SearchService` 实例。
+- 默认实例是 `NoIndexSearchService`。
+- 该服务可以初始化、销毁、接收 vault mutation，但 query 返回 `orderedPaths: null` 时，视图必须继续使用本地 fallback filtering。
+- 这个 seam 已经可用，但它还没有变成索引、worker、ranking 或 tokenizer 系统。
 
 ## 技术选择及原因
 
 ### TypeScript + strict
 
-设置、卡片记录、排序和批量操作状态都保持显式类型，是为了让后续搜索和批量能力继续沿着边界演进，而不是把状态形状散落到多个组件里。
+这里的价值不是类型本身，而是把状态归属钉死。搜索 query 不进 settings，pin 输入显式进入 `PipelineContext`，`panel-model` 明确携带 `searchQuery` / `searchStatus`，这些都靠类型边界防止后续漂移。
 
-### 标准 Svelte 5，但主状态仍归宿主
+### 标准 Svelte 5，宿主继续做协调
 
-项目已经完成从 legacy class API 到标准 Svelte 5 宿主接缝的迁移，但并没有把 Svelte 变成全局状态容器。原因很直接，Vault 事件、设置持久化、视图生命周期、文件打开动作都属于 Obsidian 宿主语义，由 `FolderCardView.ts` 汇总更稳。
+Svelte 5 迁移已经结束，但这不代表状态重心转去组件层。`FolderCardView.ts` 继续持有异步刷新、视图选择、搜索状态和 Obsidian API 交互，因为这些都属于宿主语义。
 
-这次迁移后的核心变化不是“让组件更现代”这么简单，而是把宿主和组件的责任重新固定成下面的形式：
+### SearchService 采用 fallback-first、no-index seam
 
-- `FolderCardView.ts` 负责状态真值、异步刷新、Obsidian API 交互。
-- `panel-model` 负责把宿主真值变成一份可订阅的面板状态。
-- Svelte 根面板和叶子组件负责把状态渲染出来，并通过 callback props 把用户动作送回宿主。
+本次 phase3 没直接引入 IndexedDB 或 MiniSearch，原因很实际：
 
-### 纯函数 pipeline 继续负责可见卡片投影
+- 先把 ownership、生命周期、query contract、panel bridge 固定下来，比先接索引更重要。
+- 当前已有 `matchesSearchQuery()` 与 pipeline fallback 语义，可以在无索引条件下先保证正确性。
+- 如果在边界还没稳定前就加入 worker、ranking、tokenizer、重建命令，后续更容易出现状态重复和职责混乱。
 
-`src/view/pipeline.ts` 仍然是“哪些卡片显示，显示顺序如何变化”的唯一挂点。Svelte 5 迁移没有改变这个边界，因为搜索、标签过滤和 pin 重排都需要稳定的宿主级投影链路。
+### `pipeline.ts` 继续做唯一可见卡片投影链路
+
+搜索 readiness 并没有改变这个原则。即使未来服务返回 indexed order，真正决定 `visibleCards` 的地方仍是 `runPipeline()`，而不是服务直接控制面板结果。
 
 ## 模块关系与职责边界
 
@@ -89,113 +90,95 @@ src/view/Toolbar.svelte / CardItem.svelte
 
 负责插件级职责：
 
-- 读取和保存 `PluginSettings`
-- 注册 `FOLDER_CARD_VIEW`
-- 监听文件管理器点击与 `file-open`
-- 在 `onLayoutReady` 后注册 vault 观察者并恢复会话
-- 把外部事件转换成视图可消费的选择请求和刷新请求
+- 设置读写与会话恢复。
+- 注册和激活 `FOLDER_CARD_VIEW`。
+- 注册 vault observers，并把 mutation 同时转给视图与 `SearchService`。
+- 初始化与销毁 plugin-owned `SearchService`。
 
-它不拥有卡片投影、Svelte 状态或虚拟滚动逻辑。
+它不拥有 per-view query，也不直接决定 `visibleCards`。
 
 ### `src/view/FolderCardView.ts`
 
-负责视图级运行时状态：
+这是运行时协调中枢，当前负责：
 
-- 当前文件夹或视图模式
-- `baseCards`、`visibleCards`
-- generation、in-flight 请求、刷新队列
-- available tags、selectedPath、批量选择状态
-- card hydration 与 vault mutation 响应
-- `panel-model` 创建、更新和销毁
-- 根面板 `mount/unmount`
+- `baseCards`、`visibleCards`、selectedPath、bulk state。
+- generation、防陈旧、hydration、刷新队列。
+- 当前视图的 `searchQuery`、`searchOrderedPaths`、`searchStatus`。
+- 向 `SearchService` 发 query，并把结果转成 runtime status。
+- 组装 `PipelineContext`，再调用 `runPipeline()`。
+- 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
 
-它是系统最重要的协调器，也是宿主与 Svelte 面板的唯一正式接缝。
+这里有个关键边界：**query 现在只由 `FolderCardView.ts` 持有。** `Toolbar.svelte` 不拥有搜索真值，`main.ts` 也不持久化它。
 
 ### `src/view/panel-model.ts`
 
-这是迁移完成后新增的稳定边界。
+这是宿主到面板的正式状态桥。当前除了 cards、selection、filter、pin、bulk state，还承载：
 
-- 它由宿主持有，不由 Svelte 组件创建。
-- 它暴露 `getState()`、`subscribe(...)`、`mutate(...)`。
-- 它替代旧的 `$set(...)` prop 推送，让普通状态更新不需要 remount。
+- `searchQuery`
+- `searchStatus`
 
-这个边界很重要，因为它把“宿主真值”和“面板渲染状态”隔开了。后续扩展搜索、批量操作或新的工具栏状态时，优先往这里加字段和变更语义，而不是回到散乱 prop 推送。
+它的角色不是保存长期状态，而是让宿主真值以稳定结构投影给面板。
 
-### `src/view/FolderCardPanel.svelte`
+### `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte`
 
-根面板现在是标准 Svelte 5 组件，负责：
+这两层负责展示和事件回传：
 
-- 订阅 `panelModel`
-- 根据 viewport width 计算列数并投影 rows
-- 计算可见窗口并触发 hydration 回调
-- 维护滚动位置、row 高度测量和滚动锚定
-- 组合 `Toolbar.svelte` 与 `CardItem.svelte`
+- 显示当前 query 与 status。
+- 把搜索输入变化回传给 `FolderCardView.ts`。
+- 继续处理 viewport、虚拟滚动、工具栏交互和卡片交互。
 
-它不直接访问 Obsidian API，也不拥有持久化真值。
+它们不是搜索状态源，也不直接决定搜索结果顺序。
 
-### `src/view/Toolbar.svelte`
+### `src/view/pipeline.ts`
 
-负责顶部动作入口、排序菜单、文件夹菜单、标签筛选菜单，以及当前 scope / tag filter / `includeSubfolders` 的紧凑状态提示。它已经迁移到 `$props()` 和 callback props，不再作为事件总线或状态源。
+当前职责更明确了：
 
-### `src/view/CardItem.svelte`
+- `applyTagFilter()` 处理 metadata 级筛选。
+- `applySearchFilter()` 处理 query 级筛选，优先消费 `orderedPaths`，否则回退到本地 fallback filtering。
+- `applyPinReorder()` 只对当前已保留卡片做重排。
 
-负责单卡片展示、打开笔记、键盘和鼠标交互、右键菜单入口、pin toggle。它同样已经迁移到标准 Svelte 5 组件契约。
+`PipelineContext` 现在显式携带 runtime-only `search` 输入和 `pinnedPaths`。这让 pipeline 不需要再穿透 settings 去猜测投影输入。
 
-### `src/view/row-projection.ts`
+### `src/search/types.ts` / `src/search/NoIndexSearchService.ts`
 
-负责纯计算层几何逻辑：
+这里定义了未来 indexed search 的正式接缝：
 
-- 根据可用宽度推导 `columnCount`
-- 将扁平 card 序列稳定分组成 rows
-- 将 visible rows 反向映射为扁平 `hydrate-range`
-- 复用 binary-search 友好的 offset lookup
+- `SearchQueryRequest` 由 view 传入 query、scope、candidate paths。
+- `SearchQueryResult.orderedPaths` 为 `null` 时，调用方继续走 fallback。
+- `NoIndexSearchService` 始终报告 `mode: "no-index"`，并返回 `orderedPaths: null`。
 
-它不接触宿主状态，不接触 Svelte 运行时。
-
-### `src/view/metadata-utils.ts` 与 `src/view/note-ops.ts`
-
-- `metadata-utils.ts` 负责标签抽取、frontmatter 访问、搜索辅助。`matchesTagFilter()` 继续使用 **AND** 语义。
-- `note-ops.ts` 负责复制、移动、删除、merge 等动作函数，不负责 UI 确认和视图编排。
+这说明当前服务的价值是 **统一契约和生命周期**，不是提供完整搜索能力。
 
 ## 关键流程设计
 
-### 1. 文件夹选择与视图激活
+### 1. 文件夹选择与基础卡片生成
 
-入口仍有三类：文件管理器点击、面板内 `Pick folder`、`All Notes`。
+这条主流程没有改变：
 
-统一流程是：
+1. `main.ts` 生成选择请求并激活右侧视图。
+2. `FolderCardView.ts` 采集文件、排序、生成 `baseCards`。
+3. 宿主把结果继续送入 pipeline，得到 `visibleCards`。
 
-1. `main.ts` 生成选择请求并确保右侧视图已激活。
-2. `FolderCardView` 处理选择请求，决定是否保留 UI 状态、是否强制刷新。
-3. 重新采集文件、排序、生成 `baseCards`。
-4. 根据设置和 pipeline 产出 `visibleCards`。
-5. `FolderCardView` 把最新状态写入 `panel-model`。
-6. 根面板和叶子组件据此更新 UI，并通过 callback props 把新动作回传给宿主。
+### 2. 搜索 query 进入运行时
 
-### 2. 卡片 hydration
+当前搜索主流程是：
 
-正文预览仍然不是一次性全量读取：
+1. 面板接收用户输入。
+2. `FolderCardView.ts` 更新 runtime-only `searchQuery`。
+3. 视图先按当前 query 把状态标成 `fallback` 或 `idle`。
+4. 视图向 plugin-owned `SearchService` 发起 query。
+5. 若服务返回可用 `orderedPaths`，pipeline 以该顺序筛选结果。
+6. 若服务返回 `orderedPaths: null` 或服务不可用，pipeline 继续使用本地 fallback filtering。
+7. `panel-model` 把最新 cards、query、status 投影给面板。
 
-1. 初次加载先构建轻量卡片记录。
-2. 面板依据当前可见 rows 请求 `hydrate-range`。
-3. `FolderCardView` 对窗口范围内卡片批量执行 hydration。
-4. generation 变化时，旧结果会被丢弃，避免异步回写污染新状态。
+这里最重要的设计点有两个：
 
-这个流程是性能模型核心，Svelte 5 迁移没有改变它。
+- query 输入不持久化，避免把短期 UI 意图污染成跨会话设置。
+- 搜索服务不直接输出 UI，仍需回到 `pipeline.ts` 完成可见卡片投影。
 
-### 3. Vault 增量刷新
+### 3. 可见卡片投影
 
-文件变化不会直接触发整视图重建，而是：
-
-- `main.ts` 在 `onLayoutReady` 后注册观察者
-- debounce 聚合高频变更
-- `FolderCardView` 优先尝试增量处理，必要时再退回刷新队列
-
-这条链路必须继续保持，因为它直接决定大 vault 场景下的交互平滑度。
-
-### 4. 可见卡片投影
-
-当前投影链路仍然是：
+当前正式链路是：
 
 ```text
 baseCards
@@ -205,11 +188,20 @@ baseCards
   -> visibleCards
 ```
 
-关键约束没有变：
+必须保持的语义：
 
-- tag filter 是 metadata 层过滤，不依赖全文索引
-- search 将来要插入同一链路，而不是绕开它
-- pin 只重排当前输入，不恢复被过滤掉的卡片
+- tag filter 先于 search filter。
+- search filter 先于 pin reorder。
+- pin 只改顺序，不恢复被前序步骤过滤掉的卡片。
+
+### 4. Vault 增量刷新与搜索服务转发
+
+vault mutation 会同时走两条路：
+
+- 一条进入 `FolderCardView.ts`，决定是否刷新可见卡片。
+- 一条转发给 `SearchService`，为未来 indexed mode 预留 mutation seam。
+
+当前 `NoIndexSearchService` 对 mutation 是 no-op，但这个入口已经固定下来。
 
 ## 数据流与状态映射
 
@@ -222,61 +214,67 @@ baseCards
 - `pinnedPaths`
 - `includeSubfolders`
 - `defaultView`
+- `previewLines`
 - `lastFolderPath`
 - `lastViewMode`
 
-这些状态由 `main.ts` 读写，并供 `FolderCardView` 在刷新和会话恢复时使用。
+这里 **没有 `searchQuery`**。这是当前明确的架构决定。
 
 ### 视图级运行时状态
 
-来源是 `FolderCardView`：
+来源是 `FolderCardView.ts`：
 
 - `folderPath`
 - `baseCards`
 - `visibleCards`
-- `availableTags`
 - `selectedPath`
 - `generation`
-- `loading`
-- 批量选择相关状态
-- in-flight / queued refresh 状态
+- bulk state
+- `searchQuery`
+- `searchOrderedPaths`
+- `searchStatus`
+
+搜索状态属于这一层，因为它跟当前 view 的 scope、generation 和候选卡片集合强相关。
 
 ### 面板订阅状态
 
-来源是 `panel-model`。它是宿主把运行时状态投影给面板的正式载体，字段包括：
+来源是 `panel-model`：
 
-- cards、selectedPath、loading、generation
-- 排序、标签筛选、pin 状态
-- `folderTree`、`includeSubfolders`、`isAllNotesScope`
-- bulk mode 和选中统计
+- cards、selection、loading、generation
+- sort、tag filter、pinnedPaths、previewLines
+- bulk mode 及其派生能力
+- `searchQuery`、`searchStatus`
 
-这里最重要的判断标准是，凡是会影响 Obsidian runtime、持久化或异步刷新的真值，都先归宿主，再通过模型投影给面板。
+面板读这些状态，但不拥有它们。
 
 ## 关键约束与假设
 
-1. 不要重新引入 `compatibility.componentApi = 4`，除非出现经过验证的硬阻塞。
-2. 不要把 `panel-model` 退化回零散 `$set(...)` 式 prop 推送，也不要用普通状态更新触发 remount。
-3. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
-4. `includeSubfolders` 只在 folder scope 下有可见语义，`All Notes` 不应该显示误导性的 toggle 状态。
-5. node 和 jsdom 两条测试 lane 都是正式验证面，不能只保一边。
+1. 不要把 `searchQuery` 写回 `PluginSettings`。
+2. 不要让 `SearchService` 绕开 `pipeline.ts` 直接控制最终可见卡片。
+3. 不要把 indexed mode 设想写成当前事实。当前只有 fallback-first、no-index seam。
+4. 不要破坏 `tag -> search -> pin` 的投影顺序。
+5. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
+6. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表本次 readiness 不完整。
 
 ## 历史问题与折中
 
-`2026-04-03` 的决策把项目带到 “Svelte 5 运行时，但保留 legacy component API compatibility” 的过渡阶段。那次选择降低了首轮升级风险，但也明确留下第二阶段迁移。
+`2026-03-24` 的决策已经把搜索预留在 pipeline 接缝里，但当时 `applySearchFilter()` 还是 placeholder。那时真正重要的是先建立统一投影链路。
 
-现在第二阶段已经完成。项目不再处在兼容层过渡态，而是进入标准 Svelte 5 宿主/组件接缝。当前仍保留的已知问题主要是 `Toolbar.svelte` 的非阻塞 a11y warnings，它们属于后续 UI 和可访问性收尾，不属于迁移未完成。
+`2026-04-18` 的 Svelte 5 宿主接缝收尾，给搜索 readiness 提供了稳定宿主边界。随后这次 phase3 选择继续沿既有边界前进，而不是直接跳到 IndexedDB + MiniSearch。
+
+这个折中很明确：先把 service seam、runtime ownership、panel bridge、fallback 语义锁定，再考虑索引层。成本是当前搜索能力仍偏保守，但好处是后续扩展不会和宿主状态归属打架。
 
 ## 优化与演进机会
 
-1. 把搜索从占位步骤接到 `pipeline.ts` 的正式链路。
-2. 在 `panel-model` 边界上扩展多选和批量操作，而不是把新状态塞回叶子组件。
-3. 系统处理 `Toolbar.svelte` 的 a11y warnings，避免长期带着非阻塞告警前进。
-4. 继续强化 runtime 测试，让新交互优先落在 jsdom 真实组件验证面上。
+1. 在不改变 ownership 的前提下，为 `SearchService` 增加 indexed adapter。
+2. 引入 IndexedDB 或 MiniSearch 前，先决定索引重建策略、worker 边界和 ranking/tokenizer 语义。
+3. 如需 rebuild commands，也应挂在 plugin-owned service lifecycle 上，不要绕开 `main.ts`。
+4. 单独处理 `Toolbar.svelte` 的 a11y warnings，保持验证输出更干净。
 
 ## Related decisions
 
 - `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md`
 - `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md`
 - `docs/decisions/2026-04-04-row-projected-responsive-card-wall.md`
-- `docs/decisions/2026-04-09-toolbar-scope-summary-and-folder-only-subfolder-toggle.md`
 - `docs/decisions/2026-04-18-finish-svelte-5-host-and-component-seam.md`
+- `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
