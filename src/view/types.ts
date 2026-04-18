@@ -1,7 +1,32 @@
 import type { TFile } from "obsidian";
 import type { SortDirection, SortField } from "../settings";
 
+export type { SearchStatus } from "../search/types";
+
 export const ALL_NOTES_PATH = "__all__";
+
+/**
+ * Search ownership model for Phase 3 architecture hardening.
+ *
+ * - `main.ts` owns plugin lifecycle and service wiring.
+ * - `FolderCardView.ts` owns per-view runtime coordination and query changes.
+ * - `panel-model.ts` bridges view-owned state into Svelte props only.
+ * - `Toolbar.svelte` emits query/reset intent only.
+ * - `pipeline.ts` is the single visible-card filtering path.
+ */
+export interface SearchOwnershipContract {
+  readonly main: "plugin-lifecycle-and-service-wiring";
+  readonly folderCardView: "per-view-runtime-coordination-and-query-changes";
+  readonly panelModel: "state-bridge-only";
+  readonly toolbar: "intent-emitter-only";
+  readonly pipeline: "visible-card-filtering-only";
+}
+
+/** Runtime-only search inputs passed into visible-card projection. */
+export interface PipelineSearchInput {
+  query: string;
+  orderedPaths: string[] | null;
+}
 
 export interface NoteCardRecord {
   file: TFile;

@@ -1,11 +1,15 @@
 import type { App } from "obsidian";
-import type { NoteCardRecord } from "./types";
 import type { PluginSettings } from "../settings";
-import { matchesTagFilter } from "./metadata-utils";
+import { matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
+import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
   app: App;
   settings: PluginSettings;
+  // Runtime-only input from FolderCardView; query stays out of persisted settings.
+  search: PipelineSearchInput;
+  // Explicit ordered pin input for projection; prevents reaching through settings with casts.
+  pinnedPaths: string[];
 }
 
 export type PipelineStep = (
@@ -38,9 +42,38 @@ export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext
   return cards.filter((card) => matchesTagFilter(context.app, card.file, filterTags));
 }
 
-/** Search filter step — pass-through until Task 22/27 implement search. */
-export function applySearchFilter(cards: NoteCardRecord[], _context: PipelineContext): NoteCardRecord[] {
-  return cards;
+/**
+ * Search filter step.
+ *
+ * Fallback semantics:
+ * - Empty/whitespace query returns all cards.
+ * - Title matching works without cached content.
+ * - Content matching uses supplied card excerpt when available.
+ */
+export function applySearchFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+  const query = context.search.query;
+  if (query.trim().length === 0) {
+    return cards;
+  }
+
+  if (Array.isArray(context.search.orderedPaths)) {
+    const cardsByPath = new Map(cards.map((card) => [card.path, card]));
+    const orderedMatches: NoteCardRecord[] = [];
+
+    for (const path of context.search.orderedPaths) {
+      const card = cardsByPath.get(path);
+      if (card) {
+        orderedMatches.push(card);
+      }
+    }
+
+    return orderedMatches;
+  }
+
+  return cards.filter((card) => {
+    const cachedContent = card.excerpt.trim().length > 0 ? card.excerpt : null;
+    return matchesSearchQuery(card.file, query, cachedContent);
+  });
 }
 
 /** Pin reorder step — reorder cards to put pinned paths first while preserving relative order. */
@@ -50,9 +83,9 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
     return cards;
   }
 
-  // Guard: no pinnedPaths in settings
-  const pinnedPaths = (context.settings as unknown as { pinnedPaths?: string[] }).pinnedPaths;
-  if (!pinnedPaths || pinnedPaths.length === 0) {
+  // Guard: no pinnedPaths in explicit pipeline inputs
+  const pinnedPaths = context.pinnedPaths;
+  if (pinnedPaths.length === 0) {
     return cards;
   }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, DEFAULT_PIPELINE_STEPS } from "./pipeline";
-import type { PipelineContext, PipelineStep } from "./pipeline";
+import type { PipelineContext } from "./pipeline";
 import type { NoteCardRecord } from "./types";
 import * as metadataUtils from "./metadata-utils";
 
@@ -21,17 +21,33 @@ function createMockContext(): PipelineContext {
       lastViewMode: "folder",
       pinnedPaths: [],
     },
+    search: {
+      query: "",
+      orderedPaths: null,
+    },
+    pinnedPaths: [],
   };
 }
 
-function createMockCard(path: string): NoteCardRecord {
+function withPinnedPaths(context: PipelineContext, pinnedPaths: string[]): PipelineContext {
+  return {
+    ...context,
+    settings: {
+      ...context.settings,
+      pinnedPaths: [...pinnedPaths],
+    },
+    pinnedPaths: [...pinnedPaths],
+  };
+}
+
+function createMockCard(path: string, excerpt = ""): NoteCardRecord {
   return {
     file: { path, basename: path.replace(/.*\//, "").replace(".md", "") } as NoteCardRecord["file"],
     path,
     title: path.replace(/.*\//, "").replace(".md", ""),
     ctime: Date.now(),
     mtime: Date.now(),
-    excerpt: "",
+    excerpt,
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
@@ -237,23 +253,68 @@ describe("applyTagFilter behavior", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Stub Steps (remaining)
+// applySearchFilter behavior
 // ---------------------------------------------------------------------------
 
-describe("stub steps (remaining)", () => {
-  it("applySearchFilter returns cards unchanged", () => {
-    const cards = [createMockCard("test.md")];
+describe("apply search filter behavior", () => {
+  it("returns all cards when query is empty", () => {
+    const cards = [createMockCard("alpha.md"), createMockCard("beta.md")];
     const context = createMockContext();
-    const result = applySearchFilter(cards, context);
-    expect(result).toBe(cards);
+    context.search.query = "";
+
+    expect(applySearchFilter(cards, context)).toEqual(cards);
   });
 
-  it("applySearchFilter stays a pass-through even when includeSubfolders changes", () => {
-    const cards = [createMockCard("nested/test.md")];
+  it("returns all cards when query is whitespace", () => {
+    const cards = [createMockCard("alpha.md"), createMockCard("beta.md")];
     const context = createMockContext();
-    context.settings.includeSubfolders = false;
+    context.search.query = "   ";
 
-    expect(applySearchFilter(cards, context)).toBe(cards);
+    expect(applySearchFilter(cards, context)).toEqual(cards);
+  });
+
+  it("matches card title without requiring cached content", () => {
+    const cards = [
+      createMockCard("Quarterly-Roadmap.md"),
+      createMockCard("Meeting-Notes.md"),
+    ];
+    const context = createMockContext();
+    context.search.query = "roadmap";
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["Quarterly-Roadmap.md"]);
+  });
+
+  it("matches card content using supplied excerpt", () => {
+    const cards = [
+      createMockCard("alpha.md", "team retrospective and action items"),
+      createMockCard("beta.md", "release checklist"),
+    ];
+    const context = createMockContext();
+    context.search.query = "retrospective";
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["alpha.md"]);
+  });
+
+  it("does not match content when excerpt is unavailable", () => {
+    const cards = [
+      createMockCard("alpha.md"),
+      createMockCard("beta.md"),
+    ];
+    const context = createMockContext();
+    context.search.query = "retrospective";
+
+    expect(applySearchFilter(cards, context)).toEqual([]);
+  });
+
+  it("applies case-insensitive matching for title and content", () => {
+    const cards = [
+      createMockCard("Project-Plan.md", "milestone timeline"),
+      createMockCard("notes.md", "Sprint RETROSPECTIVE summary"),
+    ];
+    const context = createMockContext();
+    context.search.query = "reTroSpeCtive";
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["notes.md"]);
   });
 });
 
@@ -274,12 +335,50 @@ describe("applyPinReorder", () => {
       createMockCard("filtered-pinned.md"),
       createMockCard("visible-unpinned.md"),
     ];
-    const context = createMockContext();
-    context.settings.filter.tags = ["project"];
-    context.settings.pinnedPaths = ["filtered-pinned.md", "visible-pinned.md"];
+    const baseContext = createMockContext();
+    baseContext.settings.filter.tags = ["project"];
+    const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
       return file.path !== "filtered-pinned.md";
+    });
+
+    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+      "visible-pinned.md",
+      "visible-unpinned.md",
+    ]);
+  });
+
+  it("does not reintroduce pinned cards removed by search filtering in the default pipeline", () => {
+    const cards = [
+      createMockCard("visible-pinned.md", "query-hit"),
+      createMockCard("filtered-pinned.md", "different text"),
+      createMockCard("visible-unpinned.md", "query-hit"),
+    ];
+    const baseContext = createMockContext();
+    baseContext.search.query = "query-hit";
+    const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
+
+    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+      "visible-pinned.md",
+      "visible-unpinned.md",
+    ]);
+  });
+
+  it("applies tag and search filters before pin reorder in one default-pipeline pass", () => {
+    const cards = [
+      createMockCard("visible-pinned.md", "query-hit"),
+      createMockCard("tag-filtered-pinned.md", "query-hit"),
+      createMockCard("visible-unpinned.md", "query-hit"),
+      createMockCard("search-filtered.md", "no-match"),
+    ];
+    const baseContext = createMockContext();
+    baseContext.settings.filter.tags = ["project"];
+    baseContext.search.query = "query-hit";
+    const context = withPinnedPaths(baseContext, ["tag-filtered-pinned.md", "visible-pinned.md"]);
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
+      return file.path !== "tag-filtered-pinned.md";
     });
 
     expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
@@ -295,9 +394,9 @@ describe("applyPinReorder", () => {
       createMockCard("c.md"),
       createMockCard("d.md"),
     ];
-    const context = createMockContext();
-    context.settings.filter.tags = ["active"];
-    context.settings.pinnedPaths = ["c.md", "a.md", "duplicate-missing.md", "c.md"];
+    const baseContext = createMockContext();
+    baseContext.settings.filter.tags = ["active"];
+    const context = withPinnedPaths(baseContext, ["c.md", "a.md", "duplicate-missing.md", "c.md"]);
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
       return file.path !== "b.md";
@@ -310,7 +409,7 @@ describe("applyPinReorder", () => {
     ]);
   });
 
-  it("returns cards unchanged when no pinnedPaths in settings", () => {
+  it("returns cards unchanged when no pinned paths are provided to the pipeline", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md")];
     const context = createMockContext();
     const result = applyPinReorder(cards, context);
@@ -328,13 +427,7 @@ describe("applyPinReorder", () => {
     // Assume future settings.pinnedPaths = ["b.md", "d.md"]
     // Pinned cards must appear in their ORIGINAL relative order from input, not pinnedPaths order
     // Mock: extend context to have pinnedPaths
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["b.md", "d.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, ["b.md", "d.md"]);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -358,13 +451,7 @@ describe("applyPinReorder", () => {
     // Pinned paths listed in this order: c, a
     // But in the input array, a comes before c
     // So in the pinned segment, a must come before c (preserving input order)
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["c.md", "a.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, ["c.md", "a.md"]);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -385,13 +472,7 @@ describe("applyPinReorder", () => {
     ];
     const context = createMockContext();
     // Pin only b
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["b.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, ["b.md"]);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -412,13 +493,7 @@ describe("applyPinReorder", () => {
     ];
     const context = createMockContext();
     // Try to pin b.md, but it's not in the current pipeline input
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["b.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, ["b.md"]);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -436,13 +511,7 @@ describe("applyPinReorder", () => {
     ];
     const context = createMockContext();
     // Request pins for b, d, e (but d and e don't exist in current input)
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["b.md", "d.md", "e.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, ["b.md", "d.md", "e.md"]);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -457,13 +526,7 @@ describe("applyPinReorder", () => {
   it("handles empty pinnedPaths array like no pinning", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md")];
     const context = createMockContext();
-    const contextWithPins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: [],
-      },
-    } as unknown as PipelineContext;
+    const contextWithPins = withPinnedPaths(context, []);
 
     const result = applyPinReorder(cards, contextWithPins);
 
@@ -479,13 +542,7 @@ describe("applyPinReorder", () => {
       createMockCard("d.md"),
     ];
     const context = createMockContext();
-    const contextWithDuplicatePins = {
-      ...context,
-      settings: {
-        ...context.settings,
-        pinnedPaths: ["c.md", "c.md", "a.md", "a.md"],
-      },
-    } as unknown as PipelineContext;
+    const contextWithDuplicatePins = withPinnedPaths(context, ["c.md", "c.md", "a.md", "a.md"]);
 
     const result = applyPinReorder(cards, contextWithDuplicatePins);
 
