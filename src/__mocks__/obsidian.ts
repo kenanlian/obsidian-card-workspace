@@ -34,3 +34,11 @@ export class Vault {
     return new TFolder();
   }
 }
+
+export function setIcon(el: Element, icon: string): void {
+  el.setAttribute("data-icon", icon);
+}
+
+export function setTooltip(el: Element, tooltip: string, _options?: unknown): void {
+  el.setAttribute("data-tooltip", tooltip);
+}
