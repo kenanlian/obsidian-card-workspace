@@ -1,6 +1,6 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
-  import type { FolderTreeNode } from "./types";
+  import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
     action: string;
@@ -19,6 +19,14 @@
     value: boolean;
   }
 
+  interface SearchQueryChangePayload {
+    query: string;
+  }
+
+  interface SearchQueryResetPayload {
+    source: "clear-button";
+  }
+
   interface SelectFolderPayload {
     path: string;
   }
@@ -32,6 +40,8 @@
     availableTags?: string[];
     activeFilterTags?: string[];
     includeSubfolders?: boolean;
+    searchQuery?: string;
+    searchStatus?: SearchStatus;
     isAllNotesScope?: boolean;
     bulkMode?: boolean;
     selectedCount?: number;
@@ -46,6 +56,8 @@
     onSortChange?: (payload: SortChangePayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
+    onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
+    onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
   }
 
@@ -77,6 +89,8 @@
     availableTags = [],
     activeFilterTags = [],
     includeSubfolders = true,
+    searchQuery = "",
+    searchStatus = "idle",
     isAllNotesScope = false,
     bulkMode = false,
     selectedCount = 0,
@@ -91,6 +105,8 @@
     onSortChange,
     onFilterChange,
     onIncludeSubfoldersChange,
+    onSearchQueryChange,
+    onSearchQueryReset,
     onSelectFolder,
   }: ToolbarProps = $props();
 
@@ -172,6 +188,18 @@
     hasFolderScope
       ? `Subfolders: ${includeSubfolders ? "included" : "direct only"}`
       : "",
+  );
+  const hasSearchQuery = $derived(searchQuery.trim().length > 0);
+  const searchStatusLabel = $derived(
+    searchStatus === "idle"
+      ? "Search idle"
+      : searchStatus === "fallback"
+        ? "Fallback search"
+        : searchStatus === "ready"
+          ? "Index ready"
+          : searchStatus === "building"
+            ? "Building index"
+            : "Search error",
   );
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
@@ -437,6 +465,19 @@
     onIncludeSubfoldersChange?.({ value: !includeSubfolders });
   }
 
+  function handleSearchInput(event: Event): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    onSearchQueryChange?.({ query: target.value });
+  }
+
+  function clearSearchQuery(): void {
+    onSearchQueryReset?.({ source: "clear-button" });
+  }
+
   function emitToolbarAction(actionId: string): void {
     onToolbarAction?.({ action: actionId });
   }
@@ -508,6 +549,30 @@
   </div>
 
   <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
+    <div class="fce-toolbar-search" role="search">
+      <label class="fce-sr-only" for="fce-search-input">Search notes</label>
+      <input
+        id="fce-search-input"
+        class="fce-search-input"
+        type="search"
+        aria-label="Search notes"
+        placeholder="Search notes"
+        value={searchQuery}
+        oninput={handleSearchInput}
+      />
+      {#if hasSearchQuery}
+        <button
+          type="button"
+          class="fce-search-clear"
+          aria-label="Clear search query"
+          onclick={clearSearchQuery}
+        >
+          Clear
+        </button>
+      {/if}
+      <span class="fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
+    </div>
+
     <div class="fce-toolbar-content">
       <span class="fce-toolbar-summary-segment"><strong>Scope:</strong> {scopeSummary}</span>
       <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>

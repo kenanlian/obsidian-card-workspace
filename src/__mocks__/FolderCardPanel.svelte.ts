@@ -16,6 +16,8 @@ interface PanelProps {
   onSortChange?: (payload: unknown) => void;
   onFilterChange?: (payload: unknown) => void;
   onIncludeSubfoldersChange?: (payload: unknown) => void;
+  onSearchQueryChange?: (payload: unknown) => void;
+  onSearchQueryReset?: (payload: unknown) => void;
   onSelectFolder?: (payload: unknown) => void;
   onHydrateRange?: (payload: unknown) => void;
 }
@@ -37,6 +39,8 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onSortChange: "sort-change",
   onFilterChange: "filter-change",
   onIncludeSubfoldersChange: "include-subfolders-change",
+  onSearchQueryChange: "search-query-change",
+  onSearchQueryReset: "search-query-reset",
   onSelectFolder: "select-folder",
   onHydrateRange: "hydrate-range",
 };

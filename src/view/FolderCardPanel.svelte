@@ -53,6 +53,14 @@
     value: boolean;
   }
 
+  interface SearchQueryChangePayload {
+    query: string;
+  }
+
+  interface SearchQueryResetPayload {
+    source: "clear-button";
+  }
+
   interface SelectFolderPayload {
     path: string;
   }
@@ -72,6 +80,8 @@
     onSortChange?: (payload: SortChangePayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
+    onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
+    onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
   }
@@ -82,6 +92,8 @@
     selectedPath: null,
     loading: false,
     generation: 0,
+    searchQuery: "",
+    searchStatus: "idle",
     sortField: "mtime",
     sortDirection: "desc",
     availableTags: [],
@@ -114,6 +126,8 @@
     onSortChange,
     onFilterChange,
     onIncludeSubfoldersChange,
+    onSearchQueryChange,
+    onSearchQueryReset,
     onSelectFolder,
     onHydrateRange,
   }: FolderCardPanelProps = $props();
@@ -145,6 +159,8 @@
   const selectedPath = $derived(panelState.selectedPath);
   const loading = $derived(panelState.loading);
   const generation = $derived(panelState.generation);
+  const searchQuery = $derived(panelState.searchQuery);
+  const searchStatus = $derived(panelState.searchStatus);
   const sortField = $derived(panelState.sortField);
   const sortDirection = $derived(panelState.sortDirection);
   const availableTags = $derived(panelState.availableTags);
@@ -196,6 +212,14 @@
 
   function handleIncludeSubfoldersChange(detail: IncludeSubfoldersChangePayload): void {
     onIncludeSubfoldersChange?.(detail);
+  }
+
+  function handleSearchQueryChange(detail: SearchQueryChangePayload): void {
+    onSearchQueryChange?.(detail);
+  }
+
+  function handleSearchQueryReset(detail: SearchQueryResetPayload): void {
+    onSearchQueryReset?.(detail);
   }
 
   function handleSelectFolder(detail: SelectFolderPayload): void {
@@ -491,6 +515,8 @@
     {activeFilterTags}
     {folderTree}
     {includeSubfolders}
+    {searchQuery}
+    {searchStatus}
     {isAllNotesScope}
     {tooltipSide}
     {bulkMode}
@@ -506,6 +532,8 @@
     onSortChange={handleSortChange}
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
+    onSearchQueryChange={handleSearchQueryChange}
+    onSearchQueryReset={handleSearchQueryReset}
     onSelectFolder={handleSelectFolder}
   />
 
