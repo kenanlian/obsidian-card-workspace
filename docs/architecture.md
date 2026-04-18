@@ -2,14 +2,15 @@
 
 ## 架构目标与设计原则
 
-这个插件的架构目标不是“做一个漂亮的卡片列表”，而是把 Obsidian 里原本分散的浏览动作，收敛成一个**响应快、状态可恢复、可以继续扩展**的侧边栏工作台。
+这个插件的架构目标不是做一个独立 Web 应用，而是在 Obsidian 运行时里提供一个响应快、状态可恢复、可以持续扩展的卡片工作台。
 
-当前架构由四个核心原则驱动：
+当前设计由五个原则驱动：
 
-1. **性能优先**：大量笔记场景下不能退化成整列表渲染或频繁全量刷新。
-2. **本地优先**：所有文件读取、metadata 判断、设置持久化都留在 Obsidian 本地运行时。
-3. **原生交互感**：尽量复用 Obsidian 的 View、Menu、Tooltip、Vault、MetadataCache 机制，而不是另起一套 Web 应用式框架。
-4. **模块边界清晰**：Obsidian 运行时绑定、纯数据投影、Svelte 视图展示、笔记操作工具分层，避免未来搜索/批量能力把当前结构拖垮。
+1. **性能优先**，大量笔记场景下不能退化成整列表渲染或频繁全量刷新。
+2. **本地优先**，文件读取、metadata 判断、设置持久化都留在 Obsidian 本地运行时。
+3. **原生交互感**，优先复用 Obsidian 的 View、Menu、Vault、MetadataCache 等宿主能力。
+4. **宿主与面板解耦**，Obsidian 运行时状态留在宿主，Svelte 组件负责渲染和回调。
+5. **标准 Svelte 5 接缝**，项目已经离开 compatibility 过渡态，新的视图改动都应沿着 `mount/unmount + panel-model + callback props` 这条接缝扩展。
 
 ## 系统总览
 
@@ -19,207 +20,202 @@ Obsidian 事件源
   ├─ file-open
   └─ vault create/modify/delete/rename
           ↓
-src/main.ts (Plugin 入口)
+src/main.ts
   ├─ 视图注册 / 激活
   ├─ 设置加载与保存
   ├─ 外部事件转选择/刷新请求
   └─ 会话恢复
           ↓
-src/view/FolderCardView.ts (运行时中枢)
+src/view/FolderCardView.ts
   ├─ 收集文件 / 排序 / 构建 baseCards
   ├─ 增量刷新 / generation 防陈旧
-  ├─ 生成 folder tree / available tags
-  ├─ 管理 scope / filter / includeSubfolders 的持久化真值
+  ├─ 管理 scope / filter / pin / bulk state
   ├─ 运行 pipeline → visibleCards
-  └─ pushState 给 Svelte 面板
+  ├─ 维护 panel-model
+  └─ mount/unmount 根面板
           ↓
-src/view/FolderCardPanel.svelte (视口层)
+src/view/panel-model.ts
+  └─ 宿主持有、面板订阅的状态边界
+          ↓
+src/view/FolderCardPanel.svelte
+  ├─ 订阅 panel-model
   ├─ row-projected 响应式布局
   ├─ 虚拟滚动
   ├─ 滚动锚定
-  ├─ hydrate-range 事件
   └─ 组合 Toolbar + CardItem
           ↓
 src/view/Toolbar.svelte / CardItem.svelte
-  └─ 用户交互入口与事件抛出
+  └─ 交互表面与 callback props
 ```
 
 ## 运行时拓扑与外部依赖
 
-运行时依赖几乎全部来自 Obsidian 宿主：
+运行时依赖主要来自三层：
 
-- `obsidian` API：`Plugin`、`ItemView`、`TFile`、`TFolder`、`FuzzySuggestModal`、`Menu`、`Notice`、`MetadataCache` 等。
-- Svelte 5：仅用于视图展示与交互编排；当前通过 legacy component API compatibility 继续兼容现有宿主接入方式。
-- esbuild + esbuild-svelte：构建 `main.js`。
-- Vitest：单元测试与视图事件契约测试。
+- `obsidian` API，负责插件生命周期、视图容器、Vault、MetadataCache、菜单、提示等宿主能力。
+- Svelte 5 运行时，负责面板渲染和交互编排。当前使用标准 `mount/unmount` 接缝，不再启用 `compatibility.componentApi = 4`。
+- esbuild + esbuild-svelte，负责把插件打包成 `main.js`。
 
-当前没有网络依赖、没有外部服务、没有持久化数据库。未来搜索方案文档指向 IndexedDB + MiniSearch，但这仍是规划，不是当前运行时事实。
+验证依赖也已经固定下来：
+
+- `vitest.config.ts` 分成 node 和 jsdom 两个 project。node lane 保留纯逻辑和 mock 驱动测试，jsdom lane 负责真实 `.svelte.test.ts` 和宿主接缝测试。
+- `.github/workflows/ci.yml` 在 Node 20 上执行 `npx svelte-check --tsconfig ./tsconfig.json`、`npm run check`、`npm run build`、`npm test`。
+
+当前没有网络依赖，没有外部服务，没有持久化数据库。未来搜索方案仍可能引入 IndexedDB + MiniSearch，但这还不是当前运行时事实。
 
 ## 技术选择及原因
 
 ### TypeScript + strict
 
-项目把设置、事件、刷新动作和卡片记录都显式类型化，这是为了让后续的搜索、批量、多视图状态扩展可以继续在边界上受约束，而不是靠运行时猜测。
+设置、卡片记录、排序和批量操作状态都保持显式类型，是为了让后续搜索和批量能力继续沿着边界演进，而不是把状态形状散落到多个组件里。
 
-### Svelte 5 只负责视图，不负责主状态
+### 标准 Svelte 5，但主状态仍归宿主
 
-当前没有把 Svelte 当成全局状态容器。主要原因是插件要和 Obsidian 运行时深度耦合：Vault 事件、文件打开、菜单、视图激活、设置持久化都更适合由 `FolderCardView` 统一管理。升级到 Svelte 5 后，这一点没有改变：Svelte 组件仍保持“接 props + 发事件”的轻状态角色，降低了视图层和宿主 API 的耦合。
+项目已经完成从 legacy class API 到标准 Svelte 5 宿主接缝的迁移，但并没有把 Svelte 变成全局状态容器。原因很直接，Vault 事件、设置持久化、视图生命周期、文件打开动作都属于 Obsidian 宿主语义，由 `FolderCardView.ts` 汇总更稳。
 
-这次迁移刻意采用 **Svelte 5 编译器/运行时 + `compatibility.componentApi = 4`** 的方式，保留 `FolderCardView.ts` 里的 `new Component(...)`、`$on(...)`、`$set(...)`、`$destroy()` 接口。这样做的目的不是长期停留在 legacy 语法，而是把“框架升级”和“组件源码改写为 runes/callback props”拆成两步，先确保现有 Obsidian 宿主接入面稳定。
+这次迁移后的核心变化不是“让组件更现代”这么简单，而是把宿主和组件的责任重新固定成下面的形式：
 
-### 纯函数 pipeline 负责可见卡片投影
+- `FolderCardView.ts` 负责状态真值、异步刷新、Obsidian API 交互。
+- `panel-model` 负责把宿主真值变成一份可订阅的面板状态。
+- Svelte 根面板和叶子组件负责把状态渲染出来，并通过 callback props 把用户动作送回宿主。
 
-`src/view/pipeline.ts` 把“哪些卡片应该显示、显示顺序如何变化”从 `FolderCardView` 的运行时逻辑中抽离出来。这样做的价值不是现在省代码，而是为后续搜索、复杂过滤器、pin 规则和结果排序提供稳定挂点。
+### 纯函数 pipeline 继续负责可见卡片投影
+
+`src/view/pipeline.ts` 仍然是“哪些卡片显示，显示顺序如何变化”的唯一挂点。Svelte 5 迁移没有改变这个边界，因为搜索、标签过滤和 pin 重排都需要稳定的宿主级投影链路。
 
 ## 模块关系与职责边界
 
 ### `src/main.ts`
 
-拥有插件级职责：
+负责插件级职责：
 
 - 读取和保存 `PluginSettings`
 - 注册 `FOLDER_CARD_VIEW`
 - 监听文件管理器点击与 `file-open`
 - 在 `onLayoutReady` 后注册 vault 观察者并恢复会话
-- 把“外部事件”转换为视图可消费的选择请求和刷新请求
+- 把外部事件转换成视图可消费的选择请求和刷新请求
 
-它**不应该**承担卡片投影、过滤规则、虚拟滚动、单卡 UI 逻辑。
+它不拥有卡片投影、Svelte 状态或虚拟滚动逻辑。
 
 ### `src/view/FolderCardView.ts`
 
-拥有视图级运行时状态：
+负责视图级运行时状态：
 
-- 当前文件夹/视图模式
-- `baseCards` / `visibleCards`
-- generation、in-flight 请求、队列刷新
-- folder tree、available tags、selectedPath
-- 卡片 hydration 与 vault mutation 响应
+- 当前文件夹或视图模式
+- `baseCards`、`visibleCards`
+- generation、in-flight 请求、刷新队列
+- available tags、selectedPath、批量选择状态
+- card hydration 与 vault mutation 响应
+- `panel-model` 创建、更新和销毁
+- 根面板 `mount/unmount`
 
-它是当前系统最重要的协调器。未来要扩展搜索、批量、多选，也应优先以它为状态汇聚点，而不是把状态散落到多个 Svelte 组件。
+它是系统最重要的协调器，也是宿主与 Svelte 面板的唯一正式接缝。
+
+### `src/view/panel-model.ts`
+
+这是迁移完成后新增的稳定边界。
+
+- 它由宿主持有，不由 Svelte 组件创建。
+- 它暴露 `getState()`、`subscribe(...)`、`mutate(...)`。
+- 它替代旧的 `$set(...)` prop 推送，让普通状态更新不需要 remount。
+
+这个边界很重要，因为它把“宿主真值”和“面板渲染状态”隔开了。后续扩展搜索、批量操作或新的工具栏状态时，优先往这里加字段和变更语义，而不是回到散乱 prop 推送。
 
 ### `src/view/FolderCardPanel.svelte`
 
-拥有纯视口职责：
+根面板现在是标准 Svelte 5 组件，负责：
 
-- 根据 viewport width 计算列数并将扁平 `cards` 投影成 rows
-- 计算可见窗口
-- 发出 `hydrate-range`
-- 维护滚动位置、测量 row 高度、执行滚动锚定
-- 组合 Toolbar 与 CardItem
+- 订阅 `panelModel`
+- 根据 viewport width 计算列数并投影 rows
+- 计算可见窗口并触发 hydration 回调
+- 维护滚动位置、row 高度测量和滚动锚定
+- 组合 `Toolbar.svelte` 与 `CardItem.svelte`
 
-它不拥有 vault 数据源，也不直接调用设置持久化。
+它不直接访问 Obsidian API，也不拥有持久化真值。
 
-当前它虽然由 Svelte 5 编译，但仍维持原先的 props / 事件协议，以便继续被 `FolderCardView` 作为类组件实例管理。
+### `src/view/Toolbar.svelte`
+
+负责顶部动作入口、排序菜单、文件夹菜单、标签筛选菜单，以及当前 scope / tag filter / `includeSubfolders` 的紧凑状态提示。它已经迁移到 `$props()` 和 callback props，不再作为事件总线或状态源。
+
+### `src/view/CardItem.svelte`
+
+负责单卡片展示、打开笔记、键盘和鼠标交互、右键菜单入口、pin toggle。它同样已经迁移到标准 Svelte 5 组件契约。
 
 ### `src/view/row-projection.ts`
 
-承载纯计算层的响应式 wall 几何逻辑：
+负责纯计算层几何逻辑：
 
 - 根据可用宽度推导 `columnCount`
 - 将扁平 card 序列稳定分组成 rows
 - 将 visible rows 反向映射为扁平 `hydrate-range`
 - 复用 binary-search 友好的 offset lookup
 
-它不触碰 Svelte state，也不触碰 Obsidian runtime。
+它不接触宿主状态，不接触 Svelte 运行时。
 
-### `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
+### `src/view/metadata-utils.ts` 与 `src/view/note-ops.ts`
 
-- `Toolbar.svelte`：顶部动作入口、排序菜单、文件夹菜单、标签筛选菜单，以及当前 scope / tag filter / `includeSubfolders` 的紧凑状态提示。
-- `CardItem.svelte`：单卡片展示、键盘/鼠标打开、右键菜单入口、pin toggle。
-
-这两个组件是交互表面层，不应演化成业务状态源。
-
-### `src/settings.ts`
-
-统一定义设置 schema、默认值和 normalize/merge 行为。它的作用是把“用户数据脏输入”挡在运行时逻辑之外。
-
-### `src/view/metadata-utils.ts`
-
-提供标签抽取、frontmatter 访问、搜索辅助。这里的约束值得特别注意：
-
-- 标签统一做小写归一化并去掉前导 `#`
-- `matchesTagFilter()` 使用 **AND 语义**
-- 搜索辅助目前只提供基础 substring 匹配，不代表最终搜索方案
-
-### `src/view/note-ops.ts`
-
-承载与单条/批量文件动作相关的可复用函数，如复制、移动、删除、merge。它是动作工具层，不负责 UI 确认、选中状态或视图刷新编排。
+- `metadata-utils.ts` 负责标签抽取、frontmatter 访问、搜索辅助。`matchesTagFilter()` 继续使用 **AND** 语义。
+- `note-ops.ts` 负责复制、移动、删除、merge 等动作函数，不负责 UI 确认和视图编排。
 
 ## 关键流程设计
 
 ### 1. 文件夹选择与视图激活
 
-入口有三类：
+入口仍有三类：文件管理器点击、面板内 `Pick folder`、`All Notes`。
 
-- 文件管理器点击
-- 面板内 `Pick folder`
-- `All Notes`
-
-流程统一收敛为：
+统一流程是：
 
 1. `main.ts` 生成选择请求并确保右侧视图已激活。
 2. `FolderCardView` 处理选择请求，决定是否保留 UI 状态、是否强制刷新。
 3. 重新采集文件、排序、生成 `baseCards`。
-4. 根据设置和 pipeline 产出 `visibleCards`，再把 `folderPath`、`activeFilterTags`、`includeSubfolders`、`isAllNotesScope` 等真实状态同步给 Svelte 面板。
-
-### 1.1 范围提示与 `includeSubfolders` 开关
-
-T32 之后，顶部 Toolbar 的范围相关语义统一遵守下面这条链路：
-
-1. `FolderCardView` 仍然持有真实范围状态：当前是 folder scope 还是 `All Notes`、`includeSubfolders` 是否开启、tag filter 是否生效。
-2. `pushState()` 和 `onOpen()` 会把 `includeSubfolders` 与 `isAllNotesScope` 作为 props 传给 `FolderCardPanel.svelte` / `Toolbar.svelte`。
-3. `Toolbar.svelte` 只负责把这些状态显示成紧凑 summary，并且**只在 folder scope 下**显示 `includeSubfolders` toggle。
-4. 用户点击 toggle 时，Toolbar 只抛出 `include-subfolders-change`；真正决定是否合法、是否持久化、是否触发刷新的人仍是 `FolderCardView`。
-
-这样做的核心目的是避免两个错觉：
-
-- 不让 `All Notes` 看起来像是也支持“关闭子文件夹”。
-- 不让 Svelte 组件自己维护一个和设置层分叉的范围真值。
+4. 根据设置和 pipeline 产出 `visibleCards`。
+5. `FolderCardView` 把最新状态写入 `panel-model`。
+6. 根面板和叶子组件据此更新 UI，并通过 callback props 把新动作回传给宿主。
 
 ### 2. 卡片 hydration
 
-卡片并不是一次性把全部正文预览都读出来。实际流程是：
+正文预览仍然不是一次性全量读取：
 
-1. 初次加载时先构建轻量卡片记录。
-2. 面板依据当前 rows 的可见范围发出 `hydrate-range`。
+1. 初次加载先构建轻量卡片记录。
+2. 面板依据当前可见 rows 请求 `hydrate-range`。
 3. `FolderCardView` 对窗口范围内卡片批量执行 hydration。
 4. generation 变化时，旧结果会被丢弃，避免异步回写污染新状态。
 
-这个流程是性能模型的核心，不应被“为了简单”而移除。
+这个流程是性能模型核心，Svelte 5 迁移没有改变它。
 
 ### 3. Vault 增量刷新
 
-插件不是每次文件变化都整文件夹重建，而是：
+文件变化不会直接触发整视图重建，而是：
 
-- 先由 `main.ts` 在 `onLayoutReady` 后注册观察者
-- 再通过 debounce 聚合高频变更
+- `main.ts` 在 `onLayoutReady` 后注册观察者
+- debounce 聚合高频变更
 - `FolderCardView` 优先尝试增量处理，必要时再退回刷新队列
 
-这让文件新增、修改、重命名、删除在大多数情况下都能维持更平滑的体验。
+这条链路必须继续保持，因为它直接决定大 vault 场景下的交互平滑度。
 
 ### 4. 可见卡片投影
 
-当前投影链路为：
+当前投影链路仍然是：
 
 ```text
 baseCards
   -> applyTagFilter
-  -> applySearchFilter   // 目前仍是占位
+  -> applySearchFilter
   -> applyPinReorder
   -> visibleCards
 ```
 
-这里最重要的约束是：
+关键约束没有变：
 
 - tag filter 是 metadata 层过滤，不依赖全文索引
-- search 未来要插入同一链路，而不是绕开它单独排序
-- pin 只重排当前输入，不恢复被上游过滤掉的卡片
+- search 将来要插入同一链路，而不是绕开它
+- pin 只重排当前输入，不恢复被过滤掉的卡片
 
 ## 数据流与状态映射
 
 ### 插件级持久化状态
 
-来源：`PluginSettings`
+来源是 `PluginSettings`：
 
 - `sort`
 - `filter.tags`
@@ -229,16 +225,11 @@ baseCards
 - `lastFolderPath`
 - `lastViewMode`
 
-这些状态由 `main.ts` 读写，并通过 `getSettings()` / `saveSettings()` 提供给 `FolderCardView` 使用。
-
-其中 `includeSubfolders` 需要特别记住：
-
-- 它是**持久化范围设置**，不是瞬时 UI 勾选框。
-- 它只对 folder scope 生效；在 `All Notes` 下只是被保留，不应该被渲染成一个误导性的当前状态。
+这些状态由 `main.ts` 读写，并供 `FolderCardView` 在刷新和会话恢复时使用。
 
 ### 视图级运行时状态
 
-来源：`FolderCardView`
+来源是 `FolderCardView`：
 
 - `folderPath`
 - `baseCards`
@@ -247,47 +238,45 @@ baseCards
 - `selectedPath`
 - `generation`
 - `loading`
+- 批量选择相关状态
 - in-flight / queued refresh 状态
 
-### 展示级瞬时状态
+### 面板订阅状态
 
-来源：Svelte 组件
+来源是 `panel-model`。它是宿主把运行时状态投影给面板的正式载体，字段包括：
 
-- 滚动位置、可见窗口、测量高度
-- 排序/筛选/文件夹菜单的展开状态
-- 当前用户滚动锁定窗口
+- cards、selectedPath、loading、generation
+- 排序、标签筛选、pin 状态
+- `folderTree`、`includeSubfolders`、`isAllNotesScope`
+- bulk mode 和选中统计
 
-这些状态可以被重建，不应持久化到插件设置。
-
-Toolbar 里的 summary 文案和 `includeSubfolders` 按钮也属于这一层：它们是对上层真值的展示，不是新的状态源。
+这里最重要的判断标准是，凡是会影响 Obsidian runtime、持久化或异步刷新的真值，都先归宿主，再通过模型投影给面板。
 
 ## 关键约束与假设
 
-1. **generation-based staleness 是必需约束。** 所有异步加载都可能在用户快速切换文件夹后变成陈旧结果。
-2. **虚拟滚动现在依赖 row projection + row height measurement。** 如果未来引入高度波动更大的内容，必须同步维护 row 级滚动锚定与 resize anchoring 逻辑。
-3. **标签筛选使用 AND 语义。** 这是当前测试和实现共同约束，不应随意改成 OR。
-4. **置顶只影响顺序，不改变可见性。** 这保证筛选规则是主规则，置顶是次规则。
-5. **当前搜索是规划中的能力，不应在文档里当成已实现。**
-6. **当前 Svelte 5 迁移停留在 compatibility 模式。** 后续如果要改成 `$props` / callback props / runes，应当作为单独的结构性演进处理，而不是顺手夹带在功能开发里。
-7. **`includeSubfolders` 只在 folder scope 下有 UI 语义。** `All Notes` 必须隐藏这个开关，而不是展示一个看起来可切换的伪状态。
-8. **preview 的逻辑预算和物理裁切预算必须保持一致。** `src/view/markdown-utils.ts` 负责把 preview 归一化成可预算的轻量 HTML，`styles.css` 里的 `.fce-excerpt` 负责按 `previewLines` 做物理裁切；excerpt 内部如果重新引入未计入预算的段间距、代码块 padding 或 border，就会重新制造最后一行 clipping。
+1. 不要重新引入 `compatibility.componentApi = 4`，除非出现经过验证的硬阻塞。
+2. 不要把 `panel-model` 退化回零散 `$set(...)` 式 prop 推送，也不要用普通状态更新触发 remount。
+3. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
+4. `includeSubfolders` 只在 folder scope 下有可见语义，`All Notes` 不应该显示误导性的 toggle 状态。
+5. node 和 jsdom 两条测试 lane 都是正式验证面，不能只保一边。
 
-## 历史问题与当前折中
+## 历史问题与折中
 
-- 早期插件重点是“文件夹点击后显示卡片”，后续才逐步补齐面板内闭环交互。
-- 最近一轮实现把 folder picker、context actions、tag filter、pin state，以及 Toolbar 中的范围提示和 `includeSubfolders` 控制都接入了同一视图状态体系，这让结构更稳定，但 `FolderCardView.ts` 也因此继续变大。
-- preview-normalization 落地后，又补了一次 clipping 修复：code preview 不再使用带额外 box chrome 的 `<pre>` 表面，excerpt 内部也不再依赖未计入 `previewLines` 预算的段间距。这个折中保持了 Scheme B 的 weak-cue 风格，但也新增了一条维护约束：不要在 excerpt 内部随意恢复垂直装饰性间距。
-- 目前批量与搜索还没进入主干实现，因此一些基础能力已在工具层或计划文档中存在，但用户可见工作流尚未完整闭环。
+`2026-04-03` 的决策把项目带到 “Svelte 5 运行时，但保留 legacy component API compatibility” 的过渡阶段。那次选择降低了首轮升级风险，但也明确留下第二阶段迁移。
 
-## 优化与演进方向
+现在第二阶段已经完成。项目不再处在兼容层过渡态，而是进入标准 Svelte 5 宿主/组件接缝。当前仍保留的已知问题主要是 `Toolbar.svelte` 的非阻塞 a11y warnings，它们属于后续 UI 和可访问性收尾，不属于迁移未完成。
 
-1. 在现有 pipeline 挂点上接入真正的搜索服务，而不是在视图层做临时过滤分支。
-2. 为批量操作补齐多选状态源和确认/错误反馈链路。
-3. 在保持原生感的前提下再做视觉一致化与无障碍收尾，并处理当前 `Toolbar.svelte` 的 a11y warnings。
+## 优化与演进机会
 
-## 相关决策
+1. 把搜索从占位步骤接到 `pipeline.ts` 的正式链路。
+2. 在 `panel-model` 边界上扩展多选和批量操作，而不是把新状态塞回叶子组件。
+3. 系统处理 `Toolbar.svelte` 的 a11y warnings，避免长期带着非阻塞告警前进。
+4. 继续强化 runtime 测试，让新交互优先落在 jsdom 真实组件验证面上。
+
+## Related decisions
 
 - `docs/decisions/2026-03-24-panel-owned-card-projection-and-interactions.md`
 - `docs/decisions/2026-04-03-migrate-to-svelte-5-with-legacy-component-api.md`
 - `docs/decisions/2026-04-04-row-projected-responsive-card-wall.md`
 - `docs/decisions/2026-04-09-toolbar-scope-summary-and-folder-only-subfolder-toggle.md`
+- `docs/decisions/2026-04-18-finish-svelte-5-host-and-component-seam.md`
