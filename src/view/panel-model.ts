@@ -1,5 +1,5 @@
 import type { SortDirection, SortField } from "../settings";
-import type { FolderTreeNode, NoteCardRecord } from "./types";
+import type { FolderTreeNode, NoteCardRecord, SearchStatus } from "./types";
 
 export interface PanelModelState {
   cards: NoteCardRecord[];
@@ -7,6 +7,8 @@ export interface PanelModelState {
   selectedPath: string | null;
   loading: boolean;
   generation: number;
+  searchQuery: string;
+  searchStatus: SearchStatus;
   sortField: SortField;
   sortDirection: SortDirection;
   availableTags: string[];

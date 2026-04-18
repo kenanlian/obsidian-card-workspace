@@ -45,10 +45,12 @@ import type {
   NoteCardRecord,
   RefreshRequest,
   RefreshResult,
+  SearchStatus,
   SelectionResult,
   VaultMutationEvent,
   VaultMutationResult,
 } from "./types";
+import type { SearchQueryResult } from "../search";
 import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
@@ -337,6 +339,10 @@ export class FolderCardView extends ItemView {
   private lastLoadedIncludeSubfolders: boolean | null = null;
   private baseCards: NoteCardRecord[] = [];
   private visibleCards: NoteCardRecord[] = [];
+  // Runtime-only query state is view-owned and intentionally excluded from persisted settings.
+  private searchQuery = "";
+  private searchOrderedPaths: string[] | null = null;
+  private searchStatus: SearchStatus = "idle";
   private selectedPath: string | null = null;
   private bulkMode = false;
   private selectedPaths = new Set<string>();
@@ -346,6 +352,7 @@ export class FolderCardView extends ItemView {
   private generation = 0;
   private pendingHydration = new Set<string>();
   private requestSeq = 0;
+  private searchRequestSeq = 0;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_HYDRATION_CARD_COUNT = 12;
@@ -401,6 +408,8 @@ export class FolderCardView extends ItemView {
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
       state.generation = this.generation;
+      state.searchQuery = this.searchQuery;
+      state.searchStatus = this.getSearchStatus();
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();
@@ -449,6 +458,12 @@ export class FolderCardView extends ItemView {
         },
         onIncludeSubfoldersChange: (detail: { value?: unknown }) => {
           void this.onIncludeSubfoldersChange(detail);
+        },
+        onSearchQueryChange: (detail: { query?: unknown }) => {
+          this.onSearchQueryChange(detail);
+        },
+        onSearchQueryReset: () => {
+          this.resetSearchQuery();
         },
         onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => {
           void this.onPinToggle(detail);
@@ -695,6 +710,10 @@ export class FolderCardView extends ItemView {
     this.lastLoadedIncludeSubfolders = null;
     this.selectedPaths = new Set<string>();
     this.bulkAnchorPath = null;
+    this.searchQuery = "";
+    this.searchOrderedPaths = null;
+    this.searchStatus = "idle";
+    this.searchRequestSeq += 1;
     this.generation += 1;
 
     return {
@@ -938,6 +957,9 @@ export class FolderCardView extends ItemView {
     this.loading = true;
     this.generation += 1;
     this.pendingHydration.clear();
+    this.searchOrderedPaths = null;
+    this.searchRequestSeq += 1;
+    this.searchStatus = this.searchQuery.trim().length === 0 ? "idle" : "fallback";
     this.pushState();
 
     const buildGeneration = this.generation;
@@ -972,6 +994,7 @@ export class FolderCardView extends ItemView {
       if (buildGeneration === this.generation) {
         this.loading = false;
         this.pushState();
+        void this.refreshSearchProjection();
       }
     }
   }
@@ -1502,11 +1525,125 @@ export class FolderCardView extends ItemView {
   }
 
   private deriveVisibleCards(): NoteCardRecord[] {
+    const settings = this.plugin.getSettings();
     const context: PipelineContext = {
       app: this.app,
-      settings: this.plugin.getSettings(),
+      settings,
+      search: {
+        query: this.searchQuery,
+        orderedPaths: this.searchOrderedPaths,
+      },
+      pinnedPaths: settings.pinnedPaths,
     };
+
     return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
+  }
+
+  private getSearchStatus(): SearchStatus {
+    return this.searchStatus;
+  }
+
+  private onSearchQueryChange(detail: { query?: unknown }): void {
+    const nextQuery = typeof detail.query === "string" ? detail.query : "";
+    if (nextQuery === this.searchQuery) {
+      return;
+    }
+
+    this.searchQuery = nextQuery;
+    this.searchOrderedPaths = null;
+    this.searchStatus = this.searchQuery.trim().length === 0 ? "idle" : "fallback";
+    this.pushState();
+    void this.refreshSearchProjection();
+  }
+
+  private resetSearchQuery(): void {
+    if (this.searchQuery.length === 0) {
+      return;
+    }
+
+    this.searchQuery = "";
+    this.searchOrderedPaths = null;
+    this.searchStatus = "idle";
+    this.searchRequestSeq += 1;
+    this.pushState();
+  }
+
+  private async refreshSearchProjection(): Promise<void> {
+    const query = this.searchQuery.trim();
+    if (query.length === 0) {
+      this.searchOrderedPaths = null;
+      this.searchStatus = "idle";
+      return;
+    }
+
+    const service = this.plugin.getSearchService();
+    if (!service) {
+      this.searchOrderedPaths = null;
+      this.searchStatus = "fallback";
+      this.pushState();
+      return;
+    }
+
+    const requestSeq = this.searchRequestSeq + 1;
+    this.searchRequestSeq = requestSeq;
+    const requestGeneration = this.generation;
+    const requestFolderPath = this.folderPath;
+
+    try {
+      const result = await service.query({
+        query,
+        scope: {
+          folderPath: this.folderPath,
+          includeSubfolders: this.plugin.getSettings().includeSubfolders,
+        },
+        candidatePaths: this.baseCards.map((card) => card.path),
+      });
+
+      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, query)) {
+        return;
+      }
+
+      this.searchOrderedPaths = result.orderedPaths;
+      this.searchStatus = this.toRuntimeSearchStatus(result);
+      this.pushState();
+    } catch {
+      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, query)) {
+        return;
+      }
+
+      this.searchOrderedPaths = null;
+      this.searchStatus = "fallback";
+      this.pushState();
+    }
+  }
+
+  private isSearchRequestCurrent(
+    requestSeq: number,
+    requestGeneration: number,
+    requestFolderPath: string | null,
+    requestQuery: string,
+  ): boolean {
+    if (requestSeq !== this.searchRequestSeq) {
+      return false;
+    }
+
+    if (requestGeneration !== this.generation) {
+      return false;
+    }
+
+    if (requestFolderPath !== this.folderPath) {
+      return false;
+    }
+
+    return requestQuery === this.searchQuery.trim();
+  }
+
+  private toRuntimeSearchStatus(result: SearchQueryResult): SearchStatus {
+    if (result.mode === "no-index" || result.orderedPaths === null) {
+      return "fallback";
+    }
+
+    return result.status;
   }
 
   private getOrderedVisiblePaths(): string[] {
@@ -1916,6 +2053,8 @@ export class FolderCardView extends ItemView {
       ...bulkRuntimeState,
       loading: this.loading,
       generation: this.generation,
+      searchQuery: this.searchQuery,
+      searchStatus: this.getSearchStatus(),
       sortField: settings.sort.field,
       sortDirection: settings.sort.direction,
       availableTags: this.deriveAvailableTags(),
@@ -1951,6 +2090,8 @@ export class FolderCardView extends ItemView {
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
       state.generation = this.generation;
+      state.searchQuery = this.searchQuery;
+      state.searchStatus = this.getSearchStatus();
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.activeFilterTags = settings.filter.tags;
@@ -1984,6 +2125,8 @@ export class FolderCardView extends ItemView {
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
       state.generation = this.generation;
+      state.searchQuery = this.searchQuery;
+      state.searchStatus = this.getSearchStatus();
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();
