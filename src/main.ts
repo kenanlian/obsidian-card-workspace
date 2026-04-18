@@ -8,17 +8,20 @@ import {
   debounce,
 } from "obsidian";
 import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
+import { NoIndexSearchService } from "./search";
 import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
-import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
-import { ALL_NOTES_PATH } from "./view/types";
+import type { SearchService, SearchVaultMutation } from "./search";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
+import { ALL_NOTES_PATH } from "./view/types";
+import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 
 export default class FolderCardExplorerPlugin extends Plugin {
   private selectedFolderPath: string | null = null;
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
+  private searchService: SearchService | null = null;
   private debouncedRefresh = debounce(
     () => {
       void this.requestRefreshForViews("vault-change");
@@ -29,6 +32,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    await this.initializeSearchService();
+    this.register(() => {
+      this.disposeSearchService();
+    });
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
@@ -64,6 +71,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       cancel?: () => void;
     };
     debouncedRefresh.cancel?.();
+    this.disposeSearchService();
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
     });
@@ -174,6 +182,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   getSettings(): PluginSettings {
     return normalizeSettings(this.settings);
+  }
+
+  getSearchService(): SearchService | null {
+    return this.searchService;
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
@@ -290,6 +302,39 @@ export default class FolderCardExplorerPlugin extends Plugin {
     );
   }
 
+  private async initializeSearchService(): Promise<void> {
+    const service = new NoIndexSearchService();
+    this.searchService = service;
+
+    try {
+      await service.initialize();
+    } catch (error) {
+      // Keep search usable by degrading to pipeline fallback when service init fails.
+      service.dispose();
+      this.searchService = null;
+      console.warn("[Folder Card Explorer] Search service initialization failed; using fallback search.", error);
+    }
+  }
+
+  private disposeSearchService(): void {
+    if (!this.searchService) {
+      return;
+    }
+
+    this.searchService.dispose();
+    this.searchService = null;
+  }
+
+  private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
+    return {
+      type: event.eventType,
+      path: event.path,
+      oldPath: event.oldPath,
+      isMarkdown: event.isMarkdown,
+      isFolder: event.isFolder,
+    };
+  }
+
   private async loadSettings(): Promise<void> {
     const rawData = await this.loadData();
     this.settings = normalizeSettings(rawData);
@@ -375,6 +420,12 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   private dispatchVaultMutation(event: VaultMutationEvent): void {
     this.reconcileSelectedFolderPath(event);
+
+    try {
+      this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
+    } catch (error) {
+      console.warn("[Folder Card Explorer] Search service mutation forwarding failed.", error);
+    }
 
     let shouldQueueRefresh = false;
     this.withFolderViews((view) => {
