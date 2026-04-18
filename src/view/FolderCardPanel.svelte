@@ -1,5 +1,6 @@
-<script>
-  import { createEventDispatcher } from "svelte";
+<script lang="ts">
+  import Toolbar from "./Toolbar.svelte";
+  import CardItem from "./CardItem.svelte";
   import {
     captureScrollAnchor,
     computeAnchoredScrollTop,
@@ -13,75 +14,237 @@
     getHydrateRangeForRows,
     projectCardsToRows,
   } from "./row-projection";
-  import Toolbar from "./Toolbar.svelte";
-  import CardItem from "./CardItem.svelte";
+  import type { PanelModel, PanelModelState } from "./panel-model";
+  import type { NoteCardRecord } from "./types";
 
-  export let cards = [];
-  export let folderPath = "";
-  export let selectedPath = null;
-  export let loading = false;
-  export let generation = 0;
-  export let sortField = "mtime";
-  export let sortDirection = "desc";
-  export let availableTags = [];
-  export let activeFilterTags = [];
-  export let pinnedPaths = [];
-  export let previewLines = 5;
-  export let folderTree = [];
-  export let includeSubfolders = true;
-  export let isAllNotesScope = false;
-  export let tooltipSide = "right";
-  export let bulkMode = false;
-  export let selectedPaths = [];
-  export let selectedCount = 0;
-  export let bulkAnchorPath = null;
-  export let canBulkSelectAll = false;
-  export let canBulkClearSelection = false;
-  export let canBulkMoveSelected = false;
-  export let canBulkTrashSelected = false;
-  export let canBulkDeleteSelected = false;
-  export let canBulkMergeSelected = false;
+  interface OpenNotePayload {
+    path: string;
+  }
 
-  const dispatch = createEventDispatcher();
+  interface BulkSelectCardPayload {
+    path: string;
+    shiftKey: boolean;
+  }
+
+  interface CardContextMenuPayload {
+    path: string;
+    mouseEvent: MouseEvent;
+  }
+
+  interface PinTogglePayload {
+    path: string;
+    pinned: boolean;
+  }
+
+  interface ToolbarActionPayload {
+    action: string;
+  }
+
+  interface SortChangePayload {
+    field: string;
+    direction: string;
+  }
+
+  interface FilterChangePayload {
+    tags: string[];
+  }
+
+  interface IncludeSubfoldersChangePayload {
+    value: boolean;
+  }
+
+  interface SelectFolderPayload {
+    path: string;
+  }
+
+  interface HydrateRangePayload {
+    start: number;
+    end: number;
+  }
+
+  interface FolderCardPanelProps {
+    panelModel: PanelModel;
+    onOpenNote?: (payload: OpenNotePayload) => void;
+    onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
+    onCardContextMenu?: (payload: CardContextMenuPayload) => void;
+    onPinToggle?: (payload: PinTogglePayload) => void;
+    onToolbarAction?: (payload: ToolbarActionPayload) => void;
+    onSortChange?: (payload: SortChangePayload) => void;
+    onFilterChange?: (payload: FilterChangePayload) => void;
+    onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
+    onSelectFolder?: (payload: SelectFolderPayload) => void;
+    onHydrateRange?: (payload: HydrateRangePayload) => void;
+  }
+
+  const EMPTY_PANEL_STATE: PanelModelState = {
+    cards: [],
+    folderPath: "",
+    selectedPath: null,
+    loading: false,
+    generation: 0,
+    sortField: "mtime",
+    sortDirection: "desc",
+    availableTags: [],
+    activeFilterTags: [],
+    pinnedPaths: [],
+    previewLines: 5,
+    folderTree: [],
+    includeSubfolders: true,
+    isAllNotesScope: false,
+    tooltipSide: "right",
+    bulkMode: false,
+    selectedPaths: [],
+    selectedCount: 0,
+    bulkAnchorPath: null,
+    canBulkSelectAll: false,
+    canBulkClearSelection: false,
+    canBulkMoveSelected: false,
+    canBulkTrashSelected: false,
+    canBulkDeleteSelected: false,
+    canBulkMergeSelected: false,
+  };
+
+  let {
+    panelModel,
+    onOpenNote,
+    onBulkSelectCard,
+    onCardContextMenu,
+    onPinToggle,
+    onToolbarAction,
+    onSortChange,
+    onFilterChange,
+    onIncludeSubfoldersChange,
+    onSelectFolder,
+    onHydrateRange,
+  }: FolderCardPanelProps = $props();
+
+  let panelState = $state<PanelModelState>(EMPTY_PANEL_STATE);
+
+  $effect(() => {
+    if (
+      !panelModel ||
+      typeof panelModel.getState !== "function" ||
+      typeof panelModel.subscribe !== "function"
+    ) {
+      panelState = EMPTY_PANEL_STATE;
+      return;
+    }
+
+    panelState = panelModel.getState();
+    const unsubscribe = panelModel.subscribe((nextState) => {
+      panelState = nextState;
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  });
+
+  const cards = $derived(panelState.cards);
+  const folderPath = $derived(panelState.folderPath);
+  const selectedPath = $derived(panelState.selectedPath);
+  const loading = $derived(panelState.loading);
+  const generation = $derived(panelState.generation);
+  const sortField = $derived(panelState.sortField);
+  const sortDirection = $derived(panelState.sortDirection);
+  const availableTags = $derived(panelState.availableTags);
+  const activeFilterTags = $derived(panelState.activeFilterTags);
+  const pinnedPaths = $derived(panelState.pinnedPaths);
+  const previewLines = $derived(panelState.previewLines);
+  const folderTree = $derived(panelState.folderTree);
+  const includeSubfolders = $derived(panelState.includeSubfolders);
+  const isAllNotesScope = $derived(panelState.isAllNotesScope);
+  const tooltipSide = $derived(panelState.tooltipSide);
+  const bulkMode = $derived(panelState.bulkMode);
+  const selectedPaths = $derived(panelState.selectedPaths);
+  const selectedCount = $derived(panelState.selectedCount);
+  const bulkAnchorPath = $derived(panelState.bulkAnchorPath);
+  const canBulkSelectAll = $derived(panelState.canBulkSelectAll);
+  const canBulkClearSelection = $derived(panelState.canBulkClearSelection);
+  const canBulkMoveSelected = $derived(panelState.canBulkMoveSelected);
+  const canBulkTrashSelected = $derived(panelState.canBulkTrashSelected);
+  const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
+  const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
+
+  function handleCardOpenNote(detail: OpenNotePayload): void {
+    onOpenNote?.(detail);
+  }
+
+  function handleCardBulkSelect(detail: BulkSelectCardPayload): void {
+    onBulkSelectCard?.(detail);
+  }
+
+  function handleCardContextMenu(detail: CardContextMenuPayload): void {
+    onCardContextMenu?.(detail);
+  }
+
+  function handleCardPinToggle(detail: PinTogglePayload): void {
+    onPinToggle?.(detail);
+  }
+
+  function handleToolbarAction(detail: ToolbarActionPayload): void {
+    onToolbarAction?.(detail);
+  }
+
+  function handleSortChange(detail: SortChangePayload): void {
+    onSortChange?.(detail);
+  }
+
+  function handleFilterChange(detail: FilterChangePayload): void {
+    onFilterChange?.(detail);
+  }
+
+  function handleIncludeSubfoldersChange(detail: IncludeSubfoldersChangePayload): void {
+    onIncludeSubfoldersChange?.(detail);
+  }
+
+  function handleSelectFolder(detail: SelectFolderPayload): void {
+    onSelectFolder?.(detail);
+  }
 
   const ESTIMATED_ROW_HEIGHT = 232;
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
 
-  let viewportEl = null;
-  let viewportHeight = 0;
-  let viewportWidth = 0;
-  let scrollTop = 0;
-  let columnCount = 1;
+  type ProjectedRow = ReturnType<typeof projectCardsToRows<NoteCardRecord>>[number];
 
-  let lastRangeStart = -1;
-  let lastRangeEnd = -1;
-  let lastHydrateGeneration = -1;
+  let viewportEl = $state<HTMLDivElement | null>(null);
+  let viewportHeight = $state(0);
+  let viewportWidth = $state(0);
+  let scrollTop = $state(0);
+  let columnCount = $state(1);
 
-  let pendingLayoutAnchor = null;
-  let projectedRows = [];
-  let projectedRowKeys = [];
-  let rowHeightMap = new Map();
-  let rowKeys = [];
-  let rowPositions = [];
-  let totalHeight = 0;
-  let visibleRows = [];
-  let hydrateRange = { start: 0, end: 0 };
-  let baseStartRowIndex = 0;
-  let baseEndRowIndex = 0;
-  let startRowIndex = 0;
-  let endRowIndex = 0;
-  let topPadding = 0;
-  let bottomPadding = 0;
-  let isAdjustingScroll = false;
-  let userScrollLockUntilMs = 0;
-  let lastMeasuredColumnCount = 1;
+  let lastRangeStart = $state(-1);
+  let lastRangeEnd = $state(-1);
+  let lastHydrateGeneration = $state(-1);
 
-  function markUserScrolling() {
+  let pendingLayoutAnchor = $state<{ anchorCardIndex: number; anchorOffset: number } | null>(null);
+  let rowHeightMap = $state<Map<string, number>>(new Map());
+  let rowKeys = $state<string[]>([]);
+  let rowPositions = $state<number[]>([]);
+  let totalHeight = $state(0);
+  let isAdjustingScroll = $state(false);
+  let userScrollLockUntilMs = $state(0);
+  let lastMeasuredColumnCount = $state(1);
+
+  const projectedRows = $derived(projectCardsToRows(cards, columnCount));
+  const projectedRowKeys = $derived(projectedRows.map((row) => row.key));
+  const baseStartRowIndex = $derived(findIndexAtOffset(scrollTop, rowPositions));
+  const baseEndRowIndex = $derived(findIndexAtOffset(scrollTop + viewportHeight, rowPositions));
+  const startRowIndex = $derived(Math.max(0, baseStartRowIndex - OVERSCAN));
+  const endRowIndex = $derived(Math.min(projectedRows.length, baseEndRowIndex + 1 + OVERSCAN));
+  const topPadding = $derived(rowPositions[startRowIndex] || 0);
+  const bottomPadding = $derived(
+    endRowIndex < projectedRows.length ? totalHeight - (rowPositions[endRowIndex] || 0) : 0,
+  );
+  const visibleRows = $derived(projectedRows.slice(startRowIndex, endRowIndex));
+  const hydrateRange = $derived(getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex));
+
+  function markUserScrolling(): void {
     userScrollLockUntilMs = Date.now() + USER_SCROLL_LOCK_MS;
   }
 
-  function applyScrollTop(nextScrollTop) {
+  function applyScrollTop(nextScrollTop: number): void {
     if (!viewportEl) {
       return;
     }
@@ -92,23 +255,24 @@
     isAdjustingScroll = false;
   }
 
-  function rebuildPositionsFrom(fromIndex, heightDelta) {
+  function rebuildPositionsFrom(fromIndex: number, heightDelta?: number): void {
     const start = Math.max(0, fromIndex);
-    rowPositions.length = projectedRows.length;
+    const nextRowPositions = [...rowPositions];
+    nextRowPositions.length = projectedRows.length;
 
     if (start === 0) {
       let y = 0;
-      for (let i = 0; i < projectedRows.length; i++) {
+      for (let i = 0; i < projectedRows.length; i += 1) {
         const row = projectedRows[i];
-        rowPositions[i] = y;
+        nextRowPositions[i] = y;
         y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
       }
       totalHeight = y;
     } else {
-      let y = rowPositions[start] ?? 0;
-      for (let i = start; i < projectedRows.length; i++) {
+      let y = nextRowPositions[start] ?? 0;
+      for (let i = start; i < projectedRows.length; i += 1) {
         const row = projectedRows[i];
-        rowPositions[i] = y;
+        nextRowPositions[i] = y;
         y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
       }
       totalHeight = y;
@@ -126,15 +290,15 @@
       applyScrollTop(viewportEl.scrollTop + anchorDelta);
     }
 
-    rowPositions = rowPositions;
+    rowPositions = nextRowPositions;
   }
 
-  function readNumber(value, fallbackValue) {
+  function readNumber(value: string, fallbackValue: number): number {
     const parsedValue = Number.parseFloat(value);
     return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
   }
 
-  function syncViewportMetrics(node) {
+  function syncViewportMetrics(node: HTMLDivElement): void {
     const styles = getComputedStyle(node);
     const horizontalPadding = readNumber(styles.paddingLeft, 0) + readNumber(styles.paddingRight, 0);
     const availableWidth = Math.max(0, node.clientWidth - horizontalPadding);
@@ -160,7 +324,7 @@
     columnCount = nextColumnCount;
   }
 
-  function bindViewport(node) {
+  function bindViewport(node: HTMLDivElement): { destroy: () => void } {
     viewportEl = node;
     syncViewportMetrics(node);
 
@@ -180,78 +344,78 @@
     };
   }
 
-  $: projectedRows = projectCardsToRows(cards, columnCount);
-  $: projectedRowKeys = projectedRows.map((row) => row.key);
-  $: baseStartRowIndex = findIndexAtOffset(scrollTop, rowPositions);
-  $: baseEndRowIndex = findIndexAtOffset(scrollTop + viewportHeight, rowPositions);
+  $effect(() => {
+    if (generation !== lastHydrateGeneration) {
+      lastHydrateGeneration = generation;
+      lastRangeStart = -1;
+      lastRangeEnd = -1;
+      pendingLayoutAnchor = null;
+      rowHeightMap = new Map();
+      rowKeys = [];
+      rowPositions = [];
+      totalHeight = 0;
+      lastMeasuredColumnCount = columnCount;
+      rebuildPositionsFrom(0);
+    }
+  });
 
-  $: startRowIndex = Math.max(0, baseStartRowIndex - OVERSCAN);
-  $: endRowIndex = Math.min(projectedRows.length, baseEndRowIndex + 1 + OVERSCAN);
-  $: topPadding = rowPositions[startRowIndex] || 0;
-  $: bottomPadding = endRowIndex < projectedRows.length ? totalHeight - (rowPositions[endRowIndex] || 0) : 0;
-  $: visibleRows = projectedRows.slice(startRowIndex, endRowIndex);
-  $: hydrateRange = getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex);
+  $effect(() => {
+    if (columnCount !== lastMeasuredColumnCount) {
+      lastMeasuredColumnCount = columnCount;
+      rowHeightMap = new Map();
+    }
+  });
 
-  $: if (generation !== lastHydrateGeneration) {
-    lastHydrateGeneration = generation;
-    lastRangeStart = -1;
-    lastRangeEnd = -1;
-    pendingLayoutAnchor = null;
-    rowHeightMap = new Map();
-    rowKeys = [];
-    rowPositions = [];
-    totalHeight = 0;
-    lastMeasuredColumnCount = columnCount;
-    rebuildPositionsFrom(0);
-  }
+  $effect(() => {
+    if (
+      projectedRowKeys.length !== rowKeys.length ||
+      projectedRowKeys.some((key, index) => key !== rowKeys[index])
+    ) {
+      rowKeys = projectedRowKeys;
+      rebuildPositionsFrom(0);
+    }
+  });
 
-  $: if (columnCount !== lastMeasuredColumnCount) {
-    lastMeasuredColumnCount = columnCount;
-    rowHeightMap = new Map();
-  }
-
-  $: if (
-    projectedRowKeys.length !== rowKeys.length ||
-    projectedRowKeys.some((key, index) => key !== rowKeys[index])
-  ) {
-    rowKeys = projectedRowKeys;
-    rebuildPositionsFrom(0);
-  }
-
-  $: {
+  $effect(() => {
     if (hydrateRange.start !== lastRangeStart || hydrateRange.end !== lastRangeEnd) {
       lastRangeStart = hydrateRange.start;
       lastRangeEnd = hydrateRange.end;
-      dispatch("hydrate-range", hydrateRange);
+      onHydrateRange?.(hydrateRange);
     }
-  }
+  });
 
-  $: if (pendingLayoutAnchor && viewportEl) {
-    applyScrollTop(
-      computeAnchoredScrollTop({
-        anchorCardIndex: pendingLayoutAnchor.anchorCardIndex,
-        anchorOffset: pendingLayoutAnchor.anchorOffset,
-        columnCount,
-        rowPositions,
-        cardCount: cards.length,
-      }),
-    );
-    pendingLayoutAnchor = null;
-  }
+  $effect(() => {
+    if (pendingLayoutAnchor && viewportEl) {
+      applyScrollTop(
+        computeAnchoredScrollTop({
+          anchorCardIndex: pendingLayoutAnchor.anchorCardIndex,
+          anchorOffset: pendingLayoutAnchor.anchorOffset,
+          columnCount,
+          rowPositions,
+          cardCount: cards.length,
+        }),
+      );
+      pendingLayoutAnchor = null;
+    }
+  });
 
-  $: if (cards.length === 0 && pendingLayoutAnchor) {
-    pendingLayoutAnchor = null;
-  }
+  $effect(() => {
+    if (cards.length === 0 && pendingLayoutAnchor) {
+      pendingLayoutAnchor = null;
+    }
+  });
 
-  $: if (viewportWidth === 0 && viewportEl) {
-    syncViewportMetrics(viewportEl);
-  }
+  $effect(() => {
+    if (viewportWidth === 0 && viewportEl) {
+      syncViewportMetrics(viewportEl);
+    }
+  });
 
-  function rowNeedsMeasuredHeight(row) {
+  function rowNeedsMeasuredHeight(row: ProjectedRow): boolean {
     return row.cards.every((card) => card.hydrated);
   }
 
-  function measureRow(node, row) {
+  function measureRow(node: HTMLDivElement, row: ProjectedRow): { update: (nextRow: ProjectedRow) => void; destroy: () => void } {
     let currentRow = row;
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -275,7 +439,7 @@
     resizeObserver.observe(node);
 
     return {
-      update(nextRow) {
+      update(nextRow: ProjectedRow) {
         currentRow = nextRow;
       },
       destroy() {
@@ -284,27 +448,27 @@
     };
   }
 
-  function isLastRow(rowIndex) {
+  function isLastRow(rowIndex: number): boolean {
     return rowIndex === projectedRows.length - 1;
   }
 
-  function getSpacerStyle(height) {
+  function getSpacerStyle(height: number): string {
     return `height: ${height}px;`;
   }
 
-  function getRowClass(rowIndex) {
+  function getRowClass(rowIndex: number): string {
     return `fce-wall-row${isLastRow(rowIndex) ? " is-last" : ""}`;
   }
 
-  function getTopPaddingStyle() {
+  function getTopPaddingStyle(): string {
     return getSpacerStyle(topPadding);
   }
 
-  function getBottomPaddingStyle() {
+  function getBottomPaddingStyle(): string {
     return getSpacerStyle(bottomPadding);
   }
 
-  function onScroll() {
+  function handleScroll(): void {
     if (!viewportEl) {
       return;
     }
@@ -338,19 +502,19 @@
     {canBulkTrashSelected}
     {canBulkDeleteSelected}
     {canBulkMergeSelected}
-    on:toolbar-action
-    on:sort-change
-    on:filter-change
-    on:include-subfolders-change
-    on:select-folder
+    onToolbarAction={handleToolbarAction}
+    onSortChange={handleSortChange}
+    onFilterChange={handleFilterChange}
+    onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
+    onSelectFolder={handleSelectFolder}
   />
 
   <div
     class="fce-list {bulkMode ? 'is-bulk-mode' : ''}"
     bind:this={viewportEl}
     use:bindViewport
-    on:scroll={onScroll}
-    on:wheel={markUserScrolling}
+    onscroll={handleScroll}
+    onwheel={markUserScrolling}
   >
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
@@ -369,10 +533,10 @@
                 {bulkMode}
                 bulkSelected={bulkMode && selectedPaths.includes(card.path)}
                 selected={selectedPath === card.path}
-                on:open-note
-                on:bulk-select-card
-                on:card-context-menu
-                on:pin-toggle
+                onOpenNote={handleCardOpenNote}
+                onBulkSelectCard={handleCardBulkSelect}
+                onCardContextMenu={handleCardContextMenu}
+                onPinToggle={handleCardPinToggle}
               />
             {/each}
           </div>

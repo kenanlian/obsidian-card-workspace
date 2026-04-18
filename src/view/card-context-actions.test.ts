@@ -10,34 +10,95 @@ const mockState = vi.hoisted(() => {
   const modalInstances: MockModal[] = [];
   const noticeMessages: string[] = [];
   const panelEventHandlers: Record<string, (event: any) => void> = {};
-  const panelInstances: MockFolderCardPanel[] = [];
 
-  (globalThis as any).__mockState = { panelEventHandlers };
+  interface MockPanelProps {
+    panelModel?: {
+      getState: () => Record<string, unknown>;
+      subscribe: (listener: (state: Record<string, unknown>) => void) => () => void;
+    };
+    onOpenNote?: (payload: Record<string, unknown>) => void;
+    onBulkSelectCard?: (payload: Record<string, unknown>) => void;
+    onCardContextMenu?: (payload: Record<string, unknown>) => void;
+    onPinToggle?: (payload: Record<string, unknown>) => void;
+    onToolbarAction?: (payload: Record<string, unknown>) => void;
+    onSortChange?: (payload: Record<string, unknown>) => void;
+    onFilterChange?: (payload: Record<string, unknown>) => void;
+    onIncludeSubfoldersChange?: (payload: Record<string, unknown>) => void;
+    onSelectFolder?: (payload: Record<string, unknown>) => void;
+    onHydrateRange?: (payload: Record<string, unknown>) => void;
+  }
 
-  class MockFolderCardPanel {
+  interface MockPanelMountOptions {
+    props?: MockPanelProps;
+  }
+
+  interface MockMountedPanel {
     initialProps: Record<string, unknown>;
-    setCalls: Array<Record<string, unknown>> = [];
+    modelSnapshots: Array<Record<string, unknown>>;
+    teardown: () => void;
+  }
 
-    constructor(options: { props?: Record<string, unknown> } = {}) {
-      this.initialProps = options.props ?? {};
-      panelInstances.push(this);
+  const panelInstances: MockMountedPanel[] = [];
+
+  const createMountedPanel = (options: MockPanelMountOptions = {}): MockMountedPanel => {
+    const panelModel = options.props?.panelModel;
+    const initialProps = panelModel ? panelModel.getState() : {};
+    const modelSnapshots: Array<Record<string, unknown>> = [];
+    let unsubscribeModel: (() => void) | null = null;
+
+    if (panelModel) {
+      unsubscribeModel = panelModel.subscribe((snapshot) => {
+        modelSnapshots.push(snapshot);
+      });
     }
 
-    $on(eventName: string, handler: (event: any) => void): () => void {
-      panelEventHandlers[eventName] = handler;
-      return () => {
-        delete panelEventHandlers[eventName];
+    const callbacks = options.props ?? {};
+    const callbackPropToEvent: Record<string, string> = {
+      onOpenNote: "open-note",
+      onBulkSelectCard: "bulk-select-card",
+      onCardContextMenu: "card-context-menu",
+      onPinToggle: "pin-toggle",
+      onToolbarAction: "toolbar-action",
+      onSortChange: "sort-change",
+      onFilterChange: "filter-change",
+      onIncludeSubfoldersChange: "include-subfolders-change",
+      onSelectFolder: "select-folder",
+      onHydrateRange: "hydrate-range",
+    };
+
+    for (const [callbackPropName, eventName] of Object.entries(callbackPropToEvent)) {
+      const callback = (callbacks as Record<string, unknown>)[callbackPropName];
+      if (typeof callback !== "function") {
+        continue;
+      }
+
+      panelEventHandlers[eventName] = (event: any) => {
+        callback(event?.detail ?? event);
       };
     }
 
-    $set(props: Record<string, unknown>): void {
-      this.setCalls.push(props);
-    }
+    const mountedPanel: MockMountedPanel = {
+      initialProps,
+      modelSnapshots,
+      teardown: () => {
+        unsubscribeModel?.();
+        unsubscribeModel = null;
+      },
+    };
 
-    $destroy(): void {
-      return;
-    }
-  }
+    panelInstances.push(mountedPanel);
+    return mountedPanel;
+  };
+
+  const svelteMountMock = vi.fn((Component: (options: MockPanelMountOptions) => MockMountedPanel, options: MockPanelMountOptions) => {
+    return Component(options);
+  });
+
+  const svelteUnmountMock = vi.fn(async (component: { teardown?: () => void } | null) => {
+    component?.teardown?.();
+  });
+
+  (globalThis as any).__mockState = { panelEventHandlers };
 
   class MockTFile {
     path: string;
@@ -301,7 +362,9 @@ const mockState = vi.hoisted(() => {
     MockTFile,
     MockTFolder,
     MockFolderPickerModal,
-    MockFolderCardPanel,
+    createMountedPanel,
+    svelteMountMock,
+    svelteUnmountMock,
     menuInstances,
     folderPickerInstances,
     modalInstances,
@@ -323,9 +386,16 @@ vi.mock("obsidian", () => {
   };
 });
 
+vi.mock("svelte", () => {
+  return {
+    mount: mockState.svelteMountMock,
+    unmount: mockState.svelteUnmountMock,
+  };
+});
+
 vi.mock("./FolderCardPanel.svelte", () => {
   return {
-    default: mockState.MockFolderCardPanel,
+    default: mockState.createMountedPanel,
   };
 });
 
@@ -963,7 +1033,7 @@ describe("FolderCardView card context actions", () => {
         ]);
         expect((view as any).bulkAnchorPath).toBe("notes/alpha.md");
 
-        const afterSelectAll = mockState.panelInstances[0]?.setCalls.at(-1);
+        const afterSelectAll = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSelectAll).toMatchObject({
           selectedPaths: ["notes/alpha.md", "notes/gamma.md", "notes/beta.md"],
           selectedCount: 3,
@@ -981,7 +1051,7 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).selectedPaths.size).toBe(0);
         expect((view as any).bulkAnchorPath).toBeNull();
 
-        const afterClear = mockState.panelInstances[0]?.setCalls.at(-1);
+        const afterClear = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterClear).toMatchObject({
           selectedPaths: [],
           selectedCount: 0,
@@ -1027,7 +1097,7 @@ describe("FolderCardView card context actions", () => {
         (view as any).bulkAnchorPath = "notes/beta.md";
         (view as any).pushState();
 
-        const afterSingleSelect = mockState.panelInstances[0]?.setCalls.at(-1);
+        const afterSingleSelect = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSingleSelect).toMatchObject({
           selectedPaths: ["notes/beta.md"],
           selectedCount: 1,
@@ -1049,7 +1119,7 @@ describe("FolderCardView card context actions", () => {
           "notes/gamma.md",
         ]);
 
-        const afterSelectAll = mockState.panelInstances[0]?.setCalls.at(-1);
+        const afterSelectAll = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSelectAll).toMatchObject({
           selectedPaths: ["notes/alpha.md", "notes/beta.md", "notes/gamma.md"],
           selectedCount: 3,
@@ -1084,7 +1154,7 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).bulkMode).toBe(false);
         expect((view as any).selectedPaths.size).toBe(0);
         expect((view as any).bulkAnchorPath).toBeNull();
-        expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+        expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
           bulkMode: false,
           selectedPaths: [],
           selectedCount: 0,
@@ -1254,7 +1324,7 @@ describe("FolderCardView card context actions", () => {
         expect(card.hydrated).toBe(true);
       });
 
-      it("onClose destroys the panel instance and clears registered handlers", async () => {
+      it("onClose unmounts the panel instance and clears registered handlers", async () => {
         const { view } = createViewWithFile("notes/close-cleanup.md");
 
         (view as any).queuedRequest = { requestId: 1 };
@@ -1267,11 +1337,12 @@ describe("FolderCardView card context actions", () => {
 
         await (view as any).onOpen();
 
-        const componentDestroySpy = vi.spyOn((view as any).component, "$destroy");
+        const mountedComponent = (view as any).component;
 
         await (view as any).onClose();
 
-        expect(componentDestroySpy).toHaveBeenCalledTimes(1);
+        expect(mockState.svelteUnmountMock).toHaveBeenCalledTimes(1);
+        expect(mockState.svelteUnmountMock).toHaveBeenCalledWith(mountedComponent);
         expect((view as any).component).toBeNull();
         expect((view as any).hostEl).toBeNull();
         expect((view as any).queuedRequest).toBeNull();
@@ -1483,7 +1554,7 @@ describe("FolderCardView card context actions", () => {
             4,
           );
           expect(mockState.panelInstances).toHaveLength(1);
-          expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+          expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
             sortField: "ctime",
             sortDirection: "asc",
             activeFilterTags: [],
@@ -1505,7 +1576,7 @@ describe("FolderCardView card context actions", () => {
             expect.any(Number),
             10,
           );
-          expect(mockState.panelInstances[0]?.setCalls.at(-1)).toMatchObject({
+          expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
             sortField: "ctime",
             sortDirection: "asc",
             activeFilterTags: [],
@@ -2623,13 +2694,15 @@ describe("FolderCardView card context actions", () => {
         pinnedPaths: ["notes/pinned.md"],
       }));
 
-      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).component = mockState.createMountedPanel({
+        props: { panelModel: (view as any).panelModel },
+      });
       (view as any).folderPath = ALL_NOTES_PATH;
       (view as any).baseCards = [createCardRecord(createMarkdownFile("notes/pinned.md"))];
 
       (view as any).pushState();
 
-      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+      expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
         folderPath: "All Notes",
         isAllNotesScope: true,
         sortField: "ctime",
@@ -2648,7 +2721,9 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath("notes/b.md"),
       ];
 
-      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).component = mockState.createMountedPanel({
+        props: { panelModel: (view as any).panelModel },
+      });
       (view as any).selectedPath = "notes/previous.md";
       (view as any).bulkMode = true;
       (view as any).selectedPaths = selectedPaths;
@@ -2661,7 +2736,7 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).selectedPath).toBe("notes/independent-selection.md");
       expect(Array.from((view as any).selectedPaths)).toEqual(["notes/a.md", "notes/b.md"]);
       expect((view as any).bulkAnchorPath).toBe("notes/a.md");
-      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+      expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
         selectedPath: "notes/independent-selection.md",
         bulkMode: true,
         selectedPaths: ["notes/a.md", "notes/b.md"],
@@ -2685,7 +2760,9 @@ describe("FolderCardView card context actions", () => {
         previewLines: 5,
       }));
 
-      (view as any).component = new mockState.MockFolderCardPanel();
+      (view as any).component = mockState.createMountedPanel({
+        props: { panelModel: (view as any).panelModel },
+      });
       (view as any).folderPath = "notes";
       (view as any).selectedPath = "notes/editor-sync.md";
       (view as any).bulkMode = true;
@@ -2698,7 +2775,7 @@ describe("FolderCardView card context actions", () => {
 
       (view as any).pushState();
 
-      expect((view as any).component.setCalls.at(-1)).toMatchObject({
+      expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
         selectedPath: "notes/editor-sync.md",
         bulkMode: true,
         selectedPaths: [firstSelectedPath, secondSelectedPath],
@@ -2948,7 +3025,9 @@ describe("FolderCardView card context actions", () => {
 
     it("scope changes clear bulk selection immediately while load is in flight", async () => {
       const { view, app, plugin } = createViewWithFile("notes/inflight-scope-change.md");
-      const component = new mockState.MockFolderCardPanel();
+      const component = mockState.createMountedPanel({
+        props: { panelModel: (view as any).panelModel },
+      });
       const notesFolder = createFolder("notes");
 
       app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
@@ -3000,7 +3079,7 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).bulkMode).toBe(true);
       expect((view as any).selectedPaths.size).toBe(0);
       expect((view as any).bulkAnchorPath).toBeNull();
-      expect(component.setCalls.at(-1)).toMatchObject({
+      expect(component.modelSnapshots.at(-1)).toMatchObject({
         bulkMode: true,
         selectedPaths: [],
         selectedCount: 0,
