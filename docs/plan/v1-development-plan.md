@@ -30,7 +30,7 @@
 
 这份计划服务于一个明确目标：
 
-> **把 Folder Card Explorer 推进成一个以响应式 card wall 为核心的 Obsidian 侧边栏工作台。**
+> **把 Card Workspace 推进成一个以响应式 card wall 为核心的 Obsidian 侧边栏工作台。**
 
 它覆盖 V1 剩余开发，不覆盖已完成能力的重做，也不覆盖 V2 方向探索。
 

@@ -473,11 +473,11 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     expect(searchCommands).toEqual([
       {
         id: "rebuild-folder-card-search-index",
-        name: "Rebuild Folder Card Explorer search index",
+        name: "Rebuild Card Workspace search index",
       },
       {
         id: "recover-folder-card-search-index",
-        name: "Recover Folder Card Explorer search index",
+        name: "Recover Card Workspace search index",
       },
     ]);
   });
@@ -608,8 +608,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     expect(seenStatuses).toContain("ready");
     expect(seenStatuses).toContain("building");
     expect(obsidianMockState.notices).toEqual([
-      "Folder Card Explorer search index requires recovery.",
-      "Folder Card Explorer search index is ready.",
+      "Card Workspace search index requires recovery.",
+      "Card Workspace search index is ready.",
     ]);
 
     unsubscribe();

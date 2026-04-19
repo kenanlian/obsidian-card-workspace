@@ -69,8 +69,8 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
 
     this.addCommand({
-      id: "open-folder-card-explorer",
-      name: "Open Folder Card Explorer view",
+      id: "open-card-workspace",
+      name: "Open Card Workspace view",
       callback: () => {
         void this.activateView();
       },
@@ -331,7 +331,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private registerSearchCommands(): void {
     this.addCommand({
       id: "rebuild-folder-card-search-index",
-      name: "Rebuild Folder Card Explorer search index",
+      name: "Rebuild Card Workspace search index",
       callback: () => {
         void this.rebuildSearchIndex("Manual rebuild command requested.");
       },
@@ -339,7 +339,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "recover-folder-card-search-index",
-      name: "Recover Folder Card Explorer search index",
+      name: "Recover Card Workspace search index",
       callback: () => {
         void this.recoverSearchIndex();
       },
@@ -386,7 +386,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
         this.shouldRunStartupSearchRebuild = true;
       }
     } catch (error) {
-      console.warn("[Folder Card Explorer] Indexed search initialization failed; using fallback search.", error);
+      console.warn("[Card Workspace] Indexed search initialization failed; using fallback search.", error);
       this.bindSearchService(new NoIndexSearchService());
       await this.searchService?.initialize();
       this.searchManager = null;
@@ -555,13 +555,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
         return;
       }
       this.searchRecoveryBoundaryState = "degraded";
-      new Notice("Folder Card Explorer search index requires recovery.");
+      new Notice("Card Workspace search index requires recovery.");
       return;
     }
 
     if (this.searchRecoveryBoundaryState === "degraded" && snapshot.status === "ready") {
       this.searchRecoveryBoundaryState = "healthy";
-      new Notice("Folder Card Explorer search index is ready.");
+      new Notice("Card Workspace search index is ready.");
       return;
     }
 
@@ -596,7 +596,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       "Unsafe vault mutation requires full search rebuild.",
     )
       .catch((error) => {
-        console.warn("[Folder Card Explorer] Search rebuild scheduling failed.", error);
+        console.warn("[Card Workspace] Search rebuild scheduling failed.", error);
       })
       .finally(() => {
         this.pendingMutationRecoveryRebuild = null;
@@ -719,7 +719,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     try {
       this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
     } catch (error) {
-      console.warn("[Folder Card Explorer] Search service mutation forwarding failed.", error);
+      console.warn("[Card Workspace] Search service mutation forwarding failed.", error);
     }
 
     let shouldQueueRefresh = false;

@@ -1,4 +1,4 @@
-# AGENTS.md — Folder Card Explorer
+# AGENTS.md — Card Workspace
 
 ## Purpose
 Obsidian plugin that turns folder clicks in the File Explorer into a virtualized card stream in the right sidebar.

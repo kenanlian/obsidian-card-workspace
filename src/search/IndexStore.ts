@@ -1,4 +1,4 @@
-const INDEX_STORE_DATABASE_NAME = "folder-card-explorer-search";
+const INDEX_STORE_DATABASE_NAME = "card-workspace-search";
 const INDEX_STORE_OBJECT_STORE_NAME = "searchIndexes";
 
 export interface IndexStoreNamespaceMetadata {

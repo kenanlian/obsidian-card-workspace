@@ -27,7 +27,7 @@ const buildOptions = {
 if (watch) {
   const ctx = await esbuild.context(buildOptions);
   await ctx.watch();
-  console.log("[Folder Card Explorer] watch mode started");
+  console.log("[Card Workspace] watch mode started");
 } else {
   await esbuild.build(buildOptions);
 }

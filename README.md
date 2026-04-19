@@ -1,4 +1,4 @@
-# Folder Card Explorer
+# Card Workspace
 
 An Obsidian plugin that listens for folder clicks in File Explorer and renders notes from that folder as a card stream in the right sidebar.
 

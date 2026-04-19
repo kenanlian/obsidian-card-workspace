@@ -379,7 +379,7 @@ export class FolderCardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Folder Card Explorer";
+    return "Card Workspace";
   }
 
   getIcon(): string {

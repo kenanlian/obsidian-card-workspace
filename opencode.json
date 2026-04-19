@@ -23,6 +23,5 @@
       },
       "enabled": true
     }
-  },
-  "plugin": ["oh-my-opencode@latest"]
+  }
 }
