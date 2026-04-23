@@ -192,65 +192,6 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("search query emits intent-only change and reset callbacks", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ searchQuery: "existing" }, captured.callbacks);
-
-    const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
-    expect(searchInput).not.toBeNull();
-    if (!searchInput) {
-      throw new Error("Expected search input to exist");
-    }
-
-    searchInput.value = "roadmap";
-    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-    const clearButton = document.querySelector<HTMLButtonElement>('button[aria-label="Clear search query"]');
-    expect(clearButton).not.toBeNull();
-    clearButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.searchQueryChangeEvents).toEqual([{ query: "roadmap" }]);
-    expect(captured.searchQueryResetEvents).toEqual([{ source: "clear-button" }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("search query renders current query and status from props", async () => {
-    const { component } = mountToolbar({ searchQuery: "roadmap", searchStatus: "fallback" });
-
-    const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
-    const status = document.querySelector<HTMLElement>(".fce-search-status");
-
-    expect(searchInput?.value).toBe("roadmap");
-    expect(status?.textContent).toContain("Fallback search");
-    expect(status?.getAttribute("data-search-status")).toBe("fallback");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders the exact compact search status labels and no rebuild controls", async () => {
-    const expectedLabels = [
-      { status: "idle", label: "Search idle" },
-      { status: "building", label: "Building index" },
-      { status: "ready", label: "Index ready" },
-      { status: "fallback", label: "Fallback search" },
-      { status: "error", label: "Search error" },
-    ] as const;
-
-    for (const expected of expectedLabels) {
-      const { component } = mountToolbar({ searchStatus: expected.status });
-      const status = document.querySelector<HTMLElement>(".fce-search-status");
-
-      expect(status?.textContent).toBe(expected.label);
-      expect(status?.getAttribute("data-search-status")).toBe(expected.status);
-      expect(document.body.textContent).not.toContain("Rebuild");
-      expect(document.body.textContent).not.toContain("Search settings");
-
-      await disposeMountedComponent(component);
-      document.body.innerHTML = "";
-    }
-  });
-
   it("emits sort-change with selected field and direction", async () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
@@ -260,7 +201,7 @@ describe("Toolbar.svelte", () => {
     sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 24, clientY: 36 }));
     await tick();
 
-    const options = Array.from(document.querySelectorAll<HTMLButtonElement>('.fce-sort-menu button[role="menuitemradio"]'));
+    const options = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-sort-menu button[role='menuitemradio']"));
     const firstUnselected = options.find((option) => option.getAttribute("aria-checked") === "false");
     expect(firstUnselected).not.toBeUndefined();
     firstUnselected?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -275,7 +216,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
 
-    const includeToggle = document.querySelector<HTMLButtonElement>(".fce-toolbar-toggle");
+    const includeToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
     expect(includeToggle).not.toBeNull();
     includeToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -297,6 +238,329 @@ describe("Toolbar.svelte", () => {
     expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
     expect(captured.toolbarActionEvents).toContainEqual({ action: "pick-folder" });
     expect(captured.toolbarActionEvents).toContainEqual({ action: "all-notes" });
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders first-row controls in the exact sequence with Subfolders after Folder scope", async () => {
+    const { component } = mountToolbar();
+    
+    const buttonsRow = document.querySelector<HTMLDivElement>(".fce-toolbar-buttons");
+    expect(buttonsRow).not.toBeNull();
+    
+    const buttons = Array.from(buttonsRow?.querySelectorAll("button") || []);
+    const expectedLabels = [
+      "Folder scope",
+      "Including subfolders",
+      "All notes",
+      "Create note",
+      "Sort cards",
+      "Filter cards",
+      "Bulk actions",
+      "Toggle search"
+    ];
+    
+    expect(buttons.length).toBeGreaterThanOrEqual(8);
+    for (let i = 0; i < expectedLabels.length; i += 1) {
+      expect(buttons[i].getAttribute("aria-label")).toBe(expectedLabels[i]);
+    }
+    
+    await disposeMountedComponent(component);
+  });
+
+  it("renders search as a toggleable first-row control and autofocuses when expanded", async () => {
+    const { component } = mountToolbar();
+
+    let searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).toBeNull();
+
+    const toggleButton = document.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]');
+    expect(toggleButton).not.toBeNull();
+    expect(document.querySelector(".fce-toolbar-buttons")?.contains(toggleButton as Node)).toBe(true);
+
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).not.toBeNull();
+    expect(document.querySelector(".fce-toolbar-search-row")).not.toBeNull();
+    expect(document.activeElement).toBe(searchInput);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("collapses search without clearing an active prop-backed query", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ searchQuery: "active query" }, captured.callbacks);
+
+    const toggleButton = document.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]');
+    expect(toggleButton).not.toBeNull();
+
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    let searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).not.toBeNull();
+    expect(searchInput?.value).toBe("active query");
+
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).toBeNull();
+    expect(captured.searchQueryResetEvents).toEqual([]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps the search toggle highlighted when a collapsed query remains active", async () => {
+    const { component } = mountToolbar({ searchQuery: "active query" });
+
+    const toggleButton = document.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]');
+    expect(toggleButton).not.toBeNull();
+    expect(toggleButton?.classList.contains("is-selected")).toBe(true);
+    expect(document.querySelector('input[aria-label="Search notes"]')).toBeNull();
+
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    expect(document.querySelector('input[aria-label="Search notes"]')).not.toBeNull();
+
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    expect(document.querySelector('input[aria-label="Search notes"]')).toBeNull();
+    expect(toggleButton?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits onSearchQueryChange when typing in the search input", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({}, captured.callbacks);
+
+    const toggleButton = document.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]');
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]');
+    expect(searchInput).not.toBeNull();
+
+    if (searchInput) {
+      searchInput.value = "my search query";
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    expect(captured.searchQueryChangeEvents).toEqual([{ query: "my search query" }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("clears an expanded search query with the x icon button", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ searchQuery: "active query" }, captured.callbacks);
+
+    const toggleButton = document.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]');
+    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    await tick();
+
+    const clearButton = document.querySelector<HTMLButtonElement>('button[aria-label="Clear search query"]');
+    expect(clearButton).not.toBeNull();
+    expect(clearButton?.closest(".fce-toolbar-search")).not.toBeNull();
+
+    clearButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.searchQueryResetEvents).toEqual([{ source: "clear-button" }]);
+    expect(captured.searchQueryChangeEvents).toEqual([]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders contextual summary badges only when filters or exceptional search states are active", async () => {
+    let { component } = mountToolbar({
+      activeFilterTags: [],
+      searchStatus: "idle",
+    });
+
+    expect(document.querySelector(".fce-toolbar-content-row")).toBeNull();
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      activeFilterTags: ["#Work"],
+      searchStatus: "ready",
+    }));
+    await tick();
+
+    let summaryRow = document.querySelector<HTMLDivElement>(".fce-toolbar-content-row");
+    expect(summaryRow).not.toBeNull();
+    let content = summaryRow?.textContent || "";
+    expect(content).toContain("Tag filter: 1 active");
+    expect(content).not.toContain("Scope:");
+    expect(content).not.toContain("Index ready");
+    await disposeMountedComponent(component);
+
+    const expectedStatuses = {
+      building: "Building index",
+      fallback: "Fallback search",
+      error: "Search error",
+    } as const;
+
+    for (const searchStatus of ["building", "fallback", "error"] as const) {
+      ({ component } = mountToolbar({
+        activeFilterTags: [],
+        searchStatus,
+      }));
+      await tick();
+
+      summaryRow = document.querySelector<HTMLDivElement>(".fce-toolbar-content-row");
+      expect(summaryRow).not.toBeNull();
+      content = summaryRow?.textContent || "";
+      expect(content).toContain(expectedStatuses[searchStatus]);
+
+      const searchStatusEl = document.querySelector<HTMLElement>(".fce-toolbar-content-row .fce-search-status");
+      expect(searchStatusEl).not.toBeNull();
+      expect(searchStatusEl?.getAttribute("data-search-status")).toBe(searchStatus);
+      expect(searchStatusEl?.textContent).toBe(expectedStatuses[searchStatus]);
+
+      await disposeMountedComponent(component);
+    }
+  });
+
+  it("keeps all-notes, filter, and bulk buttons highlighted while their state is active", async () => {
+    let { component } = mountToolbar({
+      isAllNotesScope: true,
+      folderPath: "",
+    });
+
+    let allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
+    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      activeFilterTags: ["work"],
+    }));
+    await tick();
+
+    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton?.classList.contains("is-selected")).toBe(true);
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      bulkMode: true,
+    }));
+    await tick();
+
+    const bulkButton = document.querySelector<HTMLButtonElement>('button[aria-label="Bulk actions"]');
+    expect(bulkButton?.classList.contains("is-selected")).toBe(true);
+    expect(document.querySelector(".fce-toolbar-bulk-strip")).not.toBeNull();
+    await disposeMountedComponent(component);
+  });
+
+  it("renders a compact icon-only bulk strip with tooltips and right-aligned summary", async () => {
+    const { component } = mountToolbar({
+      bulkMode: true,
+      selectedCount: 3,
+      bulkAnchorPath: "some/path.md",
+      canBulkSelectAll: true,
+      canBulkClearSelection: true,
+      canBulkMoveSelected: true,
+      canBulkTrashSelected: true,
+      canBulkDeleteSelected: true,
+      canBulkMergeSelected: true,
+    });
+
+    await tick();
+
+    const bulkStrip = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-strip");
+    expect(bulkStrip).not.toBeNull();
+
+    const bulkActions = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-actions");
+    const bulkSummary = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-summary");
+    expect(bulkActions).not.toBeNull();
+    expect(bulkSummary).not.toBeNull();
+    expect(bulkStrip?.firstElementChild).toBe(bulkActions);
+    expect(bulkStrip?.lastElementChild).toBe(bulkSummary);
+    expect(bulkSummary?.textContent).toContain("3 selected");
+    expect(document.querySelector(".fce-toolbar-bulk-mode-pill")).toBeNull();
+    expect(bulkStrip?.textContent).not.toContain("Range anchor ready");
+    expect(bulkStrip?.textContent).not.toContain("All bulk actions are ready.");
+
+    const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
+    expect(bulkButtons).toHaveLength(7);
+    expect(bulkButtons.map((button) => button.getAttribute("data-tooltip"))).toEqual([
+      "Select all",
+      "Clear selection",
+      "Move selected",
+      "Trash selected",
+      "Delete selected",
+      "Merge selected",
+      "Exit bulk mode",
+    ]);
+    expect(bulkButtons.map((button) => button.getAttribute("data-icon"))).toEqual([
+      "check-square",
+      "x-square",
+      "folder-input",
+      "trash",
+      "trash-2",
+      "combine",
+      "x",
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders Subfolders as a first-row icon button with pressed and tooltip state", async () => {
+    let { component } = mountToolbar({
+      folderPath: "notes",
+      includeSubfolders: true,
+      isAllNotesScope: false,
+    });
+    await tick();
+
+    let subfoldersToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
+    expect(subfoldersToggle).not.toBeNull();
+    expect(subfoldersToggle?.classList.contains("is-selected")).toBe(true);
+    expect(subfoldersToggle?.getAttribute("aria-label")).toBe("Including subfolders");
+    expect(subfoldersToggle?.getAttribute("aria-pressed")).toBe("true");
+    expect(subfoldersToggle?.getAttribute("data-icon")).toBe("folder-tree");
+    expect(subfoldersToggle?.getAttribute("data-tooltip")).toBe("Including subfolders");
+
+    const buttonsRow = document.querySelector<HTMLDivElement>(".fce-toolbar-buttons");
+    expect(buttonsRow?.children[1]).toBe(subfoldersToggle);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      folderPath: "notes",
+      includeSubfolders: false,
+      isAllNotesScope: false,
+    }));
+    await tick();
+
+    subfoldersToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Direct folder only"]');
+    expect(subfoldersToggle).not.toBeNull();
+    expect(subfoldersToggle?.classList.contains("is-selected")).toBe(false);
+    expect(subfoldersToggle?.getAttribute("aria-pressed")).toBe("false");
+    expect(subfoldersToggle?.getAttribute("data-tooltip")).toBe("Direct folder only");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      folderPath: "notes",
+      includeSubfolders: true,
+      isAllNotesScope: true,
+    }));
+    await tick();
+
+    expect(document.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Direct folder only"]')).toBeNull();
 
     await disposeMountedComponent(component);
   });

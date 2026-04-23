@@ -61,7 +61,8 @@
 }
 
 .folder-card-view .fce-toolbar-button.is-selected {
-  font-weight: 600;
+  background-color: var(--background-modifier-hover);
+  color: var(--icon-color-hover);
 }
 
 .folder-card-view .fce-toolbar-content-row {
@@ -123,8 +124,67 @@
   font-weight: 500;
 }
 
-.folder-card-view .fce-toolbar-toggle-value {
-  color: inherit;
+.folder-card-view .fce-toolbar-search-row {
+  padding: 0 8px 6px;
+}
+
+.folder-card-view .fce-toolbar-search-row.is-bulk-mode {
+  padding-bottom: 8px;
+}
+
+.folder-card-view .fce-toolbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  height: 30px;
+}
+
+.folder-card-view .fce-toolbar-search:focus-within {
+  border-color: var(--fce-accent);
+  box-shadow: 0 0 0 1px var(--fce-accent);
+}
+
+.folder-card-view .fce-search-input {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  color: var(--fce-text);
+  font-size: var(--font-ui-small, 13px);
+  outline: none;
+}
+
+.folder-card-view .fce-search-input:focus {
+  box-shadow: none;
+}
+
+.folder-card-view .fce-search-input::placeholder {
+  color: var(--fce-text-muted);
+}
+
+.folder-card-view .fce-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 3px;
+  color: var(--fce-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.folder-card-view .fce-search-clear:hover {
+  color: var(--fce-text);
+  background: var(--background-modifier-hover);
 }
 
 .folder-card-view .fce-toolbar-bulk-strip {
@@ -149,48 +209,25 @@
   line-height: 1.3;
 }
 
-.folder-card-view .fce-toolbar-bulk-mode-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 8px;
-  border: 1px solid var(--fce-accent);
-  border-radius: 999px;
-  color: var(--fce-accent);
-  font-weight: 600;
-}
-
-.folder-card-view .fce-toolbar-bulk-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  padding: 2px 6px;
-  border: 1px solid var(--fce-border);
-  border-radius: 999px;
-  background: var(--fce-surface-alt);
-  color: var(--fce-text);
-  font-weight: 600;
-}
-
 .folder-card-view .fce-toolbar-bulk-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
 .folder-card-view .fce-toolbar-bulk-button {
   flex: 0 0 auto;
-  padding: 3px 8px;
-  border: 1px solid var(--fce-border);
-  border-radius: 999px;
+  padding: 4px;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--fce-text-muted);
-  font-size: 12px;
-  line-height: 1.2;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .folder-card-view .fce-toolbar-bulk-button:hover:not(:disabled) {
@@ -199,7 +236,6 @@
 }
 
 .folder-card-view .fce-toolbar-bulk-button.is-exit {
-  border-color: var(--fce-accent);
   color: var(--fce-accent);
 }
 
@@ -209,7 +245,7 @@
 }
 
 .folder-card-view .fce-toolbar-bulk-button:disabled {
-  opacity: 0.55;
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -494,30 +530,9 @@
   color: inherit;
 }
 
-.folder-card-view .fce-card-bulk-toggle {
-  border: 1px solid var(--fce-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fce-text-muted);
-  box-shadow: none;
-  padding: 3px 8px;
-  font-size: 11px;
-  line-height: 1.2;
-  font-weight: 600;
+.folder-card-view .fce-card-bulk-checkbox {
+  margin: 0;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.folder-card-view .fce-card-bulk-toggle:hover {
-  background: var(--fce-surface-alt);
-  color: var(--fce-text);
-}
-
-.folder-card-view .fce-card-bulk-toggle.is-selected {
-  border-color: var(--fce-accent);
-  background: var(--fce-hover);
-  color: var(--fce-accent);
 }
 
 .folder-card-view .fce-card-pin-btn {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
+  import { tick } from "svelte";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -160,45 +161,26 @@
   let folderMenuEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
 
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+  let searchExpanded = $state(false);
+
   const bulkSelectionSummary = $derived(selectedCount === 1 ? "1 selected" : `${selectedCount} selected`);
-  const bulkModeStatus = $derived(bulkMode ? "Bulk mode active" : "Browsing notes");
-  const bulkActionHint = $derived(
-    selectedCount === 0
-      ? "Select notes to enable move, trash, delete, and merge."
-      : selectedCount === 1
-        ? "Move, trash, and delete are ready. Merge unlocks with 2 notes."
-        : "All bulk actions are ready.",
-  );
   const bulkActions = $derived([
-    { id: "bulk-select-all", label: "Select all", disabled: !canBulkSelectAll },
-    { id: "bulk-clear-selection", label: "Clear", disabled: !canBulkClearSelection },
-    { id: "bulk-move-selected", label: "Move", disabled: !canBulkMoveSelected },
-    { id: "bulk-trash-selected", label: "Trash", disabled: !canBulkTrashSelected },
-    { id: "bulk-delete-selected", label: "Delete", disabled: !canBulkDeleteSelected },
-    { id: "bulk-merge-selected", label: "Merge", disabled: !canBulkMergeSelected },
+    { id: "bulk-select-all", label: "Select all", icon: "check-square", disabled: !canBulkSelectAll },
+    { id: "bulk-clear-selection", label: "Clear selection", icon: "x-square", disabled: !canBulkClearSelection },
+    { id: "bulk-move-selected", label: "Move selected", icon: "folder-input", disabled: !canBulkMoveSelected },
+    { id: "bulk-trash-selected", label: "Trash selected", icon: "trash", disabled: !canBulkTrashSelected },
+    { id: "bulk-delete-selected", label: "Delete selected", icon: "trash-2", disabled: !canBulkDeleteSelected },
+    { id: "bulk-merge-selected", label: "Merge selected", icon: "combine", disabled: !canBulkMergeSelected },
   ]);
 
   const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
   const hasTagFilter = $derived(localActiveFilterTags.length > 0);
-  const scopeSummary = $derived(
-    isAllNotesScope
-      ? "All Notes"
-      : hasFolderScope
-        ? folderPath
-        : "No folder selected",
-  );
-  const tagSummary = $derived(
-    hasTagFilter
-      ? `Tag filter: ${localActiveFilterTags.length} active`
-      : "Tag filter: off",
-  );
-  const subfolderSummary = $derived(
-    hasFolderScope
-      ? `Subfolders: ${includeSubfolders ? "included" : "direct only"}`
-      : "",
-  );
+  const tagSummary = $derived(`Tag filter: ${localActiveFilterTags.length} active`);
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
+  const showSearchStatus = $derived(searchStatus === "building" || searchStatus === "fallback" || searchStatus === "error");
   const searchStatusLabel = $derived(SEARCH_STATUS_LABELS[searchStatus]);
+  const hasSummary = $derived(hasTagFilter || showSearchStatus);
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
     const result: FolderTreeNode[] = [];
@@ -490,6 +472,18 @@
     }
     expandedPaths = next;
   }
+
+  function toggleSearch(): void {
+    searchExpanded = !searchExpanded;
+    if (searchExpanded) {
+      showSortMenu = false;
+      showFolderMenu = false;
+      showFilterMenu = false;
+      tick().then(() => {
+        searchInputEl?.focus();
+      });
+    }
+  }
 </script>
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
@@ -509,6 +503,19 @@
             </span>
             <span use:applyIcon={"chevron-down"}></span>
           </button>
+          {#if hasFolderScope}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {includeSubfolders ? 'is-selected' : ''}"
+              aria-label={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
+              aria-pressed={includeSubfolders}
+              onclick={toggleIncludeSubfolders}
+              use:applyIcon={"folder-tree"}
+              use:applyTooltip={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
+            >
+              <span class="fce-sr-only">Subfolders</span>
+            </button>
+          {/if}
         {:else if action.id === "sort"}
           <button
             type="button"
@@ -543,87 +550,91 @@
           </button>
         {/if}
       {/each}
-    </div>
-  </div>
-
-  <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
-    <div class="fce-toolbar-search" role="search">
-      <label class="fce-sr-only" for="fce-search-input">Search notes</label>
-      <input
-        id="fce-search-input"
-        class="fce-search-input"
-        type="search"
-        aria-label="Search notes"
-        placeholder="Search notes"
-        value={searchQuery}
-        oninput={handleSearchInput}
-      />
-      {#if hasSearchQuery}
-        <button
-          type="button"
-          class="fce-search-clear"
-          aria-label="Clear search query"
-          onclick={clearSearchQuery}
-        >
-          Clear
-        </button>
-      {/if}
-      <span class="fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
-    </div>
-
-    <div class="fce-toolbar-content">
-      <span class="fce-toolbar-summary-segment"><strong>Scope:</strong> {scopeSummary}</span>
-      <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>
-      {#if bulkMode}
-        <span class="fce-toolbar-summary-segment"><strong>Status:</strong> {bulkModeStatus}</span>
-      {/if}
-      {#if hasFolderScope}
-        <span class="fce-toolbar-summary-segment">{subfolderSummary}</span>
-      {/if}
-    </div>
-
-    {#if hasFolderScope}
       <button
         type="button"
-        class="fce-toolbar-toggle {includeSubfolders ? 'is-selected' : ''}"
-        aria-label={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
-        aria-pressed={includeSubfolders}
-        onclick={toggleIncludeSubfolders}
+        class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
+        aria-label="Toggle search"
+        onclick={toggleSearch}
+        use:applyIcon={"search"}
       >
-        <span class="fce-toolbar-toggle-label">Subfolders</span>
-        <span class="fce-toolbar-toggle-value">{includeSubfolders ? "On" : "Off"}</span>
+        <span class="fce-sr-only">Toggle search</span>
       </button>
-    {/if}
+    </div>
   </div>
+
+  {#if searchExpanded}
+    <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}">
+      <div class="fce-toolbar-search" role="search">
+        <label class="fce-sr-only" for="fce-search-input">Search notes</label>
+        <input
+          bind:this={searchInputEl}
+          id="fce-search-input"
+          class="fce-search-input"
+          type="search"
+          aria-label="Search notes"
+          placeholder="Search notes"
+          value={searchQuery}
+          oninput={handleSearchInput}
+        />
+        {#if hasSearchQuery}
+          <button
+            type="button"
+            class="clickable-icon fce-search-clear"
+            aria-label="Clear search query"
+            onclick={clearSearchQuery}
+            use:applyIcon={"x"}
+          >
+            <span class="fce-sr-only">Clear</span>
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if hasSummary}
+    <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
+      <div class="fce-toolbar-content">
+        {#if hasTagFilter}
+          <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>
+        {/if}
+        {#if showSearchStatus}
+          <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   {#if bulkMode}
     <div class="fce-toolbar-bulk-strip" role="group" aria-label="Bulk actions">
-      <div class="fce-toolbar-bulk-summary">
-        <span class="fce-toolbar-bulk-mode-pill">Bulk mode</span>
-        <span class="fce-toolbar-bulk-count">{selectedCount}</span>
-        <span>{bulkSelectionSummary}</span>
-        <span class="fce-toolbar-summary-segment">{bulkAnchorPath ? "Range anchor ready" : "Range anchor idle"}</span>
-        <span class="fce-toolbar-summary-segment">{bulkActionHint}</span>
-      </div>
-
       <div class="fce-toolbar-bulk-actions">
         {#each bulkActions as action}
           <button
             type="button"
-            class="fce-toolbar-bulk-button"
+            class="clickable-icon fce-toolbar-bulk-button"
+            aria-label={action.label}
             disabled={action.disabled}
             onclick={() => emitToolbarAction(action.id)}
+            use:applyIcon={action.icon}
+            use:applyTooltip={action.label}
           >
-            {action.label}
+            <span class="fce-sr-only">{action.label}</span>
           </button>
         {/each}
+        <div style="width: 1px; height: 16px; background: var(--fce-border); margin: 0 4px;"></div>
         <button
           type="button"
-          class="fce-toolbar-bulk-button is-exit"
+          class="clickable-icon fce-toolbar-bulk-button is-exit"
+          aria-label="Exit bulk mode"
           onclick={() => emitToolbarAction("bulk")}
+          use:applyIcon={"x"}
+          use:applyTooltip={"Exit bulk mode"}
         >
-          Exit Bulk
+          <span class="fce-sr-only">Exit bulk mode</span>
         </button>
+      </div>
+
+      <div class="fce-toolbar-bulk-summary">
+        <span>{bulkSelectionSummary}</span>
       </div>
     </div>
   {/if}
