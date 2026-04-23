@@ -258,27 +258,25 @@
       <h4>{@html highlightedTitleHtml}</h4>
       <div class="fce-card-actions">
         {#if bulkMode}
-          <button
-            type="button"
-            class="fce-card-bulk-toggle {bulkSelected ? 'is-selected' : ''}"
+          <input
+            type="checkbox"
+            class="fce-card-bulk-checkbox"
             aria-label={bulkSelected ? "Deselect note from bulk selection" : "Add note to bulk selection"}
-            aria-pressed={bulkSelected}
+            checked={bulkSelected}
             onclick={onBulkSelectClick}
             onkeydown={onBulkSelectKeydown}
-          >
-            {bulkSelected ? "Selected" : "Select"}
-          </button>
+          />
+        {:else}
+          <button
+            type="button"
+            class="clickable-icon fce-card-pin-btn"
+            aria-label={isPinned ? "Unpin note" : "Pin note"}
+            aria-pressed={isPinned}
+            onclick={onPinClick}
+            onkeydown={onPinKeydown}
+            use:applyIcon={isPinned ? "pin-off" : "pin"}
+          ></button>
         {/if}
-
-        <button
-          type="button"
-          class="clickable-icon fce-card-pin-btn"
-          aria-label={isPinned ? "Unpin note" : "Pin note"}
-          aria-pressed={isPinned}
-          onclick={onPinClick}
-          onkeydown={onPinKeydown}
-          use:applyIcon={isPinned ? "pin-off" : "pin"}
-        ></button>
       </div>
     </div>
     <div

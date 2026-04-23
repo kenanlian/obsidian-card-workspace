@@ -166,7 +166,7 @@ describe("CardItem.svelte", () => {
     });
   });
 
-  it("emits bulk-select-card with shiftKey in bulk mode", () => {
+  it("emits bulk-select-card with shiftKey in bulk mode from the card surface", () => {
     const captured = createCapturedCallbacks();
     const { target } = mountCardItem({ bulkMode: true }, captured.callbacks);
 
@@ -177,12 +177,59 @@ describe("CardItem.svelte", () => {
     expect(captured.bulkEvents).toEqual([{ path: "notes/a.md", shiftKey: true }]);
   });
 
-  it("emits pin-toggle with correct toggled pinned value", async () => {
+  it("renders a checked bulk checkbox in the top-right slot and hides the pin button in bulk mode", () => {
+    const { target } = mountCardItem({
+      bulkMode: true,
+      bulkSelected: true,
+      pinnedPaths: ["notes/a.md"],
+    });
+
+    const checkbox = target.querySelector<HTMLInputElement>(".fce-card-bulk-checkbox");
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.checked).toBe(true);
+    expect(target.querySelector(".fce-card-pin-btn")).toBeNull();
+    expect(target.querySelector(".fce-card-actions")?.firstElementChild).toBe(checkbox);
+  });
+
+  it("emits exactly one bulk-select event when the bulk checkbox is clicked", () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountCardItem({ bulkMode: true }, captured.callbacks);
+
+    const checkbox = target.querySelector<HTMLInputElement>(".fce-card-bulk-checkbox");
+    expect(checkbox).not.toBeNull();
+
+    checkbox?.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+
+    expect(captured.bulkEvents).toEqual([{ path: "notes/a.md", shiftKey: true }]);
+    expect(captured.openEvents).toEqual([]);
+  });
+
+  it("emits exactly one bulk-select event when the bulk checkbox is activated by keyboard", () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountCardItem({ bulkMode: true }, captured.callbacks);
+
+    const checkbox = target.querySelector<HTMLInputElement>(".fce-card-bulk-checkbox");
+    expect(checkbox).not.toBeNull();
+
+    const keyboardEvent = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    checkbox?.dispatchEvent(keyboardEvent);
+
+    expect(keyboardEvent.defaultPrevented).toBe(true);
+    expect(captured.bulkEvents).toEqual([{ path: "notes/a.md", shiftKey: false }]);
+    expect(captured.openEvents).toEqual([]);
+  });
+
+  it("emits pin-toggle with correct toggled pinned value outside bulk mode", async () => {
     const captured = createCapturedCallbacks();
     const { component, target } = mountCardItem({}, captured.callbacks);
 
     const pinButton = target.querySelector<HTMLButtonElement>(".fce-card-pin-btn");
     expect(pinButton).not.toBeNull();
+    expect(target.querySelector(".fce-card-bulk-checkbox")).toBeNull();
 
     pinButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(captured.pinEvents[0]).toEqual({ path: "notes/a.md", pinned: true });
