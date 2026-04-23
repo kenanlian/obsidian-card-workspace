@@ -27,3 +27,6 @@ Thumbs.db
 
 # Serena runtime cache (memories are tracked, cache is not)
 .serena/cache/
+
+# Local OpenCode config
+opencode.json
