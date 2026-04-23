@@ -15,6 +15,7 @@
 - 已完成：`pipeline.ts` 仍是唯一可见卡片投影链路，正式语义是 `baseCards -> tag filter -> search filter -> pin reorder -> visibleCards`。
 - 已完成：indexed 搜索相关能力已经具备 `IndexStore`、`SearchIndexManager`、`IndexedSearchService` 这条正式运行时链路。
 - 已完成：标准仓库验证是 `npm run check`、`npm run build`、`npm test`。
+- 已完成：Toolbar UI 优化，引入可收起搜索行、上下文摘要、一级按钮持续高亮、icon-only bulk strip，以及批量模式下位于卡片右上角的复选框选择入口。
 - 已关闭：F3 的真实 Obsidian 手动 QA 因环境缺少可运行宿主而未执行，用户已明确豁免，因此 Phase 3 以仓库验证通过加文档收尾的状态关闭。
 
 ## 回来看代码前先记住这 3 件事
@@ -45,7 +46,7 @@
   - 负责消费 manager 快照、裁剪 candidate paths、返回 indexed ordering，或在不可用时回退。
 - `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
   - 展示与交互表面。
-  - 负责搜索输入、紧凑状态标签、标题和摘录命中高亮。
+  - 负责可收起的搜索输入、上下文摘要、一级 toolbar 按钮高亮态、icon-only bulk strip、批量模式复选框，以及标题和摘录命中高亮。
 
 ## 一条主流程怎么走
 
@@ -55,7 +56,7 @@
 2. `FolderCardView.ts` 更新 runtime-only `searchQuery`，按当前视图范围做 debounce，并向搜索服务发起查询。
 3. `IndexedSearchService` 根据当前健康状态决定返回 indexed ordering，或返回 `orderedPaths: null` 让调用方继续 fallback。
 4. `pipeline.ts` 先执行 tag filter，再执行 search filter，最后执行 pin reorder。
-5. `FolderCardPanel.svelte` 和 `CardItem.svelte` 接收最新 cards、compact status 和高亮结果，UI 更新。
+5. `FolderCardPanel.svelte` 和 `CardItem.svelte` 接收最新 cards、compact status、高亮结果和 bulk selection 状态，UI 更新。
 
 以“vault 发生 unsafe folder rename”为例：
 
@@ -107,15 +108,18 @@ npm run dev
 - **indexed 搜索已经存在，但边界不能被随意打破。** 后续改动必须继续尊重 `main.ts`、`FolderCardView.ts`、`pipeline.ts`、`SearchIndexManager` 之间的 ownership。
 - **`orderedPaths` contract 不能漂移。** `null` 与空数组代表不同语义，测试和文档都已锁定。
 - **unsafe folder rename 会触发 rebuild-required。** 这是刻意选择的保守策略，用来避免脏路径继续对外服务。
-- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 这不是 Phase 3 阻塞项，但仍是后续整理点。
+- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 当前主要在 folder menu item 与展开 chevron 的非语义点击元素上；这不是本次 UI 优化的阻塞项，但仍是后续整理点。
 
 ## 接下来先读哪里
 
-1. `docs/architecture.md`
-2. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
-3. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
-4. `src/main.ts`
-5. `src/view/FolderCardView.ts`
-6. `src/view/pipeline.ts`
-7. `src/search/SearchIndexManager.ts`
-8. `src/search/IndexedSearchService.ts`
+1. `docs/START_HERE.md`
+2. `docs/architecture.md`
+3. `docs/decisions/2026-04-23-toolbar-ui-optimization.md`
+4. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
+5. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
+6. `src/main.ts`
+7. `src/view/FolderCardView.ts`
+8. `src/view/Toolbar.svelte`
+9. `src/view/pipeline.ts`
+10. `src/search/SearchIndexManager.ts`
+11. `src/search/IndexedSearchService.ts`

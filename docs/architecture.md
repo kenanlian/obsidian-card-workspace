@@ -38,7 +38,7 @@ src/view/panel-model.ts
   └─ 面板订阅状态边界
           ↓
 src/view/FolderCardPanel.svelte / Toolbar.svelte / CardItem.svelte
-  └─ UI 展示、交互回调、命中高亮、紧凑状态标签
+  └─ UI 展示、交互回调、命中高亮、可收起搜索行、一级按钮高亮态、icon-only bulk strip、批量复选框
           ↓
 src/view/pipeline.ts
   └─ tag filter -> search filter -> pin reorder
@@ -125,9 +125,12 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 
 这些组件负责：
 
-- 显示 query、compact status label 和命中结果。
-- 把搜索输入变化回传给 `FolderCardView.ts`。
+- 显示可收起的搜索行、搜索输入和命中结果。
 - 在标题和摘录表面做安全高亮。
+- 在摘要行展示紧凑的上下文信息（仅在过滤或异常状态下）。
+- 用持续高亮表达 `All notes`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
+- 在 bulk mode 下把批量操作带收敛成 icon-only controls，并把每张卡片的选择入口放到右上角复选框槽位，同时临时隐藏 pin 按钮。
+- 把搜索输入变化回传给 `FolderCardView.ts`。
 - 继续处理 viewport、虚拟滚动和工具栏交互。
 
 它们不是搜索状态源，也不参与索引构建。
@@ -303,7 +306,7 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 
 1. 在不改变 ownership 的前提下，继续补强 ranking、tokenizer 或 rebuild UX。
 2. 为真实 Obsidian 宿主补 manual QA 流程，把当前豁免状态转换成已执行证据。
-3. 单独处理 `Toolbar.svelte` 的 a11y warnings，减少 build/test 输出噪音。
+3. 单独处理 `Toolbar.svelte` 的 a11y warnings，尤其是 folder menu item 与 chevron 的键盘可达性，减少 build/test 输出噪音。
 4. 如后续继续扩展索引能力，优先补 manager 和 service 层，不要把索引细节散入 view 层。
 
 ## Related decisions
@@ -314,3 +317,4 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 - `docs/decisions/2026-04-18-finish-svelte-5-host-and-component-seam.md`
 - `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
 - `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
+- `docs/decisions/2026-04-23-toolbar-ui-optimization.md`
