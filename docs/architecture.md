@@ -83,6 +83,7 @@ src/search/IndexedSearchService.ts
 
 - 统一解析 `markdown`、`base`、`canvas`、`excalidraw`。
 - 把文件类型图标和占位摘要从 UI 组件中抽离成稳定 contract。
+- 让文件类型图标继续停留在 Obsidian 官方 Lucide icon name 这一层，而不是把截图或自定义图片资产塞进 card title icon slot。
 - 让 `main.ts`、`FolderCardView.ts`、`pipeline.ts`、`CardItem.svelte` 用同一份类型语义协作，而不是各自猜测扩展名。
 
 ### Svelte 5 兼容模式，宿主继续做协调
@@ -150,6 +151,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 显示可收起的搜索行、搜索输入和命中结果。
 - 在标题和摘录表面做安全高亮。
 - 为卡片标题区显示文件类型图标。
+- 标题图标继续通过 `setIcon(...)` 渲染 Obsidian 官方 icon name；当前 `base` 使用 `layout-list`，`excalidraw` 使用 `pen-tool`。
 - 为非 Markdown 卡片显示稳定占位摘要，而不是假装存在正文预览。
 - 在摘要行展示紧凑的上下文信息（仅在过滤或异常状态下）。
 - 用持续高亮表达 `All notes`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
@@ -330,7 +332,8 @@ baseCards
 4. 不要把 `orderedPaths: null` 和空数组的语义做混。
 5. 不要让 folder rename 的 unsafe 路径继续静默服务旧索引，应明确升级到 `rebuild-required`。
 6. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
-7. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
+7. 文件类型标题图标优先保持在 Obsidian 官方 Lucide icon name contract 内，不要把截图、栅格图片或自定义图像注入 card title icon slot。
+8. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
 8. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
 9. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
 
@@ -367,3 +370,4 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 - `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
 - `docs/decisions/2026-04-23-toolbar-ui-optimization.md`
 - `docs/decisions/2026-04-24-support-mixed-file-kind-cards-with-markdown-only-indexing.md`
+- `docs/decisions/2026-04-24-keep-file-kind-icons-on-official-obsidian-lucide-icons.md`
