@@ -405,7 +405,7 @@ vi.mock("./FolderCardPanel.svelte", () => {
 
 vi.mock("./note-ops", () => {
   return {
-    batchDeleteFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
@@ -426,7 +426,7 @@ vi.mock("../FolderPickerModal", () => {
 
 import { FolderCardView } from "./FolderCardView";
 import {
-  batchDeleteFiles,
+  batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
   batchTrashFiles,
   copyNoteToClipboard,
@@ -510,6 +510,7 @@ function createViewWithFile(path: string = "notes/a.md"): {
 function createCardRecord(file: InstanceType<typeof mockState.MockTFile>) {
   return {
     file,
+    fileKind: "markdown" as const,
     path: file.path,
     title: file.basename,
     ctime: 1,
@@ -1168,7 +1169,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: false,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
-          canBulkTrashSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: false,
         });
@@ -1272,7 +1272,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
-          canBulkTrashSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: true,
         });
@@ -1290,7 +1289,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
-          canBulkTrashSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
@@ -1319,7 +1317,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
-          canBulkTrashSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
@@ -1336,7 +1333,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
-          canBulkTrashSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: false,
         });
@@ -1358,7 +1354,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
-          canBulkTrashSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: true,
         });
@@ -1393,7 +1388,6 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
-          canBulkTrashSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
@@ -2268,84 +2262,7 @@ describe("FolderCardView card context actions", () => {
     });
   });
 
-  describe("bulk trash and delete workflows", () => {
-    it("runs bulk trash using confirmed ordered live-file resolution and reconciles failed selections", async () => {
-      const { view, app } = createViewWithFile("notes/seed.md");
-      const successA = createMarkdownFile("notes/success-a.md");
-      const failedB = createMarkdownFile("notes/failed-b.md");
-      const successC = createMarkdownFile("notes/success-c.md");
-
-      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
-        if (requestedPath === successA.path) {
-          return successA;
-        }
-        if (requestedPath === failedB.path) {
-          return failedB;
-        }
-        if (requestedPath === successC.path) {
-          return successC;
-        }
-        return null;
-      });
-
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([
-        successA.path,
-        "notes/stale.md",
-        failedB.path,
-        successC.path,
-      ]);
-      (view as any).bulkAnchorPath = successA.path;
-      (view as any).baseCards = [
-        createCardRecordFromPath(successA.path),
-        createCardRecordFromPath(failedB.path),
-        createCardRecordFromPath(successC.path),
-      ];
-      (view as any).visibleCards = [
-        createCardRecordFromPath(successA.path),
-        createCardRecordFromPath(failedB.path),
-        createCardRecordFromPath(successC.path),
-      ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
-        createCardRecordFromPath(successA.path),
-        createCardRecordFromPath(failedB.path),
-        createCardRecordFromPath(successC.path),
-      ]);
-
-      vi.mocked(batchTrashFiles).mockResolvedValueOnce({
-        succeeded: [
-          { ok: true, file: successA as unknown as any },
-          { ok: true, file: successC as unknown as any },
-        ],
-        failed: [{ ok: false, error: "trash denied", path: failedB.path }],
-      } as any);
-
-      await (view as any).onOpen();
-
-      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
-      await flushAsyncWork(1);
-
-      expect(batchTrashFiles).not.toHaveBeenCalled();
-      expect(mockState.modalInstances).toHaveLength(1);
-      expect(mockState.modalInstances[0]?.title).toBe("Move notes to trash?");
-      expect(mockState.modalInstances[0]?.messages).toEqual(["Move 3 selected notes to trash?"]);
-
-      clickLatestModalButton("Move to trash");
-      await flushAsyncWork();
-
-      expect(batchTrashFiles).toHaveBeenCalledTimes(1);
-      expect(batchTrashFiles).toHaveBeenCalledWith(
-        app,
-        [successA, failedB, successC] as unknown as any,
-      );
-      expect(batchDeleteFiles).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([failedB.path]);
-      expect((view as any).bulkAnchorPath).toBe(failedB.path);
-      expect(mockState.noticeMessages).toEqual(["Trashed 2 notes; 1 failed."]);
-
-    });
-
+  describe("bulk delete workflows", () => {
     it("reconciles stale selection and no-ops when bulk delete has no live files at confirm time", async () => {
       const { view, app } = createViewWithFile("notes/seed.md");
 
@@ -2371,7 +2288,7 @@ describe("FolderCardView card context actions", () => {
       await flushAsyncWork(1);
 
       expect(mockState.modalInstances).toHaveLength(0);
-      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
       expect(Array.from((view as any).selectedPaths)).toEqual([]);
       expect((view as any).bulkAnchorPath).toBeNull();
       expect(mockState.noticeMessages).toEqual(["No selected notes are available to delete."]);
@@ -2379,8 +2296,8 @@ describe("FolderCardView card context actions", () => {
     });
   });
 
-  describe("bulk trash and delete workflows require confirmation", () => {
-    it("does not execute batch trash/delete helpers when confirmation is denied", async () => {
+  describe("bulk delete workflows require confirmation", () => {
+    it("does not execute bulk delete helper when confirmation is denied", async () => {
       const { view, app } = createViewWithFile("notes/seed.md");
       const first = createMarkdownFile("notes/first.md");
       const second = createMarkdownFile("notes/second.md");
@@ -2414,37 +2331,23 @@ describe("FolderCardView card context actions", () => {
       await (view as any).onOpen();
 
       const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
-      await flushAsyncWork(1);
-
-      expect(batchTrashFiles).not.toHaveBeenCalled();
-      expect(mockState.modalInstances).toHaveLength(1);
-      expect(mockState.modalInstances[0]?.title).toBe("Move notes to trash?");
-      expect(mockState.modalInstances[0]?.messages).toEqual(["Move 2 selected notes to trash?"]);
-
-      clickLatestModalButton("Cancel");
-      await flushAsyncWork();
-
-      expect(batchTrashFiles).not.toHaveBeenCalled();
-
       toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
       await flushAsyncWork(1);
 
-      expect(batchDeleteFiles).not.toHaveBeenCalled();
-      expect(mockState.modalInstances).toHaveLength(2);
-      expect(mockState.modalInstances[1]?.title).toBe("Permanently delete notes?");
-      expect(mockState.modalInstances[1]?.messages).toEqual([
-        "Permanently delete 2 selected notes? This cannot be undone.",
+      expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
+      expect(mockState.modalInstances).toHaveLength(1);
+      expect(mockState.modalInstances[0]?.title).toBe("Delete selected notes?");
+      expect(mockState.modalInstances[0]?.messages).toEqual([
+        "Delete 2 selected notes? Obsidian will use your Files & Links delete preference.",
       ]);
 
       clickLatestModalButton("Cancel");
       await flushAsyncWork();
 
-      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
       expect(Array.from((view as any).selectedPaths)).toEqual([first.path, second.path]);
       expect((view as any).bulkAnchorPath).toBe(first.path);
       expect(mockState.noticeMessages).toEqual([]);
-
     });
   });
 
@@ -2633,7 +2536,7 @@ describe("FolderCardView card context actions", () => {
         oldPath: "notes/inside.md",
         path: "archive/inside.md",
         isFolder: false,
-        isMarkdown: true,
+        fileKind: "markdown",
       });
 
       expect(result.shouldRefresh).toBe(false);
@@ -2658,7 +2561,7 @@ describe("FolderCardView card context actions", () => {
         oldPath: "notes/move-me.md",
         path: "archive/move-me.md",
         isFolder: false,
-        isMarkdown: true,
+        fileKind: "markdown",
       });
 
       expect(result.shouldRefresh).toBe(false);
@@ -2751,7 +2654,6 @@ describe("FolderCardView card context actions", () => {
 
       const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
       toolbarActionHandler({ detail: { action: "bulk-move-selected" } });
-      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
       toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
       toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
       await flushAsyncWork();
@@ -2760,7 +2662,7 @@ describe("FolderCardView card context actions", () => {
       expect(mockState.modalInstances).toHaveLength(0);
       expect(batchMoveFiles).not.toHaveBeenCalled();
       expect(batchTrashFiles).not.toHaveBeenCalled();
-      expect(batchDeleteFiles).not.toHaveBeenCalled();
+      expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
       expect(mergeNotes).not.toHaveBeenCalled();
       expect(mockState.noticeMessages).toEqual([]);
     });
@@ -2797,8 +2699,8 @@ describe("FolderCardView card context actions", () => {
       expect(deriveAvailableTagsSpy).not.toHaveBeenCalled();
     });
 
-    it("reconciles stale selections before confirmed bulk trash and clears selection after success", async () => {
-      const { view, app } = createViewWithFile("notes/trash-stale.md");
+    it("bulk delete uses Obsidian preference-respecting confirmation and reconciles stale selection", async () => {
+      const { view, app } = createViewWithFile("notes/delete-stale.md");
       const liveFile = createMarkdownFile("notes/live.md");
       const stalePath = "notes/stale.md";
 
@@ -2825,29 +2727,36 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(liveFile.path),
       ]);
 
-      vi.mocked(batchTrashFiles).mockResolvedValueOnce({
+      vi.mocked(batchDeleteFilesUsingObsidianPreference).mockResolvedValueOnce({
         succeeded: [{ ok: true, file: liveFile as unknown as any }],
         failed: [],
       } as any);
 
       await (view as any).onOpen();
 
+      expect(mockState.panelInstances).toHaveLength(1);
+
       const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-      toolbarActionHandler({ detail: { action: "bulk-trash-selected" } });
+      toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
       await flushAsyncWork(1);
 
       expect(Array.from((view as any).selectedPaths)).toEqual([liveFile.path]);
       expect((view as any).bulkAnchorPath).toBe(liveFile.path);
       expect(mockState.modalInstances).toHaveLength(1);
+      expect(mockState.modalInstances[0]?.title).toBe("Delete selected notes?");
+      expect(mockState.modalInstances[0]?.messages).toEqual([
+        "Delete 1 selected note? Obsidian will use your Files & Links delete preference.",
+      ]);
 
-      clickLatestModalButton("Move to trash");
+      clickLatestModalButton("Delete");
       await flushAsyncWork();
 
-      expect(batchTrashFiles).toHaveBeenCalledTimes(1);
-      expect(batchTrashFiles).toHaveBeenCalledWith(app, [liveFile] as unknown as any);
+      expect(batchDeleteFilesUsingObsidianPreference).toHaveBeenCalledTimes(1);
+      expect(batchDeleteFilesUsingObsidianPreference).toHaveBeenCalledWith(app, [liveFile] as unknown as any);
+      expect(batchTrashFiles).not.toHaveBeenCalled();
       expect(Array.from((view as any).selectedPaths)).toEqual([]);
       expect((view as any).bulkAnchorPath).toBeNull();
-      expect(mockState.noticeMessages).toEqual(["Trashed 1 note."]);
+      expect(mockState.noticeMessages).toEqual(["Deleted 1 note."]);
     });
 
     it("clears bulk selection after successful merge while keeping selectedPath stable", async () => {
@@ -3015,30 +2924,34 @@ describe("FolderCardView card context actions", () => {
         canBulkSelectAll: true,
         canBulkClearSelection: true,
         canBulkMoveSelected: true,
-        canBulkTrashSelected: true,
         canBulkDeleteSelected: true,
         canBulkMergeSelected: true,
       });
     });
 
-    it("collectMarkdownFiles returns only direct markdown files when includeSubfolders is false", () => {
+    it("supports base canvas and excalidraw cards without non-markdown cachedRead", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
       const root = attachChildren(createFolder("projects/active"), [
         createMarkdownFile("projects/active/direct.md"),
+        createNonMarkdownFile("projects/active/reference.base", "base"),
+        createNonMarkdownFile("projects/active/flow.canvas", "canvas"),
+        createNonMarkdownFile("projects/active/sketch.excalidraw", "excalidraw"),
+        createMarkdownFile("projects/active/sketch.excalidraw.md"),
         createNonMarkdownFile("projects/active/image.png"),
-        attachChildren(createFolder("projects/active/nested"), [
-          createMarkdownFile("projects/active/nested/deep.md"),
-        ]),
       ]);
 
       app.vault.getAbstractFileByPath = vi.fn(() => root);
 
-      expect((view as any).collectMarkdownFiles("projects/active", false).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).collectSupportedFiles("projects/active", false).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
+        "projects/active/reference.base",
+        "projects/active/flow.canvas",
+        "projects/active/sketch.excalidraw",
+        "projects/active/sketch.excalidraw.md",
       ]);
     });
 
-    it("collectMarkdownFiles recurses nested markdown files when includeSubfolders is true", () => {
+    it("collectSupportedFiles recurses nested markdown files when includeSubfolders is true", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
       const root = attachChildren(createFolder("projects/active"), [
         createMarkdownFile("projects/active/direct.md"),
@@ -3049,13 +2962,13 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn(() => root);
 
-      expect((view as any).collectMarkdownFiles("projects/active", true).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).collectSupportedFiles("projects/active", true).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/nested/deep.md",
       ]);
     });
 
-    it("collectMarkdownFiles treats all-notes as recursive regardless of includeSubfolders", () => {
+    it("collectSupportedFiles treats all-notes as recursive regardless of includeSubfolders", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
       const root = attachChildren(createFolder(""), [
         createMarkdownFile("projects/active/direct.md"),
@@ -3066,7 +2979,7 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getRoot = vi.fn(() => root);
 
-      expect((view as any).collectMarkdownFiles(ALL_NOTES_PATH, false).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).collectSupportedFiles(ALL_NOTES_PATH, false).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/nested/deep.md",
       ]);
@@ -3109,7 +3022,7 @@ describe("FolderCardView card context actions", () => {
           eventType: "create",
           path: "projects/active/nested/deep.md",
           isFolder: false,
-          isMarkdown: true,
+          fileKind: "markdown",
         }),
       ).toBe(false);
     });
@@ -3133,7 +3046,7 @@ describe("FolderCardView card context actions", () => {
           eventType: "create",
           path: "projects/active/nested/deep.md",
           isFolder: false,
-          isMarkdown: true,
+          fileKind: "markdown",
         }),
       ).toBe(true);
     });
@@ -3342,7 +3255,7 @@ describe("FolderCardView card context actions", () => {
         oldPath: fileA.path,
         path: renamedFile.path,
         isFolder: false,
-        isMarkdown: true,
+        fileKind: "markdown",
       });
 
       expect(renameResult.shouldRefresh).toBe(false);
@@ -3355,7 +3268,7 @@ describe("FolderCardView card context actions", () => {
         eventType: "delete",
         path: fileB.path,
         isFolder: false,
-        isMarkdown: true,
+        fileKind: "markdown",
       });
 
       expect(deleteResult.shouldRefresh).toBe(false);
@@ -3367,7 +3280,7 @@ describe("FolderCardView card context actions", () => {
         oldPath: renamedFile.path,
         path: "archive/renamed-selected.md",
         isFolder: false,
-        isMarkdown: true,
+        fileKind: "markdown",
       });
 
       expect(movedOutOfScopeResult.shouldRefresh).toBe(false);

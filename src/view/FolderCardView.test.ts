@@ -224,7 +224,7 @@ vi.mock("../FolderPickerModal", () => {
 
 vi.mock("./note-ops", () => {
   return {
-    batchDeleteFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
@@ -260,6 +260,7 @@ interface TestHarness {
 function createCard(path: string, title: string): NoteCardRecord {
   return {
     file: new testState.TestTFile(path) as unknown as never,
+    fileKind: "markdown",
     path,
     title,
     ctime: new Date("2024-01-02T10:00:00Z").getTime(),

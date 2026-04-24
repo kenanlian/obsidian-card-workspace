@@ -14,7 +14,7 @@ import { FolderPickerModal } from "../FolderPickerModal";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
 import {
-  batchDeleteFiles,
+  batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
   batchTrashFiles,
   copyNoteToClipboard,
@@ -34,6 +34,13 @@ import {
 import type { PipelineContext } from "./pipeline";
 import type { SortDirection, SortField } from "../settings";
 import { ALL_NOTES_PATH } from "./types";
+import {
+  getCardPlaceholderText,
+  isMarkdownCardKind,
+  resolveCardFileKind,
+  resolveCardFileKindFromPath,
+  isSupportedCardFile,
+} from "./file-kind";
 import { createPanelModel, type PanelModel, type PanelModelState } from "./panel-model";
 import type {
   BulkRuntimePanelState,
@@ -409,7 +416,6 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
@@ -534,11 +540,6 @@ export class FolderCardView extends ItemView {
 
     if (action === "bulk-move-selected") {
       this.bulkMoveSelected();
-      return;
-    }
-
-    if (action === "bulk-trash-selected") {
-      void this.bulkTrashSelected();
       return;
     }
 
@@ -1020,10 +1021,17 @@ export class FolderCardView extends ItemView {
     const buildGeneration = this.generation;
 
     try {
-      const files = this.collectMarkdownFiles(folderPath, loadScope.includeSubfolders);
-      const records: NoteCardRecord[] = files.map((file) => {
-        return {
+      const files = this.collectSupportedFiles(folderPath, loadScope.includeSubfolders);
+      const records: NoteCardRecord[] = [];
+      for (const file of files) {
+        const fileKind = resolveCardFileKind(file);
+        if (fileKind === null) {
+          continue;
+        }
+
+        records.push({
           file,
+          fileKind,
           path: file.path,
           title: file.basename,
           ctime: file.stat.ctime,
@@ -1032,8 +1040,8 @@ export class FolderCardView extends ItemView {
           previewHtml: "",
           previewMode: "empty",
           hydrated: false,
-        };
-      });
+        });
+      }
 
       if (buildGeneration !== this.generation) {
         return;
@@ -1073,8 +1081,14 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
-    if (!event.isFolder && !event.isMarkdown) {
-      return false;
+    if (!event.isFolder) {
+      const oldPathKind =
+        typeof event.oldPath === "string" && event.oldPath.length > 0
+          ? resolveCardFileKindFromPath(event.oldPath)
+          : null;
+      if (event.fileKind === null && oldPathKind === null) {
+        return false;
+      }
     }
 
     const includeSubfolders = this.plugin.getSettings().includeSubfolders;
@@ -1092,7 +1106,7 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
-    // All-notes mode: every markdown file is in scope
+    // All-notes mode: every supported file is in scope
     if (this.folderPath === ALL_NOTES_PATH) {
       return true;
     }
@@ -1135,7 +1149,7 @@ export class FolderCardView extends ItemView {
     return `${newPath}${currentPath.slice(oldPath.length)}`;
   }
 
-  private collectMarkdownFiles(folderPath: string, includeSubfolders: boolean): TFile[] {
+  private collectSupportedFiles(folderPath: string, includeSubfolders: boolean): TFile[] {
     const isAllNotes = folderPath === ALL_NOTES_PATH;
     const root = isAllNotes
       ? this.app.vault.getRoot()
@@ -1148,7 +1162,7 @@ export class FolderCardView extends ItemView {
     if (!isAllNotes && !includeSubfolders) {
       const directFiles: TFile[] = [];
       for (const child of root.children) {
-        if (child instanceof TFile && child.extension.toLowerCase() === "md") {
+        if (child instanceof TFile && isSupportedCardFile(child)) {
           directFiles.push(child);
         }
       }
@@ -1172,7 +1186,7 @@ export class FolderCardView extends ItemView {
           continue;
         }
 
-        if (child instanceof TFile && child.extension.toLowerCase() === "md") {
+        if (child instanceof TFile && isSupportedCardFile(child)) {
           result.push(child);
         }
       }
@@ -1233,7 +1247,12 @@ export class FolderCardView extends ItemView {
       return { handled: false, action: "skipped_folder_event" };
     }
 
-    if (!event.isMarkdown) {
+    const oldPathKind =
+      typeof event.oldPath === "string" && event.oldPath.length > 0
+        ? resolveCardFileKindFromPath(event.oldPath)
+        : null;
+
+    if (event.fileKind === null && oldPathKind === null) {
       return { handled: false, action: "skipped_folder_event" };
     }
 
@@ -1274,8 +1293,14 @@ export class FolderCardView extends ItemView {
         return { handled: false, action: "deferred_full_reload" };
       }
 
+      const fileKind = resolveCardFileKind(file);
+      if (fileKind === null) {
+        return { handled: true, action: "skipped_not_found" };
+      }
+
       const newCard: NoteCardRecord = {
         file,
+        fileKind,
         path: file.path,
         title: file.basename,
         ctime: file.stat.ctime,
@@ -1332,9 +1357,10 @@ export class FolderCardView extends ItemView {
         : -1;
 
       const newInScope = this.isPathInScope(event.path, settings.includeSubfolders);
+      const newPathKind = event.fileKind;
 
       if (oldIndex !== -1) {
-        if (!newInScope) {
+        if (!newInScope || newPathKind === null) {
           // File moved out of scope — remove it
           const removedCard = this.baseCards[oldIndex];
           if (removedCard) {
@@ -1367,6 +1393,7 @@ export class FolderCardView extends ItemView {
         }
 
         card.file = file;
+        card.fileKind = newPathKind;
         card.path = file.path;
         card.title = file.basename;
         if (event.oldPath) {
@@ -1385,7 +1412,7 @@ export class FolderCardView extends ItemView {
       }
 
       // Old path not in cards — file may have moved into scope
-      if (newInScope) {
+      if (newInScope && newPathKind !== null) {
         const alreadyExists = this.baseCards.some((c) => c.path === event.path);
         if (!alreadyExists) {
           const file = this.app.vault.getAbstractFileByPath(event.path);
@@ -1395,6 +1422,7 @@ export class FolderCardView extends ItemView {
 
           const newCard: NoteCardRecord = {
             file,
+            fileKind: newPathKind,
             path: file.path,
             title: file.basename,
             ctime: file.stat.ctime,
@@ -1477,6 +1505,18 @@ export class FolderCardView extends ItemView {
   private async hydrateCard(cardPath: string, generation: number): Promise<void> {
     const card = this.baseCards.find((c) => c.path === cardPath);
     if (!card) {
+      return;
+    }
+
+    if (!isMarkdownCardKind(card.fileKind)) {
+      if (generation !== this.generation) {
+        return;
+      }
+
+      card.excerpt = "";
+      card.previewHtml = `<p class="fce-preview-placeholder">${getCardPlaceholderText(card.fileKind)}</p>`;
+      card.previewMode = "placeholder";
+      card.hydrated = true;
       return;
     }
 
@@ -1938,24 +1978,6 @@ export class FolderCardView extends ItemView {
     );
   }
 
-  private async bulkTrashSelected(): Promise<void> {
-    if (!this.bulkMode || this.selectedPaths.size === 0) {
-      return;
-    }
-
-    await this.executeBulkDestructiveAction({
-      successVerb: "Trashed",
-      failureVerb: "trash",
-      noLiveFilesMessage: "No selected notes are available to trash.",
-      confirmTitle: "Move notes to trash?",
-      confirmButtonText: "Move to trash",
-      confirmMessageBuilder: (count) => {
-        return `Move ${count} selected note${count === 1 ? "" : "s"} to trash?`;
-      },
-      runBatch: (files) => batchTrashFiles(this.app, files),
-    });
-  }
-
   private async bulkDeleteSelected(): Promise<void> {
     if (!this.bulkMode || this.selectedPaths.size === 0) {
       return;
@@ -1965,12 +1987,12 @@ export class FolderCardView extends ItemView {
       successVerb: "Deleted",
       failureVerb: "delete",
       noLiveFilesMessage: "No selected notes are available to delete.",
-      confirmTitle: "Permanently delete notes?",
-      confirmButtonText: "Delete permanently",
+      confirmTitle: "Delete selected notes?",
+      confirmButtonText: "Delete",
       confirmMessageBuilder: (count) => {
-        return `Permanently delete ${count} selected note${count === 1 ? "" : "s"}? This cannot be undone.`;
+        return `Delete ${count} selected note${count === 1 ? "" : "s"}? Obsidian will use your Files & Links delete preference.`;
       },
-      runBatch: (files) => batchDeleteFiles(this.app, files),
+      runBatch: (files) => batchDeleteFilesUsingObsidianPreference(this.app, files),
     });
   }
 
@@ -2178,7 +2200,6 @@ export class FolderCardView extends ItemView {
       canBulkSelectAll: this.visibleCards.length > 0,
       canBulkClearSelection: hasSelection,
       canBulkMoveSelected: hasSelection,
-      canBulkTrashSelected: hasSelection,
       canBulkDeleteSelected: hasSelection,
       canBulkMergeSelected: selectedCount > 1,
     };
@@ -2227,7 +2248,6 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
@@ -2262,7 +2282,6 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkTrashSelected = bulkRuntimeState.canBulkTrashSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;

@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
 import type { SortDirection, SortField } from "../settings";
+import type { CardFileKind } from "./file-kind";
 
 export type { SearchStatus } from "../search/types";
 
@@ -37,13 +38,14 @@ export interface PipelineSearchInput {
 
 export interface NoteCardRecord {
   file: TFile;
+  fileKind: CardFileKind;
   path: string;
   title: string;
   ctime: number;
   mtime: number;
   excerpt: string;
   previewHtml: string;
-  previewMode: "text" | "code" | "empty";
+  previewMode: "text" | "code" | "empty" | "placeholder";
   hydrated: boolean;
 }
 
@@ -78,7 +80,6 @@ export interface BulkRuntimePanelState {
   canBulkSelectAll: boolean;
   canBulkClearSelection: boolean;
   canBulkMoveSelected: boolean;
-  canBulkTrashSelected: boolean;
   canBulkDeleteSelected: boolean;
   canBulkMergeSelected: boolean;
 }
@@ -109,7 +110,7 @@ export interface VaultMutationEvent {
   path: string;
   oldPath: string | null;
   isFolder: boolean;
-  isMarkdown: boolean;
+  fileKind: CardFileKind | null;
 }
 
 export type SelectionAction =
