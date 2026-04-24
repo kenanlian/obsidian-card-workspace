@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mount, unmount } from "svelte";
+import { mount, unmount, tick } from "svelte";
 import CardItem from "./CardItem.svelte";
+import type { CardFileKind } from "./file-kind";
 import type { NoteCardRecord } from "./types";
 
 interface OpenNotePayload {
@@ -44,16 +45,33 @@ interface MountedCardItem {
 
 let mountedComponents: Array<Record<string, unknown>> = [];
 
-function createCard(path: string = "notes/a.md"): NoteCardRecord {
+interface CreateCardOptions {
+  fileKind?: CardFileKind;
+  title?: string;
+  previewHtml?: string;
+  previewMode?: NoteCardRecord["previewMode"];
+  excerpt?: string;
+}
+
+function createCard(path: string = "notes/a.md", options: CreateCardOptions = {}): NoteCardRecord {
+  const {
+    fileKind = "markdown",
+    title = "A note",
+    previewHtml = "<p>Preview text</p>",
+    previewMode = "text",
+    excerpt = "excerpt",
+  } = options;
+
   return {
     file: {} as never,
+    fileKind,
     path,
-    title: "A note",
+    title,
     ctime: new Date("2024-01-02T10:00:00Z").getTime(),
     mtime: new Date("2024-02-03T12:00:00Z").getTime(),
-    excerpt: "excerpt",
-    previewHtml: "<p>Preview text</p>",
-    previewMode: "text",
+    excerpt,
+    previewHtml,
+    previewMode,
     hydrated: true,
   };
 }
@@ -177,18 +195,25 @@ describe("CardItem.svelte", () => {
     expect(captured.bulkEvents).toEqual([{ path: "notes/a.md", shiftKey: true }]);
   });
 
-  it("renders a checked bulk checkbox in the top-right slot and hides the pin button in bulk mode", () => {
+  it("keeps the file-type icon visible in bulk mode while showing the checkbox", () => {
     const { target } = mountCardItem({
       bulkMode: true,
       bulkSelected: true,
       pinnedPaths: ["notes/a.md"],
+      card: createCard("notes/model.base", {
+        fileKind: "base",
+        title: "model.base",
+        previewMode: "placeholder",
+        previewHtml: "",
+      }),
     });
 
     const checkbox = target.querySelector<HTMLInputElement>(".fce-card-bulk-checkbox");
     expect(checkbox).not.toBeNull();
     expect(checkbox?.checked).toBe(true);
     expect(target.querySelector(".fce-card-pin-btn")).toBeNull();
-    expect(target.querySelector(".fce-card-actions")?.firstElementChild).toBe(checkbox);
+    expect(target.querySelector(".fce-card-file-icon[data-file-kind='base']")).not.toBeNull();
+    expect(target.querySelector(".fce-card-actions")?.lastElementChild).toBe(checkbox);
   });
 
   it("emits exactly one bulk-select event when the bulk checkbox is clicked", () => {
@@ -223,28 +248,52 @@ describe("CardItem.svelte", () => {
     expect(captured.openEvents).toEqual([]);
   });
 
-  it("emits pin-toggle with correct toggled pinned value outside bulk mode", async () => {
+  it("renders mapped file-type icons and keeps pin behavior in normal mode", async () => {
     const captured = createCapturedCallbacks();
-    const { component, target } = mountCardItem({}, captured.callbacks);
+    const { component, target } = mountCardItem(
+      {
+        card: createCard("notes/model.base", {
+          fileKind: "base",
+          title: "model.base",
+          previewMode: "placeholder",
+          previewHtml: "",
+        }),
+      },
+      captured.callbacks,
+    );
+
+    await tick();
+
+    const icon = target.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='base']");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("data-icon")).toBe("database");
 
     const pinButton = target.querySelector<HTMLButtonElement>(".fce-card-pin-btn");
     expect(pinButton).not.toBeNull();
     expect(target.querySelector(".fce-card-bulk-checkbox")).toBeNull();
 
     pinButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(captured.pinEvents[0]).toEqual({ path: "notes/a.md", pinned: true });
+    expect(captured.pinEvents[0]).toEqual({ path: "notes/model.base", pinned: true });
 
     await disposeMountedComponent(component);
 
     const { target: remountedTarget } = mountCardItem(
-      { pinnedPaths: ["notes/a.md"] },
+      {
+        card: createCard("notes/model.base", {
+          fileKind: "base",
+          title: "model.base",
+          previewMode: "placeholder",
+          previewHtml: "",
+        }),
+        pinnedPaths: ["notes/model.base"],
+      },
       captured.callbacks,
     );
     const remountedPinButton = remountedTarget.querySelector<HTMLButtonElement>(".fce-card-pin-btn");
     expect(remountedPinButton).not.toBeNull();
 
     remountedPinButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(captured.pinEvents[1]).toEqual({ path: "notes/a.md", pinned: false });
+    expect(captured.pinEvents[1]).toEqual({ path: "notes/model.base", pinned: false });
   });
 
   it("highlights title and excerpt matches from the current query", () => {
@@ -281,5 +330,65 @@ describe("CardItem.svelte", () => {
     expect(target.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
     expect(target.querySelector("h4")?.innerHTML).toBe("A note");
     expect(getExcerptHtml(target)).toContain("<p>Preview text</p>");
+  });
+  it("non-markdown cards remain title-searchable only", () => {
+    const { target } = mountCardItem({
+      searchQuery: "canvas",
+      card: createCard("notes/workflow.canvas", {
+        fileKind: "canvas",
+        title: "workflow.canvas",
+        previewMode: "placeholder",
+        previewHtml: "<p class=\"fce-preview-placeholder\">This is a canvas file.</p>",
+        excerpt: "",
+      }),
+    });
+
+    expect(target.querySelector("h4")?.innerHTML).toContain('<mark class="fce-search-hit">canvas</mark>');
+    expect(target.querySelector(".fce-excerpt")?.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
+  });
+
+  it("renders exact placeholder copy for non-markdown cards", () => {
+    const cards: NoteCardRecord[] = [
+      createCard("notes/model.base", {
+        fileKind: "base",
+        title: "model.base",
+        previewMode: "placeholder",
+        previewHtml: "",
+      }),
+      createCard("notes/diagram.canvas", {
+        fileKind: "canvas",
+        title: "diagram.canvas",
+        previewMode: "placeholder",
+        previewHtml: "",
+      }),
+      createCard("notes/sketch.excalidraw", {
+        fileKind: "excalidraw",
+        title: "sketch.excalidraw",
+        previewMode: "placeholder",
+        previewHtml: "",
+      }),
+    ];
+
+    const first = mountCardItem({ card: cards[0] });
+    const second = mountCardItem({ card: cards[1] });
+    const third = mountCardItem({ card: cards[2] });
+
+    expect(first.target.textContent).toContain("This is a base file.");
+    expect(second.target.textContent).toContain("This is a canvas file.");
+    expect(third.target.textContent).toContain("This is an excalidraw file.");
+  });
+
+  it("renders file-kind icon metadata in the card title group", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/model.base", {
+        fileKind: "base",
+      }),
+    });
+
+    await tick();
+
+    const icon = target.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='base']");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("data-icon")).toBe("database");
   });
 });

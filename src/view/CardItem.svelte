@@ -1,5 +1,6 @@
 <script lang="ts">
   import { setIcon } from "obsidian";
+  import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
   import type { NoteCardRecord } from "./types";
 
   interface OpenNotePayload {
@@ -255,7 +256,10 @@
 >
   <div class="fce-card-body">
     <div class="fce-card-header">
-      <h4>{@html highlightedTitleHtml}</h4>
+      <div class="fce-card-title-group">
+        <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
+        <h4>{@html highlightedTitleHtml}</h4>
+      </div>
       <div class="fce-card-actions">
         {#if bulkMode}
           <input
@@ -280,11 +284,13 @@
       </div>
     </div>
     <div
-      class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''} {card.hydrated ? '' : 'is-loading'} {(card.previewMode === 'empty' || !card.previewHtml) && card.hydrated ? 'is-empty' : ''}"
+      class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''} {card.hydrated ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated ? 'is-empty' : ''}"
       style={getPreviewStyle()}
     >
       {#if card.hydrated}
-        {#if card.previewMode === "empty" || !card.previewHtml}
+        {#if card.previewMode === "placeholder"}
+          <p class="fce-preview-placeholder">{getCardPlaceholderText(card.fileKind)}</p>
+        {:else if card.previewMode === "empty" || !card.previewHtml}
           <p class="fce-preview-empty">No previewable text near the top.</p>
         {:else}
           {@html highlightedPreviewHtml}
