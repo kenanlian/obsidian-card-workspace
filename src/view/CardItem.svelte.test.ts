@@ -266,7 +266,7 @@ describe("CardItem.svelte", () => {
 
     const icon = target.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='base']");
     expect(icon).not.toBeNull();
-    expect(icon?.getAttribute("data-icon")).toBe("database");
+    expect(icon?.getAttribute("data-icon")).toBe("layout-list");
 
     const pinButton = target.querySelector<HTMLButtonElement>(".fce-card-pin-btn");
     expect(pinButton).not.toBeNull();
@@ -276,6 +276,25 @@ describe("CardItem.svelte", () => {
     expect(captured.pinEvents[0]).toEqual({ path: "notes/model.base", pinned: true });
 
     await disposeMountedComponent(component);
+
+    const { component: canvasComponent, target: canvasTarget } = mountCardItem(
+      {
+        card: createCard("notes/diagram.canvas", {
+          fileKind: "canvas",
+          title: "diagram.canvas",
+          previewMode: "placeholder",
+          previewHtml: "",
+        }),
+      },
+    );
+
+    await tick();
+
+    const canvasIcon = canvasTarget.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='canvas']");
+    expect(canvasIcon).not.toBeNull();
+    expect(canvasIcon?.getAttribute("data-icon")).toBe("layout-dashboard");
+
+    await disposeMountedComponent(canvasComponent);
 
     const { target: remountedTarget } = mountCardItem(
       {
@@ -389,6 +408,6 @@ describe("CardItem.svelte", () => {
 
     const icon = target.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='base']");
     expect(icon).not.toBeNull();
-    expect(icon?.getAttribute("data-icon")).toBe("database");
+    expect(icon?.getAttribute("data-icon")).toBe("layout-list");
   });
 });

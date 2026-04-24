@@ -93,7 +93,7 @@ describe("placeholder and icon helpers", () => {
     expect(getCardPlaceholderText("excalidraw")).toBe("This is an excalidraw file.");
 
     expect(getCardFileIcon("markdown")).toBe("file-text");
-    expect(getCardFileIcon("base")).toBe("database");
+    expect(getCardFileIcon("base")).toBe("layout-list");
     expect(getCardFileIcon("canvas")).toBe("layout-dashboard");
     expect(getCardFileIcon("excalidraw")).toBe("pen-tool");
   });

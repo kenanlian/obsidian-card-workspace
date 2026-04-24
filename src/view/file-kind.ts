@@ -22,7 +22,7 @@ const CARD_PLACEHOLDER_TEXT: Record<CardFileKind, string> = {
 
 const CARD_FILE_ICON: Record<CardFileKind, string> = {
   markdown: "file-text",
-  base: "database",
+  base: "layout-list",
   canvas: "layout-dashboard",
   excalidraw: "pen-tool",
 };
