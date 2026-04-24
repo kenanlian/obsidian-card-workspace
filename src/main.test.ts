@@ -529,6 +529,25 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     expect(app.workspace.detachLeavesOfType).toHaveBeenCalledWith("folder-card-view");
   });
 
+  it("treats markdown-to-non-markdown file renames as markdown search mutations", async () => {
+    const { plugin } = createPluginHarness();
+    await plugin.onload();
+
+    const renameCallback = obsidianMockState.vaultCallbacks.rename;
+    const renamedFile = new TFile() as TFile & { path: string; extension: string };
+    renamedFile.path = "notes/renamed.canvas";
+    renamedFile.extension = "canvas";
+    renameCallback?.(renamedFile, "notes/renamed.md");
+
+    expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
+      type: "rename",
+      path: "notes/renamed.canvas",
+      oldPath: "notes/renamed.md",
+      isMarkdown: true,
+      isFolder: false,
+    });
+  });
+
   it("schedules plugin-owned rebuild when forwarded mutation reaches rebuild-required state", async () => {
     const { plugin } = createPluginHarness();
     await plugin.onload();

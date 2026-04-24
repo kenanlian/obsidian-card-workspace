@@ -278,6 +278,29 @@ describe("SearchIndexManager", () => {
     expect(await manager.search("roadmap", ["notes/a.md", "notes/renamed.md"])).toEqual(["notes/renamed.md"]);
   });
 
+  it("removes indexed markdown document when rename target is no longer markdown-indexable", async () => {
+    const initial = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock();
+    const { source, byPath } = createDocumentSource(initial);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource();
+
+    byPath.delete("notes/a.md");
+    await manager.applyMutation(
+      createMutation({
+        type: "rename",
+        oldPath: "notes/a.md",
+        path: "notes/a.canvas",
+        isFolder: false,
+        isMarkdown: true,
+      }),
+    );
+
+    expect(await manager.search("roadmap", ["notes/a.md", "notes/a.canvas"])).toEqual([]);
+  });
+
   it("rewrites folder paths for safe folder renames", async () => {
     const initial = [
       createDocument("notes/projects/a.md", "Roadmap"),

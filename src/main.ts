@@ -26,6 +26,7 @@ import type {
 } from "./search";
 import type { PartialPluginSettings, PluginSettings } from "./settings";
 import { ALL_NOTES_PATH } from "./view/types";
+import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -413,11 +414,17 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
+    const nextPathIsMarkdown = event.fileKind !== null && isMarkdownCardKind(event.fileKind);
+    const oldPathWasMarkdown =
+      event.eventType === "rename" &&
+      event.oldPath !== null &&
+      resolveCardFileKindFromPath(event.oldPath) === "markdown";
+
     return {
       type: event.eventType,
       path: event.path,
       oldPath: event.oldPath,
-      isMarkdown: event.isMarkdown,
+      isMarkdown: nextPathIsMarkdown || oldPathWasMarkdown,
       isFolder: event.isFolder,
     };
   }
@@ -441,12 +448,21 @@ export default class FolderCardExplorerPlugin extends Plugin {
           }
 
           const files = getMarkdownFiles.call(this.app.vault);
-          const documents = await Promise.all(files.map((file) => this.prepareSearchableDocumentFromFile(file)));
+          const searchableFiles = files.filter((file) => {
+            const fileKind = resolveCardFileKind(file);
+            return fileKind !== null && isMarkdownCardKind(fileKind);
+          });
+          const documents = await Promise.all(searchableFiles.map((file) => this.prepareSearchableDocumentFromFile(file)));
           return documents.filter((document): document is NonNullable<typeof document> => document !== null);
         },
         readDocument: async (path) => {
           const target = this.app.vault.getAbstractFileByPath(path);
-          if (!(target instanceof TFile) || target.extension.toLowerCase() !== "md") {
+          if (!(target instanceof TFile)) {
+            return null;
+          }
+
+          const fileKind = resolveCardFileKind(target);
+          if (fileKind === null || !isMarkdownCardKind(fileKind)) {
             return null;
           }
           return this.prepareSearchableDocumentFromFile(target);
@@ -709,7 +725,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       path: file.path,
       oldPath,
       isFolder: file instanceof TFolder,
-      isMarkdown: file instanceof TFile && file.extension.toLowerCase() === "md",
+      fileKind: file instanceof TFile ? resolveCardFileKind(file) : null,
     };
   }
 
