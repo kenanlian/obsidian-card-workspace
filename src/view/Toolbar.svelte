@@ -50,7 +50,6 @@
     canBulkSelectAll?: boolean;
     canBulkClearSelection?: boolean;
     canBulkMoveSelected?: boolean;
-    canBulkTrashSelected?: boolean;
     canBulkDeleteSelected?: boolean;
     canBulkMergeSelected?: boolean;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
@@ -107,7 +106,6 @@
     canBulkSelectAll = false,
     canBulkClearSelection = false,
     canBulkMoveSelected = false,
-    canBulkTrashSelected = false,
     canBulkDeleteSelected = false,
     canBulkMergeSelected = false,
     onToolbarAction,
@@ -169,7 +167,6 @@
     { id: "bulk-select-all", label: "Select all", icon: "check-square", disabled: !canBulkSelectAll },
     { id: "bulk-clear-selection", label: "Clear selection", icon: "x-square", disabled: !canBulkClearSelection },
     { id: "bulk-move-selected", label: "Move selected", icon: "folder-input", disabled: !canBulkMoveSelected },
-    { id: "bulk-trash-selected", label: "Trash selected", icon: "trash", disabled: !canBulkTrashSelected },
     { id: "bulk-delete-selected", label: "Delete selected", icon: "trash-2", disabled: !canBulkDeleteSelected },
     { id: "bulk-merge-selected", label: "Merge selected", icon: "combine", disabled: !canBulkMergeSelected },
   ]);

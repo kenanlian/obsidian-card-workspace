@@ -45,7 +45,14 @@ vi.mock("obsidian", () => {
 });
 
 import { TFile, TFolder } from "obsidian";
-import { batchDeleteFiles, batchMoveFiles, batchTrashFiles, mergeNotes } from "./note-ops";
+import {
+  batchDeleteFiles,
+  batchDeleteFilesUsingObsidianPreference,
+  batchMoveFiles,
+  batchTrashFiles,
+  deleteFileUsingObsidianPreference,
+  mergeNotes,
+} from "./note-ops";
 
 interface MockAppForMove {
   vault: {
@@ -63,6 +70,15 @@ interface MockAppForTrash {
 }
 
 interface MockAppForDelete {
+  vault: {
+    delete: (file: TFile) => Promise<void>;
+  };
+}
+
+interface MockAppForPreferenceDelete {
+  fileManager: {
+    trashFile: (file: TFile) => Promise<void>;
+  };
   vault: {
     delete: (file: TFile) => Promise<void>;
   };
@@ -130,7 +146,7 @@ describe("batchMoveFiles", () => {
 
     const summary = await batchMoveFiles(app as unknown as any, files, targetFolder);
 
-    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+    expect(summary.succeeded.map((entry: { file: TFile }) => entry.file.path)).toEqual([
       "archive/first.md",
       "archive/third.md",
     ]);
@@ -160,7 +176,7 @@ describe("batchTrashFiles", () => {
 
     const summary = await batchTrashFiles(app as unknown as any, [first, second, third]);
 
-    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+    expect(summary.succeeded.map((entry: { file: TFile }) => entry.file.path)).toEqual([
       "notes/first.md",
       "notes/third.md",
     ]);
@@ -193,7 +209,7 @@ describe("batchDeleteFiles", () => {
 
     const summary = await batchDeleteFiles(app as unknown as any, [first, second, third]);
 
-    expect(summary.succeeded.map((entry) => entry.file.path)).toEqual([
+    expect(summary.succeeded.map((entry: { file: TFile }) => entry.file.path)).toEqual([
       "notes/first.md",
       "notes/third.md",
     ]);
@@ -206,6 +222,132 @@ describe("batchDeleteFiles", () => {
     expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(1, first);
     expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(2, second);
     expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(3, third);
+  });
+});
+
+describe("deleteFileUsingObsidianPreference", () => {
+  it("uses fileManager.trashFile and preserves the result shape", async () => {
+    const file = createFile("notes/first.md");
+    const app: MockAppForPreferenceDelete = {
+      fileManager: {
+        trashFile: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+      vault: {
+        delete: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+    };
+
+    const result = await deleteFileUsingObsidianPreference(app as unknown as any, file);
+
+    expect(result).toEqual({ ok: true, file });
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledWith(file);
+    expect(vi.mocked(app.vault.delete)).not.toHaveBeenCalled();
+  });
+
+  it("returns a failure result when fileManager.trashFile throws", async () => {
+    const file = createFile("notes/first.md");
+    const app: MockAppForPreferenceDelete = {
+      fileManager: {
+        trashFile: vi.fn(async (): Promise<void> => {
+          throw new Error("trash blocked");
+        }),
+      },
+      vault: {
+        delete: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+    };
+
+    const result = await deleteFileUsingObsidianPreference(app as unknown as any, file);
+
+    expect(result).toMatchObject({ ok: false, path: "notes/first.md", error: "Error: trash blocked" });
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(app.vault.delete)).not.toHaveBeenCalled();
+  });
+});
+
+describe("batchDeleteFilesUsingObsidianPreference", () => {
+  it("uses fileManager.trashFile for preference-respecting batch delete", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const app: MockAppForPreferenceDelete = {
+      fileManager: {
+        trashFile: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+      vault: {
+        delete: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+    };
+
+    const summary = await batchDeleteFilesUsingObsidianPreference(app as unknown as any, [
+      first,
+      second,
+      third,
+    ]);
+
+    expect(summary.succeeded.map((entry: { file: TFile }) => entry.file.path)).toEqual([
+      "notes/first.md",
+      "notes/second.md",
+      "notes/third.md",
+    ]);
+    expect(summary.failed).toHaveLength(0);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.fileManager.trashFile).mock.calls[0]).toEqual([first]);
+    expect(vi.mocked(app.fileManager.trashFile).mock.calls[1]).toEqual([second]);
+    expect(vi.mocked(app.fileManager.trashFile).mock.calls[2]).toEqual([third]);
+    expect(vi.mocked(app.vault.delete)).not.toHaveBeenCalled();
+  });
+
+  it("continues remaining files when one preference-respecting delete fails", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const calls: string[] = [];
+    const app: MockAppForPreferenceDelete = {
+      fileManager: {
+        trashFile: vi.fn(async (file: TFile): Promise<void> => {
+          calls.push(file.path);
+          if (file.path === second.path) {
+            throw new Error("trash blocked");
+          }
+        }),
+      },
+      vault: {
+        delete: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+    };
+
+    const summary = await batchDeleteFilesUsingObsidianPreference(app as unknown as any, [
+      first,
+      second,
+      third,
+    ]);
+
+    expect(summary.succeeded.map((entry: { file: TFile }) => entry.file.path)).toEqual([
+      "notes/first.md",
+      "notes/third.md",
+    ]);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toMatchObject({
+      ok: false,
+      path: "notes/second.md",
+    });
+    expect(calls).toEqual(["notes/first.md", "notes/second.md", "notes/third.md"]);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.vault.delete)).not.toHaveBeenCalled();
   });
 });
 

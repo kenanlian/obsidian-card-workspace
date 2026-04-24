@@ -94,6 +94,22 @@ export async function trashFile(
 }
 
 /**
+ * Move a file to trash using Obsidian's user preference.
+ */
+export async function deleteFileUsingObsidianPreference(
+  app: App,
+  file: TFile,
+): Promise<NoteOpResult> {
+  const path = file.path;
+  try {
+    await app.fileManager.trashFile(file);
+    return { ok: true, file };
+  } catch (err) {
+    return { ok: false, error: String(err), path };
+  }
+}
+
+/**
  * Duplicate a file into the same folder (appends " copy" or " copy N").
  */
 export async function duplicateFile(
@@ -188,6 +204,28 @@ export async function batchTrashFiles(
 
   for (const file of files) {
     const result = await trashFile(app, file);
+    if (result.ok) {
+      succeeded.push(result);
+    } else {
+      failed.push(result);
+    }
+  }
+
+  return { succeeded, failed };
+}
+
+/**
+ * Move multiple files to trash using Obsidian's user preference.
+ */
+export async function batchDeleteFilesUsingObsidianPreference(
+  app: App,
+  files: TFile[],
+): Promise<BatchOpSummary> {
+  const succeeded: NoteOpSuccess[] = [];
+  const failed: NoteOpFailure[] = [];
+
+  for (const file of files) {
+    const result = await deleteFileUsingObsidianPreference(app, file);
     if (result.ok) {
       succeeded.push(result);
     } else {

@@ -141,7 +141,6 @@ function mountToolbar(
       canBulkSelectAll: false,
       canBulkClearSelection: false,
       canBulkMoveSelected: false,
-      canBulkTrashSelected: false,
       canBulkDeleteSelected: false,
       canBulkMergeSelected: false,
       ...callbacks,
@@ -463,7 +462,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("renders a compact icon-only bulk strip with tooltips and right-aligned summary", async () => {
+  it("renders only one destructive bulk action", async () => {
     const { component } = mountToolbar({
       bulkMode: true,
       selectedCount: 3,
@@ -471,7 +470,6 @@ describe("Toolbar.svelte", () => {
       canBulkSelectAll: true,
       canBulkClearSelection: true,
       canBulkMoveSelected: true,
-      canBulkTrashSelected: true,
       canBulkDeleteSelected: true,
       canBulkMergeSelected: true,
     });
@@ -488,26 +486,27 @@ describe("Toolbar.svelte", () => {
     expect(bulkStrip?.firstElementChild).toBe(bulkActions);
     expect(bulkStrip?.lastElementChild).toBe(bulkSummary);
     expect(bulkSummary?.textContent).toContain("3 selected");
-    expect(document.querySelector(".fce-toolbar-bulk-mode-pill")).toBeNull();
-    expect(bulkStrip?.textContent).not.toContain("Range anchor ready");
-    expect(bulkStrip?.textContent).not.toContain("All bulk actions are ready.");
 
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
-    expect(bulkButtons).toHaveLength(7);
-    expect(bulkButtons.map((button) => button.getAttribute("data-tooltip"))).toEqual([
+    expect(bulkButtons).toHaveLength(6);
+
+    const tooltips = bulkButtons.map((button) => button.getAttribute("data-tooltip"));
+    expect(tooltips).toEqual([
       "Select all",
       "Clear selection",
       "Move selected",
-      "Trash selected",
       "Delete selected",
       "Merge selected",
       "Exit bulk mode",
     ]);
+
+    const destructiveTooltips = tooltips.filter((tooltip) => tooltip?.toLowerCase().includes("delete") || tooltip?.toLowerCase().includes("trash"));
+    expect(destructiveTooltips).toEqual(["Delete selected"]);
+
     expect(bulkButtons.map((button) => button.getAttribute("data-icon"))).toEqual([
       "check-square",
       "x-square",
       "folder-input",
-      "trash",
       "trash-2",
       "combine",
       "x",
