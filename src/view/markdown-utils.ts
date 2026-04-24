@@ -328,11 +328,7 @@ function renderInlineWithLimit(source: string, limit: number): InlineRenderResul
     remaining -= slice.length;
 
     const escaped = escapeHtml(slice);
-    if (segment.type === "strong") {
-      htmlParts.push(`<strong>${escaped}</strong>`);
-    } else if (segment.type === "em") {
-      htmlParts.push(`<em>${escaped}</em>`);
-    } else if (segment.type === "code") {
+    if (segment.type === "code") {
       htmlParts.push(`<code>${escaped}</code>`);
     } else {
       htmlParts.push(escaped);

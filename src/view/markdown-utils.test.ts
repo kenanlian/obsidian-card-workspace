@@ -158,14 +158,18 @@ describe("buildLightPreview", () => {
     expect(result.html).toContain("...");
   });
 
-  it("renders inline bold as <strong>", () => {
+  it("renders inline bold as plain text", () => {
     const result = buildLightPreview("some **bold** text");
-    expect(result.html).toContain("<strong>bold</strong>");
+    expect(result.html).toContain("some bold text");
+    expect(result.html).not.toContain("<strong>");
+    expect(result.html).not.toContain("**");
   });
 
-  it("renders inline em as <em>", () => {
+  it("renders inline em as plain text", () => {
     const result = buildLightPreview("some _italic_ text");
-    expect(result.html).toContain("<em>italic</em>");
+    expect(result.html).toContain("some italic text");
+    expect(result.html).not.toContain("<em>");
+    expect(result.html).not.toContain("_");
   });
 
   it("renders inline code as <code>", () => {
@@ -257,6 +261,8 @@ describe("buildLightPreview", () => {
 
     expect(result.html).not.toContain("**");
     expect(result.html).not.toContain("_");
+    expect(result.html).not.toContain("<strong>");
+    expect(result.html).not.toContain("<em>");
     expect(result.html).not.toContain("~~");
     expect(result.html).not.toContain("==");
     expect(result.html).not.toContain("`");
