@@ -46,6 +46,7 @@
 
 - `src/view/markdown-utils.ts`
   - code preview 的输出表面从 `<pre>` 收敛为与文本同预算的段落型表面。
+  - inline emphasis 的弱提示边界继续收紧：`**bold**` / `*italic*` 仅保留文本内容，不再输出 `<strong>` / `<em>`，避免浏览器默认字重和字形把摘要表面重新变成更重的 Markdown renderer。
 - `styles.css`
   - `.fce-excerpt` 内部不再使用会额外占高的段间距。
   - code preview 的 light background cue 改为不引入额外垂直预算的样式。
@@ -55,6 +56,7 @@
 ## Cost and risk
 
 - code preview 的视觉存在感会比带 padding / border 的 block 更弱。
+- inline emphasis 不再提供 bold / italic 的弱提示，某些用户会失去通过字重快速识别强调段的能力；这是刻意接受的表面收敛，而不是回归缺陷。
 - 后续如果有人想重新加回段间距、代码块边框或更厚的内边距，必须先重新评估 `previewLines` 的物理预算，而不是直接改 CSS。
 - 这不是“永远禁止所有 excerpt 装饰”，而是要求任何垂直装饰都必须被纳入预算模型。
 
