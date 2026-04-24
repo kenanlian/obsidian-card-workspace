@@ -26,7 +26,6 @@ export interface PanelModelState {
   canBulkSelectAll: boolean;
   canBulkClearSelection: boolean;
   canBulkMoveSelected: boolean;
-  canBulkTrashSelected: boolean;
   canBulkDeleteSelected: boolean;
   canBulkMergeSelected: boolean;
 }

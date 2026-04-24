@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
+import type { CardFileKind } from "./file-kind";
 import type { NoteCardRecord } from "./types";
 
 class ResizeObserverStub {
@@ -14,9 +15,10 @@ class ResizeObserverStub {
   }
 }
 
-function createCard(path: string, title: string): NoteCardRecord {
+function createCard(path: string, title: string, fileKind: CardFileKind = "markdown"): NoteCardRecord {
   return {
     file: {} as never,
+    fileKind,
     path,
     title,
     ctime: new Date("2024-01-02T10:00:00Z").getTime(),
@@ -54,7 +56,6 @@ function createInitialPanelState(): PanelModelState {
     canBulkSelectAll: false,
     canBulkClearSelection: false,
     canBulkMoveSelected: false,
-    canBulkTrashSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
   };
@@ -88,7 +89,7 @@ describe("FolderCardPanel.svelte", () => {
       },
     });
 
-    expect(target.textContent).toContain("No Markdown notes found in this folder.");
+    expect(target.textContent).toContain("No supported files found in this folder.");
 
     panelModel.mutate((state) => {
       state.cards = [createCard("notes/runtime.md", "Runtime note")];
@@ -106,6 +107,40 @@ describe("FolderCardPanel.svelte", () => {
     const event = hydrateEvents[hydrateEvents.length - 1];
     expect(typeof event?.start).toBe("number");
     expect(typeof event?.end).toBe("number");
+
+    await unmount(component);
+  });
+  it("supports base canvas and excalidraw cards", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onHydrateRange: () => {
+          return;
+        },
+      },
+    });
+
+    expect(target.textContent).toContain("No supported files found in this folder.");
+
+    panelModel.mutate((state) => {
+      state.cards = [
+        createCard("notes/reference.base", "reference.base", "base"),
+        createCard("notes/flow.canvas", "flow.canvas", "canvas"),
+        createCard("notes/sketch.excalidraw", "sketch.excalidraw", "excalidraw"),
+      ];
+      state.generation = 2;
+      state.folderPath = "notes";
+    });
+    await tick();
+
+    expect(target.textContent).toContain("reference.base");
+    expect(target.textContent).toContain("flow.canvas");
+    expect(target.textContent).toContain("sketch.excalidraw");
 
     await unmount(component);
   });

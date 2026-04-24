@@ -111,7 +111,6 @@
     canBulkSelectAll: false,
     canBulkClearSelection: false,
     canBulkMoveSelected: false,
-    canBulkTrashSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
   };
@@ -178,7 +177,6 @@
   const canBulkSelectAll = $derived(panelState.canBulkSelectAll);
   const canBulkClearSelection = $derived(panelState.canBulkClearSelection);
   const canBulkMoveSelected = $derived(panelState.canBulkMoveSelected);
-  const canBulkTrashSelected = $derived(panelState.canBulkTrashSelected);
   const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
 
@@ -525,7 +523,6 @@
     {canBulkSelectAll}
     {canBulkClearSelection}
     {canBulkMoveSelected}
-    {canBulkTrashSelected}
     {canBulkDeleteSelected}
     {canBulkMergeSelected}
     onToolbarAction={handleToolbarAction}
@@ -547,7 +544,7 @@
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
     {:else if cards.length === 0}
-      <div class="fce-empty">No Markdown notes found in this folder.</div>
+      <div class="fce-empty">No supported files found in this folder.</div>
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
       {#each visibleRows as row (row.key)}
