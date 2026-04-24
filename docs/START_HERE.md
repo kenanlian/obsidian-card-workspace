@@ -13,6 +13,7 @@
 - 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和降级回退。
 - 已完成：`FolderCardView.ts` 不再只收集 Markdown 文件，而是统一收集 `markdown`、`base`、`canvas`、`excalidraw` 四类受支持卡片文件，并在视图运行时维护 `fileKind`。
 - 已完成：`CardItem.svelte` / `FolderCardPanel.svelte` 现在会为非 Markdown 卡片显示文件类型图标与占位摘要，让这些文件能以稳定 UI 合约进入卡片流。
+- 已完成：Markdown 卡片的轻量 preview 继续保留 heading / inline code / code block 等弱提示，但 `**bold**` / `*italic*` 这类强调语法现在会被拍平成普通文本，不再依赖浏览器默认的 `<strong>` / `<em>` 视觉效果。
 - 已完成：非 Markdown 卡片标题图标继续走 Obsidian 官方 `setIcon(...)` 路径；`base` 当前映射为 `layout-list`，`excalidraw` 当前映射为 `pen-tool`，不再引入截图或自定义图片资产。
 - 已完成：`pipeline.ts` 和搜索服务正式锁定了“Markdown 继续做全文搜索；非 Markdown 只参与标题级匹配”的非对称搜索语义。
 - 已完成：批量删除不再承诺永久删除，而是改为遵循 Obsidian `Files & Links` 的删除偏好。
@@ -24,6 +25,7 @@
 1. **搜索查询仍是 runtime-only，而且是 per-view。** `searchQuery` 不写入 `PluginSettings`，真值仍在 `FolderCardView.ts`。
 2. **`pipeline.ts` 仍是唯一投影路径。** 搜索服务可以给出 indexed ordering，但最终哪些卡片可见、顺序如何变化，仍由 pipeline 决定。
 3. **混合文件类型支持不等于全文索引扩容。** `markdown` 继续参与全文预览和全文索引，`base` / `canvas` / `excalidraw` 进入卡片流时只提供标题、图标和占位摘要；`orderedPaths: null` 仍表示 fallback filtering，`orderedPaths: []` 仍表示 indexed 搜索已执行且结果为零。
+4. **轻量 preview 不是完整 Markdown renderer。** 当前只保留 heading、inline code、fenced code 等弱提示；粗体和斜体语法会被归一化成普通文本，不再输出 `<strong>` / `<em>`。
 
 ## 系统大致怎么拼起来的
 

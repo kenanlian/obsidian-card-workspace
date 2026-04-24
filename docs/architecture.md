@@ -133,6 +133,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 当前视图的 `searchQuery`、`searchStatus`、候选路径约束和 debounce。
 - 收集当前 folder / all-notes scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`。
 - 对 Markdown 卡片执行正文读取和预览构建；对非 Markdown 卡片注入占位摘要。
+- 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`。
 - 向 `SearchService` 发 query，并把结果转成 pipeline 输入。
 - 组装 `PipelineContext`，再调用 `runPipeline()`。
 - 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
@@ -329,13 +330,14 @@ baseCards
 1. 不要把 `searchQuery` 写回 `PluginSettings`。
 2. 不要让 `SearchService` 绕开 `pipeline.ts` 直接控制最终可见卡片。
 3. 不要把“支持进卡片流”和“支持全文索引”混成一回事；当前只有 Markdown 继续承担全文预览与全文索引。
-4. 不要把 `orderedPaths: null` 和空数组的语义做混。
-5. 不要让 folder rename 的 unsafe 路径继续静默服务旧索引，应明确升级到 `rebuild-required`。
-6. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
-7. 文件类型标题图标优先保持在 Obsidian 官方 Lucide icon name contract 内，不要把截图、栅格图片或自定义图像注入 card title icon slot。
-8. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
-8. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
-9. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
+4. 不要把轻量 preview 当成完整 Markdown renderer；强调语法当前已被刻意拍平成普通文本，避免浏览器默认 `<strong>` / `<em>` 样式重新进入卡片摘要。
+5. 不要让 `orderedPaths: null` 和空数组的语义做混。
+6. 不要让 folder rename 的 unsafe 路径继续静默服务旧索引，应明确升级到 `rebuild-required`。
+7. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
+8. 文件类型标题图标优先保持在 Obsidian 官方 Lucide icon name contract 内，不要把截图、栅格图片或自定义图像注入 card title icon slot。
+9. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
+10. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
+11. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
 
 ## 历史问题与折中
 
