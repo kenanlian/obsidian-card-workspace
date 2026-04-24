@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { PluginSettings } from "../settings";
 import { matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
+import { isMarkdownCardKind } from "./file-kind";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
@@ -69,12 +70,24 @@ export function applySearchFilter(cards: NoteCardRecord[], context: PipelineCont
       }
     }
 
-    return orderedMatches;
+    const includedPaths = new Set(orderedMatches.map((card) => card.path));
+    const normalizedQuery = query.trim().toLowerCase();
+    const titleOnlyNonMarkdownMatches = cards.filter((card) => {
+      if (includedPaths.has(card.path) || isMarkdownCardKind(card.fileKind)) {
+        return false;
+      }
+
+      return card.title.toLowerCase().includes(normalizedQuery);
+    });
+
+    return [...orderedMatches, ...titleOnlyNonMarkdownMatches];
   }
 
   // Fallback mode preserves the current sorted input order by filtering in-place.
   return cards.filter((card) => {
-    const cachedContent = card.excerpt.trim().length > 0 ? card.excerpt : null;
+    const cachedContent = isMarkdownCardKind(card.fileKind) && card.excerpt.trim().length > 0
+      ? card.excerpt
+      : null;
     return matchesSearchQuery(card.file, query, cachedContent);
   });
 }

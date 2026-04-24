@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, DEFAULT_PIPELINE_STEPS } from "./pipeline";
 import type { PipelineContext } from "./pipeline";
 import type { NoteCardRecord } from "./types";
+import type { CardFileKind } from "./file-kind";
 import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
 import * as metadataUtils from "./metadata-utils";
 
@@ -41,11 +42,19 @@ function withPinnedPaths(context: PipelineContext, pinnedPaths: string[]): Pipel
   };
 }
 
-function createMockCard(path: string, excerpt = ""): NoteCardRecord {
+interface CreateMockCardOptions {
+  fileKind?: CardFileKind;
+  title?: string;
+}
+
+function createMockCard(path: string, excerpt = "", options: CreateMockCardOptions = {}): NoteCardRecord {
+  const { fileKind = "markdown", title = path.replace(/.*\//, "").replace(/\.[^.]+$/, "") } = options;
+
   return {
-    file: { path, basename: path.replace(/.*\//, "").replace(".md", "") } as NoteCardRecord["file"],
+    file: { path, basename: path.replace(/.*\//, "").replace(/\.[^.]+$/, "") } as NoteCardRecord["file"],
+    fileKind,
     path,
-    title: path.replace(/.*\//, "").replace(".md", ""),
+    title,
     ctime: Date.now(),
     mtime: Date.now(),
     excerpt,
@@ -306,6 +315,33 @@ describe("apply search filter behavior", () => {
     context.search.orderedPaths = ["gamma.md", "missing.md", "alpha.md"];
 
     expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["gamma.md", "alpha.md"]);
+  });
+
+  it("appends title-matching non-markdown cards when indexed markdown results exist", () => {
+    const cards = [
+      createMockCard("notes/roadmap.md", "roadmap body", { fileKind: "markdown", title: "roadmap" }),
+      createMockCard("boards/alpha.canvas", "This is a canvas file.", {
+        fileKind: "canvas",
+        title: "alpha.canvas",
+      }),
+      createMockCard("sketches/idea.excalidraw", "This is an excalidraw file.", {
+        fileKind: "excalidraw",
+        title: "idea.excalidraw",
+      }),
+    ];
+
+    const context = createMockContext();
+    context.search.query = "canvas";
+    context.search.orderedPaths = ["notes/roadmap.md"];
+
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([
+      "notes/roadmap.md",
+      "boards/alpha.canvas",
+    ]);
+
+    context.search.query = "excalidraw file";
+    context.search.orderedPaths = null;
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([]);
   });
 
   it("preserves current sorted card order in fallback mode", () => {
