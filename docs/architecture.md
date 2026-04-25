@@ -10,7 +10,7 @@
 4. **视图拥有运行时查询。** 当前 view 的 query、debounce、候选卡片和搜索状态归 `FolderCardView.ts`。
 5. **`pipeline.ts` 统一可见结果。** 不管搜索来自 fallback 还是 indexed，最终投影都必须走同一条纯函数链路。
 6. **卡片文件类型是显式领域概念。** `markdown`、`base`、`canvas`、`excalidraw` 都可以进入卡片流，但它们的预览、图标和搜索能力并不完全相同。
-7. **索引能力沿现有边界扩展。** 搜索能力已经落地，但后续演进仍应在 `IndexStore`、`SearchIndexManager`、`IndexedSearchService` 这一层推进，而不是把索引逻辑散回 UI 或 settings。
+7. **默认卡片点击遵循主编辑区 recent-root fallback 语义。** 左键 / Enter / Space 的默认打开行为不再由设置驱动，而由 `main.ts` 直接决定：先尝试复用 `getMostRecentLeaf(rootSplit)` 返回的可承载文件 root leaf；若最近 root leaf 不可承载文件，则回退到 root Markdown leaf；只有目标 leaf 已 pin 或没有合适目标时，才新开一个 tab。
 
 ## 系统总览
 
@@ -121,6 +121,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 注册 vault observers，并把 mutation 转发给视图和搜索服务。
 - 在转发搜索 mutation 时，用 `file-kind` 语义判断 rename / create / delete 是否仍应被视为 Markdown 索引文档变化。
 - 订阅搜索健康快照，在必要时调度一次 plugin-owned rebuild，并避免重复 fanout。
+- 作为卡片默认打开语义的唯一真相来源，决定何时复用最近 root file-capable leaf、何时回退到 root Markdown leaf、何时新建 tab，以及何时执行显式 split / popout。
 
 它不拥有 per-view query，也不直接决定 `visibleCards`。
 
@@ -138,12 +139,13 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 组装 `PipelineContext`，再调用 `runPipeline()`。
 - 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
 - 把 bulk delete 路由到遵循 Obsidian 删除偏好的实现，而不是插件自定义的永久删除语义。
+- 把默认卡片点击与“更多”菜单显式动作分层：默认点击只上报 `path`，显式菜单动作才传具体 `OpenDestination`。
 
 关键边界是：**query 仍只由 `FolderCardView.ts` 持有。** indexed 搜索的存在没有改变这一点。
 
 ### `src/view/panel-model.ts`
 
-这是宿主到面板的正式状态桥。它承载 cards、selection、filter、pin、bulk state，也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。
+这是宿主到面板的正式状态桥。它承载 cards、selection、filter、pin、bulk state，也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。默认卡片打开方式已经不再经过这层状态桥。
 
 ### `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
 
@@ -160,7 +162,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 把搜索输入变化回传给 `FolderCardView.ts`。
 - 继续处理 viewport、虚拟滚动和工具栏交互。
 
-它们不是搜索状态源，也不参与索引构建。
+它们不是搜索状态源，也不参与索引构建。`CardItem.svelte` 的默认点击事件现在只上报 `path`，不再把默认打开目标塞进 props 或 payload。
 
 ### `src/view/pipeline.ts`
 
@@ -269,6 +271,19 @@ baseCards
 
 这里的关键约束是：插件不再自定义“Delete = 永久删除”的固定语义。
 
+### 6. 默认卡片点击与显式打开动作分层
+
+当前打开链路把“默认点击”和“显式动作”拆成两层：
+
+1. `CardItem.svelte` 的默认点击、Enter、Space 只上报 `path`。
+2. `FolderCardView.ts` 收到默认打开事件后，直接调用 `plugin.openNoteFromCard(path)`，不再从 settings 或 panel state 推导默认 destination。
+3. `main.ts` 的 `openNoteFromCard(path, destination?)` 在 `destination` 缺省时执行 main-editor-area 规则：先检查 `getMostRecentLeaf(rootSplit)`；如果这个最近 root leaf 可承载文件，则复用它，若它已 pin，则改为 `getLeaf(true)` 新开一个 tab。
+4. 如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；仍然没有合适目标时才新建一个 new tab。
+5. “更多”菜单只表达显式动作：`new-tab`、`split-right`、`new-window`。
+6. `split-right` 仍只从现有 root editor leaf 派生；`new-window` 继续委托给 `openPopoutLeaf()`，若宿主不支持则只给出 desktop-only notice。
+
+这里的关键约束是：**默认点击语义不再是设置项，而是宿主对齐策略；显式菜单动作才是用户主动选择的 destination。**
+
 ## 数据流与状态映射
 
 ### 插件级持久化状态
@@ -323,7 +338,7 @@ baseCards
 - bulk mode 及其派生能力
 - `searchQuery`、`searchStatus`
 
-面板读这些状态，但不拥有它们。
+面板读这些状态，但不拥有它们。默认点击语义已经不在这层存储。
 
 ## 关键约束与假设
 
@@ -338,6 +353,7 @@ baseCards
 9. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
 10. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
 11. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
+12. 默认卡片点击不是持久化设置；真正的默认打开语义现在直接由 `main.ts` 统一控制，而且目标是主编辑区里最近使用、可承载文件的 root leaf。不能把 leaf 选择或默认 destination 再散回 Svelte 组件、panel-model 或 settings。
 
 ## 历史问题与折中
 
@@ -373,3 +389,4 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 - `docs/decisions/2026-04-23-toolbar-ui-optimization.md`
 - `docs/decisions/2026-04-24-support-mixed-file-kind-cards-with-markdown-only-indexing.md`
 - `docs/decisions/2026-04-24-keep-file-kind-icons-on-official-obsidian-lucide-icons.md`
+- `docs/decisions/2026-04-25-constrain-card-note-opens-to-main-editor-surfaces.md`
