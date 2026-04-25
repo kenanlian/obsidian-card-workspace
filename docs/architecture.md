@@ -135,11 +135,13 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 收集当前 folder / all-notes scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`。
 - 对 Markdown 卡片执行正文读取和预览构建；对非 Markdown 卡片注入占位摘要。
 - 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`。
+- 轻量 preview 现在会在共享 `previewLines` 预算内，按源码顺序保留文本块与 fenced code block；代码块不再因为前面已经出现正文而被统一跳过。
 - 向 `SearchService` 发 query，并把结果转成 pipeline 输入。
 - 组装 `PipelineContext`，再调用 `runPipeline()`。
 - 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
 - 把 bulk delete 路由到遵循 Obsidian 删除偏好的实现，而不是插件自定义的永久删除语义。
 - 把默认卡片点击与“更多”菜单显式动作分层：默认点击只上报 `path`，显式菜单动作才传具体 `OpenDestination`。
+- 把允许的卡片 hover 表面统一转成 `hover-link` payload，再交给 Obsidian workspace 触发宿主 popover。
 
 关键边界是：**query 仍只由 `FolderCardView.ts` 持有。** indexed 搜索的存在没有改变这一点。
 
@@ -159,6 +161,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 在摘要行展示紧凑的上下文信息（仅在过滤或异常状态下）。
 - 用持续高亮表达 `All notes`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
 - 在 bulk mode 下把批量操作带收敛成 icon-only controls，并把每张卡片的选择入口放到右上角复选框槽位，同时临时隐藏 pin 按钮。
+- 在 title / excerpt / meta 这三块非控件区域发射 hover payload，让宿主 Page Preview 体系决定是否显示 popover；按钮、菜单和 bulk checkbox 不参与这条路径。
 - 把搜索输入变化回传给 `FolderCardView.ts`。
 - 继续处理 viewport、虚拟滚动和工具栏交互。
 
@@ -214,7 +217,18 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 4. Markdown 卡片继续读取正文并生成预览；非 Markdown 卡片直接使用占位摘要。
 5. 结果进入 `pipeline.ts`，得到 `visibleCards`。
 
-### 2. 搜索 query 进入运行时
+### 2. 卡片 hover preview 触发
+
+当前正式链路不是插件自己渲染 preview popover，而是借用宿主 Page Preview：
+
+1. `CardItem.svelte` 只在 title / excerpt / meta 这三块非控件区域监听鼠标进入。
+2. 组件把 `path`、当前 DOM 元素和 `MouseEvent` 作为 `CardHoverLinkPayload` 上报。
+3. `FolderCardView.ts` 继续作为唯一桥接层，把它转成 `workspace.trigger("hover-link", ...)`。
+4. Obsidian 或对应文件类型插件决定最终是否展示 popover，以及展示什么内容。
+
+这条链路的关键约束是：**插件只负责发射 `hover-link`，不自己实现第二套卡片 hover 预览器。**
+
+### 3. 搜索 query 进入运行时
 
 当前搜索主流程是：
 
@@ -226,7 +240,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 6. `pipeline.ts` 按 `tag -> search -> pin` 顺序投影 `visibleCards`；其中非 Markdown 卡片只在标题命中时被纳入搜索结果。
 7. `panel-model` 把最新 cards、query、status 投影给面板。
 
-### 3. 索引恢复、构建与增量更新
+### 4. 索引恢复、构建与增量更新
 
 索引层主流程是：
 
@@ -238,7 +252,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 6. 对无法安全前缀改写的 folder rename，manager 直接发布 `rebuild-required`，避免继续服务脏路径。
 7. `main.ts` 在 unsafe 快照上调度 plugin-owned rebuild，并保持单路径快照分发。
 
-### 4. 可见卡片投影
+### 5. 可见卡片投影
 
 当前正式链路是：
 
@@ -258,9 +272,10 @@ baseCards
 - `orderedPaths: null` 表示 fallback filtering。
 - `orderedPaths: []` 表示 indexed-ready 零结果。
 - Markdown 卡片可参与全文级匹配。
+- 卡片内轻量 preview 与 hover popover 是两条不同 contract：前者由 `markdown-utils.ts` 生成并只服务卡片表面，后者由 `hover-link` 交给宿主或对应插件决定。 
 - `base`、`canvas`、`excalidraw` 当前只参与标题级匹配，不伪装成全文命中。
 
-### 5. 批量删除遵循宿主偏好
+### 6. 批量删除遵循宿主偏好
 
 当前批量删除链路是：
 
@@ -271,7 +286,7 @@ baseCards
 
 这里的关键约束是：插件不再自定义“Delete = 永久删除”的固定语义。
 
-### 6. 默认卡片点击与显式打开动作分层
+### 7. 默认卡片点击与显式打开动作分层
 
 当前打开链路把“默认点击”和“显式动作”拆成两层：
 
@@ -341,6 +356,10 @@ baseCards
 面板读这些状态，但不拥有它们。默认点击语义已经不在这层存储。
 
 ## 关键约束与假设
+
+- `hover-link` 是当前唯一允许的卡片 hover preview 集成路径；不要在 `CardItem.svelte` 或 `FolderCardView.ts` 旁边再长出一套自建 popover。
+- `previewLines` 是文本块与 fenced code block 共享的顺序预算；任何想调整 preview 样式或抽取规则的改动，都必须同时评估解析层和 excerpt CSS 的物理预算。 
+
 
 1. 不要把 `searchQuery` 写回 `PluginSettings`。
 2. 不要让 `SearchService` 绕开 `pipeline.ts` 直接控制最终可见卡片。
