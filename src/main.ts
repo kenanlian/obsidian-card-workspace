@@ -24,7 +24,7 @@ import type {
   SearchServiceSnapshot,
   SearchVaultMutation,
 } from "./search";
-import type { PartialPluginSettings, PluginSettings } from "./settings";
+import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
 import { ALL_NOTES_PATH } from "./view/types";
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
@@ -68,6 +68,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
+    this.registerHoverLinkSource("card-workspace", {
+      display: "Card Workspace",
+      defaultMod: true,
+    });
 
     this.addCommand({
       id: "open-card-workspace",
@@ -120,7 +124,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     const fullPath = this.generateUniqueNotePath(folderPath);
     const file = await this.app.vault.create(fullPath, "");
-    await this.openNoteFromCard(file.path);
+    await this.openNoteFromCard(file.path, "current-area");
   }
 
   private resolveNewNoteFolderPath(): string | null {
@@ -161,17 +165,108 @@ export default class FolderCardExplorerPlugin extends Plugin {
     return `${prefix}${baseName} ${Date.now()}.${extension}`;
   }
 
-  async openNoteFromCard(path: string): Promise<void> {
+  async openNoteFromCard(path: string, destination?: OpenDestination): Promise<void> {
     const target = this.app.vault.getAbstractFileByPath(path);
     if (!(target instanceof TFile)) {
       return;
     }
 
-    const leaf = this.resolveTargetLeaf();
+    const leaf = await this.resolveOpenDestinationLeaf(destination);
+    if (!leaf) {
+      return;
+    }
+
     await leaf.openFile(target, { active: true });
     this.syncSelection(target.path);
   }
 
+  private async resolveOpenDestinationLeaf(destination?: OpenDestination): Promise<WorkspaceLeaf | null> {
+    if (destination === undefined) {
+      return this.resolveDefaultCardOpenLeaf();
+    }
+
+    if (destination === "current-area") {
+      return this.resolveTargetLeaf();
+    }
+
+    if (destination === "new-tab") {
+      return this.app.workspace.getLeaf(true);
+    }
+
+    if (destination === "split-right") {
+      const existingTargetLeaf = this.findExistingRootEditorLeaf();
+      if (existingTargetLeaf) {
+        return this.app.workspace.createLeafBySplit(existingTargetLeaf, "vertical");
+      }
+
+      return this.app.workspace.getLeaf(true);
+    }
+
+    const workspaceWithPopout = this.app.workspace as unknown as {
+      openPopoutLeaf?: () => WorkspaceLeaf | Promise<WorkspaceLeaf>;
+    };
+    if (typeof workspaceWithPopout.openPopoutLeaf !== "function") {
+      new Notice("Open in new window is available on desktop only.");
+      return null;
+    }
+
+    return await workspaceWithPopout.openPopoutLeaf();
+  }
+
+  private resolveDefaultCardOpenLeaf(): WorkspaceLeaf {
+    const currentMainEditorLeaf = this.findCurrentMainEditorLeaf();
+    if (!currentMainEditorLeaf) {
+      return this.app.workspace.getLeaf(true);
+    }
+
+    return this.isLeafPinned(currentMainEditorLeaf)
+      ? this.app.workspace.getLeaf(true)
+      : currentMainEditorLeaf;
+  }
+
+  private findCurrentMainEditorLeaf(): WorkspaceLeaf | null {
+    const rootSplit = this.app.workspace.rootSplit;
+    const recentRootLeaf = this.app.workspace.getMostRecentLeaf(rootSplit);
+    if (recentRootLeaf && this.isFileCapableRootLeaf(recentRootLeaf, rootSplit)) {
+      return recentRootLeaf;
+    }
+
+    const activeRootMarkdownLeaf = this.findActiveRootMarkdownLeaf();
+    if (activeRootMarkdownLeaf) {
+      return activeRootMarkdownLeaf;
+    }
+
+    const existingMarkdown = this.app.workspace.getLeavesOfType("markdown");
+    const rootMarkdownLeaf = existingMarkdown.find((leaf) => leaf.getRoot() === rootSplit);
+    return rootMarkdownLeaf ?? null;
+  }
+
+  private isFileCapableRootLeaf(leaf: WorkspaceLeaf, rootSplit: unknown): boolean {
+    const viewType = leaf.getViewState()?.type;
+    return leaf.getRoot() === rootSplit && typeof viewType === "string" && viewType !== "empty";
+  }
+
+  private findActiveRootMarkdownLeaf(): WorkspaceLeaf | null {
+    const rootSplit = this.app.workspace.rootSplit;
+    const activeLeaf = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf;
+    if (!activeLeaf || activeLeaf.getRoot() !== rootSplit) {
+      return null;
+    }
+
+    return activeLeaf;
+  }
+
+  private isLeafPinned(leaf: WorkspaceLeaf): boolean {
+    const pinnedState = (leaf as WorkspaceLeaf & {
+      getViewState?: () => { pinned?: boolean };
+      pinned?: boolean;
+    }).getViewState?.()?.pinned;
+    if (typeof pinnedState === "boolean") {
+      return pinnedState;
+    }
+
+    return (leaf as WorkspaceLeaf & { pinned?: boolean }).pinned === true;
+  }
 
   async selectFolderByPath(path: string, source: FolderSelectionSource): Promise<void> {
     const folder = path === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(path);
@@ -248,17 +343,29 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {
-    const activeMarkdown = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeMarkdown) {
-      return activeMarkdown.leaf;
-    }
-
-    const existingMarkdown = this.app.workspace.getLeavesOfType("markdown");
-    if (existingMarkdown.length > 0) {
-      return existingMarkdown[0];
+    const existingTargetLeaf = this.findExistingRootEditorLeaf();
+    if (existingTargetLeaf) {
+      return existingTargetLeaf;
     }
 
     return this.app.workspace.getLeaf(true);
+  }
+
+  private findExistingRootEditorLeaf(): WorkspaceLeaf | null {
+    const rootSplit = this.app.workspace.rootSplit;
+    const activeRootMarkdownLeaf = this.findActiveRootMarkdownLeaf();
+    if (activeRootMarkdownLeaf) {
+      return activeRootMarkdownLeaf;
+    }
+
+    const recentRootLeaf = this.app.workspace.getMostRecentLeaf(rootSplit);
+    if (recentRootLeaf) {
+      return recentRootLeaf;
+    }
+
+    const existingMarkdown = this.app.workspace.getLeavesOfType("markdown");
+    const rootMarkdownLeaf = existingMarkdown.find((leaf) => leaf.getRoot() === rootSplit);
+    return rootMarkdownLeaf ?? null;
   }
 
   private async onFileExplorerClick(event: MouseEvent): Promise<void> {

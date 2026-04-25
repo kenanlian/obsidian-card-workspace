@@ -253,6 +253,7 @@ vi.mock("obsidian", () => {
     registerView = vi.fn();
     addSettingTab = vi.fn();
     addCommand = vi.fn();
+    registerHoverLinkSource = vi.fn();
     registerDomEvent = vi.fn();
     registerEvent = vi.fn((eventRef: unknown) => eventRef);
     register = vi.fn((_cb: () => void) => undefined);
@@ -340,8 +341,14 @@ function createPluginHarness(): {
       detachLeavesOfType: ReturnType<typeof vi.fn>;
       getActiveViewOfType: ReturnType<typeof vi.fn>;
       getLeaf: ReturnType<typeof vi.fn>;
+      getMostRecentLeaf: ReturnType<typeof vi.fn>;
+      createLeafBySplit: ReturnType<typeof vi.fn>;
+      openPopoutLeaf?: ReturnType<typeof vi.fn>;
       getRightLeaf: ReturnType<typeof vi.fn>;
       revealLeaf: ReturnType<typeof vi.fn>;
+      rootSplit: { id: string };
+      leftSplit: { id: string };
+      rightSplit: { id: string };
     };
     vault: {
       on: ReturnType<typeof vi.fn>;
@@ -370,8 +377,14 @@ function createPluginHarness(): {
       detachLeavesOfType: vi.fn(),
       getActiveViewOfType: vi.fn(() => null),
       getLeaf: vi.fn(() => ({ openFile: vi.fn(async () => undefined) })),
+      getMostRecentLeaf: vi.fn(() => null),
+      createLeafBySplit: vi.fn(() => ({ openFile: vi.fn(async () => undefined) })),
+      openPopoutLeaf: vi.fn(async () => ({ openFile: vi.fn(async () => undefined) })),
       getRightLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
       revealLeaf: vi.fn(),
+      rootSplit: { id: "root-split" },
+      leftSplit: { id: "left-split" },
+      rightSplit: { id: "right-split" },
     },
     vault: {
       on: vi.fn((eventName: string, callback: (...args: unknown[]) => void) => {
@@ -393,6 +406,349 @@ function createPluginHarness(): {
 
   return { plugin, app };
 }
+
+describe("FolderCardExplorerPlugin open destination routing", () => {
+  beforeEach(() => {
+    obsidianMockState.notices = [];
+  });
+
+  it("reuses the most recent root markdown leaf for default card opens when unpinned", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/current.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+      openFile: vi.fn(async () => undefined),
+    };
+    app.workspace.getMostRecentLeaf.mockReturnValue(leaf);
+
+    await plugin.openNoteFromCard("notes/current.md");
+
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("opens a new tab for default card opens when the most recent root leaf is pinned", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/pinned.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const pinnedLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: true })),
+      openFile: vi.fn(async () => undefined),
+    };
+    const newTabLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getMostRecentLeaf.mockReturnValue(pinnedLeaf);
+    app.workspace.getLeaf.mockReturnValue(newTabLeaf);
+
+    await plugin.openNoteFromCard("notes/pinned.md");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(newTabLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+    expect(pinnedLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+  it("reuses the most recent root canvas leaf for default card opens when sidebar focus hides the editor", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/fallback.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+    };
+    const rootCanvasLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas", pinned: false })),
+      openFile: vi.fn(async () => undefined),
+    };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(rootCanvasLeaf);
+
+    await plugin.openNoteFromCard("notes/fallback.md");
+
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(rootCanvasLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("opens a new tab for default card opens when the most recent root canvas leaf is pinned", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/fallback-pinned.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+    };
+    const pinnedRootCanvasLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas", pinned: true })),
+      openFile: vi.fn(async () => undefined),
+    };
+    const newTabLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(pinnedRootCanvasLeaf);
+    app.workspace.getLeaf.mockReturnValue(newTabLeaf);
+
+    await plugin.openNoteFromCard("notes/fallback-pinned.md");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(newTabLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+    expect(pinnedRootCanvasLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the active root markdown leaf when no recent file-capable root leaf exists", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/active-root-markdown.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const activeRootMarkdownLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+      openFile: vi.fn(async () => undefined),
+    };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: activeRootMarkdownLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(null);
+
+    await plugin.openNoteFromCard("notes/active-root-markdown.md");
+
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(activeRootMarkdownLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("falls back to an existing root markdown leaf when the most recent root leaf is empty", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/existing-root-markdown.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+    };
+    const recentEmptyLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "empty" })),
+      openFile: vi.fn(async () => undefined),
+    };
+    const existingRootMarkdownLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+      openFile: vi.fn(async () => undefined),
+    };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(recentEmptyLeaf);
+    app.workspace.getLeavesOfType.mockReturnValue([sidebarLeaf, existingRootMarkdownLeaf]);
+
+    await plugin.openNoteFromCard("notes/existing-root-markdown.md");
+
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(existingRootMarkdownLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+    expect(recentEmptyLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+  it("opens a new tab for default card opens when no suitable root leaf exists", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/no-main-leaf.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown", pinned: false })),
+    };
+    const recentEmptyLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "empty" })),
+      openFile: vi.fn(async () => undefined),
+    };
+    const newTabLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(recentEmptyLeaf);
+    app.workspace.getLeavesOfType.mockReturnValue([sidebarLeaf]);
+    app.workspace.getLeaf.mockReturnValue(newTabLeaf);
+
+    await plugin.openNoteFromCard("notes/no-main-leaf.md");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(newTabLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+    expect(recentEmptyLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+
+  it("resolveTargetLeaf skips sidebar markdown views and prefers the most recent root leaf", () => {
+    const { plugin, app } = createPluginHarness();
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown" })),
+    };
+    const rootLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas" })),
+    };
+    app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
+    app.workspace.getMostRecentLeaf.mockReturnValue(rootLeaf);
+
+    const resolvedLeaf = (plugin as unknown as { resolveTargetLeaf: () => unknown }).resolveTargetLeaf();
+
+    expect(app.workspace.getMostRecentLeaf).toHaveBeenCalledWith(app.workspace.rootSplit);
+    expect(resolvedLeaf).toBe(rootLeaf);
+  });
+
+  it("resolveTargetLeaf falls back to an existing root markdown leaf before opening a new tab", () => {
+    const { plugin, app } = createPluginHarness();
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown" })),
+    };
+    const rootLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "markdown" })),
+    };
+    app.workspace.getLeavesOfType.mockReturnValue([sidebarLeaf, rootLeaf]);
+
+    const resolvedLeaf = (plugin as unknown as { resolveTargetLeaf: () => unknown }).resolveTargetLeaf();
+
+    expect(resolvedLeaf).toBe(rootLeaf);
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("resolveTargetLeaf opens a new root leaf when no root leaf exists", () => {
+    const { plugin, app } = createPluginHarness();
+    const sidebarLeaf = {
+      getRoot: vi.fn(() => app.workspace.leftSplit),
+      getViewState: vi.fn(() => ({ type: "markdown" })),
+    };
+    const newRootLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeavesOfType.mockReturnValue([sidebarLeaf]);
+    app.workspace.getLeaf.mockReturnValue(newRootLeaf);
+
+    const resolvedLeaf = (plugin as unknown as { resolveTargetLeaf: () => unknown }).resolveTargetLeaf();
+
+    expect(resolvedLeaf).toBe(newRootLeaf);
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+  });
+
+  it("resolveTargetLeaf reuses a non-markdown root leaf before opening a new tab", () => {
+    const { plugin, app } = createPluginHarness();
+    const rootLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas" })),
+    };
+    app.workspace.getMostRecentLeaf.mockReturnValue(rootLeaf);
+
+    const resolvedLeaf = (plugin as unknown as { resolveTargetLeaf: () => unknown }).resolveTargetLeaf();
+
+    expect(resolvedLeaf).toBe(rootLeaf);
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("opens in a new tab with getLeaf(true) and syncs selection", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/new-tab.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(leaf);
+    const syncSelection = vi.spyOn(plugin as unknown as { syncSelection: (path: string) => void }, "syncSelection");
+
+    await plugin.openNoteFromCard("notes/new-tab.md", "new-tab");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
+    expect(syncSelection).toHaveBeenCalledWith("notes/new-tab.md");
+  });
+
+  it("opens in split-right by splitting the resolved main editor leaf", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/split.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const targetLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas" })),
+    };
+    const splitLeaf = { openFile: vi.fn(async () => undefined) };
+    vi.spyOn(plugin as unknown as { findExistingRootEditorLeaf: () => unknown }, "findExistingRootEditorLeaf").mockReturnValue(targetLeaf);
+    app.workspace.createLeafBySplit.mockReturnValue(splitLeaf);
+
+    await plugin.openNoteFromCard("notes/split.md", "split-right");
+
+    expect(app.workspace.createLeafBySplit).toHaveBeenCalledWith(targetLeaf, "vertical");
+    expect(splitLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("opens in split-right via a new root leaf when no main editor leaf exists", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/split-fallback.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const newRootLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(newRootLeaf);
+
+    await plugin.openNoteFromCard("notes/split-fallback.md", "split-right");
+
+    expect(app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(newRootLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("opens in a new window via openPopoutLeaf when available", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/window.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.openPopoutLeaf = vi.fn(async () => leaf);
+
+    await plugin.openNoteFromCard("notes/window.md", "new-window");
+
+    expect(app.workspace.openPopoutLeaf).toHaveBeenCalledTimes(1);
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("shows exact desktop-only notice and no-ops when popout leaf API is unavailable", async () => {
+    const { plugin, app } = createPluginHarness();
+    const target = new TFile();
+    target.path = "notes/window-missing.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const fallbackLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(fallbackLeaf);
+    delete app.workspace.openPopoutLeaf;
+
+    await plugin.openNoteFromCard("notes/window-missing.md", "new-window");
+
+    expect(obsidianMockState.notices).toEqual([
+      "Open in new window is available on desktop only.",
+    ]);
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(fallbackLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+  it("opens newly created notes in current-area explicitly", async () => {
+    const { plugin, app } = createPluginHarness();
+    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
+    app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
+    const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    await plugin.createNoteInCurrentFolder();
+
+    expect(openNoteFromCard).toHaveBeenCalledWith("notes/Untitled.md", "current-area");
+  });
+});
 
 describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
   beforeEach(() => {
@@ -434,6 +790,28 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     const { plugin } = createPluginHarness();
 
     await plugin.onload();
+
+    const mockPlugin = plugin as unknown as {
+      registerHoverLinkSource: ReturnType<typeof vi.fn>;
+      addCommand: ReturnType<typeof vi.fn>;
+      registerDomEvent: ReturnType<typeof vi.fn>;
+      registerEvent: ReturnType<typeof vi.fn>;
+    };
+
+    expect(mockPlugin.registerHoverLinkSource).toHaveBeenCalledTimes(1);
+    expect(mockPlugin.registerHoverLinkSource).toHaveBeenCalledWith("card-workspace", {
+      display: "Card Workspace",
+      defaultMod: true,
+    });
+    expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlugin.addCommand.mock.invocationCallOrder[0],
+    );
+    expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlugin.registerDomEvent.mock.invocationCallOrder[0],
+    );
+    expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlugin.registerEvent.mock.invocationCallOrder[0],
+    );
 
     expect(searchMockState.indexedServices).toHaveLength(1);
     expect(searchMockState.managers).toHaveLength(1);
