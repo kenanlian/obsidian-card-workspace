@@ -262,11 +262,7 @@
     }
   }
 
-  function onTitleGroupMouseEnter(event: MouseEvent): void {
-    if (card.fileKind !== "markdown") {
-      return;
-    }
-
+  function emitCardHoverLink(event: MouseEvent): void {
     const targetEl = event.currentTarget;
     if (!(targetEl instanceof HTMLElement)) {
       return;
@@ -298,7 +294,7 @@
 >
   <div class="fce-card-body">
     <div class="fce-card-header">
-      <div class="fce-card-title-group" role="presentation" onmouseenter={onTitleGroupMouseEnter}>
+      <div class="fce-card-title-group" role="presentation" onmouseenter={emitCardHoverLink}>
         <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
         <h4>{@html highlightedTitleHtml}</h4>
       </div>
@@ -335,7 +331,9 @@
     </div>
     <div
       class="fce-excerpt {card.previewMode === 'code' ? 'is-code' : ''} {card.hydrated ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated ? 'is-empty' : ''}"
+      role="presentation"
       style={getPreviewStyle()}
+      onmouseenter={emitCardHoverLink}
     >
       {#if card.hydrated}
         {#if card.previewMode === "placeholder"}
@@ -349,6 +347,6 @@
         <p class="fce-preview-empty">Loading preview...</p>
       {/if}
     </div>
-    <p class="fce-meta">Modified {formatDate(card.mtime)} · Created {formatDate(card.ctime)}</p>
+    <p class="fce-meta" onmouseenter={emitCardHoverLink}>Modified {formatDate(card.mtime)} · Created {formatDate(card.ctime)}</p>
   </div>
 </div>

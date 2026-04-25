@@ -529,7 +529,7 @@ describe("FolderCardView host contract", () => {
     }
   });
 
-  it("forwards markdown title-group hover payload through to workspace hover-link trigger", async () => {
+  it("forwards allowed card hover surfaces through to workspace hover-link trigger for markdown cards", async () => {
     const { view } = createHarness();
 
     (view as any).folderPath = "notes";
@@ -540,23 +540,47 @@ describe("FolderCardView host contract", () => {
     await tick();
 
     const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
+    const meta = (view as any).containerEl.querySelector(".fce-meta") as HTMLElement | null;
     expect(titleGroup).not.toBeNull();
+    expect(excerpt).not.toBeNull();
+    expect(meta).not.toBeNull();
 
-    const event = new MouseEvent("mouseenter", { bubbles: true });
-    titleGroup?.dispatchEvent(event);
+    const titleEvent = new MouseEvent("mouseenter", { bubbles: true });
+    titleGroup?.dispatchEvent(titleEvent);
+
+    const excerptEvent = new MouseEvent("mouseenter", { bubbles: true });
+    excerpt?.dispatchEvent(excerptEvent);
+
+    const metaEvent = new MouseEvent("mouseenter", { bubbles: true });
+    meta?.dispatchEvent(metaEvent);
 
     const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
-    expect(triggerSpy).toHaveBeenCalledTimes(1);
-    expect(triggerSpy).toHaveBeenCalledWith("hover-link", {
-      event,
+    expect(triggerSpy).toHaveBeenCalledTimes(3);
+    expect(triggerSpy).toHaveBeenNthCalledWith(1, "hover-link", {
+      event: titleEvent,
       source: "card-workspace",
       hoverParent: view,
       targetEl: titleGroup,
       linktext: "notes/hover.md",
     });
+    expect(triggerSpy).toHaveBeenNthCalledWith(2, "hover-link", {
+      event: excerptEvent,
+      source: "card-workspace",
+      hoverParent: view,
+      targetEl: excerpt,
+      linktext: "notes/hover.md",
+    });
+    expect(triggerSpy).toHaveBeenNthCalledWith(3, "hover-link", {
+      event: metaEvent,
+      source: "card-workspace",
+      hoverParent: view,
+      targetEl: meta,
+      linktext: "notes/hover.md",
+    });
   });
 
-  it("does not trigger hover-link for non-markdown cards or action controls", async () => {
+  it("forwards allowed card hover surfaces for supported non-markdown cards but excludes action controls", async () => {
     const { view } = createHarness();
 
     (view as any).folderPath = "notes";
@@ -569,17 +593,35 @@ describe("FolderCardView host contract", () => {
     const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
 
     const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
+    const meta = (view as any).containerEl.querySelector(".fce-meta") as HTMLElement | null;
     const pinButton = (view as any).containerEl.querySelector(".fce-card-pin-btn") as HTMLButtonElement | null;
     const moreActionsButton = (view as any).containerEl.querySelector(".fce-more-actions-btn") as HTMLButtonElement | null;
 
     expect(titleGroup).not.toBeNull();
+    expect(excerpt).not.toBeNull();
+    expect(meta).not.toBeNull();
     expect(pinButton).not.toBeNull();
     expect(moreActionsButton).not.toBeNull();
 
     titleGroup?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    excerpt?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    meta?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     pinButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     moreActionsButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
 
-    expect(triggerSpy).not.toHaveBeenCalled();
+    expect(triggerSpy).toHaveBeenCalledTimes(3);
+    expect(triggerSpy).toHaveBeenNthCalledWith(1, "hover-link", expect.objectContaining({
+      targetEl: titleGroup,
+      linktext: "notes/diagram.canvas",
+    }));
+    expect(triggerSpy).toHaveBeenNthCalledWith(2, "hover-link", expect.objectContaining({
+      targetEl: excerpt,
+      linktext: "notes/diagram.canvas",
+    }));
+    expect(triggerSpy).toHaveBeenNthCalledWith(3, "hover-link", expect.objectContaining({
+      targetEl: meta,
+      linktext: "notes/diagram.canvas",
+    }));
   });
 });
