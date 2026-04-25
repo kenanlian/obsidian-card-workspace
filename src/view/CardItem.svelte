@@ -328,7 +328,7 @@
             aria-label="More actions"
             onclick={onMoreActionsClick}
             onkeydown={onMoreActionsKeydown}
-            use:applyIcon={"chevron-down"}
+            use:applyIcon={"ellipsis"}
           ></button>
         {/if}
       </div>
