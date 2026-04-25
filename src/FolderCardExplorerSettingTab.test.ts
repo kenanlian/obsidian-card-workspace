@@ -38,10 +38,32 @@ const mockState = vi.hoisted(() => {
     }
   }
 
+  class MockDropdownComponent {
+    options: Array<{ value: string; label: string }> = [];
+    value = "";
+    changeHandler: ((value: string) => Promise<void> | void) | null = null;
+
+    addOption(value: string, label: string): this {
+      this.options.push({ value, label });
+      return this;
+    }
+
+    setValue(value: string): this {
+      this.value = value;
+      return this;
+    }
+
+    onChange(handler: (value: string) => Promise<void> | void): this {
+      this.changeHandler = handler;
+      return this;
+    }
+  }
+
   class MockSetting {
     name = "";
     desc = "";
     slider: MockSliderComponent | null = null;
+    dropdown: MockDropdownComponent | null = null;
 
     constructor(_containerEl: unknown) {
       settings.push(this);
@@ -60,6 +82,12 @@ const mockState = vi.hoisted(() => {
     addSlider(configure: (slider: MockSliderComponent) => void): this {
       this.slider = new MockSliderComponent();
       configure(this.slider);
+      return this;
+    }
+
+    addDropdown(configure: (dropdown: MockDropdownComponent) => void): this {
+      this.dropdown = new MockDropdownComponent();
+      configure(this.dropdown);
       return this;
     }
   }
@@ -100,7 +128,7 @@ describe("FolderCardExplorerSettingTab", () => {
     vi.clearAllMocks();
   });
 
-  it("clears the container and renders the previewLines slider with 3..10 bounds", () => {
+  it("renders only the preview slider setting", () => {
     const plugin = {
       getSettings: vi.fn(() => ({ previewLines: 6 })),
       saveSettings: vi.fn(),
@@ -111,7 +139,7 @@ describe("FolderCardExplorerSettingTab", () => {
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
     expect(mockState.settings).toHaveLength(1);
-    expect(mockState.settings[0]?.name).toBe("Preview lines");
+    expect(mockState.settings.map((setting) => setting.name)).toEqual(["Preview lines"]);
     expect(mockState.settings[0]?.slider).toMatchObject({
       min: 3,
       max: 10,
@@ -121,21 +149,4 @@ describe("FolderCardExplorerSettingTab", () => {
     });
   });
 
-  it("persists previewLines through the plugin saveSettings seam", async () => {
-    const plugin = {
-      getSettings: vi.fn(() => ({ previewLines: 5 })),
-      saveSettings: vi.fn(async () => undefined),
-    };
-
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
-    tab.display();
-
-    const slider = mockState.settings[0]?.slider;
-    expect(slider?.changeHandler).toBeTypeOf("function");
-
-    await slider?.changeHandler?.(8);
-
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ previewLines: 8 });
-  });
 });

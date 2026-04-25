@@ -30,5 +30,6 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings({ previewLines: value });
           });
       });
+
   }
 }
