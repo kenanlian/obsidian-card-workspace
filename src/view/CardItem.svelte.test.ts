@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, unmount, tick } from "svelte";
 import CardItem from "./CardItem.svelte";
 import type { CardFileKind } from "./file-kind";
-import type { NoteCardRecord } from "./types";
+import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
 interface OpenNotePayload {
   path: string;
@@ -15,7 +15,9 @@ interface PinTogglePayload {
 
 interface CardContextMenuPayload {
   path: string;
-  mouseEvent: MouseEvent;
+  mouseEvent?: MouseEvent;
+  trigger?: "button";
+  position?: { x: number; y: number };
 }
 
 interface BulkSelectCardPayload {
@@ -28,6 +30,7 @@ interface CardItemCallbacks {
   onPinToggle?: (payload: PinTogglePayload) => void;
   onCardContextMenu?: (payload: CardContextMenuPayload) => void;
   onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
+  onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
 }
 
 interface CapturedCallbacks {
@@ -36,6 +39,7 @@ interface CapturedCallbacks {
   pinEvents: PinTogglePayload[];
   contextEvents: CardContextMenuPayload[];
   bulkEvents: BulkSelectCardPayload[];
+  hoverEvents: CardHoverLinkPayload[];
 }
 
 interface MountedCardItem {
@@ -85,6 +89,7 @@ function createCapturedCallbacks(): CapturedCallbacks {
   const pinEvents: PinTogglePayload[] = [];
   const contextEvents: CardContextMenuPayload[] = [];
   const bulkEvents: BulkSelectCardPayload[] = [];
+  const hoverEvents: CardHoverLinkPayload[] = [];
 
   return {
     callbacks: {
@@ -100,11 +105,15 @@ function createCapturedCallbacks(): CapturedCallbacks {
       onBulkSelectCard: (payload: BulkSelectCardPayload) => {
         bulkEvents.push(payload);
       },
+      onCardHoverLink: (payload: CardHoverLinkPayload) => {
+        hoverEvents.push(payload);
+      },
     },
     openEvents,
     pinEvents,
     contextEvents,
     bulkEvents,
+    hoverEvents,
   };
 }
 
@@ -176,13 +185,17 @@ describe("CardItem.svelte", () => {
 
     expect(keyboardEvent.defaultPrevented).toBe(true);
     expect(contextEvent.defaultPrevented).toBe(true);
-    expect(captured.openEvents).toEqual([{ path: "notes/a.md" }, { path: "notes/a.md" }]);
+    expect(captured.openEvents).toEqual([
+      { path: "notes/a.md" },
+      { path: "notes/a.md" },
+    ]);
     expect(captured.contextEvents).toHaveLength(1);
     expect(captured.contextEvents[0]).toEqual({
       path: "notes/a.md",
       mouseEvent: contextEvent,
     });
   });
+
 
   it("emits bulk-select-card with shiftKey in bulk mode from the card surface", () => {
     const captured = createCapturedCallbacks();
@@ -193,6 +206,56 @@ describe("CardItem.svelte", () => {
     cardButton?.dispatchEvent(clickEvent);
 
     expect(captured.bulkEvents).toEqual([{ path: "notes/a.md", shiftKey: true }]);
+  });
+
+  it("emits contextmenu with trigger='button' when more-actions button is clicked", () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountCardItem({}, captured.callbacks);
+
+    const moreActionsBtn = target.querySelector<HTMLButtonElement>(".fce-more-actions-btn");
+    expect(moreActionsBtn).not.toBeNull();
+    
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = () => ({
+      bottom: 100,
+      height: 20,
+      left: 50,
+      right: 70,
+      top: 80,
+      width: 20,
+      x: 50,
+      y: 80,
+      toJSON: () => {}
+    });
+
+    const clickEvent = new MouseEvent("click", { bubbles: true });
+    moreActionsBtn?.dispatchEvent(clickEvent);
+
+    expect(captured.contextEvents).toEqual([
+      {
+        path: "notes/a.md",
+        trigger: "button",
+        position: { x: 50, y: 100 },
+      },
+    ]);
+    expect(captured.openEvents).toHaveLength(0);
+
+    const keyboardEvent = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    moreActionsBtn?.dispatchEvent(keyboardEvent);
+
+    expect(captured.contextEvents).toHaveLength(2);
+    expect(captured.contextEvents[1]).toEqual({
+      path: "notes/a.md",
+      trigger: "button",
+      position: { x: 50, y: 100 },
+    });
+    expect(captured.openEvents).toHaveLength(0);
+
+    HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
   });
 
   it("keeps the file-type icon visible in bulk mode while showing the checkbox", () => {
@@ -409,5 +472,69 @@ describe("CardItem.svelte", () => {
     const icon = target.querySelector<HTMLElement>(".fce-card-file-icon[data-file-kind='base']");
     expect(icon).not.toBeNull();
     expect(icon?.getAttribute("data-icon")).toBe("layout-list");
+  });
+
+  it("emits hover-link payload from title group for markdown cards only", () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountCardItem({}, captured.callbacks);
+
+    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
+    expect(titleGroup).not.toBeNull();
+
+    const mouseEnterEvent = new MouseEvent("mouseenter", { bubbles: true });
+    titleGroup?.dispatchEvent(mouseEnterEvent);
+
+    expect(captured.hoverEvents).toHaveLength(1);
+    expect(captured.hoverEvents[0]).toEqual({
+      path: "notes/a.md",
+      targetEl: titleGroup,
+      mouseEvent: mouseEnterEvent,
+    });
+  });
+
+  it("does not emit hover-link payload for non-markdown cards", () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountCardItem(
+      {
+        card: createCard("notes/model.base", {
+          fileKind: "base",
+          title: "model.base",
+          previewMode: "placeholder",
+          previewHtml: "",
+        }),
+      },
+      captured.callbacks,
+    );
+
+    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
+    expect(titleGroup).not.toBeNull();
+
+    titleGroup?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+
+    expect(captured.hoverEvents).toEqual([]);
+  });
+
+  it("does not emit hover-link payload from action buttons or bulk checkbox", () => {
+    const normalCaptured = createCapturedCallbacks();
+    const normalMount = mountCardItem({}, normalCaptured.callbacks);
+
+    const pinButton = normalMount.target.querySelector<HTMLButtonElement>(".fce-card-pin-btn");
+    const moreActionsButton = normalMount.target.querySelector<HTMLButtonElement>(".fce-more-actions-btn");
+    expect(pinButton).not.toBeNull();
+    expect(moreActionsButton).not.toBeNull();
+
+    pinButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    moreActionsButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+
+    expect(normalCaptured.hoverEvents).toEqual([]);
+
+    const bulkCaptured = createCapturedCallbacks();
+    const bulkMount = mountCardItem({ bulkMode: true }, bulkCaptured.callbacks);
+    const bulkCheckbox = bulkMount.target.querySelector<HTMLInputElement>(".fce-card-bulk-checkbox");
+    expect(bulkCheckbox).not.toBeNull();
+
+    bulkCheckbox?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+
+    expect(bulkCaptured.hoverEvents).toEqual([]);
   });
 });

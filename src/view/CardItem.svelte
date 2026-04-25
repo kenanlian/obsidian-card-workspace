@@ -1,11 +1,8 @@
 <script lang="ts">
   import { setIcon } from "obsidian";
   import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
-  import type { NoteCardRecord } from "./types";
-
-  interface OpenNotePayload {
-    path: string;
-  }
+  import type { OpenNotePayload } from "./panel-model";
+  import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
   interface BulkSelectCardPayload {
     path: string;
@@ -14,7 +11,9 @@
 
   interface CardContextMenuPayload {
     path: string;
-    mouseEvent: MouseEvent;
+    mouseEvent?: MouseEvent;
+    trigger?: "button";
+    position?: { x: number; y: number };
   }
 
   interface PinTogglePayload {
@@ -34,6 +33,7 @@
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
+    onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
   }
 
   let {
@@ -48,6 +48,7 @@
     onBulkSelectCard,
     onCardContextMenu,
     onPinToggle,
+    onCardHoverLink,
   }: CardItemProps = $props();
 
   const isPinned = $derived(pinnedPaths.includes(card.path));
@@ -175,7 +176,9 @@
   }
 
   function emitOpenNote(): void {
-    onOpenNote?.({ path: card.path });
+    onOpenNote?.({
+      path: card.path,
+    });
   }
 
   function emitBulkSelect(shiftKey: boolean): void {
@@ -237,6 +240,45 @@
     }
   }
 
+  function emitMoreActionsContextMenu(element: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
+    onCardContextMenu?.({
+      path: card.path,
+      trigger: "button",
+      position: { x: rect.left, y: rect.bottom },
+    });
+  }
+
+  function onMoreActionsClick(event: MouseEvent): void {
+    event.stopPropagation();
+    emitMoreActionsContextMenu(event.currentTarget as HTMLElement);
+  }
+
+  function onMoreActionsKeydown(event: KeyboardEvent): void {
+    if (event.key === "Enter" || event.key === " ") {
+      event.stopPropagation();
+      event.preventDefault();
+      emitMoreActionsContextMenu(event.currentTarget as HTMLElement);
+    }
+  }
+
+  function onTitleGroupMouseEnter(event: MouseEvent): void {
+    if (card.fileKind !== "markdown") {
+      return;
+    }
+
+    const targetEl = event.currentTarget;
+    if (!(targetEl instanceof HTMLElement)) {
+      return;
+    }
+
+    onCardHoverLink?.({
+      path: card.path,
+      targetEl,
+      mouseEvent: event,
+    });
+  }
+
   function formatDate(timestamp: number): string {
     return new Date(timestamp).toLocaleDateString();
   }
@@ -256,7 +298,7 @@
 >
   <div class="fce-card-body">
     <div class="fce-card-header">
-      <div class="fce-card-title-group">
+      <div class="fce-card-title-group" role="presentation" onmouseenter={onTitleGroupMouseEnter}>
         <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
         <h4>{@html highlightedTitleHtml}</h4>
       </div>
@@ -279,6 +321,14 @@
             onclick={onPinClick}
             onkeydown={onPinKeydown}
             use:applyIcon={isPinned ? "pin-off" : "pin"}
+          ></button>
+          <button
+            type="button"
+            class="clickable-icon fce-more-actions-btn"
+            aria-label="More actions"
+            onclick={onMoreActionsClick}
+            onkeydown={onMoreActionsKeydown}
+            use:applyIcon={"chevron-down"}
           ></button>
         {/if}
       </div>

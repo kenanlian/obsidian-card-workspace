@@ -582,6 +582,32 @@
   color: var(--fce-accent);
 }
 
+.folder-card-view .fce-more-actions-btn {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--fce-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  margin: -4px -4px 0 0;
+}
+
+.folder-card-view .fce-more-actions-btn:hover {
+  background-color: var(--fce-surface-alt);
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-card:hover .fce-more-actions-btn,
+.folder-card-view .fce-card:focus-within .fce-more-actions-btn {
+  opacity: 1;
+}
+
 .folder-card-view .fce-meta {
   margin: auto 0 0;
   padding-top: 6px;
