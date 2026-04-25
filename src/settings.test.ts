@@ -123,6 +123,7 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
   });
 });
 
+
 describe("normalizeSettings — previewLines", () => {
   it("defaults previewLines to 5 when value is missing", () => {
     const raw = {
@@ -323,6 +324,7 @@ describe("mergeSettings — pinnedPaths", () => {
     expect(result.filter.tags).toEqual(["active"]);
   });
 });
+
 
 describe("mergeSettings — previewLines", () => {
   it("updates previewLines while preserving unrelated settings fields", () => {

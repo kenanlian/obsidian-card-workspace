@@ -6,6 +6,8 @@ export type DefaultViewMode = "cards";
 
 export type ViewMode = "folder" | "all-notes";
 
+export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-window";
+
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 10;
 export const DEFAULT_PREVIEW_LINES = 5;
