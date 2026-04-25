@@ -8,6 +8,8 @@
     "build": "node esbuild.config.mjs --production",
     "check": "tsc --noEmit",
     "check:svelte": "svelte-check --tsconfig ./tsconfig.json",
+    "release:check": "node scripts/check-release.mjs",
+    "release:prepare": "node scripts/sync-version.mjs",
     "test": "vitest run",
     "test:node": "vitest run --project node",
     "test:component": "vitest run --project jsdom",
