@@ -1,6 +1,10 @@
 import type { SortDirection, SortField } from "../settings";
 import type { FolderTreeNode, NoteCardRecord, SearchStatus } from "./types";
 
+export interface OpenNotePayload {
+  path: string;
+}
+
 export interface PanelModelState {
   cards: NoteCardRecord[];
   folderPath: string;

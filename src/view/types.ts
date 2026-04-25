@@ -49,6 +49,12 @@ export interface NoteCardRecord {
   hydrated: boolean;
 }
 
+export interface CardHoverLinkPayload {
+  path: string;
+  targetEl: HTMLElement;
+  mouseEvent: MouseEvent;
+}
+
 export type FolderSelectionSource = "explorer-click" | "programmatic" | "panel-picker";
 
 export interface FolderSelectionRequest {

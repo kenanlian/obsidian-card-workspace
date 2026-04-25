@@ -144,4 +144,48 @@ describe("FolderCardPanel.svelte", () => {
 
     await unmount(component);
   });
+
+  it("delegates card context menu actions with updated shape", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const contextEvents: Array<unknown> = [];
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onCardContextMenu: (payload: unknown) => {
+          contextEvents.push(payload);
+        }
+      },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = [createCard("notes/action.md", "Action note")];
+      state.generation = 1;
+    });
+    await tick();
+
+    const moreActionsBtn = target.querySelector<HTMLButtonElement>(".fce-more-actions-btn");
+    
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = () => ({
+      bottom: 100, height: 20, left: 50, right: 70, top: 80, width: 20, x: 50, y: 80, toJSON: () => {}
+    });
+
+    moreActionsBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(contextEvents).toEqual([
+      {
+        path: "notes/action.md",
+        trigger: "button",
+        position: { x: 50, y: 100 },
+      }
+    ]);
+
+    HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    await unmount(component);
+  });
 });

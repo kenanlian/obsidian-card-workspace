@@ -1,6 +1,7 @@
 <script lang="ts">
   import Toolbar from "./Toolbar.svelte";
   import CardItem from "./CardItem.svelte";
+  import type { OpenNotePayload, PanelModel, PanelModelState } from "./panel-model";
   import {
     captureScrollAnchor,
     computeAnchoredScrollTop,
@@ -14,12 +15,7 @@
     getHydrateRangeForRows,
     projectCardsToRows,
   } from "./row-projection";
-  import type { PanelModel, PanelModelState } from "./panel-model";
-  import type { NoteCardRecord } from "./types";
-
-  interface OpenNotePayload {
-    path: string;
-  }
+  import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
   interface BulkSelectCardPayload {
     path: string;
@@ -28,7 +24,9 @@
 
   interface CardContextMenuPayload {
     path: string;
-    mouseEvent: MouseEvent;
+    mouseEvent?: MouseEvent;
+    trigger?: "button";
+    position?: { x: number; y: number };
   }
 
   interface PinTogglePayload {
@@ -76,6 +74,7 @@
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
+    onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
@@ -121,6 +120,7 @@
     onBulkSelectCard,
     onCardContextMenu,
     onPinToggle,
+    onCardHoverLink,
     onToolbarAction,
     onSortChange,
     onFilterChange,
@@ -194,6 +194,10 @@
 
   function handleCardPinToggle(detail: PinTogglePayload): void {
     onPinToggle?.(detail);
+  }
+
+  function handleCardHoverLink(detail: CardHoverLinkPayload): void {
+    onCardHoverLink?.(detail);
   }
 
   function handleToolbarAction(detail: ToolbarActionPayload): void {
@@ -563,6 +567,7 @@
                 onBulkSelectCard={handleCardBulkSelect}
                 onCardContextMenu={handleCardContextMenu}
                 onPinToggle={handleCardPinToggle}
+                onCardHoverLink={handleCardHoverLink}
               />
             {/each}
           </div>
