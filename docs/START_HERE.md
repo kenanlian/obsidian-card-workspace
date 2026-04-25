@@ -8,7 +8,7 @@
 
 ## 当前处于什么阶段？
 
-项目处于 **Phase 3 搜索能力已完成后的长期维护态，当前焦点转向混合文件类型卡片的交互语义收敛与轻量 preview 准确性维护** 的阶段。
+项目处于 **Phase 3 搜索能力已完成后的长期维护态，当前焦点转向混合文件类型卡片的交互语义收敛、轻量 preview 准确性维护，以及最小 GitHub Release 发布链路固化** 的阶段。
 
 - 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和降级回退。
 - 已完成：`FolderCardView.ts` 不再只收集 Markdown 文件，而是统一收集 `markdown`、`base`、`canvas`、`excalidraw` 四类受支持卡片文件，并在视图运行时维护 `fileKind`。
@@ -21,7 +21,9 @@
 - 已完成：卡片默认点击现在直接对齐主编辑区 recent-root fallback 语义：优先复用当前窗口 `rootSplit` 中最近使用且可承载文件的未 pin leaf；如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有目标 leaf 已 pin 或根本没有合适 root leaf 时，才打开 new tab。
 - 已完成：卡片右上角更多菜单现在只保留三个显式打开动作：`Open in new tab`、`Open to the right`、`Open in new window`；其中 `Open in new window` 图标改为 `picture-in-picture-2`，`Open in main editor` 已从菜单移除。
 - 已完成：批量删除不再承诺永久删除，而是改为遵循 Obsidian `Files & Links` 的删除偏好。
-- 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`。
+- 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
+- 已完成：仓库现在具备最小 GitHub Release 支持；`.github/workflows/release.yml` 会在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时执行校验、构建、测试，并把 `main.js`、`manifest.json`、`styles.css` 上传成 draft release。
+- 已完成：版本发布前的元数据对齐不再靠手工记忆；`npm run release:prepare -- <version> [minAppVersion]` 会同步 `package.json`、`manifest.json`、`versions.json`，`npm run release:check -- <version>` 会校验 tag / manifest / package / compatibility mapping 是否一致。
 - 已关闭：F3 的真实 Obsidian 手动 QA 因环境缺少可运行宿主而未执行，用户已明确豁免，因此当前阶段的完成条件仍以仓库验证和文档收尾为准。
 
 ## 回来看代码前先记住这 3 件事
@@ -32,6 +34,7 @@
 4. **卡片 hover preview 现在是“宿主 popover + 插件发射 hover-link”。** 插件只负责在 title / excerpt / meta 等非控件区域发射 `hover-link` 事件，不自己渲染 popover；不同文件类型最终能否显示以及显示质量，仍取决于 Obsidian 或对应插件对该路径的支持。
 5. **轻量 preview 仍不是完整 Markdown renderer。** 当前只保留 heading、inline code、fenced code 等弱提示；粗体和斜体语法会被归一化成普通文本，不再输出 `<strong>` / `<em>`。但与此前不同，预览现在会在共享 `previewLines` 预算内按源码顺序保留多个文本块与代码块，而不是在正文开始后静默跳过后续 fenced code。
 6. **默认卡片点击已经固定为 main-editor-area fallback 行为。** 普通点击会先尝试复用当前窗口 `rootSplit` 内最近使用且可承载文件的未 pin leaf；如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有选中的目标 leaf 已 pin 或完全没有合适 root leaf 时，才打开一个 new tab。不要再把默认打开理解成可配置项。
+7. **发布链路现在有明确 contract。** Git tag 必须是与 `manifest.json.version` 完全一致的裸 semver（例如 `0.1.1`，而不是 `v0.1.1`），而且仓库要求 `package.json.version`、`manifest.json.version`、`versions.json[version]` 一起对齐；release workflow 只负责把现有构建产物发到 GitHub，不负责自动生成 changelog 或替你决定版本号。
 
 ## 哪些配置值最重要
 
@@ -58,6 +61,7 @@
 - **显式打开动作与默认点击语义已经分层。** 默认点击先看 `getMostRecentLeaf(rootSplit)`，再回退到 root Markdown leaf；更多菜单只表达显式动作。不要再把这两层重新混成一个 setting。
 - **unsafe folder rename 会触发 rebuild-required。** 这是刻意选择的保守策略，用来避免脏路径继续对外服务。
 - **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 当前主要在 folder menu item 与展开 chevron 的非语义点击元素上；这不是本次 UI 优化的阻塞项，但仍是后续整理点。
+- **最小 GitHub Release 已落地，但 GitHub 仓库权限仍是外部前置条件。** 真正发版前仍需在仓库设置里把 Actions workflow permissions 设成 `Read and write`，否则 workflow 无法创建 draft release。
 
 ## 接下来先读哪里
 
@@ -78,3 +82,6 @@
 15. `src/view/pipeline.ts`
 16. `src/search/SearchIndexManager.ts`
 17. `src/search/IndexedSearchService.ts`
+18. `.github/workflows/release.yml`
+19. `scripts/check-release.mjs`
+20. `scripts/sync-version.mjs`

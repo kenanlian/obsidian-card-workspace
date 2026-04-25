@@ -68,8 +68,9 @@ src/search/IndexedSearchService.ts
 - `IndexedDB`，由 `IndexStore` 使用，负责本地持久化索引快照。
 - `MiniSearch`，负责内存中的文本索引和查询执行。
 - esbuild + esbuild-svelte，负责构建 `main.js`。
+- GitHub Actions release workflow，负责在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时复用仓库校验链路，并把 `main.js`、`manifest.json`、`styles.css` 发布成 draft GitHub Release。
 
-当前没有网络依赖，没有外部服务。搜索能力已经是本地 indexed 架构，不再只是 no-index 接缝，但它仍保留 fallback 路径以应对构建中、恢复失败或初始化失败。
+当前没有产品运行时网络依赖，没有外部服务。搜索能力已经是本地 indexed 架构，不再只是 no-index 接缝，但它仍保留 fallback 路径以应对构建中、恢复失败或初始化失败。GitHub Release 自动化只属于仓库发布基础设施，不属于插件运行时依赖。
 
 ## 技术选择及原因
 
@@ -89,6 +90,19 @@ src/search/IndexedSearchService.ts
 ### Svelte 5 兼容模式，宿主继续做协调
 
 组件负责展示、输入和局部 UI 效果，但不拥有插件级资源，也不拥有搜索真值。这样可以把 Obsidian 生命周期和 UI 表面分开，减少组件内隐藏副作用。
+
+### Tag-driven GitHub Release automation
+
+发布链路现在采用最小仓库基础设施，而不是引入 `semantic-release`、`release-please` 或 npm publish：
+
+- `.github/workflows/release.yml` 只在 push 裸 semver tag 时触发，例如 `0.1.1`，而不是 `v0.1.1`。
+- workflow 会复用仓库当前的 `check:svelte`、`check`、`build`、`test` 校验链路，而不是发明第二套发布专用验证。
+- `scripts/check-release.mjs` 负责校验 Git tag、`package.json.version`、`manifest.json.version`、`versions.json[version]` 与 `manifest.json.minAppVersion` 的对齐关系。
+- `scripts/sync-version.mjs` 负责把版本 bump 的多文件更新收敛成一个显式命令，减少手工漏改风险。
+
+因此，release 前的本地 sanity-check 不应只跑仓库常规三件套，还应补上 `npm run check:svelte`，否则维护者可能在本地通过 `check/build/test` 后，仍在 tag workflow 中被 Svelte 校验拦下。
+
+这里的核心设计目标不是“全自动语义化发版”，而是把 Obsidian 插件对 release assets 和版本对齐的硬约束固化进仓库本身，同时保持发布行为足够可见、可控。
 
 ### IndexedDB + MiniSearch
 
@@ -204,6 +218,18 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 在构建中、恢复失败或不可用时返回 `orderedPaths: null`，让调用方继续 fallback。
 
 它不负责为非 Markdown 文件伪造全文索引；这部分能力当前故意留在标题级匹配。
+
+### Release metadata and publishing flow
+
+当前发布链路是：
+
+1. 维护者先用 `npm run release:prepare -- <version> [minAppVersion]` 同步 `package.json`、`manifest.json`、`versions.json`。
+2. 本地或 CI 用 `npm run release:check -- <version>` 校验版本 contract。
+3. 维护者在版本 bump commit 上创建与 `manifest.json.version` 完全一致的 annotated 裸 semver tag。
+4. `.github/workflows/release.yml` 在 tag push 后执行 `check:svelte`、`check`、`build`、`test`。
+5. 校验通过后，workflow 用 `gh release create` 生成 draft GitHub Release，并上传 `main.js`、`manifest.json`、`styles.css`。
+
+这条链路的关键边界是：**版本号仍由维护者显式决定，workflow 只负责验证和发布，不负责替你推断下一个版本号，也不负责 changelog 生成。**
 
 ## 关键流程设计
 
@@ -373,6 +399,8 @@ baseCards
 10. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
 11. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
 12. 默认卡片点击不是持久化设置；真正的默认打开语义现在直接由 `main.ts` 统一控制，而且目标是主编辑区里最近使用、可承载文件的 root leaf。不能把 leaf 选择或默认 destination 再散回 Svelte 组件、panel-model 或 settings。
+13. GitHub Release tag 必须是与 `manifest.json.version` 完全一致的裸 semver；为避免仓库内版本漂移，当前也要求 `package.json.version` 与 `versions.json[version]` 一起对齐。不要只改一个文件就直接打 tag。
+14. Release workflow 依赖 GitHub Actions 的 `contents: write` 与仓库级 `Read and write` workflow permissions；如果权限不满足，问题应先归因为仓库设置，而不是脚本或插件运行时。
 
 ## 历史问题与折中
 
@@ -396,6 +424,7 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 3. 为真实 Obsidian 宿主补 manual QA 流程，把当前豁免状态转换成已执行证据。
 4. 单独处理 `Toolbar.svelte` 的 a11y warnings，尤其是 folder menu item 与 chevron 的键盘可达性，减少 build/test 输出噪音。
 5. 如后续继续扩展索引能力，优先补 manager 和 service 层，不要把索引细节散入 view 层。
+6. 如果未来要补 changelog、自动版本推断或发布 PR，优先在当前 tag-driven workflow 外侧增加能力，不要破坏已经固定的版本对齐和 release asset contract。
 
 ## Related decisions
 
@@ -409,3 +438,4 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 - `docs/decisions/2026-04-24-support-mixed-file-kind-cards-with-markdown-only-indexing.md`
 - `docs/decisions/2026-04-24-keep-file-kind-icons-on-official-obsidian-lucide-icons.md`
 - `docs/decisions/2026-04-25-constrain-card-note-opens-to-main-editor-surfaces.md`
+- `docs/decisions/2026-04-25-adopt-tag-driven-github-release-automation.md`
