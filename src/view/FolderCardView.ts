@@ -32,8 +32,8 @@ import {
   toggleSelection,
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
-import type { SortDirection, SortField } from "../settings";
-import { ALL_NOTES_PATH } from "./types";
+import type { OpenDestination, SortDirection, SortField } from "../settings";
+import { ALL_NOTES_PATH, type CardHoverLinkPayload } from "./types";
 import {
   getCardPlaceholderText,
   isMarkdownCardKind,
@@ -62,7 +62,7 @@ import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
-type CardMenuAction = "move" | "copy";
+type CardMenuAction = Exclude<OpenDestination, "current-area"> | "move" | "copy";
 
 class BulkActionConfirmModal extends Modal {
   private readonly titleText: string;
@@ -398,6 +398,10 @@ export class FolderCardView extends ItemView {
     return root === this.app.workspace.leftSplit ? "right" : "left";
   }
 
+  private openCardWithDestination(path: string, destination: OpenDestination): void {
+    void this.plugin.openNoteFromCard(path, destination);
+  }
+
   async onOpen(): Promise<void> {
     const panelModule = await import("./FolderCardPanel.svelte");
     const FolderCardPanel = panelModule.default;
@@ -445,13 +449,23 @@ export class FolderCardView extends ItemView {
           if (this.bulkMode || typeof detail.path !== "string") {
             return;
           }
-          this.plugin.openNoteFromCard(detail.path);
+          void this.plugin.openNoteFromCard(detail.path);
         },
         onBulkSelectCard: (detail: { path?: unknown; shiftKey?: unknown }) => {
           this.onBulkSelectCard(detail);
         },
-        onCardContextMenu: (detail: { path?: unknown; mouseEvent?: unknown }) => {
-          this.openCardContextMenu(detail.path, detail.mouseEvent);
+        onCardContextMenu: (detail: {
+          path?: unknown;
+          mouseEvent?: unknown;
+          trigger?: unknown;
+          position?: unknown;
+        }) => {
+          this.openCardContextMenu({
+            notePath: detail.path,
+            trigger: detail.trigger,
+            mouseEvent: detail.mouseEvent,
+            position: detail.position,
+          });
         },
         onHydrateRange: (detail: { start?: unknown; end?: unknown }) => {
           if (typeof detail.start !== "number" || typeof detail.end !== "number") {
@@ -479,6 +493,9 @@ export class FolderCardView extends ItemView {
         },
         onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => {
           void this.onPinToggle(detail);
+        },
+        onCardHoverLink: (detail: CardHoverLinkPayload) => {
+          this.onCardHoverLink(detail);
         },
         onSelectFolder: (detail: { path?: unknown }) => {
           if (typeof detail.path !== "string") {
@@ -791,14 +808,40 @@ export class FolderCardView extends ItemView {
     this.searchSnapshotUnsubscribe = null;
   }
 
-  private openCardContextMenu(notePath: unknown, mouseEvent: unknown): void {
-    if (typeof notePath !== "string" || !this.isMouseEventLike(mouseEvent)) {
+  private openCardContextMenu(detail: {
+    notePath?: unknown;
+    trigger?: unknown;
+    mouseEvent?: unknown;
+    position?: unknown;
+  }): void {
+    if (typeof detail.notePath !== "string") {
+      return;
+    }
+
+    if (detail.trigger === "button") {
+      if (!this.isMenuPosition(detail.position)) {
+        return;
+      }
+    } else if (!this.isMouseEventLike(detail.mouseEvent)) {
       return;
     }
 
     const menu = new Menu();
-    this.addCardContextMenuItems(menu, notePath);
-    menu.showAtMouseEvent(mouseEvent);
+    this.addCardContextMenuItems(menu, detail.notePath);
+
+    if (detail.trigger === "button") {
+      const position = detail.position;
+      if (!this.isMenuPosition(position)) {
+        return;
+      }
+      menu.showAtPosition(position);
+    } else {
+      const mouseEvent = detail.mouseEvent;
+      if (!this.isMouseEventLike(mouseEvent)) {
+        return;
+      }
+      menu.showAtMouseEvent(mouseEvent);
+    }
 
     const menuDom = this.getMenuDom(menu);
     if (menuDom) {
@@ -837,7 +880,48 @@ export class FolderCardView extends ItemView {
     return "clientX" in event && "clientY" in event;
   }
 
+  private isMenuPosition(position: unknown): position is { x: number; y: number } {
+    if (typeof position !== "object" || position === null) {
+      return false;
+    }
+
+    if (!("x" in position) || !("y" in position)) {
+      return false;
+    }
+
+    const x = (position as { x?: unknown }).x;
+    const y = (position as { y?: unknown }).y;
+    return typeof x === "number" && typeof y === "number";
+  }
+
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
+        menu.addItem((item) => {
+      item
+        .setTitle("Open in new tab")
+        .setIcon("file-plus")
+        .onClick(() => {
+          void this.routeCardMenuAction("new-tab", notePath);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Open to the right")
+        .setIcon("separator-vertical")
+        .onClick(() => {
+          void this.routeCardMenuAction("split-right", notePath);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Open in new window")
+        .setIcon("picture-in-picture-2")
+        .onClick(() => {
+          void this.routeCardMenuAction("new-window", notePath);
+        });
+    });
+
     menu.addItem((item) => {
       item
         .setTitle("Move to…")
@@ -863,7 +947,12 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    this.moveCardNote(notePath);
+    if (action === "move") {
+      this.moveCardNote(notePath);
+      return;
+    }
+
+    this.openCardWithDestination(notePath, action);
   }
 
   private async copyCardNote(notePath: string): Promise<void> {
@@ -2365,7 +2454,7 @@ export class FolderCardView extends ItemView {
     }
 
     if (!this.bulkMode) {
-      this.plugin.openNoteFromCard(path);
+      void this.plugin.openNoteFromCard(path);
       return;
     }
 
@@ -2384,5 +2473,15 @@ export class FolderCardView extends ItemView {
       : toggleSelection(selectionState, path);
 
     this.applyBulkSelectionFromResult(result);
+  }
+
+  private onCardHoverLink(detail: CardHoverLinkPayload): void {
+    this.app.workspace.trigger("hover-link", {
+      event: detail.mouseEvent,
+      source: "card-workspace",
+      hoverParent: this,
+      targetEl: detail.targetEl,
+      linktext: detail.path,
+    });
   }
 }

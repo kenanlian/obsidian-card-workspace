@@ -159,6 +159,7 @@ const mockState = vi.hoisted(() => {
   class MockMenu {
     items: MockMenuItem[] = [];
     showAtMouseEvent = vi.fn();
+    showAtPosition = vi.fn();
     dom: any;
 
     constructor() {
@@ -492,7 +493,7 @@ function createViewWithFile(path: string = "notes/a.md"): {
         lastViewMode: "folder",
         pinnedPaths: [],
         previewLines: 5,
-      })),
+              })),
       getSearchService: vi.fn(() => null),
       getSearchSnapshot: vi.fn(() => null),
       subscribeSearchSnapshots: vi.fn(() => () => undefined),
@@ -612,7 +613,9 @@ describe("FolderCardView card context actions", () => {
       expect(mockState.panelEventHandlers["card-context-menu"]).toBeDefined();
 
       const contextMenuHandler = mockState.panelEventHandlers["card-context-menu"];
-      contextMenuHandler({ detail: { path: file.path, mouseEvent: mockMouseEvent } });
+      contextMenuHandler({
+        detail: { path: file.path, trigger: "contextmenu", mouseEvent: mockMouseEvent },
+      });
 
       expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
       expect(mockState.menuInstances).toHaveLength(1);
@@ -644,8 +647,12 @@ describe("FolderCardView card context actions", () => {
 
       const contextMenuHandler = mockState.panelEventHandlers["card-context-menu"];
 
-      contextMenuHandler({ detail: { path: file.path, mouseEvent: event1 } });
-      contextMenuHandler({ detail: { path: file.path, mouseEvent: event2 } });
+      contextMenuHandler({
+        detail: { path: file.path, trigger: "contextmenu", mouseEvent: event1 },
+      });
+      contextMenuHandler({
+        detail: { path: file.path, trigger: "contextmenu", mouseEvent: event2 },
+      });
 
       expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
       expect(mockState.menuInstances).toHaveLength(2);
@@ -672,7 +679,9 @@ describe("FolderCardView card context actions", () => {
       await (view as any).onOpen();
 
       const contextMenuHandler = mockState.panelEventHandlers["card-context-menu"];
-      contextMenuHandler({ detail: { path: file.path, mouseEvent: mockMouseEvent } });
+      contextMenuHandler({
+        detail: { path: file.path, trigger: "contextmenu", mouseEvent: mockMouseEvent },
+      });
 
       expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
       expect(mockState.menuInstances).toHaveLength(1);
@@ -1909,29 +1918,128 @@ describe("FolderCardView card context actions", () => {
       });
     });
 
-   it("openCardContextMenu adds Move to… and Copy items", () => {
+   it("openCardContextMenu shows the shared menu with destination items for contextmenu trigger", () => {
     const { view, file } = createViewWithFile();
     const mouseEvent = { clientX: 12, clientY: 24 } as MouseEvent;
 
-    (view as any).openCardContextMenu(file.path, mouseEvent);
+    (view as any).openCardContextMenu({
+      notePath: file.path,
+      trigger: "contextmenu",
+      mouseEvent,
+    });
 
     expect(mockState.menuInstances).toHaveLength(1);
     const [menu] = mockState.menuInstances;
-    expect(menu?.items.map((item) => item.title)).toEqual(["Move to…", "Copy"]);
-    expect(menu?.items.map((item) => item.icon)).toEqual(["folder-input", "documents"]);
+    expect(menu?.items.map((item) => item.title)).toEqual([
+      "Open in new tab",
+      "Open to the right",
+      "Open in new window",
+      "Move to…",
+      "Copy",
+    ]);
     expect(menu?.showAtMouseEvent).toHaveBeenCalledTimes(1);
     expect(menu?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+    expect(menu?.showAtPosition).not.toHaveBeenCalled();
+    expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+  });
+
+  it("openCardContextMenu shows the shared menu at explicit coordinates for button trigger", () => {
+    const { view, file } = createViewWithFile();
+    const position = { x: 40, y: 88 };
+
+    (view as any).openCardContextMenu({
+      notePath: file.path,
+      trigger: "button",
+      position,
+    });
+
+    expect(mockState.menuInstances).toHaveLength(1);
+    const [menu] = mockState.menuInstances;
+    expect(menu?.showAtPosition).toHaveBeenCalledTimes(1);
+    expect(menu?.showAtPosition).toHaveBeenCalledWith(position);
+    expect(menu?.showAtMouseEvent).not.toHaveBeenCalled();
     expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
   });
 
   it("openCardContextMenu aborts and does not render menu on invalid inputs", () => {
     const { view } = createViewWithFile();
-    
-    (view as any).openCardContextMenu(123, { clientX: 12, clientY: 24 });
-    (view as any).openCardContextMenu("path.md", null);
-    (view as any).openCardContextMenu("path.md", { clientX: 12 });
-    
+
+    (view as any).openCardContextMenu({
+      notePath: 123,
+      trigger: "contextmenu",
+      mouseEvent: { clientX: 12, clientY: 24 },
+    });
+    (view as any).openCardContextMenu({ notePath: "path.md", trigger: "contextmenu", mouseEvent: null });
+    (view as any).openCardContextMenu({
+      notePath: "path.md",
+      trigger: "contextmenu",
+      mouseEvent: { clientX: 12 },
+    });
+    (view as any).openCardContextMenu({ notePath: "path.md", trigger: "button", position: null });
+    (view as any).openCardContextMenu({
+      notePath: "path.md",
+      trigger: "button",
+      position: { x: 12 },
+    });
+
     expect(mockState.menuInstances).toHaveLength(0);
+  });
+
+  it("routeCardMenuAction opens note for destination actions and preserves move/copy routes", async () => {
+    const { view, file, plugin } = createViewWithFile("notes/context-route.md");
+    const moveSpy = vi.spyOn(view as any, "moveCardNote");
+    const copySpy = vi.spyOn(view as any, "copyCardNote").mockResolvedValue(undefined);
+
+    await (view as any).routeCardMenuAction("new-tab", file.path);
+    await (view as any).routeCardMenuAction("split-right", file.path);
+    await (view as any).routeCardMenuAction("new-window", file.path);
+    await (view as any).routeCardMenuAction("move", file.path);
+    await (view as any).routeCardMenuAction("copy", file.path);
+
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "new-tab");
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "split-right");
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(3, file.path, "new-window");
+    expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(3);
+    expect(moveSpy).toHaveBeenCalledTimes(1);
+    expect(moveSpy).toHaveBeenCalledWith(file.path);
+    expect(copySpy).toHaveBeenCalledTimes(1);
+    expect(copySpy).toHaveBeenCalledWith(file.path);
+  });
+
+  it("menu destination clicks call plugin.openNoteFromCard with bound this", () => {
+    const { view, file, plugin } = createViewWithFile("notes/runtime-binding.md");
+    const receiverCalls: Array<{ receiver: unknown; path: string; destination: string }> = [];
+
+    plugin.openNoteFromCard = function(this: unknown, path: string, destination: string): void {
+      receiverCalls.push({ receiver: this, path, destination });
+    } as unknown as typeof plugin.openNoteFromCard;
+
+    (view as any).openCardContextMenu({
+      notePath: file.path,
+      trigger: "button",
+      position: { x: 32, y: 64 },
+    });
+
+    const [menu] = mockState.menuInstances;
+    expect(menu).toBeDefined();
+
+    const destinationTitles = [
+      "Open in new tab",
+      "Open to the right",
+      "Open in new window",
+    ];
+
+    for (const title of destinationTitles) {
+      const menuItem = menu?.items.find((item) => item.title === title);
+      expect(menuItem?.clickHandler).toBeTypeOf("function");
+      menuItem?.clickHandler?.();
+    }
+
+    expect(receiverCalls).toEqual([
+      { receiver: plugin, path: file.path, destination: "new-tab" },
+      { receiver: plugin, path: file.path, destination: "split-right" },
+      { receiver: plugin, path: file.path, destination: "new-window" },
+    ]);
   });
 
 
@@ -2600,7 +2708,9 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).bulkAnchorPath).toBeNull();
 
       openNoteHandler({ detail: { path: file.path } });
-      contextMenuHandler({ detail: { path: file.path, mouseEvent } });
+      contextMenuHandler({
+        detail: { path: file.path, trigger: "contextmenu", mouseEvent },
+      });
 
       expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
       expect(plugin.openNoteFromCard).toHaveBeenCalledWith(file.path);
@@ -3300,7 +3410,7 @@ describe("FolderCardView card context actions", () => {
         lastFolderPath: null,
         lastViewMode: "all-notes",
         pinnedPaths: [],
-      }));
+              }));
 
       (view as any).folderPath = ALL_NOTES_PATH;
       await (view as any).onOpen();

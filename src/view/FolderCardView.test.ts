@@ -239,6 +239,7 @@ vi.mock("./note-ops", () => {
 
 import { FolderCardView } from "./FolderCardView";
 import type { SearchServiceSnapshot } from "../search";
+import type { CardFileKind } from "./file-kind";
 import type { NoteCardRecord } from "./types";
 
 interface TestHarness {
@@ -257,17 +258,19 @@ interface TestHarness {
   panelContainer: HTMLElement;
 }
 
-function createCard(path: string, title: string): NoteCardRecord {
+function createCard(path: string, title: string, fileKind: CardFileKind = "markdown"): NoteCardRecord {
+  const isMarkdown = fileKind === "markdown";
+
   return {
     file: new testState.TestTFile(path) as unknown as never,
-    fileKind: "markdown",
+    fileKind,
     path,
     title,
     ctime: new Date("2024-01-02T10:00:00Z").getTime(),
     mtime: new Date("2024-02-03T12:00:00Z").getTime(),
     excerpt: "",
-    previewHtml: "<p>Preview text</p>",
-    previewMode: "text",
+    previewHtml: isMarkdown ? "<p>Preview text</p>" : "",
+    previewMode: isMarkdown ? "text" : "placeholder",
     hydrated: true,
   };
 }
@@ -284,6 +287,7 @@ function createHarness(): TestHarness {
   const app = {
     workspace: {
       leftSplit: { id: "left-split" },
+      trigger: vi.fn(),
     },
     metadataCache: {
       getFileCache: vi.fn(() => null),
@@ -523,5 +527,59 @@ describe("FolderCardView host contract", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("forwards markdown title-group hover payload through to workspace hover-link trigger", async () => {
+    const { view } = createHarness();
+
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [createCard("notes/hover.md", "Hover card")];
+
+    await view.onOpen();
+    (view as any).pushState();
+    await tick();
+
+    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    expect(titleGroup).not.toBeNull();
+
+    const event = new MouseEvent("mouseenter", { bubbles: true });
+    titleGroup?.dispatchEvent(event);
+
+    const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
+    expect(triggerSpy).toHaveBeenCalledTimes(1);
+    expect(triggerSpy).toHaveBeenCalledWith("hover-link", {
+      event,
+      source: "card-workspace",
+      hoverParent: view,
+      targetEl: titleGroup,
+      linktext: "notes/hover.md",
+    });
+  });
+
+  it("does not trigger hover-link for non-markdown cards or action controls", async () => {
+    const { view } = createHarness();
+
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [createCard("notes/diagram.canvas", "diagram.canvas", "canvas")];
+
+    await view.onOpen();
+    (view as any).pushState();
+    await tick();
+
+    const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
+
+    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    const pinButton = (view as any).containerEl.querySelector(".fce-card-pin-btn") as HTMLButtonElement | null;
+    const moreActionsButton = (view as any).containerEl.querySelector(".fce-more-actions-btn") as HTMLButtonElement | null;
+
+    expect(titleGroup).not.toBeNull();
+    expect(pinButton).not.toBeNull();
+    expect(moreActionsButton).not.toBeNull();
+
+    titleGroup?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    pinButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    moreActionsButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+
+    expect(triggerSpy).not.toHaveBeenCalled();
   });
 });
