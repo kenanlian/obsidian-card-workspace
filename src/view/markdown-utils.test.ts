@@ -248,6 +248,56 @@ describe("buildLightPreview", () => {
     expect(result.html).not.toContain("<pre");
   });
 
+  it("preserves source order across text and multiple fenced code blocks within previewLines", () => {
+    const result = buildLightPreview(
+      [
+        "1. First item",
+        "```ts",
+        "const one = 1;",
+        "```",
+        "2. Second item",
+        "```ts",
+        "const two = 2;",
+        "```",
+      ].join("\n"),
+      500,
+      4,
+    );
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe([
+      "<p>First item</p>",
+      '<p class="fce-preview-code"><code>const one = 1;</code></p>',
+      "<p>Second item</p>",
+      '<p class="fce-preview-code"><code>const two = 2;</code></p>',
+    ].join(""));
+  });
+
+  it("stops mixed text and multiple fenced code blocks at the shared previewLines budget", () => {
+    const result = buildLightPreview(
+      [
+        "1. First item",
+        "```ts",
+        "const one = 1;",
+        "```",
+        "2. Second item",
+        "```ts",
+        "const two = 2;",
+        "```",
+      ].join("\n"),
+      500,
+      3,
+    );
+
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe([
+      "<p>First item</p>",
+      '<p class="fce-preview-code"><code>const one = 1;</code></p>',
+      "<p>Second item</p>",
+    ].join(""));
+    expect(result.html).not.toContain("const two = 2;");
+  });
+
   it("normalizes weak-cue inline markers without leaking raw delimiters", () => {
     const result = buildLightPreview("**Bold** _Italic_ ~~Strike~~ ==Highlight== `Code` plain");
 

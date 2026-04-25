@@ -125,7 +125,30 @@ export function buildLightPreview(
 
     const fence = getFenceInfo(trimmed);
     if (fence) {
-      index = skipFenceCodeBlock(lines, index, scanLimit, fence.marker, fence.size);
+      const codeBlock = readFenceCodeBlock(
+        lines,
+        index,
+        scanLimit,
+        fence.marker,
+        fence.size,
+        remainingBlocks,
+      );
+      if (codeBlock.previewText.length > 0) {
+        const clipped = clipTextWithLimit(codeBlock.previewText, remainingChars);
+        let display = clipped.text.trimEnd();
+        if ((clipped.truncated || codeBlock.truncatedByLines) && display.length > 0) {
+          display = display.includes("\n") ? `${display}\n...` : `${display}...`;
+        }
+        if (display.length > 0) {
+          htmlParts.push(`<p class="fce-preview-code"><code>${escapeHtml(display)}</code></p>`);
+          remainingChars -= clipped.text.length;
+          remainingBlocks -= codeBlock.lineCount;
+        }
+        if (clipped.truncated) {
+          break;
+        }
+      }
+      index = codeBlock.nextIndex;
       continue;
     }
 
@@ -258,7 +281,7 @@ function readFenceCodeBlock(
   marker: "`" | "~",
   size: number,
   previewLines: number,
-): { previewText: string; truncatedByLines: boolean; nextIndex: number } {
+): { previewText: string; truncatedByLines: boolean; nextIndex: number; lineCount: number } {
   const body: string[] = [];
   let cursor = startIndex + 1;
 
@@ -276,25 +299,9 @@ function readFenceCodeBlock(
   return {
     previewText: selected.join("\n").trimEnd(),
     truncatedByLines: body.length > previewLines,
-    nextIndex: cursor
+    nextIndex: cursor,
+    lineCount: selected.length,
   };
-}
-
-function skipFenceCodeBlock(
-  lines: string[],
-  startIndex: number,
-  scanLimit: number,
-  marker: "`" | "~",
-  size: number
-): number {
-  let cursor = startIndex + 1;
-  while (cursor < scanLimit) {
-    if (isFenceClosingLine(lines[cursor].trim(), marker, size)) {
-      return cursor + 1;
-    }
-    cursor += 1;
-  }
-  return cursor;
 }
 
 function renderInlineWithLimit(source: string, limit: number): InlineRenderResult {
