@@ -18,6 +18,8 @@ import {
   batchMoveFiles,
   batchTrashFiles,
   copyNoteToClipboard,
+  deleteFileUsingObsidianPreference,
+  duplicateFile,
   mergeNotes,
   moveFile,
 } from "./note-ops";
@@ -62,7 +64,13 @@ import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
-type CardMenuAction = Exclude<OpenDestination, "current-area"> | "move" | "copy";
+type CardMenuAction =
+  | Exclude<OpenDestination, "current-area">
+  | "make-copy"
+  | "move"
+  | "rename"
+  | "delete"
+  | "copy-note-content";
 
 class BulkActionConfirmModal extends Modal {
   private readonly titleText: string;
@@ -327,6 +335,77 @@ class BulkMergeModal extends Modal {
         separator: this.separator,
         cleanupMode: this.cleanupMode,
       });
+      this.close();
+    } finally {
+      this.submitting = false;
+      this.render();
+    }
+  }
+}
+
+class RenameFileModal extends Modal {
+  private readonly initialName: string;
+  private readonly onSubmit: (nextName: string) => Promise<void>;
+  private nextName: string;
+  private submitting = false;
+
+  constructor(
+    app: App,
+    options: {
+      initialName: string;
+    },
+    onSubmit: (nextName: string) => Promise<void>,
+  ) {
+    super(app);
+    this.initialName = options.initialName;
+    this.nextName = options.initialName;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    this.setTitle("Rename file");
+    this.contentEl.empty();
+
+    new Setting(this.contentEl).setName("Name").addText((text) => {
+      text.setValue(this.nextName).setPlaceholder(this.initialName).onChange((value) => {
+        this.nextName = value;
+      });
+    });
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText("Cancel").onClick(() => {
+          this.close();
+        });
+      })
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(this.submitting ? "Renaming…" : "Rename")
+          .onClick(() => {
+            void this.submit();
+          });
+      });
+  }
+
+  private async submit(): Promise<void> {
+    if (this.submitting) {
+      return;
+    }
+
+    this.submitting = true;
+    this.render();
+
+    try {
+      await this.onSubmit(this.nextName);
       this.close();
     } finally {
       this.submitting = false;
@@ -895,7 +974,7 @@ export class FolderCardView extends ItemView {
   }
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
-        menu.addItem((item) => {
+    menu.addItem((item) => {
       item
         .setTitle("Open in new tab")
         .setIcon("file-plus")
@@ -922,33 +1001,85 @@ export class FolderCardView extends ItemView {
         });
     });
 
+    menu.addSeparator();
+
     menu.addItem((item) => {
       item
-        .setTitle("Move to…")
+        .setTitle("Make a copy")
+        .setIcon("copy")
+        .onClick(() => {
+          void this.routeCardMenuAction("make-copy", notePath);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Move file to...")
         .setIcon("folder-input")
         .onClick(() => {
           void this.routeCardMenuAction("move", notePath);
         });
     });
 
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (file instanceof TFile) {
+      const fileKind = resolveCardFileKind(file);
+      if (fileKind !== null && isMarkdownCardKind(fileKind)) {
+        menu.addItem((item) => {
+          item
+            .setTitle("Copy note content")
+            .setIcon("documents")
+            .onClick(() => {
+              void this.routeCardMenuAction("copy-note-content", notePath);
+            });
+        });
+      }
+    }
+
+    menu.addSeparator();
+
     menu.addItem((item) => {
       item
-        .setTitle("Copy")
-        .setIcon("documents")
+        .setTitle("Rename...")
+        .setIcon("pencil")
         .onClick(() => {
-          void this.routeCardMenuAction("copy", notePath);
+          void this.routeCardMenuAction("rename", notePath);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Delete")
+        .setIcon("trash")
+        .onClick(() => {
+          void this.routeCardMenuAction("delete", notePath);
         });
     });
   }
 
   private async routeCardMenuAction(action: CardMenuAction, notePath: string): Promise<void> {
-    if (action === "copy") {
+    if (action === "copy-note-content") {
       await this.copyCardNote(notePath);
+      return;
+    }
+
+    if (action === "make-copy") {
+      await this.makeCardFileCopy(notePath);
       return;
     }
 
     if (action === "move") {
       this.moveCardNote(notePath);
+      return;
+    }
+
+    if (action === "rename") {
+      this.renameCardFile(notePath);
+      return;
+    }
+
+    if (action === "delete") {
+      await this.deleteCardFile(notePath);
       return;
     }
 
@@ -964,6 +1095,18 @@ export class FolderCardView extends ItemView {
     await copyNoteToClipboard(this.app, file);
   }
 
+  private async makeCardFileCopy(notePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    const result = await duplicateFile(this.app, file);
+    if (!result.ok) {
+      new Notice(`Failed to copy file: ${result.error}`);
+    }
+  }
+
   private moveCardNote(notePath: string): void {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) {
@@ -971,6 +1114,63 @@ export class FolderCardView extends ItemView {
     }
 
     this.openMoveFolderPicker(file);
+  }
+
+  private renameCardFile(notePath: string): void {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    const modal = new RenameFileModal(
+      this.app,
+      { initialName: file.name },
+      async (nextName: string) => {
+        await this.submitRename(notePath, nextName);
+      },
+    );
+    modal.open();
+  }
+
+  private async submitRename(notePath: string, nextName: string): Promise<void> {
+    const trimmedName = nextName.trim();
+    if (trimmedName.length === 0) {
+      new Notice("File name cannot be empty");
+      return;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    const nextPath = this.buildSiblingPath(file.parent?.path ?? "", trimmedName);
+    try {
+      await this.app.fileManager.renameFile(file, nextPath);
+    } catch (error) {
+      new Notice(`Failed to rename file: ${String(error)}`);
+    }
+  }
+
+  private async deleteCardFile(notePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return;
+    }
+
+    try {
+      const confirmed = await this.app.fileManager.promptForDeletion(file);
+      if (!confirmed) {
+        return;
+      }
+
+      const result = await deleteFileUsingObsidianPreference(this.app, file);
+      if (!result.ok) {
+        new Notice(`Failed to delete file: ${result.error}`);
+      }
+    } catch (error) {
+      new Notice(`Failed to delete file: ${String(error)}`);
+    }
   }
 
   private openMoveFolderPicker(file: TFile): void {
@@ -997,8 +1197,16 @@ export class FolderCardView extends ItemView {
 
     const result = await moveFile(this.app, file, targetFolder);
     if (!result.ok) {
-      new Notice(`Failed to move note: ${result.error}`);
+      new Notice(`Failed to move file: ${result.error}`);
     }
+  }
+
+  private buildSiblingPath(parentPath: string, fileName: string): string {
+    if (parentPath.length === 0) {
+      return fileName;
+    }
+
+    return `${parentPath}/${fileName}`;
   }
 
   private reconcileBulkSelectionBeforeLoad(nextLoadScope: FolderLoadKey): boolean {

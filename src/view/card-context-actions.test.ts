@@ -10,6 +10,24 @@ const mockState = vi.hoisted(() => {
   const modalInstances: MockModal[] = [];
   const noticeMessages: string[] = [];
   const panelEventHandlers: Record<string, (event: any) => void> = {};
+  const runtimeFlags = {
+    isDesktopApp: true,
+  };
+  const clipboardWriteTextMock = vi.fn(async (_text: string) => undefined);
+
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const existingNavigator = navigatorDescriptor?.get ? navigatorDescriptor.get.call(globalThis) : (globalThis as any).navigator;
+  const nextNavigator = {
+    ...(existingNavigator ?? {}),
+    clipboard: {
+      ...(existingNavigator?.clipboard ?? {}),
+      writeText: clipboardWriteTextMock,
+    },
+  };
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: nextNavigator,
+  });
 
   interface MockPanelProps {
     panelModel?: {
@@ -107,11 +125,16 @@ const mockState = vi.hoisted(() => {
   class MockTFile {
     path: string;
     basename: string;
+    name: string;
+    extension: string;
     parent: { path: string } | null;
 
     constructor(path: string) {
       this.path = path;
-      this.basename = path.replace(/.*\//, "").replace(/\.md$/, "");
+      this.name = path.replace(/.*\//, "");
+      const dotIndex = this.name.lastIndexOf(".");
+      this.extension = dotIndex >= 0 ? this.name.slice(dotIndex + 1) : "";
+      this.basename = dotIndex >= 0 ? this.name.slice(0, dotIndex) : this.name;
       const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
       this.parent = { path: parentPath };
     }
@@ -138,6 +161,8 @@ const mockState = vi.hoisted(() => {
   class MockMenuItem {
     title = "";
     icon = "";
+    submenu: MockMenu | null = null;
+    kind: "item" | "separator" = "item";
     clickHandler: (() => void) | null = null;
 
     setTitle(title: string): this {
@@ -152,6 +177,16 @@ const mockState = vi.hoisted(() => {
 
     onClick(handler: () => void): this {
       this.clickHandler = handler;
+      return this;
+    }
+
+    setSubmenu(submenu: MockMenu): this {
+      this.submenu = submenu;
+      const submenuIndex = menuInstances.indexOf(submenu);
+      if (submenuIndex >= 0) {
+        menuInstances.splice(submenuIndex, 1);
+      }
+
       return this;
     }
   }
@@ -172,6 +207,13 @@ const mockState = vi.hoisted(() => {
       const item = new MockMenuItem();
       configure(item);
       this.items.push(item);
+      return this;
+    }
+
+    addSeparator(): this {
+      const separator = new MockMenuItem();
+      separator.kind = "separator";
+      this.items.push(separator);
       return this;
     }
   }
@@ -376,6 +418,8 @@ const mockState = vi.hoisted(() => {
     noticeMessages,
     panelEventHandlers,
     panelInstances,
+    runtimeFlags,
+    clipboardWriteTextMock,
   };
 });
 
@@ -386,6 +430,11 @@ vi.mock("obsidian", () => {
     Modal: mockState.MockModal,
     Notice: mockState.MockNotice,
     Setting: mockState.MockSetting,
+    Platform: {
+      get isDesktopApp() {
+        return mockState.runtimeFlags.isDesktopApp;
+      },
+    },
     TFile: mockState.MockTFile,
     TFolder: mockState.MockTFolder,
   };
@@ -410,6 +459,8 @@ vi.mock("./note-ops", () => {
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
+    deleteFileUsingObsidianPreference: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    duplicateFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     mergeNotes: vi.fn(async () => ({
       ok: true,
       mergedFile: new mockState.MockTFile("notes/Merged notes.md"),
@@ -431,6 +482,8 @@ import {
   batchMoveFiles,
   batchTrashFiles,
   copyNoteToClipboard,
+  deleteFileUsingObsidianPreference,
+  duplicateFile,
   mergeNotes,
   moveFile,
 } from "./note-ops";
@@ -463,18 +516,47 @@ function attachChildren(
   return folder;
 }
 
-function createViewWithFile(path: string = "notes/a.md"): {
+function createViewWithFile(
+  path: string = "notes/a.md",
+  options: {
+    isDesktopApp?: boolean;
+    fullPath?: string | null;
+    promptForDeletion?: (file: InstanceType<typeof mockState.MockTFile>) => Promise<boolean> | boolean;
+  } = {},
+): {
   view: FolderCardView;
   app: any;
   file: InstanceType<typeof mockState.MockTFile>;
   plugin: any;
 } {
   const file = new mockState.MockTFile(path);
+  mockState.runtimeFlags.isDesktopApp = options.isDesktopApp ?? true;
   const app = {
     metadataCache: {
       getFileCache: vi.fn(() => null),
     },
+    fileManager: {
+      promptForDeletion: vi.fn(async (targetFile: InstanceType<typeof mockState.MockTFile>) => {
+        if (typeof options.promptForDeletion === "function") {
+          return options.promptForDeletion(targetFile);
+        }
+
+        return true;
+      }),
+      trashFile: vi.fn(async () => undefined),
+      renameFile: vi.fn(async () => undefined),
+    },
     vault: {
+      adapter: {
+        getFullPath: vi.fn(() => {
+          if (Object.prototype.hasOwnProperty.call(options, "fullPath")) {
+            return options.fullPath;
+          }
+
+          return `/vault/${path}`;
+        }),
+      },
+      getName: vi.fn(() => "Test Vault"),
       getAbstractFileByPath: vi.fn((requestedPath: string) => {
         return requestedPath === path ? file : null;
       }),
@@ -508,10 +590,13 @@ function createViewWithFile(path: string = "notes/a.md"): {
   return { view, app, file, plugin };
 }
 
-function createCardRecord(file: InstanceType<typeof mockState.MockTFile>) {
+function createCardRecord(
+  file: InstanceType<typeof mockState.MockTFile>,
+  fileKind: "markdown" | "base" | "canvas" | "excalidraw" = "markdown",
+) {
   return {
     file,
-    fileKind: "markdown" as const,
+    fileKind,
     path: file.path,
     title: file.basename,
     ctime: 1,
@@ -523,13 +608,16 @@ function createCardRecord(file: InstanceType<typeof mockState.MockTFile>) {
   };
 }
 
-function createCardRecordFromPath(path: string) {
+function createCardRecordFromPath(
+  path: string,
+  fileKind: "markdown" | "base" | "canvas" | "excalidraw" = "markdown",
+) {
   const file = createMarkdownFile(path);
   (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
     ctime: 1,
     mtime: 1,
   };
-  return createCardRecord(file);
+  return createCardRecord(file, fileKind);
 }
 
 function clickLatestModalButton(buttonText: string, occurrence: number = 0): void {
@@ -553,6 +641,79 @@ function setLatestModalTextInput(index: number, value: string): void {
   input?.onChange?.(value);
 }
 
+function getMenuItemTitles(menu: { items: Array<{ kind?: string; title: string }> }): string[] {
+  return menu.items.filter((item) => item.kind !== "separator").map((item) => item.title);
+}
+
+function getMenuStructure(menu: {
+  items: Array<{
+    kind?: string;
+    title: string;
+    submenu?: { items: Array<{ kind?: string; title: string }> } | null;
+  }>;
+}): Array<string> {
+  return menu.items.map((item) => {
+    if (item.kind === "separator") {
+      return "separator";
+    }
+
+    if (item.submenu) {
+      const submenuTitles = item.submenu.items.map((submenuItem) => {
+        return submenuItem.kind === "separator" ? "separator" : submenuItem.title;
+      });
+      return `${item.title} -> ${submenuTitles.join(", ")}`;
+    }
+
+    return item.title;
+  });
+}
+
+function getTopLevelMenuSignature(menu: {
+  items: Array<{
+    kind?: string;
+    title: string;
+    icon?: string;
+  }>;
+}): Array<{ kind: "separator" } | { kind: "item"; title: string; icon: string }> {
+  return menu.items.map((item) => {
+    if (item.kind === "separator") {
+      return { kind: "separator" };
+    }
+
+    return {
+      kind: "item",
+      title: item.title,
+      icon: item.icon ?? "",
+    };
+  });
+}
+
+function findMenuItemByTitle(
+  menu: {
+    items: Array<{
+      title: string;
+      icon?: string;
+      clickHandler?: (() => void) | null;
+      submenu?: { items: Array<{ kind?: string; title: string; icon?: string }> } | null;
+    }>;
+  },
+  title: string,
+): {
+  title: string;
+  icon?: string;
+  clickHandler?: (() => void) | null;
+  submenu?: { items: Array<{ kind?: string; title: string; icon?: string }> } | null;
+} {
+  const item = menu.items.find((entry) => entry.title === title);
+  expect(item).toBeDefined();
+  return item as {
+    title: string;
+    icon?: string;
+    clickHandler?: (() => void) | null;
+    submenu?: { items: Array<{ kind?: string; title: string; icon?: string }> } | null;
+  };
+}
+
 async function flushAsyncWork(iterations: number = 5): Promise<void> {
   for (let index = 0; index < iterations; index += 1) {
     await Promise.resolve();
@@ -566,6 +727,9 @@ describe("FolderCardView card context actions", () => {
     mockState.modalInstances.length = 0;
     mockState.noticeMessages.length = 0;
     mockState.panelInstances.length = 0;
+    mockState.runtimeFlags.isDesktopApp = true;
+    mockState.clipboardWriteTextMock.mockReset();
+    mockState.clipboardWriteTextMock.mockResolvedValue(undefined);
     Object.keys(mockState.panelEventHandlers).forEach((key) => {
       delete mockState.panelEventHandlers[key];
     });
@@ -1918,29 +2082,64 @@ describe("FolderCardView card context actions", () => {
       });
     });
 
-   it("openCardContextMenu shows the shared menu with destination items for contextmenu trigger", () => {
-    const { view, file } = createViewWithFile();
-    const mouseEvent = { clientX: 12, clientY: 24 } as MouseEvent;
+    it("openCardContextMenu shows the shared menu with destination items for contextmenu trigger", () => {
+      const { view, file } = createViewWithFile();
+      const mouseEvent = { clientX: 12, clientY: 24 } as MouseEvent;
+
+      (view as any).openCardContextMenu({
+        notePath: file.path,
+        trigger: "contextmenu",
+        mouseEvent,
+      });
+
+      expect(mockState.menuInstances).toHaveLength(1);
+      const [menu] = mockState.menuInstances;
+      expect(getMenuStructure(menu!)).toEqual([
+        "Open in new tab",
+        "Open to the right",
+        "Open in new window",
+        "separator",
+        "Make a copy",
+        "Move file to...",
+        "Copy note content",
+        "separator",
+        "Rename...",
+        "Delete",
+      ]);
+      expect(menu?.showAtMouseEvent).toHaveBeenCalledTimes(1);
+      expect(menu?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+      expect(menu?.showAtPosition).not.toHaveBeenCalled();
+      expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+    });
+
+  it("desktop markdown cards render the reduced card menu contract exactly", () => {
+    const { view, file } = createViewWithFile("notes/desktop-markdown-parity.md", {
+      isDesktopApp: true,
+      fullPath: "/vault/notes/desktop-markdown-parity.md",
+    });
 
     (view as any).openCardContextMenu({
       notePath: file.path,
       trigger: "contextmenu",
-      mouseEvent,
+      mouseEvent: { clientX: 16, clientY: 24 },
     });
 
     expect(mockState.menuInstances).toHaveLength(1);
     const [menu] = mockState.menuInstances;
-    expect(menu?.items.map((item) => item.title)).toEqual([
-      "Open in new tab",
-      "Open to the right",
-      "Open in new window",
-      "Move to…",
-      "Copy",
+    expect(menu).toBeDefined();
+
+    expect(getTopLevelMenuSignature(menu!)).toEqual([
+      { kind: "item", title: "Open in new tab", icon: "file-plus" },
+      { kind: "item", title: "Open to the right", icon: "separator-vertical" },
+      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
+      { kind: "separator" },
+      { kind: "item", title: "Make a copy", icon: "copy" },
+      { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "separator" },
+      { kind: "item", title: "Rename...", icon: "pencil" },
+      { kind: "item", title: "Delete", icon: "trash" },
     ]);
-    expect(menu?.showAtMouseEvent).toHaveBeenCalledTimes(1);
-    expect(menu?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
-    expect(menu?.showAtPosition).not.toHaveBeenCalled();
-    expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
   });
 
   it("openCardContextMenu shows the shared menu at explicit coordinates for button trigger", () => {
@@ -1985,25 +2184,102 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.menuInstances).toHaveLength(0);
   });
 
-  it("routeCardMenuAction opens note for destination actions and preserves move/copy routes", async () => {
+  it("routeCardMenuAction opens note for destination actions and preserves remaining file-mutation routes", async () => {
     const { view, file, plugin } = createViewWithFile("notes/context-route.md");
+    const makeCopySpy = vi.spyOn(view as any, "makeCardFileCopy").mockResolvedValue(undefined);
     const moveSpy = vi.spyOn(view as any, "moveCardNote");
+    const renameSpy = vi.spyOn(view as any, "renameCardFile").mockImplementation(() => undefined);
+    const deleteSpy = vi.spyOn(view as any, "deleteCardFile").mockResolvedValue(undefined);
     const copySpy = vi.spyOn(view as any, "copyCardNote").mockResolvedValue(undefined);
 
     await (view as any).routeCardMenuAction("new-tab", file.path);
     await (view as any).routeCardMenuAction("split-right", file.path);
     await (view as any).routeCardMenuAction("new-window", file.path);
+    await (view as any).routeCardMenuAction("make-copy", file.path);
     await (view as any).routeCardMenuAction("move", file.path);
-    await (view as any).routeCardMenuAction("copy", file.path);
+    await (view as any).routeCardMenuAction("rename", file.path);
+    await (view as any).routeCardMenuAction("delete", file.path);
+    await (view as any).routeCardMenuAction("copy-note-content", file.path);
 
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "new-tab");
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "split-right");
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(3, file.path, "new-window");
     expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(3);
+    expect(makeCopySpy).toHaveBeenCalledTimes(1);
+    expect(makeCopySpy).toHaveBeenCalledWith(file.path);
     expect(moveSpy).toHaveBeenCalledTimes(1);
     expect(moveSpy).toHaveBeenCalledWith(file.path);
+    expect(renameSpy).toHaveBeenCalledTimes(1);
+    expect(renameSpy).toHaveBeenCalledWith(file.path);
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(deleteSpy).toHaveBeenCalledWith(file.path);
     expect(copySpy).toHaveBeenCalledTimes(1);
     expect(copySpy).toHaveBeenCalledWith(file.path);
+  });
+
+
+  it("conditional menu variants keep separators clean after removing optional actions", () => {
+    const { view: desktopNonMarkdownView, file: desktopNonMarkdownFile } = createViewWithFile(
+      "notes/non-markdown.canvas",
+      {
+        isDesktopApp: true,
+        fullPath: "/vault/notes/non-markdown.canvas",
+      },
+    );
+    const desktopNonMarkdownCard = createCardRecord(desktopNonMarkdownFile, "canvas");
+    (desktopNonMarkdownView as any).baseCards = [desktopNonMarkdownCard];
+    (desktopNonMarkdownView as any).visibleCards = [desktopNonMarkdownCard];
+
+    (desktopNonMarkdownView as any).openCardContextMenu({
+      notePath: desktopNonMarkdownFile.path,
+      trigger: "contextmenu",
+      mouseEvent: { clientX: 2, clientY: 2 },
+    });
+
+    expect(mockState.menuInstances).toHaveLength(1);
+    const [desktopNonMarkdownMenu] = mockState.menuInstances;
+    expect(getTopLevelMenuSignature(desktopNonMarkdownMenu!)).toEqual([
+      { kind: "item", title: "Open in new tab", icon: "file-plus" },
+      { kind: "item", title: "Open to the right", icon: "separator-vertical" },
+      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
+      { kind: "separator" },
+      { kind: "item", title: "Make a copy", icon: "copy" },
+      { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "separator" },
+      { kind: "item", title: "Rename...", icon: "pencil" },
+      { kind: "item", title: "Delete", icon: "trash" },
+    ]);
+
+    mockState.menuInstances.length = 0;
+
+    const { view: nonDesktopMarkdownView, file: nonDesktopMarkdownFile } = createViewWithFile("notes/non-desktop.md", {
+      isDesktopApp: false,
+      fullPath: null,
+    });
+
+    (nonDesktopMarkdownView as any).openCardContextMenu({
+      notePath: nonDesktopMarkdownFile.path,
+      trigger: "button",
+      position: { x: 12, y: 18 },
+    });
+
+    expect(mockState.menuInstances).toHaveLength(1);
+    const [nonDesktopMarkdownMenu] = mockState.menuInstances;
+    expect(getTopLevelMenuSignature(nonDesktopMarkdownMenu!)).toEqual([
+      { kind: "item", title: "Open in new tab", icon: "file-plus" },
+      { kind: "item", title: "Open to the right", icon: "separator-vertical" },
+      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
+      { kind: "separator" },
+      { kind: "item", title: "Make a copy", icon: "copy" },
+      { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "separator" },
+      { kind: "item", title: "Rename...", icon: "pencil" },
+      { kind: "item", title: "Delete", icon: "trash" },
+    ]);
+    expect(nonDesktopMarkdownMenu?.showAtPosition).toHaveBeenCalledWith({ x: 12, y: 18 });
+    expect(nonDesktopMarkdownMenu?.showAtMouseEvent).not.toHaveBeenCalled();
+    expect(nonDesktopMarkdownMenu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
   });
 
   it("menu destination clicks call plugin.openNoteFromCard with bound this", () => {
@@ -2145,7 +2421,70 @@ describe("FolderCardView card context actions", () => {
     await picker?.onChoose(destination);
 
     expect(moveFile).toHaveBeenCalledTimes(1);
-    expect(mockState.noticeMessages).toEqual(["Failed to move note: permission denied"]);
+    expect(mockState.noticeMessages).toEqual(["Failed to move file: permission denied"]);
+  });
+
+  it("make-copy and rename routes re-resolve the clicked file and call the expected helpers exactly once", async () => {
+    const { view, app } = createViewWithFile("notes/original.md");
+    const liveFile = createMarkdownFile("notes/original.md");
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+      if (requestedPath === "notes/original.md") {
+        return liveFile;
+      }
+      return null;
+    });
+
+    await (view as any).routeCardMenuAction("make-copy", "notes/original.md");
+
+    expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith("notes/original.md");
+    expect(duplicateFile).toHaveBeenCalledTimes(1);
+    expect(duplicateFile).toHaveBeenCalledWith(app, liveFile);
+
+    await (view as any).routeCardMenuAction("rename", "notes/original.md");
+
+    const renameModal = mockState.modalInstances.at(-1);
+    expect(renameModal?.title).toBe("Rename file");
+    expect(renameModal?.textInputs[0]?.value).toBe("original.md");
+
+    setLatestModalTextInput(0, "renamed.md");
+    clickLatestModalButton("Rename");
+    await flushAsyncWork();
+
+    expect(app.vault.getAbstractFileByPath).toHaveBeenLastCalledWith("notes/original.md");
+    expect(app.fileManager.renameFile).toHaveBeenCalledTimes(1);
+    expect(app.fileManager.renameFile).toHaveBeenCalledWith(liveFile, "notes/renamed.md");
+  });
+
+  it("delete prompts before using the preference-aware delete helper and move failures use file-neutral notices", async () => {
+    const { view, file, app } = createViewWithFile("notes/delete-me.md", {
+      promptForDeletion: async () => false,
+    });
+
+    await (view as any).routeCardMenuAction("delete", file.path);
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
+    expect(deleteFileUsingObsidianPreference).not.toHaveBeenCalled();
+    expect(app.fileManager.trashFile).not.toHaveBeenCalled();
+
+    app.fileManager.promptForDeletion = vi.fn(async () => true);
+    await (view as any).routeCardMenuAction("delete", file.path);
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(deleteFileUsingObsidianPreference).toHaveBeenCalledTimes(1);
+    expect(deleteFileUsingObsidianPreference).toHaveBeenCalledWith(app, file);
+    expect(app.fileManager.trashFile).not.toHaveBeenCalled();
+
+    const destination = createFolder("archive");
+    vi.mocked(moveFile).mockResolvedValueOnce({
+      ok: false,
+      error: "permission denied",
+      path: file.path,
+    });
+
+    (view as any).moveCardNote(file.path);
+    const picker = mockState.folderPickerInstances.at(-1);
+    await picker?.onChoose(destination);
+
+    expect(mockState.noticeMessages).toContain("Failed to move file: permission denied");
   });
 
   describe("batch move workflow", () => {

@@ -153,8 +153,9 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 向 `SearchService` 发 query，并把结果转成 pipeline 输入。
 - 组装 `PipelineContext`，再调用 `runPipeline()`。
 - 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
-- 把 bulk delete 路由到遵循 Obsidian 删除偏好的实现，而不是插件自定义的永久删除语义。
+- 把 bulk delete 与单卡右键 `Delete` 都路由到遵循 Obsidian 删除偏好的实现，而不是插件自定义的永久删除语义。
 - 把默认卡片点击与“更多”菜单显式动作分层：默认点击只上报 `path`，显式菜单动作才传具体 `OpenDestination`。
+- 把卡片右键菜单收敛为最小文件操作面，不再暴露 path copy、系统壳打开或 file stats 这类高噪音动作。
 - 把允许的卡片 hover 表面统一转成 `hover-link` payload，再交给 Obsidian workspace 触发宿主 popover。
 
 关键边界是：**query 仍只由 `FolderCardView.ts` 持有。** indexed 搜索的存在没有改变这一点。
@@ -300,17 +301,18 @@ baseCards
 - Markdown 卡片可参与全文级匹配。
 - 卡片内轻量 preview 与 hover popover 是两条不同 contract：前者由 `markdown-utils.ts` 生成并只服务卡片表面，后者由 `hover-link` 交给宿主或对应插件决定。 
 - `base`、`canvas`、`excalidraw` 当前只参与标题级匹配，不伪装成全文命中。
+- 卡片右键菜单的动作集现在被刻意压缩；如果未来要恢复系统层动作，必须先证明它们属于高频工作流，而不是调试或边缘操作。
 
-### 6. 批量删除遵循宿主偏好
+### 6. 单卡删除与批量删除统一遵循宿主偏好
 
-当前批量删除链路是：
+当前删除链路分成两个入口，但共享同一条宿主偏好语义：
 
-1. 工具栏发出 `bulk-delete-selected`。
-2. `FolderCardView.ts` 做 live file 过滤、确认提示与结果汇总。
-3. `note-ops.ts` 通过 `app.fileManager.trashFile(...)` 执行删除。
+1. 单卡右键 `Delete` 由 `FolderCardView.ts` 先走确认，再委托到 `note-ops.ts` 的偏好删除 helper。
+2. 工具栏 `bulk-delete-selected` 由 `FolderCardView.ts` 做 live file 过滤、确认提示与结果汇总，再批量委托到同一类 helper。
+3. `note-ops.ts` 最终通过 `app.fileManager.trashFile(...)` 执行删除。
 4. 最终是移动到系统回收站还是永久删除，由 Obsidian `Files & Links` 偏好决定。
 
-这里的关键约束是：插件不再自定义“Delete = 永久删除”的固定语义。
+这里的关键约束是：插件不再维护“单删一套、批删一套”的删除语义，更不再把 `Delete` 固定解释为永久删除。
 
 ### 7. 默认卡片点击与显式打开动作分层
 
@@ -320,8 +322,9 @@ baseCards
 2. `FolderCardView.ts` 收到默认打开事件后，直接调用 `plugin.openNoteFromCard(path)`，不再从 settings 或 panel state 推导默认 destination。
 3. `main.ts` 的 `openNoteFromCard(path, destination?)` 在 `destination` 缺省时执行 main-editor-area 规则：先检查 `getMostRecentLeaf(rootSplit)`；如果这个最近 root leaf 可承载文件，则复用它，若它已 pin，则改为 `getLeaf(true)` 新开一个 tab。
 4. 如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；仍然没有合适目标时才新建一个 new tab。
-5. “更多”菜单只表达显式动作：`new-tab`、`split-right`、`new-window`。
+5. “更多”菜单只保留最小显式动作集合：三个打开动作 `new-tab`、`split-right`、`new-window`，加上 `make-copy`、`move`、`copy-note-content`（仅 Markdown）、`rename`、`delete`。
 6. `split-right` 仍只从现有 root editor leaf 派生；`new-window` 继续委托给 `openPopoutLeaf()`，若宿主不支持则只给出 desktop-only notice。
+7. `Copy path`、系统壳打开与 `Check file stats` 已从卡片菜单层移除，避免把宿主外壳细节和低频诊断动作继续塞进主交互面。
 
 这里的关键约束是：**默认点击语义不再是设置项，而是宿主对齐策略；显式菜单动作才是用户主动选择的 destination。**
 

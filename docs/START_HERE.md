@@ -19,8 +19,8 @@
 - 已完成：非 Markdown 卡片标题图标继续走 Obsidian 官方 `setIcon(...)` 路径；`base` 当前映射为 `layout-list`，`excalidraw` 当前映射为 `pen-tool`，不再引入截图或自定义图片资产。
 - 已完成：`pipeline.ts` 和搜索服务正式锁定了“Markdown 继续做全文搜索；非 Markdown 只参与标题级匹配”的非对称搜索语义。
 - 已完成：卡片默认点击现在直接对齐主编辑区 recent-root fallback 语义：优先复用当前窗口 `rootSplit` 中最近使用且可承载文件的未 pin leaf；如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有目标 leaf 已 pin 或根本没有合适 root leaf 时，才打开 new tab。
-- 已完成：卡片右上角更多菜单现在只保留三个显式打开动作：`Open in new tab`、`Open to the right`、`Open in new window`；其中 `Open in new window` 图标改为 `picture-in-picture-2`，`Open in main editor` 已从菜单移除。
-- 已完成：批量删除不再承诺永久删除，而是改为遵循 Obsidian `Files & Links` 的删除偏好。
+- 已完成：卡片右上角更多菜单现在收敛为最小文件操作面：保留三个显式打开动作 `Open in new tab`、`Open to the right`、`Open in new window`，以及 `Make a copy`、`Move file to...`、`Copy note content`（仅 Markdown）、`Rename...`、`Delete`；`Copy path`、`Open in default app`、`Open in system explorer`、`Check file stats` 已移除。
+- 已完成：批量删除与单卡右键 `Delete` 现在都不再承诺插件自定义删除语义，而是统一遵循 Obsidian `Files & Links` 的删除偏好。
 - 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
 - 已完成：仓库现在具备最小 GitHub Release 支持；`.github/workflows/release.yml` 会在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时执行校验、构建、测试，并把 `main.js`、`manifest.json`、`styles.css` 上传成 draft release。
 - 已完成：版本发布前的元数据对齐不再靠手工记忆；`npm run release:prepare -- <version> [minAppVersion]` 会同步 `package.json`、`manifest.json`、`versions.json`，`npm run release:check -- <version>` 会校验 tag / manifest / package / compatibility mapping 是否一致。
@@ -42,7 +42,7 @@
 - `filter.tags`：标签筛选条件，语义是 **AND**。
 - `pinnedPaths`：置顶笔记路径列表，只影响顺序。
 - `includeSubfolders`：folder scope 下的数据采集开关，会决定是否递归收集受支持文件类型。
-- `Files & Links` 删除偏好（Obsidian 宿主配置）：不在插件设置内，但会直接影响 bulk delete 的最终行为。
+- `Files & Links` 删除偏好（Obsidian 宿主配置）：不在插件设置内，但会直接影响 bulk delete 与单卡右键 `Delete` 的最终行为。
 - `lastFolderPath` / `lastViewMode`：会话恢复使用。
 
 需要特别注意：**没有 `searchQuery` 配置项，也没有默认卡片打开方式配置项。** 搜索 query 和默认点击打开语义都不属于插件设置。
@@ -56,7 +56,7 @@
 - **轻量 preview 的预算 contract 不能漂移。** `previewLines` 现在是文本块与 fenced code block 共享的顺序预算；后续如果再改 preview 抽取或样式，必须同时检查 `markdown-utils.ts`、`styles.css` 和相关测试，而不是只改某一层。
 - **文件类型图标 contract 也有明确边界。** 标题图标应优先使用 Obsidian 官方 Lucide icon name，而不是把截图、栅格图片或自定义图像资产塞进 `file-kind.ts`。
 - **`orderedPaths` contract 不能漂移。** `null` 与空数组代表不同语义，测试和文档都已锁定。
-- **bulk delete 现在依赖宿主删除偏好。** 如果后续要改文案或行为，必须继续以 Obsidian `fileManager.trashFile` 作为真相来源，而不是插件自己定义删除语义。
+- **删除语义现在统一依赖宿主删除偏好。** 如果后续要改文案或行为，必须继续以 Obsidian `fileManager.trashFile` 作为真相来源，而不是插件自己定义单删和批删两套删除语义。
 - **默认卡片点击行为现在是固定 runtime contract。** 后续如果再改默认打开逻辑，必须同时检查 `main.ts`、`FolderCardView.ts`、`CardItem.svelte` 和对应测试，而不是只改菜单文案。
 - **显式打开动作与默认点击语义已经分层。** 默认点击先看 `getMostRecentLeaf(rootSplit)`，再回退到 root Markdown leaf；更多菜单只表达显式动作。不要再把这两层重新混成一个 setting。
 - **unsafe folder rename 会触发 rebuild-required。** 这是刻意选择的保守策略，用来避免脏路径继续对外服务。
@@ -67,7 +67,8 @@
 
 1. `docs/START_HERE.md`
 2. `docs/architecture.md`
-3. `docs/decisions/2026-04-25-broaden-card-hover-and-preserve-ordered-code-previews.md`
+3. `docs/decisions/2026-04-26-shrink-card-context-menu-and-unify-delete-preference.md`
+4. `docs/decisions/2026-04-25-broaden-card-hover-and-preserve-ordered-code-previews.md`
 4. `docs/decisions/2026-04-25-constrain-card-note-opens-to-main-editor-surfaces.md`
 5. `docs/decisions/2026-04-24-support-mixed-file-kind-cards-with-markdown-only-indexing.md`
 6. `docs/decisions/2026-04-24-keep-file-kind-icons-on-official-obsidian-lucide-icons.md`
