@@ -1,0 +1,9 @@
+2026-04-18 Task 3 panel smoke evidence
+- Added real jsdom runtime test: src/view/FolderCardPanel.svelte.test.ts
+- Assertions covered:
+  - Empty state renders "No Markdown notes found in this folder."
+  - Populated state renders .fce-list and card/title + scope-facing text
+  - hydrate-range event emits numeric start/end bounds
+- Verification commands:
+  - npx vitest run src/view/FolderCardPanel.svelte.test.ts -> PASS (1 test)
+  - npm run test:component -> PASS (includes FolderCardPanel.svelte.test.ts)

@@ -1,0 +1,12 @@
+7:13:57 PM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-cards-explorer - using default configuration.
+
+RUN  v4.0.18 /home/kenan/Secret-Projects/obsidian-cards-explorer
+
+✓  node  src/search/IndexStore.test.ts (3 tests) 3ms
+✓  node  src/search/SearchIndexManager.test.ts (3 tests) 3ms
+✓  node  src/search/IndexedSearchService.test.ts (4 tests) 4ms
+
+Test Files  3 passed (3)
+Tests  10 passed (10)
+Start at  19:13:57
+Duration  153ms (transform 102ms, setup 0ms, import 136ms, tests 10ms, environment 0ms)

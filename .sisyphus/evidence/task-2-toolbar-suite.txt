@@ -1,0 +1,19 @@
+2:00:32 PM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-cards-explorer - using default configuration.
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Secret-Projects/obsidian-cards-explorer[39m
+
+2:00:33 PM [vite-plugin-svelte] src/view/Toolbar.svelte:671:6 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+2:00:33 PM [vite-plugin-svelte] src/view/Toolbar.svelte:671:6 Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+2:00:33 PM [vite-plugin-svelte] src/view/Toolbar.svelte:682:10 Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+2:00:33 PM [vite-plugin-svelte] src/view/Toolbar.svelte:682:10 `<span>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+ [32m✓[39m [30m[45m jsdom [49m[39m src/view/Toolbar.svelte.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 112[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 14:00:32
+[2m   Duration [22m 1.09s[2m (transform 440ms, setup 0ms, import 551ms, tests 112ms, environment 330ms)[22m
+

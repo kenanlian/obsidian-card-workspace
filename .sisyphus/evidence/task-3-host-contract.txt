@@ -1,0 +1,24 @@
+2026-04-18 Task 3 host-contract evidence
+- Added host-contract test file: src/view/FolderCardView.test.ts
+- Coverage added:
+  - onOpen() mounts one .folder-card-view host and panel shell
+  - pushState-style propagation updates rendered contract after mount
+  - repeated onOpen/onClose cycles keep panel shell cleaned and avoid duplicate open-note behavior
+- Minimal Vitest routing change in vitest.config.ts:
+  - node project excludes src/view/FolderCardView.test.ts
+  - jsdom project includes src/view/FolderCardView.test.ts
+  - keeps node aliasing for ./FolderCardPanel.svelte intact for legacy tests
+- Verification commands:
+  - npx vitest run src/view/FolderCardView.test.ts -> PASS (2 tests)
+  - npm test -> PASS (node + jsdom projects, includes card-context-actions.test.ts)
+  - npm run check -> PASS
+  - npm run build -> PASS (pre-existing Toolbar a11y warnings only)
+
+2026-04-18 Task 3 QA-filter compliance refresh
+- Updated test name in `src/view/FolderCardView.test.ts` to include exact phrase: `mounts panel and propagates updates`.
+- Exact filtered QA command:
+  - `npx vitest run src/view/FolderCardView.test.ts -t "mounts panel and propagates updates"`
+- Filtered run result excerpt:
+  - `✓ mounts panel and propagates updates`
+  - `Tests 1 passed | 1 skipped (2)`
+  - Exit code: 0

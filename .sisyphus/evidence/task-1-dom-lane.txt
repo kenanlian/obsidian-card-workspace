@@ -1,0 +1,35 @@
+9:06:19 AM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-cards-explorer - using default configuration.
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Secret-Projects/obsidian-cards-explorer[39m
+
+ [32m✓[39m [30m[43m node [49m[39m src/view/card-context-actions.test.ts [2m([22m[2m87 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m87 passed[39m[22m[90m (87)[39m
+[2m   Start at [22m 09:06:19
+[2m   Duration [22m 368ms[2m (transform 183ms, setup 0ms, import 210ms, tests 59ms, environment 0ms)[22m
+
+
+> folder-card-explorer@0.1.0 test
+> vitest run
+
+9:06:20 AM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-cards-explorer - using default configuration.
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Secret-Projects/obsidian-cards-explorer[39m
+
+ [32m✓[39m [30m[43m node [49m[39m src/view/scroll-anchoring.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/bulk-selection.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/markdown-utils.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/settings.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/row-projection.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/FolderPickerModal.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/FolderCardExplorerSettingTab.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/note-ops.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/pipeline.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/card-context-actions.test.ts [2m([22m[2m87 tests[22m[2m)[22m[32m 65[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m      Tests [22m [1m[32m224 passed[39m[22m[90m (224)[39m
+[2m   Start at [22m 09:06:20
+[2m   Duration [22m 434ms[2m (transform 1.30s, setup 0ms, import 1.82s, tests 140ms, environment 1ms)[22m
+

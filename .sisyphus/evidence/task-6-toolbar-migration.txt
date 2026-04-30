@@ -1,0 +1,23 @@
+Task 6 Toolbar migration evidence (2026-04-18)
+
+Scope completed:
+- Migrated `src/view/Toolbar.svelte` from legacy `export let` + `createEventDispatcher` + `$:` to Svelte 5 runes contracts using `$props()`, `$derived`, and `$effect`.
+- Replaced Toolbar outward events with typed callback props while preserving payload semantics:
+  - toolbar-action -> { action }
+  - sort-change -> { field, direction }
+  - filter-change -> { tags }
+  - include-subfolders-change -> { value }
+  - select-folder -> { path }
+- Updated immediate parent bridge in `src/view/FolderCardPanel.svelte` to re-dispatch unchanged panel events via callback handlers.
+- Updated `src/view/Toolbar.svelte.test.ts` to mount/unmount callback-capture style (no `$on`/`$destroy`) while preserving real DOM/menu behavior assertions.
+
+Verification:
+- PASS: `npx vitest run src/view/Toolbar.svelte.test.ts`
+- PASS: `npx vitest run src/view/Toolbar.svelte.test.ts -t "cleans up menus on unmount"`
+- PASS: `npx vitest run src/view/card-context-actions.test.ts`
+- PASS: `npm test`
+- PASS: `npm run check`
+- PASS: `npm run build`
+
+Notes:
+- Existing Toolbar a11y warnings remain present and non-blocking for this migration scope.

@@ -1,0 +1,61 @@
+
+> folder-card-explorer@0.1.0 build
+> node esbuild.config.mjs --production
+
+▲ [WARNING] Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:671:6:
+      671 │       <div
+          ╵       ~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:671:6:
+      671 │       <div
+          ╵       ~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:682:10:
+      682 │           <span
+          ╵           ~~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] `<span>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:682:10:
+      682 │           <span
+          ╵           ~~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+4 warnings
+
+  main.js  372.3kb
+
+⚡ Done in 166ms

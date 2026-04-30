@@ -1,0 +1,84 @@
+{
+  "active_plan": "/home/kenan/Secret-Projects/obsidian-card-workspace/.sisyphus/plans/card-context-menu-files-parity.md",
+  "started_at": "2026-04-25T16:28:14.909Z",
+  "session_ids": [
+    "ses_23a879b5effeAR1sRc3785D34O",
+    "ses_23a4b43fbffe4pTHo8Jp6xBD2D",
+    "ses_23a4b42faffeov70W5MtTVIjT5",
+    "ses_23a4b42f5ffegeYtiLU1mO3AZA",
+    "ses_23a4b425effey1OvBuAeHO67Ni",
+    "ses_23a4043a6ffe8iLcrUP9X2MY6z",
+    "ses_23a40428cffewJLXmOEsyIVpmt",
+    "ses_23a404286ffe0hjB0rNp8OuJyS",
+    "ses_23a4041dcffei8o3oGqUfq3uDd"
+  ],
+  "session_origins": {
+    "ses_23a879b5effeAR1sRc3785D34O": "direct",
+    "ses_23a4b43fbffe4pTHo8Jp6xBD2D": "appended",
+    "ses_23a4b42faffeov70W5MtTVIjT5": "appended",
+    "ses_23a4b42f5ffegeYtiLU1mO3AZA": "appended",
+    "ses_23a4b425effey1OvBuAeHO67Ni": "appended",
+    "ses_23a4043a6ffe8iLcrUP9X2MY6z": "appended",
+    "ses_23a40428cffewJLXmOEsyIVpmt": "appended",
+    "ses_23a404286ffe0hjB0rNp8OuJyS": "appended",
+    "ses_23a4041dcffei8o3oGqUfq3uDd": "appended"
+  },
+  "plan_name": "card-context-menu-files-parity",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Upgrade the card context-menu test harness for separators, submenus, and platform toggles",
+      "session_id": "ses_23a81eb21ffeayV7cSs1LX954z",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-25T16:39:48.061Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Implement the file-mutation section of the card menu",
+      "session_id": "ses_23a7842c3ffeJCa0xcTvgittS9",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-04-25T16:51:08.323Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Implement the clipboard section: `Copy path` submenu and markdown-only `Copy note content`",
+      "session_id": "ses_23a6ff287ffemNJV6l6hVtq8hS",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-04-25T17:09:59.106Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Implement the desktop shell section and the `Check file stats` modal",
+      "session_id": "ses_23a5ed216ffeYTS0EVBRUxdWCW",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-04-25T17:20:44.569Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Finalize the full menu parity matrix and clean up remaining route regressions",
+      "session_id": "ses_23a534e99ffejH2Ek5Pws7yEw1",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-04-25T17:32:08.836Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit",
+      "session_id": "ses_23a4041dcffei8o3oGqUfq3uDd",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-25T17:49:41.046Z"
+    }
+  }
+}

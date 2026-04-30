@@ -1,0 +1,10 @@
+npx vitest run src/search/SearchIndexManager.test.ts -t "mutation"
+
+Result: PASS
+
+Key output:
+- Test Files: 1 passed
+- Tests: 6 passed | 5 skipped
+- Matching suite: src/search/SearchIndexManager.test.ts (mutation classification)
+
+Timestamp: 2026-04-18 19:59:58 local

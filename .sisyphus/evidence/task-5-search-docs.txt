@@ -1,0 +1,11 @@
+npx vitest run src/search/SearchIndexManager.test.ts -t "document extraction" src/view/metadata-utils.test.ts
+
+Result: PASS
+
+Key output:
+- Test Files: 1 passed | 1 skipped
+- Tests: 3 passed | 14 skipped
+- Matching suite: src/search/SearchIndexManager.test.ts (document extraction)
+- metadata-utils suite was included and skipped by -t filter as expected.
+
+Timestamp: 2026-04-18 19:59:58 local

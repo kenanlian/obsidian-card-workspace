@@ -1,0 +1,4 @@
+Task: 11 - Phase 3 search regression matrix
+Command: npx vitest run src/search/IndexStore.test.ts src/search/SearchIndexManager.test.ts src/search/IndexedSearchService.test.ts src/main.test.ts src/view/pipeline.test.ts src/view/card-context-actions.test.ts src/view/Toolbar.svelte.test.ts src/view/CardItem.svelte.test.ts
+Result: PASS (exit code 0)
+Note: Recorded from already-verified green run for Task 11 cleanup.

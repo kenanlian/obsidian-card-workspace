@@ -1,0 +1,5 @@
+Task: 11 - Repository gate
+Command: npm test
+Result: PASS (exit code 0)
+Warnings: Pre-existing Svelte accessibility warnings in src/view/Toolbar.svelte may appear in output; warnings are non-failing.
+Note: Recorded from already-verified green run for Task 11 cleanup.

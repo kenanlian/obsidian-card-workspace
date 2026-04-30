@@ -1,0 +1,21 @@
+Task 5 evidence - CardItem Svelte 5 contract migration
+
+Scope implemented:
+- Migrated `src/view/CardItem.svelte` from legacy `export let` + `createEventDispatcher` to rune props with callback prop outputs.
+- Removed remaining Task 5 Svelte 5 deprecation surface in `CardItem.svelte` by switching to event attributes (`onclick`, `onkeydown`, `oncontextmenu`).
+- Kept the parent bridge in `src/view/FolderCardPanel.svelte` so outward panel event payload contracts stay unchanged.
+- Updated `src/view/CardItem.svelte.test.ts` to avoid deprecated component APIs (`$set`/`$destroy`) by using `mount`/`unmount` and remounting to verify pinned-state toggling.
+
+Required verification commands and results:
+- `npx vitest run src/view/CardItem.svelte.test.ts && npx vitest run src/view/card-context-actions.test.ts` -> PASS (3 + 87 tests)
+- `npx vitest run src/view/CardItem.svelte.test.ts -t "supports keyboard and context menu actions"` -> PASS (1 test matched, 2 skipped)
+- `npm test` -> PASS (14 files, 234 tests)
+- `npm run check` -> PASS
+- `npm run build` -> PASS (`main.js` built; only pre-existing `Toolbar.svelte` a11y warnings remain)
+
+Contract preservation checks:
+- open-note payload stays `{ path }`.
+- bulk-select-card payload stays `{ path, shiftKey }`.
+- card-context-menu payload stays `{ path, mouseEvent }`.
+- pin-toggle payload stays `{ path, pinned }`.
+- Dead `card-keydown` emission remains removed.

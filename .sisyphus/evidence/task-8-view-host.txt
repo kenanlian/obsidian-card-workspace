@@ -1,0 +1,7 @@
+Task 8 view host verification
+
+Command: npx vitest run src/view/FolderCardView.test.ts
+Result: PASS
+- Test files: 1 passed
+- Tests: 4 passed
+- Duration: 1.28s
