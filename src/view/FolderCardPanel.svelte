@@ -154,6 +154,7 @@
   });
 
   const cards = $derived(panelState.cards);
+  const emptyStateMessage = $derived(panelState.emptyStateMessage);
   const folderPath = $derived(panelState.folderPath);
   const selectedPath = $derived(panelState.selectedPath);
   const loading = $derived(panelState.loading);
@@ -547,8 +548,8 @@
   >
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
-    {:else if cards.length === 0}
-      <div class="fce-empty">No supported files found in this folder.</div>
+  {:else if cards.length === 0}
+<div class="fce-empty">{emptyStateMessage}</div>
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
       {#each visibleRows as row (row.key)}
