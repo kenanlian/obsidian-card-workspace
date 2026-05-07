@@ -24,6 +24,7 @@
 - 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
 - 已完成：仓库现在具备最小 GitHub Release 支持；`.github/workflows/release.yml` 会在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时执行校验、构建、测试，并把 `main.js`、`manifest.json`、`styles.css` 上传成 draft release。
 - 已完成：版本发布前的元数据对齐不再靠手工记忆；`npm run release:prepare -- <version> [minAppVersion]` 会同步 `package.json`、`manifest.json`、`versions.json`，`npm run release:check -- <version>` 会校验 tag / manifest / package / compatibility mapping 是否一致。
+- 已完成：动态搜索空状态优化。当活动的搜索查询导致零个可见卡片时，面板现在会显示与当前搜索范围（文件夹或全库）匹配的“未找到结果”文案，而不再始终显示通用的“文件夹为空”消息。
 - 已关闭：F3 的真实 Obsidian 手动 QA 因环境缺少可运行宿主而未执行，用户已明确豁免，因此当前阶段的完成条件仍以仓库验证和文档收尾为准。
 
 ## 回来看代码前先记住这 3 件事

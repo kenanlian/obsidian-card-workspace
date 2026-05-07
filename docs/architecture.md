@@ -162,7 +162,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 
 ### `src/view/panel-model.ts`
 
-这是宿主到面板的正式状态桥。它承载 cards、selection、filter、pin、bulk state，也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。默认卡片打开方式已经不再经过这层状态桥。
+这是宿主到面板的正式状态桥。它承载 cards、selection、loading、generation，以及从 `FolderCardView.ts` 桥接而来的空状态提示信息；同时也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。默认卡片打开方式已经不再经过这层状态桥。
 
 ### `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
 
@@ -238,11 +238,11 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 
 主流程相较早期的变化是：卡片候选集不再等于 Markdown 文件列表，而是等于受支持文件列表。
 
-1. `main.ts` 生成选择请求并激活右侧视图。
-2. `FolderCardView.ts` 根据 scope 收集 `markdown`、`base`、`canvas`、`excalidraw` 四类受支持文件。
-3. 视图为每个文件解析 `fileKind`，构建 `baseCards`。
-4. Markdown 卡片继续读取正文并生成预览；非 Markdown 卡片直接使用占位摘要。
-5. 结果进入 `pipeline.ts`，得到 `visibleCards`。
+- `FolderCardView.ts` 根据 scope 收集 `markdown`、`base`、`canvas`、`excalidraw` 四类受支持文件，并根据现有运行时状态计算仅用于展示的空状态文案（例如搜索无结果时的提示）。
+- 视图为每个文件解析 `fileKind`，构建 `baseCards`。
+- Markdown 卡片继续读取正文并生成预览；非 Markdown 卡片直接使用占位摘要。
+- 结果进入 `pipeline.ts`，得到 `visibleCards`。
+- `FolderCardPanel.svelte` 在 `cards.length === 0` 时渲染从 `panel-model` 桥接而来的空状态文案。
 
 ### 2. 卡片 hover preview 触发
 
