@@ -7,6 +7,7 @@ export interface OpenNotePayload {
 
 export interface PanelModelState {
   cards: NoteCardRecord[];
+  emptyStateMessage: string;
   folderPath: string;
   selectedPath: string | null;
   loading: boolean;

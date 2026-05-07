@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
+import { ALL_NOTES_PATH } from "./types";
 
 const testState = vi.hoisted(() => {
   class TestTFile {
@@ -362,6 +363,44 @@ describe("FolderCardView host contract", () => {
 
     expect(panelContainer.textContent).toContain("Runtime host note");
     expect(panelContainer.querySelector(".fce-list")).not.toBeNull();
+  });
+
+  it("computes default and search-specific empty-state messages", () => {
+    const { view, plugin } = createHarness();
+
+    expect((view as any).buildEmptyStateMessage()).toBe("No supported files found in this folder.");
+
+    (view as any).searchQuery = "  alpha  ";
+    (view as any).folderPath = "notes";
+    plugin.getSettings = vi.fn(() => ({
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: [] },
+      pinnedPaths: [],
+      previewLines: 5,
+      includeSubfolders: true,
+    }));
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder.');
+
+    plugin.getSettings = vi.fn(() => ({
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["tag-a"] },
+      pinnedPaths: [],
+      previewLines: 5,
+      includeSubfolders: true,
+    }));
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
+
+    (view as any).folderPath = ALL_NOTES_PATH;
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current tag scope.');
+
+    plugin.getSettings = vi.fn(() => ({
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: [] },
+      pinnedPaths: [],
+      previewLines: 5,
+      includeSubfolders: true,
+    }));
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in all notes.');
   });
 
   it("repeated open/close cycles do not leave stale panel DOM or duplicate open handlers", async () => {

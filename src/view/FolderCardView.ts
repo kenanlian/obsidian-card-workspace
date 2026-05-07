@@ -477,6 +477,26 @@ export class FolderCardView extends ItemView {
     return root === this.app.workspace.leftSplit ? "right" : "left";
   }
 
+  private buildEmptyStateMessage(): string {
+    const query = this.searchQuery.trim();
+
+    if (query.length === 0) {
+      return "No supported files found in this folder.";
+    }
+
+    const hasActiveTags = this.plugin.getSettings().filter.tags.length > 0;
+
+    if (this.folderPath === ALL_NOTES_PATH) {
+      return hasActiveTags
+        ? `No results for “${query}” in current tag scope.`
+        : `No results for “${query}” in all notes.`;
+    }
+
+    return hasActiveTags
+      ? `No results for “${query}” in current folder and tag scope.`
+      : `No results for “${query}” in current folder.`;
+  }
+
   private openCardWithDestination(path: string, destination: OpenDestination): void {
     void this.plugin.openNoteFromCard(path, destination);
   }
@@ -490,6 +510,7 @@ export class FolderCardView extends ItemView {
       const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
       state.cards = this.visibleCards;
+      state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
       state.selectedPath = this.selectedPath;
       state.bulkMode = bulkRuntimeState.bulkMode;
@@ -2508,6 +2529,7 @@ export class FolderCardView extends ItemView {
 
     return {
       cards: this.visibleCards,
+      emptyStateMessage: this.buildEmptyStateMessage(),
       folderPath: this.getDisplayFolderPath(),
       selectedPath: this.selectedPath,
       ...bulkRuntimeState,
@@ -2536,6 +2558,7 @@ export class FolderCardView extends ItemView {
 
     this.panelModel.mutate((state) => {
       state.cards = this.visibleCards;
+      state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
       state.selectedPath = this.selectedPath;
       state.bulkMode = bulkRuntimeState.bulkMode;
@@ -2570,6 +2593,7 @@ export class FolderCardView extends ItemView {
 
     this.panelModel.mutate((state) => {
       state.cards = this.visibleCards;
+      state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
       state.selectedPath = this.selectedPath;
       state.bulkMode = bulkRuntimeState.bulkMode;
