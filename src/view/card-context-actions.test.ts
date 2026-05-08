@@ -2141,6 +2141,7 @@ describe("FolderCardView card context actions", () => {
       expect(mockState.menuInstances).toHaveLength(1);
       const [menu] = mockState.menuInstances;
       expect(getMenuStructure(menu!)).toEqual([
+        "Open in current window",
         "Open in new tab",
         "Open to the right",
         "Open in new window",
@@ -2174,10 +2175,11 @@ describe("FolderCardView card context actions", () => {
     const [menu] = mockState.menuInstances;
     expect(menu).toBeDefined();
 
-    expect(getTopLevelMenuSignature(menu!)).toEqual([
-      { kind: "item", title: "Open in new tab", icon: "file-plus" },
-      { kind: "item", title: "Open to the right", icon: "separator-vertical" },
-      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
+      expect(getTopLevelMenuSignature(menu!)).toEqual([
+        { kind: "item", title: "Open in current window", icon: "folder-open" },
+        { kind: "item", title: "Open in new tab", icon: "file-plus" },
+        { kind: "item", title: "Open to the right", icon: "separator-vertical" },
+        { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
@@ -2238,6 +2240,7 @@ describe("FolderCardView card context actions", () => {
     const deleteSpy = vi.spyOn(view as any, "deleteCardFile").mockResolvedValue(undefined);
     const copySpy = vi.spyOn(view as any, "copyCardNote").mockResolvedValue(undefined);
 
+    await (view as any).routeCardMenuAction("current-area", file.path);
     await (view as any).routeCardMenuAction("new-tab", file.path);
     await (view as any).routeCardMenuAction("split-right", file.path);
     await (view as any).routeCardMenuAction("new-window", file.path);
@@ -2248,10 +2251,11 @@ describe("FolderCardView card context actions", () => {
       .routeCardMenuAction("delete", file.path);
     await (view as any).routeCardMenuAction("copy-note-content", file.path);
 
-    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "new-tab");
-    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "split-right");
-    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(3, file.path, "new-window");
-    expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(3);
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "current-area");
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "new-tab");
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(3, file.path, "split-right");
+    expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(4, file.path, "new-window");
+    expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(4);
     expect(makeCopySpy).toHaveBeenCalledTimes(1);
     expect(makeCopySpy).toHaveBeenCalledWith(file.path);
     expect(moveSpy).toHaveBeenCalledTimes(1);
@@ -2286,6 +2290,7 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.menuInstances).toHaveLength(1);
     const [desktopNonMarkdownMenu] = mockState.menuInstances;
     expect(getTopLevelMenuSignature(desktopNonMarkdownMenu!)).toEqual([
+      { kind: "item", title: "Open in current window", icon: "folder-open" },
       { kind: "item", title: "Open in new tab", icon: "file-plus" },
       { kind: "item", title: "Open to the right", icon: "separator-vertical" },
       { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
@@ -2313,6 +2318,7 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.menuInstances).toHaveLength(1);
     const [nonDesktopMarkdownMenu] = mockState.menuInstances;
     expect(getTopLevelMenuSignature(nonDesktopMarkdownMenu!)).toEqual([
+      { kind: "item", title: "Open in current window", icon: "folder-open" },
       { kind: "item", title: "Open in new tab", icon: "file-plus" },
       { kind: "item", title: "Open to the right", icon: "separator-vertical" },
       { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
@@ -2347,6 +2353,7 @@ describe("FolderCardView card context actions", () => {
     expect(menu).toBeDefined();
 
     const destinationTitles = [
+      "Open in current window",
       "Open in new tab",
       "Open to the right",
       "Open in new window",
@@ -2359,6 +2366,7 @@ describe("FolderCardView card context actions", () => {
     }
 
     expect(receiverCalls).toEqual([
+      { receiver: plugin, path: file.path, destination: "current-area" },
       { receiver: plugin, path: file.path, destination: "new-tab" },
       { receiver: plugin, path: file.path, destination: "split-right" },
       { receiver: plugin, path: file.path, destination: "new-window" },

@@ -66,7 +66,7 @@ import type FolderCardExplorerPlugin from "../main";
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
 type CardMenuAction =
-  | Exclude<OpenDestination, "current-area">
+  | OpenDestination
   | "make-copy"
   | "move"
   | "rename"
@@ -1003,6 +1003,15 @@ export class FolderCardView extends ItemView {
   }
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
+    menu.addItem((item) => {
+      item
+        .setTitle("Open in current window")
+        .setIcon("folder-open")
+        .onClick(() => {
+          void this.routeCardMenuAction("current-area", notePath);
+        });
+    });
+
     menu.addItem((item) => {
       item
         .setTitle("Open in new tab")
