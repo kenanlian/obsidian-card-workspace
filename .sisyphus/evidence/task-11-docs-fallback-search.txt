@@ -1,0 +1,6 @@
+Grep results for fallback/NoIndexSearchService in docs:
+docs/decisions/2026-04-18-phase3-search-architecture-readiness.md:> 当前系统已**彻底移除** `NoIndexSearchService` 与降级搜索路径，全面转向 **Indexed-Only** 模式。
+docs/decisions/2026-04-18-phase3-search-architecture-readiness.md:- `main.ts` 已拥有 plugin-owned `NoIndexSearchService` (已移除) 生命周期与初始化失败回退。
+docs/decisions/2026-04-18-phase3-search-architecture-readiness.md:- `applySearchFilter()` 已支持 fallback search (已作废)，并保持 search-before-pin invariant。
+docs/decisions/2026-04-18-phase3-search-architecture-readiness.md:- `src/search/NoIndexSearchService.ts` (已从仓库删除)
+docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md:- `NoIndexSearchService` 已被彻底从代码库中**删除**，取而代之的是状态感知的 `IndexedSearchService`。

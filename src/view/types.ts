@@ -1,8 +1,14 @@
 import type { TFile } from "obsidian";
+import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
 
-export type { SearchStatus } from "../search/types";
+export type {
+  SearchIndexPersistenceHealth,
+  SearchIndexReadinessState,
+  SearchIndexRebuildReason,
+  SearchStatus,
+} from "../search/types";
 
 export const ALL_NOTES_PATH = "__all__";
 
@@ -26,14 +32,17 @@ export interface SearchOwnershipContract {
 /**
  * Runtime-only search inputs passed into visible-card projection.
  *
- * - `orderedPaths: null` => service did not provide indexed ordering; `pipeline.ts` must fallback-filter.
- * - `orderedPaths: []` => indexed search is ready and query produced zero matches.
+ * Empty queries stay outside search filtering entirely.
+ * For non-empty queries:
+ * - `execution: "indexed-ready"` means `orderedPaths` is authoritative, including `[]` for ready-zero.
+ * - Any other execution state means indexed filtering did not run and the query stays in a blocked empty-projection state.
  *
  * Score details remain internal to search runtime contracts and must not be surfaced on card records.
  */
 export interface PipelineSearchInput {
   query: string;
-  orderedPaths: string[] | null;
+  execution: SearchQueryExecutionState;
+  orderedPaths?: string[];
 }
 
 export interface NoteCardRecord {

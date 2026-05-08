@@ -1,0 +1,7 @@
+Commands:
+- npx vitest run src/search/IndexedSearchService.test.ts src/main.test.ts
+- npm run check
+- grep for NoIndexSearchService / no-index runtime references under src/
+
+Result: PASS
+Evidence: TypeScript compile succeeded, focused tests passed, and content search found no production references to NoIndexSearchService or no-index runtime branches in src/.

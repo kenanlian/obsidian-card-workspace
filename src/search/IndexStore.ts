@@ -43,6 +43,11 @@ export type IndexStoreRestoreResult =
       detail: string | null;
     };
 
+export type IndexStoreRestoreRebuildRequiredResult = Extract<
+  IndexStoreRestoreResult,
+  { outcome: "rebuild-required" }
+>;
+
 export type IndexStoreWriteResult =
   | {
       outcome: "written";
@@ -53,6 +58,8 @@ export type IndexStoreWriteResult =
       reason: Extract<IndexStoreStorageFailureReason, "unavailable" | "quota" | "write-failed">;
       detail: string | null;
     };
+
+export type IndexStoreWriteFailureResult = Extract<IndexStoreWriteResult, { outcome: "failed" }>;
 
 export type IndexStoreClearResult =
   | {

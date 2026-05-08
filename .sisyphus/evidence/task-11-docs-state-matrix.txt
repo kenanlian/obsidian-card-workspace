@@ -1,0 +1,11 @@
+
+State matrix mentions in docs:
+docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md:   - `indexed-ready`: 索引就绪，查询执行，结果权威。
+docs/architecture.md:  └─ tag filter -> search filter (indexed-ready or blocked) -> pin reorder
+docs/architecture.md:这里的价值是把 ownership 和契约钉死。`searchQuery` 不进 settings，`SearchServiceSnapshot` 明确暴露健康状态，`SearchQueryResult` 明确区分 `indexed-ready` 和各种不可用状态，`NoteCardRecord.fileKind` 明确卡片文件类型，这些都是防止后续演进时把语义做混。
+docs/architecture.md:- `applySearchFilter()` 处理搜索投影。如果 `execution === "indexed-ready"`，则采用 indexed ordering (已包含 Markdown 全文命中与非 Markdown 标题命中)；如果处于其他 indexed 状态（如 building/error/rebuild-required），且 query 非空，则阻塞显示（返回 `null`），直到索引就绪。
+docs/architecture.md:- `orderedPaths` 语义已收敛：当 `execution !== "indexed-ready"` 且 query 非空时，pipeline 阻塞显示；`orderedPaths: []` 明确表示 indexed-ready 零结果。
+docs/architecture.md:- `orderedPaths: []` 表示 indexed-ready 零结果。
+docs/architecture.md:13. **搜索状态矩阵。** 采用 `indexed-ready`, `indexed-building`, `indexed-rebuild-required`, `indexed-storage-unavailable`, `indexed-error`, `indexed-unavailable` 六态矩阵精准描述执行边界。当 `execution !== "indexed-ready"` 时，非空查询将被阻塞以保证结果权威性。
+
+Authoritative orderedPaths mentions:

@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { IndexedSearchService, type IndexedSearchManagerAdapter } from "./IndexedSearchService";
 import type { SearchServiceSnapshot, SearchVaultMutation } from "./types";
 
+function createHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {
+  return {
+    outcome: "none",
+    readiness: "initializing",
+    healthy: false,
+    rebuilding: true,
+    rebuildRequired: false,
+    persistence: "unknown",
+    documentCount: null,
+    lastIndexedAt: null,
+    rebuildReason: null,
+    lastError: null,
+    lastSuccessfulRestore: null,
+    lastSuccessfulBuild: null,
+    detail: "Index manager initializing.",
+    ...overrides,
+  };
+}
+
 function createSnapshot(overrides: Partial<SearchServiceSnapshot> = {}): SearchServiceSnapshot {
   return {
     initialized: true,
@@ -9,14 +28,7 @@ function createSnapshot(overrides: Partial<SearchServiceSnapshot> = {}): SearchS
     mode: "indexed",
     status: "building",
     lastError: null,
-    health: {
-      outcome: "none",
-      healthy: false,
-      rebuilding: true,
-      documentCount: null,
-      lastIndexedAt: null,
-      detail: "Index manager initializing.",
-    },
+    health: createHealth(),
     ...overrides,
   };
 }
@@ -131,14 +143,23 @@ describe("IndexedSearchService", () => {
     await service.initialize();
     harness.emit(createSnapshot({
       status: "ready",
-      health: {
+      health: createHealth({
         outcome: "restored",
+        readiness: "ready",
         healthy: true,
         rebuilding: false,
+        rebuildRequired: false,
+        persistence: "healthy",
         documentCount: 7,
         lastIndexedAt: 100,
+        lastSuccessfulRestore: {
+          outcome: "restored",
+          at: 100,
+          documentCount: 7,
+          detail: "Search index restored from persistent storage.",
+        },
         detail: "Search index restored from persistent storage.",
-      },
+      }),
     }));
 
     expect(harness.initialize).toHaveBeenCalledTimes(1);
@@ -169,31 +190,66 @@ describe("IndexedSearchService", () => {
   it("returns candidate-bounded indexed ordering when ready", async () => {
     const harness = createManagerHarness(createSnapshot({ status: "ready" }));
     harness.search.mockResolvedValue([
-      "notes/b.md",
-      "outside/x.md",
-      "notes/a.md",
-      "notes/b.md",
-      "notes/c.md",
+      "notes/Meeting Followup.md",
+      "Archive/Global Meeting Index.md",
+      "notes/Meeting.md",
+      "notes/Meeting Followup.md",
+      "notes/Other.md",
     ]);
     const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 3 });
     await service.initialize();
 
     const result = await service.query({
-      query: "roadmap",
+      query: "meeting",
       scope: { folderPath: "notes", includeSubfolders: true },
-      candidatePaths: ["notes/a.md", "notes/b.md", "notes/c.md", "notes/d.md", "notes/c.md"],
+      candidatePaths: [
+        "notes/Meeting.md",
+        "notes/Meeting Followup.md",
+        "notes/Other.md",
+        "notes/Backlog.md",
+        "notes/Other.md",
+      ],
     });
 
-    expect(harness.search).toHaveBeenCalledWith("roadmap", ["notes/a.md", "notes/b.md", "notes/c.md"]);
+    expect(harness.search).toHaveBeenCalledWith("meeting", [
+      "notes/Meeting.md",
+      "notes/Meeting Followup.md",
+      "notes/Other.md",
+    ]);
     expect(result).toEqual({
       mode: "indexed",
       status: "ready",
-      execution: "indexed-ordering",
-      orderedPaths: ["notes/b.md", "notes/a.md", "notes/c.md"],
+      execution: "indexed-ready",
+      orderedPaths: [
+        "notes/Meeting Followup.md",
+        "notes/Meeting.md",
+        "notes/Other.md",
+      ],
     });
   });
 
-  it("returns fallback-safe result while building", async () => {
+  it("returns indexed-ready zero results when the bounded candidates have no matches", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "ready" }));
+    harness.search.mockResolvedValue([]);
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 3 });
+    await service.initialize();
+
+    const result = await service.query({
+      query: "meeting",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/Meeting.md", "notes/Meeting Followup.md"],
+    });
+
+    expect(harness.search).toHaveBeenCalledWith("meeting", ["notes/Meeting.md", "notes/Meeting Followup.md"]);
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "ready",
+      execution: "indexed-ready",
+      orderedPaths: [],
+    });
+  });
+
+  it("returns indexed-building result while restore/build is in progress", async () => {
     const harness = createManagerHarness(createSnapshot({ status: "building" }));
     const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
 
@@ -207,12 +263,94 @@ describe("IndexedSearchService", () => {
     expect(result).toEqual({
       mode: "indexed",
       status: "building",
-      execution: "fallback-filtering",
-      orderedPaths: null,
+      execution: "indexed-building",
     });
   });
 
-  it("returns fallback-safe result in error state", async () => {
+  it("does not locally filter candidate paths while building", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "building" }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+
+    const result = await service.query({
+      query: "meeting",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["Notes/Meeting.md", "Notes/Plan.md"],
+    });
+
+    expect(harness.search).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "building",
+      execution: "indexed-building",
+    });
+    expect(result).not.toHaveProperty("orderedPaths");
+  });
+
+  it("returns indexed rebuild-required result when health requires rebuild", async () => {
+    const harness = createManagerHarness(createSnapshot({
+      status: "building",
+      health: createHealth({
+        outcome: "rebuild-required",
+        readiness: "rebuild-required",
+        healthy: false,
+        rebuilding: true,
+        rebuildRequired: true,
+        persistence: "healthy",
+        documentCount: null,
+        lastIndexedAt: null,
+        rebuildReason: "version-drift",
+        detail: "Full rebuild required.",
+      }),
+    }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+
+    const result = await service.query({
+      query: "roadmap",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md"],
+    });
+
+    expect(harness.search).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "building",
+      execution: "indexed-rebuild-required",
+    });
+  });
+
+  it("returns indexed storage-unavailable result when rebuild-required is caused by storage", async () => {
+    const harness = createManagerHarness(createSnapshot({
+      status: "building",
+      health: createHealth({
+        outcome: "rebuild-required",
+        readiness: "rebuild-required",
+        healthy: false,
+        rebuilding: true,
+        rebuildRequired: true,
+        persistence: "storage-unavailable",
+        documentCount: null,
+        lastIndexedAt: null,
+        rebuildReason: "storage-unavailable",
+        detail: "Persistent index storage unavailable; rebuild cannot restore persisted index.",
+      }),
+    }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+
+    const result = await service.query({
+      query: "roadmap",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md"],
+    });
+
+    expect(harness.search).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "building",
+      execution: "indexed-storage-unavailable",
+    });
+  });
+
+  it("returns indexed-error result in error state", async () => {
     const harness = createManagerHarness(createSnapshot({ status: "error", lastError: "disk full" }));
     const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
 
@@ -226,9 +364,45 @@ describe("IndexedSearchService", () => {
     expect(result).toEqual({
       mode: "indexed",
       status: "error",
-      execution: "fallback-filtering",
-      orderedPaths: null,
+      execution: "indexed-error",
     });
+  });
+
+  it("returns indexed-unavailable result when the indexed runtime is not initialized", async () => {
+    const harness = createManagerHarness(createSnapshot({ initialized: false, status: "building" }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+
+    const result = await service.query({
+      query: "roadmap",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md"],
+    });
+
+    expect(harness.search).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "building",
+      execution: "indexed-unavailable",
+    });
+  });
+
+  it("does not locally filter candidate paths when indexed runtime is unavailable", async () => {
+    const harness = createManagerHarness(createSnapshot({ initialized: false, status: "building" }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+
+    const result = await service.query({
+      query: "meeting",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["Notes/Meeting.md", "Notes/Plan.md"],
+    });
+
+    expect(harness.search).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "building",
+      execution: "indexed-unavailable",
+    });
+    expect(result).not.toHaveProperty("orderedPaths");
   });
 
   it("forwards vault mutations to manager", () => {

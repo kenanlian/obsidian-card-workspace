@@ -4,86 +4,63 @@
 
 `Card Workspace` 是一个 Obsidian 插件。它把文件管理器里的文件夹选择转换成右侧侧边栏里的卡片流，让用户在当前笔记上下文中浏览、筛选、置顶、搜索并打开一组文件卡片。当前支持的正式卡片文件类型是 `markdown`、`base`、`canvas` 和 `excalidraw`；其中只有 Markdown 继续参与全文预览与全文索引，其余类型以文件标题、图标和占位摘要进入工作台。
 
-当前项目的核心目标不是再搭搜索接缝，而是维护一套已经闭环的卡片工作台。`Phase 3 search capability` 已经完成，插件现在同时具备 fallback 搜索路径和 indexed 搜索路径，后续工作应围绕维护、演进和手动验证条件补齐，而不是重新设计搜索 ownership。
+当前项目的核心目标是维护一套已经闭环的、基于本地索引的卡片工作台。`Phase 3 search capability` 已经完成，插件全面转向 **indexed-only** 搜索架构。不再支持非索引降级搜索，以确保搜索结果的权威性和一致性。
 
 ## 当前处于什么阶段？
 
-项目处于 **Phase 3 搜索能力已完成后的长期维护态，当前焦点转向混合文件类型卡片的交互语义收敛、轻量 preview 准确性维护，以及最小 GitHub Release 发布链路固化** 的阶段。
+项目处于 **v0.1.2 稳定发布态。当前重点是 indexed-only 搜索架构的完整落地与混合文件类型卡片语义收敛**。
 
-- 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和降级回退。
-- 已完成：`FolderCardView.ts` 不再只收集 Markdown 文件，而是统一收集 `markdown`、`base`、`canvas`、`excalidraw` 四类受支持卡片文件，并在视图运行时维护 `fileKind`。
+- 已完成：v0.1.2 版本元数据同步与发布契约校验链路。
+- 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和 rebuild 调度。
+- 已完成：`FolderCardView.ts` 统一收集受支持卡片文件，并根据 `IndexedSearchService` 的状态矩阵决策是否呈现搜索结果。
+- 已完成：`SearchIndexManager` 和 `IndexStore` 实现了基于 IndexedDB 的索引恢复、全量构建、增量更新和 unsafe 重名保护。
+- 已完成：插件全面移除 fallback 搜索路径，当索引未就绪时，非空查询会被明确阻塞，避免呈现不可靠的结果。
 - 已完成：`CardItem.svelte` / `FolderCardPanel.svelte` 现在会为非 Markdown 卡片显示文件类型图标与占位摘要，让这些文件能以稳定 UI 合约进入卡片流。
-- 已完成：卡片 hover preview 继续走 Obsidian 官方 `hover-link` 路径，但触发表面已从“仅标题”扩展为卡片的 title / excerpt / meta 三块非控件区域；支持文件类型不再被卡死在 Markdown。
-- 已完成：Markdown 卡片的轻量 preview 继续保留 heading / inline code / fenced code block 等弱提示；当预览预算内出现多个代码块时，`markdown-utils.ts` 现在会按源码顺序保留它们，而不再在正文开始后直接跳过后续 fenced code block。
-- 已完成：Markdown 卡片的轻量 preview 继续保留 heading / inline code / code block 等弱提示，但 `**bold**` / `*italic*` 这类强调语法现在会被拍平成普通文本，不再依赖浏览器默认的 `<strong>` / `<em>` 视觉效果。
-- 已完成：非 Markdown 卡片标题图标继续走 Obsidian 官方 `setIcon(...)` 路径；`base` 当前映射为 `layout-list`，`excalidraw` 当前映射为 `pen-tool`，不再引入截图或自定义图片资产。
-- 已完成：`pipeline.ts` 和搜索服务正式锁定了“Markdown 继续做全文搜索；非 Markdown 只参与标题级匹配”的非对称搜索语义。
-- 已完成：卡片默认点击现在直接对齐主编辑区 recent-root fallback 语义：优先复用当前窗口 `rootSplit` 中最近使用且可承载文件的未 pin leaf；如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有目标 leaf 已 pin 或根本没有合适 root leaf 时，才打开 new tab。
-- 已完成：卡片右上角更多菜单现在收敛为最小文件操作面：保留三个显式打开动作 `Open in new tab`、`Open to the right`、`Open in new window`，以及 `Make a copy`、`Move file to...`、`Copy note content`（仅 Markdown）、`Rename...`、`Delete`；`Copy path`、`Open in default app`、`Open in system explorer`、`Check file stats` 已移除。
-- 已完成：批量删除与单卡右键 `Delete` 现在都不再承诺插件自定义删除语义，而是统一遵循 Obsidian `Files & Links` 的删除偏好。
+- 已完成：卡片 hover preview 继续走 Obsidian 官方 `hover-link` 路径，但触发表面已从“仅标题”扩展为卡片的 title / excerpt / meta 三块非控件区域。
+- 已完成：Markdown 卡片的轻量 preview 采用拍平强调语法的文本抽取，并在共享预算内按源码顺序保留多个文本块与代码块。
+- 已完成：卡片默认点击对齐主编辑区 recent-root fallback 语义，不再由设置驱动，而是由 `main.ts` 统一根据当前 leaf 状态决定。
+- 已完成：批量删除与单卡右键 `Delete` 统一遵循 Obsidian `Files & Links` 的删除偏好。
 - 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
-- 已完成：仓库现在具备最小 GitHub Release 支持；`.github/workflows/release.yml` 会在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时执行校验、构建、测试，并把 `main.js`、`manifest.json`、`styles.css` 上传成 draft release。
-- 已完成：版本发布前的元数据对齐不再靠手工记忆；`npm run release:prepare -- <version> [minAppVersion]` 会同步 `package.json`、`manifest.json`、`versions.json`，`npm run release:check -- <version>` 会校验 tag / manifest / package / compatibility mapping 是否一致。
-- 已完成：动态搜索空状态优化。当活动的搜索查询导致零个可见卡片时，面板现在会显示与当前搜索范围（文件夹或全库）匹配的“未找到结果”文案，而不再始终显示通用的“文件夹为空”消息。
-- 已关闭：F3 的真实 Obsidian 手动 QA 因环境缺少可运行宿主而未执行，用户已明确豁免，因此当前阶段的完成条件仍以仓库验证和文档收尾为准。
+- 已完成：仓库具备最小 GitHub Release 支持，通过裸 semver tag 触发 draft release 生成。
+- 已完成：版本发布前的元数据对齐工具链已稳固，支持同步版本号并校验发布契约。
 
 ## 回来看代码前先记住这 3 件事
 
-1. **搜索查询仍是 runtime-only，而且是 per-view。** `searchQuery` 不写入 `PluginSettings`，真值仍在 `FolderCardView.ts`。
-2. **`pipeline.ts` 仍是唯一投影路径。** 搜索服务可以给出 indexed ordering，但最终哪些卡片可见、顺序如何变化，仍由 pipeline 决定。
-3. **混合文件类型支持不等于全文索引扩容。** `markdown` 继续参与全文预览和全文索引，`base` / `canvas` / `excalidraw` 进入卡片流时只提供标题、图标和占位摘要；`orderedPaths: null` 仍表示 fallback filtering，`orderedPaths: []` 仍表示 indexed 搜索已执行且结果为零。
-4. **卡片 hover preview 现在是“宿主 popover + 插件发射 hover-link”。** 插件只负责在 title / excerpt / meta 等非控件区域发射 `hover-link` 事件，不自己渲染 popover；不同文件类型最终能否显示以及显示质量，仍取决于 Obsidian 或对应插件对该路径的支持。
-5. **轻量 preview 仍不是完整 Markdown renderer。** 当前只保留 heading、inline code、fenced code 等弱提示；粗体和斜体语法会被归一化成普通文本，不再输出 `<strong>` / `<em>`。但与此前不同，预览现在会在共享 `previewLines` 预算内按源码顺序保留多个文本块与代码块，而不是在正文开始后静默跳过后续 fenced code。
-6. **默认卡片点击已经固定为 main-editor-area fallback 行为。** 普通点击会先尝试复用当前窗口 `rootSplit` 内最近使用且可承载文件的未 pin leaf；如果最近 root leaf 不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有选中的目标 leaf 已 pin 或完全没有合适 root leaf 时，才打开一个 new tab。不要再把默认打开理解成可配置项。
-7. **发布链路现在有明确 contract。** Git tag 必须是与 `manifest.json.version` 完全一致的裸 semver（例如 `0.1.1`，而不是 `v0.1.1`），而且仓库要求 `package.json.version`、`manifest.json.version`、`versions.json[version]` 一起对齐；release workflow 只负责把现有构建产物发到 GitHub，不负责自动生成 changelog 或替你决定版本号。
+1. **搜索查询全面转向 Indexed-Only 模式。** 降级搜索路径已彻底移除。真值仍在 `FolderCardView.ts`，但执行依赖于 `SearchIndexManager` 的就绪状态。
+2. **`pipeline.ts` 仍是唯一投影路径。** 搜索服务返回 indexed ordering，但最终哪些卡片可见、顺序如何变化，仍由 pipeline 负责 (Tag -> Search -> Pin)。
+3. **索引阻塞规则：非就绪即阻塞。** 当索引处于 building、error 或 rebuild-required 状态时，非空查询结果为 `null` (阻塞显示)；空查询（浏览模式）始终可用。
+4. **混合文件类型支持不等于全文索引扩容。** `markdown` 继续参与全文预览和全文索引，`base` / `canvas` / `excalidraw` 仅参与标题级匹配。
+5. **默认卡片点击已经固定为 main-editor-area fallback 行为。** 这一语义不再是设置项，而是由 `main.ts` 统一控制。
 
 ## 哪些配置值最重要
 
 - `sort.field` / `sort.direction`：控制卡片排序。
 - `filter.tags`：标签筛选条件，语义是 **AND**。
 - `pinnedPaths`：置顶笔记路径列表，只影响顺序。
-- `includeSubfolders`：folder scope 下的数据采集开关，会决定是否递归收集受支持文件类型。
-- `Files & Links` 删除偏好（Obsidian 宿主配置）：不在插件设置内，但会直接影响 bulk delete 与单卡右键 `Delete` 的最终行为。
-- `lastFolderPath` / `lastViewMode`：会话恢复使用。
+- `includeSubfolders`：folder scope 下的数据采集开关。
+- `Files & Links` 删除偏好（Obsidian 宿主配置）：不在插件设置内，但会直接影响删除行为。
 
-需要特别注意：**没有 `searchQuery` 配置项，也没有默认卡片打开方式配置项。** 搜索 query 和默认点击打开语义都不属于插件设置。
+需要特别注意：**没有 `searchQuery` 配置项，也没有默认卡片打开方式配置项。**
 
 ## 当前风险 / 阻塞 / 下一步
 
-- **F3 已关闭，但真实宿主手动验证仍是已知空白。** 这是用户批准的收尾条件，不是架构未知项。
-- **indexed 搜索已经存在，但边界不能被随意打破。** 后续改动必须继续尊重 `main.ts`、`FolderCardView.ts`、`pipeline.ts`、`SearchIndexManager` 之间的 ownership。
-- **混合文件类型卡片有明确边界。** 当前正式支持的是 `markdown`、`base`、`canvas`、`excalidraw`；不要把“支持进卡片流”误写成“都支持全文索引和卡片内正文预览”。
-- **hover preview 现在更宽，但仍是宿主驱动。** 插件只负责在允许的卡片表面发射 `hover-link`；如果未来 `base` / `canvas` / `excalidraw` 的 popover 呈现不一致，应优先把问题归因到宿主或对应插件支持边界，而不是先在 `CardItem.svelte` 里自建预览器。
-- **轻量 preview 的预算 contract 不能漂移。** `previewLines` 现在是文本块与 fenced code block 共享的顺序预算；后续如果再改 preview 抽取或样式，必须同时检查 `markdown-utils.ts`、`styles.css` 和相关测试，而不是只改某一层。
-- **文件类型图标 contract 也有明确边界。** 标题图标应优先使用 Obsidian 官方 Lucide icon name，而不是把截图、栅格图片或自定义图像资产塞进 `file-kind.ts`。
-- **`orderedPaths` contract 不能漂移。** `null` 与空数组代表不同语义，测试和文档都已锁定。
-- **删除语义现在统一依赖宿主删除偏好。** 如果后续要改文案或行为，必须继续以 Obsidian `fileManager.trashFile` 作为真相来源，而不是插件自己定义单删和批删两套删除语义。
-- **默认卡片点击行为现在是固定 runtime contract。** 后续如果再改默认打开逻辑，必须同时检查 `main.ts`、`FolderCardView.ts`、`CardItem.svelte` 和对应测试，而不是只改菜单文案。
-- **显式打开动作与默认点击语义已经分层。** 默认点击先看 `getMostRecentLeaf(rootSplit)`，再回退到 root Markdown leaf；更多菜单只表达显式动作。不要再把这两层重新混成一个 setting。
-- **unsafe folder rename 会触发 rebuild-required。** 这是刻意选择的保守策略，用来避免脏路径继续对外服务。
-- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 当前主要在 folder menu item 与展开 chevron 的非语义点击元素上；这不是本次 UI 优化的阻塞项，但仍是后续整理点。
-- **最小 GitHub Release 已落地，但 GitHub 仓库权限仍是外部前置条件。** 真正发版前仍需在仓库设置里把 Actions workflow permissions 设成 `Read and write`，否则 workflow 无法创建 draft release。
+- **F3 已关闭，但真实宿主手动验证仍是已知空白。** 这是用户批准的收尾条件。
+- **indexed 搜索的边界不能被随意打破。** 降级搜索路径严禁恢复，除非有明确的架构调整指令。
+- **unsafe folder rename 会触发 rebuild-required。** 这是保证路径真实性的保守策略。
+- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 后续仍需整理。
+- **最小 GitHub Release 已落地，但 GitHub 仓库权限仍是外部前置条件。**
 
 ## 接下来先读哪里
 
 1. `docs/START_HERE.md`
 2. `docs/architecture.md`
-3. `docs/decisions/2026-04-26-shrink-card-context-menu-and-unify-delete-preference.md`
-4. `docs/decisions/2026-04-25-broaden-card-hover-and-preserve-ordered-code-previews.md`
-4. `docs/decisions/2026-04-25-constrain-card-note-opens-to-main-editor-surfaces.md`
-5. `docs/decisions/2026-04-24-support-mixed-file-kind-cards-with-markdown-only-indexing.md`
-6. `docs/decisions/2026-04-24-keep-file-kind-icons-on-official-obsidian-lucide-icons.md`
-7. `docs/decisions/2026-04-23-toolbar-ui-optimization.md`
-8. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
-9. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
+3. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
+4. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
+5. `src/main.ts`
+6. `src/view/FolderCardView.ts`
+7. `src/search/SearchIndexManager.ts`
+8. `src/search/IndexedSearchService.ts`
+9. `src/view/pipeline.ts`
 10. `src/view/file-kind.ts`
-11. `src/main.ts`
-12. `src/view/FolderCardView.ts`
-13. `src/view/CardItem.svelte`
-14. `src/view/markdown-utils.ts`
-15. `src/view/pipeline.ts`
-16. `src/search/SearchIndexManager.ts`
-17. `src/search/IndexedSearchService.ts`
-18. `.github/workflows/release.yml`
-19. `scripts/check-release.mjs`
-20. `scripts/sync-version.mjs`
+
+(End of file)

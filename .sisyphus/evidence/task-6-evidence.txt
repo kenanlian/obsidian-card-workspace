@@ -1,0 +1,20 @@
+Task 6: Update search readiness/status UX copy and panel bridge
+
+- Modified `src/view/panel-model.ts` to include `searchIndexReadiness`, `searchIndexPersistence`, and `searchIndexRebuildReason` in `PanelModelState`.
+- Modified `src/view/types.ts` to properly export those types.
+- Modified `src/view/FolderCardView.ts` to assign these snapshot health variables onto the panel model state whenever search status changes.
+- Modified `src/view/Toolbar.svelte` to read these granular readiness and persistence variables and construct user-facing labels like "Restoring index", "Rebuild required (version drift)", "Search storage unavailable" using a local helper `getSearchStatusLabel`.
+- Modified `src/view/FolderCardPanel.svelte` to consume these new props.
+- Refined blocked non-empty search states in `FolderCardPanel.svelte` to show "Search is currently blocked" with the explicit readiness label, instead of falling back to the standard zero-results UI, accurately reflecting empty query results from Task 5.
+- Updated `src/view/Toolbar.svelte.test.ts` to assert that new granular readiness copies appear.
+- Updated `src/view/FolderCardPanel.svelte.test.ts` to assert that blocked state rendering avoids `emptyStateMessage` fallback and renders status copy accurately.
+- Removed unauthorized `fix.js` helper.
+- Removed `as any` casts introduced in `Toolbar.svelte.test.ts` and formatted long imports properly.
+- Commands verified:
+  - `npm run check` passes.
+  - `npm run build` succeeds (warnings are pre-existing Svelte a11y linter warnings).
+  - `npx vitest run src/view/Toolbar.svelte.test.ts src/view/FolderCardPanel.svelte.test.ts src/view/FolderCardView.test.ts` passes.
+- Cleanup (Follow-up):
+  - Removed `$derived` runes from `FolderCardPanel.svelte` for `isSearchBlocked` and `searchBlockedLabel`, substituting them with Svelte-4-compatible component-scope functions computing those values directly from `panelState`.
+  - Used double quotes uniformly in test files.
+  - Ensured correct multi-line spacing, trailing commas, and formatting conventions on components/tests.

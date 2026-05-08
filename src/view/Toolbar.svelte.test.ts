@@ -407,11 +407,12 @@ describe("Toolbar.svelte", () => {
 
     const expectedStatuses = {
       building: "Building index",
-      fallback: "Fallback search",
+      unavailable: "Search unavailable",
+      "rebuild-required": "Rebuild required",
       error: "Search error",
     } as const;
 
-    for (const searchStatus of ["building", "fallback", "error"] as const) {
+    for (const searchStatus of ["building", "unavailable", "rebuild-required", "error"] as const) {
       ({ component } = mountToolbar({
         activeFilterTags: [],
         searchStatus,
@@ -427,6 +428,40 @@ describe("Toolbar.svelte", () => {
       expect(searchStatusEl).not.toBeNull();
       expect(searchStatusEl?.getAttribute("data-search-status")).toBe(searchStatus);
       expect(searchStatusEl?.textContent).toBe(expectedStatuses[searchStatus]);
+
+      await disposeMountedComponent(component);
+    }
+
+    interface GranularTest {
+      status: import("./types").SearchStatus;
+      expected: string;
+      readiness?: import("./types").SearchIndexReadinessState;
+      rebuildReason?: import("./types").SearchIndexRebuildReason;
+      persistence?: import("./types").SearchIndexPersistenceHealth;
+    }
+
+    const granularTests: GranularTest[] = [
+      { status: "building", readiness: "restoring", expected: "Restoring index" },
+      { status: "building", readiness: "building", expected: "Building index" },
+      { status: "rebuild-required", rebuildReason: "version-drift", expected: "Rebuild required (version drift)" },
+      { status: "rebuild-required", rebuildReason: "corrupt", expected: "Rebuild required (corrupted)" },
+      { status: "rebuild-required", rebuildReason: "folder-rebuild-required", expected: "Rebuild required (folder changed)" },
+      { status: "ready", persistence: "storage-unavailable", expected: "Search storage unavailable" },
+    ];
+
+    for (const test of granularTests) {
+      ({ component } = mountToolbar({
+        activeFilterTags: [],
+        searchStatus: test.status,
+        searchIndexReadiness: test.readiness,
+        searchIndexRebuildReason: test.rebuildReason,
+        searchIndexPersistence: test.persistence,
+      }));
+      await tick();
+
+      const searchStatusEl = document.querySelector<HTMLElement>(".fce-toolbar-content-row .fce-search-status");
+      expect(searchStatusEl).not.toBeNull();
+      expect(searchStatusEl?.textContent).toBe(test.expected);
 
       await disposeMountedComponent(component);
     }

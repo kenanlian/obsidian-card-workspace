@@ -438,6 +438,7 @@ describe("FolderCardView host contract", () => {
       const query = vi.fn(async () => ({
         mode: "indexed",
         status: "ready",
+        execution: "indexed-ready",
         orderedPaths: ["notes/alpha.md"],
       }));
       plugin.getSearchService = vi.fn(() => ({ query }));
@@ -447,14 +448,7 @@ describe("FolderCardView host contract", () => {
         mode: "indexed",
         status: "ready",
         lastError: null,
-        health: {
-          outcome: "restored",
-          healthy: true,
-          rebuilding: false,
-          documentCount: 1,
-          lastIndexedAt: 1,
-          detail: "restored",
-        },
+        health: createSearchHealth(),
       }));
 
       (view as any).folderPath = "notes";
@@ -475,8 +469,108 @@ describe("FolderCardView host contract", () => {
 
       (view as any).resetSearchQuery();
       expect((view as any).searchQuery).toBe("");
-      expect((view as any).searchOrderedPaths).toBeNull();
+      expect((view as any).searchOrderedPaths).toBeUndefined();
       expect((view as any).searchStatus).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps typed query editable while blocked and auto-runs it once indexed search becomes ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const query = vi.fn()
+        .mockResolvedValueOnce({
+          mode: "indexed",
+          status: "building",
+          execution: "indexed-rebuild-required",
+        })
+        .mockResolvedValueOnce({
+          mode: "indexed",
+          status: "ready",
+          execution: "indexed-ready",
+          orderedPaths: ["notes/beta.md"],
+        });
+      let snapshotListener: ((snapshot: SearchServiceSnapshot) => void) | null = null;
+      const emitSnapshot = (snapshot: SearchServiceSnapshot): void => {
+        const listener = snapshotListener;
+        if (!listener) {
+          throw new Error("Expected search snapshot listener to be registered.");
+        }
+
+        listener(snapshot);
+      };
+
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "building",
+        lastError: null,
+        health: createSearchHealth({
+          outcome: "rebuild-required",
+          readiness: "rebuild-required",
+          healthy: false,
+          rebuilding: true,
+          rebuildRequired: true,
+          documentCount: null,
+          lastIndexedAt: null,
+          rebuildReason: "version-drift",
+          detail: "rebuilding",
+        }),
+      }));
+      plugin.subscribeSearchSnapshots = vi.fn((listener: (snapshot: SearchServiceSnapshot) => void) => {
+        snapshotListener = listener;
+        return () => {
+          snapshotListener = null;
+        };
+      });
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [
+        createCard("notes/alpha.md", "Alpha"),
+        createCard("notes/beta.md", "Beta"),
+      ];
+
+      await view.onOpen();
+      expect((view as any).searchStatus).toBe("rebuild-required");
+
+      (view as any).onSearchQueryChange({ query: "beta" });
+      expect((view as any).searchQuery).toBe("beta");
+      expect((view as any).visibleCards).toEqual([]);
+
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(query).toHaveBeenCalledTimes(1);
+      expect((view as any).visibleCards).toEqual([]);
+
+      emitSnapshot({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth({
+          outcome: "restored",
+          readiness: "ready",
+          healthy: true,
+          rebuilding: false,
+          rebuildRequired: false,
+          documentCount: 2,
+          lastIndexedAt: 1,
+        }),
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(query).toHaveBeenCalledTimes(2);
+      expect((view as any).searchQuery).toBe("beta");
+      expect((view as any).searchStatus).toBe("ready");
+      expect((view as any).visibleCards.map((card: NoteCardRecord) => card.path)).toEqual(["notes/beta.md"]);
     } finally {
       vi.useRealTimers();
     }
@@ -510,14 +604,7 @@ describe("FolderCardView host contract", () => {
         mode: "indexed",
         status: "ready",
         lastError: null,
-        health: {
-          outcome: "restored",
-          healthy: true,
-          rebuilding: false,
-          documentCount: 2,
-          lastIndexedAt: 1,
-          detail: "restored",
-        },
+        health: createSearchHealth({ documentCount: 2, lastSuccessfulRestore: { outcome: "restored", at: 1, documentCount: 2, detail: "restored" } }),
       }));
       plugin.subscribeSearchSnapshots = vi.fn((listener: (snapshot: SearchServiceSnapshot) => void) => {
         snapshotListener = listener;
@@ -540,26 +627,30 @@ describe("FolderCardView host contract", () => {
         mode: "indexed",
         status: "building",
         lastError: null,
-        health: {
+        health: createSearchHealth({
           outcome: "rebuild-required",
+          readiness: "rebuild-required",
           healthy: false,
           rebuilding: true,
+          rebuildRequired: true,
           documentCount: null,
           lastIndexedAt: null,
+          rebuildReason: "version-drift",
           detail: "rebuilding",
-        },
+        }),
       });
 
       pending[0]?.resolve({
         mode: "indexed",
         status: "ready",
+        execution: "indexed-ready",
         orderedPaths: ["notes/beta.md"],
       });
       await Promise.resolve();
       await Promise.resolve();
 
-      expect((view as any).searchStatus).toBe("building");
-      expect((view as any).searchOrderedPaths).toBeNull();
+      expect((view as any).searchStatus).toBe("rebuild-required");
+      expect((view as any).searchOrderedPaths).toBeUndefined();
 
       await view.onClose();
       expect(unsubscribe).toHaveBeenCalledTimes(1);
@@ -664,3 +755,26 @@ describe("FolderCardView host contract", () => {
     }));
   });
 });
+function createSearchHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {
+  return {
+    outcome: "restored",
+    readiness: "ready",
+    healthy: true,
+    rebuilding: false,
+    rebuildRequired: false,
+    persistence: "healthy",
+    documentCount: 1,
+    lastIndexedAt: 1,
+    rebuildReason: null,
+    lastError: null,
+    lastSuccessfulRestore: {
+      outcome: "restored",
+      at: 1,
+      documentCount: 1,
+      detail: "restored",
+    },
+    lastSuccessfulBuild: null,
+    detail: "restored",
+    ...overrides,
+  };
+}

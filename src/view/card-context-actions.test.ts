@@ -487,7 +487,6 @@ import {
   mergeNotes,
   moveFile,
 } from "./note-ops";
-import { NoIndexSearchService } from "../search";
 import type { SearchServiceSnapshot } from "../search";
 import { ALL_NOTES_PATH } from "./types";
 import * as markdownUtils from "./markdown-utils";
@@ -618,6 +617,39 @@ function createCardRecordFromPath(
     mtime: 1,
   };
   return createCardRecord(file, fileKind);
+}
+
+function createIndexedSearchServiceStub(result: {
+  mode: "indexed";
+  status: "ready" | "building" | "error";
+  execution:
+    | "indexed-ready"
+    | "indexed-building"
+    | "indexed-rebuild-required"
+    | "indexed-storage-unavailable"
+    | "indexed-error"
+    | "indexed-unavailable";
+  orderedPaths?: string[];
+} = {
+  mode: "indexed",
+  status: "building",
+  execution: "indexed-unavailable",
+}): {
+  initialize: ReturnType<typeof vi.fn>;
+  dispose: ReturnType<typeof vi.fn>;
+  getSnapshot: ReturnType<typeof vi.fn>;
+  subscribe: ReturnType<typeof vi.fn>;
+  query: ReturnType<typeof vi.fn>;
+  handleVaultMutation: ReturnType<typeof vi.fn>;
+} {
+  return {
+    initialize: vi.fn(async () => undefined),
+    dispose: vi.fn(() => undefined),
+    getSnapshot: vi.fn(() => null),
+    subscribe: vi.fn(() => () => undefined),
+    query: vi.fn(async () => result),
+    handleVaultMutation: vi.fn(() => undefined),
+  };
 }
 
 function clickLatestModalButton(buttonText: string, occurrence: number = 0): void {
@@ -963,9 +995,8 @@ describe("FolderCardView card context actions", () => {
             createCardRecordFromPath("notes/second.md"),
           ];
 
-          const service = new NoIndexSearchService();
-          await service.initialize();
-          const querySpy = vi.spyOn(service, "query");
+          const service = createIndexedSearchServiceStub();
+          const querySpy = service.query;
           plugin.getSearchService = vi.fn(() => service);
 
           (view as any).folderPath = "notes";
@@ -996,8 +1027,14 @@ describe("FolderCardView card context actions", () => {
             },
             candidatePaths: visibleCards.map((card) => card.path),
           });
-          expect((view as any).searchStatus).toBe("fallback");
-          expect((view as any).searchOrderedPaths).toBeNull();
+          expect((view as any).visibleCards).toEqual([]);
+          expect((view as any).searchStatus).toBe("unavailable");
+          expect((view as any).searchOrderedPaths).toBeUndefined();
+          expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
+            searchQuery: "roadmap",
+            searchStatus: "unavailable",
+            cards: [],
+          });
         } finally {
           vi.useRealTimers();
         }
@@ -1007,8 +1044,7 @@ describe("FolderCardView card context actions", () => {
         vi.useFakeTimers();
         try {
           const { view, plugin } = createViewWithFile("notes/search-reset-health.md");
-          const service = new NoIndexSearchService();
-          await service.initialize();
+          const service = createIndexedSearchServiceStub();
           const getSearchService = vi.fn(() => service);
           plugin.getSearchService = getSearchService;
           plugin.getSearchSnapshot = vi.fn(() => ({
@@ -1017,14 +1053,17 @@ describe("FolderCardView card context actions", () => {
             mode: "indexed",
             status: "error",
             lastError: "index unavailable",
-            health: {
+            health: createSearchHealth({
               outcome: "failed",
+              readiness: "error",
               healthy: false,
               rebuilding: false,
+              rebuildRequired: false,
               documentCount: null,
               lastIndexedAt: null,
+              lastError: "index unavailable",
               detail: "failed",
-            },
+            }),
           }));
 
           await (view as any).onOpen();
@@ -1037,10 +1076,10 @@ describe("FolderCardView card context actions", () => {
           queryChangeHandler({ detail: { query: "alpha" } });
           expect((view as any).searchStatus).toBe("error");
 
-          queryResetHandler({ detail: { source: "clear-button" } });
-          expect((view as any).searchQuery).toBe("");
-          expect((view as any).searchOrderedPaths).toBeNull();
-          expect((view as any).searchStatus).toBe("error");
+            queryResetHandler({ detail: { source: "clear-button" } });
+            expect((view as any).searchQuery).toBe("");
+            expect((view as any).searchOrderedPaths).toBeUndefined();
+            expect((view as any).searchStatus).toBe("error");
 
           vi.advanceTimersByTime(200);
           await flushAsyncWork();
@@ -1083,14 +1122,15 @@ describe("FolderCardView card context actions", () => {
             mode: "indexed",
             status: "ready",
             lastError: null,
-            health: {
-              outcome: "restored",
-              healthy: true,
-              rebuilding: false,
+            health: createSearchHealth({
               documentCount: 2,
-              lastIndexedAt: 1,
-              detail: "restored",
-            },
+              lastSuccessfulRestore: {
+                outcome: "restored",
+                at: 1,
+                documentCount: 2,
+                detail: "restored",
+              },
+            }),
           }));
           plugin.subscribeSearchSnapshots = vi.fn((listener: (snapshot: SearchServiceSnapshot) => void) => {
             snapshotListener = listener;
@@ -1124,25 +1164,29 @@ describe("FolderCardView card context actions", () => {
             mode: "indexed",
             status: "building",
             lastError: null,
-            health: {
+            health: createSearchHealth({
               outcome: "rebuild-required",
+              readiness: "rebuild-required",
               healthy: false,
               rebuilding: true,
+              rebuildRequired: true,
               documentCount: null,
               lastIndexedAt: null,
+              rebuildReason: "version-drift",
               detail: "rebuilding",
-            },
+            }),
           });
 
           pending[1]?.resolve({
             mode: "indexed",
             status: "ready",
+            execution: "indexed-ready",
             orderedPaths: [visibleCards[1].path],
           });
           await flushAsyncWork();
 
-          expect((view as any).searchStatus).toBe("building");
-          expect((view as any).searchOrderedPaths).toBeNull();
+          expect((view as any).searchStatus).toBe("rebuild-required");
+          expect((view as any).searchOrderedPaths).toBeUndefined();
 
           queryChangeHandler({ detail: { query: "gamma" } });
           vi.advanceTimersByTime(120);
@@ -1155,18 +1199,20 @@ describe("FolderCardView card context actions", () => {
           pending[2]?.resolve({
             mode: "indexed",
             status: "ready",
+            execution: "indexed-ready",
             orderedPaths: [visibleCards[0].path],
           });
           pending[0]?.resolve({
             mode: "indexed",
             status: "ready",
+            execution: "indexed-ready",
             orderedPaths: [visibleCards[0].path],
           });
           await flushAsyncWork();
 
           expect((view as any).searchQuery).toBe("gamma");
-          expect((view as any).searchStatus).toBe("building");
-          expect((view as any).searchOrderedPaths).toBeNull();
+          expect((view as any).searchStatus).toBe("rebuild-required");
+          expect((view as any).searchOrderedPaths).toBeUndefined();
         } finally {
           vi.useRealTimers();
         }
@@ -3777,3 +3823,26 @@ describe("FolderCardView card context actions", () => {
     });
   });
 });
+function createSearchHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {
+  return {
+    outcome: "restored",
+    readiness: "ready",
+    healthy: true,
+    rebuilding: false,
+    rebuildRequired: false,
+    persistence: "healthy",
+    documentCount: 1,
+    lastIndexedAt: 1,
+    rebuildReason: null,
+    lastError: null,
+    lastSuccessfulRestore: {
+      outcome: "restored",
+      at: 1,
+      documentCount: 1,
+      detail: "restored",
+    },
+    lastSuccessfulBuild: null,
+    detail: "restored",
+    ...overrides,
+  };
+}

@@ -1,0 +1,4 @@
+Task 12 rebuild command evidence
+- Command label updated to 'Rebuild Card Workspace local search index from notes'.
+- Manual rebuild callback routes through plugin-owned single-flight rebuild lifecycle with detail 'Manual rebuild command requested local search index rebuild.'.
+- Verified by src/main.test.ts command registration and execution assertions plus full npm test pass on 2026-05-08.

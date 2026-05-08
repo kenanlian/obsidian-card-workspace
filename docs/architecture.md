@@ -8,7 +8,7 @@
 2. **本地优先。** 文件处理、索引存储、搜索执行、设置持久化都发生在本地运行时。
 3. **宿主拥有生命周期。** 插件级资源、命令、通知、搜索服务和重建调度都归 `main.ts`。
 4. **视图拥有运行时查询。** 当前 view 的 query、debounce、候选卡片和搜索状态归 `FolderCardView.ts`。
-5. **`pipeline.ts` 统一可见结果。** 不管搜索来自 fallback 还是 indexed，最终投影都必须走同一条纯函数链路。
+5. **`pipeline.ts` 统一可见结果。** 不论索引是否就绪，最终卡片投影都必须走同一条纯函数链路。
 6. **卡片文件类型是显式领域概念。** `markdown`、`base`、`canvas`、`excalidraw` 都可以进入卡片流，但它们的预览、图标和搜索能力并不完全相同。
 7. **默认卡片点击遵循主编辑区 recent-root fallback 语义。** 左键 / Enter / Space 的默认打开行为不再由设置驱动，而由 `main.ts` 直接决定：先尝试复用 `getMostRecentLeaf(rootSplit)` 返回的可承载文件 root leaf；若最近 root leaf 不可承载文件，则回退到 root Markdown leaf；只有目标 leaf 已 pin 或没有合适目标时，才新开一个 tab。
 
@@ -25,7 +25,7 @@ src/main.ts
   ├─ 设置加载与保存
   ├─ 搜索服务与命令生命周期
   ├─ vault mutation 转发
-  └─ rebuild 调度与降级通知
+  └─ rebuild 调度与状态感知通知
           ↓
 src/view/FolderCardView.ts
   ├─ 收集受支持文件 / 解析 fileKind / 构建 baseCards
@@ -46,7 +46,7 @@ src/view/FolderCardPanel.svelte / Toolbar.svelte / CardItem.svelte
   └─ UI 展示、交互回调、命中高亮、文件类型图标与占位摘要、可收起搜索行、一级按钮高亮态、icon-only bulk strip、批量复选框
           ↓
 src/view/pipeline.ts
-  └─ tag filter -> search filter (markdown full-text + non-markdown title-only) -> pin reorder
+  └─ tag filter -> search filter (indexed-ready or blocked) -> pin reorder
 
 src/search/IndexStore.ts
   └─ IndexedDB 持久化索引与元数据
@@ -68,15 +68,16 @@ src/search/IndexedSearchService.ts
 - `IndexedDB`，由 `IndexStore` 使用，负责本地持久化索引快照。
 - `MiniSearch`，负责内存中的文本索引和查询执行。
 - esbuild + esbuild-svelte，负责构建 `main.js`。
-- GitHub Actions release workflow，负责在 push 裸 semver tag（例如 `0.1.1`，而不是 `v0.1.1`）时复用仓库校验链路，并把 `main.js`、`manifest.json`、`styles.css` 发布成 draft GitHub Release。
+- GitHub Actions release workflow，负责在 push 裸 semver tag（例如 `0.1.2`，而不是 `v0.1.2`）时复用仓库校验链路，并把 `main.js`、`manifest.json`、`styles.css` 发布成 draft GitHub Release。
+- 当前版本 `v0.1.2` 已正式移除全文搜索 fallback 路径。
 
-当前没有产品运行时网络依赖，没有外部服务。搜索能力已经是本地 indexed 架构，不再只是 no-index 接缝，但它仍保留 fallback 路径以应对构建中、恢复失败或初始化失败。GitHub Release 自动化只属于仓库发布基础设施，不属于插件运行时依赖。
+当前没有产品运行时网络依赖，没有外部服务。搜索架构已全面转向本地 indexed 模式，不再支持非索引降级搜索。GitHub Release 自动化只属于仓库发布基础设施，不属于插件运行时依赖。
 
 ## 技术选择及原因
 
 ### TypeScript + strict
 
-这里的价值是把 ownership 和契约钉死。`searchQuery` 不进 settings，`SearchServiceSnapshot` 明确暴露健康状态，`SearchQueryResult` 明确区分 `null` 和空数组，`NoteCardRecord.fileKind` 明确卡片文件类型，这些都是防止后续演进时把语义做混。
+这里的价值是把 ownership 和契约钉死。`searchQuery` 不进 settings，`SearchServiceSnapshot` 明确暴露健康状态，`SearchQueryResult` 明确区分 `indexed-ready` 和各种不可用状态，`NoteCardRecord.fileKind` 明确卡片文件类型，这些都是防止后续演进时把语义做混。
 
 ### 显式 `file-kind` 解析层
 
@@ -130,7 +131,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 
 - 设置读写与会话恢复。
 - 注册和激活 `FOLDER_CARD_VIEW`。
-- 初始化 `IndexStore`、`SearchIndexManager`、`IndexedSearchService`，并在失败时回退到 `NoIndexSearchService`。
+- 初始化 `IndexStore`、`SearchIndexManager`、`IndexedSearchService`。
 - 注册 command palette 的 rebuild 或 recover 命令。
 - 注册 vault observers，并把 mutation 转发给视图和搜索服务。
 - 在转发搜索 mutation 时，用 `file-kind` 语义判断 rename / create / delete 是否仍应被视为 Markdown 索引文档变化。
@@ -162,7 +163,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 
 ### `src/view/panel-model.ts`
 
-这是宿主到面板的正式状态桥。它承载 cards、selection、loading、generation，以及从 `FolderCardView.ts` 桥接而来的空状态提示信息；同时也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。默认卡片打开方式已经不再经过这层状态桥。
+这是宿主到面板的正式状态桥。它承载 cards、selection、loading、generation，以及从 `FolderCardView.ts` 桥接而来的状态信息；同时也承载 `searchQuery` 和 `searchStatus`。它不保存长期状态，只负责稳定投影。默认卡片打开方式已经不再经过这层状态桥。
 
 ### `src/view/FolderCardPanel.svelte` / `src/view/Toolbar.svelte` / `src/view/CardItem.svelte`
 
@@ -187,8 +188,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 这里继续承担唯一投影职责：
 
 - `applyTagFilter()` 处理 metadata 级筛选。
-- `applySearchFilter()` 在 `orderedPaths !== null` 时采用 indexed ordering，但会把标题命中的非 Markdown 卡片补回结果列表；在 `orderedPaths === null` 时继续走当前排序下的 fallback filtering。
-- fallback filtering 仍主要服务 Markdown 内容匹配；非 Markdown 不在这里伪造全文能力。
+- `applySearchFilter()` 处理搜索投影。如果 `execution === "indexed-ready"`，则采用 indexed ordering (已包含 Markdown 全文命中与非 Markdown 标题命中)；如果处于其他 indexed 状态（如 building/error/rebuild-required），且 query 非空，则阻塞显示（返回 `null`），直到索引就绪。
 - `applyPinReorder()` 只对保留下来的卡片做重排。
 
 这里必须保持 `tag -> search -> pin` 的固定顺序。
@@ -216,7 +216,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 把 manager 的健康状态翻译成查询 contract。
 - 在当前候选路径范围内裁剪结果，避免跨 view 泄漏无关路径。
 - 在可用时返回 Markdown 文档的 indexed ordering。
-- 在构建中、恢复失败或不可用时返回 `orderedPaths: null`，让调用方继续 fallback。
+- 在构建中、恢复失败或不可用时返回对应的 indexed 状态码（如 `indexed-building`），阻止 UI 呈现过时或不准确的搜索结果。
 
 它不负责为非 Markdown 文件伪造全文索引；这部分能力当前故意留在标题级匹配。
 
@@ -262,8 +262,8 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 1. 面板接收用户输入。
 2. `FolderCardView.ts` 更新 runtime-only `searchQuery`，按当前视图范围做 debounce。
 3. 视图向 plugin-owned `SearchService` 发起 query，请求里带上 query、scope 和当前 candidate paths。
-4. `IndexedSearchService` 若处于 ready，则返回 Markdown 文档的 candidate-bounded `orderedPaths`。
-5. 若服务返回 `orderedPaths: null`，视图继续走 fallback filtering。
+4. `IndexedSearchService` 若处于 ready，则返回当前候选范围内、由索引产出的 candidate-bounded `orderedPaths`：Markdown 通过标题 + 内容参与匹配，支持的非 Markdown 文件通过标题/basename-only 参与匹配。
+5. 若服务返回非 ready 状态（如 `indexed-building`），视图在 pipeline 中阻塞非空查询的结果。
 6. `pipeline.ts` 按 `tag -> search -> pin` 顺序投影 `visibleCards`；其中非 Markdown 卡片只在标题命中时被纳入搜索结果。
 7. `panel-model` 把最新 cards、query、status 投影给面板。
 
@@ -296,7 +296,7 @@ baseCards
 - tag filter 先于 search filter。
 - search filter 先于 pin reorder。
 - pin 只改顺序，不恢复被前序步骤过滤掉的卡片。
-- `orderedPaths: null` 表示 fallback filtering。
+- `orderedPaths` 语义已收敛：当 `execution !== "indexed-ready"` 且 query 非空时，pipeline 阻塞显示；`orderedPaths: []` 明确表示 indexed-ready 零结果。
 - `orderedPaths: []` 表示 indexed-ready 零结果。
 - Markdown 卡片可参与全文级匹配。
 - 卡片内轻量 preview 与 hover popover 是两条不同 contract：前者由 `markdown-utils.ts` 生成并只服务卡片表面，后者由 `hover-link` 交给宿主或对应插件决定。 
@@ -389,21 +389,32 @@ baseCards
 - `hover-link` 是当前唯一允许的卡片 hover preview 集成路径；不要在 `CardItem.svelte` 或 `FolderCardView.ts` 旁边再长出一套自建 popover。
 - `previewLines` 是文本块与 fenced code block 共享的顺序预算；任何想调整 preview 样式或抽取规则的改动，都必须同时评估解析层和 excerpt CSS 的物理预算。 
 
+## 十大黄金原则 (11-16 已更新为索引架构)
 
-1. 不要把 `searchQuery` 写回 `PluginSettings`。
-2. 不要让 `SearchService` 绕开 `pipeline.ts` 直接控制最终可见卡片。
-3. 不要把“支持进卡片流”和“支持全文索引”混成一回事；当前只有 Markdown 继续承担全文预览与全文索引。
-4. 不要把轻量 preview 当成完整 Markdown renderer；强调语法当前已被刻意拍平成普通文本，避免浏览器默认 `<strong>` / `<em>` 样式重新进入卡片摘要。
-5. 不要让 `orderedPaths: null` 和空数组的语义做混。
-6. 不要让 folder rename 的 unsafe 路径继续静默服务旧索引，应明确升级到 `rebuild-required`。
-7. 不要破坏 row projection、虚拟滚动、滚动锚定、hydrate-range、generation guards、debounced vault observers。
-8. 文件类型标题图标优先保持在 Obsidian 官方 Lucide icon name contract 内，不要把截图、栅格图片或自定义图像注入 card title icon slot。
-9. bulk delete 的最终行为必须继续尊重 Obsidian `fileManager.trashFile` 和宿主偏好，不要在插件里重新发明删除语义。
-10. `Toolbar.svelte` 仍有已知非阻塞 a11y warnings，这属于后续 UI 收尾，不代表 Phase 3 未完成。
-11. 当前没有真实 Obsidian 宿主内手动 QA 结果，F3 的关闭建立在用户批准豁免基础上，不应被文档误写成已完成 in-app 验证。
-12. 默认卡片点击不是持久化设置；真正的默认打开语义现在直接由 `main.ts` 统一控制，而且目标是主编辑区里最近使用、可承载文件的 root leaf。不能把 leaf 选择或默认 destination 再散回 Svelte 组件、panel-model 或 settings。
-13. GitHub Release tag 必须是与 `manifest.json.version` 完全一致的裸 semver；为避免仓库内版本漂移，当前也要求 `package.json.version` 与 `versions.json[version]` 一起对齐。不要只改一个文件就直接打 tag。
-14. Release workflow 依赖 GitHub Actions 的 `contents: write` 与仓库级 `Read and write` workflow permissions；如果权限不满足，问题应先归因为仓库设置，而不是脚本或插件运行时。
+1. **性能优先。** 避免整 vault 重扫、避免无边界重建、避免破坏虚拟滚动和 generation guard。
+2. **本地优先。** 文件处理、索引存储、搜索执行、设置持久化都发生在本地运行时。
+3. **宿主拥有生命周期。** 插件级资源、命令、通知、搜索服务和重建调度都归 `main.ts`。
+4. **视图拥有运行时查询。** 当前 view 的 query、debounce、候选卡片和搜索状态归 `FolderCardView.ts`。
+5. **`pipeline.ts` 统一可见结果。** 不论索引是否就绪，最终卡片投影都必须走同一条纯函数链路。
+6. **卡片文件类型是显式领域概念。** `markdown`、`base`、`canvas`、`excalidraw` 都可以进入卡片流，但它们的预览、图标和搜索能力并不完全相同。
+7. **默认卡片点击遵循主编辑区 recent-root fallback 语义。** 左键 / Enter / Space 的默认打开行为不再由设置驱动，而由 `main.ts` 直接决定。
+8. **Indexed-Only 搜索执行。** 搜索架构已全面转向本地索引模式，不再支持非索引降级搜索。
+9. **搜索阻塞规则。** 当索引处于 building、rebuild-required 或 error 状态时，非空查询结果将返回 `null`（阻塞显示），避免呈现过时或不准确的随机过滤结果。空查询（浏览模式）不受影响。
+10. **Markdown 优先全文索引。** 全文索引（MiniSearch）仅覆盖 Markdown 文档。非 Markdown 文件（base/canvas/excalidraw）仅参与标题匹配。
+11. **文件夹重命名保护。** 对无法安全证明前缀一致性的文件夹重命名，直接标记 `rebuild-required` 以保证搜索结果的路径真实性。
+12. **索引持久化与恢复。** 插件启动时优先从 IndexedDB 恢复索引，仅在失败、版本漂移或数据损坏时触发全量重建。
+13. **搜索状态矩阵。** 采用 `indexed-ready`, `indexed-building`, `indexed-rebuild-required`, `indexed-storage-unavailable`, `indexed-error`, `indexed-unavailable` 六态矩阵精准描述执行边界。当 `execution !== "indexed-ready"` 时，非空查询将被阻塞以保证结果权威性。
+
+## 模块职责矩阵 (核心)
+
+| 模块 | 职责 | 不该做的事 |
+| :--- | :--- | :--- |
+| `main.ts` | 插件 lifecycle, 搜索服务 ownership, 默认打开语义, Vault Mutation 转发 | 拥有 per-view query, 直接计算 visibleCards |
+| `FolderCardView.ts` | View 协调中枢, searchQuery & Status, baseCards 收集, Preview 生成 | 直接操作 IndexedDB, 拥有全局索引真值 |
+| `SearchIndexManager.ts` | 索引 restore/build/mutation, 健康快照发布 | 拥有 view query, 决定 UI 展示 |
+| `IndexedSearchService.ts` | 状态映射, Candidate 裁剪, Indexed Ordering 输出 | 伪造非 Markdown 全文索引, 拥有 view state |
+| `pipeline.ts` | 唯一投影链路 (Tag -> Search -> Pin) | 决定搜索排序算法, 直接操作 Vault |
+| `panel-model.ts` | 宿主到面板的稳定状态桥 | 保存长期设置, 拥有默认打开语义 |
 
 ## 历史问题与折中
 
@@ -414,10 +425,9 @@ baseCards
 Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜索架构。这里的折中很明确：
 
 - 我们接受 indexed 搜索依赖本地 IndexedDB 和 MiniSearch。
-- 我们保留 fallback 路径，不把单一搜索模式当成唯一真相。
+- 我们彻底移除降级搜索路径，以保证搜索结果的权威性和一致性。
 - 我们接受混合文件类型卡片与 Markdown-only 全文搜索并存的非对称模型，而不是为了“统一”提前引入脆弱的多格式正文抽取。
 - 我们对 unsafe folder rename 采用保守 rebuild-required 策略，而不是尝试高风险路径修补。
-- 我们把 bulk delete 委托给 Obsidian 删除偏好，而不是在插件里硬编码“永久删除”。
 - 我们在缺少 Obsidian 宿主的环境里，以仓库验证通过和用户豁免作为 F3 关闭条件。
 
 ## 优化与演进机会
@@ -427,7 +437,6 @@ Phase 3 的最终收尾又把这套接缝推进成真正可运行的 indexed 搜
 3. 为真实 Obsidian 宿主补 manual QA 流程，把当前豁免状态转换成已执行证据。
 4. 单独处理 `Toolbar.svelte` 的 a11y warnings，尤其是 folder menu item 与 chevron 的键盘可达性，减少 build/test 输出噪音。
 5. 如后续继续扩展索引能力，优先补 manager 和 service 层，不要把索引细节散入 view 层。
-6. 如果未来要补 changelog、自动版本推断或发布 PR，优先在当前 tag-driven workflow 外侧增加能力，不要破坏已经固定的版本对齐和 release asset contract。
 
 ## Related decisions
 

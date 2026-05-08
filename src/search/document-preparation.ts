@@ -6,7 +6,7 @@ const EXCERPT_MAX_LENGTH = 260;
 export interface SearchableDocumentInput {
   path: string;
   title: string;
-  markdown: string;
+  markdown?: string;
   mtime: number;
   ctime: number;
 }
@@ -27,8 +27,9 @@ export interface SearchMutationDecision {
 
 export function prepareSearchableDocument(input: SearchableDocumentInput): SearchableDocument {
   const title = input.title.trim();
-  const content = stripMarkdownToText(input.markdown, Number.MAX_SAFE_INTEGER);
-  const excerpt = stripMarkdownToText(input.markdown, EXCERPT_MAX_LENGTH);
+  const markdown = input.markdown;
+  const content = typeof markdown === "string" ? stripMarkdownToText(markdown, Number.MAX_SAFE_INTEGER) : "";
+  const excerpt = typeof markdown === "string" ? stripMarkdownToText(markdown, EXCERPT_MAX_LENGTH) : "";
 
   return {
     path: input.path,
@@ -51,7 +52,7 @@ export function classifySearchMutation(event: SearchVaultMutation): SearchMutati
     return classifyRenameMutation(event);
   }
 
-  if (event.isFolder || !event.isMarkdown) {
+  if (event.isFolder) {
     return {
       action: "ignored",
       renameClassification: null,
@@ -83,13 +84,6 @@ function classifyRenameMutation(event: SearchVaultMutation): SearchMutationDecis
     return {
       action: "rebuild-required",
       renameClassification: "folder-rebuild-required",
-    };
-  }
-
-  if (!event.isMarkdown) {
-    return {
-      action: "ignored",
-      renameClassification: null,
     };
   }
 

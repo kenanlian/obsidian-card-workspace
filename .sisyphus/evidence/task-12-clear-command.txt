@@ -1,0 +1,5 @@
+Task 12 clear/reset command evidence
+- Command label updated to 'Clear and reset Card Workspace local search index state'.
+- Clear/reset now uses plugin-owned single-flight guard before calling SearchIndexManager.clearAndReset('Manual clear/reset command requested local search index reset.').
+- Successful clear schedules one full rebuild with detail 'Manual clear/reset command requested full local search index rebuild.'.
+- Verified by new idempotency regression in src/main.test.ts and targeted/full Vitest passes on 2026-05-08.

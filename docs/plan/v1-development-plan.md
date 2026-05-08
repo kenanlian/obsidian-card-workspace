@@ -24,6 +24,12 @@
 
 > 注意：路线图里引用的 `docs/dev-feature/task-18...task-30` 目前仓库中并不存在。后续执行不要等待这些文件出现；本文档已经把这些缺失引用收口成一个自包含计划。
 
+> [!CAUTION]
+> **本文档中的 Phase 3 搜索规划已属于历史存档，不再代表当前实现。**
+>
+> 仓库当前正式行为以 `docs/START_HERE.md`、`docs/architecture.md`、`docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md` 和 `docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md` 为准。
+> 本文档后文若提到 fallback / 降级搜索，仅用于保留当时的规划背景；当前产品已经转向 **indexed-only** 搜索，不再支持非索引模式下的非空查询 fallback。
+
 ---
 
 ## 1. 计划目标与适用范围
@@ -456,6 +462,10 @@ Phase 4
 ---
 
 ## 8. Phase 3：把搜索做成真正能力
+
+> [!NOTE]
+> 本节保留的是 Phase 3 规划时的历史方案，其中关于 fallback / 降级搜索的描述均已过时。
+> 当前实现已经移除 fallback 搜索路径；索引未就绪时，非空查询会被明确阻塞，空查询浏览保持不变。
 
 ### 8.1 目标
 

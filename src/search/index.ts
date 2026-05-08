@@ -1,4 +1,3 @@
-export { NoIndexSearchService } from "./NoIndexSearchService";
 export { IndexStore } from "./IndexStore";
 export { SearchIndexManager } from "./SearchIndexManager";
 export { IndexedSearchService } from "./IndexedSearchService";
@@ -12,6 +11,7 @@ export type {
   SearchableDocument,
   SearchExecutionMode,
   SearchIndexHealthSnapshot,
+  SearchIndexObservabilitySnapshot,
   SearchQueryExecutionState,
   SearchQueryRequest,
   SearchQueryResult,

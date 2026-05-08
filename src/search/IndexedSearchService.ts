@@ -1,4 +1,5 @@
 import type {
+  SearchQueryExecutionState,
   SearchQueryRequest,
   SearchQueryResult,
   SearchService,
@@ -79,13 +80,12 @@ export class IndexedSearchService implements SearchService {
   }
 
   async query(request: SearchQueryRequest): Promise<SearchQueryResult> {
-    const status = this.snapshot.status;
-    if (status !== "ready") {
+    const blockedExecution = this.getBlockedExecution(this.snapshot);
+    if (blockedExecution) {
       return {
         mode: "indexed",
-        status,
-        execution: "fallback-filtering",
-        orderedPaths: null,
+        status: this.snapshot.status,
+        execution: blockedExecution,
       };
     }
 
@@ -94,18 +94,18 @@ export class IndexedSearchService implements SearchService {
       return {
         mode: "indexed",
         status: "ready",
-        execution: "indexed-ordering",
+        execution: "indexed-ready",
         orderedPaths: [],
       };
     }
 
     const searchedPaths = await this.manager.search(request.query, boundedCandidates);
-    if (this.snapshot.status !== "ready") {
+    const postSearchBlockedExecution = this.getBlockedExecution(this.snapshot);
+    if (postSearchBlockedExecution) {
       return {
         mode: "indexed",
         status: this.snapshot.status,
-        execution: "fallback-filtering",
-        orderedPaths: null,
+        execution: postSearchBlockedExecution,
       };
     }
 
@@ -124,7 +124,7 @@ export class IndexedSearchService implements SearchService {
     return {
       mode: "indexed",
       status: "ready",
-      execution: "indexed-ordering",
+      execution: "indexed-ready",
       orderedPaths,
     };
   }
@@ -153,6 +153,28 @@ export class IndexedSearchService implements SearchService {
     }
 
     return deduped;
+  }
+
+  private getBlockedExecution(snapshot: SearchServiceSnapshot): SearchQueryExecutionState | null {
+    if (!snapshot.initialized || snapshot.disposed || snapshot.mode !== "indexed") {
+      return "indexed-unavailable";
+    }
+
+    if (snapshot.status === "ready") {
+      return null;
+    }
+
+    if (snapshot.status === "error") {
+      return "indexed-error";
+    }
+
+    if (snapshot.health.outcome === "rebuild-required") {
+      return snapshot.health.persistence === "storage-unavailable"
+        ? "indexed-storage-unavailable"
+        : "indexed-rebuild-required";
+    }
+
+    return "indexed-building";
   }
 
   private emit(): void {

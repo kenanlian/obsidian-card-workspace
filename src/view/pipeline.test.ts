@@ -25,7 +25,8 @@ function createMockContext(): PipelineContext {
     },
     search: {
       query: "",
-      orderedPaths: null,
+      execution: "indexed-unavailable",
+      orderedPaths: undefined,
     },
     pinnedPaths: [],
   };
@@ -283,25 +284,49 @@ describe("apply search filter behavior", () => {
     expect(applySearchFilter(cards, context)).toEqual(cards);
   });
 
-  it("uses fallback filtering when orderedPaths is null", () => {
+  it("projects zero cards when a non-empty query is blocked by unavailable indexed search", () => {
     const cards = [
       createMockCard("Quarterly-Roadmap.md"),
       createMockCard("Meeting-Notes.md"),
     ];
     const context = createMockContext();
     context.search.query = "roadmap";
-    context.search.orderedPaths = null;
+    context.search.execution = "indexed-unavailable";
 
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["Quarterly-Roadmap.md"]);
+    expect(applySearchFilter(cards, context)).toEqual([]);
   });
 
   it("treats orderedPaths empty array as indexed-ready zero results", () => {
     const cards = [createMockCard("Quarterly-Roadmap.md"), createMockCard("Meeting-Notes.md")];
     const context = createMockContext();
     context.search.query = "roadmap";
+    context.search.execution = "indexed-ready";
     context.search.orderedPaths = [];
 
     expect(applySearchFilter(cards, context)).toEqual([]);
+  });
+
+  it("distinguishes indexed-ready zero results from blocked unavailable search states by execution contract", () => {
+    const cards = [
+      createMockCard("Quarterly-Roadmap.md", "roadmap body"),
+      createMockCard("Meeting-Notes.md", "meeting body"),
+    ];
+    const readyZeroContext = createMockContext();
+    readyZeroContext.search.query = "roadmap";
+    readyZeroContext.search.execution = "indexed-ready";
+    readyZeroContext.search.orderedPaths = [];
+
+    const blockedContext = createMockContext();
+    blockedContext.search.query = "roadmap";
+    blockedContext.search.execution = "indexed-unavailable";
+    blockedContext.search.orderedPaths = undefined;
+
+    expect(applySearchFilter(cards, readyZeroContext)).toEqual([]);
+    expect(applySearchFilter(cards, blockedContext)).toEqual([]);
+    expect(readyZeroContext.search.execution).toBe("indexed-ready");
+    expect(readyZeroContext.search.orderedPaths).toEqual([]);
+    expect(blockedContext.search.execution).toBe("indexed-unavailable");
+    expect(blockedContext.search.orderedPaths).toBeUndefined();
   });
 
   it("uses orderedPaths ordering when indexed results are provided", () => {
@@ -312,12 +337,13 @@ describe("apply search filter behavior", () => {
     ];
     const context = createMockContext();
     context.search.query = "body";
+    context.search.execution = "indexed-ready";
     context.search.orderedPaths = ["gamma.md", "missing.md", "alpha.md"];
 
     expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["gamma.md", "alpha.md"]);
   });
 
-  it("appends title-matching non-markdown cards when indexed markdown results exist", () => {
+  it("treats indexed-ready ordered paths as authoritative for non-empty queries", () => {
     const cards = [
       createMockCard("notes/roadmap.md", "roadmap body", { fileKind: "markdown", title: "roadmap" }),
       createMockCard("boards/alpha.canvas", "This is a canvas file.", {
@@ -332,87 +358,49 @@ describe("apply search filter behavior", () => {
 
     const context = createMockContext();
     context.search.query = "canvas";
+    context.search.execution = "indexed-ready";
     context.search.orderedPaths = ["notes/roadmap.md"];
 
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([
-      "notes/roadmap.md",
-      "boards/alpha.canvas",
-    ]);
+    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["notes/roadmap.md"]);
 
     context.search.query = "excalidraw file";
-    context.search.orderedPaths = null;
+    context.search.execution = "indexed-unavailable";
+    context.search.orderedPaths = undefined;
     expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([]);
   });
 
-  it("preserves current sorted card order in fallback mode", () => {
+  it("projects zero cards for all blocked non-ready indexed executions", () => {
     const cards = [
       createMockCard("zeta.md", "query-hit"),
       createMockCard("alpha.md", "query-hit"),
       createMockCard("beta.md", "nope"),
       createMockCard("delta.md", "query-hit"),
     ];
-    const context = createMockContext();
-    context.search.query = "query-hit";
-    context.search.orderedPaths = null;
+    const blockedExecutions = [
+      "indexed-building",
+      "indexed-rebuild-required",
+      "indexed-storage-unavailable",
+      "indexed-error",
+      "indexed-unavailable",
+    ] as const;
 
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual([
-      "zeta.md",
-      "alpha.md",
-      "delta.md",
-    ]);
+    for (const execution of blockedExecutions) {
+      const context = createMockContext();
+      context.search.query = "query-hit";
+      context.search.execution = execution;
+
+      expect(applySearchFilter(cards, context), execution).toEqual([]);
+    }
   });
 
   it("restores unfiltered projection for empty query even when orderedPaths is []", () => {
     const cards = [createMockCard("alpha.md"), createMockCard("beta.md")];
     const context = createMockContext();
     context.search.query = "";
+    context.search.execution = "indexed-ready";
     context.search.orderedPaths = [];
 
     expect(applySearchFilter(cards, context)).toEqual(cards);
-  });
-
-  it("matches card title without requiring cached content", () => {
-    const cards = [
-      createMockCard("Quarterly-Roadmap.md"),
-      createMockCard("Meeting-Notes.md"),
-    ];
-    const context = createMockContext();
-    context.search.query = "roadmap";
-
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["Quarterly-Roadmap.md"]);
-  });
-
-  it("matches card content using supplied excerpt", () => {
-    const cards = [
-      createMockCard("alpha.md", "team retrospective and action items"),
-      createMockCard("beta.md", "release checklist"),
-    ];
-    const context = createMockContext();
-    context.search.query = "retrospective";
-
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["alpha.md"]);
-  });
-
-  it("does not match content when excerpt is unavailable", () => {
-    const cards = [
-      createMockCard("alpha.md"),
-      createMockCard("beta.md"),
-    ];
-    const context = createMockContext();
-    context.search.query = "retrospective";
-
-    expect(applySearchFilter(cards, context)).toEqual([]);
-  });
-
-  it("applies case-insensitive matching for title and content", () => {
-    const cards = [
-      createMockCard("Project-Plan.md", "milestone timeline"),
-      createMockCard("notes.md", "Sprint RETROSPECTIVE summary"),
-    ];
-    const context = createMockContext();
-    context.search.query = "reTroSpeCtive";
-
-    expect(applySearchFilter(cards, context).map((card) => card.path)).toEqual(["notes.md"]);
   });
 
   it("locks the phase 3 indexed search MiniSearch contract", () => {
@@ -470,6 +458,8 @@ describe("applyPinReorder", () => {
     ];
     const baseContext = createMockContext();
     baseContext.search.query = "query-hit";
+    baseContext.search.execution = "indexed-ready";
+    baseContext.search.orderedPaths = ["visible-pinned.md", "visible-unpinned.md"];
     const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
 
     expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
@@ -488,6 +478,8 @@ describe("applyPinReorder", () => {
     const baseContext = createMockContext();
     baseContext.settings.filter.tags = ["project"];
     baseContext.search.query = "query-hit";
+    baseContext.search.execution = "indexed-ready";
+    baseContext.search.orderedPaths = ["visible-pinned.md", "tag-filtered-pinned.md", "visible-unpinned.md"];
     const context = withPinnedPaths(baseContext, ["tag-filtered-pinned.md", "visible-pinned.md"]);
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
@@ -510,6 +502,7 @@ describe("applyPinReorder", () => {
     const baseContext = createMockContext();
     baseContext.settings.filter.tags = ["project"];
     baseContext.search.query = "query-hit";
+    baseContext.search.execution = "indexed-ready";
     baseContext.search.orderedPaths = ["d.md", "b.md", "a.md"];
     const context = withPinnedPaths(baseContext, ["a.md", "b.md"]);
 

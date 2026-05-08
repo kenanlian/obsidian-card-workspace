@@ -58,8 +58,9 @@ import type {
   SelectionResult,
   VaultMutationEvent,
   VaultMutationResult,
+  PipelineSearchInput,
 } from "./types";
-import type { SearchQueryResult, SearchServiceSnapshot } from "../search";
+import type { SearchQueryExecutionState, SearchQueryResult, SearchServiceSnapshot } from "../search";
 import type FolderCardExplorerPlugin from "../main";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
@@ -427,7 +428,8 @@ export class FolderCardView extends ItemView {
   private visibleCards: NoteCardRecord[] = [];
   // Runtime-only query state is view-owned and intentionally excluded from persisted settings.
   private searchQuery = "";
-  private searchOrderedPaths: string[] | null = null;
+  private searchExecution: SearchQueryExecutionState = "indexed-unavailable";
+  private searchOrderedPaths: string[] | undefined = undefined;
   private searchStatus: SearchStatus = "idle";
   private selectedPath: string | null = null;
   private bulkMode = false;
@@ -526,6 +528,9 @@ export class FolderCardView extends ItemView {
       state.generation = this.generation;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
+      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
+      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
+      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();
@@ -839,7 +844,8 @@ export class FolderCardView extends ItemView {
     this.selectedPaths = new Set<string>();
     this.bulkAnchorPath = null;
     this.searchQuery = "";
-    this.searchOrderedPaths = null;
+    this.searchExecution = "indexed-unavailable";
+    this.searchOrderedPaths = undefined;
     this.searchStatus = "idle";
     this.searchRequestSeq += 1;
     this.searchSnapshotSeq += 1;
@@ -883,7 +889,8 @@ export class FolderCardView extends ItemView {
     this.searchRequestSeq += 1;
 
     if (this.searchQuery.trim().length === 0) {
-      this.searchOrderedPaths = null;
+      this.searchExecution = this.derivePendingSearchExecution();
+      this.searchOrderedPaths = undefined;
       this.searchStatus = this.deriveSearchStatus();
       if (pushState) {
         this.pushState();
@@ -891,7 +898,8 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    this.searchOrderedPaths = null;
+    this.searchExecution = this.derivePendingSearchExecution();
+    this.searchOrderedPaths = undefined;
     this.searchStatus = this.deriveSearchStatus();
 
     if (pushState) {
@@ -1330,7 +1338,8 @@ export class FolderCardView extends ItemView {
     this.loading = true;
     this.generation += 1;
     this.pendingHydration.clear();
-    this.searchOrderedPaths = null;
+    this.searchExecution = this.derivePendingSearchExecution();
+    this.searchOrderedPaths = undefined;
     this.clearSearchDebounce();
     this.searchRequestSeq += 1;
     this.searchStatus = this.deriveSearchStatus();
@@ -1942,14 +1951,26 @@ export class FolderCardView extends ItemView {
     const context: PipelineContext = {
       app: this.app,
       settings,
-      search: {
-        query: this.searchQuery,
-        orderedPaths: this.searchOrderedPaths,
-      },
+      search: this.buildPipelineSearchInput(),
       pinnedPaths: settings.pinnedPaths,
     };
 
     return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
+  }
+
+  private buildPipelineSearchInput(): PipelineSearchInput {
+    if (this.searchExecution !== "indexed-ready") {
+      return {
+        query: this.searchQuery,
+        execution: this.searchExecution,
+      };
+    }
+
+    return {
+      query: this.searchQuery,
+      execution: this.searchExecution,
+      orderedPaths: this.searchOrderedPaths ?? [],
+    };
   }
 
   private getSearchStatus(): SearchStatus {
@@ -1980,13 +2001,17 @@ export class FolderCardView extends ItemView {
       return this.deriveEmptyQuerySearchStatus();
     }
 
+    return this.deriveIndexedSearchStatus(false);
+  }
+
+  private deriveIndexedSearchStatus(emptyQuery: boolean): SearchStatus {
     const snapshot = this.searchSnapshot;
     if (!snapshot) {
-      return "fallback";
+      return emptyQuery ? "idle" : "unavailable";
     }
 
-    if (snapshot.mode === "no-index") {
-      return "fallback";
+    if (!snapshot.initialized || snapshot.disposed) {
+      return emptyQuery ? "idle" : "unavailable";
     }
 
     if (snapshot.status === "error") {
@@ -1994,23 +2019,20 @@ export class FolderCardView extends ItemView {
     }
 
     if (snapshot.status === "building") {
-      return "building";
-    }
+      if (snapshot.health.outcome === "rebuild-required") {
+        return this.isStorageUnavailable(snapshot)
+          ? "storage-unavailable"
+          : "rebuild-required";
+      }
 
-    if (this.searchOrderedPaths === null) {
-      return "fallback";
+      return "building";
     }
 
     return "ready";
   }
 
   private deriveEmptyQuerySearchStatus(): SearchStatus {
-    const snapshot = this.searchSnapshot;
-    if (!snapshot || snapshot.mode === "no-index") {
-      return "idle";
-    }
-
-    return snapshot.status;
+    return this.deriveIndexedSearchStatus(true);
   }
 
   private onSearchQueryChange(detail: { query?: unknown }): void {
@@ -2020,7 +2042,8 @@ export class FolderCardView extends ItemView {
     }
 
     this.searchQuery = nextQuery;
-    this.searchOrderedPaths = null;
+    this.searchExecution = this.derivePendingSearchExecution();
+    this.searchOrderedPaths = undefined;
     this.searchRequestSeq += 1;
     this.searchStatus = this.deriveSearchStatus();
     this.pushState();
@@ -2037,14 +2060,15 @@ export class FolderCardView extends ItemView {
     this.clearSearchDebounce();
     this.searchRequestSeq += 1;
 
-    if (this.searchQuery.length === 0 && this.searchOrderedPaths === null) {
+    if (this.searchQuery.length === 0 && this.searchOrderedPaths === undefined) {
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
     }
 
     this.searchQuery = "";
-    this.searchOrderedPaths = null;
+    this.searchExecution = this.derivePendingSearchExecution();
+    this.searchOrderedPaths = undefined;
     this.searchStatus = this.deriveSearchStatus();
     this.pushState();
   }
@@ -2052,7 +2076,8 @@ export class FolderCardView extends ItemView {
   private async refreshSearchProjection(): Promise<void> {
     const query = this.searchQuery.trim();
     if (query.length === 0) {
-      this.searchOrderedPaths = null;
+      this.searchExecution = this.derivePendingSearchExecution();
+      this.searchOrderedPaths = undefined;
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
@@ -2060,7 +2085,8 @@ export class FolderCardView extends ItemView {
 
     const service = this.plugin.getSearchService();
     if (!service) {
-      this.searchOrderedPaths = null;
+      this.searchExecution = this.derivePendingSearchExecution();
+      this.searchOrderedPaths = undefined;
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
@@ -2086,7 +2112,10 @@ export class FolderCardView extends ItemView {
         return;
       }
 
-      this.searchOrderedPaths = result.orderedPaths;
+      this.searchExecution = result.execution;
+      this.searchOrderedPaths = result.execution === "indexed-ready"
+        ? (result.orderedPaths ?? [])
+        : undefined;
       this.searchStatus = this.toRuntimeSearchStatus(result);
       this.pushState();
     } catch {
@@ -2094,7 +2123,8 @@ export class FolderCardView extends ItemView {
         return;
       }
 
-      this.searchOrderedPaths = null;
+      this.searchExecution = this.derivePendingSearchExecution();
+      this.searchOrderedPaths = undefined;
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
     }
@@ -2127,23 +2157,51 @@ export class FolderCardView extends ItemView {
   }
 
   private toRuntimeSearchStatus(result: SearchQueryResult): SearchStatus {
-    if (result.mode === "no-index") {
-      return "fallback";
+    switch (result.execution) {
+      case "indexed-ready":
+        return "ready";
+      case "indexed-building":
+        return "building";
+      case "indexed-rebuild-required":
+        return "rebuild-required";
+      case "indexed-storage-unavailable":
+        return "storage-unavailable";
+      case "indexed-error":
+        return "error";
+      case "indexed-unavailable":
+      default:
+        return "unavailable";
+    }
+  }
+
+  private derivePendingSearchExecution(): SearchQueryExecutionState {
+    const snapshot = this.searchSnapshot;
+    if (!snapshot || !snapshot.initialized || snapshot.disposed) {
+      return "indexed-unavailable";
     }
 
-    if (result.status === "building") {
-      return "building";
+    if (snapshot.status === "error") {
+      return "indexed-error";
     }
 
-    if (result.status === "error") {
-      return "error";
+    if (snapshot.status === "building") {
+      if (snapshot.health.outcome === "rebuild-required") {
+        return this.isStorageUnavailable(snapshot)
+          ? "indexed-storage-unavailable"
+          : "indexed-rebuild-required";
+      }
+
+      return "indexed-building";
     }
 
-    if (result.orderedPaths === null) {
-      return "fallback";
-    }
+    return "indexed-unavailable";
+  }
 
-    return "ready";
+  private isStorageUnavailable(snapshot: SearchServiceSnapshot): boolean {
+    return (
+      snapshot.health.persistence === "storage-unavailable"
+      || snapshot.health.rebuildReason === "storage-unavailable"
+    );
   }
 
   private getOrderedVisiblePaths(): string[] {
@@ -2537,6 +2595,9 @@ export class FolderCardView extends ItemView {
       generation: this.generation,
       searchQuery: this.searchQuery,
       searchStatus: this.getSearchStatus(),
+      searchIndexReadiness: this.searchSnapshot?.health?.readiness,
+      searchIndexPersistence: this.searchSnapshot?.health?.persistence,
+      searchIndexRebuildReason: this.searchSnapshot?.health?.rebuildReason ?? null,
       sortField: settings.sort.field,
       sortDirection: settings.sort.direction,
       availableTags: this.deriveAvailableTags(),
@@ -2574,6 +2635,9 @@ export class FolderCardView extends ItemView {
       state.generation = this.generation;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
+      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
+      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
+      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.activeFilterTags = settings.filter.tags;
@@ -2609,6 +2673,9 @@ export class FolderCardView extends ItemView {
       state.generation = this.generation;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
+      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
+      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
+      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();

@@ -1,0 +1,20 @@
+Task 9 evidence: indexed-ready zero results are distinct from blocked search states
+
+Updated tests:
+- src/search/IndexedSearchService.test.ts
+- src/view/pipeline.test.ts
+
+Validated behavior:
+- IndexedSearchService returns { execution: "indexed-ready", orderedPaths: [] } when a ready query has no matches.
+- applySearchFilter() projects [] both for ready-zero and blocked states, but the state is distinguished by execution metadata:
+  - ready-zero => execution "indexed-ready" with orderedPaths: []
+  - blocked/unavailable => non-ready execution with orderedPaths undefined
+
+Focused verification:
+- npx vitest run src/view/pipeline.test.ts -t "zero results"
+
+Target verification:
+- npx vitest run src/search/IndexedSearchService.test.ts src/view/pipeline.test.ts
+
+Result:
+- Passed locally on 2026-05-08.

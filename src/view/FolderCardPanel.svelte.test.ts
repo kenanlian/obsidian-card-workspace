@@ -214,20 +214,58 @@ describe("FolderCardPanel.svelte", () => {
       state.searchQuery = "  query  ";
       state.activeFilterTags = ["tag-a"];
       state.cards = [];
-      state.emptyStateMessage = 'No results for “query” in current folder and tag scope.';
+      state.emptyStateMessage = "No results for “query” in current folder and tag scope.";
       state.generation = 1;
     });
     await tick();
 
-    expect(target.textContent).toContain('No results for “query” in current folder and tag scope.');
+    expect(target.textContent).toContain("No results for “query” in current folder and tag scope.");
 
     panelModel.mutate((state) => {
       state.isAllNotesScope = true;
-      state.emptyStateMessage = 'No results for “query” in current tag scope.';
+      state.emptyStateMessage = "No results for “query” in current tag scope.";
     });
     await tick();
 
-    expect(target.textContent).toContain('No results for “query” in current tag scope.');
+    expect(target.textContent).toContain("No results for “query” in current tag scope.");
+
+    await unmount(component);
+  });
+
+  it("renders search blocked state explicitly with index status", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+      },
+    });
+
+    await tick();
+    panelModel.mutate((state) => {
+      state.searchQuery = "blocked query";
+      state.searchStatus = "building";
+      state.searchIndexReadiness = "restoring";
+      state.cards = [];
+      state.emptyStateMessage = "This should not be shown";
+      state.generation = 1;
+    });
+    await tick();
+
+    expect(target.textContent).toContain("Search is currently blocked");
+    expect(target.textContent).toContain("Index status: Restoring index");
+    expect(target.textContent).not.toContain("This should not be shown");
+
+    panelModel.mutate((state) => {
+      state.searchStatus = "rebuild-required";
+      state.searchIndexRebuildReason = "corrupt";
+    });
+    await tick();
+
+    expect(target.textContent).toContain("Index status: Rebuild required (corrupted)");
 
     await unmount(component);
   });

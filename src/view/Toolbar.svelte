@@ -43,6 +43,9 @@
     includeSubfolders?: boolean;
     searchQuery?: string;
     searchStatus?: SearchStatus;
+    searchIndexReadiness?: import("./types").SearchIndexReadinessState;
+    searchIndexPersistence?: import("./types").SearchIndexPersistenceHealth;
+    searchIndexRebuildReason?: import("./types").SearchIndexRebuildReason | null;
     isAllNotesScope?: boolean;
     bulkMode?: boolean;
     selectedCount?: number;
@@ -73,13 +76,41 @@
 
   type SortMenuOption = SortOption | SortSeparatorOption;
 
-  const SEARCH_STATUS_LABELS: Record<SearchStatus, string> = {
-    idle: "Search idle",
-    building: "Building index",
-    ready: "Index ready",
-    fallback: "Fallback search",
-    error: "Search error",
-  };
+  function getSearchStatusLabel(
+    status: SearchStatus,
+    readiness: string,
+    persistence: string,
+    rebuildReason: string | null,
+  ): string {
+    if (status === "building") {
+      return readiness === "restoring" ? "Restoring index" : "Building index";
+    }
+
+    if (status === "rebuild-required") {
+      if (rebuildReason === "version-drift") return "Rebuild required (version drift)";
+      if (rebuildReason === "corrupt") return "Rebuild required (corrupted)";
+      if (rebuildReason === "folder-rebuild-required") return "Rebuild required (folder changed)";
+      return "Rebuild required";
+    }
+
+    if (status === "storage-unavailable" || persistence === "storage-unavailable") {
+      return "Search storage unavailable";
+    }
+
+    if (status === "error") {
+      return "Search error";
+    }
+
+    if (status === "unavailable") {
+      return "Search unavailable";
+    }
+
+    if (status === "ready") {
+      return "Index ready";
+    }
+
+    return "Search idle";
+  }
 
   interface ToolbarActionOption {
     id: string;
@@ -99,6 +130,9 @@
     includeSubfolders = true,
     searchQuery = "",
     searchStatus = "idle",
+    searchIndexReadiness = "ready",
+    searchIndexPersistence = "healthy",
+    searchIndexRebuildReason = null,
     isAllNotesScope = false,
     bulkMode = false,
     selectedCount = 0,
@@ -175,8 +209,17 @@
   const hasTagFilter = $derived(localActiveFilterTags.length > 0);
   const tagSummary = $derived(`Tag filter: ${localActiveFilterTags.length} active`);
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
-  const showSearchStatus = $derived(searchStatus === "building" || searchStatus === "fallback" || searchStatus === "error");
-  const searchStatusLabel = $derived(SEARCH_STATUS_LABELS[searchStatus]);
+  const showSearchStatus = $derived(
+    searchStatus === "building"
+    || searchStatus === "rebuild-required"
+    || searchStatus === "storage-unavailable"
+    || searchStatus === "unavailable"
+    || searchStatus === "error"
+    || searchIndexPersistence === "storage-unavailable"
+  );
+  const searchStatusLabel = $derived(
+    getSearchStatusLabel(searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
+  );
   const hasSummary = $derived(hasTagFilter || showSearchStatus);
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {

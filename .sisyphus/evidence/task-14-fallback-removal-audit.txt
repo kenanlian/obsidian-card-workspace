@@ -1,0 +1,49 @@
+Task 14 fallback-removal audit
+Date: 2026-05-08
+
+Scope
+- Audit production source, tests, and docs for fallback-search remnants.
+- Confirm no live runtime fallback search path remains.
+- Confirm docs/tests/implementation align with indexed-only behavior.
+
+Repository sweep summary
+- `src/search/NoIndexSearchService.ts`: not present (confirmed deleted).
+- Production `src/` search for `fallback`: only unrelated generic variables/usages remained:
+  - `src/view/row-projection.ts` uses `fallbackIndex` for row anchoring math, not search.
+- Production `src/` search/status surfaces:
+  - `src/main.ts` commands and notices are index-lifecycle focused (`status`, `recover`, `rebuild`, `clear/reset`).
+  - `src/view/Toolbar.svelte` / `src/view/FolderCardPanel.svelte` use blocked/indexing/restoring/rebuild/storage-unavailable/ready labels; no runtime fallback-search label found.
+- Production search contract/runtime behavior reviewed:
+  - `src/search/IndexedSearchService.ts` returns blocked indexed execution states when not ready; no local candidate fallback filtering.
+  - `src/view/pipeline.ts` blocks non-empty non-ready queries by returning `[]`; only `indexed-ready` consumes `orderedPaths`.
+  - `orderedPaths: null` was not found in production source.
+
+Docs/tests classification
+- Historical/retired and acceptable after classification:
+  - `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
+  - `docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md`
+  These mention fallback/`orderedPaths: null`/`NoIndexSearchService` explicitly as retired prior behavior.
+- Unrelated acceptable uses of the word `fallback`:
+  - `docs/architecture.md`, `docs/START_HERE.md`, `docs/decisions/2026-04-25-constrain-card-note-opens-to-main-editor-surfaces.md`
+  These describe recent-root leaf fallback for note opening, not search fallback.
+- Ambiguous doc remnant found and fixed:
+  - `docs/plan/v1-development-plan.md` contained raw active-sounding fallback-search planning text without an upfront retired/superseded warning.
+  - Fix: added explicit CAUTION/NOTE framing that Phase 3 fallback-search content is historical only and current behavior is indexed-only blocked search.
+- Doc consistency fix:
+  - `docs/architecture.md` search flow step 4 previously described ready indexed results as Markdown-only, which under-described current product behavior.
+  - Fix: clarified that indexed `orderedPaths` come from Markdown title+content matching and supported non-Markdown title/basename-only matching.
+
+Alignment conclusions
+- No production fallback search implementation remains.
+- No production imports/references to `NoIndexSearchService` remain.
+- No production `orderedPaths: null` trigger remains.
+- Non-empty unavailable searches are blocked explicit index-status states.
+- Empty/whitespace query browsing remains unaffected.
+- Markdown searchable fields remain title + content; supported non-Markdown files remain title-only.
+- Path tokens are not documented as supported search inputs.
+- Local-only status/rebuild/clear command surface remains aligned with implementation.
+
+Verification
+- `npm run check` => exit 0
+- `npm run build` => exit 0 (with known non-fatal existing `src/view/Toolbar.svelte` a11y warnings)
+- `npm test` => exit 0

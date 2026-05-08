@@ -87,6 +87,7 @@
 
   const EMPTY_PANEL_STATE: PanelModelState = {
     cards: [],
+    emptyStateMessage: "",
     folderPath: "",
     selectedPath: null,
     loading: false,
@@ -166,6 +167,43 @@
   const availableTags = $derived(panelState.availableTags);
   const activeFilterTags = $derived(panelState.activeFilterTags);
   const pinnedPaths = $derived(panelState.pinnedPaths);
+
+  function isBlockedSearchState(state: PanelModelState): boolean {
+    return (
+      state.searchQuery.trim().length > 0 &&
+      state.searchStatus !== "idle" &&
+      state.searchStatus !== "ready"
+    );
+  }
+
+  function getBlockedSearchLabel(state: PanelModelState): string {
+    const status = state.searchStatus;
+    const readiness = state.searchIndexReadiness ?? "ready";
+    const persistence = state.searchIndexPersistence ?? "healthy";
+    const rebuildReason = state.searchIndexRebuildReason ?? null;
+
+    if (status === "building") {
+      return readiness === "restoring" ? "Restoring index" : "Building index";
+    }
+
+    if (status === "rebuild-required") {
+      if (rebuildReason === "version-drift") return "Rebuild required (version drift)";
+      if (rebuildReason === "corrupt") return "Rebuild required (corrupted)";
+      if (rebuildReason === "folder-rebuild-required") return "Rebuild required (folder changed)";
+      return "Rebuild required";
+    }
+
+    if (status === "storage-unavailable" || persistence === "storage-unavailable") {
+      return "Search storage unavailable";
+    }
+
+    if (status === "error") {
+      return "Search error";
+    }
+
+    return "Search unavailable";
+  }
+
   const previewLines = $derived(panelState.previewLines);
   const folderTree = $derived(panelState.folderTree);
   const includeSubfolders = $derived(panelState.includeSubfolders);
@@ -320,9 +358,9 @@
     rowPositions = nextRowPositions;
   }
 
-  function readNumber(value: string, fallbackValue: number): number {
+  function readNumber(value: string, defaultValue: number): number {
     const parsedValue = Number.parseFloat(value);
-    return Number.isFinite(parsedValue) ? parsedValue : fallbackValue;
+    return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
   }
 
   function syncViewportMetrics(node: HTMLDivElement): void {
@@ -520,6 +558,9 @@
     {includeSubfolders}
     {searchQuery}
     {searchStatus}
+    searchIndexReadiness={panelState.searchIndexReadiness ?? "ready"}
+    searchIndexPersistence={panelState.searchIndexPersistence ?? "healthy"}
+    searchIndexRebuildReason={panelState.searchIndexRebuildReason ?? null}
     {isAllNotesScope}
     {tooltipSide}
     {bulkMode}
@@ -549,7 +590,14 @@
     {#if loading}
       <div class="fce-empty">Loading folder cards...</div>
   {:else if cards.length === 0}
-<div class="fce-empty">{emptyStateMessage}</div>
+    {#if isBlockedSearchState(panelState)}
+      <div class="fce-empty fce-search-blocked">
+        <div class="fce-search-blocked-title">Search is currently blocked</div>
+        <div class="fce-search-blocked-status">Index status: {getBlockedSearchLabel(panelState)}</div>
+      </div>
+    {:else}
+      <div class="fce-empty">{emptyStateMessage}</div>
+    {/if}
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
       {#each visibleRows as row (row.key)}

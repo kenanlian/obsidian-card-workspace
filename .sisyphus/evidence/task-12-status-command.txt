@@ -1,0 +1,4 @@
+Task 12 status command evidence
+- Command label updated to 'Show Card Workspace local search index lifecycle status'.
+- Notice output remains local-only and now reports lifecycle wording with status, query availability, readiness, persistence, document count, last outcome, last restore/build, rebuild reason, and last error.
+- Verified by src/main.test.ts status notice assertion plus npm run check/build/test on 2026-05-08.

@@ -1,0 +1,5 @@
+Task 8 first-run evidence
+=========================
+- Healthy persisted restore no longer performs document-source sync during `onload()`.
+- First-run/missing-index rebuild still waits for `workspace.onLayoutReady()` before rebuild work and vault observer registration.
+- Verification: `npx vitest run src/main.test.ts src/search/SearchIndexManager.test.ts src/search/IndexStore.test.ts` and `npm run check`.

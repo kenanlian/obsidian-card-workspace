@@ -1,0 +1,12 @@
+7:26:23 PM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-card-workspace - using default configuration.
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Secret-Projects/obsidian-card-workspace[39m
+
+ [32m✓[39m [30m[43m node [49m[39m src/search/IndexStore.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m6 skipped[39m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/SearchIndexManager.test.ts [2m([22m[2m13 tests[22m[2m | [22m[33m9 skipped[39m[2m)[22m[32m 13[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m7 passed[39m[22m[2m | [22m[33m15 skipped[39m[90m (22)[39m
+[2m   Start at [22m 19:26:23
+[2m   Duration [22m 378ms[2m (transform 244ms, setup 0ms, import 310ms, tests 18ms, environment 0ms)[22m
+

@@ -12,7 +12,6 @@ import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
 import {
   IndexedSearchService,
   IndexStore,
-  NoIndexSearchService,
   SearchIndexManager,
   prepareSearchableDocument,
 } from "./search";
@@ -20,6 +19,7 @@ import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
   IndexStoreNamespaceMetadata,
+  SearchIndexObservabilitySnapshot,
   SearchService,
   SearchServiceSnapshot,
   SearchVaultMutation,
@@ -32,8 +32,6 @@ import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent,
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
 const SEARCH_TOKENIZER_VERSION = "lowercase-v1";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
-const UNSAFE_MUTATION_REBUILD_DETAIL = "Folder rename cannot be safely rewritten; full rebuild required.";
-
 type SearchRecoveryBoundaryState = "healthy" | "degraded";
 
 type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
@@ -49,7 +47,15 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private searchSnapshot: SearchServiceSnapshot | null = null;
   private readonly searchSnapshotListeners = new Set<SearchSnapshotListener>();
   private searchRecoveryBoundaryState: SearchRecoveryBoundaryState = "healthy";
+  private layoutReady = false;
+  private vaultObserversRegistered = false;
   private shouldRunStartupSearchRebuild = false;
+  private pendingStartupSearchRebuildDetail: string | null = null;
+  private shouldSyncRestoredSearchState = false;
+  private pendingRestoredSearchStateSync: Promise<void> | null = null;
+  private pendingSearchRebuild: Promise<void> | null = null;
+  private pendingSearchRecovery: Promise<void> | null = null;
+  private pendingSearchClearReset: Promise<void> | null = null;
   private pendingMutationRecoveryRebuild: Promise<void> | null = null;
   private debouncedRefresh = debounce(
     () => {
@@ -93,13 +99,11 @@ export default class FolderCardExplorerPlugin extends Plugin {
     );
 
     this.app.workspace.onLayoutReady(() => {
+      this.layoutReady = true;
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection(activeFile?.path ?? null);
-      if (this.shouldRunStartupSearchRebuild) {
-        this.shouldRunStartupSearchRebuild = false;
-        void this.rebuildSearchIndex("Startup restore required full search rebuild.");
-      }
+      this.flushDeferredSearchStartupWork();
       void this.restoreLastSession();
     });
   }
@@ -325,6 +329,19 @@ export default class FolderCardExplorerPlugin extends Plugin {
     return this.cloneSearchSnapshot(this.searchSnapshot);
   }
 
+  getSearchIndexObservabilitySnapshot(): SearchIndexObservabilitySnapshot | null {
+    if (!this.searchSnapshot) {
+      return null;
+    }
+
+    const snapshot = this.cloneSearchSnapshot(this.searchSnapshot);
+    return {
+      status: snapshot.status,
+      queriesAllowed: this.areSearchQueriesAllowed(snapshot),
+      health: snapshot.health,
+    };
+  }
+
   subscribeSearchSnapshots(listener: SearchSnapshotListener): () => void {
     this.searchSnapshotListeners.add(listener);
     if (this.searchSnapshot) {
@@ -438,23 +455,44 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   private registerSearchCommands(): void {
     this.addCommand({
-      id: "rebuild-folder-card-search-index",
-      name: "Rebuild Card Workspace search index",
+      id: "show-folder-card-search-index-status",
+      name: "Show Card Workspace local search index lifecycle status",
       callback: () => {
-        void this.rebuildSearchIndex("Manual rebuild command requested.");
+        this.showSearchIndexStatus();
       },
     });
 
     this.addCommand({
       id: "recover-folder-card-search-index",
-      name: "Recover Card Workspace search index",
+      name: "Recover Card Workspace local search index lifecycle",
       callback: () => {
-        void this.recoverSearchIndex();
+        void this.recoverSearchIndex("Manual recover command requested full local search index rebuild.");
+      },
+    });
+
+    this.addCommand({
+      id: "rebuild-folder-card-search-index",
+      name: "Rebuild Card Workspace local search index from notes",
+      callback: () => {
+        void this.rebuildSearchIndex("Manual rebuild command requested local search index rebuild.");
+      },
+    });
+
+    this.addCommand({
+      id: "clear-reset-folder-card-search-index",
+      name: "Clear and reset Card Workspace local search index state",
+      callback: () => {
+        void this.clearAndResetSearchIndex();
       },
     });
   }
 
   private registerVaultObservers(): void {
+    if (this.vaultObserversRegistered) {
+      return;
+    }
+
+    this.vaultObserversRegistered = true;
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         this.dispatchVaultMutation(this.buildVaultMutationEvent("create", file, null));
@@ -491,14 +529,16 @@ export default class FolderCardExplorerPlugin extends Plugin {
       await indexed.service.initialize();
       const restoreResult = await indexed.manager.restore(this.createSearchMetadata(indexed.store.vaultNamespace));
       if (restoreResult.outcome === "rebuild-required") {
-        this.shouldRunStartupSearchRebuild = true;
+        this.queueStartupSearchRebuild("Startup restore required full search rebuild.");
+      } else {
+        this.scheduleRestoredSearchStateSync();
       }
     } catch (error) {
-      console.warn("[Card Workspace] Indexed search initialization failed; using fallback search.", error);
-      this.bindSearchService(new NoIndexSearchService());
-      await this.searchService?.initialize();
-      this.searchManager = null;
+      console.warn("[Card Workspace] Indexed search initialization failed.", error);
+      indexed.manager.markInitializationFailure(error);
       this.shouldRunStartupSearchRebuild = false;
+      this.pendingStartupSearchRebuildDetail = null;
+      this.shouldSyncRestoredSearchState = false;
     }
   }
 
@@ -518,6 +558,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.searchService = null;
     this.searchManager = null;
     this.searchSnapshot = null;
+    this.pendingSearchClearReset = null;
+    this.pendingSearchRebuild = null;
+    this.pendingSearchRecovery = null;
+    this.pendingRestoredSearchStateSync = null;
   }
 
   private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
@@ -549,27 +593,22 @@ export default class FolderCardExplorerPlugin extends Plugin {
       store,
       documentSource: {
         readAllDocuments: async () => {
-          const getMarkdownFiles = (this.app.vault as { getMarkdownFiles?: () => TFile[] }).getMarkdownFiles;
-          if (typeof getMarkdownFiles !== "function") {
+          const getFiles = (this.app.vault as { getFiles?: () => TAbstractFile[] }).getFiles;
+          if (typeof getFiles !== "function") {
             return [];
           }
 
-          const files = getMarkdownFiles.call(this.app.vault);
-          const searchableFiles = files.filter((file) => {
-            const fileKind = resolveCardFileKind(file);
-            return fileKind !== null && isMarkdownCardKind(fileKind);
-          });
-          const documents = await Promise.all(searchableFiles.map((file) => this.prepareSearchableDocumentFromFile(file)));
+          const files = getFiles.call(this.app.vault);
+          const documents = await Promise.all(
+            files
+              .filter((file): file is TFile => file instanceof TFile)
+              .map((file) => this.prepareSearchableDocumentFromFile(file)),
+          );
           return documents.filter((document): document is NonNullable<typeof document> => document !== null);
         },
         readDocument: async (path) => {
           const target = this.app.vault.getAbstractFileByPath(path);
           if (!(target instanceof TFile)) {
-            return null;
-          }
-
-          const fileKind = resolveCardFileKind(target);
-          if (fileKind === null || !isMarkdownCardKind(fileKind)) {
             return null;
           }
           return this.prepareSearchableDocumentFromFile(target);
@@ -589,16 +628,27 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async prepareSearchableDocumentFromFile(file: TFile) {
-    const cachedRead = (this.app.vault as { cachedRead?: (target: TFile) => Promise<string> }).cachedRead;
-    if (typeof cachedRead !== "function") {
-      return null;
-    }
-
     try {
+      const fileKind = resolveCardFileKind(file);
+      const title = file.basename;
+      if (fileKind === null || !isMarkdownCardKind(fileKind)) {
+        return prepareSearchableDocument({
+          path: file.path,
+          title,
+          mtime: file.stat.mtime,
+          ctime: file.stat.ctime,
+        });
+      }
+
+      const cachedRead = (this.app.vault as { cachedRead?: (target: TFile) => Promise<string> }).cachedRead;
+      if (typeof cachedRead !== "function") {
+        return null;
+      }
+
       const markdown = await cachedRead.call(this.app.vault, file);
       return prepareSearchableDocument({
         path: file.path,
-        title: file.basename,
+        title,
         markdown,
         mtime: file.stat.mtime,
         ctime: file.stat.ctime,
@@ -696,8 +746,67 @@ export default class FolderCardExplorerPlugin extends Plugin {
       ...snapshot,
       health: {
         ...snapshot.health,
+        lastSuccessfulRestore: snapshot.health.lastSuccessfulRestore
+          ? {
+              ...snapshot.health.lastSuccessfulRestore,
+            }
+          : null,
+        lastSuccessfulBuild: snapshot.health.lastSuccessfulBuild
+          ? {
+              ...snapshot.health.lastSuccessfulBuild,
+            }
+          : null,
       },
     };
+  }
+
+  private showSearchIndexStatus(): void {
+    const snapshot = this.getSearchIndexObservabilitySnapshot();
+    if (!snapshot) {
+      new Notice("Card Workspace local search index lifecycle is not initialized yet.");
+      return;
+    }
+
+    new Notice(this.formatSearchIndexStatus(snapshot));
+  }
+
+  private areSearchQueriesAllowed(snapshot: SearchServiceSnapshot): boolean {
+    return (
+      snapshot.initialized &&
+      !snapshot.disposed &&
+      snapshot.mode === "indexed" &&
+      snapshot.status === "ready" &&
+      snapshot.health.readiness === "ready" &&
+      snapshot.health.healthy &&
+      !snapshot.health.rebuildRequired
+    );
+  }
+
+  private formatSearchIndexStatus(snapshot: SearchIndexObservabilitySnapshot): string {
+    const { health } = snapshot;
+    return [
+      "Card Workspace local search index lifecycle",
+      `Status: ${snapshot.status}`,
+      `Query availability: ${snapshot.queriesAllowed ? "available" : "blocked"}`,
+      `Readiness: ${health.readiness}`,
+      `Persistence: ${health.persistence}`,
+      `Documents: ${health.documentCount === null ? "unknown" : String(health.documentCount)}`,
+      `Last outcome: ${health.outcome}`,
+      `Last restore: ${this.formatSearchIndexSuccess(health.lastSuccessfulRestore)}`,
+      `Last build: ${this.formatSearchIndexSuccess(health.lastSuccessfulBuild)}`,
+      `Rebuild reason: ${health.rebuildReason ?? "none"}`,
+      `Last error: ${health.lastError ?? "none"}`,
+    ].join("\n");
+  }
+
+  private formatSearchIndexSuccess(
+    snapshot: SearchIndexObservabilitySnapshot["health"]["lastSuccessfulRestore"],
+  ): string {
+    if (!snapshot) {
+      return "none";
+    }
+
+    return `${snapshot.outcome} at ${snapshot.at} (${snapshot.documentCount} docs)`;
   }
 
   private shouldRunMutationRecoveryRebuild(snapshot: SearchServiceSnapshot): boolean {
@@ -706,7 +815,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       snapshot.mode === "indexed" &&
       snapshot.status === "building" &&
       snapshot.health.outcome === "rebuild-required" &&
-      snapshot.health.detail === UNSAFE_MUTATION_REBUILD_DETAIL
+      snapshot.health.rebuildReason === "folder-rebuild-required"
     );
   }
 
@@ -727,21 +836,93 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async rebuildSearchIndex(detail: string): Promise<void> {
+    if (this.pendingSearchRebuild) {
+      return this.pendingSearchRebuild;
+    }
+
     if (!this.searchManager) {
-      await this.recoverSearchIndex();
+      await this.recoverSearchIndex(detail);
       return;
     }
 
-    await this.searchManager.rebuildFromSource(detail);
+    if (!this.layoutReady) {
+      this.queueStartupSearchRebuild(detail);
+      return;
+    }
+
+    const manager = this.searchManager;
+    this.pendingSearchRebuild = manager.rebuildFromSource(detail).finally(() => {
+      if (this.searchManager === manager) {
+        this.pendingSearchRebuild = null;
+      }
+    });
+    await this.pendingSearchRebuild;
   }
 
-  private async recoverSearchIndex(): Promise<void> {
+  private async clearAndResetSearchIndex(): Promise<void> {
+    if (this.pendingSearchClearReset) {
+      return this.pendingSearchClearReset;
+    }
+
+    this.pendingSearchClearReset = this.runClearAndResetSearchIndex().finally(() => {
+      this.pendingSearchClearReset = null;
+    });
+    return this.pendingSearchClearReset;
+  }
+
+  private async runClearAndResetSearchIndex(): Promise<void> {
     if (!this.searchManager) {
       await this.initializeSearchService();
-      if (this.shouldRunStartupSearchRebuild) {
-        this.shouldRunStartupSearchRebuild = false;
-        void this.rebuildSearchIndex("Recovery command requested full search rebuild.");
+    }
+
+    if (!this.searchManager) {
+      new Notice("Card Workspace local search index is unavailable.");
+      return;
+    }
+
+    const clearResult = await this.searchManager.clearAndReset(
+      "Manual clear/reset command requested local search index reset.",
+    );
+    if (clearResult.outcome === "failed") {
+      new Notice("Card Workspace local search index reset failed.");
+      return;
+    }
+
+    new Notice("Card Workspace local search index cleared. Rebuilding from notes...");
+    await this.rebuildSearchIndex("Manual clear/reset command requested full local search index rebuild.");
+  }
+
+  private async recoverSearchIndex(
+    rebuildDetail = "Recovery command requested full search rebuild.",
+  ): Promise<void> {
+    if (this.pendingSearchRecovery) {
+      return this.pendingSearchRecovery;
+    }
+
+    this.pendingSearchRecovery = this.runRecoverSearchIndex(rebuildDetail).finally(() => {
+      this.pendingSearchRecovery = null;
+    });
+    return this.pendingSearchRecovery;
+  }
+
+  private async runRecoverSearchIndex(rebuildDetail: string): Promise<void> {
+    if (!this.searchManager) {
+      await this.initializeSearchService();
+      if (!this.searchManager) {
+        new Notice("Card Workspace local search index is unavailable.");
+        return;
       }
+
+      if (this.shouldRunStartupSearchRebuild) {
+        await this.rebuildSearchIndex(this.consumeStartupSearchRebuildDetail(rebuildDetail));
+        return;
+      }
+
+      this.scheduleRestoredSearchStateSync();
+      return;
+    }
+
+    if (!this.layoutReady && this.shouldRunStartupSearchRebuild) {
       return;
     }
 
@@ -749,8 +930,71 @@ export default class FolderCardExplorerPlugin extends Plugin {
       this.createSearchMetadata(this.resolveVaultNamespace()),
     );
     if (result.outcome === "rebuild-required") {
-      void this.rebuildSearchIndex("Recovery command requested full search rebuild.");
+      await this.rebuildSearchIndex(rebuildDetail);
+      return;
     }
+
+    this.scheduleRestoredSearchStateSync();
+  }
+
+  private queueStartupSearchRebuild(detail: string): void {
+    this.shouldRunStartupSearchRebuild = true;
+    this.pendingStartupSearchRebuildDetail = detail;
+  }
+
+  private consumeStartupSearchRebuildDetail(defaultDetail: string): string {
+    const detail = this.pendingStartupSearchRebuildDetail ?? defaultDetail;
+    this.shouldRunStartupSearchRebuild = false;
+    this.pendingStartupSearchRebuildDetail = null;
+    return detail;
+  }
+
+  private flushDeferredSearchStartupWork(): void {
+    if (this.shouldRunStartupSearchRebuild) {
+      void this.rebuildSearchIndex(
+        this.consumeStartupSearchRebuildDetail("Startup restore required full search rebuild."),
+      );
+    }
+
+    if (this.shouldSyncRestoredSearchState) {
+      this.shouldSyncRestoredSearchState = false;
+      void this.syncRestoredSearchState();
+    }
+  }
+
+  private scheduleRestoredSearchStateSync(): void {
+    if (!this.searchManager) {
+      return;
+    }
+
+    if (!this.layoutReady) {
+      this.shouldSyncRestoredSearchState = true;
+      return;
+    }
+
+    void this.syncRestoredSearchState();
+  }
+
+  private async syncRestoredSearchState(): Promise<void> {
+    if (this.pendingRestoredSearchStateSync) {
+      return this.pendingRestoredSearchStateSync;
+    }
+
+    if (!this.searchManager) {
+      return;
+    }
+
+    const manager = this.searchManager;
+    this.pendingRestoredSearchStateSync = manager.syncDocumentStateFromSource()
+      .catch((error) => {
+        console.warn("[Card Workspace] Restored search state sync failed.", error);
+      })
+      .finally(() => {
+        if (this.searchManager === manager) {
+          this.pendingRestoredSearchStateSync = null;
+        }
+      });
+    await this.pendingRestoredSearchStateSync;
   }
 
   private async loadSettings(): Promise<void> {

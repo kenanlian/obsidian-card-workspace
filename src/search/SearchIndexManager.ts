@@ -1,13 +1,20 @@
 import MiniSearch from "minisearch";
 import type {
+  IndexStoreClearResult,
   IndexStore,
   IndexStoreNamespaceMetadata,
+  IndexStoreRestoreRebuildRequiredResult,
   IndexStoreRestoreResult,
+  IndexStoreWriteFailureResult,
   IndexStoreWriteResult,
 } from "./IndexStore";
 import { classifySearchMutation } from "./document-preparation";
 import {
   PHASE3_MINISEARCH_CONTRACT,
+  type SearchIndexHealthSnapshot,
+  type SearchIndexPersistenceHealth,
+  type SearchIndexRebuildReason,
+  type SearchIndexSuccessOutcome,
   type SearchServiceSnapshot,
   type SearchVaultMutation,
   type SearchableDocument,
@@ -39,6 +46,16 @@ type SearchIndexMiniSearchResult = {
   score?: number;
 };
 
+interface MiniSearchStoredFields {
+  path?: string;
+}
+
+interface MiniSearchInternalState {
+  _storedFields: Map<number, MiniSearchStoredFields>;
+  _documentIds: Map<number, string>;
+  _idToShortId: Map<string, number>;
+}
+
 const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
   initialized: true,
   disposed: false,
@@ -47,10 +64,17 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
   lastError: null,
   health: {
     outcome: "none",
+    readiness: "initializing",
     healthy: false,
     rebuilding: true,
+    rebuildRequired: false,
+    persistence: "unknown",
     documentCount: null,
     lastIndexedAt: null,
+    rebuildReason: null,
+    lastError: null,
+    lastSuccessfulRestore: null,
+    lastSuccessfulBuild: null,
     detail: "Index manager initializing.",
   },
 };
@@ -89,6 +113,32 @@ export class SearchIndexManager {
 
   async initialize(): Promise<void> {
     return Promise.resolve();
+  }
+
+  markInitializationFailure(error: unknown): void {
+    const detail = this.errorMessage(error, "Indexed search initialization failed.");
+    this.snapshot = {
+      ...this.snapshot,
+      initialized: true,
+      disposed: false,
+      status: "error",
+      lastError: detail,
+      health: {
+        ...this.snapshot.health,
+        outcome: "failed",
+        readiness: "error",
+        healthy: false,
+        rebuilding: false,
+        rebuildRequired: false,
+        persistence: "unknown",
+        documentCount: null,
+        lastIndexedAt: null,
+        rebuildReason: null,
+        lastError: detail,
+        detail,
+      },
+    };
+    this.emit();
   }
 
   dispose(): void {
@@ -130,21 +180,29 @@ export class SearchIndexManager {
 
   async restore(expectedMetadata: IndexStoreNamespaceMetadata): Promise<SearchIndexManagerRestoreResult> {
     this.expectedMetadata = expectedMetadata;
-    this.setBuilding("Restoring persisted search index...");
+    this.setBuilding("Restoring persisted search index...", "restoring");
 
     const restoreResult = await this.store.restore(expectedMetadata);
     if (restoreResult.outcome !== "restored") {
       const detail = this.toRebuildDetail(restoreResult);
+      const persistence = this.toRestorePersistence(restoreResult.reason);
+      const rebuildReason = this.toRestoreRebuildReason(restoreResult.reason);
       this.snapshot = {
         ...this.snapshot,
         status: "building",
         lastError: null,
         health: {
+          ...this.snapshot.health,
           outcome: "rebuild-required",
+          readiness: "rebuild-required",
           healthy: false,
           rebuilding: true,
+          rebuildRequired: true,
+          persistence,
           documentCount: null,
           lastIndexedAt: null,
+          rebuildReason,
+          lastError: null,
           detail,
         },
       };
@@ -161,17 +219,29 @@ export class SearchIndexManager {
         restoreResult.payload.serializedIndexJson,
         this.createMiniSearchOptions(),
       );
-      await this.refreshDocumentStateFromSource();
+      const success = this.createSuccessSnapshot(
+        "restored",
+        restoreResult.payload.documentCount,
+        restoreResult.payload.lastIndexedAt,
+        "Search index restored from persistent storage.",
+      );
       this.snapshot = {
         ...this.snapshot,
         status: "ready",
         lastError: null,
         health: {
+          ...this.snapshot.health,
           outcome: "restored",
+          readiness: "ready",
           healthy: true,
           rebuilding: false,
+          rebuildRequired: false,
+          persistence: "healthy",
           documentCount: restoreResult.payload.documentCount,
           lastIndexedAt: restoreResult.payload.lastIndexedAt,
+          rebuildReason: null,
+          lastError: null,
+          lastSuccessfulRestore: success,
           detail: "Search index restored from persistent storage.",
         },
       };
@@ -189,11 +259,17 @@ export class SearchIndexManager {
         status: "building",
         lastError: detail,
         health: {
+          ...this.snapshot.health,
           outcome: "rebuild-required",
+          readiness: "rebuild-required",
           healthy: false,
           rebuilding: true,
+          rebuildRequired: true,
+          persistence: "read-failed",
           documentCount: null,
           lastIndexedAt: null,
+          rebuildReason: "load-failed",
+          lastError: detail,
           detail,
         },
       };
@@ -206,8 +282,67 @@ export class SearchIndexManager {
     }
   }
 
+  async syncDocumentStateFromSource(): Promise<void> {
+    await this.refreshDocumentStateFromSource();
+  }
+
   async rebuildFromSource(detail = "Manual rebuild requested."): Promise<void> {
     await this.runFullBuild(detail);
+  }
+
+  async clearAndReset(detail = "Manual clear/reset requested."): Promise<IndexStoreClearResult> {
+    const clearResult = await this.store.clear();
+    if (clearResult.outcome === "failed") {
+      const failureDetail = clearResult.detail ?? "Persisted search index could not be cleared.";
+      this.snapshot = {
+        ...this.snapshot,
+        status: "error",
+        lastError: failureDetail,
+        health: {
+          ...this.snapshot.health,
+          outcome: "failed",
+          readiness: "error",
+          healthy: false,
+          rebuilding: false,
+          rebuildRequired: false,
+          persistence: clearResult.reason === "unavailable" ? "storage-unavailable" : "write-failed",
+          documentCount: null,
+          lastIndexedAt: null,
+          rebuildReason: clearResult.reason === "unavailable" ? "storage-unavailable" : null,
+          lastError: failureDetail,
+          detail: failureDetail,
+        },
+      };
+      this.emit();
+      return clearResult;
+    }
+
+    this.index = this.createEmptyIndex();
+    this.documentsByPath.clear();
+    this.pendingMutations.clear();
+    this.rebuildRequestedDuringBuild = false;
+    this.pendingRebuildDetail = null;
+    this.snapshot = {
+      ...this.snapshot,
+      status: "building",
+      lastError: null,
+      health: {
+        ...this.snapshot.health,
+        outcome: "rebuild-required",
+        readiness: "rebuild-required",
+        healthy: false,
+        rebuilding: true,
+        rebuildRequired: true,
+        persistence: "healthy",
+        documentCount: null,
+        lastIndexedAt: null,
+        rebuildReason: "missing",
+        lastError: null,
+        detail,
+      },
+    };
+    this.emit();
+    return clearResult;
   }
 
   async search(query: string, candidatePaths: string[]): Promise<string[]> {
@@ -246,19 +381,26 @@ export class SearchIndexManager {
       return;
     }
 
-    this.snapshot = {
-      ...this.snapshot,
-      status: "ready",
-      lastError: null,
-      health: {
-        outcome: "rebuilt",
-        healthy: true,
-        rebuilding: false,
-        documentCount,
-        lastIndexedAt,
-        detail: "Search index rebuilt.",
-      },
-    };
+      this.snapshot = {
+        ...this.snapshot,
+        status: "ready",
+        lastError: null,
+        health: {
+          ...this.snapshot.health,
+          outcome: "rebuilt",
+          readiness: "ready",
+          healthy: true,
+          rebuilding: false,
+          rebuildRequired: false,
+          persistence: "healthy",
+          documentCount,
+          lastIndexedAt,
+          rebuildReason: null,
+          lastError: null,
+          lastSuccessfulBuild: this.createSuccessSnapshot("rebuilt", documentCount, lastIndexedAt, "Search index rebuilt."),
+          detail: "Search index rebuilt.",
+        },
+      };
     this.emit();
   }
 
@@ -301,7 +443,7 @@ export class SearchIndexManager {
   }
 
   private async executeFullBuild(detail: string): Promise<void> {
-    this.setBuilding(detail);
+    this.setBuilding(detail, "building");
     const documents = await this.documentSource.readAllDocuments();
     const nextIndex = this.createEmptyIndex();
     if (documents.length > 0) {
@@ -324,11 +466,18 @@ export class SearchIndexManager {
       status: "ready",
       lastError: null,
       health: {
+        ...this.snapshot.health,
         outcome: "rebuilt",
+        readiness: "ready",
         healthy: true,
         rebuilding: false,
+        rebuildRequired: false,
+        persistence: "healthy",
         documentCount: documents.length,
         lastIndexedAt: now,
+        rebuildReason: null,
+        lastError: null,
+        lastSuccessfulBuild: this.createSuccessSnapshot("rebuilt", documents.length, now, detail),
         detail,
       },
     };
@@ -361,7 +510,7 @@ export class SearchIndexManager {
     return true;
   }
 
-  private applyWriteFailure(writeResult: Extract<IndexStoreWriteResult, { outcome: "failed" }>): void {
+  private applyWriteFailure(writeResult: IndexStoreWriteFailureResult): void {
     this.snapshot = {
       ...this.snapshot,
       status: "error",
@@ -369,8 +518,12 @@ export class SearchIndexManager {
       health: {
         ...this.snapshot.health,
         outcome: "failed",
+        readiness: "error",
         healthy: false,
         rebuilding: false,
+        rebuildRequired: false,
+        persistence: writeResult.reason === "unavailable" ? "storage-unavailable" : "write-failed",
+        lastError: writeResult.detail,
         detail: writeResult.detail,
       },
     };
@@ -420,19 +573,7 @@ export class SearchIndexManager {
     }
 
     if (decision.action === "rebuild-required") {
-      const detail = "Folder rename cannot be safely rewritten; full rebuild required.";
-      this.snapshot = {
-        ...this.snapshot,
-        status: "building",
-        health: {
-          ...this.snapshot.health,
-          outcome: "rebuild-required",
-          healthy: false,
-          rebuilding: true,
-          detail,
-        },
-      };
-      this.emit();
+      this.markFolderRebuildRequired("Folder rename cannot be safely rewritten; full rebuild required.");
       return {
         action: "rebuild-required",
         rebuildRequired: true,
@@ -440,10 +581,7 @@ export class SearchIndexManager {
     }
 
     if (decision.action === "delete") {
-      if (this.documentsByPath.has(event.path)) {
-        this.index.discard(event.path);
-      }
-      this.documentsByPath.delete(event.path);
+      this.discardIndexedPath(event.path);
       await this.persistMutationState();
       return {
         action: "applied",
@@ -469,10 +607,7 @@ export class SearchIndexManager {
         };
       }
 
-      if (this.documentsByPath.has(oldPath)) {
-        this.index.discard(oldPath);
-      }
-      this.documentsByPath.delete(oldPath);
+      this.discardIndexedPath(oldPath);
       await this.upsertDocument(event.path);
       await this.persistMutationState();
       return {
@@ -492,6 +627,7 @@ export class SearchIndexManager {
 
       const didRewrite = this.rewriteFolderPrefix(oldPrefix, event.path);
       if (!didRewrite) {
+        this.markFolderRebuildRequired("Folder rename could not be safely rewritten from restored index metadata; full rebuild required.");
         return {
           action: "rebuild-required",
           rebuildRequired: true,
@@ -513,25 +649,25 @@ export class SearchIndexManager {
   }
 
   private rewriteFolderPrefix(oldPrefix: string, newPrefix: string): boolean {
-    const affected = [...this.documentsByPath.values()].filter((document) => hasPathPrefix(document.path, oldPrefix));
+    const affected = this.collectIndexedFolderRenames(oldPrefix, newPrefix);
     if (affected.length === 0) {
       return false;
     }
 
-    for (const document of affected) {
-      this.index.discard(document.path);
-      this.documentsByPath.delete(document.path);
+    for (const rename of affected) {
+      this.rewriteIndexedPath(rename.oldPath, rename.newPath);
 
-      const rewrittenPath = rewritePathPrefix(document.path, oldPrefix, newPrefix);
-      const rewrittenFolderPath = rewriteFolderPath(document.folderPath, oldPrefix, newPrefix);
-      const rewrittenDocument: SearchableDocument = {
-        ...document,
-        path: rewrittenPath,
-        folderPath: rewrittenFolderPath,
-      };
+      const hydratedDocument = this.documentsByPath.get(rename.oldPath);
+      if (!hydratedDocument) {
+        continue;
+      }
 
-      this.index.add(rewrittenDocument);
-      this.documentsByPath.set(rewrittenDocument.path, rewrittenDocument);
+      this.documentsByPath.delete(rename.oldPath);
+      this.documentsByPath.set(rename.newPath, {
+        ...hydratedDocument,
+        path: rename.newPath,
+        folderPath: rewriteFolderPath(hydratedDocument.folderPath, oldPrefix, newPrefix),
+      });
     }
 
     return true;
@@ -540,14 +676,11 @@ export class SearchIndexManager {
   private async upsertDocument(path: string): Promise<void> {
     const document = await this.documentSource.readDocument(path);
     if (!document) {
-      if (this.documentsByPath.has(path)) {
-        this.index.discard(path);
-      }
-      this.documentsByPath.delete(path);
+      this.discardIndexedPath(path);
       return;
     }
 
-    if (this.documentsByPath.has(path)) {
+    if (this.index.has(path)) {
       this.index.discard(path);
     }
     this.index.add(document);
@@ -564,7 +697,8 @@ export class SearchIndexManager {
 
   private async persistMutationState(): Promise<void> {
     const now = Date.now();
-    const persistSucceeded = await this.persistCurrentIndex(this.documentsByPath.size, now);
+    const documentCount = this.index.documentCount;
+    const persistSucceeded = await this.persistCurrentIndex(documentCount, now);
     if (!persistSucceeded) {
       return;
     }
@@ -574,27 +708,125 @@ export class SearchIndexManager {
         ...this.snapshot,
         health: {
           ...this.snapshot.health,
-          documentCount: this.documentsByPath.size,
+          documentCount,
           lastIndexedAt: now,
+          lastError: null,
         },
       };
       this.emit();
     }
   }
 
-  private setBuilding(detail: string): void {
+  private setBuilding(detail: string, readiness: SearchIndexHealthSnapshot["readiness"]): void {
     this.snapshot = {
       ...this.snapshot,
       status: "building",
       lastError: null,
       health: {
         ...this.snapshot.health,
+        readiness,
         healthy: false,
         rebuilding: true,
+        rebuildRequired: false,
+        lastError: null,
         detail,
       },
     };
     this.emit();
+  }
+
+  private markFolderRebuildRequired(detail: string): void {
+    this.snapshot = {
+      ...this.snapshot,
+      status: "building",
+      health: {
+        ...this.snapshot.health,
+        outcome: "rebuild-required",
+        readiness: "rebuild-required",
+        healthy: false,
+        rebuilding: true,
+        rebuildRequired: true,
+        rebuildReason: "folder-rebuild-required",
+        lastError: null,
+        detail,
+      },
+    };
+    this.emit();
+  }
+
+  private discardIndexedPath(path: string): void {
+    if (this.index.has(path)) {
+      this.index.discard(path);
+    }
+    this.documentsByPath.delete(path);
+  }
+
+  private collectIndexedFolderRenames(oldPrefix: string, newPrefix: string): Array<{ oldPath: string; newPath: string }> {
+    const indexState = this.getInternalIndexState();
+    if (!indexState) {
+      return [];
+    }
+
+    const affected: Array<{ oldPath: string; newPath: string }> = [];
+    for (const storedFields of indexState._storedFields.values()) {
+      const oldPath = storedFields.path;
+      if (typeof oldPath !== "string" || !hasPathPrefix(oldPath, oldPrefix)) {
+        continue;
+      }
+
+      const rewrittenPath = rewritePathPrefix(oldPath, oldPrefix, newPrefix);
+      if (indexState._idToShortId.has(rewrittenPath)) {
+        return [];
+      }
+
+      affected.push({
+        oldPath,
+        newPath: rewrittenPath,
+      });
+    }
+
+    return affected;
+  }
+
+  private rewriteIndexedPath(oldPath: string, newPath: string): void {
+    const indexState = this.getInternalIndexState();
+    if (!indexState) {
+      return;
+    }
+
+    const shortId = indexState._idToShortId.get(oldPath);
+    if (shortId === undefined) {
+      return;
+    }
+
+    indexState._idToShortId.delete(oldPath);
+    indexState._idToShortId.set(newPath, shortId);
+    indexState._documentIds.set(shortId, newPath);
+
+    const storedFields = indexState._storedFields.get(shortId);
+    if (storedFields) {
+      storedFields.path = newPath;
+    }
+  }
+
+  private getInternalIndexState(): MiniSearchInternalState | null {
+    const internalIndex = this.index as unknown as Record<string, unknown>;
+    const storedFields = internalIndex["_storedFields"];
+    const documentIds = internalIndex["_documentIds"];
+    const idToShortId = internalIndex["_idToShortId"];
+    if (
+      !(storedFields instanceof Map) ||
+      !(documentIds instanceof Map) ||
+      !(idToShortId instanceof Map)
+    ) {
+      return null;
+    }
+
+    return {
+      _storedFields: storedFields as Map<number, MiniSearchStoredFields>,
+      _documentIds: documentIds as Map<number, string>,
+      _idToShortId: idToShortId as Map<string, number>,
+    };
   }
 
   private createEmptyIndex(): MiniSearch<SearchableDocument> {
@@ -610,7 +842,7 @@ export class SearchIndexManager {
     };
   }
 
-  private toRebuildDetail(restoreResult: Extract<IndexStoreRestoreResult, { outcome: "rebuild-required" }>): string {
+  private toRebuildDetail(restoreResult: IndexStoreRestoreRebuildRequiredResult): string {
     if (restoreResult.detail) {
       return restoreResult.detail;
     }
@@ -623,18 +855,59 @@ export class SearchIndexManager {
       case "corrupt":
         return "Persisted index is corrupt; full build required.";
       case "unavailable":
-        return "Persistent index storage unavailable; fallback mode active.";
+        return "Persistent index storage unavailable; rebuild cannot restore persisted index.";
       case "read-failed":
       default:
         return "Persisted index read failed; full build required.";
     }
   }
 
-  private errorMessage(error: unknown, fallback: string): string {
+  private toRestorePersistence(reason: IndexStoreRestoreRebuildRequiredResult["reason"]): SearchIndexPersistenceHealth {
+    switch (reason) {
+      case "unavailable":
+        return "storage-unavailable";
+      case "read-failed":
+        return "read-failed";
+      case "missing":
+      case "version-drift":
+      case "corrupt":
+      default:
+        return "healthy";
+    }
+  }
+
+  private toRestoreRebuildReason(reason: IndexStoreRestoreRebuildRequiredResult["reason"]): SearchIndexRebuildReason {
+    switch (reason) {
+      case "missing":
+      case "version-drift":
+      case "corrupt":
+      case "read-failed":
+      case "unavailable":
+        return reason === "unavailable" ? "storage-unavailable" : reason;
+      default:
+        return "read-failed";
+    }
+  }
+
+  private createSuccessSnapshot(
+    outcome: SearchIndexSuccessOutcome,
+    documentCount: number,
+    at: number,
+    detail: string | null,
+  ): SearchIndexHealthSnapshot["lastSuccessfulBuild"] {
+    return {
+      outcome,
+      at,
+      documentCount,
+      detail,
+    };
+  }
+
+  private errorMessage(error: unknown, defaultMessage: string): string {
     if (error instanceof Error && error.message.length > 0) {
       return error.message;
     }
-    return fallback;
+    return defaultMessage;
   }
 
   private emit(): void {

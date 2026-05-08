@@ -1,5 +1,12 @@
 import type { SortDirection, SortField } from "../settings";
-import type { FolderTreeNode, NoteCardRecord, SearchStatus } from "./types";
+import type {
+  FolderTreeNode,
+  NoteCardRecord,
+  SearchIndexPersistenceHealth,
+  SearchIndexReadinessState,
+  SearchIndexRebuildReason,
+  SearchStatus,
+} from "./types";
 
 export interface OpenNotePayload {
   path: string;
@@ -14,6 +21,9 @@ export interface PanelModelState {
   generation: number;
   searchQuery: string;
   searchStatus: SearchStatus;
+  searchIndexReadiness?: SearchIndexReadinessState;
+  searchIndexPersistence?: SearchIndexPersistenceHealth;
+  searchIndexRebuildReason?: SearchIndexRebuildReason | null;
   sortField: SortField;
   sortDirection: SortDirection;
   availableTags: string[];

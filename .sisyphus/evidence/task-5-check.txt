@@ -1,0 +1,10 @@
+Task 5 evidence: typecheck
+
+Command:
+  npm run check
+
+Result:
+  PASS - tsc --noEmit exited successfully.
+
+Notes:
+  - TypeScript LSP was unavailable in the environment, so repo typecheck was used as the executable verification gate.

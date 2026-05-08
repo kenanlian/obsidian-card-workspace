@@ -38,34 +38,33 @@ npm run dev
 This repo now supports draft GitHub Releases through `.github/workflows/release.yml`.
 
 1. Ensure GitHub Actions has **Read and write permissions** under **Settings -> Actions -> General -> Workflow permissions**.
-2. Prepare the version metadata together:
+2. Prepare the version metadata together (current version: 0.1.2):
 
    ```bash
-   npm run release:prepare -- 0.1.1
+   npm run release:prepare -- 0.1.2
    ```
 
    If you also need to raise the minimum supported Obsidian version, pass it as the second argument:
 
    ```bash
-   npm run release:prepare -- 0.1.1 1.6.0
+   npm run release:prepare -- 0.1.2 1.6.0
    ```
 
 3. Validate the release metadata and the normal repo checks:
 
    ```bash
-   npm run release:check -- 0.1.1
-   npm run check:svelte
    npm run check
    npm run build
    npm test
+   npm run release:check -- 0.1.2
    ```
 
-4. Commit the version bump, then create and push an annotated bare semver tag that exactly matches `manifest.json.version` (for example `0.1.1`, not `v0.1.1`):
+4. Commit the version bump, then create and push an annotated bare semver tag that exactly matches `manifest.json.version` (for example `0.1.2`, not `v0.1.2`):
 
    ```bash
-   git tag -a 0.1.1 -m "0.1.1"
+   git tag -a 0.1.2 -m "0.1.2"
    git push origin main
-   git push origin 0.1.1
+   git push origin 0.1.2
    ```
 
 5. The release workflow will create a draft GitHub Release with these assets:

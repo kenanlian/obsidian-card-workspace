@@ -3,16 +3,65 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 interface MockSearchSnapshot {
   initialized: boolean;
   disposed: boolean;
-  mode: "indexed" | "no-index";
+  mode: "indexed";
   status: "ready" | "building" | "error";
   lastError: string | null;
   health: {
     outcome: "restored" | "rebuild-required" | "rebuilt" | "failed" | "none";
+    readiness: "initializing" | "restoring" | "building" | "ready" | "rebuild-required" | "error";
     healthy: boolean;
     rebuilding: boolean;
+    rebuildRequired: boolean;
+    persistence: "unknown" | "healthy" | "storage-unavailable" | "read-failed" | "write-failed";
     documentCount: number | null;
     lastIndexedAt: number | null;
+    rebuildReason:
+      | "missing"
+      | "version-drift"
+      | "corrupt"
+      | "read-failed"
+      | "load-failed"
+      | "storage-unavailable"
+      | "folder-rebuild-required"
+      | null;
+    lastError: string | null;
+    lastSuccessfulRestore: {
+      outcome: "restored" | "rebuilt";
+      at: number;
+      documentCount: number;
+      detail: string | null;
+    } | null;
+    lastSuccessfulBuild: {
+      outcome: "restored" | "rebuilt";
+      at: number;
+      documentCount: number;
+      detail: string | null;
+    } | null;
     detail: string | null;
+  };
+}
+
+function createMockHealth(overrides: Partial<MockSearchSnapshot["health"]> = {}): MockSearchSnapshot["health"] {
+  return {
+    outcome: "restored",
+    readiness: "ready",
+    healthy: true,
+    rebuilding: false,
+    rebuildRequired: false,
+    persistence: "healthy",
+    documentCount: 10,
+    lastIndexedAt: 1,
+    rebuildReason: null,
+    lastError: null,
+    lastSuccessfulRestore: {
+      outcome: "restored",
+      at: 1,
+      documentCount: 10,
+      detail: "restored",
+    },
+    lastSuccessfulBuild: null,
+    detail: "restored",
+    ...overrides,
   };
 }
 
@@ -34,14 +83,7 @@ const searchMockState = vi.hoisted(() => {
       mode: "indexed",
       status: "ready",
       lastError: null,
-      health: {
-        outcome: "restored",
-        healthy: true,
-        rebuilding: false,
-        documentCount: 10,
-        lastIndexedAt: 1,
-        detail: "restored",
-      },
+      health: createMockHealth(),
     } as MockSearchSnapshot,
     indexedServices: [] as Array<{
       initialize: ReturnType<typeof vi.fn>;
@@ -52,23 +94,19 @@ const searchMockState = vi.hoisted(() => {
       handleVaultMutation: ReturnType<typeof vi.fn>;
       emitSnapshot: (snapshot: MockSearchSnapshot) => void;
     }>,
-    noIndexServices: [] as Array<{
-      initialize: ReturnType<typeof vi.fn>;
-      dispose: ReturnType<typeof vi.fn>;
-      query: ReturnType<typeof vi.fn>;
-      getSnapshot: ReturnType<typeof vi.fn>;
-      subscribe: ReturnType<typeof vi.fn>;
-      handleVaultMutation: ReturnType<typeof vi.fn>;
-    }>,
     managers: [] as Array<{
       restore: ReturnType<typeof vi.fn>;
       rebuildFromSource: ReturnType<typeof vi.fn>;
+      syncDocumentStateFromSource: ReturnType<typeof vi.fn>;
+      syncDocumentStateCallCount: () => number;
+      clearAndReset: ReturnType<typeof vi.fn>;
       getSnapshot: ReturnType<typeof vi.fn>;
       subscribe: ReturnType<typeof vi.fn>;
       initialize: ReturnType<typeof vi.fn>;
       dispose: ReturnType<typeof vi.fn>;
       search: ReturnType<typeof vi.fn>;
       handleVaultMutation: ReturnType<typeof vi.fn>;
+      markInitializationFailure: ReturnType<typeof vi.fn>;
     }>,
     stores: [] as Array<{ vaultNamespace: string }>,
   };
@@ -77,6 +115,7 @@ const searchMockState = vi.hoisted(() => {
 const obsidianMockState = vi.hoisted(() => {
   return {
     layoutReadyCallback: null as (() => void) | null,
+    autoRunLayoutReady: true,
     workspaceOnCallback: null as ((file: unknown) => void) | null,
     vaultCallbacks: {} as Record<string, (...args: unknown[]) => void>,
     notices: [] as string[],
@@ -95,8 +134,14 @@ vi.mock("./search", () => {
   }
 
   class MockSearchIndexManager {
+    private syncDocumentStateCounter = 0;
+
     restore = vi.fn(async () => searchMockState.restoreResult);
     rebuildFromSource = vi.fn(async () => undefined);
+    syncDocumentStateFromSource = vi.fn(async () => {
+      this.syncDocumentStateCounter += 1;
+    });
+    clearAndReset = vi.fn(async () => ({ outcome: "cleared" as const }));
     getSnapshot = vi.fn(() => searchMockState.currentSnapshot);
     subscribe = vi.fn((listener: (snapshot: MockSearchSnapshot) => void) => {
       listener(searchMockState.currentSnapshot);
@@ -106,9 +151,40 @@ vi.mock("./search", () => {
     dispose = vi.fn(() => undefined);
     search = vi.fn(async () => [] as string[]);
     handleVaultMutation = vi.fn(() => undefined);
+    markInitializationFailure = vi.fn((error: unknown) => {
+      const detail = error instanceof Error ? error.message : "Indexed search initialization failed.";
+      searchMockState.currentSnapshot = {
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "error",
+        lastError: detail,
+        health: createMockHealth({
+          outcome: "failed",
+          readiness: "error",
+          healthy: false,
+          rebuilding: false,
+          rebuildRequired: false,
+          persistence: "unknown",
+          documentCount: null,
+          lastIndexedAt: null,
+          rebuildReason: null,
+          lastError: detail,
+          lastSuccessfulRestore: null,
+          detail,
+        }),
+      };
+      for (const service of searchMockState.indexedServices) {
+        service.emitSnapshot(searchMockState.currentSnapshot);
+      }
+    });
 
     constructor() {
       searchMockState.managers.push(this);
+    }
+
+    syncDocumentStateCallCount(): number {
+      return this.syncDocumentStateCounter;
     }
   }
 
@@ -127,7 +203,7 @@ vi.mock("./search", () => {
       return {
         mode: "indexed",
         status: "ready",
-        execution: "indexed-ordering",
+        execution: "indexed-ready",
         orderedPaths: [],
       };
     });
@@ -153,51 +229,16 @@ vi.mock("./search", () => {
     }
   }
 
-  class MockNoIndexSearchService {
-    initialize = vi.fn(async () => undefined);
-    dispose = vi.fn(() => undefined);
-    query = vi.fn(async () => {
-      return {
-        mode: "no-index",
-        status: "ready",
-        execution: "fallback-filtering",
-        orderedPaths: null,
-      };
-    });
-    getSnapshot = vi.fn(() => ({
-      initialized: true,
-      disposed: false,
-      mode: "no-index",
-      status: "ready",
-      lastError: null,
-      health: {
-        outcome: "none",
-        healthy: true,
-        rebuilding: false,
-        documentCount: null,
-        lastIndexedAt: null,
-        detail: null,
-      },
-    }));
-    subscribe = vi.fn(() => () => undefined);
-    handleVaultMutation = vi.fn(() => undefined);
-
-    constructor() {
-      searchMockState.noIndexServices.push(this);
-    }
-  }
-
   return {
     IndexStore: MockIndexStore,
     SearchIndexManager: MockSearchIndexManager,
     IndexedSearchService: MockIndexedSearchService,
-    NoIndexSearchService: MockNoIndexSearchService,
-    prepareSearchableDocument: vi.fn((input: { path: string; title: string; markdown: string; mtime: number; ctime: number }) => ({
+    prepareSearchableDocument: vi.fn((input: { path: string; title: string; markdown?: string; mtime: number; ctime: number }) => ({
       path: input.path,
       title: input.title,
       normalizedTitle: input.title.toLowerCase(),
-      content: input.markdown,
-      excerpt: input.markdown,
+      content: input.markdown ?? "",
+      excerpt: input.markdown ?? "",
       folderPath: "",
       mtime: input.mtime,
       ctime: input.ctime,
@@ -353,6 +394,7 @@ function createPluginHarness(): {
     vault: {
       on: ReturnType<typeof vi.fn>;
       getAbstractFileByPath: ReturnType<typeof vi.fn>;
+      getFiles: ReturnType<typeof vi.fn>;
       getRoot: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
       getMarkdownFiles: ReturnType<typeof vi.fn>;
@@ -370,7 +412,9 @@ function createPluginHarness(): {
       }),
       onLayoutReady: vi.fn((callback: () => void) => {
         obsidianMockState.layoutReadyCallback = callback;
-        callback();
+        if (obsidianMockState.autoRunLayoutReady) {
+          callback();
+        }
       }),
       getActiveFile: vi.fn(() => null),
       getLeavesOfType: vi.fn((type: string) => obsidianMockState.leavesByType[type] ?? []),
@@ -392,6 +436,7 @@ function createPluginHarness(): {
         return { eventName };
       }),
       getAbstractFileByPath: vi.fn(() => null),
+      getFiles: vi.fn(() => []),
       getRoot: vi.fn(() => ({ path: "", name: "/", children: [] })),
       create: vi.fn(async () => ({ path: "notes/new.md" })),
       getMarkdownFiles: vi.fn(() => []),
@@ -456,7 +501,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
   it("reuses the most recent root canvas leaf for default card opens when sidebar focus hides the editor", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
-    target.path = "notes/fallback.md";
+    target.path = "notes/sidebar-root-canvas.md";
     app.vault.getAbstractFileByPath.mockReturnValue(target);
 
     const sidebarLeaf = {
@@ -471,7 +516,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     app.workspace.getActiveViewOfType.mockReturnValue({ leaf: sidebarLeaf });
     app.workspace.getMostRecentLeaf.mockReturnValue(rootCanvasLeaf);
 
-    await plugin.openNoteFromCard("notes/fallback.md");
+    await plugin.openNoteFromCard("notes/sidebar-root-canvas.md");
 
     expect(app.workspace.getLeaf).not.toHaveBeenCalled();
     expect(rootCanvasLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
@@ -480,7 +525,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
   it("opens a new tab for default card opens when the most recent root canvas leaf is pinned", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
-    target.path = "notes/fallback-pinned.md";
+    target.path = "notes/sidebar-root-canvas-pinned.md";
     app.vault.getAbstractFileByPath.mockReturnValue(target);
 
     const sidebarLeaf = {
@@ -497,14 +542,14 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     app.workspace.getMostRecentLeaf.mockReturnValue(pinnedRootCanvasLeaf);
     app.workspace.getLeaf.mockReturnValue(newTabLeaf);
 
-    await plugin.openNoteFromCard("notes/fallback-pinned.md");
+    await plugin.openNoteFromCard("notes/sidebar-root-canvas-pinned.md");
 
     expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
     expect(newTabLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
     expect(pinnedRootCanvasLeaf.openFile).not.toHaveBeenCalled();
   });
 
-  it("falls back to the active root markdown leaf when no recent file-capable root leaf exists", async () => {
+  it("uses the active root markdown leaf when no recent file-capable root leaf exists", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
     target.path = "notes/active-root-markdown.md";
@@ -524,7 +569,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     expect(activeRootMarkdownLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
   });
 
-  it("falls back to an existing root markdown leaf when the most recent root leaf is empty", async () => {
+  it("uses an existing root markdown leaf when the most recent root leaf is empty", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
     target.path = "notes/existing-root-markdown.md";
@@ -603,7 +648,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     expect(resolvedLeaf).toBe(rootLeaf);
   });
 
-  it("resolveTargetLeaf falls back to an existing root markdown leaf before opening a new tab", () => {
+  it("resolveTargetLeaf uses an existing root markdown leaf before opening a new tab", () => {
     const { plugin, app } = createPluginHarness();
     const sidebarLeaf = {
       getRoot: vi.fn(() => app.workspace.leftSplit),
@@ -691,13 +736,13 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
   it("opens in split-right via a new root leaf when no main editor leaf exists", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
-    target.path = "notes/split-fallback.md";
+    target.path = "notes/split-new-root.md";
     app.vault.getAbstractFileByPath.mockReturnValue(target);
 
     const newRootLeaf = { openFile: vi.fn(async () => undefined) };
     app.workspace.getLeaf.mockReturnValue(newRootLeaf);
 
-    await plugin.openNoteFromCard("notes/split-fallback.md", "split-right");
+    await plugin.openNoteFromCard("notes/split-new-root.md", "split-right");
 
     expect(app.workspace.createLeafBySplit).not.toHaveBeenCalled();
     expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
@@ -725,8 +770,8 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     target.path = "notes/window-missing.md";
     app.vault.getAbstractFileByPath.mockReturnValue(target);
 
-    const fallbackLeaf = { openFile: vi.fn(async () => undefined) };
-    app.workspace.getLeaf.mockReturnValue(fallbackLeaf);
+    const defaultLeaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(defaultLeaf);
     delete app.workspace.openPopoutLeaf;
 
     await plugin.openNoteFromCard("notes/window-missing.md", "new-window");
@@ -735,7 +780,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
       "Open in new window is available on desktop only.",
     ]);
     expect(app.workspace.getLeaf).not.toHaveBeenCalled();
-    expect(fallbackLeaf.openFile).not.toHaveBeenCalled();
+    expect(defaultLeaf.openFile).not.toHaveBeenCalled();
   });
 
   it("opens newly created notes in current-area explicitly", async () => {
@@ -765,20 +810,13 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       mode: "indexed",
       status: "ready",
       lastError: null,
-      health: {
-        outcome: "restored",
-        healthy: true,
-        rebuilding: false,
-        documentCount: 10,
-        lastIndexedAt: 1,
-        detail: "restored",
-      },
+      health: createMockHealth(),
     };
     searchMockState.indexedServices.length = 0;
-    searchMockState.noIndexServices.length = 0;
     searchMockState.managers.length = 0;
     searchMockState.stores.length = 0;
     obsidianMockState.layoutReadyCallback = null;
+    obsidianMockState.autoRunLayoutReady = true;
     obsidianMockState.workspaceOnCallback = null;
     obsidianMockState.vaultCallbacks = {};
     obsidianMockState.notices = [];
@@ -818,10 +856,52 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     expect(searchMockState.stores[0]?.vaultNamespace).toBe("path:/vault/base");
     expect(searchMockState.indexedServices[0]?.initialize).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
     expect(plugin.getSearchService()).toBe(searchMockState.indexedServices[0]);
   });
 
-  it("degrades safely to no-index fallback when indexed init fails", async () => {
+  it("prepares markdown documents with cached reads and title-only pdf documents without cached reads", async () => {
+    const { app } = createPluginHarness();
+    const markdownFile = new TFile();
+    markdownFile.path = "notes/Markdown Note.md";
+    markdownFile.basename = "Markdown Note";
+    markdownFile.stat = { mtime: 20, ctime: 10 } as never;
+    const nonMarkdownFile = new TFile();
+    nonMarkdownFile.path = "Assets/Project Brief.pdf";
+    nonMarkdownFile.basename = "Project Brief";
+    nonMarkdownFile.stat = { mtime: 30, ctime: 15 } as never;
+
+    app.vault.cachedRead.mockResolvedValue("# Markdown Note\n\nunique-markdown-term");
+
+    const plugin = new FolderCardExplorerPlugin({} as never, {} as never);
+    (plugin as unknown as { app: typeof app }).app = app;
+
+    const markdownDocument = await (plugin as unknown as {
+      prepareSearchableDocumentFromFile(file: TFile): Promise<unknown>;
+    }).prepareSearchableDocumentFromFile(markdownFile);
+    const nonMarkdownDocument = await (plugin as unknown as {
+      prepareSearchableDocumentFromFile(file: TFile): Promise<unknown>;
+    }).prepareSearchableDocumentFromFile(nonMarkdownFile);
+
+    expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
+    expect(markdownDocument).toEqual(
+      expect.objectContaining({
+        path: markdownFile.path,
+        title: markdownFile.basename,
+        content: expect.stringContaining("unique-markdown-term"),
+      }),
+    );
+    expect(nonMarkdownDocument).toEqual(
+      expect.objectContaining({
+        path: nonMarkdownFile.path,
+        title: nonMarkdownFile.basename,
+        content: "",
+        excerpt: "",
+      }),
+    );
+  });
+
+  it("keeps indexed service bound and marks indexed initialization failure when startup init fails", async () => {
     const { plugin } = createPluginHarness();
     searchMockState.indexedInitializeShouldFail = true;
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -829,14 +909,34 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     await plugin.onload();
 
     expect(searchMockState.indexedServices[0]?.initialize).toHaveBeenCalledTimes(1);
-    expect(searchMockState.noIndexServices).toHaveLength(1);
-    expect(searchMockState.noIndexServices[0]?.initialize).toHaveBeenCalledTimes(1);
-    expect(plugin.getSearchService()).toBe(searchMockState.noIndexServices[0]);
+    expect(searchMockState.managers[0]?.markInitializationFailure).toHaveBeenCalledTimes(1);
+    expect(plugin.getSearchService()).toBe(searchMockState.indexedServices[0]);
+    expect(plugin.getSearchSnapshot()).toEqual({
+      initialized: true,
+      disposed: false,
+      mode: "indexed",
+      status: "error",
+      lastError: "indexed init failed",
+      health: expect.objectContaining({
+        outcome: "failed",
+        readiness: "error",
+        healthy: false,
+        rebuilding: false,
+        rebuildRequired: false,
+        persistence: "unknown",
+        lastError: "indexed init failed",
+        detail: "indexed init failed",
+      }),
+    });
     expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[Card Workspace] Indexed search initialization failed.",
+      expect.any(Error),
+    );
     warnSpy.mockRestore();
   });
 
-  it("registers exactly the two search lifecycle commands", async () => {
+  it("registers search status, rebuild, and clear/reset commands", async () => {
     const { plugin } = createPluginHarness();
 
     await plugin.onload();
@@ -847,20 +947,28 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       .filter((command) => command.id.includes("folder-card-search-index"))
       .map((command) => ({ id: command.id, name: command.name }));
 
-    expect(searchCommands).toHaveLength(2);
+    expect(searchCommands).toHaveLength(4);
     expect(searchCommands).toEqual([
       {
-        id: "rebuild-folder-card-search-index",
-        name: "Rebuild Card Workspace search index",
+        id: "show-folder-card-search-index-status",
+        name: "Show Card Workspace local search index lifecycle status",
       },
       {
         id: "recover-folder-card-search-index",
-        name: "Recover Card Workspace search index",
+        name: "Recover Card Workspace local search index lifecycle",
+      },
+      {
+        id: "rebuild-folder-card-search-index",
+        name: "Rebuild Card Workspace local search index from notes",
+      },
+      {
+        id: "clear-reset-folder-card-search-index",
+        name: "Clear and reset Card Workspace local search index state",
       },
     ]);
   });
 
-  it("routes rebuild and recover commands through plugin-owned lifecycle", async () => {
+  it("routes recover, rebuild, and clear/reset commands through plugin-owned lifecycle", async () => {
     const { plugin } = createPluginHarness();
 
     await plugin.onload();
@@ -869,16 +977,238 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
     );
 
-    const rebuild = commands.find((command) => command.id === "rebuild-folder-card-search-index");
     const recover = commands.find((command) => command.id === "recover-folder-card-search-index");
-    rebuild?.callback();
+    const rebuild = commands.find((command) => command.id === "rebuild-folder-card-search-index");
+    const reset = commands.find((command) => command.id === "clear-reset-folder-card-search-index");
     recover?.callback();
+    rebuild?.callback();
+    reset?.callback();
 
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(2);
+    expect(searchMockState.managers[0]?.clearAndReset).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(2);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(2);
+    expect(searchMockState.managers[0]?.restore).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        vaultNamespace: "path:/vault/base",
+      }),
+    );
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenNthCalledWith(
+      1,
+      "Manual rebuild command requested local search index rebuild.",
+    );
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenNthCalledWith(
+      2,
+      "Manual clear/reset command requested full local search index rebuild.",
+    );
+    expect(searchMockState.managers[0]?.clearAndReset).toHaveBeenCalledWith(
+      "Manual clear/reset command requested local search index reset.",
+    );
+    expect(obsidianMockState.notices).toContain(
+      "Card Workspace local search index cleared. Rebuilding from notes...",
+    );
+  });
+
+  it("keeps clear/reset command idempotent while a local index reset is already running", async () => {
+    const { plugin } = createPluginHarness();
+    const clearAndResetGate = (() => {
+      let resolvePromise: (() => void) | null = null;
+      const promise = new Promise<void>((resolve) => {
+        resolvePromise = resolve;
+      });
+      return {
+        promise,
+        resolve(): void {
+          resolvePromise?.();
+        },
+      };
+    })();
+
+    searchMockState.managers.length = 0;
+
+    await plugin.onload();
+
+    searchMockState.managers[0]?.clearAndReset.mockImplementation(async () => {
+      await clearAndResetGate.promise;
+      return { outcome: "cleared" as const };
+    });
+
+    const commands = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls.map(
+      (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
+    );
+    const reset = commands.find((command) => command.id === "clear-reset-folder-card-search-index");
+
+    reset?.callback();
+    reset?.callback();
+    await Promise.resolve();
+
+    expect(searchMockState.managers[0]?.clearAndReset).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(0);
+
+    clearAndResetGate.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
-    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(2);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
+      "Manual clear/reset command requested full local search index rebuild.",
+    );
+  });
+
+  it("shows local-only search index status with health fields and query availability", async () => {
+    const { plugin } = createPluginHarness();
+    searchMockState.currentSnapshot = {
+      initialized: true,
+      disposed: false,
+      mode: "indexed",
+      status: "ready",
+      lastError: null,
+      health: createMockHealth({
+        outcome: "rebuilt",
+        readiness: "ready",
+        healthy: true,
+        rebuilding: false,
+        rebuildRequired: false,
+        persistence: "healthy",
+        documentCount: 14,
+        rebuildReason: null,
+        lastError: null,
+        lastSuccessfulRestore: {
+          outcome: "restored",
+          at: 12,
+          documentCount: 11,
+          detail: "restored",
+        },
+        lastSuccessfulBuild: {
+          outcome: "rebuilt",
+          at: 25,
+          documentCount: 14,
+          detail: "rebuilt",
+        },
+      }),
+    };
+
+    await plugin.onload();
+
+    const observability = plugin.getSearchIndexObservabilitySnapshot();
+    expect(observability).toEqual({
+      status: "ready",
+      queriesAllowed: true,
+      health: expect.objectContaining({
+        outcome: "rebuilt",
+        readiness: "ready",
+        persistence: "healthy",
+        documentCount: 14,
+        rebuildReason: null,
+        lastError: null,
+        lastSuccessfulRestore: {
+          outcome: "restored",
+          at: 12,
+          documentCount: 11,
+          detail: "restored",
+        },
+        lastSuccessfulBuild: {
+          outcome: "rebuilt",
+          at: 25,
+          documentCount: 14,
+          detail: "rebuilt",
+        },
+      }),
+    });
+
+    const commands = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls.map(
+      (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
+    );
+    const status = commands.find((command) => command.id === "show-folder-card-search-index-status");
+    status?.callback();
+
+    expect(obsidianMockState.notices).toContain(
+      [
+        "Card Workspace local search index lifecycle",
+        "Status: ready",
+        "Query availability: available",
+        "Readiness: ready",
+        "Persistence: healthy",
+        "Documents: 14",
+        "Last outcome: rebuilt",
+        "Last restore: restored at 12 (11 docs)",
+        "Last build: rebuilt at 25 (14 docs)",
+        "Rebuild reason: none",
+        "Last error: none",
+      ].join("\n"),
+    );
+  });
+
+  it("reports queriesAllowed false for degraded search index states", async () => {
+    const cases = [
+      {
+        status: "building" as const,
+        health: createMockHealth({
+          outcome: "rebuild-required",
+          readiness: "rebuild-required",
+          healthy: false,
+          rebuilding: true,
+          rebuildRequired: true,
+          persistence: "healthy",
+          documentCount: null,
+          lastIndexedAt: null,
+          rebuildReason: "folder-rebuild-required",
+          lastError: null,
+          detail: "Folder rename requires rebuild.",
+        }),
+      },
+      {
+        status: "error" as const,
+        health: createMockHealth({
+          outcome: "failed",
+          readiness: "error",
+          healthy: false,
+          rebuilding: false,
+          rebuildRequired: false,
+          persistence: "storage-unavailable",
+          documentCount: null,
+          lastIndexedAt: null,
+          rebuildReason: "storage-unavailable",
+          lastError: "IndexedDB unavailable.",
+          lastSuccessfulRestore: null,
+          lastSuccessfulBuild: null,
+          detail: "IndexedDB unavailable.",
+        }),
+      },
+    ];
+
+    for (const testCase of cases) {
+      searchMockState.currentSnapshot = {
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: testCase.status,
+        lastError: testCase.health.lastError,
+        health: testCase.health,
+      };
+
+      const { plugin } = createPluginHarness();
+      await plugin.onload();
+
+      const observability = plugin.getSearchIndexObservabilitySnapshot();
+      expect(observability).toEqual({
+        status: testCase.status,
+        queriesAllowed: false,
+        health: expect.objectContaining({
+          outcome: testCase.health.outcome,
+          readiness: testCase.health.readiness,
+          healthy: false,
+          rebuildRequired: testCase.health.rebuildRequired,
+          persistence: testCase.health.persistence,
+          rebuildReason: testCase.health.rebuildReason,
+          lastError: testCase.health.lastError,
+        }),
+      });
+    }
   });
 
   it("forwards vault mutations to search service and disposes it on unload", async () => {
@@ -950,9 +1280,11 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       health: {
         ...searchMockState.currentSnapshot.health,
         outcome: "rebuild-required",
+        readiness: "rebuild-required",
         rebuilding: true,
         healthy: false,
-        detail: "Folder rename cannot be safely rewritten; full rebuild required.",
+        rebuildRequired: true,
+        rebuildReason: "folder-rebuild-required",
       },
     });
 
@@ -986,8 +1318,10 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       health: {
         ...searchMockState.currentSnapshot.health,
         outcome: "rebuild-required",
+        readiness: "rebuild-required",
         rebuilding: true,
         healthy: false,
+        rebuildRequired: true,
       },
     });
     service?.emitSnapshot({
@@ -996,8 +1330,10 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       health: {
         ...searchMockState.currentSnapshot.health,
         outcome: "rebuilt",
+        readiness: "ready",
         rebuilding: false,
         healthy: true,
+        rebuildRequired: false,
       },
     });
 
@@ -1028,6 +1364,117 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     );
   });
 
+  it("defers first-run startup rebuild and vault observers until layout ready", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+    searchMockState.restoreResult = {
+      status: "building",
+      outcome: "rebuild-required",
+      detail: "missing persisted index",
+    };
+
+    await plugin.onload();
+
+    expect(searchMockState.managers[0]?.rebuildFromSource).not.toHaveBeenCalled();
+    expect(app.vault.on).not.toHaveBeenCalled();
+
+    obsidianMockState.layoutReadyCallback?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
+      "Startup restore required full search rebuild.",
+    );
+  });
+
+  it("keeps restored index query-capable before layout ready while deferred sync waits", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+
+    await plugin.onload();
+
+    expect(plugin.getSearchIndexObservabilitySnapshot()).toEqual({
+      status: "ready",
+      queriesAllowed: true,
+      health: expect.objectContaining({
+        outcome: "restored",
+        readiness: "ready",
+        healthy: true,
+        rebuildRequired: false,
+      }),
+    });
+    expect(searchMockState.managers[0]?.syncDocumentStateCallCount()).toBe(0);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).not.toHaveBeenCalled();
+    expect(app.vault.on).not.toHaveBeenCalled();
+
+    const indexedService = searchMockState.indexedServices[0] as {
+      query: (request: {
+        query: string;
+        scope: { folderPath: string; includeSubfolders: boolean };
+        candidatePaths: string[];
+      }) => Promise<unknown>;
+    };
+    const queryResult = await indexedService.query({
+      query: "alpha",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md"],
+    });
+    expect(queryResult).toEqual({
+      mode: "indexed",
+      status: "ready",
+      execution: "indexed-ready",
+      orderedPaths: [],
+    });
+
+    obsidianMockState.layoutReadyCallback?.();
+    await Promise.resolve();
+
+    expect(searchMockState.managers[0]?.syncDocumentStateCallCount()).toBe(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps recovery and rebuild commands idempotent before layout ready after missing store restore", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+    searchMockState.restoreResult = {
+      status: "building",
+      outcome: "rebuild-required",
+      detail: "missing persisted index",
+    };
+
+    await plugin.onload();
+
+    const commands = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls.map(
+      (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
+    );
+    const recover = commands.find((command) => command.id === "recover-folder-card-search-index");
+    const rebuild = commands.find((command) => command.id === "rebuild-folder-card-search-index");
+
+    recover?.callback();
+    recover?.callback();
+    rebuild?.callback();
+    rebuild?.callback();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.rebuildFromSource).not.toHaveBeenCalled();
+    expect(app.vault.on).not.toHaveBeenCalled();
+
+    obsidianMockState.layoutReadyCallback?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
+      "Manual rebuild command requested local search index rebuild.",
+    );
+  });
+
   it("does not emit duplicate degraded notices for repeated failure snapshots", async () => {
     const { plugin } = createPluginHarness();
     await plugin.onload();
@@ -1039,7 +1486,9 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       health: {
         ...searchMockState.currentSnapshot.health,
         outcome: "failed",
+        readiness: "error",
         healthy: false,
+        rebuildRequired: false,
       },
     });
     service?.emitSnapshot({
@@ -1048,7 +1497,9 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       health: {
         ...searchMockState.currentSnapshot.health,
         outcome: "failed",
+        readiness: "error",
         healthy: false,
+        rebuildRequired: false,
       },
     });
 

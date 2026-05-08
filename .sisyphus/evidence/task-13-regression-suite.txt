@@ -1,0 +1,31 @@
+# Task 13 Regression Suite Evidence
+
+Date: 2026-05-08
+
+## Command Results
+
+1. `npx vitest run src/search/IndexedSearchService.test.ts src/view/pipeline.test.ts src/view/FolderCardView.test.ts src/view/Toolbar.svelte.test.ts src/search/SearchIndexManager.test.ts src/search/IndexStore.test.ts src/view/card-context-actions.test.ts`
+   - Exit status: 0
+   - Result: PASS
+   - Notes: 7 test files passed, 200 tests passed. Emitted known pre-existing Svelte a11y warnings from `src/view/Toolbar.svelte` only.
+
+2. `npm run check`
+   - Exit status: 0
+   - Result: PASS
+   - Notes: TypeScript type-check completed cleanly.
+
+3. `npm run build`
+   - Exit status: 0
+   - Result: PASS
+   - Notes: Production bundle built successfully. Emitted the known pre-existing Svelte a11y warnings from `src/view/Toolbar.svelte`.
+
+4. `npm test`
+   - Exit status: 0
+   - Result: PASS
+   - Notes: 22 test files passed, 398 tests passed. Emitted known pre-existing Svelte a11y warnings from `src/view/Toolbar.svelte` only.
+
+## Summary
+
+- Task 13 targeted indexed-only regression suite passed without requiring source changes.
+- Full project validation (`check`, `build`, `test`) also passed.
+- Known pre-existing non-fatal `Toolbar.svelte` accessibility warnings remain documented and were not in scope for this regression sweep.

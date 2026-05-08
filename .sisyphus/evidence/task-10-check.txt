@@ -1,0 +1,5 @@
+Command: npm run check
+Result: passed.
+Command: npm test
+Result: passed (22 files, 397 tests).
+Note: vitest emitted existing Svelte a11y warnings in src/view/Toolbar.svelte, but the run passed.

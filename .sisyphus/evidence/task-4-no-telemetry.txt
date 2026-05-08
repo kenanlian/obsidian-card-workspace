@@ -1,0 +1,4 @@
+Command: grep for fetch/XMLHttpRequest/WebSocket/sendBeacon in changed Task 4 files
+Files checked: src/main.ts, src/search/SearchIndexManager.ts, src/search/types.ts, src/main.test.ts, src/search/SearchIndexManager.test.ts
+Result: PASS
+Summary: No network APIs or remote endpoints were added. Task 4 observability remains local-only via Obsidian commands and Notice surfaces.

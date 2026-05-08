@@ -1,7 +1,6 @@
 import type { App } from "obsidian";
 import type { PluginSettings } from "../settings";
-import { matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
-import { isMarkdownCardKind } from "./file-kind";
+import { matchesTagFilter } from "./metadata-utils";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
@@ -46,10 +45,10 @@ export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext
 /**
  * Search filter step.
  *
- * Fallback semantics:
+ * Indexed-only semantics:
  * - Empty/whitespace query returns all cards.
- * - Title matching works without cached content.
- * - Content matching uses supplied card excerpt when available.
+ * - Non-empty queries filter only when indexed search explicitly ran.
+ * - Non-ready indexed states are blocked query states and project zero cards.
  */
 export function applySearchFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
   const query = context.search.query;
@@ -57,39 +56,22 @@ export function applySearchFilter(cards: NoteCardRecord[], context: PipelineCont
     return cards;
   }
 
-  const orderedPaths = context.search.orderedPaths;
-  // `orderedPaths` array is authoritative indexed ordering, including explicit zero-results ([]).
-  if (orderedPaths !== null) {
-    const cardsByPath = new Map(cards.map((card) => [card.path, card]));
-    const orderedMatches: NoteCardRecord[] = [];
-
-    for (const path of orderedPaths) {
-      const card = cardsByPath.get(path);
-      if (card) {
-        orderedMatches.push(card);
-      }
-    }
-
-    const includedPaths = new Set(orderedMatches.map((card) => card.path));
-    const normalizedQuery = query.trim().toLowerCase();
-    const titleOnlyNonMarkdownMatches = cards.filter((card) => {
-      if (includedPaths.has(card.path) || isMarkdownCardKind(card.fileKind)) {
-        return false;
-      }
-
-      return card.title.toLowerCase().includes(normalizedQuery);
-    });
-
-    return [...orderedMatches, ...titleOnlyNonMarkdownMatches];
+  if (context.search.execution !== "indexed-ready") {
+    return [];
   }
 
-  // Fallback mode preserves the current sorted input order by filtering in-place.
-  return cards.filter((card) => {
-    const cachedContent = isMarkdownCardKind(card.fileKind) && card.excerpt.trim().length > 0
-      ? card.excerpt
-      : null;
-    return matchesSearchQuery(card.file, query, cachedContent);
-  });
+  const orderedPaths = context.search.orderedPaths ?? [];
+  const cardsByPath = new Map(cards.map((card) => [card.path, card]));
+  const orderedMatches: NoteCardRecord[] = [];
+
+  for (const path of orderedPaths) {
+    const card = cardsByPath.get(path);
+    if (card) {
+      orderedMatches.push(card);
+    }
+  }
+
+  return orderedMatches;
 }
 
 /** Pin reorder step — reorder cards to put pinned paths first while preserving relative order. */

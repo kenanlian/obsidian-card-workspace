@@ -1,0 +1,5 @@
+Task 8 recovery/idempotency evidence
+===================================
+- Restored indexes stay query-capable immediately after restore while deferred document-state reconciliation waits for layout ready.
+- Recovery/rebuild flows remain single-flight and pre-layout rebuild-required states stay deferred/idempotent.
+- Verification: `npx vitest run src/main.test.ts src/search/SearchIndexManager.test.ts src/search/IndexStore.test.ts` and `npm run check`.

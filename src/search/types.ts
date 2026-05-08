@@ -1,18 +1,65 @@
-export type SearchStatus = "idle" | "fallback" | "ready" | "building" | "error";
+export type SearchStatus =
+  | "idle"
+  | "ready"
+  | "building"
+  | "rebuild-required"
+  | "storage-unavailable"
+  | "unavailable"
+  | "error";
 
 /** Indexed-mode status values surfaced by the plugin-owned search service. */
 export type SearchServiceStatus = Extract<SearchStatus, "ready" | "building" | "error">;
 
+export type SearchIndexReadinessState =
+  | "initializing"
+  | "restoring"
+  | "building"
+  | "ready"
+  | "rebuild-required"
+  | "error";
+
+export type SearchIndexPersistenceHealth = "unknown" | "healthy" | "storage-unavailable" | "read-failed" | "write-failed";
+
+export type SearchIndexRebuildReason =
+  | "missing"
+  | "version-drift"
+  | "corrupt"
+  | "read-failed"
+  | "load-failed"
+  | "storage-unavailable"
+  | "folder-rebuild-required";
+
+export type SearchIndexSuccessOutcome = Extract<SearchRestoreOutcome, "restored" | "rebuilt">;
+
+export interface SearchIndexSuccessSnapshot {
+  outcome: SearchIndexSuccessOutcome;
+  at: number;
+  documentCount: number;
+  detail: string | null;
+}
+
 /** Runtime strategy for resolving a query. */
-export type SearchExecutionMode = "no-index" | "indexed";
+export type SearchExecutionMode = "indexed";
 
 /**
- * Query execution result ownership.
+ * Indexed-only query execution state matrix.
  *
- * - `fallback-filtering`: `orderedPaths` is null and `pipeline.ts` applies local matching.
- * - `indexed-ordering`: `orderedPaths` is an array (including empty array).
+ * Empty-query browsing stays outside `SearchService.query()` and therefore outside this matrix.
+ * For non-empty queries:
+ * - `indexed-ready`: indexed search ran; `orderedPaths` is authoritative and may be empty.
+ * - `indexed-building`: index restore/build is still in progress.
+ * - `indexed-rebuild-required`: indexed search is blocked pending rebuild.
+ * - `indexed-error`: indexed search failed and cannot run the query.
+ * - `indexed-storage-unavailable`: persistent index storage is unavailable, so indexed search cannot run.
+ * - `indexed-unavailable`: indexed search has not been initialized or is temporarily unavailable.
  */
-export type SearchQueryExecutionState = "fallback-filtering" | "indexed-ordering";
+export type SearchQueryExecutionState =
+  | "indexed-ready"
+  | "indexed-building"
+  | "indexed-rebuild-required"
+  | "indexed-error"
+  | "indexed-storage-unavailable"
+  | "indexed-unavailable";
 
 /**
  * Canonical searchable document shape for Phase 3+ indexing work.
@@ -63,17 +110,24 @@ export const PHASE3_MINISEARCH_CONTRACT = {
  * Search service restore/rebuild checkpoint outcome.
  *
  * `rebuild-required` covers corruption/version mismatch/unsafe folder-rename cases,
- * and keeps runtime behavior on fallback/building path until rebuild completes.
+ * and keeps runtime behavior on the indexed blocked/building path until rebuild completes.
  */
 export type SearchRestoreOutcome = "none" | "restored" | "rebuild-required" | "rebuilt" | "failed";
 
 /** Plugin-global index health snapshot (owned by `main.ts` lifecycle). */
 export interface SearchIndexHealthSnapshot {
   outcome: SearchRestoreOutcome;
+  readiness: SearchIndexReadinessState;
   healthy: boolean;
   rebuilding: boolean;
+  rebuildRequired: boolean;
+  persistence: SearchIndexPersistenceHealth;
   documentCount: number | null;
   lastIndexedAt: number | null;
+  rebuildReason: SearchIndexRebuildReason | null;
+  lastError: string | null;
+  lastSuccessfulRestore: SearchIndexSuccessSnapshot | null;
+  lastSuccessfulBuild: SearchIndexSuccessSnapshot | null;
   detail: string | null;
 }
 
@@ -96,15 +150,16 @@ export interface SearchQueryRequest {
 /**
  * Ordered path projection seam for indexed mode.
  *
- * - `orderedPaths: null` means caller must use local fallback filtering in `pipeline.ts`.
- * - `orderedPaths: []` means indexed mode is ready and query produced zero matches.
+ * - `execution: "indexed-ready"` means indexed search ran; `orderedPaths` is authoritative.
+ * - `orderedPaths: []` still means indexed-ready zero matches, not unavailable search.
+ * - Any non-ready execution state means indexed filtering did not run for this query.
  * - Score metadata stays runtime-internal and must not leak into render-facing card types.
  */
 export interface SearchQueryResult {
   mode: SearchExecutionMode;
   status: SearchServiceStatus;
   execution: SearchQueryExecutionState;
-  orderedPaths: string[] | null;
+  orderedPaths?: string[];
   scoresByPath?: Record<string, number>;
 }
 
@@ -120,6 +175,13 @@ export interface SearchServiceSnapshot {
   mode: SearchExecutionMode;
   status: SearchServiceStatus;
   lastError: string | null;
+  health: SearchIndexHealthSnapshot;
+}
+
+/** Lightweight local-only observability payload for command/debug surfaces. */
+export interface SearchIndexObservabilitySnapshot {
+  status: SearchServiceStatus;
+  queriesAllowed: boolean;
   health: SearchIndexHealthSnapshot;
 }
 

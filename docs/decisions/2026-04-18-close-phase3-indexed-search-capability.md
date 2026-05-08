@@ -13,21 +13,22 @@
 - `IndexedSearchService` 已负责 candidate-bounded 查询与 indexed ordering 输出。
 - `main.ts` 已拥有 indexed 搜索生命周期、命令注册、降级回退和 rebuild 调度。
 - `FolderCardView.ts` 继续持有 per-view query、status 和 debounce，没有把搜索真值上提到 plugin settings。
-- `pipeline.ts` 已锁定 `orderedPaths: null` 与 `orderedPaths: []` 的不同语义，并保持 `tag -> search -> pin` 不变。
+- `pipeline.ts` 已锁定非空查询在索引未就绪时的阻塞语义，并保持 `tag -> search -> pin` 不变。
 - 最终仓库验证命令通过，真实 Obsidian 手动 QA 因环境受限未执行，用户已明确批准豁免并要求关闭 F3。
 
 ## 决策
 
-我们正式把当前搜索状态定义为：**Phase 3 search capability 已完成并关闭。**
+我们正式把当前搜索状态定义为：**Phase 3 search capability 已完成并关闭，且架构已收敛至 Indexed-Only 模式。**
 
-这项决策包含六个结论：
+这项决策包含七个结论：
 
-1. 搜索能力现在是正式 indexed 架构，不再只是 no-index readiness seam。
+1. 搜索能力现在是正式 indexed 架构，降级搜索路径已彻底移除。
 2. `main.ts` 继续拥有 plugin-global 生命周期、快照订阅、命令和 rebuild 调度。
 3. `FolderCardView.ts` 继续拥有 per-view runtime query、status、debounce 和候选卡片范围。
-4. `pipeline.ts` 继续是唯一可见卡片投影路径，indexed ordering 只能作为输入，不能绕开 pipeline。
-5. `orderedPaths: null` 与 `orderedPaths: []` 的语义视为稳定 contract，后续实现不得改写。
-6. F3 的关闭建立在仓库验证通过和用户批准豁免真实 Obsidian 手动 QA 之上，文档必须明确这一点。
+4. `pipeline.ts` 继续是唯一可见卡片投影路径，indexed ordering 是唯一搜索输入。
+5. 当索引未就绪时，非空查询结果为 `null` (阻塞)，空查询（浏览）不受影响。
+6. `orderedPaths: []` 的语义视为就绪且零结果，后续实现不得改写。
+7. F3 的关闭建立在仓库验证通过和用户批准豁免真实 Obsidian 手动 QA 之上。
 
 ## 为什么选这个方向
 
