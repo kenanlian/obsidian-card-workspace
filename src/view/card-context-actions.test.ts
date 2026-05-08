@@ -2244,7 +2244,8 @@ describe("FolderCardView card context actions", () => {
     await (view as any).routeCardMenuAction("make-copy", file.path);
     await (view as any).routeCardMenuAction("move", file.path);
     await (view as any).routeCardMenuAction("rename", file.path);
-    await (view as any).routeCardMenuAction("delete", file.path);
+    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
+      .routeCardMenuAction("delete", file.path);
     await (view as any).routeCardMenuAction("copy-note-content", file.path);
 
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "new-tab");
@@ -2506,7 +2507,8 @@ describe("FolderCardView card context actions", () => {
       promptForDeletion: async () => false,
     });
 
-    await (view as any).routeCardMenuAction("delete", file.path);
+    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
+      .routeCardMenuAction("delete", file.path);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
     expect(deleteFileUsingObsidianPreference).not.toHaveBeenCalled();
@@ -2531,6 +2533,54 @@ describe("FolderCardView card context actions", () => {
     await picker?.onChoose(destination);
 
     expect(mockState.noticeMessages).toContain("Failed to move file: permission denied");
+  });
+
+  it("delete skips the trash helper when the prompt already removed the file", async () => {
+    const { view, file, app } = createViewWithFile("notes/already-removed.md");
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+      if (requestedPath !== file.path) {
+        return null;
+      }
+
+      if (vi.mocked(app.fileManager.promptForDeletion).mock.calls.length > 0) {
+        return null;
+      }
+
+      return file;
+    });
+
+    await (view as any).routeCardMenuAction("delete", file.path);
+
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
+    expect(app.vault.getAbstractFileByPath).toHaveBeenCalledTimes(2);
+    expect(deleteFileUsingObsidianPreference).not.toHaveBeenCalled();
+    expect(app.fileManager.trashFile).not.toHaveBeenCalled();
+    expect(mockState.noticeMessages).toEqual([]);
+  });
+
+  it("delete uses the post-prompt live file when it remains available", async () => {
+    const { view, file, app } = createViewWithFile("notes/live-after-prompt.md");
+    const liveFile = createMarkdownFile("notes/live-after-prompt.md");
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+      if (requestedPath !== file.path) {
+        return null;
+      }
+
+      if (vi.mocked(app.fileManager.promptForDeletion).mock.calls.length > 0) {
+        return liveFile;
+      }
+
+      return file;
+    });
+
+    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
+      .routeCardMenuAction("delete", file.path);
+
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
+    expect(deleteFileUsingObsidianPreference).toHaveBeenCalledTimes(1);
+    expect(deleteFileUsingObsidianPreference).toHaveBeenCalledWith(app, liveFile);
   });
 
   describe("batch move workflow", () => {

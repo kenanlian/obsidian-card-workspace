@@ -1193,7 +1193,12 @@ export class FolderCardView extends ItemView {
         return;
       }
 
-      const result = await deleteFileUsingObsidianPreference(this.app, file);
+      const liveFile = this.app.vault.getAbstractFileByPath(notePath);
+      if (!(liveFile instanceof TFile)) {
+        return;
+      }
+
+      const result = await deleteFileUsingObsidianPreference(this.app, liveFile);
       if (!result.ok) {
         new Notice(`Failed to delete file: ${result.error}`);
       }
