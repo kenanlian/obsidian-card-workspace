@@ -164,6 +164,9 @@ describe("CardItem.svelte", () => {
 
     expect(target.textContent).toContain("A note");
     expect(target.innerHTML).toContain("Preview text");
+    expect(target.querySelector(".fce-meta")).toBeNull();
+    expect(target.textContent).not.toContain("Modified");
+    expect(target.textContent).not.toContain("Created");
 
     const cardButton = target.querySelector<HTMLDivElement>(".fce-card");
     expect(cardButton).not.toBeNull();
@@ -474,23 +477,20 @@ describe("CardItem.svelte", () => {
     expect(icon?.getAttribute("data-icon")).toBe("layout-list");
   });
 
-  it("emits hover-link payload from title, excerpt, and meta surfaces for markdown cards", () => {
+  it("emits hover-link payload from title and excerpt surfaces for markdown cards", () => {
     const captured = createCapturedCallbacks();
     const { target } = mountCardItem({}, captured.callbacks);
 
     const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
     const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
-    const meta = target.querySelector<HTMLElement>(".fce-meta");
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
-    expect(meta).not.toBeNull();
+    expect(target.querySelector(".fce-meta")).toBeNull();
 
     const titleEvent = new MouseEvent("mouseenter", { bubbles: true });
     const excerptEvent = new MouseEvent("mouseenter", { bubbles: true });
-    const metaEvent = new MouseEvent("mouseenter", { bubbles: true });
     titleGroup?.dispatchEvent(titleEvent);
     excerpt?.dispatchEvent(excerptEvent);
-    meta?.dispatchEvent(metaEvent);
 
     expect(captured.hoverEvents).toEqual([
       {
@@ -502,11 +502,6 @@ describe("CardItem.svelte", () => {
         path: "notes/a.md",
         targetEl: excerpt,
         mouseEvent: excerptEvent,
-      },
-      {
-        path: "notes/a.md",
-        targetEl: meta,
-        mouseEvent: metaEvent,
       },
     ]);
   });
@@ -527,22 +522,19 @@ describe("CardItem.svelte", () => {
 
     const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
     const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
-    const meta = target.querySelector<HTMLElement>(".fce-meta");
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
-    expect(meta).not.toBeNull();
+    expect(target.querySelector(".fce-meta")).toBeNull();
 
     titleGroup?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     excerpt?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-    meta?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
 
-    expect(captured.hoverEvents).toHaveLength(3);
+    expect(captured.hoverEvents).toHaveLength(2);
     expect(captured.hoverEvents.map((event) => event.path)).toEqual([
       "notes/model.base",
       "notes/model.base",
-      "notes/model.base",
     ]);
-    expect(captured.hoverEvents.map((event) => event.targetEl)).toEqual([titleGroup, excerpt, meta]);
+    expect(captured.hoverEvents.map((event) => event.targetEl)).toEqual([titleGroup, excerpt]);
   });
 
   it("does not emit hover-link payload from action buttons or bulk checkbox", () => {

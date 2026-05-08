@@ -671,10 +671,9 @@ describe("FolderCardView host contract", () => {
 
     const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
     const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
-    const meta = (view as any).containerEl.querySelector(".fce-meta") as HTMLElement | null;
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
-    expect(meta).not.toBeNull();
+    expect((view as any).containerEl.querySelector(".fce-meta")).toBeNull();
 
     const titleEvent = new MouseEvent("mouseenter", { bubbles: true });
     titleGroup?.dispatchEvent(titleEvent);
@@ -682,11 +681,8 @@ describe("FolderCardView host contract", () => {
     const excerptEvent = new MouseEvent("mouseenter", { bubbles: true });
     excerpt?.dispatchEvent(excerptEvent);
 
-    const metaEvent = new MouseEvent("mouseenter", { bubbles: true });
-    meta?.dispatchEvent(metaEvent);
-
     const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
-    expect(triggerSpy).toHaveBeenCalledTimes(3);
+    expect(triggerSpy).toHaveBeenCalledTimes(2);
     expect(triggerSpy).toHaveBeenNthCalledWith(1, "hover-link", {
       event: titleEvent,
       source: "card-workspace",
@@ -699,13 +695,6 @@ describe("FolderCardView host contract", () => {
       source: "card-workspace",
       hoverParent: view,
       targetEl: excerpt,
-      linktext: "notes/hover.md",
-    });
-    expect(triggerSpy).toHaveBeenNthCalledWith(3, "hover-link", {
-      event: metaEvent,
-      source: "card-workspace",
-      hoverParent: view,
-      targetEl: meta,
       linktext: "notes/hover.md",
     });
   });
@@ -724,33 +713,27 @@ describe("FolderCardView host contract", () => {
 
     const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
     const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
-    const meta = (view as any).containerEl.querySelector(".fce-meta") as HTMLElement | null;
     const pinButton = (view as any).containerEl.querySelector(".fce-card-pin-btn") as HTMLButtonElement | null;
     const moreActionsButton = (view as any).containerEl.querySelector(".fce-more-actions-btn") as HTMLButtonElement | null;
 
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
-    expect(meta).not.toBeNull();
+    expect((view as any).containerEl.querySelector(".fce-meta")).toBeNull();
     expect(pinButton).not.toBeNull();
     expect(moreActionsButton).not.toBeNull();
 
     titleGroup?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     excerpt?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-    meta?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     pinButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     moreActionsButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
 
-    expect(triggerSpy).toHaveBeenCalledTimes(3);
+    expect(triggerSpy).toHaveBeenCalledTimes(2);
     expect(triggerSpy).toHaveBeenNthCalledWith(1, "hover-link", expect.objectContaining({
       targetEl: titleGroup,
       linktext: "notes/diagram.canvas",
     }));
     expect(triggerSpy).toHaveBeenNthCalledWith(2, "hover-link", expect.objectContaining({
       targetEl: excerpt,
-      linktext: "notes/diagram.canvas",
-    }));
-    expect(triggerSpy).toHaveBeenNthCalledWith(3, "hover-link", expect.objectContaining({
-      targetEl: meta,
       linktext: "notes/diagram.canvas",
     }));
   });

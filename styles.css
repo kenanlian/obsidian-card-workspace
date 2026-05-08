@@ -24,7 +24,6 @@
   --fce-preview-font-size: var(--font-ui-small, 13px);
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
-  --fce-meta-font-size: 11px;
 }
 
 .folder-card-view .fce-shell {
@@ -606,15 +605,6 @@
 .folder-card-view .fce-card:hover .fce-more-actions-btn,
 .folder-card-view .fce-card:focus-within .fce-more-actions-btn {
   opacity: 1;
-}
-
-.folder-card-view .fce-meta {
-  margin: auto 0 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--fce-border);
-  font-size: var(--fce-meta-font-size);
-  line-height: 1.35;
-  color: var(--fce-text-muted);
 }
 
 .folder-card-view .fce-excerpt {

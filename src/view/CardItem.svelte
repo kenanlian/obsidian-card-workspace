@@ -275,10 +275,6 @@
     });
   }
 
-  function formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleDateString();
-  }
-
   function getPreviewStyle(): string {
     return `--fce-preview-line-clamp: ${previewLines};`;
   }
@@ -347,6 +343,5 @@
         <p class="fce-preview-empty">Loading preview...</p>
       {/if}
     </div>
-    <p class="fce-meta" onmouseenter={emitCardHoverLink}>Modified {formatDate(card.mtime)} · Created {formatDate(card.ctime)}</p>
   </div>
 </div>
