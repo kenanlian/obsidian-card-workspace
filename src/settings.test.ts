@@ -121,6 +121,19 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "all-notes" }).lastViewMode).toBe("all-notes");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "unexpected" }).lastViewMode).toBe("folder");
   });
+
+  it("defaults defaultCardOpenBehavior to smart when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: undefined } as unknown).defaultCardOpenBehavior).toBe("smart");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "current-area" } as unknown).defaultCardOpenBehavior).toBe("smart");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "unexpected" } as unknown).defaultCardOpenBehavior).toBe("smart");
+  });
+
+  it("preserves each supported defaultCardOpenBehavior value", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "smart" } as unknown).defaultCardOpenBehavior).toBe("smart");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "new-tab" } as unknown).defaultCardOpenBehavior).toBe("new-tab");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "split-right" } as unknown).defaultCardOpenBehavior).toBe("split-right");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "new-window" } as unknown).defaultCardOpenBehavior).toBe("new-window");
+  });
 });
 
 
@@ -383,5 +396,27 @@ describe("mergeSettings — previewLines", () => {
     const result = mergeSettings(DEFAULT_SETTINGS, patch as never);
 
     expect(result.previewLines).toBe(5);
+  });
+
+  it("updates defaultCardOpenBehavior while preserving unrelated settings fields", () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      previewLines: 8,
+      pinnedPaths: ["folder/note-1.md"],
+      includeSubfolders: false,
+    };
+
+    const result = mergeSettings(current, { defaultCardOpenBehavior: "split-right" });
+
+    expect(result.defaultCardOpenBehavior).toBe("split-right");
+    expect(result.previewLines).toBe(8);
+    expect(result.pinnedPaths).toEqual(["folder/note-1.md"]);
+    expect(result.includeSubfolders).toBe(false);
+  });
+
+  it("normalizes invalid defaultCardOpenBehavior patches back to smart", () => {
+    const result = mergeSettings(DEFAULT_SETTINGS, { defaultCardOpenBehavior: "current-area" } as never);
+
+    expect(result.defaultCardOpenBehavior).toBe("smart");
   });
 });

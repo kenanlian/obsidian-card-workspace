@@ -128,9 +128,12 @@ describe("FolderCardExplorerSettingTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renders only the preview slider setting", () => {
+  it("renders the default open dropdown and preview slider settings", () => {
     const plugin = {
-      getSettings: vi.fn(() => ({ previewLines: 6 })),
+      getSettings: vi.fn(() => ({
+        defaultCardOpenBehavior: "split-right",
+        previewLines: 6,
+      })),
       saveSettings: vi.fn(),
     };
 
@@ -138,15 +141,44 @@ describe("FolderCardExplorerSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(1);
-    expect(mockState.settings.map((setting) => setting.name)).toEqual(["Preview lines"]);
-    expect(mockState.settings[0]?.slider).toMatchObject({
+    expect(mockState.settings).toHaveLength(2);
+    expect(mockState.settings.map((setting) => setting.name)).toEqual([
+      "Default card open behavior",
+      "Preview lines",
+    ]);
+    expect(mockState.settings[0]?.dropdown).toMatchObject({
+      value: "split-right",
+      options: [
+        { value: "smart", label: "Current pane / current tab" },
+        { value: "new-tab", label: "Open in new tab" },
+        { value: "split-right", label: "Open to the right" },
+        { value: "new-window", label: "Open in new window" },
+      ],
+    });
+    expect(mockState.settings[1]?.slider).toMatchObject({
       min: 3,
       max: 10,
       step: 1,
       value: 6,
       dynamicTooltip: true,
     });
+  });
+
+  it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        defaultCardOpenBehavior: "smart",
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+    };
+
+    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[0]?.dropdown?.changeHandler?.("new-window");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ defaultCardOpenBehavior: "new-window" });
   });
 
 });

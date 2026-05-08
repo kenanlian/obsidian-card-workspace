@@ -1,5 +1,10 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
-import { PREVIEW_LINES_MAX, PREVIEW_LINES_MIN } from "./settings";
+import {
+  DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS,
+  PREVIEW_LINES_MAX,
+  PREVIEW_LINES_MIN,
+  isDefaultCardOpenBehavior,
+} from "./settings";
 import type FolderCardExplorerPlugin from "./main";
 
 export class FolderCardExplorerSettingTab extends PluginSettingTab {
@@ -12,9 +17,26 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
-    const { previewLines } = this.plugin.getSettings();
+    const { defaultCardOpenBehavior, previewLines } = this.plugin.getSettings();
 
     containerEl.empty();
+
+    new Setting(containerEl)
+      .setName("Default card open behavior")
+      .setDesc("Choose what happens when you click a card directly. Right-click menu actions stay available separately.")
+      .addDropdown((dropdown) => {
+        for (const option of DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(defaultCardOpenBehavior).onChange(async (value) => {
+          if (!isDefaultCardOpenBehavior(value)) {
+            return;
+          }
+
+          await this.plugin.saveSettings({ defaultCardOpenBehavior: value });
+        });
+      });
 
     new Setting(containerEl)
       .setName("Preview lines")
@@ -30,6 +52,5 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings({ previewLines: value });
           });
       });
-
   }
 }

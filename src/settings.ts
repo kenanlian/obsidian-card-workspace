@@ -8,9 +8,34 @@ export type ViewMode = "folder" | "all-notes";
 
 export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-window";
 
+export type DefaultCardOpenBehavior = "smart" | "new-tab" | "split-right" | "new-window";
+
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 10;
 export const DEFAULT_PREVIEW_LINES = 5;
+export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
+
+export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
+  value: DefaultCardOpenBehavior;
+  label: string;
+}> = [
+  {
+    value: "smart",
+    label: "Current pane / current tab",
+  },
+  {
+    value: "new-tab",
+    label: "Open in new tab",
+  },
+  {
+    value: "split-right",
+    label: "Open to the right",
+  },
+  {
+    value: "new-window",
+    label: "Open in new window",
+  },
+];
 
 export interface PluginSettings {
   sort: {
@@ -23,6 +48,7 @@ export interface PluginSettings {
   pinnedPaths: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
+  defaultCardOpenBehavior: DefaultCardOpenBehavior;
   previewLines: number;
   lastFolderPath: string | null;
   lastViewMode: ViewMode;
@@ -39,6 +65,7 @@ export interface PartialPluginSettings {
   pinnedPaths?: string[];
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
+  defaultCardOpenBehavior?: DefaultCardOpenBehavior;
   previewLines?: number;
   lastFolderPath?: string | null;
   lastViewMode?: ViewMode;
@@ -55,6 +82,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   pinnedPaths: [],
   includeSubfolders: true,
   defaultView: "cards",
+  defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: null,
   lastViewMode: "folder",
@@ -90,6 +118,16 @@ function normalizePinnedPaths(value: unknown): string[] {
 
 function normalizeDefaultView(value: unknown): DefaultViewMode {
   return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
+}
+
+export function isDefaultCardOpenBehavior(value: string): value is DefaultCardOpenBehavior {
+  return value === "smart" || value === "new-tab" || value === "split-right" || value === "new-window";
+}
+
+function normalizeDefaultCardOpenBehavior(value: unknown): DefaultCardOpenBehavior {
+  return typeof value === "string" && isDefaultCardOpenBehavior(value)
+    ? value
+    : DEFAULT_CARD_OPEN_BEHAVIOR;
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
@@ -130,6 +168,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
         ? data.includeSubfolders
         : DEFAULT_SETTINGS.includeSubfolders,
     defaultView: normalizeDefaultView(data.defaultView),
+    defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath:
       typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
