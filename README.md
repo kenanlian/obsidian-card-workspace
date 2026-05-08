@@ -5,11 +5,11 @@ An Obsidian plugin that listens for folder clicks in File Explorer and renders n
 ## Features
 
 - Click any folder in File Explorer to load `FOLDER_CARD_VIEW` in the right sidebar.
-- Cards show title, modified/created dates, Markdown-stripped excerpt, and cover image.
+- Cards show title, Markdown-stripped excerpt, and cover image.
 - Cover image source order: YAML frontmatter (`cover`, `image`, `banner`, `thumbnail`, `hero`, `cardImage`) -> first image in note body.
 - Virtualized scrolling keeps rendering smooth for large folders.
 - Two-way sync:
-  - Click card -> opens note in main editor area.
+  - Click card -> opens note using the configured default card-open behavior.
   - Switching note in editor -> corresponding card gets selected.
 - Warm Retro Paper aesthetic using `styles.css`.
 
