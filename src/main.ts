@@ -217,7 +217,15 @@ export default class FolderCardExplorerPlugin extends Plugin {
     return await workspaceWithPopout.openPopoutLeaf();
   }
 
-  private resolveDefaultCardOpenLeaf(): WorkspaceLeaf {
+  private async resolveDefaultCardOpenLeaf(): Promise<WorkspaceLeaf | null> {
+    if (this.settings.defaultCardOpenBehavior !== "smart") {
+      return this.resolveOpenDestinationLeaf(this.settings.defaultCardOpenBehavior);
+    }
+
+    return this.resolveSmartDefaultCardOpenLeaf();
+  }
+
+  private resolveSmartDefaultCardOpenLeaf(): WorkspaceLeaf {
     const currentMainEditorLeaf = this.findCurrentMainEditorLeaf();
     if (!currentMainEditorLeaf) {
       return this.app.workspace.getLeaf(true);

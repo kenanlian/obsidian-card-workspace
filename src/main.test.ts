@@ -457,6 +457,13 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     obsidianMockState.notices = [];
   });
 
+  function setDefaultCardOpenBehavior(
+    plugin: FolderCardExplorerPlugin,
+    value: "smart" | "new-tab" | "split-right" | "new-window",
+  ): void {
+    (plugin as unknown as { settings: { defaultCardOpenBehavior: string } }).settings.defaultCardOpenBehavior = value;
+  }
+
   it("reuses the most recent root markdown leaf for default card opens when unpinned", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
@@ -713,6 +720,22 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     expect(syncSelection).toHaveBeenCalledWith("notes/new-tab.md");
   });
 
+  it("uses the configured new-tab default for direct card opens", async () => {
+    const { plugin, app } = createPluginHarness();
+    setDefaultCardOpenBehavior(plugin, "new-tab");
+    const target = new TFile();
+    target.path = "notes/default-new-tab.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(leaf);
+
+    await plugin.openNoteFromCard("notes/default-new-tab.md");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
   it("opens in split-right by splitting the resolved main editor leaf", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
@@ -728,6 +751,27 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     app.workspace.createLeafBySplit.mockReturnValue(splitLeaf);
 
     await plugin.openNoteFromCard("notes/split.md", "split-right");
+
+    expect(app.workspace.createLeafBySplit).toHaveBeenCalledWith(targetLeaf, "vertical");
+    expect(splitLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
+  it("uses the configured split-right default for direct card opens", async () => {
+    const { plugin, app } = createPluginHarness();
+    setDefaultCardOpenBehavior(plugin, "split-right");
+    const target = new TFile();
+    target.path = "notes/default-split.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const targetLeaf = {
+      getRoot: vi.fn(() => app.workspace.rootSplit),
+      getViewState: vi.fn(() => ({ type: "canvas" })),
+    };
+    const splitLeaf = { openFile: vi.fn(async () => undefined) };
+    vi.spyOn(plugin as unknown as { findExistingRootEditorLeaf: () => unknown }, "findExistingRootEditorLeaf").mockReturnValue(targetLeaf);
+    app.workspace.createLeafBySplit.mockReturnValue(splitLeaf);
+
+    await plugin.openNoteFromCard("notes/default-split.md");
 
     expect(app.workspace.createLeafBySplit).toHaveBeenCalledWith(targetLeaf, "vertical");
     expect(splitLeaf.openFile).toHaveBeenCalledWith(target, { active: true });
@@ -764,6 +808,22 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
   });
 
+  it("uses the configured new-window default for direct card opens", async () => {
+    const { plugin, app } = createPluginHarness();
+    setDefaultCardOpenBehavior(plugin, "new-window");
+    const target = new TFile();
+    target.path = "notes/default-window.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.openPopoutLeaf = vi.fn(async () => leaf);
+
+    await plugin.openNoteFromCard("notes/default-window.md");
+
+    expect(app.workspace.openPopoutLeaf).toHaveBeenCalledTimes(1);
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
+  });
+
   it("shows exact desktop-only notice and no-ops when popout leaf API is unavailable", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();
@@ -781,6 +841,23 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
     ]);
     expect(app.workspace.getLeaf).not.toHaveBeenCalled();
     expect(defaultLeaf.openFile).not.toHaveBeenCalled();
+  });
+
+  it("explicit destinations still override the configured default behavior", async () => {
+    const { plugin, app } = createPluginHarness();
+    setDefaultCardOpenBehavior(plugin, "new-window");
+    const target = new TFile();
+    target.path = "notes/explicit-new-tab.md";
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.workspace.getLeaf.mockReturnValue(leaf);
+
+    await plugin.openNoteFromCard("notes/explicit-new-tab.md", "new-tab");
+
+    expect(app.workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(app.workspace.openPopoutLeaf).not.toHaveBeenCalled();
+    expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
   });
 
   it("opens newly created notes in current-area explicitly", async () => {
