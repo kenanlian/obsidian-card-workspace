@@ -1,7 +1,7 @@
 {
   "id": "card-workspace",
   "name": "Card Workspace",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "minAppVersion": "1.5.0",
   "description": "Preview notes from a clicked folder as a warm retro card stream in the right sidebar.",
   "author": "kenan.lian",
