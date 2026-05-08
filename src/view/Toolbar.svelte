@@ -167,6 +167,7 @@
     { id: "filter", label: "Filter", title: "Filter cards", icon: "list-filter" },
     { id: "bulk", label: "Bulk", title: "Bulk actions", icon: "check-check" },
   ];
+  const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
   function isSortSeparatorOption(option: SortMenuOption): option is SortSeparatorOption {
     return "type" in option;
@@ -330,7 +331,9 @@
     showSortMenu = false;
     showFolderMenu = false;
     showFilterMenu = false;
-    activeToolbarAction = actionId;
+    if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
+      activeToolbarAction = actionId;
+    }
     onToolbarAction?.({ action: actionId });
   }
 

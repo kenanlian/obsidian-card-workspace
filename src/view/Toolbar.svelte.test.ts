@@ -497,6 +497,45 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("does not keep the create-note action visually selected after it emits", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({}, captured.callbacks);
+
+    const createNoteButton = document.querySelector<HTMLButtonElement>('button[aria-label="Create note"]');
+    expect(createNoteButton).not.toBeNull();
+    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
+
+    createNoteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.toolbarActionEvents).toEqual([{ action: "new-note" }]);
+    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
+
+    const allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
+    expect(allNotesButton?.classList.contains("is-selected")).toBe(false);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps all-notes highlighted when create-note emits inside the all-notes scope", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ isAllNotesScope: true, folderPath: "" }, captured.callbacks);
+
+    const allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
+    const createNoteButton = document.querySelector<HTMLButtonElement>('button[aria-label="Create note"]');
+    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
+    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
+
+    createNoteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.toolbarActionEvents).toEqual([{ action: "new-note" }]);
+    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
+    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
+
+    await disposeMountedComponent(component);
+  });
+
   it("renders only one destructive bulk action", async () => {
     const { component } = mountToolbar({
       bulkMode: true,
