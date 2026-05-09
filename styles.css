@@ -449,7 +449,7 @@
 }
 
 .folder-card-view .fce-card {
-  border-radius: 14px;
+  border-radius: var(--radius-s);
   border: 1px solid var(--fce-border);
   background: var(--fce-surface);
   box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.12));
@@ -463,13 +463,13 @@
   transform: translateY(-1px);
   border-color: var(--fce-accent-hover);
   background: var(--fce-hover);
-  box-shadow: var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
+  box-shadow: var(--shadow-s, 0 1px 3px rgba(0, 0, 0, 0.1));
 }
 
 .folder-card-view .fce-card.is-selected {
   border-color: var(--fce-accent);
   background: var(--fce-hover);
-  box-shadow: 0 0 0 1px var(--fce-accent), var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
+  box-shadow: 0 0 0 1px var(--fce-accent), var(--shadow-s, 0 1px 3px rgba(0, 0, 0, 0.1));
 }
 
 .folder-card-view .fce-card.is-bulk-selected {
@@ -484,7 +484,7 @@
     0 0 0 1px var(--fce-accent),
     inset 0 0 0 2px var(--fce-bg),
     inset 0 0 0 3px var(--fce-accent),
-    var(--shadow-m, 0 4px 10px rgba(0, 0, 0, 0.16));
+    var(--shadow-s, 0 1px 3px rgba(0, 0, 0, 0.1));
 }
 
 .folder-card-view .fce-card-body {
@@ -650,7 +650,7 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-s);
   background: var(--fce-surface-alt);
   white-space: pre-wrap;
   word-break: break-word;
