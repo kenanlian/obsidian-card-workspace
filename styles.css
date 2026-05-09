@@ -517,6 +517,13 @@
   flex: 0 0 auto;
 }
 
+.folder-card-view .fce-card-search-count {
+  font-size: 0.7rem;
+  color: var(--fce-text-muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
 .folder-card-view .fce-card-file-icon {
   display: flex;
   align-items: center;

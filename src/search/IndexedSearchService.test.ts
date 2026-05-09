@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { IndexedSearchService, type IndexedSearchManagerAdapter } from "./IndexedSearchService";
+import type { SearchIndexManagerSearchResult } from "./SearchIndexManager";
 import type { SearchServiceSnapshot, SearchVaultMutation } from "./types";
 
 function createHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {
@@ -52,7 +53,7 @@ function createManagerHarness(initialSnapshot = createSnapshot()): {
   dispose: ReturnType<typeof vi.fn<() => void>>;
   getSnapshot: ReturnType<typeof vi.fn<() => SearchServiceSnapshot>>;
   subscribe: ReturnType<typeof vi.fn<(listener: (snapshot: SearchServiceSnapshot) => void) => () => void>>;
-  search: ReturnType<typeof vi.fn<(query: string, candidatePaths: string[]) => Promise<string[]>>>;
+  search: ReturnType<typeof vi.fn<(query: string, candidatePaths: string[]) => Promise<SearchIndexManagerSearchResult>>>;
   handleVaultMutation: ReturnType<typeof vi.fn<(event: SearchVaultMutation) => void>>;
 } {
   let current = initialSnapshot;
@@ -98,7 +99,7 @@ function createManagerHarness(initialSnapshot = createSnapshot()): {
       listeners.delete(listener);
     };
   });
-  const search = vi.fn(async () => [] as string[]);
+  const search = vi.fn(async () => ({ orderedPaths: [] }) as SearchIndexManagerSearchResult);
   const handleVaultMutation = vi.fn(() => undefined);
 
   return {
@@ -189,13 +190,21 @@ describe("IndexedSearchService", () => {
 
   it("returns candidate-bounded indexed ordering when ready", async () => {
     const harness = createManagerHarness(createSnapshot({ status: "ready" }));
-    harness.search.mockResolvedValue([
-      "notes/Meeting Followup.md",
-      "Archive/Global Meeting Index.md",
-      "notes/Meeting.md",
-      "notes/Meeting Followup.md",
-      "notes/Other.md",
-    ]);
+    harness.search.mockResolvedValue({
+      orderedPaths: [
+        "notes/Meeting Followup.md",
+        "Archive/Global Meeting Index.md",
+        "notes/Meeting.md",
+        "notes/Meeting Followup.md",
+        "notes/Other.md",
+      ],
+      matchCountsByPath: {
+        "notes/Meeting Followup.md": 4,
+        "Archive/Global Meeting Index.md": 9,
+        "notes/Meeting.md": 2,
+        "notes/Other.md": 1,
+      },
+    });
     const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 3 });
     await service.initialize();
 
@@ -225,12 +234,17 @@ describe("IndexedSearchService", () => {
         "notes/Meeting.md",
         "notes/Other.md",
       ],
+      matchCountsByPath: {
+        "notes/Meeting Followup.md": 4,
+        "notes/Meeting.md": 2,
+        "notes/Other.md": 1,
+      },
     });
   });
 
   it("returns indexed-ready zero results when the bounded candidates have no matches", async () => {
     const harness = createManagerHarness(createSnapshot({ status: "ready" }));
-    harness.search.mockResolvedValue([]);
+    harness.search.mockResolvedValue({ orderedPaths: [] });
     const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 3 });
     await service.initialize();
 
@@ -241,6 +255,62 @@ describe("IndexedSearchService", () => {
     });
 
     expect(harness.search).toHaveBeenCalledWith("meeting", ["notes/Meeting.md", "notes/Meeting Followup.md"]);
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "ready",
+      execution: "indexed-ready",
+      orderedPaths: [],
+    });
+  });
+
+  it("exposes matchCountsByPath only for indexed-ready returned paths", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "ready" }));
+    harness.search.mockResolvedValue({
+      orderedPaths: ["notes/a.md", "notes/b.md", "notes/a.md", "notes/outside.md"],
+      matchCountsByPath: {
+        "notes/a.md": 5,
+        "notes/b.md": 3,
+        "notes/outside.md": 8,
+      },
+    });
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 2 });
+    await service.initialize();
+
+    const result = await service.query({
+      query: "alpha beta",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md", "notes/b.md", "notes/c.md"],
+    });
+
+    expect(result).toEqual({
+      mode: "indexed",
+      status: "ready",
+      execution: "indexed-ready",
+      orderedPaths: ["notes/a.md", "notes/b.md"],
+      matchCountsByPath: {
+        "notes/a.md": 5,
+        "notes/b.md": 3,
+      },
+    });
+  });
+
+  it("omits match count metadata when bounded indexed-ready results retain no returned-path counts", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "ready" }));
+    harness.search.mockResolvedValue({
+      orderedPaths: ["notes/outside.md", "notes/outside.md"],
+      matchCountsByPath: {
+        "notes/outside.md": 8,
+      },
+    });
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 2 });
+    await service.initialize();
+
+    const result = await service.query({
+      query: "alpha",
+      scope: { folderPath: "notes", includeSubfolders: true },
+      candidatePaths: ["notes/a.md", "notes/b.md", "notes/c.md"],
+    });
+
     expect(result).toEqual({
       mode: "indexed",
       status: "ready",

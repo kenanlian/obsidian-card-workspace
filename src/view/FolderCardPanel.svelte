@@ -218,6 +218,7 @@
   const canBulkMoveSelected = $derived(panelState.canBulkMoveSelected);
   const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
+  const showSearchMatchCounts = $derived(!isBlockedSearchState(panelState));
 
   function handleCardOpenNote(detail: OpenNotePayload): void {
     onOpenNote?.(detail);
@@ -610,6 +611,7 @@
                 {previewLines}
                 {searchQuery}
                 {bulkMode}
+                searchMatchCount={showSearchMatchCounts ? (panelState.searchMatchCountsByPath[card.path] ?? 0) : 0}
                 bulkSelected={bulkMode && selectedPaths.includes(card.path)}
                 selected={selectedPath === card.path}
                 onOpenNote={handleCardOpenNote}

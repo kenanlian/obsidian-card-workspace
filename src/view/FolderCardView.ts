@@ -430,6 +430,7 @@ export class FolderCardView extends ItemView {
   private searchQuery = "";
   private searchExecution: SearchQueryExecutionState = "indexed-unavailable";
   private searchOrderedPaths: string[] | undefined = undefined;
+  private searchMatchCountsByPath: Record<string, number> = {};
   private searchStatus: SearchStatus = "idle";
   private selectedPath: string | null = null;
   private bulkMode = false;
@@ -846,6 +847,7 @@ export class FolderCardView extends ItemView {
     this.searchQuery = "";
     this.searchExecution = "indexed-unavailable";
     this.searchOrderedPaths = undefined;
+    this.clearSearchMatchCounts();
     this.searchStatus = "idle";
     this.searchRequestSeq += 1;
     this.searchSnapshotSeq += 1;
@@ -887,6 +889,7 @@ export class FolderCardView extends ItemView {
     this.searchSnapshot = snapshot;
     this.searchSnapshotSeq += 1;
     this.searchRequestSeq += 1;
+    this.clearSearchMatchCounts();
 
     if (this.searchQuery.trim().length === 0) {
       this.searchExecution = this.derivePendingSearchExecution();
@@ -1354,6 +1357,7 @@ export class FolderCardView extends ItemView {
     this.pendingHydration.clear();
     this.searchExecution = this.derivePendingSearchExecution();
     this.searchOrderedPaths = undefined;
+    this.clearSearchMatchCounts();
     this.clearSearchDebounce();
     this.searchRequestSeq += 1;
     this.searchStatus = this.deriveSearchStatus();
@@ -2058,6 +2062,7 @@ export class FolderCardView extends ItemView {
     this.searchQuery = nextQuery;
     this.searchExecution = this.derivePendingSearchExecution();
     this.searchOrderedPaths = undefined;
+    this.clearSearchMatchCounts();
     this.searchRequestSeq += 1;
     this.searchStatus = this.deriveSearchStatus();
     this.pushState();
@@ -2073,6 +2078,7 @@ export class FolderCardView extends ItemView {
   private resetSearchQuery(): void {
     this.clearSearchDebounce();
     this.searchRequestSeq += 1;
+    this.clearSearchMatchCounts();
 
     if (this.searchQuery.length === 0 && this.searchOrderedPaths === undefined) {
       this.searchStatus = this.deriveSearchStatus();
@@ -2092,6 +2098,7 @@ export class FolderCardView extends ItemView {
     if (query.length === 0) {
       this.searchExecution = this.derivePendingSearchExecution();
       this.searchOrderedPaths = undefined;
+      this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
@@ -2101,6 +2108,7 @@ export class FolderCardView extends ItemView {
     if (!service) {
       this.searchExecution = this.derivePendingSearchExecution();
       this.searchOrderedPaths = undefined;
+      this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
       return;
@@ -2127,9 +2135,13 @@ export class FolderCardView extends ItemView {
       }
 
       this.searchExecution = result.execution;
-      this.searchOrderedPaths = result.execution === "indexed-ready"
-        ? (result.orderedPaths ?? [])
-        : undefined;
+      if (result.execution === "indexed-ready") {
+        this.searchOrderedPaths = result.orderedPaths ?? [];
+        this.searchMatchCountsByPath = { ...(result.matchCountsByPath ?? {}) };
+      } else {
+        this.searchOrderedPaths = undefined;
+        this.clearSearchMatchCounts();
+      }
       this.searchStatus = this.toRuntimeSearchStatus(result);
       this.pushState();
     } catch {
@@ -2139,6 +2151,7 @@ export class FolderCardView extends ItemView {
 
       this.searchExecution = this.derivePendingSearchExecution();
       this.searchOrderedPaths = undefined;
+      this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
       this.pushState();
     }
@@ -2220,6 +2233,10 @@ export class FolderCardView extends ItemView {
 
   private getOrderedVisiblePaths(): string[] {
     return this.visibleCards.map((card) => card.path);
+  }
+
+  private clearSearchMatchCounts(): void {
+    this.searchMatchCountsByPath = {};
   }
 
   private reconcileBulkSelectionToVisibleCards(): void {
@@ -2601,6 +2618,7 @@ export class FolderCardView extends ItemView {
 
     return {
       cards: this.visibleCards,
+      searchMatchCountsByPath: { ...this.searchMatchCountsByPath },
       emptyStateMessage: this.buildEmptyStateMessage(),
       folderPath: this.getDisplayFolderPath(),
       selectedPath: this.selectedPath,
@@ -2633,6 +2651,7 @@ export class FolderCardView extends ItemView {
 
     this.panelModel.mutate((state) => {
       state.cards = this.visibleCards;
+      state.searchMatchCountsByPath = { ...this.searchMatchCountsByPath };
       state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
       state.selectedPath = this.selectedPath;
@@ -2671,6 +2690,7 @@ export class FolderCardView extends ItemView {
 
     this.panelModel.mutate((state) => {
       state.cards = this.visibleCards;
+      state.searchMatchCountsByPath = { ...this.searchMatchCountsByPath };
       state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
       state.selectedPath = this.selectedPath;

@@ -336,6 +336,14 @@ function createHarness(): TestHarness {
   };
 }
 
+function getPanelState(view: FolderCardView): {
+  cards: NoteCardRecord[];
+  searchMatchCountsByPath: Record<string, number>;
+  [key: string]: unknown;
+} {
+  return (view as any).panelModel.getState();
+}
+
 describe("FolderCardView host contract", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -456,11 +464,13 @@ describe("FolderCardView host contract", () => {
 
       await view.onOpen();
       expect((view as any).searchStatus).toBe("ready");
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
 
       (view as any).onSearchQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(119);
       await Promise.resolve();
       expect(query).not.toHaveBeenCalled();
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
 
       vi.advanceTimersByTime(1);
       await Promise.resolve();
@@ -471,6 +481,7 @@ describe("FolderCardView host contract", () => {
       expect((view as any).searchQuery).toBe("");
       expect((view as any).searchOrderedPaths).toBeUndefined();
       expect((view as any).searchStatus).toBe("ready");
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
     } finally {
       vi.useRealTimers();
     }
@@ -651,9 +662,239 @@ describe("FolderCardView host contract", () => {
 
       expect((view as any).searchStatus).toBe("rebuild-required");
       expect((view as any).searchOrderedPaths).toBeUndefined();
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
 
       await view.onClose();
       expect(unsubscribe).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("threads indexed-ready match counts through panel state without mutating cards", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const query = vi.fn(async () => ({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: ["notes/alpha.md"],
+        matchCountsByPath: { "notes/alpha.md": 3 },
+      }));
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth(),
+      }));
+
+      (view as any).folderPath = "notes";
+      const card = createCard("notes/alpha.md", "Alpha");
+      (view as any).baseCards = [card];
+
+      await view.onOpen();
+      (view as any).onSearchQueryChange({ query: "alpha" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const panelState = getPanelState(view);
+      expect(panelState.searchMatchCountsByPath).toEqual({ "notes/alpha.md": 3 });
+      expect((view as any).baseCards[0]).toBe(card);
+      expect(panelState.cards[0]).not.toHaveProperty("matchCount");
+      expect(panelState.cards[0]).not.toHaveProperty("searchMatchCount");
+      expect(panelState.cards[0]).toMatchObject({ path: "notes/alpha.md", title: "Alpha" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders a search badge from indexed-ready count metadata even when the visible preview omits the query text", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin, panelContainer } = createHarness();
+      const query = vi.fn(async () => ({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: ["notes/deep-hit.md"],
+        matchCountsByPath: { "notes/deep-hit.md": 4 },
+      }));
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth(),
+      }));
+
+      const deepHitCard = createCard("notes/deep-hit.md", "Roadmap");
+      deepHitCard.previewHtml = "<p>Visible preview only</p>";
+      deepHitCard.excerpt = "Visible preview only";
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [deepHitCard];
+
+      await view.onOpen();
+      (view as any).onSearchQueryChange({ query: "alpha" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+      await tick();
+
+      const cardEl = panelContainer.querySelector(".fce-card");
+      const badge = panelContainer.querySelector(".fce-card-search-count");
+      expect(cardEl?.textContent).toContain("Visible preview only");
+      expect(cardEl?.textContent).not.toContain("alpha");
+      expect(badge?.textContent?.trim()).toBe("4 matches");
+      expect(badge?.getAttribute("aria-label")).toBe("4 matches in this note");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears search counts immediately on empty query and ignores stale results", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const pending: Array<{ resolve: (value: unknown) => void }> = [];
+      const query = vi.fn(() => {
+        return new Promise((resolve) => {
+          pending.push({ resolve });
+        });
+      });
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth(),
+      }));
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
+
+      await view.onOpen();
+      (view as any).onSearchQueryChange({ query: "alpha" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+
+      (view as any).resetSearchQuery();
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
+
+      pending[0]?.resolve({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: ["notes/alpha.md"],
+        matchCountsByPath: { "notes/alpha.md": 7 },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect((view as any).searchQuery).toBe("");
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("exposes empty counts for blocked indexed search states", async () => {
+    const { view, plugin } = createHarness();
+    plugin.getSearchSnapshot = vi.fn(() => ({
+      initialized: true,
+      disposed: false,
+      mode: "indexed",
+      status: "building",
+      lastError: null,
+      health: createSearchHealth({
+        outcome: "rebuild-required",
+        readiness: "rebuild-required",
+        healthy: false,
+        rebuilding: true,
+        rebuildRequired: true,
+        documentCount: null,
+        lastIndexedAt: null,
+        rebuildReason: "version-drift",
+        detail: "rebuilding",
+      }),
+    }));
+    plugin.getSearchService = vi.fn(() => null);
+
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
+
+    await view.onOpen();
+    (view as any).onSearchQueryChange({ query: "alpha" });
+
+    expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
+    expect((view as any).searchStatus).toBe("rebuild-required");
+  });
+
+  it("does not let stale indexed-ready results overwrite current counts", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const pending: Array<{ resolve: (value: unknown) => void }> = [];
+      const query = vi.fn(() => {
+        return new Promise((resolve) => {
+          pending.push({ resolve });
+        });
+      });
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth(),
+      }));
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
+
+      await view.onOpen();
+      (view as any).onSearchQueryChange({ query: "alpha" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      expect(query).toHaveBeenCalledTimes(1);
+
+      (view as any).onSearchQueryChange({ query: "beta" });
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      expect(query).toHaveBeenCalledTimes(2);
+
+      pending[0]?.resolve({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: ["notes/alpha.md"],
+        matchCountsByPath: { "notes/alpha.md": 1 },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
+
+      pending[1]?.resolve({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: ["notes/beta.md"],
+        matchCountsByPath: { "notes/beta.md": 2 },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({ "notes/beta.md": 2 });
     } finally {
       vi.useRealTimers();
     }

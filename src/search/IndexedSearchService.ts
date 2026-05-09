@@ -1,3 +1,4 @@
+import type { SearchIndexManagerSearchResult } from "./SearchIndexManager";
 import type {
   SearchQueryExecutionState,
   SearchQueryRequest,
@@ -12,7 +13,7 @@ export interface IndexedSearchManagerAdapter {
   dispose(): void;
   getSnapshot(): SearchServiceSnapshot;
   subscribe(listener: (snapshot: SearchServiceSnapshot) => void): () => void;
-  search(query: string, candidatePaths: string[]): Promise<string[]>;
+  search(query: string, candidatePaths: string[]): Promise<SearchIndexManagerSearchResult>;
   handleVaultMutation(event: SearchVaultMutation): void;
 }
 
@@ -99,7 +100,7 @@ export class IndexedSearchService implements SearchService {
       };
     }
 
-    const searchedPaths = await this.manager.search(request.query, boundedCandidates);
+    const searchResult = await this.manager.search(request.query, boundedCandidates);
     const postSearchBlockedExecution = this.getBlockedExecution(this.snapshot);
     if (postSearchBlockedExecution) {
       return {
@@ -111,7 +112,7 @@ export class IndexedSearchService implements SearchService {
 
     const allowed = new Set(boundedCandidates);
     const orderedPaths: string[] = [];
-    for (const path of searchedPaths) {
+    for (const path of searchResult.orderedPaths) {
       if (!allowed.has(path)) {
         continue;
       }
@@ -126,6 +127,7 @@ export class IndexedSearchService implements SearchService {
       status: "ready",
       execution: "indexed-ready",
       orderedPaths,
+      matchCountsByPath: this.filterMatchCountsByPath(orderedPaths, searchResult),
     };
   }
 
@@ -175,6 +177,26 @@ export class IndexedSearchService implements SearchService {
     }
 
     return "indexed-building";
+  }
+
+  private filterMatchCountsByPath(
+    orderedPaths: string[],
+    searchResult: SearchIndexManagerSearchResult,
+  ): Record<string, number> | undefined {
+    if (!searchResult.matchCountsByPath) {
+      return undefined;
+    }
+
+    const filtered: Record<string, number> = {};
+    for (const path of orderedPaths) {
+      const count = searchResult.matchCountsByPath[path];
+      if (typeof count !== "number") {
+        continue;
+      }
+      filtered[path] = count;
+    }
+
+    return Object.keys(filtered).length > 0 ? filtered : undefined;
   }
 
   private emit(): void {

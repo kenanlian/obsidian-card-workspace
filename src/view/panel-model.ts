@@ -14,6 +14,7 @@ export interface OpenNotePayload {
 
 export interface PanelModelState {
   cards: NoteCardRecord[];
+  searchMatchCountsByPath: Record<string, number>;
   emptyStateMessage: string;
   folderPath: string;
   selectedPath: string | null;

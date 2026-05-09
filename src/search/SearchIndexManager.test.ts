@@ -186,7 +186,7 @@ describe("SearchIndexManager", () => {
         detail: "Search index restored from persistent storage.",
       },
     });
-    expect(await manager.search("road", ["notes/a.md"])).toEqual(["notes/a.md"]);
+    expect(await manager.search("road", ["notes/a.md"])).toMatchObject({ orderedPaths: ["notes/a.md"] });
   });
 
   it("defers document-state reconciliation until explicit sync after healthy restore", async () => {
@@ -215,12 +215,12 @@ describe("SearchIndexManager", () => {
       detail: "Search index restored from persistent storage.",
     });
     expect(readAllDocuments).not.toHaveBeenCalled();
-    expect(await manager.search("road", ["notes/a.md"])).toEqual(["notes/a.md"]);
+    expect(await manager.search("road", ["notes/a.md"])).toMatchObject({ orderedPaths: ["notes/a.md"] });
 
     await manager.syncDocumentStateFromSource();
 
     expect(readAllDocuments).toHaveBeenCalledTimes(1);
-    expect(await manager.search("road", ["notes/a.md"])).toEqual(["notes/a.md"]);
+    expect(await manager.search("road", ["notes/a.md"])).toMatchObject({ orderedPaths: ["notes/a.md"] });
   });
 
   it("discards restored documents on pre-sync delete without forcing source reconciliation", async () => {
@@ -247,7 +247,7 @@ describe("SearchIndexManager", () => {
     await manager.applyMutation(createMutation({ type: "delete", path: "notes/a.md" }));
 
     expect(readAllDocuments).not.toHaveBeenCalled();
-    expect(await manager.search("roadmap", ["notes/a.md"])).toEqual([]);
+    expect(await manager.search("roadmap", ["notes/a.md"])).toMatchObject({ orderedPaths: [] });
     expectHealthSubset(manager.getSnapshot().health, {
       documentCount: 0,
     });
@@ -289,7 +289,7 @@ describe("SearchIndexManager", () => {
     );
 
     expect(readAllDocuments).not.toHaveBeenCalled();
-    expect(await manager.search("roadmap", ["notes/a.md", "notes/renamed.md"])).toEqual(["notes/renamed.md"]);
+    expect(await manager.search("roadmap", ["notes/a.md", "notes/renamed.md"])).toMatchObject({ orderedPaths: ["notes/renamed.md"] });
     expectHealthSubset(manager.getSnapshot().health, {
       documentCount: 1,
     });
@@ -335,13 +335,13 @@ describe("SearchIndexManager", () => {
 
     expect(result).toEqual({ action: "applied", rebuildRequired: false });
     expect(readAllDocuments).not.toHaveBeenCalled();
-    expect(await manager.search("roadmap", ["notes/projects/a.md", "notes/initiatives/a.md"])).toEqual([
+    expect(await manager.search("roadmap", ["notes/projects/a.md", "notes/initiatives/a.md"])).toMatchObject({ orderedPaths: [
       "notes/initiatives/a.md",
-    ]);
+    ] });
     expect(await manager.search("checklist", [
       "notes/projects/sub/b.md",
       "notes/initiatives/sub/b.md",
-    ])).toEqual(["notes/initiatives/sub/b.md"]);
+    ])).toMatchObject({ orderedPaths: ["notes/initiatives/sub/b.md"] });
     expectHealthSubset(manager.getSnapshot().health, {
       documentCount: 2,
     });
@@ -537,7 +537,7 @@ describe("SearchIndexManager", () => {
         documentCount: 1,
       }),
     );
-    expect(await manager.search("road", ["notes/a.md"])).toEqual([]);
+    expect(await manager.search("road", ["notes/a.md"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("publishes health error state when clear/reset cannot clear storage", async () => {
@@ -584,7 +584,7 @@ describe("SearchIndexManager", () => {
 
     expect(readAllDocuments).toHaveBeenCalledTimes(1);
     expect(store.write).toHaveBeenCalledTimes(1);
-    expect(await manager.search("road", ["notes/a.md", "notes/b.md"])).toEqual(["notes/a.md"]);
+    expect(await manager.search("road", ["notes/a.md", "notes/b.md"])).toMatchObject({ orderedPaths: ["notes/a.md"] });
     expect(manager.getSnapshot().status).toBe("ready");
     expectHealthSubset(manager.getSnapshot().health, {
       outcome: "rebuilt",
@@ -609,10 +609,10 @@ describe("SearchIndexManager", () => {
     await manager.restore(createMetadata());
     await manager.rebuildFromSource("Initial build");
 
-    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toEqual([
+    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Project Brief.pdf",
-    ]);
-    expect(await manager.search("assets", ["Assets/Project Brief.pdf"])).toEqual([]);
+    ] });
+    expect(await manager.search("assets", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("indexes markdown content independently of title and path text", async () => {
@@ -626,9 +626,9 @@ describe("SearchIndexManager", () => {
     await manager.restore(createMetadata());
     await manager.rebuildFromSource("Initial build");
 
-    expect(await manager.search("shimmerword", ["notes/Status Update.md"])).toEqual([
+    expect(await manager.search("shimmerword", ["notes/Status Update.md"])).toMatchObject({ orderedPaths: [
       "notes/Status Update.md",
-    ]);
+    ] });
   });
 
   it("indexes fenced flow report and report_summary markdown content without path tokens", async () => {
@@ -666,22 +666,22 @@ describe("SearchIndexManager", () => {
       "notes/Fenced Report.md",
       "notes/Report Summary.md",
       "notes/Control.md",
-    ])).toEqual([
+    ])).toMatchObject({ orderedPaths: [
       "notes/Report Summary.md",
       "notes/Fenced Report.md",
-    ]);
+    ] });
     expect(await manager.search("summary", [
       "notes/Fenced Report.md",
       "notes/Report Summary.md",
       "notes/Control.md",
-    ])).toEqual([
+    ])).toMatchObject({ orderedPaths: [
       "notes/Report Summary.md",
-    ]);
+    ] });
     expect(await manager.search("notes", [
       "notes/Fenced Report.md",
       "notes/Report Summary.md",
       "notes/Control.md",
-    ])).toEqual([]);
+    ])).toMatchObject({ orderedPaths: [] });
   });
 
   it("preserves current MiniSearch ranking for candidate-bounded meeting queries", async () => {
@@ -702,11 +702,11 @@ describe("SearchIndexManager", () => {
       "Notes/Meeting.md",
       "Notes/Meeting Followup.md",
       "Notes/Other.md",
-    ])).toEqual([
+    ])).toMatchObject({ orderedPaths: [
       "Notes/Meeting.md",
       "Notes/Meeting Followup.md",
       "Notes/Other.md",
-    ]);
+    ] });
   });
 
   it("preserves current MiniSearch tie ordering when identical documents score equally", async () => {
@@ -722,15 +722,107 @@ describe("SearchIndexManager", () => {
     await manager.restore(createMetadata());
     await manager.rebuildFromSource("Initial build");
 
-    expect(await manager.search("equal", ["Notes/A.md", "Notes/B.md", "Notes/C.md"])).toEqual([
+    expect(await manager.search("equal", ["Notes/A.md", "Notes/B.md", "Notes/C.md"])).toMatchObject({ orderedPaths: [
       "Notes/A.md",
       "Notes/B.md",
-    ]);
-    expect(await manager.search("shared token", ["Notes/A.md", "Notes/B.md", "Notes/C.md"])).toEqual([
+    ] });
+    expect(await manager.search("shared token", ["Notes/A.md", "Notes/B.md", "Notes/C.md"])).toMatchObject({ orderedPaths: [
       "Notes/A.md",
       "Notes/B.md",
       "Notes/C.md",
-    ]);
+    ] });
+  });
+
+  it("returns match count metadata for unique query tokens across title and content", async () => {
+    const docs = [
+      createSearchableDocument(
+        "notes/alpha.md",
+        "Alpha",
+        "alpha alpha beta",
+      ),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    expect(await manager.search("alpha beta alpha", ["notes/alpha.md"])).toEqual({
+      orderedPaths: ["notes/alpha.md"],
+      matchCountsByPath: {
+        "notes/alpha.md": 4,
+      },
+    });
+
+    expect(await manager.search("alpha", ["notes/alpha.md"])).toEqual({
+      orderedPaths: ["notes/alpha.md"],
+      matchCountsByPath: {
+        "notes/alpha.md": 3,
+      },
+    });
+  });
+
+  it("returns match count metadata with non-overlapping literal occurrences", async () => {
+    const docs = [
+      createSearchableDocument("notes/aa.md", "Marker", "aaa"),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    expect(await manager.search("aa", ["notes/aa.md"])).toEqual({
+      orderedPaths: ["notes/aa.md"],
+      matchCountsByPath: {
+        "notes/aa.md": 1,
+      },
+    });
+  });
+
+  it("builds case-insensitive match count metadata only for candidate-bounded results", async () => {
+    const docs = [
+      createSearchableDocument(
+        "notes/alpha.md",
+        "Alpha",
+        "ALPHA alpha beta",
+      ),
+      createSearchableDocument(
+        "notes/outside.md",
+        "Alpha Outside",
+        "alpha beta alpha beta",
+      ),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    expect(await manager.search("  ALPHA beta alpha  ", ["notes/alpha.md"])).toEqual({
+      orderedPaths: ["notes/alpha.md"],
+      matchCountsByPath: {
+        "notes/alpha.md": 4,
+      },
+    });
+  });
+
+  it("omits match count metadata for empty queries while preserving candidate ordering", async () => {
+    const docs = [
+      createSearchableDocument("notes/a.md", "Alpha", "beta gamma"),
+      createSearchableDocument("notes/b.md", "Beta", "alpha gamma"),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    expect(await manager.search("   ", ["notes/b.md", "notes/a.md"])).toMatchObject({ orderedPaths: ["notes/b.md", "notes/a.md"] });
   });
 
   it("matches markdown title and markdown content without using path-only tokens", async () => {
@@ -744,13 +836,13 @@ describe("SearchIndexManager", () => {
     await manager.restore(createMetadata());
     await manager.rebuildFromSource("Initial build");
 
-    expect(await manager.search("status update", ["notes/Status Update.md"])).toEqual([
+    expect(await manager.search("status update", ["notes/Status Update.md"])).toMatchObject({ orderedPaths: [
       "notes/Status Update.md",
-    ]);
-    expect(await manager.search("shimmerword", ["notes/Status Update.md"])).toEqual([
+    ] });
+    expect(await manager.search("shimmerword", ["notes/Status Update.md"])).toMatchObject({ orderedPaths: [
       "notes/Status Update.md",
-    ]);
-    expect(await manager.search("notes", ["notes/Status Update.md"])).toEqual([]);
+    ] });
+    expect(await manager.search("notes", ["notes/Status Update.md"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("keeps non-markdown search title-only with no path-token or content-like matches", async () => {
@@ -764,14 +856,14 @@ describe("SearchIndexManager", () => {
     await manager.restore(createMetadata());
     await manager.rebuildFromSource("Initial build");
 
-    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toEqual([
+    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Project Brief.pdf",
-    ]);
-    expect(await manager.search("brief", ["Assets/Project Brief.pdf"])).toEqual([
+    ] });
+    expect(await manager.search("brief", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Project Brief.pdf",
-    ]);
-    expect(await manager.search("assets", ["Assets/Project Brief.pdf"])).toEqual([]);
-    expect(await manager.search("body", ["Assets/Project Brief.pdf"])).toEqual([]);
+    ] });
+    expect(await manager.search("assets", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [] });
+    expect(await manager.search("body", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("keeps error state when rebuild persistence write fails", async () => {
@@ -844,14 +936,14 @@ describe("SearchIndexManager", () => {
 
     byPath.set("notes/new.md", createDocument("notes/new.md", "Migration Plan"));
     await manager.applyMutation(createMutation({ type: "create", path: "notes/new.md" }));
-    expect(await manager.search("migration", ["notes/new.md", "notes/a.md"])).toEqual(["notes/new.md"]);
+    expect(await manager.search("migration", ["notes/new.md", "notes/a.md"])).toMatchObject({ orderedPaths: ["notes/new.md"] });
 
     byPath.set("notes/new.md", createDocument("notes/new.md", "Migration Updated"));
     await manager.applyMutation(createMutation({ type: "modify", path: "notes/new.md" }));
-    expect(await manager.search("updated", ["notes/new.md"])).toEqual(["notes/new.md"]);
+    expect(await manager.search("updated", ["notes/new.md"])).toMatchObject({ orderedPaths: ["notes/new.md"] });
 
     await manager.applyMutation(createMutation({ type: "delete", path: "notes/new.md" }));
-    expect(await manager.search("updated", ["notes/new.md"])).toEqual([]);
+    expect(await manager.search("updated", ["notes/new.md"])).toMatchObject({ orderedPaths: [] });
 
     byPath.delete("notes/a.md");
     byPath.set("notes/renamed.md", createDocument("notes/renamed.md", "Roadmap"));
@@ -863,7 +955,7 @@ describe("SearchIndexManager", () => {
         isFolder: false,
       }),
     );
-    expect(await manager.search("roadmap", ["notes/a.md", "notes/renamed.md"])).toEqual(["notes/renamed.md"]);
+    expect(await manager.search("roadmap", ["notes/a.md", "notes/renamed.md"])).toMatchObject({ orderedPaths: ["notes/renamed.md"] });
   });
 
   it("applies non-Markdown create/modify/delete/rename mutations through applyMutation title-only paths", async () => {
@@ -885,9 +977,9 @@ describe("SearchIndexManager", () => {
         isMarkdown: false,
       }),
     );
-    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toEqual([
+    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Project Brief.pdf",
-    ]);
+    ] });
 
     byPath.set(
       "Assets/Project Brief.pdf",
@@ -900,9 +992,9 @@ describe("SearchIndexManager", () => {
         isMarkdown: false,
       }),
     );
-    expect(await manager.search("project brief v2", ["Assets/Project Brief.pdf"])).toEqual([
+    expect(await manager.search("project brief v2", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Project Brief.pdf",
-    ]);
+    ] });
 
     byPath.delete("Assets/Project Brief.pdf");
     await manager.applyMutation(
@@ -912,7 +1004,7 @@ describe("SearchIndexManager", () => {
         isMarkdown: false,
       }),
     );
-    expect(await manager.search("project brief v2", ["Assets/Project Brief.pdf"])).toEqual([]);
+    expect(await manager.search("project brief v2", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [] });
 
     byPath.set(
       "Assets/Archive.pdf",
@@ -927,11 +1019,11 @@ describe("SearchIndexManager", () => {
         isMarkdown: false,
       }),
     );
-    expect(await manager.search("project brief", ["Assets/Archive.pdf"])).toEqual([
+    expect(await manager.search("project brief", ["Assets/Archive.pdf"])).toMatchObject({ orderedPaths: [
       "Assets/Archive.pdf",
-    ]);
-    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toEqual([]);
-    expect(await manager.search("archive", ["Assets/Archive.pdf"])).toEqual([]);
+    ] });
+    expect(await manager.search("project brief", ["Assets/Project Brief.pdf"])).toMatchObject({ orderedPaths: [] });
+    expect(await manager.search("archive", ["Assets/Archive.pdf"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("removes indexed markdown document when rename target is no longer markdown-indexable", async () => {
@@ -954,7 +1046,7 @@ describe("SearchIndexManager", () => {
       }),
     );
 
-    expect(await manager.search("roadmap", ["notes/a.md", "notes/a.canvas"])).toEqual([]);
+    expect(await manager.search("roadmap", ["notes/a.md", "notes/a.canvas"])).toMatchObject({ orderedPaths: [] });
   });
 
   it("rewrites folder paths for safe folder renames", async () => {
@@ -981,8 +1073,8 @@ describe("SearchIndexManager", () => {
     );
 
     expect(result).toEqual({ action: "applied", rebuildRequired: false });
-    expect(await manager.search("roadmap", ["notes/initiatives/a.md"])).toEqual(["notes/initiatives/a.md"]);
-    expect(await manager.search("checklist", ["notes/initiatives/sub/b.md"])).toEqual(["notes/initiatives/sub/b.md"]);
+    expect(await manager.search("roadmap", ["notes/initiatives/a.md"])).toMatchObject({ orderedPaths: ["notes/initiatives/a.md"] });
+    expect(await manager.search("checklist", ["notes/initiatives/sub/b.md"])).toMatchObject({ orderedPaths: ["notes/initiatives/sub/b.md"] });
   });
 
   it("escalates unsafe folder rename to rebuild-required with explicit rebuild reason", async () => {
@@ -1040,7 +1132,7 @@ describe("SearchIndexManager", () => {
 
     releaseBuild();
     await buildPromise;
-    expect(await manager.search("queue", ["notes/new.md"])).toEqual(["notes/new.md"]);
+    expect(await manager.search("queue", ["notes/new.md"])).toMatchObject({ orderedPaths: ["notes/new.md"] });
     expectHealthSubset(manager.getSnapshot().health, {
       outcome: "rebuilt",
       readiness: "ready",

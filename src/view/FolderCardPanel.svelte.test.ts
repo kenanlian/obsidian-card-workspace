@@ -33,6 +33,7 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
 function createInitialPanelState(): PanelModelState {
   return {
     cards: [],
+    searchMatchCountsByPath: {},
     emptyStateMessage: "No supported files found in this folder.",
     folderPath: "notes",
     selectedPath: null,
@@ -266,6 +267,103 @@ describe("FolderCardPanel.svelte", () => {
     await tick();
 
     expect(target.textContent).toContain("Index status: Rebuild required (corrupted)");
+
+    await unmount(component);
+  });
+
+  it("renders search hit match badge", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = [
+        createCard("notes/singular.md", "Singular note"),
+        createCard("notes/plural.md", "Plural note"),
+        createCard("notes/zero.md", "Zero note"),
+        createCard("notes/missing.md", "Missing note"),
+      ];
+      state.searchQuery = "test";
+      state.searchMatchCountsByPath = {
+        "notes/singular.md": 1,
+        "notes/plural.md": 3,
+        "notes/zero.md": 0,
+      };
+      state.generation = 1;
+    });
+    await tick();
+
+    const singularCard = Array.from(target.querySelectorAll(".fce-card")).find((c: Element) => c.textContent?.includes("Singular note"));
+    const singularBadge = singularCard?.querySelector(".fce-card-search-count");
+    expect(singularBadge).not.toBeNull();
+    expect(singularBadge?.textContent?.trim()).toBe("1 match");
+    expect(singularBadge?.getAttribute("aria-label")).toBe("1 match in this note");
+
+    const pluralCard = Array.from(target.querySelectorAll(".fce-card")).find((c: Element) => c.textContent?.includes("Plural note"));
+    const pluralBadge = pluralCard?.querySelector(".fce-card-search-count");
+    expect(pluralBadge).not.toBeNull();
+    expect(pluralBadge?.textContent?.trim()).toBe("3 matches");
+    expect(pluralBadge?.getAttribute("aria-label")).toBe("3 matches in this note");
+
+    const zeroCard = Array.from(target.querySelectorAll(".fce-card")).find((c: Element) => c.textContent?.includes("Zero note"));
+    expect(zeroCard?.querySelector(".fce-card-search-count")).toBeNull();
+
+    const missingCard = Array.from(target.querySelectorAll(".fce-card")).find((c: Element) => c.textContent?.includes("Missing note"));
+    expect(missingCard?.querySelector(".fce-card-search-count")).toBeNull();
+
+    panelModel.mutate((state) => {
+      state.searchQuery = "   ";
+    });
+    await tick();
+    expect(target.querySelectorAll(".fce-card-search-count").length).toBe(0);
+
+    await unmount(component);
+  });
+
+  it("suppresses search badges for blocked, unavailable, and cleared states even if count metadata is present", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = [createCard("notes/blocked.md", "Blocked note")];
+      state.searchQuery = "alpha";
+      state.searchStatus = "building";
+      state.searchIndexReadiness = "restoring";
+      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
+      state.generation = 1;
+    });
+    await tick();
+
+    expect(target.querySelector(".fce-card-search-count")).toBeNull();
+
+    panelModel.mutate((state) => {
+      state.searchStatus = "unavailable";
+      state.searchIndexReadiness = "ready";
+      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
+    });
+    await tick();
+
+    expect(target.querySelector(".fce-card-search-count")).toBeNull();
+
+    panelModel.mutate((state) => {
+      state.searchStatus = "ready";
+      state.searchQuery = "   ";
+      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
+    });
+    await tick();
+
+    expect(target.querySelector(".fce-card-search-count")).toBeNull();
 
     await unmount(component);
   });

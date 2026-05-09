@@ -1,0 +1,113 @@
+
+> card-workspace@0.1.6 check
+> tsc --noEmit
+
+
+> card-workspace@0.1.6 build
+> node esbuild.config.mjs --production
+
+▲ [WARNING] Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:723:6:
+      723 │       <div
+          ╵       ~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:723:6:
+      723 │       <div
+          ╵       ~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:734:10:
+      734 │           <span
+          ╵           ~~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+▲ [WARNING] `<span>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions [plugin esbuild-svelte]
+
+    src/view/Toolbar.svelte:734:10:
+      734 │           <span
+          ╵           ~~~~~
+
+  The plugin "esbuild-svelte" was triggered by this import
+
+    src/view/FolderCardPanel.svelte:3:20:
+      3 │ import Toolbar from "./Toolbar.svelte";
+        ╵                     ~~~~~~~~~~~~~~~~~~
+
+4 warnings
+
+  main.js  533.0kb
+
+⚡ Done in 414ms
+
+> card-workspace@0.1.6 test
+> vitest run
+
+6:09:48 PM [vite-plugin-svelte] no Svelte config found at /home/kenan/Secret-Projects/obsidian-card-workspace - using default configuration.
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/kenan/Secret-Projects/obsidian-card-workspace[39m
+
+ [32m✓[39m [30m[43m node [49m[39m src/release-support.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 479[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/main.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 176[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/card-context-actions.test.ts [2m([22m[2m98 tests[22m[2m)[22m[33m 336[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/pipeline.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/SearchIndexManager.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 70[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/markdown-utils.test.ts [2m([22m[2m44 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/IndexedSearchService.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/note-ops.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/FolderPickerModal.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/settings.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/desktop-shell.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/FolderCardExplorerSettingTab.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/document-preparation.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+6:09:52 PM [vite-plugin-svelte] src/view/Toolbar.svelte:723:6 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+6:09:52 PM [vite-plugin-svelte] src/view/Toolbar.svelte:723:6 Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+6:09:52 PM [vite-plugin-svelte] src/view/Toolbar.svelte:734:10 Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+6:09:52 PM [vite-plugin-svelte] src/view/Toolbar.svelte:734:10 `<span>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+ [32m✓[39m [30m[43m node [49m[39m src/view/file-kind.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/scroll-anchoring.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/IndexStore.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/bulk-selection.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/search/markdown-search-text.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m [30m[45m jsdom [49m[39m src/view/CardItem.svelte.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 372[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/metadata-utils.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m [30m[43m node [49m[39m src/view/row-projection.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m [30m[45m jsdom [49m[39m src/view/Toolbar.svelte.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 809[2mms[22m[39m
+ [32m✓[39m [30m[45m jsdom [49m[39m src/view/FolderCardPanel.svelte.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 964[2mms[22m[39m
+     [33m[2m✓[22m[39m renders empty state, populated list, and emits hydrate-range with numeric bounds [33m 551[2mms[22m[39m
+ [32m✓[39m [30m[45m jsdom [49m[39m src/view/FolderCardView.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1219[2mms[22m[39m
+     [33m[2m✓[22m[39m mounts panel and propagates updates [33m 596[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m24 passed[39m[22m[90m (24)[39m
+[2m      Tests [22m [1m[32m441 passed[39m[22m[90m (441)[39m
+[2m   Start at [22m 18:09:48
+[2m   Duration [22m 4.77s[2m (transform 9.38s, setup 0ms, import 12.64s, tests 4.72s, environment 4.63s)[22m
+

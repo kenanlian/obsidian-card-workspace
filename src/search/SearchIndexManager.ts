@@ -4,9 +4,7 @@ import type {
   IndexStore,
   IndexStoreNamespaceMetadata,
   IndexStoreRestoreRebuildRequiredResult,
-  IndexStoreRestoreResult,
   IndexStoreWriteFailureResult,
-  IndexStoreWriteResult,
 } from "./IndexStore";
 import { classifySearchMutation } from "./document-preparation";
 import {
@@ -29,6 +27,11 @@ export interface SearchIndexManagerRestoreResult {
 export interface SearchIndexManagerMutationResult {
   action: "ignored" | "applied" | "rebuild-required";
   rebuildRequired: boolean;
+}
+
+export interface SearchIndexManagerSearchResult {
+  orderedPaths: string[];
+  matchCountsByPath?: Record<string, number>;
 }
 
 export interface SearchIndexDocumentSource {
@@ -88,6 +91,8 @@ const SEARCH_OPTIONS = {
     content: PHASE3_MINISEARCH_CONTRACT.boost.content,
   },
 };
+
+const WHITESPACE_PATTERN = /\s+/g;
 
 export class SearchIndexManager {
   private readonly store: Pick<IndexStore, "restore" | "write" | "clear">;
@@ -345,14 +350,18 @@ export class SearchIndexManager {
     return clearResult;
   }
 
-  async search(query: string, candidatePaths: string[]): Promise<string[]> {
+  async search(query: string, candidatePaths: string[]): Promise<SearchIndexManagerSearchResult> {
     if (this.snapshot.status !== "ready") {
-      return [];
+      return {
+        orderedPaths: [],
+      };
     }
 
     const trimmed = query.trim();
     if (trimmed.length === 0) {
-      return [...candidatePaths];
+      return {
+        orderedPaths: [...candidatePaths],
+      };
     }
 
     const allowed = new Set(candidatePaths);
@@ -368,7 +377,10 @@ export class SearchIndexManager {
       ordered.push(result.path);
     }
 
-    return ordered;
+    return {
+      orderedPaths: ordered,
+      matchCountsByPath: this.buildMatchCountsByPath(trimmed, ordered),
+    };
   }
 
   async markRebuilt(documentCount: number, lastIndexedAt: number): Promise<void> {
@@ -809,6 +821,56 @@ export class SearchIndexManager {
     }
   }
 
+  private buildMatchCountsByPath(query: string, orderedPaths: string[]): Record<string, number> | undefined {
+    const uniqueTokens = this.extractUniqueQueryTokens(query);
+    if (uniqueTokens.length === 0) {
+      return undefined;
+    }
+
+    const matchCountsByPath: Record<string, number> = {};
+    for (const path of orderedPaths) {
+      const document = this.documentsByPath.get(path);
+      if (!document) {
+        continue;
+      }
+
+      const searchBasis = `${document.title} ${document.content}`.trim();
+      const count = this.countTokenMatches(searchBasis, uniqueTokens);
+      if (count > 0) {
+        matchCountsByPath[path] = count;
+      }
+    }
+
+    return Object.keys(matchCountsByPath).length > 0 ? matchCountsByPath : undefined;
+  }
+
+  private extractUniqueQueryTokens(query: string): string[] {
+    const normalized = query.toLowerCase().replace(WHITESPACE_PATTERN, " ").trim();
+    if (normalized.length === 0) {
+      return [];
+    }
+
+    const uniqueTokens = new Set<string>();
+    for (const token of normalized.split(" ")) {
+      if (token.length === 0) {
+        continue;
+      }
+      uniqueTokens.add(token);
+    }
+
+    return [...uniqueTokens];
+  }
+
+  private countTokenMatches(searchBasis: string, tokens: string[]): number {
+    const normalizedBasis = searchBasis.toLowerCase();
+    let total = 0;
+    for (const token of tokens) {
+      total += countNonOverlappingLiteralOccurrences(normalizedBasis, token);
+    }
+
+    return total;
+  }
+
   private getInternalIndexState(): MiniSearchInternalState | null {
     const internalIndex = this.index as unknown as Record<string, unknown>;
     const storedFields = internalIndex["_storedFields"];
@@ -937,4 +999,24 @@ function rewriteFolderPath(folderPath: string, oldPrefix: string, newPrefix: str
     return rewritePathPrefix(folderPath, oldPrefix, newPrefix);
   }
   return folderPath;
+}
+
+function countNonOverlappingLiteralOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0 || haystack.length === 0) {
+    return 0;
+  }
+
+  let count = 0;
+  let searchStart = 0;
+  while (searchStart < haystack.length) {
+    const matchIndex = haystack.indexOf(needle, searchStart);
+    if (matchIndex === -1) {
+      break;
+    }
+
+    count += 1;
+    searchStart = matchIndex + needle.length;
+  }
+
+  return count;
 }

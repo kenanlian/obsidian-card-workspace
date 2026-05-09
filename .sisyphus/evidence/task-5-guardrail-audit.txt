@@ -1,0 +1,7 @@
+Guardrail audit for search-hit-count badges:
+- NoteCardRecord in src/view/types.ts has no count fields.
+- pipeline.ts only filters by orderedPaths and reorders by pins; no count logic affects projection.
+- CardItem.svelte only renders a provided searchMatchCount prop; it does not compute counts from preview HTML or query text beyond display gating.
+- FolderCardPanel.svelte passes panelState.searchMatchCountsByPath[card.path] ?? 0 into CardItem and keeps badge scope under .folder-card-view styles.
+- SearchIndexManager/IndexedSearchService keep counts as runtime metadata on indexed-ready results and filter them to returned ordered paths only.
+- No dependency changes were made.

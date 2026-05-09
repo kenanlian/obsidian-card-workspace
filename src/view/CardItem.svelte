@@ -29,6 +29,7 @@
     pinnedPaths?: string[];
     previewLines?: number;
     searchQuery?: string;
+    searchMatchCount?: number;
     onOpenNote?: (payload: OpenNotePayload) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
@@ -44,6 +45,7 @@
     pinnedPaths = [],
     previewLines = 5,
     searchQuery = "",
+    searchMatchCount = 0,
     onOpenNote,
     onBulkSelectCard,
     onCardContextMenu,
@@ -293,6 +295,14 @@
       <div class="fce-card-title-group" role="presentation" onmouseenter={emitCardHoverLink}>
         <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
         <h4>{@html highlightedTitleHtml}</h4>
+        {#if searchQuery.trim().length > 0 && searchMatchCount > 0}
+          <span
+            class="fce-card-search-count"
+            aria-label="{searchMatchCount} match{searchMatchCount === 1 ? "" : "es"} in this note"
+          >
+            {searchMatchCount === 1 ? "1 match" : `${searchMatchCount} matches`}
+          </span>
+        {/if}
       </div>
       <div class="fce-card-actions">
         {#if bulkMode}

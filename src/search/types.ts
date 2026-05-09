@@ -154,6 +154,7 @@ export interface SearchQueryRequest {
  * - `orderedPaths: []` still means indexed-ready zero matches, not unavailable search.
  * - Any non-ready execution state means indexed filtering did not run for this query.
  * - Score metadata stays runtime-internal and must not leak into render-facing card types.
+ * - `matchCountsByPath` is runtime metadata for indexed-ready badge/count decoration, separate from ranking scores.
  */
 export interface SearchQueryResult {
   mode: SearchExecutionMode;
@@ -161,6 +162,7 @@ export interface SearchQueryResult {
   execution: SearchQueryExecutionState;
   orderedPaths?: string[];
   scoresByPath?: Record<string, number>;
+  matchCountsByPath?: Record<string, number>;
 }
 
 /**
