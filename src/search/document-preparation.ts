@@ -1,3 +1,4 @@
+import { extractMarkdownSearchText } from "./markdown-search-text";
 import { stripMarkdownToText } from "../view/markdown-utils";
 import type { SearchRenameClassification, SearchVaultMutation, SearchableDocument } from "./types";
 
@@ -28,7 +29,7 @@ export interface SearchMutationDecision {
 export function prepareSearchableDocument(input: SearchableDocumentInput): SearchableDocument {
   const title = input.title.trim();
   const markdown = input.markdown;
-  const content = typeof markdown === "string" ? stripMarkdownToText(markdown, Number.MAX_SAFE_INTEGER) : "";
+  const content = typeof markdown === "string" ? extractMarkdownSearchText(markdown) : "";
   const excerpt = typeof markdown === "string" ? stripMarkdownToText(markdown, EXCERPT_MAX_LENGTH) : "";
 
   return {
