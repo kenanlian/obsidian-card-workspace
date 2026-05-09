@@ -30,7 +30,7 @@ import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } 
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
-const SEARCH_TOKENIZER_VERSION = "lowercase-v1";
+const SEARCH_TOKENIZER_VERSION = "search-text-v2";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
 type SearchRecoveryBoundaryState = "healthy" | "degraded";
 

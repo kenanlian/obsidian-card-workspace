@@ -147,6 +147,24 @@ describe("IndexStore", () => {
     });
   });
 
+  it("returns rebuild-required version-drift when tokenizer metadata changes", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({
+      adapter,
+      vaultNamespace: "vault-a",
+    });
+
+    await store.write(createMetadata({ tokenizerVersion: "lowercase-v1" }), createPayload());
+    const restore = await store.restore(createMetadata({ tokenizerVersion: "search-text-v2" }));
+
+    expect(restore).toEqual({
+      outcome: "rebuild-required",
+      reason: "version-drift",
+      cleared: true,
+      detail: "Persisted index metadata version drift detected.",
+    });
+  });
+
   it("returns rebuild-required corrupt when persisted payload has invalid shape", async () => {
     const adapter = new MemoryIndexStoreAdapter();
     adapter.setRawRecord("vault-a", {

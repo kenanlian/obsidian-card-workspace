@@ -7,6 +7,7 @@ import type {
   IndexStoreRestoreResult,
   IndexStoreWriteResult,
 } from "./IndexStore";
+import { prepareSearchableDocument } from "./document-preparation";
 import type { SearchableDocument, SearchVaultMutation } from "./types";
 
 type SearchIndexManagerHealth = ReturnType<InstanceType<typeof SearchIndexManager>["getSnapshot"]>["health"];
@@ -628,6 +629,59 @@ describe("SearchIndexManager", () => {
     expect(await manager.search("shimmerword", ["notes/Status Update.md"])).toEqual([
       "notes/Status Update.md",
     ]);
+  });
+
+  it("indexes fenced flow report and report_summary markdown content without path tokens", async () => {
+    const docs = [
+      prepareSearchableDocument({
+        path: "notes/Fenced Report.md",
+        title: "Code Fence Alpha",
+        markdown: "```sh\nflow report\n```",
+        mtime: 10,
+        ctime: 5,
+      }),
+      prepareSearchableDocument({
+        path: "notes/Report Summary.md",
+        title: "Code Fence Beta",
+        markdown: "```sh\n./report_summary\n```",
+        mtime: 10,
+        ctime: 5,
+      }),
+      prepareSearchableDocument({
+        path: "notes/Control.md",
+        title: "Control",
+        markdown: "Nothing relevant here.",
+        mtime: 10,
+        ctime: 5,
+      }),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    expect(await manager.search("report", [
+      "notes/Fenced Report.md",
+      "notes/Report Summary.md",
+      "notes/Control.md",
+    ])).toEqual([
+      "notes/Report Summary.md",
+      "notes/Fenced Report.md",
+    ]);
+    expect(await manager.search("summary", [
+      "notes/Fenced Report.md",
+      "notes/Report Summary.md",
+      "notes/Control.md",
+    ])).toEqual([
+      "notes/Report Summary.md",
+    ]);
+    expect(await manager.search("notes", [
+      "notes/Fenced Report.md",
+      "notes/Report Summary.md",
+      "notes/Control.md",
+    ])).toEqual([]);
   });
 
   it("preserves current MiniSearch ranking for candidate-bounded meeting queries", async () => {
