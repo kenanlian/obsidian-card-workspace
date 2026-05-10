@@ -87,6 +87,7 @@
 
   const EMPTY_PANEL_STATE: PanelModelState = {
     cards: [],
+    searchMatchCountsByPath: {},
     emptyStateMessage: "",
     folderPath: "",
     selectedPath: null,
