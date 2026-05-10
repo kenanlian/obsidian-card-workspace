@@ -1,6 +1,7 @@
 {
   "name": "card-workspace",
   "version": "0.1.7",
+  "license": "MIT",
   "description": "Obsidian plugin that renders clicked folders as a card stream in the right sidebar.",
   "main": "main.js",
   "scripts": {
