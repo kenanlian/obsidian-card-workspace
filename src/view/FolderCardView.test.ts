@@ -671,6 +671,116 @@ describe("FolderCardView host contract", () => {
     }
   });
 
+  it("cleanupLifecycle is idempotent across repeated close calls and clears pending search runtime state", async () => {
+    vi.useFakeTimers();
+    try {
+      const { view, plugin } = createHarness();
+      const unsubscribe = vi.fn();
+
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth({ documentCount: 1, lastIndexedAt: 1 }),
+      }));
+      plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribe);
+
+      (view as any).folderPath = "notes";
+      (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
+
+      await view.onOpen();
+      (view as any).onSearchQueryChange({ query: "alpha" });
+
+      expect((view as any).searchDebounceTimer).not.toBeNull();
+      expect((view as any).searchSnapshotUnsubscribe).toBeTypeOf("function");
+
+      await view.onClose();
+
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect((view as any).component).toBeNull();
+      expect((view as any).hostEl).toBeNull();
+      expect((view as any).searchDebounceTimer).toBeNull();
+      expect((view as any).searchSnapshotUnsubscribe).toBeNull();
+      expect((view as any).searchQuery).toBe("");
+      expect((view as any).searchOrderedPaths).toBeUndefined();
+      expect((view as any).searchSnapshot).toBeNull();
+      expect(getPanelState(view).searchMatchCountsByPath).toEqual({});
+
+      await view.onClose();
+
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect((view as any).searchDebounceTimer).toBeNull();
+      expect((view as any).searchSnapshotUnsubscribe).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps cleanup isolated across multiple leaves of the same view type", async () => {
+    vi.useFakeTimers();
+    try {
+      const harnessA = createHarness();
+      const harnessB = createHarness();
+      const unsubscribeA = vi.fn();
+      const unsubscribeB = vi.fn();
+
+      harnessA.plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth({ documentCount: 1, lastIndexedAt: 1 }),
+      }));
+      harnessB.plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        health: createSearchHealth({ documentCount: 1, lastIndexedAt: 1 }),
+      }));
+      harnessA.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeA);
+      harnessB.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeB);
+
+      (harnessA.view as any).folderPath = "notes-a";
+      (harnessA.view as any).baseCards = [createCard("notes-a/alpha.md", "Alpha")];
+      (harnessB.view as any).folderPath = "notes-b";
+      (harnessB.view as any).baseCards = [createCard("notes-b/beta.md", "Beta")];
+
+      await harnessA.view.onOpen();
+      await harnessB.view.onOpen();
+
+      (harnessA.view as any).onSearchQueryChange({ query: "alpha" });
+      (harnessB.view as any).onSearchQueryChange({ query: "beta" });
+
+      expect((harnessA.view as any).searchDebounceTimer).not.toBeNull();
+      expect((harnessB.view as any).searchDebounceTimer).not.toBeNull();
+
+      await harnessA.view.onClose();
+
+      expect(unsubscribeA).toHaveBeenCalledTimes(1);
+      expect(unsubscribeB).not.toHaveBeenCalled();
+      expect((harnessA.view as any).hostEl).toBeNull();
+      expect((harnessA.view as any).searchDebounceTimer).toBeNull();
+      expect((harnessA.view as any).searchSnapshotUnsubscribe).toBeNull();
+      expect((harnessB.view as any).hostEl).not.toBeNull();
+      expect((harnessB.view as any).searchDebounceTimer).not.toBeNull();
+      expect((harnessB.view as any).searchSnapshotUnsubscribe).toBeTypeOf("function");
+
+      await harnessB.view.onClose();
+
+      expect(unsubscribeB).toHaveBeenCalledTimes(1);
+      expect((harnessB.view as any).hostEl).toBeNull();
+      expect((harnessB.view as any).searchDebounceTimer).toBeNull();
+      expect((harnessB.view as any).searchSnapshotUnsubscribe).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("threads indexed-ready match counts through panel state without mutating cards", async () => {
     vi.useFakeTimers();
     try {

@@ -117,7 +117,6 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
     });
-    this.app.workspace.detachLeavesOfType(FOLDER_CARD_VIEW);
   }
 
   async createNoteInCurrentFolder(): Promise<void> {

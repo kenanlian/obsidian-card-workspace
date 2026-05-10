@@ -1288,8 +1288,14 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     }
   });
 
-  it("forwards vault mutations to search service and disposes it on unload", async () => {
+  it("forwards vault mutations to search service and unloads plugin-owned lifecycle without detaching leaves", async () => {
     const { plugin, app } = createPluginHarness();
+    const ViewCtor = FolderCardView as unknown as { new (leaf: unknown, plugin: unknown): FolderCardView };
+    const viewA = new ViewCtor({}, {});
+    const viewB = new ViewCtor({}, {});
+    const cleanupA = vi.spyOn(viewA, "cleanupLifecycle");
+    const cleanupB = vi.spyOn(viewB, "cleanupLifecycle");
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view: viewA }, { view: viewB }];
 
     await plugin.onload();
 
@@ -1311,7 +1317,9 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
     expect(searchMockState.indexedServices[0]?.dispose).toHaveBeenCalledTimes(1);
     expect(plugin.getSearchService()).toBeNull();
-    expect(app.workspace.detachLeavesOfType).toHaveBeenCalledWith("folder-card-view");
+    expect(cleanupA).toHaveBeenCalledTimes(1);
+    expect(cleanupB).toHaveBeenCalledTimes(1);
+    expect(app.workspace.detachLeavesOfType).not.toHaveBeenCalled();
   });
 
   it("treats markdown-to-non-markdown file renames as markdown search mutations", async () => {
