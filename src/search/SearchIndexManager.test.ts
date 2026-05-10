@@ -134,6 +134,27 @@ function createMutation(overrides: Partial<SearchVaultMutation> = {}): SearchVau
   };
 }
 
+function createLargeCorpusDocuments(count: number): SearchableDocument[] {
+  return Array.from({ length: count }, (_, index) => {
+    const segment = String(Math.floor(index / 20)).padStart(3, "0");
+    const ordinal = String(index).padStart(4, "0");
+    const title = index === 420 ? `Launch Dossier ${ordinal}` : `Vault Note ${ordinal}`;
+    const uniqueToken = index === 420 ? "vaultneedle420" : `cluster-token-${index % 23}`;
+    const content = [
+      `Segment ${segment} planning notes for batch ${ordinal}.`,
+      `topic-${index % 11} archive-${index % 7} ${uniqueToken}.`,
+      index % 2 === 0 ? "status ready for first indexing." : "status staged for first indexing.",
+    ].join(" ");
+
+    return createSearchableDocument(
+      `vault/segment-${segment}/note-${ordinal}.md`,
+      title,
+      content,
+      `Preview ${ordinal} ${uniqueToken}`,
+    );
+  });
+}
+
 beforeEach(() => {
   vi.useRealTimers();
 });
@@ -596,6 +617,114 @@ describe("SearchIndexManager", () => {
       documentCount: 2,
       rebuildReason: null,
     });
+  });
+
+  it("first-indexes a deterministic large corpus with usable search state", async () => {
+    const docs = createLargeCorpusDocuments(640);
+    const store = createStoreMock();
+    const { source, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    const targetPath = "vault/segment-021/note-0420.md";
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial large-vault build");
+
+    expect(readAllDocuments).toHaveBeenCalledTimes(1);
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(await manager.search("launch dossier vaultneedle420", docs.map((document) => document.path))).toEqual({
+      orderedPaths: [targetPath],
+      matchCountsByPath: {
+        [targetPath]: 3,
+      },
+    });
+    expectHealthSubset(manager.getSnapshot().health, {
+      outcome: "rebuilt",
+      readiness: "ready",
+      healthy: true,
+      rebuilding: false,
+      rebuildRequired: false,
+      persistence: "healthy",
+      documentCount: 640,
+      rebuildReason: null,
+    });
+    expect(manager.getSnapshot().health.lastSuccessfulBuild).toEqual(expect.objectContaining({
+      outcome: "rebuilt",
+      documentCount: 640,
+      detail: "Initial large-vault build",
+    }));
+  });
+
+  it("recovers from a queued large-vault folder rename during first indexing", async () => {
+    const docs = createLargeCorpusDocuments(640);
+    const store = createStoreMock();
+    const { source, byPath, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    const oldPrefix = "vault/segment-021";
+    const newPrefix = "vault/archive/segment-021";
+    const oldTargetPath = "vault/segment-021/note-0420.md";
+    const newTargetPath = "vault/archive/segment-021/note-0420.md";
+
+    await manager.restore(createMetadata());
+
+    let releaseBuild: () => void = () => undefined;
+    readAllDocuments.mockImplementationOnce(
+      () =>
+        new Promise<SearchableDocument[]>((resolve) => {
+          releaseBuild = () => resolve([...byPath.values()]);
+        }),
+    );
+
+    const buildPromise = manager.rebuildFromSource("Initial large-vault build");
+
+    for (const document of docs.filter(({ path }) => path.startsWith(`${oldPrefix}/`))) {
+      byPath.delete(document.path);
+      const rewrittenPath = document.path.replace(oldPrefix, newPrefix);
+      byPath.set(rewrittenPath, {
+        ...document,
+        path: rewrittenPath,
+        folderPath: rewrittenPath.slice(0, rewrittenPath.lastIndexOf("/")),
+      });
+    }
+
+    expect(
+      await manager.applyMutation(
+        createMutation({
+          type: "rename",
+          oldPath: oldPrefix,
+          path: newPrefix,
+          isFolder: true,
+          isMarkdown: false,
+          renameClassification: "folder-rebuild-required",
+        }),
+      ),
+    ).toEqual({ action: "ignored", rebuildRequired: false });
+
+    releaseBuild();
+    await buildPromise;
+
+    expect(readAllDocuments).toHaveBeenCalledTimes(2);
+    expect(store.write).toHaveBeenCalledTimes(2);
+    expect(await manager.search("launch dossier vaultneedle420", [oldTargetPath, newTargetPath])).toEqual({
+      orderedPaths: [newTargetPath],
+      matchCountsByPath: {
+        [newTargetPath]: 3,
+      },
+    });
+    expectHealthSubset(manager.getSnapshot().health, {
+      outcome: "rebuilt",
+      readiness: "ready",
+      healthy: true,
+      rebuilding: false,
+      rebuildRequired: false,
+      persistence: "healthy",
+      documentCount: 640,
+      rebuildReason: null,
+    });
+    expect(manager.getSnapshot().health.lastSuccessfulBuild).toEqual(expect.objectContaining({
+      outcome: "rebuilt",
+      documentCount: 640,
+      detail: "Rebuild requested after queued mutations.",
+    }));
   });
 
   it("indexes non-Markdown documents by title only without matching path folder tokens", async () => {
