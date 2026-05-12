@@ -8,9 +8,9 @@
 
 ## 当前处于什么阶段？
 
-项目处于 **v0.1.2 稳定发布态。当前重点是 indexed-only 搜索架构的完整落地与混合文件类型卡片语义收敛**。
+项目处于**稳定发布态**。当前重点是 indexed-only 搜索架构的完整落地与混合文件类型卡片语义收敛。具体版本号请查看 `manifest.json` 或 release tags。
 
-- 已完成：v0.1.2 版本元数据同步与发布契约校验链路。
+- 已完成：版本元数据同步与发布契约校验链路。
 - 已完成：`main.ts` 持有 plugin-global 搜索生命周期，负责 indexed 服务初始化、快照订阅、命令注册和 rebuild 调度。
 - 已完成：`FolderCardView.ts` 统一收集受支持卡片文件，并根据 `IndexedSearchService` 的状态矩阵决策是否呈现搜索结果。
 - 已完成：`SearchIndexManager` 和 `IndexStore` 实现了基于 IndexedDB 的索引恢复、全量构建、增量更新和 unsafe 重名保护。
@@ -47,7 +47,7 @@
 - **F3 已关闭，但真实宿主手动验证仍是已知空白。** 这是用户批准的收尾条件。
 - **indexed 搜索的边界不能被随意打破。** 降级搜索路径严禁恢复，除非有明确的架构调整指令。
 - **unsafe folder rename 会触发 rebuild-required。** 这是保证路径真实性的保守策略。
-- **`Toolbar.svelte` 仍有已知非阻塞 a11y warnings。** 后续仍需整理。
+- **`Toolbar.svelte` a11y warnings 由 `npm run check:svelte` 跟踪。** 若存在残余 warning，应在发布前清理。
 - **最小 GitHub Release 已落地，但 GitHub 仓库权限仍是外部前置条件。**
 
 ## 接下来先读哪里

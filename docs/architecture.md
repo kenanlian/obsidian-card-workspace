@@ -68,8 +68,8 @@ src/search/IndexedSearchService.ts
 - `IndexedDB`，由 `IndexStore` 使用，负责本地持久化索引快照。
 - `MiniSearch`，负责内存中的文本索引和查询执行。
 - esbuild + esbuild-svelte，负责构建 `main.js`。
-- GitHub Actions release workflow，负责在 push 裸 semver tag（例如 `0.1.2`，而不是 `v0.1.2`）时复用仓库校验链路，并把 `main.js`、`manifest.json`、`styles.css` 发布成 draft GitHub Release。
-- 当前版本 `v0.1.2` 已正式移除全文搜索 fallback 路径。
+- GitHub Actions release workflow，负责在 push 裸 semver tag（例如 `<version>`，而不是 `v<version>`）时复用仓库校验链路，并把 `main.js`、`manifest.json`、`styles.css` 发布成 draft GitHub Release。
+- 当前版本已正式移除全文搜索 fallback 路径。具体版本号以 `manifest.json` 和 release tags 为准。
 
 当前没有产品运行时网络依赖，没有外部服务。搜索架构已全面转向本地 indexed 模式，不再支持非索引降级搜索。GitHub Release 自动化只属于仓库发布基础设施，不属于插件运行时依赖。
 
