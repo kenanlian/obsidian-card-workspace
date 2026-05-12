@@ -28,5 +28,14 @@ Thumbs.db
 # Serena runtime cache (memories are tracked, cache is not)
 .serena/cache/
 
+# Local agent/runtime artifacts
+.sisyphus/drafts/
+.sisyphus/evidence/
+.sisyphus/notepads/
+.codex/sessions/
+.codex/cache/
+.claude/sessions/
+.claude/logs/
+
 # Local OpenCode config
 opencode.json
