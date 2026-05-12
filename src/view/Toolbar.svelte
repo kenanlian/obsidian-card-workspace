@@ -723,19 +723,30 @@
       <div
         class="fce-folder-tree-item {node.path === folderPath ? 'is-selected' : ''}"
         role="menuitem"
+        tabindex="0"
         style="padding-left: {node.depth * 16 + 8}px;"
         use:applyTooltip={node.name}
         onclick={() => {
           onSelectFolder?.({ path: node.path });
           showFolderMenu = false;
         }}
+        onkeydown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelectFolder?.({ path: node.path });
+            showFolderMenu = false;
+          }
+        }}
       >
         {#if node.children.length > 0}
-          <span
+          <button
+            type="button"
             class="fce-folder-tree-chevron"
+            aria-label={expandedPaths.has(node.path) ? "Collapse" : "Expand"}
             onclick={(event) => onFolderChevronClick(event, node.path)}
             use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
-          ></span>
+          ></button>
         {:else}
           <span class="fce-folder-tree-chevron" style="pointer-events: none; visibility: hidden;"></span>
         {/if}
