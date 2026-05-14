@@ -406,6 +406,20 @@ describe("CardItem.svelte", () => {
     expect(getExcerptHtml(target)).toContain("<p>Preview text</p>");
   });
 
+  it("renders literal title text instead of injecting title HTML", () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/title-html.md", {
+        title: "<b>Unsafe</b> note",
+      }),
+    });
+
+    const title = target.querySelector("h4");
+
+    expect(title?.textContent).toBe("<b>Unsafe</b> note");
+    expect(title?.innerHTML).toContain("&lt;b&gt;Unsafe&lt;/b&gt; note");
+    expect(title?.querySelector("b")).toBeNull();
+  });
+
   it("leaves non-matching content unchanged", () => {
     const { target } = mountCardItem({
       searchQuery: "missing token",
@@ -413,9 +427,31 @@ describe("CardItem.svelte", () => {
     });
 
     expect(target.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
-    expect(target.querySelector("h4")?.innerHTML).toBe("A note");
+    expect(target.querySelector("h4")?.textContent).toBe("A note");
     expect(getExcerptHtml(target)).toContain("<p>Preview text</p>");
   });
+
+  it("sanitizes preview HTML before rendering search highlights", () => {
+    const { target } = mountCardItem({
+      searchQuery: "safe bold",
+      card: createCard("notes/sanitized-preview.md", {
+        previewHtml: '<p class="fce-preview-heading" onclick="alert(1)">Safe <strong>bold</strong><script>window.__cardItemInjected = true;</script></p>',
+      }),
+    });
+
+    const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
+    expect(excerpt).not.toBeNull();
+    expect(excerpt?.querySelector("script")).toBeNull();
+
+    const paragraph = excerpt?.querySelector("p");
+    expect(paragraph?.className).toBe("fce-preview-heading");
+    expect(paragraph?.getAttribute("onclick")).toBeNull();
+    expect(paragraph?.querySelector("strong")).toBeNull();
+    expect(excerpt?.textContent).toContain("Safe bold");
+    expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">Safe</mark>');
+    expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">bold</mark>');
+  });
+
   it("non-markdown cards remain title-searchable only", () => {
     const { target } = mountCardItem({
       searchQuery: "canvas",

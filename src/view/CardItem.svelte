@@ -37,6 +37,18 @@
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
   }
 
+  interface HighlightSegment {
+    text: string;
+    highlighted: boolean;
+  }
+
+  const ALLOWED_PREVIEW_TAGS = new Set(["P", "CODE", "MARK"]);
+  const ALLOWED_PREVIEW_CLASSES = {
+    P: new Set(["fce-preview-code", "fce-preview-heading"]),
+    CODE: new Set<string>(),
+    MARK: new Set(["fce-search-hit"]),
+  } as const;
+
   let {
     card,
     selected = false,
@@ -54,7 +66,7 @@
   }: CardItemProps = $props();
 
   const isPinned = $derived(pinnedPaths.includes(card.path));
-  const highlightedTitleHtml = $derived(getHighlightedTitleHtml(card.title, searchQuery));
+  const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
   const highlightedPreviewHtml = $derived(getHighlightedPreviewHtml(card.previewHtml, searchQuery));
 
   function getSearchTokens(query: string): string[] {
@@ -71,15 +83,6 @@
         seen.add(token);
         return true;
       });
-  }
-
-  function escapeHtml(value: string): string {
-    return value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
   }
 
   function escapeRegExp(value: string): string {
@@ -99,21 +102,30 @@
     return new RegExp(`(${pattern})`, "gi");
   }
 
-  function highlightTextValue(value: string, query: string): string | null {
+  function buildHighlightedSegments(value: string, query: string): HighlightSegment[] | null {
     const tokens = getSearchTokens(query);
     const pattern = createTokenPattern(tokens);
     if (!pattern) {
       return null;
     }
 
-    let highlighted = "";
+    const segments: HighlightSegment[] = [];
     let lastIndex = 0;
     let hasMatch = false;
 
     for (const match of value.matchAll(pattern)) {
       const index = match.index ?? 0;
-      highlighted += escapeHtml(value.slice(lastIndex, index));
-      highlighted += `<mark class="fce-search-hit">${escapeHtml(match[0])}</mark>`;
+      if (index > lastIndex) {
+        segments.push({
+          text: value.slice(lastIndex, index),
+          highlighted: false,
+        });
+      }
+
+      segments.push({
+        text: match[0],
+        highlighted: true,
+      });
       lastIndex = index + match[0].length;
       hasMatch = true;
     }
@@ -122,24 +134,85 @@
       return null;
     }
 
-    highlighted += escapeHtml(value.slice(lastIndex));
-    return highlighted;
-  }
-
-  function getHighlightedTitleHtml(title: string, query: string): string {
-    return highlightTextValue(title, query) ?? escapeHtml(title);
-  }
-
-  function getHighlightedPreviewHtml(previewHtml: string, query: string): string {
-    const tokens = getSearchTokens(query);
-    if (tokens.length === 0 || previewHtml.length === 0 || typeof document === "undefined") {
-      return previewHtml;
+    if (lastIndex < value.length) {
+      segments.push({
+        text: value.slice(lastIndex),
+        highlighted: false,
+      });
     }
 
-    const template = document.createElement("template");
-    template.innerHTML = previewHtml;
+    return segments;
+  }
 
-    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+  function getHighlightedTitleSegments(title: string, query: string): HighlightSegment[] {
+    return buildHighlightedSegments(title, query) ?? [{ text: title, highlighted: false }];
+  }
+
+  function createHighlightedFragment(value: string, query: string): DocumentFragment | null {
+    const segments = buildHighlightedSegments(value, query);
+    if (!segments) {
+      return null;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const segment of segments) {
+      if (segment.highlighted) {
+        const mark = document.createElement("mark");
+        mark.className = "fce-search-hit";
+        mark.textContent = segment.text;
+        fragment.appendChild(mark);
+        continue;
+      }
+
+      fragment.appendChild(document.createTextNode(segment.text));
+    }
+
+    return fragment;
+  }
+
+  function appendSanitizedPreviewNode(parent: Node, node: Node): void {
+    if (node instanceof Text) {
+      parent.appendChild(document.createTextNode(node.nodeValue ?? ""));
+      return;
+    }
+
+    if (!(node instanceof Element)) {
+      return;
+    }
+
+    if (!ALLOWED_PREVIEW_TAGS.has(node.tagName)) {
+      for (const child of Array.from(node.childNodes)) {
+        appendSanitizedPreviewNode(parent, child);
+      }
+      return;
+    }
+
+    const safeElement = document.createElement(node.tagName.toLowerCase());
+    const allowedClasses = ALLOWED_PREVIEW_CLASSES[node.tagName as keyof typeof ALLOWED_PREVIEW_CLASSES];
+    const nextClassName = (node.getAttribute("class") ?? "")
+      .split(/\s+/)
+      .map((className) => className.trim())
+      .filter((className) => allowedClasses.has(className))
+      .join(" ");
+
+    if (nextClassName.length > 0) {
+      safeElement.className = nextClassName;
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      appendSanitizedPreviewNode(safeElement, child);
+    }
+
+    parent.appendChild(safeElement);
+  }
+
+  function applyPreviewHighlights(root: ParentNode, query: string): void {
+    const tokens = getSearchTokens(query);
+    if (tokens.length === 0) {
+      return;
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes: Text[] = [];
     let currentNode = walker.nextNode();
 
@@ -150,22 +223,38 @@
       currentNode = walker.nextNode();
     }
 
-    let hasMatch = false;
-
     for (const textNode of textNodes) {
       const value = textNode.nodeValue ?? "";
-      const highlighted = highlightTextValue(value, query);
-      if (!highlighted) {
+      const fragment = createHighlightedFragment(value, query);
+      if (!fragment) {
         continue;
       }
 
-      hasMatch = true;
-      const replacement = document.createElement("template");
-      replacement.innerHTML = highlighted;
-      textNode.replaceWith(replacement.content.cloneNode(true));
+      textNode.replaceWith(fragment);
+    }
+  }
+
+  function serializeFragment(fragment: DocumentFragment): string {
+    const container = document.createElement("div");
+    container.appendChild(fragment);
+    return container.innerHTML;
+  }
+
+  function getHighlightedPreviewHtml(previewHtml: string, query: string): string {
+    if (previewHtml.length === 0 || typeof document === "undefined") {
+      return previewHtml;
     }
 
-    return hasMatch ? template.innerHTML : previewHtml;
+    const template = document.createElement("template");
+    template.innerHTML = previewHtml;
+
+    const sanitizedFragment = document.createDocumentFragment();
+    for (const child of Array.from(template.content.childNodes)) {
+      appendSanitizedPreviewNode(sanitizedFragment, child);
+    }
+
+    applyPreviewHighlights(sanitizedFragment, query);
+    return serializeFragment(sanitizedFragment);
   }
 
   function applyIcon(node: HTMLElement, iconName: string) {
@@ -294,7 +383,7 @@
     <div class="fce-card-header">
       <div class="fce-card-title-group" role="presentation" onmouseenter={emitCardHoverLink}>
         <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
-        <h4>{@html highlightedTitleHtml}</h4>
+        <h4>{#each highlightedTitleSegments as segment, index (index)}{#if segment.highlighted}<mark class="fce-search-hit">{segment.text}</mark>{:else}{segment.text}{/if}{/each}</h4>
         {#if searchQuery.trim().length > 0 && searchMatchCount > 0}
           <span
             class="fce-card-search-count"
