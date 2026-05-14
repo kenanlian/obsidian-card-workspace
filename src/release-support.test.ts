@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 interface ReleaseFixtureOptions {
   packageVersion?: string;
+  packageLockVersion?: string;
+  packageLockRootVersion?: string;
   manifestVersion?: string;
   minAppVersion?: string;
   versions?: Record<string, string>;
@@ -23,6 +25,8 @@ function writeJson(filePath: string, value: unknown): void {
 function createReleaseFixture(options: ReleaseFixtureOptions = {}): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "card-workspace-release-"));
   const packageVersion = options.packageVersion ?? "0.1.0";
+  const packageLockVersion = options.packageLockVersion ?? packageVersion;
+  const packageLockRootVersion = options.packageLockRootVersion ?? packageLockVersion;
   const manifestVersion = options.manifestVersion ?? packageVersion;
   const minAppVersion = options.minAppVersion ?? "1.5.0";
   const versions = options.versions ?? {
@@ -32,6 +36,18 @@ function createReleaseFixture(options: ReleaseFixtureOptions = {}): string {
   writeJson(path.join(tempDir, "package.json"), {
     name: "card-workspace",
     version: packageVersion,
+  });
+  writeJson(path.join(tempDir, "package-lock.json"), {
+    name: "card-workspace",
+    version: packageLockVersion,
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      "": {
+        name: "card-workspace",
+        version: packageLockRootVersion,
+      },
+    },
   });
   writeJson(path.join(tempDir, "manifest.json"), {
     id: "card-workspace",
@@ -80,6 +96,8 @@ describe("release support", () => {
   it("fails when release metadata drifts", () => {
     const tempDir = createReleaseFixture({
       packageVersion: "0.1.0",
+      packageLockVersion: "0.1.2",
+      packageLockRootVersion: "0.1.3",
       manifestVersion: "0.1.1",
       versions: {
         "0.1.1": "1.6.0",
@@ -93,6 +111,8 @@ describe("release support", () => {
       });
 
       expect(result.status).toBe(1);
+      expect(result.stderr).toContain("package-lock.json version '0.1.2' must match package.json version '0.1.0'.");
+      expect(result.stderr).toContain("package-lock.json packages[\"\"] version '0.1.3' must match package.json version '0.1.0'.");
       expect(result.stderr).toContain("package.json version '0.1.0' must match manifest.json version '0.1.1'.");
       expect(result.stderr).toContain(
         "versions.json['0.1.1'] must equal manifest.json minAppVersion '1.5.0', received '1.6.0'.",
@@ -102,7 +122,7 @@ describe("release support", () => {
     }
   });
 
-  it("syncs package, manifest, and compatibility metadata for a new release", () => {
+  it("syncs package, package-lock, manifest, and compatibility metadata for a new release", () => {
     const tempDir = createReleaseFixture();
 
     try {
@@ -114,10 +134,13 @@ describe("release support", () => {
       expect(result.status).toBe(0);
 
       const packageJson = JSON.parse(fs.readFileSync(path.join(tempDir, "package.json"), "utf8"));
+      const packageLockJson = JSON.parse(fs.readFileSync(path.join(tempDir, "package-lock.json"), "utf8"));
       const manifestJson = JSON.parse(fs.readFileSync(path.join(tempDir, "manifest.json"), "utf8"));
       const versionsJson = JSON.parse(fs.readFileSync(path.join(tempDir, "versions.json"), "utf8"));
 
       expect(packageJson.version).toBe("0.2.0");
+      expect(packageLockJson.version).toBe("0.2.0");
+      expect(packageLockJson.packages[""].version).toBe("0.2.0");
       expect(manifestJson.version).toBe("0.2.0");
       expect(manifestJson.minAppVersion).toBe("1.6.0");
       expect(versionsJson["0.2.0"]).toBe("1.6.0");
@@ -134,6 +157,7 @@ describe("release support", () => {
       },
     });
     const originalPackageJson = fs.readFileSync(path.join(tempDir, "package.json"), "utf8");
+    const originalPackageLockJson = fs.readFileSync(path.join(tempDir, "package-lock.json"), "utf8");
     const originalManifestJson = fs.readFileSync(path.join(tempDir, "manifest.json"), "utf8");
     const originalVersionsJson = fs.readFileSync(path.join(tempDir, "versions.json"), "utf8");
 
@@ -146,6 +170,7 @@ describe("release support", () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("versions.json already contains '0.2.0'. Choose a new version instead of overwriting an existing release mapping.");
       expect(fs.readFileSync(path.join(tempDir, "package.json"), "utf8")).toBe(originalPackageJson);
+      expect(fs.readFileSync(path.join(tempDir, "package-lock.json"), "utf8")).toBe(originalPackageLockJson);
       expect(fs.readFileSync(path.join(tempDir, "manifest.json"), "utf8")).toBe(originalManifestJson);
       expect(fs.readFileSync(path.join(tempDir, "versions.json"), "utf8")).toBe(originalVersionsJson);
     } finally {

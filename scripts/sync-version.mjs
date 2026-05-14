@@ -36,6 +36,7 @@ async function main() {
   }
 
   const packageJson = await readJson("package.json");
+  const packageLockJson = await readJson("package-lock.json");
   const manifestJson = await readJson("manifest.json");
   const versionsJson = await readJson("versions.json");
   const resolvedMinAppVersion = nextMinAppVersion ?? manifestJson.minAppVersion;
@@ -47,16 +48,22 @@ async function main() {
   }
 
   packageJson.version = nextVersion;
+  packageLockJson.version = nextVersion;
+  if (!packageLockJson.packages || typeof packageLockJson.packages[""] !== "object") {
+    throw new Error('package-lock.json packages[""] metadata must be defined.');
+  }
+  packageLockJson.packages[""].version = nextVersion;
   manifestJson.version = nextVersion;
   manifestJson.minAppVersion = resolvedMinAppVersion;
   versionsJson[nextVersion] = resolvedMinAppVersion;
 
   await writeJson("package.json", packageJson);
+  await writeJson("package-lock.json", packageLockJson);
   await writeJson("manifest.json", manifestJson);
   await writeJson("versions.json", versionsJson);
 
   console.log(
-    `Synced package.json, manifest.json, and versions.json to ${nextVersion} (minAppVersion ${resolvedMinAppVersion}).`,
+    `Synced package.json, package-lock.json, manifest.json, and versions.json to ${nextVersion} (minAppVersion ${resolvedMinAppVersion}).`,
   );
 }
 

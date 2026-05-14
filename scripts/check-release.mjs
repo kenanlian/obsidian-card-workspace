@@ -15,15 +15,42 @@ function validateVersion(value, label, errors) {
   }
 }
 
+function validatePackageLock(packageLockJson, packageVersion, errors) {
+  validateVersion(packageLockJson.version, "package-lock.json version", errors);
+
+  const rootPackage = packageLockJson.packages?.[""];
+  const rootPackageVersion = rootPackage?.version;
+  if (typeof rootPackageVersion !== "string") {
+    errors.push('package-lock.json packages[""] version must be defined.');
+    return;
+  }
+
+  validateVersion(rootPackageVersion, 'package-lock.json packages[""] version', errors);
+
+  if (packageLockJson.version !== packageVersion) {
+    errors.push(
+      `package-lock.json version '${packageLockJson.version}' must match package.json version '${packageVersion}'.`,
+    );
+  }
+
+  if (rootPackageVersion !== packageVersion) {
+    errors.push(
+      `package-lock.json packages[""] version '${rootPackageVersion}' must match package.json version '${packageVersion}'.`,
+    );
+  }
+}
+
 async function main() {
   const tag = process.argv[2] ?? null;
   const packageJson = await readJson("package.json");
+  const packageLockJson = await readJson("package-lock.json");
   const manifestJson = await readJson("manifest.json");
   const versionsJson = await readJson("versions.json");
 
   const errors = [];
 
   validateVersion(packageJson.version, "package.json version", errors);
+  validatePackageLock(packageLockJson, packageJson.version, errors);
   validateVersion(manifestJson.version, "manifest.json version", errors);
   validateVersion(manifestJson.minAppVersion, "manifest.json minAppVersion", errors);
 
