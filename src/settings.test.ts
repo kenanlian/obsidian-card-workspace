@@ -134,6 +134,18 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "split-right" } as unknown).defaultCardOpenBehavior).toBe("split-right");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "new-window" } as unknown).defaultCardOpenBehavior).toBe("new-window");
   });
+
+  it("defaults cardCornerRadius to compact when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: undefined } as unknown).cardCornerRadius).toBe("compact");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "soft" } as unknown).cardCornerRadius).toBe("compact");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: 2 } as unknown).cardCornerRadius).toBe("compact");
+  });
+
+  it("preserves each supported cardCornerRadius value", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "compact" } as unknown).cardCornerRadius).toBe("compact");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "medium" } as unknown).cardCornerRadius).toBe("medium");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "rounded" } as unknown).cardCornerRadius).toBe("rounded");
+  });
 });
 
 
@@ -418,5 +430,27 @@ describe("mergeSettings — previewLines", () => {
     const result = mergeSettings(DEFAULT_SETTINGS, { defaultCardOpenBehavior: "current-area" } as never);
 
     expect(result.defaultCardOpenBehavior).toBe("smart");
+  });
+
+  it("updates cardCornerRadius while preserving unrelated settings fields", () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      previewLines: 8,
+      pinnedPaths: ["folder/note-1.md"],
+      includeSubfolders: false,
+    };
+
+    const result = mergeSettings(current, { cardCornerRadius: "rounded" });
+
+    expect(result.cardCornerRadius).toBe("rounded");
+    expect(result.previewLines).toBe(8);
+    expect(result.pinnedPaths).toEqual(["folder/note-1.md"]);
+    expect(result.includeSubfolders).toBe(false);
+  });
+
+  it("normalizes invalid cardCornerRadius patches back to compact", () => {
+    const result = mergeSettings(DEFAULT_SETTINGS, { cardCornerRadius: "soft" } as never);
+
+    expect(result.cardCornerRadius).toBe("compact");
   });
 });

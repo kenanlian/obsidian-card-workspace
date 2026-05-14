@@ -19,6 +19,7 @@ function createMockContext(): PipelineContext {
       includeSubfolders: true,
       defaultView: "cards",
       defaultCardOpenBehavior: "smart",
+      cardCornerRadius: "compact",
       previewLines: 5,
       lastFolderPath: null,
       lastViewMode: "folder",

@@ -10,10 +10,13 @@ export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-
 
 export type DefaultCardOpenBehavior = "smart" | "new-tab" | "split-right" | "new-window";
 
+export type CardCornerRadius = "compact" | "medium" | "rounded";
+
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 10;
 export const DEFAULT_PREVIEW_LINES = 5;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
+export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";
 
 export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
   value: DefaultCardOpenBehavior;
@@ -37,6 +40,24 @@ export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
   },
 ];
 
+export const CARD_CORNER_RADIUS_OPTIONS: ReadonlyArray<{
+  value: CardCornerRadius;
+  label: string;
+}> = [
+  {
+    value: "compact",
+    label: "Compact",
+  },
+  {
+    value: "medium",
+    label: "Softer",
+  },
+  {
+    value: "rounded",
+    label: "Rounded",
+  },
+];
+
 export interface PluginSettings {
   sort: {
     field: SortField;
@@ -49,6 +70,7 @@ export interface PluginSettings {
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
+  cardCornerRadius: CardCornerRadius;
   previewLines: number;
   lastFolderPath: string | null;
   lastViewMode: ViewMode;
@@ -66,6 +88,7 @@ export interface PartialPluginSettings {
   includeSubfolders?: boolean;
   defaultView?: DefaultViewMode;
   defaultCardOpenBehavior?: DefaultCardOpenBehavior;
+  cardCornerRadius?: CardCornerRadius;
   previewLines?: number;
   lastFolderPath?: string | null;
   lastViewMode?: ViewMode;
@@ -83,6 +106,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   includeSubfolders: true,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
+  cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: null,
   lastViewMode: "folder",
@@ -124,10 +148,20 @@ export function isDefaultCardOpenBehavior(value: string): value is DefaultCardOp
   return value === "smart" || value === "new-tab" || value === "split-right" || value === "new-window";
 }
 
+export function isCardCornerRadius(value: string): value is CardCornerRadius {
+  return value === "compact" || value === "medium" || value === "rounded";
+}
+
 function normalizeDefaultCardOpenBehavior(value: unknown): DefaultCardOpenBehavior {
   return typeof value === "string" && isDefaultCardOpenBehavior(value)
     ? value
     : DEFAULT_CARD_OPEN_BEHAVIOR;
+}
+
+function normalizeCardCornerRadius(value: unknown): CardCornerRadius {
+  return typeof value === "string" && isCardCornerRadius(value)
+    ? value
+    : DEFAULT_CARD_CORNER_RADIUS;
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
@@ -169,6 +203,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
         : DEFAULT_SETTINGS.includeSubfolders,
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
+    cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath:
       typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
