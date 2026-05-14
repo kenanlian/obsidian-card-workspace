@@ -432,7 +432,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     if (leaves.length > 0) {
       leaf = leaves[0];
     } else {
-      leaf = workspace.getRightLeaf(false);
+      leaf = workspace.getLeftLeaf(false);
       if (!leaf) {
         return;
       }

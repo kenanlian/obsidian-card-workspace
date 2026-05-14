@@ -385,6 +385,7 @@ function createPluginHarness(): {
       getMostRecentLeaf: ReturnType<typeof vi.fn>;
       createLeafBySplit: ReturnType<typeof vi.fn>;
       openPopoutLeaf?: ReturnType<typeof vi.fn>;
+      getLeftLeaf: ReturnType<typeof vi.fn>;
       getRightLeaf: ReturnType<typeof vi.fn>;
       revealLeaf: ReturnType<typeof vi.fn>;
       rootSplit: { id: string };
@@ -424,6 +425,7 @@ function createPluginHarness(): {
       getMostRecentLeaf: vi.fn(() => null),
       createLeafBySplit: vi.fn(() => ({ openFile: vi.fn(async () => undefined) })),
       openPopoutLeaf: vi.fn(async () => ({ openFile: vi.fn(async () => undefined) })),
+      getLeftLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
       getRightLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
       revealLeaf: vi.fn(),
       rootSplit: { id: "root-split" },
@@ -451,6 +453,40 @@ function createPluginHarness(): {
 
   return { plugin, app };
 }
+
+describe("FolderCardExplorerPlugin activateView", () => {
+  it("creates the panel in the left sidebar when no card view leaf exists", async () => {
+    const { plugin, app } = createPluginHarness();
+    const leaf = {
+      setViewState: vi.fn(async () => undefined),
+    };
+    app.workspace.getLeftLeaf.mockReturnValue(leaf);
+
+    await (plugin as unknown as { activateView: () => Promise<void> }).activateView();
+
+    expect(app.workspace.getLeftLeaf).toHaveBeenCalledWith(false);
+    expect(app.workspace.getRightLeaf).not.toHaveBeenCalled();
+    expect(leaf.setViewState).toHaveBeenCalledWith({
+      type: "folder-card-view",
+      active: true,
+    });
+    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+  });
+
+  it("reuses an existing card view leaf before creating a new sidebar leaf", async () => {
+    const { plugin, app } = createPluginHarness();
+    const existingLeaf = {
+      setViewState: vi.fn(async () => undefined),
+    };
+    obsidianMockState.leavesByType["folder-card-view"] = [existingLeaf];
+
+    await (plugin as unknown as { activateView: () => Promise<void> }).activateView();
+
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(existingLeaf.setViewState).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+  });
+});
 
 describe("FolderCardExplorerPlugin open destination routing", () => {
   beforeEach(() => {
