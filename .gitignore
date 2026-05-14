@@ -25,17 +25,19 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Serena runtime cache (memories are tracked, cache is not)
-.serena/cache/
+# Local AI / agent state
+.sisyphus/
+.serena/
+.opencode/
+.claude/
+.codex/
+.agents/
+.specify/
 
-# Local agent/runtime artifacts
-.sisyphus/drafts/
-.sisyphus/evidence/
-.sisyphus/notepads/
-.codex/sessions/
-.codex/cache/
-.claude/sessions/
-.claude/logs/
+# Local helper/debug leftovers
+run-test.js
+test-debug.ts
+patch.css
 
 # Local OpenCode config
 opencode.json

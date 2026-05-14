@@ -1,7 +1,0 @@
-
-[2026-04-18T11:14:56] Task 7 regression verification
-- PASS: npx vitest run src/view/FolderCardPanel.svelte.test.ts && npx vitest run src/view/FolderCardView.test.ts
-- PASS: npx vitest run src/view/pipeline.test.ts && npx vitest run src/view/scroll-anchoring.test.ts && npx vitest run src/view/card-context-actions.test.ts
-- PASS: npm run check
-- PASS: npm run build
-- Build warnings observed are pre-existing Toolbar a11y warnings (menuitem tabindex and static click handler warnings).

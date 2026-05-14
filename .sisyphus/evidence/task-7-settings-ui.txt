@@ -1,7 +1,0 @@
-Task 7 — Settings UI evidence
-
-- Official pattern is registered from plugin `onload()` via `this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));` in `src/main.ts:30`.
-- The settings tab uses `PluginSettingTab`, clears the container with `containerEl.empty()`, and exposes only `previewLines` in `src/FolderCardExplorerSettingTab.ts:5`.
-- The control is constrained with `setLimits(3, 10, 1)`, initializes from persisted settings, and saves through the existing plugin seam in `src/FolderCardExplorerSettingTab.ts:19`.
-- Regression coverage verifies container clearing, slider bounds, tooltip setup, and persistence in `src/FolderCardExplorerSettingTab.test.ts:103`.
-- Validation: `npx vitest run src/FolderCardExplorerSettingTab.test.ts`, `npm run check`, `npm run build`, and `npm test` all passed on 2026-04-16.

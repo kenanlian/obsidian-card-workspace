@@ -1,4 +1,0 @@
-Task 4 verification update
-- Added plugin-level coverage in src/main.test.ts for degraded search index states.
-- The new test asserts getSearchIndexObservabilitySnapshot().queriesAllowed is false for rebuild-required and error snapshots while preserving status and health fields.
-- This closes the prior verification gap without changing production code.

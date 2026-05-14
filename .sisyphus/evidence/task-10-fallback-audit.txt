@@ -1,5 +1,0 @@
-- Searched src/ for: NoIndexSearchService, orderedPaths: null, fallback-filter, fallback-filtering, indexed-ordering.
-- Result: no active runtime/search fallback-path matches remain in src/.
-- Searched src/ for fallback terms.
-- Result: remaining matches were only generic default-parameter names after cleanup; no search fallback behavior remains.
-- Search/UI runtime files reviewed: src/search/index.ts, src/search/types.ts, src/search/IndexedSearchService.ts, src/view/pipeline.ts, src/view/Toolbar.svelte, src/view/FolderCardPanel.svelte, src/main.ts.

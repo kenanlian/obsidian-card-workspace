@@ -1,6 +1,0 @@
-
-[2026-04-18T11:14:56] Task 7 root host/component seam migration
-- Migrated src/view/FolderCardPanel.svelte to rune props/effects/derived state with panelModel as sole input surface.
-- Replaced root output events with callback props: onOpenNote, onBulkSelectCard, onCardContextMenu, onPinToggle, onToolbarAction, onSortChange, onFilterChange, onIncludeSubfoldersChange, onSelectFolder, onHydrateRange.
-- Replaced FolderCardView host seam from class-based new/$on/$destroy to mount/unmount with direct callback prop wiring while preserving host-owned panelModel mutations.
-- Updated node-lane panel mock wiring to callback props and retained model snapshot tracking for regression assertions.

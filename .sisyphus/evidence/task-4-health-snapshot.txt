@@ -1,3 +1,0 @@
-Command: npx vitest run src/search/SearchIndexManager.test.ts -t "health"
-Result: PASS
-Summary: Focused health tests passed (3 passed, 12 skipped). Coverage includes ready health snapshots and the new clear/reset health transitions with rebuild-required and storage-unavailable states.

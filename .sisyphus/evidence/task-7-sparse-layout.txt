@@ -1,7 +1,0 @@
-Task 7 — Sparse layout evidence
-
-- `CardItem.svelte` still renders exactly the existing three UI branches: loading, explicit empty, and rendered preview content in `src/view/CardItem.svelte:83`.
-- Sparse notes stay in the normal preview slot; the component only injects a `--fce-preview-line-clamp` style from `previewLines` and does not introduce a hero/centered short-note mode in `src/view/CardItem.svelte:57`.
-- The view/panel seam passes the configured preview budget down to each card for layout clamp parity in `src/view/FolderCardView.ts:95` and `src/view/FolderCardPanel.svelte:29`.
-- The selected weak-cue preset is now visible through shared preview tokens, title clamping, subdued list/quote styling, and bounded code blocks in `styles.css:10` and `styles.css:340`.
-- Regression coverage confirms `previewLines` reaches initial panel props in `src/view/card-context-actions.test.ts:637`.

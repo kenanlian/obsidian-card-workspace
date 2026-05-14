@@ -1,2 +1,0 @@
-- Unresolved for this environment: direct manual verification inside Obsidian desktop (toolbar affordances, modal UX, and click interactions in real host shell) remains pending until executable access is available.
-- Final-wave status note: all F1/F2/F3/F4 evidence artifacts are now present, but plan closure remains blocked until the user provides the explicit `okay` required by `.sisyphus/plans/phase2-bulk-organization.md`.

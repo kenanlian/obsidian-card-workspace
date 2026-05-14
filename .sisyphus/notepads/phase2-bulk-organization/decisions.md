@@ -1,4 +1,0 @@
-- 2026-04-18 QA decision: Treat command-driven integration harness (`card-context-actions.test.ts`) as highest-fidelity substitute for UI behavior because direct Obsidian launch is unavailable.
-- 2026-04-18 QA decision: PASS can be granted when targeted bulk suites and all repo verification gates pass, with explicit environment limitation disclosure.
-- 2026-04-18 final-wave context-mining decision: Do not carry forward the earlier missing-evidence failure; final verdict must use current evidence state where F2/F3/F4 artifacts are present.
-- 2026-04-18 final-wave context-mining decision: Treat missing F1 review output as expected in-progress verification work, not as a renewed F2/F3/F4 blocker.

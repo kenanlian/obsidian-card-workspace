@@ -1,9 +1,0 @@
-Rename/mutation verification:
-- SearchIndexManager tests now cover non-Markdown title-only indexing and rename/update behavior via rebuilt source documents.
-- Markdown content search remains indexed independently of title/path.
-- Non-Markdown content is not read by the plugin document preparation path; cachedRead is only used for Markdown files.
-- Non-Markdown path tokens do not match unless the basename/title matches.
-
-Update:
-- Non-Markdown rename coverage now exercises SearchIndexManager.applyMutation() for Assets/Project Brief.pdf -> Assets/Archive.pdf after the manager reaches ready state.
-- Old basename query no longer matches after rename; new title query matches the renamed PDF path.

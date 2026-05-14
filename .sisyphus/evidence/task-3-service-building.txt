@@ -1,4 +1,0 @@
-Command: npx vitest run src/search/IndexedSearchService.test.ts -t "building"
-
-Result: PASS
-Evidence: IndexedSearchService blocked-state tests pass and do not call manager.search or return orderedPaths while building/unavailable, so Notes/Meeting.md is not locally surfaced as a fallback match.
