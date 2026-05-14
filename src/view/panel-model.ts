@@ -1,4 +1,4 @@
-import type { SortDirection, SortField } from "../settings";
+import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type {
   FolderTreeNode,
   NoteCardRecord,
@@ -30,6 +30,7 @@ export interface PanelModelState {
   availableTags: string[];
   activeFilterTags: string[];
   pinnedPaths: string[];
+  cardCornerRadius: CardCornerRadius;
   previewLines: number;
   folderTree: FolderTreeNode[];
   includeSubfolders: boolean;

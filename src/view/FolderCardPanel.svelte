@@ -100,6 +100,7 @@
     availableTags: [],
     activeFilterTags: [],
     pinnedPaths: [],
+    cardCornerRadius: "compact",
     previewLines: 5,
     folderTree: [],
     includeSubfolders: true,
@@ -205,6 +206,7 @@
     return "Search unavailable";
   }
 
+  const cardCornerRadius = $derived(panelState.cardCornerRadius);
   const previewLines = $derived(panelState.previewLines);
   const folderTree = $derived(panelState.folderTree);
   const includeSubfolders = $derived(panelState.includeSubfolders);
@@ -609,6 +611,7 @@
               <CardItem
                 {card}
                 {pinnedPaths}
+                {cardCornerRadius}
                 {previewLines}
                 {searchQuery}
                 {bulkMode}

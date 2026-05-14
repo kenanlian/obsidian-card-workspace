@@ -281,6 +281,7 @@ function createHarness(): TestHarness {
     sort: { field: "mtime", direction: "desc" },
     filter: { tags: [] },
     pinnedPaths: [],
+    cardCornerRadius: "compact",
     previewLines: 5,
     includeSubfolders: true,
   };
@@ -363,6 +364,7 @@ describe("FolderCardView host contract", () => {
 
     expect(panelContainer.querySelectorAll(".folder-card-view")).toHaveLength(1);
     expect(panelContainer.querySelector(".fce-shell")).not.toBeNull();
+    expect((view as any).panelModel.getState().cardCornerRadius).toBe("compact");
 
     (view as any).folderPath = "notes";
     (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
@@ -384,6 +386,7 @@ describe("FolderCardView host contract", () => {
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: [] },
       pinnedPaths: [],
+      cardCornerRadius: "compact",
       previewLines: 5,
       includeSubfolders: true,
     }));
@@ -393,6 +396,7 @@ describe("FolderCardView host contract", () => {
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: ["tag-a"] },
       pinnedPaths: [],
+      cardCornerRadius: "compact",
       previewLines: 5,
       includeSubfolders: true,
     }));
@@ -405,6 +409,7 @@ describe("FolderCardView host contract", () => {
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: [] },
       pinnedPaths: [],
+      cardCornerRadius: "compact",
       previewLines: 5,
       includeSubfolders: true,
     }));

@@ -537,6 +537,7 @@ export class FolderCardView extends ItemView {
       state.availableTags = this.deriveAvailableTags();
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
+      state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
@@ -2635,6 +2636,7 @@ export class FolderCardView extends ItemView {
       availableTags: this.deriveAvailableTags(),
       activeFilterTags: settings.filter.tags,
       pinnedPaths: settings.pinnedPaths,
+      cardCornerRadius: settings.cardCornerRadius,
       previewLines: settings.previewLines,
       folderTree: [],
       includeSubfolders: settings.includeSubfolders,
@@ -2675,6 +2677,7 @@ export class FolderCardView extends ItemView {
       state.sortDirection = settings.sort.direction;
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
+      state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
@@ -2715,6 +2718,7 @@ export class FolderCardView extends ItemView {
       state.availableTags = this.deriveAvailableTags();
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
+      state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
