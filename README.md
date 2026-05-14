@@ -26,6 +26,7 @@ Cards display the note title, a Markdown-stripped excerpt, and a cover image whe
 ## Limitations
 
 - All processing is local to your vault. No external network requests are made by default.
+- The current release is desktop-only. Card Workspace relies on desktop File Explorer and right-sidebar workflows, and desktop shell actions stay unavailable outside desktop Obsidian.
 - The card stream is driven by folder clicks in the File Explorer. There is no standalone browse mode outside of folder selection.
 - Behavior and compatibility follow what is declared in `manifest.json` and the current Obsidian version.
 
@@ -59,6 +60,8 @@ This repo supports draft GitHub Releases through `.github/workflows/release.yml`
    npm run release:prepare -- "$TAG"
    ```
 
+   This syncs `package.json`, `package-lock.json`, `manifest.json`, and `versions.json` for the target release.
+
    If you also need to raise the minimum supported Obsidian version, pass it as the second argument:
 
    ```bash
@@ -68,6 +71,7 @@ This repo supports draft GitHub Releases through `.github/workflows/release.yml`
 4. Validate the release metadata and run the normal repo checks:
 
    ```bash
+   npm run check:svelte
    npm run check
    npm run build
    npm test
