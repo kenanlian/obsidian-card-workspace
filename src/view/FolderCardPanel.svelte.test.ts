@@ -46,6 +46,7 @@ function createInitialPanelState(): PanelModelState {
     availableTags: [],
     activeFilterTags: [],
     pinnedPaths: [],
+    cardCornerRadius: "compact",
     previewLines: 5,
     folderTree: [],
     includeSubfolders: true,
@@ -114,6 +115,30 @@ describe("FolderCardPanel.svelte", () => {
 
     await unmount(component);
   });
+  it("applies card corner radius classes from panel state", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+      },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = [createCard("notes/runtime.md", "Runtime note")];
+      state.cardCornerRadius = "rounded";
+      state.generation = 1;
+    });
+    await tick();
+
+    expect(target.querySelector(".fce-card")?.classList.contains("fce-card-radius-rounded")).toBe(true);
+
+    await unmount(component);
+  });
+
   it("supports base canvas and excalidraw cards", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

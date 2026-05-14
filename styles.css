@@ -476,6 +476,18 @@
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
 }
 
+.folder-card-view .fce-card.fce-card-radius-compact {
+  border-radius: var(--clickable-icon-radius, var(--radius-s));
+}
+
+.folder-card-view .fce-card.fce-card-radius-medium {
+  border-radius: var(--radius-m, 8px);
+}
+
+.folder-card-view .fce-card.fce-card-radius-rounded {
+  border-radius: var(--radius-l, 12px);
+}
+
 .folder-card-view .fce-card:hover {
   transform: translateY(-1px);
   border-color: var(--fce-accent-hover);

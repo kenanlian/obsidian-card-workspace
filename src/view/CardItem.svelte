@@ -27,6 +27,7 @@
     bulkMode?: boolean;
     bulkSelected?: boolean;
     pinnedPaths?: string[];
+    cardCornerRadius?: "compact" | "medium" | "rounded";
     previewLines?: number;
     searchQuery?: string;
     searchMatchCount?: number;
@@ -55,6 +56,7 @@
     bulkMode = false,
     bulkSelected = false,
     pinnedPaths = [],
+    cardCornerRadius = "compact",
     previewLines = 5,
     searchQuery = "",
     searchMatchCount = 0,
@@ -372,7 +374,7 @@
 </script>
 
 <div
-  class="fce-card {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
+  class="fce-card fce-card-radius-{cardCornerRadius} {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
   role="button"
   tabindex="0"
   onclick={onCardClick}

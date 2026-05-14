@@ -131,6 +131,7 @@ function mountCardItem(
       bulkMode: false,
       bulkSelected: false,
       pinnedPaths: [],
+      cardCornerRadius: "compact",
       previewLines: 5,
       ...callbacks,
       ...props,
@@ -156,6 +157,13 @@ describe("CardItem.svelte", () => {
     await Promise.all(mountedComponents.map((component) => unmount(component)));
     mountedComponents = [];
     document.body.innerHTML = "";
+  });
+
+  it("applies the configured card corner radius class", () => {
+    const { target } = mountCardItem({ cardCornerRadius: "rounded" });
+
+    expect(target.querySelector(".fce-card")?.classList.contains("fce-card-radius-rounded")).toBe(true);
+    expect(target.querySelector(".fce-card")?.classList.contains("fce-card-radius-compact")).toBe(false);
   });
 
   it("supports keyboard and context menu actions", () => {
