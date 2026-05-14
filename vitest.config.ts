@@ -8,8 +8,11 @@ const folderCardPanelMockAlias = path.resolve(__dirname, "src/__mocks__/FolderCa
 export default defineConfig({
   test: {
     passWithNoTests: true,
+    pool: "threads",
+    fileParallelism: false,
     projects: [
       defineProject({
+        extends: true,
         test: {
           name: "node",
           environment: "node",
@@ -24,6 +27,7 @@ export default defineConfig({
         },
       }),
       defineProject({
+        extends: true,
         plugins: [svelte()],
         test: {
           name: "jsdom",
