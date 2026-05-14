@@ -1,8 +1,10 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import {
+  CARD_CORNER_RADIUS_OPTIONS,
   DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS,
   PREVIEW_LINES_MAX,
   PREVIEW_LINES_MIN,
+  isCardCornerRadius,
   isDefaultCardOpenBehavior,
 } from "./settings";
 import type FolderCardExplorerPlugin from "./main";
@@ -17,7 +19,7 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
-    const { defaultCardOpenBehavior, previewLines } = this.plugin.getSettings();
+    const { cardCornerRadius, defaultCardOpenBehavior, previewLines } = this.plugin.getSettings();
 
     containerEl.empty();
 
@@ -35,6 +37,23 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
           }
 
           await this.plugin.saveSettings({ defaultCardOpenBehavior: value });
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Card corner radius")
+      .setDesc("Adjust how square or rounded each card border feels in the panel.")
+      .addDropdown((dropdown) => {
+        for (const option of CARD_CORNER_RADIUS_OPTIONS) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(cardCornerRadius).onChange(async (value) => {
+          if (!isCardCornerRadius(value)) {
+            return;
+          }
+
+          await this.plugin.saveSettings({ cardCornerRadius: value });
         });
       });
 

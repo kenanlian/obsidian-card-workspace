@@ -131,6 +131,7 @@ describe("FolderCardExplorerSettingTab", () => {
   it("renders the default open dropdown and preview slider settings", () => {
     const plugin = {
       getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
         previewLines: 6,
       })),
@@ -141,9 +142,10 @@ describe("FolderCardExplorerSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(2);
+    expect(mockState.settings).toHaveLength(3);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
       "Default card open behavior",
+      "Card corner radius",
       "Preview lines",
     ]);
     expect(mockState.settings[0]?.dropdown).toMatchObject({
@@ -155,7 +157,15 @@ describe("FolderCardExplorerSettingTab", () => {
         { value: "new-window", label: "Open in new window" },
       ],
     });
-    expect(mockState.settings[1]?.slider).toMatchObject({
+    expect(mockState.settings[1]?.dropdown).toMatchObject({
+      value: "medium",
+      options: [
+        { value: "compact", label: "Compact" },
+        { value: "medium", label: "Softer" },
+        { value: "rounded", label: "Rounded" },
+      ],
+    });
+    expect(mockState.settings[2]?.slider).toMatchObject({
       min: 3,
       max: 10,
       step: 1,
@@ -167,6 +177,7 @@ describe("FolderCardExplorerSettingTab", () => {
   it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
     const plugin = {
       getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
         previewLines: 5,
       })),
@@ -179,6 +190,24 @@ describe("FolderCardExplorerSettingTab", () => {
     await mockState.settings[0]?.dropdown?.changeHandler?.("new-window");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ defaultCardOpenBehavior: "new-window" });
+  });
+
+  it("saves cardCornerRadius changes from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
+        defaultCardOpenBehavior: "smart",
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+    };
+
+    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[1]?.dropdown?.changeHandler?.("rounded");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ cardCornerRadius: "rounded" });
   });
 
 });
