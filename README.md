@@ -1,12 +1,12 @@
 # Card Workspace
 
-An Obsidian plugin that turns folder clicks in the File Explorer into a warm retro card stream in the right sidebar. Browse notes by folder, click a card to open it, and keep your context while exploring.
+An Obsidian plugin that turns folder clicks in the File Explorer into a warm retro card stream in the left sidebar. Browse notes by folder, click a card to open it, and keep your context while exploring.
 
 ## How to use
 
 1. Enable the plugin in Obsidian's **Community plugins** settings.
 2. Open the **File Explorer** and click any folder.
-3. A card stream appears in the **right sidebar**, showing notes from that folder.
+3. A card stream appears in the **left sidebar**, showing notes from that folder.
 4. Click a card to open the note.
 5. Switching notes in the editor automatically selects the matching card.
 
@@ -14,7 +14,7 @@ Cards display the note title, a Markdown-stripped excerpt, and a cover image whe
 
 ## Features
 
-- Click any folder in File Explorer to load `FOLDER_CARD_VIEW` in the right sidebar.
+- Click any folder in File Explorer to load `FOLDER_CARD_VIEW` in the left sidebar.
 - Cards show title, Markdown-stripped excerpt, and cover image.
 - Cover image source order: YAML frontmatter (`cover`, `image`, `banner`, `thumbnail`, `hero`, `cardImage`) -> first image in note body.
 - Virtualized scrolling keeps rendering smooth for large folders.
@@ -26,7 +26,7 @@ Cards display the note title, a Markdown-stripped excerpt, and a cover image whe
 ## Limitations
 
 - All processing is local to your vault. No external network requests are made by default.
-- The current release is desktop-only. Card Workspace relies on desktop File Explorer and right-sidebar workflows, and desktop shell actions stay unavailable outside desktop Obsidian.
+- The current release is desktop-only. Card Workspace relies on desktop File Explorer and left-sidebar workflows, and desktop shell actions stay unavailable outside desktop Obsidian.
 - The card stream is driven by folder clicks in the File Explorer. There is no standalone browse mode outside of folder selection.
 - Behavior and compatibility follow what is declared in `manifest.json` and the current Obsidian version.
 
