@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import {
+  getCardCornerRadiusOptions,
+  getDefaultCardOpenBehaviorOptions,
+  getUiStrings,
+  resolveUiLanguage,
+} from "./i18n";
+
+describe("i18n", () => {
+  it("resolves Chinese locales and falls back to English otherwise", () => {
+    expect(resolveUiLanguage("zh")).toBe("zh");
+    expect(resolveUiLanguage("zh-TW")).toBe("zh");
+    expect(resolveUiLanguage("zh-CN")).toBe("zh");
+    expect(resolveUiLanguage("en")).toBe("en");
+    expect(resolveUiLanguage("fr")).toBe("en");
+  });
+
+  it("returns Chinese UI strings for Chinese locales", () => {
+    const strings = getUiStrings("zh");
+    expect(strings.settingTab.previewLinesName).toBe("预览行数");
+    expect(strings.toolbar.actions.sortTitle).toBe("排序卡片");
+    expect(strings.view.merge.defaultMergedTitle).toBe("合并笔记");
+  });
+
+  it("localizes settings dropdown options", () => {
+    expect(getDefaultCardOpenBehaviorOptions("en")[0]?.label).toBe("Current pane / current tab");
+    expect(getDefaultCardOpenBehaviorOptions("zh")[0]?.label).toBe("当前窗格 / 当前标签页");
+    expect(getCardCornerRadiusOptions("zh")[2]?.label).toBe("圆角");
+  });
+});
