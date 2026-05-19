@@ -1,4 +1,5 @@
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
+import type { UiStrings } from "../i18n";
 import type {
   FolderTreeNode,
   NoteCardRecord,
@@ -13,6 +14,7 @@ export interface OpenNotePayload {
 }
 
 export interface PanelModelState {
+  strings: UiStrings;
   cards: NoteCardRecord[];
   searchMatchCountsByPath: Record<string, number>;
   emptyStateMessage: string;

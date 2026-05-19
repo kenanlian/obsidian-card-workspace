@@ -1,4 +1,5 @@
 import { Platform } from "obsidian";
+import { getUiStrings, type DesktopShellStrings } from "../i18n";
 
 export interface DesktopShellFailure {
   ok: false;
@@ -25,7 +26,7 @@ function getPathAdapter(app: AppLike): FileSystemAdapterLike {
   return app.vault.adapter;
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, strings: DesktopShellStrings): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
@@ -34,7 +35,7 @@ function getErrorMessage(error: unknown): string {
     return error;
   }
 
-  return "Unknown error";
+  return strings.unknownError;
 }
 
 async function loadShell(): Promise<{ openPath: (path: string) => Promise<string>; showItemInFolder: (path: string) => void }> {
@@ -60,12 +61,16 @@ export function getSystemPath(app: AppLike, filePath: string): string | null {
   }
 }
 
-export async function openInDefaultApp(app: AppLike, filePath: string): Promise<DesktopShellResult> {
+export async function openInDefaultApp(
+  app: AppLike,
+  filePath: string,
+  strings: DesktopShellStrings = getUiStrings("en").desktopShell,
+): Promise<DesktopShellResult> {
   const systemPath = getSystemPath(app, filePath);
   if (!systemPath) {
     return {
       ok: false,
-      error: "Desktop shell support is unavailable.",
+      error: strings.unavailable,
     };
   }
 
@@ -85,17 +90,21 @@ export async function openInDefaultApp(app: AppLike, filePath: string): Promise<
   } catch (error) {
     return {
       ok: false,
-      error: getErrorMessage(error),
+      error: getErrorMessage(error, strings),
     };
   }
 }
 
-export async function showInSystemExplorer(app: AppLike, filePath: string): Promise<DesktopShellResult> {
+export async function showInSystemExplorer(
+  app: AppLike,
+  filePath: string,
+  strings: DesktopShellStrings = getUiStrings("en").desktopShell,
+): Promise<DesktopShellResult> {
   const systemPath = getSystemPath(app, filePath);
   if (!systemPath) {
     return {
       ok: false,
-      error: "Desktop shell support is unavailable.",
+      error: strings.unavailable,
     };
   }
 
@@ -108,7 +117,7 @@ export async function showInSystemExplorer(app: AppLike, filePath: string): Prom
   } catch (error) {
     return {
       ok: false,
-      error: getErrorMessage(error),
+      error: getErrorMessage(error, strings),
     };
   }
 }

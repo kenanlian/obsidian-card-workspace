@@ -1,4 +1,5 @@
 import { App, TFile, TFolder, Notice } from "obsidian";
+import { getUiStrings, type NoteOpsStrings } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // Result types — every operation returns a typed result for caller handling.
@@ -47,13 +48,14 @@ export async function moveFile(
   app: App,
   file: TFile,
   targetFolder: TFolder,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<NoteOpResult> {
   try {
     const newPath = resolveUniquePath(app, file.name, targetFolder.path);
     await app.fileManager.renameFile(file, newPath);
     const moved = app.vault.getAbstractFileByPath(newPath);
     if (!(moved instanceof TFile)) {
-      return { ok: false, error: "File not found after move", path: file.path };
+      return { ok: false, error: strings.fileNotFoundAfterMove, path: file.path };
     }
     return { ok: true, file: moved };
   } catch (err) {
@@ -152,14 +154,15 @@ export async function buildClipboardText(
 export async function copyNoteToClipboard(
   app: App,
   file: TFile,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<boolean> {
   try {
     const text = await buildClipboardText(app, file);
     await navigator.clipboard.writeText(text);
-    new Notice(`Copied "${file.basename}" to clipboard`);
+    new Notice(strings.copiedToClipboard(file.basename));
     return true;
   } catch {
-    new Notice("Failed to copy to clipboard");
+    new Notice(strings.failedToCopyToClipboard);
     return false;
   }
 }
@@ -176,12 +179,13 @@ export async function batchMoveFiles(
   app: App,
   files: TFile[],
   targetFolder: TFolder,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<BatchOpSummary> {
   const succeeded: NoteOpSuccess[] = [];
   const failed: NoteOpFailure[] = [];
 
   for (const file of files) {
-    const result = await moveFile(app, file, targetFolder);
+    const result = await moveFile(app, file, targetFolder, strings);
     if (result.ok) {
       succeeded.push(result);
     } else {
@@ -274,9 +278,10 @@ export async function mergeNotes(
   targetFolder: TFolder,
   mergedTitle: string,
   separator: string = "\n\n---\n\n",
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<MergeOpResult> {
   if (files.length === 0) {
-    return { ok: false, error: "No files to merge" };
+    return { ok: false, error: strings.noFilesToMerge };
   }
 
   try {
@@ -287,7 +292,7 @@ export async function mergeNotes(
     }
 
     const merged = sections.join(separator);
-    const safeMergedTitle = normalizeMergedTitle(mergedTitle);
+    const safeMergedTitle = normalizeMergedTitle(mergedTitle, strings.mergedNotesDefaultTitle);
     const fileName = `${safeMergedTitle}.md`;
     const newPath = resolveUniquePath(app, fileName, targetFolder.path);
     const created = await app.vault.create(newPath, merged);
@@ -302,13 +307,13 @@ export async function mergeNotes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function normalizeMergedTitle(mergedTitle: string): string {
+function normalizeMergedTitle(mergedTitle: string, defaultTitle: string): string {
   const collapsed = mergedTitle
     .replace(/[\\/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  return collapsed.length > 0 ? collapsed : "Merged notes";
+  return collapsed.length > 0 ? collapsed : defaultTitle;
 }
 
 /**
