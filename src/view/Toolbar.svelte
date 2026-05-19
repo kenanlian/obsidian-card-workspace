@@ -1,6 +1,7 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
+  import { getUiStrings, type ToolbarStrings } from "../i18n";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -33,6 +34,7 @@
   }
 
   interface ToolbarProps {
+    strings?: ToolbarStrings;
     folderPath?: string;
     sortField?: string;
     sortDirection?: string;
@@ -77,39 +79,40 @@
   type SortMenuOption = SortOption | SortSeparatorOption;
 
   function getSearchStatusLabel(
+    strings: ToolbarStrings["searchStatus"],
     status: SearchStatus,
     readiness: string,
     persistence: string,
     rebuildReason: string | null,
   ): string {
     if (status === "building") {
-      return readiness === "restoring" ? "Restoring index" : "Building index";
+      return readiness === "restoring" ? strings.buildingRestoring : strings.building;
     }
 
     if (status === "rebuild-required") {
-      if (rebuildReason === "version-drift") return "Rebuild required (version drift)";
-      if (rebuildReason === "corrupt") return "Rebuild required (corrupted)";
-      if (rebuildReason === "folder-rebuild-required") return "Rebuild required (folder changed)";
-      return "Rebuild required";
+      if (rebuildReason === "version-drift") return strings.rebuildVersionDrift;
+      if (rebuildReason === "corrupt") return strings.rebuildCorrupt;
+      if (rebuildReason === "folder-rebuild-required") return strings.rebuildFolderChanged;
+      return strings.rebuildRequired;
     }
 
     if (status === "storage-unavailable" || persistence === "storage-unavailable") {
-      return "Search storage unavailable";
+      return strings.storageUnavailable;
     }
 
     if (status === "error") {
-      return "Search error";
+      return strings.error;
     }
 
     if (status === "unavailable") {
-      return "Search unavailable";
+      return strings.unavailable;
     }
 
     if (status === "ready") {
-      return "Index ready";
+      return strings.ready;
     }
 
-    return "Search idle";
+    return strings.idle;
   }
 
   interface ToolbarActionOption {
@@ -120,6 +123,7 @@
   }
 
   let {
+    strings = getUiStrings("en").toolbar,
     folderPath = "",
     sortField = "mtime",
     sortDirection = "desc",
@@ -151,22 +155,22 @@
     onSelectFolder,
   }: ToolbarProps = $props();
 
-  const SORT_OPTIONS: SortMenuOption[] = [
-    { field: "mtime", direction: "desc", label: "编辑时间（从新到旧）" },
-    { field: "mtime", direction: "asc", label: "编辑时间（从旧到新）" },
+  const SORT_OPTIONS = $derived<SortMenuOption[]>([
+    { field: "mtime", direction: "desc", label: strings.sortOptions.mtimeDesc },
+    { field: "mtime", direction: "asc", label: strings.sortOptions.mtimeAsc },
     { type: "separator" },
-    { field: "ctime", direction: "desc", label: "创建时间（从新到旧）" },
-    { field: "ctime", direction: "asc", label: "创建时间（从旧到新）" },
-  ];
+    { field: "ctime", direction: "desc", label: strings.sortOptions.ctimeDesc },
+    { field: "ctime", direction: "asc", label: strings.sortOptions.ctimeAsc },
+  ]);
 
-  const TOOLBAR_ACTIONS: ToolbarActionOption[] = [
-    { id: "pick-folder", label: "Pick folder", title: "Folder scope", icon: "folder-open" },
-    { id: "all-notes", label: "All notes", title: "All notes", icon: "library" },
-    { id: "new-note", label: "New", title: "Create note", icon: "file-plus" },
-    { id: "sort", label: "Sort", title: "Sort cards", icon: "arrow-up-down" },
-    { id: "filter", label: "Filter", title: "Filter cards", icon: "list-filter" },
-    { id: "bulk", label: "Bulk", title: "Bulk actions", icon: "check-check" },
-  ];
+  const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
+    { id: "pick-folder", label: strings.actions.pickFolder, title: strings.actions.pickFolderTitle, icon: "folder-open" },
+    { id: "all-notes", label: strings.actions.allNotes, title: strings.actions.allNotesTitle, icon: "library" },
+    { id: "new-note", label: strings.actions.newNote, title: strings.actions.newNoteTitle, icon: "file-plus" },
+    { id: "sort", label: strings.actions.sort, title: strings.actions.sortTitle, icon: "arrow-up-down" },
+    { id: "filter", label: strings.actions.filter, title: strings.actions.filterTitle, icon: "list-filter" },
+    { id: "bulk", label: strings.actions.bulk, title: strings.actions.bulkTitle, icon: "check-check" },
+  ]);
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
   function isSortSeparatorOption(option: SortMenuOption): option is SortSeparatorOption {
@@ -174,7 +178,7 @@
   }
 
   let localActiveFilterTags = $state<string[]>([]);
-  let activeToolbarAction = $state(TOOLBAR_ACTIONS[0].id);
+  let activeToolbarAction = $state("pick-folder");
   let showSortMenu = $state(false);
   let sortMenuX = $state(0);
   let sortMenuY = $state(0);
@@ -197,18 +201,18 @@
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
 
-  const bulkSelectionSummary = $derived(selectedCount === 1 ? "1 selected" : `${selectedCount} selected`);
+  const bulkSelectionSummary = $derived(strings.bulkSummary(selectedCount));
   const bulkActions = $derived([
-    { id: "bulk-select-all", label: "Select all", icon: "check-square", disabled: !canBulkSelectAll },
-    { id: "bulk-clear-selection", label: "Clear selection", icon: "x-square", disabled: !canBulkClearSelection },
-    { id: "bulk-move-selected", label: "Move selected", icon: "folder-input", disabled: !canBulkMoveSelected },
-    { id: "bulk-delete-selected", label: "Delete selected", icon: "trash-2", disabled: !canBulkDeleteSelected },
-    { id: "bulk-merge-selected", label: "Merge selected", icon: "combine", disabled: !canBulkMergeSelected },
+    { id: "bulk-select-all", label: strings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
+    { id: "bulk-clear-selection", label: strings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
+    { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
+    { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected },
+    { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
   ]);
 
   const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
   const hasTagFilter = $derived(localActiveFilterTags.length > 0);
-  const tagSummary = $derived(`Tag filter: ${localActiveFilterTags.length} active`);
+  const tagSummary = $derived(strings.tagSummary(localActiveFilterTags.length));
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
   const showSearchStatus = $derived(
     searchStatus === "building"
@@ -219,7 +223,7 @@
     || searchIndexPersistence === "storage-unavailable"
   );
   const searchStatusLabel = $derived(
-    getSearchStatusLabel(searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
+    getSearchStatusLabel(strings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
   const hasSummary = $derived(hasTagFilter || showSearchStatus);
 
@@ -477,7 +481,7 @@
       return folderPath.split("/").filter(Boolean).pop() || folderPath;
     }
 
-    return "Select folder";
+    return strings.actions.selectFolder;
   }
 
   function toggleIncludeSubfolders(): void {
@@ -530,7 +534,7 @@
 </script>
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
-  <div class="fce-toolbar" role="toolbar" aria-label="Folder card actions">
+  <div class="fce-toolbar" role="toolbar" aria-label={strings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons">
       {#each TOOLBAR_ACTIONS as action}
         {#if action.id === "pick-folder"}
@@ -550,13 +554,13 @@
             <button
               type="button"
               class="clickable-icon fce-toolbar-button {includeSubfolders ? 'is-selected' : ''}"
-              aria-label={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
+              aria-label={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
               aria-pressed={includeSubfolders}
               onclick={toggleIncludeSubfolders}
               use:applyIcon={"folder-tree"}
-              use:applyTooltip={includeSubfolders ? 'Including subfolders' : 'Direct folder only'}
+              use:applyTooltip={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
             >
-              <span class="fce-sr-only">Subfolders</span>
+              <span class="fce-sr-only">{strings.folderMenu.subfoldersSrLabel}</span>
             </button>
           {/if}
         {:else if action.id === "sort"}
@@ -596,11 +600,11 @@
       <button
         type="button"
         class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
-        aria-label="Toggle search"
+        aria-label={strings.actions.toggleSearch}
         onclick={toggleSearch}
         use:applyIcon={"search"}
       >
-        <span class="fce-sr-only">Toggle search</span>
+        <span class="fce-sr-only">{strings.actions.toggleSearch}</span>
       </button>
     </div>
   </div>
@@ -608,14 +612,14 @@
   {#if searchExpanded}
     <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}">
       <div class="fce-toolbar-search" role="search">
-        <label class="fce-sr-only" for="fce-search-input">Search notes</label>
+        <label class="fce-sr-only" for="fce-search-input">{strings.search.inputLabel}</label>
         <input
           bind:this={searchInputEl}
           id="fce-search-input"
           class="fce-search-input"
           type="search"
-          aria-label="Search notes"
-          placeholder="Search notes"
+          aria-label={strings.search.inputLabel}
+          placeholder={strings.search.placeholder}
           value={searchQuery}
           oninput={handleSearchInput}
         />
@@ -623,11 +627,11 @@
           <button
             type="button"
             class="clickable-icon fce-search-clear"
-            aria-label="Clear search query"
+            aria-label={strings.search.clear}
             onclick={clearSearchQuery}
             use:applyIcon={"x"}
           >
-            <span class="fce-sr-only">Clear</span>
+            <span class="fce-sr-only">{strings.search.clear}</span>
           </button>
         {/if}
       </div>
@@ -648,7 +652,7 @@
   {/if}
 
   {#if bulkMode}
-    <div class="fce-toolbar-bulk-strip" role="group" aria-label="Bulk actions">
+      <div class="fce-toolbar-bulk-strip" role="group" aria-label={strings.actions.bulkTitle}>
       <div class="fce-toolbar-bulk-actions">
         {#each bulkActions as action}
           <button
@@ -667,12 +671,12 @@
         <button
           type="button"
           class="clickable-icon fce-toolbar-bulk-button is-exit"
-          aria-label="Exit bulk mode"
+          aria-label={strings.bulkActionLabels.exitBulkMode}
           onclick={() => emitToolbarAction("bulk")}
           use:applyIcon={"x"}
-          use:applyTooltip={"Exit bulk mode"}
+          use:applyTooltip={strings.bulkActionLabels.exitBulkMode}
         >
-          <span class="fce-sr-only">Exit bulk mode</span>
+          <span class="fce-sr-only">{strings.bulkActionLabels.exitBulkMode}</span>
         </button>
       </div>
 
@@ -743,7 +747,7 @@
           <button
             type="button"
             class="fce-folder-tree-chevron"
-            aria-label={expandedPaths.has(node.path) ? "Collapse" : "Expand"}
+            aria-label={expandedPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
             onclick={(event) => onFolderChevronClick(event, node.path)}
             use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
           ></button>
@@ -766,7 +770,7 @@
   >
     {#if availableTags.length === 0}
       <div class="fce-sort-menu-item" style="cursor: default; color: var(--text-muted);">
-        <span class="fce-sort-menu-item-label">No tags found</span>
+        <span class="fce-sort-menu-item-label">{strings.filter.noTagsFound}</span>
       </div>
     {:else}
       {#each availableTags as tag}

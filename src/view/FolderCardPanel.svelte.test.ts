@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
+import { getUiStrings } from "../i18n";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
 import type { CardFileKind } from "./file-kind";
@@ -32,6 +33,7 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
 
 function createInitialPanelState(): PanelModelState {
   return {
+    strings: getUiStrings("en"),
     cards: [],
     searchMatchCountsByPath: {},
     emptyStateMessage: "No supported files found in this folder.",

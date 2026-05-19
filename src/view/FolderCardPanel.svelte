@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getUiStrings } from "../i18n";
   import Toolbar from "./Toolbar.svelte";
   import CardItem from "./CardItem.svelte";
   import type { OpenNotePayload, PanelModel, PanelModelState } from "./panel-model";
@@ -86,6 +87,7 @@
   }
 
   const EMPTY_PANEL_STATE: PanelModelState = {
+    strings: getUiStrings("en"),
     cards: [],
     searchMatchCountsByPath: {},
     emptyStateMessage: "",
@@ -179,31 +181,32 @@
   }
 
   function getBlockedSearchLabel(state: PanelModelState): string {
+    const strings = state.strings.toolbar.searchStatus;
     const status = state.searchStatus;
     const readiness = state.searchIndexReadiness ?? "ready";
     const persistence = state.searchIndexPersistence ?? "healthy";
     const rebuildReason = state.searchIndexRebuildReason ?? null;
 
     if (status === "building") {
-      return readiness === "restoring" ? "Restoring index" : "Building index";
+      return readiness === "restoring" ? strings.buildingRestoring : strings.building;
     }
 
     if (status === "rebuild-required") {
-      if (rebuildReason === "version-drift") return "Rebuild required (version drift)";
-      if (rebuildReason === "corrupt") return "Rebuild required (corrupted)";
-      if (rebuildReason === "folder-rebuild-required") return "Rebuild required (folder changed)";
-      return "Rebuild required";
+      if (rebuildReason === "version-drift") return strings.rebuildVersionDrift;
+      if (rebuildReason === "corrupt") return strings.rebuildCorrupt;
+      if (rebuildReason === "folder-rebuild-required") return strings.rebuildFolderChanged;
+      return strings.rebuildRequired;
     }
 
     if (status === "storage-unavailable" || persistence === "storage-unavailable") {
-      return "Search storage unavailable";
+      return strings.storageUnavailable;
     }
 
     if (status === "error") {
-      return "Search error";
+      return strings.error;
     }
 
-    return "Search unavailable";
+    return strings.unavailable;
   }
 
   const cardCornerRadius = $derived(panelState.cardCornerRadius);
@@ -553,6 +556,7 @@
 
 <div class="fce-shell {bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
+    strings={panelState.strings.toolbar}
     {folderPath}
     {sortField}
     {sortDirection}
@@ -592,12 +596,14 @@
     onwheel={markUserScrolling}
   >
     {#if loading}
-      <div class="fce-empty">Loading folder cards...</div>
-  {:else if cards.length === 0}
+      <div class="fce-empty">{panelState.strings.panel.loadingCards}</div>
+   {:else if cards.length === 0}
     {#if isBlockedSearchState(panelState)}
       <div class="fce-empty fce-search-blocked">
-        <div class="fce-search-blocked-title">Search is currently blocked</div>
-        <div class="fce-search-blocked-status">Index status: {getBlockedSearchLabel(panelState)}</div>
+        <div class="fce-search-blocked-title">{panelState.strings.panel.searchBlockedTitle}</div>
+        <div class="fce-search-blocked-status">
+          {panelState.strings.panel.searchBlockedStatusPrefix} {getBlockedSearchLabel(panelState)}
+        </div>
       </div>
     {:else}
       <div class="fce-empty">{emptyStateMessage}</div>
@@ -610,6 +616,8 @@
             {#each row.cards as card (card.path)}
               <CardItem
                 {card}
+                strings={panelState.strings.cardItem}
+                fileKindStrings={panelState.strings.fileKind}
                 {pinnedPaths}
                 {cardCornerRadius}
                 {previewLines}

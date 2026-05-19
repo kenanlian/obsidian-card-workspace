@@ -1,5 +1,6 @@
 <script lang="ts">
   import { setIcon } from "obsidian";
+  import { getUiStrings, type CardItemStrings, type FileKindStrings } from "../i18n";
   import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
   import type { OpenNotePayload } from "./panel-model";
   import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
@@ -23,6 +24,8 @@
 
   interface CardItemProps {
     card: NoteCardRecord;
+    strings?: CardItemStrings;
+    fileKindStrings?: FileKindStrings;
     selected?: boolean;
     bulkMode?: boolean;
     bulkSelected?: boolean;
@@ -52,6 +55,8 @@
 
   let {
     card,
+    strings = getUiStrings("en").cardItem,
+    fileKindStrings = getUiStrings("en").fileKind,
     selected = false,
     bulkMode = false,
     bulkSelected = false,
@@ -389,10 +394,10 @@
         {#if searchQuery.trim().length > 0 && searchMatchCount > 0}
           <span
             class="fce-card-search-count"
-            aria-label="{searchMatchCount} match{searchMatchCount === 1 ? "" : "es"} in this note"
-          >
-            {searchMatchCount === 1 ? "1 match" : `${searchMatchCount} matches`}
-          </span>
+              aria-label={strings.searchCountAria(searchMatchCount)}
+            >
+              {strings.searchCount(searchMatchCount)}
+            </span>
         {/if}
       </div>
       <div class="fce-card-actions">
@@ -400,7 +405,7 @@
           <input
             type="checkbox"
             class="fce-card-bulk-checkbox"
-            aria-label={bulkSelected ? "Deselect note from bulk selection" : "Add note to bulk selection"}
+            aria-label={bulkSelected ? strings.bulkCheckboxRemove : strings.bulkCheckboxAdd}
             checked={bulkSelected}
             onclick={onBulkSelectClick}
             onkeydown={onBulkSelectKeydown}
@@ -409,7 +414,7 @@
           <button
             type="button"
             class="clickable-icon fce-card-pin-btn"
-            aria-label={isPinned ? "Unpin note" : "Pin note"}
+            aria-label={isPinned ? strings.unpin : strings.pin}
             aria-pressed={isPinned}
             onclick={onPinClick}
             onkeydown={onPinKeydown}
@@ -418,7 +423,7 @@
           <button
             type="button"
             class="clickable-icon fce-more-actions-btn"
-            aria-label="More actions"
+            aria-label={strings.moreActions}
             onclick={onMoreActionsClick}
             onkeydown={onMoreActionsKeydown}
             use:applyIcon={"ellipsis"}
@@ -434,14 +439,14 @@
     >
       {#if card.hydrated}
         {#if card.previewMode === "placeholder"}
-          <p class="fce-preview-placeholder">{getCardPlaceholderText(card.fileKind)}</p>
+          <p class="fce-preview-placeholder">{getCardPlaceholderText(card.fileKind, fileKindStrings)}</p>
         {:else if card.previewMode === "empty" || !card.previewHtml}
-          <p class="fce-preview-empty">No previewable text near the top.</p>
+          <p class="fce-preview-empty">{strings.placeholderEmpty}</p>
         {:else}
           {@html highlightedPreviewHtml}
         {/if}
       {:else}
-        <p class="fce-preview-empty">Loading preview...</p>
+        <p class="fce-preview-empty">{strings.placeholderLoading}</p>
       {/if}
     </div>
   </div>
