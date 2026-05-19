@@ -1,34 +1,68 @@
 # Card Workspace
 
+[简体中文](README.zh-CN.md)
+
 An Obsidian plugin that turns folder clicks in the File Explorer into a warm retro card stream in the left sidebar. Browse notes by folder, click a card to open it, and keep your context while exploring.
 
-## How to use
+## Table of contents
 
-1. Enable the plugin in Obsidian's **Community plugins** settings.
-2. Open the **File Explorer** and click any folder.
-3. A card stream appears in the **left sidebar**, showing notes from that folder.
-4. Click a card to open the note.
-5. Switching notes in the editor automatically selects the matching card.
+- [Why Card Workspace](#why-card-workspace)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Features](#features)
+- [Previews](#previews)
+- [Compatibility and limitations](#compatibility-and-limitations)
+- [Privacy](#privacy)
+- [Development](#development)
+- [Releasing](#releasing)
+- [Support and license](#support-and-license)
 
-Cards display the note title, a Markdown-stripped excerpt, and a cover image when available. Cover images are resolved from YAML frontmatter fields (`cover`, `image`, `banner`, `thumbnail`, `hero`, `cardImage`) or the first image found in the note body.
+## Why Card Workspace
+
+Card Workspace gives you a visual, scannable way to browse and organize the notes inside any folder. Instead of reading a plain file list, you see cards with titles and excerpts. Click a folder, glance at the cards, and open the note you want without losing your place.
+
+## Installation
+
+Card Workspace is installed manually from GitHub releases.
+
+1. Download the latest release from the [Releases](https://github.com/kenanlian/obsidian-card-workspace/releases) page.
+2. Extract the archive and copy `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsidian/plugins/card-workspace/` folder.
+3. Open Obsidian's **Settings -> Community plugins**.
+4. Turn off **Safe mode** if it is on.
+5. Find **Card Workspace** in the plugin list and enable it.
+
+## Quick start
+
+1. Open the **File Explorer** and click any folder.
+2. A card stream appears in the **left sidebar**, showing notes from that folder.
+3. Click a card to open the note.
+4. Switching notes in the editor automatically selects the matching card.
 
 ## Features
 
-- Click any folder in File Explorer to load `FOLDER_CARD_VIEW` in the left sidebar.
-- Cards show title, Markdown-stripped excerpt, and cover image.
-- Cover image source order: YAML frontmatter (`cover`, `image`, `banner`, `thumbnail`, `hero`, `cardImage`) -> first image in note body.
-- Virtualized scrolling keeps rendering smooth for large folders.
-- Two-way sync:
-  - Click card -> opens note using the configured default card-open behavior.
-  - Switching note in editor -> corresponding card gets selected.
-- Warm Retro Paper aesthetic using `styles.css`.
+- **Folder-driven browsing.** Click any folder in the File Explorer to load a card stream in the left sidebar.
+- **Card previews.** Each card shows the note title and a Markdown-stripped excerpt.
+- **Virtualized scrolling.** Large folders stay smooth because only visible cards are rendered.
+- **Two-way sync.** Click a card to open its note. Switch notes in the editor and the corresponding card is selected automatically.
+- **Local search.** Full-text search across the current folder's cards.
+- **Tag filtering.** Filter cards by tags extracted from frontmatter and note content.
+- **Pin reordering.** Pin cards to keep them at the top of the stream.
+- **Bulk actions.** Select multiple cards to move, delete, or merge notes in batches.
+- **Warm retro aesthetic.** Styled with `styles.css` for a paper-like card feel.
 
-## Limitations
+## Previews
 
-- All processing is local to your vault. No external network requests are made by default.
-- The current release is desktop-only. Card Workspace relies on desktop File Explorer and left-sidebar workflows, and desktop shell actions stay unavailable outside desktop Obsidian.
-- The card stream is driven by folder clicks in the File Explorer. There is no standalone browse mode outside of folder selection.
-- Behavior and compatibility follow what is declared in `manifest.json` and the current Obsidian version.
+Cards display the note title and a Markdown-stripped excerpt. The excerpt is generated from the note body with images and formatting stripped for readability.
+
+## Compatibility and limitations
+
+- **Desktop only.** Card Workspace relies on desktop File Explorer and left-sidebar workflows. It is unavailable on mobile.
+- **Folder-driven.** The card stream is triggered by folder clicks in the File Explorer. There is no standalone browse mode outside of folder selection.
+- **Obsidian version.** Requires Obsidian 1.5.0 or later. Behavior and compatibility follow what is declared in `manifest.json`.
+
+## Privacy
+
+All processing stays inside your vault. The plugin does not make external network requests. File operations go through Obsidian's local Vault and FileManager APIs. Search indexing uses the local `minisearch` library.
 
 ## Development
 
@@ -43,32 +77,36 @@ For watch mode:
 npm run dev
 ```
 
+Run type checks and tests:
+
+```bash
+npm run check
+npm test
+```
+
 ## Releasing
 
-This repo supports draft GitHub Releases through `.github/workflows/release.yml`.
+This repo creates draft GitHub Releases from bare semver tags through `.github/workflows/release.yml`.
 
-1. Ensure GitHub Actions has **Read and write permissions** under **Settings -> Actions -> General -> Workflow permissions**.
-2. Determine the target version from `manifest.json`:
+1. Determine the target version from `manifest.json`:
 
    ```bash
    TAG=$(node -p "require('./manifest.json').version")
    ```
 
-3. Prepare the version metadata together:
+2. Sync the release metadata:
 
    ```bash
    npm run release:prepare -- "$TAG"
    ```
 
-   This syncs `package.json`, `package-lock.json`, `manifest.json`, and `versions.json` for the target release.
-
-   If you also need to raise the minimum supported Obsidian version, pass it as the second argument:
+   To also raise the minimum supported Obsidian version, pass it as the second argument:
 
    ```bash
    npm run release:prepare -- "$TAG" 1.6.0
    ```
 
-4. Validate the release metadata and run the normal repo checks:
+3. Run the normal checks plus release validation:
 
    ```bash
    npm run check:svelte
@@ -78,7 +116,7 @@ This repo supports draft GitHub Releases through `.github/workflows/release.yml`
    npm run release:check -- "$TAG"
    ```
 
-5. Commit the version bump, then create and push an annotated bare semver tag that exactly matches `manifest.json.version` (for example `<version>`, not `v<version>`):
+4. Commit the version bump, then create and push an annotated bare semver tag that exactly matches `manifest.json.version` (for example `<version>`, not `v<version>`):
 
    ```bash
    git tag -a "$TAG" -m "$TAG"
@@ -86,9 +124,11 @@ This repo supports draft GitHub Releases through `.github/workflows/release.yml`
    git push origin "$TAG"
    ```
 
-6. The release workflow will create a draft GitHub Release with these assets:
-   - `main.js`
-   - `manifest.json`
-   - `styles.css`
+5. The workflow creates a draft GitHub Release containing `main.js`, `manifest.json`, and `styles.css`.
+6. Add release notes on GitHub and publish the draft release.
 
-7. Add release notes on GitHub and publish the draft release.
+## Support and license
+
+If you run into issues, please open a ticket on [GitHub Issues](https://github.com/kenanlian/obsidian-card-workspace/issues).
+
+Card Workspace is released under the MIT License.
