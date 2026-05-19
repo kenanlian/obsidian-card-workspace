@@ -352,6 +352,7 @@ vi.mock("obsidian", () => {
   return {
     Plugin: MockPlugin,
     Notice: MockNotice,
+    getLanguage: vi.fn(() => "en"),
     MarkdownView: class MockMarkdownView {
       leaf: unknown;
 

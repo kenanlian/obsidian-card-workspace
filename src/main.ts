@@ -8,6 +8,7 @@ import {
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
+import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
 import {
   IndexedSearchService,
@@ -37,6 +38,7 @@ type SearchRecoveryBoundaryState = "healthy" | "degraded";
 type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
 export default class FolderCardExplorerPlugin extends Plugin {
+  private readonly uiLanguage: UiLanguage = resolveUiLanguage();
   private selectedFolderPath: string | null = null;
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private selectionRequestSeq = 0;
@@ -75,13 +77,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
     this.registerHoverLinkSource("card-workspace", {
-      display: "Card Workspace",
+      display: this.getUiStrings().app.hoverSourceDisplay,
       defaultMod: true,
     });
 
     this.addCommand({
       id: "open-card-workspace",
-      name: "Open Card Workspace view",
+      name: this.getUiStrings().app.openCardWorkspaceViewCommand,
       callback: () => {
         void this.activateView();
       },
@@ -146,7 +148,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private generateUniqueNotePath(folderPath: string): string {
-    const baseName = "Untitled";
+    const baseName = this.getUiStrings().app.untitledNoteBaseName;
     const extension = "md";
     const prefix = folderPath ? `${folderPath}/` : "";
 
@@ -209,7 +211,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       openPopoutLeaf?: () => WorkspaceLeaf | Promise<WorkspaceLeaf>;
     };
     if (typeof workspaceWithPopout.openPopoutLeaf !== "function") {
-      new Notice("Open in new window is available on desktop only.");
+      new Notice(this.getUiStrings().app.openInNewWindowDesktopOnly);
       return null;
     }
 
@@ -322,6 +324,14 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   getSettings(): PluginSettings {
     return normalizeSettings(this.settings);
+  }
+
+  getUiLanguage(): UiLanguage {
+    return this.uiLanguage;
+  }
+
+  getUiStrings(): UiStrings {
+    return getUiStrings(this.uiLanguage);
   }
 
   getSearchService(): SearchService | null {
@@ -465,9 +475,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private registerSearchCommands(): void {
+    const strings = this.getUiStrings().app;
     this.addCommand({
       id: "show-folder-card-search-index-status",
-      name: "Show Card Workspace local search index lifecycle status",
+      name: strings.showSearchStatusCommand,
       callback: () => {
         this.showSearchIndexStatus();
       },
@@ -475,7 +486,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "recover-folder-card-search-index",
-      name: "Recover Card Workspace local search index lifecycle",
+      name: strings.recoverSearchIndexCommand,
       callback: () => {
         void this.recoverSearchIndex("Manual recover command requested full local search index rebuild.");
       },
@@ -483,7 +494,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "rebuild-folder-card-search-index",
-      name: "Rebuild Card Workspace local search index from notes",
+      name: strings.rebuildSearchIndexCommand,
       callback: () => {
         void this.rebuildSearchIndex("Manual rebuild command requested local search index rebuild.");
       },
@@ -491,7 +502,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
     this.addCommand({
       id: "clear-reset-folder-card-search-index",
-      name: "Clear and reset Card Workspace local search index state",
+      name: strings.clearResetSearchIndexCommand,
       callback: () => {
         void this.clearAndResetSearchIndex();
       },
@@ -739,13 +750,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
         return;
       }
       this.searchRecoveryBoundaryState = "degraded";
-      new Notice("Card Workspace search index requires recovery.");
+      new Notice(this.getUiStrings().app.searchIndexRequiresRecovery);
       return;
     }
 
     if (this.searchRecoveryBoundaryState === "degraded" && snapshot.status === "ready") {
       this.searchRecoveryBoundaryState = "healthy";
-      new Notice("Card Workspace search index is ready.");
+      new Notice(this.getUiStrings().app.searchIndexReady);
       return;
     }
 
@@ -774,7 +785,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private showSearchIndexStatus(): void {
     const snapshot = this.getSearchIndexObservabilitySnapshot();
     if (!snapshot) {
-      new Notice("Card Workspace local search index lifecycle is not initialized yet.");
+      new Notice(this.getUiStrings().app.searchIndexUnavailableNotice);
       return;
     }
 
@@ -794,19 +805,20 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private formatSearchIndexStatus(snapshot: SearchIndexObservabilitySnapshot): string {
+    const strings = this.getUiStrings().app;
     const { health } = snapshot;
     return [
-      "Card Workspace local search index lifecycle",
-      `Status: ${snapshot.status}`,
-      `Query availability: ${snapshot.queriesAllowed ? "available" : "blocked"}`,
-      `Readiness: ${health.readiness}`,
-      `Persistence: ${health.persistence}`,
-      `Documents: ${health.documentCount === null ? "unknown" : String(health.documentCount)}`,
-      `Last outcome: ${health.outcome}`,
-      `Last restore: ${this.formatSearchIndexSuccess(health.lastSuccessfulRestore)}`,
-      `Last build: ${this.formatSearchIndexSuccess(health.lastSuccessfulBuild)}`,
-      `Rebuild reason: ${health.rebuildReason ?? "none"}`,
-      `Last error: ${health.lastError ?? "none"}`,
+      strings.searchIndexLifecycleTitle,
+      `${strings.searchIndexStatusLabel}: ${snapshot.status}`,
+      `${strings.searchIndexQueryAvailabilityLabel}: ${snapshot.queriesAllowed ? strings.searchIndexAvailable : strings.searchIndexBlocked}`,
+      `${strings.searchIndexReadinessLabel}: ${health.readiness}`,
+      `${strings.searchIndexPersistenceLabel}: ${health.persistence}`,
+      `${strings.searchIndexDocumentsLabel}: ${health.documentCount === null ? strings.searchIndexUnknown : String(health.documentCount)}`,
+      `${strings.searchIndexLastOutcomeLabel}: ${health.outcome}`,
+      `${strings.searchIndexLastRestoreLabel}: ${this.formatSearchIndexSuccess(health.lastSuccessfulRestore)}`,
+      `${strings.searchIndexLastBuildLabel}: ${this.formatSearchIndexSuccess(health.lastSuccessfulBuild)}`,
+      `${strings.searchIndexRebuildReasonLabel}: ${health.rebuildReason ?? strings.searchIndexNone}`,
+      `${strings.searchIndexLastErrorLabel}: ${health.lastError ?? strings.searchIndexNone}`,
     ].join("\n");
   }
 
@@ -814,7 +826,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     snapshot: SearchIndexObservabilitySnapshot["health"]["lastSuccessfulRestore"],
   ): string {
     if (!snapshot) {
-      return "none";
+      return this.getUiStrings().app.searchIndexNone;
     }
 
     return `${snapshot.outcome} at ${snapshot.at} (${snapshot.documentCount} docs)`;
@@ -887,7 +899,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     }
 
     if (!this.searchManager) {
-      new Notice("Card Workspace local search index is unavailable.");
+      new Notice(this.getUiStrings().app.searchIndexUnavailable);
       return;
     }
 
@@ -895,11 +907,11 @@ export default class FolderCardExplorerPlugin extends Plugin {
       "Manual clear/reset command requested local search index reset.",
     );
     if (clearResult.outcome === "failed") {
-      new Notice("Card Workspace local search index reset failed.");
+      new Notice(this.getUiStrings().app.searchIndexResetFailed);
       return;
     }
 
-    new Notice("Card Workspace local search index cleared. Rebuilding from notes...");
+    new Notice(this.getUiStrings().app.searchIndexClearedAndRebuilding);
     await this.rebuildSearchIndex("Manual clear/reset command requested full local search index rebuild.");
   }
 
@@ -920,7 +932,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     if (!this.searchManager) {
       await this.initializeSearchService();
       if (!this.searchManager) {
-        new Notice("Card Workspace local search index is unavailable.");
+        new Notice(this.getUiStrings().app.searchIndexUnavailable);
         return;
       }
 
