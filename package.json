@@ -2,7 +2,7 @@
   "name": "card-workspace",
   "version": "0.1.9",
   "license": "MIT",
-  "description": "Obsidian plugin that renders clicked folders as a card stream in the left sidebar.",
+  "description": "Obsidian plugin that shows folder notes as a card stream in the left sidebar.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",

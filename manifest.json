@@ -3,7 +3,7 @@
   "name": "Card Workspace",
   "version": "0.1.9",
   "minAppVersion": "1.5.0",
-  "description": "Preview notes from a clicked folder as a warm retro card stream in the left sidebar.",
+  "description": "Browse folder notes as a warm retro card stream in the left sidebar.",
   "author": "kenan.lian",
   "isDesktopOnly": true
 }
