@@ -1,4 +1,5 @@
 import type { TFile } from "obsidian";
+import { getUiStrings, type FileKindStrings } from "../i18n";
 
 export type CardFileKind = "markdown" | "base" | "canvas" | "excalidraw";
 
@@ -12,13 +13,6 @@ const CARD_FILE_KIND_RULES: ReadonlyArray<{
   { suffix: ".base", kind: "base" },
   { suffix: ".md", kind: "markdown" },
 ];
-
-const CARD_PLACEHOLDER_TEXT: Record<CardFileKind, string> = {
-  markdown: "Markdown",
-  base: "This is a base file.",
-  canvas: "This is a canvas file.",
-  excalidraw: "This is an excalidraw file.",
-};
 
 const CARD_FILE_ICON: Record<CardFileKind, string> = {
   markdown: "file-text",
@@ -51,8 +45,11 @@ export function isMarkdownCardKind(kind: CardFileKind): boolean {
   return kind === "markdown";
 }
 
-export function getCardPlaceholderText(kind: CardFileKind): string {
-  return CARD_PLACEHOLDER_TEXT[kind];
+export function getCardPlaceholderText(
+  kind: CardFileKind,
+  strings: FileKindStrings = getUiStrings("en").fileKind,
+): string {
+  return strings[kind];
 }
 
 export function getCardFileIcon(kind: CardFileKind): string {

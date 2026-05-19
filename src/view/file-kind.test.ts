@@ -21,6 +21,7 @@ vi.mock("obsidian", () => {
 });
 
 import { TFile } from "obsidian";
+import { getUiStrings } from "../i18n";
 import {
   getCardFileIcon,
   getCardPlaceholderText,
@@ -96,5 +97,11 @@ describe("placeholder and icon helpers", () => {
     expect(getCardFileIcon("base")).toBe("layout-list");
     expect(getCardFileIcon("canvas")).toBe("layout-dashboard");
     expect(getCardFileIcon("excalidraw")).toBe("pen-tool");
+  });
+
+  it("supports localized placeholder text", () => {
+    const strings = getUiStrings("zh").fileKind;
+    expect(getCardPlaceholderText("base", strings)).toBe("这是一个 Base 文件。");
+    expect(getCardPlaceholderText("canvas", strings)).toBe("这是一个 Canvas 文件。");
   });
 });
