@@ -117,6 +117,15 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings(raw).includeSubfolders).toBe(false);
   });
 
+  it("defaults enableFileExplorerFolderClicks to false when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: undefined } as unknown).enableFileExplorerFolderClicks).toBe(false);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: "yes" } as unknown).enableFileExplorerFolderClicks).toBe(false);
+  });
+
+  it("preserves explicit enableFileExplorerFolderClicks true", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: true } as unknown).enableFileExplorerFolderClicks).toBe(true);
+  });
+
   it("normalizes lastViewMode to all-notes only for the known value", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "all-notes" }).lastViewMode).toBe("all-notes");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "unexpected" }).lastViewMode).toBe("folder");
@@ -347,6 +356,24 @@ describe("mergeSettings — pinnedPaths", () => {
     expect(result.includeSubfolders).toBe(false);
     expect(result.pinnedPaths).toEqual(["notes/pinned.md"]);
     expect(result.filter.tags).toEqual(["active"]);
+  });
+
+  it("updates enableFileExplorerFolderClicks while preserving unrelated settings", () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      pinnedPaths: ["notes/pinned.md"],
+      filter: {
+        tags: ["active"],
+      },
+      includeSubfolders: true,
+    };
+
+    const result = mergeSettings(current, { enableFileExplorerFolderClicks: true });
+
+    expect(result.enableFileExplorerFolderClicks).toBe(true);
+    expect(result.pinnedPaths).toEqual(["notes/pinned.md"]);
+    expect(result.filter.tags).toEqual(["active"]);
+    expect(result.includeSubfolders).toBe(true);
   });
 });
 

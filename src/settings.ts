@@ -68,6 +68,7 @@ export interface PluginSettings {
   };
   pinnedPaths: string[];
   includeSubfolders: boolean;
+  enableFileExplorerFolderClicks: boolean;
   defaultView: DefaultViewMode;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   cardCornerRadius: CardCornerRadius;
@@ -86,6 +87,7 @@ export interface PartialPluginSettings {
   };
   pinnedPaths?: string[];
   includeSubfolders?: boolean;
+  enableFileExplorerFolderClicks?: boolean;
   defaultView?: DefaultViewMode;
   defaultCardOpenBehavior?: DefaultCardOpenBehavior;
   cardCornerRadius?: CardCornerRadius;
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   },
   pinnedPaths: [],
   includeSubfolders: true,
+  enableFileExplorerFolderClicks: false,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
@@ -201,6 +204,10 @@ export function normalizeSettings(raw: unknown): PluginSettings {
       typeof data.includeSubfolders === "boolean"
         ? data.includeSubfolders
         : DEFAULT_SETTINGS.includeSubfolders,
+    enableFileExplorerFolderClicks:
+      typeof data.enableFileExplorerFolderClicks === "boolean"
+        ? data.enableFileExplorerFolderClicks
+        : DEFAULT_SETTINGS.enableFileExplorerFolderClicks,
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
