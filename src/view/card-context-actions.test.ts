@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getUiStrings } from "../i18n";
 
 const mockState = vi.hoisted(() => {
   if (typeof HTMLElement === "undefined") {
@@ -575,6 +576,8 @@ function createViewWithFile(
         pinnedPaths: [],
         previewLines: 5,
               })),
+      getUiLanguage: vi.fn(() => "en"),
+      getUiStrings: vi.fn(() => getUiStrings("en")),
       getSearchService: vi.fn(() => null),
       getSearchSnapshot: vi.fn(() => null),
       subscribeSearchSnapshots: vi.fn(() => () => undefined),
@@ -2380,7 +2383,7 @@ describe("FolderCardView card context actions", () => {
     await (view as any).copyCardNote(file.path);
 
     expect(copyNoteToClipboard).toHaveBeenCalledTimes(1);
-    expect(copyNoteToClipboard).toHaveBeenCalledWith(app, file);
+    expect(copyNoteToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
   });
 
   it("copyCardNote safely no-ops when file no longer exists", async () => {
@@ -2443,7 +2446,7 @@ describe("FolderCardView card context actions", () => {
 
     expect(app.vault.getAbstractFileByPath).toHaveBeenLastCalledWith(file.path);
     expect(moveFile).toHaveBeenCalledTimes(1);
-    expect(moveFile).toHaveBeenCalledWith(app, file, destination);
+    expect(moveFile).toHaveBeenCalledWith(app, file, destination, getUiStrings("en").noteOps);
     expect(mockState.noticeMessages).toHaveLength(0);
   });
 
@@ -2657,6 +2660,7 @@ describe("FolderCardView card context actions", () => {
         app,
         [second, first, third] as unknown as any,
         destination,
+        getUiStrings("en").noteOps,
       );
     });
 
@@ -2993,6 +2997,7 @@ describe("FolderCardView card context actions", () => {
         notesFolder,
         "Merged notes",
         "\n\n***\n\n",
+        getUiStrings("en").noteOps,
       );
     });
 

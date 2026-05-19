@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
+import { getUiStrings } from "../i18n";
 import { ALL_NOTES_PATH } from "./types";
 
 const testState = vi.hoisted(() => {
@@ -309,6 +310,8 @@ function createHarness(): TestHarness {
 
   const plugin = {
     getSettings: vi.fn(() => settings),
+    getUiLanguage: vi.fn(() => "en"),
+    getUiStrings: vi.fn(() => getUiStrings("en")),
     getSearchService: vi.fn(() => null),
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
@@ -1092,6 +1095,22 @@ describe("FolderCardView host contract", () => {
       targetEl: excerpt,
       linktext: "notes/diagram.canvas",
     }));
+  });
+
+  it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {
+    const { view, plugin } = createHarness();
+    (plugin as any).getUiLanguage.mockReturnValue("zh");
+    (plugin as any).getUiStrings.mockReturnValue(getUiStrings("zh"));
+
+    const card = createCard("notes/diagram.canvas", "diagram.canvas", "canvas");
+    card.hydrated = false;
+    card.previewHtml = "";
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [card];
+
+    await (view as any).hydrateCard(card.path, (view as any).generation);
+
+    expect(card.previewHtml).toContain("这是一个 Canvas 文件。");
   });
 });
 function createSearchHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {

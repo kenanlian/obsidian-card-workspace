@@ -11,6 +11,7 @@ import {
 } from "obsidian";
 import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
+import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
 import {
@@ -76,6 +77,7 @@ type CardMenuAction =
 class BulkActionConfirmModal extends Modal {
   private readonly titleText: string;
   private readonly message: string;
+  private readonly cancelButtonText: string;
   private readonly confirmButtonText: string;
   private readonly onDecision: (confirmed: boolean) => void;
   private resolved = false;
@@ -85,6 +87,7 @@ class BulkActionConfirmModal extends Modal {
     options: {
       title: string;
       message: string;
+      cancelButtonText: string;
       confirmButtonText: string;
     },
     onDecision: (confirmed: boolean) => void,
@@ -92,6 +95,7 @@ class BulkActionConfirmModal extends Modal {
     super(app);
     this.titleText = options.title;
     this.message = options.message;
+    this.cancelButtonText = options.cancelButtonText;
     this.confirmButtonText = options.confirmButtonText;
     this.onDecision = onDecision;
   }
@@ -103,7 +107,7 @@ class BulkActionConfirmModal extends Modal {
 
     new Setting(this.contentEl)
       .addButton((button) => {
-        button.setButtonText("Cancel").onClick(() => {
+        button.setButtonText(this.cancelButtonText).onClick(() => {
           this.resolve(false);
         });
       })
@@ -155,13 +159,15 @@ function buildMergedMarkdownContent(files: Array<{ file: TFile; content: string 
 }
 
 class BulkMergeModal extends Modal {
+  private readonly strings: UiStrings["view"]["merge"];
+  private readonly folderPickerTitle: string;
   private readonly onSubmit: (result: MergeModalSubmitResult) => Promise<void>;
   private orderedFiles: TFile[];
   private targetFolder: TFolder;
   private mergedTitle: string;
   private separator = "\n\n---\n\n";
   private cleanupMode: MergeCleanupMode = "keep";
-  private previewText = "Loading preview...";
+  private previewText: string;
   private previewError: string | null = null;
   private submitting = false;
 
@@ -171,6 +177,8 @@ class BulkMergeModal extends Modal {
       files: TFile[];
       initialTargetFolder: TFolder;
       initialMergedTitle: string;
+      strings: UiStrings["view"]["merge"];
+      folderPickerTitle: string;
     },
     onSubmit: (result: MergeModalSubmitResult) => Promise<void>,
   ) {
@@ -178,6 +186,9 @@ class BulkMergeModal extends Modal {
     this.orderedFiles = [...options.files];
     this.targetFolder = options.initialTargetFolder;
     this.mergedTitle = options.initialMergedTitle;
+    this.strings = options.strings;
+    this.folderPickerTitle = options.folderPickerTitle;
+    this.previewText = options.strings.loadingPreview;
     this.onSubmit = onSubmit;
   }
 
@@ -191,14 +202,14 @@ class BulkMergeModal extends Modal {
   }
 
   private render(): void {
-    this.setTitle("Merge selected notes");
+    this.setTitle(this.strings.title);
     this.contentEl.empty();
     this.contentEl.createEl("p", {
-      text: `${this.orderedFiles.length} source note${this.orderedFiles.length === 1 ? "" : "s"}`,
+      text: this.strings.sourceCount(this.orderedFiles.length),
     });
 
     new Setting(this.contentEl)
-      .setName("Merged title")
+      .setName(this.strings.mergedTitle)
       .addText((text) => {
         text.setValue(this.mergedTitle).onChange((value) => {
           this.mergedTitle = value;
@@ -206,20 +217,20 @@ class BulkMergeModal extends Modal {
       });
 
     new Setting(this.contentEl)
-      .setName("Target folder")
+      .setName(this.strings.targetFolder)
       .setDesc(this.targetFolder.path === "" ? "/" : this.targetFolder.path)
       .addButton((button) => {
-        button.setButtonText("Choose…").onClick(() => {
+        button.setButtonText(this.strings.chooseFolder).onClick(() => {
           const picker = new FolderPickerModal(this.app, (folder: TFolder) => {
             this.targetFolder = folder;
             this.render();
-          });
+          }, this.folderPickerTitle);
           picker.open();
         });
       });
 
     new Setting(this.contentEl)
-      .setName("Separator")
+      .setName(this.strings.separator)
       .addText((text) => {
         text.setValue(this.separator).onChange((value) => {
           this.separator = value;
@@ -227,28 +238,28 @@ class BulkMergeModal extends Modal {
         });
       });
 
-    this.contentEl.createEl("h4", { text: "Source order" });
+    this.contentEl.createEl("h4", { text: this.strings.sourceOrder });
     this.orderedFiles.forEach((file, index) => {
       new Setting(this.contentEl)
         .setName(`${index + 1}. ${file.path}`)
         .addButton((button) => {
-          button.setButtonText("Up").onClick(() => {
+          button.setButtonText(this.strings.up).onClick(() => {
             this.moveFile(index, -1);
           });
         })
         .addButton((button) => {
-          button.setButtonText("Down").onClick(() => {
+          button.setButtonText(this.strings.down).onClick(() => {
             this.moveFile(index, 1);
           });
         });
     });
 
     new Setting(this.contentEl)
-      .setName("Source cleanup")
-      .setDesc(this.cleanupMode === "keep" ? "Keep source notes" : "Trash source notes after merge")
+      .setName(this.strings.sourceCleanup)
+      .setDesc(this.cleanupMode === "keep" ? this.strings.keepSourceNotes : this.strings.trashSourceNotesAfterMerge)
       .addButton((button) => {
         button
-          .setButtonText("Keep source notes")
+          .setButtonText(this.strings.keepSourceNotes)
           .setCta()
           .onClick(() => {
             this.cleanupMode = "keep";
@@ -257,7 +268,7 @@ class BulkMergeModal extends Modal {
       })
       .addButton((button) => {
         button
-          .setButtonText("Trash source notes after merge")
+          .setButtonText(this.strings.trashSourceNotesAfterMerge)
           .setWarning()
           .onClick(() => {
             this.cleanupMode = "trash";
@@ -265,21 +276,21 @@ class BulkMergeModal extends Modal {
           });
       });
 
-    this.contentEl.createEl("h4", { text: "Preview" });
+    this.contentEl.createEl("h4", { text: this.strings.preview });
     this.contentEl.createEl("pre", {
       text: this.previewError ?? this.previewText,
     });
 
     new Setting(this.contentEl)
       .addButton((button) => {
-        button.setButtonText("Cancel").onClick(() => {
+        button.setButtonText(this.strings.cancel).onClick(() => {
           this.close();
         });
       })
       .addButton((button) => {
         button
           .setCta()
-          .setButtonText(this.submitting ? "Merging…" : "Merge notes")
+          .setButtonText(this.submitting ? this.strings.merging : this.strings.mergeNotes)
           .onClick(() => {
             void this.submit();
           });
@@ -313,7 +324,7 @@ class BulkMergeModal extends Modal {
       this.previewText = buildMergedMarkdownContent(fileContents, this.separator);
       this.previewError = null;
     } catch (error) {
-      this.previewError = `Failed to build preview: ${String(error)}`;
+      this.previewError = this.strings.failedToBuildPreview(String(error));
     }
 
     this.render();
@@ -332,7 +343,7 @@ class BulkMergeModal extends Modal {
       await this.onSubmit({
         files: [...this.orderedFiles],
         targetFolder: this.targetFolder,
-        mergedTitle: mergedTitle.length > 0 ? mergedTitle : "Merged notes",
+        mergedTitle: mergedTitle.length > 0 ? mergedTitle : this.strings.defaultMergedTitle,
         separator: this.separator,
         cleanupMode: this.cleanupMode,
       });
@@ -345,6 +356,7 @@ class BulkMergeModal extends Modal {
 }
 
 class RenameFileModal extends Modal {
+  private readonly strings: UiStrings["view"]["rename"];
   private readonly initialName: string;
   private readonly onSubmit: (nextName: string) => Promise<void>;
   private nextName: string;
@@ -354,11 +366,13 @@ class RenameFileModal extends Modal {
     app: App,
     options: {
       initialName: string;
+      strings: UiStrings["view"]["rename"];
     },
     onSubmit: (nextName: string) => Promise<void>,
   ) {
     super(app);
     this.initialName = options.initialName;
+    this.strings = options.strings;
     this.nextName = options.initialName;
     this.onSubmit = onSubmit;
   }
@@ -372,10 +386,10 @@ class RenameFileModal extends Modal {
   }
 
   private render(): void {
-    this.setTitle("Rename file");
+    this.setTitle(this.strings.title);
     this.contentEl.empty();
 
-    new Setting(this.contentEl).setName("Name").addText((text) => {
+    new Setting(this.contentEl).setName(this.strings.nameLabel).addText((text) => {
       text.setValue(this.nextName).setPlaceholder(this.initialName).onChange((value) => {
         this.nextName = value;
       });
@@ -383,14 +397,14 @@ class RenameFileModal extends Modal {
 
     new Setting(this.contentEl)
       .addButton((button) => {
-        button.setButtonText("Cancel").onClick(() => {
+        button.setButtonText(this.strings.cancel).onClick(() => {
           this.close();
         });
       })
       .addButton((button) => {
         button
           .setCta()
-          .setButtonText(this.submitting ? "Renaming…" : "Rename")
+          .setButtonText(this.submitting ? this.strings.renaming : this.strings.rename)
           .onClick(() => {
             void this.submit();
           });
@@ -468,11 +482,15 @@ export class FolderCardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Card Workspace";
+    return this.strings.view.displayName;
   }
 
   getIcon(): string {
     return "gallery-horizontal";
+  }
+
+  private get strings(): UiStrings {
+    return this.plugin.getUiStrings();
   }
 
   private getTooltipSide(): "left" | "right" {
@@ -481,23 +499,24 @@ export class FolderCardView extends ItemView {
   }
 
   private buildEmptyStateMessage(): string {
+    const strings = this.strings.view;
     const query = this.searchQuery.trim();
 
     if (query.length === 0) {
-      return "No supported files found in this folder.";
+      return strings.emptyFolder;
     }
 
     const hasActiveTags = this.plugin.getSettings().filter.tags.length > 0;
 
     if (this.folderPath === ALL_NOTES_PATH) {
       return hasActiveTags
-        ? `No results for “${query}” in current tag scope.`
-        : `No results for “${query}” in all notes.`;
+        ? strings.emptySearchAllNotesWithTags(query)
+        : strings.emptySearchAllNotes(query);
     }
 
     return hasActiveTags
-      ? `No results for “${query}” in current folder and tag scope.`
-      : `No results for “${query}” in current folder.`;
+      ? strings.emptySearchCurrentFolderWithTags(query)
+      : strings.emptySearchCurrentFolder(query);
   }
 
   private openCardWithDestination(path: string, destination: OpenDestination): void {
@@ -512,6 +531,7 @@ export class FolderCardView extends ItemView {
       const settings = this.plugin.getSettings();
       const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
+      state.strings = this.strings;
       state.cards = this.visibleCards;
       state.emptyStateMessage = this.buildEmptyStateMessage();
       state.folderPath = this.getDisplayFolderPath();
@@ -1007,9 +1027,10 @@ export class FolderCardView extends ItemView {
   }
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
+    const strings = this.strings.view.contextMenu;
     menu.addItem((item) => {
       item
-        .setTitle("Open in current window")
+        .setTitle(strings.openInCurrentWindow)
         .setIcon("folder-open")
         .onClick(() => {
           void this.routeCardMenuAction("current-area", notePath);
@@ -1018,7 +1039,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Open in new tab")
+        .setTitle(strings.openInNewTab)
         .setIcon("file-plus")
         .onClick(() => {
           void this.routeCardMenuAction("new-tab", notePath);
@@ -1027,7 +1048,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Open to the right")
+        .setTitle(strings.openToTheRight)
         .setIcon("separator-vertical")
         .onClick(() => {
           void this.routeCardMenuAction("split-right", notePath);
@@ -1036,7 +1057,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Open in new window")
+        .setTitle(strings.openInNewWindow)
         .setIcon("picture-in-picture-2")
         .onClick(() => {
           void this.routeCardMenuAction("new-window", notePath);
@@ -1047,7 +1068,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Make a copy")
+        .setTitle(strings.makeCopy)
         .setIcon("copy")
         .onClick(() => {
           void this.routeCardMenuAction("make-copy", notePath);
@@ -1056,7 +1077,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Move file to...")
+        .setTitle(strings.moveFileTo)
         .setIcon("folder-input")
         .onClick(() => {
           void this.routeCardMenuAction("move", notePath);
@@ -1069,7 +1090,7 @@ export class FolderCardView extends ItemView {
       if (fileKind !== null && isMarkdownCardKind(fileKind)) {
         menu.addItem((item) => {
           item
-            .setTitle("Copy note content")
+            .setTitle(strings.copyNoteContent)
             .setIcon("documents")
             .onClick(() => {
               void this.routeCardMenuAction("copy-note-content", notePath);
@@ -1082,7 +1103,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Rename...")
+        .setTitle(strings.rename)
         .setIcon("pencil")
         .onClick(() => {
           void this.routeCardMenuAction("rename", notePath);
@@ -1091,7 +1112,7 @@ export class FolderCardView extends ItemView {
 
     menu.addItem((item) => {
       item
-        .setTitle("Delete")
+        .setTitle(strings.delete)
         .setIcon("trash")
         .onClick(() => {
           void this.routeCardMenuAction("delete", notePath);
@@ -1134,7 +1155,7 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    await copyNoteToClipboard(this.app, file);
+    await copyNoteToClipboard(this.app, file, this.strings.noteOps);
   }
 
   private async makeCardFileCopy(notePath: string): Promise<void> {
@@ -1145,7 +1166,7 @@ export class FolderCardView extends ItemView {
 
     const result = await duplicateFile(this.app, file);
     if (!result.ok) {
-      new Notice(`Failed to copy file: ${result.error}`);
+      new Notice(this.strings.app.failedToCopyFile(result.error));
     }
   }
 
@@ -1166,7 +1187,7 @@ export class FolderCardView extends ItemView {
 
     const modal = new RenameFileModal(
       this.app,
-      { initialName: file.name },
+      { initialName: file.name, strings: this.strings.view.rename },
       async (nextName: string) => {
         await this.submitRename(notePath, nextName);
       },
@@ -1177,7 +1198,7 @@ export class FolderCardView extends ItemView {
   private async submitRename(notePath: string, nextName: string): Promise<void> {
     const trimmedName = nextName.trim();
     if (trimmedName.length === 0) {
-      new Notice("File name cannot be empty");
+      new Notice(this.strings.app.fileNameCannotBeEmpty);
       return;
     }
 
@@ -1190,7 +1211,7 @@ export class FolderCardView extends ItemView {
     try {
       await this.app.fileManager.renameFile(file, nextPath);
     } catch (error) {
-      new Notice(`Failed to rename file: ${String(error)}`);
+      new Notice(this.strings.app.failedToRenameFile(String(error)));
     }
   }
 
@@ -1213,17 +1234,17 @@ export class FolderCardView extends ItemView {
 
       const result = await deleteFileUsingObsidianPreference(this.app, liveFile);
       if (!result.ok) {
-        new Notice(`Failed to delete file: ${result.error}`);
+        new Notice(this.strings.app.failedToDeleteFile(result.error));
       }
     } catch (error) {
-      new Notice(`Failed to delete file: ${String(error)}`);
+      new Notice(this.strings.app.failedToDeleteFile(String(error)));
     }
   }
 
   private openMoveFolderPicker(file: TFile): void {
     const modal = new FolderPickerModal(this.app, (targetFolder: TFolder) => {
       void this.onMoveTargetChosen(file.path, targetFolder);
-    });
+    }, this.strings.folderPicker.selectFolderTitle);
     modal.open();
   }
 
@@ -1242,9 +1263,9 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const result = await moveFile(this.app, file, targetFolder);
+    const result = await moveFile(this.app, file, targetFolder, this.strings.noteOps);
     if (!result.ok) {
-      new Notice(`Failed to move file: ${result.error}`);
+      new Notice(this.strings.app.failedToMoveFile(result.error));
     }
   }
 
@@ -1860,7 +1881,7 @@ export class FolderCardView extends ItemView {
       }
 
       card.excerpt = "";
-      card.previewHtml = `<p class="fce-preview-placeholder">${getCardPlaceholderText(card.fileKind)}</p>`;
+      card.previewHtml = `<p class="fce-preview-placeholder">${getCardPlaceholderText(card.fileKind, this.strings.fileKind)}</p>`;
       card.previewMode = "placeholder";
       card.hydrated = true;
       return;
@@ -2311,11 +2332,12 @@ export class FolderCardView extends ItemView {
 
     const modal = new FolderPickerModal(this.app, (targetFolder: TFolder) => {
       void this.onBulkMoveTargetChosen(targetFolder);
-    });
+    }, this.strings.folderPicker.selectFolderTitle);
     modal.open();
   }
 
   private async onBulkMoveTargetChosen(targetFolder: TFolder | null): Promise<void> {
+    const moveStrings = this.strings.view.move;
     if (!(targetFolder instanceof TFolder)) {
       return;
     }
@@ -2334,7 +2356,7 @@ export class FolderCardView extends ItemView {
       this.selectedPaths = new Set<string>();
       this.bulkAnchorPath = null;
       this.pushSelectionState();
-      new Notice("No selected notes are available to move.");
+      new Notice(moveStrings.noSelectedNotes);
       return;
     }
 
@@ -2352,11 +2374,11 @@ export class FolderCardView extends ItemView {
       this.selectedPaths = new Set<string>(alreadyTargetPathsInOrder);
       this.bulkAnchorPath = alreadyTargetPathsInOrder[0] ?? null;
       this.pushSelectionState();
-      new Notice("All selected notes are already in the target folder.");
+      new Notice(moveStrings.allAlreadyInTargetFolder);
       return;
     }
 
-    const summary = await batchMoveFiles(this.app, movableFiles, targetFolder);
+    const summary = await batchMoveFiles(this.app, movableFiles, targetFolder, this.strings.noteOps);
     const failedPathsInOrder = selectedPathsInOrder.filter((selectedPath) => {
       return (
         filesAlreadyInTarget.some((file) => file.path === selectedPath) ||
@@ -2372,18 +2394,16 @@ export class FolderCardView extends ItemView {
     const failedCount = summary.failed.length + filesAlreadyInTarget.length;
 
     if (failedCount === 0) {
-      new Notice(`Moved ${succeededCount} note${succeededCount === 1 ? "" : "s"}.`);
+      new Notice(moveStrings.moved(succeededCount));
       return;
     }
 
     if (succeededCount === 0) {
-      new Notice(`Failed to move ${failedCount} note${failedCount === 1 ? "" : "s"}.`);
+      new Notice(moveStrings.failed(failedCount));
       return;
     }
 
-    new Notice(
-      `Moved ${succeededCount} note${succeededCount === 1 ? "" : "s"}; ${failedCount} failed.`,
-    );
+    new Notice(moveStrings.partial(succeededCount, failedCount));
   }
 
   private async bulkDeleteSelected(): Promise<void> {
@@ -2392,14 +2412,13 @@ export class FolderCardView extends ItemView {
     }
 
     await this.executeBulkDestructiveAction({
-      successVerb: "Deleted",
-      failureVerb: "delete",
-      noLiveFilesMessage: "No selected notes are available to delete.",
-      confirmTitle: "Delete selected notes?",
-      confirmButtonText: "Delete",
-      confirmMessageBuilder: (count) => {
-        return `Delete ${count} selected note${count === 1 ? "" : "s"}? Obsidian will use your Files & Links delete preference.`;
-      },
+      noLiveFilesMessage: this.strings.view.bulkDelete.noLiveFilesMessage,
+      confirmTitle: this.strings.view.bulkDelete.confirmTitle,
+      confirmButtonText: this.strings.view.bulkDelete.confirmButtonText,
+      confirmMessageBuilder: (count) => this.strings.view.bulkDelete.confirmMessage(count),
+      successMessageBuilder: (count) => this.strings.view.bulkDelete.successMessage(count),
+      failureMessageBuilder: (count) => this.strings.view.bulkDelete.failureMessage(count),
+      partialMessageBuilder: (success, failed) => this.strings.view.bulkDelete.partialMessage(success, failed),
       runBatch: (files) => batchDeleteFilesUsingObsidianPreference(this.app, files),
     });
   }
@@ -2430,18 +2449,22 @@ export class FolderCardView extends ItemView {
     confirmButtonText: string;
   }): Promise<boolean> {
     return new Promise((resolve) => {
-      const modal = new BulkActionConfirmModal(this.app, options, resolve);
+      const modal = new BulkActionConfirmModal(this.app, {
+        ...options,
+        cancelButtonText: this.strings.view.bulkConfirm.cancel,
+      }, resolve);
       modal.open();
     });
   }
 
   private async executeBulkDestructiveAction(options: {
-    successVerb: string;
-    failureVerb: string;
     noLiveFilesMessage: string;
     confirmTitle: string;
     confirmButtonText: string;
     confirmMessageBuilder: (count: number) => string;
+    successMessageBuilder: (count: number) => string;
+    failureMessageBuilder: (count: number) => string;
+    partialMessageBuilder: (success: number, failed: number) => string;
     runBatch: (files: TFile[]) => Promise<{ succeeded: Array<{ file: TFile }>; failed: Array<{ path: string }> }>;
   }): Promise<void> {
     const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveFilesInOrder();
@@ -2476,18 +2499,16 @@ export class FolderCardView extends ItemView {
     const failedCount = summary.failed.length;
 
     if (failedCount === 0) {
-      new Notice(`${options.successVerb} ${succeededCount} note${succeededCount === 1 ? "" : "s"}.`);
+      new Notice(options.successMessageBuilder(succeededCount));
       return;
     }
 
     if (succeededCount === 0) {
-      new Notice(`Failed to ${options.failureVerb} ${failedCount} note${failedCount === 1 ? "" : "s"}.`);
+      new Notice(options.failureMessageBuilder(failedCount));
       return;
     }
 
-    new Notice(
-      `${options.successVerb} ${succeededCount} note${succeededCount === 1 ? "" : "s"}; ${failedCount} failed.`,
-    );
+    new Notice(options.partialMessageBuilder(succeededCount, failedCount));
   }
 
   private bulkMergeSelected(): void {
@@ -2514,7 +2535,7 @@ export class FolderCardView extends ItemView {
     }
 
     if (filesInFrozenOrder.length < 2) {
-      new Notice("Select at least 2 available notes to merge.");
+      new Notice(this.strings.view.merge.selectAtLeastTwoNotes);
       return;
     }
 
@@ -2527,7 +2548,9 @@ export class FolderCardView extends ItemView {
       {
         files: filesInFrozenOrder,
         initialTargetFolder: targetFolder,
-        initialMergedTitle: "Merged notes",
+        initialMergedTitle: this.strings.view.merge.defaultMergedTitle,
+        strings: this.strings.view.merge,
+        folderPickerTitle: this.strings.folderPicker.selectFolderTitle,
       },
       async (result) => {
         await this.executeBulkMerge(result);
@@ -2543,14 +2566,15 @@ export class FolderCardView extends ItemView {
       result.targetFolder,
       result.mergedTitle,
       result.separator,
+      this.strings.noteOps,
     );
 
     if (!mergeResult.ok) {
-      new Notice(`Failed to merge notes: ${mergeResult.error}`);
+      new Notice(this.strings.view.merge.failedToMergeNotes(mergeResult.error));
       return;
     }
 
-    new Notice(`Merged ${mergeResult.sourceCount} notes into "${mergeResult.mergedFile.basename}".`);
+    new Notice(this.strings.view.merge.mergedInto(mergeResult.sourceCount, mergeResult.mergedFile.basename));
 
     if (result.cleanupMode === "keep") {
       this.reconcileSelectionToOrderedPaths([]);
@@ -2569,23 +2593,21 @@ export class FolderCardView extends ItemView {
     const failedCount = trashSummary.failed.length;
 
     if (failedCount === 0) {
-      new Notice(`Trashed ${trashedCount} source note${trashedCount === 1 ? "" : "s"}.`);
+      new Notice(this.strings.view.merge.trashedSources(trashedCount));
       return;
     }
 
     if (trashedCount === 0) {
-      new Notice(`Failed to trash ${failedCount} source note${failedCount === 1 ? "" : "s"}.`);
+      new Notice(this.strings.view.merge.failedToTrashSources(failedCount));
       return;
     }
 
-    new Notice(
-      `Trashed ${trashedCount} source note${trashedCount === 1 ? "" : "s"}; ${failedCount} failed.`,
-    );
+    new Notice(this.strings.view.merge.trashedSourcesPartial(trashedCount, failedCount));
   }
 
   private getDisplayFolderPath(): string {
     if (this.folderPath === ALL_NOTES_PATH) {
-      return "All Notes";
+      return this.strings.view.allNotes;
     }
 
     if (this.folderPath === "") {
@@ -2618,6 +2640,7 @@ export class FolderCardView extends ItemView {
     const bulkRuntimeState = this.buildBulkRuntimePanelState();
 
     return {
+      strings: this.strings,
       cards: this.visibleCards,
       searchMatchCountsByPath: { ...this.searchMatchCountsByPath },
       emptyStateMessage: this.buildEmptyStateMessage(),
