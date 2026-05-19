@@ -167,11 +167,15 @@ describe("FolderCardExplorerSettingTab", () => {
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
     expect(mockState.settings).toHaveLength(4);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
-      "Open cards from File Explorer folder clicks",
+      "Link File Explorer folder clicks to Card Workspace",
       "Default card open behavior",
       "Card corner radius",
       "Preview lines",
     ]);
+    expect(mockState.settings[0]).toMatchObject({
+      desc:
+        "When enabled, clicking a folder in Obsidian's File Explorer also opens that folder in Card Workspace. Card Workspace itself still stays available from the sidebar and commands.",
+    });
     expect(mockState.settings[0]?.toggle).toMatchObject({
       value: false,
     });

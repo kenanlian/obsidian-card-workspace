@@ -29,8 +29,10 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Open cards from File Explorer folder clicks")
-      .setDesc("When enabled, clicking a folder in Obsidian's File Explorer opens that folder in Card Workspace.")
+      .setName("Link File Explorer folder clicks to Card Workspace")
+      .setDesc(
+        "When enabled, clicking a folder in Obsidian's File Explorer also opens that folder in Card Workspace. Card Workspace itself still stays available from the sidebar and commands.",
+      )
       .addToggle((toggle) => {
         toggle.setValue(enableFileExplorerFolderClicks).onChange(async (value) => {
           await this.plugin.saveSettings({ enableFileExplorerFolderClicks: value });
