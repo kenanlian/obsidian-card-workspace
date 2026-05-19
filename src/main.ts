@@ -393,6 +393,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async onFileExplorerClick(event: MouseEvent): Promise<void> {
+    if (!this.settings.enableFileExplorerFolderClicks) {
+      return;
+    }
+
     const target = event.target instanceof Element ? event.target : null;
     if (!target) {
       return;

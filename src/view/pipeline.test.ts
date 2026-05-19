@@ -17,6 +17,7 @@ function createMockContext(): PipelineContext {
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: [] },
       includeSubfolders: true,
+      enableFileExplorerFolderClicks: false,
       defaultView: "cards",
       defaultCardOpenBehavior: "smart",
       cardCornerRadius: "compact",

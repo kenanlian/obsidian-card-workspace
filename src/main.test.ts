@@ -454,6 +454,53 @@ function createPluginHarness(): {
   return { plugin, app };
 }
 
+function installMockElement(): {
+  createFolderTitleTarget: (folderPath: string) => Element;
+  restore: () => void;
+} {
+  const originalElement = globalThis.Element;
+
+  class MockElement {
+    private readonly folderPath: string;
+
+    constructor(folderPath: string) {
+      this.folderPath = folderPath;
+    }
+
+    closest(selector: string): MockElement | null {
+      return selector === ".nav-folder-title" ? this : null;
+    }
+
+    getAttribute(name: string): string | null {
+      return name === "data-path" ? this.folderPath : null;
+    }
+  }
+
+  Object.defineProperty(globalThis, "Element", {
+    value: MockElement,
+    configurable: true,
+    writable: true,
+  });
+
+  return {
+    createFolderTitleTarget(folderPath: string): Element {
+      return new MockElement(folderPath) as unknown as Element;
+    },
+    restore(): void {
+      if (originalElement) {
+        Object.defineProperty(globalThis, "Element", {
+          value: originalElement,
+          configurable: true,
+          writable: true,
+        });
+        return;
+      }
+
+      Reflect.deleteProperty(globalThis, "Element");
+    },
+  };
+}
+
 describe("FolderCardExplorerPlugin activateView", () => {
   it("creates the panel in the left sidebar when no card view leaf exists", async () => {
     const { plugin, app } = createPluginHarness();
@@ -485,6 +532,108 @@ describe("FolderCardExplorerPlugin activateView", () => {
     expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
     expect(existingLeaf.setViewState).not.toHaveBeenCalled();
     expect(app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+  });
+});
+
+describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
+  beforeEach(() => {
+    (globalThis as unknown as { document?: unknown }).document = {};
+    searchMockState.indexedInitializeShouldFail = false;
+    searchMockState.restoreResult = {
+      status: "ready",
+      outcome: "restored",
+      detail: "restored",
+    };
+    searchMockState.currentSnapshot = {
+      initialized: true,
+      disposed: false,
+      mode: "indexed",
+      status: "ready",
+      lastError: null,
+      health: createMockHealth(),
+    };
+    searchMockState.indexedServices.length = 0;
+    searchMockState.managers.length = 0;
+    searchMockState.stores.length = 0;
+    obsidianMockState.layoutReadyCallback = null;
+    obsidianMockState.autoRunLayoutReady = true;
+    obsidianMockState.workspaceOnCallback = null;
+    obsidianMockState.vaultCallbacks = {};
+    obsidianMockState.notices = [];
+    obsidianMockState.leavesByType = {};
+    vi.clearAllMocks();
+  });
+
+  it("ignores File Explorer folder clicks by default", async () => {
+    const { plugin, app } = createPluginHarness();
+    const mockPlugin = plugin as unknown as {
+      loadData: ReturnType<typeof vi.fn>;
+      registerDomEvent: ReturnType<typeof vi.fn>;
+      saveData: ReturnType<typeof vi.fn>;
+    };
+    mockPlugin.loadData.mockResolvedValue(null);
+    const mockElement = installMockElement();
+
+    try {
+      await plugin.onload();
+
+      const clickHandler = mockPlugin.registerDomEvent.mock.calls[0]?.[2] as (event: MouseEvent) => Promise<void>;
+      await clickHandler({
+        target: mockElement.createFolderTitleTarget("notes"),
+      } as unknown as MouseEvent);
+
+      expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
+      expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+      expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+      expect(mockPlugin.saveData).not.toHaveBeenCalled();
+    } finally {
+      mockElement.restore();
+    }
+  });
+
+  it("handles File Explorer folder clicks when the setting is enabled", async () => {
+    const { plugin, app } = createPluginHarness();
+    const mockPlugin = plugin as unknown as {
+      loadData: ReturnType<typeof vi.fn>;
+      registerDomEvent: ReturnType<typeof vi.fn>;
+      saveData: ReturnType<typeof vi.fn>;
+    };
+    mockPlugin.loadData.mockResolvedValue({ enableFileExplorerFolderClicks: true });
+    const TFolderCtor = TFolder as unknown as { new (path: string): TFolder };
+    const folder = new TFolderCtor("notes");
+    app.vault.getAbstractFileByPath.mockReturnValue(folder);
+    const leaf = {
+      setViewState: vi.fn(async () => undefined),
+    };
+    app.workspace.getLeftLeaf.mockReturnValue(leaf);
+    const mockElement = installMockElement();
+
+    try {
+      await plugin.onload();
+
+      const clickHandler = mockPlugin.registerDomEvent.mock.calls[0]?.[2] as (event: MouseEvent) => Promise<void>;
+      clickHandler({
+        target: mockElement.createFolderTitleTarget("notes"),
+      } as unknown as MouseEvent);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith("notes");
+      expect(leaf.setViewState).toHaveBeenCalledWith({
+        type: "folder-card-view",
+        active: true,
+      });
+      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+      expect(mockPlugin.saveData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enableFileExplorerFolderClicks: true,
+          lastFolderPath: "notes",
+          lastViewMode: "folder",
+        }),
+      );
+    } finally {
+      mockElement.restore();
+    }
   });
 });
 
