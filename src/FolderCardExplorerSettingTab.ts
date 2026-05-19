@@ -1,7 +1,10 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import {
-  CARD_CORNER_RADIUS_OPTIONS,
-  DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS,
+  getCardCornerRadiusOptions,
+  getDefaultCardOpenBehaviorOptions,
+  getSettingTabStrings,
+} from "./i18n";
+import {
   PREVIEW_LINES_MAX,
   PREVIEW_LINES_MIN,
   isCardCornerRadius,
@@ -25,14 +28,14 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
       enableFileExplorerFolderClicks,
       previewLines,
     } = this.plugin.getSettings();
+    const language = this.plugin.getUiLanguage();
+    const strings = getSettingTabStrings(language);
 
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Link File Explorer folder clicks to Card Workspace")
-      .setDesc(
-        "When enabled, clicking a folder in Obsidian's File Explorer also opens that folder in Card Workspace. Card Workspace itself still stays available from the sidebar and commands.",
-      )
+      .setName(strings.enableFileExplorerFolderClicksName)
+      .setDesc(strings.enableFileExplorerFolderClicksDesc)
       .addToggle((toggle) => {
         toggle.setValue(enableFileExplorerFolderClicks).onChange(async (value) => {
           await this.plugin.saveSettings({ enableFileExplorerFolderClicks: value });
@@ -40,10 +43,10 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Default card open behavior")
-      .setDesc("Choose what happens when you click a card directly. Right-click menu actions stay available separately.")
+      .setName(strings.defaultCardOpenBehaviorName)
+      .setDesc(strings.defaultCardOpenBehaviorDesc)
       .addDropdown((dropdown) => {
-        for (const option of DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS) {
+        for (const option of getDefaultCardOpenBehaviorOptions(language)) {
           dropdown.addOption(option.value, option.label);
         }
 
@@ -57,10 +60,10 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Card corner radius")
-      .setDesc("Adjust how square or rounded each card border feels in the panel.")
+      .setName(strings.cardCornerRadiusName)
+      .setDesc(strings.cardCornerRadiusDesc)
       .addDropdown((dropdown) => {
-        for (const option of CARD_CORNER_RADIUS_OPTIONS) {
+        for (const option of getCardCornerRadiusOptions(language)) {
           dropdown.addOption(option.value, option.label);
         }
 
@@ -74,10 +77,8 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Preview lines")
-      .setDesc(
-        `Choose how many normalized summary lines each card preview can show (${PREVIEW_LINES_MIN}-${PREVIEW_LINES_MAX}).`,
-      )
+      .setName(strings.previewLinesName)
+      .setDesc(strings.previewLinesDesc(PREVIEW_LINES_MIN, PREVIEW_LINES_MAX))
       .addSlider((slider) => {
         slider
           .setLimits(PREVIEW_LINES_MIN, PREVIEW_LINES_MAX, 1)

@@ -48,9 +48,10 @@ export class FolderPickerModal extends FuzzySuggestModal<TFolder> {
   constructor(
     app: App,
     private onChoose: (folder: TFolder) => void,
+    titleText: string = "Select a folder",
   ) {
     super(app);
-    this.setTitle("Select a folder");
+    this.setTitle(titleText);
     this.allFolders = collectAllVaultFolders(app.vault.getRoot());
   }
 
@@ -79,5 +80,4 @@ export class FolderPickerModal extends FuzzySuggestModal<TFolder> {
     this.onChoose(folder);
   }
 }
-
 

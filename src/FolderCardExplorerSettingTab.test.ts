@@ -159,6 +159,7 @@ describe("FolderCardExplorerSettingTab", () => {
         previewLines: 6,
       })),
       saveSettings: vi.fn(),
+      getUiLanguage: vi.fn(() => "en"),
     };
 
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
@@ -205,6 +206,33 @@ describe("FolderCardExplorerSettingTab", () => {
     });
   });
 
+  it("renders Chinese labels when the Obsidian language is Chinese", () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        enableFileExplorerFolderClicks: false,
+        previewLines: 6,
+      })),
+      saveSettings: vi.fn(),
+      getUiLanguage: vi.fn(() => "zh"),
+    };
+
+    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    tab.display();
+
+    expect(mockState.settings.map((setting) => setting.name)).toEqual([
+      "将文件资源管理器中的文件夹点击关联到 Card Workspace",
+      "卡片默认打开方式",
+      "卡片圆角",
+      "预览行数",
+    ]);
+    expect(mockState.settings[1]?.dropdown?.options[0]).toEqual({
+      value: "smart",
+      label: "当前窗格 / 当前标签页",
+    });
+  });
+
   it("saves file explorer folder click toggle changes", async () => {
     const plugin = {
       getSettings: vi.fn(() => ({
@@ -214,6 +242,7 @@ describe("FolderCardExplorerSettingTab", () => {
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
     };
 
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
@@ -233,6 +262,7 @@ describe("FolderCardExplorerSettingTab", () => {
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
     };
 
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
@@ -252,6 +282,7 @@ describe("FolderCardExplorerSettingTab", () => {
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
     };
 
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
