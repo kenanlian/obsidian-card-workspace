@@ -19,9 +19,23 @@ export class FolderCardExplorerSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
-    const { cardCornerRadius, defaultCardOpenBehavior, previewLines } = this.plugin.getSettings();
+    const {
+      cardCornerRadius,
+      defaultCardOpenBehavior,
+      enableFileExplorerFolderClicks,
+      previewLines,
+    } = this.plugin.getSettings();
 
     containerEl.empty();
+
+    new Setting(containerEl)
+      .setName("Open cards from File Explorer folder clicks")
+      .setDesc("When enabled, clicking a folder in Obsidian's File Explorer opens that folder in Card Workspace.")
+      .addToggle((toggle) => {
+        toggle.setValue(enableFileExplorerFolderClicks).onChange(async (value) => {
+          await this.plugin.saveSettings({ enableFileExplorerFolderClicks: value });
+        });
+      });
 
     new Setting(containerEl)
       .setName("Default card open behavior")

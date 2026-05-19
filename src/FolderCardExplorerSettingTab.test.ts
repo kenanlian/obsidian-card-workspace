@@ -59,11 +59,27 @@ const mockState = vi.hoisted(() => {
     }
   }
 
+  class MockToggleComponent {
+    value = false;
+    changeHandler: ((value: boolean) => Promise<void> | void) | null = null;
+
+    setValue(value: boolean): this {
+      this.value = value;
+      return this;
+    }
+
+    onChange(handler: (value: boolean) => Promise<void> | void): this {
+      this.changeHandler = handler;
+      return this;
+    }
+  }
+
   class MockSetting {
     name = "";
     desc = "";
     slider: MockSliderComponent | null = null;
     dropdown: MockDropdownComponent | null = null;
+    toggle: MockToggleComponent | null = null;
 
     constructor(_containerEl: unknown) {
       settings.push(this);
@@ -88,6 +104,12 @@ const mockState = vi.hoisted(() => {
     addDropdown(configure: (dropdown: MockDropdownComponent) => void): this {
       this.dropdown = new MockDropdownComponent();
       configure(this.dropdown);
+      return this;
+    }
+
+    addToggle(configure: (toggle: MockToggleComponent) => void): this {
+      this.toggle = new MockToggleComponent();
+      configure(this.toggle);
       return this;
     }
   }
@@ -128,11 +150,12 @@ describe("FolderCardExplorerSettingTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the default open dropdown and preview slider settings", () => {
+  it("renders the file explorer toggle, default open dropdown, and preview slider settings", () => {
     const plugin = {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
+        enableFileExplorerFolderClicks: false,
         previewLines: 6,
       })),
       saveSettings: vi.fn(),
@@ -142,13 +165,17 @@ describe("FolderCardExplorerSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(3);
+    expect(mockState.settings).toHaveLength(4);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
+      "Open cards from File Explorer folder clicks",
       "Default card open behavior",
       "Card corner radius",
       "Preview lines",
     ]);
-    expect(mockState.settings[0]?.dropdown).toMatchObject({
+    expect(mockState.settings[0]?.toggle).toMatchObject({
+      value: false,
+    });
+    expect(mockState.settings[1]?.dropdown).toMatchObject({
       value: "split-right",
       options: [
         { value: "smart", label: "Current pane / current tab" },
@@ -157,7 +184,7 @@ describe("FolderCardExplorerSettingTab", () => {
         { value: "new-window", label: "Open in new window" },
       ],
     });
-    expect(mockState.settings[1]?.dropdown).toMatchObject({
+    expect(mockState.settings[2]?.dropdown).toMatchObject({
       value: "medium",
       options: [
         { value: "compact", label: "Compact" },
@@ -165,7 +192,7 @@ describe("FolderCardExplorerSettingTab", () => {
         { value: "rounded", label: "Rounded" },
       ],
     });
-    expect(mockState.settings[2]?.slider).toMatchObject({
+    expect(mockState.settings[3]?.slider).toMatchObject({
       min: 3,
       max: 10,
       step: 1,
@@ -174,11 +201,12 @@ describe("FolderCardExplorerSettingTab", () => {
     });
   });
 
-  it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
+  it("saves file explorer folder click toggle changes", async () => {
     const plugin = {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
+        enableFileExplorerFolderClicks: false,
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
@@ -187,7 +215,26 @@ describe("FolderCardExplorerSettingTab", () => {
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
     tab.display();
 
-    await mockState.settings[0]?.dropdown?.changeHandler?.("new-window");
+    await mockState.settings[0]?.toggle?.changeHandler?.(true);
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ enableFileExplorerFolderClicks: true });
+  });
+
+  it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
+        defaultCardOpenBehavior: "smart",
+        enableFileExplorerFolderClicks: false,
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+    };
+
+    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[1]?.dropdown?.changeHandler?.("new-window");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ defaultCardOpenBehavior: "new-window" });
   });
@@ -197,6 +244,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
+        enableFileExplorerFolderClicks: false,
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
@@ -205,7 +253,7 @@ describe("FolderCardExplorerSettingTab", () => {
     const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
     tab.display();
 
-    await mockState.settings[1]?.dropdown?.changeHandler?.("rounded");
+    await mockState.settings[2]?.dropdown?.changeHandler?.("rounded");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ cardCornerRadius: "rounded" });
   });
