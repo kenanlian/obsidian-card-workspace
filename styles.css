@@ -381,14 +381,18 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.fce-folder-menu button.fce-folder-tree-chevron {
+  cursor: pointer;
   transition: none;
-  background: transparent;
-  border: none;
-  box-shadow: none;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
   appearance: none;
   -webkit-appearance: none;
   padding: 0;
@@ -396,12 +400,7 @@
   color: inherit;
 }
 
-.fce-folder-tree-chevron:hover {
-  background: var(--background-modifier-hover);
-  border-radius: var(--radius-s, 4px);
-}
-
-.fce-folder-tree-chevron:focus-visible {
+.fce-folder-menu button.fce-folder-tree-chevron:focus-visible {
   outline: 2px solid var(--fce-accent);
   outline-offset: 1px;
   border-radius: var(--radius-s, 4px);
