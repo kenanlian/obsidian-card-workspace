@@ -124,13 +124,13 @@ function mountToolbar(
   document.body.appendChild(target);
   const component = mount(Toolbar, {
     target,
-    props: {
-      folderPath: "notes",
-      sortField: "mtime",
-      sortDirection: "desc",
-      folderTree: createFolderTree(),
-      availableTags: ["#Work", "#Idea"],
-      activeFilterTags: [],
+      props: {
+        folderPath: "notes",
+        sortField: "mtime",
+        sortDirection: "desc",
+        folderTree: createFolderTree(),
+        availableTags: ["Work", "Idea"],
+        activeFilterTags: [],
       includeSubfolders: true,
       searchQuery: "",
       searchStatus: "idle",
@@ -179,14 +179,106 @@ describe("Toolbar.svelte", () => {
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
 
-    const workTagItem = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-filter-menu .fce-sort-menu-item"))
+    const workTagItem = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-sort-menu-item"))
       .find((item) => item.textContent?.includes("#Work"));
 
     expect(workTagItem).not.toBeUndefined();
-    workTagItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    workTagItem?.querySelector<HTMLButtonElement>(".fce-tag-tree-select")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
     expect(captured.filterEvents).toEqual([{ tags: ["work"] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders hierarchical tag rows including synthesized parents and emits parent selections", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ availableTags: ["领域/AI/harness"] }, captured.callbacks);
+
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton).not.toBeNull();
+    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    await tick();
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item"));
+    expect(rows.map((row) => row.textContent?.trim())).toEqual([
+      "#领域",
+      "#领域/AI",
+      "#领域/AI/harness",
+    ]);
+
+    const firstSelectButton = rows[0]?.querySelector<HTMLButtonElement>(".fce-tag-tree-select");
+    expect(firstSelectButton).not.toBeNull();
+    firstSelectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.filterEvents).toEqual([{ tags: ["领域"] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders stable casing for duplicate normalized tags regardless of input order", async () => {
+    const captured = createCapturedCallbacks();
+    const first = mountToolbar({ availableTags: ["work/ML", "Work/AI"] }, captured.callbacks);
+
+    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton).not.toBeNull();
+    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    await tick();
+
+    const firstRows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim());
+    expect(firstRows).toEqual(["#Work", "#Work/AI", "#work/ML"]);
+    await disposeMountedComponent(first.component);
+
+    const second = mountToolbar({ availableTags: ["Work/AI", "work/ML"] }, captured.callbacks);
+    filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton).not.toBeNull();
+    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    await tick();
+
+    const secondRows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim());
+    expect(secondRows).toEqual(["#Work", "#Work/AI", "#work/ML"]);
+    await disposeMountedComponent(second.component);
+  });
+
+  it("normalizes prop-backed active tags before toggling so duplicate payloads are not emitted", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ availableTags: ["work"], activeFilterTags: ["#Work"] }, captured.callbacks);
+
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton).not.toBeNull();
+    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    await tick();
+
+    const workSelectButton = document.querySelector<HTMLButtonElement>(".fce-filter-menu .fce-tag-tree-select");
+    expect(workSelectButton?.getAttribute("aria-checked")).toBe("true");
+
+    workSelectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.filterEvents).toEqual([{ tags: [] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps chevron expansion separate from tag selection", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ availableTags: ["project/alpha/one"] }, captured.callbacks);
+
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    expect(filterButton).not.toBeNull();
+    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    await tick();
+
+    const chevronButton = document.querySelector<HTMLButtonElement>(".fce-filter-menu .fce-tag-tree-chevron");
+    expect(chevronButton).not.toBeNull();
+    chevronButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.filterEvents).toEqual([]);
+    expect(Array.from(document.querySelectorAll(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim())).toEqual([
+      "#project",
+    ]);
 
     await disposeMountedComponent(component);
   });

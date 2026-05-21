@@ -2,6 +2,12 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type ToolbarStrings } from "../i18n";
+  import {
+    buildTagTree,
+    collectExpandableTagPaths,
+    flattenVisibleTagTree,
+    normalizeTagPath,
+  } from "./tag-tree";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -168,7 +174,7 @@
     { id: "all-notes", label: strings.actions.allNotes, title: strings.actions.allNotesTitle, icon: "library" },
     { id: "new-note", label: strings.actions.newNote, title: strings.actions.newNoteTitle, icon: "file-plus" },
     { id: "sort", label: strings.actions.sort, title: strings.actions.sortTitle, icon: "arrow-up-down" },
-    { id: "filter", label: strings.actions.filter, title: strings.actions.filterTitle, icon: "list-filter" },
+    { id: "filter", label: strings.actions.filter, title: strings.actions.filterTitle, icon: "tags" },
     { id: "bulk", label: strings.actions.bulk, title: strings.actions.bulkTitle, icon: "check-check" },
   ]);
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
@@ -189,6 +195,7 @@
   let filterMenuX = $state(0);
   let filterMenuY = $state(0);
   let expandedPaths = $state<Set<string>>(new Set());
+  let expandedTagPaths = $state<Set<string>>(new Set());
   let folderMenuExpandedForPath = $state<string | null>(null);
 
   let sortButtonEl: HTMLElement | null = null;
@@ -244,10 +251,18 @@
   }
 
   const visibleFolderNodes = $derived(flattenVisibleTree(folderTree, expandedPaths));
+  const tagTree = $derived(buildTagTree(availableTags));
+  const visibleTagNodes = $derived(flattenVisibleTagTree(tagTree, expandedTagPaths));
+
+  function normalizeTagList(tags: string[]): string[] {
+    return Array.from(new Set(tags
+      .map((tag) => normalizeTagPath(tag))
+      .filter((tag) => tag.length > 0)));
+  }
 
   $effect(() => {
     if (!showFilterMenu) {
-      localActiveFilterTags = activeFilterTags;
+      localActiveFilterTags = normalizeTagList(activeFilterTags);
     }
   });
 
@@ -310,7 +325,8 @@
       } else {
         filterMenuX = event.clientX;
         filterMenuY = event.clientY;
-        localActiveFilterTags = [...activeFilterTags];
+        localActiveFilterTags = normalizeTagList(activeFilterTags);
+        expandedTagPaths = new Set(collectExpandableTagPaths(tagTree));
         showFilterMenu = true;
         showSortMenu = false;
         showFolderMenu = false;
@@ -342,15 +358,35 @@
   }
 
   function toggleFilterTag(tag: string): void {
-    const normalized = tag.trim().toLowerCase().replace(/^#/, "");
+    const normalized = normalizeTagPath(tag);
+    if (normalized.length === 0) {
+      return;
+    }
+
     let nextTags: string[];
     if (localActiveFilterTags.includes(normalized)) {
       nextTags = localActiveFilterTags.filter((candidateTag) => candidateTag !== normalized);
     } else {
       nextTags = [...localActiveFilterTags, normalized];
     }
+    nextTags = normalizeTagList(nextTags);
     localActiveFilterTags = nextTags;
     onFilterChange?.({ tags: nextTags });
+  }
+
+  function onTagChevronClick(event: MouseEvent, tag: string): void {
+    event.stopPropagation();
+    toggleTagExpansion(tag);
+  }
+
+  function toggleTagExpansion(tag: string): void {
+    const next = new Set(expandedTagPaths);
+    if (next.has(tag)) {
+      next.delete(tag);
+    } else {
+      next.add(tag);
+    }
+    expandedTagPaths = next;
   }
 
   function selectSortOption(option: SortOption): void {
@@ -773,21 +809,36 @@
         <span class="fce-sort-menu-item-label">{strings.filter.noTagsFound}</span>
       </div>
     {:else}
-      {#each availableTags as tag}
-        {@const normalizedTag = tag.trim().toLowerCase().replace(/^#/, "")}
-        {@const selected = localActiveFilterTags.includes(normalizedTag)}
-        <button
-          type="button"
-          class="fce-sort-menu-item"
-          role="menuitemcheckbox"
-          aria-checked={selected}
-          onclick={() => toggleFilterTag(tag)}
-        >
-          <span class="fce-sort-menu-item-label">{tag}</span>
-          {#if selected}
-            <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
-          {/if}
-        </button>
+      {#each visibleTagNodes as node}
+        {@const selected = localActiveFilterTags.includes(node.tag)}
+        <div class="fce-sort-menu-item fce-tag-tree-item">
+          <span class="fce-tag-tree-item-main" style="padding-left: {node.depth * 16}px;">
+            {#if node.hasChildren}
+              <button
+                type="button"
+                class="fce-tag-tree-chevron"
+                aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+                aria-expanded={expandedTagPaths.has(node.tag)}
+                onclick={(event) => onTagChevronClick(event, node.tag)}
+                use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
+              ></button>
+            {:else}
+              <span class="fce-tag-tree-chevron is-placeholder"></span>
+            {/if}
+            <button
+              type="button"
+              class="fce-tag-tree-select"
+              role="menuitemcheckbox"
+              aria-checked={selected}
+              onclick={() => toggleFilterTag(node.tag)}
+            >
+              <span class="fce-sort-menu-item-label fce-tag-tree-name">#{node.displayTag}</span>
+              {#if selected}
+                <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
+              {/if}
+            </button>
+          </span>
+        </div>
       {/each}
     {/if}
   </div>
