@@ -1,5 +1,6 @@
 import { App, TFile, getAllTags } from "obsidian";
 import type { CachedMetadata } from "obsidian";
+import { normalizeTagPath, tagPathMatchesFilter } from "./tag-tree";
 
 // ---------------------------------------------------------------------------
 // Tag extraction
@@ -24,7 +25,9 @@ export function getFileTags(app: App, file: TFile): string[] {
   }
 
   // Normalize: lowercase, strip leading "#"
-  return raw.map((tag) => tag.replace(/^#/, "").toLowerCase());
+  return raw
+    .map((tag) => normalizeTagPath(tag))
+    .filter((tag) => tag.length > 0);
 }
 
 /**
@@ -59,7 +62,17 @@ export function matchesTagFilter(app: App, file: TFile, filterTags: string[]): b
   }
 
   const fileTags = getFileTags(app, file);
-  return filterTags.every((ft) => fileTags.includes(ft));
+  const normalizedFilterTags = filterTags
+    .map((tag) => normalizeTagPath(tag))
+    .filter((tag) => tag.length > 0);
+
+  if (normalizedFilterTags.length === 0) {
+    return true;
+  }
+
+  return normalizedFilterTags.every((filterTag) => {
+    return fileTags.some((fileTag) => tagPathMatchesFilter(fileTag, filterTag));
+  });
 }
 
 // ---------------------------------------------------------------------------

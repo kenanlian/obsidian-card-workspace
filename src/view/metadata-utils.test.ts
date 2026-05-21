@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import type { TFile } from "obsidian";
-import { matchesSearchQuery } from "./metadata-utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { App, TFile } from "obsidian";
+
+vi.mock("obsidian", () => ({
+  getAllTags: vi.fn(),
+}));
+
+import { getAllTags } from "obsidian";
+import { matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
 
 function createMockFile(basename: string): TFile {
   return {
@@ -8,6 +14,16 @@ function createMockFile(basename: string): TFile {
     path: `${basename}.md`,
   } as TFile;
 }
+
+function createMockApp(): App {
+  return {
+    metadataCache: {
+      getFileCache: (file: TFile) => ({ path: file.path }),
+    },
+  } as unknown as App;
+}
+
+const getAllTagsMock = vi.mocked(getAllTags);
 
 describe("matchesSearchQuery", () => {
   it("returns true for empty query", () => {
@@ -33,5 +49,39 @@ describe("matchesSearchQuery", () => {
   it("is case-insensitive for title and content", () => {
     expect(matchesSearchQuery(createMockFile("PROJECT-plan"), "project")).toBe(true);
     expect(matchesSearchQuery(createMockFile("Notes"), "reTroSpeCtive", "Sprint RETROSPECTIVE summary")).toBe(true);
+  });
+});
+
+describe("matchesTagFilter", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("matches descendant note tags when a parent tag is selected", () => {
+    const file = createMockFile("Harness");
+    const app = createMockApp();
+
+    getAllTagsMock.mockReturnValue(["#领域/AI/harness"]);
+
+    expect(matchesTagFilter(app, file, ["领域/ai"])).toBe(true);
+  });
+
+  it("does not match sibling branches for parent-style selections", () => {
+    const file = createMockFile("Other");
+    const app = createMockApp();
+
+    getAllTagsMock.mockReturnValue(["#领域/ml"]);
+
+    expect(matchesTagFilter(app, file, ["领域/ai"])).toBe(false);
+  });
+
+  it("keeps AND semantics across multiple selected tags", () => {
+    const file = createMockFile("Combined");
+    const app = createMockApp();
+
+    getAllTagsMock.mockReturnValue(["#领域/AI/harness", "#project/active"]);
+
+    expect(matchesTagFilter(app, file, ["领域", "project/active"])).toBe(true);
+    expect(matchesTagFilter(app, file, ["领域", "project/archived"])).toBe(false);
   });
 });

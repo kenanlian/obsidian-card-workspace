@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildTagTree,
+  collectExpandableTagPaths,
+  flattenVisibleTagTree,
+  normalizeTagPath,
+  tagPathMatchesFilter,
+} from "./tag-tree";
+
+describe("normalizeTagPath", () => {
+  it("normalizes case, leading hash, spacing, and empty segments", () => {
+    expect(normalizeTagPath(" #Work / AI // Harness ")).toBe("work/ai/harness");
+  });
+});
+
+describe("buildTagTree", () => {
+  it("builds a normalized hierarchy and synthesizes missing parents", () => {
+    const tree = buildTagTree(["#领域/AI/harness"]);
+
+    expect(tree).toEqual([
+      {
+        tag: "领域",
+        displayTag: "领域",
+        label: "领域",
+        depth: 0,
+        synthetic: true,
+        children: [
+          {
+            tag: "领域/ai",
+            displayTag: "领域/AI",
+            label: "AI",
+            depth: 1,
+            synthetic: true,
+            children: [
+              {
+                tag: "领域/ai/harness",
+                displayTag: "领域/AI/harness",
+                label: "harness",
+                depth: 2,
+                synthetic: false,
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("marks exact parent tags as non-synthetic and sorts siblings", () => {
+    const tree = buildTagTree(["Project/zeta", "Project", "Project/Alpha"]);
+
+    expect(tree[0]?.synthetic).toBe(false);
+    expect(tree[0]?.displayTag).toBe("Project");
+    expect(tree[0]?.children.map((child) => child.label)).toEqual(["Alpha", "zeta"]);
+  });
+
+  it("chooses deterministic synthetic parent casing regardless of input order", () => {
+    const firstTree = buildTagTree(["work/ML", "Work/AI"]);
+    const secondTree = buildTagTree(["Work/AI", "work/ML"]);
+
+    expect(firstTree[0]?.displayTag).toBe("Work");
+    expect(secondTree[0]?.displayTag).toBe("Work");
+    expect(firstTree[0]).toEqual(secondTree[0]);
+  });
+
+  it("prefers exact parent casing over descendant-derived casing", () => {
+    const firstTree = buildTagTree(["WORK/AI", "work"]);
+    const secondTree = buildTagTree(["work", "WORK/AI"]);
+
+    expect(firstTree[0]?.displayTag).toBe("work");
+    expect(firstTree[0]?.synthetic).toBe(false);
+    expect(secondTree[0]?.displayTag).toBe("work");
+    expect(secondTree[0]?.synthetic).toBe(false);
+  });
+
+  it("chooses deterministic display casing for duplicate exact normalized tags", () => {
+    const firstTree = buildTagTree(["work/ai", "Work/AI"]);
+    const secondTree = buildTagTree(["Work/AI", "work/ai"]);
+
+    expect(firstTree[0]?.children[0]?.displayTag).toBe("Work/AI");
+    expect(secondTree[0]?.children[0]?.displayTag).toBe("Work/AI");
+  });
+});
+
+describe("flattenVisibleTagTree", () => {
+  it("returns only expanded descendants", () => {
+    const tree = buildTagTree(["project/alpha/one", "project/beta"]);
+
+    expect(flattenVisibleTagTree(tree, new Set())).toEqual([
+      { tag: "project", displayTag: "project", label: "project", depth: 0, synthetic: true, hasChildren: true },
+    ]);
+
+    expect(flattenVisibleTagTree(tree, new Set(["project", "project/alpha"]))).toEqual([
+      { tag: "project", displayTag: "project", label: "project", depth: 0, synthetic: true, hasChildren: true },
+      { tag: "project/alpha", displayTag: "project/alpha", label: "alpha", depth: 1, synthetic: true, hasChildren: true },
+      { tag: "project/alpha/one", displayTag: "project/alpha/one", label: "one", depth: 2, synthetic: false, hasChildren: false },
+      { tag: "project/beta", displayTag: "project/beta", label: "beta", depth: 1, synthetic: false, hasChildren: false },
+    ]);
+  });
+});
+
+describe("collectExpandableTagPaths", () => {
+  it("collects every non-leaf tag path", () => {
+    const tree = buildTagTree(["a/b/c", "a/d"]);
+    expect(collectExpandableTagPaths(tree)).toEqual(["a", "a/b"]);
+  });
+});
+
+describe("tagPathMatchesFilter", () => {
+  it("matches exact and descendant tag paths only", () => {
+    expect(tagPathMatchesFilter("领域/ai/harness", "领域")).toBe(true);
+    expect(tagPathMatchesFilter("领域/ai/harness", "领域/ai")).toBe(true);
+    expect(tagPathMatchesFilter("领域/ai", "领域/ai")).toBe(true);
+    expect(tagPathMatchesFilter("领域/ml", "领域/ai")).toBe(false);
+    expect(tagPathMatchesFilter("domain-ai", "domain")).toBe(false);
+  });
+});
