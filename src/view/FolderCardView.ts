@@ -276,11 +276,6 @@ class BulkMergeModal extends Modal {
           });
       });
 
-    this.contentEl.createEl("h4", { text: this.strings.preview });
-    this.contentEl.createEl("pre", {
-      text: this.previewError ?? this.previewText,
-    });
-
     new Setting(this.contentEl)
       .addButton((button) => {
         button.setButtonText(this.strings.cancel).onClick(() => {
@@ -295,6 +290,11 @@ class BulkMergeModal extends Modal {
             void this.submit();
           });
       });
+
+    this.contentEl.createEl("h4", { text: this.strings.preview });
+    this.contentEl.createEl("pre", {
+      text: this.previewError ?? this.previewText,
+    });
   }
 
   private moveFile(index: number, delta: -1 | 1): void {

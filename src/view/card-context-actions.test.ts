@@ -249,6 +249,7 @@ const mockState = vi.hoisted(() => {
     descriptions: string[] = [];
     messages: string[] = [];
     renderedPreviewText = "";
+    renderOrder: string[] = [];
     buttons: MockModalButton[] = [];
     textInputs: MockModalTextInput[] = [];
     contentEl: {
@@ -266,10 +267,12 @@ const mockState = vi.hoisted(() => {
           this.descriptions = [];
           this.messages = [];
           this.renderedPreviewText = "";
+          this.renderOrder = [];
           this.buttons = [];
           this.textInputs = [];
         },
         createEl: (tag: string, attrs?: { text?: string }) => {
+          this.renderOrder.push(`${tag}:${attrs?.text ?? ""}`);
           if (tag === "p" && typeof attrs?.text === "string") {
             this.messages.push(attrs.text);
           }
@@ -380,6 +383,7 @@ const mockState = vi.hoisted(() => {
       };
 
       configure(chain);
+      this.modal?.renderOrder.push(`button:${record.text}`);
       this.modal?.buttons.push(record);
       return this;
     }
@@ -2971,6 +2975,12 @@ describe("FolderCardView card context actions", () => {
 
       expect(mockState.modalInstances).toHaveLength(1);
       expect(mockState.modalInstances[0]?.title).toBe("Merge selected notes");
+      expect(mockState.modalInstances[0]?.renderOrder.indexOf("button:Cancel")).toBeLessThan(
+        mockState.modalInstances[0]?.renderOrder.indexOf("h4:Preview") ?? -1,
+      );
+      expect(mockState.modalInstances[0]?.renderOrder.indexOf("button:Merge notes")).toBeLessThan(
+        mockState.modalInstances[0]?.renderOrder.indexOf("h4:Preview") ?? -1,
+      );
 
       clickLatestModalButton("Down", 0);
       await flushAsyncWork();
