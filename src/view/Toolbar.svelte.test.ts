@@ -174,7 +174,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
 
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -195,7 +195,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({ availableTags: ["领域/AI/harness"] }, captured.callbacks);
 
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -221,7 +221,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const first = mountToolbar({ availableTags: ["work/ML", "Work/AI"] }, captured.callbacks);
 
-    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -231,7 +231,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(first.component);
 
     const second = mountToolbar({ availableTags: ["Work/AI", "work/ML"] }, captured.callbacks);
-    filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -245,7 +245,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({ availableTags: ["work"], activeFilterTags: ["#Work"] }, captured.callbacks);
 
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -265,7 +265,7 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({ availableTags: ["project/alpha/one"] }, captured.callbacks);
 
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
     await tick();
@@ -346,7 +346,7 @@ describe("Toolbar.svelte", () => {
       "All notes",
       "Create note",
       "Sort cards",
-      "Filter cards",
+      "Tag filter",
       "Bulk actions",
       "Toggle search"
     ];
@@ -574,7 +574,7 @@ describe("Toolbar.svelte", () => {
     }));
     await tick();
 
-    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton?.classList.contains("is-selected")).toBe(true);
     await disposeMountedComponent(component);
 
@@ -737,7 +737,7 @@ describe("Toolbar.svelte", () => {
     for (let i = 0; i < 2; i += 1) {
       const { component } = mountToolbar();
 
-      const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Filter cards"]');
+      const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
       expect(filterButton).not.toBeNull();
       filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 16, clientY: 18 }));
       await tick();
