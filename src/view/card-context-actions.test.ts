@@ -254,6 +254,7 @@ const mockState = vi.hoisted(() => {
     textInputs: MockModalTextInput[] = [];
     contentEl: {
       __ownerModal: MockModal;
+      scrollTop: number;
       empty: () => void;
       createEl: (tag: string, attrs?: { text?: string }) => Record<string, unknown>;
       createDiv: () => Record<string, unknown>;
@@ -263,6 +264,7 @@ const mockState = vi.hoisted(() => {
       this.app = app;
       this.contentEl = {
         __ownerModal: this,
+        scrollTop: 0,
         empty: () => {
           this.descriptions = [];
           this.messages = [];
@@ -757,6 +759,25 @@ async function flushAsyncWork(iterations: number = 5): Promise<void> {
   for (let index = 0; index < iterations; index += 1) {
     await Promise.resolve();
   }
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
 }
 
 describe("FolderCardView card context actions", () => {
@@ -3011,6 +3032,282 @@ describe("FolderCardView card context actions", () => {
       );
     });
 
+    it("preserves modal scroll position across reorder and cleanup actions", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const third = createMarkdownFile("notes/third.md");
+      const notesFolder = createFolder("notes");
+      const bodyByPath: Record<string, string> = {
+        [first.path]: "First body",
+        [second.path]: "Second body",
+        [third.path]: "Third body",
+      };
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return bodyByPath[file.path] ?? "";
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === third.path) {
+          return third;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([third.path, first.path, second.path]);
+      (view as any).bulkAnchorPath = third.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+        createCardRecordFromPath(third.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      const modal = mockState.modalInstances.at(-1);
+      expect(modal).toBeDefined();
+
+      modal!.contentEl.scrollTop = 180;
+      clickLatestModalButton("Keep source notes");
+      expect(modal!.contentEl.scrollTop).toBe(180);
+
+      modal!.contentEl.scrollTop = 240;
+      clickLatestModalButton("Down", 0);
+      expect(modal!.contentEl.scrollTop).toBe(240);
+      await flushAsyncWork();
+      expect(modal!.contentEl.scrollTop).toBe(240);
+    });
+
+    it("does not rerender bulk merge preview after the modal closes", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+      const pendingRead = createDeferred<string>();
+
+      app.vault.read = vi.fn(() => pendingRead.promise);
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork(1);
+
+      const modal = mockState.modalInstances.at(-1);
+      expect(modal).toBeDefined();
+      expect(app.vault.read).toHaveBeenCalledTimes(1);
+
+      clickLatestModalButton("Cancel");
+      expect(modal?.buttons).toEqual([]);
+      expect(modal?.renderedPreviewText).toBe("");
+
+      pendingRead.resolve("First body");
+      await flushAsyncWork();
+
+      expect(app.vault.read).toHaveBeenCalledTimes(1);
+      expect(modal?.buttons).toEqual([]);
+      expect(modal?.messages).toEqual([]);
+      expect(modal?.renderedPreviewText).toBe("");
+    });
+
+    it("drops stale bulk merge preview refreshes when a newer refresh wins", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+      const immediateBodies: Record<string, string> = {
+        [first.path]: "First body",
+        [second.path]: "Second body",
+      };
+      const pendingReads: Array<ReturnType<typeof createDeferred<string>>> = [];
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return immediateBodies[file.path] ?? "";
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      app.vault.read = vi.fn(() => {
+        const deferred = createDeferred<string>();
+        pendingReads.push(deferred);
+        return deferred.promise;
+      });
+
+      setLatestModalTextInput(1, "\n\n***\n\n");
+      await flushAsyncWork(1);
+      setLatestModalTextInput(1, "\n\n===\n\n");
+      await flushAsyncWork(1);
+
+      expect(pendingReads).toHaveLength(2);
+
+      pendingReads[1]!.resolve("First body");
+      await flushAsyncWork(1);
+      expect(pendingReads).toHaveLength(3);
+
+      pendingReads[2]!.resolve("Second body");
+      await flushAsyncWork();
+
+      expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe([
+        "# first\n\nFirst body",
+        "# second\n\nSecond body",
+      ].join("\n\n===\n\n"));
+
+      pendingReads[0]!.resolve("First body");
+      await flushAsyncWork();
+
+      expect(app.vault.read).toHaveBeenCalledTimes(3);
+      expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe([
+        "# first\n\nFirst body",
+        "# second\n\nSecond body",
+      ].join("\n\n===\n\n"));
+    });
+
+    it("does not rerender bulk merge modal after successful submit closes it", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return `${file.path} body`;
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      vi.mocked(mergeNotes).mockResolvedValueOnce({
+        ok: true,
+        mergedFile: createMarkdownFile("notes/Merged notes.md") as unknown as any,
+        sourceCount: 2,
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      const modal = mockState.modalInstances.at(-1);
+      expect(modal).toBeDefined();
+
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(mergeNotes).toHaveBeenCalledTimes(1);
+      expect(modal?.buttons).toEqual([]);
+      expect(modal?.messages).toEqual([]);
+      expect(modal?.renderedPreviewText).toBe("");
+    });
+
     it("runs post-merge trash only after merge success", async () => {
       const { view, app } = createViewWithFile("notes/seed.md");
       const first = createMarkdownFile("notes/first.md");
@@ -3066,6 +3363,9 @@ describe("FolderCardView card context actions", () => {
 
       expect(mergeNotes).toHaveBeenCalledTimes(1);
       expect(batchTrashFiles).not.toHaveBeenCalled();
+      expect(mockState.noticeMessages).toContain("Failed to merge notes: merge failed");
+      expect(mockState.modalInstances.at(-1)?.title).toBe("Merge selected notes");
+      expect(mockState.modalInstances.at(-1)?.buttons.some((button) => button.text === "Merge notes")).toBe(true);
 
       vi.mocked(mergeNotes).mockResolvedValueOnce({
         ok: true,
@@ -3325,6 +3625,61 @@ describe("FolderCardView card context actions", () => {
       expect(Array.from((view as any).selectedPaths)).toEqual([]);
       expect((view as any).bulkAnchorPath).toBeNull();
       expect(mockState.noticeMessages).toEqual(["Deleted 1 note."]);
+    });
+
+    it("keeps the bulk merge modal usable when submit throws unexpectedly", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+
+      app.vault.read = vi.fn(async () => "body");
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      vi.mocked(mergeNotes).mockReset();
+      vi.mocked(mergeNotes).mockRejectedValueOnce(new Error("boom"));
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      clickLatestModalButton("Merge notes");
+      await flushAsyncWork();
+
+      expect(mergeNotes).toHaveBeenCalledTimes(1);
+      expect(mockState.noticeMessages).toContain("Failed to merge notes: Error: boom");
+      expect(mockState.modalInstances.at(-1)?.title).toBe("Merge selected notes");
+      expect(mockState.modalInstances.at(-1)?.buttons.some((button) => button.text === "Merge notes")).toBe(true);
+      expect(batchTrashFiles).not.toHaveBeenCalled();
     });
 
     it("clears bulk selection after successful merge while keeping selectedPath stable", async () => {

@@ -161,7 +161,7 @@ function buildMergedMarkdownContent(files: Array<{ file: TFile; content: string 
 class BulkMergeModal extends Modal {
   private readonly strings: UiStrings["view"]["merge"];
   private readonly folderPickerTitle: string;
-  private readonly onSubmit: (result: MergeModalSubmitResult) => Promise<void>;
+  private readonly onSubmit: (result: MergeModalSubmitResult) => Promise<boolean>;
   private orderedFiles: TFile[];
   private targetFolder: TFolder;
   private mergedTitle: string;
@@ -170,6 +170,9 @@ class BulkMergeModal extends Modal {
   private previewText: string;
   private previewError: string | null = null;
   private submitting = false;
+  private closed = true;
+  private previewRequestSeq = 0;
+  private submitRequestSeq = 0;
 
   constructor(
     app: App,
@@ -180,7 +183,7 @@ class BulkMergeModal extends Modal {
       strings: UiStrings["view"]["merge"];
       folderPickerTitle: string;
     },
-    onSubmit: (result: MergeModalSubmitResult) => Promise<void>,
+    onSubmit: (result: MergeModalSubmitResult) => Promise<boolean>,
   ) {
     super(app);
     this.orderedFiles = [...options.files];
@@ -193,16 +196,25 @@ class BulkMergeModal extends Modal {
   }
 
   onOpen(): void {
+    this.closed = false;
     void this.refreshPreview();
     this.render();
   }
 
   onClose(): void {
+    this.closed = true;
+    this.previewRequestSeq += 1;
+    this.submitRequestSeq += 1;
     this.contentEl.empty();
   }
 
   private render(): void {
+    if (this.closed) {
+      return;
+    }
+
     this.setTitle(this.strings.title);
+    const scrollTop = this.contentEl.scrollTop;
     this.contentEl.empty();
     this.contentEl.createEl("p", {
       text: this.strings.sourceCount(this.orderedFiles.length),
@@ -295,6 +307,7 @@ class BulkMergeModal extends Modal {
     this.contentEl.createEl("pre", {
       text: this.previewError ?? this.previewText,
     });
+    this.contentEl.scrollTop = scrollTop;
   }
 
   private moveFile(index: number, delta: -1 | 1): void {
@@ -315,15 +328,28 @@ class BulkMergeModal extends Modal {
   }
 
   private async refreshPreview(): Promise<void> {
+    const requestSeq = ++this.previewRequestSeq;
+    const orderedFiles = [...this.orderedFiles];
+    const separator = this.separator;
+
     try {
       const fileContents: Array<{ file: TFile; content: string }> = [];
-      for (const file of this.orderedFiles) {
+      for (const file of orderedFiles) {
         const content = await this.app.vault.read(file);
+        if (this.closed || requestSeq !== this.previewRequestSeq) {
+          return;
+        }
         fileContents.push({ file, content });
       }
-      this.previewText = buildMergedMarkdownContent(fileContents, this.separator);
+      if (this.closed || requestSeq !== this.previewRequestSeq) {
+        return;
+      }
+      this.previewText = buildMergedMarkdownContent(fileContents, separator);
       this.previewError = null;
     } catch (error) {
+      if (this.closed || requestSeq !== this.previewRequestSeq) {
+        return;
+      }
       this.previewError = this.strings.failedToBuildPreview(String(error));
     }
 
@@ -335,20 +361,34 @@ class BulkMergeModal extends Modal {
       return;
     }
 
+    const requestSeq = ++this.submitRequestSeq;
     this.submitting = true;
     this.render();
 
     try {
       const mergedTitle = this.mergedTitle.trim();
-      await this.onSubmit({
+      const shouldClose = await this.onSubmit({
         files: [...this.orderedFiles],
         targetFolder: this.targetFolder,
         mergedTitle: mergedTitle.length > 0 ? mergedTitle : this.strings.defaultMergedTitle,
         separator: this.separator,
         cleanupMode: this.cleanupMode,
       });
-      this.close();
+      if (this.closed || requestSeq !== this.submitRequestSeq) {
+        return;
+      }
+      if (shouldClose) {
+        this.close();
+      }
+    } catch (error) {
+      if (this.closed || requestSeq !== this.submitRequestSeq) {
+        return;
+      }
+      new Notice(this.strings.failedToMergeNotes(String(error)));
     } finally {
+      if (requestSeq !== this.submitRequestSeq) {
+        return;
+      }
       this.submitting = false;
       this.render();
     }
@@ -2553,13 +2593,13 @@ export class FolderCardView extends ItemView {
         folderPickerTitle: this.strings.folderPicker.selectFolderTitle,
       },
       async (result) => {
-        await this.executeBulkMerge(result);
+        return this.executeBulkMerge(result);
       },
     );
     modal.open();
   }
 
-  private async executeBulkMerge(result: MergeModalSubmitResult): Promise<void> {
+  private async executeBulkMerge(result: MergeModalSubmitResult): Promise<boolean> {
     const mergeResult = await mergeNotes(
       this.app,
       result.files,
@@ -2571,14 +2611,14 @@ export class FolderCardView extends ItemView {
 
     if (!mergeResult.ok) {
       new Notice(this.strings.view.merge.failedToMergeNotes(mergeResult.error));
-      return;
+      return false;
     }
 
     new Notice(this.strings.view.merge.mergedInto(mergeResult.sourceCount, mergeResult.mergedFile.basename));
 
     if (result.cleanupMode === "keep") {
       this.reconcileSelectionToOrderedPaths([]);
-      return;
+      return true;
     }
 
     const trashSummary = await batchTrashFiles(this.app, result.files);
@@ -2594,15 +2634,16 @@ export class FolderCardView extends ItemView {
 
     if (failedCount === 0) {
       new Notice(this.strings.view.merge.trashedSources(trashedCount));
-      return;
+      return true;
     }
 
     if (trashedCount === 0) {
       new Notice(this.strings.view.merge.failedToTrashSources(failedCount));
-      return;
+      return true;
     }
 
     new Notice(this.strings.view.merge.trashedSourcesPartial(trashedCount, failedCount));
+    return true;
   }
 
   private getDisplayFolderPath(): string {
