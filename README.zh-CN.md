@@ -55,6 +55,18 @@ Card Workspace 目前通过 GitHub Releases 手动安装。
 
 卡片会显示笔记标题以及去除 Markdown 格式后的摘要。摘要从笔记正文中生成，并移除图片和格式标记，以提升可读性。
 
+### 左侧边栏视图
+
+![默认主题下位于左侧边栏的 Card Workspace](screenshots/card_workspace_at_left_sidebar_with_default_theme.jpg)
+
+### Maple 主题下的主窗口视图
+
+![Maple 主题下位于主窗口的 Card Workspace](screenshots/card_workspace_at_main_window_with_maple_theme.jpg)
+
+### 带边框卡片的右侧边栏视图
+
+![位于右侧边栏且使用带边框卡片样式的 Card Workspace](screenshots/card_workspace_at_right_sidebar_with_border_theme.jpg)
+
 ## 兼容性与限制
 
 - **仅支持桌面端。** Card Workspace 依赖桌面端的文件浏览器和左侧边栏工作流，移动端不可用。

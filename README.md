@@ -55,6 +55,18 @@ Card Workspace is installed manually from GitHub releases.
 
 Cards display the note title and a Markdown-stripped excerpt. The excerpt is generated from the note body with images and formatting stripped for readability.
 
+### Left sidebar workspace
+
+![Card Workspace in the left sidebar with the default theme](screenshots/card_workspace_at_left_sidebar_with_default_theme.jpg)
+
+### Main window workspace with Maple theme
+
+![Card Workspace in the main window with the Maple theme](screenshots/card_workspace_at_main_window_with_maple_theme.jpg)
+
+### Right sidebar workspace with bordered cards
+
+![Card Workspace in the right sidebar with bordered cards](screenshots/card_workspace_at_right_sidebar_with_border_theme.jpg)
+
 ## Compatibility and limitations
 
 - **Desktop only.** Card Workspace relies on desktop File Explorer and left-sidebar workflows. It is unavailable on mobile.
