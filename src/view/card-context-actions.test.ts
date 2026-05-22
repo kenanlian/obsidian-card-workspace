@@ -432,6 +432,33 @@ const mockState = vi.hoisted(() => {
 
 vi.mock("obsidian", () => {
   return {
+    FuzzySuggestModal: class<T> {
+      app: unknown;
+
+      constructor(app: unknown) {
+        this.app = app;
+      }
+
+      setTitle(_title: string): this {
+        return this;
+      }
+
+      open(): void {
+        return;
+      }
+
+      getItems(): T[] {
+        return [];
+      }
+
+      getItemText(_item: T): string {
+        return "";
+      }
+
+      onChooseItem(_item: T): void {
+        return;
+      }
+    },
     ItemView: mockState.MockItemView,
     Menu: mockState.MockMenu,
     Modal: mockState.MockModal,
