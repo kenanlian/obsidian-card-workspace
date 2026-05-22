@@ -310,14 +310,8 @@
       if (showTagMenu) {
         showTagMenu = false;
       } else {
-        const anchorEl = event.currentTarget instanceof HTMLElement ? event.currentTarget : filterButtonEl;
-        if (!anchorEl) {
-          return;
-        }
-
-        const rect = anchorEl.getBoundingClientRect();
-        tagMenuX = rect.left;
-        tagMenuY = rect.bottom + 4;
+        tagMenuX = event.clientX;
+        tagMenuY = event.clientY;
         expandedTagPaths = new Set(collectAncestorTagPaths(selectedTag));
         showTagMenu = true;
         showSortMenu = false;
@@ -416,6 +410,21 @@
     };
   }
 
+  function closeFolderMenu(): void {
+    showFolderMenu = false;
+  }
+
+  function closeTagMenu(): void {
+    showTagMenu = false;
+  }
+
+  function onTreeMenuKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      closeFolderMenu();
+      closeTagMenu();
+    }
+  }
+
   function onFolderMenuClickOutside(event: MouseEvent): void {
     const target = event.target;
     if (target instanceof Node) {
@@ -426,16 +435,18 @@
         return;
       }
     }
-    showFolderMenu = false;
+    closeFolderMenu();
   }
 
   function folderMenuAction(node: HTMLElement): { destroy: () => void } {
     folderMenuEl = node;
     document.body.appendChild(node);
     document.addEventListener("click", onFolderMenuClickOutside, true);
+    document.addEventListener("keydown", onTreeMenuKeydown, true);
     return {
       destroy() {
         document.removeEventListener("click", onFolderMenuClickOutside, true);
+        document.removeEventListener("keydown", onTreeMenuKeydown, true);
         folderMenuEl = null;
         if (node.parentNode) {
           node.parentNode.removeChild(node);
@@ -454,24 +465,18 @@
         return;
       }
     }
-    showTagMenu = false;
-  }
-
-  function onTagMenuKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      showTagMenu = false;
-    }
+    closeTagMenu();
   }
 
   function tagMenuAction(node: HTMLElement): { destroy: () => void } {
     tagMenuEl = node;
     document.body.appendChild(node);
     document.addEventListener("click", onTagMenuClickOutside, true);
-    document.addEventListener("keydown", onTagMenuKeydown, true);
+    document.addEventListener("keydown", onTreeMenuKeydown, true);
     return {
       destroy() {
         document.removeEventListener("click", onTagMenuClickOutside, true);
-        document.removeEventListener("keydown", onTagMenuKeydown, true);
+        document.removeEventListener("keydown", onTreeMenuKeydown, true);
         tagMenuEl = null;
         if (node.parentNode) {
           node.parentNode.removeChild(node);
@@ -541,7 +546,12 @@
     onFilterChange?.({
       tags: normalizedTag.length > 0 && normalizedTag === normalizedSelectedTag ? [] : [normalizedTag],
     });
-    showTagMenu = false;
+    closeTagMenu();
+  }
+
+  function selectFolder(path: string): void {
+    onSelectFolder?.({ path });
+    closeFolderMenu();
   }
 
   function clearSelectedTag(): void {
@@ -755,39 +765,39 @@
 
   {#if showTagMenu}
   <div
-    class="fce-tag-menu"
+    class="fce-tag-menu fce-tree-menu"
     role="menu"
     aria-label={strings.filter.title}
     style="position: fixed; left: {tagMenuX}px; top: {tagMenuY}px;"
     use:tagMenuAction
   >
     {#if visibleTagNodes.length === 0}
-      <div class="fce-tag-tree-empty" aria-hidden="true">{strings.filter.noTagsFound}</div>
+      <div class="fce-tree-empty" aria-hidden="true">{strings.filter.noTagsFound}</div>
     {:else}
       {#each visibleTagNodes as node}
         {@const isSelected = normalizeTagPath(selectedTag) === node.tag}
-        <div class="fce-tag-tree-row" style="padding-left: {node.depth * 16 + 8}px;">
+        <div class="fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
           {#if node.hasChildren}
             <button
               type="button"
-              class="fce-tag-tree-chevron"
+              class="fce-tree-chevron"
               aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
               aria-expanded={expandedTagPaths.has(node.tag)}
               onclick={(event) => onTagChevronClick(event, node.tag)}
               use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
             ></button>
           {:else}
-            <span class="fce-tag-tree-chevron is-placeholder" aria-hidden="true"></span>
+            <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
           {/if}
           <button
             type="button"
-            class="fce-tag-tree-button {isSelected ? 'is-selected' : ''}"
+            class="fce-tree-button"
             role="menuitemcheckbox"
             aria-checked={isSelected}
             onclick={() => selectTag(node.tag)}
             use:applyTooltip={`#${node.displayTag}`}
           >
-            <span class="fce-tag-tree-label">#{node.displayTag}</span>
+            <span class="fce-tree-label">#{node.displayTag}</span>
           </button>
         </div>
       {/each}
@@ -797,43 +807,37 @@
 
 {#if showFolderMenu}
   <div
-    class="fce-folder-menu"
+    class="fce-folder-menu fce-tree-menu"
     role="menu"
-    style="left: {folderMenuX}px; top: {folderMenuY}px;"
+    aria-label={strings.folderMenu.folderScope}
+    style="position: fixed; left: {folderMenuX}px; top: {folderMenuY}px;"
     use:folderMenuAction
   >
     {#each visibleFolderNodes as node}
-      <div
-        class="fce-folder-tree-item {node.path === folderPath ? 'is-selected' : ''}"
-        role="menuitem"
-        tabindex="0"
-        style="padding-left: {node.depth * 16 + 8}px;"
-        use:applyTooltip={node.name}
-        onclick={() => {
-          onSelectFolder?.({ path: node.path });
-          showFolderMenu = false;
-        }}
-        onkeydown={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onSelectFolder?.({ path: node.path });
-            showFolderMenu = false;
-          }
-        }}
-      >
-        {#if node.children.length > 0}
+      {@const hasChildren = node.children.length > 0}
+      {@const isSelected = node.path === folderPath}
+      <div class="fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
+        {#if hasChildren}
           <button
             type="button"
-            class="fce-folder-tree-chevron"
+            class="fce-tree-chevron"
             aria-label={expandedPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+            aria-expanded={expandedPaths.has(node.path)}
             onclick={(event) => onFolderChevronClick(event, node.path)}
             use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
           ></button>
         {:else}
-          <span class="fce-folder-tree-chevron" style="pointer-events: none; visibility: hidden;"></span>
+          <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
         {/if}
-        <span class="fce-folder-tree-name">{node.name}</span>
+        <button
+          type="button"
+          class="fce-tree-button"
+          role="menuitem"
+          onclick={() => selectFolder(node.path)}
+          use:applyTooltip={node.name}
+        >
+          <span class="fce-tree-label">{node.name}</span>
+        </button>
       </div>
     {/each}
   </div>

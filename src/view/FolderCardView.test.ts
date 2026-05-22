@@ -358,12 +358,12 @@ function getFilterButton(panelContainer: HTMLElement): HTMLButtonElement | null 
 async function openTagPopup(panelContainer: HTMLElement): Promise<void> {
   const filterButton = getFilterButton(panelContainer);
   expect(filterButton).not.toBeNull();
-  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
   await tick();
 }
 
 function getTagNode(label: string): HTMLButtonElement | undefined {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
     .find((button) => button.textContent?.includes(label));
 }
 
@@ -423,7 +423,7 @@ describe("FolderCardView host contract", () => {
     expect(getTagNode("#work")).not.toBeUndefined();
     expect(getTagNode("#work/ai")).toBeUndefined();
 
-    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-tree-chevron[aria-label='Expand']");
+    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-chevron[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();

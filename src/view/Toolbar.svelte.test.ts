@@ -169,7 +169,18 @@ function getFilterButton(): HTMLButtonElement | null {
 async function openTagPopup(): Promise<void> {
   const filterButton = getFilterButton();
   expect(filterButton).not.toBeNull();
-  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
+  await tick();
+}
+
+function getFolderScopeButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('button[aria-label="Folder scope"]');
+}
+
+async function openFolderPopup(): Promise<void> {
+  const folderButton = getFolderScopeButton();
+  expect(folderButton).not.toBeNull();
+  folderButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
   await tick();
 }
 
@@ -198,19 +209,19 @@ describe("Toolbar.svelte", () => {
     expect(filterButton).not.toBeNull();
     expect(filterButton?.className).toContain("is-selected");
 
-    const workNodeBeforeExpand = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+    const workNodeBeforeExpand = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
       .find((button) => button.textContent?.includes("#work"));
     expect(workNodeBeforeExpand).not.toBeUndefined();
     expect(workNodeBeforeExpand?.getAttribute("aria-checked")).toBe("false");
-    expect(Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+    expect(Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
       .some((button) => button.textContent?.includes("#work/ai"))).toBe(false);
 
-    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-tree-chevron[aria-label='Expand']");
+    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-chevron[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
-    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
       .find((button) => button.textContent?.includes("#work/ai"));
     expect(nestedNode).not.toBeUndefined();
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -254,6 +265,60 @@ describe("Toolbar.svelte", () => {
     expect(tagMenu).not.toBeNull();
     expect(tagMenu?.parentElement).toBe(document.body);
     expect(tagMenu?.style.position).toBe("fixed");
+    expect(tagMenu?.style.left).toBe("44px");
+    expect(tagMenu?.style.top).toBe("12px");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders the folder popup with the shared tree contract and closes it on escape", async () => {
+    const { component } = mountToolbar({
+      folderPath: "projects",
+      folderTree: [
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            {
+              name: "client-a",
+              path: "projects/client-a",
+              depth: 1,
+              children: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await openFolderPopup();
+
+    const folderMenu = document.querySelector<HTMLElement>(".fce-folder-menu.fce-tree-menu");
+    expect(folderMenu).not.toBeNull();
+    expect(folderMenu?.parentElement).toBe(document.body);
+    expect(folderMenu?.getAttribute("aria-label")).toBe("Folder scope");
+
+    const selectedRow = folderMenu?.querySelector<HTMLElement>(".fce-tree-row.is-selected");
+    expect(selectedRow?.textContent).toContain("projects");
+
+    const firstFolderButton = folderMenu?.querySelector<HTMLButtonElement>(".fce-tree-button[role='menuitem']");
+    expect(firstFolderButton).not.toBeNull();
+
+    const firstChevron = folderMenu?.querySelector<HTMLButtonElement>(".fce-tree-chevron[aria-expanded]");
+    expect(firstChevron).not.toBeNull();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
+
+    await openFolderPopup();
+    expect(document.querySelector(".fce-folder-menu")).not.toBeNull();
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
 
     await disposeMountedComponent(component);
   });
@@ -290,7 +355,7 @@ describe("Toolbar.svelte", () => {
 
     await openTagPopup();
 
-    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
       .find((button) => button.textContent?.includes("#work/ai"));
     expect(nestedNode).not.toBeUndefined();
     expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
@@ -308,10 +373,10 @@ describe("Toolbar.svelte", () => {
 
     await openTagPopup();
 
-    const emptyRow = document.querySelector<HTMLDivElement>(".fce-tag-tree-empty");
+    const emptyRow = document.querySelector<HTMLDivElement>(".fce-tag-menu .fce-tree-empty");
     expect(emptyRow).not.toBeNull();
     expect(emptyRow?.textContent).toContain("No tags found");
-    expect(document.querySelectorAll(".fce-tag-tree-button")).toHaveLength(0);
+    expect(document.querySelectorAll(".fce-tag-menu .fce-tree-button")).toHaveLength(0);
 
     await disposeMountedComponent(component);
   });
@@ -363,7 +428,7 @@ describe("Toolbar.svelte", () => {
     pickFolderButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
     await tick();
 
-    const folderItems = Array.from(document.querySelectorAll<HTMLDivElement>(".fce-folder-menu .fce-folder-tree-item"));
+    const folderItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-folder-menu .fce-tree-button"));
     const projectsItem = folderItems.find((item) => item.textContent?.includes("projects"));
     expect(projectsItem).not.toBeUndefined();
     projectsItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
