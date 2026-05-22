@@ -170,115 +170,19 @@ describe("Toolbar.svelte", () => {
     vi.restoreAllMocks();
   });
 
-  it("emits filter-change with normalized tags", async () => {
+  it("emits toolbar action for tag filter and keeps the button selected when tags are active", async () => {
     const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({}, captured.callbacks);
+    const { component } = mountToolbar({ activeFilterTags: ["work"] }, captured.callbacks);
 
     const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
     expect(filterButton).not.toBeNull();
+    expect(filterButton?.className).toContain("is-selected");
+
     filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const workTagItem = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-sort-menu-item"))
-      .find((item) => item.textContent?.includes("#Work"));
-
-    expect(workTagItem).not.toBeUndefined();
-    workTagItem?.querySelector<HTMLButtonElement>(".fce-tag-tree-select")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(captured.filterEvents).toEqual([{ tags: ["work"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders hierarchical tag rows including synthesized parents and emits parent selections", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ availableTags: ["领域/AI/harness"] }, captured.callbacks);
-
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-    expect(filterButton).not.toBeNull();
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item"));
-    expect(rows.map((row) => row.textContent?.trim())).toEqual([
-      "#领域",
-      "#领域/AI",
-      "#领域/AI/harness",
-    ]);
-
-    const firstSelectButton = rows[0]?.querySelector<HTMLButtonElement>(".fce-tag-tree-select");
-    expect(firstSelectButton).not.toBeNull();
-    firstSelectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(captured.filterEvents).toEqual([{ tags: ["领域"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders stable casing for duplicate normalized tags regardless of input order", async () => {
-    const captured = createCapturedCallbacks();
-    const first = mountToolbar({ availableTags: ["work/ML", "Work/AI"] }, captured.callbacks);
-
-    let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-    expect(filterButton).not.toBeNull();
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const firstRows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim());
-    expect(firstRows).toEqual(["#Work", "#Work/AI", "#work/ML"]);
-    await disposeMountedComponent(first.component);
-
-    const second = mountToolbar({ availableTags: ["Work/AI", "work/ML"] }, captured.callbacks);
-    filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-    expect(filterButton).not.toBeNull();
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const secondRows = Array.from(document.querySelectorAll<HTMLElement>(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim());
-    expect(secondRows).toEqual(["#Work", "#Work/AI", "#work/ML"]);
-    await disposeMountedComponent(second.component);
-  });
-
-  it("normalizes prop-backed active tags before toggling so duplicate payloads are not emitted", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ availableTags: ["work"], activeFilterTags: ["#Work"] }, captured.callbacks);
-
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-    expect(filterButton).not.toBeNull();
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const workSelectButton = document.querySelector<HTMLButtonElement>(".fce-filter-menu .fce-tag-tree-select");
-    expect(workSelectButton?.getAttribute("aria-checked")).toBe("true");
-
-    workSelectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(captured.filterEvents).toEqual([{ tags: [] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("keeps chevron expansion separate from tag selection", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ availableTags: ["project/alpha/one"] }, captured.callbacks);
-
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-    expect(filterButton).not.toBeNull();
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
-    await tick();
-
-    const chevronButton = document.querySelector<HTMLButtonElement>(".fce-filter-menu .fce-tag-tree-chevron");
-    expect(chevronButton).not.toBeNull();
-    chevronButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
     expect(captured.filterEvents).toEqual([]);
-    expect(Array.from(document.querySelectorAll(".fce-filter-menu .fce-tag-tree-item")).map((row) => row.textContent?.trim())).toEqual([
-      "#project",
-    ]);
+    expect(captured.toolbarActionEvents).toContainEqual({ action: "filter" });
 
     await disposeMountedComponent(component);
   });
@@ -737,18 +641,26 @@ describe("Toolbar.svelte", () => {
     for (let i = 0; i < 2; i += 1) {
       const { component } = mountToolbar();
 
-      const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
-      expect(filterButton).not.toBeNull();
-      filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 16, clientY: 18 }));
+      const sortButton = document.querySelector<HTMLButtonElement>('button[aria-label="Sort cards"]');
+      expect(sortButton).not.toBeNull();
+      sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 16, clientY: 18 }));
       await tick();
 
-      const filterMenu = document.body.querySelector<HTMLDivElement>(".fce-filter-menu");
-      expect(filterMenu).not.toBeNull();
-      expect(filterMenu?.parentElement).toBe(document.body);
+      const sortMenu = document.body.querySelector<HTMLDivElement>(".fce-sort-menu");
+      expect(sortMenu).not.toBeNull();
+      expect(sortMenu?.parentElement).toBe(document.body);
+
+      const folderButton = document.querySelector<HTMLButtonElement>('button[aria-label="Folder scope"]');
+      expect(folderButton).not.toBeNull();
+      folderButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 20, clientY: 22 }));
+      await tick();
+
+      const folderMenu = document.body.querySelector<HTMLDivElement>(".fce-folder-menu");
+      expect(folderMenu).not.toBeNull();
+      expect(folderMenu?.parentElement).toBe(document.body);
 
       await disposeMountedComponent(component);
 
-      expect(document.body.querySelector(".fce-filter-menu")).toBeNull();
       expect(document.body.querySelector(".fce-folder-menu")).toBeNull();
       expect(document.body.querySelector(".fce-sort-menu")).toBeNull();
       document.body.innerHTML = "";

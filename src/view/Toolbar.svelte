@@ -2,12 +2,6 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type ToolbarStrings } from "../i18n";
-  import {
-    buildTagTree,
-    collectExpandableTagPaths,
-    flattenVisibleTagTree,
-    normalizeTagPath,
-  } from "./tag-tree";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -17,10 +11,6 @@
   interface SortChangePayload {
     field: string;
     direction: string;
-  }
-
-  interface FilterChangePayload {
-    tags: string[];
   }
 
   interface IncludeSubfoldersChangePayload {
@@ -46,7 +36,6 @@
     sortDirection?: string;
     folderTree?: FolderTreeNode[];
     tooltipSide?: "top" | "right" | "bottom" | "left";
-    availableTags?: string[];
     activeFilterTags?: string[];
     includeSubfolders?: boolean;
     searchQuery?: string;
@@ -65,7 +54,6 @@
     canBulkMergeSelected?: boolean;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
-    onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
@@ -135,7 +123,6 @@
     sortDirection = "desc",
     folderTree = [],
     tooltipSide = "right",
-    availableTags = [],
     activeFilterTags = [],
     includeSubfolders = true,
     searchQuery = "",
@@ -154,7 +141,6 @@
     canBulkMergeSelected = false,
     onToolbarAction,
     onSortChange,
-    onFilterChange,
     onIncludeSubfoldersChange,
     onSearchQueryChange,
     onSearchQueryReset,
@@ -183,7 +169,6 @@
     return "type" in option;
   }
 
-  let localActiveFilterTags = $state<string[]>([]);
   let activeToolbarAction = $state("pick-folder");
   let showSortMenu = $state(false);
   let sortMenuX = $state(0);
@@ -191,16 +176,10 @@
   let folderMenuX = $state(0);
   let folderMenuY = $state(0);
   let showFolderMenu = $state(false);
-  let showFilterMenu = $state(false);
-  let filterMenuX = $state(0);
-  let filterMenuY = $state(0);
   let expandedPaths = $state<Set<string>>(new Set());
-  let expandedTagPaths = $state<Set<string>>(new Set());
   let folderMenuExpandedForPath = $state<string | null>(null);
 
   let sortButtonEl: HTMLElement | null = null;
-  let filterButtonEl: HTMLElement | null = null;
-  let filterMenuEl: HTMLElement | null = null;
   let folderButtonEl: HTMLElement | null = null;
   let folderMenuEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
@@ -218,8 +197,8 @@
   ]);
 
   const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
-  const hasTagFilter = $derived(localActiveFilterTags.length > 0);
-  const tagSummary = $derived(strings.tagSummary(localActiveFilterTags.length));
+  const hasTagFilter = $derived(activeFilterTags.length > 0);
+  const tagSummary = $derived(strings.tagSummary(activeFilterTags.length));
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
   const showSearchStatus = $derived(
     searchStatus === "building"
@@ -251,21 +230,6 @@
   }
 
   const visibleFolderNodes = $derived(flattenVisibleTree(folderTree, expandedPaths));
-  const tagTree = $derived(buildTagTree(availableTags));
-  const visibleTagNodes = $derived(flattenVisibleTagTree(tagTree, expandedTagPaths));
-
-  function normalizeTagList(tags: string[]): string[] {
-    return Array.from(new Set(tags
-      .map((tag) => normalizeTagPath(tag))
-      .filter((tag) => tag.length > 0)));
-  }
-
-  $effect(() => {
-    if (!showFilterMenu) {
-      localActiveFilterTags = normalizeTagList(activeFilterTags);
-    }
-  });
-
   $effect(() => {
     if (!showFolderMenu) {
       folderMenuExpandedForPath = null;
@@ -314,23 +278,14 @@
         sortMenuY = event.clientY;
         showSortMenu = true;
         showFolderMenu = false;
-        showFilterMenu = false;
       }
       return;
     }
 
     if (actionId === "filter") {
-      if (showFilterMenu) {
-        showFilterMenu = false;
-      } else {
-        filterMenuX = event.clientX;
-        filterMenuY = event.clientY;
-        localActiveFilterTags = normalizeTagList(activeFilterTags);
-        expandedTagPaths = new Set(collectExpandableTagPaths(tagTree));
-        showFilterMenu = true;
-        showSortMenu = false;
-        showFolderMenu = false;
-      }
+      showSortMenu = false;
+      showFolderMenu = false;
+      onToolbarAction?.({ action: actionId });
       return;
     }
 
@@ -342,7 +297,6 @@
         folderMenuY = event.clientY;
         showFolderMenu = true;
         showSortMenu = false;
-        showFilterMenu = false;
         onToolbarAction?.({ action: actionId });
       }
       return;
@@ -350,43 +304,10 @@
 
     showSortMenu = false;
     showFolderMenu = false;
-    showFilterMenu = false;
     if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
       activeToolbarAction = actionId;
     }
     onToolbarAction?.({ action: actionId });
-  }
-
-  function toggleFilterTag(tag: string): void {
-    const normalized = normalizeTagPath(tag);
-    if (normalized.length === 0) {
-      return;
-    }
-
-    let nextTags: string[];
-    if (localActiveFilterTags.includes(normalized)) {
-      nextTags = localActiveFilterTags.filter((candidateTag) => candidateTag !== normalized);
-    } else {
-      nextTags = [...localActiveFilterTags, normalized];
-    }
-    nextTags = normalizeTagList(nextTags);
-    localActiveFilterTags = nextTags;
-    onFilterChange?.({ tags: nextTags });
-  }
-
-  function onTagChevronClick(event: MouseEvent, tag: string): void {
-    event.stopPropagation();
-    toggleTagExpansion(tag);
-  }
-
-  function toggleTagExpansion(tag: string): void {
-    const next = new Set(expandedTagPaths);
-    if (next.has(tag)) {
-      next.delete(tag);
-    } else {
-      next.add(tag);
-    }
-    expandedTagPaths = next;
   }
 
   function selectSortOption(option: SortOption): void {
@@ -440,43 +361,6 @@
       destroy() {
         document.removeEventListener("click", onSortMenuClickOutside, true);
         sortMenuEl = null;
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-      },
-    };
-  }
-
-  function onFilterMenuClickOutside(event: MouseEvent): void {
-    const target = event.target;
-    if (target instanceof Node) {
-      if (filterButtonEl && filterButtonEl.contains(target)) {
-        return;
-      }
-      if (filterMenuEl && filterMenuEl.contains(target)) {
-        return;
-      }
-    }
-    showFilterMenu = false;
-  }
-
-  function captureFilterButton(node: HTMLElement): { destroy: () => void } {
-    filterButtonEl = node;
-    return {
-      destroy() {
-        filterButtonEl = null;
-      },
-    };
-  }
-
-  function filterMenuAction(node: HTMLElement): { destroy: () => void } {
-    filterMenuEl = node;
-    document.body.appendChild(node);
-    document.addEventListener("click", onFilterMenuClickOutside, true);
-    return {
-      destroy() {
-        document.removeEventListener("click", onFilterMenuClickOutside, true);
-        filterMenuEl = null;
         if (node.parentNode) {
           node.parentNode.removeChild(node);
         }
@@ -561,7 +445,6 @@
     if (searchExpanded) {
       showSortMenu = false;
       showFolderMenu = false;
-      showFilterMenu = false;
       tick().then(() => {
         searchInputEl?.focus();
       });
@@ -613,11 +496,10 @@
         {:else if action.id === "filter"}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {showFilterMenu || localActiveFilterTags.length > 0 ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {activeFilterTags.length > 0 ? 'is-selected' : ''}"
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
-            use:captureFilterButton
           >
             <span class="fce-sr-only">{action.label}</span>
           </button>
@@ -793,53 +675,5 @@
         <span class="fce-folder-tree-name">{node.name}</span>
       </div>
     {/each}
-  </div>
-{/if}
-
-
-{#if showFilterMenu}
-  <div
-    class="fce-filter-menu fce-sort-menu"
-    role="menu"
-    style="left: {filterMenuX}px; top: {filterMenuY}px;"
-    use:filterMenuAction
-  >
-    {#if availableTags.length === 0}
-      <div class="fce-sort-menu-item" style="cursor: default; color: var(--text-muted);">
-        <span class="fce-sort-menu-item-label">{strings.filter.noTagsFound}</span>
-      </div>
-    {:else}
-      {#each visibleTagNodes as node}
-        {@const selected = localActiveFilterTags.includes(node.tag)}
-        <div class="fce-sort-menu-item fce-tag-tree-item">
-          <span class="fce-tag-tree-item-main" style="padding-left: {node.depth * 16}px;">
-            {#if node.hasChildren}
-              <button
-                type="button"
-                class="fce-tag-tree-chevron"
-                aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
-                aria-expanded={expandedTagPaths.has(node.tag)}
-                onclick={(event) => onTagChevronClick(event, node.tag)}
-                use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
-              ></button>
-            {:else}
-              <span class="fce-tag-tree-chevron is-placeholder"></span>
-            {/if}
-            <button
-              type="button"
-              class="fce-tag-tree-select"
-              role="menuitemcheckbox"
-              aria-checked={selected}
-              onclick={() => toggleFilterTag(node.tag)}
-            >
-              <span class="fce-sort-menu-item-label fce-tag-tree-name">#{node.displayTag}</span>
-              {#if selected}
-                <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
-              {/if}
-            </button>
-          </span>
-        </div>
-      {/each}
-    {/if}
   </div>
 {/if}
