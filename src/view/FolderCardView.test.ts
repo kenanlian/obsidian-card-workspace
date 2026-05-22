@@ -4,6 +4,14 @@ import { getUiStrings } from "../i18n";
 import { ALL_NOTES_PATH } from "./types";
 
 const testState = vi.hoisted(() => {
+  const tagFilterModalInstances: Array<{
+    availableTags: string[];
+    activeTags: string[];
+    strings: unknown;
+    onApply: (tags: string[]) => void;
+    open: ReturnType<typeof vi.fn>;
+  }> = [];
+
   class TestTFile {
     path: string;
     basename: string;
@@ -185,6 +193,7 @@ const testState = vi.hoisted(() => {
     TestModal,
     TestSetting,
     ResizeObserverStub,
+    tagFilterModalInstances,
   };
 });
 
@@ -207,6 +216,9 @@ vi.mock("obsidian", () => {
     setTooltip: (el: Element, tooltip: string) => {
       el.setAttribute("data-tooltip", tooltip);
     },
+    getAllTags: (cache: { tags?: Array<{ tag: string }> } | null) => {
+      return cache?.tags?.map((entry) => entry.tag) ?? [];
+    },
   };
 });
 
@@ -219,6 +231,28 @@ vi.mock("../FolderPickerModal", () => {
 
       open(): void {
         return;
+      }
+    },
+  };
+});
+
+vi.mock("./TagFilterModal", () => {
+  return {
+    TagFilterModal: class {
+      constructor(
+        _app: unknown,
+        options: { availableTags: string[]; activeTags: string[]; strings: unknown },
+        onApply: (tags: string[]) => void,
+      ) {
+        const instance = {
+          availableTags: options.availableTags,
+          activeTags: options.activeTags,
+          strings: options.strings,
+          onApply,
+          open: vi.fn(),
+        };
+        testState.tagFilterModalInstances.push(instance);
+        return instance;
       }
     },
   };
@@ -351,11 +385,13 @@ function getPanelState(view: FolderCardView): {
 describe("FolderCardView host contract", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    testState.tagFilterModalInstances.length = 0;
     (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = testState.ResizeObserverStub as never;
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
+    testState.tagFilterModalInstances.length = 0;
     vi.restoreAllMocks();
   });
 
@@ -376,6 +412,40 @@ describe("FolderCardView host contract", () => {
 
     expect(panelContainer.textContent).toContain("Runtime host note");
     expect(panelContainer.querySelector(".fce-list")).not.toBeNull();
+  });
+
+  it("opens the native tag filter modal from the toolbar action and persists selected tags", async () => {
+    const { view, plugin } = createHarness();
+
+    plugin.getSettings = vi.fn(() => ({
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["work"] },
+      pinnedPaths: [],
+      cardCornerRadius: "compact",
+      previewLines: 5,
+      includeSubfolders: true,
+    }));
+    view.app.metadataCache.getFileCache = vi.fn(() => ({
+      tags: [{ tag: "#Work/AI", position: { start: { col: 0, line: 0, offset: 0 }, end: { col: 8, line: 0, offset: 8 } } }],
+    }));
+
+    (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
+
+    (view as any).handleToolbarAction({ action: "filter" });
+
+    expect(testState.tagFilterModalInstances).toHaveLength(1);
+    expect(testState.tagFilterModalInstances[0]?.open).toHaveBeenCalledTimes(1);
+    expect(testState.tagFilterModalInstances[0]?.availableTags).toEqual(["work/ai"]);
+    expect(testState.tagFilterModalInstances[0]?.activeTags).toEqual(["work"]);
+
+    testState.tagFilterModalInstances[0]?.onApply(["#Work/AI", "work"]);
+    await Promise.resolve();
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      filter: {
+        tags: ["work/ai", "work"],
+      },
+    });
   });
 
   it("computes default and search-specific empty-state messages", () => {

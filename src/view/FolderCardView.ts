@@ -45,6 +45,7 @@ import {
   isSupportedCardFile,
 } from "./file-kind";
 import { createPanelModel, type PanelModel, type PanelModelState } from "./panel-model";
+import { TagFilterModal } from "./TagFilterModal";
 import type {
   BulkRuntimePanelState,
   CleanupResult,
@@ -702,6 +703,11 @@ export class FolderCardView extends ItemView {
       return;
     }
 
+    if (action === "filter") {
+      this.openTagFilterModal();
+      return;
+    }
+
     if (action === "new-note") {
       void this.plugin.createNoteInCurrentFolder();
       return;
@@ -735,6 +741,17 @@ export class FolderCardView extends ItemView {
     if (action === "bulk-merge-selected") {
       this.bulkMergeSelected();
     }
+  }
+
+  private openTagFilterModal(): void {
+    const modal = new TagFilterModal(this.app, {
+      availableTags: this.deriveAvailableTags(),
+      activeTags: this.plugin.getSettings().filter.tags,
+      strings: this.strings.toolbar,
+    }, (tags: string[]) => {
+      void this.onFilterChange({ tags });
+    });
+    modal.open();
   }
 
   async setFolder(folder: TFolder): Promise<SelectionResult> {
