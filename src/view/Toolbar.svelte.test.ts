@@ -129,7 +129,6 @@ function mountToolbar(
         sortField: "mtime",
         sortDirection: "desc",
         folderTree: createFolderTree(),
-        availableTags: ["Work", "Idea"],
         activeFilterTags: [],
       includeSubfolders: true,
       searchQuery: "",

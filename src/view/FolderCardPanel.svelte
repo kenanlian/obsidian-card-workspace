@@ -168,7 +168,6 @@
   const searchStatus = $derived(panelState.searchStatus);
   const sortField = $derived(panelState.sortField);
   const sortDirection = $derived(panelState.sortDirection);
-  const availableTags = $derived(panelState.availableTags);
   const activeFilterTags = $derived(panelState.activeFilterTags);
   const pinnedPaths = $derived(panelState.pinnedPaths);
 
@@ -560,7 +559,6 @@
     {folderPath}
     {sortField}
     {sortDirection}
-    {availableTags}
     {activeFilterTags}
     {folderTree}
     {includeSubfolders}
@@ -581,7 +579,6 @@
     {canBulkMergeSelected}
     onToolbarAction={handleToolbarAction}
     onSortChange={handleSortChange}
-    onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
