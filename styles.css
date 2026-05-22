@@ -250,15 +250,20 @@
 
 
 
-.fce-sort-menu {
+.fce-sort-menu,
+.fce-tag-menu {
   position: fixed;
   z-index: var(--layer-menu, 10);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+}
+
+.fce-sort-menu {
   min-width: 180px;
   padding: 6px;
   border-radius: 8px;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border-hover, var(--background-modifier-border));
-  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
 }
 
 .fce-sort-menu-separator {
@@ -305,16 +310,11 @@
   color: var(--text-normal);
 }
 
-.folder-card-view .fce-tag-menu {
-  position: fixed;
-  z-index: var(--layer-menu, 10);
+.fce-tag-menu {
   min-width: 200px;
   max-width: 250px;
   padding: var(--size-2-3, 6px) 0;
   border-radius: var(--radius-m, 8px);
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
   max-height: 444px;
   overflow-y: auto;
 }
