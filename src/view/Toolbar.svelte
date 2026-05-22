@@ -753,12 +753,12 @@
   </div>
 {/if}
 
-{#if showTagMenu}
+  {#if showTagMenu}
   <div
     class="fce-tag-menu"
     role="menu"
     aria-label={strings.filter.title}
-    style="left: {tagMenuX}px; top: {tagMenuY}px;"
+    style="position: fixed; left: {tagMenuX}px; top: {tagMenuY}px;"
     use:tagMenuAction
   >
     {#if visibleTagNodes.length === 0}

@@ -245,6 +245,19 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("renders the tag popup as a fixed portal menu", async () => {
+    const { component } = mountToolbar();
+
+    await openTagPopup();
+
+    const tagMenu = document.querySelector<HTMLElement>(".fce-tag-menu");
+    expect(tagMenu).not.toBeNull();
+    expect(tagMenu?.parentElement).toBe(document.body);
+    expect(tagMenu?.style.position).toBe("fixed");
+
+    await disposeMountedComponent(component);
+  });
+
   it("renders the selected tag summary without shipping a premature clear button", async () => {
     const englishStrings = getToolbarStrings("en");
     expect(englishStrings.filter.selectedTagSummary("project/work")).toBe("project/work tag selected");
