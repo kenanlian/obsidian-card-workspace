@@ -14,6 +14,7 @@ export interface VisibleTagTreeNode {
   depth: number;
   synthetic: boolean;
   hasChildren: boolean;
+  selectable: boolean;
 }
 
 interface MutableTagTreeNode {
@@ -139,6 +140,22 @@ export function collectExpandableTagPaths(nodes: TagTreeNode[]): string[] {
   return expandablePaths;
 }
 
+export function collectAncestorTagPaths(tagPath: string): string[] {
+  const normalizedTagPath = normalizeTagPath(tagPath);
+  if (normalizedTagPath.length === 0) {
+    return [];
+  }
+
+  const segments = normalizedTagPath.split("/");
+  const ancestorPaths: string[] = [];
+
+  for (let index = 1; index < segments.length; index += 1) {
+    ancestorPaths.push(segments.slice(0, index).join("/"));
+  }
+
+  return ancestorPaths;
+}
+
 export function flattenVisibleTagTree(nodes: TagTreeNode[], expandedTags: Set<string>): VisibleTagTreeNode[] {
   const visibleNodes: VisibleTagTreeNode[] = [];
 
@@ -151,6 +168,7 @@ export function flattenVisibleTagTree(nodes: TagTreeNode[], expandedTags: Set<st
         depth: node.depth,
         synthetic: node.synthetic,
         hasChildren: node.children.length > 0,
+        selectable: true,
       });
 
       if (node.children.length > 0 && expandedTags.has(node.tag)) {

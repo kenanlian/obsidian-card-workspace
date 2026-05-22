@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTagTree,
+  collectAncestorTagPaths,
   collectExpandableTagPaths,
   flattenVisibleTagTree,
   normalizeTagPath,
@@ -83,19 +84,92 @@ describe("buildTagTree", () => {
   });
 });
 
+describe("collectAncestorTagPaths", () => {
+  it("returns ancestor paths for a selected nested tag", () => {
+    expect(collectAncestorTagPaths("project/work")).toEqual(["project"]);
+    expect(collectAncestorTagPaths("project/home")).toEqual(["project"]);
+    expect(collectAncestorTagPaths("area")).toEqual([]);
+  });
+});
+
 describe("flattenVisibleTagTree", () => {
   it("returns only expanded descendants", () => {
     const tree = buildTagTree(["project/alpha/one", "project/beta"]);
 
     expect(flattenVisibleTagTree(tree, new Set())).toEqual([
-      { tag: "project", displayTag: "project", label: "project", depth: 0, synthetic: true, hasChildren: true },
+      {
+        tag: "project",
+        displayTag: "project",
+        label: "project",
+        depth: 0,
+        synthetic: true,
+        hasChildren: true,
+        selectable: true,
+      },
     ]);
 
     expect(flattenVisibleTagTree(tree, new Set(["project", "project/alpha"]))).toEqual([
-      { tag: "project", displayTag: "project", label: "project", depth: 0, synthetic: true, hasChildren: true },
-      { tag: "project/alpha", displayTag: "project/alpha", label: "alpha", depth: 1, synthetic: true, hasChildren: true },
-      { tag: "project/alpha/one", displayTag: "project/alpha/one", label: "one", depth: 2, synthetic: false, hasChildren: false },
-      { tag: "project/beta", displayTag: "project/beta", label: "beta", depth: 1, synthetic: false, hasChildren: false },
+      {
+        tag: "project",
+        displayTag: "project",
+        label: "project",
+        depth: 0,
+        synthetic: true,
+        hasChildren: true,
+        selectable: true,
+      },
+      {
+        tag: "project/alpha",
+        displayTag: "project/alpha",
+        label: "alpha",
+        depth: 1,
+        synthetic: true,
+        hasChildren: true,
+        selectable: true,
+      },
+      {
+        tag: "project/alpha/one",
+        displayTag: "project/alpha/one",
+        label: "one",
+        depth: 2,
+        synthetic: false,
+        hasChildren: false,
+        selectable: true,
+      },
+      {
+        tag: "project/beta",
+        displayTag: "project/beta",
+        label: "beta",
+        depth: 1,
+        synthetic: false,
+        hasChildren: false,
+        selectable: true,
+      },
+    ]);
+  });
+
+  it("keeps synthetic parents selectable when flattening visible nodes", () => {
+    const tree = buildTagTree(["project/work", "area"]);
+
+    expect(flattenVisibleTagTree(tree, new Set())).toEqual([
+      {
+        tag: "area",
+        displayTag: "area",
+        label: "area",
+        depth: 0,
+        synthetic: false,
+        hasChildren: false,
+        selectable: true,
+      },
+      {
+        tag: "project",
+        displayTag: "project",
+        label: "project",
+        depth: 0,
+        synthetic: true,
+        hasChildren: true,
+        selectable: true,
+      },
     ]);
   });
 });
