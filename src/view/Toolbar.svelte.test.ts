@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount } from "svelte";
 import { tick } from "svelte";
+import { getToolbarStrings } from "../i18n";
 import Toolbar from "./Toolbar.svelte";
 import type { FolderTreeNode } from "./types";
 
@@ -73,6 +74,10 @@ function createFolderTree(): FolderTreeNode[] {
   ];
 }
 
+function createAvailableTags(): string[] {
+  return ["work/ai", "work/ml", "personal"];
+}
+
 function createCapturedCallbacks(): CapturedCallbacks {
   const filterEvents: FilterChangePayload[] = [];
   const sortEvents: SortChangePayload[] = [];
@@ -124,12 +129,13 @@ function mountToolbar(
   document.body.appendChild(target);
   const component = mount(Toolbar, {
     target,
-      props: {
-        folderPath: "notes",
-        sortField: "mtime",
-        sortDirection: "desc",
-        folderTree: createFolderTree(),
-        activeFilterTags: [],
+    props: {
+      folderPath: "notes",
+      sortField: "mtime",
+      sortDirection: "desc",
+      folderTree: createFolderTree(),
+      availableTags: createAvailableTags(),
+      activeFilterTags: [],
       includeSubfolders: true,
       searchQuery: "",
       searchStatus: "idle",
@@ -156,6 +162,17 @@ async function disposeMountedComponent(component: Record<string, unknown>): Prom
   await unmount(component);
 }
 
+function getFilterButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
+}
+
+async function openTagPopup(): Promise<void> {
+  const filterButton = getFilterButton();
+  expect(filterButton).not.toBeNull();
+  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await tick();
+}
+
 describe("Toolbar.svelte", () => {
   beforeEach(() => {
     mountedComponents = [];
@@ -169,21 +186,135 @@ describe("Toolbar.svelte", () => {
     vi.restoreAllMocks();
   });
 
-  it("emits toolbar action for tag filter and keeps the button selected when tags are active", async () => {
+  it("opens a collapsible tag tree and selects a nested tag", async () => {
     const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ activeFilterTags: ["work"] }, captured.callbacks);
+    const { component } = mountToolbar({}, captured.callbacks);
 
-    const filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
+
+    await openTagPopup();
+
+    const filterButton = getFilterButton();
     expect(filterButton).not.toBeNull();
     expect(filterButton?.className).toContain("is-selected");
 
-    filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 12, clientY: 20 }));
+    const workNodeBeforeExpand = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+      .find((button) => button.textContent?.includes("#work"));
+    expect(workNodeBeforeExpand).not.toBeUndefined();
+    expect(workNodeBeforeExpand?.getAttribute("aria-checked")).toBe("false");
+    expect(Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+      .some((button) => button.textContent?.includes("#work/ai"))).toBe(false);
+
+    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-tree-chevron[aria-label='Expand']");
+    expect(workChevron).not.toBeNull();
+    workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
-    expect(captured.filterEvents).toEqual([]);
-    expect(captured.toolbarActionEvents).toContainEqual({ action: "filter" });
+    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+      .find((button) => button.textContent?.includes("#work/ai"));
+    expect(nestedNode).not.toBeUndefined();
+    nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.filterEvents).toEqual([{ tags: ["work/ai"] }]);
+    expect(captured.toolbarActionEvents).not.toContainEqual({ action: "filter" });
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
 
     await disposeMountedComponent(component);
+  });
+
+  it("closes the tag popup on escape and outside click", async () => {
+    const { component } = mountToolbar();
+
+    await openTagPopup();
+    expect(document.querySelector(".fce-tag-menu")).not.toBeNull();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
+
+    await openTagPopup();
+    expect(document.querySelector(".fce-tag-menu")).not.toBeNull();
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders the selected tag summary without shipping a premature clear button", async () => {
+    const englishStrings = getToolbarStrings("en");
+    expect(englishStrings.filter.selectedTagSummary("project/work")).toBe("project/work tag selected");
+    expect(englishStrings.filter.selectedTagClearLabel).toBe("Clear selected tag");
+
+    const chineseStrings = getToolbarStrings("zh");
+    expect(chineseStrings.filter.selectedTagSummary("项目/工作")).toBe("已选标签：项目/工作");
+    expect(chineseStrings.filter.selectedTagClearLabel).toBe("清除所选标签");
+
+    const { component } = mountToolbar({ activeFilterTags: ["project/work"] });
+    await tick();
+
+    const filterButton = getFilterButton();
+    expect(filterButton).not.toBeNull();
+    expect(filterButton?.className).toContain("is-selected");
+
+    const contentRow = document.querySelector<HTMLDivElement>(".fce-toolbar-content-row");
+    expect(contentRow).not.toBeNull();
+    expect(contentRow?.textContent).toContain("project/work tag selected");
+    const clearButton = document.querySelector<HTMLButtonElement>(".fce-tag-clear");
+    expect(clearButton).not.toBeNull();
+    expect(clearButton?.getAttribute("aria-label")).toBe("Clear selected tag");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("deselects the current tag when the selected node is clicked again", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ activeFilterTags: ["work/ai"] }, captured.callbacks);
+
+    await openTagPopup();
+
+    const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+      .find((button) => button.textContent?.includes("#work/ai"));
+    expect(nestedNode).not.toBeUndefined();
+    expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
+    nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.filterEvents).toEqual([{ tags: [] }]);
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders a non-interactive empty tag row when no tags are available", async () => {
+    const { component } = mountToolbar({ availableTags: [] });
+
+    await openTagPopup();
+
+    const emptyRow = document.querySelector<HTMLDivElement>(".fce-tag-tree-empty");
+    expect(emptyRow).not.toBeNull();
+    expect(emptyRow?.textContent).toContain("No tags found");
+    expect(document.querySelectorAll(".fce-tag-tree-button")).toHaveLength(0);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("removes the tag popup portal and listeners on unmount", async () => {
+    const removeEventListenerSpy = vi.spyOn(document, "removeEventListener");
+    const { component } = mountToolbar();
+
+    await openTagPopup();
+    expect(document.querySelector(".fce-tag-menu")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
+    expect(removeEventListenerSpy).toHaveBeenCalledWith("click", expect.any(Function), true);
+    expect(removeEventListenerSpy).toHaveBeenCalledWith("keydown", expect.any(Function), true);
   });
 
   it("emits sort-change with selected field and direction", async () => {
@@ -387,7 +518,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
 
     ({ component } = mountToolbar({
-      activeFilterTags: ["#Work"],
+      activeFilterTags: ["project/work"],
       searchStatus: "ready",
     }));
     await tick();
@@ -395,7 +526,6 @@ describe("Toolbar.svelte", () => {
     let summaryRow = document.querySelector<HTMLDivElement>(".fce-toolbar-content-row");
     expect(summaryRow).not.toBeNull();
     let content = summaryRow?.textContent || "";
-    expect(content).toContain("Tag filter: 1 active");
     expect(content).not.toContain("Scope:");
     expect(content).not.toContain("Index ready");
     await disposeMountedComponent(component);

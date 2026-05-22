@@ -4,14 +4,6 @@ import { getUiStrings } from "../i18n";
 import { ALL_NOTES_PATH } from "./types";
 
 const testState = vi.hoisted(() => {
-  const tagFilterModalInstances: Array<{
-    availableTags: string[];
-    activeTags: string[];
-    strings: unknown;
-    onApply: (tags: string[]) => void;
-    open: ReturnType<typeof vi.fn>;
-  }> = [];
-
   class TestTFile {
     path: string;
     basename: string;
@@ -193,7 +185,6 @@ const testState = vi.hoisted(() => {
     TestModal,
     TestSetting,
     ResizeObserverStub,
-    tagFilterModalInstances,
   };
 });
 
@@ -231,28 +222,6 @@ vi.mock("../FolderPickerModal", () => {
 
       open(): void {
         return;
-      }
-    },
-  };
-});
-
-vi.mock("./TagFilterModal", () => {
-  return {
-    TagFilterModal: class {
-      constructor(
-        _app: unknown,
-        options: { availableTags: string[]; activeTags: string[]; strings: unknown },
-        onApply: (tags: string[]) => void,
-      ) {
-        const instance = {
-          availableTags: options.availableTags,
-          activeTags: options.activeTags,
-          strings: options.strings,
-          onApply,
-          open: vi.fn(),
-        };
-        testState.tagFilterModalInstances.push(instance);
-        return instance;
       }
     },
   };
@@ -382,16 +351,30 @@ function getPanelState(view: FolderCardView): {
   return (view as any).panelModel.getState();
 }
 
+function getFilterButton(panelContainer: HTMLElement): HTMLButtonElement | null {
+  return panelContainer.querySelector<HTMLButtonElement>('.fce-toolbar-button[data-icon="tags"]');
+}
+
+async function openTagPopup(panelContainer: HTMLElement): Promise<void> {
+  const filterButton = getFilterButton(panelContainer);
+  expect(filterButton).not.toBeNull();
+  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await tick();
+}
+
+function getTagNode(label: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-tree-button"))
+    .find((button) => button.textContent?.includes(label));
+}
+
 describe("FolderCardView host contract", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
-    testState.tagFilterModalInstances.length = 0;
     (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = testState.ResizeObserverStub as never;
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
-    testState.tagFilterModalInstances.length = 0;
     vi.restoreAllMocks();
   });
 
@@ -414,12 +397,12 @@ describe("FolderCardView host contract", () => {
     expect(panelContainer.querySelector(".fce-list")).not.toBeNull();
   });
 
-  it("opens the native tag filter modal from the toolbar action and persists selected tags", async () => {
-    const { view, plugin } = createHarness();
+  it("persists a selected nested tag from the toolbar popup", async () => {
+    const { view, plugin, panelContainer } = createHarness();
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: ["work"] },
+      filter: { tags: [] },
       pinnedPaths: [],
       cardCornerRadius: "compact",
       previewLines: 5,
@@ -430,22 +413,74 @@ describe("FolderCardView host contract", () => {
     }));
 
     (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
+    await view.onOpen();
+    (view as any).pushState();
+    await tick();
 
-    (view as any).handleToolbarAction({ action: "filter" });
+    await openTagPopup(panelContainer);
 
-    expect(testState.tagFilterModalInstances).toHaveLength(1);
-    expect(testState.tagFilterModalInstances[0]?.open).toHaveBeenCalledTimes(1);
-    expect(testState.tagFilterModalInstances[0]?.availableTags).toEqual(["work/ai"]);
-    expect(testState.tagFilterModalInstances[0]?.activeTags).toEqual(["work"]);
+    expect(getFilterButton(panelContainer)?.className).toContain("is-selected");
+    expect(getTagNode("#work")).not.toBeUndefined();
+    expect(getTagNode("#work/ai")).toBeUndefined();
 
-    testState.tagFilterModalInstances[0]?.onApply(["#Work/AI", "work"]);
+    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-tree-chevron[aria-label='Expand']");
+    expect(workChevron).not.toBeNull();
+    workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const nestedNode = getTagNode("#work/ai");
+    expect(nestedNode).not.toBeUndefined();
+    nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       filter: {
-        tags: ["work/ai", "work"],
+        tags: ["work/ai"],
       },
     });
+  });
+
+  it("clears the active tag from the toolbar summary", async () => {
+    const { view, plugin, panelContainer } = createHarness();
+    const settings = {
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["work/ai"] },
+      pinnedPaths: [],
+      cardCornerRadius: "compact",
+      previewLines: 5,
+      includeSubfolders: true,
+    };
+
+    plugin.getSettings = vi.fn(() => settings);
+    plugin.saveSettings = vi.fn(async (partial: Record<string, unknown>) => {
+      Object.assign(settings, partial);
+    });
+
+    view.app.metadataCache.getFileCache = vi.fn(() => ({
+      tags: [{ tag: "#Work/AI", position: { start: { col: 0, line: 0, offset: 0 }, end: { col: 8, line: 0, offset: 8 } } }],
+    }));
+    (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
+
+    await view.onOpen();
+    (view as any).pushState();
+    await tick();
+
+    expect(panelContainer.textContent).toContain("work/ai tag selected");
+
+    await openTagPopup(panelContainer);
+
+    const nestedNode = getTagNode("#work/ai");
+    expect(nestedNode).not.toBeUndefined();
+    expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
+    nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+
+    (view as any).pushState();
+    await tick();
+
+    expect(settings.filter.tags).toEqual([]);
+    expect(panelContainer.textContent).not.toContain("work/ai tag selected");
+    expect(document.querySelector(".fce-tag-menu")).toBeNull();
   });
 
   it("computes default and search-specific empty-state messages", () => {

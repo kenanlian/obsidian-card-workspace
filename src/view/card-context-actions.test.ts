@@ -949,7 +949,7 @@ describe("FolderCardView card context actions", () => {
        expect(typeof mockState.panelEventHandlers["card-context-menu"]).toBe("function");
      });
 
-     it("onOpen() registers filter-change subscription that calls onFilterChange", async () => {
+     it("onOpen() registers filter-change subscription that persists only the first selected tag", async () => {
        const { view, plugin } = createViewWithFile("notes/test-filter.md");
 
        await (view as any).onOpen();
@@ -959,15 +959,15 @@ describe("FolderCardView card context actions", () => {
        const filterChangeHandler = mockState.panelEventHandlers["filter-change"];
        filterChangeHandler({ detail: { tags: ["important", "archived"] } });
 
-       expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
-       expect(plugin.saveSettings).toHaveBeenCalledWith({
-         filter: {
-           tags: ["important", "archived"],
-         },
-       });
-     });
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          filter: {
+            tags: ["important"],
+          },
+        });
+      });
 
-     it("filter-change handler sanitizes and normalizes tag input", async () => {
+      it("filter-change handler sanitizes, normalizes, and single-selects tag input", async () => {
        const { view, plugin } = createViewWithFile("notes/tag-normalize.md");
 
        await (view as any).onOpen();
@@ -975,12 +975,12 @@ describe("FolderCardView card context actions", () => {
        const filterChangeHandler = mockState.panelEventHandlers["filter-change"];
        filterChangeHandler({ detail: { tags: ["#Important", " WORK ", "", "   "] } });
 
-       expect(plugin.saveSettings).toHaveBeenCalledWith({
-         filter: {
-           tags: ["important", "work"],
-         },
-       });
-     });
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          filter: {
+            tags: ["important"],
+          },
+        });
+      });
 
       it("filter-change handler validates that tags is an array before processing", async () => {
         const { view, plugin } = createViewWithFile("notes/invalid-filter.md");
