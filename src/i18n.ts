@@ -82,6 +82,8 @@ export interface ToolbarStrings {
   filter: {
     title: string;
     noTagsFound: string;
+    selectedTagSummary: (tag: string) => string;
+    selectedTagClearLabel: string;
     clear: string;
     cancel: string;
     apply: string;
@@ -321,7 +323,7 @@ const EN: UiStrings = {
       toggleSearch: "Toggle search",
     },
     bulkSummary: (count: number) => (count === 1 ? "1 selected" : `${count} selected`),
-    tagSummary: (count: number) => `Tag filter: ${count} active`,
+    tagSummary: (count: number) => (count === 1 ? "1 tag selected" : `${count} tags selected`),
     bulkActionLabels: {
       selectAll: "Select all",
       clearSelection: "Clear selection",
@@ -347,6 +349,8 @@ const EN: UiStrings = {
     filter: {
       title: "Tag filter",
       noTagsFound: "No tags found",
+      selectedTagSummary: (tag: string) => `${tag} tag selected`,
+      selectedTagClearLabel: "Clear selected tag",
       clear: "Clear",
       cancel: "Cancel",
       apply: "Apply",
@@ -552,7 +556,7 @@ const ZH: UiStrings = {
       toggleSearch: "切换搜索",
     },
     bulkSummary: (count: number) => (count === 1 ? "已选 1 项" : `已选 ${count} 项`),
-    tagSummary: (count: number) => `标签筛选：已启用 ${count} 个`,
+    tagSummary: (count: number) => (count === 1 ? "已选 1 个标签" : `已选 ${count} 个标签`),
     bulkActionLabels: {
       selectAll: "全选",
       clearSelection: "清除选择",
@@ -578,6 +582,8 @@ const ZH: UiStrings = {
     filter: {
       title: "标签筛选",
       noTagsFound: "未找到标签",
+      selectedTagSummary: (tag: string) => `已选标签：${tag}`,
+      selectedTagClearLabel: "清除所选标签",
       clear: "清除",
       cancel: "取消",
       apply: "应用",
