@@ -250,8 +250,7 @@
 
 
 
-.fce-sort-menu,
-.fce-tag-menu {
+.fce-sort-menu {
   position: fixed;
   z-index: var(--layer-menu, 10);
   background: var(--background-primary);
@@ -310,7 +309,9 @@
   color: var(--text-normal);
 }
 
-.fce-tag-menu {
+.fce-tree-menu {
+  position: fixed;
+  z-index: var(--layer-menu, 10);
   min-width: 200px;
   max-width: 250px;
   padding: var(--size-2-3, 6px) 0;
@@ -323,8 +324,7 @@
   overflow-y: auto;
 }
 
-.fce-tag-menu .fce-tag-tree-row,
-.fce-tag-menu .fce-tag-tree-item {
+.fce-tree-menu .fce-tree-row {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -332,229 +332,83 @@
   padding-block: var(--size-2-2, 4px);
   padding-inline-end: var(--size-4-4, 16px);
   border-radius: var(--radius-s, 4px);
-  cursor: pointer;
   color: var(--text-normal);
   font-size: var(--font-ui-small, 13px);
   line-height: 1.4;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.fce-tag-menu .fce-tag-tree-row:hover,
-.fce-tag-menu .fce-tag-tree-item:hover {
+.fce-tree-menu .fce-tree-row:hover {
   background: var(--background-modifier-hover);
 }
 
-.fce-tag-menu .fce-tag-tree-row:focus-within,
-.fce-tag-menu .fce-tag-tree-item:focus-visible {
+.fce-tree-menu .fce-tree-row:focus-within {
   outline: 2px solid var(--fce-accent);
   outline-offset: -2px;
   border-radius: var(--radius-s, 4px);
 }
 
-.fce-tag-menu .fce-tag-tree-chevron {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
+.fce-tree-menu .fce-tree-row.is-selected {
+  color: var(--text-accent);
+}
+
+.fce-tree-menu .fce-tree-chevron,
+.fce-tree-menu .fce-tree-button {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.fce-tag-menu .fce-tag-tree-chevron:focus-visible {
-  outline: 2px solid var(--fce-accent);
-  outline-offset: 1px;
-  border-radius: var(--radius-s, 4px);
-}
-
-.fce-tag-menu .fce-tag-tree-chevron.is-placeholder {
-  pointer-events: none;
-  opacity: 0;
-}
-
-.fce-tag-menu .fce-tag-tree-button {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
   box-shadow: none;
   outline: none;
-}
-
-.fce-tag-menu .fce-tag-tree-row:has(.fce-tag-tree-button.is-selected) {
-  color: var(--text-accent);
-}
-
-.fce-tag-menu .fce-tag-tree-button.is-selected {
-  color: inherit;
-}
-
-.fce-tag-menu .fce-tag-tree-label,
-.fce-tag-menu .fce-tag-tree-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fce-tag-menu .fce-tag-tree-empty {
-  padding: 6px var(--size-4-4, 16px) 8px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small, 13px);
-  line-height: 1.4;
-}
-
-.folder-card-view .fce-toolbar-summary-segment,
-.folder-card-view .fce-tag-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fce-text);
-}
-
-.folder-card-view .fce-toolbar-summary-segment strong,
-.folder-card-view .fce-tag-summary strong {
-  color: inherit;
-  font-weight: 400;
-}
-
-.folder-card-view .fce-tag-clear {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-left: auto;
-  color: var(--fce-text-muted);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-s);
-  cursor: pointer;
-}
-
-.folder-card-view .fce-tag-clear:hover {
-  color: var(--fce-text);
-  background: var(--background-modifier-hover);
-}
-
-.folder-card-view .fce-folder-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 160px;
-  overflow: hidden;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border-radius: var(--radius-s);
-  font-size: var(--font-ui-small, 13px);
-  color: var(--text-normal);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.folder-card-view .fce-folder-button:hover,
-.folder-card-view .fce-folder-button:active {
-  background: var(--background-modifier-hover);
-}
-
-.folder-card-view .fce-folder-button > span:last-child {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.folder-card-view .fce-folder-button-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.fce-folder-menu {
-  position: fixed;
-  z-index: var(--layer-menu, 10);
-  min-width: 200px;
-  max-width: 250px;
-  padding: var(--size-2-3, 6px) 0;
-  border-radius: var(--radius-m, 8px);
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
-  max-height: 444px;
-  overflow-y: auto;
-}
-
-.fce-folder-tree-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: var(--size-2-2, 4px) var(--size-4-4, 16px);
-  cursor: pointer;
-  color: var(--text-normal);
-  font-size: var(--font-ui-small, 13px);
-}
-
-.fce-folder-tree-item:hover {
-  background: var(--background-modifier-hover);
-}
-
-.fce-folder-tree-item:focus-visible {
-  outline: 2px solid var(--fce-accent);
-  outline-offset: -2px;
-  border-radius: var(--radius-s, 4px);
-}
-
-.fce-folder-tree-item.is-selected {
-  color: var(--text-accent);
-}
-
-.fce-folder-tree-chevron {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.fce-folder-menu button.fce-folder-tree-chevron {
-  cursor: pointer;
-  transition: none;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
   appearance: none;
   -webkit-appearance: none;
-  padding: 0;
   font: inherit;
   color: inherit;
 }
 
-.fce-folder-menu button.fce-folder-tree-chevron:focus-visible {
+.fce-tree-menu .fce-tree-chevron {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.fce-tree-menu .fce-tree-chevron:focus-visible {
   outline: 2px solid var(--fce-accent);
   outline-offset: 1px;
   border-radius: var(--radius-s, 4px);
 }
 
-.fce-folder-tree-name {
+.fce-tree-menu .fce-tree-chevron.is-placeholder {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.fce-tree-menu .fce-tree-button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fce-tree-menu .fce-tree-label {
+  min-width: 0;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fce-tree-menu .fce-tree-empty {
+  padding: 6px var(--size-4-4, 16px) 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 13px);
+  line-height: 1.4;
 }
 
 .folder-card-view .fce-sr-only {
