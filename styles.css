@@ -319,8 +319,8 @@
   overflow-y: auto;
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-row,
-.folder-card-view .fce-tag-menu .fce-tag-tree-item {
+.fce-tag-menu .fce-tag-tree-row,
+.fce-tag-menu .fce-tag-tree-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -330,18 +330,18 @@
   font-size: var(--font-ui-small, 13px);
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-row:hover,
-.folder-card-view .fce-tag-menu .fce-tag-tree-item:hover {
+.fce-tag-menu .fce-tag-tree-row:hover,
+.fce-tag-menu .fce-tag-tree-item:hover {
   background: var(--background-modifier-hover);
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-row:focus-visible,
-.folder-card-view .fce-tag-menu .fce-tag-tree-item:focus-visible {
+.fce-tag-menu .fce-tag-tree-row:focus-visible,
+.fce-tag-menu .fce-tag-tree-item:focus-visible {
   outline: 2px solid var(--fce-accent);
   outline-offset: -2px;
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-chevron {
+.fce-tag-menu .fce-tag-tree-chevron {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -355,12 +355,12 @@
   cursor: pointer;
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-chevron.is-placeholder {
+.fce-tag-menu .fce-tag-tree-chevron.is-placeholder {
   pointer-events: none;
   visibility: hidden;
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-button {
+.fce-tag-menu .fce-tag-tree-button {
   display: inline-flex;
   align-items: center;
   min-width: 0;
@@ -375,12 +375,12 @@
   outline: none;
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-button.is-selected {
+.fce-tag-menu .fce-tag-tree-button.is-selected {
   color: var(--fce-accent);
 }
 
-.folder-card-view .fce-tag-menu .fce-tag-tree-label,
-.folder-card-view .fce-tag-menu .fce-tag-tree-name {
+.fce-tag-menu .fce-tag-tree-label,
+.fce-tag-menu .fce-tag-tree-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
