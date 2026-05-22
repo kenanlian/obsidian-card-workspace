@@ -80,7 +80,11 @@ export interface ToolbarStrings {
     clear: string;
   };
   filter: {
+    title: string;
     noTagsFound: string;
+    clear: string;
+    cancel: string;
+    apply: string;
   };
 }
 
@@ -341,7 +345,11 @@ const EN: UiStrings = {
       clear: "Clear search query",
     },
     filter: {
+      title: "Tag filter",
       noTagsFound: "No tags found",
+      clear: "Clear",
+      cancel: "Cancel",
+      apply: "Apply",
     },
   },
   cardItem: {
@@ -568,7 +576,11 @@ const ZH: UiStrings = {
       clear: "清除搜索内容",
     },
     filter: {
+      title: "标签筛选",
       noTagsFound: "未找到标签",
+      clear: "清除",
+      cancel: "取消",
+      apply: "应用",
     },
   },
   cardItem: {
