@@ -2,6 +2,12 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type ToolbarStrings } from "../i18n";
+  import {
+    buildTagTree,
+    collectAncestorTagPaths,
+    flattenVisibleTagTree,
+    normalizeTagPath,
+  } from "./tag-tree";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -25,6 +31,10 @@
     source: "clear-button";
   }
 
+  interface FilterChangePayload {
+    tags: string[];
+  }
+
   interface SelectFolderPayload {
     path: string;
   }
@@ -35,6 +45,7 @@
     sortField?: string;
     sortDirection?: string;
     folderTree?: FolderTreeNode[];
+    availableTags?: string[];
     tooltipSide?: "top" | "right" | "bottom" | "left";
     activeFilterTags?: string[];
     includeSubfolders?: boolean;
@@ -53,6 +64,7 @@
     canBulkDeleteSelected?: boolean;
     canBulkMergeSelected?: boolean;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
+    onFilterChange?: (payload: FilterChangePayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
@@ -122,6 +134,7 @@
     sortField = "mtime",
     sortDirection = "desc",
     folderTree = [],
+    availableTags = [],
     tooltipSide = "right",
     activeFilterTags = [],
     includeSubfolders = true,
@@ -140,6 +153,7 @@
     canBulkDeleteSelected = false,
     canBulkMergeSelected = false,
     onToolbarAction,
+    onFilterChange,
     onSortChange,
     onIncludeSubfoldersChange,
     onSearchQueryChange,
@@ -176,13 +190,19 @@
   let folderMenuX = $state(0);
   let folderMenuY = $state(0);
   let showFolderMenu = $state(false);
+  let tagMenuX = $state(0);
+  let tagMenuY = $state(0);
+  let showTagMenu = $state(false);
   let expandedPaths = $state<Set<string>>(new Set());
+  let expandedTagPaths = $state<Set<string>>(new Set());
   let folderMenuExpandedForPath = $state<string | null>(null);
 
   let sortButtonEl: HTMLElement | null = null;
   let folderButtonEl: HTMLElement | null = null;
+  let filterButtonEl: HTMLElement | null = null;
   let folderMenuEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
+  let tagMenuEl: HTMLElement | null = null;
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
@@ -198,7 +218,8 @@
 
   const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
   const hasTagFilter = $derived(activeFilterTags.length > 0);
-  const tagSummary = $derived(strings.tagSummary(activeFilterTags.length));
+  const selectedTag = $derived(activeFilterTags[0] ?? "");
+  const selectedTagSummary = $derived(selectedTag ? strings.filter.selectedTagSummary(selectedTag) : "");
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
   const showSearchStatus = $derived(
     searchStatus === "building"
@@ -212,6 +233,8 @@
     getSearchStatusLabel(strings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
   const hasSummary = $derived(hasTagFilter || showSearchStatus);
+  const tagTree = $derived(buildTagTree(availableTags));
+  const visibleTagNodes = $derived(flattenVisibleTagTree(tagTree, expandedTagPaths));
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
     const result: FolderTreeNode[] = [];
@@ -278,14 +301,28 @@
         sortMenuY = event.clientY;
         showSortMenu = true;
         showFolderMenu = false;
+        showTagMenu = false;
       }
       return;
     }
 
     if (actionId === "filter") {
-      showSortMenu = false;
-      showFolderMenu = false;
-      onToolbarAction?.({ action: actionId });
+      if (showTagMenu) {
+        showTagMenu = false;
+      } else {
+        const anchorEl = event.currentTarget instanceof HTMLElement ? event.currentTarget : filterButtonEl;
+        if (!anchorEl) {
+          return;
+        }
+
+        const rect = anchorEl.getBoundingClientRect();
+        tagMenuX = rect.left;
+        tagMenuY = rect.bottom + 4;
+        expandedTagPaths = new Set(collectAncestorTagPaths(selectedTag));
+        showTagMenu = true;
+        showSortMenu = false;
+        showFolderMenu = false;
+      }
       return;
     }
 
@@ -297,6 +334,7 @@
         folderMenuY = event.clientY;
         showFolderMenu = true;
         showSortMenu = false;
+        showTagMenu = false;
         onToolbarAction?.({ action: actionId });
       }
       return;
@@ -304,6 +342,7 @@
 
     showSortMenu = false;
     showFolderMenu = false;
+    showTagMenu = false;
     if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
       activeToolbarAction = actionId;
     }
@@ -353,6 +392,15 @@
     };
   }
 
+  function captureFilterButton(node: HTMLElement): { destroy: () => void } {
+    filterButtonEl = node;
+    return {
+      destroy() {
+        filterButtonEl = null;
+      },
+    };
+  }
+
   function sortMenuAction(node: HTMLElement): { destroy: () => void } {
     sortMenuEl = node;
     document.body.appendChild(node);
@@ -389,6 +437,42 @@
       destroy() {
         document.removeEventListener("click", onFolderMenuClickOutside, true);
         folderMenuEl = null;
+        if (node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      },
+    };
+  }
+
+  function onTagMenuClickOutside(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Node) {
+      if (filterButtonEl && filterButtonEl.contains(target)) {
+        return;
+      }
+      if (tagMenuEl && tagMenuEl.contains(target)) {
+        return;
+      }
+    }
+    showTagMenu = false;
+  }
+
+  function onTagMenuKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      showTagMenu = false;
+    }
+  }
+
+  function tagMenuAction(node: HTMLElement): { destroy: () => void } {
+    tagMenuEl = node;
+    document.body.appendChild(node);
+    document.addEventListener("click", onTagMenuClickOutside, true);
+    document.addEventListener("keydown", onTagMenuKeydown, true);
+    return {
+      destroy() {
+        document.removeEventListener("click", onTagMenuClickOutside, true);
+        document.removeEventListener("keydown", onTagMenuKeydown, true);
+        tagMenuEl = null;
         if (node.parentNode) {
           node.parentNode.removeChild(node);
         }
@@ -440,16 +524,41 @@
     expandedPaths = next;
   }
 
+  function onTagChevronClick(event: MouseEvent, tag: string): void {
+    event.stopPropagation();
+    const next = new Set(expandedTagPaths);
+    if (next.has(tag)) {
+      next.delete(tag);
+    } else {
+      next.add(tag);
+    }
+    expandedTagPaths = next;
+  }
+
+  function selectTag(tag: string): void {
+    const normalizedTag = normalizeTagPath(tag);
+    const normalizedSelectedTag = normalizeTagPath(selectedTag);
+    onFilterChange?.({
+      tags: normalizedTag.length > 0 && normalizedTag === normalizedSelectedTag ? [] : [normalizedTag],
+    });
+    showTagMenu = false;
+  }
+
+  function clearSelectedTag(): void {
+    onFilterChange?.({ tags: [] });
+  }
+
   function toggleSearch(): void {
     searchExpanded = !searchExpanded;
-    if (searchExpanded) {
-      showSortMenu = false;
-      showFolderMenu = false;
-      tick().then(() => {
-        searchInputEl?.focus();
-      });
+      if (searchExpanded) {
+        showSortMenu = false;
+        showFolderMenu = false;
+        showTagMenu = false;
+        tick().then(() => {
+          searchInputEl?.focus();
+        });
+      }
     }
-  }
 </script>
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
@@ -496,10 +605,11 @@
         {:else if action.id === "filter"}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {activeFilterTags.length > 0 ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {(showTagMenu || activeFilterTags.length > 0) ? 'is-selected' : ''}"
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
+            use:captureFilterButton
           >
             <span class="fce-sr-only">{action.label}</span>
           </button>
@@ -560,7 +670,16 @@
     <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
       <div class="fce-toolbar-content">
         {#if hasTagFilter}
-          <span class="fce-toolbar-summary-segment"><strong>{tagSummary}</strong></span>
+          <span class="fce-toolbar-summary-segment fce-tag-summary"><strong>{selectedTagSummary}</strong></span>
+          <button
+            type="button"
+            class="clickable-icon fce-tag-clear"
+            aria-label={strings.filter.selectedTagClearLabel}
+            onclick={clearSelectedTag}
+            use:applyIcon={"x"}
+          >
+            <span class="fce-sr-only">{strings.filter.selectedTagClearLabel}</span>
+          </button>
         {/if}
         {#if showSearchStatus}
           <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
@@ -631,6 +750,48 @@
         </button>
       {/if}
     {/each}
+  </div>
+{/if}
+
+{#if showTagMenu}
+  <div
+    class="fce-tag-menu"
+    role="menu"
+    aria-label={strings.filter.title}
+    style="left: {tagMenuX}px; top: {tagMenuY}px;"
+    use:tagMenuAction
+  >
+    {#if visibleTagNodes.length === 0}
+      <div class="fce-tag-tree-empty" aria-hidden="true">{strings.filter.noTagsFound}</div>
+    {:else}
+      {#each visibleTagNodes as node}
+        {@const isSelected = normalizeTagPath(selectedTag) === node.tag}
+        <div class="fce-tag-tree-row" style="padding-left: {node.depth * 16 + 8}px;">
+          {#if node.hasChildren}
+            <button
+              type="button"
+              class="fce-tag-tree-chevron"
+              aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+              aria-expanded={expandedTagPaths.has(node.tag)}
+              onclick={(event) => onTagChevronClick(event, node.tag)}
+              use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
+            ></button>
+          {:else}
+            <span class="fce-tag-tree-chevron is-placeholder" aria-hidden="true"></span>
+          {/if}
+          <button
+            type="button"
+            class="fce-tag-tree-button {isSelected ? 'is-selected' : ''}"
+            role="menuitemcheckbox"
+            aria-checked={isSelected}
+            onclick={() => selectTag(node.tag)}
+            use:applyTooltip={`#${node.displayTag}`}
+          >
+            <span class="fce-tag-tree-label">#{node.displayTag}</span>
+          </button>
+        </div>
+      {/each}
+    {/if}
   </div>
 {/if}
 

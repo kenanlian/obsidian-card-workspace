@@ -559,6 +559,7 @@
     {folderPath}
     {sortField}
     {sortDirection}
+    availableTags={panelState.availableTags}
     {activeFilterTags}
     {folderTree}
     {includeSubfolders}
@@ -579,6 +580,7 @@
     {canBulkMergeSelected}
     onToolbarAction={handleToolbarAction}
     onSortChange={handleSortChange}
+    onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}

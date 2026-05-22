@@ -45,7 +45,6 @@ import {
   isSupportedCardFile,
 } from "./file-kind";
 import { createPanelModel, type PanelModel, type PanelModelState } from "./panel-model";
-import { TagFilterModal } from "./TagFilterModal";
 import type {
   BulkRuntimePanelState,
   CleanupResult,
@@ -703,11 +702,6 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    if (action === "filter") {
-      this.openTagFilterModal();
-      return;
-    }
-
     if (action === "new-note") {
       void this.plugin.createNoteInCurrentFolder();
       return;
@@ -741,17 +735,6 @@ export class FolderCardView extends ItemView {
     if (action === "bulk-merge-selected") {
       this.bulkMergeSelected();
     }
-  }
-
-  private openTagFilterModal(): void {
-    const modal = new TagFilterModal(this.app, {
-      availableTags: this.deriveAvailableTags(),
-      activeTags: this.plugin.getSettings().filter.tags,
-      strings: this.strings.toolbar,
-    }, (tags: string[]) => {
-      void this.onFilterChange({ tags });
-    });
-    modal.open();
   }
 
   async setFolder(folder: TFolder): Promise<SelectionResult> {
@@ -2808,10 +2791,11 @@ export class FolderCardView extends ItemView {
 
   private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
     const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
-    const nextTags = rawTags
+    const normalizedTag = rawTags
       .filter((tag): tag is string => typeof tag === "string")
       .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
-      .filter((tag) => tag.length > 0);
+      .find((tag) => tag.length > 0);
+    const nextTags = normalizedTag ? [normalizedTag] : [];
     const currentTags = this.plugin.getSettings().filter.tags;
 
     if (
