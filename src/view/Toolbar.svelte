@@ -84,6 +84,13 @@
 
   type SortMenuOption = SortOption | SortSeparatorOption;
 
+  interface PopupLifecycleOptions {
+    getButton: () => HTMLElement | null;
+    setMenu: (node: HTMLElement | null) => void;
+    close: () => void;
+    closeOnEscape?: boolean;
+  }
+
   function getSearchStatusLabel(
     strings: ToolbarStrings["searchStatus"],
     status: SearchStatus,
@@ -295,48 +302,48 @@
   function selectToolbarAction(actionId: string, event: MouseEvent): void {
     if (actionId === "sort") {
       if (showSortMenu) {
-        showSortMenu = false;
+        closeSortMenu();
       } else {
         sortMenuX = event.clientX;
         sortMenuY = event.clientY;
         showSortMenu = true;
-        showFolderMenu = false;
-        showTagMenu = false;
+        closeFolderMenu();
+        closeTagMenu();
       }
       return;
     }
 
     if (actionId === "filter") {
       if (showTagMenu) {
-        showTagMenu = false;
+        closeTagMenu();
       } else {
         tagMenuX = event.clientX;
         tagMenuY = event.clientY;
         expandedTagPaths = new Set(collectAncestorTagPaths(selectedTag));
         showTagMenu = true;
-        showSortMenu = false;
-        showFolderMenu = false;
+        closeSortMenu();
+        closeFolderMenu();
       }
       return;
     }
 
     if (actionId === "pick-folder") {
       if (showFolderMenu) {
-        showFolderMenu = false;
+        closeFolderMenu();
       } else {
         folderMenuX = event.clientX;
         folderMenuY = event.clientY;
         showFolderMenu = true;
-        showSortMenu = false;
-        showTagMenu = false;
+        closeSortMenu();
+        closeTagMenu();
         onToolbarAction?.({ action: actionId });
       }
       return;
     }
 
-    showSortMenu = false;
-    showFolderMenu = false;
-    showTagMenu = false;
+    closeSortMenu();
+    closeFolderMenu();
+    closeTagMenu();
     if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
       activeToolbarAction = actionId;
     }
@@ -344,7 +351,7 @@
   }
 
   function selectSortOption(option: SortOption): void {
-    showSortMenu = false;
+    closeSortMenu();
     if (option.field === sortField && option.direction === sortDirection) {
       return;
     }
@@ -355,59 +362,75 @@
     });
   }
 
-  function onSortMenuClickOutside(event: MouseEvent): void {
-    const target = event.target;
-    if (target instanceof Node) {
-      if (sortButtonEl && sortButtonEl.contains(target)) {
-        return;
-      }
-      if (sortMenuEl && sortMenuEl.contains(target)) {
-        return;
-      }
-    }
-    showSortMenu = false;
-  }
-
-  function captureSortButton(node: HTMLElement): { destroy: () => void } {
-    sortButtonEl = node;
-    return {
-      destroy() {
-        sortButtonEl = null;
-      },
+  function createElementCapture(assign: (node: HTMLElement | null) => void): (node: HTMLElement) => { destroy: () => void } {
+    return (node: HTMLElement) => {
+      assign(node);
+      return {
+        destroy() {
+          assign(null);
+        },
+      };
     };
   }
 
-  function captureFolderButton(node: HTMLElement): { destroy: () => void } {
-    folderButtonEl = node;
-    return {
-      destroy() {
-        folderButtonEl = null;
-      },
-    };
-  }
-
-  function captureFilterButton(node: HTMLElement): { destroy: () => void } {
-    filterButtonEl = node;
-    return {
-      destroy() {
-        filterButtonEl = null;
-      },
-    };
-  }
-
-  function sortMenuAction(node: HTMLElement): { destroy: () => void } {
-    sortMenuEl = node;
-    document.body.appendChild(node);
-    document.addEventListener("click", onSortMenuClickOutside, true);
-    return {
-      destroy() {
-        document.removeEventListener("click", onSortMenuClickOutside, true);
-        sortMenuEl = null;
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
+  function createPopupPortalAction(options: PopupLifecycleOptions): (node: HTMLElement) => { destroy: () => void } {
+    return (node: HTMLElement) => {
+      const onClickOutside = (event: MouseEvent): void => {
+        const target = event.target;
+        if (target instanceof Node) {
+          const button = options.getButton();
+          if (button && button.contains(target)) {
+            return;
+          }
+          if (node.contains(target)) {
+            return;
+          }
         }
-      },
+        options.close();
+      };
+
+      const onKeydown = (event: KeyboardEvent): void => {
+        if (event.key === "Escape") {
+          options.close();
+        }
+      };
+
+      options.setMenu(node);
+      document.body.appendChild(node);
+      document.addEventListener("click", onClickOutside, true);
+      if (options.closeOnEscape) {
+        document.addEventListener("keydown", onKeydown, true);
+      }
+
+      return {
+        destroy() {
+          document.removeEventListener("click", onClickOutside, true);
+          if (options.closeOnEscape) {
+            document.removeEventListener("keydown", onKeydown, true);
+          }
+          options.setMenu(null);
+          if (node.parentNode) {
+            node.parentNode.removeChild(node);
+          }
+        },
+      };
     };
+  }
+
+  const captureSortButton = createElementCapture((node) => {
+    sortButtonEl = node;
+  });
+
+  const captureFolderButton = createElementCapture((node) => {
+    folderButtonEl = node;
+  });
+
+  const captureFilterButton = createElementCapture((node) => {
+    filterButtonEl = node;
+  });
+
+  function closeSortMenu(): void {
+    showSortMenu = false;
   }
 
   function closeFolderMenu(): void {
@@ -418,72 +441,32 @@
     showTagMenu = false;
   }
 
-  function onTreeMenuKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      closeFolderMenu();
-      closeTagMenu();
-    }
-  }
+  const sortMenuAction = createPopupPortalAction({
+    getButton: () => sortButtonEl,
+    setMenu: (node) => {
+      sortMenuEl = node;
+    },
+    close: closeSortMenu,
+    closeOnEscape: true,
+  });
 
-  function onFolderMenuClickOutside(event: MouseEvent): void {
-    const target = event.target;
-    if (target instanceof Node) {
-      if (folderButtonEl && folderButtonEl.contains(target)) {
-        return;
-      }
-      if (folderMenuEl && folderMenuEl.contains(target)) {
-        return;
-      }
-    }
-    closeFolderMenu();
-  }
+  const folderMenuAction = createPopupPortalAction({
+    getButton: () => folderButtonEl,
+    setMenu: (node) => {
+      folderMenuEl = node;
+    },
+    close: closeFolderMenu,
+    closeOnEscape: true,
+  });
 
-  function folderMenuAction(node: HTMLElement): { destroy: () => void } {
-    folderMenuEl = node;
-    document.body.appendChild(node);
-    document.addEventListener("click", onFolderMenuClickOutside, true);
-    document.addEventListener("keydown", onTreeMenuKeydown, true);
-    return {
-      destroy() {
-        document.removeEventListener("click", onFolderMenuClickOutside, true);
-        document.removeEventListener("keydown", onTreeMenuKeydown, true);
-        folderMenuEl = null;
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-      },
-    };
-  }
-
-  function onTagMenuClickOutside(event: MouseEvent): void {
-    const target = event.target;
-    if (target instanceof Node) {
-      if (filterButtonEl && filterButtonEl.contains(target)) {
-        return;
-      }
-      if (tagMenuEl && tagMenuEl.contains(target)) {
-        return;
-      }
-    }
-    closeTagMenu();
-  }
-
-  function tagMenuAction(node: HTMLElement): { destroy: () => void } {
-    tagMenuEl = node;
-    document.body.appendChild(node);
-    document.addEventListener("click", onTagMenuClickOutside, true);
-    document.addEventListener("keydown", onTreeMenuKeydown, true);
-    return {
-      destroy() {
-        document.removeEventListener("click", onTagMenuClickOutside, true);
-        document.removeEventListener("keydown", onTreeMenuKeydown, true);
-        tagMenuEl = null;
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-      },
-    };
-  }
+  const tagMenuAction = createPopupPortalAction({
+    getButton: () => filterButtonEl,
+    setMenu: (node) => {
+      tagMenuEl = node;
+    },
+    close: closeTagMenu,
+    closeOnEscape: true,
+  });
 
   function getFolderButtonText(): string {
     if (hasFolderScope) {
@@ -561,9 +544,9 @@
   function toggleSearch(): void {
     searchExpanded = !searchExpanded;
       if (searchExpanded) {
-        showSortMenu = false;
-        showFolderMenu = false;
-        showTagMenu = false;
+        closeSortMenu();
+        closeFolderMenu();
+        closeTagMenu();
         tick().then(() => {
           searchInputEl?.focus();
         });
@@ -736,69 +719,84 @@
 
 {#if showSortMenu}
   <div
-    class="fce-sort-menu"
+    class="fce-popup-menu fce-sort-menu"
     role="menu"
+    aria-label={strings.actions.sortTitle}
     style="left: {sortMenuX}px; top: {sortMenuY}px;"
     use:sortMenuAction
   >
     {#each SORT_OPTIONS as option}
       {#if isSortSeparatorOption(option)}
-        <div class="fce-sort-menu-separator"></div>
+        <div class="fce-sort-menu-separator" role="separator" aria-hidden="true"></div>
       {:else}
         {@const selected = sortField === option.field && sortDirection === option.direction}
         <button
           type="button"
-          class="fce-sort-menu-item"
+          class="fce-popup-row fce-sort-menu-item"
           role="menuitemradio"
           aria-checked={selected}
           onclick={() => selectSortOption(option)}
         >
-          <span class="fce-sort-menu-item-label">{option.label}</span>
-          {#if selected}
-            <span class="fce-sort-menu-item-check" use:applyIcon={"check"}></span>
-          {/if}
+          <span class="fce-popup-row-leading" aria-hidden="true"></span>
+          <span class="fce-popup-row-content">
+            <span class="fce-sort-menu-item-label">{option.label}</span>
+          </span>
+          <span class="fce-popup-row-trailing" aria-hidden={!selected}>
+            {#if selected}
+              <span class="fce-popup-row-selected-indicator fce-sort-menu-item-check" use:applyIcon={"check"}></span>
+            {/if}
+          </span>
         </button>
       {/if}
     {/each}
   </div>
 {/if}
 
-  {#if showTagMenu}
+{#if showTagMenu}
   <div
-    class="fce-tag-menu fce-tree-menu"
+    class="fce-popup-menu fce-tag-menu fce-tree-menu"
     role="menu"
     aria-label={strings.filter.title}
     style="position: fixed; left: {tagMenuX}px; top: {tagMenuY}px;"
     use:tagMenuAction
   >
     {#if visibleTagNodes.length === 0}
-      <div class="fce-tree-empty" aria-hidden="true">{strings.filter.noTagsFound}</div>
+      <div class="fce-tree-empty">{strings.filter.noTagsFound}</div>
     {:else}
       {#each visibleTagNodes as node}
         {@const isSelected = normalizeTagPath(selectedTag) === node.tag}
-        <div class="fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
-          {#if node.hasChildren}
+        <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
+          <div class="fce-popup-row-leading">
+            {#if node.hasChildren}
+              <button
+                type="button"
+                class="fce-tree-chevron"
+                aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+                aria-expanded={expandedTagPaths.has(node.tag)}
+                onclick={(event) => onTagChevronClick(event, node.tag)}
+                use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
+              ></button>
+            {:else}
+              <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
+            {/if}
+          </div>
+          <div class="fce-popup-row-content">
             <button
               type="button"
-              class="fce-tree-chevron"
-              aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
-              aria-expanded={expandedTagPaths.has(node.tag)}
-              onclick={(event) => onTagChevronClick(event, node.tag)}
-              use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
-            ></button>
-          {:else}
-            <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
-          {/if}
-          <button
-            type="button"
-            class="fce-tree-button"
-            role="menuitemcheckbox"
-            aria-checked={isSelected}
-            onclick={() => selectTag(node.tag)}
-            use:applyTooltip={`#${node.displayTag}`}
-          >
-            <span class="fce-tree-label">#{node.displayTag}</span>
-          </button>
+              class="fce-tree-button"
+              role="menuitemcheckbox"
+              aria-checked={isSelected}
+              onclick={() => selectTag(node.tag)}
+              use:applyTooltip={`#${node.displayTag}`}
+            >
+              <span class="fce-tree-label">#{node.displayTag}</span>
+            </button>
+          </div>
+          <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
+            {#if isSelected}
+              <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
+            {/if}
+          </div>
         </div>
       {/each}
     {/if}
@@ -807,7 +805,7 @@
 
 {#if showFolderMenu}
   <div
-    class="fce-folder-menu fce-tree-menu"
+    class="fce-popup-menu fce-folder-menu fce-tree-menu"
     role="menu"
     aria-label={strings.folderMenu.folderScope}
     style="position: fixed; left: {folderMenuX}px; top: {folderMenuY}px;"
@@ -816,28 +814,37 @@
     {#each visibleFolderNodes as node}
       {@const hasChildren = node.children.length > 0}
       {@const isSelected = node.path === folderPath}
-      <div class="fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
-        {#if hasChildren}
+      <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
+        <div class="fce-popup-row-leading">
+          {#if hasChildren}
+            <button
+              type="button"
+              class="fce-tree-chevron"
+              aria-label={expandedPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+              aria-expanded={expandedPaths.has(node.path)}
+              onclick={(event) => onFolderChevronClick(event, node.path)}
+              use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
+            ></button>
+          {:else}
+            <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
+          {/if}
+        </div>
+        <div class="fce-popup-row-content">
           <button
             type="button"
-            class="fce-tree-chevron"
-            aria-label={expandedPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
-            aria-expanded={expandedPaths.has(node.path)}
-            onclick={(event) => onFolderChevronClick(event, node.path)}
-            use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
-          ></button>
-        {:else}
-          <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
-        {/if}
-        <button
-          type="button"
-          class="fce-tree-button"
-          role="menuitem"
-          onclick={() => selectFolder(node.path)}
-          use:applyTooltip={node.name}
-        >
-          <span class="fce-tree-label">{node.name}</span>
-        </button>
+            class="fce-tree-button"
+            role="menuitem"
+            onclick={() => selectFolder(node.path)}
+            use:applyTooltip={node.name}
+          >
+            <span class="fce-tree-label">{node.name}</span>
+          </button>
+        </div>
+        <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
+          {#if isSelected}
+            <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
+          {/if}
+        </div>
       </div>
     {/each}
   </div>

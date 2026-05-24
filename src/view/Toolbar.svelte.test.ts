@@ -184,6 +184,32 @@ async function openFolderPopup(): Promise<void> {
   await tick();
 }
 
+function getSortButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('button[aria-label="Sort cards"]');
+}
+
+async function openSortPopup(): Promise<void> {
+  const sortButton = getSortButton();
+  expect(sortButton).not.toBeNull();
+  sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
+  await tick();
+}
+
+function getSelectedSortOption(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(
+    ".fce-sort-menu button[role='menuitemradio'][aria-checked='true']",
+  );
+}
+
+function getTreeRowByText(menuSelector: string, text: string): HTMLDivElement | null {
+  return Array.from(document.querySelectorAll<HTMLDivElement>(`${menuSelector} .fce-tree-row`))
+    .find((row) => row.textContent?.includes(text)) ?? null;
+}
+
+function getSelectedTreeRow(menuSelector: string): HTMLDivElement | null {
+  return document.querySelector<HTMLDivElement>(`${menuSelector} .fce-tree-row.is-selected`);
+}
+
 describe("Toolbar.svelte", () => {
   beforeEach(() => {
     mountedComponents = [];
@@ -256,6 +282,28 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("sort popup closes on escape and outside click", async () => {
+    const { component } = mountToolbar();
+
+    await openSortPopup();
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await openSortPopup();
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
   it("renders the tag popup as a fixed portal menu", async () => {
     const { component } = mountToolbar();
 
@@ -319,6 +367,169 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(document.querySelector(".fce-folder-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders the shared trailing selected indicator across popup variants", async () => {
+    let { component } = mountToolbar();
+
+    await openSortPopup();
+
+    const selectedSortOption = getSelectedSortOption();
+    expect(selectedSortOption).not.toBeNull();
+    expect(selectedSortOption?.classList.contains("fce-popup-row")).toBe(true);
+    expect(selectedSortOption?.querySelector(".fce-popup-row-leading")).not.toBeNull();
+    expect(selectedSortOption?.querySelector(".fce-popup-row-content .fce-sort-menu-item-label")).not.toBeNull();
+    expect(selectedSortOption?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
+    expect(selectedSortOption?.querySelector(".fce-sort-menu-item-check")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      folderPath: "projects",
+      folderTree: [
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            {
+              name: "client-a",
+              path: "projects/client-a",
+              depth: 1,
+              children: [],
+            },
+          ],
+        },
+      ],
+    }));
+
+    await openFolderPopup();
+
+    const selectedFolderRow = getSelectedTreeRow(".fce-folder-menu");
+    expect(selectedFolderRow).not.toBeNull();
+    expect(selectedFolderRow?.classList.contains("fce-popup-row")).toBe(true);
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-leading")).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-content .fce-tree-button")).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-content .fce-tree-label")).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-tree-row-check")).not.toBeNull();
+    expect(selectedFolderRow?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeFilterTags: ["work/ai"] }));
+
+    await openTagPopup();
+
+    const selectedTagRow = getSelectedTreeRow(".fce-tag-menu");
+    expect(selectedTagRow).not.toBeNull();
+    expect(selectedTagRow?.classList.contains("fce-popup-row")).toBe(true);
+    expect(selectedTagRow?.querySelector(".fce-popup-row-leading")).not.toBeNull();
+    expect(selectedTagRow?.querySelector(".fce-popup-row-content .fce-tree-button[aria-checked='true']")).not.toBeNull();
+    expect(selectedTagRow?.querySelector(".fce-popup-row-content .fce-tree-label")).not.toBeNull();
+    expect(selectedTagRow?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
+    expect(selectedTagRow?.querySelector(".fce-tree-row-check")).not.toBeNull();
+    expect(selectedTagRow?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders placeholder leading slots for non-expandable tree rows", async () => {
+    let { component } = mountToolbar({
+      folderPath: "projects",
+      folderTree: [
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            {
+              name: "client-a",
+              path: "projects/client-a",
+              depth: 1,
+              children: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await openFolderPopup();
+
+    const expandableFolderRow = getTreeRowByText(".fce-folder-menu", "projects");
+    expect(expandableFolderRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron[aria-expanded]")).not.toBeNull();
+
+    const folderChevron = expandableFolderRow?.querySelector<HTMLButtonElement>(".fce-popup-row-leading .fce-tree-chevron[aria-expanded]");
+    folderChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const folderLeafRow = getTreeRowByText(".fce-folder-menu", "client-a");
+    expect(folderLeafRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron.is-placeholder")).not.toBeNull();
+    expect(folderLeafRow?.querySelector(".fce-popup-row-content .fce-tree-button")).not.toBeNull();
+    expect(folderLeafRow?.querySelector(".fce-popup-row-trailing")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar());
+
+    await openTagPopup();
+
+    const expandableTagRow = getTreeRowByText(".fce-tag-menu", "#work");
+    expect(expandableTagRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron[aria-expanded]")).not.toBeNull();
+
+    const tagChevron = expandableTagRow?.querySelector<HTMLButtonElement>(".fce-popup-row-leading .fce-tree-chevron[aria-expanded]");
+    tagChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const tagLeafRow = getTreeRowByText(".fce-tag-menu", "#work/ai");
+    expect(tagLeafRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron.is-placeholder")).not.toBeNull();
+    expect(tagLeafRow?.querySelector(".fce-popup-row-content .fce-tree-button")).not.toBeNull();
+    expect(tagLeafRow?.querySelector(".fce-popup-row-trailing")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("preserves truncation and trailing indicator for long popup labels", async () => {
+    const longFolderName = "projects-with-a-very-long-folder-label-that-should-truncate-in-the-label-slot";
+    const longTagPath = "labels-with-a-very-long-tag-path-that-should-truncate-in-the-label-slot";
+
+    let { component } = mountToolbar({
+      folderPath: longFolderName,
+      folderTree: [
+        {
+          name: longFolderName,
+          path: longFolderName,
+          depth: 0,
+          children: [],
+        },
+      ],
+    });
+
+    await openFolderPopup();
+
+    const selectedFolderRow = getSelectedTreeRow(".fce-folder-menu");
+    const selectedFolderLabel = selectedFolderRow?.querySelector<HTMLSpanElement>(".fce-tree-label");
+    expect(selectedFolderLabel?.textContent).toBe(longFolderName);
+    expect(selectedFolderLabel?.parentElement).toBe(selectedFolderRow?.querySelector(".fce-popup-row-content .fce-tree-button"));
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron")).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
+    expect(selectedFolderRow?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeFilterTags: [longTagPath], availableTags: [longTagPath] }));
+
+    await openTagPopup();
+
+    const selectedTagRow = getSelectedTreeRow(".fce-tag-menu");
+    const selectedTagLabel = selectedTagRow?.querySelector<HTMLSpanElement>(".fce-tree-label");
+    expect(selectedTagLabel?.textContent).toBe(`#${longTagPath}`);
+    expect(selectedTagLabel?.parentElement).toBe(selectedTagRow?.querySelector(".fce-popup-row-content .fce-tree-button"));
+    expect(selectedTagRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron")).not.toBeNull();
+    expect(selectedTagRow?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
+    expect(selectedTagRow?.classList.contains("is-selected")).toBe(true);
 
     await disposeMountedComponent(component);
   });
@@ -415,6 +626,51 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("exposes a menu-level accessible name for sort popup", async () => {
+    const { component } = mountToolbar();
+
+    await openSortPopup();
+
+    const sortMenu = document.querySelector<HTMLElement>(".fce-sort-menu");
+    expect(sortMenu).not.toBeNull();
+    expect(sortMenu?.getAttribute("aria-label")).toBe(getToolbarStrings("en").actions.sortTitle);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps exactly one popup open when buttons are clicked in sequence", async () => {
+    let { component } = mountToolbar();
+
+    await openFolderPopup();
+    expect(document.querySelectorAll(".fce-folder-menu, .fce-sort-menu, .fce-tag-menu")).toHaveLength(1);
+    expect(document.querySelector(".fce-folder-menu")).not.toBeNull();
+
+    await openSortPopup();
+    expect(document.querySelectorAll(".fce-folder-menu, .fce-sort-menu, .fce-tag-menu")).toHaveLength(1);
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    await openTagPopup();
+    expect(document.querySelectorAll(".fce-folder-menu, .fce-sort-menu, .fce-tag-menu")).toHaveLength(1);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+    expect(document.querySelector(".fce-tag-menu")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar());
+
+    await openSortPopup();
+    expect(document.querySelectorAll(".fce-folder-menu, .fce-sort-menu, .fce-tag-menu")).toHaveLength(1);
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    await openFolderPopup();
+    expect(document.querySelectorAll(".fce-folder-menu, .fce-sort-menu, .fce-tag-menu")).toHaveLength(1);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+    expect(document.querySelector(".fce-folder-menu")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
   it("emits include-subfolders-change and folder/toolbar actions", async () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
@@ -441,6 +697,38 @@ describe("Toolbar.svelte", () => {
     expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
     expect(captured.toolbarActionEvents).toContainEqual({ action: "pick-folder" });
     expect(captured.toolbarActionEvents).toContainEqual({ action: "all-notes" });
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits the pick-folder toolbar action before folder selection", async () => {
+    const order: string[] = [];
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({}, {
+      ...captured.callbacks,
+      onToolbarAction: (payload) => {
+        captured.toolbarActionEvents.push(payload);
+        order.push(`toolbar:${payload.action}`);
+      },
+      onSelectFolder: (payload) => {
+        captured.selectFolderEvents.push(payload);
+        order.push(`folder:${payload.path}`);
+      },
+    });
+
+    const pickFolderButton = document.querySelector<HTMLButtonElement>('button[aria-label="Folder scope"]');
+    expect(pickFolderButton).not.toBeNull();
+    pickFolderButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
+    await tick();
+
+    const folderItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-folder-menu .fce-tree-button"));
+    const projectsItem = folderItems.find((item) => item.textContent?.includes("projects"));
+    expect(projectsItem).not.toBeUndefined();
+    projectsItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.toolbarActionEvents).toEqual([{ action: "pick-folder" }]);
+    expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
+    expect(order).toEqual(["toolbar:pick-folder", "folder:projects"]);
 
     await disposeMountedComponent(component);
   });
