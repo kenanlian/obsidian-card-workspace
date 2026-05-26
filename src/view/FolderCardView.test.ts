@@ -409,7 +409,7 @@ describe("FolderCardView host contract", () => {
       includeSubfolders: true,
     }));
     view.app.metadataCache.getFileCache = vi.fn(() => ({
-      tags: [{ tag: "#Work/AI", position: { start: { col: 0, line: 0, offset: 0 }, end: { col: 8, line: 0, offset: 8 } } }],
+      tags: [{ tag: "#Work/AI/harness", position: { start: { col: 0, line: 0, offset: 0 }, end: { col: 16, line: 0, offset: 16 } } }],
     }));
 
     (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
@@ -428,14 +428,26 @@ describe("FolderCardView host contract", () => {
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
-    const nestedNode = getTagNode("Work/AI");
+    const nestedNode = getTagNode("AI");
     expect(nestedNode).not.toBeUndefined();
-    nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(getTagNode("Work/AI")).toBeUndefined();
+
+    const nestedChevron = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-chevron"))
+      .find((button) => button.getAttribute("aria-label") === "Expand");
+    expect(nestedChevron).not.toBeUndefined();
+    nestedChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const leafNode = getTagNode("harness");
+    expect(leafNode).not.toBeUndefined();
+    expect(getTagNode("Work/AI/harness")).toBeUndefined();
+
+    leafNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       filter: {
-        tags: ["work/ai"],
+        tags: ["work/ai/harness"],
       },
     });
   });
@@ -469,7 +481,7 @@ describe("FolderCardView host contract", () => {
 
     await openTagPopup(panelContainer);
 
-    const nestedNode = getTagNode("Work/AI");
+    const nestedNode = getTagNode("AI");
     expect(nestedNode).not.toBeUndefined();
     expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

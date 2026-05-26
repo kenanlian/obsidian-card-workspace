@@ -820,7 +820,7 @@
               onclick={() => selectTag(node.tag)}
               use:applyTooltip={node.displayTag}
             >
-              <span class="fce-tree-label">{node.displayTag}</span>
+              <span class="fce-tree-label">{node.label}</span>
             </button>
           </div>
           <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
