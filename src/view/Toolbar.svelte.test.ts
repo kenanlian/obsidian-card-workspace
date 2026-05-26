@@ -75,7 +75,7 @@ function createFolderTree(): FolderTreeNode[] {
 }
 
 function createAvailableTags(): string[] {
-  return ["work/ai", "work/ml", "personal"];
+  return ["Work/AI", "work/ml", "Personal"];
 }
 
 function createCapturedCallbacks(): CapturedCallbacks {
@@ -236,11 +236,12 @@ describe("Toolbar.svelte", () => {
     expect(filterButton?.className).toContain("is-selected");
 
     const workNodeBeforeExpand = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
-      .find((button) => button.textContent?.includes("#work"));
+      .find((button) => button.textContent?.includes("Work"));
     expect(workNodeBeforeExpand).not.toBeUndefined();
+    expect(workNodeBeforeExpand?.textContent).not.toContain("#");
     expect(workNodeBeforeExpand?.getAttribute("aria-checked")).toBe("false");
     expect(Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
-      .some((button) => button.textContent?.includes("#work/ai"))).toBe(false);
+      .some((button) => button.textContent?.includes("Work/AI"))).toBe(false);
 
     const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-chevron[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
@@ -248,7 +249,7 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
-      .find((button) => button.textContent?.includes("#work/ai"));
+      .find((button) => button.textContent?.includes("Work/AI"));
     expect(nestedNode).not.toBeUndefined();
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
@@ -528,7 +529,7 @@ describe("Toolbar.svelte", () => {
 
     const selectedTagRow = getSelectedTreeRow(".fce-tag-menu");
     const selectedTagLabel = selectedTagRow?.querySelector<HTMLSpanElement>(".fce-tree-label");
-    expect(selectedTagLabel?.textContent).toBe(`#${longTagPath}`);
+    expect(selectedTagLabel?.textContent).toBe(longTagPath);
     expect(selectedTagLabel?.parentElement).toBe(selectedTagRow?.querySelector(".fce-popup-row-content .fce-tree-button"));
     expect(selectedTagRow?.querySelector(".fce-popup-row-leading .fce-tree-chevron")).not.toBeNull();
     expect(selectedTagRow?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
@@ -570,7 +571,7 @@ describe("Toolbar.svelte", () => {
     await openTagPopup();
 
     const nestedNode = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
-      .find((button) => button.textContent?.includes("#work/ai"));
+      .find((button) => button.textContent?.includes("Work/AI"));
     expect(nestedNode).not.toBeUndefined();
     expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

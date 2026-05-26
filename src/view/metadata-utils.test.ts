@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { getAllTags } from "obsidian";
-import { matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
+import { collectAllTags, matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
 
 function createMockFile(basename: string): TFile {
   return {
@@ -83,5 +83,21 @@ describe("matchesTagFilter", () => {
 
     expect(matchesTagFilter(app, file, ["领域", "project/active"])).toBe(true);
     expect(matchesTagFilter(app, file, ["领域", "project/archived"])).toBe(false);
+  });
+});
+describe("collectAllTags", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("preserves display casing, removes leading hashes, and deduplicates by normalized tag", () => {
+    const app = createMockApp();
+    const files = [createMockFile("Alpha"), createMockFile("Beta")];
+
+    getAllTagsMock
+      .mockReturnValueOnce(["#Work/AI", "#Project"])
+      .mockReturnValueOnce(["#work/ai", "#personal"]);
+
+    expect(collectAllTags(app, files)).toEqual(["personal", "Project", "Work/AI"]);
   });
 });

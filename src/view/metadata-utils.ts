@@ -6,6 +6,20 @@ import { normalizeTagPath, tagPathMatchesFilter } from "./tag-tree";
 // Tag extraction
 // ---------------------------------------------------------------------------
 
+function getDisplayTag(value: string): string {
+  return value
+    .trim()
+    .replace(/^#/, "")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+    .join("/");
+}
+
+function shouldReplaceDisplayTag(currentDisplayTag: string, nextDisplayTag: string): boolean {
+  return nextDisplayTag < currentDisplayTag;
+}
+
 /**
  * Return all tags for a file (both frontmatter and inline), normalized to
  * lowercase with leading `#` stripped. Returns `[]` if no cache or tags.
@@ -31,22 +45,37 @@ export function getFileTags(app: App, file: TFile): string[] {
 }
 
 /**
- * Collect all unique tags across a set of files. Returns a sorted array
- * of normalized tags (lowercase, no `#`). Useful for building a tag filter UI.
+ * Collect all unique tags across a set of files. Returns a sorted array of
+ * display tags without a leading `#`, while deduplicating by normalized tag
+ * path. Useful for building a tag filter UI.
  */
 export function collectAllTags(app: App, files: TFile[]): string[] {
-  const tagSet = new Set<string>();
+  const displayTagsByNormalizedTag = new Map<string, string>();
 
   for (const file of files) {
-    const tags = getFileTags(app, file);
-    for (const tag of tags) {
-      tagSet.add(tag);
+    const cache = app.metadataCache.getFileCache(file);
+    const rawTags = cache ? getAllTags(cache) : null;
+    if (!rawTags || rawTags.length === 0) {
+      continue;
+    }
+
+    for (const rawTag of rawTags) {
+      const normalizedTag = normalizeTagPath(rawTag);
+      const displayTag = getDisplayTag(rawTag);
+      if (normalizedTag.length === 0 || displayTag.length === 0) {
+        continue;
+      }
+
+      const currentDisplayTag = displayTagsByNormalizedTag.get(normalizedTag);
+      if (!currentDisplayTag || shouldReplaceDisplayTag(currentDisplayTag, displayTag)) {
+        displayTagsByNormalizedTag.set(normalizedTag, displayTag);
+      }
     }
   }
 
-  const result = Array.from(tagSet);
-  result.sort((a, b) => a.localeCompare(b));
-  return result;
+  return Array.from(displayTagsByNormalizedTag.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, displayTag]) => displayTag);
 }
 
 /**

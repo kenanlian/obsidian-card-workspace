@@ -7,6 +7,7 @@
     collectAncestorTagPaths,
     flattenVisibleTagTree,
     normalizeTagPath,
+    type TagTreeNode,
   } from "./tag-tree";
   import type { FolderTreeNode, SearchStatus } from "./types";
 
@@ -229,7 +230,6 @@
   const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
   const hasTagFilter = $derived(activeFilterTags.length > 0);
   const selectedTag = $derived(activeFilterTags[0] ?? "");
-  const selectedTagSummary = $derived(selectedTag ? strings.filter.selectedTagSummary(selectedTag) : "");
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
   const showSearchStatus = $derived(
     searchStatus === "building"
@@ -244,7 +244,32 @@
   );
   const hasSummary = $derived(hasTagFilter || showSearchStatus);
   const tagTree = $derived(buildTagTree(availableTags));
+  const selectedTagDisplay = $derived(findDisplayTag(tagTree, selectedTag) ?? selectedTag);
+  const selectedTagSummary = $derived(selectedTagDisplay ? strings.filter.selectedTagSummary(selectedTagDisplay) : "");
   const visibleTagNodes = $derived(flattenVisibleTagTree(tagTree, expandedTagPaths));
+
+  function findDisplayTag(nodes: TagTreeNode[], tag: string): string | null {
+    const normalizedTag = normalizeTagPath(tag);
+    if (normalizedTag.length === 0) {
+      return null;
+    }
+
+    const pendingNodes = [...nodes];
+    while (pendingNodes.length > 0) {
+      const node = pendingNodes.shift();
+      if (!node) {
+        continue;
+      }
+
+      if (node.tag === normalizedTag) {
+        return node.displayTag;
+      }
+
+      pendingNodes.push(...node.children);
+    }
+
+    return null;
+  }
 
   function flattenVisibleTree(tree: FolderTreeNode[], expanded: Set<string>): FolderTreeNode[] {
     const result: FolderTreeNode[] = [];
@@ -793,9 +818,9 @@
               role="menuitemcheckbox"
               aria-checked={isSelected}
               onclick={() => selectTag(node.tag)}
-              use:applyTooltip={`#${node.displayTag}`}
+              use:applyTooltip={node.displayTag}
             >
-              <span class="fce-tree-label">#{node.displayTag}</span>
+              <span class="fce-tree-label">{node.displayTag}</span>
             </button>
           </div>
           <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>

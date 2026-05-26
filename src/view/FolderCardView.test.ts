@@ -420,15 +420,15 @@ describe("FolderCardView host contract", () => {
     await openTagPopup(panelContainer);
 
     expect(getFilterButton(panelContainer)?.className).toContain("is-selected");
-    expect(getTagNode("#work")).not.toBeUndefined();
-    expect(getTagNode("#work/ai")).toBeUndefined();
+    expect(getTagNode("Work")).not.toBeUndefined();
+    expect(getTagNode("Work/AI")).toBeUndefined();
 
     const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-chevron[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
-    const nestedNode = getTagNode("#work/ai");
+    const nestedNode = getTagNode("Work/AI");
     expect(nestedNode).not.toBeUndefined();
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
@@ -465,11 +465,11 @@ describe("FolderCardView host contract", () => {
     (view as any).pushState();
     await tick();
 
-    expect(panelContainer.textContent).toContain("work/ai tag selected");
+    expect(panelContainer.textContent).toContain("Work/AI tag selected");
 
     await openTagPopup(panelContainer);
 
-    const nestedNode = getTagNode("#work/ai");
+    const nestedNode = getTagNode("Work/AI");
     expect(nestedNode).not.toBeUndefined();
     expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -479,7 +479,7 @@ describe("FolderCardView host contract", () => {
     await tick();
 
     expect(settings.filter.tags).toEqual([]);
-    expect(panelContainer.textContent).not.toContain("work/ai tag selected");
+    expect(panelContainer.textContent).not.toContain("Work/AI tag selected");
     expect(document.querySelector(".fce-tag-menu")).toBeNull();
   });
 
