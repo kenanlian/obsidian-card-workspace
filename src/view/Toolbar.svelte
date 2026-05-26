@@ -167,6 +167,9 @@
     onSearchQueryReset,
     onSelectFolder,
   }: ToolbarProps = $props();
+  const folderScopeButtonId = "fce-folder-scope-button";
+  const sortButtonId = "fce-sort-button";
+  const tagFilterButtonId = "fce-tag-filter-button";
 
   const SORT_OPTIONS = $derived<SortMenuOption[]>([
     { field: "mtime", direction: "desc", label: strings.sortOptions.mtimeDesc },
@@ -562,6 +565,7 @@
           <button
             type="button"
             class="fce-folder-button {showFolderMenu || hasFolderScope ? 'is-selected' : ''}"
+            id={folderScopeButtonId}
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:captureFolderButton
@@ -588,6 +592,7 @@
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+            id={sortButtonId}
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
@@ -599,6 +604,7 @@
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {(showTagMenu || activeFilterTags.length > 0) ? 'is-selected' : ''}"
+            id={tagFilterButtonId}
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}
@@ -721,7 +727,7 @@
   <div
     class="fce-popup-menu fce-sort-menu"
     role="menu"
-    aria-label={strings.actions.sortTitle}
+    aria-labelledby={sortButtonId}
     style="left: {sortMenuX}px; top: {sortMenuY}px;"
     use:sortMenuAction
   >
@@ -756,7 +762,7 @@
   <div
     class="fce-popup-menu fce-tag-menu fce-tree-menu"
     role="menu"
-    aria-label={strings.filter.title}
+    aria-labelledby={tagFilterButtonId}
     style="position: fixed; left: {tagMenuX}px; top: {tagMenuY}px;"
     use:tagMenuAction
   >
@@ -807,7 +813,7 @@
   <div
     class="fce-popup-menu fce-folder-menu fce-tree-menu"
     role="menu"
-    aria-label={strings.folderMenu.folderScope}
+    aria-labelledby={folderScopeButtonId}
     style="position: fixed; left: {folderMenuX}px; top: {folderMenuY}px;"
     use:folderMenuAction
   >

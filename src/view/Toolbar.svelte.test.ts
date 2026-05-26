@@ -265,6 +265,9 @@ describe("Toolbar.svelte", () => {
 
     await openTagPopup();
     expect(document.querySelector(".fce-tag-menu")).not.toBeNull();
+    const tagMenu = document.querySelector<HTMLElement>(".fce-tag-menu");
+    expect(tagMenu?.getAttribute("aria-labelledby")).toBe("fce-tag-filter-button");
+    expect(tagMenu?.hasAttribute("aria-label")).toBe(false);
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await tick();
@@ -344,8 +347,8 @@ describe("Toolbar.svelte", () => {
     const folderMenu = document.querySelector<HTMLElement>(".fce-folder-menu.fce-tree-menu");
     expect(folderMenu).not.toBeNull();
     expect(folderMenu?.parentElement).toBe(document.body);
-    expect(folderMenu?.getAttribute("aria-label")).toBe("Folder scope");
-
+    expect(folderMenu?.getAttribute("aria-labelledby")).toBe("fce-folder-scope-button");
+    expect(folderMenu?.hasAttribute("aria-label")).toBe(false);
     const selectedRow = folderMenu?.querySelector<HTMLElement>(".fce-tree-row.is-selected");
     expect(selectedRow?.textContent).toContain("projects");
 
@@ -606,6 +609,19 @@ describe("Toolbar.svelte", () => {
     expect(removeEventListenerSpy).toHaveBeenCalledWith("keydown", expect.any(Function), true);
   });
 
+  it("exposes a menu-level accessible name for tag popup through its trigger button", async () => {
+    const { component } = mountToolbar();
+
+    await openTagPopup();
+
+    const tagMenu = document.querySelector<HTMLElement>(".fce-tag-menu");
+    expect(tagMenu).not.toBeNull();
+    expect(tagMenu?.getAttribute("aria-labelledby")).toBe("fce-tag-filter-button");
+    expect(tagMenu?.hasAttribute("aria-label")).toBe(false);
+
+    await disposeMountedComponent(component);
+  });
+
   it("emits sort-change with selected field and direction", async () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
@@ -626,15 +642,15 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("exposes a menu-level accessible name for sort popup", async () => {
+  it("exposes a menu-level accessible name for sort popup through its trigger button", async () => {
     const { component } = mountToolbar();
 
     await openSortPopup();
 
     const sortMenu = document.querySelector<HTMLElement>(".fce-sort-menu");
     expect(sortMenu).not.toBeNull();
-    expect(sortMenu?.getAttribute("aria-label")).toBe(getToolbarStrings("en").actions.sortTitle);
-
+    expect(sortMenu?.getAttribute("aria-labelledby")).toBe("fce-sort-button");
+    expect(sortMenu?.hasAttribute("aria-label")).toBe(false);
     await disposeMountedComponent(component);
   });
 
