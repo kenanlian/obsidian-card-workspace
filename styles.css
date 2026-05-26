@@ -353,8 +353,9 @@
 }
 
 .fce-tree-menu .fce-popup-row {
-  padding-block: var(--size-2-2, 4px);
-  padding-inline-end: var(--size-4-4, 16px);
+  min-height: 24px;
+  padding-block: 2px;
+  padding-inline-end: 12px;
 }
 
 .fce-tree-menu .fce-tree-row.is-selected {
