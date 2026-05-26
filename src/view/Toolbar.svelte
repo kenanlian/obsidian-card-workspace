@@ -587,19 +587,21 @@
     <div class="fce-toolbar-buttons">
       {#each TOOLBAR_ACTIONS as action}
         {#if action.id === "pick-folder"}
-          <button
-            type="button"
-            class="fce-folder-button {showFolderMenu || hasFolderScope ? 'is-selected' : ''}"
-            id={folderScopeButtonId}
-            aria-label={action.title}
-            onclick={(event) => selectToolbarAction(action.id, event)}
-            use:captureFolderButton
-          >
-            <span class="fce-folder-button-text">
-              {getFolderButtonText()}
-            </span>
-            <span use:applyIcon={"chevron-down"}></span>
-          </button>
+          <div class="fce-toolbar-folder-group">
+            <button
+              type="button"
+              class="fce-folder-button {showFolderMenu || hasFolderScope ? 'is-selected' : ''}"
+              id={folderScopeButtonId}
+              aria-label={action.title}
+              onclick={(event) => selectToolbarAction(action.id, event)}
+              use:captureFolderButton
+            >
+              <span class="fce-folder-button-text">
+                {getFolderButtonText()}
+              </span>
+              <span class="fce-folder-button-chevron" use:applyIcon={"chevron-down"}></span>
+            </button>
+          </div>
           {#if hasFolderScope}
             <button
               type="button"

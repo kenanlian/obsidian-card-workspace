@@ -791,6 +791,31 @@ describe("Toolbar.svelte", () => {
     
     await disposeMountedComponent(component);
   });
+  it("wraps only the folder scope button in a shrinkable group so the label truncates before toolbar overflow", async () => {
+    const longFolderName = "projects-with-a-very-long-folder-label-that-should-shrink-before-toolbar-overflow";
+    const { component } = mountToolbar({
+      folderPath: longFolderName,
+      folderTree: [
+        {
+          name: longFolderName,
+          path: longFolderName,
+          depth: 0,
+          children: [],
+        },
+      ],
+    });
+
+    const folderGroup = document.querySelector<HTMLDivElement>(".fce-toolbar-folder-group");
+    expect(folderGroup).not.toBeNull();
+    const folderButton = folderGroup?.querySelector<HTMLButtonElement>('button[aria-label="Folder scope"]');
+    expect(folderButton).not.toBeNull();
+    expect(folderButton?.querySelector(".fce-folder-button-text")?.textContent?.trim()).toBe(longFolderName);
+    expect(folderButton?.querySelector(".fce-folder-button-chevron")).not.toBeNull();
+    expect(folderGroup?.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
+    expect(folderGroup?.nextElementSibling?.getAttribute("aria-label")).toBe("Including subfolders");
+
+    await disposeMountedComponent(component);
+  });
 
   it("renders search as a toggleable first-row control and autofocuses when expanded", async () => {
     const { component } = mountToolbar();
@@ -1130,6 +1155,7 @@ describe("Toolbar.svelte", () => {
     expect(subfoldersToggle?.getAttribute("data-tooltip")).toBe("Including subfolders");
 
     const buttonsRow = document.querySelector<HTMLDivElement>(".fce-toolbar-buttons");
+    expect(buttonsRow?.firstElementChild?.classList.contains("fce-toolbar-folder-group")).toBe(true);
     expect(buttonsRow?.children[1]).toBe(subfoldersToggle);
 
     await disposeMountedComponent(component);

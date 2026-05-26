@@ -24,6 +24,7 @@
   --fce-preview-font-size: var(--font-ui-small, 13px);
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
+  --fce-toolbar-folder-button-min-width: 40px;
 }
 
 .folder-card-view .fce-shell {
@@ -51,6 +52,37 @@
   gap: 2px;
   padding: 6px;
   overflow-x: auto;
+}
+.folder-card-view .fce-toolbar-folder-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: var(--fce-toolbar-folder-button-min-width);
+}
+
+.folder-card-view .fce-folder-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: var(--fce-toolbar-folder-button-min-width);
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.folder-card-view .fce-folder-button-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.folder-card-view .fce-folder-button-chevron {
+  flex: 0 0 auto;
 }
 
 .folder-card-view .fce-toolbar-button {
