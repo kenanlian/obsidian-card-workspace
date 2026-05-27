@@ -697,11 +697,6 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    if (action === "all-notes") {
-      void this.plugin.selectAllNotes();
-      return;
-    }
-
     if (action === "new-note") {
       void this.plugin.createNoteInCurrentFolder();
       return;

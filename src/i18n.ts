@@ -43,8 +43,6 @@ export interface ToolbarStrings {
     pickFolder: string;
     pickFolderTitle: string;
     selectFolder: string;
-    allNotes: string;
-    allNotesTitle: string;
     newNote: string;
     newNoteTitle: string;
     sort: string;
@@ -311,8 +309,6 @@ const EN: UiStrings = {
       pickFolder: "Pick folder",
       pickFolderTitle: "Folder scope",
       selectFolder: "Select folder",
-      allNotes: "All notes",
-      allNotesTitle: "All notes",
       newNote: "New",
       newNoteTitle: "Create note",
       sort: "Sort",
@@ -545,8 +541,6 @@ const ZH: UiStrings = {
       pickFolder: "选择文件夹",
       pickFolderTitle: "文件夹范围",
       selectFolder: "选择文件夹",
-      allNotes: "全部笔记",
-      allNotesTitle: "全部笔记",
       newNote: "新建",
       newNoteTitle: "新建笔记",
       sort: "排序",

@@ -182,9 +182,8 @@
 
   const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
     { id: "pick-folder", label: strings.actions.pickFolder, title: strings.actions.pickFolderTitle, icon: "folder-open" },
-    { id: "all-notes", label: strings.actions.allNotes, title: strings.actions.allNotesTitle, icon: "library" },
-    { id: "new-note", label: strings.actions.newNote, title: strings.actions.newNoteTitle, icon: "file-plus" },
-    { id: "sort", label: strings.actions.sort, title: strings.actions.sortTitle, icon: "arrow-up-down" },
+    { id: "new-note", label: strings.actions.newNote, title: strings.actions.newNoteTitle, icon: "square-pen" },
+    { id: "sort", label: strings.actions.sort, title: strings.actions.sortTitle, icon: "arrow-up-narrow-wide" },
     { id: "filter", label: strings.actions.filter, title: strings.actions.filterTitle, icon: "tags" },
     { id: "bulk", label: strings.actions.bulk, title: strings.actions.bulkTitle, icon: "check-check" },
   ]);
@@ -657,7 +656,7 @@
         {:else}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {(action.id === 'all-notes' ? isAllNotesScope : action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
             aria-label={action.title}
             onclick={(event) => selectToolbarAction(action.id, event)}
             use:applyIcon={action.icon}

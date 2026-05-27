@@ -757,7 +757,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("emits include-subfolders-change and folder/toolbar actions", async () => {
+  it("emits include-subfolders-change and folder selection actions", async () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
 
@@ -775,14 +775,9 @@ describe("Toolbar.svelte", () => {
     expect(projectsItem).not.toBeUndefined();
     projectsItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    const allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
-    expect(allNotesButton).not.toBeNull();
-    allNotesButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
     expect(captured.includeEvents).toEqual([{ value: false }]);
     expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
     expect(captured.toolbarActionEvents).toContainEqual({ action: "pick-folder" });
-    expect(captured.toolbarActionEvents).toContainEqual({ action: "all-notes" });
 
     await disposeMountedComponent(component);
   });
@@ -821,27 +816,30 @@ describe("Toolbar.svelte", () => {
 
   it("renders first-row controls in the exact sequence with Subfolders after Folder scope", async () => {
     const { component } = mountToolbar();
-    
+
     const buttonsRow = document.querySelector<HTMLDivElement>(".fce-toolbar-buttons");
     expect(buttonsRow).not.toBeNull();
-    
+
     const buttons = Array.from(buttonsRow?.querySelectorAll("button") || []);
     const expectedLabels = [
       "Folder scope",
       "Including subfolders",
-      "All notes",
       "Create note",
       "Sort cards",
       "Tag filter",
       "Bulk actions",
       "Toggle search"
     ];
-    
-    expect(buttons.length).toBeGreaterThanOrEqual(8);
+
+    expect(buttons.length).toBeGreaterThanOrEqual(7);
     for (let i = 0; i < expectedLabels.length; i += 1) {
       expect(buttons[i].getAttribute("aria-label")).toBe(expectedLabels[i]);
     }
-    
+    expect(document.querySelector('button[aria-label="All notes"]')).toBeNull();
+    await tick();
+    expect(document.querySelector<HTMLButtonElement>('button[aria-label="Create note"]')?.getAttribute("data-icon")).toBe("square-pen");
+    expect(document.querySelector<HTMLButtonElement>('button[aria-label="Sort cards"]')?.getAttribute("data-icon")).toBe("arrow-up-narrow-wide");
+
     await disposeMountedComponent(component);
   });
   it("wraps only the folder scope button in a shrinkable group so the label truncates before toolbar overflow", async () => {
@@ -1069,19 +1067,10 @@ describe("Toolbar.svelte", () => {
     }
   });
 
-  it("keeps all-notes, filter, and bulk buttons highlighted while their state is active", async () => {
+  it("keeps filter and bulk buttons highlighted while their state is active", async () => {
     let { component } = mountToolbar({
-      isAllNotesScope: true,
-      folderPath: "",
-    });
-
-    let allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
-    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
-    await disposeMountedComponent(component);
-
-    ({ component } = mountToolbar({
       activeFilterTags: ["work"],
-    }));
+    });
     await tick();
 
     let filterButton = document.querySelector<HTMLButtonElement>('button[aria-label="Tag filter"]');
@@ -1111,28 +1100,6 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([{ action: "new-note" }]);
-    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
-
-    const allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
-    expect(allNotesButton?.classList.contains("is-selected")).toBe(false);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("keeps all-notes highlighted when create-note emits inside the all-notes scope", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({ isAllNotesScope: true, folderPath: "" }, captured.callbacks);
-
-    const allNotesButton = document.querySelector<HTMLButtonElement>('button[aria-label="All notes"]');
-    const createNoteButton = document.querySelector<HTMLButtonElement>('button[aria-label="Create note"]');
-    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
-    expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
-
-    createNoteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(captured.toolbarActionEvents).toEqual([{ action: "new-note" }]);
-    expect(allNotesButton?.classList.contains("is-selected")).toBe(true);
     expect(createNoteButton?.classList.contains("is-selected")).toBe(false);
 
     await disposeMountedComponent(component);

@@ -1788,17 +1788,6 @@ describe("FolderCardView card context actions", () => {
         expect(plugin.selectFolderByPath).toHaveBeenCalledWith("projects/archive", "panel-picker");
       });
 
-      it("toolbar-action all-notes routes to plugin.selectAllNotes exactly once", async () => {
-        const { view, plugin } = createViewWithFile("notes/all-notes-action.md");
-
-        await (view as any).onOpen();
-
-        const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-        toolbarActionHandler({ detail: { action: "all-notes" } });
-
-        expect(plugin.selectAllNotes).toHaveBeenCalledTimes(1);
-        expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
-      });
 
       it("hydrate-range subscription forwards visible window to hydrateRange", async () => {
         const { view, app, file } = createViewWithFile("notes/hydrate-range.md");
@@ -3503,7 +3492,7 @@ describe("FolderCardView card context actions", () => {
       expect(mockState.menuInstances[0]?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
     });
 
-    it("keeps filter, pin, include-subfolders, and all-notes toolbar actions functional after bulk mode toggles", async () => {
+    it("keeps filter, pin, and include-subfolders toolbar actions functional after bulk mode toggles", async () => {
       const { view, plugin } = createViewWithFile("projects/active/phase2-toggle.md");
 
       (view as any).folderPath = "projects/active";
@@ -3521,7 +3510,6 @@ describe("FolderCardView card context actions", () => {
       filterChangeHandler({ detail: { tags: ["#Work"] } });
       pinToggleHandler({ detail: { path: "projects/active/phase2-toggle.md", pinned: true } });
       includeSubfoldersHandler({ detail: { value: false } });
-      toolbarActionHandler({ detail: { action: "all-notes" } });
       await flushAsyncWork();
 
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(1, {
@@ -3535,7 +3523,6 @@ describe("FolderCardView card context actions", () => {
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
         includeSubfolders: false,
       });
-      expect(plugin.selectAllNotes).toHaveBeenCalledTimes(1);
     });
 
     it("treats zero-selection bulk actions as safe no-ops", async () => {
