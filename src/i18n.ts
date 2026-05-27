@@ -68,6 +68,7 @@ export interface ToolbarStrings {
   folderMenu: {
     allNotesScope: string;
     folderScope: string;
+    rootFolder: string;
     includeSubfolders: string;
     directFolderOnly: string;
     subfoldersSrLabel: string;
@@ -335,6 +336,7 @@ const EN: UiStrings = {
     folderMenu: {
       allNotesScope: "All notes",
       folderScope: "Folder scope",
+      rootFolder: "Root /",
       includeSubfolders: "Including subfolders",
       directFolderOnly: "Direct folder only",
       subfoldersSrLabel: "Subfolders",
@@ -568,6 +570,7 @@ const ZH: UiStrings = {
     folderMenu: {
       allNotesScope: "全部笔记",
       folderScope: "文件夹范围",
+      rootFolder: "根目录 /",
       includeSubfolders: "包含子文件夹",
       directFolderOnly: "仅当前文件夹",
       subfoldersSrLabel: "子文件夹",

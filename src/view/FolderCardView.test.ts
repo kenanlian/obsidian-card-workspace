@@ -1213,6 +1213,46 @@ describe("FolderCardView host contract", () => {
       linktext: "notes/diagram.canvas",
     }));
   });
+  it("builds a folder tree with vault root as a selectable top-level row", () => {
+    const { view } = createHarness();
+    const root = new testState.TestTFolder("");
+    const projects = new testState.TestTFolder("projects");
+    const archive = new testState.TestTFolder("archive");
+    const nested = new testState.TestTFolder("projects/client-a");
+    projects.children = [nested];
+    root.children = [projects, archive];
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+
+    const tree = (view as any).buildFolderTree();
+
+    expect(tree).toEqual([
+      {
+        name: "/",
+        path: "/",
+        children: [],
+        depth: 0,
+      },
+      {
+        name: "archive",
+        path: "archive",
+        children: [],
+        depth: 0,
+      },
+      {
+        name: "projects",
+        path: "projects",
+        children: [
+          {
+            name: "client-a",
+            path: "projects/client-a",
+            children: [],
+            depth: 1,
+          },
+        ],
+        depth: 0,
+      },
+    ]);
+  });
 
   it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {
     const { view, plugin } = createHarness();

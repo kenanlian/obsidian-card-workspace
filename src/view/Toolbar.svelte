@@ -288,6 +288,17 @@
   }
 
   const visibleFolderNodes = $derived(flattenVisibleTree(folderTree, expandedPaths));
+  function isRootFolderNode(node: FolderTreeNode): boolean {
+    return node.path === "/";
+  }
+
+  function getFolderNodeLabel(node: FolderTreeNode): string {
+    return isRootFolderNode(node) ? strings.folderMenu.rootFolder : node.name;
+  }
+
+  function isFolderNodeSelected(node: FolderTreeNode): boolean {
+    return node.path === folderPath;
+  }
   $effect(() => {
     if (!showFolderMenu) {
       folderMenuExpandedForPath = null;
@@ -498,6 +509,10 @@
 
   function getFolderButtonText(): string {
     if (hasFolderScope) {
+      if (folderPath === "/") {
+        return strings.folderMenu.rootFolder;
+      }
+
       return folderPath.split("/").filter(Boolean).pop() || folderPath;
     }
 
@@ -846,7 +861,8 @@
   >
     {#each visibleFolderNodes as node}
       {@const hasChildren = node.children.length > 0}
-      {@const isSelected = node.path === folderPath}
+      {@const isSelected = isFolderNodeSelected(node)}
+      {@const label = getFolderNodeLabel(node)}
       <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
         <div class="fce-popup-row-leading">
           {#if hasChildren}
@@ -858,6 +874,8 @@
               onclick={(event) => onFolderChevronClick(event, node.path)}
               use:applyIcon={expandedPaths.has(node.path) ? "chevron-down" : "chevron-right"}
             ></button>
+          {:else if isRootFolderNode(node)}
+            <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"house"}></span>
           {:else}
             <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
           {/if}
@@ -868,9 +886,9 @@
             class="fce-tree-button"
             role="menuitem"
             onclick={() => selectFolder(node.path)}
-            use:applyTooltip={node.name}
+            use:applyTooltip={label}
           >
-            <span class="fce-tree-label">{node.name}</span>
+            <span class="fce-tree-label">{label}</span>
           </button>
         </div>
         <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>

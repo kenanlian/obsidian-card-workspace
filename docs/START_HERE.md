@@ -23,6 +23,7 @@
 - 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
 - 已完成：仓库具备最小 GitHub Release 支持，通过裸 semver tag 触发 draft release 生成。
 - 已完成：版本发布前的元数据对齐工具链已稳固，支持同步版本号并校验发布契约。
+- 已完成：folder scope 菜单现在显式暴露 `根目录 /` 选项；关闭 `includeSubfolders` 时只看 vault 根目录直系文件，开启后结果与 `All notes` 等价，但仍保持 folder scope 语义。
 
 ## 回来看代码前先记住这 3 件事
 

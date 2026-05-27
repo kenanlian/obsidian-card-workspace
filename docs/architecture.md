@@ -176,6 +176,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 为非 Markdown 卡片显示稳定占位摘要，而不是假装存在正文预览。
 - 在摘要行展示紧凑的上下文信息（仅在过滤或异常状态下）。
 - 用持续高亮表达 `All notes`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
+- `Folder scope` 菜单显式包含 `vault root /` 这一顶层选项；它不是树容器，不额外缩进其他一级文件夹，且在 `includeSubfolders` 开启时结果可与 `All notes` 等价。
 - 在 bulk mode 下把批量操作带收敛成 icon-only controls，并把每张卡片的选择入口放到右上角复选框槽位，同时临时隐藏 pin 按钮。
 - 在 title / excerpt / meta 这三块非控件区域发射 hover payload，让宿主 Page Preview 体系决定是否显示 popover；按钮、菜单和 bulk checkbox 不参与这条路径。
 - 把搜索输入变化回传给 `FolderCardView.ts`。

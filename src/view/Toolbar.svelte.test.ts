@@ -60,6 +60,12 @@ let mountedComponents: Array<Record<string, unknown>> = [];
 function createFolderTree(): FolderTreeNode[] {
   return [
     {
+      name: "/",
+      path: "/",
+      depth: 0,
+      children: [],
+    },
+    {
       name: "notes",
       path: "notes",
       depth: 0,
@@ -391,6 +397,53 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("renders vault root as a labeled top-level folder option with a root icon", async () => {
+    const { component } = mountToolbar({
+      folderPath: "/",
+      folderTree: [
+        {
+          name: "/",
+          path: "/",
+          depth: 0,
+          children: [],
+        },
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            {
+              name: "client-a",
+              path: "projects/client-a",
+              depth: 1,
+              children: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const folderButton = getFolderScopeButton();
+    expect(folderButton?.querySelector(".fce-folder-button-text")?.textContent?.trim()).toBe("Root /");
+
+    await openFolderPopup();
+
+    const rootRow = getTreeRowByText(".fce-folder-menu", "Root /");
+    const projectsRow = getTreeRowByText(".fce-folder-menu", "projects");
+    expect(rootRow).not.toBeNull();
+    expect(projectsRow).not.toBeNull();
+    expect(rootRow?.style.paddingLeft).toBe("8px");
+    expect(projectsRow?.style.paddingLeft).toBe("8px");
+
+    const rootButton = rootRow?.querySelector<HTMLButtonElement>(".fce-tree-button");
+    expect(rootButton?.getAttribute("data-tooltip")).toBe("Root /");
+    const rootLeadingIcon = rootRow?.querySelector<HTMLElement>(".fce-popup-row-leading .fce-tree-node-icon");
+    expect(rootLeadingIcon?.getAttribute("data-icon")).toBe("house");
+    expect(rootButton?.querySelector(".fce-tree-node-icon")).toBeNull();
+    expect(rootButton?.textContent).toContain("Root /");
+
+    await disposeMountedComponent(component);
+  });
   it("renders the shared trailing selected indicator across popup variants", async () => {
     let { component } = mountToolbar();
 
