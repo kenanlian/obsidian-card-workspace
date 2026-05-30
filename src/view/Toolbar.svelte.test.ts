@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount } from "svelte";
 import { tick } from "svelte";
@@ -54,9 +57,10 @@ interface CapturedCallbacks {
   selectFolderEvents: SelectFolderPayload[];
   toolbarActionEvents: ToolbarActionPayload[];
 }
-
+const TEST_STYLESHEET_ID = "toolbar-test-styles";
+const stylesPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../styles.css");
+const stylesCss = readFileSync(stylesPath, "utf8");
 let mountedComponents: Array<Record<string, unknown>> = [];
-
 function createFolderTree(): FolderTreeNode[] {
   return [
     {
@@ -132,6 +136,7 @@ function mountToolbar(
   callbacks: ToolbarCallbacks = {},
 ): { component: Record<string, unknown>; target: HTMLDivElement } {
   const target = document.createElement("div");
+  target.className = "folder-card-view";
   document.body.appendChild(target);
   const component = mount(Toolbar, {
     target,
@@ -215,9 +220,20 @@ function getTreeRowByText(menuSelector: string, text: string): HTMLDivElement | 
 function getSelectedTreeRow(menuSelector: string): HTMLDivElement | null {
   return document.querySelector<HTMLDivElement>(`${menuSelector} .fce-tree-row.is-selected`);
 }
+function installTestStyles(): void {
+  if (document.head.querySelector(`#${TEST_STYLESHEET_ID}`)) {
+    return;
+  }
+
+  const styleEl = document.createElement("style");
+  styleEl.id = TEST_STYLESHEET_ID;
+  styleEl.textContent = stylesCss;
+  document.head.appendChild(styleEl);
+}
 
 describe("Toolbar.svelte", () => {
   beforeEach(() => {
+    installTestStyles();
     mountedComponents = [];
     document.body.innerHTML = "";
   });
@@ -842,7 +858,7 @@ describe("Toolbar.svelte", () => {
 
     await disposeMountedComponent(component);
   });
-  it("wraps only the folder scope button in a shrinkable group so the label truncates before toolbar overflow", async () => {
+  it("keeps the folder scope button shrinkable without letting it consume extra toolbar width", async () => {
     const longFolderName = "projects-with-a-very-long-folder-label-that-should-shrink-before-toolbar-overflow";
     const { component } = mountToolbar({
       folderPath: longFolderName,
@@ -864,6 +880,12 @@ describe("Toolbar.svelte", () => {
     expect(folderButton?.querySelector(".fce-folder-button-chevron")).not.toBeNull();
     expect(folderGroup?.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
     expect(folderGroup?.nextElementSibling?.getAttribute("aria-label")).toBe("Including subfolders");
+
+    expect(getComputedStyle(folderGroup as HTMLDivElement).flexGrow).toBe("0");
+    expect(getComputedStyle(folderGroup as HTMLDivElement).flexShrink).toBe("1");
+    expect(getComputedStyle(folderButton as HTMLButtonElement).flexGrow).toBe("0");
+    expect(getComputedStyle(folderButton as HTMLButtonElement).flexShrink).toBe("1");
+    expect(getComputedStyle(folderButton as HTMLButtonElement).maxWidth).toBe("100%");
 
     await disposeMountedComponent(component);
   });

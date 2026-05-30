@@ -57,8 +57,9 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: var(--fce-toolbar-folder-button-min-width);
+  max-width: 100%;
 }
 
 .folder-card-view .fce-folder-button {
@@ -66,7 +67,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: var(--fce-toolbar-folder-button-min-width);
   max-width: 100%;
   overflow: hidden;
