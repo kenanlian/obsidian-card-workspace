@@ -1446,6 +1446,10 @@ export class FolderCardView extends ItemView {
       this.baseCards = records;
       this.folderLoadKey = loadKey;
       this.lastLoadedIncludeSubfolders = loadScope.includeSubfolders;
+      const startupPaths = this.deriveVisibleCardsFrom(records)
+        .slice(0, FolderCardView.STARTUP_HYDRATION_CARD_COUNT)
+        .map((card) => card.path);
+      await this.hydrateCardPaths(startupPaths, buildGeneration, { pushState: false });
     } finally {
       if (buildGeneration === this.generation) {
         this.loading = false;
@@ -1845,38 +1849,70 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const generation = this.generation;
-    const targets: string[] = [];
     const safeStart = Math.max(0, start);
     const safeEnd = Math.min(this.visibleCards.length, end);
+    const targets = this.visibleCards
+      .slice(safeStart, safeEnd)
+      .map((card) => card.path);
 
-    for (let index = safeStart; index < safeEnd; index += 1) {
-      const card = this.visibleCards[index];
-      if (!card || card.hydrated || this.pendingHydration.has(card.path)) {
+    await this.hydrateCardPaths(targets, this.generation, {
+      pushState: true,
+      batchSize: FolderCardView.HYDRATION_BATCH_SIZE,
+    });
+  }
+
+  private async hydrateCardPaths(
+    paths: string[],
+    generation: number,
+    options: {
+      pushState: boolean;
+      batchSize?: number;
+    },
+  ): Promise<void> {
+    if (paths.length === 0 || generation !== this.generation) {
+      return;
+    }
+
+    const targets: string[] = [];
+    for (const path of paths) {
+      const card = this.baseCards.find((candidate) => candidate.path === path);
+      if (!card || card.hydrated || this.pendingHydration.has(path)) {
         continue;
       }
-      this.pendingHydration.add(card.path);
-      targets.push(card.path);
+
+      this.pendingHydration.add(path);
+      targets.push(path);
     }
 
     if (targets.length === 0) {
       return;
     }
 
-    const batchSize = FolderCardView.HYDRATION_BATCH_SIZE;
-    for (let batchStart = 0; batchStart < targets.length; batchStart += batchSize) {
-      if (generation !== this.generation) {
-        break;
+    const batchSize = Math.max(1, options.batchSize ?? targets.length);
+
+    try {
+      for (let batchStart = 0; batchStart < targets.length; batchStart += batchSize) {
+        if (generation !== this.generation) {
+          return;
+        }
+
+        const batch = targets.slice(batchStart, batchStart + batchSize);
+        await Promise.all(batch.map((path) => this.hydrateCard(path, generation)));
+
+        if (generation !== this.generation) {
+          return;
+        }
+
+        batch.forEach((path) => this.pendingHydration.delete(path));
       }
-
-      const batch = targets.slice(batchStart, batchStart + batchSize);
-      await Promise.all(batch.map((path) => this.hydrateCard(path, generation)));
-
-      batch.forEach((path) => this.pendingHydration.delete(path));
-
+    } finally {
       if (generation === this.generation) {
-        this.pushState();
+        targets.forEach((path) => this.pendingHydration.delete(path));
       }
+    }
+
+    if (options.pushState && generation === this.generation) {
+      this.pushState();
     }
   }
 
@@ -2009,6 +2045,10 @@ export class FolderCardView extends ItemView {
   }
 
   private deriveVisibleCards(): NoteCardRecord[] {
+    return this.deriveVisibleCardsFrom(this.baseCards);
+  }
+
+  private deriveVisibleCardsFrom(cards: NoteCardRecord[]): NoteCardRecord[] {
     const settings = this.plugin.getSettings();
     const context: PipelineContext = {
       app: this.app,
@@ -2017,7 +2057,7 @@ export class FolderCardView extends ItemView {
       pinnedPaths: settings.pinnedPaths,
     };
 
-    return runPipeline(this.baseCards, DEFAULT_PIPELINE_STEPS, context);
+    return runPipeline(cards, DEFAULT_PIPELINE_STEPS, context);
   }
 
   private buildPipelineSearchInput(): PipelineSearchInput {

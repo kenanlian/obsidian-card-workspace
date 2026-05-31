@@ -64,6 +64,9 @@ export function buildLightPreview(
   previewLines = DEFAULT_PREVIEW_LINES,
 ): LightPreviewResult {
   const content = stripFrontmatter(markdown).replace(/\r\n/g, "\n");
+  if (content.trim().length === 0) {
+    return { html: "", mode: "empty" };
+  }
   const lines = content.split("\n");
   const scanLimit = Math.min(lines.length, MAX_PREVIEW_SCAN_LINES);
   const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);

@@ -30,6 +30,7 @@ src/main.ts
 src/view/FolderCardView.ts
   ├─ 收集受支持文件 / 解析 fileKind / 构建 baseCards
   ├─ generation / hydration / 刷新编排
+  ├─ startup loading 内先跑 pipeline 并预热首屏前 12 张可见卡片
   ├─ runtime-only searchQuery / debounce / searchStatus
   ├─ SearchService query 协调
   ├─ 运行 pipeline -> visibleCards
@@ -145,12 +146,12 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 这是每个视图实例的运行时协调中枢，当前负责：
 
 - `baseCards`、`visibleCards`、selectedPath、bulk state。
-- generation、防陈旧、hydration、刷新队列。
+- generation、防陈旧、pendingHydration 去重、刷新队列。
 - 当前视图的 `searchQuery`、`searchStatus`、候选路径约束和 debounce。
 - 收集当前 folder scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`；vault root (`lastFolderPath=""`) 是默认且最宽的 folder scope。
+- `loadFolder()` 会在 `loading=true` 期间先对当前 pipeline 投影后的首屏前 12 张可见卡片做 preview 预热，再提交首个非 loading state；因此启动预热目标不能绕开 tag filter、search gate 或 pin reorder。
 - 对 Markdown 卡片执行正文读取和预览构建；对非 Markdown 卡片注入占位摘要。
-- 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`。
-- 轻量 preview 现在会在共享 `previewLines` 预算内，按源码顺序保留文本块与 fenced code block；代码块不再因为前面已经出现正文而被统一跳过。
+- 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`；空字符串与纯空白内容会在昂贵解析前直接走 `empty` 快路径。
 - 向 `SearchService` 发 query，并把结果转成 pipeline 输入。
 - 组装 `PipelineContext`，再调用 `runPipeline()`。
 - 把 cards、filter、pin、bulk、search 状态写入 `panel-model`。
@@ -388,6 +389,7 @@ baseCards
 
 - `hover-link` 是当前唯一允许的卡片 hover preview 集成路径；不要在 `CardItem.svelte` 或 `FolderCardView.ts` 旁边再长出一套自建 popover。
 - `previewLines` 是文本块与 fenced code block 共享的顺序预算；任何想调整 preview 样式或抽取规则的改动，都必须同时评估解析层和 excerpt CSS 的物理预算。 
+- 启动期 preview 优化的 contract 是“统一 loading + 首屏同步预热”，不是 preview cache。不要把它扩展成全量 eager hydration，也不要改成按 `baseCards` 前 N 张预热；目标范围必须来自 pipeline 后的当前可见前缀。
 
 ## 十大黄金原则 (11-16 已更新为索引架构)
 

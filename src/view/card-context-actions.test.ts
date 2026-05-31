@@ -479,6 +479,9 @@ vi.mock("obsidian", () => {
         return mockState.runtimeFlags.isDesktopApp;
       },
     },
+    getAllTags: (cache: { tags?: Array<{ tag: string }> } | null) => {
+      return cache?.tags?.map((entry) => entry.tag) ?? [];
+    },
     TFile: mockState.MockTFile,
     TFolder: mockState.MockTFolder,
   };
@@ -1820,6 +1823,210 @@ describe("FolderCardView card context actions", () => {
         expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
         expect(card.hydrated).toBe(true);
       });
+      it("prewarms projected startup cards before the first non-loading panel snapshot", async () => {
+        const { view, app, plugin } = createViewWithFile("notes/prewarm-projection-seed.md");
+        const pinnedFile = createMarkdownFile("notes/pinned.md");
+        const remainingTaggedFiles = Array.from({ length: 12 }, (_, index) =>
+          createMarkdownFile(`notes/tagged-${index + 2}.md`),
+        );
+        const filteredOutFile = createMarkdownFile("notes/filtered-out.md");
+        const files = [pinnedFile, ...remainingTaggedFiles, filteredOutFile];
+
+        files.forEach((file, index) => {
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: index + 1,
+            mtime: file.path === filteredOutFile.path ? 200 : index + 1,
+          };
+        });
+
+        const notesFolder = attachChildren(createFolder("notes"), files);
+        const fileByPath = new Map(files.map((file) => [file.path, file] as const));
+
+        plugin.getSettings = vi.fn(() => ({
+          includeSubfolders: true,
+          sort: { field: "mtime", direction: "desc" },
+          filter: { tags: ["focus"] },
+          defaultView: "cards",
+          lastFolderPath: null,
+          lastViewMode: "folder",
+          pinnedPaths: [pinnedFile.path],
+          previewLines: 5,
+        }));
+
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+          if (requestedPath === "notes") {
+            return notesFolder;
+          }
+          return fileByPath.get(requestedPath) ?? null;
+        });
+        app.metadataCache.getFileCache = vi.fn((file: { path: string }) => {
+          if (file.path === filteredOutFile.path) {
+            return { tags: [{ tag: "#other" }] };
+          }
+          return { tags: [{ tag: "#focus" }] };
+        });
+        app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody ${file.basename}`);
+
+        await (view as any).onOpen();
+        await (view as any).handleFolderSelection({
+          requestId: 6,
+          folderPath: "notes",
+          source: "programmatic",
+          requestedAtMs: Date.now(),
+          forceRefresh: false,
+        });
+
+        const firstStableSnapshot = mockState.panelInstances[0]?.modelSnapshots.find(
+          (snapshot: any) =>
+            snapshot.loading === false &&
+            Array.isArray(snapshot.cards) &&
+            snapshot.cards.length > 0,
+        ) as { cards?: Array<{ path: string; hydrated: boolean }> } | undefined;
+
+        expect(firstStableSnapshot).toBeDefined();
+        expect(firstStableSnapshot?.cards).toHaveLength(13);
+        expect(firstStableSnapshot?.cards?.[0]?.path).toBe(pinnedFile.path);
+        expect(firstStableSnapshot?.cards?.slice(0, 12).every((card) => card.hydrated)).toBe(true);
+        expect(firstStableSnapshot?.cards?.[12]?.path).toBe(remainingTaggedFiles[0]?.path);
+        expect(firstStableSnapshot?.cards?.[12]?.hydrated).toBe(false);
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+        expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
+      });
+
+      it("startup prewarm prevents duplicate hydrate-range reads on open", async () => {
+        const { view, app } = createViewWithFile("notes/prewarm-no-dup.md");
+        const files = Array.from({ length: 13 }, (_, index) => {
+          const file = createMarkdownFile(`notes/prewarm-${index + 1}.md`);
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: index + 1,
+            mtime: index + 1,
+          };
+          return file;
+        });
+        const notesFolder = attachChildren(createFolder("notes"), files);
+        const fileByPath = new Map(files.map((file) => [file.path, file] as const));
+
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+          if (requestedPath === "notes") {
+            return notesFolder;
+          }
+          return fileByPath.get(requestedPath) ?? null;
+        });
+        app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody`);
+
+        await (view as any).onOpen();
+        await (view as any).handleFolderSelection({
+          requestId: 7,
+          folderPath: "notes",
+          source: "programmatic",
+          requestedAtMs: Date.now(),
+          forceRefresh: false,
+        });
+
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+
+        const hydrateRangeHandler = mockState.panelEventHandlers["hydrate-range"];
+        expect(hydrateRangeHandler).toBeDefined();
+
+        hydrateRangeHandler({ detail: { start: 0, end: 12 } });
+        await flushAsyncWork(2);
+
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+      });
+
+      it("drops stale startup prewarm results after generation changes", async () => {
+        const { view, app } = createViewWithFile("notes/stale-startup-prewarm.md");
+        const file = createMarkdownFile("notes/stale-startup-prewarm.md");
+        (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+          ctime: 1,
+          mtime: 1,
+        };
+        const notesFolder = attachChildren(createFolder("notes"), [file]);
+        const staleRead = createDeferred<string>();
+
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+          if (requestedPath === "notes") {
+            return notesFolder;
+          }
+          return requestedPath === file.path ? file : null;
+        });
+        app.vault.cachedRead = vi.fn(() => staleRead.promise);
+
+        const loadPromise = (view as any).loadFolder(
+          "notes",
+          {
+            folderPath: "notes",
+            includeSubfolders: true,
+            sortField: "mtime",
+            sortDirection: "desc",
+          },
+          "notes|true|mtime|desc",
+        );
+
+        await flushAsyncWork(1);
+
+        expect((view as any).pendingHydration.has(file.path)).toBe(true);
+
+        (view as any).generation += 1;
+        (view as any).pendingHydration.clear();
+
+        staleRead.resolve("# stale\ncontent");
+        await loadPromise;
+
+        const card = (view as any).baseCards[0];
+        expect(card?.hydrated).toBe(false);
+        expect(card?.previewHtml).toBe("");
+        expect(card?.previewMode).toBe("empty");
+        expect((view as any).pendingHydration.size).toBe(0);
+      });
+
+      it("hydrateRange pushes state once after finishing a multi-batch visible range", async () => {
+        const { view, app } = createViewWithFile("notes/range-single-push.md");
+        const files = Array.from({ length: 12 }, (_, index) => {
+          const file = createMarkdownFile(`notes/range-${index + 1}.md`);
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: index + 1,
+            mtime: index + 1,
+          };
+          return file;
+        });
+        const notesFolder = attachChildren(createFolder("notes"), files);
+        const fileByPath = new Map(files.map((file) => [file.path, file] as const));
+
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+          if (requestedPath === "notes") {
+            return notesFolder;
+          }
+          return fileByPath.get(requestedPath) ?? null;
+        });
+        app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody`);
+
+        await (view as any).handleFolderSelection({
+          requestId: 8,
+          folderPath: "notes",
+          source: "programmatic",
+          requestedAtMs: Date.now(),
+          forceRefresh: false,
+        });
+
+        vi.mocked(app.vault.cachedRead).mockClear();
+        for (const card of (view as any).baseCards) {
+          card.hydrated = false;
+          card.previewHtml = "";
+          card.previewMode = "empty";
+        }
+        (view as any).pendingHydration.clear();
+
+        const pushStateSpy = vi.spyOn(view as any, "pushState");
+        pushStateSpy.mockClear();
+
+        await (view as any).hydrateRange(0, 12);
+
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+        expect(pushStateSpy).toHaveBeenCalledTimes(1);
+        expect((view as any).baseCards.every((card: { hydrated: boolean }) => card.hydrated)).toBe(true);
+      });
+
 
       it("onClose unmounts the panel instance and clears registered handlers", async () => {
         const { view } = createViewWithFile("notes/close-cleanup.md");
@@ -1918,16 +2125,18 @@ describe("FolderCardView card context actions", () => {
 
         it("ignores stale hydration errors after previewLines change bumps generation", async () => {
           const { view, app, plugin } = createViewWithFile("notes/stale-refresh.md");
-          const file = createMarkdownFile("notes/stale-refresh.md");
-          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
-            ctime: 1,
-            mtime: 1,
-          };
-          const notesFolder = attachChildren(createFolder("notes"), [file]);
+          const files = Array.from({ length: 13 }, (_, index) => {
+            const file = createMarkdownFile(`notes/stale-refresh-${index + 1}.md`);
+            (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+              ctime: index + 1,
+              mtime: index + 1,
+            };
+            return file;
+          });
+          const staleFile = files[0];
+          const notesFolder = attachChildren(createFolder("notes"), files);
           const firstReadError = new Error("stale read failed");
-          const firstReadControl: { reject: ((reason?: unknown) => void) | null } = {
-            reject: null,
-          };
+          const staleRead = createDeferred<string>();
           let previewLines = 4;
           const previewSpy = vi.spyOn(markdownUtils, "buildLightPreview");
 
@@ -1942,25 +2151,20 @@ describe("FolderCardView card context actions", () => {
             previewLines,
           }));
 
+          const fileByPath = new Map(files.map((file) => [file.path, file] as const));
           app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
             if (requestedPath === "notes") {
               return notesFolder;
             }
-            if (requestedPath === file.path) {
-              return file;
-            }
-            return null;
+            return fileByPath.get(requestedPath) ?? null;
           });
 
-          app.vault.cachedRead = vi
-            .fn()
-            .mockImplementationOnce(
-              () =>
-                new Promise<string>((_resolve, reject) => {
-                  firstReadControl.reject = reject;
-                }),
-            )
-            .mockImplementation(async () => "fresh\npreview\ncontent");
+          app.vault.cachedRead = vi.fn((file: { path: string }) => {
+            if (file.path === staleFile?.path) {
+              return staleRead.promise;
+            }
+            return Promise.resolve("fresh\npreview\ncontent");
+          });
 
           await (view as any).handleFolderSelection({
             requestId: 2,
@@ -1970,27 +2174,26 @@ describe("FolderCardView card context actions", () => {
             forceRefresh: false,
           });
 
-          const staleHydration = (view as any).hydrateRange(0, 1);
+          vi.mocked(app.vault.cachedRead).mockClear();
+          previewSpy.mockClear();
+
+          const staleHydration = (view as any).hydrateRange(12, 13);
           await flushAsyncWork(1);
 
           previewLines = 8;
-          await (view as any).refresh({
-            reason: "settings-change",
-            folderPath: "notes",
-            forceRefresh: true,
-          });
-
-          if (firstReadControl.reject) {
-            firstReadControl.reject(firstReadError);
-          }
+          (view as any).generation += 1;
+          (view as any).pendingHydration.clear();
+          staleRead.reject(firstReadError);
           await staleHydration;
+          vi.mocked(app.vault.cachedRead).mockImplementation(async () => "fresh\npreview\ncontent");
 
-          const currentCard = (view as any).baseCards[0];
-          expect(currentCard?.hydrated).toBe(false);
-          expect(currentCard?.previewHtml).toBe("");
-          expect(currentCard?.previewMode).toBe("empty");
 
-          await (view as any).hydrateRange(0, 1);
+          const staleCard = (view as any).baseCards.find((card: { path: string }) => card.path === staleFile?.path);
+          expect(staleCard?.hydrated).toBe(false);
+          expect(staleCard?.previewHtml).toBe("");
+          expect(staleCard?.previewMode).toBe("empty");
+
+          await (view as any).hydrateRange(12, 13);
 
           expect(previewSpy).toHaveBeenCalledTimes(1);
           expect(previewSpy).toHaveBeenLastCalledWith(

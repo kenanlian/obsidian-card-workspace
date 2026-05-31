@@ -88,8 +88,9 @@ describe("buildLightPreview", () => {
   });
 
   it("returns mode=empty for whitespace-only content", () => {
-    const result = buildLightPreview("   \n\n  ");
+    const result = buildLightPreview("   \n\t");
     expect(result.mode).toBe("empty");
+    expect(result.html).toBe("");
   });
 
   it("renders a paragraph as mode=text", () => {
