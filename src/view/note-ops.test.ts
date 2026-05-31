@@ -540,4 +540,35 @@ describe("mergeNotes", () => {
     expect(result.ok).toBe(true);
     expect(vi.mocked(app.vault.create).mock.calls[0]?.[0]).toBe("archive/Merged notes.md");
   });
+
+  it("defaults to no separator between merged sections", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const bodyByPath: Record<string, string> = {
+      [first.path]: "First body",
+      [second.path]: "Second body",
+    };
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (file: TFile): Promise<string> => {
+          return bodyByPath[file.path] ?? "";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(app as unknown as any, [first, second], targetFolder, "Merged Title");
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
+      "# first\n\nFirst body# second\n\nSecond body",
+    );
+  });
 });

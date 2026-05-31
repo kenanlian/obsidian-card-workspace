@@ -252,6 +252,11 @@ const mockState = vi.hoisted(() => {
     renderOrder: string[] = [];
     buttons: MockModalButton[] = [];
     textInputs: MockModalTextInput[] = [];
+    modalEl: {
+      scrollTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+    };
     contentEl: {
       __ownerModal: MockModal;
       scrollTop: number;
@@ -262,6 +267,11 @@ const mockState = vi.hoisted(() => {
 
     constructor(app: unknown) {
       this.app = app;
+      this.modalEl = {
+        scrollTop: 0,
+        scrollHeight: 1200,
+        clientHeight: 400,
+      };
       this.contentEl = {
         __ownerModal: this,
         scrollTop: 0,
@@ -3021,6 +3031,14 @@ describe("FolderCardView card context actions", () => {
       clickLatestModalButton("Down", 0);
       await flushAsyncWork();
 
+      expect(mockState.modalInstances[0]?.textInputs[1]?.value).toBe("");
+      const defaultPreview = [
+        "# second\n\nSecond body",
+        "# first\n\nFirst body",
+        "# third\n\nThird body",
+      ].join("");
+      expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe(defaultPreview);
+
       setLatestModalTextInput(1, "\n\n***\n\n");
       await flushAsyncWork();
 
@@ -3106,15 +3124,15 @@ describe("FolderCardView card context actions", () => {
       const modal = mockState.modalInstances.at(-1);
       expect(modal).toBeDefined();
 
-      modal!.contentEl.scrollTop = 180;
+      modal!.modalEl.scrollTop = 180;
       clickLatestModalButton("Keep source notes");
-      expect(modal!.contentEl.scrollTop).toBe(180);
+      expect(modal!.modalEl.scrollTop).toBe(180);
 
-      modal!.contentEl.scrollTop = 240;
+      modal!.modalEl.scrollTop = 240;
       clickLatestModalButton("Down", 0);
-      expect(modal!.contentEl.scrollTop).toBe(240);
+      expect(modal!.modalEl.scrollTop).toBe(240);
       await flushAsyncWork();
-      expect(modal!.contentEl.scrollTop).toBe(240);
+      expect(modal!.modalEl.scrollTop).toBe(240);
     });
 
     it("does not rerender bulk merge preview after the modal closes", async () => {

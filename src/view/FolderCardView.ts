@@ -169,7 +169,7 @@ class BulkMergeModal extends Modal {
   private orderedFiles: TFile[];
   private targetFolder: TFolder;
   private mergedTitle: string;
-  private separator = "\n\n---\n\n";
+  private separator = "";
   private cleanupMode: MergeCleanupMode = "keep";
   private previewText: string;
   private previewError: string | null = null;
@@ -211,6 +211,14 @@ class BulkMergeModal extends Modal {
     this.submitRequestSeq += 1;
     this.contentEl.empty();
   }
+  private getScrollContainer(): HTMLElement {
+    if (this.modalEl.scrollTop > 0 || this.modalEl.scrollHeight > this.modalEl.clientHeight) {
+      return this.modalEl;
+    }
+
+    return this.contentEl;
+  }
+
 
   private render(): void {
     if (this.closed) {
@@ -218,7 +226,8 @@ class BulkMergeModal extends Modal {
     }
 
     this.setTitle(this.strings.title);
-    const scrollTop = this.contentEl.scrollTop;
+    const scrollContainer = this.getScrollContainer();
+    const scrollTop = scrollContainer.scrollTop;
     this.contentEl.empty();
     this.contentEl.createEl("p", {
       text: this.strings.sourceCount(this.orderedFiles.length),
@@ -311,7 +320,7 @@ class BulkMergeModal extends Modal {
     this.contentEl.createEl("pre", {
       text: this.previewError ?? this.previewText,
     });
-    this.contentEl.scrollTop = scrollTop;
+    scrollContainer.scrollTop = scrollTop;
   }
 
   private moveFile(index: number, delta: -1 | 1): void {

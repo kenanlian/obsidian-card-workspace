@@ -277,7 +277,7 @@ export async function mergeNotes(
   files: TFile[],
   targetFolder: TFolder,
   mergedTitle: string,
-  separator: string = "\n\n---\n\n",
+  separator: string = "",
   strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<MergeOpResult> {
   if (files.length === 0) {
