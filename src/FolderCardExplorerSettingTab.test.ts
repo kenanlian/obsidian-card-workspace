@@ -199,7 +199,7 @@ describe("FolderCardExplorerSettingTab", () => {
     });
     expect(mockState.settings[3]?.slider).toMatchObject({
       min: 3,
-      max: 10,
+      max: 8,
       step: 1,
       value: 6,
       dynamicTooltip: true,

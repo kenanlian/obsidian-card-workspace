@@ -44,6 +44,7 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
     .replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_, link, alias) => alias ?? link)
     .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+\[(?: |x|X)\]\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/^\s*\d+\.\s+/gm, "")
     .replace(/[*_~=>]/g, " ")
@@ -68,46 +69,11 @@ export function buildLightPreview(
   const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
 
   let index = 0;
-  while (index < scanLimit) {
-    const trimmed = lines[index].trim();
-    if (trimmed.length === 0 || isImageOnlyLine(trimmed)) {
-      index += 1;
-      continue;
-    }
-
-    const fence = getFenceInfo(trimmed);
-    if (fence) {
-      const codeBlock = readFenceCodeBlock(
-        lines,
-        index,
-        scanLimit,
-        fence.marker,
-        fence.size,
-        normalizedPreviewLines,
-      );
-      if (codeBlock.previewText.length > 0) {
-        const clipped = clipTextWithLimit(codeBlock.previewText, maxVisibleChars);
-        let display = clipped.text.trimEnd();
-        if ((clipped.truncated || codeBlock.truncatedByLines) && display.length > 0) {
-          display = display.includes("\n") ? `${display}\n...` : `${display}...`;
-        }
-        if (display.length > 0) {
-          return {
-            html: `<p class="fce-preview-code"><code>${escapeHtml(display)}</code></p>`,
-            mode: "code"
-          };
-        }
-      }
-      index = codeBlock.nextIndex;
-      continue;
-    }
-
-    break;
-  }
-
   let remainingChars = maxVisibleChars;
   let remainingBlocks = normalizedPreviewLines;
   const htmlParts: string[] = [];
+  let sawCodeBlock = false;
+  let sawTextBlock = false;
 
   while (index < scanLimit && remainingChars > 0 && remainingBlocks > 0) {
     const line = lines[index];
@@ -143,6 +109,7 @@ export function buildLightPreview(
           htmlParts.push(`<p class="fce-preview-code"><code>${escapeHtml(display)}</code></p>`);
           remainingChars -= clipped.text.length;
           remainingBlocks -= codeBlock.lineCount;
+          sawCodeBlock = true;
         }
         if (clipped.truncated) {
           break;
@@ -159,6 +126,23 @@ export function buildLightPreview(
         htmlParts.push(`<p class="fce-preview-heading">${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
         remainingBlocks -= 1;
+        sawTextBlock = true;
+      }
+      if (rendered.truncated) {
+        break;
+      }
+      index += 1;
+      continue;
+    }
+
+    const taskMatch = trimmed.match(/^[-*+]\s+\[(?: |x|X)\]\s+(.*)$/);
+    if (taskMatch?.[1]) {
+      const rendered = renderInlineWithLimit(taskMatch[1], remainingChars);
+      if (rendered.consumedChars > 0) {
+        htmlParts.push(`<p>${rendered.html}</p>`);
+        remainingChars -= rendered.consumedChars;
+        remainingBlocks -= 1;
+        sawTextBlock = true;
       }
       if (rendered.truncated) {
         break;
@@ -174,6 +158,7 @@ export function buildLightPreview(
         htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
         remainingBlocks -= 1;
+        sawTextBlock = true;
       }
       if (rendered.truncated) {
         break;
@@ -189,6 +174,7 @@ export function buildLightPreview(
         htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
         remainingBlocks -= 1;
+        sawTextBlock = true;
       }
       if (rendered.truncated) {
         break;
@@ -205,6 +191,7 @@ export function buildLightPreview(
         htmlParts.push(`<p>${rendered.html}</p>`);
         remainingChars -= rendered.consumedChars;
         remainingBlocks -= 1;
+        sawTextBlock = true;
       }
       if (rendered.truncated) {
         break;
@@ -229,6 +216,7 @@ export function buildLightPreview(
       htmlParts.push(`<p>${rendered.html}</p>`);
       remainingChars -= rendered.consumedChars;
       remainingBlocks -= paragraphLines.length;
+      sawTextBlock = true;
     }
     if (rendered.truncated) {
       break;
@@ -242,7 +230,7 @@ export function buildLightPreview(
     return { html: "", mode: "empty" };
   }
 
-  return { html: htmlParts.join(""), mode: "text" };
+  return { html: htmlParts.join(""), mode: sawCodeBlock && !sawTextBlock ? "code" : "text" };
 }
 
 function stripFrontmatter(markdown: string): string {
@@ -347,9 +335,6 @@ function renderInlineWithLimit(source: string, limit: number): InlineRenderResul
     }
   }
 
-  if (!truncated && consumedChars < normalized.length) {
-    truncated = true;
-  }
 
   if (truncated && htmlParts.length > 0) {
     htmlParts.push("...");

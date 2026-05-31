@@ -54,6 +54,10 @@ describe("stripMarkdownToText", () => {
   it("strips ordered list markers", () => {
     expect(stripMarkdownToText("1. first\n2. second")).toBe("first second");
   });
+  it("strips task list markers", () => {
+    expect(stripMarkdownToText("- [ ] first\n- [x] second")).toBe("first second");
+  });
+
 
   it("strips bold/italic/strikethrough markers", () => {
     // The implementation replaces marker characters with spaces and then
@@ -123,6 +127,14 @@ describe("buildLightPreview", () => {
     expect(result.html).not.toContain("<ol>");
     expect(result.html).not.toContain("<li>");
   });
+  it("renders task lists as normalized summary lines", () => {
+    const result = buildLightPreview("- [ ] first task\n- [x] done task");
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>first task</p><p>done task</p>");
+    expect(result.html).not.toContain("[ ]");
+    expect(result.html).not.toContain("[x]");
+  });
+
 
   it("renders quotes with only a weak body-text cue", () => {
     const result = buildLightPreview("> quoted text");
@@ -132,7 +144,7 @@ describe("buildLightPreview", () => {
     expect(result.html).not.toContain("> quoted text");
   });
 
-  it("returns mode=code for fenced code block at top", () => {
+  it("keeps code-only previews in code mode when the note starts with a fenced block", () => {
     const result = buildLightPreview("```js\nconst x = 1;\n```");
     expect(result.mode).toBe("code");
     expect(result.html).toContain('<p class="fce-preview-code">');
@@ -145,6 +157,14 @@ describe("buildLightPreview", () => {
     expect(result.html).not.toContain("<script>");
     expect(result.html).toContain("&lt;script&gt;");
   });
+  it("keeps later text after a leading fenced code block when preview budget remains", () => {
+    const result = buildLightPreview("```ts\nconst x = 1;\n```\nAfter code should still preview.", 500, 5);
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe(
+      '<p class="fce-preview-code"><code>const x = 1;</code></p><p>After code should still preview.</p>',
+    );
+  });
+
 
   it("skips image-only lines", () => {
     const result = buildLightPreview("![[photo.png]]\nReal content");
@@ -176,6 +196,12 @@ describe("buildLightPreview", () => {
     const result = buildLightPreview("use `fn()` here");
     expect(result.html).toContain("<code>fn()</code>");
   });
+  it("keeps later paragraphs after inline code in an earlier paragraph", () => {
+    const result = buildLightPreview("Use `fn()` here.\n\nAfter inline code should still preview.", 500, 5);
+    expect(result.mode).toBe("text");
+    expect(result.html).toBe("<p>Use <code>fn()</code> here.</p><p>After inline code should still preview.</p>");
+  });
+
 
   it("keeps sparse one-line content as standard text preview", () => {
     const result = buildLightPreview("Only one truthful line.");

@@ -170,12 +170,12 @@ describe("normalizeSettings — previewLines", () => {
     expect(result.previewLines).toBe(5);
   });
 
-  it("clamps previewLines within inclusive bounds for raw values 2, 3, 5, 10, 11", () => {
+  it("clamps previewLines within inclusive bounds for raw values 2, 3, 5, 8, 9", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 2 } as unknown).previewLines).toBe(3);
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 3 } as unknown).previewLines).toBe(3);
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 5 } as unknown).previewLines).toBe(5);
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 10 } as unknown).previewLines).toBe(10);
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 11 } as unknown).previewLines).toBe(10);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 8 } as unknown).previewLines).toBe(8);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 9 } as unknown).previewLines).toBe(8);
   });
 
   it("falls back to default for null and non-number previewLines inputs", () => {
@@ -395,9 +395,9 @@ describe("mergeSettings — previewLines", () => {
       lastFolderPath: "",
     } as unknown;
 
-    const result = mergeSettings(current as never, { previewLines: 10 });
+    const result = mergeSettings(current as never, { previewLines: 8 });
 
-    expect(result.previewLines).toBe(10);
+    expect(result.previewLines).toBe(8);
     expect(result.sort.field).toBe("ctime");
     expect(result.sort.direction).toBe("asc");
     expect(result.filter.tags).toEqual(["tag-a", "tag-b"]);
@@ -407,12 +407,12 @@ describe("mergeSettings — previewLines", () => {
     expect(result.lastFolderPath).toBe("");
   });
 
-  it("normalizes previewLines in patch for raw values 2, 3, 5, 10, 11", () => {
+  it("normalizes previewLines in patch for raw values 2, 3, 5, 8, 9", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 2 }).previewLines).toBe(3);
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 3 }).previewLines).toBe(3);
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 5 }).previewLines).toBe(5);
-    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 10 }).previewLines).toBe(10);
-    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 11 }).previewLines).toBe(10);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 8 }).previewLines).toBe(8);
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 9 }).previewLines).toBe(8);
   });
 
   it("falls back to default when patch.previewLines is null or non-number", () => {

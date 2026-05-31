@@ -11,7 +11,7 @@ export type DefaultCardOpenBehavior = "smart" | "new-tab" | "split-right" | "new
 export type CardCornerRadius = "compact" | "medium" | "rounded";
 
 export const PREVIEW_LINES_MIN = 3;
-export const PREVIEW_LINES_MAX = 10;
+export const PREVIEW_LINES_MAX = 8;
 export const DEFAULT_PREVIEW_LINES = 5;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
 export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";
