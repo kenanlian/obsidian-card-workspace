@@ -23,7 +23,7 @@
 - 已完成：标准仓库验证仍是 `npm run check`、`npm run build`、`npm test`；而 release workflow 会在此基础上额外执行 `npm run check:svelte`。
 - 已完成：仓库具备最小 GitHub Release 支持，通过裸 semver tag 触发 draft release 生成。
 - 已完成：版本发布前的元数据对齐工具链已稳固，支持同步版本号并校验发布契约。
-- 已完成：folder scope 菜单现在显式暴露 `根目录 /` 选项；关闭 `includeSubfolders` 时只看 vault 根目录直系文件，开启后结果与 `All notes` 等价，但仍保持 folder scope 语义。
+- 已完成：scope 模型已收敛为 folder-only。插件启动与会话恢复默认进入 `根目录 / + includeSubfolders=true`；`lastFolderPath=""` 现在是 vault root 的正式持久化表示，不再保留 `All notes` 或“未选择文件夹”运行态。
 
 ## 回来看代码前先记住这 3 件事
 
@@ -55,13 +55,14 @@
 
 1. `docs/START_HERE.md`
 2. `docs/architecture.md`
-3. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
-4. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
-5. `src/main.ts`
-6. `src/view/FolderCardView.ts`
-7. `src/search/SearchIndexManager.ts`
-8. `src/search/IndexedSearchService.ts`
-9. `src/view/pipeline.ts`
-10. `src/view/file-kind.ts`
+3. `docs/decisions/2026-05-31-collapse-scope-model-to-root-default-folder-only.md`
+4. `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
+5. `docs/decisions/2026-04-18-phase3-search-architecture-readiness.md`
+6. `src/main.ts`
+7. `src/view/FolderCardView.ts`
+8. `src/search/SearchIndexManager.ts`
+9. `src/search/IndexedSearchService.ts`
+10. `src/view/pipeline.ts`
+11. `src/view/file-kind.ts`
 
 (End of file)

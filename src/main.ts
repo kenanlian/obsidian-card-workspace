@@ -26,20 +26,24 @@ import type {
   SearchVaultMutation,
 } from "./search";
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
-import { ALL_NOTES_PATH } from "./view/types";
-import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
+import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
+
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
 const SEARCH_TOKENIZER_VERSION = "search-text-v2";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
+
+function normalizeFolderScopePath(path: string): string {
+  return path === "/" ? "" : path;
+}
 type SearchRecoveryBoundaryState = "healthy" | "degraded";
 
 type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
 export default class FolderCardExplorerPlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
-  private selectedFolderPath: string | null = null;
+  private selectedFolderPath = "";
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
@@ -123,28 +127,14 @@ export default class FolderCardExplorerPlugin extends Plugin {
 
   async createNoteInCurrentFolder(): Promise<void> {
     const folderPath = this.resolveNewNoteFolderPath();
-    if (folderPath === null) {
-      return;
-    }
 
     const fullPath = this.generateUniqueNotePath(folderPath);
     const file = await this.app.vault.create(fullPath, "");
     await this.openNoteFromCard(file.path, "current-area");
   }
 
-  private resolveNewNoteFolderPath(): string | null {
-    // If viewing a specific folder, use it directly
-    if (this.selectedFolderPath && this.selectedFolderPath !== ALL_NOTES_PATH) {
-      return this.selectedFolderPath;
-    }
-
-    // "All Notes" mode: create in vault root
-    if (this.selectedFolderPath === ALL_NOTES_PATH) {
-      return "";
-    }
-
-    // No folder selected at all
-    return null;
+  private resolveNewNoteFolderPath(): string {
+    return this.selectedFolderPath;
   }
 
   private generateUniqueNotePath(folderPath: string): string {
@@ -282,26 +272,16 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   async selectFolderByPath(path: string, source: FolderSelectionSource): Promise<void> {
-    const folder = path === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(path);
+    const normalizedPath = normalizeFolderScopePath(path);
+    const folder = normalizedPath === ""
+      ? this.app.vault.getRoot()
+      : this.app.vault.getAbstractFileByPath(normalizedPath);
     if (!(folder instanceof TFolder)) {
       return;
     }
     await this.selectFolder(folder, source);
   }
 
-  async selectAllNotes(): Promise<void> {
-    const request = this.createSelectionRequest(ALL_NOTES_PATH, "panel-picker");
-    await this.activateView();
-    if (request.requestId !== this.latestHandledRequestId) {
-      return;
-    }
-    this.dispatchSelectionRequest(request);
-    this.selectedFolderPath = ALL_NOTES_PATH;
-    await this.saveData(
-      mergeSettings(this.settings, { lastViewMode: "all-notes" }),
-    );
-    this.settings = mergeSettings(this.settings, { lastViewMode: "all-notes" });
-  }
 
   private async selectFolder(
     folder: TFolder,
@@ -314,11 +294,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
     }
     this.dispatchSelectionRequest(request);
     await this.saveData(
-      mergeSettings(this.settings, { lastFolderPath: folder.path, lastViewMode: "folder" }),
+      mergeSettings(this.settings, { lastFolderPath: folder.path }),
     );
     this.settings = mergeSettings(this.settings, {
       lastFolderPath: folder.path,
-      lastViewMode: "folder",
     });
   }
 
@@ -1026,17 +1005,8 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async restoreLastSession(): Promise<void> {
-    if (this.settings.lastViewMode === "all-notes") {
-      await this.selectAllNotes();
-      return;
-    }
-
-    const lastPath = this.settings.lastFolderPath;
-    if (!lastPath) {
-      return;
-    }
-
-    const folder = this.app.vault.getAbstractFileByPath(lastPath);
+    const lastPath = normalizeFolderScopePath(this.settings.lastFolderPath);
+    const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
     if (!(folder instanceof TFolder)) {
       return;
     }
@@ -1057,7 +1027,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     this.selectionRequestSeq += 1;
     const request: FolderSelectionRequest = {
       requestId: this.selectionRequestSeq,
-      folderPath,
+      folderPath: normalizeFolderScopePath(folderPath),
       source,
       requestedAtMs: Date.now(),
       forceRefresh,
@@ -1115,7 +1085,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     let shouldQueueRefresh = false;
     this.withFolderViews((view) => {
       const result = view.handleVaultMutation(event);
-      if (result.selectedFolderPathAfterRename) {
+      if (result.selectedFolderPathAfterRename !== null) {
         this.selectedFolderPath = result.selectedFolderPathAfterRename;
       }
       if (result.shouldRefresh) {
@@ -1132,7 +1102,6 @@ export default class FolderCardExplorerPlugin extends Plugin {
     if (
       event.eventType !== "rename" ||
       !event.isFolder ||
-      !this.selectedFolderPath ||
       !event.oldPath
     ) {
       return;
@@ -1152,14 +1121,10 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private async requestRefreshForViews(
     reason: "vault-change" | "settings-change" | "manual",
   ): Promise<void> {
-    if (!this.selectedFolderPath) {
-      return;
-    }
-
     this.withFolderViews((view) => {
       void view.refresh({
         reason,
-        folderPath: this.selectedFolderPath ?? undefined,
+        folderPath: this.selectedFolderPath,
         forceRefresh: true,
       });
     });

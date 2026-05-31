@@ -150,7 +150,6 @@ function mountToolbar(
       includeSubfolders: true,
       searchQuery: "",
       searchStatus: "idle",
-      isAllNotesScope: false,
       bulkMode: false,
       selectedCount: 0,
       bulkAnchorPath: null,
@@ -1184,7 +1183,6 @@ describe("Toolbar.svelte", () => {
     let { component } = mountToolbar({
       folderPath: "notes",
       includeSubfolders: true,
-      isAllNotesScope: false,
     });
     await tick();
 
@@ -1205,7 +1203,6 @@ describe("Toolbar.svelte", () => {
     ({ component } = mountToolbar({
       folderPath: "notes",
       includeSubfolders: false,
-      isAllNotesScope: false,
     }));
     await tick();
 
@@ -1218,13 +1215,12 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
 
     ({ component } = mountToolbar({
-      folderPath: "notes",
+      folderPath: "/",
       includeSubfolders: true,
-      isAllNotesScope: true,
     }));
     await tick();
 
-    expect(document.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Including subfolders"]')).not.toBeNull();
     expect(document.querySelector('button[aria-label="Direct folder only"]')).toBeNull();
 
     await disposeMountedComponent(component);

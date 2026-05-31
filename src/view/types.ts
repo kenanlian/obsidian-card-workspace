@@ -10,7 +10,6 @@ export type {
   SearchStatus,
 } from "../search/types";
 
-export const ALL_NOTES_PATH = "__all__";
 
 /**
  * Search ownership model for Phase 3 architecture hardening.
@@ -153,7 +152,6 @@ export interface RefreshRequest {
 export type RefreshAction =
   | "started"
   | "queued_latest"
-  | "skipped_no_folder"
   | "skipped_invalid_folder";
 
 export interface RefreshResult {
@@ -169,7 +167,6 @@ export type IncrementalAction =
   | "updated"
   | "hydration_reset"
   | "skipped_not_found"
-  | "skipped_no_folder"
   | "skipped_folder_event"
   | "deferred_full_reload";
 

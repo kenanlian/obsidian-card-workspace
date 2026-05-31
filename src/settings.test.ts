@@ -126,9 +126,10 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: true } as unknown).enableFileExplorerFolderClicks).toBe(true);
   });
 
-  it("normalizes lastViewMode to all-notes only for the known value", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "all-notes" }).lastViewMode).toBe("all-notes");
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "unexpected" }).lastViewMode).toBe("folder");
+  it("normalizes root lastFolderPath forms to the internal empty-string path", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastFolderPath: "/" }).lastFolderPath).toBe("");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "all-notes" }).lastFolderPath).toBe("");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, lastViewMode: "unexpected" }).lastFolderPath).toBe("");
   });
 
   it("defaults defaultCardOpenBehavior to smart when the raw value is missing or invalid", () => {
@@ -391,8 +392,7 @@ describe("mergeSettings — previewLines", () => {
       },
       pinnedPaths: ["folder/note-1.md", "folder/note-2.md"],
       includeSubfolders: false,
-      defaultView: "cards",
-      lastViewMode: "all-notes",
+      lastFolderPath: "",
     } as unknown;
 
     const result = mergeSettings(current as never, { previewLines: 10 });
@@ -404,7 +404,7 @@ describe("mergeSettings — previewLines", () => {
     expect(result.pinnedPaths).toEqual(["folder/note-1.md", "folder/note-2.md"]);
     expect(result.includeSubfolders).toBe(false);
     expect(result.defaultView).toBe("cards");
-    expect(result.lastViewMode).toBe("all-notes");
+    expect(result.lastFolderPath).toBe("");
   });
 
   it("normalizes previewLines in patch for raw values 2, 3, 5, 10, 11", () => {

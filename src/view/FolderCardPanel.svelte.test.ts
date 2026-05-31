@@ -52,7 +52,6 @@ function createInitialPanelState(): PanelModelState {
     previewLines: 5,
     folderTree: [],
     includeSubfolders: true,
-    isAllNotesScope: false,
     tooltipSide: "right",
     bulkMode: false,
     selectedPaths: [],
@@ -250,12 +249,11 @@ describe("FolderCardPanel.svelte", () => {
     expect(target.textContent).toContain("No results for “query” in current folder and tag scope.");
 
     panelModel.mutate((state) => {
-      state.isAllNotesScope = true;
-      state.emptyStateMessage = "No results for “query” in current tag scope.";
+      state.emptyStateMessage = "No results for “query” in current folder.";
     });
     await tick();
 
-    expect(target.textContent).toContain("No results for “query” in current tag scope.");
+    expect(target.textContent).toContain("No results for “query” in current folder.");
 
     await unmount(component);
   });

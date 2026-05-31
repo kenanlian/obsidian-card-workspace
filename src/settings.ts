@@ -4,8 +4,6 @@ export type SortDirection = "desc" | "asc";
 
 export type DefaultViewMode = "cards";
 
-export type ViewMode = "folder" | "all-notes";
-
 export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-window";
 
 export type DefaultCardOpenBehavior = "smart" | "new-tab" | "split-right" | "new-window";
@@ -73,8 +71,7 @@ export interface PluginSettings {
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   cardCornerRadius: CardCornerRadius;
   previewLines: number;
-  lastFolderPath: string | null;
-  lastViewMode: ViewMode;
+  lastFolderPath: string;
 }
 
 export interface PartialPluginSettings {
@@ -92,8 +89,7 @@ export interface PartialPluginSettings {
   defaultCardOpenBehavior?: DefaultCardOpenBehavior;
   cardCornerRadius?: CardCornerRadius;
   previewLines?: number;
-  lastFolderPath?: string | null;
-  lastViewMode?: ViewMode;
+  lastFolderPath?: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -111,8 +107,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
   previewLines: DEFAULT_PREVIEW_LINES,
-  lastFolderPath: null,
-  lastViewMode: "folder",
+  lastFolderPath: "",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -167,8 +162,12 @@ function normalizeCardCornerRadius(value: unknown): CardCornerRadius {
     : DEFAULT_CARD_CORNER_RADIUS;
 }
 
-function normalizeViewMode(value: unknown): ViewMode {
-  return value === "all-notes" ? "all-notes" : "folder";
+function normalizeLastFolderPath(value: unknown, rawLastViewMode: unknown): string {
+  if (typeof value === "string") {
+    return value === "/" ? "" : value;
+  }
+
+  return rawLastViewMode === "all-notes" ? "" : DEFAULT_SETTINGS.lastFolderPath;
 }
 
 function normalizePreviewLines(value: unknown): number {
@@ -212,11 +211,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     previewLines: normalizePreviewLines(data.previewLines),
-    lastFolderPath:
-      typeof data.lastFolderPath === "string" && data.lastFolderPath.length > 0
-        ? data.lastFolderPath
-        : null,
-    lastViewMode: normalizeViewMode(data.lastViewMode),
+    lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
   };
 }
 

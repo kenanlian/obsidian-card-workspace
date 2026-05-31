@@ -522,7 +522,6 @@ import {
   moveFile,
 } from "./note-ops";
 import type { SearchServiceSnapshot } from "../search";
-import { ALL_NOTES_PATH } from "./types";
 import * as markdownUtils from "./markdown-utils";
 
 function createFolder(path: string): InstanceType<typeof mockState.MockTFolder> {
@@ -1678,23 +1677,21 @@ describe("FolderCardView card context actions", () => {
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
           folderPath: "projects/active",
           includeSubfolders: true,
-          isAllNotesScope: false,
           previewLines: 5,
         });
       });
 
-      it("onOpen passes a legible all-notes scope state to the panel", async () => {
-        const { view } = createViewWithFile("notes/all-notes-props.md");
+      it("onOpen passes a legible root folder scope state to the panel", async () => {
+        const { view } = createViewWithFile("notes/root-props.md");
 
-        (view as any).folderPath = ALL_NOTES_PATH;
+        (view as any).folderPath = "";
 
         await (view as any).onOpen();
 
         expect(mockState.panelInstances).toHaveLength(1);
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
-          folderPath: "All Notes",
+          folderPath: "/",
           includeSubfolders: true,
-          isAllNotesScope: true,
         });
       });
 
@@ -1729,17 +1726,19 @@ describe("FolderCardView card context actions", () => {
         expect(plugin.saveSettings).not.toHaveBeenCalled();
       });
 
-      it("include-subfolders-change is ignored in all-notes scope", async () => {
-        const { view, plugin } = createViewWithFile("notes/include-subfolders-all-notes.md");
+      it("include-subfolders-change persists valid boolean values in root folder scope", async () => {
+        const { view, plugin } = createViewWithFile("notes/include-subfolders-root.md");
 
-        (view as any).folderPath = ALL_NOTES_PATH;
+        (view as any).folderPath = "";
 
         await (view as any).onOpen();
 
         const includeSubfoldersHandler = mockState.panelEventHandlers["include-subfolders-change"];
         includeSubfoldersHandler({ detail: { value: false } });
 
-        expect(plugin.saveSettings).not.toHaveBeenCalled();
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          includeSubfolders: false,
+        });
       });
 
       it("include-subfolders-change is a no-op when the requested value already matches settings", async () => {
@@ -3428,14 +3427,14 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).refreshQueued).toBe(false);
     });
 
-    it("rename updates card path when move stays visible in all-notes scope", () => {
+    it("rename updates card path when move stays visible in recursive root scope", () => {
       const { view, app, file } = createViewWithFile("notes/move-me.md");
       const movedFile = new mockState.MockTFile("archive/move-me.md");
       app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
         return requestedPath === movedFile.path ? movedFile : null;
       });
 
-      (view as any).folderPath = ALL_NOTES_PATH;
+      (view as any).folderPath = "";
       (view as any).baseCards = [createCardRecord(file)];
 
       const result = (view as any).handleVaultMutation({
@@ -3758,30 +3757,28 @@ describe("FolderCardView card context actions", () => {
   });
 
   describe("Phase 1 regression hardening", () => {
-    it("pushState updates the panel to all-notes while preserving sort, filter, and pinned props", () => {
-      const { view, plugin } = createViewWithFile("notes/push-state-all-notes.md");
+    it("pushState updates the panel to root scope while preserving sort, filter, and pinned props", () => {
+      const { view, plugin } = createViewWithFile("notes/push-state-root.md");
 
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: false,
         sort: { field: "ctime", direction: "asc" },
         filter: { tags: ["alpha", "beta"] },
         defaultView: "cards",
-        lastFolderPath: null,
-        lastViewMode: "all-notes",
+        lastFolderPath: "",
         pinnedPaths: ["notes/pinned.md"],
       }));
 
       (view as any).component = mockState.createMountedPanel({
         props: { panelModel: (view as any).panelModel },
       });
-      (view as any).folderPath = ALL_NOTES_PATH;
+      (view as any).folderPath = "";
       (view as any).baseCards = [createCardRecord(createMarkdownFile("notes/pinned.md"))];
 
       (view as any).pushState();
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
-        folderPath: "All Notes",
-        isAllNotesScope: true,
+        folderPath: "/",
         sortField: "ctime",
         sortDirection: "asc",
         activeFilterTags: ["alpha", "beta"],
@@ -3905,7 +3902,7 @@ describe("FolderCardView card context actions", () => {
       ]);
     });
 
-    it("collectSupportedFiles treats all-notes as recursive regardless of includeSubfolders", () => {
+    it("collectSupportedFiles recurses from root when includeSubfolders is true", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
       const root = attachChildren(createFolder(""), [
         createMarkdownFile("projects/active/direct.md"),
@@ -3916,28 +3913,20 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getRoot = vi.fn(() => root);
 
-      expect((view as any).collectSupportedFiles(ALL_NOTES_PATH, false).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).collectSupportedFiles("", true).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/nested/deep.md",
       ]);
     });
 
-    it("isPathInScope excludes nested descendants when includeSubfolders is false and includes them otherwise", () => {
-      const { view } = createViewWithFile("projects/active/direct.md");
-
-      (view as any).folderPath = "projects/active";
-
-      expect((view as any).isPathInScope("projects/active/direct.md", false)).toBe(true);
-      expect((view as any).isPathInScope("projects/active/nested/deep.md", false)).toBe(false);
-      expect((view as any).isPathInScope("projects/active/nested/deep.md", true)).toBe(true);
-    });
-
-    it("isPathInScope always includes markdown files in all-notes scope", () => {
+    it("isPathInScope excludes nested descendants for direct root scope and includes them recursively", () => {
       const { view } = createViewWithFile("notes/root.md");
 
-      (view as any).folderPath = ALL_NOTES_PATH;
+      (view as any).folderPath = "";
 
-      expect((view as any).isPathInScope("archive/nested.md", false)).toBe(true);
+      expect((view as any).isPathInScope("root.md", false)).toBe(true);
+      expect((view as any).isPathInScope("archive/nested.md", false)).toBe(false);
+      expect((view as any).isPathInScope("archive/nested.md", true)).toBe(true);
     });
 
     it("vault mutations ignore nested descendants when includeSubfolders is false", () => {
@@ -4093,7 +4082,7 @@ describe("FolderCardView card context actions", () => {
       (view as any).bulkAnchorPath = "notes/direct.md";
       await (view as any).handleFolderSelection({
         requestId: 23,
-        folderPath: ALL_NOTES_PATH,
+        folderPath: "",
         source: "programmatic",
         requestedAtMs: Date.now(),
         forceRefresh: true,
@@ -4226,7 +4215,7 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).bulkAnchorPath).toBeNull();
     });
 
-    it("open-note, sort-change, filter-change, and pin-toggle still work after switching to all-notes scope", async () => {
+    it("open-note, sort-change, filter-change, and pin-toggle still work after switching to root scope", async () => {
       const { view, plugin } = createViewWithFile("notes/phase1-regression.md");
 
       plugin.getSettings = vi.fn(() => ({
@@ -4234,12 +4223,12 @@ describe("FolderCardView card context actions", () => {
         sort: { field: "mtime", direction: "desc" },
         filter: { tags: [] },
         defaultView: "cards",
-        lastFolderPath: null,
-        lastViewMode: "all-notes",
+        lastFolderPath: "",
         pinnedPaths: [],
               }));
 
-      (view as any).folderPath = ALL_NOTES_PATH;
+      (view as any).folderPath = "";
+      await (view as any).onOpen();
       await (view as any).onOpen();
 
       mockState.panelEventHandlers["open-note"]({ detail: { path: "notes/phase1-regression.md" } });

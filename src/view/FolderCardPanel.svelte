@@ -106,7 +106,6 @@
     previewLines: 5,
     folderTree: [],
     includeSubfolders: true,
-    isAllNotesScope: false,
     tooltipSide: "right",
     bulkMode: false,
     selectedPaths: [],
@@ -212,7 +211,6 @@
   const previewLines = $derived(panelState.previewLines);
   const folderTree = $derived(panelState.folderTree);
   const includeSubfolders = $derived(panelState.includeSubfolders);
-  const isAllNotesScope = $derived(panelState.isAllNotesScope);
   const tooltipSide = $derived(panelState.tooltipSide);
   const bulkMode = $derived(panelState.bulkMode);
   const selectedPaths = $derived(panelState.selectedPaths);
@@ -568,7 +566,6 @@
     searchIndexReadiness={panelState.searchIndexReadiness ?? "ready"}
     searchIndexPersistence={panelState.searchIndexPersistence ?? "healthy"}
     searchIndexRebuildReason={panelState.searchIndexRebuildReason ?? null}
-    {isAllNotesScope}
     {tooltipSide}
     {bulkMode}
     {selectedCount}

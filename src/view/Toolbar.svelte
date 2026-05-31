@@ -55,7 +55,6 @@
     searchIndexReadiness?: import("./types").SearchIndexReadinessState;
     searchIndexPersistence?: import("./types").SearchIndexPersistenceHealth;
     searchIndexRebuildReason?: import("./types").SearchIndexRebuildReason | null;
-    isAllNotesScope?: boolean;
     bulkMode?: boolean;
     selectedCount?: number;
     bulkAnchorPath?: string | null;
@@ -151,7 +150,6 @@
     searchIndexReadiness = "ready",
     searchIndexPersistence = "healthy",
     searchIndexRebuildReason = null,
-    isAllNotesScope = false,
     bulkMode = false,
     selectedCount = 0,
     bulkAnchorPath = null,
@@ -226,7 +224,7 @@
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
   ]);
 
-  const hasFolderScope = $derived(!isAllNotesScope && folderPath.length > 0);
+  const hasFolderScope = $derived(folderPath.length > 0);
   const hasTagFilter = $derived(activeFilterTags.length > 0);
   const selectedTag = $derived(activeFilterTags[0] ?? "");
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);

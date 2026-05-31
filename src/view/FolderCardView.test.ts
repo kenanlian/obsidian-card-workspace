@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import { getUiStrings } from "../i18n";
-import { ALL_NOTES_PATH } from "./types";
 
 const testState = vi.hoisted(() => {
   class TestTFile {
@@ -522,8 +521,8 @@ describe("FolderCardView host contract", () => {
     }));
     expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
 
-    (view as any).folderPath = ALL_NOTES_PATH;
-    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current tag scope.');
+    (view as any).folderPath = "";
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
@@ -533,7 +532,7 @@ describe("FolderCardView host contract", () => {
       previewLines: 5,
       includeSubfolders: true,
     }));
-    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in all notes.');
+    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder.');
   });
 
   it("repeated open/close cycles do not leave stale panel DOM or duplicate open handlers", async () => {
@@ -1252,6 +1251,47 @@ describe("FolderCardView host contract", () => {
         depth: 0,
       },
     ]);
+  });
+
+  it("normalizes slash root selection requests to the internal empty-string folder path", async () => {
+    const { view } = createHarness();
+    const root = new testState.TestTFolder("");
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+
+    const result = await (view as any).handleFolderSelection({
+      requestId: 1,
+      folderPath: "/",
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+      forceRefresh: true,
+    });
+
+    expect(result).toMatchObject({
+      action: "started",
+      folderPath: "",
+    });
+    expect((view as any).folderPath).toBe("");
+  });
+
+  it("treats slash-selected root scope as eligible for modify-driven preview refresh", () => {
+    const { view } = createHarness();
+    const card = createCard("nested/note.md", "Nested note");
+    const hydrateSpy = vi.spyOn(view as any, "hydrateCard").mockResolvedValue(undefined);
+
+    (view as any).folderPath = "/";
+    (view as any).baseCards = [card];
+
+    const result = (view as any).handleVaultMutation({
+      eventType: "modify",
+      path: card.path,
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(result.shouldRefresh).toBe(false);
+    expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
+    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).generation);
   });
 
   it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {

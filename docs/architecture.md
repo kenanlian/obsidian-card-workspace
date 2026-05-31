@@ -147,7 +147,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - `baseCards`、`visibleCards`、selectedPath、bulk state。
 - generation、防陈旧、hydration、刷新队列。
 - 当前视图的 `searchQuery`、`searchStatus`、候选路径约束和 debounce。
-- 收集当前 folder / all-notes scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`。
+- 收集当前 folder scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`；vault root (`lastFolderPath=""`) 是默认且最宽的 folder scope。
 - 对 Markdown 卡片执行正文读取和预览构建；对非 Markdown 卡片注入占位摘要。
 - 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`。
 - 轻量 preview 现在会在共享 `previewLines` 预算内，按源码顺序保留文本块与 fenced code block；代码块不再因为前面已经出现正文而被统一跳过。
@@ -175,8 +175,8 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - 标题图标继续通过 `setIcon(...)` 渲染 Obsidian 官方 icon name；当前 `base` 使用 `layout-list`，`excalidraw` 使用 `pen-tool`。
 - 为非 Markdown 卡片显示稳定占位摘要，而不是假装存在正文预览。
 - 在摘要行展示紧凑的上下文信息（仅在过滤或异常状态下）。
-- 用持续高亮表达 `All notes`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
-- `Folder scope` 菜单显式包含 `vault root /` 这一顶层选项；它不是树容器，不额外缩进其他一级文件夹，且在 `includeSubfolders` 开启时结果可与 `All notes` 等价。
+- 用持续高亮表达 `Folder scope`、`Filter cards`、`Bulk actions`、`Toggle search`、`Subfolders` 等一级按钮的当前激活状态。
+- `Folder scope` 菜单显式包含 `vault root /` 这一顶层选项；它不是树容器，不额外缩进其他一级文件夹。关闭 `includeSubfolders` 时只看 vault 根目录直系文件，开启后则作为插件默认的全库浏览态。
 - 在 bulk mode 下把批量操作带收敛成 icon-only controls，并把每张卡片的选择入口放到右上角复选框槽位，同时临时隐藏 pin 按钮。
 - 在 title / excerpt / meta 这三块非控件区域发射 hover payload，让宿主 Page Preview 体系决定是否显示 popover；按钮、菜单和 bulk checkbox 不参与这条路径。
 - 把搜索输入变化回传给 `FolderCardView.ts`。
@@ -341,8 +341,7 @@ baseCards
 - `includeSubfolders`
 - `defaultView`
 - `previewLines`
-- `lastFolderPath`
-- `lastViewMode`
+- `lastFolderPath`（空字符串 `""` 表示 vault root，也是默认恢复值）
 
 这里 **没有 `searchQuery`**。这是当前明确的架构决定。
 

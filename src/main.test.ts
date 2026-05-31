@@ -278,9 +278,9 @@ vi.mock("./view/FolderCardView", () => {
       getCurrentFolderPath(): string | null {
         return null;
       }
-      async refresh(): Promise<{ action: "skipped_no_folder"; inFlightKey: null }> {
+      async refresh(): Promise<{ action: "started"; inFlightKey: null }> {
         return {
-          action: "skipped_no_folder",
+          action: "started",
           inFlightKey: null,
         };
       }
@@ -629,7 +629,6 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
         expect.objectContaining({
           enableFileExplorerFolderClicks: true,
           lastFolderPath: "notes",
-          lastViewMode: "folder",
         }),
       );
     } finally {

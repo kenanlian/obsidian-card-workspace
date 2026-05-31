@@ -22,8 +22,7 @@ function createMockContext(): PipelineContext {
       defaultCardOpenBehavior: "smart",
       cardCornerRadius: "compact",
       previewLines: 5,
-      lastFolderPath: null,
-      lastViewMode: "folder",
+      lastFolderPath: "",
       pinnedPaths: [],
     },
     search: {

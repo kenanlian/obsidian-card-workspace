@@ -36,7 +36,6 @@ export interface PanelModelState {
   previewLines: number;
   folderTree: FolderTreeNode[];
   includeSubfolders: boolean;
-  isAllNotesScope: boolean;
   tooltipSide: "left" | "right";
   bulkMode: boolean;
   selectedPaths: string[];

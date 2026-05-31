@@ -36,7 +36,7 @@ import {
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
-import { ALL_NOTES_PATH, type CardHoverLinkPayload } from "./types";
+import type { CardHoverLinkPayload } from "./types";
 import {
   getCardPlaceholderText,
   isMarkdownCardKind,
@@ -63,6 +63,10 @@ import type {
 } from "./types";
 import type { SearchQueryExecutionState, SearchQueryResult, SearchServiceSnapshot } from "../search";
 import type FolderCardExplorerPlugin from "../main";
+
+function normalizeFolderScopePath(path: string): string {
+  return path === "/" ? "" : path;
+}
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
@@ -113,8 +117,8 @@ class BulkActionConfirmModal extends Modal {
       })
       .addButton((button) => {
         button
-          .setWarning()
           .setButtonText(this.confirmButtonText)
+          .setWarning()
           .onClick(() => {
             this.resolve(true);
           });
@@ -475,7 +479,7 @@ export class FolderCardView extends ItemView {
   private hostEl: HTMLElement | null = null;
   private readonly panelModel: PanelModel;
 
-  private folderPath: string | null = null;
+  private folderPath = "";
   private folderLoadKey: string | null = null;
   private lastLoadedIncludeSubfolders: boolean | null = null;
   private baseCards: NoteCardRecord[] = [];
@@ -548,12 +552,6 @@ export class FolderCardView extends ItemView {
 
     const hasActiveTags = this.plugin.getSettings().filter.tags.length > 0;
 
-    if (this.folderPath === ALL_NOTES_PATH) {
-      return hasActiveTags
-        ? strings.emptySearchAllNotesWithTags(query)
-        : strings.emptySearchAllNotes(query);
-    }
-
     return hasActiveTags
       ? strings.emptySearchCurrentFolderWithTags(query)
       : strings.emptySearchCurrentFolder(query);
@@ -600,7 +598,7 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
-      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
+      state.tooltipSide = this.getTooltipSide();
       state.tooltipSide = this.getTooltipSide();
     });
 
@@ -738,22 +736,26 @@ export class FolderCardView extends ItemView {
   }
 
   async handleFolderSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
-    const isAllNotes = request.folderPath === ALL_NOTES_PATH;
-    const folder = isAllNotes
-      ? null
-      : this.app.vault.getAbstractFileByPath(request.folderPath);
+    const normalizedFolderPath = normalizeFolderScopePath(request.folderPath);
+    const normalizedRequest =
+      normalizedFolderPath === request.folderPath
+        ? request
+        : { ...request, folderPath: normalizedFolderPath };
+    const folder = normalizedFolderPath === ""
+      ? this.app.vault.getRoot()
+      : this.app.vault.getAbstractFileByPath(normalizedFolderPath);
 
-    if (!isAllNotes && !(folder instanceof TFolder)) {
+    if (!(folder instanceof TFolder)) {
       return {
         action: "rejected_invalid",
-        folderPath: request.folderPath,
+        folderPath: normalizedRequest.folderPath,
         generationChanged: false,
         preserveUiState: true,
       };
     }
 
-    const forceRefresh = request.forceRefresh ?? false;
-    const nextLoadScope = this.buildLoadScope(request.folderPath);
+    const forceRefresh = normalizedRequest.forceRefresh ?? false;
+    const nextLoadScope = this.buildLoadScope(normalizedRequest.folderPath);
     const loadKey = this.serializeLoadKey(nextLoadScope);
     const clearedBulkSelection = this.reconcileBulkSelectionBeforeLoad(nextLoadScope);
 
@@ -764,16 +766,16 @@ export class FolderCardView extends ItemView {
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
           action: "reused_inflight",
-          folderPath: request.folderPath,
+          folderPath: normalizedRequest.folderPath,
           generationChanged: false,
           preserveUiState: true,
         };
       }
 
-      this.queuedRequest = request;
+      this.queuedRequest = normalizedRequest;
       return {
         action: "queued_latest",
-        folderPath: request.folderPath,
+        folderPath: normalizedRequest.folderPath,
         generationChanged: false,
         preserveUiState: true,
       };
@@ -782,18 +784,18 @@ export class FolderCardView extends ItemView {
     if (!forceRefresh && this.folderLoadKey === loadKey) {
       return {
         action: "noop",
-        folderPath: request.folderPath,
+        folderPath: normalizedRequest.folderPath,
         generationChanged: false,
         preserveUiState: true,
       };
     }
 
-    await this.runLoad(request.folderPath, nextLoadScope, loadKey);
+    await this.runLoad(normalizedRequest.folderPath, nextLoadScope, loadKey);
     await this.drainQueuedRequest();
 
     return {
       action: "started",
-      folderPath: request.folderPath,
+      folderPath: normalizedRequest.folderPath,
       generationChanged: true,
       preserveUiState: false,
     };
@@ -801,12 +803,6 @@ export class FolderCardView extends ItemView {
 
   async refresh(request: RefreshRequest = { reason: "manual" }): Promise<RefreshResult> {
     const targetPath = request.folderPath ?? this.folderPath;
-    if (!targetPath) {
-      return {
-        action: "skipped_no_folder",
-        inFlightKey: this.inFlightKey,
-      };
-    }
 
     if (request.reason === "vault-change") {
       this.refreshQueued = false;
@@ -839,12 +835,13 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    const currentFolderPath = this.normalizeActiveFolderScopePath();
     let selectedFolderPathAfterRename: string | null = null;
     if (event.eventType === "rename" && event.isFolder && event.oldPath) {
-      const renamedPath = this.rewritePathAfterRename(this.folderPath, event.oldPath, event.path);
-      if (renamedPath !== this.folderPath) {
+      const renamedPath = this.rewritePathAfterRename(currentFolderPath, event.oldPath, event.path);
+      if (renamedPath !== currentFolderPath) {
         this.folderPath = renamedPath;
-        this.folderLoadKey = renamedPath ? this.serializeLoadKey(this.buildLoadScope(renamedPath)) : null;
+        this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(renamedPath));
         selectedFolderPathAfterRename = renamedPath;
       }
     }
@@ -858,7 +855,6 @@ export class FolderCardView extends ItemView {
       };
     }
 
-    // Attempt incremental update. Only fall back to full reload if not handled.
     if (!this.inFlight && !this.loading) {
       const incrementalResult = this.applyIncrementalMutation(event);
       if (incrementalResult.handled) {
@@ -1327,25 +1323,12 @@ export class FolderCardView extends ItemView {
       if (this.inFlightLoadScope.folderPath !== nextLoadScope.folderPath) {
         return true;
       }
-
-      if (nextLoadScope.folderPath === ALL_NOTES_PATH) {
-        return false;
-      }
-
       return this.inFlightLoadScope.includeSubfolders !== nextLoadScope.includeSubfolders;
     }
 
-    if (!this.folderPath) {
-      return false;
-    }
-
-    if (this.folderPath !== nextLoadScope.folderPath) {
+    const currentFolderPath = this.normalizeActiveFolderScopePath();
+    if (currentFolderPath !== nextLoadScope.folderPath) {
       return true;
-    }
-
-    // All Notes ignores includeSubfolders and should not clear selection for that setting change.
-    if (nextLoadScope.folderPath === ALL_NOTES_PATH) {
-      return false;
     }
 
     return (
@@ -1361,17 +1344,16 @@ export class FolderCardView extends ItemView {
     this.requestSeq += 1;
     return {
       requestId: this.requestSeq,
-      folderPath,
+      folderPath: normalizeFolderScopePath(folderPath),
       source: "programmatic",
       requestedAtMs: Date.now(),
       forceRefresh,
     };
   }
-
   private buildLoadScope(folderPath: string): FolderLoadKey {
     const settings = this.plugin.getSettings();
     return {
-      folderPath,
+      folderPath: normalizeFolderScopePath(folderPath),
       includeSubfolders: settings.includeSubfolders,
       sortField: settings.sort.field,
       sortDirection: settings.sort.direction,
@@ -1479,10 +1461,6 @@ export class FolderCardView extends ItemView {
   }
 
   private shouldRefreshForVaultEvent(event: VaultMutationEvent): boolean {
-    if (!this.folderPath) {
-      return false;
-    }
-
     if (!event.isFolder) {
       const oldPathKind =
         typeof event.oldPath === "string" && event.oldPath.length > 0
@@ -1503,21 +1481,26 @@ export class FolderCardView extends ItemView {
     return pathInScope || oldPathInScope;
   }
 
+  private normalizeActiveFolderScopePath(): string {
+    const normalizedFolderPath = normalizeFolderScopePath(this.folderPath);
+    if (normalizedFolderPath !== this.folderPath) {
+      this.folderPath = normalizedFolderPath;
+    }
+
+    return normalizedFolderPath;
+  }
+
   private isPathInScope(path: string, includeSubfolders: boolean): boolean {
-    if (!this.folderPath) {
-      return false;
+    const currentFolderPath = this.normalizeActiveFolderScopePath();
+    if (currentFolderPath === "") {
+      return includeSubfolders || !path.includes("/");
     }
 
-    // All-notes mode: every supported file is in scope
-    if (this.folderPath === ALL_NOTES_PATH) {
+    if (path === currentFolderPath) {
       return true;
     }
 
-    if (path === this.folderPath) {
-      return true;
-    }
-
-    const prefix = `${this.folderPath}/`;
+    const prefix = `${currentFolderPath}/`;
     if (!path.startsWith(prefix)) {
       return false;
     }
@@ -1531,11 +1514,11 @@ export class FolderCardView extends ItemView {
   }
 
   private rewritePathAfterRename(
-    currentPath: string | null,
+    currentPath: string,
     oldPath: string,
     newPath: string,
-  ): string | null {
-    if (!currentPath) {
+  ): string {
+    if (currentPath === "") {
       return currentPath;
     }
 
@@ -1552,8 +1535,7 @@ export class FolderCardView extends ItemView {
   }
 
   private collectSupportedFiles(folderPath: string, includeSubfolders: boolean): TFile[] {
-    const isAllNotes = folderPath === ALL_NOTES_PATH;
-    const root = isAllNotes
+    const root = folderPath === ""
       ? this.app.vault.getRoot()
       : this.app.vault.getAbstractFileByPath(folderPath);
 
@@ -1561,7 +1543,7 @@ export class FolderCardView extends ItemView {
       return [];
     }
 
-    if (!isAllNotes && !includeSubfolders) {
+    if (!includeSubfolders) {
       const directFiles: TFile[] = [];
       for (const child of root.children) {
         if (child instanceof TFile && isSupportedCardFile(child)) {
@@ -1572,7 +1554,7 @@ export class FolderCardView extends ItemView {
       return directFiles;
     }
 
-    // recursive (all-notes always recurses)
+    // recursive
     const result: TFile[] = [];
     const stack: TFolder[] = [root];
 
@@ -1639,9 +1621,6 @@ export class FolderCardView extends ItemView {
   }
 
   private applyIncrementalMutation(event: VaultMutationEvent): IncrementalMutationResult {
-    if (!this.folderPath) {
-      return { handled: false, action: "skipped_no_folder" };
-    }
 
     if (event.isFolder) {
       // Folder-level events (other than rename path-rewrite already handled above)
@@ -2641,15 +2620,11 @@ export class FolderCardView extends ItemView {
   }
 
   private getDisplayFolderPath(): string {
-    if (this.folderPath === ALL_NOTES_PATH) {
-      return this.strings.view.allNotes;
-    }
-
     if (this.folderPath === "") {
       return "/";
     }
 
-    return this.folderPath ?? "";
+    return this.folderPath;
   }
 
   private buildBulkRuntimePanelState(): BulkRuntimePanelState {
@@ -2698,7 +2673,6 @@ export class FolderCardView extends ItemView {
       previewLines: settings.previewLines,
       folderTree: [],
       includeSubfolders: settings.includeSubfolders,
-      isAllNotesScope: this.folderPath === ALL_NOTES_PATH,
       tooltipSide: this.getTooltipSide(),
     };
   }
@@ -2738,7 +2712,6 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
-      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
     });
   }
 
@@ -2779,7 +2752,6 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
-      state.isAllNotesScope = this.folderPath === ALL_NOTES_PATH;
     });
   }
 
@@ -2807,7 +2779,7 @@ export class FolderCardView extends ItemView {
   }
 
   private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
-    if (this.folderPath === ALL_NOTES_PATH || typeof detail.value !== "boolean") {
+    if (typeof detail.value !== "boolean") {
       return;
     }
 

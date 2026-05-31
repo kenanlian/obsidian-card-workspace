@@ -64,7 +64,6 @@ export interface ToolbarStrings {
     exitBulkMode: string;
   };
   folderMenu: {
-    allNotesScope: string;
     folderScope: string;
     rootFolder: string;
     includeSubfolders: string;
@@ -133,10 +132,7 @@ export interface DesktopShellStrings {
 
 export interface ViewStrings {
   displayName: string;
-  allNotes: string;
   emptyFolder: string;
-  emptySearchAllNotes: (query: string) => string;
-  emptySearchAllNotesWithTags: (query: string) => string;
   emptySearchCurrentFolder: (query: string) => string;
   emptySearchCurrentFolderWithTags: (query: string) => string;
   bulkConfirm: {
@@ -330,7 +326,6 @@ const EN: UiStrings = {
       exitBulkMode: "Exit bulk mode",
     },
     folderMenu: {
-      allNotesScope: "All notes",
       folderScope: "Folder scope",
       rootFolder: "Root /",
       includeSubfolders: "Including subfolders",
@@ -393,10 +388,7 @@ const EN: UiStrings = {
   },
   view: {
     displayName: "Card Workspace",
-    allNotes: "All Notes",
     emptyFolder: "No supported files found in this folder.",
-    emptySearchAllNotes: (query: string) => `No results for “${query}” in all notes.`,
-    emptySearchAllNotesWithTags: (query: string) => `No results for “${query}” in current tag scope.`,
     emptySearchCurrentFolder: (query: string) => `No results for “${query}” in current folder.`,
     emptySearchCurrentFolderWithTags: (query: string) => `No results for “${query}” in current folder and tag scope.`,
     bulkConfirm: {
@@ -562,7 +554,6 @@ const ZH: UiStrings = {
       exitBulkMode: "退出批量模式",
     },
     folderMenu: {
-      allNotesScope: "全部笔记",
       folderScope: "文件夹范围",
       rootFolder: "根目录 /",
       includeSubfolders: "包含子文件夹",
@@ -624,10 +615,7 @@ const ZH: UiStrings = {
   },
   view: {
     displayName: "Card Workspace",
-    allNotes: "全部笔记",
     emptyFolder: "此文件夹中没有找到受支持的文件。",
-    emptySearchAllNotes: (query: string) => `在全部笔记中没有找到“${query}”的结果。`,
-    emptySearchAllNotesWithTags: (query: string) => `在当前标签范围内没有找到“${query}”的结果。`,
     emptySearchCurrentFolder: (query: string) => `在当前文件夹中没有找到“${query}”的结果。`,
     emptySearchCurrentFolderWithTags: (query: string) => `在当前文件夹和标签范围内没有找到“${query}”的结果。`,
     bulkConfirm: {
