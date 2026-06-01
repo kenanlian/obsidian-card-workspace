@@ -1,5 +1,5 @@
-.workspace-leaf-content[data-type="folder-card-view"] .view-content {
-  padding: 0 !important;
+.workspace-leaf-content[data-type="folder-card-view"] > .view-content {
+  padding: 0;
 }
 
 .folder-card-view,

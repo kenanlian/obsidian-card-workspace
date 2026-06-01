@@ -1,6 +1,6 @@
 {
   "name": "card-workspace",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "MIT",
   "description": "Obsidian plugin that shows folder notes as a card stream in the left sidebar.",
   "main": "main.js",
