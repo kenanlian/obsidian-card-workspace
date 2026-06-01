@@ -4,13 +4,14 @@
 
 An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, click a card to open it, and optionally link File Explorer folder clicks into the view.
 
+![Card Workspace demo](screenshots/card_workspace_demo.gif)
+
 ## Table of contents
 
 - [Why Card Workspace](#why-card-workspace)
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Features](#features)
-- [Previews](#previews)
 - [Compatibility and limitations](#compatibility-and-limitations)
 - [Privacy](#privacy)
 - [Development](#development)
@@ -48,12 +49,6 @@ Card Workspace is installed manually from GitHub releases.
 - **Tag filtering.** Filter cards by tags extracted from frontmatter and note content.
 - **Pin reordering.** Pin cards to keep them at the top of the stream.
 - **Bulk actions.** Select multiple cards to move, delete, or merge notes in batches.
-
-## Previews
-
-Cards display the note title and a Markdown-stripped excerpt. The excerpt is generated from the note body with images and formatting stripped for readability.
-
-![Card Workspace demo](screenshots/card_workspace_demo.gif)
 
 ## Compatibility and limitations
 
