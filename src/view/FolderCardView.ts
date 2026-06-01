@@ -1228,7 +1228,7 @@ export class FolderCardView extends ItemView {
 
     const modal = new RenameFileModal(
       this.app,
-      { initialName: file.name, strings: this.strings.view.rename },
+      { initialName: file.basename, strings: this.strings.view.rename },
       async (nextName: string) => {
         await this.submitRename(notePath, nextName);
       },
@@ -1248,7 +1248,7 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const nextPath = this.buildSiblingPath(file.parent?.path ?? "", trimmedName);
+    const nextPath = this.buildSiblingPath(file.parent?.path ?? "", this.buildRenamedFileName(file, trimmedName));
     try {
       await this.app.fileManager.renameFile(file, nextPath);
     } catch (error) {
@@ -1316,6 +1316,20 @@ export class FolderCardView extends ItemView {
     }
 
     return `${parentPath}/${fileName}`;
+  }
+
+  private buildRenamedFileName(file: TFile, inputName: string): string {
+    const trimmedName = inputName.trim();
+    if (file.extension.length === 0) {
+      return trimmedName;
+    }
+
+    const extensionSuffix = `.${file.extension}`;
+    if (trimmedName.toLowerCase().endsWith(extensionSuffix.toLowerCase())) {
+      return trimmedName;
+    }
+
+    return `${trimmedName}${extensionSuffix}`;
   }
 
   private reconcileBulkSelectionBeforeLoad(nextLoadScope: FolderLoadKey): boolean {

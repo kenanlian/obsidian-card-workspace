@@ -2808,13 +2808,33 @@ describe("FolderCardView card context actions", () => {
 
     const renameModal = mockState.modalInstances.at(-1);
     expect(renameModal?.title).toBe("Rename file");
-    expect(renameModal?.textInputs[0]?.value).toBe("original.md");
+    expect(renameModal?.textInputs[0]?.value).toBe("original");
+
+    setLatestModalTextInput(0, "renamed");
+    clickLatestModalButton("Rename");
+    await flushAsyncWork();
+
+    expect(app.vault.getAbstractFileByPath).toHaveBeenLastCalledWith("notes/original.md");
+    expect(app.fileManager.renameFile).toHaveBeenCalledTimes(1);
+    expect(app.fileManager.renameFile).toHaveBeenCalledWith(liveFile, "notes/renamed.md");
+  });
+
+  it("rename accepts a basename input that already includes the original extension", async () => {
+    const { view, app } = createViewWithFile("notes/original.md");
+    const liveFile = createMarkdownFile("notes/original.md");
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+      if (requestedPath === "notes/original.md") {
+        return liveFile;
+      }
+      return null;
+    });
+
+    await (view as any).routeCardMenuAction("rename", "notes/original.md");
 
     setLatestModalTextInput(0, "renamed.md");
     clickLatestModalButton("Rename");
     await flushAsyncWork();
 
-    expect(app.vault.getAbstractFileByPath).toHaveBeenLastCalledWith("notes/original.md");
     expect(app.fileManager.renameFile).toHaveBeenCalledTimes(1);
     expect(app.fileManager.renameFile).toHaveBeenCalledWith(liveFile, "notes/renamed.md");
   });
