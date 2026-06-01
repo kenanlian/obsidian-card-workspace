@@ -2,7 +2,7 @@
 
 ## 架构目标与设计原则
 
-这个插件不是独立 Web 应用，而是 Obsidian 里的右侧卡片工作台。当前架构由六个原则驱动：
+这个插件不是独立 Web 应用，而是 Obsidian 里的左侧卡片工作台。当前架构由六个原则驱动：
 
 1. **性能优先。** 避免整 vault 重扫、避免无边界重建、避免破坏虚拟滚动和 generation guard。
 2. **本地优先。** 文件处理、索引存储、搜索执行、设置持久化都发生在本地运行时。
@@ -30,7 +30,7 @@ src/main.ts
 src/view/FolderCardView.ts
   ├─ 收集受支持文件 / 解析 fileKind / 构建 baseCards
   ├─ generation / hydration / 刷新编排
-  ├─ startup loading 内先跑 pipeline 并预热首屏前 12 张可见卡片
+  ├─ startup loading 内先跑 pipeline，并在 120ms 预算内预热首屏前 6 张可见卡片
   ├─ runtime-only searchQuery / debounce / searchStatus
   ├─ SearchService query 协调
   ├─ 运行 pipeline -> visibleCards
@@ -149,7 +149,7 @@ Phase 3 最重要的变化，是搜索不再只是 readiness seam，而是形成
 - generation、防陈旧、pendingHydration 去重、刷新队列。
 - 当前视图的 `searchQuery`、`searchStatus`、候选路径约束和 debounce。
 - 收集当前 folder scope 下的受支持文件，并把 `fileKind` 写入 `NoteCardRecord`；vault root (`lastFolderPath=""`) 是默认且最宽的 folder scope。
-- `loadFolder()` 会在 `loading=true` 期间先对当前 pipeline 投影后的首屏前 12 张可见卡片做 preview 预热，再提交首个非 loading state；因此启动预热目标不能绕开 tag filter、search gate 或 pin reorder。
+- `loadFolder()` 会在 `loading=true` 期间先对当前 pipeline 投影后的首屏前 6 张可见卡片做 preview 预热，但只等待 120ms；如果预览在预算内完成，首个非 loading state 会直接带 preview，否则先提交稳定卡片状态，再由后台 hydration 补齐 preview。因此启动预热目标不能绕开 tag filter、search gate 或 pin reorder。
 - 对 Markdown 卡片执行正文读取和预览构建；对非 Markdown 卡片注入占位摘要。
 - 轻量 preview 只保留少数可预算的弱提示：heading、inline code、fenced code；粗体和斜体语法会在 `markdown-utils.ts` 中被拍平成普通文本，不再输出 `<strong>` / `<em>`；空字符串与纯空白内容会在昂贵解析前直接走 `empty` 快路径。
 - 向 `SearchService` 发 query，并把结果转成 pipeline 输入。

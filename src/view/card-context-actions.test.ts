@@ -1823,7 +1823,7 @@ describe("FolderCardView card context actions", () => {
         expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
         expect(card.hydrated).toBe(true);
       });
-      it("prewarms projected startup cards before the first non-loading panel snapshot", async () => {
+      it("prewarms projected startup cards within the first-screen wait budget", async () => {
         const { view, app, plugin } = createViewWithFile("notes/prewarm-projection-seed.md");
         const pinnedFile = createMarkdownFile("notes/pinned.md");
         const remainingTaggedFiles = Array.from({ length: 12 }, (_, index) =>
@@ -1886,10 +1886,9 @@ describe("FolderCardView card context actions", () => {
         expect(firstStableSnapshot).toBeDefined();
         expect(firstStableSnapshot?.cards).toHaveLength(13);
         expect(firstStableSnapshot?.cards?.[0]?.path).toBe(pinnedFile.path);
-        expect(firstStableSnapshot?.cards?.slice(0, 12).every((card) => card.hydrated)).toBe(true);
-        expect(firstStableSnapshot?.cards?.[12]?.path).toBe(remainingTaggedFiles[0]?.path);
-        expect(firstStableSnapshot?.cards?.[12]?.hydrated).toBe(false);
-        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+        expect(firstStableSnapshot?.cards?.slice(0, 6).every((card) => card.hydrated)).toBe(true);
+        expect(firstStableSnapshot?.cards?.[6]?.hydrated).toBe(false);
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
         expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
       });
 
@@ -1923,7 +1922,7 @@ describe("FolderCardView card context actions", () => {
           forceRefresh: false,
         });
 
-        expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+        expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
 
         const hydrateRangeHandler = mockState.panelEventHandlers["hydrate-range"];
         expect(hydrateRangeHandler).toBeDefined();
@@ -1932,6 +1931,60 @@ describe("FolderCardView card context actions", () => {
         await flushAsyncWork(2);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
+      });
+
+      it("releases the first stable card snapshot when startup preview hydration exceeds the wait budget", async () => {
+        vi.useFakeTimers();
+        try {
+          const { view, app } = createViewWithFile("notes/prewarm-timeout.md");
+          const file = createMarkdownFile("notes/prewarm-timeout.md");
+          (file as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+            ctime: 1,
+            mtime: 1,
+          };
+          const notesFolder = attachChildren(createFolder("notes"), [file]);
+          const delayedRead = createDeferred<string>();
+
+          app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+            if (requestedPath === "notes") {
+              return notesFolder;
+            }
+            return requestedPath === file.path ? file : null;
+          });
+          app.vault.cachedRead = vi.fn(() => delayedRead.promise);
+
+          const loadPromise = (view as any).loadFolder(
+            "notes",
+            {
+              folderPath: "notes",
+              includeSubfolders: true,
+              sortField: "mtime",
+              sortDirection: "desc",
+            },
+            "notes|true|mtime|desc",
+          );
+
+          await flushAsyncWork(1);
+          expect((view as any).loading).toBe(true);
+          expect((view as any).pendingHydration.has(file.path)).toBe(true);
+
+          vi.advanceTimersByTime(120);
+          await loadPromise;
+
+          const card = (view as any).baseCards[0];
+          expect((view as any).loading).toBe(false);
+          expect(card?.hydrated).toBe(false);
+          expect(card?.previewHtml).toBe("");
+
+          delayedRead.resolve("# delayed\ncontent");
+          await flushAsyncWork(2);
+
+          expect(card?.hydrated).toBe(true);
+          expect(card?.previewHtml).not.toBe("");
+          expect((view as any).pendingHydration.size).toBe(0);
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it("drops stale startup prewarm results after generation changes", async () => {

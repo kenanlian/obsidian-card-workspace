@@ -515,7 +515,8 @@ export class FolderCardView extends ItemView {
   private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
-  private static readonly STARTUP_HYDRATION_CARD_COUNT = 12;
+  private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
+  private static readonly STARTUP_PREVIEW_WAIT_MS = 120;
   private static readonly SEARCH_DEBOUNCE_MS = 120;
 
   private inFlight: Promise<void> | null = null;
@@ -1447,9 +1448,9 @@ export class FolderCardView extends ItemView {
       this.folderLoadKey = loadKey;
       this.lastLoadedIncludeSubfolders = loadScope.includeSubfolders;
       const startupPaths = this.deriveVisibleCardsFrom(records)
-        .slice(0, FolderCardView.STARTUP_HYDRATION_CARD_COUNT)
+        .slice(0, FolderCardView.STARTUP_PREVIEW_CARD_COUNT)
         .map((card) => card.path);
-      await this.hydrateCardPaths(startupPaths, buildGeneration, { pushState: false });
+      await this.hydrateStartupCardPaths(startupPaths, buildGeneration);
     } finally {
       if (buildGeneration === this.generation) {
         this.loading = false;
@@ -1916,6 +1917,45 @@ export class FolderCardView extends ItemView {
     }
   }
 
+  private async hydrateStartupCardPaths(paths: string[], generation: number): Promise<void> {
+    if (paths.length === 0 || generation !== this.generation) {
+      return;
+    }
+
+    const hydration = this.hydrateCardPaths(paths, generation, {
+      pushState: false,
+      batchSize: FolderCardView.HYDRATION_BATCH_SIZE,
+    });
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const waitBudget = new Promise<"timeout">((resolve) => {
+      timeoutId = setTimeout(() => {
+        resolve("timeout");
+      }, FolderCardView.STARTUP_PREVIEW_WAIT_MS);
+    });
+
+    const result = await Promise.race([
+      hydration.then(() => "hydrated" as const),
+      waitBudget,
+    ]);
+
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+
+    if (result === "timeout") {
+      void hydration.then(
+        () => {
+          if (generation === this.generation) {
+            this.pushState();
+          }
+        },
+        (error: unknown) => {
+          console.warn("[Card Workspace] Startup preview hydration failed.", error);
+        },
+      );
+    }
+  }
+
   private hydrateVisibleCardsOnOpen(): void {
     if (this.loading || this.visibleCards.length === 0) {
       return;
@@ -1923,7 +1963,7 @@ export class FolderCardView extends ItemView {
 
     const end = Math.min(
       this.visibleCards.length,
-      FolderCardView.STARTUP_HYDRATION_CARD_COUNT,
+      FolderCardView.STARTUP_PREVIEW_CARD_COUNT,
     );
     void this.hydrateRange(0, end);
   }

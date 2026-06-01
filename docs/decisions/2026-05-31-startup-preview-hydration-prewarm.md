@@ -57,11 +57,12 @@
 
 ## Follow-up actions
 
-- 保持启动预热只覆盖 pipeline 后的前 12 张可见卡片，除非 viewport contract 本身发生变化。
+- 固定等待前 12 张 preview 的策略已被 `2026-06-01-startup-preview-wait-budget` 调整为 6 张候选卡片 + 120ms 等待预算。
 - 如果未来考虑 preview cache，必须单独写决策记录，明确失效与一致性策略。
 
 ## Supersedes / related records
 
+- Superseded in part by: `docs/decisions/2026-06-01-startup-preview-wait-budget.md`
 - Related: `docs/decisions/2026-05-31-collapse-scope-model-to-root-default-folder-only.md`
 - Related: `docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md`
 
