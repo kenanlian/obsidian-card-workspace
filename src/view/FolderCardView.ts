@@ -169,7 +169,7 @@ class BulkMergeModal extends Modal {
   private orderedFiles: TFile[];
   private targetFolder: TFolder;
   private mergedTitle: string;
-  private separator = "";
+  private separator = "\n\n";
   private cleanupMode: MergeCleanupMode = "keep";
   private previewText: string;
   private previewError: string | null = null;

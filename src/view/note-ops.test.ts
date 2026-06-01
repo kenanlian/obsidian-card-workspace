@@ -541,7 +541,7 @@ describe("mergeNotes", () => {
     expect(vi.mocked(app.vault.create).mock.calls[0]?.[0]).toBe("archive/Merged notes.md");
   });
 
-  it("defaults to no separator between merged sections", async () => {
+  it("defaults to two newlines between merged sections", async () => {
     const first = createFile("notes/first.md");
     const second = createFile("notes/second.md");
     const targetFolder = new TFolder();
@@ -568,7 +568,7 @@ describe("mergeNotes", () => {
 
     expect(result.ok).toBe(true);
     expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
-      "# first\n\nFirst body# second\n\nSecond body",
+      "# first\n\nFirst body\n\n# second\n\nSecond body",
     );
   });
 });

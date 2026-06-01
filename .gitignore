@@ -41,3 +41,6 @@ patch.css
 
 # Local OpenCode config
 opencode.json
+
+# Dev docs (not for distribution)
+docs/

@@ -3307,12 +3307,12 @@ describe("FolderCardView card context actions", () => {
       clickLatestModalButton("Down", 0);
       await flushAsyncWork();
 
-      expect(mockState.modalInstances[0]?.textInputs[1]?.value).toBe("");
+      expect(mockState.modalInstances[0]?.textInputs[1]?.value).toBe("\n\n");
       const defaultPreview = [
         "# second\n\nSecond body",
         "# first\n\nFirst body",
         "# third\n\nThird body",
-      ].join("");
+      ].join("\n\n");
       expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe(defaultPreview);
 
       setLatestModalTextInput(1, "\n\n***\n\n");
