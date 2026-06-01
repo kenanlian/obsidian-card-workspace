@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-An Obsidian plugin that shows folder notes as a warm retro card stream in the left sidebar. Open Card Workspace manually, browse notes by folder, click a card to open it, and optionally link File Explorer folder clicks into the view.
+An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, click a card to open it, and optionally link File Explorer folder clicks into the view.
 
 ## Table of contents
 
@@ -36,7 +36,6 @@ Card Workspace is installed manually from GitHub releases.
 1. Run **Open Card Workspace view** from Obsidian's command palette to open the panel in the **left sidebar**.
 2. Browse notes in Card Workspace and click a card to open it.
 3. If you want File Explorer folder clicks to jump into Card Workspace too, enable **Link File Explorer folder clicks to Card Workspace** in the plugin settings.
-4. Switching notes in the editor automatically selects the matching card.
 
 ## Features
 
@@ -49,23 +48,12 @@ Card Workspace is installed manually from GitHub releases.
 - **Tag filtering.** Filter cards by tags extracted from frontmatter and note content.
 - **Pin reordering.** Pin cards to keep them at the top of the stream.
 - **Bulk actions.** Select multiple cards to move, delete, or merge notes in batches.
-- **Warm retro aesthetic.** Styled with `styles.css` for a paper-like card feel.
 
 ## Previews
 
 Cards display the note title and a Markdown-stripped excerpt. The excerpt is generated from the note body with images and formatting stripped for readability.
 
-### Left sidebar workspace
-
-![Card Workspace in the left sidebar with the default theme](screenshots/card_workspace_at_left_sidebar_with_default_theme.jpg)
-
-### Main window workspace with Maple theme
-
-![Card Workspace in the main window with the Maple theme](screenshots/card_workspace_at_main_window_with_maple_theme.jpg)
-
-### Right sidebar workspace with bordered cards
-
-![Card Workspace in the right sidebar with bordered cards](screenshots/card_workspace_at_right_sidebar_with_border_theme.jpg)
+![Card Workspace demo](screenshots/card_workspace_demo.gif)
 
 ## Compatibility and limitations
 

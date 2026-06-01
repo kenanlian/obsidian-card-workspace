@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个 Obsidian 插件：在左侧边栏中以温暖复古风卡片流展示文件夹里的笔记。你可以手动打开 Card Workspace，按文件夹浏览笔记，点击卡片打开笔记，也可以按需把文件浏览器中的文件夹点击联动到这个视图里。
+一个 Obsidian 插件：在边栏或主编辑区中以卡片流展示文件夹里的笔记。你可以手动打开 Card Workspace，按文件夹浏览笔记，使用标签筛选，使用插件内置搜索，使用多种方式打开卡片笔记，也可以按需把文件浏览器中的文件夹点击联动到这个视图里。
 
 ## 目录
 
@@ -23,7 +23,7 @@ Card Workspace 提供了一种更直观、可快速扫描的方式，用来浏�
 
 ## 安装
 
-Card Workspace 目前通过 GitHub Releases 手动安装。
+Card Workspace 目前支持通过 GitHub Releases 手动安装。
 
 1. 前往 [Releases](https://github.com/kenanlian/obsidian-card-workspace/releases) 页面下载最新版本。
 2. 解压压缩包，并将 `main.js`、`manifest.json` 和 `styles.css` 复制到你的仓库目录 `.obsidian/plugins/card-workspace/` 中。
@@ -36,7 +36,6 @@ Card Workspace 目前通过 GitHub Releases 手动安装。
 1. 从 Obsidian 命令面板运行 **Open Card Workspace view**，在**左侧边栏**打开该面板。
 2. 在 Card Workspace 中浏览笔记，并点击任意卡片打开对应笔记。
 3. 如果你希望文件浏览器中的文件夹点击也自动跳转到 Card Workspace，可在插件设置中启用 **Link File Explorer folder clicks to Card Workspace**。
-4. 当你在编辑器中切换笔记时，对应卡片也会自动被选中。
 
 ## 功能特性
 
@@ -49,28 +48,16 @@ Card Workspace 目前通过 GitHub Releases 手动安装。
 - **标签筛选。** 可按 frontmatter 和笔记正文中提取出的标签过滤卡片。
 - **置顶重排。** 可将卡片置顶，让它们始终显示在卡片流顶部。
 - **批量操作。** 可同时选择多张卡片，批量移动、删除或合并笔记。
-- **温暖复古风格。** 通过 `styles.css` 提供带有纸质质感的卡片界面风格。
 
 ## 预览内容
 
 卡片会显示笔记标题以及去除 Markdown 格式后的摘要。摘要从笔记正文中生成，并移除图片和格式标记，以提升可读性。
 
-### 左侧边栏视图
-
-![默认主题下位于左侧边栏的 Card Workspace](screenshots/card_workspace_at_left_sidebar_with_default_theme.jpg)
-
-### Maple 主题下的主窗口视图
-
-![Maple 主题下位于主窗口的 Card Workspace](screenshots/card_workspace_at_main_window_with_maple_theme.jpg)
-
-### 带边框卡片的右侧边栏视图
-
-![位于右侧边栏且使用带边框卡片样式的 Card Workspace](screenshots/card_workspace_at_right_sidebar_with_border_theme.jpg)
+![Card Workspace 演示](screenshots/card_workspace_demo.gif)
 
 ## 兼容性与限制
 
 - **仅支持桌面端。** Card Workspace 依赖桌面端的文件浏览器和左侧边栏工作流，移动端不可用。
-- **以侧边栏为主的工作流。** Card Workspace 作为左侧边栏视图始终可用，而文件浏览器文件夹点击联动是可选项，且默认关闭。
 - **Obsidian 版本要求。** 需要 Obsidian 1.5.0 或更高版本。实际行为和兼容性以 `manifest.json` 中声明的内容为准。
 
 ## 隐私
