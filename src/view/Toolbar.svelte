@@ -171,6 +171,9 @@
   const tagFilterButtonId = "fce-tag-filter-button";
 
   const SORT_OPTIONS = $derived<SortMenuOption[]>([
+    { field: "name", direction: "asc", label: strings.sortOptions.nameAsc },
+    { field: "name", direction: "desc", label: strings.sortOptions.nameDesc },
+    { type: "separator" },
     { field: "mtime", direction: "desc", label: strings.sortOptions.mtimeDesc },
     { field: "mtime", direction: "asc", label: strings.sortOptions.mtimeAsc },
     { type: "separator" },
@@ -782,7 +785,6 @@
           aria-checked={selected}
           onclick={() => selectSortOption(option)}
         >
-          <span class="fce-popup-row-leading" aria-hidden="true"></span>
           <span class="fce-popup-row-content">
             <span class="fce-sort-menu-item-label">{option.label}</span>
           </span>

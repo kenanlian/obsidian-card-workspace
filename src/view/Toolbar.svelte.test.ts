@@ -467,7 +467,7 @@ describe("Toolbar.svelte", () => {
     const selectedSortOption = getSelectedSortOption();
     expect(selectedSortOption).not.toBeNull();
     expect(selectedSortOption?.classList.contains("fce-popup-row")).toBe(true);
-    expect(selectedSortOption?.querySelector(".fce-popup-row-leading")).not.toBeNull();
+    expect(selectedSortOption?.querySelector(".fce-popup-row-leading")).toBeNull();
     expect(selectedSortOption?.querySelector(".fce-popup-row-content .fce-sort-menu-item-label")).not.toBeNull();
     expect(selectedSortOption?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
     expect(selectedSortOption?.querySelector(".fce-sort-menu-item-check")).not.toBeNull();
@@ -711,18 +711,37 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({}, captured.callbacks);
 
-    const sortButton = document.querySelector<HTMLButtonElement>('button[aria-label="Sort cards"]');
-    expect(sortButton).not.toBeNull();
-    sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 24, clientY: 36 }));
-    await tick();
+    await openSortPopup();
 
-    const options = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-sort-menu button[role='menuitemradio']"));
-    const firstUnselected = options.find((option) => option.getAttribute("aria-checked") === "false");
-    expect(firstUnselected).not.toBeUndefined();
-    firstUnselected?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const filenameDescOption = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".fce-sort-menu button[role='menuitemradio']"),
+    ).find((option) => option.textContent?.includes("Filename (Z to A)"));
+
+    expect(filenameDescOption).not.toBeUndefined();
+    filenameDescOption?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(captured.sortEvents).toHaveLength(1);
-    expect(captured.sortEvents[0]).toEqual({ field: "mtime", direction: "asc" });
+    expect(captured.sortEvents[0]).toEqual({ field: "name", direction: "desc" });
+
+    await disposeMountedComponent(component);
+  });
+  it("renders filename sort options before time-based options", async () => {
+    const { component } = mountToolbar();
+
+    await openSortPopup();
+
+    const labels = Array.from(
+      document.querySelectorAll<HTMLElement>(".fce-sort-menu .fce-sort-menu-item-label"),
+    ).map((element) => element.textContent?.trim());
+
+    expect(labels).toEqual([
+      "Filename (A to Z)",
+      "Filename (Z to A)",
+      "Edited time (newest first)",
+      "Edited time (oldest first)",
+      "Created time (newest first)",
+      "Created time (oldest first)",
+    ]);
 
     await disposeMountedComponent(component);
   });

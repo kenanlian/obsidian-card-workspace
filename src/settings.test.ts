@@ -157,6 +157,19 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "rounded" } as unknown).cardCornerRadius).toBe("rounded");
   });
 });
+describe("normalizeSettings — sort fields", () => {
+  it("preserves filename sort and falls back invalid sort fields to mtime", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, sort: { field: "name", direction: "asc" } } as unknown).sort).toEqual({
+      field: "name",
+      direction: "asc",
+    });
+
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, sort: { field: "unexpected", direction: "asc" } } as unknown).sort).toEqual({
+      field: "mtime",
+      direction: "asc",
+    });
+  });
+});
 
 
 describe("normalizeSettings — previewLines", () => {

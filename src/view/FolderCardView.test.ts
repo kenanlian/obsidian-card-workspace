@@ -394,7 +394,69 @@ describe("FolderCardView host contract", () => {
 
     expect(panelContainer.textContent).toContain("Runtime host note");
     expect(panelContainer.querySelector(".fce-list")).not.toBeNull();
+
+    await view.onClose();
   });
+  it("re-sorts loaded cards immediately when sort changes to filename order", async () => {
+    const { view, plugin } = createHarness();
+    const zetaCard = createCard("notes/zeta.md", "Zeta");
+    const alphaCard = createCard("notes/alpha.md", "Alpha");
+
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [zetaCard, alphaCard];
+
+    await (view as any).onSortChange({ field: "name", direction: "asc" });
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      sort: {
+        field: "name",
+        direction: "asc",
+      },
+    });
+    expect((view as any).baseCards.map((card: NoteCardRecord) => card.title)).toEqual(["Alpha", "Zeta"]);
+    expect(getPanelState(view).sortField).toBe("name");
+    expect(getPanelState(view).sortDirection).toBe("asc");
+  });
+
+  it("repositions an in-scope renamed card under filename sorting", () => {
+    const { view, plugin } = createHarness();
+    const settings = {
+      sort: { field: "name", direction: "asc" },
+      filter: { tags: [] },
+      pinnedPaths: [],
+      cardCornerRadius: "compact",
+      previewLines: 5,
+      includeSubfolders: true,
+    };
+    const alphaCard = createCard("notes/alpha.md", "Alpha");
+    const zetaCard = createCard("notes/zeta.md", "Zeta");
+    const renamedFile = new testState.TestTFile("notes/zulu.md");
+
+    plugin.getSettings = vi.fn(() => settings);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) =>
+      path === "notes/zulu.md" ? renamedFile : null,
+    );
+
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [alphaCard, zetaCard];
+
+    const result = (view as any).handleVaultMutation({
+      eventType: "rename",
+      path: "notes/zulu.md",
+      oldPath: "notes/alpha.md",
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(result.shouldRefresh).toBe(false);
+    expect(result.incrementalResult?.action).toBe("updated");
+    expect((view as any).baseCards.map((card: NoteCardRecord) => card.title)).toEqual(["Zeta", "zulu"]);
+    expect((view as any).baseCards.map((card: NoteCardRecord) => card.path)).toEqual([
+      "notes/zeta.md",
+      "notes/zulu.md",
+    ]);
+  });
+
 
   it("persists a selected nested tag from the toolbar popup", async () => {
     const { view, plugin, panelContainer } = createHarness();

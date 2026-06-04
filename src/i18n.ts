@@ -37,6 +37,8 @@ export interface ToolbarStrings {
     mtimeAsc: string;
     ctimeDesc: string;
     ctimeAsc: string;
+    nameAsc: string;
+    nameDesc: string;
   };
   actions: {
     toolbarAriaLabel: string;
@@ -299,6 +301,8 @@ const EN: UiStrings = {
       mtimeAsc: "Edited time (oldest first)",
       ctimeDesc: "Created time (newest first)",
       ctimeAsc: "Created time (oldest first)",
+      nameAsc: "Filename (A to Z)",
+      nameDesc: "Filename (Z to A)",
     },
     actions: {
       toolbarAriaLabel: "Folder card actions",
@@ -527,6 +531,8 @@ const ZH: UiStrings = {
       mtimeAsc: "编辑时间（从旧到新）",
       ctimeDesc: "创建时间（从新到旧）",
       ctimeAsc: "创建时间（从旧到新）",
+      nameAsc: "文件名（A 到 Z）",
+      nameDesc: "文件名（Z 到 A）",
     },
     actions: {
       toolbarAriaLabel: "卡片操作",

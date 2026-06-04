@@ -1,4 +1,4 @@
-export type SortField = "mtime" | "ctime";
+export type SortField = "mtime" | "ctime" | "name";
 
 export type SortDirection = "desc" | "asc";
 
@@ -115,7 +115,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeSortField(value: unknown): SortField {
-  return value === "ctime" ? "ctime" : "mtime";
+  return value === "ctime" || value === "name" ? value : "mtime";
 }
 
 function normalizeSortDirection(value: unknown): SortDirection {

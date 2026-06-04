@@ -1613,9 +1613,14 @@ export class FolderCardView extends ItemView {
     field: SortField,
     direction: SortDirection,
   ): number {
-    const leftValue = field === "ctime" ? left.ctime : left.mtime;
-    const rightValue = field === "ctime" ? right.ctime : right.mtime;
-    const difference = leftValue - rightValue;
+    let difference: number;
+    if (field === "name") {
+      difference = left.title.localeCompare(right.title);
+    } else {
+      const leftValue = field === "ctime" ? left.ctime : left.mtime;
+      const rightValue = field === "ctime" ? right.ctime : right.mtime;
+      difference = leftValue - rightValue;
+    }
 
     if (difference !== 0) {
       return direction === "asc" ? difference : -difference;
@@ -1646,6 +1651,15 @@ export class FolderCardView extends ItemView {
       }
     }
     return low;
+  }
+  private reinsertCardAtSortedPosition(index: number): void {
+    const [card] = this.baseCards.splice(index, 1);
+    if (!card) {
+      return;
+    }
+
+    const insertIndex = this.findSortedInsertIndex(card);
+    this.baseCards.splice(insertIndex, 0, card);
   }
 
   private applyIncrementalMutation(event: VaultMutationEvent): IncrementalMutationResult {
@@ -1801,10 +1815,18 @@ export class FolderCardView extends ItemView {
           return { handled: false, action: "deferred_full_reload" };
         }
 
+        const oldCardPath = card.path;
+        const hadPendingHydration = this.pendingHydration.delete(oldCardPath);
+
         card.file = file;
         card.fileKind = newPathKind;
         card.path = file.path;
         card.title = file.basename;
+
+        if (hadPendingHydration) {
+          this.pendingHydration.add(file.path);
+        }
+
         if (event.oldPath) {
           const bulkResult = migrateRenamedPath(
             {
@@ -1817,6 +1839,8 @@ export class FolderCardView extends ItemView {
           this.selectedPaths = bulkResult.selectedPaths;
           this.bulkAnchorPath = bulkResult.anchorPath;
         }
+
+        this.reinsertCardAtSortedPosition(oldIndex);
         return { handled: true, action: "updated" };
       }
 
@@ -2031,7 +2055,8 @@ export class FolderCardView extends ItemView {
     field?: unknown;
     direction?: unknown;
   }): Promise<void> {
-    const nextField: SortField = detail.field === "ctime" ? "ctime" : "mtime";
+    const nextField: SortField =
+      detail.field === "ctime" || detail.field === "name" ? detail.field : "mtime";
     const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
     const currentSettings = this.plugin.getSettings();
 
@@ -2048,6 +2073,9 @@ export class FolderCardView extends ItemView {
         direction: nextDirection,
       },
     });
+    this.baseCards.sort((left, right) => this.compareCards(left, right, nextField, nextDirection));
+    this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(this.folderPath));
+
 
     this.pushState();
   }
