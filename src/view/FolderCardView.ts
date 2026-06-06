@@ -36,7 +36,7 @@ import {
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
-import type { CardHoverLinkPayload } from "./types";
+import type { CardHoverLinkPayload, FolderActionPayload } from "./types";
 import {
   getCardPlaceholderText,
   isMarkdownCardKind,
@@ -67,6 +67,7 @@ import type FolderCardExplorerPlugin from "../main";
 function normalizeFolderScopePath(path: string): string {
   return path === "/" ? "" : path;
 }
+
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
@@ -482,6 +483,78 @@ class RenameFileModal extends Modal {
   }
 }
 
+class CreateFolderModal extends Modal {
+  private readonly strings: UiStrings["view"]["folderManagement"];
+  private readonly onSubmit: (nextName: string) => Promise<boolean>;
+  private nextName = "";
+  private submitting = false;
+
+  constructor(
+    app: App,
+    strings: UiStrings["view"]["folderManagement"],
+    onSubmit: (nextName: string) => Promise<boolean>,
+  ) {
+    super(app);
+    this.strings = strings;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    this.setTitle(this.strings.createChildTitle);
+    this.contentEl.empty();
+
+    new Setting(this.contentEl).setName(this.strings.nameLabel).addText((text) => {
+      text.setValue(this.nextName).onChange((value) => {
+        this.nextName = value;
+      });
+    });
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText(this.strings.cancel).onClick(() => {
+          this.close();
+        });
+      })
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(this.submitting ? this.strings.creating : this.strings.create)
+          .onClick(() => {
+            void this.submit();
+          });
+      });
+  }
+
+  private async submit(): Promise<void> {
+    if (this.submitting) {
+      return;
+    }
+
+    this.submitting = true;
+    this.render();
+
+    try {
+      const shouldClose = await this.onSubmit(this.nextName);
+      if (shouldClose) {
+        this.close();
+      }
+    } finally {
+      this.submitting = false;
+      if (this.contentEl.isConnected) {
+        this.render();
+      }
+    }
+  }
+}
+
 export class FolderCardView extends ItemView {
   private plugin: FolderCardExplorerPlugin;
   private component: ReturnType<typeof mount> | null = null;
@@ -678,6 +751,9 @@ export class FolderCardView extends ItemView {
           }
           void this.plugin.selectFolderByPath(detail.path, "panel-picker");
         },
+        onFolderAction: (detail: FolderActionPayload) => {
+          this.handleFolderActionRequest(detail);
+        },
       },
     });
 
@@ -737,6 +813,26 @@ export class FolderCardView extends ItemView {
 
     if (action === "bulk-merge-selected") {
       this.bulkMergeSelected();
+    }
+  }
+
+  private handleFolderActionRequest(detail: FolderActionPayload): void {
+    if (typeof detail.path !== "string") {
+      return;
+    }
+
+    if (detail.action === "create-child-folder") {
+      this.openCreateChildFolderModal(detail.path);
+      return;
+    }
+
+    if (detail.action === "move-folder") {
+      this.openMoveFolderPickerForFolder(detail.path);
+      return;
+    }
+
+    if (detail.action === "delete-folder") {
+      void this.deleteFolder(detail.path);
     }
   }
 
@@ -1316,6 +1412,177 @@ export class FolderCardView extends ItemView {
     }
 
     return `${parentPath}/${fileName}`;
+  }
+
+  private getFolderManagementStrings(): UiStrings["view"]["folderManagement"] {
+    return this.strings.view.folderManagement;
+  }
+
+  private refreshFolderTreeState(): void {
+    this.panelModel.mutate((state) => {
+      state.folderTree = this.buildFolderTree();
+    });
+  }
+
+  private resolveFolderFromUiPath(folderPath: string): TFolder | null {
+    const normalizedPath = normalizeFolderScopePath(folderPath);
+    const folder = normalizedPath === ""
+      ? this.app.vault.getRoot()
+      : this.app.vault.getAbstractFileByPath(normalizedPath);
+    return folder instanceof TFolder ? folder : null;
+  }
+
+  private openCreateChildFolderModal(parentFolderPath: string): void {
+    const parentFolder = this.resolveFolderFromUiPath(parentFolderPath);
+    if (!(parentFolder instanceof TFolder)) {
+      new Notice(this.getFolderManagementStrings().folderNotFound);
+      return;
+    }
+
+    const modal = new CreateFolderModal(
+      this.app,
+      this.getFolderManagementStrings(),
+      async (nextName: string) => {
+        return this.createChildFolder(parentFolderPath, nextName);
+      },
+    );
+    modal.open();
+  }
+
+  private async createChildFolder(parentFolderPath: string, nextName: string): Promise<boolean> {
+    const strings = this.getFolderManagementStrings();
+    const trimmedName = nextName.trim();
+    if (trimmedName.length === 0) {
+      new Notice(strings.emptyName);
+      return false;
+    }
+
+    if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+      new Notice(strings.invalidName);
+      return false;
+    }
+
+    const parentFolder = this.resolveFolderFromUiPath(parentFolderPath);
+    if (!(parentFolder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return false;
+    }
+
+    try {
+      await this.app.vault.createFolder(this.buildSiblingPath(parentFolder.path, trimmedName));
+      this.refreshFolderTreeState();
+      return true;
+    } catch (error) {
+      new Notice(strings.createFailed(String(error)));
+      return false;
+    }
+  }
+
+  private openMoveFolderPickerForFolder(folderPath: string): void {
+    const folder = this.resolveFolderFromUiPath(folderPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(this.getFolderManagementStrings().folderNotFound);
+      return;
+    }
+
+    if (folder.path === "") {
+      return;
+    }
+
+    const modal = new FolderPickerModal(this.app, (targetFolder: TFolder) => {
+      void this.onFolderMoveTargetChosen(folderPath, targetFolder);
+    }, this.strings.folderPicker.selectFolderTitle);
+    modal.open();
+  }
+
+  private async onFolderMoveTargetChosen(folderPath: string, targetFolder: TFolder | null): Promise<void> {
+    const strings = this.getFolderManagementStrings();
+    if (!(targetFolder instanceof TFolder)) {
+      return;
+    }
+
+    const folder = this.resolveFolderFromUiPath(folderPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return;
+    }
+
+    if (folder.path === "") {
+      return;
+    }
+
+    if ((folder.parent?.path ?? "") === targetFolder.path) {
+      new Notice(strings.sameTarget);
+      return;
+    }
+
+    if (targetFolder.path === folder.path || targetFolder.path.startsWith(`${folder.path}/`)) {
+      new Notice(strings.invalidMoveTarget);
+      return;
+    }
+
+    const nextPath = this.buildSiblingPath(targetFolder.path, folder.name);
+    try {
+      await this.app.fileManager.renameFile(folder, nextPath);
+      this.refreshFolderTreeState();
+      await this.refreshFolderScopeAfterFolderRename(folder.path, nextPath);
+    } catch (error) {
+      new Notice(strings.moveFailed(String(error)));
+    }
+  }
+
+  private async deleteFolder(folderPath: string): Promise<void> {
+    const strings = this.getFolderManagementStrings();
+    const folder = this.resolveFolderFromUiPath(folderPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return;
+    }
+
+    if (folder.path === "") {
+      return;
+    }
+
+    try {
+      const confirmed = await this.app.fileManager.promptForDeletion(folder);
+      if (!confirmed) {
+        return;
+      }
+
+      const liveFolder = this.resolveFolderFromUiPath(folderPath);
+      if (!(liveFolder instanceof TFolder)) {
+        new Notice(strings.folderNotFound);
+        return;
+      }
+
+      const nextFolderPath = this.getFallbackFolderPathAfterFolderDeletion(liveFolder.path);
+      await this.app.fileManager.trashFile(liveFolder);
+      this.refreshFolderTreeState();
+      if (nextFolderPath !== null) {
+        await this.refresh({ reason: "manual", folderPath: nextFolderPath, forceRefresh: true });
+      }
+    } catch (error) {
+      new Notice(strings.deleteFailed(String(error)));
+    }
+  }
+
+  private async refreshFolderScopeAfterFolderRename(previousPath: string, nextPath: string): Promise<void> {
+    const currentFolderPath = this.normalizeActiveFolderScopePath();
+    const rewrittenPath = this.rewritePathAfterRename(currentFolderPath, previousPath, nextPath);
+    if (rewrittenPath === null || rewrittenPath === currentFolderPath) {
+      return;
+    }
+
+    await this.refresh({ reason: "manual", folderPath: rewrittenPath, forceRefresh: true });
+  }
+
+  private getFallbackFolderPathAfterFolderDeletion(deletedPath: string): string | null {
+    const currentFolderPath = this.normalizeActiveFolderScopePath();
+    if (currentFolderPath !== deletedPath && !currentFolderPath.startsWith(`${deletedPath}/`)) {
+      return null;
+    }
+
+    return "";
   }
 
   private buildRenamedFileName(file: TFile, inputName: string): string {

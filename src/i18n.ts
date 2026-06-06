@@ -73,6 +73,9 @@ export interface ToolbarStrings {
     subfoldersSrLabel: string;
     expand: string;
     collapse: string;
+    createChildFolder: string;
+    moveFolder: string;
+    deleteFolder: string;
   };
   search: {
     placeholder: string;
@@ -190,6 +193,21 @@ export interface ViewStrings {
     trashedSources: (count: number) => string;
     failedToTrashSources: (count: number) => string;
     trashedSourcesPartial: (success: number, failed: number) => string;
+  };
+  folderManagement: {
+    createChildTitle: string;
+    nameLabel: string;
+    cancel: string;
+    create: string;
+    creating: string;
+    emptyName: string;
+    invalidName: string;
+    folderNotFound: string;
+    createFailed: (reason: string) => string;
+    sameTarget: string;
+    invalidMoveTarget: string;
+    moveFailed: (reason: string) => string;
+    deleteFailed: (reason: string) => string;
   };
   contextMenu: {
     openInCurrentWindow: string;
@@ -337,6 +355,9 @@ const EN: UiStrings = {
       subfoldersSrLabel: "Subfolders",
       expand: "Expand",
       collapse: "Collapse",
+      createChildFolder: "Create child folder",
+      moveFolder: "Move folder",
+      deleteFolder: "Delete folder",
     },
     search: {
       placeholder: "Search notes",
@@ -421,6 +442,21 @@ const EN: UiStrings = {
       successMessage: (count: number) => `Deleted ${count} note${count === 1 ? "" : "s"}.`,
       failureMessage: (count: number) => `Failed to delete ${count} note${count === 1 ? "" : "s"}.`,
       partialMessage: (success: number, failed: number) => `Deleted ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
+    },
+    folderManagement: {
+      createChildTitle: "Create child folder",
+      nameLabel: "Folder name",
+      cancel: "Cancel",
+      create: "Create",
+      creating: "Creating…",
+      emptyName: "Folder name cannot be empty.",
+      invalidName: "Folder name cannot contain / or \\.",
+      folderNotFound: "Folder no longer exists.",
+      createFailed: (reason: string) => `Failed to create folder: ${reason}`,
+      sameTarget: "Folder is already in the selected location.",
+      invalidMoveTarget: "Cannot move a folder into itself or one of its subfolders.",
+      moveFailed: (reason: string) => `Failed to move folder: ${reason}`,
+      deleteFailed: (reason: string) => `Failed to delete folder: ${reason}`,
     },
     merge: {
       title: "Merge selected notes",
@@ -567,6 +603,9 @@ const ZH: UiStrings = {
       subfoldersSrLabel: "子文件夹",
       expand: "展开",
       collapse: "折叠",
+      createChildFolder: "新建子文件夹",
+      moveFolder: "移动文件夹",
+      deleteFolder: "删除文件夹",
     },
     search: {
       placeholder: "搜索笔记",
@@ -650,6 +689,21 @@ const ZH: UiStrings = {
       successMessage: (count: number) => `已删除 ${count} 篇笔记。`,
       failureMessage: (count: number) => `删除 ${count} 篇笔记失败。`,
       partialMessage: (success: number, failed: number) => `已删除 ${success} 篇笔记；${failed} 篇失败。`,
+    },
+    folderManagement: {
+      createChildTitle: "新建子文件夹",
+      nameLabel: "文件夹名称",
+      cancel: "取消",
+      create: "新建",
+      creating: "正在新建…",
+      emptyName: "文件夹名称不能为空。",
+      invalidName: "文件夹名称不能包含 / 或 \\。",
+      folderNotFound: "文件夹已不存在。",
+      createFailed: (reason: string) => `创建文件夹失败：${reason}`,
+      sameTarget: "文件夹已在所选位置中。",
+      invalidMoveTarget: "不能将文件夹移动到其自身或其子文件夹中。",
+      moveFailed: (reason: string) => `移动文件夹失败：${reason}`,
+      deleteFailed: (reason: string) => `删除文件夹失败：${reason}`,
     },
     merge: {
       title: "合并所选笔记",

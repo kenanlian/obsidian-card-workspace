@@ -25,6 +25,11 @@ interface SelectFolderPayload {
   path: string;
 }
 
+interface FolderActionPayload {
+  action: "create-child-folder" | "move-folder" | "delete-folder";
+  path: string;
+}
+
 interface ToolbarActionPayload {
   action: string;
 }
@@ -44,6 +49,7 @@ interface ToolbarCallbacks {
   onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
   onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
   onSelectFolder?: (payload: SelectFolderPayload) => void;
+  onFolderAction?: (payload: FolderActionPayload) => void;
   onToolbarAction?: (payload: ToolbarActionPayload) => void;
 }
 
@@ -56,6 +62,7 @@ interface CapturedCallbacks {
   searchQueryResetEvents: SearchQueryResetPayload[];
   selectFolderEvents: SelectFolderPayload[];
   toolbarActionEvents: ToolbarActionPayload[];
+  folderActionEvents: FolderActionPayload[];
 }
 const TEST_STYLESHEET_ID = "toolbar-test-styles";
 const stylesPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../styles.css");
@@ -96,7 +103,7 @@ function createCapturedCallbacks(): CapturedCallbacks {
   const searchQueryResetEvents: SearchQueryResetPayload[] = [];
   const selectFolderEvents: SelectFolderPayload[] = [];
   const toolbarActionEvents: ToolbarActionPayload[] = [];
-
+  const folderActionEvents: FolderActionPayload[] = [];
   return {
     callbacks: {
       onFilterChange: (payload: FilterChangePayload) => {
@@ -120,6 +127,9 @@ function createCapturedCallbacks(): CapturedCallbacks {
       onToolbarAction: (payload: ToolbarActionPayload) => {
         toolbarActionEvents.push(payload);
       },
+      onFolderAction: (payload: FolderActionPayload) => {
+        folderActionEvents.push(payload);
+      },
     },
     filterEvents,
     sortEvents,
@@ -128,6 +138,7 @@ function createCapturedCallbacks(): CapturedCallbacks {
     searchQueryResetEvents,
     selectFolderEvents,
     toolbarActionEvents,
+    folderActionEvents,
   };
 }
 
@@ -844,6 +855,126 @@ describe("Toolbar.svelte", () => {
     expect(captured.toolbarActionEvents).toEqual([{ action: "pick-folder" }]);
     expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
     expect(order).toEqual(["toolbar:pick-folder", "folder:projects"]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders folder row action buttons in order and keeps root create-only", async () => {
+    const { component } = mountToolbar({
+      folderPath: "projects",
+      folderTree: [
+        { name: "/", path: "/", depth: 0, children: [] },
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            { name: "client-a", path: "projects/client-a", depth: 1, children: [] },
+          ],
+        },
+      ],
+    });
+
+    await openFolderPopup();
+
+    const rootRow = getTreeRowByText(".fce-folder-menu", "Root /");
+    const rootActionLabels = Array.from(rootRow?.querySelectorAll<HTMLButtonElement>(".fce-folder-row-action") ?? [])
+      .map((button) => button.getAttribute("aria-label"));
+    expect(rootActionLabels).toEqual(["Create child folder"]);
+
+    const projectsRow = getTreeRowByText(".fce-folder-menu", "projects");
+    const projectActionLabels = Array.from(projectsRow?.querySelectorAll<HTMLButtonElement>(".fce-folder-row-action") ?? [])
+      .map((button) => button.getAttribute("aria-label"));
+    expect(projectActionLabels).toEqual([
+      "Create child folder",
+      "Move folder",
+      "Delete folder",
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps folder row actions hidden by default and replaces the trailing check slot on row hover focus", async () => {
+    const { component } = mountToolbar({ folderPath: "notes" });
+
+    await openFolderPopup();
+
+    const notesRow = getTreeRowByText(".fce-folder-menu", "notes");
+    const actions = notesRow?.querySelector<HTMLElement>(".fce-folder-row-actions");
+    const trailing = notesRow?.querySelector<HTMLElement>(".fce-popup-row-trailing");
+    expect(actions).not.toBeNull();
+    expect(trailing).not.toBeNull();
+    expect(getComputedStyle(actions as HTMLElement).opacity).toBe("0");
+    expect(getComputedStyle(actions as HTMLElement).pointerEvents).toBe("none");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:hover .fce-folder-row-actions");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:focus-within .fce-folder-row-actions");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:hover .fce-popup-row-trailing");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:focus-within .fce-popup-row-trailing");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits folder action payloads and closes the popup without selecting the folder row", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ folderPath: "projects" }, captured.callbacks);
+
+    await openFolderPopup();
+
+    const notesRow = getTreeRowByText(".fce-folder-menu", "notes");
+    const actionButtons = notesRow?.querySelectorAll<HTMLButtonElement>(".fce-folder-row-action");
+    expect(actionButtons).toHaveLength(3);
+
+    actionButtons?.[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
+
+    await openFolderPopup();
+    getTreeRowByText(".fce-folder-menu", "notes")
+      ?.querySelectorAll<HTMLButtonElement>(".fce-folder-row-action")[1]
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
+
+    await openFolderPopup();
+    getTreeRowByText(".fce-folder-menu", "notes")
+      ?.querySelectorAll<HTMLButtonElement>(".fce-folder-row-action")[2]
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.folderActionEvents).toEqual([
+      { action: "create-child-folder", path: "notes" },
+      { action: "move-folder", path: "notes" },
+      { action: "delete-folder", path: "notes" },
+    ]);
+    expect(captured.selectFolderEvents).toEqual([]);
+    expect(document.querySelector(".fce-folder-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps folder chevrons visible and wired to the hover highlight style contract", async () => {
+    const { component } = mountToolbar({
+      folderTree: [
+        { name: "/", path: "/", depth: 0, children: [] },
+        {
+          name: "projects",
+          path: "projects",
+          depth: 0,
+          children: [
+            { name: "client-a", path: "projects/client-a", depth: 1, children: [] },
+          ],
+        },
+      ],
+    });
+
+    await openFolderPopup();
+
+    const projectsRow = getTreeRowByText(".fce-folder-menu", "projects");
+    const chevron = projectsRow?.querySelector<HTMLButtonElement>(".fce-tree-chevron[aria-expanded]");
+    expect(chevron).not.toBeNull();
+    expect(getComputedStyle(chevron as HTMLButtonElement).cursor).toBe("pointer");
+    expect(stylesCss).toContain(".fce-tree-menu .fce-tree-chevron:hover");
+    expect(stylesCss).toContain(".fce-tree-menu .fce-tree-chevron:focus-visible");
 
     await disposeMountedComponent(component);
   });

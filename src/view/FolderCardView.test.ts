@@ -25,11 +25,14 @@ const testState = vi.hoisted(() => {
     path: string;
     name: string;
     children: unknown[];
+    parent: { path: string } | null;
 
     constructor(path: string) {
       this.path = path;
       this.name = path === "" ? "/" : path.replace(/.*\//, "");
       this.children = [];
+      const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      this.parent = path === "" ? null : { path: parentPath };
     }
   }
 
@@ -175,7 +178,6 @@ const testState = vi.hoisted(() => {
       return;
     }
   }
-
   return {
     TestTFile,
     TestTFolder,
@@ -184,6 +186,7 @@ const testState = vi.hoisted(() => {
     TestModal,
     TestSetting,
     ResizeObserverStub,
+    noticeMessages: [] as string[],
   };
 });
 
@@ -193,8 +196,8 @@ vi.mock("obsidian", () => {
     Menu: testState.TestMenu,
     Modal: testState.TestModal,
     Notice: class {
-      constructor(_message: string) {
-        return;
+      constructor(message: string) {
+        testState.noticeMessages.push(message);
       }
     },
     Setting: testState.TestSetting,
@@ -215,12 +218,13 @@ vi.mock("obsidian", () => {
 vi.mock("../FolderPickerModal", () => {
   return {
     FolderPickerModal: class {
-      constructor(_app: unknown, _onChoose: (folder: unknown) => void) {
-        return;
+      constructor(_app: unknown, onChoose: (folder: unknown) => void, title?: string) {
+        (testState as any).folderPickerOnChoose = onChoose;
+        (testState as any).folderPickerTitle = title ?? null;
       }
 
       open(): void {
-        return;
+        (testState as any).folderPickerOpenCount = ((testState as any).folderPickerOpenCount ?? 0) + 1;
       }
     },
   };
@@ -279,6 +283,15 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
   };
 }
 
+function createFolder(path: string, children: Array<InstanceType<typeof testState.TestTFolder>> = []): InstanceType<typeof testState.TestTFolder> {
+  const folder = new testState.TestTFolder(path);
+  folder.children = children;
+  for (const child of children) {
+    child.parent = { path: folder.path };
+  }
+  return folder;
+}
+
 function createHarness(): TestHarness {
   const settings = {
     sort: { field: "mtime", direction: "desc" },
@@ -300,8 +313,14 @@ function createHarness(): TestHarness {
     vault: {
       getAbstractFileByPath: vi.fn(() => null),
       getRoot: vi.fn(() => new testState.TestTFolder("")),
+      createFolder: vi.fn(async (path: string) => new testState.TestTFolder(path)),
       cachedRead: vi.fn(async () => ""),
       read: vi.fn(async () => ""),
+    },
+    fileManager: {
+      renameFile: vi.fn(async () => undefined),
+      promptForDeletion: vi.fn(async () => true),
+      trashFile: vi.fn(async () => undefined),
     },
   };
 
@@ -369,6 +388,10 @@ function getTagNode(label: string): HTMLButtonElement | undefined {
 describe("FolderCardView host contract", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    testState.noticeMessages.length = 0;
+    (testState as any).folderPickerOnChoose = undefined;
+    (testState as any).folderPickerTitle = null;
+    (testState as any).folderPickerOpenCount = 0;
     (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = testState.ResizeObserverStub as never;
   });
 
@@ -1333,6 +1356,138 @@ describe("FolderCardView host contract", () => {
       folderPath: "",
     });
     expect((view as any).folderPath).toBe("");
+  });
+
+  it("routes folder action intents to the matching handlers", () => {
+    const { view } = createHarness();
+    const createSpy = vi.spyOn(view as any, "openCreateChildFolderModal").mockImplementation(() => undefined);
+    const moveSpy = vi.spyOn(view as any, "openMoveFolderPickerForFolder").mockImplementation(() => undefined);
+    const deleteSpy = vi.spyOn(view as any, "deleteFolder").mockResolvedValue(undefined);
+
+    (view as any).handleFolderActionRequest({ action: "create-child-folder", path: "projects" });
+    (view as any).handleFolderActionRequest({ action: "move-folder", path: "projects" });
+    (view as any).handleFolderActionRequest({ action: "delete-folder", path: "projects" });
+
+    expect(createSpy).toHaveBeenCalledWith("projects");
+    expect(moveSpy).toHaveBeenCalledWith("projects");
+    expect(deleteSpy).toHaveBeenCalledWith("projects");
+  });
+
+  it("creates a child folder and refreshes the folder tree state", async () => {
+    const { view } = createHarness();
+    const projects = createFolder("projects");
+    const root = createFolder("", [projects]);
+
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
+      return path === "projects" ? projects : null;
+    });
+    (view.app.vault.createFolder as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
+      const child = createFolder(path);
+      child.parent = { path: projects.path };
+      projects.children.push(child);
+      return child;
+    });
+
+    const created = await (view as any).createChildFolder("projects", "client-a");
+
+    expect(created).toBe(true);
+    expect(view.app.vault.createFolder).toHaveBeenCalledWith("projects/client-a");
+    expect(getPanelState(view).folderTree).toEqual((view as any).buildFolderTree());
+  });
+
+  it("rejects invalid child folder names and missing parent folders", async () => {
+    const { view } = createHarness();
+    const projects = createFolder("projects");
+
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
+      return path === "projects" ? projects : null;
+    });
+
+    await expect((view as any).createChildFolder("projects", "bad/name")).resolves.toBe(false);
+    await expect((view as any).createChildFolder("missing", "client-a")).resolves.toBe(false);
+
+    expect(view.app.vault.createFolder).not.toHaveBeenCalled();
+    expect(testState.noticeMessages).toEqual([
+      "Folder name cannot contain / or \\.",
+      "Folder no longer exists.",
+    ]);
+  });
+
+  it("opens the folder picker only for live non-root folders", () => {
+    const { view } = createHarness();
+    const projects = createFolder("projects");
+    const root = createFolder("");
+
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
+      return path === "projects" ? projects : null;
+    });
+
+    (view as any).openMoveFolderPickerForFolder("projects");
+    (view as any).openMoveFolderPickerForFolder("/");
+
+    expect((testState as any).folderPickerOpenCount).toBe(1);
+    expect((testState as any).folderPickerTitle).toBe("Select a folder");
+  });
+
+  it("rejects same-parent and descendant folder move targets", async () => {
+    const { view } = createHarness();
+    const clientA = createFolder("projects/client-a");
+    const projects = createFolder("projects", [clientA]);
+
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
+      return path === "projects" ? projects : path === "projects/client-a" ? clientA : null;
+    });
+
+    await (view as any).onFolderMoveTargetChosen("projects", createFolder(""));
+    await (view as any).onFolderMoveTargetChosen("projects", clientA);
+
+    expect(view.app.fileManager.renameFile).not.toHaveBeenCalled();
+    expect(testState.noticeMessages).toEqual([
+      "Folder is already in the selected location.",
+      "Cannot move a folder into itself or one of its subfolders.",
+    ]);
+  });
+
+  it("renames folders and refreshes the active scope when the selected folder moves", async () => {
+    const { view } = createHarness();
+    const projects = createFolder("projects");
+    const archive = createFolder("archive");
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue({ action: "started", inFlightKey: null });
+
+    (view as any).folderPath = "projects";
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
+      return path === "projects" ? projects : path === "archive" ? archive : null;
+    });
+
+    await (view as any).onFolderMoveTargetChosen("projects", archive);
+
+    expect(view.app.fileManager.renameFile).toHaveBeenCalledWith(projects, "archive/projects");
+    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", folderPath: "archive/projects", forceRefresh: true });
+  });
+
+  it("deletes the active folder scope back to root via prompt live re-fetch and skips root deletion", async () => {
+    const { view } = createHarness();
+    const initialClientA = createFolder("projects/client-a");
+    const liveClientA = createFolder("projects/client-a");
+    const root = createFolder("");
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue({ action: "started", inFlightKey: null });
+
+    (view as any).folderPath = "projects/client-a";
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce((path: string) => path === "projects/client-a" ? initialClientA : null)
+      .mockImplementationOnce((path: string) => path === "projects/client-a" ? liveClientA : null)
+      .mockImplementation((path: string) => path === "projects/client-a" ? initialClientA : null);
+
+    await (view as any).deleteFolder("projects/client-a");
+    await (view as any).deleteFolder("/");
+
+    expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledWith(initialClientA);
+    expect(view.app.fileManager.trashFile).toHaveBeenCalledWith(liveClientA);
+    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", folderPath: "", forceRefresh: true });
   });
 
   it("treats slash-selected root scope as eligible for modify-driven preview refresh", () => {

@@ -9,7 +9,7 @@
     normalizeTagPath,
     type TagTreeNode,
   } from "./tag-tree";
-  import type { FolderTreeNode, SearchStatus } from "./types";
+  import type { FolderActionPayload, FolderManagementAction, FolderTreeNode, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
     action: string;
@@ -36,8 +36,12 @@
     tags: string[];
   }
 
-  interface SelectFolderPayload {
-    path: string;
+  type SelectFolderPayload = Pick<FolderActionPayload, "path">;
+
+  interface FolderActionOption {
+    action: FolderManagementAction;
+    icon: string;
+    label: string;
   }
 
   interface ToolbarProps {
@@ -70,6 +74,7 @@
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
+    onFolderAction?: (payload: FolderActionPayload) => void;
   }
 
   interface SortOption {
@@ -165,6 +170,7 @@
     onSearchQueryChange,
     onSearchQueryReset,
     onSelectFolder,
+    onFolderAction,
   }: ToolbarProps = $props();
   const folderScopeButtonId = "fce-folder-scope-button";
   const sortButtonId = "fce-sort-button";
@@ -295,6 +301,32 @@
   function getFolderNodeLabel(node: FolderTreeNode): string {
     return isRootFolderNode(node) ? strings.folderMenu.rootFolder : node.name;
   }
+
+  function getFolderActionOptions(node: FolderTreeNode): FolderActionOption[] {
+    const actions: FolderActionOption[] = [{
+      action: "create-child-folder",
+      icon: "folder-plus",
+      label: strings.folderMenu.createChildFolder,
+    }];
+
+    if (!isRootFolderNode(node)) {
+      actions.push(
+        {
+          action: "move-folder",
+          icon: "folder-input",
+          label: strings.folderMenu.moveFolder,
+        },
+        {
+          action: "delete-folder",
+          icon: "trash-2",
+          label: strings.folderMenu.deleteFolder,
+        },
+      );
+    }
+
+    return actions;
+  }
+
 
   function isFolderNodeSelected(node: FolderTreeNode): boolean {
     return node.path === folderPath;
@@ -578,6 +610,12 @@
   function selectFolder(path: string): void {
     onSelectFolder?.({ path });
     closeFolderMenu();
+  }
+
+  function triggerFolderAction(event: MouseEvent, path: string, action: FolderManagementAction): void {
+    event.stopPropagation();
+    closeFolderMenu();
+    onFolderAction?.({ action, path });
   }
 
   function clearSelectedTag(): void {
@@ -890,10 +928,26 @@
             <span class="fce-tree-label">{label}</span>
           </button>
         </div>
-        <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
-          {#if isSelected}
-            <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
-          {/if}
+        <div class="fce-folder-row-end">
+          <div class="fce-folder-row-actions">
+            {#each getFolderActionOptions(node) as action}
+              <button
+                type="button"
+                class="fce-folder-row-action"
+                aria-label={action.label}
+                onclick={(event) => triggerFolderAction(event, node.path, action.action)}
+                use:applyIcon={action.icon}
+                use:applyTooltip={action.label}
+              >
+                <span class="fce-sr-only">{action.label}</span>
+              </button>
+            {/each}
+          </div>
+          <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
+            {#if isSelected}
+              <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
+            {/if}
+          </div>
         </div>
       </div>
     {/each}

@@ -16,7 +16,7 @@
     getHydrateRangeForRows,
     projectCardsToRows,
   } from "./row-projection";
-  import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
+  import type { CardHoverLinkPayload, FolderActionPayload, NoteCardRecord } from "./types";
 
   interface BulkSelectCardPayload {
     path: string;
@@ -60,9 +60,7 @@
     source: "clear-button";
   }
 
-  interface SelectFolderPayload {
-    path: string;
-  }
+  type SelectFolderPayload = Pick<FolderActionPayload, "path">;
 
   interface HydrateRangePayload {
     start: number;
@@ -83,6 +81,7 @@
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
+    onFolderAction?: (payload: FolderActionPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
   }
 
@@ -132,6 +131,7 @@
     onSearchQueryChange,
     onSearchQueryReset,
     onSelectFolder,
+    onFolderAction,
     onHydrateRange,
   }: FolderCardPanelProps = $props();
 
@@ -269,6 +269,10 @@
 
   function handleSelectFolder(detail: SelectFolderPayload): void {
     onSelectFolder?.(detail);
+  }
+
+  function handleFolderAction(detail: FolderActionPayload): void {
+    onFolderAction?.(detail);
   }
 
   const ESTIMATED_ROW_HEIGHT = 232;
@@ -582,8 +586,8 @@
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
     onSelectFolder={handleSelectFolder}
+    onFolderAction={handleFolderAction}
   />
-
   <div
     class="fce-list {bulkMode ? 'is-bulk-mode' : ''}"
     bind:this={viewportEl}

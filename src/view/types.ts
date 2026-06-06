@@ -194,3 +194,10 @@ export interface FolderTreeNode {
   children: FolderTreeNode[];         // Sorted alphabetically by name
   depth: number;                      // 0 for root, 1 for top-level folders, etc.
 }
+
+export type FolderManagementAction = "create-child-folder" | "move-folder" | "delete-folder";
+
+export interface FolderActionPayload {
+  action: FolderManagementAction;
+  path: string;
+}
