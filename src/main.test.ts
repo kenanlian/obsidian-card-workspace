@@ -388,7 +388,7 @@ function createPluginHarness(): {
       openPopoutLeaf?: ReturnType<typeof vi.fn>;
       getLeftLeaf: ReturnType<typeof vi.fn>;
       getRightLeaf: ReturnType<typeof vi.fn>;
-      revealLeaf: ReturnType<typeof vi.fn>;
+      setActiveLeaf: ReturnType<typeof vi.fn>;
       rootSplit: { id: string };
       leftSplit: { id: string };
       rightSplit: { id: string };
@@ -428,7 +428,7 @@ function createPluginHarness(): {
       openPopoutLeaf: vi.fn(async () => ({ openFile: vi.fn(async () => undefined) })),
       getLeftLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
       getRightLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
-      revealLeaf: vi.fn(),
+      setActiveLeaf: vi.fn(),
       rootSplit: { id: "root-split" },
       leftSplit: { id: "left-split" },
       rightSplit: { id: "right-split" },
@@ -453,6 +453,10 @@ function createPluginHarness(): {
   (plugin as unknown as { app: unknown }).app = app;
 
   return { plugin, app };
+}
+
+async function waitForPluginLoad(plugin: FolderCardExplorerPlugin): Promise<void> {
+  await (plugin as unknown as { startupPromise: Promise<void> }).startupPromise;
 }
 
 function installMockElement(): {
@@ -518,7 +522,7 @@ describe("FolderCardExplorerPlugin activateView", () => {
       type: "folder-card-view",
       active: true,
     });
-    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+    expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, { focus: false });
   });
 
   it("reuses an existing card view leaf before creating a new sidebar leaf", async () => {
@@ -532,13 +536,15 @@ describe("FolderCardExplorerPlugin activateView", () => {
 
     expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
     expect(existingLeaf.setViewState).not.toHaveBeenCalled();
-    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: false });
   });
 });
 
 describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
   beforeEach(() => {
-    (globalThis as unknown as { document?: unknown }).document = {};
+    (globalThis as unknown as { document?: unknown; activeDocument?: unknown }).document = {};
+    (globalThis as unknown as { activeDocument?: unknown }).activeDocument =
+      (globalThis as unknown as { document?: unknown }).document;
     searchMockState.indexedInitializeShouldFail = false;
     searchMockState.restoreResult = {
       status: "ready",
@@ -576,7 +582,8 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
     const mockElement = installMockElement();
 
     try {
-      await plugin.onload();
+      plugin.onload();
+      await waitForPluginLoad(plugin);
 
       const clickHandler = mockPlugin.registerDomEvent.mock.calls[0]?.[2] as (event: MouseEvent) => Promise<void>;
       await clickHandler({
@@ -585,7 +592,7 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
 
       expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
       expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
-      expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+      expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
       expect(mockPlugin.saveData).not.toHaveBeenCalled();
     } finally {
       mockElement.restore();
@@ -610,7 +617,8 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
     const mockElement = installMockElement();
 
     try {
-      await plugin.onload();
+      plugin.onload();
+      await waitForPluginLoad(plugin);
 
       const clickHandler = mockPlugin.registerDomEvent.mock.calls[0]?.[2] as (event: MouseEvent) => Promise<void>;
       clickHandler({
@@ -624,7 +632,7 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
         type: "folder-card-view",
         active: true,
       });
-      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+      expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, { focus: false });
       expect(mockPlugin.saveData).toHaveBeenCalledWith(
         expect.objectContaining({
           enableFileExplorerFolderClicks: true,
@@ -1059,7 +1067,9 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
 
 describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
   beforeEach(() => {
-    (globalThis as unknown as { document?: unknown }).document = {};
+    (globalThis as unknown as { document?: unknown; activeDocument?: unknown }).document = {};
+    (globalThis as unknown as { activeDocument?: unknown }).activeDocument =
+      (globalThis as unknown as { document?: unknown }).document;
     searchMockState.indexedInitializeShouldFail = false;
     searchMockState.restoreResult = {
       status: "ready",
@@ -1089,7 +1099,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
   it("initializes indexed service and attempts restore during startup", async () => {
     const { plugin } = createPluginHarness();
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const mockPlugin = plugin as unknown as {
       registerHoverLinkSource: ReturnType<typeof vi.fn>;
@@ -1168,7 +1179,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     searchMockState.indexedInitializeShouldFail = true;
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     expect(searchMockState.indexedServices[0]?.initialize).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.markInitializationFailure).toHaveBeenCalledTimes(1);
@@ -1201,7 +1213,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
   it("registers search status, rebuild, and clear/reset commands", async () => {
     const { plugin } = createPluginHarness();
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const addCommandCalls = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls;
     const searchCommands = addCommandCalls
@@ -1233,7 +1246,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
   it("routes recover, rebuild, and clear/reset commands through plugin-owned lifecycle", async () => {
     const { plugin } = createPluginHarness();
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const commands = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls.map(
       (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
@@ -1292,7 +1306,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
     searchMockState.managers.length = 0;
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     searchMockState.managers[0]?.clearAndReset.mockImplementation(async () => {
       await clearAndResetGate.promise;
@@ -1354,7 +1369,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       }),
     };
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const observability = plugin.getSearchIndexObservabilitySnapshot();
     expect(observability).toEqual({
@@ -1454,7 +1470,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       };
 
       const { plugin } = createPluginHarness();
-      await plugin.onload();
+      plugin.onload();
+      await waitForPluginLoad(plugin);
 
       const observability = plugin.getSearchIndexObservabilitySnapshot();
       expect(observability).toEqual({
@@ -1482,7 +1499,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     const cleanupB = vi.spyOn(viewB, "cleanupLifecycle");
     obsidianMockState.leavesByType["folder-card-view"] = [{ view: viewA }, { view: viewB }];
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const createCallback = obsidianMockState.vaultCallbacks.create;
     const createdFile = new TFile() as TFile & { path: string; extension: string };
@@ -1509,7 +1527,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
   it("treats markdown-to-non-markdown file renames as markdown search mutations", async () => {
     const { plugin } = createPluginHarness();
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const renameCallback = obsidianMockState.vaultCallbacks.rename;
     const renamedFile = new TFile() as TFile & { path: string; extension: string };
@@ -1528,7 +1547,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
   it("schedules plugin-owned rebuild when forwarded mutation reaches rebuild-required state", async () => {
     const { plugin } = createPluginHarness();
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const renameCallback = obsidianMockState.vaultCallbacks.rename;
     const TFolderCtor = TFolder as unknown as { new (path: string): TFolder };
@@ -1579,7 +1599,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       (view.onSearchSnapshot as unknown as () => void)();
     });
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const service = searchMockState.indexedServices[0];
     service?.emitSnapshot({
@@ -1626,7 +1647,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       detail: "missing persisted index",
     };
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
     await Promise.resolve();
 
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
@@ -1643,7 +1665,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       detail: "missing persisted index",
     };
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     expect(searchMockState.managers[0]?.rebuildFromSource).not.toHaveBeenCalled();
     expect(app.vault.on).not.toHaveBeenCalled();
@@ -1663,7 +1686,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
     obsidianMockState.autoRunLayoutReady = false;
     const { plugin, app } = createPluginHarness();
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     expect(plugin.getSearchIndexObservabilitySnapshot()).toEqual({
       status: "ready",
@@ -1715,7 +1739,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
       detail: "missing persisted index",
     };
 
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const commands = (plugin as unknown as { addCommand: ReturnType<typeof vi.fn> }).addCommand.mock.calls.map(
       (entry: unknown[]) => entry[0] as { id: string; callback: () => void },
@@ -1747,7 +1772,8 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
   it("does not emit duplicate degraded notices for repeated failure snapshots", async () => {
     const { plugin } = createPluginHarness();
-    await plugin.onload();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
     const service = searchMockState.indexedServices[0];
     service?.emitSnapshot({

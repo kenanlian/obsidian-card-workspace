@@ -72,7 +72,7 @@ export type IndexStoreClearResult =
     };
 
 export interface IndexStoreStorageAdapter {
-  getRecord(key: string): Promise<IndexStoreRecord | null>;
+  getRecord(key: string): Promise<unknown | null>;
   setRecord(key: string, value: IndexStoreRecord): Promise<void>;
   removeRecord(key: string): Promise<void>;
 }
@@ -100,10 +100,9 @@ class IndexedDbStorageAdapter implements IndexStoreStorageAdapter {
     this.indexedDbFactory = indexedDbFactory;
   }
 
-  async getRecord(key: string): Promise<IndexStoreRecord | null> {
-    return this.withStore("readonly", (store) =>
-      this.requestPromise<IndexStoreRecord | undefined>(store.get(key)).then((result) => result ?? null),
-    );
+  async getRecord(key: string): Promise<unknown | null> {
+    const result = await this.withStore("readonly", (store) => this.requestPromise(store.get(key)));
+    return result ?? null;
   }
 
   async setRecord(key: string, value: IndexStoreRecord): Promise<void> {
@@ -140,7 +139,7 @@ class IndexedDbStorageAdapter implements IndexStoreStorageAdapter {
       try {
         request = this.indexedDbFactory.open(INDEX_STORE_DATABASE_NAME, 1);
       } catch (error) {
-        reject(error);
+        reject(normalizeUnknownError(error, "Failed to open IndexedDB database."));
         return;
       }
 
@@ -159,7 +158,7 @@ class IndexedDbStorageAdapter implements IndexStoreStorageAdapter {
     });
   }
 
-  private requestPromise<T = void>(request: IDBRequest<T>): Promise<T> {
+  private requestPromise(request: IDBRequest): Promise<unknown> {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         resolve(request.result);
@@ -200,7 +199,7 @@ export class IndexStore {
     }
 
     try {
-      this.adapter = new IndexedDbStorageAdapter(options.indexedDbFactory ?? globalThis.indexedDB);
+      this.adapter = new IndexedDbStorageAdapter(resolveIndexedDbFactory(options.indexedDbFactory));
       this.available = true;
     } catch (error) {
       this.adapter = createUnavailableAdapter(error);
@@ -218,7 +217,7 @@ export class IndexStore {
       };
     }
 
-    let record: IndexStoreRecord | null;
+    let record: unknown | null;
     try {
       record = await this.adapter.getRecord(this.vaultNamespace);
     } catch (error) {
@@ -425,4 +424,24 @@ function normalizeErrorMessage(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeUnknownError(error: unknown, fallbackMessage: string): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (typeof error === "string" && error.length > 0) {
+    return new Error(error);
+  }
+
+  return new Error(fallbackMessage);
+}
+
+function resolveIndexedDbFactory(indexedDbFactory: IDBFactory | null | undefined): IDBFactory | null {
+  if (indexedDbFactory) {
+    return indexedDbFactory;
+  }
+
+  return typeof window === "undefined" ? null : window.indexedDB;
 }

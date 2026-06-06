@@ -23,6 +23,7 @@ import {
   duplicateFile,
   mergeNotes,
   moveFile,
+  trashAbstractFileUsingObsidianPreference,
 } from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
 import {
@@ -78,6 +79,12 @@ type CardMenuAction =
   | "rename"
   | "delete"
   | "copy-note-content";
+
+interface MenuDomLike {
+  classList: {
+    add: (token: string) => void;
+  };
+}
 
 class BulkActionConfirmModal extends Modal {
   private readonly titleText: string;
@@ -400,11 +407,10 @@ class BulkMergeModal extends Modal {
       }
       new Notice(this.strings.failedToMergeNotes(String(error)));
     } finally {
-      if (requestSeq !== this.submitRequestSeq) {
-        return;
+      if (requestSeq === this.submitRequestSeq) {
+        this.submitting = false;
+        this.render();
       }
-      this.submitting = false;
-      this.render();
     }
   }
 }
@@ -585,7 +591,7 @@ export class FolderCardView extends ItemView {
   private searchSnapshotSeq = 0;
   private searchSnapshot: SearchServiceSnapshot | null = null;
   private searchSnapshotUnsubscribe: (() => void) | null = null;
-  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
@@ -645,8 +651,7 @@ export class FolderCardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    const panelModule = await import("./FolderCardPanel.svelte");
-    const FolderCardPanel = panelModule.default;
+    const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
     this.initializeSearchSnapshotState();
     this.panelModel.mutate((state) => {
       const settings = this.plugin.getSettings();
@@ -689,7 +694,7 @@ export class FolderCardView extends ItemView {
     target.empty();
 
     this.hostEl = target.createDiv({ cls: "folder-card-view" });
-    this.component = mount(FolderCardPanel as any, {
+    this.component = mount(FolderCardPanel, {
       target: this.hostEl,
       props: {
         panelModel: this.panelModel,
@@ -1118,27 +1123,22 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private getMenuDom(menu: Menu): { classList: { add: (token: string) => void } } | null {
+  private getMenuDom(menu: Menu): MenuDomLike | null {
     const candidate = menu as unknown as { dom?: unknown };
-    if (typeof candidate.dom !== "object" || candidate.dom === null) {
+    if (!this.isMenuDomLike(candidate.dom)) {
       return null;
     }
 
-    if (!("classList" in candidate.dom)) {
-      return null;
+    return candidate.dom;
+  }
+
+  private isMenuDomLike(value: unknown): value is MenuDomLike {
+    if (typeof value !== "object" || value === null || !("classList" in value)) {
+      return false;
     }
 
-    const classList = candidate.dom.classList;
-    if (
-      typeof classList !== "object" ||
-      classList === null ||
-      !("add" in classList) ||
-      typeof classList.add !== "function"
-    ) {
-      return null;
-    }
-
-    return { classList: { add: classList.add.bind(classList) } };
+    const { classList } = value;
+    return typeof classList === "object" && classList !== null && "add" in classList && typeof classList.add === "function";
   }
 
   private isMouseEventLike(event: unknown): event is MouseEvent {
@@ -1556,7 +1556,7 @@ export class FolderCardView extends ItemView {
       }
 
       const nextFolderPath = this.getFallbackFolderPathAfterFolderDeletion(liveFolder.path);
-      await this.app.fileManager.trashFile(liveFolder);
+      await trashAbstractFileUsingObsidianPreference(this.app, liveFolder);
       this.refreshFolderTreeState();
       if (nextFolderPath !== null) {
         await this.refresh({ reason: "manual", folderPath: nextFolderPath, forceRefresh: true });
@@ -2231,9 +2231,10 @@ export class FolderCardView extends ItemView {
       pushState: false,
       batchSize: FolderCardView.HYDRATION_BATCH_SIZE,
     });
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const viewWindow = this.getViewWindow();
+    let timeoutId: ReturnType<Window["setTimeout"]> | null = null;
     const waitBudget = new Promise<"timeout">((resolve) => {
-      timeoutId = setTimeout(() => {
+      timeoutId = viewWindow.setTimeout(() => {
         resolve("timeout");
       }, FolderCardView.STARTUP_PREVIEW_WAIT_MS);
     });
@@ -2244,7 +2245,7 @@ export class FolderCardView extends ItemView {
     ]);
 
     if (timeoutId !== null) {
-      clearTimeout(timeoutId);
+      viewWindow.clearTimeout(timeoutId);
     }
 
     if (result === "timeout") {
@@ -2427,20 +2428,32 @@ export class FolderCardView extends ItemView {
   private getSearchStatus(): SearchStatus {
     return this.searchStatus;
   }
+  private getViewWindow(): Pick<Window, "setTimeout" | "clearTimeout"> {
+    const ownerWindow = this.hostEl?.ownerDocument?.defaultView;
+    if (ownerWindow) {
+      return ownerWindow;
+    }
+
+    if (typeof activeWindow !== "undefined") {
+      return activeWindow;
+    }
+
+    return window;
+  }
 
   private clearSearchDebounce(): boolean {
-    if (!this.searchDebounceTimer) {
+    if (this.searchDebounceTimer === null) {
       return false;
     }
 
-    clearTimeout(this.searchDebounceTimer);
+    this.getViewWindow().clearTimeout(this.searchDebounceTimer);
     this.searchDebounceTimer = null;
     return true;
   }
 
   private scheduleDebouncedSearchProjection(): void {
     this.clearSearchDebounce();
-    this.searchDebounceTimer = setTimeout(() => {
+    this.searchDebounceTimer = this.getViewWindow().setTimeout(() => {
       this.searchDebounceTimer = null;
       void this.refreshSearchProjection();
     }, FolderCardView.SEARCH_DEBOUNCE_MS);

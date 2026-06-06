@@ -514,6 +514,9 @@ vi.mock("./note-ops", () => {
       sourceCount: 2,
     })),
     moveFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    trashAbstractFileUsingObsidianPreference: vi.fn(async (app: { fileManager: { trashFile: (file: unknown) => Promise<void> } }, file: unknown) => {
+      await app.fileManager.trashFile(file);
+    }),
   };
 });
 
@@ -829,6 +832,17 @@ describe("FolderCardView card context actions", () => {
     mockState.runtimeFlags.isDesktopApp = true;
     mockState.clipboardWriteTextMock.mockReset();
     mockState.clipboardWriteTextMock.mockResolvedValue(undefined);
+    (globalThis as unknown as {
+      activeWindow?: Pick<Window, "setTimeout" | "clearTimeout">;
+    }).activeWindow = {
+      setTimeout: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        setTimeout(handler, timeout, ...args)) as Window["setTimeout"],
+      clearTimeout: ((handle?: number | NodeJS.Timeout) => {
+        if (handle !== undefined) {
+          clearTimeout(handle);
+        }
+      }) as Window["clearTimeout"],
+    };
     Object.keys(mockState.panelEventHandlers).forEach((key) => {
       delete mockState.panelEventHandlers[key];
     });

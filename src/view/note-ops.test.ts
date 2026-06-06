@@ -65,14 +65,20 @@ interface MockAppForMove {
 }
 
 interface MockAppForTrash {
+  fileManager: {
+    trashFile: (file: TFile) => Promise<void>;
+  };
   vault: {
     trash: (file: TFile, system: boolean) => Promise<void>;
   };
 }
 
 interface MockAppForDelete {
+  fileManager: {
+    trashFile: (file: TFile) => Promise<void>;
+  };
   vault: {
-    delete: (file: TFile) => Promise<void>;
+    trash: (file: TFile, system: boolean) => Promise<void>;
   };
 }
 
@@ -247,11 +253,16 @@ describe("batchTrashFiles", () => {
     const second = createFile("notes/second.md");
     const third = createFile("notes/third.md");
     const app: MockAppForTrash = {
-      vault: {
-        trash: vi.fn(async (file: TFile): Promise<void> => {
+      fileManager: {
+        trashFile: vi.fn(async (file: TFile): Promise<void> => {
           if (file.path === second.path) {
             throw new Error("trash blocked");
           }
+        }),
+      },
+      vault: {
+        trash: vi.fn(async (): Promise<void> => {
+          return;
         }),
       },
     };
@@ -267,10 +278,11 @@ describe("batchTrashFiles", () => {
       ok: false,
       path: "notes/second.md",
     });
-    expect(vi.mocked(app.vault.trash)).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(app.vault.trash).mock.calls[0]).toEqual([first, true]);
-    expect(vi.mocked(app.vault.trash).mock.calls[1]).toEqual([second, true]);
-    expect(vi.mocked(app.vault.trash).mock.calls[2]).toEqual([third, true]);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(1, first);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(2, second);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(3, third);
+    expect(vi.mocked(app.vault.trash)).not.toHaveBeenCalled();
   });
 });
 
@@ -280,11 +292,16 @@ describe("batchDeleteFiles", () => {
     const second = createFile("notes/second.md");
     const third = createFile("notes/third.md");
     const app: MockAppForDelete = {
-      vault: {
-        delete: vi.fn(async (file: TFile): Promise<void> => {
+      fileManager: {
+        trashFile: vi.fn(async (file: TFile): Promise<void> => {
           if (file.path === second.path) {
             throw new Error("delete blocked");
           }
+        }),
+      },
+      vault: {
+        trash: vi.fn(async (): Promise<void> => {
+          return;
         }),
       },
     };
@@ -300,10 +317,11 @@ describe("batchDeleteFiles", () => {
       ok: false,
       path: "notes/second.md",
     });
-    expect(vi.mocked(app.vault.delete)).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(1, first);
-    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(2, second);
-    expect(vi.mocked(app.vault.delete)).toHaveBeenNthCalledWith(3, third);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(1, first);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(2, second);
+    expect(vi.mocked(app.fileManager.trashFile)).toHaveBeenNthCalledWith(3, third);
+    expect(vi.mocked(app.vault.trash)).not.toHaveBeenCalled();
   });
 });
 

@@ -38,10 +38,19 @@ function getErrorMessage(error: unknown, strings: DesktopShellStrings): string {
   return strings.unknownError;
 }
 
-async function loadShell(): Promise<{ openPath: (path: string) => Promise<string>; showItemInFolder: (path: string) => void }> {
-  const moduleName = "electron";
-  const { shell } = await import(/* @vite-ignore */ moduleName);
-  return shell;
+interface DesktopShell {
+  openPath: (path: string) => Promise<string>;
+  showItemInFolder: (path: string) => void;
+}
+
+interface ElectronModule {
+  shell: DesktopShell;
+}
+
+async function loadShell(): Promise<DesktopShell> {
+  const moduleName: "electron" = "electron";
+  const electronModule = (await import(/* @vite-ignore */ moduleName)) as ElectronModule;
+  return electronModule.shell;
 }
 
 export function canResolveSystemPath(app: AppLike): boolean {

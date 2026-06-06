@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, Notice } from "obsidian";
+import { App, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import { getUiStrings, type NoteOpsStrings } from "../i18n";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,28 @@ export type MergeOpResult = MergeResult | MergeFailure;
 // Single-file operations
 // ---------------------------------------------------------------------------
 
+interface FileManagerTrashLike {
+  trashFile?: (file: TAbstractFile) => Promise<void>;
+}
+
+interface VaultTrashLike {
+  trash: (file: TAbstractFile, system: boolean) => Promise<void>;
+}
+
+export async function trashAbstractFileUsingObsidianPreference(
+  app: App,
+  file: TAbstractFile,
+): Promise<void> {
+  const fileManager = app.fileManager as unknown as FileManagerTrashLike;
+  const trashFile = fileManager["trashFile"];
+  if (typeof trashFile === "function") {
+    await trashFile(file);
+    return;
+  }
+
+  const vault = app.vault as unknown as VaultTrashLike;
+  await vault.trash(file, true);
+}
 /**
  * Move a file to a target folder. Generates a unique name if a file with
  * the same basename already exists in the destination.
@@ -64,7 +86,7 @@ export async function moveFile(
 }
 
 /**
- * Permanently delete a file (no trash).
+ * Delete a file using Obsidian's configured trash behavior.
  */
 export async function deleteFile(
   app: App,
@@ -72,7 +94,7 @@ export async function deleteFile(
 ): Promise<NoteOpResult> {
   const path = file.path;
   try {
-    await app.vault.delete(file);
+    await trashAbstractFileUsingObsidianPreference(app, file);
     return { ok: true, file };
   } catch (err) {
     return { ok: false, error: String(err), path };
@@ -80,7 +102,7 @@ export async function deleteFile(
 }
 
 /**
- * Move a file to the system trash (or Obsidian .trash, based on user prefs).
+ * Move a file to trash using Obsidian's configured trash behavior.
  */
 export async function trashFile(
   app: App,
@@ -88,7 +110,7 @@ export async function trashFile(
 ): Promise<NoteOpResult> {
   const path = file.path;
   try {
-    await app.vault.trash(file, true);
+    await trashAbstractFileUsingObsidianPreference(app, file);
     return { ok: true, file };
   } catch (err) {
     return { ok: false, error: String(err), path };
@@ -104,7 +126,7 @@ export async function deleteFileUsingObsidianPreference(
 ): Promise<NoteOpResult> {
   const path = file.path;
   try {
-    await app.fileManager.trashFile(file);
+    await trashAbstractFileUsingObsidianPreference(app, file);
     return { ok: true, file };
   } catch (err) {
     return { ok: false, error: String(err), path };

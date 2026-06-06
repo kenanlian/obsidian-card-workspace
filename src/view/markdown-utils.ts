@@ -42,7 +42,7 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
     .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
     .replace(/!\[\[[^\]]+]]/g, " ")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_, link, alias) => alias ?? link)
+    .replace(/\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|([^\]]+))?]]/g, (_match: string, link: string, alias?: string) => alias ?? link)
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*+]\s+\[(?: |x|X)\]\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
@@ -461,6 +461,6 @@ function escapeHtml(input: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }

@@ -236,12 +236,17 @@ vi.mock("./note-ops", () => {
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
+    deleteFileUsingObsidianPreference: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    duplicateFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     mergeNotes: vi.fn(async () => ({
       ok: true,
       mergedFile: { basename: "Merged" },
       sourceCount: 2,
     })),
     moveFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    trashAbstractFileUsingObsidianPreference: vi.fn(async (app: { fileManager: { trashFile: (file: unknown) => Promise<void> } }, file: unknown) => {
+      await app.fileManager.trashFile(file);
+    }),
   };
 });
 

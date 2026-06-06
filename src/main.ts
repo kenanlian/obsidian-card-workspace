@@ -63,6 +63,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   private pendingSearchRecovery: Promise<void> | null = null;
   private pendingSearchClearReset: Promise<void> | null = null;
   private pendingMutationRecoveryRebuild: Promise<void> | null = null;
+  private startupPromise: Promise<void> = Promise.resolve();
   private debouncedRefresh = debounce(
     () => {
       void this.requestRefreshForViews("vault-change");
@@ -71,7 +72,13 @@ export default class FolderCardExplorerPlugin extends Plugin {
     false,
   );
 
-  async onload(): Promise<void> {
+  onload(): void {
+    this.startupPromise = this.initializePlugin().catch((error: unknown) => {
+      console.error("[Card Workspace] Plugin load failed.", error);
+    });
+  }
+
+  private async initializePlugin(): Promise<void> {
     await this.loadSettings();
     await this.initializeSearchService();
     this.register(() => {
@@ -86,7 +93,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "open-card-workspace",
+      id: "open-view",
       name: this.getUiStrings().app.openCardWorkspaceViewCommand,
       callback: () => {
         void this.activateView();
@@ -94,7 +101,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     });
     this.registerSearchCommands();
 
-    this.registerDomEvent(document, "click", (event: MouseEvent) => {
+    this.registerDomEvent(activeDocument, "click", (event: MouseEvent) => {
       void this.onFileExplorerClick(event);
     });
 
@@ -114,7 +121,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     });
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     const debouncedRefresh = this.debouncedRefresh as (() => void) & {
       cancel?: () => void;
     };
@@ -124,6 +131,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
       view.cleanupLifecycle();
     });
   }
+
 
   async createNoteInCurrentFolder(): Promise<void> {
     const folderPath = this.resolveNewNoteFolderPath();
@@ -438,7 +446,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     if (!leaf) {
       return;
     }
-    workspace.revealLeaf(leaf);
+    workspace.setActiveLeaf(leaf, { focus: false });
   }
 
   private withFolderViews(callback: (view: FolderCardView) => void): void {
@@ -1000,7 +1008,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    const rawData = await this.loadData();
+    const rawData: unknown = await this.loadData();
     this.settings = normalizeSettings(rawData);
   }
 

@@ -27,13 +27,16 @@ export function collectAllVaultFolders(root: TFolder): TFolder[] {
 /**
  * Type guard to check if an object is a TFolder.
  */
-function isTFolder(obj: any): obj is TFolder {
+function isTFolder(obj: unknown): obj is TFolder {
+  if (typeof obj !== "object" || obj === null) {
+    return false;
+  }
+
+  const candidate = obj as Record<string, unknown>;
   return (
-    obj != null &&
-    typeof obj === "object" &&
-    typeof obj.path === "string" &&
-    typeof obj.name === "string" &&
-    Array.isArray(obj.children)
+    typeof candidate.path === "string" &&
+    typeof candidate.name === "string" &&
+    Array.isArray(candidate.children)
   );
 }
 
