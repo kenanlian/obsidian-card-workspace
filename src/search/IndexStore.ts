@@ -72,7 +72,7 @@ export type IndexStoreClearResult =
     };
 
 export interface IndexStoreStorageAdapter {
-  getRecord(key: string): Promise<unknown | null>;
+  getRecord(key: string): Promise<unknown>;
   setRecord(key: string, value: IndexStoreRecord): Promise<void>;
   removeRecord(key: string): Promise<void>;
 }
@@ -100,9 +100,8 @@ class IndexedDbStorageAdapter implements IndexStoreStorageAdapter {
     this.indexedDbFactory = indexedDbFactory;
   }
 
-  async getRecord(key: string): Promise<unknown | null> {
-    const result = await this.withStore("readonly", (store) => this.requestPromise(store.get(key)));
-    return result ?? null;
+  async getRecord(key: string): Promise<unknown> {
+    return this.withStore("readonly", (store) => this.requestPromise(store.get(key)));
   }
 
   async setRecord(key: string, value: IndexStoreRecord): Promise<void> {
@@ -217,7 +216,7 @@ export class IndexStore {
       };
     }
 
-    let record: unknown | null;
+    let record: unknown;
     try {
       record = await this.adapter.getRecord(this.vaultNamespace);
     } catch (error) {

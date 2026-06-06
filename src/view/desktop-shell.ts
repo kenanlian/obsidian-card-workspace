@@ -43,13 +43,9 @@ interface DesktopShell {
   showItemInFolder: (path: string) => void;
 }
 
-interface ElectronModule {
-  shell: DesktopShell;
-}
 
 async function loadShell(): Promise<DesktopShell> {
-  const moduleName: "electron" = "electron";
-  const electronModule = (await import(/* @vite-ignore */ moduleName)) as ElectronModule;
+  const electronModule = await import("electron");
   return electronModule.shell;
 }
 
