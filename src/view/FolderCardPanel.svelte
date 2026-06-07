@@ -113,6 +113,8 @@
     canBulkSelectAll: false,
     canBulkClearSelection: false,
     canBulkMoveSelected: false,
+    canBulkAddTagSelected: false,
+    canBulkRemoveTagSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
   };
@@ -219,6 +221,8 @@
   const canBulkSelectAll = $derived(panelState.canBulkSelectAll);
   const canBulkClearSelection = $derived(panelState.canBulkClearSelection);
   const canBulkMoveSelected = $derived(panelState.canBulkMoveSelected);
+  const canBulkAddTagSelected = $derived(panelState.canBulkAddTagSelected);
+  const canBulkRemoveTagSelected = $derived(panelState.canBulkRemoveTagSelected);
   const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
   const showSearchMatchCounts = $derived(!isBlockedSearchState(panelState));
@@ -577,6 +581,8 @@
     {canBulkSelectAll}
     {canBulkClearSelection}
     {canBulkMoveSelected}
+    {canBulkAddTagSelected}
+    {canBulkRemoveTagSelected}
     {canBulkDeleteSelected}
     {canBulkMergeSelected}
     onToolbarAction={handleToolbarAction}

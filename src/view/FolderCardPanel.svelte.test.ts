@@ -60,6 +60,8 @@ function createInitialPanelState(): PanelModelState {
     canBulkSelectAll: false,
     canBulkClearSelection: false,
     canBulkMoveSelected: false,
+    canBulkAddTagSelected: false,
+    canBulkRemoveTagSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
   };

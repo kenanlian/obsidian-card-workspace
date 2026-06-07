@@ -15,14 +15,19 @@ import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags } from "./metadata-utils";
 import {
+  addTagToFile,
+  batchAddTagToFiles,
   batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
+  batchRemoveTagFromFiles,
   batchTrashFiles,
   copyNoteToClipboard,
   deleteFileUsingObsidianPreference,
   duplicateFile,
   mergeNotes,
   moveFile,
+  normalizeTagForFrontmatter,
+  removeTagFromFile,
   trashAbstractFileUsingObsidianPreference,
 } from "./note-ops";
 import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
@@ -72,12 +77,16 @@ function normalizeFolderScopePath(path: string): string {
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
+type TagMutationMode = "add" | "remove";
+
 type CardMenuAction =
   | OpenDestination
   | "make-copy"
   | "move"
   | "rename"
   | "delete"
+  | "add-tag"
+  | "remove-tag"
   | "copy-note-content";
 
 interface MenuDomLike {
@@ -415,6 +424,100 @@ class BulkMergeModal extends Modal {
   }
 }
 
+
+class TagInputModal extends Modal {
+  private readonly strings: UiStrings["view"]["tagInput"];
+  private readonly mode: TagMutationMode;
+  private readonly onSubmit: (tag: string) => Promise<boolean>;
+  private tagValue = "";
+  private submitting = false;
+  private closed = true;
+
+  constructor(
+    app: App,
+    options: {
+      mode: TagMutationMode;
+      strings: UiStrings["view"]["tagInput"];
+    },
+    onSubmit: (tag: string) => Promise<boolean>,
+  ) {
+    super(app);
+    this.mode = options.mode;
+    this.strings = options.strings;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    this.closed = false;
+    this.render();
+  }
+
+  onClose(): void {
+    this.closed = true;
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    this.setTitle(this.mode === "add" ? this.strings.addTitle : this.strings.removeTitle);
+    this.contentEl.empty();
+
+    new Setting(this.contentEl).setName(this.strings.tagLabel).addText((text) => {
+      text.setValue(this.tagValue).setPlaceholder(this.strings.tagPlaceholder).onChange((value) => {
+        this.tagValue = value;
+      });
+    });
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText(this.strings.cancel).onClick(() => {
+          this.close();
+        });
+      })
+      .addButton((button) => {
+        button
+          .setCta()
+          .setButtonText(this.getSubmitButtonText())
+          .onClick(() => {
+            void this.submit();
+          });
+      });
+  }
+
+  private getSubmitButtonText(): string {
+    if (this.mode === "add") {
+      return this.submitting ? this.strings.adding : this.strings.add;
+    }
+
+    return this.submitting ? this.strings.removing : this.strings.remove;
+  }
+
+  private async submit(): Promise<void> {
+    if (this.submitting) {
+      return;
+    }
+
+    const normalizedTag = normalizeTagForFrontmatter(this.tagValue);
+    if (normalizedTag.length === 0) {
+      new Notice(this.strings.invalidTag);
+      return;
+    }
+
+    this.submitting = true;
+    this.render();
+
+    try {
+      const shouldClose = await this.onSubmit(normalizedTag);
+      if (shouldClose) {
+        this.close();
+      }
+    } finally {
+      this.submitting = false;
+      if (!this.closed) {
+        this.render();
+      }
+    }
+  }
+}
 class RenameFileModal extends Modal {
   private readonly strings: UiStrings["view"]["rename"];
   private readonly initialName: string;
@@ -669,6 +772,8 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
+      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
@@ -808,6 +913,16 @@ export class FolderCardView extends ItemView {
 
     if (action === "bulk-move-selected") {
       this.bulkMoveSelected();
+      return;
+    }
+
+    if (action === "bulk-add-tag-selected") {
+      this.bulkAddTagSelected();
+      return;
+    }
+
+    if (action === "bulk-remove-tag-selected") {
+      this.bulkRemoveTagSelected();
       return;
     }
 
@@ -1221,19 +1336,33 @@ export class FolderCardView extends ItemView {
         });
     });
 
-    const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (file instanceof TFile) {
-      const fileKind = resolveCardFileKind(file);
-      if (fileKind !== null && isMarkdownCardKind(fileKind)) {
-        menu.addItem((item) => {
-          item
-            .setTitle(strings.copyNoteContent)
-            .setIcon("documents")
-            .onClick(() => {
-              void this.routeCardMenuAction("copy-note-content", notePath);
-            });
-        });
-      }
+    if (this.resolveLiveMarkdownFile(notePath)) {
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.addTag)
+          .setIcon("tag")
+          .onClick(() => {
+            void this.routeCardMenuAction("add-tag", notePath);
+          });
+      });
+
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.removeTag)
+          .setIcon("tag-x")
+          .onClick(() => {
+            void this.routeCardMenuAction("remove-tag", notePath);
+          });
+      });
+
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.copyNoteContent)
+          .setIcon("documents")
+          .onClick(() => {
+            void this.routeCardMenuAction("copy-note-content", notePath);
+          });
+      });
     }
 
     menu.addSeparator();
@@ -1275,6 +1404,16 @@ export class FolderCardView extends ItemView {
 
     if (action === "rename") {
       this.renameCardFile(notePath);
+      return;
+    }
+
+    if (action === "add-tag") {
+      this.openSingleTagModal(notePath, "add");
+      return;
+    }
+
+    if (action === "remove-tag") {
+      this.openSingleTagModal(notePath, "remove");
       return;
     }
 
@@ -1330,6 +1469,57 @@ export class FolderCardView extends ItemView {
       },
     );
     modal.open();
+  }
+
+  private resolveLiveMarkdownFile(notePath: string): TFile | null {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) {
+      return null;
+    }
+
+    const fileKind = resolveCardFileKind(file);
+    if (fileKind === null || !isMarkdownCardKind(fileKind)) {
+      return null;
+    }
+
+    return file;
+  }
+
+  private openSingleTagModal(notePath: string, mode: TagMutationMode): void {
+    if (!this.resolveLiveMarkdownFile(notePath)) {
+      return;
+    }
+
+    const modal = new TagInputModal(
+      this.app,
+      { mode, strings: this.strings.view.tagInput },
+      async (tag) => this.submitSingleTagAction(notePath, mode, tag),
+    );
+    modal.open();
+  }
+
+  private async submitSingleTagAction(notePath: string, mode: TagMutationMode, tag: string): Promise<boolean> {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
+      return true;
+    }
+
+    const result = mode === "add"
+      ? await addTagToFile(this.app, file, tag)
+      : await removeTagFromFile(this.app, file, tag);
+    if (!result.ok) {
+      const message = mode === "add"
+        ? this.strings.view.singleTagActions.failedToAdd(result.error)
+        : this.strings.view.singleTagActions.failedToRemove(result.error);
+      new Notice(message);
+      return false;
+    }
+
+    const message = mode === "add"
+      ? this.strings.view.singleTagActions.added(tag, file.basename)
+      : this.strings.view.singleTagActions.removed(tag, file.basename);
+    new Notice(message);
+    return true;
   }
 
   private async submitRename(notePath: string, nextName: string): Promise<void> {
@@ -2830,6 +3020,73 @@ export class FolderCardView extends ItemView {
     new Notice(moveStrings.partial(succeededCount, failedCount));
   }
 
+  private bulkAddTagSelected(): void {
+    if (!this.bulkMode || this.selectedPaths.size === 0) {
+      return;
+    }
+
+    this.openBulkTagModal("add");
+  }
+
+  private bulkRemoveTagSelected(): void {
+    if (!this.bulkMode || this.selectedPaths.size === 0) {
+      return;
+    }
+
+    this.openBulkTagModal("remove");
+  }
+
+  private openBulkTagModal(mode: TagMutationMode): void {
+    const modal = new TagInputModal(
+      this.app,
+      { mode, strings: this.strings.view.tagInput },
+      async (tag) => this.executeBulkTagAction(mode, tag),
+    );
+    modal.open();
+  }
+
+  private async executeBulkTagAction(mode: TagMutationMode, tag: string): Promise<boolean> {
+    const addStrings = this.strings.view.bulkAddTag;
+    const removeStrings = this.strings.view.bulkRemoveTag;
+    const strings = mode === "add" ? addStrings : removeStrings;
+    const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveMarkdownFilesInOrder();
+    const livePathsInOrder = filesInOrder.map((file) => file.path);
+
+    if (filesInOrder.length === 0) {
+      this.reconcileSelectionToOrderedPaths([]);
+      new Notice(strings.noSelectedNotes);
+      return true;
+    }
+
+    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
+      this.reconcileSelectionToOrderedPaths(livePathsInOrder);
+    }
+
+    const summary = mode === "add"
+      ? await batchAddTagToFiles(this.app, filesInOrder, tag)
+      : await batchRemoveTagFromFiles(this.app, filesInOrder, tag);
+    const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
+    const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
+
+    this.reconcileSelectionToOrderedPaths(failedPathsInOrder);
+
+    const succeededCount = summary.succeeded.length;
+    const failedCount = summary.failed.length;
+    if (failedCount === 0) {
+      new Notice(mode === "add" ? addStrings.added(succeededCount, tag) : removeStrings.removed(succeededCount, tag));
+      return true;
+    }
+
+    if (succeededCount === 0) {
+      new Notice(strings.failed(failedCount, tag));
+      return false;
+    }
+
+    new Notice(strings.partial(succeededCount, failedCount, tag));
+    return true;
+
+  }
+
   private async bulkDeleteSelected(): Promise<void> {
     if (!this.bulkMode || this.selectedPaths.size === 0) {
       return;
@@ -2854,6 +3111,20 @@ export class FolderCardView extends ItemView {
     for (const selectedPath of selectedPathsInOrder) {
       const file = this.app.vault.getAbstractFileByPath(selectedPath);
       if (file instanceof TFile) {
+        filesInOrder.push(file);
+      }
+    }
+
+    return { selectedPathsInOrder, filesInOrder };
+  }
+
+  private resolveSelectedLiveMarkdownFilesInOrder(): { selectedPathsInOrder: string[]; filesInOrder: TFile[] } {
+    const selectedPathsInOrder = Array.from(this.selectedPaths);
+    const filesInOrder: TFile[] = [];
+
+    for (const selectedPath of selectedPathsInOrder) {
+      const file = this.resolveLiveMarkdownFile(selectedPath);
+      if (file) {
         filesInOrder.push(file);
       }
     }
@@ -3042,6 +3313,7 @@ export class FolderCardView extends ItemView {
     const selectedPaths = Array.from(this.selectedPaths);
     const selectedCount = selectedPaths.length;
     const hasSelection = selectedCount > 0;
+    const selectedMarkdownCount = this.resolveSelectedLiveMarkdownFilesInOrder().filesInOrder.length;
 
     return {
       bulkMode: this.bulkMode,
@@ -3051,6 +3323,8 @@ export class FolderCardView extends ItemView {
       canBulkSelectAll: this.visibleCards.length > 0,
       canBulkClearSelection: hasSelection,
       canBulkMoveSelected: hasSelection,
+      canBulkAddTagSelected: selectedMarkdownCount > 0,
+      canBulkRemoveTagSelected: selectedMarkdownCount > 0,
       canBulkDeleteSelected: hasSelection,
       canBulkMergeSelected: selectedCount > 1,
     };
@@ -3107,6 +3381,8 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
+      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
@@ -3146,6 +3422,8 @@ export class FolderCardView extends ItemView {
       state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
       state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
       state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
+      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
+      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;

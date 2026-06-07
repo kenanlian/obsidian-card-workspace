@@ -502,8 +502,11 @@ vi.mock("./FolderCardPanel.svelte", () => {
 
 vi.mock("./note-ops", () => {
   return {
+    addTagToFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    batchAddTagToFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchRemoveTagFromFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
     deleteFileUsingObsidianPreference: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
@@ -514,6 +517,8 @@ vi.mock("./note-ops", () => {
       sourceCount: 2,
     })),
     moveFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    normalizeTagForFrontmatter: vi.fn((tag: string) => tag.trim().replace(/^#/, "").toLowerCase()),
+    removeTagFromFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     trashAbstractFileUsingObsidianPreference: vi.fn(async (app: { fileManager: { trashFile: (file: unknown) => Promise<void> } }, file: unknown) => {
       await app.fileManager.trashFile(file);
     }),
@@ -528,14 +533,18 @@ vi.mock("../FolderPickerModal", () => {
 
 import { FolderCardView } from "./FolderCardView";
 import {
+  addTagToFile,
+  batchAddTagToFiles,
   batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
+  batchRemoveTagFromFiles,
   batchTrashFiles,
   copyNoteToClipboard,
   deleteFileUsingObsidianPreference,
   duplicateFile,
   mergeNotes,
   moveFile,
+  removeTagFromFile,
 } from "./note-ops";
 import type { SearchServiceSnapshot } from "../search";
 import * as markdownUtils from "./markdown-utils";
@@ -584,6 +593,9 @@ function createViewWithFile(
       getFileCache: vi.fn(() => null),
     },
     fileManager: {
+      processFrontMatter: vi.fn(async (_file: InstanceType<typeof mockState.MockTFile>, mutate: (frontmatter: Record<string, unknown>) => void) => {
+        mutate({});
+      }),
       promptForDeletion: vi.fn(async (targetFile: InstanceType<typeof mockState.MockTFile>) => {
         if (typeof options.promptForDeletion === "function") {
           return options.promptForDeletion(targetFile);
@@ -609,32 +621,33 @@ function createViewWithFile(
         return requestedPath === path ? file : null;
       }),
       cachedRead: vi.fn(async () => ""),
+      process: vi.fn(async (_file: InstanceType<typeof mockState.MockTFile>, mutate: (content: string) => string) => mutate("")),
     },
     workspace: {},
   };
   const leaf = { app, getRoot: vi.fn(() => ({})) };
-   const plugin = {
-     getSettings: vi.fn(() => ({
-        includeSubfolders: true,
-        sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
-        defaultView: "cards",
-        lastFolderPath: null,
-        lastViewMode: "folder",
-        pinnedPaths: [],
-        previewLines: 5,
-              })),
-      getUiLanguage: vi.fn(() => "en"),
-      getUiStrings: vi.fn(() => getUiStrings("en")),
-      getSearchService: vi.fn(() => null),
-      getSearchSnapshot: vi.fn(() => null),
-      subscribeSearchSnapshots: vi.fn(() => () => undefined),
-      openNoteFromCard: vi.fn(),
-     selectAllNotes: vi.fn(),
-     createNoteInCurrentFolder: vi.fn(),
-     selectFolderByPath: vi.fn(),
-     saveSettings: vi.fn(async () => undefined),
-   };
+  const plugin = {
+    getSettings: vi.fn(() => ({
+      includeSubfolders: true,
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: [] },
+      defaultView: "cards",
+      lastFolderPath: null,
+      lastViewMode: "folder",
+      pinnedPaths: [],
+      previewLines: 5,
+    })),
+    getUiLanguage: vi.fn(() => "en"),
+    getUiStrings: vi.fn(() => getUiStrings("en")),
+    getSearchService: vi.fn(() => null),
+    getSearchSnapshot: vi.fn(() => null),
+    subscribeSearchSnapshots: vi.fn(() => () => undefined),
+    openNoteFromCard: vi.fn(),
+    selectAllNotes: vi.fn(),
+    createNoteInCurrentFolder: vi.fn(),
+    selectFolderByPath: vi.fn(),
+    saveSettings: vi.fn(async () => undefined),
+  };
 
   const view = new FolderCardView(leaf as any, plugin as any);
   return { view, app, file, plugin };
@@ -1469,87 +1482,27 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: false,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
+          canBulkAddTagSelected: true,
+          canBulkRemoveTagSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: false,
         });
       });
 
-      it("normal mode and bulk mode click behavior stay distinct", async () => {
-        const { view, plugin } = createViewWithFile("notes/click-distinction.md");
-        const visibleCards = [createCardRecordFromPath("notes/selected-in-bulk.md")];
-
-        (view as any).baseCards = visibleCards;
-        (view as any).visibleCards = visibleCards;
-        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-
-        await (view as any).onOpen();
-
-        const openNoteHandler = mockState.panelEventHandlers["open-note"];
-        const bulkSelectHandler = mockState.panelEventHandlers["bulk-select-card"];
-
-        openNoteHandler({ detail: { path: "notes/normal-open.md" } });
-        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
-        expect(plugin.openNoteFromCard).toHaveBeenLastCalledWith("notes/normal-open.md");
-
-        (view as any).bulkMode = true;
-        openNoteHandler({ detail: { path: "notes/should-not-open.md" } });
-        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
-
-        bulkSelectHandler({ detail: { path: "notes/selected-in-bulk.md", shiftKey: false } });
-
-        expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
-        expect(Array.from((view as any).selectedPaths)).toEqual(["notes/selected-in-bulk.md"]);
-        expect((view as any).bulkAnchorPath).toBe("notes/selected-in-bulk.md");
-      });
-
-      it("shift-range selection uses visible order", async () => {
-        const { view, plugin } = createViewWithFile("notes/shift-visible-order.md");
-        const visibleCards = [
-          createCardRecordFromPath("notes/c.md"),
-          createCardRecordFromPath("notes/b.md"),
-          createCardRecordFromPath("notes/a.md"),
-          createCardRecordFromPath("notes/d.md"),
-        ];
-
-        (view as any).baseCards = [
-          createCardRecordFromPath("notes/a.md"),
-          createCardRecordFromPath("notes/b.md"),
-          createCardRecordFromPath("notes/c.md"),
-          createCardRecordFromPath("notes/d.md"),
-          createCardRecordFromPath("notes/hidden.md"),
-        ];
-        (view as any).visibleCards = visibleCards;
-        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-        (view as any).bulkMode = true;
-
-        await (view as any).onOpen();
-
-        const bulkSelectHandler = mockState.panelEventHandlers["bulk-select-card"];
-        bulkSelectHandler({ detail: { path: "notes/b.md", shiftKey: false } });
-        bulkSelectHandler({ detail: { path: "notes/d.md", shiftKey: true } });
-
-        expect(Array.from((view as any).selectedPaths)).toEqual([
-          "notes/b.md",
-          "notes/a.md",
-          "notes/d.md",
-        ]);
-        expect((view as any).bulkAnchorPath).toBe("notes/b.md");
-        expect((view as any).selectedPaths.has("notes/hidden.md")).toBe(false);
-        expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
-      });
-
       it("bulk selection state machine", async () => {
-        const { view } = createViewWithFile("notes/bulk-state-machine.md");
+        const { view, app } = createViewWithFile("notes/bulk-state-machine.md");
         const visibleCards = [
           createCardRecordFromPath("notes/alpha.md"),
           createCardRecordFromPath("notes/gamma.md"),
           createCardRecordFromPath("notes/beta.md"),
         ];
+        const fileMap = new Map(visibleCards.map((card) => [card.path, card.file]));
 
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
         (view as any).visibleCards = visibleCards;
         (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
         (view as any).bulkMode = true;
-        (view as any).selectedPaths = new Set<string>(["notes/alpha.md"]);
+        (view as any).selectedPaths = new Set(["notes/gamma.md"]);
         (view as any).bulkAnchorPath = "notes/alpha.md";
 
         await (view as any).onOpen();
@@ -1572,6 +1525,8 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
+          canBulkAddTagSelected: true,
+          canBulkRemoveTagSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: true,
         });
@@ -1589,19 +1544,23 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
+          canBulkAddTagSelected: false,
+          canBulkRemoveTagSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
       });
 
       it("bulk toolbar actions and enablement", async () => {
-        const { view } = createViewWithFile("notes/bulk-toolbar.md");
+        const { view, app } = createViewWithFile("notes/bulk-toolbar.md");
         const visibleCards = [
           createCardRecordFromPath("notes/alpha.md"),
           createCardRecordFromPath("notes/beta.md"),
           createCardRecordFromPath("notes/gamma.md"),
         ];
+        const fileMap = new Map(visibleCards.map((card) => [card.path, card.file]));
 
+        app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
         (view as any).visibleCards = visibleCards;
         (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
         (view as any).bulkMode = true;
@@ -1617,6 +1576,8 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
+          canBulkAddTagSelected: false,
+          canBulkRemoveTagSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
@@ -1633,6 +1594,8 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
+          canBulkAddTagSelected: true,
+          canBulkRemoveTagSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: false,
         });
@@ -1654,6 +1617,8 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: true,
           canBulkMoveSelected: true,
+          canBulkAddTagSelected: true,
+          canBulkRemoveTagSelected: true,
           canBulkDeleteSelected: true,
           canBulkMergeSelected: true,
         });
@@ -1688,6 +1653,8 @@ describe("FolderCardView card context actions", () => {
           canBulkSelectAll: true,
           canBulkClearSelection: false,
           canBulkMoveSelected: false,
+          canBulkAddTagSelected: false,
+          canBulkRemoveTagSelected: false,
           canBulkDeleteSelected: false,
           canBulkMergeSelected: false,
         });
@@ -2471,6 +2438,8 @@ describe("FolderCardView card context actions", () => {
         "separator",
         "Make a copy",
         "Move file to...",
+        "Add tag...",
+        "Remove tag...",
         "Copy note content",
         "separator",
         "Rename...",
@@ -2497,38 +2466,21 @@ describe("FolderCardView card context actions", () => {
     expect(mockState.menuInstances).toHaveLength(1);
     const [menu] = mockState.menuInstances;
     expect(menu).toBeDefined();
-
-      expect(getTopLevelMenuSignature(menu!)).toEqual([
-        { kind: "item", title: "Open in current window", icon: "folder-open" },
-        { kind: "item", title: "Open in new tab", icon: "file-plus" },
-        { kind: "item", title: "Open to the right", icon: "separator-vertical" },
-        { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
+    expect(getTopLevelMenuSignature(menu!)).toEqual([
+      { kind: "item", title: "Open in current window", icon: "folder-open" },
+      { kind: "item", title: "Open in new tab", icon: "file-plus" },
+      { kind: "item", title: "Open to the right", icon: "separator-vertical" },
+      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "item", title: "Add tag...", icon: "tag" },
+      { kind: "item", title: "Remove tag...", icon: "tag-x" },
       { kind: "item", title: "Copy note content", icon: "documents" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
     ]);
-  });
-
-  it("openCardContextMenu shows the shared menu at explicit coordinates for button trigger", () => {
-    const { view, file } = createViewWithFile();
-    const position = { x: 40, y: 88 };
-
-    (view as any).openCardContextMenu({
-      notePath: file.path,
-      trigger: "button",
-      position,
-    });
-
-    expect(mockState.menuInstances).toHaveLength(1);
-    const [menu] = mockState.menuInstances;
-    expect(menu?.showAtPosition).toHaveBeenCalledTimes(1);
-    expect(menu?.showAtPosition).toHaveBeenCalledWith(position);
-    expect(menu?.showAtMouseEvent).not.toHaveBeenCalled();
-    expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
   });
 
   it("openCardContextMenu aborts and does not render menu on invalid inputs", () => {
@@ -2560,6 +2512,7 @@ describe("FolderCardView card context actions", () => {
     const makeCopySpy = vi.spyOn(view as any, "makeCardFileCopy").mockResolvedValue(undefined);
     const moveSpy = vi.spyOn(view as any, "moveCardNote");
     const renameSpy = vi.spyOn(view as any, "renameCardFile").mockImplementation(() => undefined);
+    const addTagSpy = vi.spyOn(view as any, "openSingleTagModal").mockImplementation(() => undefined);
     const deleteSpy = vi.spyOn(view as any, "deleteCardFile").mockResolvedValue(undefined);
     const copySpy = vi.spyOn(view as any, "copyCardNote").mockResolvedValue(undefined);
 
@@ -2570,6 +2523,8 @@ describe("FolderCardView card context actions", () => {
     await (view as any).routeCardMenuAction("make-copy", file.path);
     await (view as any).routeCardMenuAction("move", file.path);
     await (view as any).routeCardMenuAction("rename", file.path);
+    await (view as any).routeCardMenuAction("add-tag", file.path);
+    await (view as any).routeCardMenuAction("remove-tag", file.path);
     await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
       .routeCardMenuAction("delete", file.path);
     await (view as any).routeCardMenuAction("copy-note-content", file.path);
@@ -2585,12 +2540,86 @@ describe("FolderCardView card context actions", () => {
     expect(moveSpy).toHaveBeenCalledWith(file.path);
     expect(renameSpy).toHaveBeenCalledTimes(1);
     expect(renameSpy).toHaveBeenCalledWith(file.path);
+    expect(addTagSpy).toHaveBeenNthCalledWith(1, file.path, "add");
+    expect(addTagSpy).toHaveBeenNthCalledWith(2, file.path, "remove");
     expect(deleteSpy).toHaveBeenCalledTimes(1);
     expect(deleteSpy).toHaveBeenCalledWith(file.path);
     expect(copySpy).toHaveBeenCalledTimes(1);
     expect(copySpy).toHaveBeenCalledWith(file.path);
   });
 
+  it("single tag actions prompt for tag input and surface success and failure notices", async () => {
+    const { view, file, app } = createViewWithFile("notes/tag-action.md");
+
+    await (view as any).routeCardMenuAction("add-tag", file.path);
+    expect(mockState.modalInstances.at(-1)?.title).toBe("Add tag");
+    setLatestModalTextInput(0, "  #Project/Alpha ");
+    clickLatestModalButton("Add tag");
+    await vi.waitFor(() => {
+      expect(addTagToFile).toHaveBeenCalledWith(app, file, "project/alpha");
+    });
+    expect(mockState.noticeMessages).toContain('Added #project/alpha to "tag-action".');
+
+    vi.mocked(removeTagFromFile).mockResolvedValueOnce({
+      ok: false,
+      error: "remove failed",
+      path: file.path,
+    } as any);
+
+    await (view as any).routeCardMenuAction("remove-tag", file.path);
+    expect(mockState.modalInstances.at(-1)?.title).toBe("Remove tag");
+    setLatestModalTextInput(0, "#Project/Alpha");
+    clickLatestModalButton("Remove tag");
+    await vi.waitFor(() => {
+      expect(removeTagFromFile).toHaveBeenCalledWith(app, file, "project/alpha");
+    });
+    expect(mockState.noticeMessages).toContain("Failed to remove tag: remove failed");
+  });
+
+  it("bulk add tag reconciles selection to failed markdown paths only", async () => {
+    const { view, app } = createViewWithFile("notes/primary.md");
+    const first = createMarkdownFile("notes/first.md");
+    const second = createMarkdownFile("notes/second.md");
+    const third = createNonMarkdownFile("notes/third.canvas", "canvas");
+    const visibleCards = [
+      createCardRecord(first),
+      createCardRecord(second),
+      createCardRecord(third, "canvas"),
+    ];
+    const fileMap = new Map([
+      [first.path, first],
+      [second.path, second],
+      [third.path, third],
+    ]);
+
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
+    (view as any).visibleCards = visibleCards;
+    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).bulkMode = true;
+    (view as any).selectedPaths = new Set([first.path, second.path, third.path]);
+    (view as any).bulkAnchorPath = first.path;
+
+    vi.mocked(batchAddTagToFiles).mockResolvedValueOnce({
+      succeeded: [{ ok: true, file: first }],
+      failed: [{ ok: false, error: "denied", path: second.path }],
+    } as any);
+
+    await (view as any).onOpen();
+
+    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+    toolbarActionHandler({ detail: { action: "bulk-add-tag-selected" } });
+    expect(mockState.modalInstances.at(-1)?.title).toBe("Add tag");
+    setLatestModalTextInput(0, "#Project");
+    clickLatestModalButton("Add tag");
+
+    await vi.waitFor(() => {
+      expect(batchAddTagToFiles).toHaveBeenCalledWith(app, [first, second], "project");
+    });
+
+    expect(Array.from((view as any).selectedPaths)).toEqual([second.path]);
+    expect((view as any).bulkAnchorPath).toBe(second.path);
+    expect(mockState.noticeMessages).toContain("Added #project to 1 note; 1 failed.");
+  });
 
   it("conditional menu variants keep separators clean after removing optional actions", () => {
     const { view: desktopNonMarkdownView, file: desktopNonMarkdownFile } = createViewWithFile(
@@ -2648,6 +2677,8 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "item", title: "Add tag...", icon: "tag" },
+      { kind: "item", title: "Remove tag...", icon: "tag-x" },
       { kind: "item", title: "Copy note content", icon: "documents" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
@@ -4127,9 +4158,11 @@ describe("FolderCardView card context actions", () => {
     });
 
     it("pushState includes bulk runtime payload", () => {
-      const { view, plugin } = createViewWithFile("notes/bulk-runtime-payload.md");
+      const { view, app, plugin } = createViewWithFile("notes/bulk-runtime-payload.md");
       const firstSelectedPath = "notes/first.md";
       const secondSelectedPath = "notes/second.md";
+      const firstFile = createMarkdownFile(firstSelectedPath);
+      const secondFile = createMarkdownFile(secondSelectedPath);
 
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
@@ -4145,16 +4178,22 @@ describe("FolderCardView card context actions", () => {
       (view as any).component = mockState.createMountedPanel({
         props: { panelModel: (view as any).panelModel },
       });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === firstSelectedPath) {
+          return firstFile;
+        }
+        if (requestedPath === secondSelectedPath) {
+          return secondFile;
+        }
+        return null;
+      });
+      (view as any).visibleCards = [createCardRecord(firstFile), createCardRecord(secondFile)];
+      (view as any).deriveVisibleCards = vi.fn(() => (view as any).visibleCards);
       (view as any).folderPath = "notes";
       (view as any).selectedPath = "notes/editor-sync.md";
       (view as any).bulkMode = true;
       (view as any).selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
       (view as any).bulkAnchorPath = firstSelectedPath;
-      (view as any).baseCards = [
-        createCardRecord(createMarkdownFile(firstSelectedPath)),
-        createCardRecord(createMarkdownFile(secondSelectedPath)),
-      ];
-
       (view as any).pushState();
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({

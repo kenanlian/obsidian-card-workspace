@@ -65,6 +65,8 @@
     canBulkSelectAll?: boolean;
     canBulkClearSelection?: boolean;
     canBulkMoveSelected?: boolean;
+    canBulkAddTagSelected?: boolean;
+    canBulkRemoveTagSelected?: boolean;
     canBulkDeleteSelected?: boolean;
     canBulkMergeSelected?: boolean;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
@@ -161,6 +163,8 @@
     canBulkSelectAll = false,
     canBulkClearSelection = false,
     canBulkMoveSelected = false,
+    canBulkAddTagSelected = false,
+    canBulkRemoveTagSelected = false,
     canBulkDeleteSelected = false,
     canBulkMergeSelected = false,
     onToolbarAction,
@@ -229,6 +233,8 @@
     { id: "bulk-select-all", label: strings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
     { id: "bulk-clear-selection", label: strings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
     { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
+    { id: "bulk-add-tag-selected", label: strings.bulkActionLabels.addTagSelected, icon: "tag", disabled: !canBulkAddTagSelected },
+    { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: "tag-x", disabled: !canBulkRemoveTagSelected },
     { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected },
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
   ]);

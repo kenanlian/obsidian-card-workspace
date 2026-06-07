@@ -61,6 +61,8 @@ export interface ToolbarStrings {
     selectAll: string;
     clearSelection: string;
     moveSelected: string;
+    addTagSelected: string;
+    removeTagSelected: string;
     deleteSelected: string;
     mergeSelected: string;
     exitBulkMode: string;
@@ -194,6 +196,36 @@ export interface ViewStrings {
     failedToTrashSources: (count: number) => string;
     trashedSourcesPartial: (success: number, failed: number) => string;
   };
+  tagInput: {
+    addTitle: string;
+    removeTitle: string;
+    tagLabel: string;
+    tagPlaceholder: string;
+    invalidTag: string;
+    cancel: string;
+    add: string;
+    adding: string;
+    remove: string;
+    removing: string;
+  };
+  singleTagActions: {
+    added: (tag: string, basename: string) => string;
+    removed: (tag: string, basename: string) => string;
+    failedToAdd: (reason: string) => string;
+    failedToRemove: (reason: string) => string;
+  };
+  bulkAddTag: {
+    noSelectedNotes: string;
+    added: (count: number, tag: string) => string;
+    failed: (count: number, tag: string) => string;
+    partial: (success: number, failed: number, tag: string) => string;
+  };
+  bulkRemoveTag: {
+    noSelectedNotes: string;
+    removed: (count: number, tag: string) => string;
+    failed: (count: number, tag: string) => string;
+    partial: (success: number, failed: number, tag: string) => string;
+  };
   folderManagement: {
     createChildTitle: string;
     nameLabel: string;
@@ -216,6 +248,8 @@ export interface ViewStrings {
     openInNewWindow: string;
     makeCopy: string;
     moveFileTo: string;
+    addTag: string;
+    removeTag: string;
     copyNoteContent: string;
     rename: string;
     delete: string;
@@ -343,6 +377,8 @@ const EN: UiStrings = {
       selectAll: "Select all",
       clearSelection: "Clear selection",
       moveSelected: "Move selected",
+      addTagSelected: "Add tag to selected",
+      removeTagSelected: "Remove tag from selected",
       deleteSelected: "Delete selected",
       mergeSelected: "Merge selected",
       exitBulkMode: "Exit bulk mode",
@@ -443,20 +479,37 @@ const EN: UiStrings = {
       failureMessage: (count: number) => `Failed to delete ${count} note${count === 1 ? "" : "s"}.`,
       partialMessage: (success: number, failed: number) => `Deleted ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
     },
-    folderManagement: {
-      createChildTitle: "Create child folder",
-      nameLabel: "Folder name",
+    tagInput: {
+      addTitle: "Add tag",
+      removeTitle: "Remove tag",
+      tagLabel: "Tag",
+      tagPlaceholder: "project/tag",
+      invalidTag: "Enter a valid tag.",
       cancel: "Cancel",
-      create: "Create",
-      creating: "Creating…",
-      emptyName: "Folder name cannot be empty.",
-      invalidName: "Folder name cannot contain / or \\.",
-      folderNotFound: "Folder no longer exists.",
-      createFailed: (reason: string) => `Failed to create folder: ${reason}`,
-      sameTarget: "Folder is already in the selected location.",
-      invalidMoveTarget: "Cannot move a folder into itself or one of its subfolders.",
-      moveFailed: (reason: string) => `Failed to move folder: ${reason}`,
-      deleteFailed: (reason: string) => `Failed to delete folder: ${reason}`,
+      add: "Add tag",
+      adding: "Adding…",
+      remove: "Remove tag",
+      removing: "Removing…",
+    },
+    singleTagActions: {
+      added: (tag: string, basename: string) => `Added #${tag} to "${basename}".`,
+      removed: (tag: string, basename: string) => `Removed #${tag} from "${basename}".`,
+      failedToAdd: (reason: string) => `Failed to add tag: ${reason}`,
+      failedToRemove: (reason: string) => `Failed to remove tag: ${reason}`,
+    },
+    bulkAddTag: {
+      noSelectedNotes: "No selected Markdown notes are available to tag.",
+      added: (count: number, tag: string) => `Added #${tag} to ${count} note${count === 1 ? "" : "s"}.`,
+      failed: (count: number, tag: string) => `Failed to add #${tag} to ${count} note${count === 1 ? "" : "s"}.`,
+      partial: (success: number, failed: number, tag: string) =>
+        `Added #${tag} to ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
+    },
+    bulkRemoveTag: {
+      noSelectedNotes: "No selected Markdown notes are available to untag.",
+      removed: (count: number, tag: string) => `Removed #${tag} from ${count} note${count === 1 ? "" : "s"}.`,
+      failed: (count: number, tag: string) => `Failed to remove #${tag} from ${count} note${count === 1 ? "" : "s"}.`,
+      partial: (success: number, failed: number, tag: string) =>
+        `Removed #${tag} from ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
     },
     merge: {
       title: "Merge selected notes",
@@ -485,6 +538,21 @@ const EN: UiStrings = {
       failedToTrashSources: (count: number) => `Failed to trash ${count} source note${count === 1 ? "" : "s"}.`,
       trashedSourcesPartial: (success: number, failed: number) => `Trashed ${success} source note${success === 1 ? "" : "s"}; ${failed} failed.`,
     },
+    folderManagement: {
+      createChildTitle: "Create child folder",
+      nameLabel: "Folder name",
+      cancel: "Cancel",
+      create: "Create",
+      creating: "Creating…",
+      emptyName: "Folder name cannot be empty.",
+      invalidName: "Folder name cannot contain / or \\.",
+      folderNotFound: "Folder no longer exists.",
+      createFailed: (reason: string) => `Failed to create folder: ${reason}`,
+      sameTarget: "Folder is already in the selected location.",
+      invalidMoveTarget: "Cannot move a folder into itself or one of its subfolders.",
+      moveFailed: (reason: string) => `Failed to move folder: ${reason}`,
+      deleteFailed: (reason: string) => `Failed to delete folder: ${reason}`,
+    },
     contextMenu: {
       openInCurrentWindow: "Open in current window",
       openInNewTab: "Open in new tab",
@@ -492,6 +560,8 @@ const EN: UiStrings = {
       openInNewWindow: "Open in new window",
       makeCopy: "Make a copy",
       moveFileTo: "Move file to...",
+      addTag: "Add tag...",
+      removeTag: "Remove tag...",
       copyNoteContent: "Copy note content",
       rename: "Rename...",
       delete: "Delete",
@@ -576,7 +646,7 @@ const ZH: UiStrings = {
       pickFolderTitle: "文件夹范围",
       selectFolder: "选择文件夹",
       newNote: "新建",
-      newNoteTitle: "新建笔记",
+      newNoteTitle: "创建笔记",
       sort: "排序",
       sortTitle: "排序卡片",
       filter: "标签",
@@ -591,6 +661,8 @@ const ZH: UiStrings = {
       selectAll: "全选",
       clearSelection: "清除选择",
       moveSelected: "移动所选",
+      addTagSelected: "为所选添加标签",
+      removeTagSelected: "移除所选标签",
       deleteSelected: "删除所选",
       mergeSelected: "合并所选",
       exitBulkMode: "退出批量模式",
@@ -690,20 +762,35 @@ const ZH: UiStrings = {
       failureMessage: (count: number) => `删除 ${count} 篇笔记失败。`,
       partialMessage: (success: number, failed: number) => `已删除 ${success} 篇笔记；${failed} 篇失败。`,
     },
-    folderManagement: {
-      createChildTitle: "新建子文件夹",
-      nameLabel: "文件夹名称",
+    tagInput: {
+      addTitle: "添加标签",
+      removeTitle: "移除标签",
+      tagLabel: "标签",
+      tagPlaceholder: "project/tag",
+      invalidTag: "请输入有效标签。",
       cancel: "取消",
-      create: "新建",
-      creating: "正在新建…",
-      emptyName: "文件夹名称不能为空。",
-      invalidName: "文件夹名称不能包含 / 或 \\。",
-      folderNotFound: "文件夹已不存在。",
-      createFailed: (reason: string) => `创建文件夹失败：${reason}`,
-      sameTarget: "文件夹已在所选位置中。",
-      invalidMoveTarget: "不能将文件夹移动到其自身或其子文件夹中。",
-      moveFailed: (reason: string) => `移动文件夹失败：${reason}`,
-      deleteFailed: (reason: string) => `删除文件夹失败：${reason}`,
+      add: "添加标签",
+      adding: "正在添加…",
+      remove: "移除标签",
+      removing: "正在移除…",
+    },
+    singleTagActions: {
+      added: (tag: string, basename: string) => `已为“${basename}”添加 #${tag}。`,
+      removed: (tag: string, basename: string) => `已从“${basename}”移除 #${tag}。`,
+      failedToAdd: (reason: string) => `添加标签失败：${reason}`,
+      failedToRemove: (reason: string) => `移除标签失败：${reason}`,
+    },
+    bulkAddTag: {
+      noSelectedNotes: "没有可添加标签的已选 Markdown 笔记。",
+      added: (count: number, tag: string) => `已为 ${count} 篇笔记添加 #${tag}。`,
+      failed: (count: number, tag: string) => `为 ${count} 篇笔记添加 #${tag} 失败。`,
+      partial: (success: number, failed: number, tag: string) => `已为 ${success} 篇笔记添加 #${tag}；${failed} 篇失败。`,
+    },
+    bulkRemoveTag: {
+      noSelectedNotes: "没有可移除标签的已选 Markdown 笔记。",
+      removed: (count: number, tag: string) => `已从 ${count} 篇笔记移除 #${tag}。`,
+      failed: (count: number, tag: string) => `从 ${count} 篇笔记移除 #${tag} 失败。`,
+      partial: (success: number, failed: number, tag: string) => `已从 ${success} 篇笔记移除 #${tag}；${failed} 篇失败。`,
     },
     merge: {
       title: "合并所选笔记",
@@ -732,6 +819,21 @@ const ZH: UiStrings = {
       failedToTrashSources: (count: number) => `将 ${count} 篇源笔记移入废纸篓失败。`,
       trashedSourcesPartial: (success: number, failed: number) => `已将 ${success} 篇源笔记移入废纸篓；${failed} 篇失败。`,
     },
+    folderManagement: {
+      createChildTitle: "新建子文件夹",
+      nameLabel: "文件夹名称",
+      cancel: "取消",
+      create: "新建",
+      creating: "正在新建…",
+      emptyName: "文件夹名称不能为空。",
+      invalidName: "文件夹名称不能包含 / 或 \\。",
+      folderNotFound: "文件夹已不存在。",
+      createFailed: (reason: string) => `创建文件夹失败：${reason}`,
+      sameTarget: "文件夹已在所选位置中。",
+      invalidMoveTarget: "不能将文件夹移动到其自身或其子文件夹中。",
+      moveFailed: (reason: string) => `移动文件夹失败：${reason}`,
+      deleteFailed: (reason: string) => `删除文件夹失败：${reason}`,
+    },
     contextMenu: {
       openInCurrentWindow: "在当前窗口打开",
       openInNewTab: "在新标签页打开",
@@ -739,6 +841,8 @@ const ZH: UiStrings = {
       openInNewWindow: "在新窗口打开",
       makeCopy: "创建副本",
       moveFileTo: "移动文件到...",
+      addTag: "添加标签...",
+      removeTag: "移除标签...",
       copyNoteContent: "复制笔记内容",
       rename: "重命名...",
       delete: "删除",

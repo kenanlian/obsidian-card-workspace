@@ -46,13 +46,18 @@ vi.mock("obsidian", () => {
 
 import { TFile, TFolder } from "obsidian";
 import {
+  addTagToFile,
+  batchAddTagToFiles,
   batchDeleteFiles,
   batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
+  batchRemoveTagFromFiles,
   batchTrashFiles,
-  duplicateFile,
   deleteFileUsingObsidianPreference,
+  duplicateFile,
   mergeNotes,
+  normalizeTagForFrontmatter,
+  removeTagFromFile,
 } from "./note-ops";
 
 interface MockAppForMove {
@@ -107,6 +112,28 @@ interface MockAppForDuplicate {
   };
 }
 
+interface MockTagPosition {
+  start: { offset: number };
+  end: { offset: number };
+}
+
+interface MockTagCacheEntry {
+  tag: string;
+  position: MockTagPosition;
+}
+
+interface MockAppForTagMutation {
+  fileManager: {
+    processFrontMatter: (file: TFile, fn: (frontmatter: Record<string, unknown>) => void) => Promise<void>;
+  };
+  vault: {
+    process: (file: TFile, fn: (content: string) => string) => Promise<string>;
+  };
+  metadataCache: {
+    getFileCache: (file: TFile) => { tags?: MockTagCacheEntry[] } | null;
+  };
+}
+
 function createFile(path: string, extension: string = "md"): TFile {
   const file = new TFile();
   (file as unknown as { path: string }).path = path;
@@ -119,6 +146,290 @@ function createFile(path: string, extension: string = "md"): TFile {
   (file as unknown as { parent: { path: string } }).parent = { path: parentPath };
   return file;
 }
+
+function createTagCacheEntry(content: string, rawTag: string, occurrence: number = 0): MockTagCacheEntry {
+  let fromIndex = 0;
+  let start = -1;
+  for (let index = 0; index <= occurrence; index += 1) {
+    start = content.indexOf(rawTag, fromIndex);
+    if (start === -1) {
+      throw new Error(`Tag "${rawTag}" occurrence ${occurrence} not found.`);
+    }
+
+    fromIndex = start + rawTag.length;
+  }
+
+  return {
+    tag: rawTag,
+    position: {
+      start: { offset: start },
+      end: { offset: start + rawTag.length },
+    },
+  };
+}
+
+
+describe("normalizeTagForFrontmatter", () => {
+  it("trims, removes leading hash, and lowercases tag path segments", () => {
+    expect(normalizeTagForFrontmatter("  #Project / Alpha / Beta  ")).toBe("project/alpha/beta");
+  });
+});
+
+describe("addTagToFile", () => {
+  it("creates frontmatter tags when missing and is idempotent for existing normalized tags", async () => {
+    const file = createFile("notes/tagged.md");
+    const frontmatter: Record<string, unknown> = {};
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => mutate("")),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => null),
+      },
+    };
+
+    const first = await addTagToFile(app as unknown as any, file, "  #Project/Alpha ");
+    const second = await addTagToFile(app as unknown as any, file, "#project/alpha");
+
+    expect(first).toEqual({ ok: true, file });
+    expect(second).toEqual({ ok: true, file });
+    expect(frontmatter).toEqual({ tags: ["project/alpha"] });
+    expect(vi.mocked(app.fileManager.processFrontMatter)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(app.vault.process)).not.toHaveBeenCalled();
+  });
+
+  it("coerces string tag fields into a normalized tags array", async () => {
+    const file = createFile("notes/string-tag.md");
+    const frontmatter: Record<string, unknown> = {
+      tag: "#Existing/Path",
+    };
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => mutate("")),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => null),
+      },
+    };
+
+    const result = await addTagToFile(app as unknown as any, file, "new/tag");
+
+    expect(result).toEqual({ ok: true, file });
+    expect(frontmatter).toEqual({ tags: ["existing/path", "new/tag"] });
+  });
+
+  it("returns a failure result when processFrontMatter throws", async () => {
+    const file = createFile("notes/frontmatter-error.md");
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async () => {
+          throw new Error("yaml parse failed");
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => mutate("")),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => null),
+      },
+    };
+
+    const result = await addTagToFile(app as unknown as any, file, "project");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Error: yaml parse failed",
+      path: "notes/frontmatter-error.md",
+    });
+  });
+});
+
+describe("removeTagFromFile", () => {
+  it("removes matching tags from frontmatter and inline tag cache ranges", async () => {
+    const file = createFile("notes/remove-tag.md");
+    const frontmatter: Record<string, unknown> = {
+      tag: "#Keep/Me",
+      tags: ["#Project/Alpha", "second/tag"],
+    };
+    let content = "Intro #Project/Alpha middle #second/tag outro #Project/Alpha";
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [
+            createTagCacheEntry(content, "#Project/Alpha", 0),
+            createTagCacheEntry(content, "#second/tag"),
+            createTagCacheEntry(content, "#Project/Alpha", 1),
+          ],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
+
+    expect(result).toEqual({ ok: true, file });
+    expect(frontmatter).toEqual({ tags: ["second/tag", "keep/me"] });
+    expect(content).toBe("Intro  middle #second/tag outro ");
+  });
+
+  it("keeps stale inline ranges as a no-op while still updating frontmatter", async () => {
+    const file = createFile("notes/stale-range.md");
+    const frontmatter: Record<string, unknown> = {
+      tags: ["project/alpha", "keep"],
+    };
+    let content = "Intro #project/alpha";
+    const staleRange = createTagCacheEntry(content, "#project/alpha");
+    content = "Intro #changed/tag";
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [staleRange],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
+
+    expect(result).toEqual({ ok: true, file });
+    expect(frontmatter).toEqual({ tags: ["keep"] });
+    expect(content).toBe("Intro #changed/tag");
+  });
+
+  it("is idempotent when the tag is absent from frontmatter and inline cache", async () => {
+    const file = createFile("notes/idempotent-remove.md");
+    const frontmatter: Record<string, unknown> = {
+      tags: ["keep"],
+    };
+    let content = "Body without matching tag";
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => null),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
+
+    expect(result).toEqual({ ok: true, file });
+    expect(frontmatter).toEqual({ tags: ["keep"] });
+    expect(content).toBe("Body without matching tag");
+    expect(vi.mocked(app.vault.process)).not.toHaveBeenCalled();
+  });
+});
+
+describe("batch tag operations", () => {
+  it("continues bulk add and remove after partial failures", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const third = createFile("notes/third.md");
+    const frontmatterByPath = new Map<string, Record<string, unknown>>([
+      [first.path, { tags: [] }],
+      [second.path, { tags: [] }],
+      [third.path, { tags: ["project"] }],
+    ]);
+    const contentByPath = new Map<string, string>([
+      [first.path, "#project"],
+      [second.path, "#project"],
+      [third.path, "#project"],
+    ]);
+    const app: MockAppForTagMutation = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (file, mutate) => {
+          if (file.path === second.path) {
+            throw new Error("frontmatter blocked");
+          }
+
+          mutate(frontmatterByPath.get(file.path) ?? {});
+        }),
+      },
+      vault: {
+        process: vi.fn(async (file, mutate) => {
+          const nextContent = mutate(contentByPath.get(file.path) ?? "");
+          contentByPath.set(file.path, nextContent);
+          return nextContent;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn((file: TFile) => {
+          const content = contentByPath.get(file.path) ?? "";
+          if (!content.includes("#project")) {
+            return null;
+          }
+
+          return {
+            tags: [createTagCacheEntry(content, "#project")],
+          };
+        }),
+      },
+    };
+
+    const addSummary = await batchAddTagToFiles(app as unknown as any, [first, second, third], "project");
+    const removeSummary = await batchRemoveTagFromFiles(app as unknown as any, [first, second, third], "project");
+
+    expect(addSummary.succeeded.map((entry) => entry.file.path)).toEqual(["notes/first.md", "notes/third.md"]);
+    expect(addSummary.failed).toEqual([
+      {
+        ok: false,
+        error: "Error: frontmatter blocked",
+        path: "notes/second.md",
+      },
+    ]);
+    expect(removeSummary.succeeded.map((entry) => entry.file.path)).toEqual(["notes/first.md", "notes/third.md"]);
+    expect(removeSummary.failed).toEqual([
+      {
+        ok: false,
+        error: "Error: frontmatter blocked",
+        path: "notes/second.md",
+      },
+    ]);
+    expect(frontmatterByPath.get(first.path)).toEqual({});
+    expect(frontmatterByPath.get(third.path)).toEqual({});
+    expect(contentByPath.get(first.path)).toBe("");
+    expect(contentByPath.get(second.path)).toBe("#project");
+    expect(contentByPath.get(third.path)).toBe("");
+  });
+});
 
 describe("duplicateFile", () => {
   it('creates a same-folder copy and resolves name collisions', async () => {

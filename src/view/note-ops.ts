@@ -1,5 +1,6 @@
 import { App, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import { getUiStrings, type NoteOpsStrings } from "../i18n";
+import { normalizeTagPath } from "./tag-tree";
 
 // ---------------------------------------------------------------------------
 // Result types — every operation returns a typed result for caller handling.
@@ -46,6 +47,20 @@ interface FileManagerTrashLike {
 
 interface VaultTrashLike {
   trash: (file: TAbstractFile, system: boolean) => Promise<void>;
+}
+
+interface FrontmatterProcessLike {
+  processFrontMatter: (file: TFile, fn: (frontmatter: Record<string, unknown>) => void) => Promise<void>;
+}
+
+interface MetadataCacheLike {
+  tags?: Array<{
+    tag?: string;
+    position?: {
+      start?: { offset?: number };
+      end?: { offset?: number };
+    };
+  }>;
 }
 
 export async function trashAbstractFileUsingObsidianPreference(
@@ -149,6 +164,59 @@ export async function duplicateFile(
     const newPath = resolveUniquePath(app, copyName, parentPath);
     const created = await app.vault.create(newPath, content);
     return { ok: true, file: created };
+  } catch (err) {
+    return { ok: false, error: String(err), path: file.path };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tag operations
+// ---------------------------------------------------------------------------
+
+export function normalizeTagForFrontmatter(value: string): string {
+  return normalizeTagPath(value);
+}
+
+export async function addTagToFile(
+  app: App,
+  file: TFile,
+  tag: string,
+): Promise<NoteOpResult> {
+  const normalizedTag = normalizeTagForFrontmatter(tag);
+  if (!isMarkdownFile(file) || normalizedTag.length === 0) {
+    return { ok: false, error: "Tag operations require a Markdown note and a non-empty tag.", path: file.path };
+  }
+
+  try {
+    const fileManager = app.fileManager as unknown as FrontmatterProcessLike;
+    await fileManager.processFrontMatter(file, (frontmatter) => {
+      const nextTags = mergeFrontmatterTags(frontmatter, normalizedTag);
+      writeNormalizedFrontmatterTags(frontmatter, nextTags);
+    });
+    return { ok: true, file };
+  } catch (err) {
+    return { ok: false, error: String(err), path: file.path };
+  }
+}
+
+export async function removeTagFromFile(
+  app: App,
+  file: TFile,
+  tag: string,
+): Promise<NoteOpResult> {
+  const normalizedTag = normalizeTagForFrontmatter(tag);
+  if (!isMarkdownFile(file) || normalizedTag.length === 0) {
+    return { ok: false, error: "Tag operations require a Markdown note and a non-empty tag.", path: file.path };
+  }
+
+  try {
+    const fileManager = app.fileManager as unknown as FrontmatterProcessLike;
+    await fileManager.processFrontMatter(file, (frontmatter) => {
+      const nextTags = removeNormalizedFrontmatterTag(frontmatter, normalizedTag);
+      writeNormalizedFrontmatterTags(frontmatter, nextTags);
+    });
+    await removeInlineTagRangesFromFile(app, file, normalizedTag);
+    return { ok: true, file };
   } catch (err) {
     return { ok: false, error: String(err), path: file.path };
   }
@@ -284,6 +352,46 @@ export async function batchDeleteFiles(
   return { succeeded, failed };
 }
 
+export async function batchAddTagToFiles(
+  app: App,
+  files: TFile[],
+  tag: string,
+): Promise<BatchOpSummary> {
+  const succeeded: NoteOpSuccess[] = [];
+  const failed: NoteOpFailure[] = [];
+
+  for (const file of files) {
+    const result = await addTagToFile(app, file, tag);
+    if (result.ok) {
+      succeeded.push(result);
+    } else {
+      failed.push(result);
+    }
+  }
+
+  return { succeeded, failed };
+}
+
+export async function batchRemoveTagFromFiles(
+  app: App,
+  files: TFile[],
+  tag: string,
+): Promise<BatchOpSummary> {
+  const succeeded: NoteOpSuccess[] = [];
+  const failed: NoteOpFailure[] = [];
+
+  for (const file of files) {
+    const result = await removeTagFromFile(app, file, tag);
+    if (result.ok) {
+      succeeded.push(result);
+    } else {
+      failed.push(result);
+    }
+  }
+
+  return { succeeded, failed };
+}
+
 // ---------------------------------------------------------------------------
 // Merge operations (Task 19)
 // ---------------------------------------------------------------------------
@@ -362,4 +470,119 @@ function resolveUniquePath(app: App, fileName: string, folderPath: string): stri
   }
 
   return `${prefix}${stem} ${Date.now()}${ext}`;
+}
+
+function isMarkdownFile(file: TFile): boolean {
+  return file.extension.toLowerCase() === "md";
+}
+
+function readNormalizedFrontmatterTags(frontmatter: Record<string, unknown>): string[] {
+  const normalizedTags: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawValue of [frontmatter["tags"], frontmatter["tag"]]) {
+    for (const rawTag of coerceFrontmatterTags(rawValue)) {
+      const normalizedTag = normalizeTagForFrontmatter(rawTag);
+      if (normalizedTag.length === 0 || seen.has(normalizedTag)) {
+        continue;
+      }
+
+      seen.add(normalizedTag);
+      normalizedTags.push(normalizedTag);
+    }
+  }
+
+  return normalizedTags;
+}
+
+function coerceFrontmatterTags(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string");
+  }
+
+  return [];
+}
+
+function mergeFrontmatterTags(frontmatter: Record<string, unknown>, normalizedTag: string): string[] {
+  const nextTags = readNormalizedFrontmatterTags(frontmatter);
+  if (!nextTags.includes(normalizedTag)) {
+    nextTags.push(normalizedTag);
+  }
+
+  return nextTags;
+}
+
+function removeNormalizedFrontmatterTag(frontmatter: Record<string, unknown>, normalizedTag: string): string[] {
+  return readNormalizedFrontmatterTags(frontmatter).filter((tag) => tag !== normalizedTag);
+}
+
+function writeNormalizedFrontmatterTags(frontmatter: Record<string, unknown>, normalizedTags: string[]): void {
+  if (normalizedTags.length > 0) {
+    frontmatter["tags"] = normalizedTags;
+  } else {
+    delete frontmatter["tags"];
+  }
+
+  delete frontmatter["tag"];
+}
+
+function getInlineTagRemovalRanges(
+  app: App,
+  file: TFile,
+  normalizedTag: string,
+): Array<{ start: number; end: number }> {
+  const cache = app.metadataCache.getFileCache(file) as MetadataCacheLike | null;
+  if (!cache?.tags?.length) {
+    return [];
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const tagEntry of cache.tags) {
+    if (normalizeTagForFrontmatter(tagEntry.tag ?? "") !== normalizedTag) {
+      continue;
+    }
+
+    const startOffset = tagEntry.position?.start?.offset;
+    const endOffset = tagEntry.position?.end?.offset;
+    if (
+      typeof startOffset !== "number"
+      || typeof endOffset !== "number"
+      || !Number.isInteger(startOffset)
+      || !Number.isInteger(endOffset)
+      || startOffset < 0
+      || endOffset <= startOffset
+    ) {
+      continue;
+    }
+
+    ranges.push({ start: startOffset, end: endOffset });
+  }
+
+  ranges.sort((left, right) => right.start - left.start);
+  return ranges;
+}
+
+async function removeInlineTagRangesFromFile(app: App, file: TFile, normalizedTag: string): Promise<void> {
+  const ranges = getInlineTagRemovalRanges(app, file, normalizedTag);
+  if (ranges.length === 0) {
+    return;
+  }
+
+  await app.vault.process(file, (content) => {
+    let nextContent = content;
+    for (const range of ranges) {
+      const currentSlice = nextContent.slice(range.start, range.end);
+      if (normalizeTagForFrontmatter(currentSlice) !== normalizedTag) {
+        continue;
+      }
+
+      nextContent = nextContent.slice(0, range.start) + nextContent.slice(range.end);
+    }
+
+    return nextContent;
+  });
 }
