@@ -142,9 +142,9 @@ vi.mock("obsidian", () => {
   };
 });
 
-import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
+import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 
-describe("FolderCardExplorerSettingTab", () => {
+describe("CardWorkspaceSettingTab", () => {
   beforeEach(() => {
     mockState.settings.length = 0;
     vi.clearAllMocks();
@@ -162,7 +162,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getUiLanguage: vi.fn(() => "en"),
     };
 
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
@@ -218,7 +218,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getUiLanguage: vi.fn(() => "zh"),
     };
 
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
@@ -245,7 +245,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getUiLanguage: vi.fn(() => "en"),
     };
 
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
     await mockState.settings[0]?.toggle?.changeHandler?.(true);
@@ -265,7 +265,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getUiLanguage: vi.fn(() => "en"),
     };
 
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
     await mockState.settings[1]?.dropdown?.changeHandler?.("new-window");
@@ -285,7 +285,7 @@ describe("FolderCardExplorerSettingTab", () => {
       getUiLanguage: vi.fn(() => "en"),
     };
 
-    const tab = new FolderCardExplorerSettingTab({} as never, plugin as never);
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
     await mockState.settings[2]?.dropdown?.changeHandler?.("rounded");

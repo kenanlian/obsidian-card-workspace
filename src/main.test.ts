@@ -246,9 +246,9 @@ vi.mock("./search", () => {
   };
 });
 
-vi.mock("./FolderCardExplorerSettingTab", () => {
+vi.mock("./CardWorkspaceSettingTab", () => {
   return {
-    FolderCardExplorerSettingTab: class MockFolderCardExplorerSettingTab {},
+    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {},
   };
 });
 
@@ -369,11 +369,11 @@ vi.mock("obsidian", () => {
 });
 
 import { TFile, TFolder } from "obsidian";
-import FolderCardExplorerPlugin from "./main";
+import CardWorkspacePlugin from "./main";
 import { FolderCardView } from "./view/FolderCardView";
 
 function createPluginHarness(): {
-  plugin: FolderCardExplorerPlugin;
+  plugin: CardWorkspacePlugin;
   app: {
     workspace: {
       on: ReturnType<typeof vi.fn>;
@@ -449,13 +449,13 @@ function createPluginHarness(): {
     },
   };
 
-  const plugin = new FolderCardExplorerPlugin({} as never, {} as never);
+  const plugin = new CardWorkspacePlugin({} as never, {} as never);
   (plugin as unknown as { app: unknown }).app = app;
 
   return { plugin, app };
 }
 
-async function waitForPluginLoad(plugin: FolderCardExplorerPlugin): Promise<void> {
+async function waitForPluginLoad(plugin: CardWorkspacePlugin): Promise<void> {
   await (plugin as unknown as { startupPromise: Promise<void> }).startupPromise;
 }
 
@@ -506,7 +506,7 @@ function installMockElement(): {
   };
 }
 
-describe("FolderCardExplorerPlugin activateView", () => {
+describe("CardWorkspacePlugin activateView", () => {
   it("creates the panel in the left sidebar when no card view leaf exists", async () => {
     const { plugin, app } = createPluginHarness();
     const leaf = {
@@ -540,7 +540,7 @@ describe("FolderCardExplorerPlugin activateView", () => {
   });
 });
 
-describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
+describe("CardWorkspacePlugin File Explorer folder clicks", () => {
   beforeEach(() => {
     (globalThis as unknown as { document?: unknown; activeDocument?: unknown }).document = {};
     (globalThis as unknown as { activeDocument?: unknown }).activeDocument =
@@ -645,13 +645,13 @@ describe("FolderCardExplorerPlugin File Explorer folder clicks", () => {
   });
 });
 
-describe("FolderCardExplorerPlugin open destination routing", () => {
+describe("CardWorkspacePlugin open destination routing", () => {
   beforeEach(() => {
     obsidianMockState.notices = [];
   });
 
   function setDefaultCardOpenBehavior(
-    plugin: FolderCardExplorerPlugin,
+    plugin: CardWorkspacePlugin,
     value: "smart" | "new-tab" | "split-right" | "new-window",
   ): void {
     (plugin as unknown as { settings: { defaultCardOpenBehavior: string } }).settings.defaultCardOpenBehavior = value;
@@ -1065,7 +1065,7 @@ describe("FolderCardExplorerPlugin open destination routing", () => {
   });
 });
 
-describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
+describe("CardWorkspacePlugin indexed search lifecycle", () => {
   beforeEach(() => {
     (globalThis as unknown as { document?: unknown; activeDocument?: unknown }).document = {};
     (globalThis as unknown as { activeDocument?: unknown }).activeDocument =
@@ -1146,7 +1146,7 @@ describe("FolderCardExplorerPlugin indexed search lifecycle", () => {
 
     app.vault.cachedRead.mockResolvedValue("# Markdown Note\n\nunique-markdown-term");
 
-    const plugin = new FolderCardExplorerPlugin({} as never, {} as never);
+    const plugin = new CardWorkspacePlugin({} as never, {} as never);
     (plugin as unknown as { app: typeof app }).app = app;
 
     const markdownDocument = await (plugin as unknown as {

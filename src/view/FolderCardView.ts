@@ -68,7 +68,7 @@ import type {
   PipelineSearchInput,
 } from "./types";
 import type { SearchQueryExecutionState, SearchQueryResult, SearchServiceSnapshot } from "../search";
-import type FolderCardExplorerPlugin from "../main";
+import type CardWorkspacePlugin from "../main";
 
 function normalizeFolderScopePath(path: string): string {
   return path === "/" ? "" : path;
@@ -665,7 +665,7 @@ class CreateFolderModal extends Modal {
 }
 
 export class FolderCardView extends ItemView {
-  private plugin: FolderCardExplorerPlugin;
+  private plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null;
   private readonly panelModel: PanelModel;
@@ -707,7 +707,7 @@ export class FolderCardView extends ItemView {
   private queuedRequest: FolderSelectionRequest | null = null;
   private refreshQueued = false;
 
-  constructor(leaf: WorkspaceLeaf, plugin: FolderCardExplorerPlugin) {
+  constructor(leaf: WorkspaceLeaf, plugin: CardWorkspacePlugin) {
     super(leaf);
     this.plugin = plugin;
     this.panelModel = createPanelModel(this.buildPanelModelState());

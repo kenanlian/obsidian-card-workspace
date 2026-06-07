@@ -10,12 +10,12 @@ import {
   isCardCornerRadius,
   isDefaultCardOpenBehavior,
 } from "./settings";
-import type FolderCardExplorerPlugin from "./main";
+import type CardWorkspacePlugin from "./main";
 
-export class FolderCardExplorerSettingTab extends PluginSettingTab {
-  private plugin: FolderCardExplorerPlugin;
+export class CardWorkspaceSettingTab extends PluginSettingTab {
+  private plugin: CardWorkspacePlugin;
 
-  constructor(app: App, plugin: FolderCardExplorerPlugin) {
+  constructor(app: App, plugin: CardWorkspacePlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }

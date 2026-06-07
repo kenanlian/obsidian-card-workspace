@@ -9,7 +9,7 @@ import {
   debounce,
 } from "obsidian";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
-import { FolderCardExplorerSettingTab } from "./FolderCardExplorerSettingTab";
+import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import {
   IndexedSearchService,
   IndexStore,
@@ -41,7 +41,7 @@ type SearchRecoveryBoundaryState = "healthy" | "degraded";
 
 type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
-export default class FolderCardExplorerPlugin extends Plugin {
+export default class CardWorkspacePlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
   private selectedFolderPath = "";
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
@@ -86,7 +86,7 @@ export default class FolderCardExplorerPlugin extends Plugin {
     });
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
-    this.addSettingTab(new FolderCardExplorerSettingTab(this.app, this));
+    this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
     this.registerHoverLinkSource("card-workspace", {
       display: this.getUiStrings().app.hoverSourceDisplay,
       defaultMod: true,

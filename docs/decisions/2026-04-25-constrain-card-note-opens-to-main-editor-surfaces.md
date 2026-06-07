@@ -32,7 +32,7 @@
 1. **默认卡片点击不再是设置项。** 左键 / Enter / Space 的默认打开行为从 `PluginSettings` 中移除，改由 `main.ts` 直接执行宿主对齐规则。
 2. **默认卡片点击对齐主编辑区 recent-root fallback 语义。** `openNoteFromCard(path)` 在 `destination` 缺省时，先检查当前窗口 `rootSplit` 内最近使用的 root leaf；如果它可承载文件且未 pin，则直接复用；如果它不可承载文件，则回退到活动 root Markdown leaf，再回退到现有 root Markdown leaf；只有最终目标 leaf 已 pin，或者根本没有合适的 root leaf 时，才改为 `getLeaf(true)` 打开一个 new tab。
 3. **显式打开动作继续保留，但只存在于“更多”菜单。** 卡片更多菜单只保留 `Open in new tab`、`Open to the right`、`Open in new window`。
-4. **设置层与面板状态层移除默认打开 destination。** `defaultOpenDestination` 不再出现在 `PluginSettings`、`FolderCardExplorerSettingTab.ts`、`panel-model.ts`、`FolderCardPanel.svelte`、`CardItem.svelte` 中。
+4. **设置层与面板状态层移除默认打开 destination。** `defaultOpenDestination` 不再出现在 `PluginSettings`、`CardWorkspaceSettingTab.ts`、`panel-model.ts`、`FolderCardPanel.svelte`、`CardItem.svelte` 中。
 5. **内部 `current-area` route 仍可保留给插件内部显式调用。** 这用于像 `createNoteInCurrentFolder()` 这样的非卡片默认点击场景，但它不再是用户可配置项，也不再是卡片更多菜单项。
 6. **菜单文案与图标同步收敛。** `split-right` 的用户文案改为 `Open to the right`，`new-window` 的图标改为 `picture-in-picture-2`。
 
@@ -48,7 +48,7 @@
 
 - `src/main.ts` 现在既负责显式 destination route，也负责默认卡片点击的 Files-like leaf 选择。
 - `src/settings.ts` 不再持久化 `defaultOpenDestination`。
-- `src/FolderCardExplorerSettingTab.ts` 只保留 preview lines 设置。
+- `src/CardWorkspaceSettingTab.ts` 只保留 preview lines 设置。
 - `src/view/panel-model.ts`、`src/view/FolderCardPanel.svelte`、`src/view/CardItem.svelte` 不再携带默认打开 destination。
 - `src/view/FolderCardView.ts` 把默认点击和显式菜单动作分开处理：默认点击直接 `openNoteFromCard(path)`，菜单动作才带 `OpenDestination`。
 - `src/view/card-context-actions.test.ts`、`src/view/CardItem.svelte.test.ts`、`src/view/FolderCardView.test.ts`、`src/main.test.ts`、`src/settings.test.ts` 等测试都改为锁定新的 contract。
@@ -84,8 +84,8 @@
 - `src/main.test.ts`
 - `src/settings.ts`
 - `src/settings.test.ts`
-- `src/FolderCardExplorerSettingTab.ts`
-- `src/FolderCardExplorerSettingTab.test.ts`
+- `src/CardWorkspaceSettingTab.ts`
+- `src/CardWorkspaceSettingTab.test.ts`
 - `src/view/FolderCardView.ts`
 - `src/view/FolderCardView.test.ts`
 - `src/view/panel-model.ts`
