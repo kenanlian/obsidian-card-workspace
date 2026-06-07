@@ -94,7 +94,7 @@ Phase 3 成功的地方，不是重新设计 view 和 plugin 的边界，而是�
 
 ## 相关文件
 
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`
 - `src/main.ts`
 - `src/view/FolderCardView.ts`

@@ -86,5 +86,5 @@
 - `src/view/FolderCardView.test.ts`
 - `src/view/markdown-utils.ts`
 - `src/view/markdown-utils.test.ts`
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`

@@ -73,4 +73,4 @@
 - `src/view/card-context-actions.test.ts`
 - `src/view/markdown-utils.test.ts`
 - `docs/architecture.md`
-- `docs/START_HERE.md`
+- `AGENTS.md`

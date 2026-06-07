@@ -57,7 +57,7 @@
 
 - 后续若有真实 vault profile，应记录 120ms 是否合适。
 - 如果引入 preview cache，需要单独记录缓存 key、失效策略和迁移策略。
-- 如要改动预热数量，必须同时更新 `docs/START_HERE.md`、`docs/architecture.md` 和相关测试。
+- 如要改动预热数量，必须同时更新 `AGENTS.md`、`docs/architecture.md` 和相关测试。
 
 ## Supersedes / related records
 
@@ -69,4 +69,4 @@
 - `src/view/FolderCardView.ts`
 - `src/view/card-context-actions.test.ts`
 - `docs/architecture.md`
-- `docs/START_HERE.md`
+- `AGENTS.md`

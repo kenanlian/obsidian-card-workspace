@@ -102,7 +102,7 @@ Readiness 阶段 `SearchService` 可以返回 `orderedPaths: null`，视图就�
 
 ## Related files
 
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`
 - `src/main.ts`
 - `src/view/FolderCardView.ts`

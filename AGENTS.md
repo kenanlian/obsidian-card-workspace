@@ -11,17 +11,33 @@
 - **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
 - **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
 
+## Documentation Map
+
+- `AGENTS.md` — first read; repo workflow, commands, testing entry points, implementation constraints, and current architecture guardrails
+- `docs/architecture.md` — detailed architecture source of truth: module boundaries, runtime flows, state ownership, invariants
+- `docs/state-and-runtime-patterns.md` — runtime ownership, async safety, projection rules, change checklist
+- `docs/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
+- `docs/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
+
 ## Architecture Quick Reference
 
-- **Architecture source of truth**: `docs/architecture.md`
-- **Keep `AGENTS.md` lightweight**: use it for repository workflow, commands, tests, and implementation constraints; put full module ownership, runtime flows, state/data ownership, and architecture rationale in `docs/architecture.md`
-- **Plugin ownership**: `src/main.ts` owns plugin lifecycle, settings, search service lifecycle, and vault mutation fanout
+- **Detailed source of truth**: `docs/architecture.md`
+- **Plugin ownership**: `src/main.ts` owns plugin lifecycle, settings, search service lifecycle, vault mutation fanout, and default card open behavior
 - **Per-view ownership**: `src/view/FolderCardView.ts` owns folder scope, `baseCards` / `visibleCards`, hydration, bulk state, and runtime search state
 - **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path, in fixed order: `tag filter -> search filter -> pin reorder`
 - **UI boundary**: `src/view/panel-model.ts` bridges host state into Svelte; `FolderCardPanel.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready
-- **Preview budget**: startup hydration targets the first 6 visible cards and falls back to background hydration after 120ms
-- **File kinds**: current supported card kinds are `markdown`, `base`, `canvas`, and `excalidraw`
+
+## Current Project Status
+
+- Search architecture is **indexed-only**. Do not restore fallback search paths without an explicit architecture change.
+- `pipeline.ts` remains the only visible-card projection path.
+- Non-ready indexed states (`building`, `error`, `rebuild-required`) block non-empty queries.
+- Supported card file kinds are `markdown`, `base`, `canvas`, and `excalidraw`.
+- Markdown keeps full preview and full-text indexing; the other supported kinds remain title/placeholder-oriented.
+- Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
+- `lastFolderPath = ""` is the persisted vault-root folder scope.
+- Default card open behavior is owned by `main.ts`.
 ## Key Directories
 
 | Directory | Purpose |
@@ -32,7 +48,7 @@
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte` |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
 | `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
-| `docs/` | Developer docs (gitignored): `START_HERE.md`, `architecture.md`, `decisions/` (19 ADRs), `plan/`, `roadmap/` |
+| `docs/` | Developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/`, `plan/`, `roadmap/` |
 | `.github/workflows/` | CI (`ci.yml`) and release (`release.yml`) automation |
 
 ## Development Commands

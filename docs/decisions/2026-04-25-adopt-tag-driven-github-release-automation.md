@@ -31,7 +31,7 @@
 
 - 仓库现在具备最小 draft GitHub Release 自动化能力。
 - 版本发布流程多了两个明确入口：`npm run release:prepare` 和 `npm run release:check`。
-- README、`docs/START_HERE.md`、`docs/architecture.md` 现在都把发布链路视作正式仓库 contract，而不是一次性操作说明。
+- README、`AGENTS.md`、`docs/architecture.md` 现在都把发布链路视作正式仓库 contract，而不是一次性操作说明。
 
 ## Cost and risk
 

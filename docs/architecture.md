@@ -2,6 +2,12 @@
 
 本文件是当前架构的**唯一详细说明**。`AGENTS.md` 只保留开发约束、命令、测试入口和少量必须记住的架构速记；模块职责、运行链路、状态归属和架构不变量都以这里为准。
 
+配套模式文档：
+
+- `docs/state-and-runtime-patterns.md`：运行时状态归属、防陈旧与投影规则
+- `docs/data-and-persistence-patterns.md`：设置、索引、持久化边界与搜索契约
+- `docs/ui-patterns.md`：host/Svelte UI 边界、虚拟化、hydration 与交互约束
+
 ## 架构目标
 
 `Card Workspace` 是一个 Obsidian 桌面插件。它把 folder scope 映射成左侧 sidebar 中的卡片流，让用户在当前 vault 上下文中浏览、筛选、搜索、置顶和打开文件。

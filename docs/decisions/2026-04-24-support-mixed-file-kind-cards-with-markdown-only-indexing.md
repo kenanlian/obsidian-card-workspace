@@ -79,5 +79,5 @@
 - `src/view/CardItem.svelte`
 - `src/view/pipeline.ts`
 - `src/view/note-ops.ts`
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`

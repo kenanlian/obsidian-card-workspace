@@ -8,7 +8,7 @@
 
 ### 方向理解时的阅读顺序
 
-1. `docs/START_HERE.md`
+1. `AGENTS.md`
 2. `docs/architecture.md`
 3. `docs/roadmap/v1-product-roadmap.md`
 4. 本文档
@@ -18,7 +18,7 @@
 
 1. 本文档
 2. `docs/roadmap/v1-product-roadmap.md`
-3. `docs/START_HERE.md`
+3. `AGENTS.md`
 4. `docs/architecture.md`
 5. `dev_plan.md`（仅作历史拆分参考，不再作为执行入口）
 
@@ -27,7 +27,7 @@
 > [!CAUTION]
 > **本文档中的 Phase 3 搜索规划已属于历史存档，不再代表当前实现。**
 >
-> 仓库当前正式行为以 `docs/START_HERE.md`、`docs/architecture.md`、`docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md` 和 `docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md` 为准。
+> 仓库当前正式行为以 `AGENTS.md`、`docs/architecture.md`、`docs/decisions/2026-04-18-close-phase3-indexed-search-capability.md` 和 `docs/decisions/2026-05-08-adopt-indexed-only-search-architecture.md` 为准。
 > 本文档后文若提到 fallback / 降级搜索，仅用于保留当时的规划背景；当前产品已经转向 **indexed-only** 搜索，不再支持非索引模式下的非空查询 fallback。
 
 ---
@@ -716,7 +716,7 @@ Phase 4
 
 ### 每次开始前先读
 
-1. `docs/START_HERE.md`
+1. `AGENTS.md`
 2. `docs/architecture.md`
 3. `docs/roadmap/v1-product-roadmap.md`
 4. 本文档

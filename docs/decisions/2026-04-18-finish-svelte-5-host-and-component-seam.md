@@ -87,7 +87,7 @@
 
 ## Related files
 
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`
 - `src/view/FolderCardView.ts`
 - `src/view/panel-model.ts`

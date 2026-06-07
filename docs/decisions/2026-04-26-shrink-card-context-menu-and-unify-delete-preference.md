@@ -71,5 +71,5 @@
 - `src/view/FolderCardView.ts`
 - `src/view/note-ops.ts`
 - `src/view/card-context-actions.test.ts`
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`

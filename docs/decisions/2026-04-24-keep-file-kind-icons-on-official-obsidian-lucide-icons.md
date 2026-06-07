@@ -70,5 +70,5 @@
 - `src/view/CardItem.svelte`
 - `src/view/CardItem.svelte.test.ts`
 - `src/view/file-kind.test.ts`
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`

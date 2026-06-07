@@ -93,5 +93,5 @@
 - `src/view/CardItem.svelte`
 - `src/view/CardItem.svelte.test.ts`
 - `src/view/card-context-actions.test.ts`
-- `docs/START_HERE.md`
+- `AGENTS.md`
 - `docs/architecture.md`
