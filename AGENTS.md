@@ -1,72 +1,227 @@
-# AGENTS.md — Card Workspace
+# Repository Guidelines
 
-## Purpose
-Obsidian plugin for browsing a folder as a virtualized card stream in the **left sidebar**. File Explorer folder-click linkage is optional and disabled by default.
+## Project Overview
 
-## Stack that matters
-- TypeScript `strict: true`
-- Svelte 5 components and runtime
-- esbuild bundle entry: `src/main.ts` -> `main.js` (CJS)
-- Vitest split into `node` and `jsdom` projects
-- Local search indexing via `minisearch` + IndexedDB-backed `src/search/*`
+**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, and optional File Explorer folder-click linkage.
 
-## Commands
-- Install: `npm install`
-- Watch build: `npm run dev`
-- Build: `npm run build`
-- Type check: `npm run check`
-- Svelte check: `npm run check:svelte`
-- Full test suite: `npm test`
-- Node-only tests: `npm run test:node`
-- jsdom/Svelte tests: `npm run test:component`
-- Single file: `npx vitest run src/view/markdown-utils.test.ts`
-- Single test: `npx vitest run src/view/markdown-utils.test.ts -t "buildLightPreview handles code fences"`
+- **Plugin ID**: `card-workspace`
+- **Version**: `0.5.6` (source of truth: `manifest.json`)
+- **License**: MIT
+- **Min Obsidian**: `1.5.0`
+- **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
+- **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
 
-## Required verification
-- For normal code/docs changes, run: `npm run check && npm run build && npm test`
-- CI and release validation also run `npm run check:svelte` before the chain above.
+## Architecture Quick Reference
 
-## Release workflow facts
-- Use `npm run release:prepare -- "$TAG"` to sync `package.json`, `package-lock.json`, `manifest.json`, and `versions.json`.
-- Validate release metadata with `npm run release:check -- "$TAG"`.
-- Release tags are bare semver (`x.y.z`), not `vX.Y.Z`.
+- **Architecture source of truth**: `docs/architecture.md`
+- **Keep `AGENTS.md` lightweight**: use it for repository workflow, commands, tests, and implementation constraints; put full module ownership, runtime flows, state/data ownership, and architecture rationale in `docs/architecture.md`
+- **Plugin ownership**: `src/main.ts` owns plugin lifecycle, settings, search service lifecycle, and vault mutation fanout
+- **Per-view ownership**: `src/view/FolderCardView.ts` owns folder scope, `baseCards` / `visibleCards`, hydration, bulk state, and runtime search state
+- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path, in fixed order: `tag filter -> search filter -> pin reorder`
+- **UI boundary**: `src/view/panel-model.ts` bridges host state into Svelte; `FolderCardPanel.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
+- **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready
+- **Preview budget**: startup hydration targets the first 6 visible cards and falls back to background hydration after 120ms
+- **File kinds**: current supported card kinds are `markdown`, `base`, `canvas`, and `excalidraw`
+## Key Directories
 
-## Architecture boundaries
-- `src/main.ts`: plugin lifecycle, command registration, left-sidebar view activation, File Explorer click wiring, settings I/O, search service bootstrap/restore.
-- `src/view/FolderCardView.ts`: runtime coordinator and source of truth for cards, selection, refresh, hydration, bulk actions, and search projection.
-- `src/view/FolderCardPanel.svelte` + `Toolbar.svelte` + `CardItem.svelte`: presentation/event surface only.
-- `src/view/panel-model.ts`: host-to-Svelte state bridge.
-- `src/view/pipeline.ts`: visible-card projection steps like tag filtering, search filtering, and pin reordering.
-- `src/search/*`: isolated local search subsystem with persistence, restore/rebuild logic, and query gating.
+| Directory | Purpose |
+|-----------|---------|
+| `src/` | All source code |
+| `src/view/` | Obsidian view layer, Svelte components, and view utilities |
+| `src/search/` | Local search subsystem (MiniSearch + IndexedDB) |
+| `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte` |
+| `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
+| `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
+| `docs/` | Developer docs (gitignored): `START_HERE.md`, `architecture.md`, `decisions/` (19 ADRs), `plan/`, `roadmap/` |
+| `.github/workflows/` | CI (`ci.yml`) and release (`release.yml`) automation |
 
-## Svelte / host seam
-- This repo is **not** on the old class-component seam anymore.
-- `FolderCardView` dynamically imports the panel and uses `mount()` / `unmount()`, not `new` / `$set` / `$on` / `$destroy`.
-- Current Svelte components use Svelte 5 APIs like `$props`, `$state`, `$derived`, and `$effect`.
-- Keep host-owned state in `FolderCardView` / `panel-model`; do not move the source of truth into Svelte components.
+## Development Commands
 
-## Testing shape
-- `vitest.config.ts` splits logic tests into the `node` project and Svelte / `FolderCardView` integration tests into the `jsdom` project.
-- `src/__mocks__/obsidian.ts` and `src/__mocks__/FolderCardPanel.svelte.ts` are part of the intended testing seam.
+| Command | Purpose |
+|---------|---------|
+| `npm install` | Install dependencies |
+| `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
+| `npm run build` | Production build (`main.js`, no sourcemaps) |
+| `npm run check` | TypeScript type check (`tsc --noEmit`) |
+| `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |
+| `npm test` | Full Vitest suite (node + jsdom projects) |
+| `npm run test:node` | Node-only tests (logic, settings, note-ops, search) |
+| `npm run test:component` | jsdom/Svelte tests (Toolbar, FolderCardView, CardItem) |
+| `npm run test:watch` | Vitest watch mode |
+| `npm run release:prepare -- "x.y.z" [minAppVersion]` | Sync version across all manifest files |
+| `npm run release:check -- "x.y.z"` | Validate version consistency |
 
-## Performance and correctness invariants
-Do not casually break these:
-- request/generation guards that drop stale async selection, search, or hydration results
-- viewport-driven lazy hydration and row-projected virtualization in `FolderCardPanel.svelte`
+### CI validation chain
+
+For normal changes, run:
+```
+npm run check && npm run build && npm test
+```
+
+CI/release also requires `npm run check:svelte` before the chain.
+
+## Code Conventions & Common Patterns
+
+### TypeScript & Svelte
+
+- **TypeScript strict**: `strict: true`, `moduleResolution: "Bundler"`, `isolatedModules: true`
+- **Svelte 5 only**: components use `$props`, `$state`, `$derived`, `$effect` runes
+- **Host seam**: `FolderCardView` dynamically imports the Svelte panel and uses `mount()` / `unmount()` — never `new`, `$set`, `$on`, or `$destroy`
+- **Host-owned state**: keep the source of truth in `FolderCardView` / `panel-model`; do not move it into Svelte components
+
+### State management
+
+- **PanelModel**: simple observable bridge between imperative host and declarative Svelte
+  ```ts
+  // src/view/panel-model.ts
+  const model = createPanelModel(initialState);
+  model.subscribe(listener);  // Svelte panel subscribes
+  model.mutate(fn);           // FolderCardView pushes state
+  ```
+- **Snapshot pattern**: `SearchService` and `IndexStore` use snapshot + `Set<listener>`; snapshots are cloned before emission
+- **Generation guards**: all async view operations track `this.generation` to discard stale results (selection, search, hydration)
+- **Settings**: owned by plugin; views read on load; `saveSettings()` triggers `requestRefreshForViews`
+
+### Naming
+
+- **Classes**: `PascalCase` (e.g., `FolderCardView`, `SearchIndexManager`)
+- **Functions**: `camelCase`
+- **Callbacks**: `on` prefix (e.g., `onOpenNote`, `onToolbarAction`)
+- **Handlers**: `handle` prefix (e.g., `handleVaultMutation`, `handleFolderSelection`)
+- **Builders**: `build` prefix (e.g., `buildLightPreview`, `buildTagTree`)
+- **Resolvers**: `resolve` prefix (e.g., `resolveCardFileKindFromPath`, `resolveUiLanguage`)
+- **Type prefixes**: `Search*`, `Folder*`, `Bulk*`, `Card*`, `NoteOp*` for domain-specific types
+
+### Async & error handling
+
+- **Async**: explicit `async/await` with generation tracking and pending-operation guards (e.g., `pendingSearchRebuild`, `pendingSearchRecovery`)
+- **File operations**: typed result unions with `outcome: 'ok' | 'error'` (`NoteOpResult`, `BatchOpSummary`, `MergeOpResult`)
+- **Search errors**: caught with `console.warn`; no global error boundary
+- **Debouncing**: `debounce(..., 250, false)` for vault changes; `120ms` for search query changes
+
+### Obsidian-specific rules
+
+- Prefer `app.vault`, `cachedRead()`, and FileManager/Vault APIs over lower-level adapter access
+- Keep `onload()` light; expensive vault/watcher work belongs behind `workspace.onLayoutReady()`
+- Register plugin-owned events and DOM listeners with Obsidian cleanup helpers
+- `manifest.json` is desktop-only; do not add mobile assumptions without updating that contract
+
+### CSS
+
+- Single flat file (`styles.css`, 848 lines) — no preprocessor, no Tailwind
+- Design tokens: `--fce-*` custom properties scoped under `.folder-card-view` that map to Obsidian theme variables (`--background-primary`, `--text-normal`, `--interactive-accent`, etc.)
+- BEM-like classes: `.fce-toolbar`, `.fce-card`, `.fce-search-hit`, `.fce-preview-code`
+
+## Important Files
+
+| File | Role |
+|------|------|
+| `src/main.ts` | Plugin entry point — lifecycle, settings, search wiring, vault observers, command registration, view activation (~1,141 lines) |
+| `src/view/FolderCardView.ts` | Per-view runtime coordinator — folder loading, card arrays, pipeline, search, bulk state, hydration, context menus, modals (~3,267 lines) |
+| `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring (~643 lines) |
+| `src/view/Toolbar.svelte` | Svelte 5 toolbar — folder picker, sort, tag filter, search, bulk mode (~956 lines) |
+| `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox (~454 lines) |
+| `src/view/panel-model.ts` | Host-to-Svelte observable state bridge |
+| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → search filter → pin reorder |
+| `src/view/types.ts` | View-layer type definitions (~20 interfaces, Phase 3 ownership docs) |
+| `src/settings.ts` | Settings types, `DEFAULT_SETTINGS`, `normalizeSettings`, `mergeSettings` |
+| `src/i18n.ts` | i18n strings (`en` / `zh`) — ~828 lines |
+| `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations (~1,023 lines) |
+| `src/search/IndexedSearchService.ts` | SearchService adapter — query bounding, blocked-state gating |
+| `src/search/IndexStore.ts` | IndexedDB persistence with schema-version checks |
+| `src/search/types.ts` | Search subsystem contracts (`PHASE3_MINISEARCH_CONTRACT`) |
+| `src/view/note-ops.ts` | File operations — move, delete, trash, duplicate, merge, batch variants |
+| `src/view/markdown-utils.ts` | Markdown-to-HTML preview engine with allow-list sanitization |
+| `src/electron.d.ts` | Ambient types for Electron `shell.openPath` / `shell.showItemInFolder` |
+| `manifest.json` | Obsidian plugin manifest — version source of truth |
+| `versions.json` | Version compatibility map (required by Obsidian plugin updater) |
+| `esbuild.config.mjs` | Build config — CJS, ES2018, browser platform, externals |
+| `tsconfig.json` | TypeScript strict config |
+| `vitest.config.ts` | Dual-project Vitest config (node + jsdom) |
+| `styles.css` | Flat CSS design system |
+| `scripts/sync-version.mjs` | Release prep — syncs version across 4 files |
+| `scripts/check-release.mjs` | Release validation — cross-file version check |
+
+## Runtime/Tooling Preferences
+
+- **Package manager**: npm (lockfile: `package-lock.json`)
+- **Runtime**: Node.js (for build/test; plugin runs inside Obsidian/Electron)
+- **Bundle**: esbuild → `main.js` (CJS, ~598KB), entry `src/main.ts`
+- **Externals** (provided by Obsidian runtime, never bundled):
+  - `obsidian`
+  - `electron`
+  - `@codemirror/state`
+  - `@codemirror/view`
+  - `@codemirror/language`
+- **No ESLint / No Prettier** — do not add unless explicitly requested
+- `oxlint` is installed as a devDependency but not wired into any script or CI
+- `typescript-language-server` is a devDependency for editor LSP support
+
+## Testing & QA
+
+### Test split
+
+Vitest 4 with two named projects:
+
+1. **`node` project** — pure logic tests
+   - Environment: `node`
+   - Includes: `src/**/*.test.ts` **excluding** `*.svelte.test.ts` and `FolderCardView.test.ts`
+   - Aliases: `obsidian` → `src/__mocks__/obsidian.ts`, `./FolderCardPanel.svelte` → `src/__mocks__/FolderCardPanel.svelte.ts`
+   - Good for: settings, note-ops, search subsystem, markdown-utils, pipeline
+
+2. **`jsdom` project** — DOM/Svelte tests
+   - Environment: `jsdom`
+   - Includes: `*.svelte.test.ts` and `FolderCardView.test.ts`
+   - Uses `@sveltejs/vite-plugin-svelte` with `conditions: ['browser']`
+   - Good for: Toolbar, FolderCardView, CardItem, scroll anchoring, row projection
+
+### Mock seam
+
+- `src/__mocks__/obsidian.ts` — shared minimal stubs for `App`, `Vault`, `Modal`, `TFolder`, `setIcon`, `setTooltip`, `getAllTags`
+- `src/__mocks__/FolderCardPanel.svelte.ts` — mock Svelte component that captures callback props into `__mockState.panelEventHandlers`
+- `vi.hoisted()` — mutable mock state shared across `vi.mock()` factories and test bodies
+- Module-level `vi.mock()` for `obsidian`, `note-ops`, `FolderPickerModal`, and search modules per test file
+
+### Running tests
+
+```bash
+# Full suite
+npm test
+
+# Single file
+npx vitest run src/view/markdown-utils.test.ts
+
+# Single test by name
+npx vitest run src/view/markdown-utils.test.ts -t "buildLightPreview handles code fences"
+
+# Node-only
+npm run test:node
+
+# Component/jsdom only
+npm run test:component
+```
+
+### Key testing patterns
+
+- **Event contract verification**: views register callbacks on `onOpen()`; tests fire them via mock state and assert downstream effects
+- **Stale-protection testing**: create pending promises, advance generation/snapshot state, then resolve and verify old results are discarded
+- **Debounce testing**: `vi.useFakeTimers()` + `vi.advanceTimersByTime(119)` (should not fire) then `+1` (should fire)
+- **Confirmation modal testing**: inspect modal structure via mock state arrays, simulate clicks via `clickLatestModalButton`
+- **Batch operation testing**: verify partial-failure continuation, selection reconciliation, and notice accumulation
+- **i18n coverage**: many tests verify both `en` and `zh` string paths via `getUiStrings('en')` / `getUiStrings('zh')`
+
+### Performance invariants (do not break)
+
+- Stale async guards must drop stale selection, search, and hydration results
+- Viewport-driven lazy hydration and row-projected virtualization in `FolderCardPanel.svelte`
 - `debounce(..., 250, false)` refresh behavior for vault changes
-- vault `create`/`modify`/`delete`/`rename` observers being registered after `workspace.onLayoutReady()`
-- pinning only reorders cards; it does not bypass active filters or search constraints
-- non-ready indexed-search states intentionally block non-empty queries and project zero cards
+- Vault `create`/`modify`/`delete`/`rename` observers registered after `workspace.onLayoutReady()`
+- Pinning only reorders cards; it does not bypass active filters or search constraints
+- Non-ready indexed-search states intentionally block non-empty queries and project zero cards
 
-## Obsidian-specific rules
-- Prefer `app.vault`, `cachedRead()`, and FileManager/Vault APIs over lower-level adapter access.
-- Keep `onload()` light; expensive vault/watcher work belongs behind `workspace.onLayoutReady()`.
-- Register plugin-owned events and DOM listeners with Obsidian cleanup helpers.
-- `manifest.json` declares this plugin as desktop-only; do not add mobile assumptions without updating that contract.
+### Release workflow
 
-## Bundle/runtime constraints
-These stay external in the bundle: `obsidian`, `electron`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language`.
-
-## Repo conventions worth preserving
-- No ESLint or Prettier is configured; do not add tooling unless explicitly requested.
-- `CLAUDE.md` just points back to this file, so keep this file as the canonical agent instruction source.
+1. Tags are **bare semver** (`x.y.z`), not `vX.Y.Z`
+2. `npm run release:prepare -- "x.y.z" [minAppVersion]` syncs `package.json`, `package-lock.json`, `manifest.json`, and `versions.json`
+3. `npm run release:check -- "x.y.z"` validates consistency
+4. GitHub `release.yml` triggers on semver tag pushes, runs the full CI chain, creates a draft release with `main.js`, `manifest.json`, and `styles.css`
