@@ -61,6 +61,9 @@ export function setIcon(el: Element, icon: string): void {
   el.setAttribute("data-icon", icon);
 }
 
+
+export function addIcon(_name: string, _svgContent: string): void {
+}
 export function setTooltip(el: Element, tooltip: string, _options?: unknown): void {
   el.setAttribute("data-tooltip", tooltip);
 }

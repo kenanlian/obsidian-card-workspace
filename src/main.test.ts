@@ -349,9 +349,12 @@ vi.mock("obsidian", () => {
     return debounced;
   };
 
+  const addIcon = vi.fn();
+
   return {
     Plugin: MockPlugin,
     Notice: MockNotice,
+    addIcon,
     getLanguage: vi.fn(() => "en"),
     MarkdownView: class MockMarkdownView {
       leaf: unknown;
@@ -1107,6 +1110,8 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       addCommand: ReturnType<typeof vi.fn>;
       registerDomEvent: ReturnType<typeof vi.fn>;
       registerEvent: ReturnType<typeof vi.fn>;
+    } & {
+      addIcon?: ReturnType<typeof vi.fn>;
     };
 
     expect(mockPlugin.registerHoverLinkSource).toHaveBeenCalledTimes(1);
@@ -1122,6 +1127,20 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     );
     expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
       mockPlugin.registerEvent.mock.invocationCallOrder[0],
+    );
+
+    const obsidianModule = await import("obsidian");
+    const addIcon = vi.mocked(obsidianModule.addIcon);
+    expect(addIcon).toHaveBeenCalledTimes(2);
+    expect(addIcon).toHaveBeenNthCalledWith(
+      1,
+      "card-workspace-tag-plus",
+      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
+    );
+    expect(addIcon).toHaveBeenNthCalledWith(
+      2,
+      "card-workspace-tag-minus",
+      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
 
     expect(searchMockState.indexedServices).toHaveLength(1);
