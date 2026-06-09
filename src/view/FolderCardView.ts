@@ -1,4 +1,5 @@
 import {
+  FuzzySuggestModal,
   ItemView,
   Menu,
   Modal,
@@ -13,13 +14,13 @@ import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
 import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
-import { collectAllTags } from "./metadata-utils";
+import { collectAllTags, getFileTags } from "./metadata-utils";
 import {
   addTagToFile,
   batchAddTagToFiles,
   batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
-  batchRemoveTagFromFiles,
+  batchRemoveTagsFromFiles,
   batchTrashFiles,
   copyNoteToClipboard,
   deleteFileUsingObsidianPreference,
@@ -78,6 +79,11 @@ function normalizeFolderScopePath(path: string): string {
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
 type TagMutationMode = "add" | "remove";
+
+interface BulkRemovableTagOption {
+  normalizedTag: string;
+  label: string;
+}
 
 type CardMenuAction =
   | OpenDestination
@@ -507,6 +513,152 @@ class TagInputModal extends Modal {
 
     try {
       const shouldClose = await this.onSubmit(normalizedTag);
+      if (shouldClose) {
+        this.close();
+      }
+    } finally {
+      this.submitting = false;
+      if (!this.closed) {
+        this.render();
+      }
+    }
+  }
+}
+class SingleRemoveTagModal extends FuzzySuggestModal<string> {
+  private readonly tags: string[];
+  private readonly onChoose: (tag: string) => Promise<boolean>;
+
+  constructor(
+    app: App,
+    title: string,
+    tags: string[],
+    onChoose: (tag: string) => Promise<boolean>,
+  ) {
+    super(app);
+    this.tags = tags;
+    this.onChoose = onChoose;
+    this.setTitle(title);
+  }
+
+  getItems(): string[] {
+    return this.tags;
+  }
+
+  getItemText(tag: string): string {
+    return tag;
+  }
+
+  async onChooseItem(tag: string): Promise<void> {
+    const shouldClose = await this.onChoose(tag);
+    if (shouldClose) {
+      this.close();
+    }
+  }
+}
+
+class BulkRemoveTagsModal extends Modal {
+  private readonly titleText: string;
+  private readonly emptyMessage: string;
+  private readonly selectionSummary: (count: number) => string;
+  private readonly cancelText: string;
+  private readonly submitText: string;
+  private readonly submittingText: string;
+  private readonly tagOptions: BulkRemovableTagOption[];
+  private readonly onSubmit: (tags: string[]) => Promise<boolean>;
+  private readonly selectedTags = new Set<string>();
+  private submitting = false;
+  private closed = true;
+
+  constructor(
+    app: App,
+    options: {
+      titleText: string;
+      emptyMessage: string;
+      selectionSummary: (count: number) => string;
+      cancelText: string;
+      submitText: string;
+      submittingText: string;
+      tagOptions: BulkRemovableTagOption[];
+    },
+    onSubmit: (tags: string[]) => Promise<boolean>,
+  ) {
+    super(app);
+    this.titleText = options.titleText;
+    this.emptyMessage = options.emptyMessage;
+    this.selectionSummary = options.selectionSummary;
+    this.cancelText = options.cancelText;
+    this.submitText = options.submitText;
+    this.submittingText = options.submittingText;
+    this.tagOptions = options.tagOptions;
+    this.onSubmit = onSubmit;
+  }
+  
+
+  onOpen(): void {
+    this.closed = false;
+    this.render();
+  }
+
+  onClose(): void {
+    this.closed = true;
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    this.setTitle(this.titleText);
+    this.contentEl.empty();
+
+    if (this.tagOptions.length === 0) {
+      this.contentEl.createEl("p", { text: this.emptyMessage });
+    } else {
+      this.contentEl.createEl("p", { text: this.selectionSummary(this.selectedTags.size) });
+      for (const tagOption of this.tagOptions) {
+        new Setting(this.contentEl)
+          .setName(tagOption.label)
+          .addToggle((toggle: any) => {
+            toggle
+              .setValue(this.selectedTags.has(tagOption.normalizedTag))
+              .onChange((value: boolean) => {
+                if (value) {
+                  this.selectedTags.add(tagOption.normalizedTag);
+                } else {
+                  this.selectedTags.delete(tagOption.normalizedTag);
+                }
+                if (!this.closed) {
+                  this.render();
+                }
+              });
+          });
+      }
+    }
+
+    new Setting(this.contentEl)
+      .addButton((button) => {
+        button.setButtonText(this.cancelText).onClick(() => {
+          this.close();
+        });
+      })
+      .addButton((button: any) => {
+        button
+          .setCta()
+          .setButtonText(this.submitting ? this.submittingText : this.submitText)
+          .onClick(() => {
+            void this.submit();
+          });
+        button.setDisabled?.(this.submitting || this.selectedTags.size === 0);
+      });
+  }
+
+  private async submit(): Promise<void> {
+    if (this.submitting || this.selectedTags.size === 0) {
+      return;
+    }
+
+    this.submitting = true;
+    this.render();
+
+    try {
+      const shouldClose = await this.onSubmit(Array.from(this.selectedTags));
       if (shouldClose) {
         this.close();
       }
@@ -1486,18 +1638,40 @@ export class FolderCardView extends ItemView {
   }
 
   private openSingleTagModal(notePath: string, mode: TagMutationMode): void {
-    if (!this.resolveLiveMarkdownFile(notePath)) {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
       return;
     }
 
-    const modal = new TagInputModal(
+    if (mode === "add") {
+      const modal = new TagInputModal(
+        this.app,
+        { mode, strings: this.strings.view.tagInput },
+        async (tag) => this.submitSingleTagAction(notePath, mode, tag),
+      );
+      modal.open();
+      return;
+    }
+
+    const tags = getFileTags(this.app, file);
+    if (tags.length === 0) {
+      new Notice(this.strings.view.singleRemoveTag.noRemovableTags);
+      return;
+    }
+
+    if (tags.length === 1) {
+      void this.submitSingleTagAction(notePath, mode, tags[0]);
+      return;
+    }
+
+    const modal = new SingleRemoveTagModal(
       this.app,
-      { mode, strings: this.strings.view.tagInput },
+      this.strings.view.singleRemoveTag.modalTitle,
+      tags,
       async (tag) => this.submitSingleTagAction(notePath, mode, tag),
     );
     modal.open();
   }
-
   private async submitSingleTagAction(notePath: string, mode: TagMutationMode, tag: string): Promise<boolean> {
     const file = this.resolveLiveMarkdownFile(notePath);
     if (!file) {
@@ -1513,6 +1687,15 @@ export class FolderCardView extends ItemView {
         : this.strings.view.singleTagActions.failedToRemove(result.error);
       new Notice(message);
       return false;
+    }
+
+    if (mode === "remove" && "changed" in result && !result.changed) {
+      new Notice(this.strings.view.singleTagActions.absent(tag, file.basename));
+      return false;
+    }
+
+    if (mode === "remove" && "changed" in result && result.changed) {
+      await this.clearStaleTagFilterIfNeeded([tag]);
     }
 
     const message = mode === "add"
@@ -3037,18 +3220,52 @@ export class FolderCardView extends ItemView {
   }
 
   private openBulkTagModal(mode: TagMutationMode): void {
-    const modal = new TagInputModal(
+    if (mode === "add") {
+      const modal = new TagInputModal(
+        this.app,
+        { mode, strings: this.strings.view.tagInput },
+        async (tag) => this.executeBulkTagAction(tag),
+      );
+      modal.open();
+      return;
+    }
+
+    const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveMarkdownFilesInOrder();
+    const livePathsInOrder = filesInOrder.map((file) => file.path);
+    if (filesInOrder.length === 0) {
+      this.reconcileSelectionToOrderedPaths([]);
+      new Notice(this.strings.view.bulkRemoveTag.noSelectedNotes);
+      return;
+    }
+
+    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
+      this.reconcileSelectionToOrderedPaths(livePathsInOrder);
+    }
+
+    const tagOptions = this.buildBulkRemovableTagOptions(filesInOrder);
+    if (tagOptions.length === 0) {
+      new Notice(this.strings.view.bulkRemoveTag.noRemovableTags);
+      return;
+    }
+
+    const modal = new BulkRemoveTagsModal(
       this.app,
-      { mode, strings: this.strings.view.tagInput },
-      async (tag) => this.executeBulkTagAction(mode, tag),
+      {
+        titleText: this.strings.view.bulkRemoveTag.modalTitle,
+        emptyMessage: this.strings.view.bulkRemoveTag.noRemovableTags,
+        selectionSummary: (count) => this.strings.view.bulkRemoveTag.selectedTagCount(count),
+        cancelText: this.strings.view.tagInput.cancel,
+        submitText: this.strings.view.bulkRemoveTag.removeSelectedTags,
+        submittingText: this.strings.view.bulkRemoveTag.removingSelectedTags,
+        tagOptions,
+      },
+      async (tags) => this.executeBulkRemoveTags(tags),
     );
     modal.open();
   }
 
-  private async executeBulkTagAction(mode: TagMutationMode, tag: string): Promise<boolean> {
-    const addStrings = this.strings.view.bulkAddTag;
-    const removeStrings = this.strings.view.bulkRemoveTag;
-    const strings = mode === "add" ? addStrings : removeStrings;
+  private async executeBulkTagAction(tag: string): Promise<boolean> {
+    const strings = this.strings.view.bulkAddTag;
     const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveMarkdownFilesInOrder();
     const livePathsInOrder = filesInOrder.map((file) => file.path);
 
@@ -3062,9 +3279,7 @@ export class FolderCardView extends ItemView {
       this.reconcileSelectionToOrderedPaths(livePathsInOrder);
     }
 
-    const summary = mode === "add"
-      ? await batchAddTagToFiles(this.app, filesInOrder, tag)
-      : await batchRemoveTagFromFiles(this.app, filesInOrder, tag);
+    const summary = await batchAddTagToFiles(this.app, filesInOrder, tag);
     const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
     const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
 
@@ -3073,7 +3288,7 @@ export class FolderCardView extends ItemView {
     const succeededCount = summary.succeeded.length;
     const failedCount = summary.failed.length;
     if (failedCount === 0) {
-      new Notice(mode === "add" ? addStrings.added(succeededCount, tag) : removeStrings.removed(succeededCount, tag));
+      new Notice(strings.added(succeededCount, tag));
       return true;
     }
 
@@ -3084,7 +3299,59 @@ export class FolderCardView extends ItemView {
 
     new Notice(strings.partial(succeededCount, failedCount, tag));
     return true;
+  }
 
+  private async executeBulkRemoveTags(tags: string[]): Promise<boolean> {
+    const strings = this.strings.view.bulkRemoveTag;
+    const { selectedPathsInOrder, filesInOrder } = this.resolveSelectedLiveMarkdownFilesInOrder();
+    const livePathsInOrder = filesInOrder.map((file) => file.path);
+
+    if (filesInOrder.length === 0) {
+      this.reconcileSelectionToOrderedPaths([]);
+      new Notice(strings.noSelectedNotes);
+      return true;
+    }
+
+    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
+      this.reconcileSelectionToOrderedPaths(livePathsInOrder);
+    }
+
+    const collapsedTags = this.collapseBulkRemovableTags(tags);
+    if (collapsedTags.length === 0) {
+      new Notice(strings.noRemovableTags);
+      return false;
+    }
+
+    const summary = await batchRemoveTagsFromFiles(this.app, filesInOrder, collapsedTags);
+    const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
+    const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
+
+    this.reconcileSelectionToOrderedPaths(failedPathsInOrder);
+
+    const removedCount = summary.changed.length;
+    const noopCount = summary.noop.length;
+    const failedCount = summary.failed.length;
+    if (removedCount > 0) {
+      await this.clearStaleTagFilterIfNeeded(collapsedTags);
+    }
+
+    if (failedCount === 0 && noopCount === 0) {
+      new Notice(strings.removed(removedCount, collapsedTags.length));
+      return true;
+    }
+
+    if (removedCount === 0 && failedCount === 0) {
+      new Notice(strings.noop(noopCount, collapsedTags.length));
+      return false;
+    }
+
+    if (removedCount === 0 && noopCount === 0) {
+      new Notice(strings.failed(failedCount, collapsedTags.length));
+      return false;
+    }
+
+    new Notice(strings.partial(removedCount, noopCount, failedCount, collapsedTags.length));
+    return true;
   }
 
   private async bulkDeleteSelected(): Promise<void> {
@@ -3204,6 +3471,72 @@ export class FolderCardView extends ItemView {
     }
 
     new Notice(options.partialMessageBuilder(succeededCount, failedCount));
+  }
+
+  private buildBulkRemovableTagOptions(filesInOrder: TFile[]): BulkRemovableTagOption[] {
+    const displayTags = collectAllTags(this.app, filesInOrder);
+    const displayByNormalizedTag = new Map<string, string>();
+    for (const displayTag of displayTags) {
+      displayByNormalizedTag.set(normalizeTagForFrontmatter(displayTag), displayTag);
+    }
+
+    const countsByNormalizedTag = new Map<string, number>();
+    for (const file of filesInOrder) {
+      const fileTags = new Set(getFileTags(this.app, file));
+      for (const tag of fileTags) {
+        countsByNormalizedTag.set(tag, (countsByNormalizedTag.get(tag) ?? 0) + 1);
+      }
+    }
+
+    return Array.from(countsByNormalizedTag.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([normalizedTag, selectedFileCount]) => ({
+        normalizedTag,
+        label: `${displayByNormalizedTag.get(normalizedTag) ?? normalizedTag} (${selectedFileCount})`,
+      }));
+  }
+
+  private collapseBulkRemovableTags(tags: string[]): string[] {
+    const normalizedTags = Array.from(new Set(
+      tags
+        .map((tag) => normalizeTagForFrontmatter(tag))
+        .filter((tag) => tag.length > 0),
+    ));
+    normalizedTags.sort((left, right) => left.length - right.length || left.localeCompare(right));
+
+    const collapsedTags: string[] = [];
+    for (const normalizedTag of normalizedTags) {
+      if (collapsedTags.some((candidate) => normalizedTag === candidate || normalizedTag.startsWith(`${candidate}/`))) {
+        continue;
+      }
+
+      collapsedTags.push(normalizedTag);
+    }
+
+    return collapsedTags;
+  }
+
+  private async clearStaleTagFilterIfNeeded(removedTags: string[]): Promise<void> {
+    const currentFilterTags = this.plugin.getSettings().filter.tags;
+    const activeFilterTag = normalizeTagForFrontmatter(currentFilterTags[0] ?? "");
+    if (activeFilterTag.length === 0) {
+      return;
+    }
+
+    const normalizedRemovedTags = this.collapseBulkRemovableTags(removedTags);
+    const removedActiveFilter = normalizedRemovedTags.some((removedTag) => {
+      return activeFilterTag === removedTag || activeFilterTag.startsWith(`${removedTag}/`);
+    });
+    const availableTags = new Set(this.deriveAvailableTags().map((tag) => normalizeTagForFrontmatter(tag)));
+    if (!removedActiveFilter && availableTags.has(activeFilterTag)) {
+      return;
+    }
+
+    await this.plugin.saveSettings({
+      filter: {
+        tags: [],
+      },
+    });
   }
 
   private bulkMergeSelected(): void {

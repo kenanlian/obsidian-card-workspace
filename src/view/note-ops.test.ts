@@ -255,20 +255,21 @@ describe("addTagToFile", () => {
 });
 
 describe("removeTagFromFile", () => {
-  it("removes matching tags from frontmatter and inline tag cache ranges", async () => {
+  it("removes matching parent and descendant tags from frontmatter and inline tag cache ranges", async () => {
     const file = createFile("notes/remove-tag.md");
     const frontmatter: Record<string, unknown> = {
       tag: "#Keep/Me",
-      tags: ["#Project/Alpha", "second/tag"],
+      tags: ["#Project/Alpha", "project/alpha/task", "project/beta", "second/tag"],
     };
-    let content = "Intro #Project/Alpha middle #second/tag outro #Project/Alpha";
-    const app: MockAppForTagMutation = {
+    let content = "Intro #Project/Alpha middle #project/alpha/task and #project/beta outro #Project/Alpha";
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
       fileManager: {
         processFrontMatter: vi.fn(async (_file, mutate) => {
           mutate(frontmatter);
         }),
       },
       vault: {
+        cachedRead: vi.fn(async () => content),
         process: vi.fn(async (_file, mutate) => {
           content = mutate(content);
           return content;
@@ -278,7 +279,8 @@ describe("removeTagFromFile", () => {
         getFileCache: vi.fn(() => ({
           tags: [
             createTagCacheEntry(content, "#Project/Alpha", 0),
-            createTagCacheEntry(content, "#second/tag"),
+            createTagCacheEntry(content, "#project/alpha/task"),
+            createTagCacheEntry(content, "#project/beta"),
             createTagCacheEntry(content, "#Project/Alpha", 1),
           ],
         })),
@@ -287,9 +289,46 @@ describe("removeTagFromFile", () => {
 
     const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
 
-    expect(result).toEqual({ ok: true, file });
-    expect(frontmatter).toEqual({ tags: ["second/tag", "keep/me"] });
-    expect(content).toBe("Intro  middle #second/tag outro ");
+    expect(result).toEqual({ ok: true, changed: true, file });
+    expect(frontmatter).toEqual({ tags: ["project/beta", "second/tag", "keep/me"] });
+    expect(content).toBe("Intro  middle  and #project/beta outro ");
+  });
+
+  it("keeps sibling branches untouched when removing a nested parent tag", async () => {
+    const file = createFile("notes/remove-branch.md");
+    const frontmatter: Record<string, unknown> = {
+      tags: ["project/alpha/task", "project/beta", "project/beta/task"],
+    };
+    let content = "Body #project/alpha/task #project/beta #project/beta/task";
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        cachedRead: vi.fn(async () => content),
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [
+            createTagCacheEntry(content, "#project/alpha/task"),
+            createTagCacheEntry(content, "#project/beta"),
+            createTagCacheEntry(content, "#project/beta/task"),
+          ],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
+
+    expect(result).toEqual({ ok: true, changed: true, file });
+    expect(frontmatter).toEqual({ tags: ["project/beta", "project/beta/task"] });
+    expect(content).toBe("Body  #project/beta #project/beta/task");
   });
 
   it("keeps stale inline ranges as a no-op while still updating frontmatter", async () => {
@@ -300,13 +339,14 @@ describe("removeTagFromFile", () => {
     let content = "Intro #project/alpha";
     const staleRange = createTagCacheEntry(content, "#project/alpha");
     content = "Intro #changed/tag";
-    const app: MockAppForTagMutation = {
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
       fileManager: {
         processFrontMatter: vi.fn(async (_file, mutate) => {
           mutate(frontmatter);
         }),
       },
       vault: {
+        cachedRead: vi.fn(async () => content),
         process: vi.fn(async (_file, mutate) => {
           content = mutate(content);
           return content;
@@ -321,24 +361,25 @@ describe("removeTagFromFile", () => {
 
     const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
 
-    expect(result).toEqual({ ok: true, file });
+    expect(result).toEqual({ ok: true, changed: true, file });
     expect(frontmatter).toEqual({ tags: ["keep"] });
     expect(content).toBe("Intro #changed/tag");
   });
 
-  it("is idempotent when the tag is absent from frontmatter and inline cache", async () => {
+  it("returns a no-op result when the tag is absent from frontmatter and inline cache", async () => {
     const file = createFile("notes/idempotent-remove.md");
     const frontmatter: Record<string, unknown> = {
       tags: ["keep"],
     };
     let content = "Body without matching tag";
-    const app: MockAppForTagMutation = {
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
       fileManager: {
         processFrontMatter: vi.fn(async (_file, mutate) => {
           mutate(frontmatter);
         }),
       },
       vault: {
+        cachedRead: vi.fn(async () => content),
         process: vi.fn(async (_file, mutate) => {
           content = mutate(content);
           return content;
@@ -351,10 +392,110 @@ describe("removeTagFromFile", () => {
 
     const result = await removeTagFromFile(app as unknown as any, file, "project/alpha");
 
-    expect(result).toEqual({ ok: true, file });
+    expect(result).toEqual({ ok: true, changed: false, file });
     expect(frontmatter).toEqual({ tags: ["keep"] });
     expect(content).toBe("Body without matching tag");
     expect(vi.mocked(app.vault.process)).not.toHaveBeenCalled();
+  });
+  it("skips inline tags inside fenced code blocks", async () => {
+    const file = createFile("notes/code-block.md");
+    const frontmatter: Record<string, unknown> = { tags: ["project"] };
+    let content = "Intro\n\n```\n#project\n```\n\nOutro #project";
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        cachedRead: vi.fn(async () => content),
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [
+            createTagCacheEntry(content, "#project", 0),
+            createTagCacheEntry(content, "#project", 1),
+          ],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project");
+
+    expect(result).toEqual({ ok: true, changed: true, file });
+    expect(frontmatter).toEqual({});
+    expect(content).toBe("Intro\n\n```\n#project\n```\n\nOutro ");
+  });
+
+  it("skips inline tags inside inline code spans", async () => {
+    const file = createFile("notes/inline-code.md");
+    const frontmatter: Record<string, unknown> = { tags: ["project"] };
+    let content = "Intro `#project` outro #project";
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        cachedRead: vi.fn(async () => content),
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [
+            createTagCacheEntry(content, "#project", 0),
+            createTagCacheEntry(content, "#project", 1),
+          ],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project");
+    expect(result).toEqual({ ok: true, changed: true, file });
+    expect(frontmatter).toEqual({});
+    expect(content).toBe("Intro `#project` outro ");
+  });
+
+  it("skips inline tags inside HTML tags", async () => {
+    const file = createFile("notes/html-tag.md");
+    const frontmatter: Record<string, unknown> = { tags: ["project"] };
+    let content = "Intro <span>#project</span> outro #project";
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
+      fileManager: {
+        processFrontMatter: vi.fn(async (_file, mutate) => {
+          mutate(frontmatter);
+        }),
+      },
+      vault: {
+        cachedRead: vi.fn(async () => content),
+        process: vi.fn(async (_file, mutate) => {
+          content = mutate(content);
+          return content;
+        }),
+      },
+      metadataCache: {
+        getFileCache: vi.fn(() => ({
+          tags: [
+            createTagCacheEntry(content, "#project", 0),
+            createTagCacheEntry(content, "#project", 1),
+          ],
+        })),
+      },
+    };
+
+    const result = await removeTagFromFile(app as unknown as any, file, "project");
+
+    expect(result).toEqual({ ok: true, changed: true, file });
+    expect(frontmatter).toEqual({});
+    expect(content).toBe("Intro <span>#project</span> outro ");
   });
 });
 
@@ -363,17 +504,20 @@ describe("batch tag operations", () => {
     const first = createFile("notes/first.md");
     const second = createFile("notes/second.md");
     const third = createFile("notes/third.md");
+    const fourth = createFile("notes/fourth.md");
     const frontmatterByPath = new Map<string, Record<string, unknown>>([
       [first.path, { tags: [] }],
       [second.path, { tags: [] }],
-      [third.path, { tags: ["project"] }],
+      [third.path, { tags: ["project/alpha"] }],
+      [fourth.path, { tags: ["keep"] }],
     ]);
     const contentByPath = new Map<string, string>([
       [first.path, "#project"],
       [second.path, "#project"],
-      [third.path, "#project"],
+      [third.path, "#project/alpha"],
+      [fourth.path, "#keep"],
     ]);
-    const app: MockAppForTagMutation = {
+    const app: MockAppForTagMutation & { vault: { cachedRead: (file: TFile) => Promise<string> } } = {
       fileManager: {
         processFrontMatter: vi.fn(async (file, mutate) => {
           if (file.path === second.path) {
@@ -384,6 +528,7 @@ describe("batch tag operations", () => {
         }),
       },
       vault: {
+        cachedRead: vi.fn(async (file: TFile) => contentByPath.get(file.path) ?? ""),
         process: vi.fn(async (file, mutate) => {
           const nextContent = mutate(contentByPath.get(file.path) ?? "");
           contentByPath.set(file.path, nextContent);
@@ -393,19 +538,28 @@ describe("batch tag operations", () => {
       metadataCache: {
         getFileCache: vi.fn((file: TFile) => {
           const content = contentByPath.get(file.path) ?? "";
-          if (!content.includes("#project")) {
+          if (content.length === 0) {
             return null;
           }
 
-          return {
-            tags: [createTagCacheEntry(content, "#project")],
-          };
+          const tags: MockTagCacheEntry[] = [];
+          if (content.includes("#project/alpha")) {
+            tags.push(createTagCacheEntry(content, "#project/alpha"));
+          }
+          if (content.includes("#project")) {
+            tags.push(createTagCacheEntry(content, "#project"));
+          }
+          if (content.includes("#keep")) {
+            tags.push(createTagCacheEntry(content, "#keep"));
+          }
+
+          return tags.length > 0 ? { tags } : null;
         }),
       },
     };
 
     const addSummary = await batchAddTagToFiles(app as unknown as any, [first, second, third], "project");
-    const removeSummary = await batchRemoveTagFromFiles(app as unknown as any, [first, second, third], "project");
+    const removeSummary = await batchRemoveTagFromFiles(app as unknown as any, [first, second, third, fourth], "project");
 
     expect(addSummary.succeeded.map((entry) => entry.file.path)).toEqual(["notes/first.md", "notes/third.md"]);
     expect(addSummary.failed).toEqual([
@@ -415,7 +569,8 @@ describe("batch tag operations", () => {
         path: "notes/second.md",
       },
     ]);
-    expect(removeSummary.succeeded.map((entry) => entry.file.path)).toEqual(["notes/first.md", "notes/third.md"]);
+    expect(removeSummary.changed.map((entry) => entry.file.path)).toEqual(["notes/first.md", "notes/third.md"]);
+    expect(removeSummary.noop.map((entry) => entry.file.path)).toEqual(["notes/fourth.md"]);
     expect(removeSummary.failed).toEqual([
       {
         ok: false,
@@ -425,9 +580,11 @@ describe("batch tag operations", () => {
     ]);
     expect(frontmatterByPath.get(first.path)).toEqual({});
     expect(frontmatterByPath.get(third.path)).toEqual({});
+    expect(frontmatterByPath.get(fourth.path)).toEqual({ tags: ["keep"] });
     expect(contentByPath.get(first.path)).toBe("");
     expect(contentByPath.get(second.path)).toBe("#project");
     expect(contentByPath.get(third.path)).toBe("");
+    expect(contentByPath.get(fourth.path)).toBe("#keep");
   });
 });
 

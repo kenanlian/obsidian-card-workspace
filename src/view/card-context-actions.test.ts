@@ -9,6 +9,7 @@ const mockState = vi.hoisted(() => {
   const menuInstances: MockMenu[] = [];
   const folderPickerInstances: MockFolderPickerModal[] = [];
   const modalInstances: MockModal[] = [];
+  const suggestModalInstances: MockSuggestModal[] = [];
   const noticeMessages: string[] = [];
   const panelEventHandlers: Record<string, (event: any) => void> = {};
   const runtimeFlags = {
@@ -235,12 +236,20 @@ const mockState = vi.hoisted(() => {
     text: string;
     warning: boolean;
     cta: boolean;
+    disabled: boolean;
     onClick: (() => void) | null;
   }
 
   interface MockModalTextInput {
     value: string;
     onChange: ((value: string) => void) | null;
+  }
+
+  interface MockModalToggle {
+    label: string;
+    description: string | null;
+    value: boolean;
+    onChange: ((value: boolean) => void) | null;
   }
 
   class MockModal {
@@ -252,6 +261,7 @@ const mockState = vi.hoisted(() => {
     renderOrder: string[] = [];
     buttons: MockModalButton[] = [];
     textInputs: MockModalTextInput[] = [];
+    toggles: MockModalToggle[] = [];
     modalEl: {
       scrollTop: number;
       scrollHeight: number;
@@ -282,6 +292,7 @@ const mockState = vi.hoisted(() => {
           this.renderOrder = [];
           this.buttons = [];
           this.textInputs = [];
+          this.toggles = [];
         },
         createEl: (tag: string, attrs?: { text?: string }) => {
           this.renderOrder.push(`${tag}:${attrs?.text ?? ""}`);
@@ -315,6 +326,40 @@ const mockState = vi.hoisted(() => {
       }
     }
   }
+  class MockSuggestModal {
+    app: unknown;
+    title = "";
+
+    constructor(app: unknown) {
+      this.app = app;
+      suggestModalInstances.push(this);
+    }
+
+    setTitle(title: string): this {
+      this.title = title;
+      return this;
+    }
+
+    open(): void {
+      return;
+    }
+
+    close(): void {
+      return;
+    }
+
+    getItems(): unknown[] {
+      return [];
+    }
+
+    getItemText(_item: unknown): string {
+      return "";
+    }
+
+    onChooseItem(_item: unknown): void | Promise<void> {
+      return;
+    }
+  }
 
   class MockSetting {
     private modal: MockModal | null;
@@ -324,11 +369,17 @@ const mockState = vi.hoisted(() => {
       this.modal = owner ?? null;
     }
 
-    setName(_name: string): this {
+    private currentName = "";
+    private currentDescription: string | null = null;
+
+    setName(name: string): this {
+      this.currentName = name;
+      this.modal?.renderOrder.push(`setting:${name}`);
       return this;
     }
 
     setDesc(description: string): this {
+      this.currentDescription = description;
       this.modal?.descriptions.push(description);
       return this;
     }
@@ -362,16 +413,46 @@ const mockState = vi.hoisted(() => {
       return this;
     }
 
+    addToggle(configure: (toggle: {
+      setValue: (value: boolean) => unknown;
+      onChange: (handler: (value: boolean) => void) => unknown;
+    }) => void): this {
+      const record: MockModalToggle = {
+        label: this.currentName,
+        description: this.currentDescription,
+        value: false,
+        onChange: null,
+      };
+
+      const chain = {
+        setValue: (value: boolean) => {
+          record.value = value;
+          return chain;
+        },
+        onChange: (handler: (value: boolean) => void) => {
+          record.onChange = handler;
+          return chain;
+        },
+      };
+
+      configure(chain);
+      this.modal?.renderOrder.push(`toggle:${record.label}`);
+      this.modal?.toggles.push(record);
+      return this;
+    }
+
     addButton(configure: (button: {
       setButtonText: (text: string) => unknown;
       onClick: (handler: () => void) => unknown;
       setWarning: () => unknown;
       setCta: () => unknown;
+      setDisabled: (disabled: boolean) => unknown;
     }) => void): this {
       const record: MockModalButton = {
         text: "",
         warning: false,
         cta: false,
+        disabled: false,
         onClick: null,
       };
 
@@ -390,6 +471,10 @@ const mockState = vi.hoisted(() => {
         },
         setCta: () => {
           record.cta = true;
+          return chain;
+        },
+        setDisabled: (disabled: boolean) => {
+          record.disabled = disabled;
           return chain;
         },
       };
@@ -423,6 +508,7 @@ const mockState = vi.hoisted(() => {
     MockModal,
     MockNotice,
     MockSetting,
+    MockSuggestModal,
     MockTFile,
     MockTFolder,
     MockFolderPickerModal,
@@ -432,6 +518,7 @@ const mockState = vi.hoisted(() => {
     menuInstances,
     folderPickerInstances,
     modalInstances,
+    suggestModalInstances,
     noticeMessages,
     panelEventHandlers,
     panelInstances,
@@ -442,33 +529,7 @@ const mockState = vi.hoisted(() => {
 
 vi.mock("obsidian", () => {
   return {
-    FuzzySuggestModal: class<T> {
-      app: unknown;
-
-      constructor(app: unknown) {
-        this.app = app;
-      }
-
-      setTitle(_title: string): this {
-        return this;
-      }
-
-      open(): void {
-        return;
-      }
-
-      getItems(): T[] {
-        return [];
-      }
-
-      getItemText(_item: T): string {
-        return "";
-      }
-
-      onChooseItem(_item: T): void {
-        return;
-      }
-    },
+    FuzzySuggestModal: mockState.MockSuggestModal,
     ItemView: mockState.MockItemView,
     Menu: mockState.MockMenu,
     Modal: mockState.MockModal,
@@ -506,7 +567,7 @@ vi.mock("./note-ops", () => {
     batchAddTagToFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
-    batchRemoveTagFromFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchRemoveTagsFromFiles: vi.fn(async () => ({ changed: [], noop: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyNoteToClipboard: vi.fn(async () => true),
     deleteFileUsingObsidianPreference: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
@@ -537,7 +598,7 @@ import {
   batchAddTagToFiles,
   batchDeleteFilesUsingObsidianPreference,
   batchMoveFiles,
-  batchRemoveTagFromFiles,
+  batchRemoveTagsFromFiles,
   batchTrashFiles,
   copyNoteToClipboard,
   deleteFileUsingObsidianPreference,
@@ -716,12 +777,20 @@ function createIndexedSearchServiceStub(result: {
   };
 }
 
-function clickLatestModalButton(buttonText: string, occurrence: number = 0): void {
+
+function getLatestModalButton(
+  buttonText: string,
+  occurrence: number = 0,
+): { text: string; disabled: boolean; onClick: (() => void) | null } | undefined {
   const modal = mockState.modalInstances.at(-1);
   expect(modal).toBeDefined();
 
   const buttons = modal?.buttons.filter((candidate) => candidate.text === buttonText) ?? [];
-  const button = buttons[occurrence];
+  return buttons[occurrence];
+}
+
+function clickLatestModalButton(buttonText: string, occurrence: number = 0): void {
+  const button = getLatestModalButton(buttonText, occurrence);
   expect(button).toBeDefined();
   expect(typeof button?.onClick).toBe("function");
   button?.onClick?.();
@@ -735,6 +804,16 @@ function setLatestModalTextInput(index: number, value: string): void {
   expect(input).toBeDefined();
   input!.value = value;
   input?.onChange?.(value);
+}
+
+function setLatestModalToggle(label: string, value: boolean): void {
+  const modal = mockState.modalInstances.at(-1);
+  expect(modal).toBeDefined();
+
+  const toggle = modal?.toggles.find((candidate) => candidate.label === label);
+  expect(toggle).toBeDefined();
+  toggle!.value = value;
+  toggle?.onChange?.(value);
 }
 
 function getMenuItemTitles(menu: { items: Array<{ kind?: string; title: string }> }): string[] {
@@ -840,6 +919,7 @@ describe("FolderCardView card context actions", () => {
     mockState.menuInstances.length = 0;
     mockState.folderPickerInstances.length = 0;
     mockState.modalInstances.length = 0;
+    mockState.suggestModalInstances.length = 0;
     mockState.noticeMessages.length = 0;
     mockState.panelInstances.length = 0;
     mockState.runtimeFlags.isDesktopApp = true;
@@ -2548,8 +2628,8 @@ describe("FolderCardView card context actions", () => {
     expect(copySpy).toHaveBeenCalledWith(file.path);
   });
 
-  it("single tag actions prompt for tag input and surface success and failure notices", async () => {
-    const { view, file, app } = createViewWithFile("notes/tag-action.md");
+  it("single tag actions keep add freeform, direct-remove one tag, and picker-remove from existing tags", async () => {
+    const { view, file, app, plugin } = createViewWithFile("notes/tag-action.md");
 
     await (view as any).routeCardMenuAction("add-tag", file.path);
     expect(mockState.modalInstances.at(-1)?.title).toBe("Add tag");
@@ -2560,6 +2640,27 @@ describe("FolderCardView card context actions", () => {
     });
     expect(mockState.noticeMessages).toContain('Added #project/alpha to "tag-action".');
 
+    app.metadataCache.getFileCache = vi.fn(() => ({
+      tags: [{ tag: "#Project/Alpha" }],
+    }));
+    vi.mocked(removeTagFromFile).mockResolvedValueOnce({
+      ok: true,
+      changed: false,
+      file,
+    } as any);
+
+    const modalCountBeforeDirectRemove = mockState.modalInstances.length;
+    await (view as any).routeCardMenuAction("remove-tag", file.path);
+    await vi.waitFor(() => {
+      expect(removeTagFromFile).toHaveBeenCalledWith(app, file, "project/alpha");
+    });
+    expect(mockState.modalInstances).toHaveLength(modalCountBeforeDirectRemove);
+    expect(mockState.noticeMessages).toContain('#project/alpha was not present on "tag-action".');
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+
+    app.metadataCache.getFileCache = vi.fn(() => ({
+      tags: [{ tag: "#Other" }, { tag: "#Project/Alpha" }],
+    }));
     vi.mocked(removeTagFromFile).mockResolvedValueOnce({
       ok: false,
       error: "remove failed",
@@ -2567,11 +2668,12 @@ describe("FolderCardView card context actions", () => {
     } as any);
 
     await (view as any).routeCardMenuAction("remove-tag", file.path);
-    expect(mockState.modalInstances.at(-1)?.title).toBe("Remove tag");
-    setLatestModalTextInput(0, "#Project/Alpha");
-    clickLatestModalButton("Remove tag");
+    const suggestModal = mockState.suggestModalInstances.at(-1);
+    expect(suggestModal?.title).toBe("Remove tag");
+    expect((suggestModal as any)?.getItems()).toEqual(["other", "project/alpha"]);
+    await (suggestModal as any)?.onChooseItem("project/alpha");
     await vi.waitFor(() => {
-      expect(removeTagFromFile).toHaveBeenCalledWith(app, file, "project/alpha");
+      expect(removeTagFromFile).toHaveBeenCalledTimes(2);
     });
     expect(mockState.noticeMessages).toContain("Failed to remove tag: remove failed");
   });
@@ -2619,6 +2721,151 @@ describe("FolderCardView card context actions", () => {
     expect(Array.from((view as any).selectedPaths)).toEqual([second.path]);
     expect((view as any).bulkAnchorPath).toBe(second.path);
     expect(mockState.noticeMessages).toContain("Added #project to 1 note; 1 failed.");
+  });
+
+  it("bulk remove opens a checkbox modal, collapses redundant tags, and clears a stale filter", async () => {
+    const { view, app, plugin } = createViewWithFile("notes/primary.md");
+    const first = createMarkdownFile("notes/first.md");
+    const second = createMarkdownFile("notes/second.md");
+    const third = createNonMarkdownFile("notes/third.canvas", "canvas");
+    const visibleCards = [
+      createCardRecord(first),
+      createCardRecord(second),
+      createCardRecord(third, "canvas"),
+    ];
+    const fileMap = new Map([
+      [first.path, first],
+      [second.path, second],
+      [third.path, third],
+    ]);
+    const tagsByPath = new Map<string, string[]>([
+      [first.path, ["#project/alpha", "#other"]],
+      [second.path, ["#project", "#project/alpha"]],
+      [third.path, ["#canvas-only"]],
+    ]);
+
+    plugin.getSettings = vi.fn(() => ({
+      includeSubfolders: true,
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["project/alpha"] },
+      defaultView: "cards",
+      lastFolderPath: null,
+      lastViewMode: "folder",
+      pinnedPaths: [],
+      previewLines: 5,
+    }));
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
+    app.metadataCache.getFileCache = vi.fn((targetFile: InstanceType<typeof mockState.MockTFile>) => {
+      const tags = tagsByPath.get(targetFile.path) ?? [];
+      return tags.length > 0 ? { tags: tags.map((tag) => ({ tag })) } : null;
+    });
+    (view as any).baseCards = visibleCards;
+    (view as any).visibleCards = visibleCards;
+    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).bulkMode = true;
+    (view as any).selectedPaths = new Set([first.path, second.path, third.path]);
+    (view as any).bulkAnchorPath = first.path;
+
+    vi.mocked(batchRemoveTagsFromFiles).mockImplementationOnce(async () => {
+      tagsByPath.set(first.path, []);
+      tagsByPath.set(second.path, []);
+      return {
+        changed: [
+          { ok: true, changed: true, file: first },
+          { ok: true, changed: true, file: second },
+        ],
+        noop: [],
+        failed: [],
+      } as any;
+    });
+
+    await (view as any).onOpen();
+
+    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+    toolbarActionHandler({ detail: { action: "bulk-remove-tag-selected" } });
+
+    const modal = mockState.modalInstances.at(-1);
+    expect(modal?.title).toBe("Remove tags");
+    expect(modal?.textInputs).toEqual([]);
+    expect(modal?.toggles.map((toggle) => toggle.label)).toEqual([
+      "other (1)",
+      "project (1)",
+      "project/alpha (2)",
+    ]);
+    expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(true);
+
+    setLatestModalToggle("project (1)", true);
+    expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(false);
+    setLatestModalToggle("project/alpha (2)", true);
+    setLatestModalToggle("other (1)", true);
+    clickLatestModalButton("Remove selected tags");
+
+    await vi.waitFor(() => {
+      expect(batchRemoveTagsFromFiles).toHaveBeenCalledWith(app, [first, second], ["other", "project"]);
+    });
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      filter: {
+        tags: [],
+      },
+    });
+    expect(Array.from((view as any).selectedPaths)).toEqual([]);
+    expect((view as any).bulkAnchorPath).toBeNull();
+    await vi.waitFor(() => {
+      expect(mockState.noticeMessages).toContain("Removed 2 tags from 2 notes.");
+    });
+  });
+
+  it("bulk remove reports noop-only results without claiming success", async () => {
+    const { view, app, plugin } = createViewWithFile("notes/primary.md");
+    const first = createMarkdownFile("notes/first.md");
+    const second = createMarkdownFile("notes/second.md");
+    const visibleCards = [
+      createCardRecord(first),
+      createCardRecord(second),
+    ];
+    const fileMap = new Map([
+      [first.path, first],
+      [second.path, second],
+    ]);
+
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
+    app.metadataCache.getFileCache = vi.fn(() => ({
+      tags: [{ tag: "#project" }],
+    }));
+    (view as any).baseCards = visibleCards;
+    (view as any).visibleCards = visibleCards;
+    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).bulkMode = true;
+    (view as any).selectedPaths = new Set([first.path, second.path]);
+    (view as any).bulkAnchorPath = first.path;
+
+    vi.mocked(batchRemoveTagsFromFiles).mockResolvedValueOnce({
+      changed: [],
+      noop: [
+        { ok: true, changed: false, file: first },
+        { ok: true, changed: false, file: second },
+      ],
+      failed: [],
+    } as any);
+
+    await (view as any).onOpen();
+
+    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+    toolbarActionHandler({ detail: { action: "bulk-remove-tag-selected" } });
+    setLatestModalToggle("project (2)", true);
+    clickLatestModalButton("Remove selected tags");
+
+    await vi.waitFor(() => {
+      expect(batchRemoveTagsFromFiles).toHaveBeenCalledWith(app, [first, second], ["project"]);
+    });
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockState.noticeMessages).toContain(
+        "No selected notes contained the 1 chosen tag (2 notes unchanged).",
+      );
+    });
   });
 
   it("conditional menu variants keep separators clean after removing optional actions", () => {

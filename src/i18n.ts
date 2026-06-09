@@ -211,8 +211,13 @@ export interface ViewStrings {
   singleTagActions: {
     added: (tag: string, basename: string) => string;
     removed: (tag: string, basename: string) => string;
+    absent: (tag: string, basename: string) => string;
     failedToAdd: (reason: string) => string;
     failedToRemove: (reason: string) => string;
+  };
+  singleRemoveTag: {
+    modalTitle: string;
+    noRemovableTags: string;
   };
   bulkAddTag: {
     noSelectedNotes: string;
@@ -222,9 +227,15 @@ export interface ViewStrings {
   };
   bulkRemoveTag: {
     noSelectedNotes: string;
-    removed: (count: number, tag: string) => string;
-    failed: (count: number, tag: string) => string;
-    partial: (success: number, failed: number, tag: string) => string;
+    noRemovableTags: string;
+    modalTitle: string;
+    removeSelectedTags: string;
+    removingSelectedTags: string;
+    selectedTagCount: (count: number) => string;
+    removed: (removed: number, tagCount: number) => string;
+    noop: (noop: number, tagCount: number) => string;
+    failed: (failed: number, tagCount: number) => string;
+    partial: (removed: number, noop: number, failed: number, tagCount: number) => string;
   };
   folderManagement: {
     createChildTitle: string;
@@ -494,8 +505,13 @@ const EN: UiStrings = {
     singleTagActions: {
       added: (tag: string, basename: string) => `Added #${tag} to "${basename}".`,
       removed: (tag: string, basename: string) => `Removed #${tag} from "${basename}".`,
+      absent: (tag: string, basename: string) => `#${tag} was not present on "${basename}".`,
       failedToAdd: (reason: string) => `Failed to add tag: ${reason}`,
       failedToRemove: (reason: string) => `Failed to remove tag: ${reason}`,
+    },
+    singleRemoveTag: {
+      modalTitle: "Remove tag",
+      noRemovableTags: "This note does not contain any removable tags.",
     },
     bulkAddTag: {
       noSelectedNotes: "No selected Markdown notes are available to tag.",
@@ -506,10 +522,19 @@ const EN: UiStrings = {
     },
     bulkRemoveTag: {
       noSelectedNotes: "No selected Markdown notes are available to untag.",
-      removed: (count: number, tag: string) => `Removed #${tag} from ${count} note${count === 1 ? "" : "s"}.`,
-      failed: (count: number, tag: string) => `Failed to remove #${tag} from ${count} note${count === 1 ? "" : "s"}.`,
-      partial: (success: number, failed: number, tag: string) =>
-        `Removed #${tag} from ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
+      noRemovableTags: "The selected Markdown notes do not contain any removable tags.",
+      modalTitle: "Remove tags",
+      removeSelectedTags: "Remove selected tags",
+      removingSelectedTags: "Removing selected tags…",
+      selectedTagCount: (count: number) => `Selected ${count} tag${count === 1 ? "" : "s"}.`,
+      removed: (removed: number, tagCount: number) =>
+        `Removed ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${removed} note${removed === 1 ? "" : "s"}.`,
+      noop: (noop: number, tagCount: number) =>
+        `No selected notes contained the ${tagCount} chosen tag${tagCount === 1 ? "" : "s"} (${noop} note${noop === 1 ? "" : "s"} unchanged).`,
+      failed: (failed: number, tagCount: number) =>
+        `Failed to remove ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${failed} note${failed === 1 ? "" : "s"}.`,
+      partial: (removed: number, noop: number, failed: number, tagCount: number) =>
+        `Removed ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${removed} note${removed === 1 ? "" : "s"}; ${noop} unchanged; ${failed} failed.`,
     },
     merge: {
       title: "Merge selected notes",
@@ -777,8 +802,13 @@ const ZH: UiStrings = {
     singleTagActions: {
       added: (tag: string, basename: string) => `已为“${basename}”添加 #${tag}。`,
       removed: (tag: string, basename: string) => `已从“${basename}”移除 #${tag}。`,
+      absent: (tag: string, basename: string) => `“${basename}”中不存在 #${tag}。`,
       failedToAdd: (reason: string) => `添加标签失败：${reason}`,
       failedToRemove: (reason: string) => `移除标签失败：${reason}`,
+    },
+    singleRemoveTag: {
+      modalTitle: "移除标签",
+      noRemovableTags: "此笔记没有可移除的标签。",
     },
     bulkAddTag: {
       noSelectedNotes: "没有可添加标签的已选 Markdown 笔记。",
@@ -788,9 +818,16 @@ const ZH: UiStrings = {
     },
     bulkRemoveTag: {
       noSelectedNotes: "没有可移除标签的已选 Markdown 笔记。",
-      removed: (count: number, tag: string) => `已从 ${count} 篇笔记移除 #${tag}。`,
-      failed: (count: number, tag: string) => `从 ${count} 篇笔记移除 #${tag} 失败。`,
-      partial: (success: number, failed: number, tag: string) => `已从 ${success} 篇笔记移除 #${tag}；${failed} 篇失败。`,
+      noRemovableTags: "所选 Markdown 笔记中没有可移除的标签。",
+      modalTitle: "移除标签",
+      removeSelectedTags: "移除所选标签",
+      removingSelectedTags: "正在移除所选标签…",
+      selectedTagCount: (count: number) => `已选择 ${count} 个标签。`,
+      removed: (removed: number, tagCount: number) => `已从 ${removed} 篇笔记移除 ${tagCount} 个标签。`,
+      noop: (noop: number, tagCount: number) => `所选 ${tagCount} 个标签在 ${noop} 篇笔记中均不存在，未做更改。`,
+      failed: (failed: number, tagCount: number) => `从 ${failed} 篇笔记移除 ${tagCount} 个标签失败。`,
+      partial: (removed: number, noop: number, failed: number, tagCount: number) =>
+        `已从 ${removed} 篇笔记移除 ${tagCount} 个标签；${noop} 篇未更改；${failed} 篇失败。`,
     },
     merge: {
       title: "合并所选笔记",
