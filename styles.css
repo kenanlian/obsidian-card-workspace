@@ -475,6 +475,36 @@
   color: var(--text-normal);
 }
 
+.fce-tag-checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 12px;
+  row-gap: 10px;
+}
+
+.fce-tag-checkbox-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  color: var(--text-normal);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fce-tag-checkbox-input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.fce-tag-checkbox-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fce-tree-menu .fce-tree-chevron,
 .fce-tree-menu .fce-tree-button {
   padding: 0;

@@ -1,5 +1,4 @@
 import {
-  FuzzySuggestModal,
   ItemView,
   Menu,
   Modal,
@@ -77,6 +76,9 @@ function normalizeFolderScopePath(path: string): string {
 
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
+const TAG_ADD_ICON = "card-workspace-tag-plus";
+const TAG_REMOVE_ICON = "card-workspace-tag-minus";
+
 
 type TagMutationMode = "add" | "remove";
 
@@ -524,37 +526,6 @@ class TagInputModal extends Modal {
     }
   }
 }
-class SingleRemoveTagModal extends FuzzySuggestModal<string> {
-  private readonly tags: string[];
-  private readonly onChoose: (tag: string) => Promise<boolean>;
-
-  constructor(
-    app: App,
-    title: string,
-    tags: string[],
-    onChoose: (tag: string) => Promise<boolean>,
-  ) {
-    super(app);
-    this.tags = tags;
-    this.onChoose = onChoose;
-    this.setTitle(title);
-  }
-
-  getItems(): string[] {
-    return this.tags;
-  }
-
-  getItemText(tag: string): string {
-    return tag;
-  }
-
-  async onChooseItem(tag: string): Promise<void> {
-    const shouldClose = await this.onChoose(tag);
-    if (shouldClose) {
-      this.close();
-    }
-  }
-}
 
 class BulkRemoveTagsModal extends Modal {
   private readonly titleText: string;
@@ -612,23 +583,28 @@ class BulkRemoveTagsModal extends Modal {
       this.contentEl.createEl("p", { text: this.emptyMessage });
     } else {
       this.contentEl.createEl("p", { text: this.selectionSummary(this.selectedTags.size) });
+      const checkboxGrid = this.contentEl.createDiv({ cls: "fce-tag-checkbox-grid" });
       for (const tagOption of this.tagOptions) {
-        new Setting(this.contentEl)
-          .setName(tagOption.label)
-          .addToggle((toggle: any) => {
-            toggle
-              .setValue(this.selectedTags.has(tagOption.normalizedTag))
-              .onChange((value: boolean) => {
-                if (value) {
-                  this.selectedTags.add(tagOption.normalizedTag);
-                } else {
-                  this.selectedTags.delete(tagOption.normalizedTag);
-                }
-                if (!this.closed) {
-                  this.render();
-                }
-              });
-          });
+        const optionEl = checkboxGrid.createEl("label", { cls: "fce-tag-checkbox-option" });
+        const checkboxEl = optionEl.createEl("input", {
+          cls: "fce-tag-checkbox-input",
+          type: "checkbox",
+        });
+        checkboxEl.checked = this.selectedTags.has(tagOption.normalizedTag);
+        checkboxEl.addEventListener("change", () => {
+          if (checkboxEl.checked) {
+            this.selectedTags.add(tagOption.normalizedTag);
+          } else {
+            this.selectedTags.delete(tagOption.normalizedTag);
+          }
+          if (!this.closed) {
+            this.render();
+          }
+        });
+        optionEl.createEl("span", {
+          cls: "fce-tag-checkbox-label",
+          text: tagOption.label,
+        });
       }
     }
 
@@ -1492,7 +1468,7 @@ export class FolderCardView extends ItemView {
       menu.addItem((item) => {
         item
           .setTitle(strings.addTag)
-          .setIcon("tag")
+          .setIcon(TAG_ADD_ICON)
           .onClick(() => {
             void this.routeCardMenuAction("add-tag", notePath);
           });
@@ -1501,7 +1477,7 @@ export class FolderCardView extends ItemView {
       menu.addItem((item) => {
         item
           .setTitle(strings.removeTag)
-          .setIcon("tag-x")
+          .setIcon(TAG_REMOVE_ICON)
           .onClick(() => {
             void this.routeCardMenuAction("remove-tag", notePath);
           });
@@ -1653,22 +1629,24 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const tags = getFileTags(this.app, file);
-    if (tags.length === 0) {
+    const tagOptions = this.buildBulkRemovableTagOptions([file]);
+    if (tagOptions.length === 0) {
       new Notice(this.strings.view.singleRemoveTag.noRemovableTags);
       return;
     }
 
-    if (tags.length === 1) {
-      void this.submitSingleTagAction(notePath, mode, tags[0]);
-      return;
-    }
-
-    const modal = new SingleRemoveTagModal(
+    const modal = new BulkRemoveTagsModal(
       this.app,
-      this.strings.view.singleRemoveTag.modalTitle,
-      tags,
-      async (tag) => this.submitSingleTagAction(notePath, mode, tag),
+      {
+        titleText: this.strings.view.bulkRemoveTag.modalTitle,
+        emptyMessage: this.strings.view.singleRemoveTag.noRemovableTags,
+        selectionSummary: (count) => this.strings.view.bulkRemoveTag.selectedTagCount(count),
+        cancelText: this.strings.view.tagInput.cancel,
+        submitText: this.strings.view.bulkRemoveTag.removeSelectedTags,
+        submittingText: this.strings.view.bulkRemoveTag.removingSelectedTags,
+        tagOptions,
+      },
+      async (tags) => this.executeSingleRemoveTags(notePath, tags),
     );
     modal.open();
   }
@@ -1703,6 +1681,42 @@ export class FolderCardView extends ItemView {
       : this.strings.view.singleTagActions.removed(tag, file.basename);
     new Notice(message);
     return true;
+  }
+
+  private async executeSingleRemoveTags(notePath: string, tags: string[]): Promise<boolean> {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
+      return true;
+    }
+
+    const collapsedTags = this.collapseBulkRemovableTags(tags);
+    if (collapsedTags.length === 0) {
+      new Notice(this.strings.view.singleRemoveTag.noRemovableTags);
+      return false;
+    }
+
+    if (collapsedTags.length === 1) {
+      return this.submitSingleTagAction(notePath, "remove", collapsedTags[0]);
+    }
+
+    const summary = await batchRemoveTagsFromFiles(this.app, [file], collapsedTags);
+    if (summary.changed.length > 0) {
+      await this.clearStaleTagFilterIfNeeded(collapsedTags);
+    }
+
+    const strings = this.strings.view.bulkRemoveTag;
+    if (summary.failed.length === 0 && summary.noop.length === 0) {
+      new Notice(strings.removed(summary.changed.length, collapsedTags.length));
+      return true;
+    }
+
+    if (summary.changed.length === 0 && summary.failed.length === 0) {
+      new Notice(strings.noop(summary.noop.length, collapsedTags.length));
+      return false;
+    }
+
+    new Notice(strings.failed(summary.failed.length, collapsedTags.length));
+    return false;
   }
 
   private async submitRename(notePath: string, nextName: string): Promise<void> {

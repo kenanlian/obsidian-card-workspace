@@ -245,11 +245,83 @@ const mockState = vi.hoisted(() => {
     onChange: ((value: string) => void) | null;
   }
 
+  interface MockModalCheckbox {
+    label: string;
+    checked: boolean;
+    onChange: (() => void) | null;
+  }
+
   interface MockModalToggle {
     label: string;
     description: string | null;
     value: boolean;
     onChange: ((value: boolean) => void) | null;
+  }
+
+  class MockModalElement {
+    readonly __ownerModal: MockModal;
+    private readonly text: string | null;
+    private readonly tag: string;
+    checked = false;
+    private changeHandler: (() => void) | null = null;
+
+    constructor(modal: MockModal, tag: string, text: string | null = null) {
+      this.__ownerModal = modal;
+      this.tag = tag;
+      this.text = text;
+    }
+
+    createEl(tag: string, attrs?: { text?: string; cls?: string; type?: string }): MockModalElement {
+      this.__ownerModal.renderOrder.push(`${tag}:${attrs?.text ?? ""}`);
+      if (tag === "p" && typeof attrs?.text === "string") {
+        this.__ownerModal.messages.push(attrs.text);
+      }
+      if (tag === "pre" && typeof attrs?.text === "string") {
+        this.__ownerModal.renderedPreviewText = attrs.text;
+      }
+      if (tag === "span" && this.tag === "label" && typeof attrs?.text === "string") {
+        const checkbox = this.__ownerModal.checkboxes.at(-1);
+        if (checkbox) {
+          checkbox.label = attrs.text;
+        }
+      }
+      if (tag === "input" && attrs?.type === "checkbox") {
+        const checkbox: MockModalCheckbox = {
+          label: this.text ?? "",
+          checked: false,
+          onChange: null,
+        };
+        this.__ownerModal.checkboxes.push(checkbox);
+        const inputEl = new MockModalElement(this.__ownerModal, tag);
+        Object.defineProperty(inputEl, "checked", {
+          get: () => checkbox.checked,
+          set: (value: boolean) => {
+            checkbox.checked = value;
+          },
+          configurable: true,
+          enumerable: true,
+        });
+        inputEl.addEventListener = vi.fn((event: string, handler: () => void) => {
+          if (event === "change") {
+            checkbox.onChange = handler;
+          }
+        });
+        return inputEl;
+      }
+      return new MockModalElement(this.__ownerModal, tag, attrs?.text ?? null);
+    }
+
+    createDiv(_attrs?: { cls?: string }): MockModalElement {
+      return new MockModalElement(this.__ownerModal, "div");
+    }
+
+    addEventListener = vi.fn((_event: string, handler: () => void) => {
+      this.changeHandler = handler;
+    });
+
+    triggerChange(): void {
+      this.changeHandler?.();
+    }
   }
 
   class MockModal {
@@ -262,17 +334,15 @@ const mockState = vi.hoisted(() => {
     buttons: MockModalButton[] = [];
     textInputs: MockModalTextInput[] = [];
     toggles: MockModalToggle[] = [];
+    checkboxes: MockModalCheckbox[] = [];
     modalEl: {
       scrollTop: number;
       scrollHeight: number;
       clientHeight: number;
     };
-    contentEl: {
-      __ownerModal: MockModal;
+    contentEl: MockModalElement & {
       scrollTop: number;
       empty: () => void;
-      createEl: (tag: string, attrs?: { text?: string }) => Record<string, unknown>;
-      createDiv: () => Record<string, unknown>;
     };
 
     constructor(app: unknown) {
@@ -282,30 +352,19 @@ const mockState = vi.hoisted(() => {
         scrollHeight: 1200,
         clientHeight: 400,
       };
-      this.contentEl = {
-        __ownerModal: this,
-        scrollTop: 0,
-        empty: () => {
-          this.descriptions = [];
-          this.messages = [];
-          this.renderedPreviewText = "";
-          this.renderOrder = [];
-          this.buttons = [];
-          this.textInputs = [];
-          this.toggles = [];
-        },
-        createEl: (tag: string, attrs?: { text?: string }) => {
-          this.renderOrder.push(`${tag}:${attrs?.text ?? ""}`);
-          if (tag === "p" && typeof attrs?.text === "string") {
-            this.messages.push(attrs.text);
-          }
-          if (tag === "pre" && typeof attrs?.text === "string") {
-            this.renderedPreviewText = attrs.text;
-          }
-          return {};
-        },
-        createDiv: () => ({}),
+      const contentEl = new MockModalElement(this, "div") as MockModal["contentEl"];
+      contentEl.scrollTop = 0;
+      contentEl.empty = () => {
+        this.descriptions = [];
+        this.messages = [];
+        this.renderedPreviewText = "";
+        this.renderOrder = [];
+        this.buttons = [];
+        this.textInputs = [];
+        this.toggles = [];
+        this.checkboxes = [];
       };
+      this.contentEl = contentEl;
     }
 
     setTitle(title: string): this {
@@ -814,6 +873,16 @@ function setLatestModalToggle(label: string, value: boolean): void {
   expect(toggle).toBeDefined();
   toggle!.value = value;
   toggle?.onChange?.(value);
+}
+
+function setLatestModalCheckbox(label: string, checked: boolean): void {
+  const modal = mockState.modalInstances.at(-1);
+  expect(modal).toBeDefined();
+
+  const checkbox = modal?.checkboxes.find((candidate) => candidate.label === label);
+  expect(checkbox).toBeDefined();
+  checkbox!.checked = checked;
+  checkbox?.onChange?.();
 }
 
 function getMenuItemTitles(menu: { items: Array<{ kind?: string; title: string }> }): string[] {
@@ -2554,8 +2623,8 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
-      { kind: "item", title: "Add tag...", icon: "tag" },
-      { kind: "item", title: "Remove tag...", icon: "tag-x" },
+      { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
+      { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
       { kind: "item", title: "Copy note content", icon: "documents" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
@@ -2628,7 +2697,7 @@ describe("FolderCardView card context actions", () => {
     expect(copySpy).toHaveBeenCalledWith(file.path);
   });
 
-  it("single tag actions keep add freeform, direct-remove one tag, and picker-remove from existing tags", async () => {
+  it("single tag actions keep add freeform and require explicit remove selection", async () => {
     const { view, file, app, plugin } = createViewWithFile("notes/tag-action.md");
 
     await (view as any).routeCardMenuAction("add-tag", file.path);
@@ -2649,33 +2718,45 @@ describe("FolderCardView card context actions", () => {
       file,
     } as any);
 
-    const modalCountBeforeDirectRemove = mockState.modalInstances.length;
     await (view as any).routeCardMenuAction("remove-tag", file.path);
+    const singleTagModal = mockState.modalInstances.at(-1);
+    expect(singleTagModal?.title).toBe("Remove tags");
+    expect(singleTagModal?.textInputs).toEqual([]);
+    expect(singleTagModal?.checkboxes.map((checkbox) => checkbox.label)).toEqual(["Project/Alpha (1)"]);
+    expect(removeTagFromFile).not.toHaveBeenCalled();
+    setLatestModalCheckbox("Project/Alpha (1)", true);
+    clickLatestModalButton("Remove selected tags");
     await vi.waitFor(() => {
       expect(removeTagFromFile).toHaveBeenCalledWith(app, file, "project/alpha");
     });
-    expect(mockState.modalInstances).toHaveLength(modalCountBeforeDirectRemove);
     expect(mockState.noticeMessages).toContain('#project/alpha was not present on "tag-action".');
     expect(plugin.saveSettings).not.toHaveBeenCalled();
 
     app.metadataCache.getFileCache = vi.fn(() => ({
       tags: [{ tag: "#Other" }, { tag: "#Project/Alpha" }],
     }));
-    vi.mocked(removeTagFromFile).mockResolvedValueOnce({
-      ok: false,
-      error: "remove failed",
-      path: file.path,
+    vi.mocked(batchRemoveTagsFromFiles).mockResolvedValueOnce({
+      changed: [{ ok: true, changed: true, file }],
+      noop: [],
+      failed: [],
     } as any);
 
     await (view as any).routeCardMenuAction("remove-tag", file.path);
-    const suggestModal = mockState.suggestModalInstances.at(-1);
-    expect(suggestModal?.title).toBe("Remove tag");
-    expect((suggestModal as any)?.getItems()).toEqual(["other", "project/alpha"]);
-    await (suggestModal as any)?.onChooseItem("project/alpha");
+    const multiTagModal = mockState.modalInstances.at(-1);
+    expect(multiTagModal?.title).toBe("Remove tags");
+    expect(multiTagModal?.checkboxes.map((checkbox) => checkbox.label)).toEqual([
+      "Other (1)",
+      "Project/Alpha (1)",
+    ]);
+    setLatestModalCheckbox("Other (1)", true);
+    setLatestModalCheckbox("Project/Alpha (1)", true);
+    clickLatestModalButton("Remove selected tags");
     await vi.waitFor(() => {
-      expect(removeTagFromFile).toHaveBeenCalledTimes(2);
+      expect(batchRemoveTagsFromFiles).toHaveBeenCalledWith(app, [file], ["other", "project/alpha"]);
     });
-    expect(mockState.noticeMessages).toContain("Failed to remove tag: remove failed");
+    await vi.waitFor(() => {
+      expect(mockState.noticeMessages).toContain("Removed 2 tags from 1 note.");
+    });
   });
 
   it("bulk add tag reconciles selection to failed markdown paths only", async () => {
@@ -2787,17 +2868,17 @@ describe("FolderCardView card context actions", () => {
     const modal = mockState.modalInstances.at(-1);
     expect(modal?.title).toBe("Remove tags");
     expect(modal?.textInputs).toEqual([]);
-    expect(modal?.toggles.map((toggle) => toggle.label)).toEqual([
+    expect(modal?.checkboxes.map((checkbox) => checkbox.label)).toEqual([
       "other (1)",
       "project (1)",
       "project/alpha (2)",
     ]);
     expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(true);
 
-    setLatestModalToggle("project (1)", true);
+    setLatestModalCheckbox("project (1)", true);
     expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(false);
-    setLatestModalToggle("project/alpha (2)", true);
-    setLatestModalToggle("other (1)", true);
+    setLatestModalCheckbox("project/alpha (2)", true);
+    setLatestModalCheckbox("other (1)", true);
     clickLatestModalButton("Remove selected tags");
 
     await vi.waitFor(() => {
@@ -2853,7 +2934,7 @@ describe("FolderCardView card context actions", () => {
 
     const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
     toolbarActionHandler({ detail: { action: "bulk-remove-tag-selected" } });
-    setLatestModalToggle("project (2)", true);
+    setLatestModalCheckbox("project (2)", true);
     clickLatestModalButton("Remove selected tags");
 
     await vi.waitFor(() => {
