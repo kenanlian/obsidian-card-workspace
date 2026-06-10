@@ -65,7 +65,6 @@ export interface ToolbarStrings {
     removeTagSelected: string;
     deleteSelected: string;
     mergeSelected: string;
-    exitBulkMode: string;
   };
   folderMenu: {
     folderScope: string;
@@ -392,7 +391,6 @@ const EN: UiStrings = {
       removeTagSelected: "Remove tag from selected",
       deleteSelected: "Delete selected",
       mergeSelected: "Merge selected",
-      exitBulkMode: "Exit bulk mode",
     },
     folderMenu: {
       folderScope: "Folder scope",
@@ -690,7 +688,6 @@ const ZH: UiStrings = {
       removeTagSelected: "移除所选标签",
       deleteSelected: "删除所选",
       mergeSelected: "合并所选",
-      exitBulkMode: "退出批量模式",
     },
     folderMenu: {
       folderScope: "文件夹范围",

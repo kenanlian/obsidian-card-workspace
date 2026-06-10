@@ -101,6 +101,7 @@ interface MenuDomLike {
   classList: {
     add: (token: string) => void;
   };
+  querySelectorAll?: (selectors: string) => Iterable<Element>;
 }
 
 class BulkActionConfirmModal extends Modal {
@@ -1362,7 +1363,7 @@ export class FolderCardView extends ItemView {
 
     const menuDom = this.getMenuDom(menu);
     if (menuDom) {
-      menuDom.classList.add("fce-card-context-menu");
+      this.decorateCardContextMenu(menuDom, this.strings.view.contextMenu.delete);
     }
   }
 
@@ -1373,6 +1374,25 @@ export class FolderCardView extends ItemView {
     }
 
     return candidate.dom;
+  }
+  private decorateCardContextMenu(menuDom: MenuDomLike, deleteLabel: string): void {
+    menuDom.classList.add("fce-card-context-menu");
+    this.markMenuItemAsDanger(menuDom, deleteLabel);
+  }
+
+  private markMenuItemAsDanger(menuDom: MenuDomLike, label: string): void {
+    if (typeof menuDom.querySelectorAll !== "function") {
+      return;
+    }
+
+    for (const item of menuDom.querySelectorAll(".menu-item")) {
+      const titleElement = item.querySelector(".menu-item-title");
+      if (titleElement?.textContent?.trim() !== label) {
+        continue;
+      }
+
+      item.classList.add("fce-menu-item-danger");
+    }
   }
 
   private isMenuDomLike(value: unknown): value is MenuDomLike {
@@ -1408,6 +1428,7 @@ export class FolderCardView extends ItemView {
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
     const strings = this.strings.view.contextMenu;
+    const liveMarkdownFile = this.resolveLiveMarkdownFile(notePath);
     menu.addItem((item) => {
       item
         .setTitle(strings.openInCurrentWindow)
@@ -1464,7 +1485,20 @@ export class FolderCardView extends ItemView {
         });
     });
 
-    if (this.resolveLiveMarkdownFile(notePath)) {
+    if (liveMarkdownFile) {
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.copyNoteContent)
+          .setIcon("documents")
+          .onClick(() => {
+            void this.routeCardMenuAction("copy-note-content", notePath);
+          });
+      });
+    }
+
+    if (liveMarkdownFile) {
+      menu.addSeparator();
+
       menu.addItem((item) => {
         item
           .setTitle(strings.addTag)
@@ -1480,15 +1514,6 @@ export class FolderCardView extends ItemView {
           .setIcon(TAG_REMOVE_ICON)
           .onClick(() => {
             void this.routeCardMenuAction("remove-tag", notePath);
-          });
-      });
-
-      menu.addItem((item) => {
-        item
-          .setTitle(strings.copyNoteContent)
-          .setIcon("documents")
-          .onClick(() => {
-            void this.routeCardMenuAction("copy-note-content", notePath);
           });
       });
     }

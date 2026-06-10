@@ -1307,35 +1307,34 @@ describe("Toolbar.svelte", () => {
     expect(bulkSummary?.textContent).toContain("3 selected");
 
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
-    expect(bulkButtons).toHaveLength(8);
+    expect(bulkButtons).toHaveLength(7);
+    expect(bulkActions?.querySelectorAll(".fce-toolbar-bulk-separator")).toHaveLength(2);
 
     const tooltips = bulkButtons.map((button) => button.getAttribute("data-tooltip"));
     expect(tooltips).toEqual([
       "Select all",
       "Clear selection",
-      "Move selected",
       "Add tag to selected",
       "Remove tag from selected",
-      "Delete selected",
+      "Move selected",
       "Merge selected",
-      "Exit bulk mode",
+      "Delete selected",
     ]);
 
-    const destructiveTooltips = tooltips.filter((tooltip) => tooltip?.toLowerCase().includes("delete") || tooltip?.toLowerCase().includes("trash"));
-    expect(destructiveTooltips).toEqual(["Delete selected"]);
+    const destructiveButtons = bulkButtons.filter((button) => button.classList.contains("is-destructive"));
+    expect(destructiveButtons).toHaveLength(1);
+    expect(destructiveButtons[0]?.getAttribute("data-tooltip")).toBe("Delete selected");
 
     expect(bulkButtons.map((button) => button.getAttribute("data-icon"))).toEqual([
       "check-square",
       "x-square",
-      "folder-input",
       "card-workspace-tag-plus",
       "card-workspace-tag-minus",
-      "trash-2",
+      "folder-input",
       "combine",
-      "x",
+      "trash-2",
     ]);
     expect(bulkButtons.map((button) => button.disabled)).toEqual([
-      false,
       false,
       false,
       false,
@@ -1345,14 +1344,14 @@ describe("Toolbar.svelte", () => {
       false,
     ]);
     bulkButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    bulkButtons[3]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    bulkButtons[7]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    bulkButtons[2]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    bulkButtons[6]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([
       { action: "bulk-select-all" },
       { action: "bulk-add-tag-selected" },
-      { action: "bulk" },
+      { action: "bulk-delete-selected" },
     ]);
 
     await disposeMountedComponent(component);

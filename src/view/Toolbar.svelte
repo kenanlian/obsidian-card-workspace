@@ -92,7 +92,20 @@
     type: "separator";
   }
 
+  interface BulkActionOption {
+    id: string;
+    label: string;
+    icon: string;
+    disabled: boolean;
+    danger?: boolean;
+  }
+
+  interface BulkActionSeparatorOption {
+    type: "separator";
+  }
+
   type SortMenuOption = SortOption | SortSeparatorOption;
+  type BulkToolbarOption = BulkActionOption | BulkActionSeparatorOption;
 
   interface PopupLifecycleOptions {
     getButton: () => HTMLElement | null;
@@ -232,14 +245,16 @@
   let searchExpanded = $state(false);
 
   const bulkSelectionSummary = $derived(strings.bulkSummary(selectedCount));
-  const bulkActions = $derived([
+  const bulkActions = $derived<BulkToolbarOption[]>([
     { id: "bulk-select-all", label: strings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
     { id: "bulk-clear-selection", label: strings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
-    { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
+    { type: "separator" },
     { id: "bulk-add-tag-selected", label: strings.bulkActionLabels.addTagSelected, icon: BULK_ADD_TAG_ICON, disabled: !canBulkAddTagSelected },
     { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
-    { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected },
+    { type: "separator" },
+    { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
+    { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
   ]);
 
   const hasFolderScope = $derived(folderPath.length > 0);
@@ -777,32 +792,25 @@
   {/if}
 
   {#if bulkMode}
-      <div class="fce-toolbar-bulk-strip" role="group" aria-label={strings.actions.bulkTitle}>
+    <div class="fce-toolbar-bulk-strip" role="group" aria-label={strings.actions.bulkTitle}>
       <div class="fce-toolbar-bulk-actions">
         {#each bulkActions as action}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-bulk-button"
-            aria-label={action.label}
-            disabled={action.disabled}
-            onclick={() => emitToolbarAction(action.id)}
-            use:applyIcon={action.icon}
-            use:applyTooltip={action.label}
-          >
-            <span class="fce-sr-only">{action.label}</span>
-          </button>
+          {#if "type" in action}
+            <div class="fce-toolbar-bulk-separator" role="separator" aria-hidden="true"></div>
+          {:else}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-bulk-button {action.danger ? 'is-destructive' : ''}"
+              aria-label={action.label}
+              disabled={action.disabled}
+              onclick={() => emitToolbarAction(action.id)}
+              use:applyIcon={action.icon}
+              use:applyTooltip={action.label}
+            >
+              <span class="fce-sr-only">{action.label}</span>
+            </button>
+          {/if}
         {/each}
-        <div style="width: 1px; height: 16px; background: var(--fce-border); margin: 0 4px;"></div>
-        <button
-          type="button"
-          class="clickable-icon fce-toolbar-bulk-button is-exit"
-          aria-label={strings.bulkActionLabels.exitBulkMode}
-          onclick={() => emitToolbarAction("bulk")}
-          use:applyIcon={"x"}
-          use:applyTooltip={strings.bulkActionLabels.exitBulkMode}
-        >
-          <span class="fce-sr-only">{strings.bulkActionLabels.exitBulkMode}</span>
-        </button>
       </div>
 
       <div class="fce-toolbar-bulk-summary">
@@ -810,6 +818,7 @@
       </div>
     </div>
   {/if}
+
 </header>
 
 {#if showSortMenu}

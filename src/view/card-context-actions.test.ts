@@ -193,15 +193,74 @@ const mockState = vi.hoisted(() => {
     }
   }
 
+  class MockMenuTitleElement {
+    textContent: string;
+
+    constructor(text: string) {
+      this.textContent = text;
+    }
+  }
+
+  class MockMenuItemDom {
+    readonly titleElement: MockMenuTitleElement;
+    readonly classNames = new Set<string>(["menu-item"]);
+    readonly classList = {
+      add: (token: string) => {
+        this.classNames.add(token);
+      },
+    };
+
+    constructor(title: string) {
+      this.titleElement = new MockMenuTitleElement(title);
+    }
+
+    querySelector(selector: string): MockMenuTitleElement | null {
+      if (selector === ".menu-item-title") {
+        return this.titleElement;
+      }
+
+      return null;
+    }
+
+    hasClass(token: string): boolean {
+      return this.classNames.has(token);
+    }
+  }
+
+  class MockMenuDom {
+    readonly classList = {
+      add: vi.fn(),
+    };
+    private readonly itemNodes: MockMenuItemDom[] = [];
+
+    appendItem(item: MockMenuItem): void {
+      this.itemNodes.push(new MockMenuItemDom(item.title));
+    }
+
+    appendSeparator(): void {}
+
+    querySelectorAll<T>(selector: string): T[] {
+      if (selector === ".menu-item") {
+        return this.itemNodes as T[];
+      }
+
+      if (selector === ".menu-item.fce-menu-item-danger .menu-item-title") {
+        return this.itemNodes
+          .filter((item) => item.hasClass("fce-menu-item-danger"))
+          .map((item) => item.titleElement) as T[];
+      }
+
+      return [];
+    }
+  }
   class MockMenu {
     items: MockMenuItem[] = [];
     showAtMouseEvent = vi.fn();
     showAtPosition = vi.fn();
-    dom: any;
+    dom: MockMenuDom;
 
     constructor() {
-      this.dom = new (globalThis as any).HTMLElement();
-      this.dom.classList = { add: vi.fn() };
+      this.dom = new MockMenuDom();
       menuInstances.push(this);
     }
 
@@ -209,6 +268,7 @@ const mockState = vi.hoisted(() => {
       const item = new MockMenuItem();
       configure(item);
       this.items.push(item);
+      this.dom.appendItem(item);
       return this;
     }
 
@@ -216,6 +276,7 @@ const mockState = vi.hoisted(() => {
       const separator = new MockMenuItem();
       separator.kind = "separator";
       this.items.push(separator);
+      this.dom.appendSeparator();
       return this;
     }
   }
@@ -930,6 +991,10 @@ function getTopLevelMenuSignature(menu: {
       icon: item.icon ?? "",
     };
   });
+}
+function getDangerMenuTitles(menu: { dom: { querySelectorAll: <T>(selector: string) => T[] } }): string[] {
+  return menu.dom.querySelectorAll<{ textContent: string | null }>(".menu-item.fce-menu-item-danger .menu-item-title")
+    .map((element) => element.textContent?.trim() ?? "");
 }
 
 function findMenuItemByTitle(
@@ -2587,9 +2652,10 @@ describe("FolderCardView card context actions", () => {
         "separator",
         "Make a copy",
         "Move file to...",
+        "Copy note content",
+        "separator",
         "Add tag...",
         "Remove tag...",
-        "Copy note content",
         "separator",
         "Rename...",
         "Delete",
@@ -2598,6 +2664,7 @@ describe("FolderCardView card context actions", () => {
       expect(menu?.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
       expect(menu?.showAtPosition).not.toHaveBeenCalled();
       expect(menu?.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+      expect(getDangerMenuTitles(menu!)).toEqual(["Delete"]);
     });
 
   it("desktop markdown cards render the reduced card menu contract exactly", () => {
@@ -2623,9 +2690,10 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "separator" },
       { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
       { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
-      { kind: "item", title: "Copy note content", icon: "documents" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
@@ -3005,9 +3073,10 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
-      { kind: "item", title: "Add tag...", icon: "tag" },
-      { kind: "item", title: "Remove tag...", icon: "tag-x" },
       { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "separator" },
+      { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
+      { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },

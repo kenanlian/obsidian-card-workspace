@@ -248,6 +248,13 @@
   flex-wrap: wrap;
 }
 
+.folder-card-view .fce-toolbar-bulk-separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--fce-border);
+}
+
 .folder-card-view .fce-toolbar-bulk-button {
   flex: 0 0 auto;
   padding: 4px;
@@ -267,13 +274,13 @@
   color: var(--fce-text);
 }
 
-.folder-card-view .fce-toolbar-bulk-button.is-exit {
-  color: var(--fce-accent);
+.folder-card-view .fce-toolbar-bulk-button.is-destructive {
+  color: var(--text-error, #c0392b);
 }
 
-.folder-card-view .fce-toolbar-bulk-button.is-exit:hover:not(:disabled) {
-  background: var(--fce-hover);
-  color: var(--fce-accent-hover);
+.folder-card-view .fce-toolbar-bulk-button.is-destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-error, #c0392b) 12%, transparent);
+  color: var(--text-error, #c0392b);
 }
 
 .folder-card-view .fce-toolbar-bulk-button:disabled {
@@ -869,6 +876,12 @@
 
 .menu.fce-card-context-menu {
   min-width: 220px;
+}
+
+.menu.fce-card-context-menu .menu-item.fce-menu-item-danger,
+.menu.fce-card-context-menu .menu-item.fce-menu-item-danger .menu-item-title,
+.menu.fce-card-context-menu .menu-item.fce-menu-item-danger .menu-item-icon {
+  color: var(--text-error, #c0392b);
 }
 
 .fce-filter-menu {
