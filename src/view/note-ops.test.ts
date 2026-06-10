@@ -53,6 +53,12 @@ import {
   batchMoveFiles,
   batchRemoveTagFromFiles,
   batchTrashFiles,
+  buildContentClipboardText,
+  buildTitleAndContentClipboardText,
+  buildTitleClipboardText,
+  copyContentToClipboard,
+  copyTitleAndContentToClipboard,
+  copyTitleToClipboard,
   deleteFileUsingObsidianPreference,
   duplicateFile,
   mergeNotes,
@@ -656,6 +662,71 @@ describe("duplicateFile", () => {
     });
     expect(vi.mocked(app.vault.read)).toHaveBeenCalledWith(source);
     expect(vi.mocked(app.vault.create)).toHaveBeenCalledWith("diagrams/flow copy 1.canvas", "Canvas body");
+  });
+});
+describe("clipboard operations", () => {
+  it("builds title, content, and title-plus-content clipboard text", async () => {
+    const file = createFile("notes/Weekly Note.md");
+    const app = {
+      vault: {
+        cachedRead: vi.fn(async (): Promise<string> => "Line 1\nLine 2"),
+      },
+    };
+
+    expect(buildTitleClipboardText(file)).toBe("Weekly Note");
+    await expect(buildContentClipboardText(app as unknown as any, file)).resolves.toBe("Line 1\nLine 2");
+    await expect(buildTitleAndContentClipboardText(app as unknown as any, file)).resolves.toBe("# Weekly Note\n\nLine 1\nLine 2");
+  });
+
+  it("copies title, content, and title-plus-content to the clipboard", async () => {
+    const file = createFile("notes/Weekly Note.md");
+    const clipboardWriteText = vi.fn(async (_text: string) => undefined);
+    const app = {
+      vault: {
+        cachedRead: vi.fn(async (): Promise<string> => "Line 1\nLine 2"),
+      },
+    };
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        clipboard: {
+          writeText: clipboardWriteText,
+        },
+      },
+      configurable: true,
+    });
+
+    await expect(copyTitleToClipboard(app as unknown as any, file)).resolves.toBe(true);
+    await expect(copyContentToClipboard(app as unknown as any, file)).resolves.toBe(true);
+    await expect(copyTitleAndContentToClipboard(app as unknown as any, file)).resolves.toBe(true);
+
+    expect(clipboardWriteText).toHaveBeenNthCalledWith(1, "Weekly Note");
+    expect(clipboardWriteText).toHaveBeenNthCalledWith(2, "Line 1\nLine 2");
+    expect(clipboardWriteText).toHaveBeenNthCalledWith(3, "# Weekly Note\n\nLine 1\nLine 2");
+  });
+
+  it("returns false when clipboard write fails", async () => {
+    const file = createFile("notes/Weekly Note.md");
+    const app = {
+      vault: {
+        cachedRead: vi.fn(async (): Promise<string> => "Line 1\nLine 2"),
+      },
+    };
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        clipboard: {
+          writeText: vi.fn(async () => {
+            throw new Error("blocked");
+          }),
+        },
+      },
+      configurable: true,
+    });
+
+    await expect(copyTitleToClipboard(app as unknown as any, file)).resolves.toBe(false);
+    await expect(copyContentToClipboard(app as unknown as any, file)).resolves.toBe(false);
+    await expect(copyTitleAndContentToClipboard(app as unknown as any, file)).resolves.toBe(false);
   });
 });
 

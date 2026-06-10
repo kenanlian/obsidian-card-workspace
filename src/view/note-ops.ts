@@ -232,34 +232,78 @@ export async function removeTagFromFile(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build clipboard-ready title text for a file.
+ */
+export function buildTitleClipboardText(file: TFile): string {
+  return file.basename;
+}
+
+/**
+ * Build clipboard-ready full body text for a file.
+ */
+export async function buildContentClipboardText(app: App, file: TFile): Promise<string> {
+  return await app.vault.cachedRead(file);
+}
+
+/**
  * Build "# Title\n\nBody" text for a file, ready for clipboard.
  */
-export async function buildClipboardText(
+export async function buildTitleAndContentClipboardText(
   app: App,
   file: TFile,
 ): Promise<string> {
-  const body = await app.vault.cachedRead(file);
+  const body = await buildContentClipboardText(app, file);
   return `# ${file.basename}\n\n${body}`;
+}
+
+async function copyTextToClipboard(text: string, basename: string, strings: NoteOpsStrings): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    new Notice(strings.copiedToClipboard(basename));
+    return true;
+  } catch {
+    new Notice(strings.failedToCopyToClipboard);
+    return false;
+  }
+}
+
+/**
+ * Copy the title of a note to the system clipboard.
+ * Shows an Obsidian Notice on success/failure.
+ */
+export async function copyTitleToClipboard(
+  _app: App,
+  file: TFile,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
+): Promise<boolean> {
+  const text = buildTitleClipboardText(file);
+  return await copyTextToClipboard(text, file.basename, strings);
+}
+
+/**
+ * Copy the full content of a note to the system clipboard.
+ * Shows an Obsidian Notice on success/failure.
+ */
+export async function copyContentToClipboard(
+  app: App,
+  file: TFile,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
+): Promise<boolean> {
+  const text = await buildContentClipboardText(app, file);
+  return await copyTextToClipboard(text, file.basename, strings);
 }
 
 /**
  * Copy the title + full content of a note to the system clipboard.
  * Shows an Obsidian Notice on success/failure.
  */
-export async function copyNoteToClipboard(
+export async function copyTitleAndContentToClipboard(
   app: App,
   file: TFile,
   strings: NoteOpsStrings = getUiStrings("en").noteOps,
 ): Promise<boolean> {
-  try {
-    const text = await buildClipboardText(app, file);
-    await navigator.clipboard.writeText(text);
-    new Notice(strings.copiedToClipboard(file.basename));
-    return true;
-  } catch {
-    new Notice(strings.failedToCopyToClipboard);
-    return false;
-  }
+  const text = await buildTitleAndContentClipboardText(app, file);
+  return await copyTextToClipboard(text, file.basename, strings);
 }
 
 // ---------------------------------------------------------------------------

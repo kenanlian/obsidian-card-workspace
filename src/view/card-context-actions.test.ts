@@ -689,7 +689,9 @@ vi.mock("./note-ops", () => {
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchRemoveTagsFromFiles: vi.fn(async () => ({ changed: [], noop: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
-    copyNoteToClipboard: vi.fn(async () => true),
+    copyContentToClipboard: vi.fn(async () => true),
+    copyTitleAndContentToClipboard: vi.fn(async () => true),
+    copyTitleToClipboard: vi.fn(async () => true),
     deleteFileUsingObsidianPreference: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     duplicateFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     mergeNotes: vi.fn(async () => ({
@@ -720,7 +722,9 @@ import {
   batchMoveFiles,
   batchRemoveTagsFromFiles,
   batchTrashFiles,
-  copyNoteToClipboard,
+  copyContentToClipboard,
+  copyTitleAndContentToClipboard,
+  copyTitleToClipboard,
   deleteFileUsingObsidianPreference,
   duplicateFile,
   mergeNotes,
@@ -2652,7 +2656,9 @@ describe("FolderCardView card context actions", () => {
         "separator",
         "Make a copy",
         "Move file to...",
-        "Copy note content",
+        "Copy title",
+        "Copy content",
+        "Copy title & content",
         "separator",
         "Add tag...",
         "Remove tag...",
@@ -2690,7 +2696,9 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
-      { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "item", title: "Copy title", icon: "clipboard" },
+      { kind: "item", title: "Copy content", icon: "clipboard" },
+      { kind: "item", title: "Copy title & content", icon: "clipboard" },
       { kind: "separator" },
       { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
       { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
@@ -2731,7 +2739,9 @@ describe("FolderCardView card context actions", () => {
     const renameSpy = vi.spyOn(view as any, "renameCardFile").mockImplementation(() => undefined);
     const addTagSpy = vi.spyOn(view as any, "openSingleTagModal").mockImplementation(() => undefined);
     const deleteSpy = vi.spyOn(view as any, "deleteCardFile").mockResolvedValue(undefined);
-    const copySpy = vi.spyOn(view as any, "copyCardNote").mockResolvedValue(undefined);
+    const copyTitleSpy = vi.spyOn(view as any, "copyCardTitle").mockResolvedValue(undefined);
+    const copyContentSpy = vi.spyOn(view as any, "copyCardContent").mockResolvedValue(undefined);
+    const copyTitleAndContentSpy = vi.spyOn(view as any, "copyCardTitleAndContent").mockResolvedValue(undefined);
 
     await (view as any).routeCardMenuAction("current-area", file.path);
     await (view as any).routeCardMenuAction("new-tab", file.path);
@@ -2744,7 +2754,9 @@ describe("FolderCardView card context actions", () => {
     await (view as any).routeCardMenuAction("remove-tag", file.path);
     await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
       .routeCardMenuAction("delete", file.path);
-    await (view as any).routeCardMenuAction("copy-note-content", file.path);
+    await (view as any).routeCardMenuAction("copy-title", file.path);
+    await (view as any).routeCardMenuAction("copy-content", file.path);
+    await (view as any).routeCardMenuAction("copy-title-and-content", file.path);
 
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "current-area");
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "new-tab");
@@ -2761,8 +2773,12 @@ describe("FolderCardView card context actions", () => {
     expect(addTagSpy).toHaveBeenNthCalledWith(2, file.path, "remove");
     expect(deleteSpy).toHaveBeenCalledTimes(1);
     expect(deleteSpy).toHaveBeenCalledWith(file.path);
-    expect(copySpy).toHaveBeenCalledTimes(1);
-    expect(copySpy).toHaveBeenCalledWith(file.path);
+    expect(copyTitleSpy).toHaveBeenCalledTimes(1);
+    expect(copyTitleSpy).toHaveBeenCalledWith(file.path);
+    expect(copyContentSpy).toHaveBeenCalledTimes(1);
+    expect(copyContentSpy).toHaveBeenCalledWith(file.path);
+    expect(copyTitleAndContentSpy).toHaveBeenCalledTimes(1);
+    expect(copyTitleAndContentSpy).toHaveBeenCalledWith(file.path);
   });
 
   it("single tag actions keep add freeform and require explicit remove selection", async () => {
@@ -3073,7 +3089,9 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
-      { kind: "item", title: "Copy note content", icon: "documents" },
+      { kind: "item", title: "Copy title", icon: "clipboard" },
+      { kind: "item", title: "Copy content", icon: "clipboard" },
+      { kind: "item", title: "Copy title & content", icon: "clipboard" },
       { kind: "separator" },
       { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
       { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
@@ -3125,25 +3143,45 @@ describe("FolderCardView card context actions", () => {
   });
 
 
-  it("copyCardNote delegates to copyNoteToClipboard exactly once", async () => {
+  it("copyCardTitle delegates to copyTitleToClipboard exactly once", async () => {
     const { view, file, app } = createViewWithFile("notes/copy-target.md");
 
-    await (view as any).copyCardNote(file.path);
+    await (view as any).copyCardTitle(file.path);
 
-    expect(copyNoteToClipboard).toHaveBeenCalledTimes(1);
-    expect(copyNoteToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
+    expect(copyTitleToClipboard).toHaveBeenCalledTimes(1);
+    expect(copyTitleToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
   });
 
-  it("copyCardNote safely no-ops when file no longer exists", async () => {
+  it("copyCardContent delegates to copyContentToClipboard exactly once", async () => {
+    const { view, file, app } = createViewWithFile("notes/copy-target.md");
+
+    await (view as any).copyCardContent(file.path);
+
+    expect(copyContentToClipboard).toHaveBeenCalledTimes(1);
+    expect(copyContentToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
+  });
+
+  it("copyCardTitleAndContent delegates to copyTitleAndContentToClipboard exactly once", async () => {
+    const { view, file, app } = createViewWithFile("notes/copy-target.md");
+
+    await (view as any).copyCardTitleAndContent(file.path);
+
+    expect(copyTitleAndContentToClipboard).toHaveBeenCalledTimes(1);
+    expect(copyTitleAndContentToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
+  });
+
+  it("clipboard copy handlers safely no-op when file no longer exists", async () => {
     const { view, app } = createViewWithFile("notes/existing.md");
-    // Simulate file disappearing by using a path that will not resolve
     const missingPath = "notes/deleted.md";
     app.vault.getAbstractFileByPath = vi.fn(() => null);
 
-    await (view as any).copyCardNote(missingPath);
+    await (view as any).copyCardTitle(missingPath);
+    await (view as any).copyCardContent(missingPath);
+    await (view as any).copyCardTitleAndContent(missingPath);
 
-    // copyNoteToClipboard should never be called
-    expect(copyNoteToClipboard).not.toHaveBeenCalled();
+    expect(copyTitleToClipboard).not.toHaveBeenCalled();
+    expect(copyContentToClipboard).not.toHaveBeenCalled();
+    expect(copyTitleAndContentToClipboard).not.toHaveBeenCalled();
   });
 
   it("moveCardNote opens FolderPickerModal for the clicked file", () => {

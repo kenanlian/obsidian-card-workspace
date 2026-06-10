@@ -260,7 +260,9 @@ export interface ViewStrings {
     moveFileTo: string;
     addTag: string;
     removeTag: string;
-    copyNoteContent: string;
+    copyTitle: string;
+    copyContent: string;
+    copyTitleAndContent: string;
     rename: string;
     delete: string;
   };
@@ -492,7 +494,7 @@ const EN: UiStrings = {
       addTitle: "Add tag",
       removeTitle: "Remove tag",
       tagLabel: "Tag",
-      tagPlaceholder: "project/tag",
+      tagPlaceholder: "tag/sub-tag",
       invalidTag: "Enter a valid tag.",
       cancel: "Cancel",
       add: "Add tag",
@@ -585,7 +587,9 @@ const EN: UiStrings = {
       moveFileTo: "Move file to...",
       addTag: "Add tag...",
       removeTag: "Remove tag...",
-      copyNoteContent: "Copy note content",
+      copyTitle: "Copy title",
+      copyContent: "Copy content",
+      copyTitleAndContent: "Copy title & content",
       rename: "Rename...",
       delete: "Delete",
     },
@@ -788,7 +792,7 @@ const ZH: UiStrings = {
       addTitle: "添加标签",
       removeTitle: "移除标签",
       tagLabel: "标签",
-      tagPlaceholder: "project/tag",
+      tagPlaceholder: "标签/子标签",
       invalidTag: "请输入有效标签。",
       cancel: "取消",
       add: "添加标签",
@@ -877,7 +881,9 @@ const ZH: UiStrings = {
       moveFileTo: "移动文件到...",
       addTag: "添加标签...",
       removeTag: "移除标签...",
-      copyNoteContent: "复制笔记内容",
+      copyTitle: "复制标题",
+      copyContent: "复制内容",
+      copyTitleAndContent: "复制标题和内容",
       rename: "重命名...",
       delete: "删除",
     },

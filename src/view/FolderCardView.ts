@@ -21,7 +21,9 @@ import {
   batchMoveFiles,
   batchRemoveTagsFromFiles,
   batchTrashFiles,
-  copyNoteToClipboard,
+  copyContentToClipboard,
+  copyTitleAndContentToClipboard,
+  copyTitleToClipboard,
   deleteFileUsingObsidianPreference,
   duplicateFile,
   mergeNotes,
@@ -95,7 +97,9 @@ type CardMenuAction =
   | "delete"
   | "add-tag"
   | "remove-tag"
-  | "copy-note-content";
+  | "copy-title"
+  | "copy-content"
+  | "copy-title-and-content";
 
 interface MenuDomLike {
   classList: {
@@ -1488,10 +1492,28 @@ export class FolderCardView extends ItemView {
     if (liveMarkdownFile) {
       menu.addItem((item) => {
         item
-          .setTitle(strings.copyNoteContent)
-          .setIcon("documents")
+          .setTitle(strings.copyTitle)
+          .setIcon("clipboard")
           .onClick(() => {
-            void this.routeCardMenuAction("copy-note-content", notePath);
+            void this.routeCardMenuAction("copy-title", notePath);
+          });
+      });
+
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.copyContent)
+          .setIcon("clipboard")
+          .onClick(() => {
+            void this.routeCardMenuAction("copy-content", notePath);
+          });
+      });
+
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.copyTitleAndContent)
+          .setIcon("clipboard")
+          .onClick(() => {
+            void this.routeCardMenuAction("copy-title-and-content", notePath);
           });
       });
     }
@@ -1540,8 +1562,18 @@ export class FolderCardView extends ItemView {
   }
 
   private async routeCardMenuAction(action: CardMenuAction, notePath: string): Promise<void> {
-    if (action === "copy-note-content") {
-      await this.copyCardNote(notePath);
+    if (action === "copy-title") {
+      await this.copyCardTitle(notePath);
+      return;
+    }
+
+    if (action === "copy-content") {
+      await this.copyCardContent(notePath);
+      return;
+    }
+
+    if (action === "copy-title-and-content") {
+      await this.copyCardTitleAndContent(notePath);
       return;
     }
 
@@ -1578,13 +1610,31 @@ export class FolderCardView extends ItemView {
     this.openCardWithDestination(notePath, action);
   }
 
-  private async copyCardNote(notePath: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (!(file instanceof TFile)) {
+  private async copyCardTitle(notePath: string): Promise<void> {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
       return;
     }
 
-    await copyNoteToClipboard(this.app, file, this.strings.noteOps);
+    await copyTitleToClipboard(this.app, file, this.strings.noteOps);
+  }
+
+  private async copyCardContent(notePath: string): Promise<void> {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
+      return;
+    }
+
+    await copyContentToClipboard(this.app, file, this.strings.noteOps);
+  }
+
+  private async copyCardTitleAndContent(notePath: string): Promise<void> {
+    const file = this.resolveLiveMarkdownFile(notePath);
+    if (!file) {
+      return;
+    }
+
+    await copyTitleAndContentToClipboard(this.app, file, this.strings.noteOps);
   }
 
   private async makeCardFileCopy(notePath: string): Promise<void> {
