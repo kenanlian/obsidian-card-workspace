@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount, tick } from "svelte";
 import CardItem from "./CardItem.svelte";
+import { getUiStrings } from "../i18n";
 import type { CardFileKind } from "./file-kind";
 import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
@@ -233,12 +234,49 @@ describe("CardItem.svelte", () => {
     );
     expect(dataTransfer.effectAllowed).toBe("copy");
     expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
+    const nativeDragImage = dataTransfer.setDragImage.mock.calls[0]?.[0] as HTMLElement | undefined;
+    expect(nativeDragImage?.className).toBe("fce-card-native-drag-image");
+    expect(dataTransfer.setDragImage.mock.calls[0]?.slice(1)).toEqual([0, 0]);
+    const dragGhost = document.body.querySelector<HTMLElement>(".fce-card-drag-ghost");
+    expect(dragGhost?.querySelector(".fce-card-drag-ghost-title")?.textContent).toBe("A note");
+    const dragEvent = new MouseEvent("drag", { bubbles: true, clientX: 40, clientY: 50 }) as DragEvent;
+    cardButton?.dispatchEvent(dragEvent);
+    expect(dragGhost?.style.left).toBe("52px");
+    expect(dragGhost?.style.top).toBe("62px");
+    expect(dragGhost?.querySelector(".fce-card-drag-ghost-action")?.textContent).toBe("Insert here");
     expect(cardButton?.classList.contains("is-dragging")).toBe(true);
 
     const dragEndEvent = new Event("dragend", { bubbles: true }) as DragEvent;
     cardButton?.dispatchEvent(dragEndEvent);
 
     expect(cardButton?.classList.contains("is-dragging")).toBe(false);
+    expect(document.body.querySelector(".fce-card-drag-ghost")).toBeNull();
+  });
+
+  it("renders the full long title in the floating drag ghost", () => {
+    const longTitle = "一级按钮右键功能分组菜单需要保持清晰可见直到末尾仍然不变淡";
+    const { target } = mountCardItem({
+      card: createCard("notes/long.md", { title: longTitle }),
+      strings: {
+        ...getUiStrings("zh").cardItem,
+      },
+    });
+    const cardButton = target.querySelector<HTMLDivElement>(".fce-card");
+    const dataTransfer = {
+      effectAllowed: "none",
+      setData: vi.fn(),
+      setDragImage: vi.fn(),
+    };
+    const dragStartEvent = new Event("dragstart", { bubbles: true }) as DragEvent;
+    Object.defineProperty(dragStartEvent, "dataTransfer", {
+      value: dataTransfer,
+    });
+
+    cardButton?.dispatchEvent(dragStartEvent);
+
+    const dragGhost = document.body.querySelector<HTMLElement>(".fce-card-drag-ghost");
+    expect(dragGhost?.querySelector(".fce-card-drag-ghost-title")?.textContent).toBe(longTitle);
+    expect(dragGhost?.querySelector(".fce-card-drag-ghost-action")?.textContent).toBe("在此处插入");
   });
 
 

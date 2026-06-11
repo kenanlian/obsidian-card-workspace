@@ -13,7 +13,7 @@ import {
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
-import { EditorView } from "@codemirror/view";
+import { EditorView, dropCursor } from "@codemirror/view";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import {
@@ -141,12 +141,13 @@ export default class CardWorkspacePlugin extends Plugin {
       },
     });
     this.registerSearchCommands();
-    this.registerEditorExtension(
+    this.registerEditorExtension([
+      dropCursor(),
       EditorView.domEventHandlers({
         dragover: (event) => this.handleCardEditorDragOver(event),
         drop: (event, view) => this.handleCardEditorDomDrop(event, view),
       }),
-    );
+    ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
         void this.handleCardEditorDrop(event, editor, info);

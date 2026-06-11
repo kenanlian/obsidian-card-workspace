@@ -79,6 +79,53 @@
   const isPinned = $derived(pinnedPaths.includes(card.path));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
   const highlightedPreviewHtml = $derived(getHighlightedPreviewHtml(card.previewHtml, searchQuery));
+  let activeDragGhost: HTMLElement | null = null;
+
+  function moveDragGhost(event: DragEvent): void {
+    const { clientX, clientY } = event;
+    if (
+      activeDragGhost == null ||
+      typeof clientX !== "number" ||
+      typeof clientY !== "number" ||
+      (clientX === 0 && clientY === 0)
+    ) {
+      return;
+    }
+
+    activeDragGhost.style.left = `${clientX + 12}px`;
+    activeDragGhost.style.top = `${clientY + 12}px`;
+  }
+
+  function removeDragGhost(): void {
+    activeDragGhost?.remove();
+    activeDragGhost = null;
+  }
+
+  function createDragGhost(doc: Document): HTMLElement {
+    const ghost = doc.createElement("div");
+    ghost.className = "fce-card-drag-ghost";
+
+    const self = doc.createElement("div");
+    self.className = "fce-card-drag-ghost-self";
+
+    const icon = doc.createElement("span");
+    icon.className = "fce-card-drag-ghost-icon";
+    icon.setAttribute("aria-hidden", "true");
+    setIcon(icon, getCardFileIcon(card.fileKind));
+
+    const title = doc.createElement("span");
+    title.className = "fce-card-drag-ghost-title";
+    title.textContent = card.title;
+
+    const action = doc.createElement("div");
+    action.className = "fce-card-drag-ghost-action";
+    action.textContent = strings.dragInsert;
+
+    self.append(icon, title);
+    ghost.append(self, action);
+
+    return ghost;
+  }
 
   function getSearchTokens(query: string): string[] {
     const seen = new Set<string>();
@@ -323,26 +370,37 @@
 
     const cardEl = event.currentTarget as { classList?: DOMTokenList; ownerDocument?: Document } | null;
     const doc = cardEl?.ownerDocument;
-    if (doc?.body == null) {
+    if (cardEl == null || doc?.body == null) {
       return;
     }
 
     event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
     event.dataTransfer.effectAllowed = "copy";
 
-    const ghost = doc.createElement("div");
-    ghost.textContent = card.title;
-    ghost.className = "fce-card-drag-ghost";
+    removeDragGhost();
+
+    const nativeDragImage = doc.createElement("div");
+    nativeDragImage.className = "fce-card-native-drag-image";
+    doc.body.appendChild(nativeDragImage);
+    event.dataTransfer.setDragImage(nativeDragImage, 0, 0);
+    requestAnimationFrame(() => nativeDragImage.remove());
+
+    const ghost = createDragGhost(doc);
     doc.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 12, 12);
-    requestAnimationFrame(() => ghost.remove());
+    activeDragGhost = ghost;
+    moveDragGhost(event);
 
     cardEl.classList?.add("is-dragging");
+  }
+
+  function onCardDrag(event: DragEvent): void {
+    moveDragGhost(event);
   }
 
   function onCardDragEnd(event: DragEvent): void {
     const cardEl = event.currentTarget as { classList?: DOMTokenList } | null;
     cardEl?.classList?.remove("is-dragging");
+    removeDragGhost();
   }
 
   function onBulkSelectClick(event: MouseEvent): void {
@@ -420,6 +478,7 @@
   onkeydown={onCardKeydown}
   oncontextmenu={onCardContextMenuAction}
   ondragstart={onCardDragStart}
+  ondrag={onCardDrag}
   ondragend={onCardDragEnd}
 >
   <div class="fce-card-body">
