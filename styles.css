@@ -423,21 +423,25 @@
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
+  padding-left: 16px;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-50%);
   transition: opacity 120ms ease;
+  background-image:
+    linear-gradient(to right, transparent, var(--background-modifier-hover) 16px),
+    linear-gradient(to right, transparent, var(--background-primary) 16px);
 }
 
 .fce-folder-menu .fce-tree-row:hover .fce-folder-row-actions,
-.fce-folder-menu .fce-tree-row:focus-within .fce-folder-row-actions {
+.fce-folder-menu .fce-folder-row-end:focus-within .fce-folder-row-actions {
   opacity: 1;
   pointer-events: auto;
   z-index: 1;
 }
 
 .fce-folder-menu .fce-tree-row:hover .fce-popup-row-trailing,
-.fce-folder-menu .fce-tree-row:focus-within .fce-popup-row-trailing {
+.fce-folder-menu .fce-folder-row-end:focus-within .fce-popup-row-trailing {
   opacity: 0;
   pointer-events: none;
 }
