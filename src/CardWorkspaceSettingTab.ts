@@ -2,6 +2,7 @@ import { PluginSettingTab, Setting, type App } from "obsidian";
 import {
   getCardCornerRadiusOptions,
   getDefaultCardOpenBehaviorOptions,
+  getDragInsertActionOptions,
   getSettingTabStrings,
 } from "./i18n";
 import {
@@ -9,6 +10,7 @@ import {
   PREVIEW_LINES_MIN,
   isCardCornerRadius,
   isDefaultCardOpenBehavior,
+  isDragInsertAction,
 } from "./settings";
 import type CardWorkspacePlugin from "./main";
 
@@ -25,6 +27,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const {
       cardCornerRadius,
       defaultCardOpenBehavior,
+      dragInsertAction,
       enableFileExplorerFolderClicks,
       previewLines,
     } = this.plugin.getSettings();
@@ -56,6 +59,23 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           }
 
           await this.plugin.saveSettings({ defaultCardOpenBehavior: value });
+        });
+      });
+
+    new Setting(containerEl)
+      .setName(strings.dragInsertActionName)
+      .setDesc(strings.dragInsertActionDesc)
+      .addDropdown((dropdown) => {
+        for (const option of getDragInsertActionOptions(language)) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(dragInsertAction).onChange(async (value) => {
+          if (!isDragInsertAction(value)) {
+            return;
+          }
+
+          await this.plugin.saveSettings({ dragInsertAction: value });
         });
       });
 

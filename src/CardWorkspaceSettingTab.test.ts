@@ -155,6 +155,7 @@ describe("CardWorkspaceSettingTab", () => {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
         enableFileExplorerFolderClicks: false,
         previewLines: 6,
       })),
@@ -166,10 +167,11 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(4);
+    expect(mockState.settings).toHaveLength(5);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
       "Link File Explorer folder clicks to Card Workspace",
       "Default card open behavior",
+      "Card drag insert behavior",
       "Card corner radius",
       "Preview lines",
     ]);
@@ -190,6 +192,16 @@ describe("CardWorkspaceSettingTab", () => {
       ],
     });
     expect(mockState.settings[2]?.dropdown).toMatchObject({
+      value: "embed",
+      options: [
+        { value: "ask", label: "Ask every time" },
+        { value: "wiki", label: "Insert wiki link" },
+        { value: "embed", label: "Insert embed link" },
+        { value: "content", label: "Insert card content" },
+        { value: "title-content", label: "Insert card title & content" },
+      ],
+    });
+    expect(mockState.settings[3]?.dropdown).toMatchObject({
       value: "medium",
       options: [
         { value: "compact", label: "Compact" },
@@ -197,7 +209,7 @@ describe("CardWorkspaceSettingTab", () => {
         { value: "rounded", label: "Rounded" },
       ],
     });
-    expect(mockState.settings[3]?.slider).toMatchObject({
+    expect(mockState.settings[4]?.slider).toMatchObject({
       min: 3,
       max: 8,
       step: 1,
@@ -211,6 +223,7 @@ describe("CardWorkspaceSettingTab", () => {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
         enableFileExplorerFolderClicks: false,
         previewLines: 6,
       })),
@@ -224,6 +237,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
       "将文件资源管理器中的文件夹点击关联到 Card Workspace",
       "卡片默认打开方式",
+      "卡片拖拽插入行为",
       "卡片圆角",
       "预览行数",
     ]);
@@ -231,6 +245,13 @@ describe("CardWorkspaceSettingTab", () => {
       value: "smart",
       label: "当前窗格 / 当前标签页",
     });
+    expect(mockState.settings[2]?.dropdown?.options).toEqual([
+      { value: "ask", label: "每次弹框确认" },
+      { value: "wiki", label: "插入 wiki link" },
+      { value: "embed", label: "插入嵌入 link" },
+      { value: "content", label: "插入卡片内容" },
+      { value: "title-content", label: "插入卡片标题&内容" },
+    ]);
   });
 
   it("saves file explorer folder click toggle changes", async () => {
@@ -238,6 +259,7 @@ describe("CardWorkspaceSettingTab", () => {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
         enableFileExplorerFolderClicks: false,
         previewLines: 5,
       })),
@@ -258,6 +280,7 @@ describe("CardWorkspaceSettingTab", () => {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
         enableFileExplorerFolderClicks: false,
         previewLines: 5,
       })),
@@ -273,11 +296,12 @@ describe("CardWorkspaceSettingTab", () => {
     expect(plugin.saveSettings).toHaveBeenCalledWith({ defaultCardOpenBehavior: "new-window" });
   });
 
-  it("saves cardCornerRadius changes from the dropdown", async () => {
+  it("saves dragInsertAction changes from the dropdown", async () => {
     const plugin = {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
         enableFileExplorerFolderClicks: false,
         previewLines: 5,
       })),
@@ -288,7 +312,28 @@ describe("CardWorkspaceSettingTab", () => {
     const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
-    await mockState.settings[2]?.dropdown?.changeHandler?.("rounded");
+    await mockState.settings[2]?.dropdown?.changeHandler?.("embed");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ dragInsertAction: "embed" });
+  });
+
+  it("saves cardCornerRadius changes from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
+        defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
+        enableFileExplorerFolderClicks: false,
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[3]?.dropdown?.changeHandler?.("rounded");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ cardCornerRadius: "rounded" });
   });

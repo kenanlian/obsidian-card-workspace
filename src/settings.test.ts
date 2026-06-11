@@ -145,6 +145,20 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, defaultCardOpenBehavior: "new-window" } as unknown).defaultCardOpenBehavior).toBe("new-window");
   });
 
+  it("defaults dragInsertAction to ask when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: undefined } as unknown).dragInsertAction).toBe("ask");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "current-area" } as unknown).dragInsertAction).toBe("ask");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "unexpected" } as unknown).dragInsertAction).toBe("ask");
+  });
+
+  it("preserves each supported dragInsertAction value", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "ask" } as unknown).dragInsertAction).toBe("ask");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "wiki" } as unknown).dragInsertAction).toBe("wiki");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "embed" } as unknown).dragInsertAction).toBe("embed");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "content" } as unknown).dragInsertAction).toBe("content");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "title-content" } as unknown).dragInsertAction).toBe("title-content");
+  });
+
   it("defaults cardCornerRadius to compact when the raw value is missing or invalid", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: undefined } as unknown).cardCornerRadius).toBe("compact");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "soft" } as unknown).cardCornerRadius).toBe("compact");

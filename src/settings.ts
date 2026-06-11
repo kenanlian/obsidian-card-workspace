@@ -8,12 +8,15 @@ export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-
 
 export type DefaultCardOpenBehavior = "smart" | "new-tab" | "split-right" | "new-window";
 
+export type DragInsertAction = "ask" | "wiki" | "embed" | "content" | "title-content";
+
 export type CardCornerRadius = "compact" | "medium" | "rounded";
 
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 8;
 export const DEFAULT_PREVIEW_LINES = 5;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
+export const DEFAULT_DRAG_INSERT_ACTION: DragInsertAction = "ask";
 export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";
 
 export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
@@ -35,6 +38,32 @@ export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
   {
     value: "new-window",
     label: "Open in new window",
+  },
+];
+
+export const DRAG_INSERT_ACTION_OPTIONS: ReadonlyArray<{
+  value: DragInsertAction;
+  label: string;
+}> = [
+  {
+    value: "ask",
+    label: "Ask every time",
+  },
+  {
+    value: "wiki",
+    label: "Insert wiki link",
+  },
+  {
+    value: "embed",
+    label: "Insert embed link",
+  },
+  {
+    value: "content",
+    label: "Insert card content",
+  },
+  {
+    value: "title-content",
+    label: "Insert card title & content",
   },
 ];
 
@@ -69,6 +98,7 @@ export interface PluginSettings {
   enableFileExplorerFolderClicks: boolean;
   defaultView: DefaultViewMode;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
+  dragInsertAction: DragInsertAction;
   cardCornerRadius: CardCornerRadius;
   previewLines: number;
   lastFolderPath: string;
@@ -87,6 +117,7 @@ export interface PartialPluginSettings {
   enableFileExplorerFolderClicks?: boolean;
   defaultView?: DefaultViewMode;
   defaultCardOpenBehavior?: DefaultCardOpenBehavior;
+  dragInsertAction?: DragInsertAction;
   cardCornerRadius?: CardCornerRadius;
   previewLines?: number;
   lastFolderPath?: string;
@@ -105,6 +136,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   enableFileExplorerFolderClicks: false,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
+  dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
@@ -146,6 +178,10 @@ export function isDefaultCardOpenBehavior(value: string): value is DefaultCardOp
   return value === "smart" || value === "new-tab" || value === "split-right" || value === "new-window";
 }
 
+export function isDragInsertAction(value: string): value is DragInsertAction {
+  return value === "ask" || value === "wiki" || value === "embed" || value === "content" || value === "title-content";
+}
+
 export function isCardCornerRadius(value: string): value is CardCornerRadius {
   return value === "compact" || value === "medium" || value === "rounded";
 }
@@ -154,6 +190,12 @@ function normalizeDefaultCardOpenBehavior(value: unknown): DefaultCardOpenBehavi
   return typeof value === "string" && isDefaultCardOpenBehavior(value)
     ? value
     : DEFAULT_CARD_OPEN_BEHAVIOR;
+}
+
+function normalizeDragInsertAction(value: unknown): DragInsertAction {
+  return typeof value === "string" && isDragInsertAction(value)
+    ? value
+    : DEFAULT_DRAG_INSERT_ACTION;
 }
 
 function normalizeCardCornerRadius(value: unknown): CardCornerRadius {
@@ -209,6 +251,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
         : DEFAULT_SETTINGS.enableFileExplorerFolderClicks,
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
+    dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),

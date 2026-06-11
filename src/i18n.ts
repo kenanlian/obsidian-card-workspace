@@ -12,6 +12,8 @@ export interface SettingTabStrings {
   enableFileExplorerFolderClicksDesc: string;
   defaultCardOpenBehaviorName: string;
   defaultCardOpenBehaviorDesc: string;
+  dragInsertActionName: string;
+  dragInsertActionDesc: string;
   cardCornerRadiusName: string;
   cardCornerRadiusDesc: string;
   previewLinesName: string;
@@ -266,6 +268,14 @@ export interface ViewStrings {
     rename: string;
     delete: string;
   };
+  dragInsertMenu: {
+    insertWikiLink: string;
+    insertEmbedLink: string;
+    insertContent: string;
+    insertTitleAndContent: string;
+    unsupportedForFileType: string;
+    sourceFileMissing: string;
+  };
 }
 
 export interface AppStrings {
@@ -340,6 +350,8 @@ const EN: UiStrings = {
     defaultCardOpenBehaviorName: "Default card open behavior",
     defaultCardOpenBehaviorDesc:
       "Choose what happens when you click a card directly. Right-click menu actions stay available separately.",
+    dragInsertActionName: "Card drag insert behavior",
+    dragInsertActionDesc: "Choose what happens when a card is dropped into a Markdown editor.",
     cardCornerRadiusName: "Card corner radius",
     cardCornerRadiusDesc: "Adjust how square or rounded each card border feels in the panel.",
     previewLinesName: "Preview lines",
@@ -593,6 +605,14 @@ const EN: UiStrings = {
       rename: "Rename...",
       delete: "Delete",
     },
+    dragInsertMenu: {
+      insertWikiLink: "Insert wiki link",
+      insertEmbedLink: "Insert embed link",
+      insertContent: "Insert card content",
+      insertTitleAndContent: "Insert card title & content",
+      unsupportedForFileType: "This card type does not support that drag insertion action.",
+      sourceFileMissing: "Card source file no longer exists.",
+    },
   },
   app: {
     appName: "Card Workspace",
@@ -640,6 +660,8 @@ const ZH: UiStrings = {
       "启用后，在 Obsidian 文件资源管理器中点击文件夹时，也会在 Card Workspace 中打开该文件夹。Card Workspace 仍然可以从侧边栏和命令中进入。",
     defaultCardOpenBehaviorName: "卡片默认打开方式",
     defaultCardOpenBehaviorDesc: "选择直接点击卡片时的行为。右键菜单操作仍可单独使用。",
+    dragInsertActionName: "卡片拖拽插入行为",
+    dragInsertActionDesc: "选择将卡片拖入 Markdown 编辑器时的处理方式。",
     cardCornerRadiusName: "卡片圆角",
     cardCornerRadiusDesc: "调整面板中每张卡片边框的方正或圆润程度。",
     previewLinesName: "预览行数",
@@ -887,6 +909,14 @@ const ZH: UiStrings = {
       rename: "重命名...",
       delete: "删除",
     },
+    dragInsertMenu: {
+      insertWikiLink: "插入 wiki link",
+      insertEmbedLink: "插入嵌入 link",
+      insertContent: "插入卡片内容",
+      insertTitleAndContent: "插入卡片标题&内容",
+      unsupportedForFileType: "此卡片类型不支持该拖拽插入操作。",
+      sourceFileMissing: "卡片源文件已不存在。",
+    },
   },
   app: {
     appName: "Card Workspace",
@@ -958,6 +988,17 @@ export function getDefaultCardOpenBehaviorOptions(language: string = safeGetLang
     { value: "new-tab", label: zh ? "在新标签页中打开" : "Open in new tab" },
     { value: "split-right", label: zh ? "在右侧分栏打开" : "Open to the right" },
     { value: "new-window", label: zh ? "在新窗口中打开" : "Open in new window" },
+  ];
+}
+
+export function getDragInsertActionOptions(language: string = safeGetLanguage()): LocalizedOption[] {
+  const zh = resolveUiLanguage(language) === "zh";
+  return [
+    { value: "ask", label: zh ? "每次弹框确认" : "Ask every time" },
+    { value: "wiki", label: zh ? "插入 wiki link" : "Insert wiki link" },
+    { value: "embed", label: zh ? "插入嵌入 link" : "Insert embed link" },
+    { value: "content", label: zh ? "插入卡片内容" : "Insert card content" },
+    { value: "title-content", label: zh ? "插入卡片标题&内容" : "Insert card title & content" },
   ];
 }
 

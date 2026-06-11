@@ -1,14 +1,19 @@
 import {
   addIcon,
+  Editor,
+  Menu,
+  MarkdownFileInfo,
   MarkdownView,
   Notice,
   Plugin,
   TAbstractFile,
   TFile,
   TFolder,
+  type EditorPosition,
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
+import { EditorView } from "@codemirror/view";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import {
@@ -17,7 +22,12 @@ import {
   SearchIndexManager,
   prepareSearchableDocument,
 } from "./search";
-import { DEFAULT_SETTINGS, mergeSettings, normalizeSettings } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  normalizeSettings,
+  type DragInsertAction,
+} from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
   IndexStoreNamespaceMetadata,
@@ -29,6 +39,7 @@ import type {
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
+import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
 
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -47,6 +58,27 @@ function normalizeFolderScopePath(path: string): string {
 type SearchRecoveryBoundaryState = "healthy" | "degraded";
 
 type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
+
+interface MenuDomLike {
+  classList: {
+    add: (token: string) => void;
+  };
+  querySelectorAll?: (selectors: string) => Iterable<Element>;
+}
+
+interface CardWorkspaceDragPayload {
+  path: string;
+  title: string;
+}
+
+interface ResolvedCardDragEditorContext {
+  editor: Editor;
+  info: MarkdownView | MarkdownFileInfo;
+}
+
+type SupportedDragInsertAction = Exclude<DragInsertAction, "ask">;
+
+const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note";
 
 export default class CardWorkspacePlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
@@ -109,6 +141,17 @@ export default class CardWorkspacePlugin extends Plugin {
       },
     });
     this.registerSearchCommands();
+    this.registerEditorExtension(
+      EditorView.domEventHandlers({
+        dragover: (event) => this.handleCardEditorDragOver(event),
+        drop: (event, view) => this.handleCardEditorDomDrop(event, view),
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on("editor-drop", (event, editor, info) => {
+        void this.handleCardEditorDrop(event, editor, info);
+      }),
+    );
 
     this.registerDomEvent(activeDocument, "click", (event: MouseEvent) => {
       void this.onFileExplorerClick(event);
@@ -236,6 +279,266 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     return this.resolveSmartDefaultCardOpenLeaf();
+  }
+
+  private handleCardEditorDragOver(event: DragEvent): boolean {
+    if (event.defaultPrevented) {
+      return false;
+    }
+
+    if (!this.hasCardWorkspaceDragTypes(event)) {
+      return false;
+    }
+
+    if (event.dataTransfer != null) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+
+    event.preventDefault();
+    return true;
+  }
+
+  private handleCardEditorDomDrop(event: DragEvent, view: EditorView): boolean {
+    const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
+    if (!payload) {
+      return false;
+    }
+
+    const context = this.resolveCardDragEditorContext(view);
+    if (!context) {
+      return false;
+    }
+
+    event.preventDefault();
+    void this.handleCardEditorDrop(event, context.editor, context.info);
+    return true;
+  }
+
+
+  private async handleCardEditorDrop(
+    event: DragEvent,
+    editor: Editor,
+    info: MarkdownView | MarkdownFileInfo,
+  ): Promise<void> {
+    const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
+    if (!payload) {
+      return;
+    }
+
+    if (!event.defaultPrevented) {
+      event.preventDefault();
+    }
+
+
+    const file = this.app.vault.getAbstractFileByPath(payload.path);
+    if (!(file instanceof TFile)) {
+      new Notice(this.getUiStrings().view.dragInsertMenu.sourceFileMissing);
+      return;
+    }
+
+    const position = this.resolveDropEditorPosition(event, editor, info);
+    const action = this.settings.dragInsertAction;
+    if (action === "ask") {
+      this.openDragInsertMenu({ event, editor, file, position });
+      return;
+    }
+
+    await this.insertCardDragContent({ editor, file, position, action });
+  }
+
+  private resolveDropEditorPosition(
+    event: DragEvent,
+    editor: Editor,
+    info: MarkdownView | MarkdownFileInfo,
+  ): EditorPosition {
+    const sourceEditor = info.editor ?? editor;
+    // @ts-expect-error Obsidian exposes CodeMirror through an untyped cm property.
+    const cm = sourceEditor.cm;
+    if (cm instanceof EditorView) {
+      const offset = cm.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (typeof offset === "number") {
+        return editor.offsetToPos(offset);
+      }
+    }
+
+    return editor.getCursor();
+  }
+
+  private parseCardWorkspaceDragPayload(value: string): CardWorkspaceDragPayload | null {
+    if (value.length === 0) {
+      return null;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return null;
+    }
+
+    const { path, title } = parsed as { path?: unknown; title?: unknown };
+    if (typeof path !== "string" || path.length === 0 || typeof title !== "string" || title.length === 0) {
+      return null;
+    }
+
+    return { path, title };
+  }
+  private resolveCardDragEditorContext(view: EditorView): ResolvedCardDragEditorContext | null {
+    const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of markdownLeaves) {
+      const leafView = leaf.view;
+      if (!(leafView instanceof MarkdownView)) {
+        continue;
+      }
+
+      const editor = leafView.editor;
+      // @ts-expect-error Obsidian exposes CodeMirror through an untyped cm property.
+      const editorView = editor.cm;
+      if (editorView === view) {
+        return {
+          editor,
+          info: leafView,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private hasCardWorkspaceDragTypes(event: DragEvent): boolean {
+    const types = event.dataTransfer?.types;
+    if (types == null) {
+      return false;
+    }
+
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === CARD_WORKSPACE_DRAG_MIME) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+
+  private getSupportedDragInsertActions(file: TFile): SupportedDragInsertAction[] {
+    const fileKind = resolveCardFileKind(file);
+    if (fileKind === "markdown") {
+      return ["wiki", "embed", "content", "title-content"];
+    }
+    if (fileKind === "base" || fileKind === "canvas") {
+      return ["wiki", "embed"];
+    }
+
+    return ["wiki"];
+  }
+
+  private isDragInsertActionSupported(file: TFile, action: SupportedDragInsertAction): boolean {
+    return this.getSupportedDragInsertActions(file).includes(action);
+  }
+
+  private openDragInsertMenu({
+    event,
+    editor,
+    file,
+    position,
+  }: {
+    event: DragEvent;
+    editor: Editor;
+    file: TFile;
+    position: EditorPosition;
+  }): void {
+    const strings = this.getUiStrings().view.dragInsertMenu;
+    const menu = new Menu();
+    for (const action of this.getSupportedDragInsertActions(file)) {
+      const { icon, title } = this.getDragInsertMenuItemDetails(action, strings);
+      menu.addItem((item) => {
+        item.setTitle(title).setIcon(icon).onClick(() => {
+          void this.insertCardDragContent({ editor, file, position, action });
+        });
+      });
+    }
+
+    menu.showAtPosition(this.resolveDragMenuPosition(event));
+    const menuDom = this.getMenuDom(menu);
+    menuDom?.classList.add("fce-card-drag-insert-menu");
+  }
+
+  private getDragInsertMenuItemDetails(
+    action: SupportedDragInsertAction,
+    strings: UiStrings["view"]["dragInsertMenu"],
+  ): { icon: string; title: string } {
+    switch (action) {
+      case "wiki":
+        return { icon: "link", title: strings.insertWikiLink };
+      case "embed":
+        return { icon: "file-input", title: strings.insertEmbedLink };
+      case "content":
+        return { icon: "clipboard", title: strings.insertContent };
+      case "title-content":
+        return { icon: "heading-1", title: strings.insertTitleAndContent };
+    }
+  }
+
+  private resolveDragMenuPosition(event: DragEvent): { x: number; y: number } {
+    return { x: event.clientX, y: event.clientY };
+  }
+
+  private async buildDragInsertText(file: TFile, action: SupportedDragInsertAction): Promise<string | null> {
+    switch (action) {
+      case "wiki":
+        return `[[${file.basename}]]`;
+      case "embed":
+        return `![[${file.basename}]]`;
+      case "content":
+        return await buildContentClipboardText(this.app, file);
+      case "title-content":
+        return await buildTitleAndContentClipboardText(this.app, file);
+    }
+  }
+
+  private async insertCardDragContent({
+    editor,
+    file,
+    position,
+    action,
+  }: {
+    editor: Editor;
+    file: TFile;
+    position: EditorPosition;
+    action: SupportedDragInsertAction;
+  }): Promise<void> {
+    if (!this.isDragInsertActionSupported(file, action)) {
+      new Notice(this.getUiStrings().view.dragInsertMenu.unsupportedForFileType);
+      return;
+    }
+
+    const text = (await this.buildDragInsertText(file, action)) ?? "";
+    editor.replaceRange(text, position, undefined, "card-workspace-drag");
+    const endPosition = editor.offsetToPos(editor.posToOffset(position) + text.length);
+    editor.setCursor(endPosition);
+  }
+
+  private getMenuDom(menu: Menu): MenuDomLike | null {
+    const candidate = menu as unknown as { dom?: unknown };
+    if (!this.isMenuDomLike(candidate.dom)) {
+      return null;
+    }
+
+    return candidate.dom;
+  }
+
+  private isMenuDomLike(value: unknown): value is MenuDomLike {
+    if (typeof value !== "object" || value === null || !("classList" in value)) {
+      return false;
+    }
+
+    const { classList } = value;
+    return typeof classList === "object" && classList !== null && "add" in classList && typeof classList.add === "function";
   }
 
   private resolveSmartDefaultCardOpenLeaf(): WorkspaceLeaf {

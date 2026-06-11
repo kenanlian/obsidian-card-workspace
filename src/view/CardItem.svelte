@@ -1,3 +1,7 @@
+<script module lang="ts">
+  const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note";
+</script>
+
 <script lang="ts">
   import { setIcon } from "obsidian";
   import { getUiStrings, type CardItemStrings, type FileKindStrings } from "../i18n";
@@ -312,6 +316,35 @@
     onCardContextMenu?.({ path: card.path, mouseEvent: event });
   }
 
+  function onCardDragStart(event: DragEvent): void {
+    if (event.dataTransfer == null) {
+      return;
+    }
+
+    const cardEl = event.currentTarget as { classList?: DOMTokenList; ownerDocument?: Document } | null;
+    const doc = cardEl?.ownerDocument;
+    if (doc?.body == null) {
+      return;
+    }
+
+    event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
+    event.dataTransfer.effectAllowed = "copy";
+
+    const ghost = doc.createElement("div");
+    ghost.textContent = card.title;
+    ghost.className = "fce-card-drag-ghost";
+    doc.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, 12, 12);
+    requestAnimationFrame(() => ghost.remove());
+
+    cardEl.classList?.add("is-dragging");
+  }
+
+  function onCardDragEnd(event: DragEvent): void {
+    const cardEl = event.currentTarget as { classList?: DOMTokenList } | null;
+    cardEl?.classList?.remove("is-dragging");
+  }
+
   function onBulkSelectClick(event: MouseEvent): void {
     event.stopPropagation();
     emitBulkSelect(event.shiftKey);
@@ -382,9 +415,12 @@
   class="fce-card fce-card-radius-{cardCornerRadius} {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
   role="button"
   tabindex="0"
+  draggable="true"
   onclick={onCardClick}
   onkeydown={onCardKeydown}
   oncontextmenu={onCardContextMenuAction}
+  ondragstart={onCardDragStart}
+  ondragend={onCardDragEnd}
 >
   <div class="fce-card-body">
     <div class="fce-card-header">

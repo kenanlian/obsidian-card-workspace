@@ -685,6 +685,32 @@
     0 4px 10px rgba(0, 0, 0, 0.16);
 }
 
+.folder-card-view .fce-card.is-dragging {
+  opacity: 0.55;
+  border-color: var(--fce-accent);
+  box-shadow: 0 0 0 1px var(--fce-accent), 0 4px 10px rgba(0, 0, 0, 0.16);
+}
+
+.fce-card-drag-ghost {
+  position: fixed;
+  top: -10000px;
+  left: -10000px;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  font-size: var(--font-ui-small, 13px);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: var(--layer-popover, 30);
+}
+
 .folder-card-view .fce-card-body {
   display: flex;
   flex-direction: column;
@@ -875,6 +901,10 @@
 }
 
 .menu.fce-card-context-menu {
+  min-width: 220px;
+}
+
+.menu.fce-card-drag-insert-menu {
   min-width: 220px;
 }
 

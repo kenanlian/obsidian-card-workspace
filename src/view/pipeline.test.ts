@@ -20,6 +20,7 @@ function createMockContext(): PipelineContext {
       enableFileExplorerFolderClicks: false,
       defaultView: "cards",
       defaultCardOpenBehavior: "smart",
+      dragInsertAction: "ask",
       cardCornerRadius: "compact",
       previewLines: 5,
       lastFolderPath: "",

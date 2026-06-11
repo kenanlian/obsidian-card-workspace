@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount, tick } from "svelte";
 import CardItem from "./CardItem.svelte";
 import type { CardFileKind } from "./file-kind";
@@ -205,6 +205,40 @@ describe("CardItem.svelte", () => {
       path: "notes/a.md",
       mouseEvent: contextEvent,
     });
+  });
+
+  it("emits plugin-private drag data and drag visual state", () => {
+    const { target } = mountCardItem();
+    const cardButton = target.querySelector<HTMLDivElement>(".fce-card");
+    expect(cardButton?.getAttribute("draggable")).toBe("true");
+
+    const dragData = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: "none",
+      setData: vi.fn((type: string, value: string) => {
+        dragData.set(type, value);
+      }),
+      setDragImage: vi.fn(),
+    };
+    const dragStartEvent = new Event("dragstart", { bubbles: true }) as DragEvent;
+    Object.defineProperty(dragStartEvent, "dataTransfer", {
+      value: dataTransfer,
+    });
+
+    cardButton?.dispatchEvent(dragStartEvent);
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      "application/x-card-workspace-note",
+      JSON.stringify({ path: "notes/a.md", title: "A note" }),
+    );
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
+    expect(cardButton?.classList.contains("is-dragging")).toBe(true);
+
+    const dragEndEvent = new Event("dragend", { bubbles: true }) as DragEvent;
+    cardButton?.dispatchEvent(dragEndEvent);
+
+    expect(cardButton?.classList.contains("is-dragging")).toBe(false);
   });
 
 

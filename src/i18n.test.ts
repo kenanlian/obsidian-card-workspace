@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getCardCornerRadiusOptions,
   getDefaultCardOpenBehaviorOptions,
+  getDragInsertActionOptions,
   getUiStrings,
   resolveUiLanguage,
 } from "./i18n";
@@ -25,6 +26,9 @@ describe("i18n", () => {
   it("localizes settings dropdown options", () => {
     expect(getDefaultCardOpenBehaviorOptions("en")[0]?.label).toBe("Current pane / current tab");
     expect(getDefaultCardOpenBehaviorOptions("zh")[0]?.label).toBe("当前窗格 / 当前标签页");
+    expect(getDragInsertActionOptions("en")[0]?.label).toBe("Ask every time");
+    expect(getDragInsertActionOptions("zh")[0]?.label).toBe("每次弹框确认");
+    expect(getDragInsertActionOptions("zh")[4]?.label).toBe("插入卡片标题&内容");
     expect(getCardCornerRadiusOptions("zh")[2]?.label).toBe("圆角");
   });
 });
