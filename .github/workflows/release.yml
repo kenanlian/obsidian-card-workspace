@@ -50,8 +50,8 @@ jobs:
             manifest.json
             styles.css
 
-      - name: Create draft release
+      - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes --draft main.js manifest.json styles.css
+        run: gh release create "$TAG" --title "$TAG" --generate-notes main.js manifest.json styles.css
