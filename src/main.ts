@@ -75,6 +75,10 @@ interface ResolvedCardDragEditorContext {
   editor: Editor;
   info: MarkdownView | MarkdownFileInfo;
 }
+interface EditorWithCodeMirror {
+  cm?: unknown;
+}
+
 
 type SupportedDragInsertAction = Exclude<DragInsertAction, "ask">;
 
@@ -150,7 +154,15 @@ export default class CardWorkspacePlugin extends Plugin {
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
-        void this.handleCardEditorDrop(event, editor, info);
+        if (event.defaultPrevented) {
+          return;
+        }
+        const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
+        if (!payload) {
+          return;
+        }
+        event.preventDefault();
+        void this.handlePreparedCardEditorDrop(payload, event, editor, info);
       }),
     );
 
@@ -300,6 +312,9 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private handleCardEditorDomDrop(event: DragEvent, view: EditorView): boolean {
+    if (event.defaultPrevented) {
+      return false;
+    }
     const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
     if (!payload) {
       return false;
@@ -311,7 +326,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     event.preventDefault();
-    void this.handleCardEditorDrop(event, context.editor, context.info);
+    void this.handlePreparedCardEditorDrop(payload, event, context.editor, context.info);
     return true;
   }
 
@@ -330,7 +345,15 @@ export default class CardWorkspacePlugin extends Plugin {
       event.preventDefault();
     }
 
+    await this.handlePreparedCardEditorDrop(payload, event, editor, info);
+  }
 
+  private async handlePreparedCardEditorDrop(
+    payload: CardWorkspaceDragPayload,
+    event: DragEvent,
+    editor: Editor,
+    info: MarkdownView | MarkdownFileInfo,
+  ): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(payload.path);
     if (!(file instanceof TFile)) {
       new Notice(this.getUiStrings().view.dragInsertMenu.sourceFileMissing);
@@ -353,8 +376,7 @@ export default class CardWorkspacePlugin extends Plugin {
     info: MarkdownView | MarkdownFileInfo,
   ): EditorPosition {
     const sourceEditor = info.editor ?? editor;
-    // @ts-expect-error Obsidian exposes CodeMirror through an untyped cm property.
-    const cm = sourceEditor.cm;
+    const cm = this.getEditorCodeMirror(sourceEditor);
     if (cm instanceof EditorView) {
       const offset = cm.posAtCoords({ x: event.clientX, y: event.clientY });
       if (typeof offset === "number") {
@@ -388,6 +410,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
     return { path, title };
   }
+
   private resolveCardDragEditorContext(view: EditorView): ResolvedCardDragEditorContext | null {
     const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
     for (const leaf of markdownLeaves) {
@@ -397,8 +420,7 @@ export default class CardWorkspacePlugin extends Plugin {
       }
 
       const editor = leafView.editor;
-      // @ts-expect-error Obsidian exposes CodeMirror through an untyped cm property.
-      const editorView = editor.cm;
+      const editorView = this.getEditorCodeMirror(editor);
       if (editorView === view) {
         return {
           editor,
@@ -408,6 +430,10 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     return null;
+  }
+
+  private getEditorCodeMirror(editor: Editor): unknown {
+    return (editor as Editor & EditorWithCodeMirror).cm;
   }
 
   private hasCardWorkspaceDragTypes(event: DragEvent): boolean {

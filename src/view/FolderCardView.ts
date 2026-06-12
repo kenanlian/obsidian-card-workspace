@@ -7,6 +7,7 @@ import {
   TFile,
   TFolder,
   type App,
+  type ButtonComponent,
   type WorkspaceLeaf,
 } from "obsidian";
 import { mount, unmount } from "svelte";
@@ -619,14 +620,14 @@ class BulkRemoveTagsModal extends Modal {
           this.close();
         });
       })
-      .addButton((button: any) => {
+      .addButton((button: ButtonComponent) => {
         button
           .setCta()
           .setButtonText(this.submitting ? this.submittingText : this.submitText)
           .onClick(() => {
             void this.submit();
           });
-        button.setDisabled?.(this.submitting || this.selectedTags.size === 0);
+        button.setDisabled(this.submitting || this.selectedTags.size === 0);
       });
   }
 
