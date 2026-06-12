@@ -909,9 +909,9 @@ describe("Toolbar.svelte", () => {
     expect(getComputedStyle(actions as HTMLElement).opacity).toBe("0");
     expect(getComputedStyle(actions as HTMLElement).pointerEvents).toBe("none");
     expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:hover .fce-folder-row-actions");
-    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:focus-within .fce-folder-row-actions");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-folder-row-end:focus-within .fce-folder-row-actions");
     expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:hover .fce-popup-row-trailing");
-    expect(stylesCss).toContain(".fce-folder-menu .fce-tree-row:focus-within .fce-popup-row-trailing");
+    expect(stylesCss).toContain(".fce-folder-menu .fce-folder-row-end:focus-within .fce-popup-row-trailing");
 
     await disposeMountedComponent(component);
   });
