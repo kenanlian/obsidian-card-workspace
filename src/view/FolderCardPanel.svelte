@@ -39,6 +39,11 @@
     action: string;
   }
 
+  interface BoxCommandPayload {
+    command: string;
+    boxId?: string;
+  }
+
   interface SortChangePayload {
     field: string;
     direction: string;
@@ -82,6 +87,7 @@
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
+    onBoxCommand?: (payload: BoxCommandPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
   }
 
@@ -117,6 +123,10 @@
     canBulkRemoveTagSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
+    activeBoxId: null,
+    activeBoxName: null,
+    boxSummaries: [],
+    boxExcludedCount: 0,
   };
 
   let {
@@ -134,6 +144,7 @@
     onSearchQueryReset,
     onSelectFolder,
     onFolderAction,
+    onBoxCommand,
     onHydrateRange,
   }: FolderCardPanelProps = $props();
 
@@ -245,6 +256,10 @@
 
   function handleCardHoverLink(detail: CardHoverLinkPayload): void {
     onCardHoverLink?.(detail);
+  }
+
+  function handleBoxCommand(detail: BoxCommandPayload): void {
+    onBoxCommand?.(detail);
   }
 
   function handleToolbarAction(detail: ToolbarActionPayload): void {
@@ -562,6 +577,11 @@
 <div class="fce-shell {bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
     strings={panelState.strings.toolbar}
+    boxStrings={panelState.strings.box}
+    activeBoxId={panelState.activeBoxId}
+    activeBoxName={panelState.activeBoxName}
+    boxSummaries={panelState.boxSummaries}
+    boxExcludedCount={panelState.boxExcludedCount}
     {folderPath}
     {sortField}
     {sortDirection}
@@ -593,6 +613,7 @@
     onSearchQueryReset={handleSearchQueryReset}
     onSelectFolder={handleSelectFolder}
     onFolderAction={handleFolderAction}
+    onBoxCommand={handleBoxCommand}
   />
   <div
     class="fce-list {bulkMode ? 'is-bulk-mode' : ''}"

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
-  import { getUiStrings, type ToolbarStrings } from "../i18n";
+  import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
+  import type { BoxSummary } from "./panel-model";
   import {
     buildTagTree,
     collectAncestorTagPaths,
@@ -13,6 +14,11 @@
 
   interface ToolbarActionPayload {
     action: string;
+  }
+
+  interface BoxCommandPayload {
+    command: string;
+    boxId?: string;
   }
 
   interface SortChangePayload {
@@ -49,6 +55,11 @@
 
   interface ToolbarProps {
     strings?: ToolbarStrings;
+    boxStrings?: BoxStrings;
+    activeBoxId?: string | null;
+    activeBoxName?: string | null;
+    boxSummaries?: BoxSummary[];
+    boxExcludedCount?: number;
     folderPath?: string;
     sortField?: string;
     sortDirection?: string;
@@ -80,6 +91,7 @@
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
+    onBoxCommand?: (payload: BoxCommandPayload) => void;
   }
 
   interface SortOption {
@@ -160,6 +172,11 @@
 
   let {
     strings = getUiStrings("en").toolbar,
+    boxStrings = getUiStrings("en").box,
+    activeBoxId = null,
+    activeBoxName = null,
+    boxSummaries = [],
+    boxExcludedCount = 0,
     folderPath = "",
     sortField = "mtime",
     sortDirection = "desc",
@@ -191,8 +208,10 @@
     onSearchQueryReset,
     onSelectFolder,
     onFolderAction,
+    onBoxCommand,
   }: ToolbarProps = $props();
   const folderScopeButtonId = "fce-folder-scope-button";
+  const boxButtonId = "fce-box-button";
   const sortButtonId = "fce-sort-button";
   const tagFilterButtonId = "fce-tag-filter-button";
 
@@ -237,9 +256,18 @@
   let sortButtonEl: HTMLElement | null = null;
   let folderButtonEl: HTMLElement | null = null;
   let filterButtonEl: HTMLElement | null = null;
+  let boxButtonEl: HTMLElement | null = null;
   let folderMenuEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
   let tagMenuEl: HTMLElement | null = null;
+  let boxMenuEl: HTMLElement | null = null;
+
+  let showBoxMenu = $state(false);
+  let boxMenuX = $state(0);
+  let boxMenuY = $state(0);
+
+  const isBoxMode = $derived(activeBoxId !== null);
+  const otherBoxes = $derived(boxSummaries.filter((box) => box.id !== activeBoxId));
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
@@ -253,6 +281,7 @@
     { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
     { type: "separator" },
     { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
+    { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: "gallery-horizontal", disabled: !canBulkClearSelection },
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
     { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
   ]);
@@ -524,8 +553,34 @@
     filterButtonEl = node;
   });
 
+  const captureBoxButton = createElementCapture((node) => {
+    boxButtonEl = node;
+  });
+
   function closeSortMenu(): void {
     showSortMenu = false;
+  }
+
+  function closeBoxMenu(): void {
+    showBoxMenu = false;
+  }
+
+  function openBoxMenu(event: MouseEvent): void {
+    if (showBoxMenu) {
+      closeBoxMenu();
+      return;
+    }
+    boxMenuX = event.clientX;
+    boxMenuY = event.clientY;
+    showBoxMenu = true;
+    closeSortMenu();
+    closeFolderMenu();
+    closeTagMenu();
+  }
+
+  function emitBoxCommand(command: string, boxId?: string): void {
+    closeBoxMenu();
+    onBoxCommand?.(boxId === undefined ? { command } : { command, boxId });
   }
 
   function closeFolderMenu(): void {
@@ -551,6 +606,15 @@
       folderMenuEl = node;
     },
     close: closeFolderMenu,
+    closeOnEscape: true,
+  });
+
+  const boxMenuAction = createPopupPortalAction({
+    getButton: () => boxButtonEl,
+    setMenu: (node) => {
+      boxMenuEl = node;
+    },
+    close: closeBoxMenu,
     closeOnEscape: true,
   });
 
@@ -662,6 +726,61 @@
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
   <div class="fce-toolbar" role="toolbar" aria-label={strings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons">
+      {#if isBoxMode}
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button fce-box-exit-button"
+          aria-label={boxStrings.exitTitle}
+          onclick={() => emitBoxCommand("exit")}
+          use:applyIcon={"arrow-left"}
+          use:applyTooltip={boxStrings.exitTitle}
+        >
+          <span class="fce-sr-only">{boxStrings.exit}</span>
+        </button>
+        <div class="fce-toolbar-folder-group">
+          <button
+            type="button"
+            class="fce-folder-button is-selected fce-box-switcher-button"
+            id={boxButtonId}
+            aria-label={boxStrings.entryTitle}
+            onclick={openBoxMenu}
+            use:captureBoxButton
+          >
+            <span class="fce-folder-button-text">{activeBoxName}</span>
+            <span class="fce-folder-button-chevron" use:applyIcon={"chevron-down"}></span>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+          id={sortButtonId}
+          aria-label={boxStrings.sortTitle}
+          onclick={(event) => selectToolbarAction("sort", event)}
+          use:applyIcon={"arrow-up-narrow-wide"}
+          use:captureSortButton
+        >
+          <span class="fce-sr-only">{boxStrings.sortTitle}</span>
+        </button>
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button"
+          aria-label={boxStrings.configureTitle}
+          onclick={() => emitBoxCommand("configure")}
+          use:applyIcon={"settings-2"}
+          use:applyTooltip={boxStrings.configureTitle}
+        >
+          <span class="fce-sr-only">{boxStrings.configure}</span>
+        </button>
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
+          aria-label={strings.actions.bulkTitle}
+          onclick={(event) => selectToolbarAction("bulk", event)}
+          use:applyIcon={"check-check"}
+        >
+          <span class="fce-sr-only">{strings.actions.bulk}</span>
+        </button>
+      {:else}
       {#each TOOLBAR_ACTIONS as action}
         {#if action.id === "pick-folder"}
           <div class="fce-toolbar-folder-group">
@@ -728,6 +847,19 @@
           </button>
         {/if}
       {/each}
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button fce-box-entry-button {showBoxMenu ? 'is-selected' : ''}"
+          id={boxButtonId}
+          aria-label={boxStrings.entryTitle}
+          onclick={openBoxMenu}
+          use:captureBoxButton
+          use:applyIcon={"gallery-horizontal"}
+          use:applyTooltip={boxStrings.entryTitle}
+        >
+          <span class="fce-sr-only">{boxStrings.entryTitle}</span>
+        </button>
+      {/if}
       <button
         type="button"
         class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
@@ -969,5 +1101,72 @@
         </div>
       </div>
     {/each}
+  </div>
+{/if}
+
+{#if showBoxMenu}
+  <div
+    class="fce-popup-menu fce-box-menu"
+    role="menu"
+    aria-labelledby={boxButtonId}
+    style="position: fixed; left: {boxMenuX}px; top: {boxMenuY}px;"
+    use:boxMenuAction
+  >
+    {#if isBoxMode}
+      {#if otherBoxes.length > 0}
+        <div class="fce-box-menu-heading">{boxStrings.switchHeading}</div>
+        {#each otherBoxes as box}
+          <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("switch", box.id)}>
+            <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
+          </button>
+        {/each}
+        <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
+      {/if}
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("rename")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.rename}</span></span>
+      </button>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("duplicate")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.duplicate}</span></span>
+      </button>
+      <button type="button" class="fce-popup-row fce-box-menu-item is-destructive" role="menuitem" onclick={() => emitBoxCommand("delete")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.delete}</span></span>
+      </button>
+      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
+      </button>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("exit")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.exit}</span></span>
+      </button>
+    {:else if boxSummaries.length === 0}
+      <div class="fce-box-menu-invite">{boxStrings.emptyInvite}</div>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("save-scope-as-box")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.saveScopeAsBox}</span></span>
+      </button>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
+      </button>
+    {:else}
+      <div class="fce-box-menu-heading">{boxStrings.switchHeading}</div>
+      {#each boxSummaries as box}
+        <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("switch", box.id)}>
+          <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
+        </button>
+      {/each}
+      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
+      <div class="fce-box-menu-heading">{boxStrings.addScopeToBox}</div>
+      {#each boxSummaries as box}
+        <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("add-scope-to-box", box.id)}>
+          <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
+        </button>
+      {/each}
+      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("save-scope-as-box")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.saveScopeAsBox}</span></span>
+      </button>
+      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
+        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
+      </button>
+    {/if}
   </div>
 {/if}

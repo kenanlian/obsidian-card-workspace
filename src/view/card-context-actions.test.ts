@@ -182,14 +182,15 @@ const mockState = vi.hoisted(() => {
       return this;
     }
 
-    setSubmenu(submenu: MockMenu): this {
+    setSubmenu(): MockMenu {
+      const submenu = new MockMenu();
       this.submenu = submenu;
       const submenuIndex = menuInstances.indexOf(submenu);
       if (submenuIndex >= 0) {
         menuInstances.splice(submenuIndex, 1);
       }
 
-      return this;
+      return submenu;
     }
   }
 
@@ -2656,6 +2657,8 @@ describe("FolderCardView card context actions", () => {
         "separator",
         "Make a copy",
         "Move file to...",
+        "separator",
+        "Add to card box -> New card box…",
         "Copy title",
         "Copy content",
         "Copy title & content",
@@ -2696,6 +2699,8 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "separator" },
+      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
       { kind: "item", title: "Copy content", icon: "clipboard" },
       { kind: "item", title: "Copy title & content", icon: "clipboard" },
@@ -3062,6 +3067,8 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
+      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
+      { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
     ]);
@@ -3089,6 +3096,8 @@ describe("FolderCardView card context actions", () => {
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
+      { kind: "separator" },
+      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
       { kind: "item", title: "Copy content", icon: "clipboard" },
       { kind: "item", title: "Copy title & content", icon: "clipboard" },

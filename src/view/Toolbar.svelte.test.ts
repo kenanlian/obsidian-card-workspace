@@ -995,6 +995,7 @@ describe("Toolbar.svelte", () => {
       "Sort cards",
       "Tag filter",
       "Bulk actions",
+      "Card boxes",
       "Toggle search"
     ];
 
@@ -1307,7 +1308,7 @@ describe("Toolbar.svelte", () => {
     expect(bulkSummary?.textContent).toContain("3 selected");
 
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
-    expect(bulkButtons).toHaveLength(7);
+    expect(bulkButtons).toHaveLength(8);
     expect(bulkActions?.querySelectorAll(".fce-toolbar-bulk-separator")).toHaveLength(2);
 
     const tooltips = bulkButtons.map((button) => button.getAttribute("data-tooltip"));
@@ -1317,6 +1318,7 @@ describe("Toolbar.svelte", () => {
       "Add tag to selected",
       "Remove tag from selected",
       "Move selected",
+      "Add to card box",
       "Merge selected",
       "Delete selected",
     ]);
@@ -1331,6 +1333,7 @@ describe("Toolbar.svelte", () => {
       "card-workspace-tag-plus",
       "card-workspace-tag-minus",
       "folder-input",
+      "gallery-horizontal",
       "combine",
       "trash-2",
     ]);
@@ -1342,10 +1345,11 @@ describe("Toolbar.svelte", () => {
       false,
       false,
       false,
+      false,
     ]);
     bulkButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     bulkButtons[2]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    bulkButtons[6]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    bulkButtons[7]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([

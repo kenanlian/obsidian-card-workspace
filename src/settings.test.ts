@@ -508,3 +508,67 @@ describe("mergeSettings — previewLines", () => {
     expect(result.cardCornerRadius).toBe("compact");
   });
 });
+
+describe("card box settings normalization", () => {
+  it("defaults to empty boxes and null active box", () => {
+    const result = normalizeSettings({});
+    expect(result.boxes).toEqual([]);
+    expect(result.activeBoxId).toBeNull();
+  });
+
+  it("drops invalid boxes and dedupes ids", () => {
+    const result = normalizeSettings({
+      boxes: [
+        { id: "a", name: "A" },
+        { id: "", name: "no-id" },
+        { id: "a", name: "duplicate" },
+        "not-an-object",
+      ],
+    } as never);
+
+    expect(result.boxes.map((box) => box.id)).toEqual(["a"]);
+    expect(result.boxes[0].name).toBe("A");
+    expect(result.boxes[0].rules).toEqual([]);
+    expect(result.boxes[0].sort).toEqual({ field: "mtime", direction: "desc" });
+  });
+
+  it("enforces the manual/excluded disjoint invariant", () => {
+    const result = normalizeSettings({
+      boxes: [
+        {
+          id: "a",
+          name: "A",
+          manualPaths: ["shared.md", "manual.md"],
+          excludedPaths: ["shared.md", "excluded.md"],
+        },
+      ],
+    } as never);
+
+    expect(result.boxes[0].manualPaths).toEqual(["shared.md", "manual.md"]);
+    expect(result.boxes[0].excludedPaths).toEqual(["excluded.md"]);
+  });
+
+  it("normalizes rule folders and tags", () => {
+    const result = normalizeSettings({
+      boxes: [
+        {
+          id: "a",
+          name: "A",
+          rules: [
+            { folder: "/", includeSubfolders: false, tags: ["#Wip", "", 5] },
+            "bad-rule",
+          ],
+        },
+      ],
+    } as never);
+
+    expect(result.boxes[0].rules).toEqual([
+      { folder: "", includeSubfolders: false, tags: ["#Wip"] },
+    ]);
+  });
+
+  it("falls back to null activeBoxId when it does not match a box", () => {
+    expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "ghost" } as never).activeBoxId).toBeNull();
+    expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "a" } as never).activeBoxId).toBe("a");
+  });
+});

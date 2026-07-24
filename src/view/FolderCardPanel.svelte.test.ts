@@ -64,6 +64,10 @@ function createInitialPanelState(): PanelModelState {
     canBulkRemoveTagSelected: false,
     canBulkDeleteSelected: false,
     canBulkMergeSelected: false,
+    activeBoxId: null,
+    activeBoxName: null,
+    boxSummaries: [],
+    boxExcludedCount: 0,
   };
 }
 

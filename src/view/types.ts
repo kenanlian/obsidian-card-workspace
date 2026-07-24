@@ -44,6 +44,43 @@ export interface PipelineSearchInput {
   orderedPaths?: string[];
 }
 
+/**
+ * A single membership rule for a card box.
+ *
+ * - `folder`: folder scope path (`""` = vault root).
+ * - `includeSubfolders`: whether the folder scope descends recursively.
+ * - `tags`: normalized tags applied with AND semantics (same as browse tag filter).
+ *
+ * A path matches a rule when it is inside the folder scope AND matches every tag.
+ * Rules within a box combine with OR semantics.
+ */
+export interface Rule {
+  folder: string;
+  includeSubfolders: boolean;
+  tags: string[];
+}
+
+export interface CardBoxSortSpec {
+  field: SortField;
+  direction: SortDirection;
+}
+
+/**
+ * A topic-oriented collection container.
+ *
+ * Membership = rule hits (folder + tags) ∪ manualPaths − excludedPaths.
+ * Invariant: `manualPaths ∩ excludedPaths = ∅`.
+ */
+export interface CardBoxDefinition {
+  id: string;
+  name: string;
+  rules: Rule[];
+  manualPaths: string[];
+  excludedPaths: string[];
+  pinnedPaths: string[];
+  sort: CardBoxSortSpec;
+}
+
 export interface NoteCardRecord {
   file: TFile;
   fileKind: CardFileKind;

@@ -13,6 +13,11 @@ export interface OpenNotePayload {
   path: string;
 }
 
+export interface BoxSummary {
+  id: string;
+  name: string;
+}
+
 export interface PanelModelState {
   strings: UiStrings;
   cards: NoteCardRecord[];
@@ -48,6 +53,10 @@ export interface PanelModelState {
   canBulkRemoveTagSelected: boolean;
   canBulkDeleteSelected: boolean;
   canBulkMergeSelected: boolean;
+  activeBoxId: string | null;
+  activeBoxName: string | null;
+  boxSummaries: BoxSummary[];
+  boxExcludedCount: number;
 }
 
 export interface PanelModel {

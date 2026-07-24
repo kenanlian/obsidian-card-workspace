@@ -40,6 +40,7 @@ import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./s
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
+import { reconcileBoxForVaultMutation } from "./view/card-boxes";
 
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -1354,6 +1355,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private async loadSettings(): Promise<void> {
     const rawData: unknown = await this.loadData();
     this.settings = normalizeSettings(rawData);
+    // Card boxes always start collapsed to browse mode on launch.
+    this.settings.activeBoxId = null;
   }
 
   private async restoreLastSession(): Promise<void> {
@@ -1427,6 +1430,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
   private dispatchVaultMutation(event: VaultMutationEvent): void {
     this.reconcileSelectedFolderPath(event);
+    this.reconcileBoxesForVaultMutation(event);
 
     try {
       this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
@@ -1448,6 +1452,38 @@ export default class CardWorkspacePlugin extends Plugin {
     if (shouldQueueRefresh) {
       this.debouncedRefresh();
     }
+  }
+
+  private reconcileBoxesForVaultMutation(event: VaultMutationEvent): void {
+    const boxes = this.settings.boxes;
+    if (boxes.length === 0) {
+      return;
+    }
+
+    if (event.eventType !== "rename" && event.eventType !== "delete") {
+      return;
+    }
+
+    let changed = false;
+    const nextBoxes = boxes.map((box) => {
+      const reconciled = reconcileBoxForVaultMutation(box, {
+        eventType: event.eventType,
+        path: event.path,
+        oldPath: event.oldPath,
+        isFolder: event.isFolder,
+      });
+      if (reconciled !== box) {
+        changed = true;
+      }
+      return reconciled;
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    this.settings = { ...this.settings, boxes: nextBoxes };
+    void this.saveData(this.settings);
   }
 
   private reconcileSelectedFolderPath(event: VaultMutationEvent): void {

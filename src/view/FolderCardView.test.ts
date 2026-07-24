@@ -307,6 +307,8 @@ function createHarness(): TestHarness {
     cardCornerRadius: "compact",
     previewLines: 5,
     includeSubfolders: true,
+    boxes: [],
+    activeBoxId: null,
   };
 
   const app = {
@@ -1557,3 +1559,97 @@ function createSearchHealth(overrides: Partial<SearchServiceSnapshot["health"]> 
     ...overrides,
   };
 }
+
+function makeTestBox(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "box-1",
+    name: "Ideas",
+    rules: [],
+    manualPaths: [],
+    excludedPaths: [],
+    pinnedPaths: [],
+    sort: { field: "mtime", direction: "desc" },
+    ...overrides,
+  };
+}
+
+describe("FolderCardView card box mode", () => {
+  function readSettings(plugin: TestHarness["plugin"]): Record<string, any> {
+    return (plugin.getSettings as unknown as () => Record<string, any>)();
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+      testState.ResizeObserverStub as never;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  it("pin toggle writes to the active box, not global settings", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox()];
+    settings.activeBoxId = "box-1";
+
+    await (view as any).onPinToggle({ path: "notes/a.md", pinned: true });
+
+    expect(settings.boxes[0].pinnedPaths).toEqual(["notes/a.md"]);
+    expect(settings.pinnedPaths).toEqual([]);
+  });
+
+  it("sort change writes to the active box", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox()];
+    settings.activeBoxId = "box-1";
+
+    await (view as any).onSortChange({ field: "name", direction: "asc" });
+
+    expect(settings.boxes[0].sort).toEqual({ field: "name", direction: "asc" });
+    expect(settings.sort).toEqual({ field: "mtime", direction: "desc" });
+  });
+
+  it("projects box members with the box's own pins first", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox({ pinnedPaths: ["notes/b.md"] })];
+    settings.activeBoxId = "box-1";
+    (view as any).baseCards = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
+
+    const visible = (view as any).deriveVisibleCards() as NoteCardRecord[];
+
+    expect(visible.map((card) => card.path)).toEqual(["notes/b.md", "notes/a.md"]);
+  });
+
+  it("exposes active box metadata in panel state", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox()];
+    settings.activeBoxId = "box-1";
+
+    await view.onOpen();
+    await tick();
+
+    const state = getPanelState(view);
+    expect(state.activeBoxId).toBe("box-1");
+    expect(state.activeBoxName).toBe("Ideas");
+    expect(state.boxSummaries).toEqual([{ id: "box-1", name: "Ideas" }]);
+  });
+
+  it("switches and exits boxes via box commands", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox(), makeTestBox({ id: "box-2", name: "Plans" })];
+    settings.activeBoxId = null;
+
+    (view as any).handleBoxCommand({ command: "switch", boxId: "box-2" });
+    expect(settings.activeBoxId).toBe("box-2");
+
+    (view as any).handleBoxCommand({ command: "exit" });
+    expect(settings.activeBoxId).toBeNull();
+  });
+});

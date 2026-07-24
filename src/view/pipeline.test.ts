@@ -25,6 +25,8 @@ function createMockContext(): PipelineContext {
       previewLines: 5,
       lastFolderPath: "",
       pinnedPaths: [],
+      boxes: [],
+      activeBoxId: null,
     },
     search: {
       query: "",

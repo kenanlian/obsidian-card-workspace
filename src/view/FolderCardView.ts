@@ -33,7 +33,22 @@ import {
   removeTagFromFile,
   trashAbstractFileUsingObsidianPreference,
 } from "./note-ops";
-import { runPipeline, DEFAULT_PIPELINE_STEPS } from "./pipeline";
+import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
+import { isBoxMember } from "./card-box-membership";
+import {
+  addManualPaths,
+  addRuleToBox,
+  createCardBox,
+  deleteCardBox,
+  duplicateCardBox,
+  findCardBox,
+  removeMemberFromBox,
+  renameCardBox,
+  translateBrowseScopeToRule,
+  upsertCardBox,
+} from "./card-boxes";
+import { BoxConfigModal } from "./BoxConfigModal";
+import { BoxNameModal } from "./BoxNameModal";
 import {
   clearSelection,
   migrateRenamedPath,
@@ -45,7 +60,7 @@ import {
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
-import type { CardHoverLinkPayload, FolderActionPayload } from "./types";
+import type { CardBoxDefinition, CardHoverLinkPayload, FolderActionPayload, Rule } from "./types";
 import {
   getCardPlaceholderText,
   isMarkdownCardKind,
@@ -53,7 +68,7 @@ import {
   resolveCardFileKindFromPath,
   isSupportedCardFile,
 } from "./file-kind";
-import { createPanelModel, type PanelModel, type PanelModelState } from "./panel-model";
+import { createPanelModel, type BoxSummary, type PanelModel, type PanelModelState } from "./panel-model";
 import type {
   BulkRuntimePanelState,
   CleanupResult,
@@ -887,6 +902,402 @@ export class FolderCardView extends ItemView {
     void this.plugin.openNoteFromCard(path, destination);
   }
 
+  // ---------------------------------------------------------------------------
+  // Card box mode
+  // ---------------------------------------------------------------------------
+
+  private getActiveBox(): CardBoxDefinition | null {
+    const settings = this.plugin.getSettings();
+    return findCardBox(settings.boxes ?? [], settings.activeBoxId ?? null);
+  }
+
+  private isBoxMode(): boolean {
+    return (this.plugin.getSettings().activeBoxId ?? null) !== null;
+  }
+
+  private boxSignature(box: CardBoxDefinition): string {
+    return JSON.stringify({
+      rules: box.rules,
+      manual: box.manualPaths,
+      excluded: box.excludedPaths,
+    });
+  }
+
+  /**
+   * Resolve the candidate member files for a box: the union of each rule's
+   * folder scope plus manual paths, filtered down to actual box members.
+   * Membership is metadata-based and never gated by search index readiness.
+   */
+  private collectBoxFiles(box: CardBoxDefinition): TFile[] {
+    const candidatePaths = new Set<string>();
+
+    for (const rule of box.rules) {
+      for (const file of this.collectSupportedFiles(rule.folder, rule.includeSubfolders)) {
+        candidatePaths.add(file.path);
+      }
+    }
+    for (const path of box.manualPaths) {
+      candidatePaths.add(path);
+    }
+
+    const files: TFile[] = [];
+    for (const path of candidatePaths) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (
+        file instanceof TFile &&
+        isSupportedCardFile(file) &&
+        isBoxMember(this.app, path, box)
+      ) {
+        files.push(file);
+      }
+    }
+
+    return files;
+  }
+
+  private async persistBoxes(
+    boxes: CardBoxDefinition[],
+    activeBoxId?: string | null,
+  ): Promise<void> {
+    if (activeBoxId === undefined) {
+      await this.plugin.saveSettings({ boxes });
+      return;
+    }
+    await this.plugin.saveSettings({ boxes, activeBoxId });
+  }
+
+  private async updateActiveBox(
+    mutate: (box: CardBoxDefinition) => CardBoxDefinition,
+  ): Promise<void> {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    if (box === null) {
+      return;
+    }
+    const nextBox = mutate(box);
+    if (nextBox === box) {
+      return;
+    }
+    await this.persistBoxes(upsertCardBox(settings.boxes, nextBox));
+  }
+
+  private buildBoxPanelFields(): {
+    activeBoxId: string | null;
+    activeBoxName: string | null;
+    boxSummaries: BoxSummary[];
+    boxExcludedCount: number;
+  } {
+    const settings = this.plugin.getSettings();
+    const box = this.getActiveBox();
+    return {
+      activeBoxId: settings.activeBoxId ?? null,
+      activeBoxName: box ? box.name : null,
+      boxSummaries: (settings.boxes ?? []).map((entry) => ({ id: entry.id, name: entry.name })),
+      boxExcludedCount: box ? box.excludedPaths.length : 0,
+    };
+  }
+
+  private applyBoxProjectionToState(state: PanelModelState): void {
+    const projection = this.effectiveSortAndPins();
+    state.sortField = projection.sortField;
+    state.sortDirection = projection.sortDirection;
+    state.pinnedPaths = projection.pinnedPaths;
+
+    const boxFields = this.buildBoxPanelFields();
+    state.activeBoxId = boxFields.activeBoxId;
+    state.activeBoxName = boxFields.activeBoxName;
+    state.boxSummaries = boxFields.boxSummaries;
+    state.boxExcludedCount = boxFields.boxExcludedCount;
+  }
+
+  private effectiveSortAndPins(): {
+    sortField: SortField;
+    sortDirection: SortDirection;
+    pinnedPaths: string[];
+  } {
+    const settings = this.plugin.getSettings();
+    const box = this.getActiveBox();
+    if (box) {
+      return {
+        sortField: box.sort.field,
+        sortDirection: box.sort.direction,
+        pinnedPaths: box.pinnedPaths,
+      };
+    }
+    return {
+      sortField: settings.sort.field,
+      sortDirection: settings.sort.direction,
+      pinnedPaths: settings.pinnedPaths,
+    };
+  }
+
+  private getBrowseScope(): { folder: string; includeSubfolders: boolean; tags: string[] } {
+    const settings = this.plugin.getSettings();
+    return {
+      folder: this.normalizeActiveFolderScopePath(),
+      includeSubfolders: settings.includeSubfolders,
+      tags: [...settings.filter.tags],
+    };
+  }
+
+  private describeRule(rule: Rule): string {
+    const strings = this.strings.box;
+    let label = rule.folder === "" ? strings.ruleRootLabel : rule.folder;
+    if (rule.includeSubfolders) {
+      label += ` (${strings.ruleSubfolderSuffix})`;
+    }
+    if (rule.tags.length > 0) {
+      label += strings.ruleTagsSeparator + rule.tags.map((tag) => `#${tag}`).join(", ");
+    }
+    return label;
+  }
+
+  handleBoxCommand(detail: { command?: unknown; boxId?: unknown }): void {
+    const command = typeof detail.command === "string" ? detail.command : "";
+    const boxId = typeof detail.boxId === "string" ? detail.boxId : null;
+
+    switch (command) {
+      case "switch":
+        if (boxId) {
+          void this.plugin.saveSettings({ activeBoxId: boxId });
+        }
+        return;
+      case "exit":
+        void this.plugin.saveSettings({ activeBoxId: null });
+        return;
+      case "create":
+        this.openCreateBoxModal();
+        return;
+      case "rename":
+        this.openRenameBoxModal(boxId ?? this.plugin.getSettings().activeBoxId);
+        return;
+      case "duplicate":
+        this.duplicateBoxById(boxId ?? this.plugin.getSettings().activeBoxId);
+        return;
+      case "delete":
+        this.openDeleteBoxConfirm(boxId ?? this.plugin.getSettings().activeBoxId);
+        return;
+      case "save-scope-as-box":
+        this.openSaveScopeAsBoxModal();
+        return;
+      case "add-scope-to-box":
+        this.addScopeToBox(boxId);
+        return;
+      case "configure":
+        this.openBoxConfig(boxId ?? this.plugin.getSettings().activeBoxId);
+        return;
+      default:
+        return;
+    }
+  }
+
+  private openCreateBoxModal(): void {
+    const strings = this.strings.box;
+    new BoxNameModal(this.app, {
+      strings: this.strings,
+      title: strings.nameModalCreateTitle,
+      initialName: "",
+      submitLabel: strings.create,
+      onSubmit: async (name) => {
+        const settings = this.plugin.getSettings();
+        const box = createCardBox(name, settings.boxes);
+        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+      },
+    }).open();
+  }
+
+  private openRenameBoxModal(boxId: string | null): void {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null) {
+      return;
+    }
+    const strings = this.strings.box;
+    new BoxNameModal(this.app, {
+      strings: this.strings,
+      title: strings.nameModalRenameTitle,
+      initialName: box.name,
+      submitLabel: strings.save,
+      onSubmit: async (name) => {
+        const current = this.plugin.getSettings();
+        await this.persistBoxes(renameCardBox(current.boxes, box.id, name));
+      },
+    }).open();
+  }
+
+  private duplicateBoxById(boxId: string | null): void {
+    if (boxId === null) {
+      return;
+    }
+    const settings = this.plugin.getSettings();
+    void this.persistBoxes(duplicateCardBox(settings.boxes, boxId));
+  }
+
+  private openDeleteBoxConfirm(boxId: string | null): void {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null) {
+      return;
+    }
+    const strings = this.strings.box;
+    const modal = new Modal(this.app);
+    modal.setTitle(strings.deleteConfirmTitle);
+    modal.contentEl.createEl("p", { text: strings.deleteConfirmBody(box.name) });
+    new Setting(modal.contentEl)
+      .addButton((button) => {
+        button.setButtonText(strings.cancel).onClick(() => {
+          modal.close();
+        });
+      })
+      .addButton((button) => {
+        button
+          .setWarning()
+          .setButtonText(strings.deleteConfirm)
+          .onClick(() => {
+            const current = this.plugin.getSettings();
+            const nextBoxes = deleteCardBox(current.boxes, box.id);
+            const nextActive = current.activeBoxId === box.id ? null : current.activeBoxId;
+            void this.persistBoxes(nextBoxes, nextActive);
+            modal.close();
+          });
+      });
+    modal.open();
+  }
+
+  private openSaveScopeAsBoxModal(): void {
+    const strings = this.strings.box;
+    const rule = translateBrowseScopeToRule(this.getBrowseScope());
+    const hitCount = this.baseCards.length;
+    new BoxNameModal(this.app, {
+      strings: this.strings,
+      title: strings.saveScopeTitle,
+      initialName: this.deriveDefaultBoxNameFromScope(),
+      submitLabel: strings.create,
+      previewText: strings.hitCountPreview(hitCount),
+      onSubmit: async (name) => {
+        const settings = this.plugin.getSettings();
+        const box = createCardBox(name, settings.boxes, { rules: [rule] });
+        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+      },
+    }).open();
+  }
+
+  private deriveDefaultBoxNameFromScope(): string {
+    const scope = this.getBrowseScope();
+    if (scope.folder !== "") {
+      const segments = scope.folder.split("/");
+      return segments[segments.length - 1] ?? scope.folder;
+    }
+    if (scope.tags.length > 0) {
+      return `#${scope.tags[0]}`;
+    }
+    return "";
+  }
+
+  private addScopeToBox(boxId: string | null): void {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null) {
+      return;
+    }
+    const rule = translateBrowseScopeToRule(this.getBrowseScope());
+    void this.persistBoxes(upsertCardBox(settings.boxes, addRuleToBox(box, rule)));
+  }
+
+  private openBoxConfig(boxId: string | null): void {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null) {
+      return;
+    }
+    new BoxConfigModal(this.app, {
+      box,
+      strings: this.strings,
+      currentScopeRule: translateBrowseScopeToRule(this.getBrowseScope()),
+      describeRule: (rule) => this.describeRule(rule),
+      onConfirm: async (nextBox) => {
+        const current = this.plugin.getSettings();
+        await this.persistBoxes(upsertCardBox(current.boxes, nextBox));
+      },
+    }).open();
+  }
+
+  /** Add one or more cards to a box (via context menu / bulk). */
+  private async addPathsToBox(boxId: string, paths: string[]): Promise<void> {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null || paths.length === 0) {
+      return;
+    }
+    const nextBox = addManualPaths(box, paths);
+    await this.persistBoxes(upsertCardBox(settings.boxes, nextBox));
+    new Notice(this.strings.box.addedToBox(paths.length, box.name));
+  }
+
+  private openCreateBoxModalWithPaths(paths: string[]): void {
+    const strings = this.strings.box;
+    new BoxNameModal(this.app, {
+      strings: this.strings,
+      title: strings.nameModalCreateTitle,
+      initialName: "",
+      submitLabel: strings.create,
+      onSubmit: async (name) => {
+        const settings = this.plugin.getSettings();
+        const box = createCardBox(name, settings.boxes, { manualPaths: paths });
+        await this.persistBoxes(upsertCardBox(settings.boxes, box));
+        new Notice(strings.addedToBox(paths.length, box.name));
+      },
+    }).open();
+  }
+
+  /** Remove a single card entirely from the active box (manual delete or exclude). */
+  private async removeMemberFromActiveBox(path: string): Promise<void> {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    if (box === null) {
+      return;
+    }
+    const nextBox = removeMemberFromBox(this.app, box, path);
+    await this.persistBoxes(upsertCardBox(settings.boxes, nextBox));
+    new Notice(this.strings.box.removedFromBox(box.name));
+  }
+
+  private appendAddToBoxMenu(menu: Menu, paths: string[]): void {
+    if (paths.length === 0) {
+      return;
+    }
+    const strings = this.strings.box;
+    const settings = this.plugin.getSettings();
+    menu.addItem((item) => {
+      item.setTitle(strings.addToBox).setIcon("gallery-horizontal");
+      const boxes = settings.boxes ?? [];
+      const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
+      if (submenu && typeof submenu.addItem === "function") {
+        for (const summary of boxes) {
+          submenu.addItem((sub) => {
+            sub.setTitle(summary.name).onClick(() => {
+              void this.addPathsToBox(summary.id, paths);
+            });
+          });
+        }
+        if (boxes.length > 0) {
+          submenu.addSeparator();
+        }
+        submenu.addItem((sub) => {
+          sub.setTitle(strings.addToNewBox).setIcon("plus").onClick(() => {
+            this.openCreateBoxModalWithPaths(paths);
+          });
+        });
+        return;
+      }
+
+      // Fallback when submenus are unavailable: create a new box directly.
+      item.onClick(() => {
+        this.openCreateBoxModalWithPaths(paths);
+      });
+    });
+  }
+
   async onOpen(): Promise<void> {
     const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
     this.initializeSearchSnapshotState();
@@ -926,7 +1337,7 @@ export class FolderCardView extends ItemView {
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.tooltipSide = this.getTooltipSide();
-      state.tooltipSide = this.getTooltipSide();
+      this.applyBoxProjectionToState(state);
     });
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
@@ -998,6 +1409,9 @@ export class FolderCardView extends ItemView {
         onFolderAction: (detail: FolderActionPayload) => {
           this.handleFolderActionRequest(detail);
         },
+        onBoxCommand: (detail: { command?: unknown; boxId?: unknown }) => {
+          this.handleBoxCommand(detail);
+        },
       },
     });
 
@@ -1067,7 +1481,49 @@ export class FolderCardView extends ItemView {
 
     if (action === "bulk-merge-selected") {
       this.bulkMergeSelected();
+      return;
     }
+
+    if (action === "bulk-add-to-box") {
+      this.bulkAddToBox();
+    }
+  }
+
+  private bulkAddToBox(): void {
+    const selectedPaths = this.getOrderedVisiblePaths().filter((path) =>
+      this.selectedPaths.has(path),
+    );
+    if (selectedPaths.length === 0) {
+      return;
+    }
+
+    const settings = this.plugin.getSettings();
+    if (settings.boxes.length === 0) {
+      this.openCreateBoxModalWithPaths(selectedPaths);
+      return;
+    }
+
+    const strings = this.strings.box;
+    const modal = new Modal(this.app);
+    modal.setTitle(strings.bulkAddToBoxTitle);
+    for (const box of settings.boxes) {
+      new Setting(modal.contentEl).setName(box.name).addButton((button) => {
+        button.setButtonText(strings.addToBox).onClick(() => {
+          void this.addPathsToBox(box.id, selectedPaths);
+          modal.close();
+        });
+      });
+    }
+    new Setting(modal.contentEl).addButton((button) => {
+      button
+        .setCta()
+        .setButtonText(strings.addToNewBox)
+        .onClick(() => {
+          modal.close();
+          this.openCreateBoxModalWithPaths(selectedPaths);
+        });
+    });
+    modal.open();
   }
 
   private handleFolderActionRequest(detail: FolderActionPayload): void {
@@ -1096,6 +1552,14 @@ export class FolderCardView extends ItemView {
   }
 
   async handleFolderSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
+    // External folder navigation exits an active box back into browse mode.
+    if (
+      this.isBoxMode() &&
+      (request.source === "explorer-click" || request.source === "panel-picker")
+    ) {
+      await this.plugin.saveSettings({ activeBoxId: null });
+    }
+
     const normalizedFolderPath = normalizeFolderScopePath(request.folderPath);
     const normalizedRequest =
       normalizedFolderPath === request.folderPath
@@ -1489,6 +1953,19 @@ export class FolderCardView extends ItemView {
           void this.routeCardMenuAction("move", notePath);
         });
     });
+
+    menu.addSeparator();
+    this.appendAddToBoxMenu(menu, [notePath]);
+    if (this.isBoxMode()) {
+      menu.addItem((item) => {
+        item
+          .setTitle(this.strings.box.removeFromBox)
+          .setIcon("gallery-thumbnails")
+          .onClick(() => {
+            void this.removeMemberFromActiveBox(notePath);
+          });
+      });
+    }
 
     if (liveMarkdownFile) {
       menu.addItem((item) => {
@@ -2106,6 +2583,15 @@ export class FolderCardView extends ItemView {
   }
   private buildLoadScope(folderPath: string): FolderLoadKey {
     const settings = this.plugin.getSettings();
+    const box = this.getActiveBox();
+    if (box) {
+      return {
+        folderPath: `__box__:${box.id}`,
+        includeSubfolders: true,
+        sortField: box.sort.field,
+        sortDirection: box.sort.direction,
+      };
+    }
     return {
       folderPath: normalizeFolderScopePath(folderPath),
       includeSubfolders: settings.includeSubfolders,
@@ -2115,6 +2601,10 @@ export class FolderCardView extends ItemView {
   }
 
   private serializeLoadKey(loadKey: FolderLoadKey): string {
+    const box = this.getActiveBox();
+    if (box && loadKey.folderPath === `__box__:${box.id}`) {
+      return `box::${box.id}::${loadKey.sortField}::${loadKey.sortDirection}::${this.boxSignature(box)}`;
+    }
     return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
   }
 
@@ -2159,7 +2649,10 @@ export class FolderCardView extends ItemView {
     const buildGeneration = this.generation;
 
     try {
-      const files = this.collectSupportedFiles(folderPath, loadScope.includeSubfolders);
+      const activeBox = this.getActiveBox();
+      const files = activeBox
+        ? this.collectBoxFiles(activeBox)
+        : this.collectSupportedFiles(folderPath, loadScope.includeSubfolders);
       const records: NoteCardRecord[] = [];
       for (const file of files) {
         const fileKind = resolveCardFileKind(file);
@@ -2789,6 +3282,25 @@ export class FolderCardView extends ItemView {
     const nextField: SortField =
       detail.field === "ctime" || detail.field === "name" ? detail.field : "mtime";
     const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
+    const activeBox = this.getActiveBox();
+
+    if (activeBox) {
+      if (
+        activeBox.sort.field === nextField &&
+        activeBox.sort.direction === nextDirection
+      ) {
+        return;
+      }
+      await this.updateActiveBox((box) => ({
+        ...box,
+        sort: { field: nextField, direction: nextDirection },
+      }));
+      this.baseCards.sort((left, right) => this.compareCards(left, right, nextField, nextDirection));
+      this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(this.folderPath));
+      this.pushState();
+      return;
+    }
+
     const currentSettings = this.plugin.getSettings();
 
     if (
@@ -2863,14 +3375,15 @@ export class FolderCardView extends ItemView {
 
   private deriveVisibleCardsFrom(cards: NoteCardRecord[]): NoteCardRecord[] {
     const settings = this.plugin.getSettings();
+    const box = this.getActiveBox();
     const context: PipelineContext = {
       app: this.app,
       settings,
       search: this.buildPipelineSearchInput(),
-      pinnedPaths: settings.pinnedPaths,
+      pinnedPaths: box ? box.pinnedPaths : settings.pinnedPaths,
     };
 
-    return runPipeline(cards, DEFAULT_PIPELINE_STEPS, context);
+    return runPipeline(cards, box ? BOX_PIPELINE_STEPS : DEFAULT_PIPELINE_STEPS, context);
   }
 
   private buildPipelineSearchInput(): PipelineSearchInput {
@@ -3756,6 +4269,7 @@ export class FolderCardView extends ItemView {
   private buildPanelModelState(): PanelModelState {
     const settings = this.plugin.getSettings();
     const bulkRuntimeState = this.buildBulkRuntimePanelState();
+    const projection = this.effectiveSortAndPins();
 
     return {
       strings: this.strings,
@@ -3772,16 +4286,17 @@ export class FolderCardView extends ItemView {
       searchIndexReadiness: this.searchSnapshot?.health?.readiness,
       searchIndexPersistence: this.searchSnapshot?.health?.persistence,
       searchIndexRebuildReason: this.searchSnapshot?.health?.rebuildReason ?? null,
-      sortField: settings.sort.field,
-      sortDirection: settings.sort.direction,
+      sortField: projection.sortField,
+      sortDirection: projection.sortDirection,
       availableTags: this.deriveAvailableTags(),
       activeFilterTags: settings.filter.tags,
-      pinnedPaths: settings.pinnedPaths,
+      pinnedPaths: projection.pinnedPaths,
       cardCornerRadius: settings.cardCornerRadius,
       previewLines: settings.previewLines,
       folderTree: [],
       includeSubfolders: settings.includeSubfolders,
       tooltipSide: this.getTooltipSide(),
+      ...this.buildBoxPanelFields(),
     };
   }
 
@@ -3822,6 +4337,7 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
+      this.applyBoxProjectionToState(state);
     });
   }
 
@@ -3864,10 +4380,14 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
+      this.applyBoxProjectionToState(state);
     });
   }
 
   private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
+    if (this.isBoxMode()) {
+      return;
+    }
     const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
     const normalizedTag = rawTags
       .filter((tag): tag is string => typeof tag === "string")
@@ -3891,6 +4411,9 @@ export class FolderCardView extends ItemView {
   }
 
   private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
+    if (this.isBoxMode()) {
+      return;
+    }
     if (typeof detail.value !== "boolean") {
       return;
     }
@@ -3910,7 +4433,8 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const currentPinnedPaths = this.plugin.getSettings().pinnedPaths;
+    const activeBox = this.getActiveBox();
+    const currentPinnedPaths = activeBox ? activeBox.pinnedPaths : this.plugin.getSettings().pinnedPaths;
     const currentlyPinned = currentPinnedPaths.includes(path);
     const shouldPin = typeof detail.pinned === "boolean" ? detail.pinned : !currentlyPinned;
 
@@ -3921,6 +4445,11 @@ export class FolderCardView extends ItemView {
     const nextPinnedPaths = shouldPin
       ? [...currentPinnedPaths, path]
       : currentPinnedPaths.filter((pinnedPath) => pinnedPath !== path);
+
+    if (activeBox) {
+      await this.updateActiveBox((box) => ({ ...box, pinnedPaths: nextPinnedPaths }));
+      return;
+    }
 
     await this.plugin.saveSettings({
       pinnedPaths: nextPinnedPaths,

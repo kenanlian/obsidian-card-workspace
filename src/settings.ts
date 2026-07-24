@@ -1,3 +1,5 @@
+import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./view/types";
+
 export type SortField = "mtime" | "ctime" | "name";
 
 export type SortDirection = "desc" | "asc";
@@ -102,6 +104,8 @@ export interface PluginSettings {
   cardCornerRadius: CardCornerRadius;
   previewLines: number;
   lastFolderPath: string;
+  boxes: CardBoxDefinition[];
+  activeBoxId: string | null;
 }
 
 export interface PartialPluginSettings {
@@ -121,6 +125,8 @@ export interface PartialPluginSettings {
   cardCornerRadius?: CardCornerRadius;
   previewLines?: number;
   lastFolderPath?: string;
+  boxes?: CardBoxDefinition[];
+  activeBoxId?: string | null;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -140,6 +146,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
+  boxes: [],
+  activeBoxId: null,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -227,10 +235,123 @@ function normalizePreviewLines(value: unknown): number {
   return rounded;
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length === 0 || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function normalizeBoxSort(value: unknown): CardBoxSortSpec {
+  const sort = isRecord(value) ? value : {};
+  return {
+    field: normalizeSortField(sort.field),
+    direction: normalizeSortDirection(sort.direction),
+  };
+}
+
+function normalizeRule(value: unknown): Rule | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const folder = typeof value.folder === "string" ? (value.folder === "/" ? "" : value.folder) : "";
+  const includeSubfolders =
+    typeof value.includeSubfolders === "boolean" ? value.includeSubfolders : true;
+  const tags = normalizeTags(value.tags);
+
+  return { folder, includeSubfolders, tags };
+}
+
+function normalizeRules(value: unknown): Rule[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result: Rule[] = [];
+  for (const entry of value) {
+    const rule = normalizeRule(entry);
+    if (rule !== null) {
+      result.push(rule);
+    }
+  }
+  return result;
+}
+
+function normalizeBox(value: unknown): CardBoxDefinition | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  if (id.length === 0) {
+    return null;
+  }
+
+  const name = typeof value.name === "string" && value.name.trim().length > 0 ? value.name : id;
+  const manualPaths = normalizeStringArray(value.manualPaths);
+  const manualSet = new Set(manualPaths);
+  // Invariant: manualPaths ∩ excludedPaths = ∅ (manual add wins over exclude).
+  const excludedPaths = normalizeStringArray(value.excludedPaths).filter(
+    (path) => !manualSet.has(path),
+  );
+
+  return {
+    id,
+    name,
+    rules: normalizeRules(value.rules),
+    manualPaths,
+    excludedPaths,
+    pinnedPaths: normalizeStringArray(value.pinnedPaths),
+    sort: normalizeBoxSort(value.sort),
+  };
+}
+
+function normalizeBoxes(value: unknown): CardBoxDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result: CardBoxDefinition[] = [];
+  const seenIds = new Set<string>();
+  for (const entry of value) {
+    const box = normalizeBox(entry);
+    if (box === null || seenIds.has(box.id)) {
+      continue;
+    }
+    seenIds.add(box.id);
+    result.push(box);
+  }
+  return result;
+}
+
+function normalizeActiveBoxId(value: unknown, boxes: CardBoxDefinition[]): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  return boxes.some((box) => box.id === value) ? value : null;
+}
+
 export function normalizeSettings(raw: unknown): PluginSettings {
   const data = isRecord(raw) ? raw : {};
   const sort = isRecord(data.sort) ? data.sort : {};
   const filter = isRecord(data.filter) ? data.filter : {};
+  const boxes = normalizeBoxes(data.boxes);
 
   return {
     sort: {
@@ -255,6 +376,8 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
+    boxes,
+    activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
   };
 }
 

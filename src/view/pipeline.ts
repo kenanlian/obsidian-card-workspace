@@ -111,3 +111,15 @@ export const DEFAULT_PIPELINE_STEPS: PipelineStep[] = [
   applySearchFilter,
   applyPinReorder,
 ];
+
+/**
+ * Card-box projection step set.
+ *
+ * The member set (rule hits ∪ manual − excluded) is resolved during box load,
+ * so the box pipeline skips the browse tag filter and only runs
+ * `search -> pin`. `context.pinnedPaths` carries the box's own pinned paths.
+ */
+export const BOX_PIPELINE_STEPS: PipelineStep[] = [
+  applySearchFilter,
+  applyPinReorder,
+];
