@@ -1207,7 +1207,7 @@ describe("FolderCardView card context actions", () => {
        expect(typeof mockState.panelEventHandlers["card-context-menu"]).toBe("function");
      });
 
-     it("onOpen() registers filter-change subscription that persists only the first selected tag", async () => {
+     it("onOpen() registers filter-change subscription that persists all selected tags", async () => {
        const { view, plugin } = createViewWithFile("notes/test-filter.md");
 
        await (view as any).onOpen();
@@ -1220,22 +1220,22 @@ describe("FolderCardView card context actions", () => {
         expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         expect(plugin.saveSettings).toHaveBeenCalledWith({
           filter: {
-            tags: ["important"],
+            tags: ["important", "archived"],
           },
         });
       });
 
-      it("filter-change handler sanitizes, normalizes, and single-selects tag input", async () => {
+      it("filter-change handler sanitizes, normalizes, and dedupes multi-tag input", async () => {
        const { view, plugin } = createViewWithFile("notes/tag-normalize.md");
 
        await (view as any).onOpen();
 
        const filterChangeHandler = mockState.panelEventHandlers["filter-change"];
-       filterChangeHandler({ detail: { tags: ["#Important", " WORK ", "", "   "] } });
+       filterChangeHandler({ detail: { tags: ["#Important", " WORK ", "", "   ", "important"] } });
 
         expect(plugin.saveSettings).toHaveBeenCalledWith({
           filter: {
-            tags: ["important"],
+            tags: ["important", "work"],
           },
         });
       });

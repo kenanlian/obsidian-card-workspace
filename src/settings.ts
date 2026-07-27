@@ -17,6 +17,9 @@ export type CardCornerRadius = "compact" | "medium" | "rounded";
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 8;
 export const DEFAULT_PREVIEW_LINES = 5;
+export const NAV_PANE_WIDTH_MIN = 160;
+export const NAV_PANE_WIDTH_MAX = 480;
+export const DEFAULT_NAV_PANE_WIDTH = 240;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
 export const DEFAULT_DRAG_INSERT_ACTION: DragInsertAction = "ask";
 export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";
@@ -106,6 +109,11 @@ export interface PluginSettings {
   lastFolderPath: string;
   boxes: CardBoxDefinition[];
   activeBoxId: string | null;
+  navPaneWidth: number;
+  navPaneCollapsed: boolean;
+  folderSectionCollapsed: boolean;
+  tagSectionCollapsed: boolean;
+  boxSectionCollapsed: boolean;
 }
 
 export interface PartialPluginSettings {
@@ -127,6 +135,11 @@ export interface PartialPluginSettings {
   lastFolderPath?: string;
   boxes?: CardBoxDefinition[];
   activeBoxId?: string | null;
+  navPaneWidth?: number;
+  navPaneCollapsed?: boolean;
+  folderSectionCollapsed?: boolean;
+  tagSectionCollapsed?: boolean;
+  boxSectionCollapsed?: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -148,6 +161,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   lastFolderPath: "",
   boxes: [],
   activeBoxId: null,
+  navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
+  navPaneCollapsed: false,
+  folderSectionCollapsed: false,
+  tagSectionCollapsed: false,
+  boxSectionCollapsed: false,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -218,6 +236,25 @@ function normalizeLastFolderPath(value: unknown, rawLastViewMode: unknown): stri
   }
 
   return rawLastViewMode === "all-notes" ? "" : DEFAULT_SETTINGS.lastFolderPath;
+}
+
+function normalizeNavPaneWidth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_NAV_PANE_WIDTH;
+  }
+
+  const rounded = Math.round(value);
+  if (rounded < NAV_PANE_WIDTH_MIN) {
+    return NAV_PANE_WIDTH_MIN;
+  }
+  if (rounded > NAV_PANE_WIDTH_MAX) {
+    return NAV_PANE_WIDTH_MAX;
+  }
+  return rounded;
+}
+
+function normalizeBooleanSetting(value: unknown, defaultValue: boolean): boolean {
+  return typeof value === "boolean" ? value : defaultValue;
 }
 
 function normalizePreviewLines(value: unknown): number {
@@ -378,6 +415,23 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
     boxes,
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
+    navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),
+    navPaneCollapsed: normalizeBooleanSetting(
+      data.navPaneCollapsed,
+      DEFAULT_SETTINGS.navPaneCollapsed,
+    ),
+    folderSectionCollapsed: normalizeBooleanSetting(
+      data.folderSectionCollapsed,
+      DEFAULT_SETTINGS.folderSectionCollapsed,
+    ),
+    tagSectionCollapsed: normalizeBooleanSetting(
+      data.tagSectionCollapsed,
+      DEFAULT_SETTINGS.tagSectionCollapsed,
+    ),
+    boxSectionCollapsed: normalizeBooleanSetting(
+      data.boxSectionCollapsed,
+      DEFAULT_SETTINGS.boxSectionCollapsed,
+    ),
   };
 }
 

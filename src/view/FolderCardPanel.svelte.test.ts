@@ -68,6 +68,11 @@ function createInitialPanelState(): PanelModelState {
     activeBoxName: null,
     boxSummaries: [],
     boxExcludedCount: 0,
+    navPaneWidth: 240,
+    navPaneCollapsed: false,
+    folderSectionCollapsed: false,
+    tagSectionCollapsed: false,
+    boxSectionCollapsed: false,
   };
 }
 
@@ -112,8 +117,9 @@ describe("FolderCardPanel.svelte", () => {
 
     const listEl = target.querySelector<HTMLDivElement>(".fce-list");
     expect(listEl).not.toBeNull();
+    expect(target.querySelector(".fce-nav-pane")).not.toBeNull();
+    expect(target.querySelector(".fce-main-pane")).not.toBeNull();
     expect(target.textContent).toContain("Runtime note");
-    expect(target.textContent).toContain("notes");
 
     expect(hydrateEvents.length).toBeGreaterThan(0);
     const event = hydrateEvents[hydrateEvents.length - 1];
@@ -122,6 +128,38 @@ describe("FolderCardPanel.svelte", () => {
 
     await unmount(component);
   });
+
+  it("keeps the list scrollable inside the main pane and survives scroll events", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = Array.from({ length: 40 }, (_unused, index) =>
+        createCard(`notes/card-${index}.md`, `Card ${index}`),
+      );
+      state.generation = 1;
+    });
+    await tick();
+
+    const listEl = target.querySelector<HTMLDivElement>(".fce-main-pane .fce-list");
+    expect(listEl).not.toBeNull();
+
+    listEl?.dispatchEvent(new Event("scroll", { bubbles: true }));
+    listEl?.dispatchEvent(new Event("wheel", { bubbles: true }));
+    await tick();
+
+    expect(target.querySelector(".fce-nav-pane")).not.toBeNull();
+    expect(target.querySelector(".fce-main-pane .fce-list")).not.toBeNull();
+
+    await unmount(component);
+  });
+
   it("applies card corner radius classes from panel state", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

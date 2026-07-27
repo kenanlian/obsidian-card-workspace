@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getUiStrings } from "../i18n";
   import Toolbar from "./Toolbar.svelte";
+  import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
   import type { OpenNotePayload, PanelModel, PanelModelState } from "./panel-model";
   import {
@@ -72,6 +73,8 @@
     end: number;
   }
 
+  type NavSection = "folders" | "tags" | "boxes";
+
   interface FolderCardPanelProps {
     panelModel: PanelModel;
     onOpenNote?: (payload: OpenNotePayload) => void;
@@ -89,6 +92,9 @@
     onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
+    onNavPaneResize?: (width: number) => void;
+    onToggleNavPane?: () => void;
+    onToggleNavSection?: (section: NavSection) => void;
   }
 
   const EMPTY_PANEL_STATE: PanelModelState = {
@@ -127,6 +133,11 @@
     activeBoxName: null,
     boxSummaries: [],
     boxExcludedCount: 0,
+    navPaneWidth: 240,
+    navPaneCollapsed: false,
+    folderSectionCollapsed: false,
+    tagSectionCollapsed: false,
+    boxSectionCollapsed: false,
   };
 
   let {
@@ -146,6 +157,9 @@
     onFolderAction,
     onBoxCommand,
     onHydrateRange,
+    onNavPaneResize,
+    onToggleNavPane,
+    onToggleNavSection,
   }: FolderCardPanelProps = $props();
 
   let panelState = $state<PanelModelState>(EMPTY_PANEL_STATE);
@@ -237,6 +251,11 @@
   const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
   const showSearchMatchCounts = $derived(!isBlockedSearchState(panelState));
+  const navPaneWidth = $derived(panelState.navPaneWidth);
+  const navPaneCollapsed = $derived(panelState.navPaneCollapsed);
+  const folderSectionCollapsed = $derived(panelState.folderSectionCollapsed);
+  const tagSectionCollapsed = $derived(panelState.tagSectionCollapsed);
+  const boxSectionCollapsed = $derived(panelState.boxSectionCollapsed);
 
   function handleCardOpenNote(detail: OpenNotePayload): void {
     onOpenNote?.(detail);
@@ -292,6 +311,18 @@
 
   function handleFolderAction(detail: FolderActionPayload): void {
     onFolderAction?.(detail);
+  }
+
+  function handleNavPaneResize(width: number): void {
+    onNavPaneResize?.(width);
+  }
+
+  function handleToggleNavPane(): void {
+    onToggleNavPane?.();
+  }
+
+  function handleToggleNavSection(section: NavSection): void {
+    onToggleNavSection?.(section);
   }
 
   const ESTIMATED_ROW_HEIGHT = 232;
@@ -575,6 +606,32 @@
 </script>
 
 <div class="fce-shell {bulkMode ? 'is-bulk-mode' : ''}">
+  <NavigationPane
+    strings={panelState.strings.toolbar}
+    boxStrings={panelState.strings.box}
+    {tooltipSide}
+    {folderTree}
+    {folderPath}
+    {includeSubfolders}
+    availableTags={panelState.availableTags}
+    {activeFilterTags}
+    boxSummaries={panelState.boxSummaries}
+    activeBoxId={panelState.activeBoxId}
+    {navPaneWidth}
+    {navPaneCollapsed}
+    {folderSectionCollapsed}
+    {tagSectionCollapsed}
+    {boxSectionCollapsed}
+    onSelectFolder={handleSelectFolder}
+    onFilterChange={handleFilterChange}
+    onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
+    onFolderAction={handleFolderAction}
+    onBoxCommand={handleBoxCommand}
+    onNavPaneResize={handleNavPaneResize}
+    onToggleNavPane={handleToggleNavPane}
+    onToggleNavSection={handleToggleNavSection}
+  />
+  <div class="fce-main-pane {bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
     strings={panelState.strings.toolbar}
     boxStrings={panelState.strings.box}
@@ -585,10 +642,6 @@
     {folderPath}
     {sortField}
     {sortDirection}
-    availableTags={panelState.availableTags}
-    {activeFilterTags}
-    {folderTree}
-    {includeSubfolders}
     {searchQuery}
     {searchStatus}
     searchIndexReadiness={panelState.searchIndexReadiness ?? "ready"}
@@ -607,12 +660,8 @@
     {canBulkMergeSelected}
     onToolbarAction={handleToolbarAction}
     onSortChange={handleSortChange}
-    onFilterChange={handleFilterChange}
-    onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
-    onSelectFolder={handleSelectFolder}
-    onFolderAction={handleFolderAction}
     onBoxCommand={handleBoxCommand}
   />
   <div
@@ -665,5 +714,6 @@
       {/each}
       <div class="fce-virtual-spacer" style={getBottomPaddingStyle()}></div>
     {/if}
+  </div>
   </div>
 </div>

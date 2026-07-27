@@ -80,6 +80,20 @@ export interface ToolbarStrings {
     moveFolder: string;
     deleteFolder: string;
   };
+  navPane: {
+    ariaLabel: string;
+    collapsePane: string;
+    expandPane: string;
+    resizeHandle: string;
+    foldersSection: string;
+    tagsSection: string;
+    boxesSection: string;
+    collapseSection: string;
+    expandSection: string;
+    tagsDisabledInBox: string;
+    boxesEmpty: string;
+    exitBox: string;
+  };
   search: {
     placeholder: string;
     inputLabel: string;
@@ -471,6 +485,20 @@ const EN: UiStrings = {
       moveFolder: "Move folder",
       deleteFolder: "Delete folder",
     },
+    navPane: {
+      ariaLabel: "Navigation",
+      collapsePane: "Collapse navigation",
+      expandPane: "Expand navigation",
+      resizeHandle: "Resize navigation",
+      foldersSection: "Folders",
+      tagsSection: "Tags",
+      boxesSection: "Boxes",
+      collapseSection: "Collapse section",
+      expandSection: "Expand section",
+      tagsDisabledInBox: "Tag filter is unavailable in a box",
+      boxesEmpty: "No boxes yet",
+      exitBox: "Exit box",
+    },
     search: {
       placeholder: "Search notes",
       inputLabel: "Search notes",
@@ -834,6 +862,20 @@ const ZH: UiStrings = {
       createChildFolder: "新建子文件夹",
       moveFolder: "移动文件夹",
       deleteFolder: "删除文件夹",
+    },
+    navPane: {
+      ariaLabel: "导航",
+      collapsePane: "折叠导航栏",
+      expandPane: "展开导航栏",
+      resizeHandle: "调整导航栏宽度",
+      foldersSection: "文件夹",
+      tagsSection: "标签",
+      boxesSection: "卡片盒",
+      collapseSection: "折叠此区",
+      expandSection: "展开此区",
+      tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
+      boxesEmpty: "暂无卡片盒",
+      exitBox: "退出卡片盒",
     },
     search: {
       placeholder: "搜索笔记",

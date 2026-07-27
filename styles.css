@@ -29,9 +29,208 @@
 
 .folder-card-view .fce-shell {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--fce-bg);
   color: var(--fce-text);
+}
+
+.folder-card-view .fce-main-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.folder-card-view .fce-nav-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  border-right: 1px solid var(--fce-border);
+  background: var(--fce-surface);
+  overflow: hidden;
+}
+
+.folder-card-view .fce-nav-pane.is-collapsed {
+  width: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+}
+
+.folder-card-view .fce-nav-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px;
+  flex: 0 0 auto;
+}
+
+.folder-card-view .fce-nav-pane.is-collapsed .fce-nav-pane-toggle {
+  margin-top: 6px;
+}
+
+.folder-card-view .fce-nav-pane-sections {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.folder-card-view .fce-nav-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.folder-card-view .fce-nav-resize-handle:hover,
+.folder-card-view .fce-nav-resize-handle:active {
+  background: var(--fce-hover);
+}
+
+.folder-card-view .fce-tree-section {
+  border-bottom: 1px solid var(--fce-border);
+}
+
+.folder-card-view .fce-tree-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 2px 2px;
+}
+
+.folder-card-view .fce-tree-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 4px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--fce-text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-weight: var(--font-semibold, 600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.folder-card-view .fce-tree-section-toggle:hover {
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-tree-section-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.folder-card-view .fce-tree-section-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-tree-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.folder-card-view .fce-nav-section-action.is-active {
+  color: var(--fce-accent);
+}
+
+.folder-card-view .fce-tree-section-body {
+  padding-bottom: 4px;
+}
+
+.folder-card-view .fce-nav-tree {
+  width: 100%;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+}
+
+.folder-card-view .fce-nav-tree.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.folder-card-view .fce-nav-box-list {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+}
+
+.folder-card-view .fce-nav-box-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 12px 4px 8px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--fce-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-card-view .fce-nav-box-item:hover {
+  background: var(--fce-hover);
+}
+
+.folder-card-view .fce-nav-box-item.is-active {
+  color: var(--text-accent);
+  background: var(--fce-hover);
+}
+
+.folder-card-view .fce-nav-box-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--fce-text-muted);
+}
+
+.folder-card-view .fce-nav-box-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-nav-box-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .folder-card-view .fce-header {

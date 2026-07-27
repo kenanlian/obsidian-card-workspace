@@ -27,6 +27,11 @@ function createMockContext(): PipelineContext {
       pinnedPaths: [],
       boxes: [],
       activeBoxId: null,
+      navPaneWidth: 240,
+      navPaneCollapsed: false,
+      folderSectionCollapsed: false,
+      tagSectionCollapsed: false,
+      boxSectionCollapsed: false,
     },
     search: {
       query: "",

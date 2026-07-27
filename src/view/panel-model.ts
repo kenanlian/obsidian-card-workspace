@@ -57,6 +57,11 @@ export interface PanelModelState {
   activeBoxName: string | null;
   boxSummaries: BoxSummary[];
   boxExcludedCount: number;
+  navPaneWidth: number;
+  navPaneCollapsed: boolean;
+  folderSectionCollapsed: boolean;
+  tagSectionCollapsed: boolean;
+  boxSectionCollapsed: boolean;
 }
 
 export interface PanelModel {

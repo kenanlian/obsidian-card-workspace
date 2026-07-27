@@ -1404,7 +1404,7 @@ export class FolderCardView extends ItemView {
           if (typeof detail.path !== "string") {
             return;
           }
-          void this.plugin.selectFolderByPath(detail.path, "panel-picker");
+          void this.selectFolderFromNav(detail.path);
         },
         onFolderAction: (detail: FolderActionPayload) => {
           this.handleFolderActionRequest(detail);
@@ -1412,8 +1412,19 @@ export class FolderCardView extends ItemView {
         onBoxCommand: (detail: { command?: unknown; boxId?: unknown }) => {
           this.handleBoxCommand(detail);
         },
+        onNavPaneResize: (width: number) => {
+          void this.onNavPaneResize(width);
+        },
+        onToggleNavPane: () => {
+          void this.onToggleNavPane();
+        },
+        onToggleNavSection: (section: unknown) => {
+          void this.onToggleNavSection(section);
+        },
       },
     });
+
+    this.refreshFolderTreeState();
 
     this.hydrateVisibleCardsOnOpen();
   }
@@ -1431,13 +1442,6 @@ export class FolderCardView extends ItemView {
 
   private handleToolbarAction(detail: { action?: unknown }): void {
     const action = detail.action;
-
-    if (action === "pick-folder") {
-      this.panelModel.mutate((state) => {
-        state.folderTree = this.buildFolderTree();
-      });
-      return;
-    }
 
     if (action === "new-note") {
       void this.plugin.createNoteInCurrentFolder();
@@ -1659,6 +1663,9 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    if (event.isFolder) {
+      this.refreshFolderTreeState();
+    }
     const currentFolderPath = this.normalizeActiveFolderScopePath();
     let selectedFolderPathAfterRename: string | null = null;
     if (event.eventType === "rename" && event.isFolder && event.oldPath) {
@@ -2692,6 +2699,7 @@ export class FolderCardView extends ItemView {
       if (buildGeneration === this.generation) {
         this.loading = false;
         this.pushState();
+        this.refreshFolderTreeState();
         void this.refreshSearchProjection();
       }
     }
@@ -3324,6 +3332,11 @@ export class FolderCardView extends ItemView {
   }
 
   private buildFolderTree(): FolderTreeNode[] {
+    const vault = this.app.vault as unknown as { getRoot?: unknown };
+    if (typeof vault.getRoot !== "function") {
+      return [];
+    }
+
     const root = this.app.vault.getRoot();
     const rootNode: FolderTreeNode = {
       name: root.name || "/",
@@ -4296,6 +4309,11 @@ export class FolderCardView extends ItemView {
       folderTree: [],
       includeSubfolders: settings.includeSubfolders,
       tooltipSide: this.getTooltipSide(),
+      navPaneWidth: settings.navPaneWidth,
+      navPaneCollapsed: settings.navPaneCollapsed,
+      folderSectionCollapsed: settings.folderSectionCollapsed,
+      tagSectionCollapsed: settings.tagSectionCollapsed,
+      boxSectionCollapsed: settings.boxSectionCollapsed,
       ...this.buildBoxPanelFields(),
     };
   }
@@ -4380,6 +4398,11 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
+      state.navPaneWidth = settings.navPaneWidth;
+      state.navPaneCollapsed = settings.navPaneCollapsed;
+      state.folderSectionCollapsed = settings.folderSectionCollapsed;
+      state.tagSectionCollapsed = settings.tagSectionCollapsed;
+      state.boxSectionCollapsed = settings.boxSectionCollapsed;
       this.applyBoxProjectionToState(state);
     });
   }
@@ -4389,11 +4412,16 @@ export class FolderCardView extends ItemView {
       return;
     }
     const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
-    const normalizedTag = rawTags
-      .filter((tag): tag is string => typeof tag === "string")
-      .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
-      .find((tag) => tag.length > 0);
-    const nextTags = normalizedTag ? [normalizedTag] : [];
+    const nextTags: string[] = [];
+    for (const tag of rawTags) {
+      if (typeof tag !== "string") {
+        continue;
+      }
+      const normalized = tag.trim().replace(/^#/, "").toLowerCase();
+      if (normalized.length > 0 && !nextTags.includes(normalized)) {
+        nextTags.push(normalized);
+      }
+    }
     const currentTags = this.plugin.getSettings().filter.tags;
 
     if (
@@ -4408,6 +4436,47 @@ export class FolderCardView extends ItemView {
         tags: nextTags,
       },
     });
+  }
+
+  private async selectFolderFromNav(path: string): Promise<void> {
+    if (this.isBoxMode()) {
+      await this.plugin.saveSettings({ activeBoxId: null });
+    }
+    await this.plugin.selectFolderByPath(path, "panel-picker");
+  }
+
+  private async onNavPaneResize(width: number): Promise<void> {
+    if (typeof width !== "number" || !Number.isFinite(width)) {
+      return;
+    }
+
+    const normalizedWidth = Math.round(width);
+    if (this.plugin.getSettings().navPaneWidth === normalizedWidth) {
+      return;
+    }
+
+    await this.plugin.saveSettings({ navPaneWidth: normalizedWidth });
+  }
+
+  private async onToggleNavPane(): Promise<void> {
+    const current = this.plugin.getSettings().navPaneCollapsed;
+    await this.plugin.saveSettings({ navPaneCollapsed: !current });
+  }
+
+  private async onToggleNavSection(section: unknown): Promise<void> {
+    const settings = this.plugin.getSettings();
+    if (section === "folders") {
+      await this.plugin.saveSettings({ folderSectionCollapsed: !settings.folderSectionCollapsed });
+      return;
+    }
+    if (section === "tags") {
+      await this.plugin.saveSettings({ tagSectionCollapsed: !settings.tagSectionCollapsed });
+      return;
+    }
+    if (section === "boxes") {
+      await this.plugin.saveSettings({ boxSectionCollapsed: !settings.boxSectionCollapsed });
+      return;
+    }
   }
 
   private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {

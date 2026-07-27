@@ -490,7 +490,7 @@ describe("FolderCardView host contract", () => {
   });
 
 
-  it("persists a selected nested tag from the toolbar popup", async () => {
+  it("persists a selected nested tag from the navigation pane tag tree", async () => {
     const { view, plugin, panelContainer } = createHarness();
 
     plugin.getSettings = vi.fn(() => ({
@@ -510,9 +510,6 @@ describe("FolderCardView host contract", () => {
     (view as any).pushState();
     await tick();
 
-    await openTagPopup(panelContainer);
-
-    expect(getFilterButton(panelContainer)?.className).toContain("is-selected");
     expect(getTagNode("Work")).not.toBeUndefined();
     expect(getTagNode("Work/AI")).toBeUndefined();
 
@@ -545,8 +542,8 @@ describe("FolderCardView host contract", () => {
     });
   });
 
-  it("clears the active tag from the toolbar summary", async () => {
-    const { view, plugin, panelContainer } = createHarness();
+  it("toggles off an active tag from the navigation pane tag tree", async () => {
+    const { view, plugin } = createHarness();
     const settings = {
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: ["work/ai"] },
@@ -570,10 +567,6 @@ describe("FolderCardView host contract", () => {
     (view as any).pushState();
     await tick();
 
-    expect(panelContainer.textContent).toContain("Work/AI tag selected");
-
-    await openTagPopup(panelContainer);
-
     const nestedNode = getTagNode("AI");
     expect(nestedNode).not.toBeUndefined();
     expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
@@ -584,8 +577,6 @@ describe("FolderCardView host contract", () => {
     await tick();
 
     expect(settings.filter.tags).toEqual([]);
-    expect(panelContainer.textContent).not.toContain("Work/AI tag selected");
-    expect(document.querySelector(".fce-tag-menu")).toBeNull();
   });
 
   it("computes default and search-specific empty-state messages", () => {
@@ -1403,6 +1394,41 @@ describe("FolderCardView host contract", () => {
     expect(created).toBe(true);
     expect(view.app.vault.createFolder).toHaveBeenCalledWith("projects/client-a");
     expect(getPanelState(view).folderTree).toEqual((view as any).buildFolderTree());
+  });
+
+  it("refreshes the folder tree state on folder vault mutations", async () => {
+    const { view } = createHarness();
+    const alpha = createFolder("alpha");
+    const root = createFolder("", [alpha]);
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+
+    (view as any).handleVaultMutation({
+      eventType: "create",
+      path: "beta",
+      oldPath: null,
+      isFolder: true,
+      fileKind: null,
+    });
+
+    const treePaths = (getPanelState(view).folderTree as Array<{ path: string }>).map((node) => node.path);
+    expect(treePaths).toContain("/");
+    expect(treePaths).toContain("alpha");
+    expect(getPanelState(view).folderTree).toEqual((view as any).buildFolderTree());
+  });
+
+  it("does not rebuild the folder tree for non-folder vault mutations", async () => {
+    const { view } = createHarness();
+    const buildSpy = vi.spyOn(view as any, "buildFolderTree");
+
+    (view as any).handleVaultMutation({
+      eventType: "modify",
+      path: "notes/file.md",
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(buildSpy).not.toHaveBeenCalled();
   });
 
   it("rejects invalid child folder names and missing parent folders", async () => {
