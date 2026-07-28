@@ -33,6 +33,8 @@ Thumbs.db
 .codex/
 .agents/
 .specify/
+.cursor/
+.dmux-hooks/
 
 # Local helper/debug leftovers
 run-test.js
@@ -42,3 +44,4 @@ patch.css
 # Local OpenCode config
 opencode.json
 
+.dmux/
