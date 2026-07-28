@@ -309,6 +309,8 @@ function createHarness(): TestHarness {
     includeSubfolders: true,
     boxes: [],
     activeBoxId: null,
+    navPaneWidth: 240,
+    navPaneCollapsed: false,
   };
 
   const app = {
@@ -1356,6 +1358,55 @@ describe("FolderCardView host contract", () => {
       folderPath: "",
     });
     expect((view as any).folderPath).toBe("");
+  });
+
+  it("swaps the single-pane view without persisting navPaneCollapsed", async () => {
+    const { view, plugin } = createHarness();
+
+    (view as any).onShellResize(400);
+    expect(getPanelState(view).layoutMode).toBe("single");
+    expect(getPanelState(view).navVisible).toBe(false);
+
+    await (view as any).onToggleNavPane();
+    expect(getPanelState(view).navVisible).toBe(true);
+
+    await (view as any).onToggleNavPane();
+    expect(getPanelState(view).navVisible).toBe(false);
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("persists navPaneCollapsed when toggling in dual layout", async () => {
+    const { view, plugin } = createHarness();
+
+    (view as any).onShellResize(800);
+    expect(getPanelState(view).layoutMode).toBe("dual");
+
+    await (view as any).onToggleNavPane();
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ navPaneCollapsed: true });
+  });
+
+  it("returns to the cards view when a folder is selected in single-pane layout", async () => {
+    const { view } = createHarness();
+
+    (view as any).onShellResize(400);
+    (view as any).singlePaneView = "nav";
+
+    await (view as any).selectFolderFromNav("projects");
+
+    expect(getPanelState(view).navVisible).toBe(false);
+  });
+
+  it("falls back to the cards view when narrowing below the dual-layout threshold", () => {
+    const { view } = createHarness();
+
+    (view as any).onShellResize(800);
+    (view as any).singlePaneView = "nav";
+    (view as any).onShellResize(400);
+
+    expect(getPanelState(view).layoutMode).toBe("single");
+    expect(getPanelState(view).navVisible).toBe(false);
   });
 
   it("routes folder action intents to the matching handlers", () => {

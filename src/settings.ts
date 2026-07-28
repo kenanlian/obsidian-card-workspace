@@ -20,6 +20,8 @@ export const DEFAULT_PREVIEW_LINES = 5;
 export const NAV_PANE_WIDTH_MIN = 160;
 export const NAV_PANE_WIDTH_MAX = 480;
 export const DEFAULT_NAV_PANE_WIDTH = 240;
+/** Minimum width the card pane needs before the two-column layout squashes cards below --fce-card-min-width. */
+export const CARD_PANE_MIN_WIDTH = 304;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
 export const DEFAULT_DRAG_INSERT_ACTION: DragInsertAction = "ask";
 export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";

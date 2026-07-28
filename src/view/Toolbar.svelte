@@ -38,6 +38,8 @@
     boxSummaries?: BoxSummary[];
     boxExcludedCount?: number;
     folderPath?: string;
+    navVisible?: boolean;
+    onToggleNavPane?: () => void;
     sortField?: string;
     sortDirection?: string;
     tooltipSide?: "top" | "right" | "bottom" | "left";
@@ -147,6 +149,8 @@
     boxSummaries = [],
     boxExcludedCount = 0,
     folderPath = "",
+    navVisible = false,
+    onToggleNavPane,
     sortField = "mtime",
     sortDirection = "desc",
     tooltipSide = "right",
@@ -429,6 +433,17 @@
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
   <div class="fce-toolbar" role="toolbar" aria-label={strings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons">
+      <button
+        type="button"
+        class="clickable-icon fce-toolbar-button {navVisible ? 'is-selected' : ''}"
+        aria-label={navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}
+        aria-pressed={navVisible}
+        onclick={() => onToggleNavPane?.()}
+        use:applyIcon={navVisible ? "panel-left-close" : "panel-left-open"}
+        use:applyTooltip={navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}
+      >
+        <span class="fce-sr-only">{navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}</span>
+      </button>
       {#if isBoxMode}
         <button
           type="button"

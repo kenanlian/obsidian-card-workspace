@@ -93,6 +93,7 @@
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
     onNavPaneResize?: (width: number) => void;
+    onShellResize?: (width: number) => void;
     onToggleNavPane?: () => void;
     onToggleNavSection?: (section: NavSection) => void;
   }
@@ -134,7 +135,8 @@
     boxSummaries: [],
     boxExcludedCount: 0,
     navPaneWidth: 240,
-    navPaneCollapsed: false,
+    layoutMode: "dual",
+    navVisible: true,
     folderSectionCollapsed: false,
     tagSectionCollapsed: false,
     boxSectionCollapsed: false,
@@ -158,6 +160,7 @@
     onBoxCommand,
     onHydrateRange,
     onNavPaneResize,
+    onShellResize,
     onToggleNavPane,
     onToggleNavSection,
   }: FolderCardPanelProps = $props();
@@ -252,7 +255,8 @@
   const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
   const showSearchMatchCounts = $derived(!isBlockedSearchState(panelState));
   const navPaneWidth = $derived(panelState.navPaneWidth);
-  const navPaneCollapsed = $derived(panelState.navPaneCollapsed);
+  const navVisible = $derived(panelState.navVisible);
+  const layoutMode = $derived(panelState.layoutMode);
   const folderSectionCollapsed = $derived(panelState.folderSectionCollapsed);
   const tagSectionCollapsed = $derived(panelState.tagSectionCollapsed);
   const boxSectionCollapsed = $derived(panelState.boxSectionCollapsed);
@@ -422,6 +426,11 @@
   }
 
   function syncViewportMetrics(node: HTMLDivElement): void {
+    // A hidden pane measures 0 and would otherwise reset every cached row height.
+    if (node.clientWidth === 0) {
+      return;
+    }
+
     const styles = getComputedStyle(node);
     const horizontalPadding = readNumber(styles.paddingLeft, 0) + readNumber(styles.paddingRight, 0);
     const availableWidth = Math.max(0, node.clientWidth - horizontalPadding);
@@ -445,6 +454,22 @@
     viewportWidth = availableWidth;
     viewportHeight = node.clientHeight;
     columnCount = nextColumnCount;
+  }
+
+  function bindShell(node: HTMLDivElement): { destroy: () => void } {
+    const report = (): void => {
+      onShellResize?.(node.clientWidth);
+    };
+
+    report();
+    const resizeObserver = new ResizeObserver(report);
+    resizeObserver.observe(node);
+
+    return {
+      destroy() {
+        resizeObserver.disconnect();
+      },
+    };
   }
 
   function bindViewport(node: HTMLDivElement): { destroy: () => void } {
@@ -605,7 +630,10 @@
   }
 </script>
 
-<div class="fce-shell {bulkMode ? 'is-bulk-mode' : ''}">
+<div
+  class="fce-shell {bulkMode ? 'is-bulk-mode' : ''} {layoutMode === 'single' ? 'is-single' : 'is-dual'} {navVisible ? 'is-nav-visible' : 'is-nav-hidden'}"
+  use:bindShell
+>
   <NavigationPane
     strings={panelState.strings.toolbar}
     boxStrings={panelState.strings.box}
@@ -618,14 +646,13 @@
     boxSummaries={panelState.boxSummaries}
     activeBoxId={panelState.activeBoxId}
     {navPaneWidth}
-    {navPaneCollapsed}
+    {layoutMode}
     {folderSectionCollapsed}
     {tagSectionCollapsed}
     {boxSectionCollapsed}
     onSelectFolder={handleSelectFolder}
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
-    onFolderAction={handleFolderAction}
     onBoxCommand={handleBoxCommand}
     onNavPaneResize={handleNavPaneResize}
     onToggleNavPane={handleToggleNavPane}
@@ -640,6 +667,8 @@
     boxSummaries={panelState.boxSummaries}
     boxExcludedCount={panelState.boxExcludedCount}
     {folderPath}
+    {navVisible}
+    onToggleNavPane={handleToggleNavPane}
     {sortField}
     {sortDirection}
     {searchQuery}

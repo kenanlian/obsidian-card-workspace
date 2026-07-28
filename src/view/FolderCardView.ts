@@ -59,6 +59,7 @@ import {
   toggleSelection,
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
+import { CARD_PANE_MIN_WIDTH } from "../settings";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
 import type { CardBoxDefinition, CardHoverLinkPayload, FolderActionPayload, Rule } from "./types";
 import {
@@ -835,6 +836,8 @@ export class FolderCardView extends ItemView {
   private selectedPaths = new Set<string>();
   private bulkAnchorPath: string | null = null;
   private loading = false;
+  private shellWidth = 0;
+  private singlePaneView: "nav" | "cards" = "cards";
 
   private generation = 0;
   private pendingHydration = new Set<string>();
@@ -1059,10 +1062,12 @@ export class FolderCardView extends ItemView {
     switch (command) {
       case "switch":
         if (boxId) {
+          this.returnToCardsViewIfSinglePane();
           void this.plugin.saveSettings({ activeBoxId: boxId });
         }
         return;
       case "exit":
+        this.returnToCardsViewIfSinglePane();
         void this.plugin.saveSettings({ activeBoxId: null });
         return;
       case "create":
@@ -1414,6 +1419,9 @@ export class FolderCardView extends ItemView {
         },
         onNavPaneResize: (width: number) => {
           void this.onNavPaneResize(width);
+        },
+        onShellResize: (width: number) => {
+          this.onShellResize(width);
         },
         onToggleNavPane: () => {
           void this.onToggleNavPane();
@@ -4310,7 +4318,8 @@ export class FolderCardView extends ItemView {
       includeSubfolders: settings.includeSubfolders,
       tooltipSide: this.getTooltipSide(),
       navPaneWidth: settings.navPaneWidth,
-      navPaneCollapsed: settings.navPaneCollapsed,
+      layoutMode: this.getLayoutMode(),
+      navVisible: this.getNavVisible(),
       folderSectionCollapsed: settings.folderSectionCollapsed,
       tagSectionCollapsed: settings.tagSectionCollapsed,
       boxSectionCollapsed: settings.boxSectionCollapsed,
@@ -4399,7 +4408,8 @@ export class FolderCardView extends ItemView {
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.navPaneWidth = settings.navPaneWidth;
-      state.navPaneCollapsed = settings.navPaneCollapsed;
+      state.layoutMode = this.getLayoutMode();
+      state.navVisible = this.getNavVisible();
       state.folderSectionCollapsed = settings.folderSectionCollapsed;
       state.tagSectionCollapsed = settings.tagSectionCollapsed;
       state.boxSectionCollapsed = settings.boxSectionCollapsed;
@@ -4408,6 +4418,7 @@ export class FolderCardView extends ItemView {
   }
 
   private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
+    this.returnToCardsViewIfSinglePane();
     if (this.isBoxMode()) {
       return;
     }
@@ -4439,6 +4450,7 @@ export class FolderCardView extends ItemView {
   }
 
   private async selectFolderFromNav(path: string): Promise<void> {
+    this.returnToCardsViewIfSinglePane();
     if (this.isBoxMode()) {
       await this.plugin.saveSettings({ activeBoxId: null });
     }
@@ -4458,7 +4470,69 @@ export class FolderCardView extends ItemView {
     await this.plugin.saveSettings({ navPaneWidth: normalizedWidth });
   }
 
+  private getLayoutMode(): "dual" | "single" {
+    if (this.shellWidth <= 0) {
+      return "dual";
+    }
+
+    return this.shellWidth < this.plugin.getSettings().navPaneWidth + CARD_PANE_MIN_WIDTH
+      ? "single"
+      : "dual";
+  }
+
+  private getNavVisible(): boolean {
+    if (this.getLayoutMode() === "single") {
+      return this.singlePaneView === "nav";
+    }
+
+    return !this.plugin.getSettings().navPaneCollapsed;
+  }
+
+  private pushNavLayoutState(): void {
+    this.panelModel.mutate((state) => {
+      state.layoutMode = this.getLayoutMode();
+      state.navVisible = this.getNavVisible();
+    });
+  }
+
+  private onShellResize(width: number): void {
+    if (typeof width !== "number" || !Number.isFinite(width)) {
+      return;
+    }
+
+    const nextWidth = Math.round(width);
+    if (nextWidth === this.shellWidth) {
+      return;
+    }
+
+    const previousMode = this.getLayoutMode();
+    this.shellWidth = nextWidth;
+
+    // The toolbar lives in the card pane, so a narrowing fallback must land on cards.
+    if (previousMode === "dual" && this.getLayoutMode() === "single") {
+      this.singlePaneView = "cards";
+    }
+
+    this.pushNavLayoutState();
+  }
+
+  private returnToCardsViewIfSinglePane(): void {
+    if (this.getLayoutMode() !== "single" || this.singlePaneView === "cards") {
+      return;
+    }
+
+    this.singlePaneView = "cards";
+    this.pushNavLayoutState();
+  }
+
   private async onToggleNavPane(): Promise<void> {
+    // Single-pane swapping stays transient so widening the panel restores both panes.
+    if (this.getLayoutMode() === "single") {
+      this.singlePaneView = this.singlePaneView === "nav" ? "cards" : "nav";
+      this.pushNavLayoutState();
+      return;
+    }
+
     const current = this.plugin.getSettings().navPaneCollapsed;
     await this.plugin.saveSettings({ navPaneCollapsed: !current });
   }
@@ -4480,6 +4554,7 @@ export class FolderCardView extends ItemView {
   }
 
   private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
+    this.returnToCardsViewIfSinglePane();
     if (this.isBoxMode()) {
       return;
     }

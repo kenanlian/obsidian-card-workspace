@@ -25,6 +25,12 @@
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
   --fce-toolbar-folder-button-min-width: 40px;
+  --fce-nav-row-height: 26px;
+  --fce-nav-row-radius: var(--radius-s, 4px);
+  --fce-nav-indent-step: 16px;
+  --fce-nav-row-hover: var(--nav-item-background-hover, var(--background-modifier-hover));
+  --fce-nav-row-active-bg: var(--nav-item-background-active, var(--background-modifier-hover));
+  --fce-nav-row-active-color: var(--nav-item-color-active, var(--text-normal));
 }
 
 .folder-card-view .fce-shell {
@@ -32,6 +38,24 @@
   flex-direction: row;
   background: var(--fce-bg);
   color: var(--fce-text);
+}
+
+.folder-card-view .fce-shell.is-nav-hidden .fce-nav-pane {
+  display: none;
+}
+
+.folder-card-view .fce-shell.is-single.is-nav-visible .fce-main-pane {
+  display: none;
+}
+
+.folder-card-view .fce-shell.is-single .fce-nav-pane {
+  flex: 1 1 auto;
+  width: 100%;
+  border-right: none;
+}
+
+.folder-card-view .fce-shell.is-single .fce-nav-resize-handle {
+  display: none;
 }
 
 .folder-card-view .fce-main-pane {
@@ -50,26 +74,16 @@
   min-height: 0;
   box-sizing: border-box;
   border-right: 1px solid var(--fce-border);
-  background: var(--fce-surface);
+  background: var(--fce-bg);
   overflow: hidden;
-}
-
-.folder-card-view .fce-nav-pane.is-collapsed {
-  width: 36px;
-  flex: 0 0 36px;
-  align-items: center;
 }
 
 .folder-card-view .fce-nav-pane-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 4px;
+  justify-content: flex-start;
+  padding: 6px;
   flex: 0 0 auto;
-}
-
-.folder-card-view .fce-nav-pane.is-collapsed .fce-nav-pane-toggle {
-  margin-top: 6px;
 }
 
 .folder-card-view .fce-nav-pane-sections {
@@ -96,7 +110,7 @@
 }
 
 .folder-card-view .fce-tree-section {
-  border-bottom: 1px solid var(--fce-border);
+  padding-bottom: 4px;
 }
 
 .folder-card-view .fce-tree-section-header {
@@ -109,6 +123,7 @@
 .folder-card-view .fce-tree-section-toggle {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
@@ -122,8 +137,6 @@
   color: var(--fce-text-muted);
   font-size: var(--font-ui-smaller, 12px);
   font-weight: var(--font-semibold, 600);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   cursor: pointer;
 }
 
@@ -167,6 +180,26 @@
   max-height: none;
   padding: 0;
   overflow: visible;
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row {
+  min-height: var(--fce-nav-row-height);
+  margin: 0 4px;
+  padding-inline-end: 6px;
+  border-radius: var(--fce-nav-row-radius);
+  color: var(--fce-text);
+  font-size: var(--font-ui-small, 13px);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row:hover {
+  background: var(--fce-nav-row-hover);
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-selected {
+  background: var(--fce-nav-row-active-bg);
+  color: var(--fce-nav-row-active-color);
+  font-weight: var(--nav-item-weight-active, 600);
 }
 
 .folder-card-view .fce-nav-tree.is-disabled {
@@ -519,10 +552,30 @@
   height: 16px;
 }
 
-.fce-popup-menu .fce-popup-row {
+.fce-popup-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.fce-popup-row-leading,
+.fce-popup-row-trailing {
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-height: 16px;
+}
+
+.fce-popup-row-content {
+  min-width: 0;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.fce-popup-menu .fce-popup-row {
   min-height: 28px;
   border-radius: 4px;
   color: var(--text-normal);
@@ -539,23 +592,6 @@
   outline: 2px solid var(--fce-accent);
   outline-offset: -2px;
   border-radius: var(--radius-s, 4px);
-}
-
-.fce-popup-menu .fce-popup-row-leading,
-.fce-popup-menu .fce-popup-row-trailing {
-  flex: 0 0 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  min-height: 16px;
-}
-
-.fce-popup-menu .fce-popup-row-content {
-  min-width: 0;
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
 }
 
 .fce-sort-menu .fce-popup-row {
@@ -583,10 +619,13 @@
 }
 
 .fce-tree-menu {
-  width: 250px;
   padding: var(--size-2-3, 6px) 0;
-  max-height: 444px;
   overflow-x: hidden;
+}
+
+.fce-popup-menu .fce-tree-menu {
+  width: 250px;
+  max-height: 444px;
   overflow-y: auto;
 }
 
@@ -606,70 +645,6 @@
   background: var(--background-modifier-hover);
 }
 
-.fce-folder-menu .fce-folder-row-end {
-  position: relative;
-  flex: 0 0 20px;
-  width: 20px;
-  min-width: 20px;
-  overflow: visible;
-}
-
-.fce-folder-menu .fce-folder-row-actions {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  padding-left: 16px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity 120ms ease;
-  background-image:
-    linear-gradient(to right, transparent, var(--background-modifier-hover) 16px),
-    linear-gradient(to right, transparent, var(--background-primary) 16px);
-}
-
-.fce-folder-menu .fce-tree-row:hover .fce-folder-row-actions,
-.fce-folder-menu .fce-folder-row-end:focus-within .fce-folder-row-actions {
-  opacity: 1;
-  pointer-events: auto;
-  z-index: 1;
-}
-
-.fce-folder-menu .fce-tree-row:hover .fce-popup-row-trailing,
-.fce-folder-menu .fce-folder-row-end:focus-within .fce-popup-row-trailing {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.fce-folder-menu .fce-folder-row-action {
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-  font: inherit;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-s, 4px);
-  cursor: pointer;
-}
-
-.fce-folder-menu .fce-popup-row-trailing {
-  transition: opacity 120ms ease;
-}
-
-.fce-folder-menu .fce-folder-row-action:hover,
-.fce-folder-menu .fce-folder-row-action:focus-visible,
 .fce-tree-menu .fce-tree-chevron:hover,
 .fce-tree-menu .fce-tree-chevron:focus-visible {
   background: var(--background-modifier-hover);

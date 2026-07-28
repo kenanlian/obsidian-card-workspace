@@ -84,6 +84,7 @@ export interface ToolbarStrings {
     ariaLabel: string;
     collapsePane: string;
     expandPane: string;
+    backToCards: string;
     resizeHandle: string;
     foldersSection: string;
     tagsSection: string;
@@ -489,6 +490,7 @@ const EN: UiStrings = {
       ariaLabel: "Navigation",
       collapsePane: "Collapse navigation",
       expandPane: "Expand navigation",
+      backToCards: "Back to cards",
       resizeHandle: "Resize navigation",
       foldersSection: "Folders",
       tagsSection: "Tags",
@@ -867,6 +869,7 @@ const ZH: UiStrings = {
       ariaLabel: "导航",
       collapsePane: "折叠导航栏",
       expandPane: "展开导航栏",
+      backToCards: "返回卡片",
       resizeHandle: "调整导航栏宽度",
       foldersSection: "文件夹",
       tagsSection: "标签",

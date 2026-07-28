@@ -163,6 +163,7 @@ describe("Toolbar.svelte", () => {
 
     const buttons = Array.from(buttonsRow?.querySelectorAll("button") || []);
     const expectedLabels = [
+      "Expand navigation",
       "Create note",
       "Sort cards",
       "Bulk actions",
@@ -171,6 +172,29 @@ describe("Toolbar.svelte", () => {
     ];
 
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(expectedLabels);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("toggles the navigation pane through a dedicated callback", async () => {
+    const captured = createCapturedCallbacks();
+    const onToggleNavPane = vi.fn();
+    let { component } = mountToolbar({ navVisible: false, onToggleNavPane }, captured.callbacks);
+
+    const expandButton = document.querySelector<HTMLButtonElement>('button[aria-label="Expand navigation"]');
+    expect(expandButton).not.toBeNull();
+    expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onToggleNavPane).toHaveBeenCalledTimes(1);
+    expect(captured.toolbarActionEvents).toEqual([]);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ navVisible: true, onToggleNavPane }, captured.callbacks));
+
+    const collapseButton = document.querySelector<HTMLButtonElement>('button[aria-label="Collapse navigation"]');
+    expect(collapseButton).not.toBeNull();
+    expect(collapseButton?.classList.contains("is-selected")).toBe(true);
 
     await disposeMountedComponent(component);
   });

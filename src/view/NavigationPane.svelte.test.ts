@@ -118,7 +118,7 @@ function mountNav(
       ],
       activeBoxId: null,
       navPaneWidth: 240,
-      navPaneCollapsed: false,
+      layoutMode: "dual",
       folderSectionCollapsed: false,
       tagSectionCollapsed: false,
       boxSectionCollapsed: false,
@@ -268,21 +268,24 @@ describe("NavigationPane.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("collapses to a rail and emits onToggleNavPane", async () => {
-    const captured = createCaptured();
-    let { component } = mountNav({}, captured.callbacks);
+  it("renders no pane header in dual layout", async () => {
+    const { component } = mountNav();
 
-    const collapseButton = document.querySelector<HTMLButtonElement>('button[aria-label="Collapse navigation"]');
-    expect(collapseButton).not.toBeNull();
-    collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(captured.togglePaneEvents).toBe(1);
+    expect(document.querySelector(".fce-nav-pane-header")).toBeNull();
+    expect(document.querySelector(".fce-nav-pane")).not.toBeNull();
 
     await disposeMountedComponent(component);
+  });
 
-    ({ component } = mountNav({ navPaneCollapsed: true }, captured.callbacks));
-    expect(document.querySelector(".fce-nav-pane.is-collapsed")).not.toBeNull();
-    const expandButton = document.querySelector<HTMLButtonElement>('button[aria-label="Expand navigation"]');
-    expect(expandButton).not.toBeNull();
+  it("renders a back button in single layout that emits onToggleNavPane", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ layoutMode: "single" }, captured.callbacks);
+
+    const backButton = document.querySelector<HTMLButtonElement>('button[aria-label="Back to cards"]');
+    expect(backButton).not.toBeNull();
+    backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.togglePaneEvents).toBe(1);
 
     await disposeMountedComponent(component);
   });

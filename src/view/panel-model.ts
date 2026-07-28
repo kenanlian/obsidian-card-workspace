@@ -58,7 +58,8 @@ export interface PanelModelState {
   boxSummaries: BoxSummary[];
   boxExcludedCount: number;
   navPaneWidth: number;
-  navPaneCollapsed: boolean;
+  layoutMode: "dual" | "single";
+  navVisible: boolean;
   folderSectionCollapsed: boolean;
   tagSectionCollapsed: boolean;
   boxSectionCollapsed: boolean;

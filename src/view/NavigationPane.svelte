@@ -9,7 +9,7 @@
     flattenVisibleTagTree,
     normalizeTagPath,
   } from "./tag-tree";
-  import type { FolderActionPayload, FolderManagementAction, FolderTreeNode } from "./types";
+  import type { FolderTreeNode } from "./types";
   import TreeSection from "./TreeSection.svelte";
 
   type NavSection = "folders" | "tags" | "boxes";
@@ -31,12 +31,6 @@
     boxId?: string;
   }
 
-  interface FolderActionOption {
-    action: FolderManagementAction;
-    icon: string;
-    label: string;
-  }
-
   interface NavigationPaneProps {
     strings?: ToolbarStrings;
     boxStrings?: BoxStrings;
@@ -49,14 +43,13 @@
     boxSummaries?: BoxSummary[];
     activeBoxId?: string | null;
     navPaneWidth?: number;
-    navPaneCollapsed?: boolean;
+    layoutMode?: "dual" | "single";
     folderSectionCollapsed?: boolean;
     tagSectionCollapsed?: boolean;
     boxSectionCollapsed?: boolean;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
-    onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onNavPaneResize?: (width: number) => void;
     onToggleNavPane?: () => void;
@@ -75,14 +68,13 @@
     boxSummaries = [],
     activeBoxId = null,
     navPaneWidth = 240,
-    navPaneCollapsed = false,
+    layoutMode = "dual",
     folderSectionCollapsed = false,
     tagSectionCollapsed = false,
     boxSectionCollapsed = false,
     onSelectFolder,
     onFilterChange,
     onIncludeSubfoldersChange,
-    onFolderAction,
     onBoxCommand,
     onNavPaneResize,
     onToggleNavPane,
@@ -165,31 +157,6 @@
     return !isBoxMode && node.path === folderPath;
   }
 
-  function getFolderActionOptions(node: FolderTreeNode): FolderActionOption[] {
-    const actions: FolderActionOption[] = [{
-      action: "create-child-folder",
-      icon: "folder-plus",
-      label: strings.folderMenu.createChildFolder,
-    }];
-
-    if (!isRootFolderNode(node)) {
-      actions.push(
-        {
-          action: "move-folder",
-          icon: "folder-input",
-          label: strings.folderMenu.moveFolder,
-        },
-        {
-          action: "delete-folder",
-          icon: "trash-2",
-          label: strings.folderMenu.deleteFolder,
-        },
-      );
-    }
-
-    return actions;
-  }
-
   function onFolderChevronClick(event: MouseEvent, path: string): void {
     event.stopPropagation();
     const next = new Set(expandedFolderPaths);
@@ -214,11 +181,6 @@
 
   function selectFolder(path: string): void {
     onSelectFolder?.({ path });
-  }
-
-  function triggerFolderAction(event: MouseEvent, path: string, action: FolderManagementAction): void {
-    event.stopPropagation();
-    onFolderAction?.({ action, path });
   }
 
   function toggleTag(tag: string): void {
@@ -299,76 +261,120 @@
   }
 </script>
 
-{#if navPaneCollapsed}
-  <div class="fce-nav-pane is-collapsed">
-    <button
-      type="button"
-      class="clickable-icon fce-nav-pane-toggle"
-      aria-label={strings.navPane.expandPane}
-      onclick={() => onToggleNavPane?.()}
-      use:applyIcon={"panel-left-open"}
-      use:applyTooltip={strings.navPane.expandPane}
-    >
-      <span class="fce-sr-only">{strings.navPane.expandPane}</span>
-    </button>
-  </div>
-{:else}
-  <nav class="fce-nav-pane" aria-label={strings.navPane.ariaLabel} style="width: {paneWidth}px;">
+<nav
+  class="fce-nav-pane"
+  aria-label={strings.navPane.ariaLabel}
+  style={layoutMode === "single" ? "" : `width: ${paneWidth}px;`}
+>
+  {#if layoutMode === "single"}
     <div class="fce-nav-pane-header">
       <button
         type="button"
         class="clickable-icon fce-nav-pane-toggle"
-        aria-label={strings.navPane.collapsePane}
+        aria-label={strings.navPane.backToCards}
         onclick={() => onToggleNavPane?.()}
-        use:applyIcon={"panel-left-close"}
-        use:applyTooltip={strings.navPane.collapsePane}
+        use:applyIcon={"arrow-left"}
+        use:applyTooltip={strings.navPane.backToCards}
       >
-        <span class="fce-sr-only">{strings.navPane.collapsePane}</span>
+        <span class="fce-sr-only">{strings.navPane.backToCards}</span>
       </button>
     </div>
+  {/if}
 
-    <div class="fce-nav-pane-sections">
-      <TreeSection
-        title={strings.navPane.foldersSection}
-        collapsed={folderSectionCollapsed}
-        collapseLabel={strings.navPane.collapseSection}
-        expandLabel={strings.navPane.expandSection}
-        onToggle={() => toggleSection("folders")}
-      >
-        {#snippet actions()}
-          {#if hasFolderScope && !isBoxMode}
-            <button
-              type="button"
-              class="clickable-icon fce-nav-section-action {includeSubfolders ? 'is-active' : ''}"
-              aria-label={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
-              aria-pressed={includeSubfolders}
-              onclick={toggleIncludeSubfolders}
-              use:applyIcon={"folder-tree"}
-              use:applyTooltip={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
-            >
-              <span class="fce-sr-only">{strings.folderMenu.subfoldersSrLabel}</span>
-            </button>
-          {/if}
-        {/snippet}
-        {#snippet body()}
-          <div class="fce-tree-menu fce-nav-tree fce-folder-menu" role="tree">
-            {#each visibleFolderNodes as node (node.path)}
-              {@const hasChildren = node.children.length > 0}
-              {@const isSelected = isFolderNodeSelected(node)}
-              {@const label = getFolderNodeLabel(node)}
-              <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
+  <div class="fce-nav-pane-sections">
+    <TreeSection
+      title={strings.navPane.foldersSection}
+      collapsed={folderSectionCollapsed}
+      collapseLabel={strings.navPane.collapseSection}
+      expandLabel={strings.navPane.expandSection}
+      onToggle={() => toggleSection("folders")}
+    >
+      {#snippet actions()}
+        {#if hasFolderScope && !isBoxMode}
+          <button
+            type="button"
+            class="clickable-icon fce-nav-section-action {includeSubfolders ? 'is-active' : ''}"
+            aria-label={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
+            aria-pressed={includeSubfolders}
+            onclick={toggleIncludeSubfolders}
+            use:applyIcon={"folder-tree"}
+            use:applyTooltip={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
+          >
+            <span class="fce-sr-only">{strings.folderMenu.subfoldersSrLabel}</span>
+          </button>
+        {/if}
+      {/snippet}
+      {#snippet body()}
+        <div class="fce-tree-menu fce-nav-tree fce-folder-menu" role="tree">
+          {#each visibleFolderNodes as node (node.path)}
+            {@const hasChildren = node.children.length > 0}
+            {@const isSelected = isFolderNodeSelected(node)}
+            {@const label = getFolderNodeLabel(node)}
+            <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
+              <div class="fce-popup-row-leading">
+                {#if hasChildren}
+                  <button
+                    type="button"
+                    class="fce-tree-chevron"
+                    aria-label={expandedFolderPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+                    aria-expanded={expandedFolderPaths.has(node.path)}
+                    onclick={(event) => onFolderChevronClick(event, node.path)}
+                    use:applyIcon={expandedFolderPaths.has(node.path) ? "chevron-down" : "chevron-right"}
+                  ></button>
+                {:else if isRootFolderNode(node)}
+                  <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"house"}></span>
+                {:else}
+                  <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
+                {/if}
+              </div>
+              <div class="fce-popup-row-content">
+                <button
+                  type="button"
+                  class="fce-tree-button"
+                  onclick={() => selectFolder(node.path)}
+                  use:applyTooltip={label}
+                >
+                  <span class="fce-tree-label">{label}</span>
+                </button>
+              </div>
+              <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
+                {#if isSelected}
+                  <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/snippet}
+    </TreeSection>
+
+    <TreeSection
+      title={strings.navPane.tagsSection}
+      collapsed={tagSectionCollapsed}
+      collapseLabel={strings.navPane.collapseSection}
+      expandLabel={strings.navPane.expandSection}
+      onToggle={() => toggleSection("tags")}
+    >
+      {#snippet body()}
+        <div class="fce-tree-menu fce-nav-tree fce-tag-menu {isBoxMode ? 'is-disabled' : ''}" role="tree">
+          {#if isBoxMode}
+            <div class="fce-tree-empty">{strings.navPane.tagsDisabledInBox}</div>
+          {:else if visibleTagNodes.length === 0}
+            <div class="fce-tree-empty">{strings.filter.noTagsFound}</div>
+          {:else}
+            {#each visibleTagNodes as node (node.tag)}
+              {@const isSelected = normalizedActiveTags.has(node.tag)}
+              <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
                 <div class="fce-popup-row-leading">
-                  {#if hasChildren}
+                  {#if node.hasChildren}
                     <button
                       type="button"
                       class="fce-tree-chevron"
-                      aria-label={expandedFolderPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
-                      aria-expanded={expandedFolderPaths.has(node.path)}
-                      onclick={(event) => onFolderChevronClick(event, node.path)}
-                      use:applyIcon={expandedFolderPaths.has(node.path) ? "chevron-down" : "chevron-right"}
+                      aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
+                      aria-expanded={expandedTagPaths.has(node.tag)}
+                      onclick={(event) => onTagChevronClick(event, node.tag)}
+                      use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
                     ></button>
-                  {:else if isRootFolderNode(node)}
-                    <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"house"}></span>
                   {:else}
                     <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
                   {/if}
@@ -377,134 +383,65 @@
                   <button
                     type="button"
                     class="fce-tree-button"
-                    onclick={() => selectFolder(node.path)}
-                    use:applyTooltip={label}
+                    role="menuitemcheckbox"
+                    aria-checked={isSelected}
+                    onclick={() => toggleTag(node.tag)}
+                    use:applyTooltip={node.displayTag}
                   >
-                    <span class="fce-tree-label">{label}</span>
+                    <span class="fce-tree-label">{node.label}</span>
                   </button>
                 </div>
-                <div class="fce-folder-row-end">
-                  <div class="fce-folder-row-actions">
-                    {#each getFolderActionOptions(node) as action}
-                      <button
-                        type="button"
-                        class="fce-folder-row-action"
-                        aria-label={action.label}
-                        onclick={(event) => triggerFolderAction(event, node.path, action.action)}
-                        use:applyIcon={action.icon}
-                        use:applyTooltip={action.label}
-                      >
-                        <span class="fce-sr-only">{action.label}</span>
-                      </button>
-                    {/each}
-                  </div>
-                  <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
-                    {#if isSelected}
-                      <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
-                    {/if}
-                  </div>
+                <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
+                  {#if isSelected}
+                    <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
+                  {/if}
                 </div>
               </div>
             {/each}
-          </div>
-        {/snippet}
-      </TreeSection>
+          {/if}
+        </div>
+      {/snippet}
+    </TreeSection>
 
-      <TreeSection
-        title={strings.navPane.tagsSection}
-        collapsed={tagSectionCollapsed}
-        collapseLabel={strings.navPane.collapseSection}
-        expandLabel={strings.navPane.expandSection}
-        onToggle={() => toggleSection("tags")}
-      >
-        {#snippet body()}
-          <div class="fce-tree-menu fce-nav-tree fce-tag-menu {isBoxMode ? 'is-disabled' : ''}" role="tree">
-            {#if isBoxMode}
-              <div class="fce-tree-empty">{strings.navPane.tagsDisabledInBox}</div>
-            {:else if visibleTagNodes.length === 0}
-              <div class="fce-tree-empty">{strings.filter.noTagsFound}</div>
-            {:else}
-              {#each visibleTagNodes as node (node.tag)}
-                {@const isSelected = normalizedActiveTags.has(node.tag)}
-                <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: {node.depth * 16 + 8}px;">
-                  <div class="fce-popup-row-leading">
-                    {#if node.hasChildren}
-                      <button
-                        type="button"
-                        class="fce-tree-chevron"
-                        aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
-                        aria-expanded={expandedTagPaths.has(node.tag)}
-                        onclick={(event) => onTagChevronClick(event, node.tag)}
-                        use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
-                      ></button>
-                    {:else}
-                      <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
-                    {/if}
-                  </div>
-                  <div class="fce-popup-row-content">
-                    <button
-                      type="button"
-                      class="fce-tree-button"
-                      role="menuitemcheckbox"
-                      aria-checked={isSelected}
-                      onclick={() => toggleTag(node.tag)}
-                      use:applyTooltip={node.displayTag}
-                    >
-                      <span class="fce-tree-label">{node.label}</span>
-                    </button>
-                  </div>
-                  <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
-                    {#if isSelected}
-                      <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            {/if}
-          </div>
-        {/snippet}
-      </TreeSection>
+    <TreeSection
+      title={strings.navPane.boxesSection}
+      collapsed={boxSectionCollapsed}
+      collapseLabel={strings.navPane.collapseSection}
+      expandLabel={strings.navPane.expandSection}
+      onToggle={() => toggleSection("boxes")}
+    >
+      {#snippet body()}
+        <div class="fce-nav-box-list">
+          {#if boxSummaries.length === 0}
+            <div class="fce-tree-empty">{strings.navPane.boxesEmpty}</div>
+          {:else}
+            {#each boxSummaries as box (box.id)}
+              {@const isActive = box.id === activeBoxId}
+              <button
+                type="button"
+                class="fce-nav-box-item {isActive ? 'is-active' : ''}"
+                aria-pressed={isActive}
+                onclick={() => selectBox(box.id)}
+                use:applyTooltip={isActive ? strings.navPane.exitBox : box.name}
+              >
+                <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"gallery-horizontal"}></span>
+                <span class="fce-nav-box-label">{box.name}</span>
+                {#if isActive}
+                  <span class="fce-nav-box-check" aria-hidden="true" use:applyIcon={"check"}></span>
+                {/if}
+              </button>
+            {/each}
+          {/if}
+        </div>
+      {/snippet}
+    </TreeSection>
+  </div>
 
-      <TreeSection
-        title={strings.navPane.boxesSection}
-        collapsed={boxSectionCollapsed}
-        collapseLabel={strings.navPane.collapseSection}
-        expandLabel={strings.navPane.expandSection}
-        onToggle={() => toggleSection("boxes")}
-      >
-        {#snippet body()}
-          <div class="fce-nav-box-list">
-            {#if boxSummaries.length === 0}
-              <div class="fce-tree-empty">{strings.navPane.boxesEmpty}</div>
-            {:else}
-              {#each boxSummaries as box (box.id)}
-                {@const isActive = box.id === activeBoxId}
-                <button
-                  type="button"
-                  class="fce-nav-box-item {isActive ? 'is-active' : ''}"
-                  aria-pressed={isActive}
-                  onclick={() => selectBox(box.id)}
-                  use:applyTooltip={isActive ? strings.navPane.exitBox : box.name}
-                >
-                  <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"gallery-horizontal"}></span>
-                  <span class="fce-nav-box-label">{box.name}</span>
-                  {#if isActive}
-                    <span class="fce-nav-box-check" aria-hidden="true" use:applyIcon={"check"}></span>
-                  {/if}
-                </button>
-              {/each}
-            {/if}
-          </div>
-        {/snippet}
-      </TreeSection>
-    </div>
-
-    <div
-      class="fce-nav-resize-handle"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={strings.navPane.resizeHandle}
-      onpointerdown={beginResize}
-    ></div>
-  </nav>
-{/if}
+  <div
+    class="fce-nav-resize-handle"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label={strings.navPane.resizeHandle}
+    onpointerdown={beginResize}
+  ></div>
+</nav>
