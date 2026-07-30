@@ -112,6 +112,7 @@
     sortField: "mtime",
     sortDirection: "desc",
     availableTags: [],
+    tagCounts: {},
     activeFilterTags: [],
     pinnedPaths: [],
     cardCornerRadius: "compact",
@@ -644,6 +645,7 @@
     {folderPath}
     {includeSubfolders}
     availableTags={panelState.availableTags}
+    tagCounts={panelState.tagCounts}
     {activeFilterTags}
     boxSummaries={panelState.boxSummaries}
     activeBoxId={panelState.activeBoxId}

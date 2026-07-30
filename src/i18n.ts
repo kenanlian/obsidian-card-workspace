@@ -431,7 +431,7 @@ const EN: UiStrings = {
       `Choose how many normalized summary lines each card preview can show (${min}-${max}).`,
     showNavItemCountsName: "Show item counts in navigation",
     showNavItemCountsDesc:
-      "Show how many cards each folder contributes in the navigation pane. The count follows the include-subfolders toggle.",
+      "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
   },
   toolbar: {
     searchStatus: {
@@ -814,7 +814,8 @@ const ZH: UiStrings = {
     previewLinesName: "预览行数",
     previewLinesDesc: (min: number, max: number) => `选择每张卡片预览可显示的规范化摘要行数（${min}-${max}）。`,
     showNavItemCountsName: "在导航栏显示条目计数",
-    showNavItemCountsDesc: "在导航栏中显示每个文件夹包含的卡片数量。计数会跟随“包含子文件夹”开关变化。",
+    showNavItemCountsDesc:
+      "在导航栏中显示每个文件夹和标签包含的卡片数量。文件夹计数会跟随“包含子文件夹”开关变化，标签计数包含其子标签。",
   },
   toolbar: {
     searchStatus: {

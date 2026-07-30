@@ -14,7 +14,7 @@ import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
 import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
-import { collectAllTags, getFileTags } from "./metadata-utils";
+import { collectAllTags, collectTagCounts, getFileTags } from "./metadata-utils";
 import {
   addTagToFile,
   batchAddTagToFiles,
@@ -1338,6 +1338,7 @@ export class FolderCardView extends ItemView {
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();
+      state.tagCounts = this.deriveTagCounts();
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
       state.cardCornerRadius = settings.cardCornerRadius;
@@ -3427,6 +3428,17 @@ export class FolderCardView extends ItemView {
     );
   }
 
+  private deriveTagCounts(): Record<string, number> {
+    if (!this.plugin.getSettings().showNavItemCounts) {
+      return {};
+    }
+
+    return collectTagCounts(
+      this.app,
+      this.baseCards.map((card) => card.file),
+    );
+  }
+
   private deriveVisibleCards(): NoteCardRecord[] {
     return this.deriveVisibleCardsFrom(this.baseCards);
   }
@@ -4365,6 +4377,7 @@ export class FolderCardView extends ItemView {
       sortField: projection.sortField,
       sortDirection: projection.sortDirection,
       availableTags: this.deriveAvailableTags(),
+      tagCounts: this.deriveTagCounts(),
       activeFilterTags: settings.filter.tags,
       pinnedPaths: projection.pinnedPaths,
       cardCornerRadius: settings.cardCornerRadius,
@@ -4458,6 +4471,7 @@ export class FolderCardView extends ItemView {
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
       state.availableTags = this.deriveAvailableTags();
+      state.tagCounts = this.deriveTagCounts();
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
       state.cardCornerRadius = settings.cardCornerRadius;

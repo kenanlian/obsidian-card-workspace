@@ -46,6 +46,7 @@ function createInitialPanelState(): PanelModelState {
     sortField: "mtime",
     sortDirection: "desc",
     availableTags: [],
+    tagCounts: {},
     activeFilterTags: [],
     pinnedPaths: [],
     cardCornerRadius: "compact",

@@ -9,6 +9,7 @@
     collectExpandableTagPaths,
     flattenVisibleTagTree,
     normalizeTagPath,
+    type VisibleTagTreeNode,
   } from "./tag-tree";
   import type { FolderActionPayload, FolderTreeNode } from "./types";
   import TreeSection from "./TreeSection.svelte";
@@ -40,6 +41,7 @@
     folderPath?: string;
     includeSubfolders?: boolean;
     availableTags?: string[];
+    tagCounts?: Record<string, number>;
     activeFilterTags?: string[];
     boxSummaries?: BoxSummary[];
     activeBoxId?: string | null;
@@ -67,6 +69,7 @@
     folderPath = "",
     includeSubfolders = true,
     availableTags = [],
+    tagCounts = {},
     activeFilterTags = [],
     boxSummaries = [],
     activeBoxId = null,
@@ -203,6 +206,10 @@
     return "folder";
   }
 
+  function getTagNodeIcon(node: VisibleTagTreeNode): string {
+    return node.hasChildren ? "tags" : "tag";
+  }
+
   function getFolderNodeCount(node: FolderTreeNode): number {
     if (!showNavItemCounts) {
       return 0;
@@ -211,11 +218,19 @@
     return includeSubfolders ? node.recursiveCount : node.directCount;
   }
 
+  function getTagNodeCount(node: VisibleTagTreeNode): number {
+    if (!showNavItemCounts) {
+      return 0;
+    }
+
+    return tagCounts[node.tag] ?? 0;
+  }
+
   function isFolderNodeSelected(node: FolderTreeNode): boolean {
     return !isBoxMode && node.path === folderPath;
   }
 
-  function onFolderChevronClick(event: MouseEvent, path: string): void {
+  function toggleFolderExpansion(event: MouseEvent, path: string): void {
     event.stopPropagation();
     const next = new Set(expandedFolderPaths);
     if (next.has(path)) {
@@ -226,7 +241,7 @@
     expandedFolderPaths = next;
   }
 
-  function onTagChevronClick(event: MouseEvent, tag: string): void {
+  function toggleTagExpansion(event: MouseEvent, tag: string): void {
     event.stopPropagation();
     const next = new Set(expandedTagPaths);
     if (next.has(tag)) {
@@ -379,6 +394,7 @@
   <div class="fce-nav-pane-sections">
     <TreeSection
       title={strings.navPane.foldersSection}
+      icon="folders"
       collapsed={folderSectionCollapsed}
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
@@ -396,14 +412,22 @@
                 {#if hasChildren}
                   <button
                     type="button"
-                    class="fce-tree-chevron"
+                    class="fce-tree-item-icon"
                     aria-label={expandedFolderPaths.has(node.path) ? strings.folderMenu.collapse : strings.folderMenu.expand}
                     aria-expanded={expandedFolderPaths.has(node.path)}
-                    onclick={(event) => onFolderChevronClick(event, node.path)}
-                    use:applyIcon={expandedFolderPaths.has(node.path) ? "chevron-down" : "chevron-right"}
-                  ></button>
+                    onclick={(event) => toggleFolderExpansion(event, node.path)}
+                  >
+                    <span class="fce-tree-item-glyph" aria-hidden="true" use:applyIcon={getFolderNodeIcon(node)}></span>
+                    <span
+                      class="fce-tree-item-chevron"
+                      aria-hidden="true"
+                      use:applyIcon={expandedFolderPaths.has(node.path) ? "chevron-down" : "chevron-right"}
+                    ></span>
+                  </button>
                 {:else}
-                  <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
+                  <span class="fce-tree-item-icon is-static" aria-hidden="true">
+                    <span class="fce-tree-item-glyph" use:applyIcon={getFolderNodeIcon(node)}></span>
+                  </span>
                 {/if}
               </div>
               <div class="fce-popup-row-content">
@@ -413,7 +437,6 @@
                   onclick={() => selectFolder(node.path)}
                   use:applyTooltip={label}
                 >
-                  <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={getFolderNodeIcon(node)}></span>
                   <span class="fce-tree-label">{label}</span>
                   {#if nodeCount > 0}
                     <span class="fce-nav-row-count">{nodeCount}</span>
@@ -428,6 +451,7 @@
 
     <TreeSection
       title={strings.navPane.tagsSection}
+      icon="tags"
       collapsed={tagSectionCollapsed}
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
@@ -442,19 +466,28 @@
           {:else}
             {#each visibleTagNodes as node (node.tag)}
               {@const isSelected = normalizedActiveTags.has(node.tag)}
+              {@const nodeCount = getTagNodeCount(node)}
               <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
                 <div class="fce-popup-row-leading">
                   {#if node.hasChildren}
                     <button
                       type="button"
-                      class="fce-tree-chevron"
+                      class="fce-tree-item-icon"
                       aria-label={expandedTagPaths.has(node.tag) ? strings.folderMenu.collapse : strings.folderMenu.expand}
                       aria-expanded={expandedTagPaths.has(node.tag)}
-                      onclick={(event) => onTagChevronClick(event, node.tag)}
-                      use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
-                    ></button>
+                      onclick={(event) => toggleTagExpansion(event, node.tag)}
+                    >
+                      <span class="fce-tree-item-glyph" aria-hidden="true" use:applyIcon={getTagNodeIcon(node)}></span>
+                      <span
+                        class="fce-tree-item-chevron"
+                        aria-hidden="true"
+                        use:applyIcon={expandedTagPaths.has(node.tag) ? "chevron-down" : "chevron-right"}
+                      ></span>
+                    </button>
                   {:else}
-                    <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
+                    <span class="fce-tree-item-icon is-static" aria-hidden="true">
+                      <span class="fce-tree-item-glyph" use:applyIcon={getTagNodeIcon(node)}></span>
+                    </span>
                   {/if}
                 </div>
                 <div class="fce-popup-row-content">
@@ -466,8 +499,10 @@
                     onclick={() => toggleTag(node.tag)}
                     use:applyTooltip={node.displayTag}
                   >
-                    <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"hash"}></span>
                     <span class="fce-tree-label">{node.label}</span>
+                    {#if nodeCount > 0}
+                      <span class="fce-nav-row-count">{nodeCount}</span>
+                    {/if}
                   </button>
                 </div>
                 {#if isSelected}
@@ -484,6 +519,7 @@
 
     <TreeSection
       title={strings.navPane.boxesSection}
+      icon="boxes"
       collapsed={boxSectionCollapsed}
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
@@ -503,7 +539,7 @@
                 onclick={() => selectBox(box.id)}
                 use:applyTooltip={isActive ? strings.navPane.exitBox : box.name}
               >
-                <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"gallery-horizontal"}></span>
+                <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"box"}></span>
                 <span class="fce-nav-box-label">{box.name}</span>
                 {#if isActive}
                   <span class="fce-nav-box-check" aria-hidden="true" use:applyIcon={"check"}></span>

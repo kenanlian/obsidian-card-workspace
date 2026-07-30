@@ -4,6 +4,7 @@
 
   interface TreeSectionProps {
     title: string;
+    icon: string;
     collapsed?: boolean;
     collapseLabel?: string;
     expandLabel?: string;
@@ -13,6 +14,7 @@
 
   let {
     title,
+    icon,
     collapsed = false,
     collapseLabel = "Collapse section",
     expandLabel = "Expand section",
@@ -39,7 +41,8 @@
       aria-label={collapsed ? expandLabel : collapseLabel}
       onclick={() => onToggle?.()}
     >
-      <span class="fce-tree-section-chevron" use:applyIcon={collapsed ? "chevron-right" : "chevron-down"}></span>
+      <span class="fce-tree-section-glyph" aria-hidden="true" use:applyIcon={icon}></span>
+      <span class="fce-tree-section-chevron" aria-hidden="true" use:applyIcon={collapsed ? "chevron-right" : "chevron-down"}></span>
       <span class="fce-tree-section-title">{title}</span>
     </button>
   </div>

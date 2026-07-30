@@ -127,6 +127,7 @@ function mountNav(
       folderPath: "notes",
       includeSubfolders: true,
       availableTags: ["work", "work/ai", "personal"],
+      tagCounts: { work: 3, "work/ai": 1, personal: 2 },
       activeFilterTags: [],
       boxSummaries: [
         { id: "box-1", name: "Alpha" },
@@ -164,6 +165,16 @@ function getTreeButtonByText(menuSelector: string, text: string): HTMLButtonElem
 function getFolderRowCount(label: string): string | null {
   const button = getTreeButtonByText(".fce-folder-menu", label);
   return button?.querySelector(".fce-nav-row-count")?.textContent?.trim() ?? null;
+}
+
+function getTagRowCount(label: string): string | null {
+  const button = getTreeButtonByText(".fce-tag-menu", label);
+  return button?.querySelector(".fce-nav-row-count")?.textContent?.trim() ?? null;
+}
+
+function getRowGlyphIcon(menuSelector: string, label: string): string | null {
+  const row = getTreeButtonByText(menuSelector, label)?.closest(".fce-tree-row");
+  return row?.querySelector(".fce-tree-item-glyph")?.getAttribute("data-icon") ?? null;
 }
 
 describe("NavigationPane.svelte", () => {
@@ -395,6 +406,66 @@ describe("NavigationPane.svelte", () => {
     ({ component } = mountNav({ showNavItemCounts: false, includeSubfolders: true }));
 
     expect(document.querySelector(".fce-nav-row-count")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders tag counts only when enabled", async () => {
+    let { component } = mountNav({ showNavItemCounts: true });
+
+    expect(getTagRowCount("work")).toBe("3");
+    expect(getTagRowCount("personal")).toBe("2");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountNav({ showNavItemCounts: false }));
+
+    expect(document.querySelector(".fce-tag-menu .fce-nav-row-count")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("leading icon toggles folder expansion and marks tag leaf icons", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    expect(getTreeButtonByText(".fce-folder-menu", "projects")?.querySelector("[data-icon]")).toBeNull();
+    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
+
+    const projectsRow = getTreeButtonByText(".fce-folder-menu", "projects")?.closest(".fce-tree-row");
+    const expandButton = projectsRow?.querySelector<HTMLButtonElement>(
+      '.fce-tree-item-icon[aria-label="Expand"]',
+    );
+    expect(expandButton).not.toBeNull();
+    expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).not.toBeNull();
+
+    expect(getRowGlyphIcon(".fce-tag-menu", "work")).toBe("tags");
+    expect(getRowGlyphIcon(".fce-tag-menu", "personal")).toBe("tag");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders section identity icons", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    const glyphIcons = Array.from(document.querySelectorAll(".fce-tree-section-glyph")).map((glyph) =>
+      glyph.getAttribute("data-icon"),
+    );
+    expect(glyphIcons).toEqual(["folders", "tags", "boxes"]);
+    expect(document.querySelectorAll(".fce-tree-section-chevron")).toHaveLength(3);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders box rows with the box icon", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    expect(document.querySelector(".fce-nav-box-icon")?.getAttribute("data-icon")).toBe("box");
 
     await disposeMountedComponent(component);
   });

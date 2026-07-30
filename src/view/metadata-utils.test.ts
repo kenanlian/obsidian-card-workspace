@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { getAllTags } from "obsidian";
-import { collectAllTags, matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
+import { collectAllTags, collectTagCounts, matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
 
 function createMockFile(basename: string): TFile {
   return {
@@ -99,5 +99,48 @@ describe("collectAllTags", () => {
       .mockReturnValueOnce(["#work/ai", "#personal"]);
 
     expect(collectAllTags(app, files)).toEqual(["personal", "Project", "Work/AI"]);
+  });
+});
+
+describe("collectTagCounts", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("rolls counts up to ancestor tag paths", () => {
+    const app = createMockApp();
+    const files = [createMockFile("Alpha"), createMockFile("Beta")];
+
+    getAllTagsMock
+      .mockReturnValueOnce(["#Work/AI"])
+      .mockReturnValueOnce(["#work/ml"]);
+
+    expect(collectTagCounts(app, files)).toEqual({
+      work: 2,
+      "work/ai": 1,
+      "work/ml": 1,
+    });
+  });
+
+  it("counts a file once per tag path even when it carries nested variants", () => {
+    const app = createMockApp();
+    const files = [createMockFile("Alpha")];
+
+    getAllTagsMock.mockReturnValueOnce(["#Work/AI", "#work/ai/harness"]);
+
+    expect(collectTagCounts(app, files)).toEqual({
+      work: 1,
+      "work/ai": 1,
+      "work/ai/harness": 1,
+    });
+  });
+
+  it("ignores files without tags", () => {
+    const app = createMockApp();
+    const files = [createMockFile("Alpha")];
+
+    getAllTagsMock.mockReturnValueOnce(null);
+
+    expect(collectTagCounts(app, files)).toEqual({});
   });
 });

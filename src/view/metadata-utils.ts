@@ -79,6 +79,42 @@ export function collectAllTags(app: App, files: TFile[]): string[] {
 }
 
 /**
+ * Count how many files fall under each tag path, keyed by normalized tag.
+ * A file with `work/ai` counts once for `work` and once for `work/ai`, so a
+ * parent count matches what selecting that parent would filter to.
+ */
+export function collectTagCounts(app: App, files: TFile[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const file of files) {
+    const cache = app.metadataCache.getFileCache(file);
+    const rawTags = cache ? getAllTags(cache) : null;
+    if (!rawTags || rawTags.length === 0) {
+      continue;
+    }
+
+    const pathsForFile = new Set<string>();
+    for (const rawTag of rawTags) {
+      const normalizedTag = normalizeTagPath(rawTag);
+      if (normalizedTag.length === 0) {
+        continue;
+      }
+
+      const segments = normalizedTag.split("/");
+      for (let index = 0; index < segments.length; index += 1) {
+        pathsForFile.add(segments.slice(0, index + 1).join("/"));
+      }
+    }
+
+    for (const tagPath of pathsForFile) {
+      counts[tagPath] = (counts[tagPath] ?? 0) + 1;
+    }
+  }
+
+  return counts;
+}
+
+/**
  * Check whether a file matches a tag filter. A file matches if it contains
  * ALL of the specified filter tags (AND logic). Filter tags should be
  * normalized (lowercase, no `#`).

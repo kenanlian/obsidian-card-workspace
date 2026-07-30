@@ -35,6 +35,7 @@ export interface PanelModelState {
   sortField: SortField;
   sortDirection: SortDirection;
   availableTags: string[];
+  tagCounts: Record<string, number>;
   activeFilterTags: string[];
   pinnedPaths: string[];
   cardCornerRadius: CardCornerRadius;
