@@ -30,6 +30,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       dragInsertAction,
       enableFileExplorerFolderClicks,
       previewLines,
+      showNavItemCounts,
     } = this.plugin.getSettings();
     const language = this.plugin.getUiLanguage();
     const strings = getSettingTabStrings(language);
@@ -107,6 +108,15 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             await this.plugin.saveSettings({ previewLines: value });
           });
+      });
+
+    new Setting(containerEl)
+      .setName(strings.showNavItemCountsName)
+      .setDesc(strings.showNavItemCountsDesc)
+      .addToggle((toggle) => {
+        toggle.setValue(showNavItemCounts).onChange(async (value) => {
+          await this.plugin.saveSettings({ showNavItemCounts: value });
+        });
       });
   }
 }

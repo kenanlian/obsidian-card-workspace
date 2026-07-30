@@ -74,6 +74,7 @@ function createInitialPanelState(): PanelModelState {
     folderSectionCollapsed: false,
     tagSectionCollapsed: false,
     boxSectionCollapsed: false,
+    showNavItemCounts: false,
   };
 }
 

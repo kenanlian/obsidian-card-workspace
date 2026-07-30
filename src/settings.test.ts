@@ -170,6 +170,15 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "medium" } as unknown).cardCornerRadius).toBe("medium");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "rounded" } as unknown).cardCornerRadius).toBe("rounded");
   });
+
+  it("defaults showNavItemCounts to false when absent", () => {
+    expect(normalizeSettings({}).showNavItemCounts).toBe(false);
+  });
+
+  it("defaults showNavItemCounts to false for non-boolean input and preserves true", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, showNavItemCounts: "yes" } as unknown).showNavItemCounts).toBe(false);
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, showNavItemCounts: true } as unknown).showNavItemCounts).toBe(true);
+  });
 });
 describe("normalizeSettings — sort fields", () => {
   it("preserves filename sort and falls back invalid sort fields to mtime", () => {

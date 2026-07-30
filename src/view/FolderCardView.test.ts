@@ -255,7 +255,7 @@ vi.mock("./note-ops", () => {
 import { FolderCardView } from "./FolderCardView";
 import type { SearchServiceSnapshot } from "../search";
 import type { CardFileKind } from "./file-kind";
-import type { NoteCardRecord } from "./types";
+import type { FolderTreeNode, NoteCardRecord } from "./types";
 
 interface TestHarness {
   view: FolderCardView;
@@ -311,6 +311,7 @@ function createHarness(): TestHarness {
     activeBoxId: null,
     navPaneWidth: 240,
     navPaneCollapsed: false,
+    showNavItemCounts: false,
   };
 
   const app = {
@@ -1317,12 +1318,16 @@ describe("FolderCardView host contract", () => {
         path: "/",
         children: [],
         depth: 0,
+        directCount: 0,
+        recursiveCount: 0,
       },
       {
         name: "archive",
         path: "archive",
         children: [],
         depth: 0,
+        directCount: 0,
+        recursiveCount: 0,
       },
       {
         name: "projects",
@@ -1333,11 +1338,54 @@ describe("FolderCardView host contract", () => {
             path: "projects/client-a",
             children: [],
             depth: 1,
+            directCount: 0,
+            recursiveCount: 0,
           },
         ],
         depth: 0,
+        directCount: 0,
+        recursiveCount: 0,
       },
     ]);
+  });
+
+  it("counts supported card files per folder only when the setting is enabled", () => {
+    const { view } = createHarness();
+    const settings = (view as any).plugin.getSettings() as Record<string, unknown>;
+    const nested = new testState.TestTFolder("projects/client-a");
+    nested.children = [
+      new testState.TestTFile("projects/client-a/brief.md"),
+      new testState.TestTFile("projects/client-a/board.canvas"),
+      new testState.TestTFile("projects/client-a/logo.png"),
+    ];
+    const projects = new testState.TestTFolder("projects");
+    projects.children = [
+      nested,
+      new testState.TestTFile("projects/index.md"),
+      new testState.TestTFile("projects/cover.png"),
+    ];
+    const root = new testState.TestTFolder("");
+    root.children = [projects, new testState.TestTFile("inbox.md")];
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+
+    settings.showNavItemCounts = true;
+
+    const [rootNode, projectsNode] = (view as any).buildFolderTree() as FolderTreeNode[];
+
+    expect(rootNode.directCount).toBe(1);
+    expect(rootNode.recursiveCount).toBe(4);
+    expect(projectsNode.directCount).toBe(1);
+    expect(projectsNode.recursiveCount).toBe(3);
+    expect(projectsNode.children[0].directCount).toBe(2);
+    expect(projectsNode.children[0].recursiveCount).toBe(2);
+
+    settings.showNavItemCounts = false;
+
+    const disabledTree = (view as any).buildFolderTree() as FolderTreeNode[];
+    const collectCounts = (nodes: FolderTreeNode[]): number[] =>
+      nodes.flatMap((node) => [node.directCount, node.recursiveCount, ...collectCounts(node.children)]);
+
+    expect(collectCounts(disabledTree).every((count) => count === 0)).toBe(true);
   });
 
   it("normalizes slash root selection requests to the internal empty-string folder path", async () => {

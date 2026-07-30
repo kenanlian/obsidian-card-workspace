@@ -8,7 +8,6 @@
     collapseLabel?: string;
     expandLabel?: string;
     onToggle?: () => void;
-    actions?: Snippet;
     body?: Snippet;
   }
 
@@ -18,7 +17,6 @@
     collapseLabel = "Collapse section",
     expandLabel = "Expand section",
     onToggle,
-    actions,
     body,
   }: TreeSectionProps = $props();
 
@@ -44,11 +42,6 @@
       <span class="fce-tree-section-chevron" use:applyIcon={collapsed ? "chevron-right" : "chevron-down"}></span>
       <span class="fce-tree-section-title">{title}</span>
     </button>
-    {#if actions}
-      <div class="fce-tree-section-actions">
-        {@render actions()}
-      </div>
-    {/if}
   </div>
   {#if !collapsed}
     <div class="fce-tree-section-body">

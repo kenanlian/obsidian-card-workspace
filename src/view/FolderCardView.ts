@@ -847,11 +847,13 @@ export class FolderCardView extends ItemView {
   private searchSnapshot: SearchServiceSnapshot | null = null;
   private searchSnapshotUnsubscribe: (() => void) | null = null;
   private searchDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
+  private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
   private static readonly STARTUP_PREVIEW_WAIT_MS = 120;
   private static readonly SEARCH_DEBOUNCE_MS = 120;
+  private static readonly FOLDER_TREE_DEBOUNCE_MS = 250;
 
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
@@ -1673,6 +1675,11 @@ export class FolderCardView extends ItemView {
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
     if (event.isFolder) {
       this.refreshFolderTreeState();
+    } else if (
+      this.plugin.getSettings().showNavItemCounts &&
+      event.eventType !== "modify"
+    ) {
+      this.scheduleFolderTreeRefresh();
     }
     const currentFolderPath = this.normalizeActiveFolderScopePath();
     let selectedFolderPathAfterRename: string | null = null;
@@ -1723,6 +1730,7 @@ export class FolderCardView extends ItemView {
     const hadPendingHydration = this.pendingHydration.size > 0;
     const cancelledDebounce = this.clearSearchDebounce();
 
+    this.clearFolderTreeDebounce();
     this.clearSearchSnapshotSubscription();
     this.searchSnapshot = null;
     this.queuedRequest = null;
@@ -3345,31 +3353,60 @@ export class FolderCardView extends ItemView {
       return [];
     }
 
-    const root = this.app.vault.getRoot();
-    const rootNode: FolderTreeNode = {
-      name: root.name || "/",
-      path: "/",
-      children: [],
-      depth: 0,
-    };
+    const countsEnabled = this.plugin.getSettings().showNavItemCounts;
+
+    function countDirectFiles(folder: TFolder): number {
+      if (!countsEnabled) {
+        return 0;
+      }
+
+      let total = 0;
+      for (const child of folder.children) {
+        if (child instanceof TFile && isSupportedCardFile(child)) {
+          total += 1;
+        }
+      }
+
+      return total;
+    }
 
     function buildNode(folder: TFolder, depth: number): FolderTreeNode {
       const subfolders = folder.children
         .filter((c): c is TFolder => c instanceof TFolder)
         .sort((a, b) => a.name.localeCompare(b.name));
+      const children = subfolders.map((sf) => buildNode(sf, depth + 1));
+      const directCount = countDirectFiles(folder);
+
       return {
         name: folder.name || "/",
         path: folder.path === "" ? "/" : folder.path,
-        children: subfolders.map((sf) => buildNode(sf, depth + 1)),
+        children,
         depth,
+        directCount,
+        recursiveCount: children.reduce((total, child) => total + child.recursiveCount, directCount),
       };
     }
 
+    const root = this.app.vault.getRoot();
     const subfolders = root.children
       .filter((c): c is TFolder => c instanceof TFolder)
       .sort((a, b) => a.name.localeCompare(b.name));
+    const topLevelNodes = subfolders.map((sf) => buildNode(sf, 0));
+    const rootDirectCount = countDirectFiles(root);
 
-    return [rootNode, ...subfolders.map((sf) => buildNode(sf, 0))];
+    const rootNode: FolderTreeNode = {
+      name: root.name || "/",
+      path: "/",
+      children: [],
+      depth: 0,
+      directCount: rootDirectCount,
+      recursiveCount: topLevelNodes.reduce(
+        (total, node) => total + node.recursiveCount,
+        rootDirectCount,
+      ),
+    };
+
+    return [rootNode, ...topLevelNodes];
   }
 
   private deriveAvailableTags(): string[] {
@@ -3454,6 +3491,24 @@ export class FolderCardView extends ItemView {
       this.searchDebounceTimer = null;
       void this.refreshSearchProjection();
     }, FolderCardView.SEARCH_DEBOUNCE_MS);
+  }
+
+  private clearFolderTreeDebounce(): boolean {
+    if (this.folderTreeDebounceTimer === null) {
+      return false;
+    }
+
+    this.getViewWindow().clearTimeout(this.folderTreeDebounceTimer);
+    this.folderTreeDebounceTimer = null;
+    return true;
+  }
+
+  private scheduleFolderTreeRefresh(): void {
+    this.clearFolderTreeDebounce();
+    this.folderTreeDebounceTimer = this.getViewWindow().setTimeout(() => {
+      this.folderTreeDebounceTimer = null;
+      this.refreshFolderTreeState();
+    }, FolderCardView.FOLDER_TREE_DEBOUNCE_MS);
   }
 
   private deriveSearchStatus(): SearchStatus {
@@ -4323,6 +4378,7 @@ export class FolderCardView extends ItemView {
       folderSectionCollapsed: settings.folderSectionCollapsed,
       tagSectionCollapsed: settings.tagSectionCollapsed,
       boxSectionCollapsed: settings.boxSectionCollapsed,
+      showNavItemCounts: settings.showNavItemCounts,
       ...this.buildBoxPanelFields(),
     };
   }
@@ -4413,6 +4469,7 @@ export class FolderCardView extends ItemView {
       state.folderSectionCollapsed = settings.folderSectionCollapsed;
       state.tagSectionCollapsed = settings.tagSectionCollapsed;
       state.boxSectionCollapsed = settings.boxSectionCollapsed;
+      state.showNavItemCounts = settings.showNavItemCounts;
       this.applyBoxProjectionToState(state);
     });
   }

@@ -63,6 +63,7 @@ export interface PanelModelState {
   folderSectionCollapsed: boolean;
   tagSectionCollapsed: boolean;
   boxSectionCollapsed: boolean;
+  showNavItemCounts: boolean;
 }
 
 export interface PanelModel {

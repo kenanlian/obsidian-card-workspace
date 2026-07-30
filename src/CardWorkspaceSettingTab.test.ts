@@ -158,6 +158,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "embed",
         enableFileExplorerFolderClicks: false,
         previewLines: 6,
+        showNavItemCounts: false,
       })),
       saveSettings: vi.fn(),
       getUiLanguage: vi.fn(() => "en"),
@@ -167,13 +168,14 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(5);
+    expect(mockState.settings).toHaveLength(6);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
       "Link File Explorer folder clicks to Card Workspace",
       "Default card open behavior",
       "Card drag insert behavior",
       "Card corner radius",
       "Preview lines",
+      "Show item counts in navigation",
     ]);
     expect(mockState.settings[0]).toMatchObject({
       desc:
@@ -216,6 +218,9 @@ describe("CardWorkspaceSettingTab", () => {
       value: 6,
       dynamicTooltip: true,
     });
+    expect(mockState.settings[5]?.toggle).toMatchObject({
+      value: false,
+    });
   });
 
   it("renders Chinese labels when the Obsidian language is Chinese", () => {
@@ -226,6 +231,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "embed",
         enableFileExplorerFolderClicks: false,
         previewLines: 6,
+        showNavItemCounts: false,
       })),
       saveSettings: vi.fn(),
       getUiLanguage: vi.fn(() => "zh"),
@@ -240,6 +246,7 @@ describe("CardWorkspaceSettingTab", () => {
       "卡片拖拽插入行为",
       "卡片圆角",
       "预览行数",
+      "在导航栏显示条目计数",
     ]);
     expect(mockState.settings[1]?.dropdown?.options[0]).toEqual({
       value: "smart",

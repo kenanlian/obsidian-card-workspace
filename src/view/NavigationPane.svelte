@@ -6,10 +6,11 @@
   import {
     buildTagTree,
     collectAncestorTagPaths,
+    collectExpandableTagPaths,
     flattenVisibleTagTree,
     normalizeTagPath,
   } from "./tag-tree";
-  import type { FolderTreeNode } from "./types";
+  import type { FolderActionPayload, FolderTreeNode } from "./types";
   import TreeSection from "./TreeSection.svelte";
 
   type NavSection = "folders" | "tags" | "boxes";
@@ -47,7 +48,9 @@
     folderSectionCollapsed?: boolean;
     tagSectionCollapsed?: boolean;
     boxSectionCollapsed?: boolean;
+    showNavItemCounts?: boolean;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
+    onFolderAction?: (payload: FolderActionPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
@@ -72,7 +75,9 @@
     folderSectionCollapsed = false,
     tagSectionCollapsed = false,
     boxSectionCollapsed = false,
+    showNavItemCounts = false,
     onSelectFolder,
+    onFolderAction,
     onFilterChange,
     onIncludeSubfoldersChange,
     onBoxCommand,
@@ -87,7 +92,6 @@
   let dragWidth = $state<number | null>(null);
 
   const isBoxMode = $derived(activeBoxId !== null);
-  const hasFolderScope = $derived(folderPath.length > 0);
   const paneWidth = $derived(dragWidth ?? navPaneWidth);
 
   const tagTree = $derived(buildTagTree(availableTags));
@@ -110,7 +114,41 @@
     return result;
   }
 
+  function collectExpandableFolderPaths(nodes: FolderTreeNode[]): string[] {
+    const paths: string[] = [];
+
+    function walk(items: FolderTreeNode[]): void {
+      for (const node of items) {
+        if (node.children.length > 0) {
+          paths.push(node.path);
+          walk(node.children);
+        }
+      }
+    }
+
+    walk(nodes);
+    return paths;
+  }
+
   const visibleFolderNodes = $derived(flattenVisibleTree(folderTree, expandedFolderPaths));
+  const expandableFolderPaths = $derived(collectExpandableFolderPaths(folderTree));
+  const expandableTagPaths = $derived(collectExpandableTagPaths(tagTree));
+  const hasExpandedNodes = $derived(expandedFolderPaths.size > 0 || expandedTagPaths.size > 0);
+
+  function toggleExpandAll(): void {
+    if (hasExpandedNodes) {
+      expandedFolderPaths = new Set();
+      expandedTagPaths = new Set();
+      return;
+    }
+
+    expandedFolderPaths = new Set(expandableFolderPaths);
+    expandedTagPaths = new Set(expandableTagPaths);
+  }
+
+  function createFolderInCurrentScope(): void {
+    onFolderAction?.({ action: "create-child-folder", path: folderPath });
+  }
 
   $effect(() => {
     if (seededTagExpansion || activeFilterTags.length === 0) {
@@ -151,6 +189,26 @@
 
   function getFolderNodeLabel(node: FolderTreeNode): string {
     return isRootFolderNode(node) ? strings.folderMenu.rootFolder : node.name;
+  }
+
+  function getFolderNodeIcon(node: FolderTreeNode): string {
+    if (isRootFolderNode(node)) {
+      return "house";
+    }
+
+    if (node.children.length > 0 && expandedFolderPaths.has(node.path)) {
+      return "folder-open";
+    }
+
+    return "folder";
+  }
+
+  function getFolderNodeCount(node: FolderTreeNode): number {
+    if (!showNavItemCounts) {
+      return 0;
+    }
+
+    return includeSubfolders ? node.recursiveCount : node.directCount;
   }
 
   function isFolderNodeSelected(node: FolderTreeNode): boolean {
@@ -211,7 +269,7 @@
   }
 
   function toggleIncludeSubfolders(): void {
-    if (isBoxMode || !hasFolderScope) {
+    if (isBoxMode) {
       return;
     }
 
@@ -266,20 +324,57 @@
   aria-label={strings.navPane.ariaLabel}
   style={layoutMode === "single" ? "" : `width: ${paneWidth}px;`}
 >
-  {#if layoutMode === "single"}
-    <div class="fce-nav-pane-header">
+  <div class="fce-nav-pane-header">
+    <div class="fce-nav-pane-header-group">
+      {#if layoutMode === "single"}
+        <button
+          type="button"
+          class="clickable-icon fce-nav-header-button"
+          aria-label={strings.navPane.backToCards}
+          onclick={() => onToggleNavPane?.()}
+          use:applyIcon={"arrow-left"}
+          use:applyTooltip={strings.navPane.backToCards}
+        >
+          <span class="fce-sr-only">{strings.navPane.backToCards}</span>
+        </button>
+      {/if}
+    </div>
+    <div class="fce-nav-pane-header-group">
       <button
         type="button"
-        class="clickable-icon fce-nav-pane-toggle"
-        aria-label={strings.navPane.backToCards}
-        onclick={() => onToggleNavPane?.()}
-        use:applyIcon={"arrow-left"}
-        use:applyTooltip={strings.navPane.backToCards}
+        class="clickable-icon fce-nav-header-button"
+        aria-label={hasExpandedNodes ? strings.navPane.collapseAll : strings.navPane.expandAll}
+        onclick={toggleExpandAll}
+        use:applyIcon={hasExpandedNodes ? "chevrons-down-up" : "chevrons-up-down"}
+        use:applyTooltip={hasExpandedNodes ? strings.navPane.collapseAll : strings.navPane.expandAll}
       >
-        <span class="fce-sr-only">{strings.navPane.backToCards}</span>
+        <span class="fce-sr-only">{hasExpandedNodes ? strings.navPane.collapseAll : strings.navPane.expandAll}</span>
       </button>
+      <button
+        type="button"
+        class="clickable-icon fce-nav-header-button"
+        aria-label={strings.folderMenu.createChildFolder}
+        onclick={createFolderInCurrentScope}
+        use:applyIcon={"folder-plus"}
+        use:applyTooltip={strings.folderMenu.createChildFolder}
+      >
+        <span class="fce-sr-only">{strings.folderMenu.createChildFolder}</span>
+      </button>
+      {#if !isBoxMode}
+        <button
+          type="button"
+          class="clickable-icon fce-nav-header-button {includeSubfolders ? 'is-active' : ''}"
+          aria-label={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
+          aria-pressed={includeSubfolders}
+          onclick={toggleIncludeSubfolders}
+          use:applyIcon={"folder-tree"}
+          use:applyTooltip={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
+        >
+          <span class="fce-sr-only">{strings.folderMenu.subfoldersSrLabel}</span>
+        </button>
+      {/if}
     </div>
-  {/if}
+  </div>
 
   <div class="fce-nav-pane-sections">
     <TreeSection
@@ -289,27 +384,13 @@
       expandLabel={strings.navPane.expandSection}
       onToggle={() => toggleSection("folders")}
     >
-      {#snippet actions()}
-        {#if hasFolderScope && !isBoxMode}
-          <button
-            type="button"
-            class="clickable-icon fce-nav-section-action {includeSubfolders ? 'is-active' : ''}"
-            aria-label={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
-            aria-pressed={includeSubfolders}
-            onclick={toggleIncludeSubfolders}
-            use:applyIcon={"folder-tree"}
-            use:applyTooltip={includeSubfolders ? strings.folderMenu.includeSubfolders : strings.folderMenu.directFolderOnly}
-          >
-            <span class="fce-sr-only">{strings.folderMenu.subfoldersSrLabel}</span>
-          </button>
-        {/if}
-      {/snippet}
       {#snippet body()}
         <div class="fce-tree-menu fce-nav-tree fce-folder-menu" role="tree">
           {#each visibleFolderNodes as node (node.path)}
             {@const hasChildren = node.children.length > 0}
             {@const isSelected = isFolderNodeSelected(node)}
             {@const label = getFolderNodeLabel(node)}
+            {@const nodeCount = getFolderNodeCount(node)}
             <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
               <div class="fce-popup-row-leading">
                 {#if hasChildren}
@@ -321,8 +402,6 @@
                     onclick={(event) => onFolderChevronClick(event, node.path)}
                     use:applyIcon={expandedFolderPaths.has(node.path) ? "chevron-down" : "chevron-right"}
                   ></button>
-                {:else if isRootFolderNode(node)}
-                  <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"house"}></span>
                 {:else}
                   <span class="fce-tree-chevron is-placeholder" aria-hidden="true"></span>
                 {/if}
@@ -334,13 +413,12 @@
                   onclick={() => selectFolder(node.path)}
                   use:applyTooltip={label}
                 >
+                  <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={getFolderNodeIcon(node)}></span>
                   <span class="fce-tree-label">{label}</span>
+                  {#if nodeCount > 0}
+                    <span class="fce-nav-row-count">{nodeCount}</span>
+                  {/if}
                 </button>
-              </div>
-              <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
-                {#if isSelected}
-                  <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
-                {/if}
               </div>
             </div>
           {/each}
@@ -388,14 +466,15 @@
                     onclick={() => toggleTag(node.tag)}
                     use:applyTooltip={node.displayTag}
                   >
+                    <span class="fce-tree-node-icon" aria-hidden="true" use:applyIcon={"hash"}></span>
                     <span class="fce-tree-label">{node.label}</span>
                   </button>
                 </div>
-                <div class="fce-popup-row-trailing" aria-hidden={!isSelected}>
-                  {#if isSelected}
+                {#if isSelected}
+                  <div class="fce-popup-row-trailing">
                     <span class="fce-popup-row-selected-indicator fce-tree-row-check" use:applyIcon={"check"}></span>
-                  {/if}
-                </div>
+                  </div>
+                {/if}
               </div>
             {/each}
           {/if}

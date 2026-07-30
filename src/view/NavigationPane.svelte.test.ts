@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import NavigationPane from "./NavigationPane.svelte";
-import type { FolderTreeNode } from "./types";
+import type { FolderActionPayload, FolderTreeNode } from "./types";
 
 interface SelectFolderPayload {
   path: string;
@@ -24,6 +24,7 @@ type NavSection = "folders" | "tags" | "boxes";
 
 interface NavCallbacks {
   onSelectFolder?: (payload: SelectFolderPayload) => void;
+  onFolderAction?: (payload: FolderActionPayload) => void;
   onFilterChange?: (payload: FilterChangePayload) => void;
   onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
   onBoxCommand?: (payload: BoxCommandPayload) => void;
@@ -35,6 +36,7 @@ interface NavCallbacks {
 interface Captured {
   callbacks: NavCallbacks;
   selectFolderEvents: SelectFolderPayload[];
+  folderActionEvents: FolderActionPayload[];
   filterEvents: FilterChangePayload[];
   includeEvents: IncludeSubfoldersChangePayload[];
   boxCommandEvents: BoxCommandPayload[];
@@ -47,14 +49,24 @@ let mountedComponents: Array<Record<string, unknown>> = [];
 
 function createFolderTree(): FolderTreeNode[] {
   return [
-    { name: "/", path: "/", depth: 0, children: [] },
-    { name: "notes", path: "notes", depth: 0, children: [] },
-    { name: "projects", path: "projects", depth: 0, children: [] },
+    { name: "/", path: "/", depth: 0, children: [], directCount: 0, recursiveCount: 0 },
+    { name: "notes", path: "notes", depth: 0, children: [], directCount: 0, recursiveCount: 0 },
+    {
+      name: "projects",
+      path: "projects",
+      depth: 0,
+      children: [
+        { name: "alpha", path: "projects/alpha", depth: 1, children: [], directCount: 3, recursiveCount: 3 },
+      ],
+      directCount: 2,
+      recursiveCount: 5,
+    },
   ];
 }
 
 function createCaptured(): Captured {
   const selectFolderEvents: SelectFolderPayload[] = [];
+  const folderActionEvents: FolderActionPayload[] = [];
   const filterEvents: FilterChangePayload[] = [];
   const includeEvents: IncludeSubfoldersChangePayload[] = [];
   const boxCommandEvents: BoxCommandPayload[] = [];
@@ -65,6 +77,9 @@ function createCaptured(): Captured {
     callbacks: {
       onSelectFolder: (payload) => {
         selectFolderEvents.push(payload);
+      },
+      onFolderAction: (payload) => {
+        folderActionEvents.push(payload);
       },
       onFilterChange: (payload) => {
         filterEvents.push(payload);
@@ -87,6 +102,7 @@ function createCaptured(): Captured {
       },
     },
     selectFolderEvents,
+    folderActionEvents,
     filterEvents,
     includeEvents,
     boxCommandEvents,
@@ -142,7 +158,12 @@ function getSectionToggle(title: string): HTMLButtonElement | null {
 
 function getTreeButtonByText(menuSelector: string, text: string): HTMLButtonElement | null {
   return Array.from(document.querySelectorAll<HTMLButtonElement>(`${menuSelector} .fce-tree-button`))
-    .find((button) => button.textContent?.trim() === text) ?? null;
+    .find((button) => button.querySelector(".fce-tree-label")?.textContent?.trim() === text) ?? null;
+}
+
+function getFolderRowCount(label: string): string | null {
+  const button = getTreeButtonByText(".fce-folder-menu", label);
+  return button?.querySelector(".fce-nav-row-count")?.textContent?.trim() ?? null;
 }
 
 describe("NavigationPane.svelte", () => {
@@ -255,9 +276,9 @@ describe("NavigationPane.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("emits include-subfolders toggle from the folder section header action", async () => {
+  it("emits include-subfolders toggle from the pane header", async () => {
     const captured = createCaptured();
-    const { component } = mountNav({ folderPath: "notes", includeSubfolders: true }, captured.callbacks);
+    let { component } = mountNav({ folderPath: "notes", includeSubfolders: true }, captured.callbacks);
 
     const includeToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
     expect(includeToggle).not.toBeNull();
@@ -266,13 +287,69 @@ describe("NavigationPane.svelte", () => {
     expect(captured.includeEvents).toEqual([{ value: false }]);
 
     await disposeMountedComponent(component);
+
+    const rootCaptured = createCaptured();
+    ({ component } = mountNav({ folderPath: "/", includeSubfolders: true }, rootCaptured.callbacks));
+
+    const rootToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
+    expect(rootToggle).not.toBeNull();
+    rootToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(rootCaptured.includeEvents).toEqual([{ value: false }]);
+
+    await disposeMountedComponent(component);
   });
 
-  it("renders no pane header in dual layout", async () => {
+  it("hides the include-subfolders toggle in box mode", async () => {
+    const { component } = mountNav({ activeBoxId: "box-1" });
+
+    expect(document.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders the header toolbar in dual layout", async () => {
     const { component } = mountNav();
 
-    expect(document.querySelector(".fce-nav-pane-header")).toBeNull();
-    expect(document.querySelector(".fce-nav-pane")).not.toBeNull();
+    expect(document.querySelector(".fce-nav-pane-header")).not.toBeNull();
+    expect(document.querySelector('button[aria-label="Back to cards"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Create child folder"]')).not.toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("expands every folder and tag node, then collapses them", async () => {
+    const { component } = mountNav();
+
+    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
+
+    const expandAll = document.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]');
+    expect(expandAll).not.toBeNull();
+    expandAll?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).not.toBeNull();
+    expect(getTreeButtonByText(".fce-tag-menu", "ai")).not.toBeNull();
+
+    const collapseAll = document.querySelector<HTMLButtonElement>('button[aria-label="Collapse all"]');
+    expect(collapseAll).not.toBeNull();
+    collapseAll?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits create-child-folder for the current scope", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ folderPath: "notes" }, captured.callbacks);
+
+    document.querySelector<HTMLButtonElement>('button[aria-label="Create child folder"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    expect(captured.folderActionEvents).toEqual([{ action: "create-child-folder", path: "notes" }]);
 
     await disposeMountedComponent(component);
   });
@@ -286,6 +363,38 @@ describe("NavigationPane.svelte", () => {
     backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(captured.togglePaneEvents).toBe(1);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("marks the selected folder row and leaves tag checks intact", async () => {
+    const { component } = mountNav({ folderPath: "notes", activeFilterTags: ["work"] });
+
+    const selectedFolderRow = document.querySelector<HTMLElement>(".fce-folder-menu .fce-tree-row.is-selected");
+    expect(selectedFolderRow).not.toBeNull();
+    expect(selectedFolderRow?.querySelector(".fce-tree-row-check")).toBeNull();
+
+    expect(document.querySelector(".fce-tag-menu .fce-tree-row.is-selected .fce-tree-row-check")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("renders counts only when enabled and follows include-subfolders", async () => {
+    let { component } = mountNav({ showNavItemCounts: true, includeSubfolders: true });
+
+    expect(getFolderRowCount("projects")).toBe("5");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountNav({ showNavItemCounts: true, includeSubfolders: false }));
+
+    expect(getFolderRowCount("projects")).toBe("2");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountNav({ showNavItemCounts: false, includeSubfolders: true }));
+
+    expect(document.querySelector(".fce-nav-row-count")).toBeNull();
 
     await disposeMountedComponent(component);
   });

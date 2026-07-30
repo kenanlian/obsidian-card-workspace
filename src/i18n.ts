@@ -18,6 +18,8 @@ export interface SettingTabStrings {
   cardCornerRadiusDesc: string;
   previewLinesName: string;
   previewLinesDesc: (min: number, max: number) => string;
+  showNavItemCountsName: string;
+  showNavItemCountsDesc: string;
 }
 
 export interface ToolbarStrings {
@@ -85,6 +87,8 @@ export interface ToolbarStrings {
     collapsePane: string;
     expandPane: string;
     backToCards: string;
+    expandAll: string;
+    collapseAll: string;
     resizeHandle: string;
     foldersSection: string;
     tagsSection: string;
@@ -425,6 +429,9 @@ const EN: UiStrings = {
     previewLinesName: "Preview lines",
     previewLinesDesc: (min: number, max: number) =>
       `Choose how many normalized summary lines each card preview can show (${min}-${max}).`,
+    showNavItemCountsName: "Show item counts in navigation",
+    showNavItemCountsDesc:
+      "Show how many cards each folder contributes in the navigation pane. The count follows the include-subfolders toggle.",
   },
   toolbar: {
     searchStatus: {
@@ -491,6 +498,8 @@ const EN: UiStrings = {
       collapsePane: "Collapse navigation",
       expandPane: "Expand navigation",
       backToCards: "Back to cards",
+      expandAll: "Expand all",
+      collapseAll: "Collapse all",
       resizeHandle: "Resize navigation",
       foldersSection: "Folders",
       tagsSection: "Tags",
@@ -804,6 +813,8 @@ const ZH: UiStrings = {
     cardCornerRadiusDesc: "调整面板中每张卡片边框的方正或圆润程度。",
     previewLinesName: "预览行数",
     previewLinesDesc: (min: number, max: number) => `选择每张卡片预览可显示的规范化摘要行数（${min}-${max}）。`,
+    showNavItemCountsName: "在导航栏显示条目计数",
+    showNavItemCountsDesc: "在导航栏中显示每个文件夹包含的卡片数量。计数会跟随“包含子文件夹”开关变化。",
   },
   toolbar: {
     searchStatus: {
@@ -870,6 +881,8 @@ const ZH: UiStrings = {
       collapsePane: "折叠导航栏",
       expandPane: "展开导航栏",
       backToCards: "返回卡片",
+      expandAll: "全部展开",
+      collapseAll: "全部折叠",
       resizeHandle: "调整导航栏宽度",
       foldersSection: "文件夹",
       tagsSection: "标签",

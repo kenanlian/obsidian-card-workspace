@@ -232,6 +232,8 @@ export interface FolderTreeNode {
   path: string;                       // Full vault path (e.g., "Projects/2024/Q1") — "/" for vault root
   children: FolderTreeNode[];         // Sorted alphabetically by name
   depth: number;                      // 0 for root, 1 for top-level folders, etc.
+  directCount: number;                // Supported card files directly in this folder; 0 when counting is disabled
+  recursiveCount: number;             // directCount plus every descendant folder's recursiveCount; 0 when counting is disabled
 }
 
 export type FolderManagementAction = "create-child-folder" | "move-folder" | "delete-folder";

@@ -32,6 +32,7 @@ function createMockContext(): PipelineContext {
       folderSectionCollapsed: false,
       tagSectionCollapsed: false,
       boxSectionCollapsed: false,
+      showNavItemCounts: false,
     },
     search: {
       query: "",

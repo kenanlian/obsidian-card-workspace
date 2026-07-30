@@ -140,6 +140,7 @@
     folderSectionCollapsed: false,
     tagSectionCollapsed: false,
     boxSectionCollapsed: false,
+    showNavItemCounts: false,
   };
 
   let {
@@ -260,6 +261,7 @@
   const folderSectionCollapsed = $derived(panelState.folderSectionCollapsed);
   const tagSectionCollapsed = $derived(panelState.tagSectionCollapsed);
   const boxSectionCollapsed = $derived(panelState.boxSectionCollapsed);
+  const showNavItemCounts = $derived(panelState.showNavItemCounts);
 
   function handleCardOpenNote(detail: OpenNotePayload): void {
     onOpenNote?.(detail);
@@ -650,7 +652,9 @@
     {folderSectionCollapsed}
     {tagSectionCollapsed}
     {boxSectionCollapsed}
+    {showNavItemCounts}
     onSelectFolder={handleSelectFolder}
+    onFolderAction={handleFolderAction}
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onBoxCommand={handleBoxCommand}

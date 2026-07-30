@@ -116,6 +116,7 @@ export interface PluginSettings {
   folderSectionCollapsed: boolean;
   tagSectionCollapsed: boolean;
   boxSectionCollapsed: boolean;
+  showNavItemCounts: boolean;
 }
 
 export interface PartialPluginSettings {
@@ -142,6 +143,7 @@ export interface PartialPluginSettings {
   folderSectionCollapsed?: boolean;
   tagSectionCollapsed?: boolean;
   boxSectionCollapsed?: boolean;
+  showNavItemCounts?: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -168,6 +170,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   folderSectionCollapsed: false,
   tagSectionCollapsed: false,
   boxSectionCollapsed: false,
+  showNavItemCounts: false,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -433,6 +436,10 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     boxSectionCollapsed: normalizeBooleanSetting(
       data.boxSectionCollapsed,
       DEFAULT_SETTINGS.boxSectionCollapsed,
+    ),
+    showNavItemCounts: normalizeBooleanSetting(
+      data.showNavItemCounts,
+      DEFAULT_SETTINGS.showNavItemCounts,
     ),
   };
 }
