@@ -1,5 +1,6 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
+  import { PLAIN_FOLDER_ICON } from "../icons";
   import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
   import { NAV_PANE_WIDTH_MAX, NAV_PANE_WIDTH_MIN } from "../settings";
   import type { BoxSummary } from "./panel-model";
@@ -93,6 +94,11 @@
   let expandedTagPaths = $state<Set<string>>(new Set());
   let seededTagExpansion = $state(false);
   let dragWidth = $state<number | null>(null);
+  let hoveredFolderPath = $state<string | null>(null);
+  let hoveredTagPath = $state<string | null>(null);
+
+  const paneLabelId = $props.id();
+  const resizeHandleLabelId = `${paneLabelId}-resize`;
 
   const isBoxMode = $derived(activeBoxId !== null);
   const paneWidth = $derived(dragWidth ?? navPaneWidth);
@@ -199,15 +205,104 @@
       return "house";
     }
 
-    if (node.children.length > 0 && expandedFolderPaths.has(node.path)) {
-      return "folder-open";
+    if (node.children.length === 0) {
+      return PLAIN_FOLDER_ICON;
     }
 
-    return "folder";
+    return expandedFolderPaths.has(node.path) ? "folder-open" : "folders";
   }
 
   function getTagNodeIcon(node: VisibleTagTreeNode): string {
     return node.hasChildren ? "tags" : "tag";
+  }
+
+  /**
+   * The flattened tree renders every node as a flat sibling, so a descendant row
+   * is not a DOM descendant of its parent row. Subtree hover therefore has to be
+   * resolved from the hovered path instead of CSS `:hover`.
+   */
+  function isPathHovered(hoveredPath: string | null, path: string): boolean {
+    if (hoveredPath === null) {
+      return false;
+    }
+
+    return hoveredPath === path || hoveredPath.startsWith(`${path}/`);
+  }
+
+  interface HoverTracker {
+    onEnter: () => void;
+    onLeave: () => void;
+  }
+
+  function trackHover(
+    node: HTMLElement,
+    tracker: HoverTracker,
+  ): { update: (nextTracker: HoverTracker) => void; destroy: () => void } {
+    let current = tracker;
+    const handleEnter = (): void => current.onEnter();
+    const handleLeave = (): void => current.onLeave();
+    node.addEventListener("pointerenter", handleEnter);
+    node.addEventListener("pointerleave", handleLeave);
+
+    return {
+      update(nextTracker: HoverTracker) {
+        current = nextTracker;
+      },
+      destroy() {
+        node.removeEventListener("pointerenter", handleEnter);
+        node.removeEventListener("pointerleave", handleLeave);
+      },
+    };
+  }
+
+  function enterFolderRow(path: string): void {
+    hoveredFolderPath = path;
+  }
+
+  function leaveFolderRow(path: string): void {
+    if (hoveredFolderPath === path) {
+      hoveredFolderPath = null;
+    }
+  }
+
+  function enterTagRow(tag: string): void {
+    hoveredTagPath = tag;
+  }
+
+  function leaveTagRow(tag: string): void {
+    if (hoveredTagPath === tag) {
+      hoveredTagPath = null;
+    }
+  }
+
+  /** Guards against a hovered row being unmounted before its leave event fires. */
+  function resetHoveredRows(): void {
+    hoveredFolderPath = null;
+    hoveredTagPath = null;
+  }
+
+  function isFolderRowHovered(node: FolderTreeNode): boolean {
+    if (isRootFolderNode(node)) {
+      return hoveredFolderPath === node.path;
+    }
+
+    return isPathHovered(hoveredFolderPath, node.path);
+  }
+
+  function isTagRowHovered(node: VisibleTagTreeNode): boolean {
+    return isPathHovered(hoveredTagPath, node.tag);
+  }
+
+  function getFolderNodeTooltip(node: FolderTreeNode): string {
+    return strings.navPane.folderCountsTooltip(node.recursiveCount, node.recursiveFolderCount);
+  }
+
+  function getTagNodeTooltip(node: VisibleTagTreeNode): string {
+    return strings.navPane.tagCountsTooltip(tagCounts[node.tag] ?? 0, node.descendantCount);
+  }
+
+  function getBoxTooltip(box: BoxSummary, isActive: boolean): string {
+    return isActive ? strings.navPane.exitBox : strings.navPane.boxCountsTooltip(box.cardCount);
   }
 
   function getFolderNodeCount(node: FolderTreeNode): number {
@@ -334,11 +429,16 @@
   }
 </script>
 
+<!--
+  The accessible name is a hidden element rather than `aria-label`, because
+  Obsidian renders a hover tooltip for every element carrying `aria-label`.
+-->
 <nav
   class="fce-nav-pane"
-  aria-label={strings.navPane.ariaLabel}
+  aria-labelledby={paneLabelId}
   style={layoutMode === "single" ? "" : `width: ${paneWidth}px;`}
 >
+  <span class="fce-sr-only" id={paneLabelId}>{strings.navPane.ariaLabel}</span>
   <div class="fce-nav-pane-header">
     <div class="fce-nav-pane-header-group">
       {#if layoutMode === "single"}
@@ -391,7 +491,10 @@
     </div>
   </div>
 
-  <div class="fce-nav-pane-sections">
+  <div
+    class="fce-nav-pane-sections"
+    use:trackHover={{ onEnter: () => undefined, onLeave: resetHoveredRows }}
+  >
     <TreeSection
       title={strings.navPane.foldersSection}
       icon="folders"
@@ -407,7 +510,14 @@
             {@const isSelected = isFolderNodeSelected(node)}
             {@const label = getFolderNodeLabel(node)}
             {@const nodeCount = getFolderNodeCount(node)}
-            <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
+            <div
+              class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''} {isFolderRowHovered(node) ? 'is-hovered' : ''}"
+              style="padding-left: calc(var(--fce-nav-indent-step) * ({node.depth} + 1));"
+              use:trackHover={{
+                onEnter: () => enterFolderRow(node.path),
+                onLeave: () => leaveFolderRow(node.path),
+              }}
+            >
               <div class="fce-popup-row-leading">
                 {#if hasChildren}
                   <button
@@ -435,7 +545,7 @@
                   type="button"
                   class="fce-tree-button"
                   onclick={() => selectFolder(node.path)}
-                  use:applyTooltip={label}
+                  use:applyTooltip={getFolderNodeTooltip(node)}
                 >
                   <span class="fce-tree-label">{label}</span>
                   {#if nodeCount > 0}
@@ -467,7 +577,14 @@
             {#each visibleTagNodes as node (node.tag)}
               {@const isSelected = normalizedActiveTags.has(node.tag)}
               {@const nodeCount = getTagNodeCount(node)}
-              <div class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''}" style="padding-left: calc(var(--fce-nav-indent-step) * {node.depth} + 8px);">
+              <div
+                class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''} {isTagRowHovered(node) ? 'is-hovered' : ''}"
+                style="padding-left: calc(var(--fce-nav-indent-step) * ({node.depth} + 1));"
+                use:trackHover={{
+                  onEnter: () => enterTagRow(node.tag),
+                  onLeave: () => leaveTagRow(node.tag),
+                }}
+              >
                 <div class="fce-popup-row-leading">
                   {#if node.hasChildren}
                     <button
@@ -497,7 +614,7 @@
                     role="menuitemcheckbox"
                     aria-checked={isSelected}
                     onclick={() => toggleTag(node.tag)}
-                    use:applyTooltip={node.displayTag}
+                    use:applyTooltip={getTagNodeTooltip(node)}
                   >
                     <span class="fce-tree-label">{node.label}</span>
                     {#if nodeCount > 0}
@@ -537,7 +654,7 @@
                 class="fce-nav-box-item {isActive ? 'is-active' : ''}"
                 aria-pressed={isActive}
                 onclick={() => selectBox(box.id)}
-                use:applyTooltip={isActive ? strings.navPane.exitBox : box.name}
+                use:applyTooltip={getBoxTooltip(box, isActive)}
               >
                 <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"box"}></span>
                 <span class="fce-nav-box-label">{box.name}</span>
@@ -556,7 +673,9 @@
     class="fce-nav-resize-handle"
     role="separator"
     aria-orientation="vertical"
-    aria-label={strings.navPane.resizeHandle}
+    aria-labelledby={resizeHandleLabelId}
     onpointerdown={beginResize}
-  ></div>
+  >
+    <span class="fce-sr-only" id={resizeHandleLabelId}>{strings.navPane.resizeHandle}</span>
+  </div>
 </nav>

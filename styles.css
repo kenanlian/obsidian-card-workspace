@@ -229,13 +229,18 @@
   color: var(--fce-nav-icon-color);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row:hover .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-within .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph {
+/*
+ * `is-hovered` is set by NavigationPane so an ancestor keeps its chevron while
+ * the pointer is anywhere in its subtree. `:has(:focus-visible)` keeps keyboard
+ * users covered without the click-then-leave stickiness of `:focus-within`.
+ */
+.folder-card-view .fce-nav-tree .fce-tree-row.is-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph,
+.folder-card-view .fce-nav-tree .fce-tree-row:has(:focus-visible) .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph {
   display: none;
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row:hover .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-within .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron,
+.folder-card-view .fce-nav-tree .fce-tree-row:has(:focus-visible) .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron {
   display: flex;
 }
 
@@ -279,9 +284,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 4px 12px 4px 8px;
+  min-height: var(--fce-nav-row-height);
+  margin: 0 4px;
+  padding: 4px 12px 4px var(--fce-nav-indent-step);
   border: none;
+  border-radius: var(--fce-nav-row-radius);
   background: transparent;
   box-shadow: none;
   outline: none;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import NavigationPane from "./NavigationPane.svelte";
+import { PLAIN_FOLDER_ICON } from "../icons";
 import type { FolderActionPayload, FolderTreeNode } from "./types";
 
 interface SelectFolderPayload {
@@ -49,17 +50,42 @@ let mountedComponents: Array<Record<string, unknown>> = [];
 
 function createFolderTree(): FolderTreeNode[] {
   return [
-    { name: "/", path: "/", depth: 0, children: [], directCount: 0, recursiveCount: 0 },
-    { name: "notes", path: "notes", depth: 0, children: [], directCount: 0, recursiveCount: 0 },
+    {
+      name: "/",
+      path: "/",
+      depth: 0,
+      children: [],
+      directCount: 0,
+      recursiveCount: 5,
+      recursiveFolderCount: 3,
+    },
+    {
+      name: "notes",
+      path: "notes",
+      depth: 0,
+      children: [],
+      directCount: 0,
+      recursiveCount: 0,
+      recursiveFolderCount: 0,
+    },
     {
       name: "projects",
       path: "projects",
       depth: 0,
       children: [
-        { name: "alpha", path: "projects/alpha", depth: 1, children: [], directCount: 3, recursiveCount: 3 },
+        {
+          name: "alpha",
+          path: "projects/alpha",
+          depth: 1,
+          children: [],
+          directCount: 3,
+          recursiveCount: 3,
+          recursiveFolderCount: 0,
+        },
       ],
       directCount: 2,
       recursiveCount: 5,
+      recursiveFolderCount: 1,
     },
   ];
 }
@@ -130,8 +156,8 @@ function mountNav(
       tagCounts: { work: 3, "work/ai": 1, personal: 2 },
       activeFilterTags: [],
       boxSummaries: [
-        { id: "box-1", name: "Alpha" },
-        { id: "box-2", name: "Beta" },
+        { id: "box-1", name: "Alpha", cardCount: 4 },
+        { id: "box-2", name: "Beta", cardCount: 0 },
       ],
       activeBoxId: null,
       navPaneWidth: 240,
@@ -175,6 +201,19 @@ function getTagRowCount(label: string): string | null {
 function getRowGlyphIcon(menuSelector: string, label: string): string | null {
   const row = getTreeButtonByText(menuSelector, label)?.closest(".fce-tree-row");
   return row?.querySelector(".fce-tree-item-glyph")?.getAttribute("data-icon") ?? null;
+}
+
+function getRow(menuSelector: string, label: string): HTMLElement | null {
+  return (getTreeButtonByText(menuSelector, label)?.closest(".fce-tree-row") as HTMLElement | null) ?? null;
+}
+
+function getRowTooltip(menuSelector: string, label: string): string | null {
+  return getTreeButtonByText(menuSelector, label)?.getAttribute("data-tooltip") ?? null;
+}
+
+function getBoxItemByName(name: string): HTMLButtonElement | null {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-nav-box-item"))
+    .find((button) => button.querySelector(".fce-nav-box-label")?.textContent?.trim() === name) ?? null;
 }
 
 describe("NavigationPane.svelte", () => {
@@ -444,6 +483,114 @@ describe("NavigationPane.svelte", () => {
 
     expect(getRowGlyphIcon(".fce-tag-menu", "work")).toBe("tags");
     expect(getRowGlyphIcon(".fce-tag-menu", "personal")).toBe("tag");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("shows recursive counts instead of names in row tooltips", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    expect(getRowTooltip(".fce-folder-menu", "Root /")).toBe("5 files, 3 folders");
+    expect(getRowTooltip(".fce-folder-menu", "projects")).toBe("5 files, 1 folder");
+    expect(getRowTooltip(".fce-folder-menu", "notes")).toBe("0 files, 0 folders");
+    expect(getRowTooltip(".fce-tag-menu", "work")).toBe("3 files, 1 subtag");
+    expect(getRowTooltip(".fce-tag-menu", "personal")).toBe("2 files, 0 subtags");
+    expect(getBoxItemByName("Alpha")?.getAttribute("data-tooltip")).toBe("4 files");
+    expect(getBoxItemByName("Beta")?.getAttribute("data-tooltip")).toBe("0 files");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("keeps tooltip counts when inline counts are disabled and labels the active box with the exit action", async () => {
+    const { component } = mountNav({ showNavItemCounts: false, activeBoxId: "box-1" });
+    await tick();
+
+    expect(document.querySelector(".fce-nav-row-count")).toBeNull();
+    expect(getRowTooltip(".fce-folder-menu", "projects")).toBe("5 files, 1 folder");
+    expect(getBoxItemByName("Alpha")?.getAttribute("data-tooltip")).toBe("Exit box");
+    expect(getBoxItemByName("Beta")?.getAttribute("data-tooltip")).toBe("0 files");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("uses the plugin folder glyph, folders, folder-open, and house by node shape", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    expect(getRowGlyphIcon(".fce-folder-menu", "Root /")).toBe("house");
+    expect(getRowGlyphIcon(".fce-folder-menu", "notes")).toBe(PLAIN_FOLDER_ICON);
+    expect(getRowGlyphIcon(".fce-folder-menu", "projects")).toBe("folders");
+
+    getRow(".fce-folder-menu", "projects")
+      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(getRowGlyphIcon(".fce-folder-menu", "projects")).toBe("folder-open");
+    expect(getRowGlyphIcon(".fce-folder-menu", "alpha")).toBe(PLAIN_FOLDER_ICON);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("marks a row as hovered while the pointer is anywhere in its subtree", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    const parentRow = getRow(".fce-folder-menu", "projects");
+    parentRow
+      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    const childRow = getRow(".fce-folder-menu", "alpha");
+    childRow?.dispatchEvent(new Event("pointerenter"));
+    await tick();
+
+    expect(parentRow?.classList.contains("is-hovered")).toBe(true);
+    expect(childRow?.classList.contains("is-hovered")).toBe(true);
+    expect(getRow(".fce-folder-menu", "notes")?.classList.contains("is-hovered")).toBe(false);
+
+    childRow?.dispatchEvent(new Event("pointerleave"));
+    await tick();
+
+    expect(parentRow?.classList.contains("is-hovered")).toBe(false);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("indents rows by one indent step per depth level plus a base step", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    getRow(".fce-folder-menu", "projects")
+      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(getRow(".fce-folder-menu", "projects")?.getAttribute("style")).toContain(
+      "calc(var(--fce-nav-indent-step) * (0 + 1))",
+    );
+    expect(getRow(".fce-folder-menu", "alpha")?.getAttribute("style")).toContain(
+      "calc(var(--fce-nav-indent-step) * (1 + 1))",
+    );
+
+    await disposeMountedComponent(component);
+  });
+
+  it("names the pane and resize handle without an aria-label tooltip", async () => {
+    const { component } = mountNav();
+    await tick();
+
+    const pane = document.querySelector<HTMLElement>(".fce-nav-pane");
+    expect(pane?.hasAttribute("aria-label")).toBe(false);
+    const paneLabelId = pane?.getAttribute("aria-labelledby") ?? "";
+    expect(document.getElementById(paneLabelId)?.textContent?.trim()).toBe("Navigation");
+
+    const handle = document.querySelector<HTMLElement>(".fce-nav-resize-handle");
+    expect(handle?.hasAttribute("aria-label")).toBe(false);
+    const handleLabelId = handle?.getAttribute("aria-labelledby") ?? "";
+    expect(document.getElementById(handleLabelId)?.textContent?.trim()).toBe("Resize navigation");
 
     await disposeMountedComponent(component);
   });

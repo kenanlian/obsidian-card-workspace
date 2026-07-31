@@ -98,6 +98,9 @@ export interface ToolbarStrings {
     tagsDisabledInBox: string;
     boxesEmpty: string;
     exitBox: string;
+    folderCountsTooltip: (files: number, folders: number) => string;
+    tagCountsTooltip: (files: number, subtags: number) => string;
+    boxCountsTooltip: (files: number) => string;
   };
   search: {
     placeholder: string;
@@ -509,6 +512,11 @@ const EN: UiStrings = {
       tagsDisabledInBox: "Tag filter is unavailable in a box",
       boxesEmpty: "No boxes yet",
       exitBox: "Exit box",
+      folderCountsTooltip: (files: number, folders: number) =>
+        `${files} file${files === 1 ? "" : "s"}, ${folders} folder${folders === 1 ? "" : "s"}`,
+      tagCountsTooltip: (files: number, subtags: number) =>
+        `${files} file${files === 1 ? "" : "s"}, ${subtags} subtag${subtags === 1 ? "" : "s"}`,
+      boxCountsTooltip: (files: number) => `${files} file${files === 1 ? "" : "s"}`,
     },
     search: {
       placeholder: "Search notes",
@@ -893,6 +901,10 @@ const ZH: UiStrings = {
       tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
       boxesEmpty: "暂无卡片盒",
       exitBox: "退出卡片盒",
+      folderCountsTooltip: (files: number, folders: number) =>
+        `${files} 个文件, ${folders} 个文件夹`,
+      tagCountsTooltip: (files: number, subtags: number) => `${files} 个文件, ${subtags} 个子标签`,
+      boxCountsTooltip: (files: number) => `${files} 个文件`,
     },
     search: {
       placeholder: "搜索笔记",

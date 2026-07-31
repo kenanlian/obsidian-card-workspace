@@ -16,6 +16,7 @@ export interface OpenNotePayload {
 export interface BoxSummary {
   id: string;
   name: string;
+  cardCount: number;
 }
 
 export interface PanelModelState {

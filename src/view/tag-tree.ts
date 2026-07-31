@@ -14,6 +14,7 @@ export interface VisibleTagTreeNode {
   depth: number;
   synthetic: boolean;
   hasChildren: boolean;
+  descendantCount: number;
   selectable: boolean;
 }
 
@@ -156,6 +157,14 @@ export function collectAncestorTagPaths(tagPath: string): string[] {
   return ancestorPaths;
 }
 
+function countDescendantTags(nodes: TagTreeNode[]): number {
+  let total = 0;
+  for (const node of nodes) {
+    total += 1 + countDescendantTags(node.children);
+  }
+  return total;
+}
+
 export function flattenVisibleTagTree(nodes: TagTreeNode[], expandedTags: Set<string>): VisibleTagTreeNode[] {
   const visibleNodes: VisibleTagTreeNode[] = [];
 
@@ -168,6 +177,7 @@ export function flattenVisibleTagTree(nodes: TagTreeNode[], expandedTags: Set<st
         depth: node.depth,
         synthetic: node.synthetic,
         hasChildren: node.children.length > 0,
+        descendantCount: countDescendantTags(node.children),
         selectable: true,
       });
 

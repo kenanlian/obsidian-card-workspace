@@ -104,6 +104,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 0,
         synthetic: true,
         hasChildren: true,
+        descendantCount: 3,
         selectable: true,
       },
     ]);
@@ -116,6 +117,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 0,
         synthetic: true,
         hasChildren: true,
+        descendantCount: 3,
         selectable: true,
       },
       {
@@ -125,6 +127,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 1,
         synthetic: true,
         hasChildren: true,
+        descendantCount: 1,
         selectable: true,
       },
       {
@@ -134,6 +137,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 2,
         synthetic: false,
         hasChildren: false,
+        descendantCount: 0,
         selectable: true,
       },
       {
@@ -143,6 +147,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 1,
         synthetic: false,
         hasChildren: false,
+        descendantCount: 0,
         selectable: true,
       },
     ]);
@@ -159,6 +164,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 0,
         synthetic: false,
         hasChildren: false,
+        descendantCount: 0,
         selectable: true,
       },
       {
@@ -168,6 +174,7 @@ describe("flattenVisibleTagTree", () => {
         depth: 0,
         synthetic: true,
         hasChildren: true,
+        descendantCount: 1,
         selectable: true,
       },
     ]);

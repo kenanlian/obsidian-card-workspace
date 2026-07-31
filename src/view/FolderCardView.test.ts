@@ -1320,6 +1320,7 @@ describe("FolderCardView host contract", () => {
         depth: 0,
         directCount: 0,
         recursiveCount: 0,
+        recursiveFolderCount: 3,
       },
       {
         name: "archive",
@@ -1328,6 +1329,7 @@ describe("FolderCardView host contract", () => {
         depth: 0,
         directCount: 0,
         recursiveCount: 0,
+        recursiveFolderCount: 0,
       },
       {
         name: "projects",
@@ -1340,16 +1342,18 @@ describe("FolderCardView host contract", () => {
             depth: 1,
             directCount: 0,
             recursiveCount: 0,
+            recursiveFolderCount: 0,
           },
         ],
         depth: 0,
         directCount: 0,
         recursiveCount: 0,
+        recursiveFolderCount: 1,
       },
     ]);
   });
 
-  it("counts supported card files per folder only when the setting is enabled", () => {
+  it("counts supported card files and descendant folders regardless of the inline count setting", () => {
     const { view } = createHarness();
     const settings = (view as any).plugin.getSettings() as Record<string, unknown>;
     const nested = new testState.TestTFolder("projects/client-a");
@@ -1374,18 +1378,21 @@ describe("FolderCardView host contract", () => {
 
     expect(rootNode.directCount).toBe(1);
     expect(rootNode.recursiveCount).toBe(4);
+    expect(rootNode.recursiveFolderCount).toBe(2);
     expect(projectsNode.directCount).toBe(1);
     expect(projectsNode.recursiveCount).toBe(3);
+    expect(projectsNode.recursiveFolderCount).toBe(1);
     expect(projectsNode.children[0].directCount).toBe(2);
     expect(projectsNode.children[0].recursiveCount).toBe(2);
+    expect(projectsNode.children[0].recursiveFolderCount).toBe(0);
 
     settings.showNavItemCounts = false;
 
-    const disabledTree = (view as any).buildFolderTree() as FolderTreeNode[];
-    const collectCounts = (nodes: FolderTreeNode[]): number[] =>
-      nodes.flatMap((node) => [node.directCount, node.recursiveCount, ...collectCounts(node.children)]);
+    const [disabledRootNode, disabledProjectsNode] = (view as any).buildFolderTree() as FolderTreeNode[];
 
-    expect(collectCounts(disabledTree).every((count) => count === 0)).toBe(true);
+    expect(disabledRootNode.recursiveCount).toBe(4);
+    expect(disabledRootNode.recursiveFolderCount).toBe(2);
+    expect(disabledProjectsNode.recursiveCount).toBe(3);
   });
 
   it("normalizes slash root selection requests to the internal empty-string folder path", async () => {
@@ -1762,7 +1769,37 @@ describe("FolderCardView card box mode", () => {
     const state = getPanelState(view);
     expect(state.activeBoxId).toBe("box-1");
     expect(state.activeBoxName).toBe("Ideas");
-    expect(state.boxSummaries).toEqual([{ id: "box-1", name: "Ideas" }]);
+    expect(state.boxSummaries).toEqual([{ id: "box-1", name: "Ideas", cardCount: 0 }]);
+  });
+
+  it("exposes box member counts and caches them per membership signature", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox({ manualPaths: ["notes/a.md", "notes/b.md"] })];
+    settings.activeBoxId = null;
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => new testState.TestTFile(path),
+    );
+
+    await view.onOpen();
+    await tick();
+
+    expect(getPanelState(view).boxSummaries).toEqual([
+      { id: "box-1", name: "Ideas", cardCount: 2 },
+    ]);
+
+    const collectSpy = vi.spyOn(view as any, "collectBoxFiles");
+    (view as any).pushState();
+
+    expect(collectSpy).not.toHaveBeenCalled();
+
+    settings.boxes = [makeTestBox({ manualPaths: ["notes/a.md"] })];
+    (view as any).pushState();
+
+    expect(collectSpy).toHaveBeenCalledTimes(1);
+    expect(getPanelState(view).boxSummaries).toEqual([
+      { id: "box-1", name: "Ideas", cardCount: 1 },
+    ]);
   });
 
   it("switches and exits boxes via box commands", () => {

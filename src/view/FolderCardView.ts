@@ -848,6 +848,7 @@ export class FolderCardView extends ItemView {
   private searchSnapshotUnsubscribe: (() => void) | null = null;
   private searchDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
+  private boxCardCountCache = new Map<string, { signature: string; count: number }>();
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
@@ -929,6 +930,24 @@ export class FolderCardView extends ItemView {
   }
 
   /**
+   * Member count for a box, cached per membership signature.
+   *
+   * Counting scans every rule's folder scope, so the cache keeps `pushState()`
+   * cheap; it is cleared on vault mutations and on box persistence.
+   */
+  private countBoxCards(box: CardBoxDefinition): number {
+    const signature = this.boxSignature(box);
+    const cached = this.boxCardCountCache.get(box.id);
+    if (cached && cached.signature === signature) {
+      return cached.count;
+    }
+
+    const count = this.collectBoxFiles(box).length;
+    this.boxCardCountCache.set(box.id, { signature, count });
+    return count;
+  }
+
+  /**
    * Resolve the candidate member files for a box: the union of each rule's
    * folder scope plus manual paths, filtered down to actual box members.
    * Membership is metadata-based and never gated by search index readiness.
@@ -997,7 +1016,11 @@ export class FolderCardView extends ItemView {
     return {
       activeBoxId: settings.activeBoxId ?? null,
       activeBoxName: box ? box.name : null,
-      boxSummaries: (settings.boxes ?? []).map((entry) => ({ id: entry.id, name: entry.name })),
+      boxSummaries: (settings.boxes ?? []).map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        cardCount: this.countBoxCards(entry),
+      })),
       boxExcludedCount: box ? box.excludedPaths.length : 0,
     };
   }
@@ -1674,12 +1697,10 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    this.boxCardCountCache.clear();
     if (event.isFolder) {
       this.refreshFolderTreeState();
-    } else if (
-      this.plugin.getSettings().showNavItemCounts &&
-      event.eventType !== "modify"
-    ) {
+    } else if (event.eventType !== "modify") {
       this.scheduleFolderTreeRefresh();
     }
     const currentFolderPath = this.normalizeActiveFolderScopePath();
@@ -3354,13 +3375,7 @@ export class FolderCardView extends ItemView {
       return [];
     }
 
-    const countsEnabled = this.plugin.getSettings().showNavItemCounts;
-
     function countDirectFiles(folder: TFolder): number {
-      if (!countsEnabled) {
-        return 0;
-      }
-
       let total = 0;
       for (const child of folder.children) {
         if (child instanceof TFile && isSupportedCardFile(child)) {
@@ -3385,6 +3400,10 @@ export class FolderCardView extends ItemView {
         depth,
         directCount,
         recursiveCount: children.reduce((total, child) => total + child.recursiveCount, directCount),
+        recursiveFolderCount: children.reduce(
+          (total, child) => total + 1 + child.recursiveFolderCount,
+          0,
+        ),
       };
     }
 
@@ -3404,6 +3423,12 @@ export class FolderCardView extends ItemView {
       recursiveCount: topLevelNodes.reduce(
         (total, node) => total + node.recursiveCount,
         rootDirectCount,
+      ),
+      // The root node hoists its subfolders to top level, so its own descendant
+      // folder count has to be derived from the hoisted nodes.
+      recursiveFolderCount: topLevelNodes.reduce(
+        (total, node) => total + 1 + node.recursiveFolderCount,
+        0,
       ),
     };
 
@@ -3429,10 +3454,6 @@ export class FolderCardView extends ItemView {
   }
 
   private deriveTagCounts(): Record<string, number> {
-    if (!this.plugin.getSettings().showNavItemCounts) {
-      return {};
-    }
-
     return collectTagCounts(
       this.app,
       this.baseCards.map((card) => card.file),

@@ -41,6 +41,7 @@ import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent,
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
+import { PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -190,6 +191,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private registerCustomIcons(): void {
     addIcon(BULK_ADD_TAG_ICON, BULK_ADD_TAG_ICON_SVG);
     addIcon(BULK_REMOVE_TAG_ICON, BULK_REMOVE_TAG_ICON_SVG);
+    addIcon(PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG);
   }
 
   onunload(): void {
