@@ -2,7 +2,6 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
-  import type { BoxSummary } from "./panel-model";
   import type { SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -35,9 +34,8 @@
     boxStrings?: BoxStrings;
     activeBoxId?: string | null;
     activeBoxName?: string | null;
-    boxSummaries?: BoxSummary[];
-    boxExcludedCount?: number;
     folderPath?: string;
+    activeFilterTags?: string[];
     navVisible?: boolean;
     onToggleNavPane?: () => void;
     sortField?: string;
@@ -146,9 +144,8 @@
     boxStrings = getUiStrings("en").box,
     activeBoxId = null,
     activeBoxName = null,
-    boxSummaries = [],
-    boxExcludedCount = 0,
     folderPath = "",
+    activeFilterTags = [],
     navVisible = false,
     onToggleNavPane,
     sortField = "mtime",
@@ -175,7 +172,6 @@
     onSearchQueryReset,
     onBoxCommand,
   }: ToolbarProps = $props();
-  const boxButtonId = "fce-box-button";
   const sortButtonId = "fce-sort-button";
 
   const SORT_OPTIONS = $derived<SortMenuOption[]>([
@@ -206,16 +202,31 @@
   let sortMenuY = $state(0);
 
   let sortButtonEl: HTMLElement | null = null;
-  let boxButtonEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
-  let boxMenuEl: HTMLElement | null = null;
-
-  let showBoxMenu = $state(false);
-  let boxMenuX = $state(0);
-  let boxMenuY = $state(0);
 
   const isBoxMode = $derived(activeBoxId !== null);
-  const otherBoxes = $derived(boxSummaries.filter((box) => box.id !== activeBoxId));
+
+  function formatScopeTag(tag: string): string {
+    return tag.startsWith("#") ? tag : `#${tag}`;
+  }
+
+  const isVaultRootScope = $derived(folderPath === "/" || folderPath === "");
+  const folderScopeName = $derived(
+    isVaultRootScope ? strings.folderMenu.rootFolder : (folderPath.split("/").pop() ?? folderPath),
+  );
+  const folderScopeFullLabel = $derived(
+    isVaultRootScope ? strings.folderMenu.rootFolder : folderPath,
+  );
+  const tagScopeLabel = $derived(activeFilterTags.map(formatScopeTag).join(", "));
+
+  function joinScope(folderLabel: string): string {
+    return tagScopeLabel.length > 0
+      ? `${folderLabel}${strings.scope.separator}${tagScopeLabel}`
+      : folderLabel;
+  }
+
+  const scopeText = $derived(isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeName));
+  const scopeTooltip = $derived(isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeFullLabel));
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
@@ -356,31 +367,11 @@
     sortButtonEl = node;
   });
 
-  const captureBoxButton = createElementCapture((node) => {
-    boxButtonEl = node;
-  });
-
   function closeSortMenu(): void {
     showSortMenu = false;
   }
 
-  function closeBoxMenu(): void {
-    showBoxMenu = false;
-  }
-
-  function openBoxMenu(event: MouseEvent): void {
-    if (showBoxMenu) {
-      closeBoxMenu();
-      return;
-    }
-    boxMenuX = event.clientX;
-    boxMenuY = event.clientY;
-    showBoxMenu = true;
-    closeSortMenu();
-  }
-
   function emitBoxCommand(command: string, boxId?: string): void {
-    closeBoxMenu();
     onBoxCommand?.(boxId === undefined ? { command } : { command, boxId });
   }
 
@@ -390,15 +381,6 @@
       sortMenuEl = node;
     },
     close: closeSortMenu,
-    closeOnEscape: true,
-  });
-
-  const boxMenuAction = createPopupPortalAction({
-    getButton: () => boxButtonEl,
-    setMenu: (node) => {
-      boxMenuEl = node;
-    },
-    close: closeBoxMenu,
     closeOnEscape: true,
   });
 
@@ -435,7 +417,7 @@
     <div class="fce-toolbar-buttons">
       <button
         type="button"
-        class="clickable-icon fce-toolbar-button {navVisible ? 'is-selected' : ''}"
+        class="clickable-icon fce-toolbar-button"
         aria-label={navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}
         aria-pressed={navVisible}
         onclick={() => onToggleNavPane?.()}
@@ -444,108 +426,89 @@
       >
         <span class="fce-sr-only">{navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}</span>
       </button>
-      {#if isBoxMode}
-        <button
-          type="button"
-          class="clickable-icon fce-toolbar-button fce-box-exit-button"
-          aria-label={boxStrings.exitTitle}
-          onclick={() => emitBoxCommand("exit")}
-          use:applyIcon={"arrow-left"}
-          use:applyTooltip={boxStrings.exitTitle}
-        >
-          <span class="fce-sr-only">{boxStrings.exit}</span>
-        </button>
-        <div class="fce-toolbar-folder-group">
-          <button
-            type="button"
-            class="fce-folder-button is-selected fce-box-switcher-button"
-            id={boxButtonId}
-            aria-label={boxStrings.entryTitle}
-            onclick={openBoxMenu}
-            use:captureBoxButton
-          >
-            <span class="fce-folder-button-text">{activeBoxName}</span>
-            <span class="fce-folder-button-chevron" use:applyIcon={"chevron-down"}></span>
-          </button>
-        </div>
-        <button
-          type="button"
-          class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
-          id={sortButtonId}
-          aria-label={boxStrings.sortTitle}
-          onclick={(event) => selectToolbarAction("sort", event)}
-          use:applyIcon={"arrow-up-narrow-wide"}
-          use:captureSortButton
-        >
-          <span class="fce-sr-only">{boxStrings.sortTitle}</span>
-        </button>
-        <button
-          type="button"
-          class="clickable-icon fce-toolbar-button"
-          aria-label={boxStrings.configureTitle}
-          onclick={() => emitBoxCommand("configure")}
-          use:applyIcon={"settings-2"}
-          use:applyTooltip={boxStrings.configureTitle}
-        >
-          <span class="fce-sr-only">{boxStrings.configure}</span>
-        </button>
-        <button
-          type="button"
-          class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
-          aria-label={strings.actions.bulkTitle}
-          onclick={(event) => selectToolbarAction("bulk", event)}
-          use:applyIcon={"check-check"}
-        >
-          <span class="fce-sr-only">{strings.actions.bulk}</span>
-        </button>
-      {:else}
-      {#each TOOLBAR_ACTIONS as action}
-        {#if action.id === "sort"}
+      <div class="fce-toolbar-scope {isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
+        <span class="fce-sr-only">{strings.scope.ariaLabel}</span>
+        <span class="fce-toolbar-scope-text">{scopeText}</span>
+      </div>
+      <div class="fce-toolbar-actions">
+        {#if isBoxMode}
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
             id={sortButtonId}
-            aria-label={action.title}
-            onclick={(event) => selectToolbarAction(action.id, event)}
-            use:applyIcon={action.icon}
+            aria-label={boxStrings.sortTitle}
+            onclick={(event) => selectToolbarAction("sort", event)}
+            use:applyIcon={"arrow-up-narrow-wide"}
             use:captureSortButton
           >
-            <span class="fce-sr-only">{action.label}</span>
+            <span class="fce-sr-only">{boxStrings.sortTitle}</span>
           </button>
-        {:else}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
-            aria-label={action.title}
-            onclick={(event) => selectToolbarAction(action.id, event)}
-            use:applyIcon={action.icon}
+            class="clickable-icon fce-toolbar-button"
+            aria-label={boxStrings.configureTitle}
+            onclick={() => emitBoxCommand("configure")}
+            use:applyIcon={"settings-2"}
+            use:applyTooltip={boxStrings.configureTitle}
           >
-            <span class="fce-sr-only">{action.label}</span>
+            <span class="fce-sr-only">{boxStrings.configure}</span>
+          </button>
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
+            aria-label={strings.actions.bulkTitle}
+            onclick={(event) => selectToolbarAction("bulk", event)}
+            use:applyIcon={"check-check"}
+          >
+            <span class="fce-sr-only">{strings.actions.bulk}</span>
+          </button>
+        {:else}
+          {#each TOOLBAR_ACTIONS as action}
+            {#if action.id === "sort"}
+              <button
+                type="button"
+                class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+                id={sortButtonId}
+                aria-label={action.title}
+                onclick={(event) => selectToolbarAction(action.id, event)}
+                use:applyIcon={action.icon}
+                use:captureSortButton
+              >
+                <span class="fce-sr-only">{action.label}</span>
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
+                aria-label={action.title}
+                onclick={(event) => selectToolbarAction(action.id, event)}
+                use:applyIcon={action.icon}
+              >
+                <span class="fce-sr-only">{action.label}</span>
+              </button>
+            {/if}
+          {/each}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button"
+            aria-label={boxStrings.saveScopeTitle}
+            onclick={() => emitBoxCommand("save-scope-as-box")}
+            use:applyIcon={"package-plus"}
+            use:applyTooltip={boxStrings.saveScopeTitle}
+          >
+            <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
           </button>
         {/if}
-      {/each}
         <button
           type="button"
-          class="clickable-icon fce-toolbar-button fce-box-entry-button {showBoxMenu ? 'is-selected' : ''}"
-          id={boxButtonId}
-          aria-label={boxStrings.entryTitle}
-          onclick={openBoxMenu}
-          use:captureBoxButton
-          use:applyIcon={"gallery-horizontal"}
-          use:applyTooltip={boxStrings.entryTitle}
+          class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
+          aria-label={strings.actions.toggleSearch}
+          onclick={toggleSearch}
+          use:applyIcon={"search"}
         >
-          <span class="fce-sr-only">{boxStrings.entryTitle}</span>
+          <span class="fce-sr-only">{strings.actions.toggleSearch}</span>
         </button>
-      {/if}
-      <button
-        type="button"
-        class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
-        aria-label={strings.actions.toggleSearch}
-        onclick={toggleSearch}
-        use:applyIcon={"search"}
-      >
-        <span class="fce-sr-only">{strings.actions.toggleSearch}</span>
-      </button>
+      </div>
     </div>
   </div>
 
@@ -649,72 +612,5 @@
         </button>
       {/if}
     {/each}
-  </div>
-{/if}
-
-{#if showBoxMenu}
-  <div
-    class="fce-popup-menu fce-box-menu"
-    role="menu"
-    aria-labelledby={boxButtonId}
-    style="position: fixed; left: {boxMenuX}px; top: {boxMenuY}px;"
-    use:boxMenuAction
-  >
-    {#if isBoxMode}
-      {#if otherBoxes.length > 0}
-        <div class="fce-box-menu-heading">{boxStrings.switchHeading}</div>
-        {#each otherBoxes as box}
-          <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("switch", box.id)}>
-            <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
-          </button>
-        {/each}
-        <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
-      {/if}
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("rename")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.rename}</span></span>
-      </button>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("duplicate")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.duplicate}</span></span>
-      </button>
-      <button type="button" class="fce-popup-row fce-box-menu-item is-destructive" role="menuitem" onclick={() => emitBoxCommand("delete")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.delete}</span></span>
-      </button>
-      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
-      </button>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("exit")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.exit}</span></span>
-      </button>
-    {:else if boxSummaries.length === 0}
-      <div class="fce-box-menu-invite">{boxStrings.emptyInvite}</div>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("save-scope-as-box")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.saveScopeAsBox}</span></span>
-      </button>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
-      </button>
-    {:else}
-      <div class="fce-box-menu-heading">{boxStrings.switchHeading}</div>
-      {#each boxSummaries as box}
-        <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("switch", box.id)}>
-          <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
-        </button>
-      {/each}
-      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
-      <div class="fce-box-menu-heading">{boxStrings.addScopeToBox}</div>
-      {#each boxSummaries as box}
-        <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("add-scope-to-box", box.id)}>
-          <span class="fce-popup-row-content"><span class="fce-box-menu-label">{box.name}</span></span>
-        </button>
-      {/each}
-      <div class="fce-box-menu-separator" role="separator" aria-hidden="true"></div>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("save-scope-as-box")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.saveScopeAsBox}</span></span>
-      </button>
-      <button type="button" class="fce-popup-row fce-box-menu-item" role="menuitem" onclick={() => emitBoxCommand("create")}>
-        <span class="fce-popup-row-content"><span class="fce-box-menu-label">{boxStrings.createBox}</span></span>
-      </button>
-    {/if}
   </div>
 {/if}

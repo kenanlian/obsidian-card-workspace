@@ -1443,6 +1443,9 @@ export class FolderCardView extends ItemView {
         onBoxCommand: (detail: { command?: unknown; boxId?: unknown }) => {
           this.handleBoxCommand(detail);
         },
+        onBoxContextMenu: (detail: { boxId?: unknown; mouseEvent?: unknown }) => {
+          this.openBoxContextMenu(detail);
+        },
         onNavPaneResize: (width: number) => {
           void this.onNavPaneResize(width);
         },
@@ -2082,6 +2085,110 @@ export class FolderCardView extends ItemView {
           void this.routeCardMenuAction("delete", notePath);
         });
     });
+  }
+
+  private openBoxContextMenu(detail: { boxId?: unknown; mouseEvent?: unknown }): void {
+    if (!this.isMouseEventLike(detail.mouseEvent)) {
+      return;
+    }
+
+    const menu = new Menu();
+    const boxId = typeof detail.boxId === "string" ? detail.boxId : null;
+    if (boxId === null) {
+      this.addBoxCreationMenuItems(menu);
+    } else if (!this.addBoxItemMenuItems(menu, boxId)) {
+      return;
+    }
+
+    menu.showAtMouseEvent(detail.mouseEvent);
+
+    const menuDom = this.getMenuDom(menu);
+    if (menuDom) {
+      this.decorateCardContextMenu(menuDom, this.strings.box.delete);
+    }
+  }
+
+  private addBoxCreationMenuItems(menu: Menu): void {
+    const strings = this.strings.box;
+    menu.addItem((item) => {
+      item
+        .setTitle(strings.createBox)
+        .setIcon("package-plus")
+        .onClick(() => {
+          this.handleBoxCommand({ command: "create" });
+        });
+    });
+
+    if (!this.isBoxMode()) {
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.saveScopeAsBox)
+          .setIcon("bookmark-plus")
+          .onClick(() => {
+            this.handleBoxCommand({ command: "save-scope-as-box" });
+          });
+      });
+    }
+  }
+
+  private addBoxItemMenuItems(menu: Menu, boxId: string): boolean {
+    if (findCardBox(this.plugin.getSettings().boxes, boxId) === null) {
+      return false;
+    }
+
+    const strings = this.strings.box;
+    menu.addItem((item) => {
+      item
+        .setTitle(strings.configure)
+        .setIcon("settings-2")
+        .onClick(() => {
+          this.handleBoxCommand({ command: "configure", boxId });
+        });
+    });
+
+    if (!this.isBoxMode()) {
+      menu.addItem((item) => {
+        item
+          .setTitle(strings.addScopeToThisBox)
+          .setIcon("list-plus")
+          .onClick(() => {
+            this.handleBoxCommand({ command: "add-scope-to-box", boxId });
+          });
+      });
+    }
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle(strings.rename)
+        .setIcon("pencil")
+        .onClick(() => {
+          this.handleBoxCommand({ command: "rename", boxId });
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle(strings.duplicate)
+        .setIcon("copy")
+        .onClick(() => {
+          this.handleBoxCommand({ command: "duplicate", boxId });
+        });
+    });
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle(strings.delete)
+        .setIcon("trash-2")
+        .onClick(() => {
+          this.handleBoxCommand({ command: "delete", boxId });
+        });
+    });
+
+    return true;
   }
 
   private async routeCardMenuAction(action: CardMenuAction, notePath: string): Promise<void> {

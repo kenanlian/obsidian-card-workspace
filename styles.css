@@ -24,7 +24,6 @@
   --fce-preview-font-size: var(--font-ui-small, 13px);
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
-  --fce-toolbar-folder-button-min-width: 40px;
   --fce-nav-row-height: 26px;
   --fce-nav-row-radius: var(--radius-s, 4px);
   --fce-nav-indent-step: 16px;
@@ -352,38 +351,35 @@
   align-items: center;
   gap: 2px;
   padding: 6px;
-  overflow-x: auto;
+  min-width: 0;
 }
-.folder-card-view .fce-toolbar-folder-group {
+
+.folder-card-view .fce-toolbar-scope {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex: 0 1 auto;
-  min-width: var(--fce-toolbar-folder-button-min-width);
-  max-width: 100%;
-}
-
-.folder-card-view .fce-folder-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  flex: 0 1 auto;
-  min-width: var(--fce-toolbar-folder-button-min-width);
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.folder-card-view .fce-folder-button-text {
-  min-width: 0;
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  color: var(--fce-text);
+  font-size: var(--font-ui-small, 13px);
+}
+
+.folder-card-view .fce-toolbar-scope-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: left;
 }
 
-.folder-card-view .fce-folder-button-chevron {
+.folder-card-view .fce-toolbar-scope.is-box .fce-toolbar-scope-text {
+  font-weight: var(--font-medium, 600);
+}
+
+.folder-card-view .fce-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex: 0 0 auto;
 }
 
@@ -1214,63 +1210,6 @@
 .fce-filter-menu {
   max-height: 350px;
   overflow-y: auto;
-}
-
-/* Card boxes */
-.fce-box-switcher-button .fce-folder-button-text {
-  font-weight: var(--font-medium, 600);
-}
-
-.fce-box-menu {
-  min-width: 200px;
-  max-height: 420px;
-  overflow-y: auto;
-  padding: 6px;
-  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-}
-
-.fce-box-menu-heading {
-  padding: 4px 8px;
-  color: var(--fce-text-muted);
-  font-size: var(--font-ui-smaller, 12px);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.fce-box-menu-invite {
-  padding: 8px;
-  max-width: 260px;
-  color: var(--fce-text-muted);
-  font-size: var(--font-ui-small, 13px);
-  line-height: 1.5;
-}
-
-.fce-box-menu-separator {
-  height: 0;
-  margin: 4px 0;
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.fce-box-menu .fce-box-menu-item {
-  justify-content: flex-start;
-  width: 100%;
-  padding: 4px 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  box-shadow: none;
-  outline: none;
-}
-
-.fce-box-menu .fce-box-menu-item.is-destructive {
-  color: var(--text-error);
-}
-
-.fce-box-menu-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Card box config modal */

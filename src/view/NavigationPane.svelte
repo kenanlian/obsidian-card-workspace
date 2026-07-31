@@ -12,7 +12,7 @@
     normalizeTagPath,
     type VisibleTagTreeNode,
   } from "./tag-tree";
-  import type { FolderActionPayload, FolderTreeNode } from "./types";
+  import type { BoxContextMenuPayload, FolderActionPayload, FolderTreeNode } from "./types";
   import TreeSection from "./TreeSection.svelte";
 
   type NavSection = "folders" | "tags" | "boxes";
@@ -57,6 +57,7 @@
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
+    onBoxContextMenu?: (payload: BoxContextMenuPayload) => void;
     onNavPaneResize?: (width: number) => void;
     onToggleNavPane?: () => void;
     onToggleNavSection?: (section: NavSection) => void;
@@ -85,6 +86,7 @@
     onFilterChange,
     onIncludeSubfoldersChange,
     onBoxCommand,
+    onBoxContextMenu,
     onNavPaneResize,
     onToggleNavPane,
     onToggleNavSection,
@@ -395,6 +397,17 @@
     onBoxCommand?.({ command: "switch", boxId });
   }
 
+  function requestBoxSectionMenu(event: MouseEvent): void {
+    event.preventDefault();
+    onBoxContextMenu?.({ mouseEvent: event });
+  }
+
+  function requestBoxRowMenu(event: MouseEvent, boxId: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    onBoxContextMenu?.({ boxId, mouseEvent: event });
+  }
+
   function toggleSection(section: NavSection): void {
     onToggleNavSection?.(section);
   }
@@ -641,9 +654,10 @@
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
       onToggle={() => toggleSection("boxes")}
+      onHeaderContextMenu={requestBoxSectionMenu}
     >
       {#snippet body()}
-        <div class="fce-nav-box-list">
+        <div class="fce-nav-box-list" role="presentation" oncontextmenu={requestBoxSectionMenu}>
           {#if boxSummaries.length === 0}
             <div class="fce-tree-empty">{strings.navPane.boxesEmpty}</div>
           {:else}
@@ -654,6 +668,7 @@
                 class="fce-nav-box-item {isActive ? 'is-active' : ''}"
                 aria-pressed={isActive}
                 onclick={() => selectBox(box.id)}
+                oncontextmenu={(event) => requestBoxRowMenu(event, box.id)}
                 use:applyTooltip={getBoxTooltip(box, isActive)}
               >
                 <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"box"}></span>

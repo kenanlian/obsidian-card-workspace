@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import NavigationPane from "./NavigationPane.svelte";
 import { PLAIN_FOLDER_ICON } from "../icons";
-import type { FolderActionPayload, FolderTreeNode } from "./types";
+import type { BoxContextMenuPayload, FolderActionPayload, FolderTreeNode } from "./types";
 
 interface SelectFolderPayload {
   path: string;
@@ -29,6 +29,7 @@ interface NavCallbacks {
   onFilterChange?: (payload: FilterChangePayload) => void;
   onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
   onBoxCommand?: (payload: BoxCommandPayload) => void;
+  onBoxContextMenu?: (payload: BoxContextMenuPayload) => void;
   onNavPaneResize?: (width: number) => void;
   onToggleNavPane?: () => void;
   onToggleNavSection?: (section: NavSection) => void;
@@ -41,6 +42,7 @@ interface Captured {
   filterEvents: FilterChangePayload[];
   includeEvents: IncludeSubfoldersChangePayload[];
   boxCommandEvents: BoxCommandPayload[];
+  boxContextMenuEvents: BoxContextMenuPayload[];
   resizeEvents: number[];
   togglePaneEvents: number;
   toggleSectionEvents: NavSection[];
@@ -96,6 +98,7 @@ function createCaptured(): Captured {
   const filterEvents: FilterChangePayload[] = [];
   const includeEvents: IncludeSubfoldersChangePayload[] = [];
   const boxCommandEvents: BoxCommandPayload[] = [];
+  const boxContextMenuEvents: BoxContextMenuPayload[] = [];
   const resizeEvents: number[] = [];
   const toggleSectionEvents: NavSection[] = [];
   let togglePaneEvents = 0;
@@ -116,6 +119,9 @@ function createCaptured(): Captured {
       onBoxCommand: (payload) => {
         boxCommandEvents.push(payload);
       },
+      onBoxContextMenu: (payload) => {
+        boxContextMenuEvents.push(payload);
+      },
       onNavPaneResize: (width) => {
         resizeEvents.push(width);
       },
@@ -132,6 +138,7 @@ function createCaptured(): Captured {
     filterEvents,
     includeEvents,
     boxCommandEvents,
+    boxContextMenuEvents,
     resizeEvents,
     togglePaneEvents: 0,
     toggleSectionEvents,
@@ -322,6 +329,40 @@ describe("NavigationPane.svelte", () => {
       new MouseEvent("click", { bubbles: true }),
     );
     expect(captured2.boxCommandEvents).toEqual([{ command: "exit" }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits a box context menu request with the box id", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({}, captured.callbacks);
+
+    document.querySelector<HTMLButtonElement>(".fce-nav-box-item")?.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
+    );
+
+    expect(captured.boxContextMenuEvents).toHaveLength(1);
+    expect(captured.boxContextMenuEvents[0]?.boxId).toBe("box-1");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits a box context menu request without a box id from the section header and empty list", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({}, captured.callbacks);
+
+    getSectionToggle("Boxes")?.closest(".fce-tree-section-header")?.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
+    );
+    document.querySelector<HTMLElement>(".fce-nav-box-list")?.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
+    );
+
+    expect(captured.boxContextMenuEvents).toHaveLength(2);
+    expect(captured.boxContextMenuEvents.map((payload) => payload.boxId)).toEqual([
+      undefined,
+      undefined,
+    ]);
 
     await disposeMountedComponent(component);
   });

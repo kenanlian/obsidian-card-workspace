@@ -47,6 +47,7 @@ const mockState = vi.hoisted(() => {
     onSearchQueryChange?: (payload: Record<string, unknown>) => void;
     onSearchQueryReset?: (payload: Record<string, unknown>) => void;
     onSelectFolder?: (payload: Record<string, unknown>) => void;
+    onBoxContextMenu?: (payload: Record<string, unknown>) => void;
     onHydrateRange?: (payload: Record<string, unknown>) => void;
   }
 
@@ -87,6 +88,7 @@ const mockState = vi.hoisted(() => {
       onSearchQueryChange: "search-query-change",
       onSearchQueryReset: "search-query-reset",
       onSelectFolder: "select-folder",
+      onBoxContextMenu: "box-context-menu",
       onHydrateRange: "hydrate-range",
     };
 
@@ -5042,6 +5044,113 @@ describe("FolderCardView card context actions", () => {
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
         pinnedPaths: ["notes/phase1-regression.md"],
       });
+    });
+  });
+
+  describe("card box context menus", () => {
+    const BOX_ID = "box-1";
+
+    function createViewWithBox(activeBoxId: string | null = null): {
+      view: FolderCardView;
+      plugin: any;
+    } {
+      const { view, plugin } = createViewWithFile("notes/box-menu.md");
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: "notes",
+        pinnedPaths: [],
+        previewLines: 5,
+        activeBoxId,
+        boxes: [
+          {
+            id: BOX_ID,
+            name: "Reading",
+            rules: [],
+            manualPaths: [],
+            excludedPaths: [],
+            pinnedPaths: [],
+            sort: { field: "mtime", direction: "desc" },
+          },
+        ],
+      }));
+      return { view, plugin };
+    }
+
+    function getMenuTitles(): string[] {
+      const menu = mockState.menuInstances[0];
+      return menu.items
+        .filter((item: any) => item.kind !== "separator")
+        .map((item: any) => item.title);
+    }
+
+    it("box row context menu offers configure, add-current-view, rename, duplicate, and delete", () => {
+      const { view } = createViewWithBox();
+      const mouseEvent = { clientX: 5, clientY: 6 };
+
+      (view as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent });
+
+      expect(mockState.menuInstances).toHaveLength(1);
+      expect(getMenuTitles()).toEqual([
+        "Configure card box…",
+        "Add current view to this card box",
+        "Rename…",
+        "Duplicate",
+        "Delete",
+      ]);
+
+      const menu = mockState.menuInstances[0];
+      expect(menu.showAtMouseEvent).toHaveBeenCalledTimes(1);
+      expect(menu.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+      expect(menu.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+    });
+
+    it("box section context menu offers creation entries and hides save-current-view inside a box", () => {
+      const { view } = createViewWithBox();
+
+      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+      expect(getMenuTitles()).toEqual(["New card box…", "Save current view as card box…"]);
+
+      mockState.menuInstances.length = 0;
+
+      const { view: boxModeView } = createViewWithBox(BOX_ID);
+      (boxModeView as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+      expect(getMenuTitles()).toEqual(["New card box…"]);
+
+      mockState.menuInstances.length = 0;
+
+      (boxModeView as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent: { clientX: 1, clientY: 2 } });
+      expect(getMenuTitles()).not.toContain("Add current view to this card box");
+    });
+
+    it("box context menu is ignored for an unknown box id or a non-mouse event", () => {
+      const { view } = createViewWithBox();
+
+      (view as any).openBoxContextMenu({ boxId: "missing", mouseEvent: { clientX: 5, clientY: 6 } });
+      (view as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent: null });
+
+      for (const menu of mockState.menuInstances) {
+        expect(menu.showAtMouseEvent).not.toHaveBeenCalled();
+        expect(menu.items).toEqual([]);
+        expect(menu.dom.classList.add).not.toHaveBeenCalled();
+      }
+    });
+
+    it("routes the panel box-context-menu callback into openBoxContextMenu", async () => {
+      const { view } = createViewWithBox();
+      await (view as any).onOpen();
+
+      const openBoxContextMenu = vi
+        .spyOn(view as any, "openBoxContextMenu")
+        .mockImplementation(() => undefined);
+
+      const payload = { boxId: BOX_ID, mouseEvent: { clientX: 3, clientY: 4 } };
+      mockState.panelEventHandlers["box-context-menu"]({ detail: payload });
+
+      expect(openBoxContextMenu).toHaveBeenCalledTimes(1);
+      expect(openBoxContextMenu).toHaveBeenCalledWith(payload);
     });
   });
 });

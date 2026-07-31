@@ -167,7 +167,7 @@ describe("Toolbar.svelte", () => {
       "Create note",
       "Sort cards",
       "Bulk actions",
-      "Card boxes",
+      "Save current view as card box",
       "Toggle search",
     ];
 
@@ -194,7 +194,7 @@ describe("Toolbar.svelte", () => {
 
     const collapseButton = document.querySelector<HTMLButtonElement>('button[aria-label="Collapse navigation"]');
     expect(collapseButton).not.toBeNull();
-    expect(collapseButton?.classList.contains("is-selected")).toBe(true);
+    expect(collapseButton?.classList.contains("is-selected")).toBe(false);
 
     await disposeMountedComponent(component);
   });
@@ -379,23 +379,57 @@ describe("Toolbar.svelte", () => {
     }
   });
 
-  it("opens the box entry menu and emits a create command", async () => {
+  it("emits save-scope-as-box from the toolbar and hides it in box mode", async () => {
     const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({}, captured.callbacks);
+    let { component } = mountToolbar({}, captured.callbacks);
 
-    const boxButton = document.querySelector<HTMLButtonElement>('button[aria-label="Card boxes"]');
-    expect(boxButton).not.toBeNull();
-    boxButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 10, clientY: 10 }));
+    const saveScopeButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Save current view as card box"]',
+    );
+    expect(saveScopeButton).not.toBeNull();
+    saveScopeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.boxCommandEvents).toContainEqual({ command: "save-scope-as-box" });
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeBoxId: "box-1", activeBoxName: "Reading" }, captured.callbacks));
     await tick();
 
-    const boxMenu = document.querySelector<HTMLElement>(".fce-box-menu");
-    expect(boxMenu).not.toBeNull();
+    expect(
+      document.querySelector('button[aria-label="Save current view as card box"]'),
+    ).toBeNull();
 
-    const createItem = Array.from(boxMenu?.querySelectorAll<HTMLButtonElement>(".fce-box-menu-item") ?? [])
-      .find((item) => item.textContent?.includes("New card box"));
-    createItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await disposeMountedComponent(component);
+  });
 
-    expect(captured.boxCommandEvents).toContainEqual({ command: "create" });
+  it("renders the browsed folder and tags as truncatable scope text", async () => {
+    let { component } = mountToolbar({
+      folderPath: "Projects/2026/Notes",
+      activeFilterTags: ["work", "idea"],
+    });
+    await tick();
+
+    let scope = document.querySelector<HTMLElement>(".fce-toolbar-scope");
+    expect(scope).not.toBeNull();
+    expect(scope?.classList.contains("is-box")).toBe(false);
+    expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Notes · #work, #idea");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ folderPath: "/", activeFilterTags: [] }));
+    await tick();
+
+    expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Root /");
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeBoxId: "box-1", activeBoxName: "Reading" }));
+    await tick();
+
+    scope = document.querySelector<HTMLElement>(".fce-toolbar-scope");
+    expect(scope?.classList.contains("is-box")).toBe(true);
+    expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Reading");
 
     await disposeMountedComponent(component);
   });

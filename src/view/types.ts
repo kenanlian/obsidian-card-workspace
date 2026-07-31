@@ -243,3 +243,8 @@ export interface FolderActionPayload {
   action: FolderManagementAction;
   path: string;
 }
+
+export interface BoxContextMenuPayload {
+  boxId?: string;
+  mouseEvent: MouseEvent;
+}

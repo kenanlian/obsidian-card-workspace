@@ -102,6 +102,10 @@ export interface ToolbarStrings {
     tagCountsTooltip: (files: number, subtags: number) => string;
     boxCountsTooltip: (files: number) => string;
   };
+  scope: {
+    ariaLabel: string;
+    separator: string;
+  };
   search: {
     placeholder: string;
     inputLabel: string;
@@ -162,15 +166,9 @@ export interface DesktopShellStrings {
 }
 
 export interface BoxStrings {
-  entryTitle: string;
-  emptyInvite: string;
   createBox: string;
   saveScopeAsBox: string;
-  addScopeToBox: string;
-  switchHeading: string;
-  manageHeading: string;
-  exit: string;
-  exitTitle: string;
+  addScopeToThisBox: string;
   rename: string;
   duplicate: string;
   delete: string;
@@ -510,13 +508,17 @@ const EN: UiStrings = {
       collapseSection: "Collapse section",
       expandSection: "Expand section",
       tagsDisabledInBox: "Tag filter is unavailable in a box",
-      boxesEmpty: "No boxes yet",
+      boxesEmpty: "No card boxes yet — right-click to create one",
       exitBox: "Exit box",
       folderCountsTooltip: (files: number, folders: number) =>
         `${files} file${files === 1 ? "" : "s"}, ${folders} folder${folders === 1 ? "" : "s"}`,
       tagCountsTooltip: (files: number, subtags: number) =>
         `${files} file${files === 1 ? "" : "s"}, ${subtags} subtag${subtags === 1 ? "" : "s"}`,
       boxCountsTooltip: (files: number) => `${files} file${files === 1 ? "" : "s"}`,
+    },
+    scope: {
+      ariaLabel: "Current scope",
+      separator: " · ",
     },
     search: {
       placeholder: "Search notes",
@@ -572,15 +574,9 @@ const EN: UiStrings = {
     unknownError: "Unknown error",
   },
   box: {
-    entryTitle: "Card boxes",
-    emptyInvite: "No card boxes yet. Save the current view as a card box.",
     createBox: "New card box…",
     saveScopeAsBox: "Save current view as card box…",
-    addScopeToBox: "Add current view to…",
-    switchHeading: "Switch to",
-    manageHeading: "Card boxes",
-    exit: "Exit card box",
-    exitTitle: "Back to browse",
+    addScopeToThisBox: "Add current view to this card box",
     rename: "Rename…",
     duplicate: "Duplicate",
     delete: "Delete",
@@ -899,12 +895,16 @@ const ZH: UiStrings = {
       collapseSection: "折叠此区",
       expandSection: "展开此区",
       tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
-      boxesEmpty: "暂无卡片盒",
+      boxesEmpty: "还没有卡片盒 — 右键新建",
       exitBox: "退出卡片盒",
       folderCountsTooltip: (files: number, folders: number) =>
         `${files} 个文件, ${folders} 个文件夹`,
       tagCountsTooltip: (files: number, subtags: number) => `${files} 个文件, ${subtags} 个子标签`,
       boxCountsTooltip: (files: number) => `${files} 个文件`,
+    },
+    scope: {
+      ariaLabel: "当前范围",
+      separator: " · ",
     },
     search: {
       placeholder: "搜索笔记",
@@ -959,15 +959,9 @@ const ZH: UiStrings = {
     unknownError: "未知错误",
   },
   box: {
-    entryTitle: "卡片盒",
-    emptyInvite: "还没有卡片盒。可将当前视图存为卡片盒。",
     createBox: "新建卡片盒…",
     saveScopeAsBox: "将当前视图存为卡片盒…",
-    addScopeToBox: "将当前视图加入…",
-    switchHeading: "切换到",
-    manageHeading: "卡片盒",
-    exit: "退出卡片盒",
-    exitTitle: "返回浏览",
+    addScopeToThisBox: "将当前视图加入此卡片盒",
     rename: "重命名…",
     duplicate: "复制",
     delete: "删除",

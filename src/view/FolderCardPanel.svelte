@@ -17,7 +17,12 @@
     getHydrateRangeForRows,
     projectCardsToRows,
   } from "./row-projection";
-  import type { CardHoverLinkPayload, FolderActionPayload, NoteCardRecord } from "./types";
+  import type {
+    BoxContextMenuPayload,
+    CardHoverLinkPayload,
+    FolderActionPayload,
+    NoteCardRecord,
+  } from "./types";
 
   interface BulkSelectCardPayload {
     path: string;
@@ -91,6 +96,7 @@
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
+    onBoxContextMenu?: (payload: BoxContextMenuPayload) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
     onNavPaneResize?: (width: number) => void;
     onShellResize?: (width: number) => void;
@@ -160,6 +166,7 @@
     onSelectFolder,
     onFolderAction,
     onBoxCommand,
+    onBoxContextMenu,
     onHydrateRange,
     onNavPaneResize,
     onShellResize,
@@ -318,6 +325,10 @@
 
   function handleFolderAction(detail: FolderActionPayload): void {
     onFolderAction?.(detail);
+  }
+
+  function handleBoxContextMenu(detail: BoxContextMenuPayload): void {
+    onBoxContextMenu?.(detail);
   }
 
   function handleNavPaneResize(width: number): void {
@@ -660,6 +671,7 @@
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onBoxCommand={handleBoxCommand}
+    onBoxContextMenu={handleBoxContextMenu}
     onNavPaneResize={handleNavPaneResize}
     onToggleNavPane={handleToggleNavPane}
     onToggleNavSection={handleToggleNavSection}
@@ -670,9 +682,8 @@
     boxStrings={panelState.strings.box}
     activeBoxId={panelState.activeBoxId}
     activeBoxName={panelState.activeBoxName}
-    boxSummaries={panelState.boxSummaries}
-    boxExcludedCount={panelState.boxExcludedCount}
     {folderPath}
+    {activeFilterTags}
     {navVisible}
     onToggleNavPane={handleToggleNavPane}
     {sortField}

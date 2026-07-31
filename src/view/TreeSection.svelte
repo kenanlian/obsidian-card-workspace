@@ -9,6 +9,7 @@
     collapseLabel?: string;
     expandLabel?: string;
     onToggle?: () => void;
+    onHeaderContextMenu?: (event: MouseEvent) => void;
     body?: Snippet;
   }
 
@@ -19,6 +20,7 @@
     collapseLabel = "Collapse section",
     expandLabel = "Expand section",
     onToggle,
+    onHeaderContextMenu,
     body,
   }: TreeSectionProps = $props();
 
@@ -33,7 +35,11 @@
 </script>
 
 <section class="fce-tree-section {collapsed ? 'is-collapsed' : ''}">
-  <div class="fce-tree-section-header">
+  <div
+    class="fce-tree-section-header"
+    role="presentation"
+    oncontextmenu={(event) => onHeaderContextMenu?.(event)}
+  >
     <button
       type="button"
       class="fce-tree-section-toggle"
