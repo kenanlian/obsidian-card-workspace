@@ -230,8 +230,11 @@ vi.mock("../FolderPickerModal", () => {
   };
 });
 
-vi.mock("./note-ops", () => {
+vi.mock("./note-ops", async () => {
+  const actual = await vi.importActual<typeof import("./note-ops")>("./note-ops");
+
   return {
+    buildMergedNoteContent: actual.buildMergedNoteContent,
     batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),

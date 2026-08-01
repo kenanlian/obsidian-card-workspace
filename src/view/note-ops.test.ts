@@ -1128,4 +1128,112 @@ describe("mergeNotes", () => {
       "# first\n\nFirst body\n\n# second\n\nSecond body",
     );
   });
+
+  it("refuses to merge when any source file is not markdown", async () => {
+    const first = createFile("notes/first.md");
+    const canvas = createFile("notes/board.canvas", "canvas");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (): Promise<string> => "body"),
+        create: vi.fn(async (path: string): Promise<TFile> => createFile(path)),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(app as unknown as any, [first, canvas], targetFolder, "Merged Title");
+
+    expect(result).toEqual({ ok: false, error: "Only Markdown notes can be merged" });
+    expect(vi.mocked(app.vault.read)).not.toHaveBeenCalled();
+    expect(vi.mocked(app.vault.create)).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the first note's frontmatter and hoists it above the merged content", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const bodyByPath: Record<string, string> = {
+      [first.path]: "---\ntags:\n  - keep\n---\n\nFirst body",
+      [second.path]: "---\ntags:\n  - drop\n---\n\nSecond body",
+    };
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (file: TFile): Promise<string> => {
+          return bodyByPath[file.path] ?? "";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(app as unknown as any, [first, second], targetFolder, "Merged Title");
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
+      "---\ntags:\n  - keep\n---\n\n# first\n\nFirst body\n\n# second\n\nSecond body",
+    );
+  });
+
+  it("drops later frontmatter even when the first note has none", async () => {
+    const first = createFile("notes/first.md");
+    const second = createFile("notes/second.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const bodyByPath: Record<string, string> = {
+      [first.path]: "First body",
+      [second.path]: "---\ntags:\n  - drop\n---\n\nSecond body",
+    };
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (file: TFile): Promise<string> => {
+          return bodyByPath[file.path] ?? "";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(app as unknown as any, [first, second], targetFolder, "Merged Title");
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
+      "# first\n\nFirst body\n\n# second\n\nSecond body",
+    );
+  });
+
+  it("treats a mid-note horizontal rule as body content, not frontmatter", async () => {
+    const first = createFile("notes/first.md");
+    const targetFolder = new TFolder();
+    (targetFolder as unknown as { path: string }).path = "archive";
+
+    const app: MockAppForMerge = {
+      vault: {
+        read: vi.fn(async (): Promise<string> => {
+          return "Intro\n\n---\n\nOutro";
+        }),
+        create: vi.fn(async (path: string): Promise<TFile> => {
+          return createFile(path);
+        }),
+        getAbstractFileByPath: vi.fn(() => null),
+      },
+    };
+
+    const result = await mergeNotes(app as unknown as any, [first], targetFolder, "Merged Title");
+
+    expect(result.ok).toBe(true);
+    expect(vi.mocked(app.vault.create).mock.calls[0]?.[1]).toBe(
+      "# first\n\nIntro\n\n---\n\nOutro",
+    );
+  });
 });

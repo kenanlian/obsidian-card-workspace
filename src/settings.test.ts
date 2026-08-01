@@ -117,13 +117,22 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings(raw).includeSubfolders).toBe(false);
   });
 
-  it("defaults enableFileExplorerFolderClicks to false when the raw value is missing or invalid", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: undefined } as unknown).enableFileExplorerFolderClicks).toBe(false);
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: "yes" } as unknown).enableFileExplorerFolderClicks).toBe(false);
+  it("defaults newNoteTemplate to tags-frontmatter when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: undefined } as unknown).newNoteTemplate).toBe("tags-frontmatter");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "template" } as unknown).newNoteTemplate).toBe("tags-frontmatter");
   });
 
-  it("preserves explicit enableFileExplorerFolderClicks true", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, enableFileExplorerFolderClicks: true } as unknown).enableFileExplorerFolderClicks).toBe(true);
+  it("preserves explicit newNoteTemplate blank", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "blank" } as unknown).newNoteTemplate).toBe("blank");
+  });
+
+  it("drops the removed enableFileExplorerFolderClicks setting", () => {
+    const normalized = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      enableFileExplorerFolderClicks: true,
+    } as unknown) as unknown as Record<string, unknown>;
+
+    expect(normalized.enableFileExplorerFolderClicks).toBeUndefined();
   });
 
   it("normalizes root lastFolderPath forms to the internal empty-string path", () => {
@@ -159,10 +168,10 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, dragInsertAction: "title-content" } as unknown).dragInsertAction).toBe("title-content");
   });
 
-  it("defaults cardCornerRadius to compact when the raw value is missing or invalid", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: undefined } as unknown).cardCornerRadius).toBe("compact");
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "soft" } as unknown).cardCornerRadius).toBe("compact");
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: 2 } as unknown).cardCornerRadius).toBe("compact");
+  it("defaults cardCornerRadius to rounded when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: undefined } as unknown).cardCornerRadius).toBe("rounded");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "soft" } as unknown).cardCornerRadius).toBe("rounded");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: 2 } as unknown).cardCornerRadius).toBe("rounded");
   });
 
   it("preserves each supported cardCornerRadius value", () => {
@@ -395,7 +404,7 @@ describe("mergeSettings — pinnedPaths", () => {
     expect(result.filter.tags).toEqual(["active"]);
   });
 
-  it("updates enableFileExplorerFolderClicks while preserving unrelated settings", () => {
+  it("updates newNoteTemplate while preserving unrelated settings", () => {
     const current = {
       ...DEFAULT_SETTINGS,
       pinnedPaths: ["notes/pinned.md"],
@@ -405,9 +414,9 @@ describe("mergeSettings — pinnedPaths", () => {
       includeSubfolders: true,
     };
 
-    const result = mergeSettings(current, { enableFileExplorerFolderClicks: true });
+    const result = mergeSettings(current, { newNoteTemplate: "blank" });
 
-    expect(result.enableFileExplorerFolderClicks).toBe(true);
+    expect(result.newNoteTemplate).toBe("blank");
     expect(result.pinnedPaths).toEqual(["notes/pinned.md"]);
     expect(result.filter.tags).toEqual(["active"]);
     expect(result.includeSubfolders).toBe(true);
@@ -498,6 +507,7 @@ describe("mergeSettings — previewLines", () => {
   it("updates cardCornerRadius while preserving unrelated settings fields", () => {
     const current = {
       ...DEFAULT_SETTINGS,
+      cardCornerRadius: "compact" as const,
       previewLines: 8,
       pinnedPaths: ["folder/note-1.md"],
       includeSubfolders: false,
@@ -511,10 +521,10 @@ describe("mergeSettings — previewLines", () => {
     expect(result.includeSubfolders).toBe(false);
   });
 
-  it("normalizes invalid cardCornerRadius patches back to compact", () => {
+  it("normalizes invalid cardCornerRadius patches back to rounded", () => {
     const result = mergeSettings(DEFAULT_SETTINGS, { cardCornerRadius: "soft" } as never);
 
-    expect(result.cardCornerRadius).toBe("compact");
+    expect(result.cardCornerRadius).toBe("rounded");
   });
 });
 

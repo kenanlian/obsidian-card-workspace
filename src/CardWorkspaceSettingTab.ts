@@ -3,6 +3,7 @@ import {
   getCardCornerRadiusOptions,
   getDefaultCardOpenBehaviorOptions,
   getDragInsertActionOptions,
+  getNewNoteTemplateOptions,
   getSettingTabStrings,
 } from "./i18n";
 import {
@@ -11,6 +12,7 @@ import {
   isCardCornerRadius,
   isDefaultCardOpenBehavior,
   isDragInsertAction,
+  isNewNoteTemplate,
 } from "./settings";
 import type CardWorkspacePlugin from "./main";
 
@@ -28,7 +30,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       cardCornerRadius,
       defaultCardOpenBehavior,
       dragInsertAction,
-      enableFileExplorerFolderClicks,
+      newNoteTemplate,
       previewLines,
       showNavItemCounts,
     } = this.plugin.getSettings();
@@ -36,15 +38,6 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const strings = getSettingTabStrings(language);
 
     containerEl.empty();
-
-    new Setting(containerEl)
-      .setName(strings.enableFileExplorerFolderClicksName)
-      .setDesc(strings.enableFileExplorerFolderClicksDesc)
-      .addToggle((toggle) => {
-        toggle.setValue(enableFileExplorerFolderClicks).onChange(async (value) => {
-          await this.plugin.saveSettings({ enableFileExplorerFolderClicks: value });
-        });
-      });
 
     new Setting(containerEl)
       .setName(strings.defaultCardOpenBehaviorName)
@@ -77,6 +70,23 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           }
 
           await this.plugin.saveSettings({ dragInsertAction: value });
+        });
+      });
+
+    new Setting(containerEl)
+      .setName(strings.newNoteTemplateName)
+      .setDesc(strings.newNoteTemplateDesc)
+      .addDropdown((dropdown) => {
+        for (const option of getNewNoteTemplateOptions(language)) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(newNoteTemplate).onChange(async (value) => {
+          if (!isNewNoteTemplate(value)) {
+            return;
+          }
+
+          await this.plugin.saveSettings({ newNoteTemplate: value });
         });
       });
 

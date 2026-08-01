@@ -86,6 +86,8 @@ type SupportedDragInsertAction = Exclude<DragInsertAction, "ask">;
 
 const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note";
 
+const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
+
 export default class CardWorkspacePlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
   private selectedFolderPath = "";
@@ -171,10 +173,6 @@ export default class CardWorkspacePlugin extends Plugin {
       }),
     );
 
-    this.registerDomEvent(activeDocument, "click", (event: MouseEvent) => {
-      void this.onFileExplorerClick(event);
-    });
-
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         this.syncSelection(file instanceof TFile ? file.path : null);
@@ -213,8 +211,12 @@ export default class CardWorkspacePlugin extends Plugin {
     const folderPath = this.resolveNewNoteFolderPath();
 
     const fullPath = this.generateUniqueNotePath(folderPath);
-    const file = await this.app.vault.create(fullPath, "");
+    const file = await this.app.vault.create(fullPath, this.buildNewNoteContent());
     await this.openNoteFromCard(file.path, "current-area");
+  }
+
+  private buildNewNoteContent(): string {
+    return this.settings.newNoteTemplate === "tags-frontmatter" ? NEW_NOTE_TAGS_FRONTMATTER : "";
   }
 
   private resolveNewNoteFolderPath(): string {
@@ -737,42 +739,6 @@ export default class CardWorkspacePlugin extends Plugin {
     const existingMarkdown = this.app.workspace.getLeavesOfType("markdown");
     const rootMarkdownLeaf = existingMarkdown.find((leaf) => leaf.getRoot() === rootSplit);
     return rootMarkdownLeaf ?? null;
-  }
-
-  private async onFileExplorerClick(event: MouseEvent): Promise<void> {
-    if (!this.settings.enableFileExplorerFolderClicks) {
-      return;
-    }
-
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) {
-      return;
-    }
-
-    const folderPath = this.extractFolderPathFromTarget(target);
-    if (!folderPath) {
-      return;
-    }
-
-    const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof TFolder)) {
-      return;
-    }
-
-    await this.selectFolder(folder, "explorer-click");
-  }
-
-  private extractFolderPathFromTarget(target: Element): string | null {
-    const titleEl = target.closest(".nav-folder-title");
-    if (!titleEl) {
-      return null;
-    }
-
-    return (
-      titleEl.getAttribute("data-path") ??
-      titleEl.closest(".nav-folder")?.getAttribute("data-path") ??
-      null
-    );
   }
 
   private async activateView(): Promise<void> {
@@ -1409,10 +1375,6 @@ export default class CardWorkspacePlugin extends Plugin {
   ): Promise<void> {
     const result = await view.handleFolderSelection(request);
     if (result.action === "rejected_invalid") {
-      return;
-    }
-
-    if (request.source === "explorer-click" && request.requestId !== this.latestHandledRequestId) {
       return;
     }
 

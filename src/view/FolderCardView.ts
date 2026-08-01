@@ -23,6 +23,7 @@ import {
   batchMoveFiles,
   batchRemoveTagsFromFiles,
   batchTrashFiles,
+  buildMergedNoteContent,
   copyContentToClipboard,
   copyTitleAndContentToClipboard,
   copyTitleToClipboard,
@@ -202,13 +203,6 @@ interface MergeModalSubmitResult {
   cleanupMode: MergeCleanupMode;
 }
 
-function buildMergedMarkdownContent(files: Array<{ file: TFile; content: string }>, separator: string): string {
-  return files
-    .map(({ file, content }) => {
-      return `# ${file.basename}\n\n${content}`;
-    })
-    .join(separator);
-}
 
 class BulkMergeModal extends Modal {
   private readonly strings: UiStrings["view"]["merge"];
@@ -394,18 +388,18 @@ class BulkMergeModal extends Modal {
     const separator = this.separator;
 
     try {
-      const fileContents: Array<{ file: TFile; content: string }> = [];
+      const notes: Array<{ basename: string; content: string }> = [];
       for (const file of orderedFiles) {
         const content = await this.app.vault.read(file);
         if (this.closed || requestSeq !== this.previewRequestSeq) {
           return;
         }
-        fileContents.push({ file, content });
+        notes.push({ basename: file.basename, content });
       }
       if (this.closed || requestSeq !== this.previewRequestSeq) {
         return;
       }
-      this.previewText = buildMergedMarkdownContent(fileContents, separator);
+      this.previewText = buildMergedNoteContent(notes, separator);
       this.previewError = null;
     } catch (error) {
       if (this.closed || requestSeq !== this.previewRequestSeq) {
@@ -1642,10 +1636,7 @@ export class FolderCardView extends ItemView {
 
   async handleFolderSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
     // External folder navigation exits an active box back into browse mode.
-    if (
-      this.isBoxMode() &&
-      (request.source === "explorer-click" || request.source === "panel-picker")
-    ) {
+    if (this.isBoxMode() && request.source === "panel-picker") {
       await this.plugin.saveSettings({ activeBoxId: null });
     }
 
@@ -4418,17 +4409,29 @@ export class FolderCardView extends ItemView {
       .map((card) => card.path)
       .filter((path) => selectedPathSet.has(path));
     const filesInFrozenOrder: TFile[] = [];
+    let hasNonMarkdownSelection = false;
 
     for (const path of selectedPathsInVisibleOrder) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof TFile) {
-        filesInFrozenOrder.push(file);
+      if (!(file instanceof TFile)) {
+        continue;
       }
+
+      const fileKind = resolveCardFileKind(file);
+      if (fileKind === null || !isMarkdownCardKind(fileKind)) {
+        hasNonMarkdownSelection = true;
+      }
+      filesInFrozenOrder.push(file);
     }
 
     const livePathsInFrozenOrder = filesInFrozenOrder.map((file) => file.path);
     if (livePathsInFrozenOrder.length !== this.selectedPaths.size) {
       this.reconcileSelectionToOrderedPaths(livePathsInFrozenOrder);
+    }
+
+    if (hasNonMarkdownSelection) {
+      new Notice(this.strings.view.merge.markdownOnly);
+      return;
     }
 
     if (filesInFrozenOrder.length < 2) {
@@ -4528,7 +4531,7 @@ export class FolderCardView extends ItemView {
       canBulkAddTagSelected: selectedMarkdownCount > 0,
       canBulkRemoveTagSelected: selectedMarkdownCount > 0,
       canBulkDeleteSelected: hasSelection,
-      canBulkMergeSelected: selectedCount > 1,
+      canBulkMergeSelected: selectedCount > 1 && selectedMarkdownCount === selectedCount,
     };
   }
 

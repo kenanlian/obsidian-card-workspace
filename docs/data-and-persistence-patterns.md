@@ -23,10 +23,10 @@ Use this file for data boundaries: what lives in the vault, plugin settings, Ind
 - `filter.tags`
 - `pinnedPaths`
 - `includeSubfolders`
-- `enableFileExplorerFolderClicks`
 - `defaultView`
 - `defaultCardOpenBehavior`
 - `cardCornerRadius`
+- `newNoteTemplate`
 - `previewLines`
 - `lastFolderPath`
 

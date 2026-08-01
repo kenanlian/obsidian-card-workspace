@@ -14,6 +14,8 @@ export type DragInsertAction = "ask" | "wiki" | "embed" | "content" | "title-con
 
 export type CardCornerRadius = "compact" | "medium" | "rounded";
 
+export type NewNoteTemplate = "tags-frontmatter" | "blank";
+
 export const PREVIEW_LINES_MIN = 3;
 export const PREVIEW_LINES_MAX = 8;
 export const DEFAULT_PREVIEW_LINES = 5;
@@ -24,7 +26,8 @@ export const DEFAULT_NAV_PANE_WIDTH = 240;
 export const CARD_PANE_MIN_WIDTH = 304;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
 export const DEFAULT_DRAG_INSERT_ACTION: DragInsertAction = "ask";
-export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "compact";
+export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "rounded";
+export const DEFAULT_NEW_NOTE_TEMPLATE: NewNoteTemplate = "tags-frontmatter";
 
 export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
   value: DefaultCardOpenBehavior;
@@ -92,6 +95,20 @@ export const CARD_CORNER_RADIUS_OPTIONS: ReadonlyArray<{
   },
 ];
 
+export const NEW_NOTE_TEMPLATE_OPTIONS: ReadonlyArray<{
+  value: NewNoteTemplate;
+  label: string;
+}> = [
+  {
+    value: "tags-frontmatter",
+    label: "Start with a tags property",
+  },
+  {
+    value: "blank",
+    label: "Start blank",
+  },
+];
+
 export interface PluginSettings {
   sort: {
     field: SortField;
@@ -102,11 +119,11 @@ export interface PluginSettings {
   };
   pinnedPaths: string[];
   includeSubfolders: boolean;
-  enableFileExplorerFolderClicks: boolean;
   defaultView: DefaultViewMode;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   dragInsertAction: DragInsertAction;
   cardCornerRadius: CardCornerRadius;
+  newNoteTemplate: NewNoteTemplate;
   previewLines: number;
   lastFolderPath: string;
   boxes: CardBoxDefinition[];
@@ -129,11 +146,11 @@ export interface PartialPluginSettings {
   };
   pinnedPaths?: string[];
   includeSubfolders?: boolean;
-  enableFileExplorerFolderClicks?: boolean;
   defaultView?: DefaultViewMode;
   defaultCardOpenBehavior?: DefaultCardOpenBehavior;
   dragInsertAction?: DragInsertAction;
   cardCornerRadius?: CardCornerRadius;
+  newNoteTemplate?: NewNoteTemplate;
   previewLines?: number;
   lastFolderPath?: string;
   boxes?: CardBoxDefinition[];
@@ -156,11 +173,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   },
   pinnedPaths: [],
   includeSubfolders: true,
-  enableFileExplorerFolderClicks: false,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
+  newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
   boxes: [],
@@ -217,6 +234,10 @@ export function isCardCornerRadius(value: string): value is CardCornerRadius {
   return value === "compact" || value === "medium" || value === "rounded";
 }
 
+export function isNewNoteTemplate(value: string): value is NewNoteTemplate {
+  return value === "tags-frontmatter" || value === "blank";
+}
+
 function normalizeDefaultCardOpenBehavior(value: unknown): DefaultCardOpenBehavior {
   return typeof value === "string" && isDefaultCardOpenBehavior(value)
     ? value
@@ -233,6 +254,12 @@ function normalizeCardCornerRadius(value: unknown): CardCornerRadius {
   return typeof value === "string" && isCardCornerRadius(value)
     ? value
     : DEFAULT_CARD_CORNER_RADIUS;
+}
+
+function normalizeNewNoteTemplate(value: unknown): NewNoteTemplate {
+  return typeof value === "string" && isNewNoteTemplate(value)
+    ? value
+    : DEFAULT_NEW_NOTE_TEMPLATE;
 }
 
 function normalizeLastFolderPath(value: unknown, rawLastViewMode: unknown): string {
@@ -408,14 +435,11 @@ export function normalizeSettings(raw: unknown): PluginSettings {
       typeof data.includeSubfolders === "boolean"
         ? data.includeSubfolders
         : DEFAULT_SETTINGS.includeSubfolders,
-    enableFileExplorerFolderClicks:
-      typeof data.enableFileExplorerFolderClicks === "boolean"
-        ? data.enableFileExplorerFolderClicks
-        : DEFAULT_SETTINGS.enableFileExplorerFolderClicks,
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
+    newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
     boxes,

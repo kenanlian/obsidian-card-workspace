@@ -100,7 +100,7 @@ export interface CardHoverLinkPayload {
   mouseEvent: MouseEvent;
 }
 
-export type FolderSelectionSource = "explorer-click" | "programmatic" | "panel-picker";
+export type FolderSelectionSource = "programmatic" | "panel-picker";
 
 export interface FolderSelectionRequest {
   requestId: number;

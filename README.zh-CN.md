@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个 Obsidian 插件：在边栏或主编辑区中以卡片流展示文件夹里的笔记。你可以手动打开 Card Workspace，按文件夹浏览笔记，使用标签筛选，使用插件内置搜索，使用多种方式打开卡片笔记，也可以按需把文件浏览器中的文件夹点击联动到这个视图里。
+一个 Obsidian 插件：在边栏或主编辑区中以卡片流展示文件夹里的笔记。你可以手动打开 Card Workspace，按文件夹浏览笔记，使用标签筛选，使用插件内置搜索，并使用多种方式打开卡片笔记。
 
 ![Card Workspace 演示](screenshots/card_workspace_demo.gif)
 
@@ -35,13 +35,13 @@ Card Workspace 目前支持通过 GitHub Releases 手动安装。
 ## 快速开始
 
 1. 从 Obsidian 命令面板运行 **Open Card Workspace view**，在**左侧边栏**打开该面板。
-2. 在 Card Workspace 中浏览笔记，并点击任意卡片打开对应笔记。
-3. 如果你希望文件浏览器中的文件夹点击也自动跳转到 Card Workspace，可在插件设置中启用 **Link File Explorer folder clicks to Card Workspace**。
+2. 在 Card Workspace 自带的导航栏中选择文件夹、标签或卡片盒。
+3. 浏览卡片流，并点击任意卡片打开对应笔记。
 
 ## 功能特性
 
 - **左侧边栏文件夹浏览。** 在左侧边栏打开 Card Workspace 后，可按文件夹浏览对应的卡片流。
-- **可选的文件浏览器联动。** 启用后，在文件浏览器中点击文件夹时，也会在 Card Workspace 中打开该文件夹。
+- **内置导航栏。** 无需离开面板，即可在 Card Workspace 内切换文件夹、标签和卡片盒。
 - **卡片预览。** 每张卡片都会显示笔记标题，以及去除 Markdown 格式后的摘要内容。
 - **虚拟化滚动。** 即使文件夹很大，也能保持流畅，因为只会渲染当前可见的卡片。
 - **双向同步。** 点击卡片可打开对应笔记；在编辑器中切换笔记时，对应卡片也会自动选中。
@@ -52,7 +52,7 @@ Card Workspace 目前支持通过 GitHub Releases 手动安装。
 
 ## 兼容性与限制
 
-- **仅支持桌面端。** Card Workspace 依赖桌面端的文件浏览器和左侧边栏工作流，移动端不可用。
+- **仅支持桌面端。** Card Workspace 依赖桌面端的左侧边栏工作流，移动端不可用。
 - **Obsidian 版本要求。** 需要 Obsidian 1.5.0 或更高版本。实际行为和兼容性以 `manifest.json` 中声明的内容为准。
 
 ## 隐私

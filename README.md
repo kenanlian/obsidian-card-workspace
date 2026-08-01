@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, click a card to open it, and optionally link File Explorer folder clicks into the view.
+An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, and click a card to open it.
 
 ![Card Workspace demo](screenshots/card_workspace_demo.gif)
 
@@ -35,13 +35,13 @@ Card Workspace is installed manually from GitHub releases.
 ## Quick start
 
 1. Run **Open Card Workspace view** from Obsidian's command palette to open the panel in the **left sidebar**.
-2. Browse notes in Card Workspace and click a card to open it.
-3. If you want File Explorer folder clicks to jump into Card Workspace too, enable **Link File Explorer folder clicks to Card Workspace** in the plugin settings.
+2. Pick a folder, tag, or box in Card Workspace's own navigation pane.
+3. Browse the cards and click one to open its note.
 
 ## Features
 
 - **Left-sidebar folder browsing.** Open Card Workspace in the left sidebar and browse a folder as a card stream.
-- **Optional File Explorer linkage.** When enabled, clicking a folder in the File Explorer also opens that folder in Card Workspace.
+- **Built-in navigation pane.** Switch folders, tags, and boxes from Card Workspace itself, without leaving the panel.
 - **Card previews.** Each card shows the note title and a Markdown-stripped excerpt.
 - **Virtualized scrolling.** Large folders stay smooth because only visible cards are rendered.
 - **Two-way sync.** Click a card to open its note. Switch notes in the editor and the corresponding card is selected automatically.
@@ -52,8 +52,8 @@ Card Workspace is installed manually from GitHub releases.
 
 ## Compatibility and limitations
 
-- **Desktop only.** Card Workspace relies on desktop File Explorer and left-sidebar workflows. It is unavailable on mobile.
-- **Sidebar-first workflow.** Card Workspace remains available as a left-sidebar view, while File Explorer folder-click linkage is optional and disabled by default.
+- **Desktop only.** Card Workspace relies on desktop left-sidebar workflows. It is unavailable on mobile.
+- **Sidebar-first workflow.** Card Workspace is a left-sidebar view with its own navigation pane, opened from the ribbon icon or the command palette.
 - **Obsidian version.** Requires Obsidian 1.5.0 or later. Behavior and compatibility follow what is declared in `manifest.json`.
 
 ## Privacy

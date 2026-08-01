@@ -461,8 +461,32 @@ export async function batchRemoveTagsFromFiles(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build the merged markdown for the given notes, in the provided order. Only the
+ * first note's frontmatter survives, hoisted to the top of the merged content so
+ * it stays valid frontmatter. Shared by the merge preview and the merge itself.
+ */
+export function buildMergedNoteContent(
+  notes: ReadonlyArray<{ basename: string; content: string }>,
+  separator: string = "\n\n",
+): string {
+  const sections: string[] = [];
+  let leadingFrontmatter = "";
+
+  for (const note of notes) {
+    const { frontmatter, body } = splitFrontmatter(note.content);
+    if (sections.length === 0) {
+      leadingFrontmatter = frontmatter;
+    }
+    sections.push(`# ${note.basename}\n\n${body}`);
+  }
+
+  return `${leadingFrontmatter}${sections.join(separator)}`;
+}
+
+/**
  * Merge multiple notes into a single new file. Content is concatenated
- * in the provided order with a configurable separator.
+ * in the provided order with a configurable separator. Only the first note's
+ * frontmatter survives, hoisted to the top of the merged file so it stays valid.
  *
  * Does NOT delete the source files — callers decide whether to trash them.
  */
@@ -478,14 +502,17 @@ export async function mergeNotes(
     return { ok: false, error: strings.noFilesToMerge };
   }
 
+  if (files.some((file) => !isMarkdownFile(file))) {
+    return { ok: false, error: strings.mergeMarkdownOnly };
+  }
+
   try {
-    const sections: string[] = [];
+    const notes: Array<{ basename: string; content: string }> = [];
     for (const file of files) {
-      const content = await app.vault.read(file);
-      sections.push(`# ${file.basename}\n\n${content}`);
+      notes.push({ basename: file.basename, content: await app.vault.read(file) });
     }
 
-    const merged = sections.join(separator);
+    const merged = buildMergedNoteContent(notes, separator);
     const safeMergedTitle = normalizeMergedTitle(mergedTitle, strings.mergedNotesDefaultTitle);
     const fileName = `${safeMergedTitle}.md`;
     const newPath = resolveUniquePath(app, fileName, targetFolder.path);
@@ -500,6 +527,37 @@ export async function mergeNotes(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Split a leading YAML frontmatter block from the note body. The block only
+ * counts when the note opens with a `---` line; anything else is body text.
+ * The returned frontmatter keeps a trailing blank line so it can be prepended
+ * directly to merged content.
+ */
+function splitFrontmatter(content: string): { frontmatter: string; body: string } {
+  const normalized = content.replace(/^\uFEFF/, "");
+  const lines = normalized.split("\n");
+  if (lines[0]?.trimEnd() !== "---") {
+    return { frontmatter: "", body: normalized };
+  }
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index]?.trimEnd();
+    if (line !== "---" && line !== "...") {
+      continue;
+    }
+
+    const frontmatter = lines.slice(0, index + 1).join("\n");
+    const body = lines
+      .slice(index + 1)
+      .join("\n")
+      .replace(/^(?:[ \t]*\r?\n)+/, "");
+
+    return { frontmatter: `${frontmatter}\n\n`, body };
+  }
+
+  return { frontmatter: "", body: normalized };
+}
 
 function normalizeMergedTitle(mergedTitle: string, defaultTitle: string): string {
   const collapsed = mergedTitle

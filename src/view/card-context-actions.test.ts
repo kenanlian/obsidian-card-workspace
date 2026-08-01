@@ -684,8 +684,11 @@ vi.mock("./FolderCardPanel.svelte", () => {
   };
 });
 
-vi.mock("./note-ops", () => {
+vi.mock("./note-ops", async () => {
+  const actual = await vi.importActual<typeof import("./note-ops")>("./note-ops");
+
   return {
+    buildMergedNoteContent: actual.buildMergedNoteContent,
     addTagToFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     batchAddTagToFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
@@ -3829,6 +3832,91 @@ describe("FolderCardView card context actions", () => {
         "Merged notes",
         "\n\n***\n\n",
         getUiStrings("en").noteOps,
+      );
+    });
+
+    it("blocks merging and disables the action when a non-markdown file is selected", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const canvas = createNonMarkdownFile("notes/board.canvas", "canvas");
+      const visibleCards = [createCardRecord(first), createCardRecord(canvas, "canvas")];
+      const fileMap = new Map([
+        [first.path, first],
+        [canvas.path, canvas],
+      ]);
+
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
+      (view as any).visibleCards = visibleCards;
+      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, canvas.path]);
+      (view as any).bulkAnchorPath = first.path;
+
+      await (view as any).onOpen();
+
+      expect((view as any).buildBulkRuntimePanelState().canBulkMergeSelected).toBe(false);
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      expect(mockState.modalInstances).toHaveLength(0);
+      expect(mergeNotes).not.toHaveBeenCalled();
+      expect(mockState.noticeMessages).toContain(
+        "Only Markdown notes can be merged. Deselect the other file types first.",
+      );
+    });
+
+    it("previews merged content with only the first note's frontmatter", async () => {
+      const { view, app } = createViewWithFile("notes/seed.md");
+      const first = createMarkdownFile("notes/first.md");
+      const second = createMarkdownFile("notes/second.md");
+      const notesFolder = createFolder("notes");
+      const bodyByPath: Record<string, string> = {
+        [first.path]: "---\ntags:\n  - keep\n---\n\nFirst body",
+        [second.path]: "---\ntags:\n  - drop\n---\n\nSecond body",
+      };
+
+      app.vault.read = vi.fn(async (file: { path: string }) => {
+        return bodyByPath[file.path] ?? "";
+      });
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+        if (requestedPath === first.path) {
+          return first;
+        }
+        if (requestedPath === second.path) {
+          return second;
+        }
+        if (requestedPath === "notes") {
+          return notesFolder;
+        }
+        return null;
+      });
+
+      (view as any).bulkMode = true;
+      (view as any).selectedPaths = new Set([first.path, second.path]);
+      (view as any).bulkAnchorPath = first.path;
+      (view as any).baseCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).visibleCards = [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ];
+      (view as any).deriveVisibleCards = vi.fn(() => [
+        createCardRecordFromPath(first.path),
+        createCardRecordFromPath(second.path),
+      ]);
+
+      await (view as any).onOpen();
+
+      const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
+      toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
+      await flushAsyncWork();
+
+      expect(mockState.modalInstances.at(-1)?.renderedPreviewText).toBe(
+        "---\ntags:\n  - keep\n---\n\n# first\n\nFirst body\n\n# second\n\nSecond body",
       );
     });
 

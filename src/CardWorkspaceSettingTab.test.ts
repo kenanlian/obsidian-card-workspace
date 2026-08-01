@@ -150,13 +150,13 @@ describe("CardWorkspaceSettingTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the file explorer toggle, default open dropdown, and preview slider settings", () => {
+  it("renders the card behavior dropdowns, preview slider, and navigation toggle", () => {
     const plugin = {
       getSettings: vi.fn(() => ({
         cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
         dragInsertAction: "embed",
-        enableFileExplorerFolderClicks: false,
+        newNoteTemplate: "blank",
         previewLines: 6,
         showNavItemCounts: false,
       })),
@@ -170,21 +170,14 @@ describe("CardWorkspaceSettingTab", () => {
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
     expect(mockState.settings).toHaveLength(6);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
-      "Link File Explorer folder clicks to Card Workspace",
       "Default card open behavior",
       "Card drag insert behavior",
+      "New note content",
       "Card corner radius",
       "Preview lines",
       "Show item counts in navigation",
     ]);
-    expect(mockState.settings[0]).toMatchObject({
-      desc:
-        "When enabled, clicking a folder in Obsidian's File Explorer also opens that folder in Card Workspace. Card Workspace itself still stays available from the sidebar and commands.",
-    });
-    expect(mockState.settings[0]?.toggle).toMatchObject({
-      value: false,
-    });
-    expect(mockState.settings[1]?.dropdown).toMatchObject({
+    expect(mockState.settings[0]?.dropdown).toMatchObject({
       value: "split-right",
       options: [
         { value: "smart", label: "Current pane / current tab" },
@@ -193,7 +186,7 @@ describe("CardWorkspaceSettingTab", () => {
         { value: "new-window", label: "Open in new window" },
       ],
     });
-    expect(mockState.settings[2]?.dropdown).toMatchObject({
+    expect(mockState.settings[1]?.dropdown).toMatchObject({
       value: "embed",
       options: [
         { value: "ask", label: "Ask every time" },
@@ -201,6 +194,13 @@ describe("CardWorkspaceSettingTab", () => {
         { value: "embed", label: "Insert embed link" },
         { value: "content", label: "Insert card content" },
         { value: "title-content", label: "Insert card title & content" },
+      ],
+    });
+    expect(mockState.settings[2]?.dropdown).toMatchObject({
+      value: "blank",
+      options: [
+        { value: "tags-frontmatter", label: "Start with a tags property" },
+        { value: "blank", label: "Start blank" },
       ],
     });
     expect(mockState.settings[3]?.dropdown).toMatchObject({
@@ -229,7 +229,7 @@ describe("CardWorkspaceSettingTab", () => {
         cardCornerRadius: "medium",
         defaultCardOpenBehavior: "split-right",
         dragInsertAction: "embed",
-        enableFileExplorerFolderClicks: false,
+        newNoteTemplate: "tags-frontmatter",
         previewLines: 6,
         showNavItemCounts: false,
       })),
@@ -241,45 +241,28 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
 
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
-      "将文件资源管理器中的文件夹点击关联到 Card Workspace",
       "卡片默认打开方式",
       "卡片拖拽插入行为",
+      "新建笔记内容",
       "卡片圆角",
       "预览行数",
       "在导航栏显示条目计数",
     ]);
-    expect(mockState.settings[1]?.dropdown?.options[0]).toEqual({
+    expect(mockState.settings[0]?.dropdown?.options[0]).toEqual({
       value: "smart",
       label: "当前窗格 / 当前标签页",
     });
-    expect(mockState.settings[2]?.dropdown?.options).toEqual([
+    expect(mockState.settings[1]?.dropdown?.options).toEqual([
       { value: "ask", label: "每次弹框确认" },
       { value: "wiki", label: "插入 wiki link" },
       { value: "embed", label: "插入嵌入 link" },
       { value: "content", label: "插入卡片内容" },
       { value: "title-content", label: "插入卡片标题&内容" },
     ]);
-  });
-
-  it("saves file explorer folder click toggle changes", async () => {
-    const plugin = {
-      getSettings: vi.fn(() => ({
-        cardCornerRadius: "compact",
-        defaultCardOpenBehavior: "smart",
-        dragInsertAction: "ask",
-        enableFileExplorerFolderClicks: false,
-        previewLines: 5,
-      })),
-      saveSettings: vi.fn(async () => undefined),
-      getUiLanguage: vi.fn(() => "en"),
-    };
-
-    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
-    tab.display();
-
-    await mockState.settings[0]?.toggle?.changeHandler?.(true);
-
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ enableFileExplorerFolderClicks: true });
+    expect(mockState.settings[2]?.dropdown?.options).toEqual([
+      { value: "tags-frontmatter", label: "带 tags 属性" },
+      { value: "blank", label: "完全空白" },
+    ]);
   });
 
   it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
@@ -288,7 +271,7 @@ describe("CardWorkspaceSettingTab", () => {
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
         dragInsertAction: "ask",
-        enableFileExplorerFolderClicks: false,
+        newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
@@ -298,7 +281,7 @@ describe("CardWorkspaceSettingTab", () => {
     const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
-    await mockState.settings[1]?.dropdown?.changeHandler?.("new-window");
+    await mockState.settings[0]?.dropdown?.changeHandler?.("new-window");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ defaultCardOpenBehavior: "new-window" });
   });
@@ -309,7 +292,7 @@ describe("CardWorkspaceSettingTab", () => {
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
         dragInsertAction: "ask",
-        enableFileExplorerFolderClicks: false,
+        newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),
@@ -319,9 +302,51 @@ describe("CardWorkspaceSettingTab", () => {
     const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
     tab.display();
 
-    await mockState.settings[2]?.dropdown?.changeHandler?.("embed");
+    await mockState.settings[1]?.dropdown?.changeHandler?.("embed");
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ dragInsertAction: "embed" });
+  });
+
+  it("saves newNoteTemplate changes from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
+        defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
+        newNoteTemplate: "tags-frontmatter",
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[2]?.dropdown?.changeHandler?.("blank");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ newNoteTemplate: "blank" });
+  });
+
+  it("ignores unsupported newNoteTemplate values from the dropdown", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "compact",
+        defaultCardOpenBehavior: "smart",
+        dragInsertAction: "ask",
+        newNoteTemplate: "tags-frontmatter",
+        previewLines: 5,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[2]?.dropdown?.changeHandler?.("daily-note");
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
   it("saves cardCornerRadius changes from the dropdown", async () => {
@@ -330,7 +355,7 @@ describe("CardWorkspaceSettingTab", () => {
         cardCornerRadius: "compact",
         defaultCardOpenBehavior: "smart",
         dragInsertAction: "ask",
-        enableFileExplorerFolderClicks: false,
+        newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
       })),
       saveSettings: vi.fn(async () => undefined),

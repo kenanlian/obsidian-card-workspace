@@ -25,7 +25,7 @@
 
 ```text
 Obsidian events
-  ├─ file explorer / workspace actions
+  ├─ workspace actions
   └─ vault create/modify/delete/rename
           ↓
 src/main.ts

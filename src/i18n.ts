@@ -8,12 +8,12 @@ export interface LocalizedOption<TValue extends string = string> {
 }
 
 export interface SettingTabStrings {
-  enableFileExplorerFolderClicksName: string;
-  enableFileExplorerFolderClicksDesc: string;
   defaultCardOpenBehaviorName: string;
   defaultCardOpenBehaviorDesc: string;
   dragInsertActionName: string;
   dragInsertActionDesc: string;
+  newNoteTemplateName: string;
+  newNoteTemplateDesc: string;
   cardCornerRadiusName: string;
   cardCornerRadiusDesc: string;
   previewLinesName: string;
@@ -157,6 +157,7 @@ export interface NoteOpsStrings {
   copiedToClipboard: (basename: string) => string;
   failedToCopyToClipboard: string;
   noFilesToMerge: string;
+  mergeMarkdownOnly: string;
   mergedNotesDefaultTitle: string;
 }
 
@@ -264,6 +265,7 @@ export interface ViewStrings {
     merging: string;
     defaultMergedTitle: string;
     selectAtLeastTwoNotes: string;
+    markdownOnly: string;
     failedToMergeNotes: (reason: string) => string;
     mergedInto: (count: number, basename: string) => string;
     trashedSources: (count: number) => string;
@@ -419,14 +421,14 @@ export function isChineseLanguage(language: string = safeGetLanguage()): boolean
 
 const EN: UiStrings = {
   settingTab: {
-    enableFileExplorerFolderClicksName: "Link File Explorer folder clicks to Card Workspace",
-    enableFileExplorerFolderClicksDesc:
-      "When enabled, clicking a folder in Obsidian's File Explorer also opens that folder in Card Workspace. Card Workspace itself still stays available from the sidebar and commands.",
     defaultCardOpenBehaviorName: "Default card open behavior",
     defaultCardOpenBehaviorDesc:
       "Choose what happens when you click a card directly. Right-click menu actions stay available separately.",
     dragInsertActionName: "Card drag insert behavior",
     dragInsertActionDesc: "Choose what happens when a card is dropped into a Markdown editor.",
+    newNoteTemplateName: "New note content",
+    newNoteTemplateDesc:
+      "Choose what the toolbar's create-note action writes into a new note: an empty tags property, or nothing at all.",
     cardCornerRadiusName: "Card corner radius",
     cardCornerRadiusDesc: "Adjust how square or rounded each card border feels in the panel.",
     previewLinesName: "Preview lines",
@@ -569,6 +571,7 @@ const EN: UiStrings = {
     copiedToClipboard: (basename: string) => `Copied "${basename}" to clipboard`,
     failedToCopyToClipboard: "Failed to copy to clipboard",
     noFilesToMerge: "No files to merge",
+    mergeMarkdownOnly: "Only Markdown notes can be merged",
     mergedNotesDefaultTitle: "Merged notes",
   },
   desktopShell: {
@@ -723,6 +726,7 @@ const EN: UiStrings = {
       merging: "Merging…",
       defaultMergedTitle: "Merged notes",
       selectAtLeastTwoNotes: "Select at least 2 available notes to merge.",
+      markdownOnly: "Only Markdown notes can be merged. Deselect the other file types first.",
       failedToMergeNotes: (reason: string) => `Failed to merge notes: ${reason}`,
       mergedInto: (count: number, basename: string) => `Merged ${count} notes into "${basename}".`,
       trashedSources: (count: number) => `Trashed ${count} source note${count === 1 ? "" : "s"}.`,
@@ -810,13 +814,12 @@ const EN: UiStrings = {
 
 const ZH: UiStrings = {
   settingTab: {
-    enableFileExplorerFolderClicksName: "将文件资源管理器中的文件夹点击关联到 Card Workspace",
-    enableFileExplorerFolderClicksDesc:
-      "启用后，在 Obsidian 文件资源管理器中点击文件夹时，也会在 Card Workspace 中打开该文件夹。Card Workspace 仍然可以从侧边栏和命令中进入。",
     defaultCardOpenBehaviorName: "卡片默认打开方式",
     defaultCardOpenBehaviorDesc: "选择直接点击卡片时的行为。右键菜单操作仍可单独使用。",
     dragInsertActionName: "卡片拖拽插入行为",
     dragInsertActionDesc: "选择将卡片拖入 Markdown 编辑器时的处理方式。",
+    newNoteTemplateName: "新建笔记内容",
+    newNoteTemplateDesc: "选择工具栏“创建笔记”生成的笔记内容：带一个空的 tags 属性，或完全空白。",
     cardCornerRadiusName: "卡片圆角",
     cardCornerRadiusDesc: "调整面板中每张卡片边框的方正或圆润程度。",
     previewLinesName: "预览行数",
@@ -956,6 +959,7 @@ const ZH: UiStrings = {
     copiedToClipboard: (basename: string) => `已将“${basename}”复制到剪贴板`,
     failedToCopyToClipboard: "复制到剪贴板失败",
     noFilesToMerge: "没有可合并的文件",
+    mergeMarkdownOnly: "只能合并 Markdown 笔记",
     mergedNotesDefaultTitle: "合并笔记",
   },
   desktopShell: {
@@ -1103,6 +1107,7 @@ const ZH: UiStrings = {
       merging: "正在合并…",
       defaultMergedTitle: "合并笔记",
       selectAtLeastTwoNotes: "请至少选择 2 篇可用笔记进行合并。",
+      markdownOnly: "只能合并 Markdown 笔记，请先取消选择其他格式的文件。",
       failedToMergeNotes: (reason: string) => `合并笔记失败：${reason}`,
       mergedInto: (count: number, basename: string) => `已将 ${count} 篇笔记合并到“${basename}”。`,
       trashedSources: (count: number) => `已将 ${count} 篇源笔记移入废纸篓。`,
@@ -1230,6 +1235,14 @@ export function getDragInsertActionOptions(language: string = safeGetLanguage())
     { value: "embed", label: zh ? "插入嵌入 link" : "Insert embed link" },
     { value: "content", label: zh ? "插入卡片内容" : "Insert card content" },
     { value: "title-content", label: zh ? "插入卡片标题&内容" : "Insert card title & content" },
+  ];
+}
+
+export function getNewNoteTemplateOptions(language: string = safeGetLanguage()): LocalizedOption[] {
+  const zh = resolveUiLanguage(language) === "zh";
+  return [
+    { value: "tags-frontmatter", label: zh ? "带 tags 属性" : "Start with a tags property" },
+    { value: "blank", label: zh ? "完全空白" : "Start blank" },
   ];
 }
 
