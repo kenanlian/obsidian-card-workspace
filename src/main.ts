@@ -212,7 +212,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
     const fullPath = this.generateUniqueNotePath(folderPath);
     const file = await this.app.vault.create(fullPath, this.buildNewNoteContent());
-    await this.openNoteFromCard(file.path, "current-area");
+    await this.openNoteFromCard(file.path, "new-tab");
   }
 
   private buildNewNoteContent(): string {

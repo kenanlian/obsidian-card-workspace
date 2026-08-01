@@ -1235,7 +1235,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
     expect(leaf.openFile).toHaveBeenCalledWith(target, { active: true });
   });
 
-  it("opens newly created notes in current-area explicitly", async () => {
+  it("opens newly created notes in new-tab explicitly", async () => {
     const { plugin, app } = createPluginHarness();
     (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
@@ -1243,7 +1243,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
     await plugin.createNoteInCurrentFolder();
 
-    expect(openNoteFromCard).toHaveBeenCalledWith("notes/Untitled.md", "current-area");
+    expect(openNoteFromCard).toHaveBeenCalledWith("notes/Untitled.md", "new-tab");
   });
 
   it("seeds new notes with a tags property by default", async () => {
