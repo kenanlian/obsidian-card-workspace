@@ -649,7 +649,7 @@
 
     <TreeSection
       title={strings.navPane.boxesSection}
-      icon="boxes"
+      icon="package"
       collapsed={boxSectionCollapsed}
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}

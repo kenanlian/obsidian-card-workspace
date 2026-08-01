@@ -297,6 +297,7 @@ vi.mock("obsidian", () => {
   class MockPlugin {
     app: unknown = null;
     registerView = vi.fn();
+    addRibbonIcon = vi.fn((_icon: string, _title: string, _callback: () => void) => ({}));
     addSettingTab = vi.fn();
     addCommand = vi.fn();
     registerHoverLinkSource = vi.fn();
@@ -585,6 +586,34 @@ describe("CardWorkspacePlugin activateView", () => {
       active: true,
     });
     expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, { focus: false });
+  });
+
+  it("registers a ribbon entry point that activates the view", async () => {
+    const { plugin, app } = createPluginHarness();
+    const existingLeaf = { setViewState: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [existingLeaf];
+    const globals = globalThis as unknown as { document?: unknown; activeDocument?: unknown };
+    globals.document = {};
+    globals.activeDocument = globals.document;
+
+    try {
+      plugin.onload();
+      await waitForPluginLoad(plugin);
+
+      const addRibbonIcon = (plugin as unknown as { addRibbonIcon: ReturnType<typeof vi.fn> }).addRibbonIcon;
+      expect(addRibbonIcon).toHaveBeenCalledTimes(1);
+      const [icon, title, callback] = addRibbonIcon.mock.calls[0] as [string, string, () => void];
+      expect(icon).toBe("layout-grid");
+      expect(title).toBe("Open Card Workspace");
+
+      callback();
+      await Promise.resolve();
+
+      expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: false });
+    } finally {
+      Reflect.deleteProperty(globals, "activeDocument");
+      Reflect.deleteProperty(globals, "document");
+    }
   });
 
   it("reuses an existing card view leaf before creating a new sidebar leaf", async () => {

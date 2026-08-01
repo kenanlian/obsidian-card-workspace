@@ -168,6 +168,7 @@ export interface DesktopShellStrings {
 export interface BoxStrings {
   createBox: string;
   saveScopeAsBox: string;
+  addScopeToBox: string;
   addScopeToThisBox: string;
   rename: string;
   duplicate: string;
@@ -355,6 +356,7 @@ export interface AppStrings {
   untitledNoteBaseName: string;
   hoverSourceDisplay: string;
   openCardWorkspaceViewCommand: string;
+  ribbonTooltip: string;
   showSearchStatusCommand: string;
   recoverSearchIndexCommand: string;
   rebuildSearchIndexCommand: string;
@@ -576,6 +578,7 @@ const EN: UiStrings = {
   box: {
     createBox: "New card box…",
     saveScopeAsBox: "Save current view as card box…",
+    addScopeToBox: "Add current view to card box",
     addScopeToThisBox: "Add current view to this card box",
     rename: "Rename…",
     duplicate: "Duplicate",
@@ -770,6 +773,7 @@ const EN: UiStrings = {
     untitledNoteBaseName: "Untitled",
     hoverSourceDisplay: "Card Workspace",
     openCardWorkspaceViewCommand: "Open Card Workspace view",
+    ribbonTooltip: "Open Card Workspace",
     showSearchStatusCommand: "Show Card Workspace local search index lifecycle status",
     recoverSearchIndexCommand: "Recover Card Workspace local search index lifecycle",
     rebuildSearchIndexCommand: "Rebuild Card Workspace local search index from notes",
@@ -961,6 +965,7 @@ const ZH: UiStrings = {
   box: {
     createBox: "新建卡片盒…",
     saveScopeAsBox: "将当前视图存为卡片盒…",
+    addScopeToBox: "将当前视图加入卡片盒",
     addScopeToThisBox: "将当前视图加入此卡片盒",
     rename: "重命名…",
     duplicate: "复制",
@@ -1148,6 +1153,7 @@ const ZH: UiStrings = {
     untitledNoteBaseName: "未命名",
     hoverSourceDisplay: "Card Workspace",
     openCardWorkspaceViewCommand: "打开 Card Workspace 视图",
+    ribbonTooltip: "打开 Card Workspace",
     showSearchStatusCommand: "显示 Card Workspace 本地搜索索引生命周期状态",
     recoverSearchIndexCommand: "恢复 Card Workspace 本地搜索索引生命周期",
     rebuildSearchIndexCommand: "从笔记重建 Card Workspace 本地搜索索引",

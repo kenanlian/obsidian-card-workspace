@@ -2,6 +2,7 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
+  import type { BoxSummary } from "./panel-model";
   import type { SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -34,6 +35,7 @@
     boxStrings?: BoxStrings;
     activeBoxId?: string | null;
     activeBoxName?: string | null;
+    boxSummaries?: BoxSummary[];
     folderPath?: string;
     activeFilterTags?: string[];
     navVisible?: boolean;
@@ -144,6 +146,7 @@
     boxStrings = getUiStrings("en").box,
     activeBoxId = null,
     activeBoxName = null,
+    boxSummaries = [],
     folderPath = "",
     activeFilterTags = [],
     navVisible = false,
@@ -173,6 +176,7 @@
     onBoxCommand,
   }: ToolbarProps = $props();
   const sortButtonId = "fce-sort-button";
+  const boxPickerButtonId = "fce-box-picker-button";
 
   const SORT_OPTIONS = $derived<SortMenuOption[]>([
     { field: "name", direction: "asc", label: strings.sortOptions.nameAsc },
@@ -200,11 +204,17 @@
   let showSortMenu = $state(false);
   let sortMenuX = $state(0);
   let sortMenuY = $state(0);
+  let showBoxPickerMenu = $state(false);
+  let boxPickerMenuX = $state(0);
+  let boxPickerMenuY = $state(0);
 
   let sortButtonEl: HTMLElement | null = null;
   let sortMenuEl: HTMLElement | null = null;
+  let boxPickerButtonEl: HTMLElement | null = null;
+  let boxPickerMenuEl: HTMLElement | null = null;
 
   const isBoxMode = $derived(activeBoxId !== null);
+  const hasBoxes = $derived(boxSummaries.length > 0);
 
   function formatScopeTag(tag: string): string {
     return tag.startsWith("#") ? tag : `#${tag}`;
@@ -240,7 +250,7 @@
     { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
     { type: "separator" },
     { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
-    { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: "gallery-horizontal", disabled: !canBulkClearSelection },
+    { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: "box", disabled: !canBulkClearSelection },
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
     { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
   ]);
@@ -278,6 +288,8 @@
   }
 
   function selectToolbarAction(actionId: string, event: MouseEvent): void {
+    closeBoxPickerMenu();
+
     if (actionId === "sort") {
       if (showSortMenu) {
         closeSortMenu();
@@ -367,12 +379,37 @@
     sortButtonEl = node;
   });
 
+  const captureBoxPickerButton = createElementCapture((node) => {
+    boxPickerButtonEl = node;
+  });
+
   function closeSortMenu(): void {
     showSortMenu = false;
   }
 
+  function closeBoxPickerMenu(): void {
+    showBoxPickerMenu = false;
+  }
+
   function emitBoxCommand(command: string, boxId?: string): void {
     onBoxCommand?.(boxId === undefined ? { command } : { command, boxId });
+  }
+
+  function toggleBoxPickerMenu(event: MouseEvent): void {
+    if (showBoxPickerMenu) {
+      closeBoxPickerMenu();
+      return;
+    }
+
+    closeSortMenu();
+    boxPickerMenuX = event.clientX;
+    boxPickerMenuY = event.clientY;
+    showBoxPickerMenu = true;
+  }
+
+  function addScopeToBox(boxId: string): void {
+    closeBoxPickerMenu();
+    emitBoxCommand("add-scope-to-box", boxId);
   }
 
   const sortMenuAction = createPopupPortalAction({
@@ -381,6 +418,15 @@
       sortMenuEl = node;
     },
     close: closeSortMenu,
+    closeOnEscape: true,
+  });
+
+  const boxPickerMenuAction = createPopupPortalAction({
+    getButton: () => boxPickerButtonEl,
+    setMenu: (node) => {
+      boxPickerMenuEl = node;
+    },
+    close: closeBoxPickerMenu,
     closeOnEscape: true,
   });
 
@@ -498,6 +544,20 @@
           >
             <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
           </button>
+          {#if hasBoxes}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {showBoxPickerMenu ? 'is-selected' : ''}"
+              id={boxPickerButtonId}
+              aria-label={boxStrings.addScopeToBox}
+              aria-expanded={showBoxPickerMenu}
+              onclick={toggleBoxPickerMenu}
+              use:applyIcon={"package-check"}
+              use:captureBoxPickerButton
+            >
+              <span class="fce-sr-only">{boxStrings.addScopeToBox}</span>
+            </button>
+          {/if}
         {/if}
         <button
           type="button"
@@ -611,6 +671,30 @@
           </span>
         </button>
       {/if}
+    {/each}
+  </div>
+{/if}
+
+{#if showBoxPickerMenu}
+  <div
+    class="fce-popup-menu fce-box-picker-menu"
+    role="menu"
+    aria-labelledby={boxPickerButtonId}
+    style="left: {boxPickerMenuX}px; top: {boxPickerMenuY}px;"
+    use:boxPickerMenuAction
+  >
+    {#each boxSummaries as box (box.id)}
+      <button
+        type="button"
+        class="fce-popup-row fce-box-picker-item"
+        role="menuitem"
+        onclick={() => addScopeToBox(box.id)}
+      >
+        <span class="fce-popup-row-leading" aria-hidden="true" use:applyIcon={"box"}></span>
+        <span class="fce-popup-row-content">
+          <span class="fce-box-picker-item-label">{box.name}</span>
+        </span>
+      </button>
     {/each}
   </div>
 {/if}

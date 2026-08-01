@@ -25,6 +25,11 @@ interface BoxCommandPayload {
   boxId?: string;
 }
 
+const BOX_SUMMARIES = [
+  { id: "box-1", name: "Reading", cardCount: 3 },
+  { id: "box-2", name: "Plans", cardCount: 1 },
+];
+
 interface ToolbarCallbacks {
   onSortChange?: (payload: SortChangePayload) => void;
   onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
@@ -126,6 +131,17 @@ async function openSortPopup(): Promise<void> {
   await tick();
 }
 
+function getBoxPickerButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>('button[aria-label="Add current view to card box"]');
+}
+
+async function clickBoxPickerButton(): Promise<void> {
+  const button = getBoxPickerButton();
+  expect(button).not.toBeNull();
+  button?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 60, clientY: 12 }));
+  await tick();
+}
+
 function getSelectedSortOption(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(
     ".fce-sort-menu button[role='menuitemradio'][aria-checked='true']",
@@ -172,6 +188,90 @@ describe("Toolbar.svelte", () => {
     ];
 
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(expectedLabels);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("offers add-current-view-to-box only once a card box exists", async () => {
+    let { component } = mountToolbar();
+
+    expect(getBoxPickerButton()).toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ boxSummaries: BOX_SUMMARIES }));
+
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-buttons button"));
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Expand navigation",
+      "Create note",
+      "Sort cards",
+      "Bulk actions",
+      "Save current view as card box",
+      "Add current view to card box",
+      "Toggle search",
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("hides add-current-view-to-box inside a card box", async () => {
+    const { component } = mountToolbar({
+      boxSummaries: BOX_SUMMARIES,
+      activeBoxId: "box-1",
+      activeBoxName: "Reading",
+    });
+
+    expect(getBoxPickerButton()).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("toggles the box picker popup from its own button", async () => {
+    const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
+
+    await clickBoxPickerButton();
+    expect(document.querySelector(".fce-box-picker-menu")).not.toBeNull();
+    expect(getBoxPickerButton()?.classList.contains("is-selected")).toBe(true);
+
+    await clickBoxPickerButton();
+    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+    expect(getBoxPickerButton()?.classList.contains("is-selected")).toBe(false);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("adds the current view to the picked box and closes the popup", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES }, captured.callbacks);
+
+    await clickBoxPickerButton();
+
+    const options = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-box-picker-item"));
+    expect(options.map((option) => option.textContent?.trim())).toEqual(["Reading", "Plans"]);
+
+    options[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.boxCommandEvents).toEqual([{ command: "add-scope-to-box", boxId: "box-2" }]);
+    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("closes the box picker popup on an outside click and when the sort popup opens", async () => {
+    const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
+
+    await clickBoxPickerButton();
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+
+    await clickBoxPickerButton();
+    await openSortPopup();
+
+    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
 
     await disposeMountedComponent(component);
   });

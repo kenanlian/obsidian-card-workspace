@@ -2702,10 +2702,10 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
-      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
+      { kind: "item", title: "Add to card box", icon: "box" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
-      { kind: "item", title: "Copy content", icon: "clipboard" },
-      { kind: "item", title: "Copy title & content", icon: "clipboard" },
+      { kind: "item", title: "Copy content", icon: "clipboard-list" },
+      { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
       { kind: "separator" },
       { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
       { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
@@ -3069,7 +3069,7 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
-      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
+      { kind: "item", title: "Add to card box", icon: "box" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
@@ -3099,10 +3099,10 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
-      { kind: "item", title: "Add to card box", icon: "gallery-horizontal" },
+      { kind: "item", title: "Add to card box", icon: "box" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
-      { kind: "item", title: "Copy content", icon: "clipboard" },
-      { kind: "item", title: "Copy title & content", icon: "clipboard" },
+      { kind: "item", title: "Copy content", icon: "clipboard-list" },
+      { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
       { kind: "separator" },
       { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
       { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
@@ -5111,7 +5111,11 @@ describe("FolderCardView card context actions", () => {
       const { view } = createViewWithBox();
 
       (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
-      expect(getMenuTitles()).toEqual(["New card box…", "Save current view as card box…"]);
+      expect(getMenuTitles()).toEqual([
+        "New card box…",
+        "Save current view as card box…",
+        "Add current view to card box",
+      ]);
 
       mockState.menuInstances.length = 0;
 
@@ -5123,6 +5127,62 @@ describe("FolderCardView card context actions", () => {
 
       (boxModeView as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent: { clientX: 1, clientY: 2 } });
       expect(getMenuTitles()).not.toContain("Add current view to this card box");
+    });
+
+    it("add-current-view submenu targets every card box and routes to the scope rule", () => {
+      const { view } = createViewWithBox();
+      const addScopeToBox = vi.spyOn(view as any, "addScopeToBox").mockImplementation(() => undefined);
+
+      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+
+      const item = findMenuItemByTitle(mockState.menuInstances[0], "Add current view to card box");
+      expect(item.icon).toBe("package-check");
+      expect(item.submenu?.items.map((entry: any) => entry.title)).toEqual(["Reading"]);
+
+      (item.submenu?.items[0] as any).clickHandler();
+
+      expect(addScopeToBox).toHaveBeenCalledTimes(1);
+      expect(addScopeToBox).toHaveBeenCalledWith(BOX_ID);
+    });
+
+    it("hides the add-current-view entry when no card box exists", () => {
+      const { view, plugin } = createViewWithBox();
+      const settings = plugin.getSettings();
+      plugin.getSettings = vi.fn(() => ({ ...settings, boxes: [] }));
+
+      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+
+      expect(getMenuTitles()).toEqual(["New card box…", "Save current view as card box…"]);
+    });
+
+    it("opens a flat box picker when a submenu is unavailable", () => {
+      const { view } = createViewWithBox();
+      const addScopeToBox = vi.spyOn(view as any, "addScopeToBox").mockImplementation(() => undefined);
+      const mouseEvent = { clientX: 9, clientY: 11 };
+
+      (view as any).openAddScopeToBoxPicker(mouseEvent);
+
+      expect(mockState.menuInstances).toHaveLength(1);
+      const menu = mockState.menuInstances[0];
+      expect(menu.items.map((item: any) => item.title)).toEqual(["Reading"]);
+      expect(menu.showAtMouseEvent).toHaveBeenCalledWith(mouseEvent);
+
+      menu.items[0].clickHandler?.();
+      expect(addScopeToBox).toHaveBeenCalledWith(BOX_ID);
+    });
+
+    it("skips the flat box picker inside a box, without boxes, or without a mouse event", () => {
+      const { view: boxModeView } = createViewWithBox(BOX_ID);
+      (boxModeView as any).openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
+
+      const { view, plugin } = createViewWithBox();
+      (view as any).openAddScopeToBoxPicker(null);
+
+      const settings = plugin.getSettings();
+      plugin.getSettings = vi.fn(() => ({ ...settings, boxes: [] }));
+      (view as any).openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
+
+      expect(mockState.menuInstances).toHaveLength(0);
     });
 
     it("box context menu is ignored for an unknown box id or a non-mouse event", () => {

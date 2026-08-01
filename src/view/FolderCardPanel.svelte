@@ -682,6 +682,7 @@
     boxStrings={panelState.strings.box}
     activeBoxId={panelState.activeBoxId}
     activeBoxName={panelState.activeBoxName}
+    boxSummaries={panelState.boxSummaries}
     {folderPath}
     {activeFilterTags}
     {navVisible}

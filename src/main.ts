@@ -41,7 +41,7 @@ import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent,
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
-import { PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
+import { CARD_WORKSPACE_ICON, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -133,6 +133,9 @@ export default class CardWorkspacePlugin extends Plugin {
     });
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
+    this.addRibbonIcon(CARD_WORKSPACE_ICON, this.getUiStrings().app.ribbonTooltip, () => {
+      void this.activateView();
+    });
     this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
     this.registerHoverLinkSource("card-workspace", {
       display: this.getUiStrings().app.hoverSourceDisplay,

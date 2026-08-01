@@ -12,6 +12,7 @@ import {
 } from "obsidian";
 import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
+import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags, collectTagCounts, getFileTags } from "./metadata-utils";
@@ -877,7 +878,7 @@ export class FolderCardView extends ItemView {
   }
 
   getIcon(): string {
-    return "gallery-horizontal";
+    return CARD_WORKSPACE_ICON;
   }
 
   private get strings(): UiStrings {
@@ -1224,6 +1225,53 @@ export class FolderCardView extends ItemView {
     return "";
   }
 
+  private canAddScopeToBox(): boolean {
+    return !this.isBoxMode() && this.plugin.getSettings().boxes.length > 0;
+  }
+
+  private appendScopeTargetBoxItems(menu: Menu): void {
+    for (const box of this.plugin.getSettings().boxes) {
+      menu.addItem((item) => {
+        item
+          .setTitle(box.name)
+          .setIcon("box")
+          .onClick(() => {
+            this.addScopeToBox(box.id);
+          });
+      });
+    }
+  }
+
+  /** Flat target picker for entry points that cannot host a submenu. */
+  private openAddScopeToBoxPicker(mouseEvent: unknown): void {
+    if (!this.canAddScopeToBox() || !this.isMouseEventLike(mouseEvent)) {
+      return;
+    }
+
+    const menu = new Menu();
+    this.appendScopeTargetBoxItems(menu);
+    menu.showAtMouseEvent(mouseEvent);
+  }
+
+  private appendAddScopeToBoxMenu(menu: Menu): void {
+    if (!this.canAddScopeToBox()) {
+      return;
+    }
+
+    menu.addItem((item) => {
+      item.setTitle(this.strings.box.addScopeToBox).setIcon("package-check");
+      const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
+      if (submenu && typeof submenu.addItem === "function") {
+        this.appendScopeTargetBoxItems(submenu);
+        return;
+      }
+
+      item.onClick((event) => {
+        this.openAddScopeToBoxPicker(event);
+      });
+    });
+  }
+
   private addScopeToBox(boxId: string | null): void {
     const settings = this.plugin.getSettings();
     const box = findCardBox(settings.boxes, boxId);
@@ -1299,7 +1347,7 @@ export class FolderCardView extends ItemView {
     const strings = this.strings.box;
     const settings = this.plugin.getSettings();
     menu.addItem((item) => {
-      item.setTitle(strings.addToBox).setIcon("gallery-horizontal");
+      item.setTitle(strings.addToBox).setIcon("box");
       const boxes = settings.boxes ?? [];
       const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
       if (submenu && typeof submenu.addItem === "function") {
@@ -2028,7 +2076,7 @@ export class FolderCardView extends ItemView {
       menu.addItem((item) => {
         item
           .setTitle(strings.copyContent)
-          .setIcon("clipboard")
+          .setIcon("clipboard-list")
           .onClick(() => {
             void this.routeCardMenuAction("copy-content", notePath);
           });
@@ -2037,7 +2085,7 @@ export class FolderCardView extends ItemView {
       menu.addItem((item) => {
         item
           .setTitle(strings.copyTitleAndContent)
-          .setIcon("clipboard")
+          .setIcon("clipboard-plus")
           .onClick(() => {
             void this.routeCardMenuAction("copy-title-and-content", notePath);
           });
@@ -2113,7 +2161,7 @@ export class FolderCardView extends ItemView {
     menu.addItem((item) => {
       item
         .setTitle(strings.createBox)
-        .setIcon("package-plus")
+        .setIcon("box")
         .onClick(() => {
           this.handleBoxCommand({ command: "create" });
         });
@@ -2123,12 +2171,14 @@ export class FolderCardView extends ItemView {
       menu.addItem((item) => {
         item
           .setTitle(strings.saveScopeAsBox)
-          .setIcon("bookmark-plus")
+          .setIcon("package-plus")
           .onClick(() => {
             this.handleBoxCommand({ command: "save-scope-as-box" });
           });
       });
     }
+
+    this.appendAddScopeToBoxMenu(menu);
   }
 
   private addBoxItemMenuItems(menu: Menu, boxId: string): boolean {

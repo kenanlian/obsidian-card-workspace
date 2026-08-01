@@ -109,9 +109,14 @@
   color: var(--icon-color-hover);
 }
 
+/*
+ * The 4px inset aligns each section header icon with the pane header buttons,
+ * whose icons sit at the header's 6px padding plus the `clickable-icon` inset.
+ */
 .folder-card-view .fce-nav-pane-sections {
   flex: 1 1 auto;
   min-height: 0;
+  padding-left: 4px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -596,7 +601,8 @@
   box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
 }
 
-.fce-sort-menu {
+.fce-sort-menu,
+.fce-box-picker-menu {
   min-width: 180px;
   padding: 6px;
   border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
@@ -659,7 +665,8 @@
   border-radius: var(--radius-s, 4px);
 }
 
-.fce-sort-menu .fce-popup-row {
+.fce-sort-menu .fce-popup-row,
+.fce-box-picker-menu .fce-popup-row {
   justify-content: space-between;
   width: 100%;
   padding: 4px 8px;
@@ -672,7 +679,12 @@
   outline: none;
 }
 
-.fce-sort-menu-item-label {
+.fce-box-picker-menu .fce-popup-row-leading {
+  color: var(--fce-text-muted);
+}
+
+.fce-sort-menu-item-label,
+.fce-box-picker-item-label {
   min-width: 0;
   flex: 1;
   overflow: hidden;

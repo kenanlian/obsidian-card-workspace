@@ -6,6 +6,9 @@
  */
 const LUCIDE_VIEWBOX_SCALE = 100 / 24;
 
+/** Plugin identity glyph, shared by the view tab and the ribbon entry point. */
+export const CARD_WORKSPACE_ICON = "layout-grid";
+
 /**
  * Obsidian's built-in `folder` id resolves to its legacy open-folder glyph and
  * shadows Lucide's closed `folder`, so the Lucide artwork is registered here

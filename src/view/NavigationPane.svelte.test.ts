@@ -643,7 +643,7 @@ describe("NavigationPane.svelte", () => {
     const glyphIcons = Array.from(document.querySelectorAll(".fce-tree-section-glyph")).map((glyph) =>
       glyph.getAttribute("data-icon"),
     );
-    expect(glyphIcons).toEqual(["folders", "tags", "boxes"]);
+    expect(glyphIcons).toEqual(["folders", "tags", "package"]);
     expect(document.querySelectorAll(".fce-tree-section-chevron")).toHaveLength(3);
 
     await disposeMountedComponent(component);
