@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockState = vi.hoisted(() => {
   const openPath = vi.fn(async (_path: string) => "");
   const showItemInFolder = vi.fn();
+  const remoteOpenPath = vi.fn(async (_path: string) => "");
+  const remoteShowItemInFolder = vi.fn();
   let isDesktopApp = true;
   let getFullPath = vi.fn((path: string) => `/vault/${path}`);
 
   return {
     openPath,
     showItemInFolder,
+    remoteOpenPath,
+    remoteShowItemInFolder,
     get isDesktopApp(): boolean {
       return isDesktopApp;
     },
@@ -64,6 +68,10 @@ describe("desktop-shell", () => {
     mockState.openPath.mockReset();
     mockState.openPath.mockResolvedValue("");
     mockState.showItemInFolder.mockReset();
+    mockState.remoteOpenPath.mockReset();
+    mockState.remoteOpenPath.mockResolvedValue("");
+    mockState.remoteShowItemInFolder.mockReset();
+    Reflect.deleteProperty(globalThis, "electron");
   });
 
   it("openInDefaultApp resolves the system path and calls shell.openPath", async () => {
@@ -78,6 +86,44 @@ describe("desktop-shell", () => {
     expect(mockState.openPath).toHaveBeenCalledTimes(1);
     expect(mockState.openPath).toHaveBeenCalledWith("/vault/notes/example.md");
     expect(mockState.showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it("prefers window.electron.remote.shell so Explorer can take foreground focus", async () => {
+    (globalThis as typeof globalThis & { electron?: unknown }).electron = {
+      remote: {
+        shell: {
+          openPath: mockState.remoteOpenPath,
+          showItemInFolder: mockState.remoteShowItemInFolder,
+        },
+      },
+    };
+    const app = createApp();
+
+    await expect(showInSystemExplorer(app as never, "notes/example.md")).resolves.toEqual({
+      ok: true,
+    });
+    await expect(openInDefaultApp(app as never, "notes/example.md")).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(mockState.remoteShowItemInFolder).toHaveBeenCalledTimes(1);
+    expect(mockState.remoteShowItemInFolder).toHaveBeenCalledWith("/vault/notes/example.md");
+    expect(mockState.remoteOpenPath).toHaveBeenCalledTimes(1);
+    expect(mockState.remoteOpenPath).toHaveBeenCalledWith("/vault/notes/example.md");
+    expect(mockState.showItemInFolder).not.toHaveBeenCalled();
+    expect(mockState.openPath).not.toHaveBeenCalled();
+  });
+
+  it("showInSystemExplorer falls back to renderer shell when remote shell is unavailable", async () => {
+    const app = createApp();
+
+    await expect(showInSystemExplorer(app as never, "notes/example.md")).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(mockState.showItemInFolder).toHaveBeenCalledTimes(1);
+    expect(mockState.showItemInFolder).toHaveBeenCalledWith("/vault/notes/example.md");
+    expect(mockState.remoteShowItemInFolder).not.toHaveBeenCalled();
   });
 
   it("returns a failure result when desktop shell support is unavailable", async () => {

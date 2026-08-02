@@ -1,3 +1,6 @@
+// Static import so esbuild emits CJS `require("electron")`.
+// Dynamic `import("electron")` fails at runtime with a bare-specifier error.
+import { shell as rendererShell } from "electron";
 import { Platform } from "obsidian";
 import { getUiStrings, type DesktopShellStrings } from "../i18n";
 
@@ -11,6 +14,18 @@ export interface DesktopShellSuccess {
 }
 
 export type DesktopShellResult = DesktopShellSuccess | DesktopShellFailure;
+
+interface DesktopShell {
+  openPath: (path: string) => Promise<string>;
+  showItemInFolder: (path: string) => void;
+}
+
+interface ElectronBridge {
+  remote?: {
+    shell?: DesktopShell;
+  };
+  shell?: DesktopShell;
+}
 
 interface FileSystemAdapterLike {
   getFullPath?: (path: string) => string;
@@ -42,15 +57,27 @@ function getErrorMessage(error: unknown, strings: DesktopShellStrings): string {
   return strings.unknownError;
 }
 
-interface DesktopShell {
-  openPath: (path: string) => Promise<string>;
-  showItemInFolder: (path: string) => void;
+function isDesktopShell(value: unknown): value is DesktopShell {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as DesktopShell;
+  return typeof candidate.openPath === "function" && typeof candidate.showItemInFolder === "function";
 }
 
+/**
+ * Prefer Obsidian's main-process `window.electron.remote.shell`.
+ * Renderer `shell.showItemInFolder` often opens Explorer behind Obsidian on Windows
+ * because background processes cannot steal foreground focus.
+ */
+function getDesktopShell(): DesktopShell {
+  const bridge = (globalThis as typeof globalThis & { electron?: ElectronBridge }).electron;
+  if (isDesktopShell(bridge?.remote?.shell)) {
+    return bridge.remote.shell;
+  }
 
-async function loadShell(): Promise<DesktopShell> {
-  const electronModule = await import("electron");
-  return electronModule.shell;
+  return rendererShell;
 }
 
 export function canResolveSystemPath(app: AppLike): boolean {
@@ -84,8 +111,7 @@ export async function openInDefaultApp(
   }
 
   try {
-    const shell = await loadShell();
-    const error = await shell.openPath(systemPath);
+    const error = await getDesktopShell().openPath(systemPath);
     if (typeof error === "string" && error.length > 0) {
       return {
         ok: false,
@@ -118,8 +144,7 @@ export async function showInSystemExplorer(
   }
 
   try {
-    const shell = await loadShell();
-    shell.showItemInFolder(systemPath);
+    getDesktopShell().showItemInFolder(systemPath);
     return {
       ok: true,
     };

@@ -23,6 +23,7 @@ export default defineConfig({
         resolve: {
           alias: {
             obsidian: obsidianAlias,
+            electron: electronAlias,
             "./FolderCardPanel.svelte": folderCardPanelMockAlias,
           },
         },
