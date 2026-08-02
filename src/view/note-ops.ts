@@ -280,6 +280,14 @@ export async function copyTitleToClipboard(
   return await copyTextToClipboard(text, file.basename, strings);
 }
 
+/** Copy an arbitrary path string, echoing it in the success Notice. */
+export async function copyPathToClipboard(
+  path: string,
+  strings: NoteOpsStrings = getUiStrings("en").noteOps,
+): Promise<boolean> {
+  return await copyTextToClipboard(path, path, strings);
+}
+
 /**
  * Copy the full content of a note to the system clipboard.
  * Shows an Obsidian Notice on success/failure.
@@ -572,7 +580,7 @@ function normalizeMergedTitle(mergedTitle: string, defaultTitle: string): string
  * Generate a unique file path inside `folderPath`. If `fileName` already
  * exists, appends " 1", " 2", etc. before the extension.
  */
-function resolveUniquePath(app: App, fileName: string, folderPath: string): string {
+export function resolveUniquePath(app: App, fileName: string, folderPath: string): string {
   const prefix = folderPath ? `${folderPath}/` : "";
   const candidate = `${prefix}${fileName}`;
 

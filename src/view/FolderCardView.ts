@@ -12,7 +12,7 @@ import {
 } from "obsidian";
 import { mount, unmount } from "svelte";
 import { FolderPickerModal } from "../FolderPickerModal";
-import { CARD_WORKSPACE_ICON } from "../icons";
+import { CARD_WORKSPACE_ICON, PLAIN_FOLDER_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
 import { collectAllTags, collectTagCounts, getFileTags } from "./metadata-utils";
@@ -25,6 +25,7 @@ import {
   batchTrashFiles,
   buildMergedNoteContent,
   copyContentToClipboard,
+  copyPathToClipboard,
   copyTitleAndContentToClipboard,
   copyTitleToClipboard,
   deleteFileUsingObsidianPreference,
@@ -33,8 +34,23 @@ import {
   moveFile,
   normalizeTagForFrontmatter,
   removeTagFromFile,
+  resolveUniquePath,
   trashAbstractFileUsingObsidianPreference,
 } from "./note-ops";
+import { canResolveSystemPath, getSystemPath, showInSystemExplorer } from "./desktop-shell";
+import {
+  buildNavContextMenu,
+  resolveNavMenuDangerLabel,
+  type NavMenuDeps,
+} from "./nav-context-menu";
+import {
+  isFavorite,
+  isFavoriteKind,
+  moveFavorite,
+  pruneFavoriteBoxes,
+  toggleFavorite,
+} from "./favorites";
+import { normalizeTagPath } from "./tag-tree";
 import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
 import { isBoxMember } from "./card-box-membership";
 import {
@@ -46,6 +62,7 @@ import {
   findCardBox,
   removeMemberFromBox,
   renameCardBox,
+  restoreExcludedPaths,
   translateBrowseScopeToRule,
   upsertCardBox,
 } from "./card-boxes";
@@ -63,15 +80,30 @@ import {
 import type { PipelineContext } from "./pipeline";
 import { CARD_PANE_MIN_WIDTH } from "../settings";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
-import type { CardBoxDefinition, CardHoverLinkPayload, FolderActionPayload, Rule } from "./types";
+import type {
+  CardBoxDefinition,
+  CardHoverLinkPayload,
+  FavoriteEntry,
+  FavoriteKind,
+  FolderActionPayload,
+  NavContextMenuPayload,
+  Rule,
+} from "./types";
 import {
+  getCardFileIcon,
   getCardPlaceholderText,
   isMarkdownCardKind,
   resolveCardFileKind,
   resolveCardFileKindFromPath,
   isSupportedCardFile,
 } from "./file-kind";
-import { createPanelModel, type BoxSummary, type PanelModel, type PanelModelState } from "./panel-model";
+import {
+  createPanelModel,
+  type BoxSummary,
+  type FavoriteRowModel,
+  type PanelModel,
+  type PanelModelState,
+} from "./panel-model";
 import type {
   BulkRuntimePanelState,
   CleanupResult,
@@ -99,6 +131,20 @@ function normalizeFolderScopePath(path: string): string {
 export const FOLDER_CARD_VIEW = "folder-card-view";
 const TAG_ADD_ICON = "card-workspace-tag-plus";
 const TAG_REMOVE_ICON = "card-workspace-tag-minus";
+/** JSON Canvas requires the two top-level arrays; Obsidian rewrites the file on first save. */
+const NEW_CANVAS_CONTENT = '{"nodes":[],"edges":[]}';
+const NEW_BASE_CONTENT = "views:\n  - type: table\n    name: Table\n";
+/** Mirrors `TFile.basename`: `Foo.excalidraw.md` keeps the `.excalidraw` half. */
+const CARD_FILE_EXTENSIONS = [".md", ".canvas", ".base"];
+
+function stripCardFileExtension(fileName: string): string {
+  for (const extension of CARD_FILE_EXTENSIONS) {
+    if (fileName.endsWith(extension)) {
+      return fileName.slice(0, -extension.length);
+    }
+  }
+  return fileName;
+}
 
 
 type TagMutationMode = "add" | "remove";
@@ -737,20 +783,31 @@ class RenameFileModal extends Modal {
   }
 }
 
+interface FolderNameModalOptions {
+  title: string;
+  submitLabel: string;
+  submittingLabel: string;
+  initialName?: string;
+}
+
 class CreateFolderModal extends Modal {
   private readonly strings: UiStrings["view"]["folderManagement"];
+  private readonly options: FolderNameModalOptions;
   private readonly onSubmit: (nextName: string) => Promise<boolean>;
-  private nextName = "";
+  private nextName: string;
   private submitting = false;
 
   constructor(
     app: App,
     strings: UiStrings["view"]["folderManagement"],
+    options: FolderNameModalOptions,
     onSubmit: (nextName: string) => Promise<boolean>,
   ) {
     super(app);
     this.strings = strings;
+    this.options = options;
     this.onSubmit = onSubmit;
+    this.nextName = options.initialName ?? "";
   }
 
   onOpen(): void {
@@ -762,7 +819,7 @@ class CreateFolderModal extends Modal {
   }
 
   private render(): void {
-    this.setTitle(this.strings.createChildTitle);
+    this.setTitle(this.options.title);
     this.contentEl.empty();
 
     new Setting(this.contentEl).setName(this.strings.nameLabel).addText((text) => {
@@ -780,7 +837,7 @@ class CreateFolderModal extends Modal {
       .addButton((button) => {
         button
           .setCta()
-          .setButtonText(this.submitting ? this.strings.creating : this.strings.create)
+          .setButtonText(this.submitting ? this.options.submittingLabel : this.options.submitLabel)
           .onClick(() => {
             void this.submit();
           });
@@ -833,6 +890,7 @@ export class FolderCardView extends ItemView {
   private loading = false;
   private shellWidth = 0;
   private singlePaneView: "nav" | "cards" = "cards";
+  private searchFocusToken = 0;
 
   private generation = 0;
   private pendingHydration = new Set<string>();
@@ -850,6 +908,7 @@ export class FolderCardView extends ItemView {
   private static readonly STARTUP_PREVIEW_WAIT_MS = 120;
   private static readonly SEARCH_DEBOUNCE_MS = 120;
   private static readonly FOLDER_TREE_DEBOUNCE_MS = 250;
+  private static readonly FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 
   private inFlight: Promise<void> | null = null;
   private inFlightKey: string | null = null;
@@ -978,11 +1037,15 @@ export class FolderCardView extends ItemView {
     boxes: CardBoxDefinition[],
     activeBoxId?: string | null,
   ): Promise<void> {
+    const favorites = pruneFavoriteBoxes(
+      this.plugin.getSettings().favorites ?? [],
+      boxes.map((box) => box.id),
+    );
     if (activeBoxId === undefined) {
-      await this.plugin.saveSettings({ boxes });
+      await this.plugin.saveSettings({ boxes, favorites });
       return;
     }
-    await this.plugin.saveSettings({ boxes, activeBoxId });
+    await this.plugin.saveSettings({ boxes, activeBoxId, favorites });
   }
 
   private async updateActiveBox(
@@ -1017,6 +1080,106 @@ export class FolderCardView extends ItemView {
         cardCount: this.countBoxCards(entry),
       })),
       boxExcludedCount: box ? box.excludedPaths.length : 0,
+    };
+  }
+
+  /**
+   * Folder and file rows carry no count on purpose: the folder tree is built by the
+   * debounced `refreshFolderTreeState`, so counting here would mean a second full
+   * vault walk on every state push.
+   */
+  private buildFavoriteRowModels(): FavoriteRowModel[] {
+    const settings = this.plugin.getSettings();
+    const favorites = settings.favorites ?? [];
+    if (favorites.length === 0) {
+      return [];
+    }
+
+    const showCounts = settings.showNavItemCounts;
+    const tagCounts = this.deriveTagCounts();
+    const availableTags = new Set(this.deriveAvailableTags());
+    const boxSummaries = this.buildBoxPanelFields().boxSummaries;
+    const activeBoxId = settings.activeBoxId ?? null;
+    const isBoxMode = this.isBoxMode();
+    const activeFolderPath = this.normalizeActiveFolderScopePath();
+    const activeTags = new Set(settings.filter.tags.map((tag) => normalizeTagPath(tag)));
+
+    return favorites.map((entry) => this.buildFavoriteRowModel(entry, {
+      showCounts,
+      tagCounts,
+      availableTags,
+      boxSummaries,
+      activeBoxId,
+      isBoxMode,
+      activeFolderPath,
+      activeTags,
+    }));
+  }
+
+  private buildFavoriteRowModel(
+    entry: FavoriteEntry,
+    context: {
+      showCounts: boolean;
+      tagCounts: Record<string, number>;
+      availableTags: Set<string>;
+      boxSummaries: BoxSummary[];
+      activeBoxId: string | null;
+      isBoxMode: boolean;
+      activeFolderPath: string;
+      activeTags: Set<string>;
+    },
+  ): FavoriteRowModel {
+    const { kind, ref } = entry;
+
+    if (kind === "folder") {
+      return {
+        kind,
+        ref,
+        label: ref === "" ? this.strings.toolbar.folderMenu.rootFolder : ref.slice(ref.lastIndexOf("/") + 1),
+        icon: ref === "" ? "house" : PLAIN_FOLDER_ICON,
+        count: 0,
+        selected: !context.isBoxMode && ref === context.activeFolderPath,
+        missing: this.resolveFolderFromUiPath(ref) === null,
+        disabled: false,
+      };
+    }
+
+    if (kind === "file") {
+      return {
+        kind,
+        ref,
+        label: stripCardFileExtension(ref.slice(ref.lastIndexOf("/") + 1)),
+        icon: getCardFileIcon(resolveCardFileKindFromPath(ref) ?? "markdown"),
+        count: 0,
+        selected: ref === this.selectedPath,
+        missing: !(this.app.vault.getAbstractFileByPath(ref) instanceof TFile),
+        disabled: false,
+      };
+    }
+
+    if (kind === "tag") {
+      return {
+        kind,
+        ref,
+        label: `#${ref}`,
+        icon: "tag",
+        count: context.showCounts ? (context.tagCounts[ref] ?? 0) : 0,
+        selected: context.activeTags.has(ref),
+        missing: !context.availableTags.has(ref),
+        disabled: context.isBoxMode,
+      };
+    }
+
+    const summary = context.boxSummaries.find((box) => box.id === ref) ?? null;
+    return {
+      kind,
+      ref,
+      label: summary?.name ?? ref,
+      icon: "box",
+      count: context.showCounts ? (summary?.cardCount ?? 0) : 0,
+      selected: ref === context.activeBoxId,
+      missing: summary === null,
+      disabled: false,
     };
   }
 
@@ -1485,8 +1648,11 @@ export class FolderCardView extends ItemView {
         onBoxCommand: (detail: { command?: unknown; boxId?: unknown }) => {
           this.handleBoxCommand(detail);
         },
-        onBoxContextMenu: (detail: { boxId?: unknown; mouseEvent?: unknown }) => {
-          this.openBoxContextMenu(detail);
+        onNavContextMenu: (detail: NavContextMenuPayload) => {
+          this.openNavContextMenu(detail);
+        },
+        onFavoriteActivate: (detail: { favorite?: unknown }) => {
+          this.handleFavoriteActivate(detail);
         },
         onNavPaneResize: (width: number) => {
           void this.onNavPaneResize(width);
@@ -1616,16 +1782,6 @@ export class FolderCardView extends ItemView {
 
     if (detail.action === "create-child-folder") {
       this.openCreateChildFolderModal(detail.path);
-      return;
-    }
-
-    if (detail.action === "move-folder") {
-      this.openMoveFolderPickerForFolder(detail.path);
-      return;
-    }
-
-    if (detail.action === "delete-folder") {
-      void this.deleteFolder(detail.path);
     }
   }
 
@@ -1931,9 +2087,11 @@ export class FolderCardView extends ItemView {
 
     return candidate.dom;
   }
-  private decorateCardContextMenu(menuDom: MenuDomLike, deleteLabel: string): void {
+  private decorateCardContextMenu(menuDom: MenuDomLike, deleteLabel: string | null): void {
     menuDom.classList.add("fce-card-context-menu");
-    this.markMenuItemAsDanger(menuDom, deleteLabel);
+    if (deleteLabel !== null) {
+      this.markMenuItemAsDanger(menuDom, deleteLabel);
+    }
   }
 
   private markMenuItemAsDanger(menuDom: MenuDomLike, label: string): void {
@@ -1980,6 +2138,19 @@ export class FolderCardView extends ItemView {
     const x = (position as { x?: unknown }).x;
     const y = (position as { y?: unknown }).y;
     return typeof x === "number" && typeof y === "number";
+  }
+
+  private appendCardFavoriteMenuItem(menu: Menu, notePath: string): void {
+    const navMenu = this.strings.view.navMenu;
+    const favorited = isFavorite(this.plugin.getSettings().favorites ?? [], "file", notePath);
+    menu.addItem((item) => {
+      item
+        .setTitle(favorited ? navMenu.unfavorite : navMenu.favorite)
+        .setIcon(favorited ? "star-off" : "star")
+        .onClick(() => {
+          void this.toggleFavoriteEntry("file", notePath);
+        });
+    });
   }
 
   private addCardContextMenuItems(menu: Menu, notePath: string): void {
@@ -2043,6 +2214,7 @@ export class FolderCardView extends ItemView {
 
     menu.addSeparator();
     this.appendAddToBoxMenu(menu, [notePath]);
+    this.appendCardFavoriteMenuItem(menu, notePath);
     if (this.isBoxMode()) {
       menu.addItem((item) => {
         item
@@ -2126,110 +2298,124 @@ export class FolderCardView extends ItemView {
     });
   }
 
-  private openBoxContextMenu(detail: { boxId?: unknown; mouseEvent?: unknown }): void {
-    if (!this.isMouseEventLike(detail.mouseEvent)) {
+  private openNavContextMenu(payload: NavContextMenuPayload): void {
+    if (!this.isMouseEventLike(payload.mouseEvent)) {
       return;
     }
 
+    const deps = this.buildNavMenuDeps();
     const menu = new Menu();
-    const boxId = typeof detail.boxId === "string" ? detail.boxId : null;
-    if (boxId === null) {
-      this.addBoxCreationMenuItems(menu);
-    } else if (!this.addBoxItemMenuItems(menu, boxId)) {
+    if (!buildNavContextMenu(menu, payload, deps)) {
       return;
     }
 
-    menu.showAtMouseEvent(detail.mouseEvent);
+    menu.showAtMouseEvent(payload.mouseEvent);
 
     const menuDom = this.getMenuDom(menu);
     if (menuDom) {
-      this.decorateCardContextMenu(menuDom, this.strings.box.delete);
+      this.decorateCardContextMenu(menuDom, resolveNavMenuDangerLabel(payload, deps));
     }
   }
 
-  private addBoxCreationMenuItems(menu: Menu): void {
-    const strings = this.strings.box;
-    menu.addItem((item) => {
-      item
-        .setTitle(strings.createBox)
-        .setIcon("box")
-        .onClick(() => {
-          this.handleBoxCommand({ command: "create" });
-        });
-    });
-
-    if (!this.isBoxMode()) {
-      menu.addItem((item) => {
-        item
-          .setTitle(strings.saveScopeAsBox)
-          .setIcon("package-plus")
-          .onClick(() => {
-            this.handleBoxCommand({ command: "save-scope-as-box" });
-          });
-      });
-    }
-
-    this.appendAddScopeToBoxMenu(menu);
-  }
-
-  private addBoxItemMenuItems(menu: Menu, boxId: string): boolean {
-    if (findCardBox(this.plugin.getSettings().boxes, boxId) === null) {
-      return false;
-    }
-
-    const strings = this.strings.box;
-    menu.addItem((item) => {
-      item
-        .setTitle(strings.configure)
-        .setIcon("settings-2")
-        .onClick(() => {
-          this.handleBoxCommand({ command: "configure", boxId });
-        });
-    });
-
-    if (!this.isBoxMode()) {
-      menu.addItem((item) => {
-        item
-          .setTitle(strings.addScopeToThisBox)
-          .setIcon("list-plus")
-          .onClick(() => {
-            this.handleBoxCommand({ command: "add-scope-to-box", boxId });
-          });
-      });
-    }
-
-    menu.addSeparator();
-
-    menu.addItem((item) => {
-      item
-        .setTitle(strings.rename)
-        .setIcon("pencil")
-        .onClick(() => {
-          this.handleBoxCommand({ command: "rename", boxId });
-        });
-    });
-
-    menu.addItem((item) => {
-      item
-        .setTitle(strings.duplicate)
-        .setIcon("copy")
-        .onClick(() => {
-          this.handleBoxCommand({ command: "duplicate", boxId });
-        });
-    });
-
-    menu.addSeparator();
-
-    menu.addItem((item) => {
-      item
-        .setTitle(strings.delete)
-        .setIcon("trash-2")
-        .onClick(() => {
-          this.handleBoxCommand({ command: "delete", boxId });
-        });
-    });
-
-    return true;
+  private buildNavMenuDeps(): NavMenuDeps {
+    const settings = this.plugin.getSettings();
+    return {
+      strings: this.strings,
+      isBoxMode: this.isBoxMode(),
+      includeSubfolders: settings.includeSubfolders,
+      activeFilterTags: settings.filter.tags,
+      canResolveSystemPath: canResolveSystemPath(this.app),
+      favorites: settings.favorites ?? [],
+      boxes: settings.boxes ?? [],
+      activeBoxId: settings.activeBoxId ?? null,
+      boxExcludedCount: (boxId) => this.getBoxExcludedCount(boxId),
+      sectionCollapsed: {
+        favorites: settings.favoritesSectionCollapsed,
+        folders: settings.folderSectionCollapsed,
+        tags: settings.tagSectionCollapsed,
+        boxes: settings.boxSectionCollapsed,
+      },
+      actions: {
+        createNote: (folderUiPath) => {
+          void this.createNoteIn(folderUiPath);
+        },
+        createFolder: (folderUiPath) => {
+          this.openCreateChildFolderModal(folderUiPath);
+        },
+        createCanvas: (folderUiPath) => {
+          void this.createCanvasIn(folderUiPath);
+        },
+        createBase: (folderUiPath) => {
+          void this.createBaseIn(folderUiPath);
+        },
+        duplicateFolder: (folderUiPath) => {
+          void this.duplicateFolder(folderUiPath);
+        },
+        moveFolder: (folderUiPath) => {
+          this.openMoveFolderPickerForFolder(folderUiPath);
+        },
+        renameFolder: (folderUiPath) => {
+          this.openRenameFolderModal(folderUiPath);
+        },
+        deleteFolder: (folderUiPath) => {
+          void this.deleteFolder(folderUiPath);
+        },
+        findInFolder: (folderUiPath) => {
+          void this.findInFolder(folderUiPath);
+        },
+        copyPath: (ref, mode) => {
+          void this.copyFavoritePath(ref, mode);
+        },
+        revealInSystemExplorer: (ref) => {
+          void this.revealInSystemExplorer(ref);
+        },
+        toggleIncludeSubfolders: () => {
+          void this.onIncludeSubfoldersChange({ value: !settings.includeSubfolders });
+        },
+        toggleSection: (section) => {
+          void this.onToggleNavSection(section);
+        },
+        addTagToFilter: (tag) => {
+          void this.addTagToFilter(tag);
+        },
+        removeTagFromFilter: (tag) => {
+          void this.removeTagFromFilter(tag);
+        },
+        filterByOnlyTag: (tag) => {
+          void this.filterByOnlyTag(tag);
+        },
+        clearTagFilter: () => {
+          void this.clearTagFilter();
+        },
+        createNoteWithTag: (tag) => {
+          void this.createNoteWithTag(tag);
+        },
+        copyTag: (tag) => {
+          void this.copyTag(tag);
+        },
+        boxCommand: (command, boxId) => {
+          this.handleBoxCommand({ command, boxId });
+        },
+        appendAddScopeSubmenu: (menu) => {
+          this.appendAddScopeToBoxMenu(menu);
+        },
+        restoreBoxExcluded: (boxId) => {
+          void this.restoreBoxExcluded(boxId);
+        },
+        toggleFavorite: (kind, ref) => {
+          void this.toggleFavoriteEntry(kind, ref);
+        },
+        moveFavorite: (kind, ref, delta) => {
+          void this.moveFavoriteEntry(kind, ref, delta);
+        },
+        clearFavorites: () => {
+          void this.clearFavorites();
+        },
+        cardMenu: (menu, notePath) => {
+          this.addCardContextMenuItems(menu, notePath);
+        },
+      },
+    };
   }
 
   private async routeCardMenuAction(action: CardMenuAction, notePath: string): Promise<void> {
@@ -2572,9 +2758,15 @@ export class FolderCardView extends ItemView {
       return;
     }
 
+    const strings = this.getFolderManagementStrings();
     const modal = new CreateFolderModal(
       this.app,
-      this.getFolderManagementStrings(),
+      strings,
+      {
+        title: strings.createChildTitle,
+        submitLabel: strings.create,
+        submittingLabel: strings.creating,
+      },
       async (nextName: string) => {
         return this.createChildFolder(parentFolderPath, nextName);
       },
@@ -2654,14 +2846,335 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const nextPath = this.buildSiblingPath(targetFolder.path, folder.name);
+    await this.renameFolderTo(folder, this.buildSiblingPath(targetFolder.path, folder.name));
+  }
+
+  /** Shared move/rename primitive: both entry points get the same scope repair. */
+  private async renameFolderTo(
+    folder: TFolder,
+    nextPath: string,
+    failureMessage?: (reason: string) => string,
+  ): Promise<boolean> {
+    const strings = this.getFolderManagementStrings();
+    const previousPath = folder.path;
     try {
       await this.app.fileManager.renameFile(folder, nextPath);
       this.refreshFolderTreeState();
-      await this.refreshFolderScopeAfterFolderRename(folder.path, nextPath);
+      await this.refreshFolderScopeAfterFolderRename(previousPath, nextPath);
+      return true;
     } catch (error) {
-      new Notice(strings.moveFailed(String(error)));
+      new Notice((failureMessage ?? strings.moveFailed)(String(error)));
+      return false;
     }
+  }
+
+  private openRenameFolderModal(folderUiPath: string): void {
+    const strings = this.getFolderManagementStrings();
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return;
+    }
+
+    if (folder.path === "") {
+      return;
+    }
+
+    const modal = new CreateFolderModal(
+      this.app,
+      strings,
+      {
+        title: strings.renameTitle,
+        submitLabel: strings.rename,
+        submittingLabel: strings.renaming,
+        initialName: folder.name,
+      },
+      async (nextName: string) => {
+        return this.renameFolder(folderUiPath, nextName);
+      },
+    );
+    modal.open();
+  }
+
+  private async renameFolder(folderUiPath: string, nextName: string): Promise<boolean> {
+    const strings = this.getFolderManagementStrings();
+    const trimmedName = nextName.trim();
+    if (trimmedName.length === 0) {
+      new Notice(strings.emptyName);
+      return false;
+    }
+
+    if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+      new Notice(strings.invalidName);
+      return false;
+    }
+
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return false;
+    }
+
+    if (trimmedName === folder.name) {
+      new Notice(strings.unchangedName);
+      return false;
+    }
+
+    return this.renameFolderTo(
+      folder,
+      this.buildSiblingPath(folder.parent?.path ?? "", trimmedName),
+      strings.renameFailed,
+    );
+  }
+
+  private countFilesInFolder(folder: TFolder): number {
+    let total = 0;
+    for (const child of folder.children) {
+      if (child instanceof TFolder) {
+        total += this.countFilesInFolder(child);
+        continue;
+      }
+      total += 1;
+    }
+    return total;
+  }
+
+  private async duplicateFolder(folderUiPath: string): Promise<void> {
+    const strings = this.getFolderManagementStrings();
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(strings.folderNotFound);
+      return;
+    }
+
+    if (folder.path === "") {
+      return;
+    }
+
+    const fileCount = this.countFilesInFolder(folder);
+    if (fileCount > FolderCardView.FOLDER_DUPLICATE_CONFIRM_THRESHOLD) {
+      const confirmed = await this.requestDestructiveConfirmation({
+        title: strings.duplicateConfirmTitle,
+        message: strings.duplicateConfirmBody(fileCount),
+        confirmButtonText: strings.duplicateConfirm,
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const targetPath = resolveUniquePath(this.app, `${folder.name} copy`, folder.parent?.path ?? "");
+    try {
+      await this.app.vault.copy(folder, targetPath);
+      this.refreshFolderTreeState();
+    } catch (error) {
+      new Notice(strings.duplicateFailed(String(error)));
+    }
+  }
+
+  private async findInFolder(folderUiPath: string): Promise<void> {
+    await this.selectFolderFromNav(folderUiPath);
+    this.resetSearchQuery();
+    this.searchFocusToken += 1;
+    this.pushState();
+  }
+
+  private async createNoteIn(folderUiPath: string, tags: string[] = []): Promise<void> {
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(this.getFolderManagementStrings().folderNotFound);
+      return;
+    }
+
+    await this.plugin.createNoteInFolder(folder.path, tags);
+  }
+
+  private async createCanvasIn(folderUiPath: string): Promise<void> {
+    await this.createSupportedFileIn(folderUiPath, "canvas", NEW_CANVAS_CONTENT);
+  }
+
+  private async createBaseIn(folderUiPath: string): Promise<void> {
+    await this.createSupportedFileIn(folderUiPath, "base", NEW_BASE_CONTENT);
+  }
+
+  private async createSupportedFileIn(
+    folderUiPath: string,
+    extension: "canvas" | "base",
+    content: string,
+  ): Promise<void> {
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    if (!(folder instanceof TFolder)) {
+      new Notice(this.getFolderManagementStrings().folderNotFound);
+      return;
+    }
+
+    const fileName = `${this.strings.app.untitledNoteBaseName}.${extension}`;
+    const targetPath = resolveUniquePath(this.app, fileName, folder.path);
+    try {
+      const created = await this.app.vault.create(targetPath, content);
+      await this.plugin.openNoteFromCard(created.path, "new-tab");
+    } catch (error) {
+      new Notice(this.getFolderManagementStrings().createFileFailed(String(error)));
+    }
+  }
+
+  private async copyFavoritePath(ref: string, mode: "vault" | "system"): Promise<void> {
+    if (mode === "vault") {
+      await copyPathToClipboard(ref === "" ? "/" : ref, this.strings.noteOps);
+      return;
+    }
+
+    const systemPath = getSystemPath(this.app, ref);
+    if (systemPath === null) {
+      new Notice(this.strings.desktopShell.unavailable);
+      return;
+    }
+
+    await copyPathToClipboard(systemPath, this.strings.noteOps);
+  }
+
+  private async revealInSystemExplorer(ref: string): Promise<void> {
+    const result = await showInSystemExplorer(this.app, ref, this.strings.desktopShell);
+    if (!result.ok) {
+      new Notice(result.error);
+    }
+  }
+
+  private async applyTagFilter(nextTags: string[]): Promise<void> {
+    await this.plugin.saveSettings({ filter: { tags: nextTags } });
+  }
+
+  private async addTagToFilter(tag: string): Promise<void> {
+    const current = this.plugin.getSettings().filter.tags;
+    if (current.some((existing) => normalizeTagPath(existing) === tag)) {
+      return;
+    }
+    await this.applyTagFilter([...current, tag]);
+  }
+
+  private async removeTagFromFilter(tag: string): Promise<void> {
+    const current = this.plugin.getSettings().filter.tags;
+    const nextTags = current.filter((existing) => normalizeTagPath(existing) !== tag);
+    if (nextTags.length === current.length) {
+      return;
+    }
+    await this.applyTagFilter(nextTags);
+  }
+
+  private async filterByOnlyTag(tag: string): Promise<void> {
+    await this.applyTagFilter([tag]);
+  }
+
+  private async clearTagFilter(): Promise<void> {
+    if (this.plugin.getSettings().filter.tags.length === 0) {
+      return;
+    }
+    await this.applyTagFilter([]);
+  }
+
+  private async copyTag(tag: string): Promise<void> {
+    await copyPathToClipboard(`#${tag}`, this.strings.noteOps);
+  }
+
+  private async createNoteWithTag(tag: string): Promise<void> {
+    await this.createNoteIn(this.getDisplayFolderPath(), [tag]);
+  }
+
+  private getBoxExcludedCount(boxId: string): number {
+    return findCardBox(this.plugin.getSettings().boxes, boxId)?.excludedPaths.length ?? 0;
+  }
+
+  private async restoreBoxExcluded(boxId: string): Promise<void> {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, boxId);
+    if (box === null) {
+      return;
+    }
+
+    await this.persistBoxes(upsertCardBox(settings.boxes, restoreExcludedPaths(box)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Favorites
+  // ---------------------------------------------------------------------------
+
+  private async persistFavorites(favorites: FavoriteEntry[]): Promise<void> {
+    await this.plugin.saveSettings({ favorites });
+  }
+
+  private async toggleFavoriteEntry(kind: FavoriteKind, ref: string): Promise<void> {
+    const favorites = this.plugin.getSettings().favorites ?? [];
+    const next = toggleFavorite(favorites, kind, ref);
+    if (next === favorites) {
+      return;
+    }
+    await this.persistFavorites(next);
+  }
+
+  private async moveFavoriteEntry(kind: FavoriteKind, ref: string, delta: -1 | 1): Promise<void> {
+    const favorites = this.plugin.getSettings().favorites ?? [];
+    const next = moveFavorite(favorites, kind, ref, delta);
+    if (next === favorites) {
+      return;
+    }
+    await this.persistFavorites(next);
+  }
+
+  private async clearFavorites(): Promise<void> {
+    const favorites = this.plugin.getSettings().favorites ?? [];
+    if (favorites.length === 0) {
+      return;
+    }
+
+    const strings = this.strings.view.navMenu;
+    const confirmed = await this.requestDestructiveConfirmation({
+      title: strings.clearFavoritesConfirmTitle,
+      message: strings.clearFavoritesConfirmBody(favorites.length),
+      confirmButtonText: strings.clearFavoritesConfirm,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    await this.persistFavorites([]);
+  }
+
+  private handleFavoriteActivate(detail: { favorite?: unknown }): void {
+    const favorite = detail.favorite;
+    if (typeof favorite !== "object" || favorite === null) {
+      return;
+    }
+
+    const { kind, ref } = favorite as { kind?: unknown; ref?: unknown };
+    if (!isFavoriteKind(kind) || typeof ref !== "string") {
+      return;
+    }
+
+    if (kind === "folder") {
+      void this.selectFolderFromNav(ref);
+      return;
+    }
+
+    if (kind === "file") {
+      void this.plugin.openNoteFromCard(ref);
+      return;
+    }
+
+    if (kind === "tag") {
+      if (this.isBoxMode()) {
+        return;
+      }
+      const current = this.plugin.getSettings().filter.tags;
+      const nextTags = current.filter((existing) => normalizeTagPath(existing) !== ref);
+      if (nextTags.length === current.length) {
+        nextTags.push(ref);
+      }
+      void this.applyTagFilter(nextTags);
+      return;
+    }
+
+    const activeBoxId = this.plugin.getSettings().activeBoxId ?? null;
+    this.handleBoxCommand({ command: ref === activeBoxId ? "exit" : "switch", boxId: ref });
   }
 
   private async deleteFolder(folderPath: string): Promise<void> {
@@ -4572,6 +5085,9 @@ export class FolderCardView extends ItemView {
       folderSectionCollapsed: settings.folderSectionCollapsed,
       tagSectionCollapsed: settings.tagSectionCollapsed,
       boxSectionCollapsed: settings.boxSectionCollapsed,
+      favorites: this.buildFavoriteRowModels(),
+      favoritesSectionCollapsed: settings.favoritesSectionCollapsed,
+      searchFocusToken: this.searchFocusToken,
       showNavItemCounts: settings.showNavItemCounts,
       ...this.buildBoxPanelFields(),
     };
@@ -4664,6 +5180,9 @@ export class FolderCardView extends ItemView {
       state.folderSectionCollapsed = settings.folderSectionCollapsed;
       state.tagSectionCollapsed = settings.tagSectionCollapsed;
       state.boxSectionCollapsed = settings.boxSectionCollapsed;
+      state.favorites = this.buildFavoriteRowModels();
+      state.favoritesSectionCollapsed = settings.favoritesSectionCollapsed;
+      state.searchFocusToken = this.searchFocusToken;
       state.showNavItemCounts = settings.showNavItemCounts;
       this.applyBoxProjectionToState(state);
     });
@@ -4791,6 +5310,12 @@ export class FolderCardView extends ItemView {
 
   private async onToggleNavSection(section: unknown): Promise<void> {
     const settings = this.plugin.getSettings();
+    if (section === "favorites") {
+      await this.plugin.saveSettings({
+        favoritesSectionCollapsed: !settings.favoritesSectionCollapsed,
+      });
+      return;
+    }
     if (section === "folders") {
       await this.plugin.saveSettings({ folderSectionCollapsed: !settings.folderSectionCollapsed });
       return;

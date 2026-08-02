@@ -93,6 +93,10 @@ export interface ToolbarStrings {
     foldersSection: string;
     tagsSection: string;
     boxesSection: string;
+    favoritesSection: string;
+    favoritesEmpty: string;
+    favoriteMissing: string;
+    newFolderAtRoot: string;
     collapseSection: string;
     expandSection: string;
     tagsDisabledInBox: string;
@@ -327,6 +331,16 @@ export interface ViewStrings {
     invalidMoveTarget: string;
     moveFailed: (reason: string) => string;
     deleteFailed: (reason: string) => string;
+    renameTitle: string;
+    rename: string;
+    renaming: string;
+    renameFailed: (reason: string) => string;
+    unchangedName: string;
+    duplicateConfirmTitle: string;
+    duplicateConfirmBody: (count: number) => string;
+    duplicateConfirm: string;
+    duplicateFailed: (reason: string) => string;
+    createFileFailed: (reason: string) => string;
   };
   contextMenu: {
     openInCurrentWindow: string;
@@ -342,6 +356,46 @@ export interface ViewStrings {
     copyTitleAndContent: string;
     rename: string;
     delete: string;
+  };
+  navMenu: {
+    newNote: string;
+    newFolder: string;
+    newCanvas: string;
+    newBase: string;
+    newNoteAtRoot: string;
+    newFolderAtRoot: string;
+    newCanvasAtRoot: string;
+    newBaseAtRoot: string;
+    duplicateFolder: string;
+    renameFolder: string;
+    findInFolder: string;
+    copyPath: string;
+    copyVaultPath: string;
+    copySystemPath: string;
+    revealInSystemExplorer: string;
+    expandAllFolders: string;
+    collapseAllFolders: string;
+    expandAllTags: string;
+    collapseAllTags: string;
+    addTagToFilter: string;
+    removeTagFromFilter: string;
+    filterByOnlyThisTag: string;
+    expandSubtags: string;
+    collapseSubtags: string;
+    newNoteWithTag: string;
+    copyTag: string;
+    clearTagFilter: string;
+    openThisBox: string;
+    exitThisBox: string;
+    restoreExcludedCards: (count: number) => string;
+    favorite: string;
+    unfavorite: string;
+    moveFavoriteUp: string;
+    moveFavoriteDown: string;
+    clearFavorites: string;
+    clearFavoritesConfirmTitle: string;
+    clearFavoritesConfirmBody: (count: number) => string;
+    clearFavoritesConfirm: string;
   };
   dragInsertMenu: {
     insertWikiLink: string;
@@ -509,6 +563,10 @@ const EN: UiStrings = {
       foldersSection: "Folders",
       tagsSection: "Tags",
       boxesSection: "Boxes",
+      favoritesSection: "Favorites",
+      favoritesEmpty: "No favorites yet — right-click an item to add one",
+      favoriteMissing: "(missing)",
+      newFolderAtRoot: "New folder in vault root",
       collapseSection: "Collapse section",
       expandSection: "Expand section",
       tagsDisabledInBox: "Tag filter is unavailable in a box",
@@ -747,6 +805,16 @@ const EN: UiStrings = {
       invalidMoveTarget: "Cannot move a folder into itself or one of its subfolders.",
       moveFailed: (reason: string) => `Failed to move folder: ${reason}`,
       deleteFailed: (reason: string) => `Failed to delete folder: ${reason}`,
+      renameTitle: "Rename folder",
+      rename: "Rename",
+      renaming: "Renaming…",
+      renameFailed: (reason: string) => `Failed to rename folder: ${reason}`,
+      unchangedName: "Folder name is unchanged.",
+      duplicateConfirmTitle: "Copy folder",
+      duplicateConfirmBody: (count: number) => `Copy this folder and its ${count} files?`,
+      duplicateConfirm: "Copy",
+      duplicateFailed: (reason: string) => `Failed to copy folder: ${reason}`,
+      createFileFailed: (reason: string) => `Failed to create file: ${reason}`,
     },
     contextMenu: {
       openInCurrentWindow: "Open in current window",
@@ -762,6 +830,47 @@ const EN: UiStrings = {
       copyTitleAndContent: "Copy title & content",
       rename: "Rename...",
       delete: "Delete",
+    },
+    navMenu: {
+      newNote: "New note",
+      newFolder: "New folder",
+      newCanvas: "New canvas",
+      newBase: "New base",
+      newNoteAtRoot: "New note in vault root",
+      newFolderAtRoot: "New folder in vault root",
+      newCanvasAtRoot: "New canvas in vault root",
+      newBaseAtRoot: "New base in vault root",
+      duplicateFolder: "Make a copy",
+      renameFolder: "Rename...",
+      findInFolder: "Search in folder",
+      copyPath: "Copy path",
+      copyVaultPath: "Vault path",
+      copySystemPath: "System path",
+      revealInSystemExplorer: "Show in system explorer",
+      expandAllFolders: "Expand all folders",
+      collapseAllFolders: "Collapse all folders",
+      expandAllTags: "Expand all tags",
+      collapseAllTags: "Collapse all tags",
+      addTagToFilter: "Add tag to filter",
+      removeTagFromFilter: "Remove tag from filter",
+      filterByOnlyThisTag: "Filter by this tag only",
+      expandSubtags: "Expand subtags",
+      collapseSubtags: "Collapse subtags",
+      newNoteWithTag: "New note with this tag",
+      copyTag: "Copy tag",
+      clearTagFilter: "Clear tag filter",
+      openThisBox: "Open card box",
+      exitThisBox: "Exit card box",
+      restoreExcludedCards: (count: number) => `Restore ${count} removed notes`,
+      favorite: "Add to favorites",
+      unfavorite: "Remove from favorites",
+      moveFavoriteUp: "Move up",
+      moveFavoriteDown: "Move down",
+      clearFavorites: "Clear favorites",
+      clearFavoritesConfirmTitle: "Clear favorites",
+      clearFavoritesConfirmBody: (count: number) =>
+        `Remove all ${count} favorites? Your notes and folders are not affected.`,
+      clearFavoritesConfirm: "Clear",
     },
     dragInsertMenu: {
       insertWikiLink: "Insert wiki link",
@@ -899,6 +1008,10 @@ const ZH: UiStrings = {
       foldersSection: "文件夹",
       tagsSection: "标签",
       boxesSection: "卡片盒",
+      favoritesSection: "收藏",
+      favoritesEmpty: "还没有收藏 — 右键任意条目即可添加",
+      favoriteMissing: "（已失效）",
+      newFolderAtRoot: "在库根目录新建文件夹",
       collapseSection: "折叠此区",
       expandSection: "展开此区",
       tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
@@ -1128,6 +1241,16 @@ const ZH: UiStrings = {
       invalidMoveTarget: "不能将文件夹移动到其自身或其子文件夹中。",
       moveFailed: (reason: string) => `移动文件夹失败：${reason}`,
       deleteFailed: (reason: string) => `删除文件夹失败：${reason}`,
+      renameTitle: "重命名文件夹",
+      rename: "重命名",
+      renaming: "正在重命名…",
+      renameFailed: (reason: string) => `重命名文件夹失败：${reason}`,
+      unchangedName: "文件夹名称未变化。",
+      duplicateConfirmTitle: "复制文件夹",
+      duplicateConfirmBody: (count: number) => `复制此文件夹及其中的 ${count} 个文件？`,
+      duplicateConfirm: "复制",
+      duplicateFailed: (reason: string) => `复制文件夹失败：${reason}`,
+      createFileFailed: (reason: string) => `创建文件失败：${reason}`,
     },
     contextMenu: {
       openInCurrentWindow: "在当前窗口打开",
@@ -1143,6 +1266,47 @@ const ZH: UiStrings = {
       copyTitleAndContent: "复制标题和内容",
       rename: "重命名...",
       delete: "删除",
+    },
+    navMenu: {
+      newNote: "新建笔记",
+      newFolder: "新建文件夹",
+      newCanvas: "新建白板",
+      newBase: "新建数据库",
+      newNoteAtRoot: "在库根目录新建笔记",
+      newFolderAtRoot: "在库根目录新建文件夹",
+      newCanvasAtRoot: "在库根目录新建白板",
+      newBaseAtRoot: "在库根目录新建数据库",
+      duplicateFolder: "创建副本",
+      renameFolder: "重命名...",
+      findInFolder: "在文件夹中查找",
+      copyPath: "复制路径",
+      copyVaultPath: "库内相对路径",
+      copySystemPath: "系统绝对路径",
+      revealInSystemExplorer: "在系统资源管理器中显示",
+      expandAllFolders: "展开全部文件夹",
+      collapseAllFolders: "折叠全部文件夹",
+      expandAllTags: "展开全部标签",
+      collapseAllTags: "折叠全部标签",
+      addTagToFilter: "将此标签加入筛选",
+      removeTagFromFilter: "从筛选中移除此标签",
+      filterByOnlyThisTag: "仅按此标签筛选",
+      expandSubtags: "展开子标签",
+      collapseSubtags: "折叠子标签",
+      newNoteWithTag: "新建带此标签的笔记",
+      copyTag: "复制标签文本",
+      clearTagFilter: "清除标签筛选",
+      openThisBox: "打开此卡片盒",
+      exitThisBox: "退出此卡片盒",
+      restoreExcludedCards: (count: number) => `恢复已移出的 ${count} 篇笔记`,
+      favorite: "收藏",
+      unfavorite: "取消收藏",
+      moveFavoriteUp: "上移",
+      moveFavoriteDown: "下移",
+      clearFavorites: "清空收藏",
+      clearFavoritesConfirmTitle: "清空收藏",
+      clearFavoritesConfirmBody: (count: number) =>
+        `确定移除全部 ${count} 项收藏？你的笔记和文件夹不受影响。`,
+      clearFavoritesConfirm: "清空",
     },
     dragInsertMenu: {
       insertWikiLink: "插入 wiki link",

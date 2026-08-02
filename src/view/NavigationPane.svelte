@@ -3,7 +3,7 @@
   import { PLAIN_FOLDER_ICON } from "../icons";
   import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
   import { NAV_PANE_WIDTH_MAX, NAV_PANE_WIDTH_MIN } from "../settings";
-  import type { BoxSummary } from "./panel-model";
+  import type { BoxSummary, FavoriteRowModel } from "./panel-model";
   import {
     buildTagTree,
     collectAncestorTagPaths,
@@ -12,10 +12,15 @@
     normalizeTagPath,
     type VisibleTagTreeNode,
   } from "./tag-tree";
-  import type { BoxContextMenuPayload, FolderActionPayload, FolderTreeNode } from "./types";
+  import type {
+    FavoriteEntry,
+    FolderActionPayload,
+    FolderTreeNode,
+    NavContextMenuPayload,
+    NavMenuBridge,
+    NavSectionId,
+  } from "./types";
   import TreeSection from "./TreeSection.svelte";
-
-  type NavSection = "folders" | "tags" | "boxes";
 
   interface SelectFolderPayload {
     path: string;
@@ -51,16 +56,19 @@
     folderSectionCollapsed?: boolean;
     tagSectionCollapsed?: boolean;
     boxSectionCollapsed?: boolean;
+    favorites?: FavoriteRowModel[];
+    favoritesSectionCollapsed?: boolean;
     showNavItemCounts?: boolean;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
-    onBoxContextMenu?: (payload: BoxContextMenuPayload) => void;
+    onNavContextMenu?: (payload: NavContextMenuPayload) => void;
+    onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
     onNavPaneResize?: (width: number) => void;
     onToggleNavPane?: () => void;
-    onToggleNavSection?: (section: NavSection) => void;
+    onToggleNavSection?: (section: NavSectionId) => void;
   }
 
   let {
@@ -80,13 +88,16 @@
     folderSectionCollapsed = false,
     tagSectionCollapsed = false,
     boxSectionCollapsed = false,
+    favorites = [],
+    favoritesSectionCollapsed = false,
     showNavItemCounts = false,
     onSelectFolder,
     onFolderAction,
     onFilterChange,
     onIncludeSubfoldersChange,
     onBoxCommand,
-    onBoxContextMenu,
+    onNavContextMenu,
+    onFavoriteActivate,
     onNavPaneResize,
     onToggleNavPane,
     onToggleNavSection,
@@ -146,6 +157,15 @@
   const expandableTagPaths = $derived(collectExpandableTagPaths(tagTree));
   const hasExpandedNodes = $derived(expandedFolderPaths.size > 0 || expandedTagPaths.size > 0);
 
+  function toggleAllFolderExpansion(): void {
+    expandedFolderPaths =
+      expandedFolderPaths.size > 0 ? new Set() : new Set(expandableFolderPaths);
+  }
+
+  function toggleAllTagExpansion(): void {
+    expandedTagPaths = expandedTagPaths.size > 0 ? new Set() : new Set(expandableTagPaths);
+  }
+
   function toggleExpandAll(): void {
     if (hasExpandedNodes) {
       expandedFolderPaths = new Set();
@@ -157,8 +177,8 @@
     expandedTagPaths = new Set(expandableTagPaths);
   }
 
-  function createFolderInCurrentScope(): void {
-    onFolderAction?.({ action: "create-child-folder", path: folderPath });
+  function createFolderAtRoot(): void {
+    onFolderAction?.({ action: "create-child-folder", path: "/" });
   }
 
   $effect(() => {
@@ -338,8 +358,7 @@
     expandedFolderPaths = next;
   }
 
-  function toggleTagExpansion(event: MouseEvent, tag: string): void {
-    event.stopPropagation();
+  function toggleTagExpansionByPath(tag: string): void {
     const next = new Set(expandedTagPaths);
     if (next.has(tag)) {
       next.delete(tag);
@@ -347,6 +366,11 @@
       next.add(tag);
     }
     expandedTagPaths = next;
+  }
+
+  function toggleTagExpansion(event: MouseEvent, tag: string): void {
+    event.stopPropagation();
+    toggleTagExpansionByPath(tag);
   }
 
   function selectFolder(path: string): void {
@@ -397,18 +421,41 @@
     onBoxCommand?.({ command: "switch", boxId });
   }
 
-  function requestBoxSectionMenu(event: MouseEvent): void {
-    event.preventDefault();
-    onBoxContextMenu?.({ mouseEvent: event });
+  function buildBridge(tagNode: VisibleTagTreeNode | null): NavMenuBridge {
+    return {
+      hasExpandedFolders: expandedFolderPaths.size > 0,
+      hasExpandedTags: expandedTagPaths.size > 0,
+      toggleAllFolders: () => toggleAllFolderExpansion(),
+      toggleAllTags: () => toggleAllTagExpansion(),
+      tagHasChildren: tagNode?.hasChildren ?? false,
+      tagExpanded: tagNode !== null && expandedTagPaths.has(tagNode.tag),
+      toggleTagExpansion: () => {
+        if (tagNode !== null) {
+          toggleTagExpansionByPath(tagNode.tag);
+        }
+      },
+    };
   }
 
-  function requestBoxRowMenu(event: MouseEvent, boxId: string): void {
+  function requestNavMenu(
+    event: MouseEvent,
+    section: NavSectionId,
+    scope: "header" | "item",
+    options: { itemId?: string; favorite?: FavoriteEntry; tagNode?: VisibleTagTreeNode } = {},
+  ): void {
     event.preventDefault();
     event.stopPropagation();
-    onBoxContextMenu?.({ boxId, mouseEvent: event });
+    onNavContextMenu?.({
+      section,
+      scope,
+      itemId: options.itemId,
+      favorite: options.favorite,
+      bridge: buildBridge(options.tagNode ?? null),
+      mouseEvent: event,
+    });
   }
 
-  function toggleSection(section: NavSection): void {
+  function toggleSection(section: NavSectionId): void {
     onToggleNavSection?.(section);
   }
 
@@ -481,12 +528,12 @@
       <button
         type="button"
         class="clickable-icon fce-nav-header-button"
-        aria-label={strings.folderMenu.createChildFolder}
-        onclick={createFolderInCurrentScope}
+        aria-label={strings.navPane.newFolderAtRoot}
+        onclick={createFolderAtRoot}
         use:applyIcon={"folder-plus"}
-        use:applyTooltip={strings.folderMenu.createChildFolder}
+        use:applyTooltip={strings.navPane.newFolderAtRoot}
       >
-        <span class="fce-sr-only">{strings.folderMenu.createChildFolder}</span>
+        <span class="fce-sr-only">{strings.navPane.newFolderAtRoot}</span>
       </button>
       {#if !isBoxMode}
         <button
@@ -509,15 +556,76 @@
     use:trackHover={{ onEnter: () => undefined, onLeave: resetHoveredRows }}
   >
     <TreeSection
+      title={strings.navPane.favoritesSection}
+      icon="star"
+      collapsed={favoritesSectionCollapsed}
+      collapseLabel={strings.navPane.collapseSection}
+      expandLabel={strings.navPane.expandSection}
+      onToggle={() => toggleSection("favorites")}
+      onHeaderContextMenu={(event) => requestNavMenu(event, "favorites", "header")}
+    >
+      {#snippet body()}
+        <div
+          class="fce-tree-menu fce-nav-tree fce-favorites-menu"
+          role="tree"
+          tabindex="-1"
+          oncontextmenu={(event) => requestNavMenu(event, "favorites", "header")}
+        >
+          {#if favorites.length === 0}
+            <div class="fce-tree-empty">{strings.navPane.favoritesEmpty}</div>
+          {:else}
+            {#each favorites as row (`${row.kind}:${row.ref}`)}
+              <div
+                class="fce-popup-row fce-tree-row {row.selected ? 'is-selected' : ''} {row.missing ? 'is-missing' : ''} {row.disabled ? 'is-disabled' : ''}"
+                style="padding-left: var(--fce-nav-indent-step);"
+                role="presentation"
+                oncontextmenu={(event) =>
+                  requestNavMenu(event, "favorites", "item", {
+                    favorite: { kind: row.kind, ref: row.ref },
+                  })}
+              >
+                <div class="fce-popup-row-leading">
+                  <span class="fce-tree-item-icon is-static" aria-hidden="true">
+                    <span class="fce-tree-item-glyph" use:applyIcon={row.icon}></span>
+                  </span>
+                </div>
+                <div class="fce-popup-row-content">
+                  <button
+                    type="button"
+                    class="fce-tree-button"
+                    disabled={row.disabled}
+                    onclick={() => onFavoriteActivate?.({ favorite: { kind: row.kind, ref: row.ref } })}
+                    use:applyTooltip={row.missing ? `${row.label} ${strings.navPane.favoriteMissing}` : row.label}
+                  >
+                    <span class="fce-tree-label">{row.label}</span>
+                    {#if row.count > 0}
+                      <span class="fce-nav-row-count">{row.count}</span>
+                    {/if}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/snippet}
+    </TreeSection>
+
+    <TreeSection
       title={strings.navPane.foldersSection}
       icon="folders"
       collapsed={folderSectionCollapsed}
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
       onToggle={() => toggleSection("folders")}
+      onHeaderContextMenu={(event) => requestNavMenu(event, "folders", "header")}
     >
       {#snippet body()}
-        <div class="fce-tree-menu fce-nav-tree fce-folder-menu" role="tree">
+        <div
+          class="fce-tree-menu fce-nav-tree fce-folder-menu"
+          role="tree"
+          tabindex="-1"
+          oncontextmenu={(event) => requestNavMenu(event, "folders", "header")}
+        >
           {#each visibleFolderNodes as node (node.path)}
             {@const hasChildren = node.children.length > 0}
             {@const isSelected = isFolderNodeSelected(node)}
@@ -526,6 +634,8 @@
             <div
               class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''} {isFolderRowHovered(node) ? 'is-hovered' : ''}"
               style="padding-left: calc(var(--fce-nav-indent-step) * ({node.depth} + 1));"
+              role="presentation"
+              oncontextmenu={(event) => requestNavMenu(event, "folders", "item", { itemId: node.path })}
               use:trackHover={{
                 onEnter: () => enterFolderRow(node.path),
                 onLeave: () => leaveFolderRow(node.path),
@@ -579,9 +689,15 @@
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
       onToggle={() => toggleSection("tags")}
+      onHeaderContextMenu={(event) => requestNavMenu(event, "tags", "header")}
     >
       {#snippet body()}
-        <div class="fce-tree-menu fce-nav-tree fce-tag-menu {isBoxMode ? 'is-disabled' : ''}" role="tree">
+        <div
+          class="fce-tree-menu fce-nav-tree fce-tag-menu {isBoxMode ? 'is-disabled' : ''}"
+          role="tree"
+          tabindex="-1"
+          oncontextmenu={(event) => requestNavMenu(event, "tags", "header")}
+        >
           {#if isBoxMode}
             <div class="fce-tree-empty">{strings.navPane.tagsDisabledInBox}</div>
           {:else if visibleTagNodes.length === 0}
@@ -593,6 +709,9 @@
               <div
                 class="fce-popup-row fce-tree-row {isSelected ? 'is-selected' : ''} {isTagRowHovered(node) ? 'is-hovered' : ''}"
                 style="padding-left: calc(var(--fce-nav-indent-step) * ({node.depth} + 1));"
+                role="presentation"
+                oncontextmenu={(event) =>
+                  requestNavMenu(event, "tags", "item", { itemId: node.tag, tagNode: node })}
                 use:trackHover={{
                   onEnter: () => enterTagRow(node.tag),
                   onLeave: () => leaveTagRow(node.tag),
@@ -654,10 +773,14 @@
       collapseLabel={strings.navPane.collapseSection}
       expandLabel={strings.navPane.expandSection}
       onToggle={() => toggleSection("boxes")}
-      onHeaderContextMenu={requestBoxSectionMenu}
+      onHeaderContextMenu={(event) => requestNavMenu(event, "boxes", "header")}
     >
       {#snippet body()}
-        <div class="fce-nav-box-list" role="presentation" oncontextmenu={requestBoxSectionMenu}>
+        <div
+          class="fce-nav-box-list"
+          role="presentation"
+          oncontextmenu={(event) => requestNavMenu(event, "boxes", "header")}
+        >
           {#if boxSummaries.length === 0}
             <div class="fce-tree-empty">{strings.navPane.boxesEmpty}</div>
           {:else}
@@ -668,7 +791,7 @@
                 class="fce-nav-box-item {isActive ? 'is-active' : ''}"
                 aria-pressed={isActive}
                 onclick={() => selectBox(box.id)}
-                oncontextmenu={(event) => requestBoxRowMenu(event, box.id)}
+                oncontextmenu={(event) => requestNavMenu(event, "boxes", "item", { itemId: box.id })}
                 use:applyTooltip={getBoxTooltip(box, isActive)}
               >
                 <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"box"}></span>

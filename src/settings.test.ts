@@ -591,3 +591,71 @@ describe("card box settings normalization", () => {
     expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "a" } as never).activeBoxId).toBe("a");
   });
 });
+
+describe("favorites settings normalization", () => {
+  it("defaults to an empty list and an expanded section", () => {
+    const result = normalizeSettings({});
+    expect(result.favorites).toEqual([]);
+    expect(result.favoritesSectionCollapsed).toBe(false);
+  });
+
+  it("persists the section collapse flag", () => {
+    expect(normalizeSettings({ favoritesSectionCollapsed: true } as never).favoritesSectionCollapsed).toBe(true);
+    expect(normalizeSettings({ favoritesSectionCollapsed: "yes" } as never).favoritesSectionCollapsed).toBe(false);
+  });
+
+  it("drops non-objects, unknown kinds, non-string refs, and empty tag refs", () => {
+    const result = normalizeSettings({
+      favorites: [
+        "not-an-object",
+        null,
+        { kind: "note", ref: "A.md" },
+        { kind: "file", ref: 5 },
+        { kind: "tag", ref: "  " },
+        { kind: "box", ref: "" },
+        { kind: "file", ref: "A.md" },
+      ],
+    } as never);
+
+    expect(result.favorites).toEqual([{ kind: "file", ref: "A.md" }]);
+  });
+
+  it("dedupes on kind plus normalized ref", () => {
+    const result = normalizeSettings({
+      favorites: [
+        { kind: "tag", ref: "#Work" },
+        { kind: "tag", ref: "work" },
+        { kind: "folder", ref: "Projects/" },
+        { kind: "folder", ref: "Projects" },
+      ],
+    } as never);
+
+    expect(result.favorites).toEqual([
+      { kind: "folder", ref: "Projects" },
+      { kind: "tag", ref: "work" },
+    ]);
+  });
+
+  it("keeps the vault-root folder ref", () => {
+    const result = normalizeSettings({ favorites: [{ kind: "folder", ref: "/" }] } as never);
+    expect(result.favorites).toEqual([{ kind: "folder", ref: "" }]);
+  });
+
+  it("regroups a mixed input into folder, file, tag, box order", () => {
+    const result = normalizeSettings({
+      favorites: [
+        { kind: "box", ref: "box-1" },
+        { kind: "tag", ref: "#Work/AI" },
+        { kind: "file", ref: "Notes/A.md" },
+        { kind: "folder", ref: "Projects" },
+      ],
+    } as never);
+
+    expect(result.favorites).toEqual([
+      { kind: "folder", ref: "Projects" },
+      { kind: "file", ref: "Notes/A.md" },
+      { kind: "tag", ref: "work/ai" },
+      { kind: "box", ref: "box-1" },
+    ]);
+  });
+});

@@ -1470,16 +1470,10 @@ describe("FolderCardView host contract", () => {
   it("routes folder action intents to the matching handlers", () => {
     const { view } = createHarness();
     const createSpy = vi.spyOn(view as any, "openCreateChildFolderModal").mockImplementation(() => undefined);
-    const moveSpy = vi.spyOn(view as any, "openMoveFolderPickerForFolder").mockImplementation(() => undefined);
-    const deleteSpy = vi.spyOn(view as any, "deleteFolder").mockResolvedValue(undefined);
 
     (view as any).handleFolderActionRequest({ action: "create-child-folder", path: "projects" });
-    (view as any).handleFolderActionRequest({ action: "move-folder", path: "projects" });
-    (view as any).handleFolderActionRequest({ action: "delete-folder", path: "projects" });
 
     expect(createSpy).toHaveBeenCalledWith("projects");
-    expect(moveSpy).toHaveBeenCalledWith("projects");
-    expect(deleteSpy).toHaveBeenCalledWith("projects");
   });
 
   it("creates a child folder and refreshes the folder tree state", async () => {

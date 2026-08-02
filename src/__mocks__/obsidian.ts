@@ -57,6 +57,10 @@ export class Vault {
   }
 }
 
+export const Platform = {
+  isDesktopApp: true,
+};
+
 export function setIcon(el: Element, icon: string): void {
   el.setAttribute("data-icon", icon);
 }

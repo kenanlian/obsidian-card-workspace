@@ -4,6 +4,7 @@ import { defineConfig, defineProject } from "vitest/config";
 
 const obsidianAlias = path.resolve(__dirname, "src/__mocks__/obsidian.ts");
 const folderCardPanelMockAlias = path.resolve(__dirname, "src/__mocks__/FolderCardPanel.svelte.ts");
+const electronAlias = path.resolve(__dirname, "src/__mocks__/electron.ts");
 
 export default defineConfig({
   test: {
@@ -38,6 +39,7 @@ export default defineConfig({
           conditions: ["browser"],
           alias: {
             obsidian: obsidianAlias,
+            electron: electronAlias,
           },
         },
       }),

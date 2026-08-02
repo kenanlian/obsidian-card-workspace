@@ -81,6 +81,20 @@ export interface CardBoxDefinition {
   sort: CardBoxSortSpec;
 }
 
+export type FavoriteKind = "folder" | "file" | "tag" | "box";
+
+/**
+ * A navigation shortcut. `ref` is kind-dependent:
+ * - `folder`: normalized folder path (`""` = vault root)
+ * - `file`:   vault-relative file path
+ * - `tag`:    tag normalized by `normalizeTagPath` (no leading `#`)
+ * - `box`:    `CardBoxDefinition.id`
+ */
+export interface FavoriteEntry {
+  kind: FavoriteKind;
+  ref: string;
+}
+
 export interface NoteCardRecord {
   file: TFile;
   fileKind: CardFileKind;
@@ -237,14 +251,37 @@ export interface FolderTreeNode {
   recursiveFolderCount: number;       // Every descendant folder, at any depth
 }
 
-export type FolderManagementAction = "create-child-folder" | "move-folder" | "delete-folder";
+export type FolderManagementAction = "create-child-folder";
 
 export interface FolderActionPayload {
   action: FolderManagementAction;
   path: string;
 }
 
-export interface BoxContextMenuPayload {
-  boxId?: string;
+export type NavSectionId = "favorites" | "folders" | "tags" | "boxes";
+
+/**
+ * Tree expansion lives in `NavigationPane.svelte` component state, so the host
+ * receives it — and the commands to change it — as a bridge on the payload.
+ * Tag fields are only meaningful for `section: "tags"`, `scope: "item"`.
+ */
+export interface NavMenuBridge {
+  hasExpandedFolders: boolean;
+  hasExpandedTags: boolean;
+  toggleAllFolders: () => void;
+  toggleAllTags: () => void;
+  tagHasChildren: boolean;
+  tagExpanded: boolean;
+  toggleTagExpansion: () => void;
+}
+
+export interface NavContextMenuPayload {
+  section: NavSectionId;
+  scope: "header" | "item";
+  /** Folder UI path (`"/"` for root), normalized tag, or box id. Absent when `scope` is `"header"`. */
+  itemId?: string;
+  /** Present only for `section: "favorites"`, `scope: "item"`. */
+  favorite?: FavoriteEntry;
+  bridge: NavMenuBridge;
   mouseEvent: MouseEvent;
 }

@@ -16,14 +16,18 @@ interface FileSystemAdapterLike {
   getFullPath?: (path: string) => string;
 }
 
+/**
+ * `adapter` stays `unknown` so the real Obsidian `App` (whose `DataAdapter` only
+ * exposes `getFullPath` on the desktop `FileSystemAdapter` subtype) is accepted.
+ */
 interface AppLike {
   vault: {
-    adapter: FileSystemAdapterLike;
+    adapter: unknown;
   };
 }
 
 function getPathAdapter(app: AppLike): FileSystemAdapterLike {
-  return app.vault.adapter;
+  return app.vault.adapter as FileSystemAdapterLike;
 }
 
 function getErrorMessage(error: unknown, strings: DesktopShellStrings): string {

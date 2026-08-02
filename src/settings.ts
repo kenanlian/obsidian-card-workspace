@@ -1,4 +1,5 @@
-import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./view/types";
+import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
+import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, Rule } from "./view/types";
 
 export type SortField = "mtime" | "ctime" | "name";
 
@@ -127,12 +128,14 @@ export interface PluginSettings {
   previewLines: number;
   lastFolderPath: string;
   boxes: CardBoxDefinition[];
+  favorites: FavoriteEntry[];
   activeBoxId: string | null;
   navPaneWidth: number;
   navPaneCollapsed: boolean;
   folderSectionCollapsed: boolean;
   tagSectionCollapsed: boolean;
   boxSectionCollapsed: boolean;
+  favoritesSectionCollapsed: boolean;
   showNavItemCounts: boolean;
 }
 
@@ -154,12 +157,14 @@ export interface PartialPluginSettings {
   previewLines?: number;
   lastFolderPath?: string;
   boxes?: CardBoxDefinition[];
+  favorites?: FavoriteEntry[];
   activeBoxId?: string | null;
   navPaneWidth?: number;
   navPaneCollapsed?: boolean;
   folderSectionCollapsed?: boolean;
   tagSectionCollapsed?: boolean;
   boxSectionCollapsed?: boolean;
+  favoritesSectionCollapsed?: boolean;
   showNavItemCounts?: boolean;
 }
 
@@ -181,12 +186,14 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
   boxes: [],
+  favorites: [],
   activeBoxId: null,
   navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
   navPaneCollapsed: false,
   folderSectionCollapsed: false,
   tagSectionCollapsed: false,
   boxSectionCollapsed: false,
+  favoritesSectionCollapsed: false,
   showNavItemCounts: false,
 };
 
@@ -408,6 +415,31 @@ function normalizeBoxes(value: unknown): CardBoxDefinition[] {
   return result;
 }
 
+function normalizeFavorites(value: unknown): FavoriteEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: FavoriteEntry[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !isFavoriteKind(entry.kind) || typeof entry.ref !== "string") {
+      continue;
+    }
+    const ref = normalizeFavoriteRef(entry.kind, entry.ref);
+    if (ref === null) {
+      continue;
+    }
+    const dedupeKey = `${entry.kind}\u0000${ref}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    result.push({ kind: entry.kind, ref });
+  }
+  return sortFavoritesByKind(result);
+}
+
 function normalizeActiveBoxId(value: unknown, boxes: CardBoxDefinition[]): string | null {
   if (typeof value !== "string" || value.length === 0) {
     return null;
@@ -443,6 +475,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
     boxes,
+    favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
     navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),
     navPaneCollapsed: normalizeBooleanSetting(
@@ -460,6 +493,10 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     boxSectionCollapsed: normalizeBooleanSetting(
       data.boxSectionCollapsed,
       DEFAULT_SETTINGS.boxSectionCollapsed,
+    ),
+    favoritesSectionCollapsed: normalizeBooleanSetting(
+      data.favoritesSectionCollapsed,
+      DEFAULT_SETTINGS.favoritesSectionCollapsed,
     ),
     showNavItemCounts: normalizeBooleanSetting(
       data.showNavItemCounts,

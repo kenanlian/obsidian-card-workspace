@@ -41,6 +41,7 @@ import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent,
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
+import { reconcileFavoritesForVaultMutation } from "./view/favorites";
 import { CARD_WORKSPACE_ICON, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 
@@ -208,19 +209,21 @@ export default class CardWorkspacePlugin extends Plugin {
 
 
   async createNoteInCurrentFolder(): Promise<void> {
-    const folderPath = this.resolveNewNoteFolderPath();
+    await this.createNoteInFolder(this.selectedFolderPath);
+  }
 
+  async createNoteInFolder(folderPath: string, tags: string[] = []): Promise<void> {
     const fullPath = this.generateUniqueNotePath(folderPath);
-    const file = await this.app.vault.create(fullPath, this.buildNewNoteContent());
+    const file = await this.app.vault.create(fullPath, this.buildNewNoteContent(tags));
     await this.openNoteFromCard(file.path, "new-tab");
   }
 
-  private buildNewNoteContent(): string {
-    return this.settings.newNoteTemplate === "tags-frontmatter" ? NEW_NOTE_TAGS_FRONTMATTER : "";
-  }
+  private buildNewNoteContent(tags: string[] = []): string {
+    if (tags.length > 0) {
+      return `---\ntags:\n${tags.map((tag) => `  - ${tag}\n`).join("")}---\n\n`;
+    }
 
-  private resolveNewNoteFolderPath(): string {
-    return this.selectedFolderPath;
+    return this.settings.newNoteTemplate === "tags-frontmatter" ? NEW_NOTE_TAGS_FRONTMATTER : "";
   }
 
   private generateUniqueNotePath(folderPath: string): string {
@@ -1398,6 +1401,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private dispatchVaultMutation(event: VaultMutationEvent): void {
     this.reconcileSelectedFolderPath(event);
     this.reconcileBoxesForVaultMutation(event);
+    this.reconcileFavoritesForVaultMutation(event);
 
     try {
       this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
@@ -1450,6 +1454,31 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.settings = { ...this.settings, boxes: nextBoxes };
+    void this.saveData(this.settings);
+  }
+
+  private reconcileFavoritesForVaultMutation(event: VaultMutationEvent): void {
+    const favorites = this.settings.favorites;
+    if (favorites.length === 0) {
+      return;
+    }
+
+    if (event.eventType !== "rename" && event.eventType !== "delete") {
+      return;
+    }
+
+    const nextFavorites = reconcileFavoritesForVaultMutation(favorites, {
+      eventType: event.eventType,
+      path: event.path,
+      oldPath: event.oldPath,
+      isFolder: event.isFolder,
+    });
+
+    if (nextFavorites === favorites) {
+      return;
+    }
+
+    this.settings = { ...this.settings, favorites: nextFavorites };
     void this.saveData(this.settings);
   }
 

@@ -270,6 +270,15 @@
   pointer-events: none;
 }
 
+.folder-card-view .fce-favorites-menu .fce-tree-row.is-missing {
+  opacity: 0.55;
+}
+
+.folder-card-view .fce-favorites-menu .fce-tree-row.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .folder-card-view .fce-nav-row-count {
   flex: 0 0 auto;
   margin-inline-start: 6px;
@@ -717,7 +726,8 @@
 }
 
 .fce-folder-menu .fce-tree-row.is-selected,
-.fce-tag-menu .fce-tree-row.is-selected {
+.fce-tag-menu .fce-tree-row.is-selected,
+.fce-favorites-menu .fce-tree-row.is-selected {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
@@ -733,7 +743,8 @@
 }
 
 .fce-folder-menu .fce-tree-row-check,
-.fce-tag-menu .fce-tree-row-check {
+.fce-tag-menu .fce-tree-row-check,
+.fce-favorites-menu .fce-tree-row-check {
   color: var(--text-normal);
 }
 

@@ -45,6 +45,7 @@
     tooltipSide?: "top" | "right" | "bottom" | "left";
     searchQuery?: string;
     searchStatus?: SearchStatus;
+    searchFocusToken?: number;
     searchIndexReadiness?: import("./types").SearchIndexReadinessState;
     searchIndexPersistence?: import("./types").SearchIndexPersistenceHealth;
     searchIndexRebuildReason?: import("./types").SearchIndexRebuildReason | null;
@@ -156,6 +157,7 @@
     tooltipSide = "right",
     searchQuery = "",
     searchStatus = "idle",
+    searchFocusToken = 0,
     searchIndexReadiness = "ready",
     searchIndexPersistence = "healthy",
     searchIndexRebuildReason = null,
@@ -240,6 +242,27 @@
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
+
+  // Plain `let`, not `$state`: the effect writes it, and a reactive read would
+  // re-run the effect for no reason.
+  let handledSearchFocusToken = 0;
+
+  $effect(() => {
+    if (searchFocusToken === handledSearchFocusToken) {
+      return;
+    }
+
+    handledSearchFocusToken = searchFocusToken;
+    if (searchFocusToken === 0) {
+      return;
+    }
+
+    searchExpanded = true;
+    closeSortMenu();
+    tick().then(() => {
+      searchInputEl?.focus();
+    });
+  });
 
   const bulkSelectionSummary = $derived(strings.bulkSummary(selectedCount));
   const bulkActions = $derived<BulkToolbarOption[]>([

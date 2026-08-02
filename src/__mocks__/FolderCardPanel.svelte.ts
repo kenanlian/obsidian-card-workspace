@@ -20,7 +20,8 @@ interface PanelProps {
   onSearchQueryReset?: (payload: unknown) => void;
   onSelectFolder?: (payload: unknown) => void;
   onFolderAction?: (payload: unknown) => void;
-  onBoxContextMenu?: (payload: unknown) => void;
+  onNavContextMenu?: (payload: unknown) => void;
+  onFavoriteActivate?: (payload: unknown) => void;
   onHydrateRange?: (payload: unknown) => void;
 }
 
@@ -45,7 +46,8 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onSearchQueryReset: "search-query-reset",
   onSelectFolder: "select-folder",
   onFolderAction: "folder-action",
-  onBoxContextMenu: "box-context-menu",
+  onNavContextMenu: "nav-context-menu",
+  onFavoriteActivate: "favorite-activate",
   onHydrateRange: "hydrate-range",
 };
 

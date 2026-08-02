@@ -161,6 +161,27 @@ describe("Toolbar.svelte", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the search input closed while the focus token is zero", async () => {
+    const { component } = mountToolbar({ searchFocusToken: 0 });
+    await tick();
+
+    expect(document.querySelector(".fce-search-input")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("opens and focuses the search input when the focus token increments", async () => {
+    const { component } = mountToolbar({ searchFocusToken: 1 });
+    await tick();
+    await tick();
+
+    const input = document.querySelector<HTMLInputElement>(".fce-search-input");
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+
+    await disposeMountedComponent(component);
+  });
+
   it("does not render folder or tag controls", async () => {
     const { component } = mountToolbar();
 

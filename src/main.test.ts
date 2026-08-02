@@ -1268,6 +1268,43 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
     expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "");
   });
+
+  it("targets the current scope from createNoteInCurrentFolder", async () => {
+    const { plugin, app } = createPluginHarness();
+    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes/sub";
+    app.vault.create.mockResolvedValue({ path: "notes/sub/Untitled.md" });
+    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    await plugin.createNoteInCurrentFolder();
+
+    expect(app.vault.create).toHaveBeenCalledWith("notes/sub/Untitled.md", expect.any(String));
+  });
+
+  it("creates a note in an explicit folder", async () => {
+    const { plugin, app } = createPluginHarness();
+    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
+    app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
+    const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    await plugin.createNoteInFolder("Projects");
+
+    expect(app.vault.create).toHaveBeenCalledWith("Projects/Untitled.md", "---\ntags:\n---\n\n");
+    expect(openNoteFromCard).toHaveBeenCalledWith("Projects/Untitled.md", "new-tab");
+  });
+
+  it("writes explicit tags even when the blank template is configured", async () => {
+    const { plugin, app } = createPluginHarness();
+    (plugin as unknown as { settings: { newNoteTemplate: string } }).settings.newNoteTemplate = "blank";
+    app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
+    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    await plugin.createNoteInFolder("Projects", ["work"]);
+
+    expect(app.vault.create).toHaveBeenCalledWith(
+      "Projects/Untitled.md",
+      "---\ntags:\n  - work\n---\n\n",
+    );
+  });
 });
 
 describe("CardWorkspacePlugin indexed search lifecycle", () => {

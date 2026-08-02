@@ -47,7 +47,9 @@ const mockState = vi.hoisted(() => {
     onSearchQueryChange?: (payload: Record<string, unknown>) => void;
     onSearchQueryReset?: (payload: Record<string, unknown>) => void;
     onSelectFolder?: (payload: Record<string, unknown>) => void;
-    onBoxContextMenu?: (payload: Record<string, unknown>) => void;
+    onFolderAction?: (payload: Record<string, unknown>) => void;
+    onNavContextMenu?: (payload: Record<string, unknown>) => void;
+    onFavoriteActivate?: (payload: Record<string, unknown>) => void;
     onHydrateRange?: (payload: Record<string, unknown>) => void;
   }
 
@@ -88,7 +90,9 @@ const mockState = vi.hoisted(() => {
       onSearchQueryChange: "search-query-change",
       onSearchQueryReset: "search-query-reset",
       onSelectFolder: "select-folder",
-      onBoxContextMenu: "box-context-menu",
+      onFolderAction: "folder-action",
+      onNavContextMenu: "nav-context-menu",
+      onFavoriteActivate: "favorite-activate",
       onHydrateRange: "hydrate-range",
     };
 
@@ -165,6 +169,8 @@ const mockState = vi.hoisted(() => {
   class MockMenuItem {
     title = "";
     icon = "";
+    checked: boolean | null = null;
+    disabled = false;
     submenu: MockMenu | null = null;
     kind: "item" | "separator" = "item";
     clickHandler: (() => void) | null = null;
@@ -176,6 +182,16 @@ const mockState = vi.hoisted(() => {
 
     setIcon(icon: string): this {
       this.icon = icon;
+      return this;
+    }
+
+    setChecked(checked: boolean): this {
+      this.checked = checked;
+      return this;
+    }
+
+    setDisabled(disabled: boolean): this {
+      this.disabled = disabled;
       return this;
     }
 
@@ -2664,6 +2680,7 @@ describe("FolderCardView card context actions", () => {
         "Move file to...",
         "separator",
         "Add to card box -> New card box…",
+        "Add to favorites",
         "Copy title",
         "Copy content",
         "Copy title & content",
@@ -2706,6 +2723,7 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
       { kind: "item", title: "Add to card box", icon: "box" },
+      { kind: "item", title: "Add to favorites", icon: "star" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
       { kind: "item", title: "Copy content", icon: "clipboard-list" },
       { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
@@ -3073,6 +3091,7 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
       { kind: "item", title: "Add to card box", icon: "box" },
+      { kind: "item", title: "Add to favorites", icon: "star" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
@@ -3103,6 +3122,7 @@ describe("FolderCardView card context actions", () => {
       { kind: "item", title: "Move file to...", icon: "folder-input" },
       { kind: "separator" },
       { kind: "item", title: "Add to card box", icon: "box" },
+      { kind: "item", title: "Add to favorites", icon: "star" },
       { kind: "item", title: "Copy title", icon: "clipboard" },
       { kind: "item", title: "Copy content", icon: "clipboard-list" },
       { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
@@ -5174,16 +5194,36 @@ describe("FolderCardView card context actions", () => {
         .map((item: any) => item.title);
     }
 
-    it("box row context menu offers configure, add-current-view, rename, duplicate, and delete", () => {
+    function createNavPayload(overrides: Record<string, unknown>): Record<string, unknown> {
+      return {
+        bridge: {
+          hasExpandedFolders: false,
+          hasExpandedTags: false,
+          toggleAllFolders: vi.fn(),
+          toggleAllTags: vi.fn(),
+          tagHasChildren: false,
+          tagExpanded: false,
+          toggleTagExpansion: vi.fn(),
+        },
+        mouseEvent: { clientX: 1, clientY: 2 },
+        ...overrides,
+      };
+    }
+
+    it("box row context menu offers open, configure, add-current-view, rename, duplicate, and delete", () => {
       const { view } = createViewWithBox();
       const mouseEvent = { clientX: 5, clientY: 6 };
 
-      (view as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent });
+      (view as any).openNavContextMenu(
+        createNavPayload({ section: "boxes", scope: "item", itemId: BOX_ID, mouseEvent }),
+      );
 
       expect(mockState.menuInstances).toHaveLength(1);
       expect(getMenuTitles()).toEqual([
+        "Open card box",
         "Configure card box…",
         "Add current view to this card box",
+        "Add to favorites",
         "Rename…",
         "Duplicate",
         "Delete",
@@ -5198,22 +5238,25 @@ describe("FolderCardView card context actions", () => {
     it("box section context menu offers creation entries and hides save-current-view inside a box", () => {
       const { view } = createViewWithBox();
 
-      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+      (view as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
       expect(getMenuTitles()).toEqual([
         "New card box…",
         "Save current view as card box…",
         "Add current view to card box",
+        "Collapse section",
       ]);
 
       mockState.menuInstances.length = 0;
 
       const { view: boxModeView } = createViewWithBox(BOX_ID);
-      (boxModeView as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
-      expect(getMenuTitles()).toEqual(["New card box…"]);
+      (boxModeView as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
+      expect(getMenuTitles()).toEqual(["New card box…", "Collapse section"]);
 
       mockState.menuInstances.length = 0;
 
-      (boxModeView as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent: { clientX: 1, clientY: 2 } });
+      (boxModeView as any).openNavContextMenu(
+        createNavPayload({ section: "boxes", scope: "item", itemId: BOX_ID }),
+      );
       expect(getMenuTitles()).not.toContain("Add current view to this card box");
     });
 
@@ -5221,7 +5264,7 @@ describe("FolderCardView card context actions", () => {
       const { view } = createViewWithBox();
       const addScopeToBox = vi.spyOn(view as any, "addScopeToBox").mockImplementation(() => undefined);
 
-      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+      (view as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
 
       const item = findMenuItemByTitle(mockState.menuInstances[0], "Add current view to card box");
       expect(item.icon).toBe("package-check");
@@ -5238,9 +5281,13 @@ describe("FolderCardView card context actions", () => {
       const settings = plugin.getSettings();
       plugin.getSettings = vi.fn(() => ({ ...settings, boxes: [] }));
 
-      (view as any).openBoxContextMenu({ mouseEvent: { clientX: 1, clientY: 2 } });
+      (view as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
 
-      expect(getMenuTitles()).toEqual(["New card box…", "Save current view as card box…"]);
+      expect(getMenuTitles()).toEqual([
+        "New card box…",
+        "Save current view as card box…",
+        "Collapse section",
+      ]);
     });
 
     it("opens a flat box picker when a submenu is unavailable", () => {
@@ -5273,11 +5320,20 @@ describe("FolderCardView card context actions", () => {
       expect(mockState.menuInstances).toHaveLength(0);
     });
 
-    it("box context menu is ignored for an unknown box id or a non-mouse event", () => {
+    it("nav context menu is ignored for an unknown box id or a non-mouse event", () => {
       const { view } = createViewWithBox();
 
-      (view as any).openBoxContextMenu({ boxId: "missing", mouseEvent: { clientX: 5, clientY: 6 } });
-      (view as any).openBoxContextMenu({ boxId: BOX_ID, mouseEvent: null });
+      (view as any).openNavContextMenu(
+        createNavPayload({
+          section: "boxes",
+          scope: "item",
+          itemId: "missing",
+          mouseEvent: { clientX: 5, clientY: 6 },
+        }),
+      );
+      (view as any).openNavContextMenu(
+        createNavPayload({ section: "boxes", scope: "item", itemId: BOX_ID, mouseEvent: null }),
+      );
 
       for (const menu of mockState.menuInstances) {
         expect(menu.showAtMouseEvent).not.toHaveBeenCalled();
@@ -5286,19 +5342,150 @@ describe("FolderCardView card context actions", () => {
       }
     });
 
-    it("routes the panel box-context-menu callback into openBoxContextMenu", async () => {
+    it("routes the panel nav-context-menu callback into openNavContextMenu", async () => {
       const { view } = createViewWithBox();
       await (view as any).onOpen();
 
-      const openBoxContextMenu = vi
-        .spyOn(view as any, "openBoxContextMenu")
+      const openNavContextMenu = vi
+        .spyOn(view as any, "openNavContextMenu")
         .mockImplementation(() => undefined);
 
-      const payload = { boxId: BOX_ID, mouseEvent: { clientX: 3, clientY: 4 } };
-      mockState.panelEventHandlers["box-context-menu"]({ detail: payload });
+      const payload = createNavPayload({
+        section: "boxes",
+        scope: "item",
+        itemId: BOX_ID,
+        mouseEvent: { clientX: 3, clientY: 4 },
+      });
+      mockState.panelEventHandlers["nav-context-menu"]({ detail: payload });
 
-      expect(openBoxContextMenu).toHaveBeenCalledTimes(1);
-      expect(openBoxContextMenu).toHaveBeenCalledWith(payload);
+      expect(openNavContextMenu).toHaveBeenCalledTimes(1);
+      expect(openNavContextMenu).toHaveBeenCalledWith(payload);
+    });
+  });
+
+  describe("nav context menu wiring", () => {
+    function createNavView(
+      settingsOverrides: Record<string, unknown> = {},
+    ): { view: FolderCardView; plugin: any } {
+      const { view, plugin } = createViewWithFile("notes/nav-menu.md");
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: "notes",
+        pinnedPaths: [],
+        previewLines: 5,
+        activeBoxId: null,
+        boxes: [],
+        favorites: [],
+        favoritesSectionCollapsed: false,
+        folderSectionCollapsed: false,
+        tagSectionCollapsed: false,
+        boxSectionCollapsed: false,
+        ...settingsOverrides,
+      }));
+      return { view, plugin };
+    }
+
+    function navPayload(overrides: Record<string, unknown>): Record<string, unknown> {
+      return {
+        bridge: {
+          hasExpandedFolders: false,
+          hasExpandedTags: false,
+          toggleAllFolders: vi.fn(),
+          toggleAllTags: vi.fn(),
+          tagHasChildren: false,
+          tagExpanded: false,
+          toggleTagExpansion: vi.fn(),
+        },
+        mouseEvent: { clientX: 7, clientY: 8 },
+        ...overrides,
+      };
+    }
+
+    function latestMenuTitles(): string[] {
+      const menu = mockState.menuInstances[0];
+      return menu.items
+        .filter((item: any) => item.kind !== "separator")
+        .map((item: any) => item.title);
+    }
+
+    it("shows the folders header menu at the mouse event without a danger row", () => {
+      const { view } = createNavView();
+
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+
+      const menu = mockState.menuInstances[0];
+      expect(menu.showAtMouseEvent).toHaveBeenCalledTimes(1);
+      expect(menu.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+      expect(getDangerMenuTitles(menu)).toEqual([]);
+    });
+
+    it("marks the folder delete row as dangerous for a folder row menu", () => {
+      const { view } = createNavView();
+
+      (view as any).openNavContextMenu(
+        navPayload({ section: "folders", scope: "item", itemId: "notes" }),
+      );
+
+      expect(latestMenuTitles()).toContain("Delete folder");
+      expect(getDangerMenuTitles(mockState.menuInstances[0])).toEqual(["Delete folder"]);
+    });
+
+    it("shows the favorites row menu for a file favorite", () => {
+      const { view } = createNavView({ favorites: [{ kind: "file", ref: "notes/nav-menu.md" }] });
+
+      (view as any).openNavContextMenu(
+        navPayload({
+          section: "favorites",
+          scope: "item",
+          favorite: { kind: "file", ref: "notes/nav-menu.md" },
+        }),
+      );
+
+      const titles = latestMenuTitles();
+      expect(titles.slice(0, 3)).toEqual(["Remove from favorites", "Move up", "Move down"]);
+      expect(titles).toContain("Open in new tab");
+      expect(mockState.menuInstances[0].showAtMouseEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips the menu entirely for a tag row in box mode", () => {
+      const { view } = createNavView({
+        activeBoxId: "box-1",
+        boxes: [
+          {
+            id: "box-1",
+            name: "Reading",
+            rules: [],
+            manualPaths: [],
+            excludedPaths: [],
+            pinnedPaths: [],
+            sort: { field: "mtime", direction: "desc" },
+          },
+        ],
+      });
+
+      (view as any).openNavContextMenu(
+        navPayload({ section: "tags", scope: "item", itemId: "work" }),
+      );
+
+      expect(mockState.menuInstances[0].showAtMouseEvent).not.toHaveBeenCalled();
+    });
+
+    it("routes the panel favorite-activate callback into the folder scope", async () => {
+      const { view } = createNavView();
+      await (view as any).onOpen();
+
+      const selectFolderFromNav = vi
+        .spyOn(view as any, "selectFolderFromNav")
+        .mockResolvedValue(undefined);
+
+      mockState.panelEventHandlers["favorite-activate"]({
+        detail: { favorite: { kind: "folder", ref: "notes" } },
+      });
+
+      expect(selectFolderFromNav).toHaveBeenCalledWith("notes");
     });
   });
 });

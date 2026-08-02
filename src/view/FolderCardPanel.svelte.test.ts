@@ -75,6 +75,9 @@ function createInitialPanelState(): PanelModelState {
     folderSectionCollapsed: false,
     tagSectionCollapsed: false,
     boxSectionCollapsed: false,
+    favorites: [],
+    favoritesSectionCollapsed: false,
+    searchFocusToken: 0,
     showNavItemCounts: false,
   };
 }

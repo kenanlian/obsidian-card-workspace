@@ -1,6 +1,7 @@
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type { UiStrings } from "../i18n";
 import type {
+  FavoriteKind,
   FolderTreeNode,
   NoteCardRecord,
   SearchIndexPersistenceHealth,
@@ -17,6 +18,17 @@ export interface BoxSummary {
   id: string;
   name: string;
   cardCount: number;
+}
+
+export interface FavoriteRowModel {
+  kind: FavoriteKind;
+  ref: string;
+  label: string;
+  icon: string;
+  count: number;
+  selected: boolean;
+  missing: boolean;
+  disabled: boolean;
 }
 
 export interface PanelModelState {
@@ -65,6 +77,10 @@ export interface PanelModelState {
   folderSectionCollapsed: boolean;
   tagSectionCollapsed: boolean;
   boxSectionCollapsed: boolean;
+  favorites: FavoriteRowModel[];
+  favoritesSectionCollapsed: boolean;
+  /** Monotonic nonce; each increment asks the toolbar to open and focus its search input. */
+  searchFocusToken: number;
   showNavItemCounts: boolean;
 }
 

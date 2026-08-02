@@ -18,9 +18,11 @@
     projectCardsToRows,
   } from "./row-projection";
   import type {
-    BoxContextMenuPayload,
     CardHoverLinkPayload,
+    FavoriteEntry,
     FolderActionPayload,
+    NavContextMenuPayload,
+    NavSectionId,
     NoteCardRecord,
   } from "./types";
 
@@ -78,8 +80,6 @@
     end: number;
   }
 
-  type NavSection = "folders" | "tags" | "boxes";
-
   interface FolderCardPanelProps {
     panelModel: PanelModel;
     onOpenNote?: (payload: OpenNotePayload) => void;
@@ -96,12 +96,13 @@
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
-    onBoxContextMenu?: (payload: BoxContextMenuPayload) => void;
+    onNavContextMenu?: (payload: NavContextMenuPayload) => void;
+    onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
     onHydrateRange?: (payload: HydrateRangePayload) => void;
     onNavPaneResize?: (width: number) => void;
     onShellResize?: (width: number) => void;
     onToggleNavPane?: () => void;
-    onToggleNavSection?: (section: NavSection) => void;
+    onToggleNavSection?: (section: NavSectionId) => void;
   }
 
   const EMPTY_PANEL_STATE: PanelModelState = {
@@ -147,6 +148,9 @@
     folderSectionCollapsed: false,
     tagSectionCollapsed: false,
     boxSectionCollapsed: false,
+    favorites: [],
+    favoritesSectionCollapsed: false,
+    searchFocusToken: 0,
     showNavItemCounts: false,
   };
 
@@ -166,7 +170,8 @@
     onSelectFolder,
     onFolderAction,
     onBoxCommand,
-    onBoxContextMenu,
+    onNavContextMenu,
+    onFavoriteActivate,
     onHydrateRange,
     onNavPaneResize,
     onShellResize,
@@ -269,6 +274,8 @@
   const folderSectionCollapsed = $derived(panelState.folderSectionCollapsed);
   const tagSectionCollapsed = $derived(panelState.tagSectionCollapsed);
   const boxSectionCollapsed = $derived(panelState.boxSectionCollapsed);
+  const favorites = $derived(panelState.favorites);
+  const favoritesSectionCollapsed = $derived(panelState.favoritesSectionCollapsed);
   const showNavItemCounts = $derived(panelState.showNavItemCounts);
 
   function handleCardOpenNote(detail: OpenNotePayload): void {
@@ -327,8 +334,12 @@
     onFolderAction?.(detail);
   }
 
-  function handleBoxContextMenu(detail: BoxContextMenuPayload): void {
-    onBoxContextMenu?.(detail);
+  function handleNavContextMenu(detail: NavContextMenuPayload): void {
+    onNavContextMenu?.(detail);
+  }
+
+  function handleFavoriteActivate(detail: { favorite: FavoriteEntry }): void {
+    onFavoriteActivate?.(detail);
   }
 
   function handleNavPaneResize(width: number): void {
@@ -339,7 +350,7 @@
     onToggleNavPane?.();
   }
 
-  function handleToggleNavSection(section: NavSection): void {
+  function handleToggleNavSection(section: NavSectionId): void {
     onToggleNavSection?.(section);
   }
 
@@ -665,13 +676,16 @@
     {folderSectionCollapsed}
     {tagSectionCollapsed}
     {boxSectionCollapsed}
+    {favorites}
+    {favoritesSectionCollapsed}
     {showNavItemCounts}
     onSelectFolder={handleSelectFolder}
     onFolderAction={handleFolderAction}
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onBoxCommand={handleBoxCommand}
-    onBoxContextMenu={handleBoxContextMenu}
+    onNavContextMenu={handleNavContextMenu}
+    onFavoriteActivate={handleFavoriteActivate}
     onNavPaneResize={handleNavPaneResize}
     onToggleNavPane={handleToggleNavPane}
     onToggleNavSection={handleToggleNavSection}
@@ -691,6 +705,7 @@
     {sortDirection}
     {searchQuery}
     {searchStatus}
+    searchFocusToken={panelState.searchFocusToken}
     searchIndexReadiness={panelState.searchIndexReadiness ?? "ready"}
     searchIndexPersistence={panelState.searchIndexPersistence ?? "healthy"}
     searchIndexRebuildReason={panelState.searchIndexRebuildReason ?? null}
