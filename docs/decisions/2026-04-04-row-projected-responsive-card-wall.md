@@ -18,7 +18,7 @@ V1 Phase 1 的核心目标，不再只是“把文件夹里的笔记列出来”
 
 ## 触发信号
 
-- `docs/plan/v1-development-plan.md` 的 T31 明确要求采用 **row-projected virtualization** 作为唯一推荐路径。
+- 当时的 V1 开发计划（仅保留在本地，未纳入版本控制）中的 T31 明确要求采用 **row-projected virtualization** 作为唯一推荐路径。
 - 产品路线已经把 V1 的第一优先级定义为“把单列卡片流升级成响应式 card wall”。
 - 现有性能约束不能退回整列表渲染，也不能破坏 viewport-driven hydration 与 generation 防陈旧模型。
 

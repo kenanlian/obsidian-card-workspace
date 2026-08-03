@@ -48,7 +48,7 @@
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte` |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
 | `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
-| `docs/` | Developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/`, `plan/`, `roadmap/` |
+| `docs/` | Developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/` |
 | `.github/workflows/` | CI (`ci.yml`) and release (`release.yml`) automation |
 
 ## Development Commands
