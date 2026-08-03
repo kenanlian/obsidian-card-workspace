@@ -50,7 +50,7 @@ import {
   pruneFavoriteBoxes,
   toggleFavorite,
 } from "./favorites";
-import { normalizeTagPath } from "./tag-tree";
+import { normalizeTagPath, resolveTagSelection } from "./tag-tree";
 import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
 import { isBoxMember } from "./card-box-membership";
 import {
@@ -1510,7 +1510,7 @@ export class FolderCardView extends ItemView {
       if (submenu && typeof submenu.addItem === "function") {
         for (const summary of boxes) {
           submenu.addItem((sub) => {
-            sub.setTitle(summary.name).onClick(() => {
+            sub.setTitle(summary.name).setIcon("box").onClick(() => {
               void this.addPathsToBox(summary.id, paths);
             });
           });
@@ -1689,7 +1689,9 @@ export class FolderCardView extends ItemView {
     const action = detail.action;
 
     if (action === "new-note") {
-      void this.plugin.createNoteInCurrentFolder();
+      void this.plugin.createNoteInCurrentFolder().catch((error: unknown) => {
+        new Notice(this.getFolderManagementStrings().createFileFailed(String(error)));
+      });
       return;
     }
 
@@ -2726,11 +2728,12 @@ export class FolderCardView extends ItemView {
   }
 
   private buildSiblingPath(parentPath: string, fileName: string): string {
-    if (parentPath.length === 0) {
+    const scopePath = normalizeFolderScopePath(parentPath);
+    if (scopePath.length === 0) {
       return fileName;
     }
 
-    return `${parentPath}/${fileName}`;
+    return `${scopePath}/${fileName}`;
   }
 
   private getFolderManagementStrings(): UiStrings["view"]["folderManagement"] {
@@ -2986,7 +2989,11 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    await this.plugin.createNoteInFolder(folder.path, tags);
+    try {
+      await this.plugin.createNoteInFolder(folder.path, tags);
+    } catch (error) {
+      new Notice(this.getFolderManagementStrings().createFileFailed(String(error)));
+    }
   }
 
   private async createCanvasIn(folderUiPath: string): Promise<void> {
@@ -3164,12 +3171,13 @@ export class FolderCardView extends ItemView {
       if (this.isBoxMode()) {
         return;
       }
+      // Favorited tags are shortcuts to a single tag, so activation never
+      // accumulates: it swaps the filter, or clears it when already alone.
       const current = this.plugin.getSettings().filter.tags;
-      const nextTags = current.filter((existing) => normalizeTagPath(existing) !== ref);
-      if (nextTags.length === current.length) {
-        nextTags.push(ref);
+      const nextTags = resolveTagSelection(current, ref, false);
+      if (nextTags !== current) {
+        void this.applyTagFilter(nextTags);
       }
-      void this.applyTagFilter(nextTags);
       return;
     }
 

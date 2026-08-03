@@ -581,7 +581,8 @@ function normalizeMergedTitle(mergedTitle: string, defaultTitle: string): string
  * exists, appends " 1", " 2", etc. before the extension.
  */
 export function resolveUniquePath(app: App, fileName: string, folderPath: string): string {
-  const prefix = folderPath ? `${folderPath}/` : "";
+  // `TFolder.path` is "/" for the vault root, which would produce a "//" prefix.
+  const prefix = folderPath && folderPath !== "/" ? `${folderPath}/` : "";
   const candidate = `${prefix}${fileName}`;
 
   if (!app.vault.getAbstractFileByPath(candidate)) {

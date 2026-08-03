@@ -336,6 +336,8 @@ describe("folder row menu", () => {
     const submenu = findItem(menu, "Copy path")?.submenu;
     expect(submenu).not.toBeUndefined();
     expect(getTitles(submenu as MockMenu)).toEqual(["Vault path", "System path"]);
+    expect(findItem(submenu as MockMenu, "Vault path")?.icon).toBe("vault");
+    expect(findItem(submenu as MockMenu, "System path")?.icon).toBe("hard-drive");
 
     findItem(submenu as MockMenu, "System path")?.clickHandler?.();
     expect(deps.actions.copyPath).toHaveBeenCalledWith("Projects", "system");
@@ -515,9 +517,9 @@ describe("box row menu", () => {
       { title: "Add current view to this card box", icon: "list-plus" },
       { title: "Add to favorites", icon: "star" },
       "sep",
-      { title: "Rename…", icon: "pencil" },
-      { title: "Duplicate", icon: "copy" },
+      { title: "Make a copy", icon: "copy" },
       "sep",
+      { title: "Rename…", icon: "pencil" },
       { title: "Delete", icon: "trash-2" },
     ]);
   });

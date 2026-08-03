@@ -1292,6 +1292,18 @@ describe("CardWorkspacePlugin open destination routing", () => {
     expect(openNoteFromCard).toHaveBeenCalledWith("Projects/Untitled.md", "new-tab");
   });
 
+  it("treats the vault-root folder path as an empty prefix", async () => {
+    const { plugin, app } = createPluginHarness();
+    app.vault.create.mockResolvedValue({ path: "Untitled.md" });
+    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    // `TFolder.path` is "/" for the vault root, so an unnormalized prefix would
+    // produce "//Untitled.md" and the create would never land.
+    await plugin.createNoteInFolder("/", ["work"]);
+
+    expect(app.vault.create).toHaveBeenCalledWith("Untitled.md", "---\ntags:\n  - work\n---\n\n");
+  });
+
   it("writes explicit tags even when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
     (plugin as unknown as { settings: { newNoteTemplate: string } }).settings.newNoteTemplate = "blank";

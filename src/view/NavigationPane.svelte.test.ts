@@ -340,24 +340,61 @@ describe("NavigationPane.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("emits multi-select tag filter arrays", async () => {
+  it("replaces the filter on a plain tag click instead of accumulating", async () => {
     const captured = createCaptured();
     const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
 
     getTreeButtonByText(".fce-tag-menu", "personal")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    expect(captured.filterEvents).toEqual([{ tags: ["work", "personal"] }]);
+    expect(captured.filterEvents).toEqual([{ tags: ["personal"] }]);
 
     await disposeMountedComponent(component);
   });
 
-  it("removes an already-selected tag when toggled again", async () => {
+  it("collapses a multi-tag filter down to the plainly clicked tag", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ activeFilterTags: ["work", "personal"] }, captured.callbacks);
+
+    getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(captured.filterEvents).toEqual([{ tags: ["work"] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("clears the filter when the only active tag is clicked again", async () => {
     const captured = createCaptured();
     const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
 
     getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(captured.filterEvents).toEqual([{ tags: [] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("adds a tag to the filter on ctrl-click", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
+
+    getTreeButtonByText(".fce-tag-menu", "personal")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, ctrlKey: true }),
+    );
+
+    expect(captured.filterEvents).toEqual([{ tags: ["work", "personal"] }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("removes an already-selected tag on meta-click without dropping the rest", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ activeFilterTags: ["work", "personal"] }, captured.callbacks);
+
+    getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, metaKey: true }),
+    );
+
+    expect(captured.filterEvents).toEqual([{ tags: ["personal"] }]);
 
     await disposeMountedComponent(component);
   });

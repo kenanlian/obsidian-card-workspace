@@ -852,6 +852,7 @@ function createViewWithFile(
     openNoteFromCard: vi.fn(),
     selectAllNotes: vi.fn(),
     createNoteInCurrentFolder: vi.fn(),
+    createNoteInFolder: vi.fn(async () => undefined),
     selectFolderByPath: vi.fn(),
     saveSettings: vi.fn(async () => undefined),
   };
@@ -5155,6 +5156,39 @@ describe("FolderCardView card context actions", () => {
     });
   });
 
+  describe("note creation targets", () => {
+    it("routes the vault-root scope through the root folder returned by the vault", async () => {
+      const { view, app, plugin } = createViewWithFile();
+      // Obsidian reports "/" as the root folder path.
+      app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
+
+      await (view as any).createNoteIn("/", ["work"]);
+
+      expect(app.vault.getRoot).toHaveBeenCalled();
+      expect(plugin.createNoteInFolder).toHaveBeenCalledWith("/", ["work"]);
+    });
+
+    it("surfaces a notice instead of failing silently when creation throws", async () => {
+      const { view, app, plugin } = createViewWithFile();
+      app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
+      plugin.createNoteInFolder = vi.fn(async () => {
+        throw new Error("permission denied");
+      });
+
+      await (view as any).createNoteIn("/");
+
+      expect(mockState.noticeMessages).toContain("Failed to create file: Error: permission denied");
+    });
+
+    it("builds root-level sibling paths without a leading slash", () => {
+      const { view } = createViewWithFile();
+
+      expect((view as any).buildSiblingPath("/", "Untitled.md")).toBe("Untitled.md");
+      expect((view as any).buildSiblingPath("", "Untitled.md")).toBe("Untitled.md");
+      expect((view as any).buildSiblingPath("notes", "Untitled.md")).toBe("notes/Untitled.md");
+    });
+  });
+
   describe("card box context menus", () => {
     const BOX_ID = "box-1";
 
@@ -5224,8 +5258,8 @@ describe("FolderCardView card context actions", () => {
         "Configure card box…",
         "Add current view to this card box",
         "Add to favorites",
+        "Make a copy",
         "Rename…",
-        "Duplicate",
         "Delete",
       ]);
 
@@ -5274,6 +5308,32 @@ describe("FolderCardView card context actions", () => {
 
       expect(addScopeToBox).toHaveBeenCalledTimes(1);
       expect(addScopeToBox).toHaveBeenCalledWith(BOX_ID);
+    });
+
+    it("add-to-box submenu lists every card box with a box icon", () => {
+      const { view } = createViewWithBox();
+      const addPathsToBox = vi
+        .spyOn(view as any, "addPathsToBox")
+        .mockImplementation(async () => undefined);
+
+      (view as any).openCardContextMenu({
+        notePath: "notes/box-menu.md",
+        trigger: "contextmenu",
+        mouseEvent: { clientX: 3, clientY: 4 },
+      });
+
+      const item = findMenuItemByTitle(mockState.menuInstances[0], "Add to card box");
+      const submenuItems = (item.submenu?.items ?? []).filter(
+        (entry: any) => entry.kind !== "separator",
+      );
+      expect(submenuItems.map((entry: any) => ({ title: entry.title, icon: entry.icon }))).toEqual([
+        { title: "Reading", icon: "box" },
+        { title: "New card box…", icon: "plus" },
+      ]);
+
+      (submenuItems[0] as any).clickHandler();
+
+      expect(addPathsToBox).toHaveBeenCalledWith(BOX_ID, ["notes/box-menu.md"]);
     });
 
     it("hides the add-current-view entry when no card box exists", () => {

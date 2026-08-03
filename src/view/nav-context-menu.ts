@@ -145,11 +145,17 @@ function appendCopyPathItem(menu: Menu, deps: NavMenuDeps, ref: string): void {
     "clipboard-copy",
     (submenu) => {
       submenu.addItem((sub) => {
-        sub.setTitle(navMenu.copyVaultPath).onClick(() => deps.actions.copyPath(ref, "vault"));
+        sub
+          .setTitle(navMenu.copyVaultPath)
+          .setIcon("vault")
+          .onClick(() => deps.actions.copyPath(ref, "vault"));
       });
       if (deps.canResolveSystemPath) {
         submenu.addItem((sub) => {
-          sub.setTitle(navMenu.copySystemPath).onClick(() => deps.actions.copyPath(ref, "system"));
+          sub
+            .setTitle(navMenu.copySystemPath)
+            .setIcon("hard-drive")
+            .onClick(() => deps.actions.copyPath(ref, "system"));
         });
       }
     },
@@ -356,10 +362,10 @@ function buildBoxItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boolea
   appendFavoriteToggleItem(menu, deps, "box", itemId);
 
   menu.addSeparator();
-  addItem(menu, box.rename, "pencil", () => deps.actions.boxCommand("rename", itemId));
   addItem(menu, box.duplicate, "copy", () => deps.actions.boxCommand("duplicate", itemId));
 
   menu.addSeparator();
+  addItem(menu, box.rename, "pencil", () => deps.actions.boxCommand("rename", itemId));
   addItem(menu, box.delete, "trash-2", () => deps.actions.boxCommand("delete", itemId));
   return true;
 }

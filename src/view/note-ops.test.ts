@@ -64,6 +64,7 @@ import {
   mergeNotes,
   normalizeTagForFrontmatter,
   removeTagFromFile,
+  resolveUniquePath,
 } from "./note-ops";
 
 interface MockAppForMove {
@@ -178,6 +179,31 @@ function createTagCacheEntry(content: string, rawTag: string, occurrence: number
 describe("normalizeTagForFrontmatter", () => {
   it("trims, removes leading hash, and lowercases tag path segments", () => {
     expect(normalizeTagForFrontmatter("  #Project / Alpha / Beta  ")).toBe("project/alpha/beta");
+  });
+});
+
+describe("resolveUniquePath", () => {
+  function createLookupApp(existingPaths: string[]): unknown {
+    const existing = new Set(existingPaths);
+    return {
+      vault: {
+        getAbstractFileByPath: (path: string): unknown => (existing.has(path) ? {} : null),
+      },
+    };
+  }
+
+  it("keeps the folder prefix for a nested folder", () => {
+    const app = createLookupApp(["Work/Note.md"]);
+
+    expect(resolveUniquePath(app as never, "Note.md", "Work")).toBe("Work/Note 1.md");
+  });
+
+  it("drops the vault-root folder path instead of producing a double slash", () => {
+    const app = createLookupApp(["Note.md"]);
+
+    // `TFolder.path` is "/" for the vault root.
+    expect(resolveUniquePath(app as never, "Note.md", "/")).toBe("Note 1.md");
+    expect(resolveUniquePath(app as never, "Other.md", "/")).toBe("Other.md");
   });
 });
 

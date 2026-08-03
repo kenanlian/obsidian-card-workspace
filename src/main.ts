@@ -229,7 +229,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private generateUniqueNotePath(folderPath: string): string {
     const baseName = this.getUiStrings().app.untitledNoteBaseName;
     const extension = "md";
-    const prefix = folderPath ? `${folderPath}/` : "";
+    const scopePath = normalizeFolderScopePath(folderPath);
+    const prefix = scopePath ? `${scopePath}/` : "";
 
     // Try "Untitled.md" first
     const firstCandidate = `${prefix}${baseName}.${extension}`;

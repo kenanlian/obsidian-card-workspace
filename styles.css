@@ -34,6 +34,12 @@
   --fce-nav-icon-color: var(--text-muted);
   --fce-nav-row-selected-bg: color-mix(in srgb, var(--fce-accent) 10%, transparent);
   --fce-nav-row-selected-marker: var(--fce-accent);
+  /*
+   * Derived from the text color instead of a theme hover token: the row is
+   * already painted with `--fce-nav-row-hover`, which many themes alias to the
+   * same value, leaving the chevron hover invisible.
+   */
+  --fce-nav-chevron-hover-bg: color-mix(in srgb, var(--text-normal) 16%, transparent);
   --fce-nav-count-color: var(--text-faint, var(--text-muted));
 }
 
@@ -734,7 +740,7 @@
 
 .fce-tree-menu .fce-tree-item-icon:not(.is-static):hover,
 .fce-tree-menu .fce-tree-item-icon:focus-visible {
-  background: var(--background-modifier-hover);
+  background: var(--fce-nav-chevron-hover-bg);
   color: var(--text-normal);
 }
 
@@ -804,6 +810,19 @@
 
 .fce-tree-menu .fce-tree-item-icon.is-static {
   cursor: default;
+}
+
+/*
+ * Expandable rows get a 22px rounded hit target so the chevron reads as a
+ * button. The negative margin keeps the leading column at 16px, so row
+ * indentation stays aligned with the static leaf icons.
+ */
+.fce-tree-menu .fce-tree-item-icon:not(.is-static) {
+  width: 22px;
+  height: 22px;
+  margin: -3px;
+  border-radius: var(--radius-s, 4px);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .fce-tree-menu .fce-tree-item-icon:focus-visible {

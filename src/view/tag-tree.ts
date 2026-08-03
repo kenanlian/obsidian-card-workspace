@@ -59,6 +59,36 @@ export function normalizeTagPath(value: string): string {
     .join("/");
 }
 
+/**
+ * Next filter array for activating `tag`. Plain activation is single-select and
+ * replaces the filter, or clears it when `tag` is already the only active tag so
+ * a second click still unfilters. Additive activation (Ctrl/Cmd) keeps the
+ * multi-select toggle. Returns `activeTags` unchanged when nothing moves.
+ */
+export function resolveTagSelection(
+  activeTags: string[],
+  tag: string,
+  additive: boolean,
+): string[] {
+  const normalizedTag = normalizeTagPath(tag);
+  if (normalizedTag.length === 0) {
+    return activeTags;
+  }
+
+  if (!additive) {
+    const isOnlyActiveTag =
+      activeTags.length === 1 && normalizeTagPath(activeTags[0]) === normalizedTag;
+    return isOnlyActiveTag ? [] : [normalizedTag];
+  }
+
+  const nextTags = activeTags.filter((existing) => normalizeTagPath(existing) !== normalizedTag);
+  if (nextTags.length === activeTags.length) {
+    nextTags.push(normalizedTag);
+  }
+
+  return nextTags;
+}
+
 export function buildTagTree(tags: string[]): TagTreeNode[] {
   const roots: MutableTagTreeNode[] = [];
   const nodesByTag = new Map<string, MutableTagTreeNode>();

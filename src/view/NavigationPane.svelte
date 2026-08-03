@@ -10,6 +10,7 @@
     collectExpandableTagPaths,
     flattenVisibleTagTree,
     normalizeTagPath,
+    resolveTagSelection,
     type VisibleTagTreeNode,
   } from "./tag-tree";
   import type {
@@ -377,28 +378,14 @@
     onSelectFolder?.({ path });
   }
 
-  function toggleTag(tag: string): void {
+  function toggleTag(event: MouseEvent, tag: string): void {
     if (isBoxMode) {
       return;
     }
 
-    const normalizedTag = normalizeTagPath(tag);
-    if (normalizedTag.length === 0) {
+    const nextTags = resolveTagSelection(activeFilterTags, tag, event.ctrlKey || event.metaKey);
+    if (nextTags === activeFilterTags) {
       return;
-    }
-
-    const nextTags: string[] = [];
-    let removed = false;
-    for (const existing of activeFilterTags) {
-      if (normalizeTagPath(existing) === normalizedTag) {
-        removed = true;
-        continue;
-      }
-      nextTags.push(existing);
-    }
-
-    if (!removed) {
-      nextTags.push(normalizedTag);
     }
 
     onFilterChange?.({ tags: nextTags });
@@ -745,7 +732,7 @@
                     class="fce-tree-button"
                     role="menuitemcheckbox"
                     aria-checked={isSelected}
-                    onclick={() => toggleTag(node.tag)}
+                    onclick={(event) => toggleTag(event, node.tag)}
                     use:applyTooltip={getTagNodeTooltip(node)}
                   >
                     <span class="fce-tree-label">{node.label}</span>

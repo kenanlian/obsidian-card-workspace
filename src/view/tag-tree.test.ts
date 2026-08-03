@@ -5,12 +5,40 @@ import {
   collectExpandableTagPaths,
   flattenVisibleTagTree,
   normalizeTagPath,
+  resolveTagSelection,
   tagPathMatchesFilter,
 } from "./tag-tree";
 
 describe("normalizeTagPath", () => {
   it("normalizes case, leading hash, spacing, and empty segments", () => {
     expect(normalizeTagPath(" #Work / AI // Harness ")).toBe("work/ai/harness");
+  });
+});
+
+describe("resolveTagSelection", () => {
+  it("replaces the filter on a plain activation", () => {
+    expect(resolveTagSelection(["work", "personal"], "notes", false)).toEqual(["notes"]);
+  });
+
+  it("collapses a multi-tag filter to the activated tag", () => {
+    expect(resolveTagSelection(["work", "personal"], "work", false)).toEqual(["work"]);
+  });
+
+  it("clears the filter when the only active tag is activated again", () => {
+    expect(resolveTagSelection(["#Work"], "work", false)).toEqual([]);
+  });
+
+  it("adds to the filter on an additive activation", () => {
+    expect(resolveTagSelection(["work"], "#Personal", true)).toEqual(["work", "personal"]);
+  });
+
+  it("removes only the activated tag on an additive activation", () => {
+    expect(resolveTagSelection(["work", "personal"], "Work", true)).toEqual(["personal"]);
+  });
+
+  it("returns the same array for an empty tag so callers can skip the update", () => {
+    const activeTags = ["work"];
+    expect(resolveTagSelection(activeTags, " # ", false)).toBe(activeTags);
   });
 });
 
