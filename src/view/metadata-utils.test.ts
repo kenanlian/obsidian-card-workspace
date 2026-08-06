@@ -6,7 +6,13 @@ vi.mock("obsidian", () => ({
 }));
 
 import { getAllTags } from "obsidian";
-import { collectAllTags, collectTagCounts, matchesSearchQuery, matchesTagFilter } from "./metadata-utils";
+import {
+  collectAllTags,
+  collectTagCounts,
+  collectVaultTagIndex,
+  matchesSearchQuery,
+  matchesTagFilter,
+} from "./metadata-utils";
 
 function createMockFile(basename: string): TFile {
   return {
@@ -142,5 +148,74 @@ describe("collectTagCounts", () => {
     getAllTagsMock.mockReturnValueOnce(null);
 
     expect(collectTagCounts(app, files)).toEqual({});
+  });
+});
+
+describe("collectVaultTagIndex", () => {
+  function createVaultApp(files: TFile[]): App {
+    return {
+      metadataCache: {
+        getFileCache: (file: TFile) => ({ path: file.path }),
+      },
+      vault: {
+        getMarkdownFiles: () => files,
+      },
+    } as unknown as App;
+  }
+
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("collects normalized tags from every markdown file, including ancestors", () => {
+    const app = createVaultApp([createMockFile("Alpha"), createMockFile("Beta")]);
+
+    getAllTagsMock
+      .mockReturnValueOnce(["#Work/AI/harness"])
+      .mockReturnValueOnce(["#personal"]);
+
+    expect(collectVaultTagIndex(app)?.tagPaths).toEqual(
+      new Set(["work", "work/ai", "work/ai/harness", "personal"]),
+    );
+  });
+
+  it("rolls counts up to ancestors and counts each note once per tag path", () => {
+    const app = createVaultApp([
+      createMockFile("Alpha"),
+      createMockFile("Beta"),
+      createMockFile("Gamma"),
+    ]);
+
+    getAllTagsMock
+      .mockReturnValueOnce(["#Work/AI", "#work/ai/harness"])
+      .mockReturnValueOnce(["#work/ml"])
+      .mockReturnValueOnce(["#personal"]);
+
+    expect(collectVaultTagIndex(app)?.counts).toEqual({
+      work: 2,
+      "work/ai": 1,
+      "work/ai/harness": 1,
+      "work/ml": 1,
+      personal: 1,
+    });
+  });
+
+  it("returns empty data when files exist but carry no tags", () => {
+    const app = createVaultApp([createMockFile("Alpha")]);
+
+    getAllTagsMock.mockReturnValueOnce(null);
+
+    expect(collectVaultTagIndex(app)).toEqual({ tagPaths: new Set(), counts: {} });
+  });
+
+  it("returns null when the answer cannot be trusted", () => {
+    expect(collectVaultTagIndex(createVaultApp([]))).toBeNull();
+    expect(collectVaultTagIndex({ vault: {} } as unknown as App)).toBeNull();
+    expect(
+      collectVaultTagIndex({
+        metadataCache: { getFileCache: () => null },
+        vault: {},
+      } as unknown as App),
+    ).toBeNull();
   });
 });

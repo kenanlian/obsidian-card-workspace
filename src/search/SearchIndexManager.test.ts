@@ -272,6 +272,7 @@ describe("SearchIndexManager", () => {
     expectHealthSubset(manager.getSnapshot().health, {
       documentCount: 0,
     });
+    await manager.flushPendingPersist();
     expect(store.write).toHaveBeenLastCalledWith(
       expect.objectContaining({ documentCount: 0 }),
       expect.objectContaining({ documentCount: 0 }),
@@ -314,9 +315,50 @@ describe("SearchIndexManager", () => {
     expectHealthSubset(manager.getSnapshot().health, {
       documentCount: 1,
     });
+    await manager.flushPendingPersist();
     expect(store.write).toHaveBeenLastCalledWith(
       expect.objectContaining({ documentCount: 1 }),
       expect.objectContaining({ documentCount: 1 }),
+    );
+  });
+
+  it("coalesces consecutive incremental mutations into a single index write", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap"), createDocument("notes/b.md", "Backlog")];
+    const serialized = await createSerializedIndex(docs);
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndexJson: serialized,
+        documentCount: 2,
+        lastIndexedAt: 111,
+      },
+    });
+    const { source, byPath } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({
+      store,
+      documentSource: source,
+    });
+
+    await manager.restore(createMetadata());
+    store.write.mockClear();
+
+    byPath.delete("notes/a.md");
+    await manager.applyMutation(createMutation({ type: "delete", path: "notes/a.md" }));
+    byPath.set("notes/c.md", createDocument("notes/c.md", "Checklist"));
+    await manager.applyMutation(createMutation({ type: "create", path: "notes/c.md" }));
+    await manager.applyMutation(createMutation({ type: "modify", path: "notes/b.md" }));
+
+    expect(store.write).not.toHaveBeenCalled();
+    // The in-memory index stays authoritative while the write is pending.
+    expectHealthSubset(manager.getSnapshot().health, { documentCount: 2 });
+
+    await manager.flushPendingPersist();
+
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(store.write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ documentCount: 2 }),
+      expect.objectContaining({ documentCount: 2 }),
     );
   });
 

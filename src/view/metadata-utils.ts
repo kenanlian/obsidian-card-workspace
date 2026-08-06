@@ -114,6 +114,65 @@ export function collectTagCounts(app: App, files: TFile[]): Record<string, numbe
   return counts;
 }
 
+export interface VaultTagIndex {
+  /** Every tag path in the vault, expanded to include ancestors. */
+  tagPaths: Set<string>;
+  /** Notes per tag path, rolled up to ancestors exactly like `collectTagCounts`. */
+  counts: Record<string, number>;
+}
+
+/**
+ * Tag index for the whole vault, independent of the browse scope.
+ *
+ * Ancestors are included so a favorited `work` stays alive — and keeps a
+ * count — while only `work/ai` is in use, matching what selecting `work`
+ * actually filters to.
+ *
+ * Only markdown is scanned: the metadata cache never reports tags for the
+ * other supported card kinds, so widening the walk would cost lookups without
+ * changing the answer.
+ *
+ * Returns `null` when the answer cannot be trusted — no usable metadata cache,
+ * or a vault that reports no markdown files (indistinguishable from one that
+ * has not finished loading). Callers must treat `null` as "no usable data"
+ * rather than "the vault has no tags".
+ */
+export function collectVaultTagIndex(app: App): VaultTagIndex | null {
+  const metadataCache = app.metadataCache as { getFileCache?: unknown } | undefined;
+  if (typeof metadataCache?.getFileCache !== "function") {
+    return null;
+  }
+
+  const getMarkdownFiles = app.vault?.getMarkdownFiles as (() => TFile[]) | undefined;
+  if (typeof getMarkdownFiles !== "function") {
+    return null;
+  }
+
+  const files = getMarkdownFiles.call(app.vault);
+  if (files.length === 0) {
+    return null;
+  }
+
+  const tagPaths = new Set<string>();
+  const counts: Record<string, number> = {};
+  for (const file of files) {
+    const pathsForFile = new Set<string>();
+    for (const tag of getFileTags(app, file)) {
+      const segments = tag.split("/");
+      for (let index = 0; index < segments.length; index += 1) {
+        pathsForFile.add(segments.slice(0, index + 1).join("/"));
+      }
+    }
+
+    for (const tagPath of pathsForFile) {
+      tagPaths.add(tagPath);
+      counts[tagPath] = (counts[tagPath] ?? 0) + 1;
+    }
+  }
+
+  return { tagPaths, counts };
+}
+
 /**
  * Check whether a file matches a tag filter. A file matches if it contains
  * ALL of the specified filter tags (AND logic). Filter tags should be

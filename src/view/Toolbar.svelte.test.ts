@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount } from "svelte";
 import { tick } from "svelte";
 import Toolbar from "./Toolbar.svelte";
+import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
 
 interface SortChangePayload {
   field: string;
@@ -616,6 +617,45 @@ describe("Toolbar.svelte", () => {
       { action: "bulk-select-all" },
       { action: "bulk-delete-selected" },
     ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("adds a remove-from-card-box bulk action only in box mode", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({
+      bulkMode: true,
+      selectedCount: 2,
+      activeBoxId: "box-1",
+      activeBoxName: "Alpha",
+      canBulkSelectAll: true,
+      canBulkClearSelection: true,
+      canBulkMoveSelected: true,
+      canBulkAddTagSelected: true,
+      canBulkRemoveTagSelected: false,
+      canBulkDeleteSelected: true,
+      canBulkMergeSelected: true,
+    }, captured.callbacks);
+
+    await tick();
+
+    const bulkActions = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-actions");
+    const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
+    expect(bulkButtons).toHaveLength(9);
+
+    const addButton = bulkButtons.find(
+      (button) => button.getAttribute("data-tooltip") === "Add to card box",
+    );
+    const removeButton = bulkButtons.find(
+      (button) => button.getAttribute("data-tooltip") === "Remove from card box",
+    );
+    expect(addButton?.getAttribute("data-icon")).toBe(BULK_ADD_TO_BOX_ICON);
+    expect(removeButton?.getAttribute("data-icon")).toBe(BULK_REMOVE_FROM_BOX_ICON);
+
+    removeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.toolbarActionEvents).toEqual([{ action: "bulk-remove-from-box" }]);
 
     await disposeMountedComponent(component);
   });

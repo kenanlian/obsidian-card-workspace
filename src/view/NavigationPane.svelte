@@ -563,7 +563,7 @@
           {:else}
             {#each favorites as row (`${row.kind}:${row.ref}`)}
               <div
-                class="fce-popup-row fce-tree-row {row.selected ? 'is-selected' : ''} {row.missing ? 'is-missing' : ''} {row.disabled ? 'is-disabled' : ''}"
+                class="fce-popup-row fce-tree-row {row.selected ? 'is-selected' : ''} {row.missing ? 'is-missing' : ''}"
                 style="padding-left: var(--fce-nav-indent-step);"
                 role="presentation"
                 oncontextmenu={(event) =>
@@ -580,7 +580,6 @@
                   <button
                     type="button"
                     class="fce-tree-button"
-                    disabled={row.disabled}
                     onclick={() => onFavoriteActivate?.({ favorite: { kind: row.kind, ref: row.ref } })}
                     use:applyTooltip={row.missing ? `${row.label} ${strings.navPane.favoriteMissing}` : row.label}
                   >
@@ -783,6 +782,9 @@
               >
                 <span class="fce-nav-box-icon" aria-hidden="true" use:applyIcon={"box"}></span>
                 <span class="fce-nav-box-label">{box.name}</span>
+                {#if showNavItemCounts && box.cardCount > 0}
+                  <span class="fce-nav-row-count">{box.cardCount}</span>
+                {/if}
                 {#if isActive}
                   <span class="fce-nav-box-check" aria-hidden="true" use:applyIcon={"check"}></span>
                 {/if}

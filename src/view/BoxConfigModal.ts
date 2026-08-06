@@ -2,13 +2,14 @@ import { Modal, Setting, type App } from "obsidian";
 import type { UiStrings } from "../i18n";
 import type { SortDirection, SortField } from "../settings";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
-import { addRuleToBox, removeRuleFromBox, restoreExcludedPaths } from "./card-boxes";
+import { removeRuleFromBox, restoreExcludedPaths } from "./card-boxes";
 
 export interface BoxConfigModalOptions {
   box: CardBoxDefinition;
   strings: UiStrings;
-  currentScopeRule: Rule;
   describeRule: (rule: Rule) => string;
+  isRuleFolderMissing: (rule: Rule) => boolean;
+  describeMemberPath: (path: string) => string;
   onConfirm: (box: CardBoxDefinition) => Promise<void>;
 }
 
@@ -30,7 +31,7 @@ const SORT_CHOICES: ReadonlyArray<{
  * Draft-state configuration modal for a card box.
  *
  * Edits a local draft; nothing is persisted until "Done" is pressed.
- * Manual members are managed inline in the card stream, not here.
+ * This is the only place to edit rules, manual members, and removed members.
  */
 export class BoxConfigModal extends Modal {
   private readonly options: BoxConfigModalOptions;
@@ -75,26 +76,22 @@ export class BoxConfigModal extends Modal {
       this.contentEl.createEl("p", { text: strings.noRules, cls: "fce-box-config__empty" });
     } else {
       this.draft.rules.forEach((rule, index) => {
-        new Setting(this.contentEl)
-          .setName(this.options.describeRule(rule))
-          .addExtraButton((button) => {
-            button
-              .setIcon("trash-2")
-              .setTooltip(strings.removeRule)
-              .onClick(() => {
-                this.draft = removeRuleFromBox(this.draft, index);
-                this.render();
-              });
-          });
+        const setting = new Setting(this.contentEl).setName(this.options.describeRule(rule));
+        if (this.options.isRuleFolderMissing(rule)) {
+          setting.setDesc(strings.ruleFolderMissing);
+          setting.setClass("fce-box-config__rule-missing");
+        }
+        setting.addExtraButton((button) => {
+          button
+            .setIcon("trash-2")
+            .setTooltip(strings.removeRule)
+            .onClick(() => {
+              this.draft = removeRuleFromBox(this.draft, index);
+              this.render();
+            });
+        });
       });
     }
-
-    new Setting(this.contentEl).addButton((button) => {
-      button.setButtonText(strings.addCurrentScope).onClick(() => {
-        this.draft = addRuleToBox(this.draft, this.options.currentScopeRule);
-        this.render();
-      });
-    });
 
     // Sort section.
     this.contentEl.createEl("h4", { text: strings.sortHeading, cls: "fce-box-config__heading" });
@@ -113,16 +110,57 @@ export class BoxConfigModal extends Modal {
       });
     });
 
-    // Excluded members section.
-    if (this.draft.excludedPaths.length > 0) {
-      new Setting(this.contentEl)
-        .setName(strings.excludedSummary(this.draft.excludedPaths.length))
-        .addButton((button) => {
-          button.setButtonText(strings.restoreExcluded).onClick(() => {
-            this.draft = restoreExcludedPaths(this.draft);
-            this.render();
+    // Manually added members section.
+    this.contentEl.createEl("h4", { text: strings.manualHeading, cls: "fce-box-config__heading" });
+    if (this.draft.manualPaths.length === 0) {
+      this.contentEl.createEl("p", { text: strings.noManualMembers, cls: "fce-box-config__empty" });
+    } else {
+      const list = this.contentEl.createDiv({ cls: "fce-box-config__member-list" });
+      for (const path of this.draft.manualPaths) {
+        new Setting(list)
+          .setName(this.options.describeMemberPath(path))
+          .setDesc(path)
+          .addExtraButton((button) => {
+            button
+              .setIcon("trash-2")
+              .setTooltip(strings.removeManualMember)
+              .onClick(() => {
+                this.draft = {
+                  ...this.draft,
+                  manualPaths: this.draft.manualPaths.filter((candidate) => candidate !== path),
+                };
+                this.render();
+              });
           });
+      }
+    }
+
+    // Excluded members section.
+    this.contentEl.createEl("h4", { text: strings.excludedHeading, cls: "fce-box-config__heading" });
+    if (this.draft.excludedPaths.length === 0) {
+      this.contentEl.createEl("p", { text: strings.noExcludedMembers, cls: "fce-box-config__empty" });
+    } else {
+      const list = this.contentEl.createDiv({ cls: "fce-box-config__member-list" });
+      for (const path of this.draft.excludedPaths) {
+        new Setting(list)
+          .setName(this.options.describeMemberPath(path))
+          .setDesc(path)
+          .addExtraButton((button) => {
+            button
+              .setIcon("undo-2")
+              .setTooltip(strings.restoreExcluded)
+              .onClick(() => {
+                this.draft = restoreExcludedPaths(this.draft, [path]);
+                this.render();
+              });
+          });
+      }
+      new Setting(this.contentEl).addButton((button) => {
+        button.setButtonText(strings.restoreAllExcluded).onClick(() => {
+          this.draft = restoreExcludedPaths(this.draft);
+          this.render();
         });
+      });
     }
 
     // Footer.

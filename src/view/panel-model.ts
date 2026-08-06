@@ -28,7 +28,6 @@ export interface FavoriteRowModel {
   count: number;
   selected: boolean;
   missing: boolean;
-  disabled: boolean;
 }
 
 export interface PanelModelState {

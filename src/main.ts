@@ -41,8 +41,17 @@ import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent,
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
 import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
-import { reconcileFavoritesForVaultMutation } from "./view/favorites";
-import { CARD_WORKSPACE_ICON, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
+import { pruneFavoriteTags, reconcileFavoritesForVaultMutation } from "./view/favorites";
+import { collectVaultTagIndex } from "./view/metadata-utils";
+import {
+  BULK_ADD_TO_BOX_ICON,
+  BULK_ADD_TO_BOX_ICON_SVG,
+  BULK_REMOVE_FROM_BOX_ICON,
+  BULK_REMOVE_FROM_BOX_ICON_SVG,
+  CARD_WORKSPACE_ICON,
+  PLAIN_FOLDER_ICON,
+  PLAIN_FOLDER_ICON_SVG,
+} from "./icons";
 
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
@@ -117,6 +126,31 @@ export default class CardWorkspacePlugin extends Plugin {
       void this.requestRefreshForViews("vault-change");
     },
     250,
+    false,
+  );
+  private debouncedReconciledSettingsSave = debounce(
+    () => {
+      void this.saveData(this.settings);
+    },
+    250,
+    false,
+  );
+  private debouncedNavStateRefresh = debounce(
+    () => {
+      this.withFolderViews((view) => {
+        view.refreshNavState();
+      });
+    },
+    250,
+    false,
+  );
+  // Longer than the other vault-change debouncers: this one walks every markdown
+  // file's cache, and the cache lags the vault events that trigger it.
+  private debouncedFavoriteTagPrune = debounce(
+    () => {
+      this.pruneFavoriteTagsNow();
+    },
+    1000,
     false,
   );
 
@@ -194,6 +228,8 @@ export default class CardWorkspacePlugin extends Plugin {
     addIcon(BULK_ADD_TAG_ICON, BULK_ADD_TAG_ICON_SVG);
     addIcon(BULK_REMOVE_TAG_ICON, BULK_REMOVE_TAG_ICON_SVG);
     addIcon(PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG);
+    addIcon(BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG);
+    addIcon(BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG);
   }
 
   onunload(): void {
@@ -201,6 +237,18 @@ export default class CardWorkspacePlugin extends Plugin {
       cancel?: () => void;
     };
     debouncedRefresh.cancel?.();
+    const reconciledSave = this.debouncedReconciledSettingsSave as (() => void) & {
+      run?: () => void;
+    };
+    reconciledSave.run?.();
+    const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
+      cancel?: () => void;
+    };
+    navStateRefresh.cancel?.();
+    const favoriteTagPrune = this.debouncedFavoriteTagPrune as (() => void) & {
+      cancel?: () => void;
+    };
+    favoriteTagPrune.cancel?.();
     this.disposeSearchService();
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
@@ -1403,6 +1451,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.reconcileSelectedFolderPath(event);
     this.reconcileBoxesForVaultMutation(event);
     this.reconcileFavoritesForVaultMutation(event);
+    this.queueFavoriteTagPrune(event);
 
     try {
       this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
@@ -1455,7 +1504,8 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.settings = { ...this.settings, boxes: nextBoxes };
-    void this.saveData(this.settings);
+    this.debouncedReconciledSettingsSave();
+    this.debouncedNavStateRefresh();
   }
 
   private reconcileFavoritesForVaultMutation(event: VaultMutationEvent): void {
@@ -1480,7 +1530,45 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.settings = { ...this.settings, favorites: nextFavorites };
-    void this.saveData(this.settings);
+    this.debouncedReconciledSettingsSave();
+    this.debouncedNavStateRefresh();
+  }
+
+  /**
+   * `create` is skipped on purpose: it can only add tags, and the metadata cache
+   * may not have parsed the new file yet, which would look like a vanished tag.
+   */
+  private queueFavoriteTagPrune(event: VaultMutationEvent): void {
+    if (event.eventType === "create") {
+      return;
+    }
+
+    if (!this.settings.favorites.some((entry) => entry.kind === "tag")) {
+      return;
+    }
+
+    this.debouncedFavoriteTagPrune();
+  }
+
+  private pruneFavoriteTagsNow(): void {
+    const favorites = this.settings.favorites;
+    if (!favorites.some((entry) => entry.kind === "tag")) {
+      return;
+    }
+
+    const vaultTags = collectVaultTagIndex(this.app);
+    if (vaultTags === null) {
+      return;
+    }
+
+    const nextFavorites = pruneFavoriteTags(favorites, vaultTags.tagPaths);
+    if (nextFavorites === favorites) {
+      return;
+    }
+
+    this.settings = { ...this.settings, favorites: nextFavorites };
+    this.debouncedReconciledSettingsSave();
+    this.debouncedNavStateRefresh();
   }
 
   private reconcileSelectedFolderPath(event: VaultMutationEvent): void {

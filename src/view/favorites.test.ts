@@ -7,6 +7,7 @@ import {
   moveFavorite,
   normalizeFavoriteRef,
   pruneFavoriteBoxes,
+  pruneFavoriteTags,
   reconcileFavoritesForVaultMutation,
   removeFavorite,
   sortFavoritesByKind,
@@ -187,6 +188,39 @@ describe("pruneFavoriteBoxes", () => {
   it("returns the same reference when every box still exists", () => {
     const favorites = [makeFavorite("box", "box-1")];
     expect(pruneFavoriteBoxes(favorites, ["box-1", "box-2"])).toBe(favorites);
+  });
+});
+
+describe("pruneFavoriteTags", () => {
+  it("drops tag entries whose tag no longer exists in the vault", () => {
+    const favorites = [
+      makeFavorite("tag", "work"),
+      makeFavorite("tag", "archive"),
+      makeFavorite("file", "notes/A.md"),
+    ];
+    expect(pruneFavoriteTags(favorites, new Set(["work"]))).toEqual([
+      makeFavorite("tag", "work"),
+      makeFavorite("file", "notes/A.md"),
+    ]);
+  });
+
+  it("keeps a parent tag that only exists through its children", () => {
+    const favorites = [makeFavorite("tag", "work")];
+    expect(pruneFavoriteTags(favorites, new Set(["work", "work/ai"]))).toBe(favorites);
+  });
+
+  it("compares by normalized tag path", () => {
+    const favorites = [makeFavorite("tag", "Work/AI")];
+    expect(pruneFavoriteTags(favorites, new Set(["work/ai"]))).toBe(favorites);
+  });
+
+  it("never drops non-tag entries", () => {
+    const favorites = [
+      makeFavorite("folder", "notes"),
+      makeFavorite("file", "notes/A.md"),
+      makeFavorite("box", "box-1"),
+    ];
+    expect(pruneFavoriteTags(favorites, new Set())).toBe(favorites);
   });
 });
 

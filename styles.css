@@ -280,11 +280,6 @@
   opacity: 0.55;
 }
 
-.folder-card-view .fce-favorites-menu .fce-tree-row.is-disabled {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
 .folder-card-view .fce-nav-row-count {
   flex: 0 0 auto;
   margin-inline-start: 6px;
@@ -861,7 +856,8 @@
   white-space: nowrap;
 }
 
-.fce-tree-menu .fce-tree-empty {
+.fce-tree-menu .fce-tree-empty,
+.fce-nav-box-list .fce-tree-empty {
   padding: 6px var(--size-4-4, 16px) 8px;
   color: var(--text-muted);
   font-size: var(--font-ui-small, 13px);
@@ -1271,6 +1267,19 @@
   margin: 0 0 8px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-small, 13px);
+}
+
+.fce-box-config__member-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.fce-box-config__rule-missing .setting-item-name {
+  color: var(--text-muted);
+}
+
+.fce-box-config__rule-missing .setting-item-description {
+  color: var(--text-error);
 }
 
 .fce-box-name__preview {

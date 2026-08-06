@@ -323,6 +323,7 @@ const mockState = vi.hoisted(() => {
   interface MockModalTextInput {
     value: string;
     onChange: ((value: string) => void) | null;
+    keydownHandlers: Array<(event: { key: string; preventDefault: () => void }) => void>;
   }
 
   interface MockModalCheckbox {
@@ -527,10 +528,17 @@ const mockState = vi.hoisted(() => {
       setValue: (value: string) => unknown;
       setPlaceholder: (value: string) => unknown;
       onChange: (handler: (value: string) => void) => unknown;
+      inputEl: {
+        addEventListener: (
+          type: string,
+          handler: (event: { key: string; preventDefault: () => void }) => void,
+        ) => void;
+      };
     }) => void): this {
       const record: MockModalTextInput = {
         value: "",
         onChange: null,
+        keydownHandlers: [],
       };
 
       const chain = {
@@ -544,6 +552,16 @@ const mockState = vi.hoisted(() => {
         onChange: (handler: (value: string) => void) => {
           record.onChange = handler;
           return chain;
+        },
+        inputEl: {
+          addEventListener: (
+            type: string,
+            handler: (event: { key: string; preventDefault: () => void }) => void,
+          ) => {
+            if (type === "keydown") {
+              record.keydownHandlers.push(handler);
+            }
+          },
         },
       };
 

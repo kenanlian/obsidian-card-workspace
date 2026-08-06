@@ -145,6 +145,23 @@ export function pruneFavoriteBoxes(
   return filtered.length === favorites.length ? favorites : filtered;
 }
 
+/**
+ * Drop favorited tags that no longer exist anywhere in the vault, matching how
+ * folder/file/box favorites disappear once their target is gone.
+ *
+ * `existingTagPaths` must already contain ancestor paths; callers get that from
+ * `collectVaultTagPaths`. Returns the same array reference when nothing changes.
+ */
+export function pruneFavoriteTags(
+  favorites: FavoriteEntry[],
+  existingTagPaths: Set<string>,
+): FavoriteEntry[] {
+  const filtered = favorites.filter(
+    (entry) => entry.kind !== "tag" || existingTagPaths.has(normalizeTagPath(entry.ref)),
+  );
+  return filtered.length === favorites.length ? favorites : filtered;
+}
+
 export interface FavoriteVaultMutation {
   eventType: "create" | "modify" | "delete" | "rename";
   path: string;
@@ -168,10 +185,10 @@ function isUnderPath(path: string, scopePath: string): boolean {
 }
 
 /**
- * Keep favorites consistent with a vault mutation.
+ * Keep path-based favorites consistent with a vault mutation.
  *
- * Tag entries are deliberately never dropped: a tag stops existing when its last
- * note loses it, which is usually temporary, so it renders as a missing row instead.
+ * Tag entries are untouched here because tag existence is a metadata question,
+ * not a path one; `pruneFavoriteTags` handles them.
  *
  * Returns the same array reference when nothing changes.
  */

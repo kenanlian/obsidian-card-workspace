@@ -15,7 +15,12 @@ import { FolderPickerModal } from "../FolderPickerModal";
 import { CARD_WORKSPACE_ICON, PLAIN_FOLDER_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "./markdown-utils";
-import { collectAllTags, collectTagCounts, getFileTags } from "./metadata-utils";
+import {
+  collectAllTags,
+  collectTagCounts,
+  collectVaultTagIndex,
+  getFileTags,
+} from "./metadata-utils";
 import {
   addTagToFile,
   batchAddTagToFiles,
@@ -50,7 +55,7 @@ import {
   pruneFavoriteBoxes,
   toggleFavorite,
 } from "./favorites";
-import { normalizeTagPath, resolveTagSelection } from "./tag-tree";
+import { normalizeTagPath } from "./tag-tree";
 import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
 import { isBoxMember } from "./card-box-membership";
 import {
@@ -79,7 +84,12 @@ import {
 } from "./bulk-selection";
 import type { PipelineContext } from "./pipeline";
 import { CARD_PANE_MIN_WIDTH } from "../settings";
-import type { OpenDestination, SortDirection, SortField } from "../settings";
+import type {
+  OpenDestination,
+  PartialPluginSettings,
+  SortDirection,
+  SortField,
+} from "../settings";
 import type {
   CardBoxDefinition,
   CardHoverLinkPayload,
@@ -747,6 +757,12 @@ class RenameFileModal extends Modal {
       text.setValue(this.nextName).setPlaceholder(this.initialName).onChange((value) => {
         this.nextName = value;
       });
+      text.inputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
     });
 
     new Setting(this.contentEl)
@@ -826,6 +842,12 @@ class CreateFolderModal extends Modal {
       text.setValue(this.nextName).onChange((value) => {
         this.nextName = value;
       });
+      text.inputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
     });
 
     new Setting(this.contentEl)
@@ -902,12 +924,27 @@ export class FolderCardView extends ItemView {
   private searchDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private boxCardCountCache = new Map<string, { signature: string; count: number }>();
+  private navCountRefreshHandle: ReturnType<Window["setTimeout"]> | null = null;
+  /** Bumped by every vault mutation; keeps the scope-derived tag memo honest. */
+  private vaultContentSeq = 0;
+  /**
+   * Bumped once per debounced nav-count refresh rather than per vault event, so
+   * a folder delete costs one vault-wide recount instead of one per contained file.
+   */
+  private navCountSeq = 0;
+  private scopeTagCache: {
+    key: string;
+    value: { availableTags: string[]; tagCounts: Record<string, number> };
+  } | null = null;
+  private vaultTagCountsCache: { seq: number; counts: Record<string, number> } | null = null;
+  private folderTreeCountsByPath = new Map<string, { direct: number; recursive: number }>();
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
   private static readonly STARTUP_PREVIEW_WAIT_MS = 120;
   private static readonly SEARCH_DEBOUNCE_MS = 120;
   private static readonly FOLDER_TREE_DEBOUNCE_MS = 250;
+  private static readonly NAV_COUNT_REFRESH_DEBOUNCE_MS = 250;
   private static readonly FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 
   private inFlight: Promise<void> | null = null;
@@ -1084,11 +1121,12 @@ export class FolderCardView extends ItemView {
   }
 
   /**
-   * Folder and file rows carry no count on purpose: the folder tree is built by the
-   * debounced `refreshFolderTreeState`, so counting here would mean a second full
-   * vault walk on every state push.
+   * Every favorite row counts vault-wide, because activating one always leaves the
+   * current scope. File rows are the exception: a note is always exactly one note.
    */
-  private buildFavoriteRowModels(): FavoriteRowModel[] {
+  private buildFavoriteRowModels(precomputed: {
+    boxSummaries: BoxSummary[];
+  }): FavoriteRowModel[] {
     const settings = this.plugin.getSettings();
     const favorites = settings.favorites ?? [];
     if (favorites.length === 0) {
@@ -1096,9 +1134,8 @@ export class FolderCardView extends ItemView {
     }
 
     const showCounts = settings.showNavItemCounts;
-    const tagCounts = this.deriveTagCounts();
-    const availableTags = new Set(this.deriveAvailableTags());
-    const boxSummaries = this.buildBoxPanelFields().boxSummaries;
+    const hasTagFavorite = favorites.some((entry) => entry.kind === "tag");
+    const boxSummaries = precomputed.boxSummaries;
     const activeBoxId = settings.activeBoxId ?? null;
     const isBoxMode = this.isBoxMode();
     const activeFolderPath = this.normalizeActiveFolderScopePath();
@@ -1106,8 +1143,9 @@ export class FolderCardView extends ItemView {
 
     return favorites.map((entry) => this.buildFavoriteRowModel(entry, {
       showCounts,
-      tagCounts,
-      availableTags,
+      // Only pay for the vault-wide tag walk when a row will actually show one.
+      vaultTagCounts: showCounts && hasTagFavorite ? this.getVaultTagCounts() : {},
+      includeSubfolders: settings.includeSubfolders,
       boxSummaries,
       activeBoxId,
       isBoxMode,
@@ -1116,12 +1154,21 @@ export class FolderCardView extends ItemView {
     }));
   }
 
+  /** Mirrors the folder section so the same folder never shows two different numbers. */
+  private getFavoriteFolderCount(folderPath: string, includeSubfolders: boolean): number {
+    const counts = this.folderTreeCountsByPath.get(normalizeFolderScopePath(folderPath));
+    if (!counts) {
+      return 0;
+    }
+    return includeSubfolders ? counts.recursive : counts.direct;
+  }
+
   private buildFavoriteRowModel(
     entry: FavoriteEntry,
     context: {
       showCounts: boolean;
-      tagCounts: Record<string, number>;
-      availableTags: Set<string>;
+      vaultTagCounts: Record<string, number>;
+      includeSubfolders: boolean;
       boxSummaries: BoxSummary[];
       activeBoxId: string | null;
       isBoxMode: boolean;
@@ -1137,10 +1184,9 @@ export class FolderCardView extends ItemView {
         ref,
         label: ref === "" ? this.strings.toolbar.folderMenu.rootFolder : ref.slice(ref.lastIndexOf("/") + 1),
         icon: ref === "" ? "house" : PLAIN_FOLDER_ICON,
-        count: 0,
+        count: context.showCounts ? this.getFavoriteFolderCount(ref, context.includeSubfolders) : 0,
         selected: !context.isBoxMode && ref === context.activeFolderPath,
         missing: this.resolveFolderFromUiPath(ref) === null,
-        disabled: false,
       };
     }
 
@@ -1153,20 +1199,21 @@ export class FolderCardView extends ItemView {
         count: 0,
         selected: ref === this.selectedPath,
         missing: !(this.app.vault.getAbstractFileByPath(ref) instanceof TFile),
-        disabled: false,
       };
     }
 
     if (kind === "tag") {
+      // Never marked missing: activation browses the whole vault for this tag,
+      // so the current folder's tag set says nothing about it. Tags that stop
+      // existing vault-wide are pruned from favorites instead.
       return {
         kind,
         ref,
-        label: `#${ref}`,
+        label: ref,
         icon: "tag",
-        count: context.showCounts ? (context.tagCounts[ref] ?? 0) : 0,
+        count: context.vaultTagCounts[normalizeTagPath(ref)] ?? 0,
         selected: context.activeTags.has(ref),
-        missing: !context.availableTags.has(ref),
-        disabled: context.isBoxMode,
+        missing: false,
       };
     }
 
@@ -1179,17 +1226,18 @@ export class FolderCardView extends ItemView {
       count: context.showCounts ? (summary?.cardCount ?? 0) : 0,
       selected: ref === context.activeBoxId,
       missing: summary === null,
-      disabled: false,
     };
   }
 
-  private applyBoxProjectionToState(state: PanelModelState): void {
+  private applyBoxProjectionToState(
+    state: PanelModelState,
+    boxFields: ReturnType<FolderCardView["buildBoxPanelFields"]>,
+  ): void {
     const projection = this.effectiveSortAndPins();
     state.sortField = projection.sortField;
     state.sortDirection = projection.sortDirection;
     state.pinnedPaths = projection.pinnedPaths;
 
-    const boxFields = this.buildBoxPanelFields();
     state.activeBoxId = boxFields.activeBoxId;
     state.activeBoxName = boxFields.activeBoxName;
     state.boxSummaries = boxFields.boxSummaries;
@@ -1448,8 +1496,9 @@ export class FolderCardView extends ItemView {
     new BoxConfigModal(this.app, {
       box,
       strings: this.strings,
-      currentScopeRule: translateBrowseScopeToRule(this.getBrowseScope()),
       describeRule: (rule) => this.describeRule(rule),
+      isRuleFolderMissing: (rule) => this.resolveFolderFromUiPath(rule.folder) === null,
+      describeMemberPath: (path) => stripCardFileExtension(path.slice(path.lastIndexOf("/") + 1)),
       onConfirm: async (nextBox) => {
         const current = this.plugin.getSettings();
         await this.persistBoxes(upsertCardBox(current.boxes, nextBox));
@@ -1573,7 +1622,7 @@ export class FolderCardView extends ItemView {
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
       state.tooltipSide = this.getTooltipSide();
-      this.applyBoxProjectionToState(state);
+      this.applyBoxProjectionToState(state, this.buildBoxPanelFields());
     });
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
@@ -1737,6 +1786,11 @@ export class FolderCardView extends ItemView {
 
     if (action === "bulk-add-to-box") {
       this.bulkAddToBox();
+      return;
+    }
+
+    if (action === "bulk-remove-from-box") {
+      void this.bulkRemoveFromBox();
     }
   }
 
@@ -1777,13 +1831,39 @@ export class FolderCardView extends ItemView {
     modal.open();
   }
 
+  private async bulkRemoveFromBox(): Promise<void> {
+    const settings = this.plugin.getSettings();
+    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    if (box === null) {
+      return;
+    }
+
+    const selectedPaths = this.getOrderedVisiblePaths().filter((path) =>
+      this.selectedPaths.has(path),
+    );
+    if (selectedPaths.length === 0) {
+      return;
+    }
+
+    let nextBox = box;
+    for (const path of selectedPaths) {
+      nextBox = removeMemberFromBox(this.app, nextBox, path);
+    }
+    if (nextBox === box) {
+      return;
+    }
+
+    await this.persistBoxes(upsertCardBox(settings.boxes, nextBox));
+    new Notice(this.strings.box.removedFromBoxCount(selectedPaths.length, box.name));
+  }
+
   private handleFolderActionRequest(detail: FolderActionPayload): void {
     if (typeof detail.path !== "string") {
       return;
     }
 
     if (detail.action === "create-child-folder") {
-      this.openCreateChildFolderModal(detail.path);
+      void this.createFromFolderTree(detail.path, "folder");
     }
   }
 
@@ -1897,7 +1977,8 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
-    this.boxCardCountCache.clear();
+    this.vaultContentSeq += 1;
+    this.scheduleNavCountRefresh();
     if (event.isFolder) {
       this.refreshFolderTreeState();
     } else if (event.eventType !== "modify") {
@@ -1947,12 +2028,49 @@ export class FolderCardView extends ItemView {
     };
   }
 
+  /** Re-push nav-derived state after the plugin reconciled boxes/favorites outside the view. */
+  refreshNavState(): void {
+    this.invalidateNavCounts();
+    this.pushState();
+  }
+
+  /** Card box counts and vault-wide tag counts both walk the vault, so they expire together. */
+  private invalidateNavCounts(): void {
+    this.boxCardCountCache.clear();
+    this.navCountSeq += 1;
+  }
+
+  /**
+   * Nav counts feed badges and tooltips only, so a burst of vault events can
+   * coalesce into one recount instead of one per event.
+   */
+  private scheduleNavCountRefresh(): void {
+    const view = this.getViewWindow();
+    if (this.navCountRefreshHandle !== null) {
+      view.clearTimeout(this.navCountRefreshHandle);
+    }
+    this.navCountRefreshHandle = view.setTimeout(() => {
+      this.navCountRefreshHandle = null;
+      this.invalidateNavCounts();
+      this.pushState();
+    }, FolderCardView.NAV_COUNT_REFRESH_DEBOUNCE_MS);
+  }
+
+  private clearNavCountRefreshDebounce(): void {
+    if (this.navCountRefreshHandle === null) {
+      return;
+    }
+    this.getViewWindow().clearTimeout(this.navCountRefreshHandle);
+    this.navCountRefreshHandle = null;
+  }
+
   cleanupLifecycle(): CleanupResult {
     const hadQueuedRequest = this.queuedRequest !== null || this.refreshQueued;
     const hadPendingHydration = this.pendingHydration.size > 0;
     const cancelledDebounce = this.clearSearchDebounce();
 
     this.clearFolderTreeDebounce();
+    this.clearNavCountRefreshDebounce();
     this.clearSearchSnapshotSubscription();
     this.searchSnapshot = null;
     this.queuedRequest = null;
@@ -2339,16 +2457,16 @@ export class FolderCardView extends ItemView {
       },
       actions: {
         createNote: (folderUiPath) => {
-          void this.createNoteIn(folderUiPath);
+          void this.createFromFolderTree(folderUiPath, "note");
         },
         createFolder: (folderUiPath) => {
-          this.openCreateChildFolderModal(folderUiPath);
+          void this.createFromFolderTree(folderUiPath, "folder");
         },
         createCanvas: (folderUiPath) => {
-          void this.createCanvasIn(folderUiPath);
+          void this.createFromFolderTree(folderUiPath, "canvas");
         },
         createBase: (folderUiPath) => {
-          void this.createBaseIn(folderUiPath);
+          void this.createFromFolderTree(folderUiPath, "base");
         },
         duplicateFolder: (folderUiPath) => {
           void this.duplicateFolder(folderUiPath);
@@ -2741,9 +2859,31 @@ export class FolderCardView extends ItemView {
   }
 
   private refreshFolderTreeState(): void {
+    const tree = this.buildFolderTree();
+    this.cacheFolderTreeCounts(tree);
     this.panelModel.mutate((state) => {
-      state.folderTree = this.buildFolderTree();
+      state.folderTree = tree;
     });
+  }
+
+  /**
+   * The tree walk already counts every folder, so favorites can reuse those
+   * numbers instead of paying for a second vault walk.
+   */
+  private cacheFolderTreeCounts(tree: FolderTreeNode[]): void {
+    this.folderTreeCountsByPath.clear();
+    const visit = (node: FolderTreeNode): void => {
+      this.folderTreeCountsByPath.set(normalizeFolderScopePath(node.path), {
+        direct: node.directCount,
+        recursive: node.recursiveCount,
+      });
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+    for (const node of tree) {
+      visit(node);
+    }
   }
 
   private resolveFolderFromUiPath(folderPath: string): TFolder | null {
@@ -2982,6 +3122,30 @@ export class FolderCardView extends ItemView {
     this.pushState();
   }
 
+  /** Folder-tree create actions always land in browse mode on the target folder, never inside an open card box. */
+  private async createFromFolderTree(
+    folderUiPath: string,
+    kind: "note" | "folder" | "canvas" | "base",
+  ): Promise<void> {
+    if (this.isBoxMode()) {
+      await this.selectFolderFromNav(folderUiPath);
+    }
+
+    if (kind === "note") {
+      await this.createNoteIn(folderUiPath);
+      return;
+    }
+    if (kind === "canvas") {
+      await this.createCanvasIn(folderUiPath);
+      return;
+    }
+    if (kind === "base") {
+      await this.createBaseIn(folderUiPath);
+      return;
+    }
+    this.openCreateChildFolderModal(folderUiPath);
+  }
+
   private async createNoteIn(folderUiPath: string, tags: string[] = []): Promise<void> {
     const folder = this.resolveFolderFromUiPath(folderUiPath);
     if (!(folder instanceof TFolder)) {
@@ -3168,21 +3332,18 @@ export class FolderCardView extends ItemView {
     }
 
     if (kind === "tag") {
-      if (this.isBoxMode()) {
-        return;
-      }
-      // Favorited tags are shortcuts to a single tag, so activation never
-      // accumulates: it swaps the filter, or clears it when already alone.
-      const current = this.plugin.getSettings().filter.tags;
-      const nextTags = resolveTagSelection(current, ref, false);
-      if (nextTags !== current) {
-        void this.applyTagFilter(nextTags);
-      }
+      void this.activateFavoriteTag(ref);
       return;
     }
 
     const activeBoxId = this.plugin.getSettings().activeBoxId ?? null;
     this.handleBoxCommand({ command: ref === activeBoxId ? "exit" : "switch", boxId: ref });
+  }
+
+  /** A favorited tag means "show every note with this tag": vault root + that one tag. */
+  private async activateFavoriteTag(tag: string): Promise<void> {
+    await this.selectFolderFromNav("");
+    await this.applyTagFilter([tag]);
   }
 
   private async deleteFolder(folderPath: string): Promise<void> {
@@ -3456,6 +3617,18 @@ export class FolderCardView extends ItemView {
     return normalizedFolderPath;
   }
 
+  /**
+   * Membership test against whatever currently feeds `baseCards`: card box
+   * membership in box mode, browse folder scope otherwise.
+   */
+  private isPathInActiveScope(path: string): boolean {
+    const box = this.getActiveBox();
+    if (box) {
+      return isBoxMember(this.app, path, box);
+    }
+    return this.isPathInScope(path, this.plugin.getSettings().includeSubfolders);
+  }
+
   private isPathInScope(path: string, includeSubfolders: boolean): boolean {
     const currentFolderPath = this.normalizeActiveFolderScopePath();
     if (currentFolderPath === "") {
@@ -3638,8 +3811,7 @@ export class FolderCardView extends ItemView {
     }
 
     if (event.eventType === "create") {
-      const settings = this.plugin.getSettings();
-      if (!this.isPathInScope(event.path, settings.includeSubfolders)) {
+      if (!this.isPathInActiveScope(event.path)) {
         return { handled: true, action: "skipped_not_found" };
       }
 
@@ -3712,12 +3884,11 @@ export class FolderCardView extends ItemView {
     }
 
     if (event.eventType === "rename" && !event.isFolder) {
-      const settings = this.plugin.getSettings();
       const oldIndex = event.oldPath
         ? this.baseCards.findIndex((c) => c.path === event.oldPath)
         : -1;
 
-      const newInScope = this.isPathInScope(event.path, settings.includeSubfolders);
+      const newInScope = this.isPathInActiveScope(event.path);
       const newPathKind = event.fileKind;
 
       if (oldIndex !== -1) {
@@ -4104,29 +4275,70 @@ export class FolderCardView extends ItemView {
     return [rootNode, ...topLevelNodes];
   }
 
-  private deriveAvailableTags(): string[] {
+  /**
+   * Key for the scope-derived tag memo. Every input that can change the answer
+   * moves one of these: the scope itself (`folderLoadKey` covers folder, box,
+   * subfolder inclusion and sort), the loaded card set, and vault content.
+   */
+  private scopeTagCacheKey(): string {
+    return `${this.folderLoadKey}::${this.baseCards.length}::${this.vaultContentSeq}`;
+  }
+
+  /**
+   * Tags for the current scope. Memoized because `pushState` is hot (hydration
+   * batches, selection, search) while this walks every loaded card, which at
+   * vault-root scope means the whole vault.
+   */
+  private deriveScopeTags(): { availableTags: string[]; tagCounts: Record<string, number> } {
+    const key = this.scopeTagCacheKey();
+    const cached = this.scopeTagCache;
+    if (cached && cached.key === key) {
+      return cached.value;
+    }
+
+    const files = this.baseCards.map((card) => card.file);
+    const value = {
+      availableTags: this.hasMetadataCache() ? collectAllTags(this.app, files) : [],
+      tagCounts: collectTagCounts(this.app, files),
+    };
+    this.scopeTagCache = { key, value };
+    return value;
+  }
+
+  private hasMetadataCache(): boolean {
     const metadataCache = (this.app as unknown as { metadataCache?: unknown }).metadataCache;
-    const hasGetFileCache =
+    return (
       typeof metadataCache === "object" &&
       metadataCache !== null &&
       "getFileCache" in metadataCache &&
-      typeof (metadataCache as { getFileCache?: unknown }).getFileCache === "function";
-
-    if (!hasGetFileCache) {
-      return [];
-    }
-
-    return collectAllTags(
-      this.app,
-      this.baseCards.map((card) => card.file),
+      typeof (metadataCache as { getFileCache?: unknown }).getFileCache === "function"
     );
   }
 
+  private deriveAvailableTags(): string[] {
+    return this.deriveScopeTags().availableTags;
+  }
+
   private deriveTagCounts(): Record<string, number> {
-    return collectTagCounts(
-      this.app,
-      this.baseCards.map((card) => card.file),
-    );
+    return this.deriveScopeTags().tagCounts;
+  }
+
+  /**
+   * Vault-wide tag counts, used by favorites: activating a favorited tag browses
+   * the whole vault, so a scope-derived number would contradict the click.
+   *
+   * The browse scope cannot move these, so they only follow `navCountSeq`, which
+   * lags vault events by one debounce interval — same deal as box card counts.
+   */
+  private getVaultTagCounts(): Record<string, number> {
+    const cached = this.vaultTagCountsCache;
+    if (cached && cached.seq === this.navCountSeq) {
+      return cached.counts;
+    }
+
+    const counts = collectVaultTagIndex(this.app)?.counts ?? {};
+    this.vaultTagCountsCache = { seq: this.navCountSeq, counts };
+    return counts;
   }
 
   private deriveVisibleCards(): NoteCardRecord[] {
@@ -5060,6 +5272,9 @@ export class FolderCardView extends ItemView {
     const settings = this.plugin.getSettings();
     const bulkRuntimeState = this.buildBulkRuntimePanelState();
     const projection = this.effectiveSortAndPins();
+    const availableTags = this.deriveAvailableTags();
+    const tagCounts = this.deriveTagCounts();
+    const boxFields = this.buildBoxPanelFields();
 
     return {
       strings: this.strings,
@@ -5078,8 +5293,8 @@ export class FolderCardView extends ItemView {
       searchIndexRebuildReason: this.searchSnapshot?.health?.rebuildReason ?? null,
       sortField: projection.sortField,
       sortDirection: projection.sortDirection,
-      availableTags: this.deriveAvailableTags(),
-      tagCounts: this.deriveTagCounts(),
+      availableTags,
+      tagCounts,
       activeFilterTags: settings.filter.tags,
       pinnedPaths: projection.pinnedPaths,
       cardCornerRadius: settings.cardCornerRadius,
@@ -5093,11 +5308,13 @@ export class FolderCardView extends ItemView {
       folderSectionCollapsed: settings.folderSectionCollapsed,
       tagSectionCollapsed: settings.tagSectionCollapsed,
       boxSectionCollapsed: settings.boxSectionCollapsed,
-      favorites: this.buildFavoriteRowModels(),
+      favorites: this.buildFavoriteRowModels({
+        boxSummaries: boxFields.boxSummaries,
+      }),
       favoritesSectionCollapsed: settings.favoritesSectionCollapsed,
       searchFocusToken: this.searchFocusToken,
       showNavItemCounts: settings.showNavItemCounts,
-      ...this.buildBoxPanelFields(),
+      ...boxFields,
     };
   }
 
@@ -5138,7 +5355,7 @@ export class FolderCardView extends ItemView {
       state.cardCornerRadius = settings.cardCornerRadius;
       state.previewLines = settings.previewLines;
       state.includeSubfolders = settings.includeSubfolders;
-      this.applyBoxProjectionToState(state);
+      this.applyBoxProjectionToState(state, this.buildBoxPanelFields());
     });
   }
 
@@ -5148,6 +5365,9 @@ export class FolderCardView extends ItemView {
 
     const settings = this.plugin.getSettings();
     const bulkRuntimeState = this.buildBulkRuntimePanelState();
+    const availableTags = this.deriveAvailableTags();
+    const tagCounts = this.deriveTagCounts();
+    const boxFields = this.buildBoxPanelFields();
 
     this.panelModel.mutate((state) => {
       state.cards = this.visibleCards;
@@ -5175,8 +5395,8 @@ export class FolderCardView extends ItemView {
       state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
       state.sortField = settings.sort.field;
       state.sortDirection = settings.sort.direction;
-      state.availableTags = this.deriveAvailableTags();
-      state.tagCounts = this.deriveTagCounts();
+      state.availableTags = availableTags;
+      state.tagCounts = tagCounts;
       state.activeFilterTags = settings.filter.tags;
       state.pinnedPaths = settings.pinnedPaths;
       state.cardCornerRadius = settings.cardCornerRadius;
@@ -5188,11 +5408,13 @@ export class FolderCardView extends ItemView {
       state.folderSectionCollapsed = settings.folderSectionCollapsed;
       state.tagSectionCollapsed = settings.tagSectionCollapsed;
       state.boxSectionCollapsed = settings.boxSectionCollapsed;
-      state.favorites = this.buildFavoriteRowModels();
+      state.favorites = this.buildFavoriteRowModels({
+        boxSummaries: boxFields.boxSummaries,
+      });
       state.favoritesSectionCollapsed = settings.favoritesSectionCollapsed;
       state.searchFocusToken = this.searchFocusToken;
       state.showNavItemCounts = settings.showNavItemCounts;
-      this.applyBoxProjectionToState(state);
+      this.applyBoxProjectionToState(state, boxFields);
     });
   }
 
@@ -5230,9 +5452,25 @@ export class FolderCardView extends ItemView {
 
   private async selectFolderFromNav(path: string): Promise<void> {
     this.returnToCardsViewIfSinglePane();
-    if (this.isBoxMode()) {
-      await this.plugin.saveSettings({ activeBoxId: null });
+
+    const targetFolderPath = normalizeFolderScopePath(path);
+    const inBoxMode = this.isBoxMode();
+    // Leaving a card box counts as a scope change: tag filters never applied
+    // inside a box, so browse mode should resume from a clean state.
+    const scopeChanged = inBoxMode || targetFolderPath !== this.normalizeActiveFolderScopePath();
+    const hasTagFilter = this.plugin.getSettings().filter.tags.length > 0;
+
+    const patch: PartialPluginSettings = {};
+    if (inBoxMode) {
+      patch.activeBoxId = null;
     }
+    if (scopeChanged && hasTagFilter) {
+      patch.filter = { tags: [] };
+    }
+    if (Object.keys(patch).length > 0) {
+      await this.plugin.saveSettings(patch);
+    }
+
     await this.plugin.selectFolderByPath(path, "panel-picker");
   }
 

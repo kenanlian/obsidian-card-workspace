@@ -118,6 +118,7 @@ const obsidianMockState = vi.hoisted(() => {
     autoRunLayoutReady: true,
     workspaceCallbacks: {} as Record<string, (...args: unknown[]) => unknown>,
     vaultCallbacks: {} as Record<string, (...args: unknown[]) => void>,
+    vaultTagsByPath: {} as Record<string, string[]>,
     notices: [] as string[],
     leavesByType: {} as Record<string, unknown[]>,
     menus: [] as Array<{
@@ -406,6 +407,9 @@ vi.mock("obsidian", () => {
     Notice: MockNotice,
     Menu: MockMenu,
     addIcon,
+    getAllTags: vi.fn((cache: { path?: string } | null) => {
+      return obsidianMockState.vaultTagsByPath[cache?.path ?? ""] ?? null;
+    }),
     getLanguage: vi.fn(() => "en"),
     MarkdownView: class MockMarkdownView {
       leaf: unknown;
@@ -447,6 +451,9 @@ function createPluginHarness(): {
       leftSplit: { id: string };
       rightSplit: { id: string };
     };
+    metadataCache: {
+      getFileCache: ReturnType<typeof vi.fn>;
+    };
     vault: {
       on: ReturnType<typeof vi.fn>;
       getAbstractFileByPath: ReturnType<typeof vi.fn>;
@@ -486,6 +493,9 @@ function createPluginHarness(): {
       rootSplit: { id: "root-split" },
       leftSplit: { id: "left-split" },
       rightSplit: { id: "right-split" },
+    },
+    metadataCache: {
+      getFileCache: vi.fn((file: { path: string }) => ({ path: file.path })),
     },
     vault: {
       on: vi.fn((eventName: string, callback: (...args: unknown[]) => void) => {
@@ -1345,6 +1355,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.autoRunLayoutReady = true;
     obsidianMockState.workspaceCallbacks = {};
     obsidianMockState.vaultCallbacks = {};
+    obsidianMockState.vaultTagsByPath = {};
     obsidianMockState.notices = [];
     obsidianMockState.leavesByType = {};
     vi.clearAllMocks();
@@ -1380,7 +1391,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
-    expect(addIcon).toHaveBeenCalledTimes(3);
+    expect(addIcon).toHaveBeenCalledTimes(5);
     expect(addIcon).toHaveBeenNthCalledWith(
       1,
       "card-workspace-tag-plus",
@@ -1394,6 +1405,16 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(addIcon).toHaveBeenNthCalledWith(
       3,
       "card-workspace-folder",
+      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
+    );
+    expect(addIcon).toHaveBeenNthCalledWith(
+      4,
+      "card-workspace-package-import",
+      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
+    );
+    expect(addIcon).toHaveBeenNthCalledWith(
+      5,
+      "card-workspace-package-export",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
 
@@ -1796,6 +1817,77 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(cleanupA).toHaveBeenCalledTimes(1);
     expect(cleanupB).toHaveBeenCalledTimes(1);
     expect(app.workspace.detachLeavesOfType).not.toHaveBeenCalled();
+  });
+
+  it("drops favorited tags that no longer exist anywhere in the vault", async () => {
+    const { plugin, app } = createPluginHarness();
+    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
+    mockPlugin.loadData.mockResolvedValue({
+      favorites: [
+        { kind: "tag", ref: "work" },
+        { kind: "tag", ref: "archive" },
+        { kind: "folder", ref: "notes" },
+      ],
+    });
+
+    const survivor = new TFile() as TFile & { path: string; extension: string };
+    survivor.path = "notes/survivor.md";
+    survivor.extension = "md";
+    app.vault.getMarkdownFiles.mockReturnValue([survivor]);
+    obsidianMockState.vaultTagsByPath["notes/survivor.md"] = ["#work/ai"];
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const deleted = new TFile() as TFile & { path: string; extension: string };
+    deleted.path = "notes/gone.md";
+    deleted.extension = "md";
+    obsidianMockState.vaultCallbacks.delete?.(deleted);
+
+    // "work" survives through its child tag; "archive" is gone for good.
+    expect(plugin.getSettings().favorites).toEqual([
+      { kind: "folder", ref: "notes" },
+      { kind: "tag", ref: "work" },
+    ]);
+  });
+
+  it("never prunes favorited tags on create, where the metadata cache may lag", async () => {
+    const { plugin, app } = createPluginHarness();
+    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
+    mockPlugin.loadData.mockResolvedValue({
+      favorites: [{ kind: "tag", ref: "archive" }],
+    });
+
+    const unparsed = new TFile() as TFile & { path: string; extension: string };
+    unparsed.path = "notes/unparsed.md";
+    unparsed.extension = "md";
+    app.vault.getMarkdownFiles.mockReturnValue([unparsed]);
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    obsidianMockState.vaultCallbacks.create?.(unparsed);
+
+    expect(plugin.getSettings().favorites).toEqual([{ kind: "tag", ref: "archive" }]);
+  });
+
+  it("keeps favorited tags when the vault reports no markdown files to inspect", async () => {
+    const { plugin, app } = createPluginHarness();
+    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
+    mockPlugin.loadData.mockResolvedValue({
+      favorites: [{ kind: "tag", ref: "archive" }],
+    });
+    app.vault.getMarkdownFiles.mockReturnValue([]);
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const deleted = new TFile() as TFile & { path: string; extension: string };
+    deleted.path = "notes/gone.md";
+    deleted.extension = "md";
+    obsidianMockState.vaultCallbacks.delete?.(deleted);
+
+    expect(plugin.getSettings().favorites).toEqual([{ kind: "tag", ref: "archive" }]);
   });
 
   it("treats markdown-to-non-markdown file renames as markdown search mutations", async () => {

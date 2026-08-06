@@ -245,7 +245,6 @@ const FAVORITE_ROWS = [
     count: 0,
     selected: true,
     missing: false,
-    disabled: false,
   },
   {
     kind: "file" as const,
@@ -255,17 +254,15 @@ const FAVORITE_ROWS = [
     count: 0,
     selected: false,
     missing: true,
-    disabled: false,
   },
   {
     kind: "tag" as const,
     ref: "work",
-    label: "#work",
+    label: "work",
     icon: "tag",
     count: 3,
     selected: false,
     missing: false,
-    disabled: true,
   },
   {
     kind: "box" as const,
@@ -275,7 +272,6 @@ const FAVORITE_ROWS = [
     count: 4,
     selected: false,
     missing: false,
-    disabled: false,
   },
 ];
 
@@ -648,6 +644,17 @@ describe("NavigationPane.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("renders inline box counts only when enabled, including for the active box", async () => {
+    const { component } = mountNav({ showNavItemCounts: true, activeBoxId: "box-1" });
+    await tick();
+
+    expect(getBoxItemByName("Alpha")?.querySelector(".fce-nav-row-count")?.textContent).toBe("4");
+    // Beta holds no cards, so it gets no badge rather than a "0".
+    expect(getBoxItemByName("Beta")?.querySelector(".fce-nav-row-count")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
   it("keeps tooltip counts when inline counts are disabled and labels the active box with the exit action", async () => {
     const { component } = mountNav({ showNavItemCounts: false, activeBoxId: "box-1" });
     await tick();
@@ -814,7 +821,6 @@ describe("NavigationPane.svelte", () => {
 
       expect(getRow(".fce-favorites-menu", "notes")?.classList.contains("is-selected")).toBe(true);
       expect(getRow(".fce-favorites-menu", "A")?.classList.contains("is-missing")).toBe(true);
-      expect(getRow(".fce-favorites-menu", "#work")?.classList.contains("is-disabled")).toBe(true);
 
       await disposeMountedComponent(component);
     });
@@ -830,20 +836,19 @@ describe("NavigationPane.svelte", () => {
       await disposeMountedComponent(component);
     });
 
-    it("activates each enabled row and ignores the disabled one", async () => {
+    it("activates every row, including tag rows", async () => {
       const captured = createCaptured();
       const { component } = mountNav({ favorites: FAVORITE_ROWS }, captured.callbacks);
       await tick();
 
-      expect(getTreeButtonByText(".fce-favorites-menu", "#work")?.disabled).toBe(true);
-
-      for (const label of ["notes", "A", "#work", "Alpha"]) {
+      for (const label of ["notes", "A", "work", "Alpha"]) {
         getTreeButtonByText(".fce-favorites-menu", label)?.click();
       }
 
       expect(captured.favoriteActivateEvents.map((payload) => payload.favorite)).toEqual([
         { kind: "folder", ref: "notes" },
         { kind: "file", ref: "notes/A.md" },
+        { kind: "tag", ref: "work" },
         { kind: "box", ref: "box-1" },
       ]);
 
@@ -857,7 +862,7 @@ describe("NavigationPane.svelte", () => {
 
       dispatchContextMenu(getSectionToggle("Favorites")?.closest(".fce-tree-section-header"));
       dispatchContextMenu(document.querySelector(".fce-favorites-menu"));
-      dispatchContextMenu(getRow(".fce-favorites-menu", "#work"));
+      dispatchContextMenu(getRow(".fce-favorites-menu", "work"));
 
       expect(captured.navContextMenuEvents).toHaveLength(3);
       expect(captured.navContextMenuEvents.map((payload) => payload.section)).toEqual([

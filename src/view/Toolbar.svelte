@@ -2,6 +2,7 @@
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
+  import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
   import type { BoxSummary } from "./panel-model";
   import type { SearchStatus } from "./types";
 
@@ -273,7 +274,15 @@
     { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
     { type: "separator" },
     { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
-    { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: "box", disabled: !canBulkClearSelection },
+    { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: BULK_ADD_TO_BOX_ICON, disabled: !canBulkClearSelection },
+    ...(isBoxMode
+      ? [{
+          id: "bulk-remove-from-box",
+          label: boxStrings.removeFromBox,
+          icon: BULK_REMOVE_FROM_BOX_ICON,
+          disabled: !canBulkClearSelection,
+        } as BulkActionOption]
+      : []),
     { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
     { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
   ]);

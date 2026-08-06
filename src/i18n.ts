@@ -201,17 +201,23 @@ export interface BoxStrings {
   bulkAddToBoxTitle: string;
   addedToBox: (count: number, name: string) => string;
   removedFromBox: (name: string) => string;
+  removedFromBoxCount: (count: number, name: string) => string;
   configTitle: (name: string) => string;
   rulesHeading: string;
   ruleRootLabel: string;
   ruleSubfolderSuffix: string;
   ruleTagsSeparator: string;
-  addCurrentScope: string;
+  ruleFolderMissing: string;
   removeRule: string;
   noRules: string;
   sortHeading: string;
-  excludedSummary: (count: number) => string;
+  manualHeading: string;
+  noManualMembers: string;
+  removeManualMember: string;
+  excludedHeading: string;
+  noExcludedMembers: string;
   restoreExcluded: string;
+  restoreAllExcluded: string;
   done: string;
   emptyBoxHint: string;
 }
@@ -670,18 +676,25 @@ const EN: UiStrings = {
     addedToBox: (count: number, name: string) =>
       count === 1 ? `Added 1 note to “${name}”.` : `Added ${count} notes to “${name}”.`,
     removedFromBox: (name: string) => `Removed from “${name}”.`,
+    removedFromBoxCount: (count: number, name: string) =>
+      `Removed ${count} notes from “${name}”`,
     configTitle: (name: string) => `Configure “${name}”`,
     rulesHeading: "Rules",
     ruleRootLabel: "Vault root",
     ruleSubfolderSuffix: "incl. subfolders",
     ruleTagsSeparator: " · ",
-    addCurrentScope: "＋ Add current view",
+    ruleFolderMissing: "Folder no longer exists",
     removeRule: "Remove rule",
-    noRules: "No rules yet. Add the current view to collect matching notes.",
+    noRules:
+      "No rules yet. Use “Add current view to card box” from the card box's right-click menu.",
     sortHeading: "Sort",
-    excludedSummary: (count: number) =>
-      count === 1 ? "1 note removed" : `${count} notes removed`,
+    manualHeading: "Manually added",
+    noManualMembers: "No manually added notes.",
+    removeManualMember: "Remove from card box",
+    excludedHeading: "Removed notes",
+    noExcludedMembers: "No removed notes.",
     restoreExcluded: "Restore",
+    restoreAllExcluded: "Restore all",
     done: "Done",
     emptyBoxHint: "This card box is empty. Add notes from the card list or add a rule.",
   },
@@ -1111,17 +1124,23 @@ const ZH: UiStrings = {
     bulkAddToBoxTitle: "将所选加入卡片盒",
     addedToBox: (count: number, name: string) => `已将 ${count} 篇加入“${name}”。`,
     removedFromBox: (name: string) => `已从“${name}”移出。`,
+    removedFromBoxCount: (count: number, name: string) => `已从「${name}」移出 ${count} 篇`,
     configTitle: (name: string) => `配置“${name}”`,
     rulesHeading: "规则",
     ruleRootLabel: "库根目录",
     ruleSubfolderSuffix: "含子文件夹",
     ruleTagsSeparator: " · ",
-    addCurrentScope: "＋ 加入当前视图",
+    ruleFolderMissing: "文件夹已不存在",
     removeRule: "删除规则",
-    noRules: "还没有规则。加入当前视图以收集匹配的笔记。",
+    noRules: "还没有规则。请在卡片盒右键菜单中使用「加入当前视图」。",
     sortHeading: "排序",
-    excludedSummary: (count: number) => `已移出 ${count} 篇`,
+    manualHeading: "手动加入",
+    noManualMembers: "还没有手动加入的笔记。",
+    removeManualMember: "移出卡片盒",
+    excludedHeading: "已移出的笔记",
+    noExcludedMembers: "没有被移出的笔记。",
     restoreExcluded: "恢复",
+    restoreAllExcluded: "全部恢复",
     done: "完成",
     emptyBoxHint: "此卡片盒为空。可从卡片列表加入笔记，或添加规则。",
   },

@@ -95,6 +95,15 @@ const SEARCH_OPTIONS = {
 const WHITESPACE_PATTERN = /\s+/g;
 
 export class SearchIndexManager {
+  /**
+   * Incremental mutations keep the in-memory index current immediately, but the
+   * full-index serialization is coalesced: deleting a folder fans out one event
+   * per contained file, and serializing on each one blocks the main thread.
+   */
+  private static readonly MUTATION_PERSIST_DEBOUNCE_MS = 1000;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistScheduled = false;
+  private persistInFlight: Promise<void> | null = null;
   private readonly store: Pick<IndexStore, "restore" | "write" | "clear">;
   private readonly documentSource: SearchIndexDocumentSource;
   private index: MiniSearch<SearchableDocument>;
@@ -147,6 +156,8 @@ export class SearchIndexManager {
   }
 
   dispose(): void {
+    void this.flushPendingPersist();
+
     if (this.snapshot.disposed) {
       return;
     }
@@ -439,6 +450,8 @@ export class SearchIndexManager {
       return;
     }
 
+    // A full build writes the whole index anyway, so a pending incremental write is moot.
+    this.cancelPendingPersist();
     this.isBuilding = true;
     try {
       let nextDetail = detail;
@@ -594,7 +607,7 @@ export class SearchIndexManager {
 
     if (decision.action === "delete") {
       this.discardIndexedPath(event.path);
-      await this.persistMutationState();
+      this.schedulePersistMutationState();
       return {
         action: "applied",
         rebuildRequired: false,
@@ -603,7 +616,7 @@ export class SearchIndexManager {
 
     if (decision.action === "create" || decision.action === "modify") {
       await this.upsertDocument(event.path);
-      await this.persistMutationState();
+      this.schedulePersistMutationState();
       return {
         action: "applied",
         rebuildRequired: false,
@@ -621,7 +634,7 @@ export class SearchIndexManager {
 
       this.discardIndexedPath(oldPath);
       await this.upsertDocument(event.path);
-      await this.persistMutationState();
+      this.schedulePersistMutationState();
       return {
         action: "applied",
         rebuildRequired: false,
@@ -646,7 +659,7 @@ export class SearchIndexManager {
         };
       }
 
-      await this.persistMutationState();
+      this.schedulePersistMutationState();
 
       return {
         action: "applied",
@@ -658,6 +671,74 @@ export class SearchIndexManager {
       action: "ignored",
       rebuildRequired: false,
     };
+  }
+
+  private schedulePersistMutationState(): void {
+    this.refreshHealthDocumentCount();
+    this.persistScheduled = true;
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+    }
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.flushPendingPersist();
+    }, SearchIndexManager.MUTATION_PERSIST_DEBOUNCE_MS);
+  }
+
+  /**
+   * Queries run against the in-memory index, so its document count is reported
+   * as soon as a mutation lands even though the disk write is debounced.
+   */
+  private refreshHealthDocumentCount(): void {
+    if (this.snapshot.status !== "ready") {
+      return;
+    }
+
+    const documentCount = this.index.documentCount;
+    if (this.snapshot.health.documentCount === documentCount) {
+      return;
+    }
+
+    this.snapshot = {
+      ...this.snapshot,
+      health: {
+        ...this.snapshot.health,
+        documentCount,
+      },
+    };
+    this.emit();
+  }
+
+  private cancelPendingPersist(): void {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistScheduled = false;
+  }
+
+  /** Write out debounced index state immediately. Tests and dispose use this instead of waiting on the timer. */
+  async flushPendingPersist(): Promise<void> {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    if (this.persistInFlight) {
+      await this.persistInFlight;
+    }
+    if (!this.persistScheduled) {
+      return;
+    }
+    this.persistScheduled = false;
+    const run = this.persistMutationState();
+    this.persistInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.persistInFlight === run) {
+        this.persistInFlight = null;
+      }
+    }
   }
 
   private rewriteFolderPrefix(oldPrefix: string, newPrefix: string): boolean {

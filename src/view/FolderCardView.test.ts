@@ -200,6 +200,7 @@ vi.mock("obsidian", () => {
         testState.noticeMessages.push(message);
       }
     },
+    Platform: { isDesktopApp: true },
     Setting: testState.TestSetting,
     TFile: testState.TestTFile,
     TFolder: testState.TestTFolder,
@@ -271,6 +272,7 @@ interface TestHarness {
     openNoteFromCard: ReturnType<typeof vi.fn>;
     selectAllNotes: ReturnType<typeof vi.fn>;
     createNoteInCurrentFolder: ReturnType<typeof vi.fn>;
+    createNoteInFolder: ReturnType<typeof vi.fn>;
     selectFolderByPath: ReturnType<typeof vi.fn>;
   };
   panelContainer: HTMLElement;
@@ -326,7 +328,9 @@ function createHarness(): TestHarness {
       getFileCache: vi.fn(() => null),
     },
     vault: {
+      adapter: { getFullPath: vi.fn((path: string) => `/vault/${path}`) },
       getAbstractFileByPath: vi.fn(() => null),
+      getMarkdownFiles: vi.fn(() => []),
       getRoot: vi.fn(() => new testState.TestTFolder("")),
       createFolder: vi.fn(async (path: string) => new testState.TestTFolder(path)),
       cachedRead: vi.fn(async () => ""),
@@ -359,6 +363,9 @@ function createHarness(): TestHarness {
       return;
     }),
     createNoteInCurrentFolder: vi.fn(async () => {
+      return;
+    }),
+    createNoteInFolder: vi.fn(async () => {
       return;
     }),
     selectFolderByPath: vi.fn(async () => {
@@ -1810,5 +1817,218 @@ describe("FolderCardView card box mode", () => {
 
     (view as any).handleBoxCommand({ command: "exit" });
     expect(settings.activeBoxId).toBeNull();
+  });
+});
+
+describe("FolderCardView navigation scope activation", () => {
+  function readSettings(plugin: TestHarness["plugin"]): Record<string, any> {
+    return (plugin.getSettings as unknown as () => Record<string, any>)();
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    testState.noticeMessages.length = 0;
+    (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+      testState.ResizeObserverStub as never;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  it("clears the tag filter when the activated folder differs from the current scope", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = { tags: ["alpha"] };
+    (view as any).folderPath = "notes";
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [] } });
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
+  });
+
+  it("keeps the tag filter when the activated folder is already the current scope", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = { tags: ["alpha"] };
+    (view as any).folderPath = "other";
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter.tags).toEqual(["alpha"]);
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
+  });
+
+  it("activating a favorited tag exits the box, jumps to the vault root, and keeps only that tag", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox()];
+    settings.activeBoxId = "box-1";
+    settings.filter = { tags: ["stale"] };
+    (view as any).folderPath = "notes";
+
+    await (view as any).activateFavoriteTag("alpha");
+
+    expect(settings.activeBoxId).toBeNull();
+    expect(settings.filter.tags).toEqual(["alpha"]);
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("", "panel-picker");
+  });
+
+  it("folder-tree create actions leave box mode and switch scope before creating", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox()];
+    settings.activeBoxId = "box-1";
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => new testState.TestTFolder(path),
+    );
+
+    const createSpy = vi.spyOn(view as any, "createFromFolderTree");
+    const actions = (view as any).buildNavMenuDeps().actions;
+    actions.createNote("notes");
+    actions.createFolder("notes");
+    actions.createCanvas("notes");
+    actions.createBase("notes");
+
+    expect(createSpy.mock.calls.map((call) => call[1])).toEqual([
+      "note",
+      "folder",
+      "canvas",
+      "base",
+    ]);
+
+    createSpy.mockRestore();
+    await (view as any).createFromFolderTree("notes", "note");
+
+    expect(settings.activeBoxId).toBeNull();
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("notes", "panel-picker");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("notes", []);
+  });
+
+  it("counts favorites vault-wide, independent of the browse scope", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.showNavItemCounts = true;
+    settings.includeSubfolders = true;
+    settings.boxes = [makeTestBox({ manualPaths: ["notes/a.md", "notes/b.md"] })];
+    settings.favorites = [
+      { kind: "folder", ref: "notes" },
+      { kind: "tag", ref: "work" },
+      { kind: "box", ref: "box-1" },
+    ];
+
+    // Vault: notes/ holds two markdown files, one of which is tagged work/ai.
+    const alpha = new testState.TestTFile("notes/a.md");
+    const beta = new testState.TestTFile("notes/b.md");
+    const notesFolder = createFolder("notes");
+    notesFolder.children = [alpha, beta];
+    const root = createFolder("", [notesFolder]);
+    view.app.vault.getRoot = vi.fn(() => root) as never;
+    view.app.vault.getMarkdownFiles = vi.fn(() => [alpha, beta]) as never;
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => (path === "notes" ? notesFolder : new testState.TestTFile(path)),
+    );
+    view.app.metadataCache.getFileCache = vi.fn((file: { path: string }) =>
+      file.path === "notes/a.md" ? { tags: [{ tag: "#work/ai" }] } : null,
+    ) as never;
+
+    // Browsing an unrelated, empty scope must not shrink any of the numbers.
+    (view as any).folderPath = "elsewhere";
+    (view as any).baseCards = [];
+    (view as any).refreshFolderTreeState();
+    (view as any).pushState();
+
+    const favorites = getPanelState(view).favorites as Array<{ ref: string; count: number }>;
+    expect(favorites.map((row) => [row.ref, row.count])).toEqual([
+      ["notes", 2],
+      ["work", 1],
+      ["box-1", 2],
+    ]);
+  });
+
+  it("recomputes scope tag counts after a vault mutation", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    const alpha = createCard("notes/a.md", "A");
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [alpha];
+    settings.showNavItemCounts = true;
+
+    const getFileCache = vi.fn(() => ({ tags: [{ tag: "#work" }] }));
+    view.app.metadataCache.getFileCache = getFileCache as never;
+
+    (view as any).pushState();
+    expect(getPanelState(view).tagCounts).toEqual({ work: 1 });
+
+    const callsAfterFirstPush = getFileCache.mock.calls.length;
+    (view as any).pushState();
+    expect(getFileCache.mock.calls.length).toBe(callsAfterFirstPush);
+
+    // A vault change must break the memo even when the card count is unchanged.
+    view.app.metadataCache.getFileCache = vi.fn(() => ({ tags: [{ tag: "#archive" }] })) as never;
+    view.handleVaultMutation({
+      eventType: "modify",
+      path: "notes/a.md",
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+    (view as any).pushState();
+
+    expect(getPanelState(view).tagCounts).toEqual({ archive: 1 });
+  });
+
+  it("never marks a favorited tag missing just because the current folder lacks it", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.favorites = [
+      { kind: "tag", ref: "work" },
+      { kind: "folder", ref: "gone" },
+    ];
+    (view as any).folderPath = "notes";
+    (view as any).baseCards = [];
+
+    (view as any).pushState();
+
+    const favorites = getPanelState(view).favorites as Array<{
+      kind: string;
+      ref: string;
+      missing: boolean;
+    }>;
+    expect(favorites).toEqual([
+      expect.objectContaining({ kind: "tag", ref: "work", missing: false }),
+      expect.objectContaining({ kind: "folder", ref: "gone", missing: true }),
+    ]);
+  });
+
+  it("does not insert a created file into an active box it is not a member of", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.boxes = [makeTestBox({ manualPaths: ["notes/member.md"] })];
+    settings.activeBoxId = "box-1";
+    (view as any).folderPath = "";
+    (view as any).baseCards = [];
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => new testState.TestTFile(path),
+    );
+
+    const createEvent = {
+      eventType: "create" as const,
+      path: "notes/outsider.md",
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown" as const,
+    };
+
+    view.handleVaultMutation(createEvent);
+    expect(((view as any).baseCards as NoteCardRecord[])).toHaveLength(0);
+
+    view.handleVaultMutation({ ...createEvent, path: "notes/member.md" });
+    expect(((view as any).baseCards as NoteCardRecord[]).map((card) => card.path)).toEqual([
+      "notes/member.md",
+    ]);
   });
 });
