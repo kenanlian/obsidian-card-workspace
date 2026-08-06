@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, and its own navigation pane for folders, tags, and boxes.
+**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, and boxes.
 
 - **Plugin ID**: `card-workspace`
-- **Version**: `0.5.6` (source of truth: `manifest.json`)
+- **Version**: `1.0.1` (source of truth: `manifest.json`)
 - **License**: MIT
-- **Min Obsidian**: `1.5.0`
+- **Min Obsidian**: `1.9.0`
 - **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
 - **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
 
@@ -124,7 +124,7 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 ### CSS
 
-- Single flat file (`styles.css`, 848 lines) — no preprocessor, no Tailwind
+- Single flat file (`styles.css`, ~1,289 lines) — no preprocessor, no Tailwind
 - Design tokens: `--fce-*` custom properties scoped under `.folder-card-view` that map to Obsidian theme variables (`--background-primary`, `--text-normal`, `--interactive-accent`, etc.)
 - BEM-like classes: `.fce-toolbar`, `.fce-card`, `.fce-search-hit`, `.fce-preview-code`
 
@@ -132,21 +132,25 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 | File | Role |
 |------|------|
-| `src/main.ts` | Plugin entry point — lifecycle, settings, search wiring, vault observers, command registration, view activation (~1,141 lines) |
-| `src/view/FolderCardView.ts` | Per-view runtime coordinator — folder loading, card arrays, pipeline, search, bulk state, hydration, context menus, modals (~3,267 lines) |
-| `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring (~643 lines) |
-| `src/view/Toolbar.svelte` | Svelte 5 toolbar — folder picker, sort, tag filter, search, bulk mode (~956 lines) |
-| `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox (~454 lines) |
+| `src/main.ts` | Plugin entry point — lifecycle, settings, search wiring, vault observers, command registration, view activation, drag-insert handling (~1,605 lines) |
+| `src/view/FolderCardView.ts` | Per-view runtime coordinator — folder loading, card arrays, pipeline, search, bulk state, hydration, context menus, modals (~5,663 lines) |
+| `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring (~781 lines) |
+| `src/view/NavigationPane.svelte` | Svelte 5 navigation column — folder/tag/box trees, favorites section, resize handle |
+| `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode (~732 lines) |
+| `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source (~548 lines) |
 | `src/view/panel-model.ts` | Host-to-Svelte observable state bridge |
 | `src/view/pipeline.ts` | Sole visible-card projection: tag filter → search filter → pin reorder |
 | `src/view/types.ts` | View-layer type definitions (~20 interfaces, Phase 3 ownership docs) |
 | `src/settings.ts` | Settings types, `DEFAULT_SETTINGS`, `normalizeSettings`, `mergeSettings` |
-| `src/i18n.ts` | i18n strings (`en` / `zh`) — ~828 lines |
-| `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations (~1,023 lines) |
+| `src/i18n.ts` | i18n strings (`en` / `zh`) — ~1,439 lines |
+| `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations (~1,103 lines) |
 | `src/search/IndexedSearchService.ts` | SearchService adapter — query bounding, blocked-state gating |
 | `src/search/IndexStore.ts` | IndexedDB persistence with schema-version checks |
 | `src/search/types.ts` | Search subsystem contracts (`PHASE3_MINISEARCH_CONTRACT`) |
 | `src/view/note-ops.ts` | File operations — move, delete, trash, duplicate, merge, batch variants |
+| `src/view/favorites.ts` | Favorites entries — normalize, toggle, reorder, prune, vault-mutation reconciliation |
+| `src/view/card-boxes.ts` | Card box definitions — create, rename, rule seeding, sort specs |
+| `src/view/nav-context-menu.ts` | Navigation pane context menus for folders, tags, and boxes |
 | `src/view/markdown-utils.ts` | Markdown-to-HTML preview engine with allow-list sanitization |
 | `src/electron.d.ts` | Ambient types for Electron `shell.openPath` / `shell.showItemInFolder` |
 | `manifest.json` | Obsidian plugin manifest — version source of truth |
@@ -162,7 +166,7 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 - **Package manager**: npm (lockfile: `package-lock.json`)
 - **Runtime**: Node.js (for build/test; plugin runs inside Obsidian/Electron)
-- **Bundle**: esbuild → `main.js` (CJS, ~598KB), entry `src/main.ts`
+- **Bundle**: esbuild → `main.js` (CJS, ~800KB), entry `src/main.ts`
 - **Externals** (provided by Obsidian runtime, never bundled):
   - `obsidian`
   - `electron`
