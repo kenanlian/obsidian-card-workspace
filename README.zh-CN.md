@@ -4,7 +4,7 @@
 
 一个 Obsidian 插件：在边栏或主编辑区中以卡片流展示文件夹里的笔记。你可以手动打开 Card Workspace，按文件夹浏览笔记，使用标签筛选，使用插件内置搜索，并使用多种方式打开卡片笔记。
 
-![Card Workspace 演示](screenshots/20260806.png)
+![Card Workspace 演示](screenshots/2026_08_06_09_24_27.jpg)
 
 > ## 1.0.0 重点更新
 >

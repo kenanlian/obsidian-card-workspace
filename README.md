@@ -4,7 +4,7 @@
 
 An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, and click a card to open it.
 
-![Card Workspace demo](screenshots/20260806.png)
+![Card Workspace demo](screenshots/2026_08_06_09_24_27.jpg)
 
 > ## What's new in 1.0.0
 >
