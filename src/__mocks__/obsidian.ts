@@ -6,17 +6,17 @@ export class FuzzySuggestModal<T> {
     this.app = app;
   }
 
-  setTitle(title: string): void {}
+  setTitle(_title: string): void {}
 
   getItems(): T[] {
     return [];
   }
 
-  getItemText(item: T): string {
+  getItemText(_item: T): string {
     return "";
   }
 
-  onChooseItem(item: T): void {}
+  onChooseItem(_item: T): void {}
 }
 
 export class TFolder {

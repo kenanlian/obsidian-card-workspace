@@ -842,13 +842,6 @@ describe("CardWorkspacePlugin open destination routing", () => {
     (plugin as unknown as { settings: { defaultCardOpenBehavior: string } }).settings.defaultCardOpenBehavior = value;
   }
 
-  function setDragInsertAction(
-    plugin: CardWorkspacePlugin,
-    value: "ask" | "wiki" | "embed" | "content" | "title-content",
-  ): void {
-    (plugin as unknown as { settings: { dragInsertAction: string } }).settings.dragInsertAction = value;
-  }
-
   it("reuses the most recent root markdown leaf for default card opens when unpinned", async () => {
     const { plugin, app } = createPluginHarness();
     const target = new TFile();

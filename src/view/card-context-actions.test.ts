@@ -20,9 +20,9 @@ const mockState = vi.hoisted(() => {
   const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const existingNavigator = navigatorDescriptor?.get ? navigatorDescriptor.get.call(globalThis) : (globalThis as any).navigator;
   const nextNavigator = {
-    ...(existingNavigator ?? {}),
+    ...existingNavigator,
     clipboard: {
-      ...(existingNavigator?.clipboard ?? {}),
+      ...existingNavigator?.clipboard,
       writeText: clipboardWriteTextMock,
     },
   };
@@ -971,16 +971,6 @@ function setLatestModalTextInput(index: number, value: string): void {
   input?.onChange?.(value);
 }
 
-function setLatestModalToggle(label: string, value: boolean): void {
-  const modal = mockState.modalInstances.at(-1);
-  expect(modal).toBeDefined();
-
-  const toggle = modal?.toggles.find((candidate) => candidate.label === label);
-  expect(toggle).toBeDefined();
-  toggle!.value = value;
-  toggle?.onChange?.(value);
-}
-
 function setLatestModalCheckbox(label: string, checked: boolean): void {
   const modal = mockState.modalInstances.at(-1);
   expect(modal).toBeDefined();
@@ -989,10 +979,6 @@ function setLatestModalCheckbox(label: string, checked: boolean): void {
   expect(checkbox).toBeDefined();
   checkbox!.checked = checked;
   checkbox?.onChange?.();
-}
-
-function getMenuItemTitles(menu: { items: Array<{ kind?: string; title: string }> }): string[] {
-  return menu.items.filter((item) => item.kind !== "separator").map((item) => item.title);
 }
 
 function getMenuStructure(menu: {
@@ -5322,7 +5308,7 @@ describe("FolderCardView card context actions", () => {
       expect(item.icon).toBe("package-check");
       expect(item.submenu?.items.map((entry: any) => entry.title)).toEqual(["Reading"]);
 
-      (item.submenu?.items[0] as any).clickHandler();
+      (item.submenu!.items[0] as any).clickHandler();
 
       expect(addScopeToBox).toHaveBeenCalledTimes(1);
       expect(addScopeToBox).toHaveBeenCalledWith(BOX_ID);

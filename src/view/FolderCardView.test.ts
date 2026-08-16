@@ -391,17 +391,6 @@ function getPanelState(view: FolderCardView): {
   return (view as any).panelModel.getState();
 }
 
-function getFilterButton(panelContainer: HTMLElement): HTMLButtonElement | null {
-  return panelContainer.querySelector<HTMLButtonElement>('.fce-toolbar-button[data-icon="tags"]');
-}
-
-async function openTagPopup(panelContainer: HTMLElement): Promise<void> {
-  const filterButton = getFilterButton(panelContainer);
-  expect(filterButton).not.toBeNull();
-  filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
-  await tick();
-}
-
 function getTagNode(label: string): HTMLButtonElement | undefined {
   return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-button"))
     .find((button) => button.textContent?.includes(label));
@@ -504,7 +493,7 @@ describe("FolderCardView host contract", () => {
 
 
   it("persists a selected nested tag from the navigation pane tag tree", async () => {
-    const { view, plugin, panelContainer } = createHarness();
+    const { view, plugin } = createHarness();
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },

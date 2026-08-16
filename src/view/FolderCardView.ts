@@ -4549,7 +4549,7 @@ export class FolderCardView extends ItemView {
       this.searchExecution = result.execution;
       if (result.execution === "indexed-ready") {
         this.searchOrderedPaths = result.orderedPaths ?? [];
-        this.searchMatchCountsByPath = { ...(result.matchCountsByPath ?? {}) };
+        this.searchMatchCountsByPath = { ...result.matchCountsByPath };
       } else {
         this.searchOrderedPaths = undefined;
         this.clearSearchMatchCounts();

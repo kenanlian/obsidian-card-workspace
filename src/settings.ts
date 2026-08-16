@@ -511,11 +511,11 @@ export function mergeSettings(current: PluginSettings, patch: PartialPluginSetti
     ...patch,
     sort: {
       ...current.sort,
-      ...(patch.sort ?? {}),
+      ...patch.sort,
     },
     filter: {
       ...current.filter,
-      ...(patch.filter ?? {}),
+      ...patch.filter,
     },
   });
 }
