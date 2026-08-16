@@ -1,3 +1,14 @@
+/*
+ * Section map: this file is organized into named sections marked with
+ * `=== name ===` comments (tokens, layout, toolbar, nav, card, preview,
+ * search, bulk, modal, utility). New styles must be inserted inside the
+ * section that matches their purpose, and must never be appended to the
+ * end of the file. Reordering existing rules requires a separate, dedicated
+ * change that carries visual regression verification, since CSS rules of
+ * equal specificity resolve by source order.
+ */
+
+/* === layout === */
 .workspace-leaf-content[data-type="folder-card-view"] > .view-content {
   padding: 0;
 }
@@ -7,6 +18,7 @@
   height: 100%;
 }
 
+/* === tokens === */
 .folder-card-view {
   --fce-bg: var(--background-primary);
   --fce-surface: var(--background-secondary);
@@ -43,6 +55,7 @@
   --fce-nav-count-color: var(--text-faint, var(--text-muted));
 }
 
+/* === layout === */
 .folder-card-view .fce-shell {
   display: flex;
   flex-direction: row;
@@ -76,6 +89,7 @@
   min-height: 0;
 }
 
+/* === nav === */
 .folder-card-view .fce-nav-pane {
   position: relative;
   display: flex;
@@ -349,6 +363,7 @@
   flex: 0 0 auto;
 }
 
+/* === toolbar === */
 .folder-card-view .fce-header {
   padding: 0;
 }
@@ -468,6 +483,7 @@
   font-weight: 500;
 }
 
+/* === search === */
 .folder-card-view .fce-toolbar-search-row {
   padding: 0 8px 6px;
 }
@@ -531,6 +547,7 @@
   background: var(--background-modifier-hover);
 }
 
+/* === bulk === */
 .folder-card-view .fce-toolbar-bulk-strip {
   display: flex;
   align-items: center;
@@ -602,6 +619,7 @@
 
 
 
+/* === modal === */
 .fce-popup-menu {
   position: fixed;
   z-index: var(--layer-menu, 10);
@@ -705,6 +723,7 @@
   color: var(--text-normal);
 }
 
+/* === nav === */
 .fce-tree-menu {
   padding: var(--size-2-3, 6px) 0;
   overflow-x: hidden;
@@ -864,6 +883,7 @@
   line-height: 1.4;
 }
 
+/* === utility === */
 .folder-card-view .fce-sr-only {
   position: absolute;
   width: 1px;
@@ -876,6 +896,7 @@
   border: 0;
 }
 
+/* === layout === */
 .folder-card-view .fce-list {
   flex: 1;
   overflow-y: auto;
@@ -918,6 +939,7 @@
   text-align: center;
 }
 
+/* === card === */
 .folder-card-view .fce-card {
   border-radius: var(--clickable-icon-radius, var(--radius-s));
   border: 1px solid var(--fce-border);
@@ -1100,6 +1122,7 @@
   flex: 1;
 }
 
+/* === search === */
 .folder-card-view .fce-search-hit {
   padding: 0 2px;
   border-radius: 3px;
@@ -1107,11 +1130,13 @@
   color: inherit;
 }
 
+/* === bulk === */
 .folder-card-view .fce-card-bulk-checkbox {
   margin: 0;
   cursor: pointer;
 }
 
+/* === card === */
 .folder-card-view .fce-card-pin-btn {
   background: transparent;
   box-shadow: none;
@@ -1173,6 +1198,7 @@
   opacity: 1;
 }
 
+/* === preview === */
 .folder-card-view .fce-excerpt {
   margin: 0;
   color: var(--fce-text);
@@ -1235,6 +1261,7 @@
   line-height: var(--fce-preview-line-height);
 }
 
+/* === modal === */
 .menu.fce-card-context-menu {
   min-width: 220px;
 }
@@ -1249,12 +1276,13 @@
   color: var(--text-error, #c0392b);
 }
 
+/* === toolbar === */
 .fce-filter-menu {
   max-height: 350px;
   overflow-y: auto;
 }
 
-/* Card box config modal */
+/* === modal === */
 .fce-box-config__heading {
   margin: 12px 0 4px;
   color: var(--fce-text-muted);

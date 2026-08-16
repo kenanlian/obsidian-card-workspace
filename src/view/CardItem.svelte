@@ -1,5 +1,5 @@
 <script module lang="ts">
-  const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note";
+  const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note"; // Duplicated in EditorDropController; update both together.
 </script>
 
 <script lang="ts">

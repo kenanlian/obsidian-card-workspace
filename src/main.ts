@@ -1,45 +1,33 @@
 import {
   addIcon,
-  Editor,
-  Menu,
-  MarkdownFileInfo,
   MarkdownView,
   Notice,
   Plugin,
   TAbstractFile,
   TFile,
   TFolder,
-  type EditorPosition,
   WorkspaceLeaf,
   debounce,
 } from "obsidian";
 import { EditorView, dropCursor } from "@codemirror/view";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
-import {
-  IndexedSearchService,
-  IndexStore,
-  SearchIndexManager,
-  prepareSearchableDocument,
-} from "./search";
+import { EditorDropController } from "./services/EditorDropController";
+import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import {
   DEFAULT_SETTINGS,
   mergeSettings,
   normalizeSettings,
-  type DragInsertAction,
 } from "./settings";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
-  IndexStoreNamespaceMetadata,
   SearchIndexObservabilitySnapshot,
   SearchService,
   SearchServiceSnapshot,
-  SearchVaultMutation,
 } from "./search";
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
 import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
-import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "./view/file-kind";
-import { buildContentClipboardText, buildTitleAndContentClipboardText } from "./view/note-ops";
+import { resolveCardFileKind } from "./view/file-kind";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
 import { pruneFavoriteTags, reconcileFavoritesForVaultMutation } from "./view/favorites";
 import { collectVaultTagIndex } from "./view/metadata-utils";
@@ -53,11 +41,6 @@ import {
   PLAIN_FOLDER_ICON_SVG,
 } from "./icons";
 
-
-const SEARCH_SCHEMA_VERSION = "phase3-v1";
-const SEARCH_TOKENIZER_VERSION = "search-text-v2";
-const SEARCH_MAX_CANDIDATE_PATHS = 10000;
-
 const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
 const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
 const TABLER_ICON_SCALE = 4.1666666667;
@@ -67,35 +50,6 @@ const BULK_REMOVE_TAG_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-wi
 function normalizeFolderScopePath(path: string): string {
   return path === "/" ? "" : path;
 }
-type SearchRecoveryBoundaryState = "healthy" | "degraded";
-
-type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
-
-interface MenuDomLike {
-  classList: {
-    add: (token: string) => void;
-  };
-  querySelectorAll?: (selectors: string) => Iterable<Element>;
-}
-
-interface CardWorkspaceDragPayload {
-  path: string;
-  title: string;
-}
-
-interface ResolvedCardDragEditorContext {
-  editor: Editor;
-  info: MarkdownView | MarkdownFileInfo;
-}
-interface EditorWithCodeMirror {
-  cm?: unknown;
-}
-
-
-type SupportedDragInsertAction = Exclude<DragInsertAction, "ask">;
-
-const CARD_WORKSPACE_DRAG_MIME = "application/x-card-workspace-note";
-
 const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
 
 export default class CardWorkspacePlugin extends Plugin {
@@ -104,23 +58,18 @@ export default class CardWorkspacePlugin extends Plugin {
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
-  private searchService: SearchService | null = null;
-  private searchManager: SearchIndexManager | null = null;
-  private searchServiceUnsubscribe: (() => void) | null = null;
-  private searchSnapshot: SearchServiceSnapshot | null = null;
-  private readonly searchSnapshotListeners = new Set<SearchSnapshotListener>();
-  private searchRecoveryBoundaryState: SearchRecoveryBoundaryState = "healthy";
-  private layoutReady = false;
   private vaultObserversRegistered = false;
-  private shouldRunStartupSearchRebuild = false;
-  private pendingStartupSearchRebuildDetail: string | null = null;
-  private shouldSyncRestoredSearchState = false;
-  private pendingRestoredSearchStateSync: Promise<void> | null = null;
-  private pendingSearchRebuild: Promise<void> | null = null;
-  private pendingSearchRecovery: Promise<void> | null = null;
-  private pendingSearchClearReset: Promise<void> | null = null;
-  private pendingMutationRecoveryRebuild: Promise<void> | null = null;
   private startupPromise: Promise<void> = Promise.resolve();
+  private readonly editorDropController = new EditorDropController({
+    app: this.app,
+    getSettings: () => this.settings,
+    getUiStrings: () => this.getUiStrings(),
+  });
+  private readonly searchCoordinator = new SearchCoordinator({
+    getApp: () => this.app,
+    getUiStrings: () => this.getUiStrings(),
+    getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
+  });
   private debouncedRefresh = debounce(
     () => {
       void this.requestRefreshForViews("vault-change");
@@ -162,11 +111,11 @@ export default class CardWorkspacePlugin extends Plugin {
 
   private async initializePlugin(): Promise<void> {
     await this.loadSettings();
-    await this.initializeSearchService();
+    await this.searchCoordinator.initialize();
     this.registerCustomIcons();
 
     this.register(() => {
-      this.disposeSearchService();
+      this.searchCoordinator.dispose();
     });
 
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
@@ -190,21 +139,13 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerEditorExtension([
       dropCursor(),
       EditorView.domEventHandlers({
-        dragover: (event) => this.handleCardEditorDragOver(event),
-        drop: (event, view) => this.handleCardEditorDomDrop(event, view),
+        dragover: (event) => this.editorDropController.handleDragOver(event),
+        drop: (event, view) => this.editorDropController.handleDomDrop(event, view),
       }),
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
-        if (event.defaultPrevented) {
-          return;
-        }
-        const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
-        if (!payload) {
-          return;
-        }
-        event.preventDefault();
-        void this.handlePreparedCardEditorDrop(payload, event, editor, info);
+        this.editorDropController.handleWorkspaceEditorDrop(event, editor, info);
       }),
     );
 
@@ -215,11 +156,10 @@ export default class CardWorkspacePlugin extends Plugin {
     );
 
     this.app.workspace.onLayoutReady(() => {
-      this.layoutReady = true;
       this.registerVaultObservers();
       const activeFile = this.app.workspace.getActiveFile();
       this.syncSelection(activeFile?.path ?? null);
-      this.flushDeferredSearchStartupWork();
+      this.searchCoordinator.flushDeferredStartupWork();
       void this.restoreLastSession();
     });
   }
@@ -249,7 +189,7 @@ export default class CardWorkspacePlugin extends Plugin {
       cancel?: () => void;
     };
     favoriteTagPrune.cancel?.();
-    this.disposeSearchService();
+    this.searchCoordinator.dispose();
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
     });
@@ -354,280 +294,6 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.resolveSmartDefaultCardOpenLeaf();
   }
 
-  private handleCardEditorDragOver(event: DragEvent): boolean {
-    if (event.defaultPrevented) {
-      return false;
-    }
-
-    if (!this.hasCardWorkspaceDragTypes(event)) {
-      return false;
-    }
-
-    if (event.dataTransfer != null) {
-      event.dataTransfer.dropEffect = "copy";
-    }
-
-    event.preventDefault();
-    return true;
-  }
-
-  private handleCardEditorDomDrop(event: DragEvent, view: EditorView): boolean {
-    if (event.defaultPrevented) {
-      return false;
-    }
-    const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
-    if (!payload) {
-      return false;
-    }
-
-    const context = this.resolveCardDragEditorContext(view);
-    if (!context) {
-      return false;
-    }
-
-    event.preventDefault();
-    void this.handlePreparedCardEditorDrop(payload, event, context.editor, context.info);
-    return true;
-  }
-
-
-  private async handleCardEditorDrop(
-    event: DragEvent,
-    editor: Editor,
-    info: MarkdownView | MarkdownFileInfo,
-  ): Promise<void> {
-    const payload = this.parseCardWorkspaceDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
-    if (!payload) {
-      return;
-    }
-
-    if (!event.defaultPrevented) {
-      event.preventDefault();
-    }
-
-    await this.handlePreparedCardEditorDrop(payload, event, editor, info);
-  }
-
-  private async handlePreparedCardEditorDrop(
-    payload: CardWorkspaceDragPayload,
-    event: DragEvent,
-    editor: Editor,
-    info: MarkdownView | MarkdownFileInfo,
-  ): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(payload.path);
-    if (!(file instanceof TFile)) {
-      new Notice(this.getUiStrings().view.dragInsertMenu.sourceFileMissing);
-      return;
-    }
-
-    const position = this.resolveDropEditorPosition(event, editor, info);
-    const action = this.settings.dragInsertAction;
-    if (action === "ask") {
-      this.openDragInsertMenu({ event, editor, file, position });
-      return;
-    }
-
-    await this.insertCardDragContent({ editor, file, position, action });
-  }
-
-  private resolveDropEditorPosition(
-    event: DragEvent,
-    editor: Editor,
-    info: MarkdownView | MarkdownFileInfo,
-  ): EditorPosition {
-    const sourceEditor = info.editor ?? editor;
-    const cm = this.getEditorCodeMirror(sourceEditor);
-    if (cm instanceof EditorView) {
-      const offset = cm.posAtCoords({ x: event.clientX, y: event.clientY });
-      if (typeof offset === "number") {
-        return editor.offsetToPos(offset);
-      }
-    }
-
-    return editor.getCursor();
-  }
-
-  private parseCardWorkspaceDragPayload(value: string): CardWorkspaceDragPayload | null {
-    if (value.length === 0) {
-      return null;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(value);
-    } catch {
-      return null;
-    }
-
-    if (typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-
-    const { path, title } = parsed as { path?: unknown; title?: unknown };
-    if (typeof path !== "string" || path.length === 0 || typeof title !== "string" || title.length === 0) {
-      return null;
-    }
-
-    return { path, title };
-  }
-
-  private resolveCardDragEditorContext(view: EditorView): ResolvedCardDragEditorContext | null {
-    const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
-    for (const leaf of markdownLeaves) {
-      const leafView = leaf.view;
-      if (!(leafView instanceof MarkdownView)) {
-        continue;
-      }
-
-      const editor = leafView.editor;
-      const editorView = this.getEditorCodeMirror(editor);
-      if (editorView === view) {
-        return {
-          editor,
-          info: leafView,
-        };
-      }
-    }
-
-    return null;
-  }
-
-  private getEditorCodeMirror(editor: Editor): unknown {
-    return (editor as Editor & EditorWithCodeMirror).cm;
-  }
-
-  private hasCardWorkspaceDragTypes(event: DragEvent): boolean {
-    const types = event.dataTransfer?.types;
-    if (types == null) {
-      return false;
-    }
-
-    for (let i = 0; i < types.length; i++) {
-      if (types[i] === CARD_WORKSPACE_DRAG_MIME) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-
-  private getSupportedDragInsertActions(file: TFile): SupportedDragInsertAction[] {
-    const fileKind = resolveCardFileKind(file);
-    if (fileKind === "markdown") {
-      return ["wiki", "embed", "content", "title-content"];
-    }
-    if (fileKind === "base" || fileKind === "canvas") {
-      return ["wiki", "embed"];
-    }
-
-    return ["wiki"];
-  }
-
-  private isDragInsertActionSupported(file: TFile, action: SupportedDragInsertAction): boolean {
-    return this.getSupportedDragInsertActions(file).includes(action);
-  }
-
-  private openDragInsertMenu({
-    event,
-    editor,
-    file,
-    position,
-  }: {
-    event: DragEvent;
-    editor: Editor;
-    file: TFile;
-    position: EditorPosition;
-  }): void {
-    const strings = this.getUiStrings().view.dragInsertMenu;
-    const menu = new Menu();
-    for (const action of this.getSupportedDragInsertActions(file)) {
-      const { icon, title } = this.getDragInsertMenuItemDetails(action, strings);
-      menu.addItem((item) => {
-        item.setTitle(title).setIcon(icon).onClick(() => {
-          void this.insertCardDragContent({ editor, file, position, action });
-        });
-      });
-    }
-
-    menu.showAtPosition(this.resolveDragMenuPosition(event));
-    const menuDom = this.getMenuDom(menu);
-    menuDom?.classList.add("fce-card-drag-insert-menu");
-  }
-
-  private getDragInsertMenuItemDetails(
-    action: SupportedDragInsertAction,
-    strings: UiStrings["view"]["dragInsertMenu"],
-  ): { icon: string; title: string } {
-    switch (action) {
-      case "wiki":
-        return { icon: "link", title: strings.insertWikiLink };
-      case "embed":
-        return { icon: "file-input", title: strings.insertEmbedLink };
-      case "content":
-        return { icon: "clipboard", title: strings.insertContent };
-      case "title-content":
-        return { icon: "heading-1", title: strings.insertTitleAndContent };
-    }
-  }
-
-  private resolveDragMenuPosition(event: DragEvent): { x: number; y: number } {
-    return { x: event.clientX, y: event.clientY };
-  }
-
-  private async buildDragInsertText(file: TFile, action: SupportedDragInsertAction): Promise<string | null> {
-    switch (action) {
-      case "wiki":
-        return `[[${file.basename}]]`;
-      case "embed":
-        return `![[${file.basename}]]`;
-      case "content":
-        return await buildContentClipboardText(this.app, file);
-      case "title-content":
-        return await buildTitleAndContentClipboardText(this.app, file);
-    }
-  }
-
-  private async insertCardDragContent({
-    editor,
-    file,
-    position,
-    action,
-  }: {
-    editor: Editor;
-    file: TFile;
-    position: EditorPosition;
-    action: SupportedDragInsertAction;
-  }): Promise<void> {
-    if (!this.isDragInsertActionSupported(file, action)) {
-      new Notice(this.getUiStrings().view.dragInsertMenu.unsupportedForFileType);
-      return;
-    }
-
-    const text = (await this.buildDragInsertText(file, action)) ?? "";
-    editor.replaceRange(text, position, undefined, "card-workspace-drag");
-    const endPosition = editor.offsetToPos(editor.posToOffset(position) + text.length);
-    editor.setCursor(endPosition);
-  }
-
-  private getMenuDom(menu: Menu): MenuDomLike | null {
-    const candidate = menu as unknown as { dom?: unknown };
-    if (!this.isMenuDomLike(candidate.dom)) {
-      return null;
-    }
-
-    return candidate.dom;
-  }
-
-  private isMenuDomLike(value: unknown): value is MenuDomLike {
-    if (typeof value !== "object" || value === null || !("classList" in value)) {
-      return false;
-    }
-
-    const { classList } = value;
-    return typeof classList === "object" && classList !== null && "add" in classList && typeof classList.add === "function";
-  }
-
   private resolveSmartDefaultCardOpenLeaf(): WorkspaceLeaf {
     const currentMainEditorLeaf = this.findCurrentMainEditorLeaf();
     if (!currentMainEditorLeaf) {
@@ -726,39 +392,19 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   getSearchService(): SearchService | null {
-    return this.searchService;
+    return this.searchCoordinator.getService();
   }
 
   getSearchSnapshot(): SearchServiceSnapshot | null {
-    if (!this.searchSnapshot) {
-      return null;
-    }
-
-    return this.cloneSearchSnapshot(this.searchSnapshot);
+    return this.searchCoordinator.getSnapshot();
   }
 
   getSearchIndexObservabilitySnapshot(): SearchIndexObservabilitySnapshot | null {
-    if (!this.searchSnapshot) {
-      return null;
-    }
-
-    const snapshot = this.cloneSearchSnapshot(this.searchSnapshot);
-    return {
-      status: snapshot.status,
-      queriesAllowed: this.areSearchQueriesAllowed(snapshot),
-      health: snapshot.health,
-    };
+    return this.searchCoordinator.getObservabilitySnapshot();
   }
 
   subscribeSearchSnapshots(listener: SearchSnapshotListener): () => void {
-    this.searchSnapshotListeners.add(listener);
-    if (this.searchSnapshot) {
-      listener(this.cloneSearchSnapshot(this.searchSnapshot));
-    }
-
-    return () => {
-      this.searchSnapshotListeners.delete(listener);
-    };
+    return this.searchCoordinator.subscribe(listener);
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
@@ -835,7 +481,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "show-folder-card-search-index-status",
       name: strings.showSearchStatusCommand,
       callback: () => {
-        this.showSearchIndexStatus();
+        this.searchCoordinator.showStatus();
       },
     });
 
@@ -843,7 +489,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "recover-folder-card-search-index",
       name: strings.recoverSearchIndexCommand,
       callback: () => {
-        void this.recoverSearchIndex("Manual recover command requested full local search index rebuild.");
+        void this.searchCoordinator.recover("Manual recover command requested full local search index rebuild.");
       },
     });
 
@@ -851,7 +497,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "rebuild-folder-card-search-index",
       name: strings.rebuildSearchIndexCommand,
       callback: () => {
-        void this.rebuildSearchIndex("Manual rebuild command requested local search index rebuild.");
+        void this.searchCoordinator.rebuild("Manual rebuild command requested local search index rebuild.");
       },
     });
 
@@ -859,7 +505,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "clear-reset-folder-card-search-index",
       name: strings.clearResetSearchIndexCommand,
       callback: () => {
-        void this.clearAndResetSearchIndex();
+        void this.searchCoordinator.clearAndReset();
       },
     });
   }
@@ -893,486 +539,6 @@ export default class CardWorkspacePlugin extends Plugin {
         this.dispatchVaultMutation(this.buildVaultMutationEvent("rename", file, oldPath));
       }),
     );
-  }
-
-  private async initializeSearchService(): Promise<void> {
-    this.disposeSearchService();
-
-    const indexed = this.createIndexedSearchService();
-    this.searchManager = indexed.manager;
-    this.bindSearchService(indexed.service);
-
-    try {
-      await indexed.service.initialize();
-      const restoreResult = await indexed.manager.restore(this.createSearchMetadata(indexed.store.vaultNamespace));
-      if (restoreResult.outcome === "rebuild-required") {
-        this.queueStartupSearchRebuild("Startup restore required full search rebuild.");
-      } else {
-        this.scheduleRestoredSearchStateSync();
-      }
-    } catch (error) {
-      console.warn("[Card Workspace] Indexed search initialization failed.", error);
-      indexed.manager.markInitializationFailure(error);
-      this.shouldRunStartupSearchRebuild = false;
-      this.pendingStartupSearchRebuildDetail = null;
-      this.shouldSyncRestoredSearchState = false;
-    }
-  }
-
-  private disposeSearchService(): void {
-    if (this.searchServiceUnsubscribe) {
-      this.searchServiceUnsubscribe();
-      this.searchServiceUnsubscribe = null;
-    }
-
-    if (!this.searchService) {
-      this.searchManager = null;
-      this.searchSnapshot = null;
-      return;
-    }
-
-    this.searchService.dispose();
-    this.searchService = null;
-    this.searchManager = null;
-    this.searchSnapshot = null;
-    this.pendingSearchClearReset = null;
-    this.pendingSearchRebuild = null;
-    this.pendingSearchRecovery = null;
-    this.pendingRestoredSearchStateSync = null;
-  }
-
-  private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
-    const nextPathIsMarkdown = event.fileKind !== null && isMarkdownCardKind(event.fileKind);
-    const oldPathWasMarkdown =
-      event.eventType === "rename" &&
-      event.oldPath !== null &&
-      resolveCardFileKindFromPath(event.oldPath) === "markdown";
-
-    return {
-      type: event.eventType,
-      path: event.path,
-      oldPath: event.oldPath,
-      isMarkdown: nextPathIsMarkdown || oldPathWasMarkdown,
-      isFolder: event.isFolder,
-    };
-  }
-
-  private createIndexedSearchService(): {
-    manager: SearchIndexManager;
-    service: IndexedSearchService;
-    store: IndexStore;
-  } {
-    const vaultNamespace = this.resolveVaultNamespace();
-    const store = new IndexStore({
-      vaultNamespace,
-    });
-    const manager = new SearchIndexManager({
-      store,
-      documentSource: {
-        readAllDocuments: async () => {
-          const getFiles = (this.app.vault as { getFiles?: () => TAbstractFile[] }).getFiles;
-          if (typeof getFiles !== "function") {
-            return [];
-          }
-
-          const files = getFiles.call(this.app.vault);
-          const documents = await Promise.all(
-            files
-              .filter((file): file is TFile => file instanceof TFile)
-              .map((file) => this.prepareSearchableDocumentFromFile(file)),
-          );
-          return documents.filter((document): document is NonNullable<typeof document> => document !== null);
-        },
-        readDocument: async (path) => {
-          const target = this.app.vault.getAbstractFileByPath(path);
-          if (!(target instanceof TFile)) {
-            return null;
-          }
-          return this.prepareSearchableDocumentFromFile(target);
-        },
-      },
-    });
-
-    const service = new IndexedSearchService(manager, {
-      maxCandidatePaths: SEARCH_MAX_CANDIDATE_PATHS,
-    });
-
-    return {
-      manager,
-      service,
-      store,
-    };
-  }
-
-  private async prepareSearchableDocumentFromFile(file: TFile) {
-    try {
-      const fileKind = resolveCardFileKind(file);
-      const title = file.basename;
-      if (fileKind === null || !isMarkdownCardKind(fileKind)) {
-        return prepareSearchableDocument({
-          path: file.path,
-          title,
-          mtime: file.stat.mtime,
-          ctime: file.stat.ctime,
-        });
-      }
-
-      const cachedRead = (this.app.vault as { cachedRead?: (target: TFile) => Promise<string> }).cachedRead;
-      if (typeof cachedRead !== "function") {
-        return null;
-      }
-
-      const markdown = await cachedRead.call(this.app.vault, file);
-      return prepareSearchableDocument({
-        path: file.path,
-        title,
-        markdown,
-        mtime: file.stat.mtime,
-        ctime: file.stat.ctime,
-      });
-    } catch {
-      return null;
-    }
-  }
-
-  private resolveVaultNamespace(): string {
-    const adapter = this.app.vault.adapter as {
-      getBasePath?: () => string;
-      basePath?: string;
-    };
-    const basePath =
-      typeof adapter.getBasePath === "function"
-        ? adapter.getBasePath()
-        : typeof adapter.basePath === "string"
-          ? adapter.basePath
-          : "";
-    if (basePath.trim().length > 0) {
-      return `path:${basePath}`;
-    }
-
-    const getName = (this.app.vault as { getName?: () => string }).getName;
-    const vaultName = typeof getName === "function" ? getName.call(this.app.vault) : "unknown-vault";
-    return `name:${vaultName}`;
-  }
-
-  private createSearchMetadata(vaultNamespace: string): IndexStoreNamespaceMetadata {
-    const pluginVersion = (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0";
-    return {
-      vaultNamespace,
-      schemaVersion: SEARCH_SCHEMA_VERSION,
-      tokenizerVersion: SEARCH_TOKENIZER_VERSION,
-      pluginVersion,
-      documentCount: 0,
-      lastIndexedAt: 0,
-    };
-  }
-
-  private bindSearchService(service: SearchService): void {
-    if (this.searchServiceUnsubscribe) {
-      this.searchServiceUnsubscribe();
-      this.searchServiceUnsubscribe = null;
-    }
-
-    this.searchService = service;
-    this.searchServiceUnsubscribe = service.subscribe((snapshot) => {
-      this.handleSearchSnapshot(snapshot);
-    });
-  }
-
-  private handleSearchSnapshot(snapshot: SearchServiceSnapshot): void {
-    const nextSnapshot = this.cloneSearchSnapshot(snapshot);
-    this.searchSnapshot = nextSnapshot;
-
-    for (const listener of this.searchSnapshotListeners) {
-      listener(this.cloneSearchSnapshot(nextSnapshot));
-    }
-
-    if (this.shouldRunMutationRecoveryRebuild(nextSnapshot)) {
-      this.scheduleMutationRecoveryRebuild();
-    }
-
-    this.emitRecoveryBoundaryNotice(nextSnapshot);
-  }
-
-  private emitRecoveryBoundaryNotice(snapshot: SearchServiceSnapshot): void {
-    const isDegraded =
-      snapshot.status === "error" ||
-      snapshot.health.outcome === "rebuild-required" ||
-      snapshot.health.outcome === "failed";
-
-    if (isDegraded) {
-      if (this.searchRecoveryBoundaryState === "degraded") {
-        return;
-      }
-      this.searchRecoveryBoundaryState = "degraded";
-      new Notice(this.getUiStrings().app.searchIndexRequiresRecovery);
-      return;
-    }
-
-    if (this.searchRecoveryBoundaryState === "degraded" && snapshot.status === "ready") {
-      this.searchRecoveryBoundaryState = "healthy";
-      new Notice(this.getUiStrings().app.searchIndexReady);
-      return;
-    }
-
-    this.searchRecoveryBoundaryState = "healthy";
-  }
-
-  private cloneSearchSnapshot(snapshot: SearchServiceSnapshot): SearchServiceSnapshot {
-    return {
-      ...snapshot,
-      health: {
-        ...snapshot.health,
-        lastSuccessfulRestore: snapshot.health.lastSuccessfulRestore
-          ? {
-              ...snapshot.health.lastSuccessfulRestore,
-            }
-          : null,
-        lastSuccessfulBuild: snapshot.health.lastSuccessfulBuild
-          ? {
-              ...snapshot.health.lastSuccessfulBuild,
-            }
-          : null,
-      },
-    };
-  }
-
-  private showSearchIndexStatus(): void {
-    const snapshot = this.getSearchIndexObservabilitySnapshot();
-    if (!snapshot) {
-      new Notice(this.getUiStrings().app.searchIndexUnavailableNotice);
-      return;
-    }
-
-    new Notice(this.formatSearchIndexStatus(snapshot));
-  }
-
-  private areSearchQueriesAllowed(snapshot: SearchServiceSnapshot): boolean {
-    return (
-      snapshot.initialized &&
-      !snapshot.disposed &&
-      snapshot.mode === "indexed" &&
-      snapshot.status === "ready" &&
-      snapshot.health.readiness === "ready" &&
-      snapshot.health.healthy &&
-      !snapshot.health.rebuildRequired
-    );
-  }
-
-  private formatSearchIndexStatus(snapshot: SearchIndexObservabilitySnapshot): string {
-    const strings = this.getUiStrings().app;
-    const { health } = snapshot;
-    return [
-      strings.searchIndexLifecycleTitle,
-      `${strings.searchIndexStatusLabel}: ${snapshot.status}`,
-      `${strings.searchIndexQueryAvailabilityLabel}: ${snapshot.queriesAllowed ? strings.searchIndexAvailable : strings.searchIndexBlocked}`,
-      `${strings.searchIndexReadinessLabel}: ${health.readiness}`,
-      `${strings.searchIndexPersistenceLabel}: ${health.persistence}`,
-      `${strings.searchIndexDocumentsLabel}: ${health.documentCount === null ? strings.searchIndexUnknown : String(health.documentCount)}`,
-      `${strings.searchIndexLastOutcomeLabel}: ${health.outcome}`,
-      `${strings.searchIndexLastRestoreLabel}: ${this.formatSearchIndexSuccess(health.lastSuccessfulRestore)}`,
-      `${strings.searchIndexLastBuildLabel}: ${this.formatSearchIndexSuccess(health.lastSuccessfulBuild)}`,
-      `${strings.searchIndexRebuildReasonLabel}: ${health.rebuildReason ?? strings.searchIndexNone}`,
-      `${strings.searchIndexLastErrorLabel}: ${health.lastError ?? strings.searchIndexNone}`,
-    ].join("\n");
-  }
-
-  private formatSearchIndexSuccess(
-    snapshot: SearchIndexObservabilitySnapshot["health"]["lastSuccessfulRestore"],
-  ): string {
-    if (!snapshot) {
-      return this.getUiStrings().app.searchIndexNone;
-    }
-
-    return `${snapshot.outcome} at ${snapshot.at} (${snapshot.documentCount} docs)`;
-  }
-
-  private shouldRunMutationRecoveryRebuild(snapshot: SearchServiceSnapshot): boolean {
-    return (
-      this.searchManager !== null &&
-      snapshot.mode === "indexed" &&
-      snapshot.status === "building" &&
-      snapshot.health.outcome === "rebuild-required" &&
-      snapshot.health.rebuildReason === "folder-rebuild-required"
-    );
-  }
-
-  private scheduleMutationRecoveryRebuild(): void {
-    if (this.pendingMutationRecoveryRebuild) {
-      return;
-    }
-
-    this.pendingMutationRecoveryRebuild = this.rebuildSearchIndex(
-      "Unsafe vault mutation requires full search rebuild.",
-    )
-      .catch((error) => {
-        console.warn("[Card Workspace] Search rebuild scheduling failed.", error);
-      })
-      .finally(() => {
-        this.pendingMutationRecoveryRebuild = null;
-      });
-  }
-
-  private async rebuildSearchIndex(detail: string): Promise<void> {
-    if (this.pendingSearchRebuild) {
-      return this.pendingSearchRebuild;
-    }
-
-    if (!this.searchManager) {
-      await this.recoverSearchIndex(detail);
-      return;
-    }
-
-    if (!this.layoutReady) {
-      this.queueStartupSearchRebuild(detail);
-      return;
-    }
-
-    const manager = this.searchManager;
-    this.pendingSearchRebuild = manager.rebuildFromSource(detail).finally(() => {
-      if (this.searchManager === manager) {
-        this.pendingSearchRebuild = null;
-      }
-    });
-    await this.pendingSearchRebuild;
-  }
-
-  private async clearAndResetSearchIndex(): Promise<void> {
-    if (this.pendingSearchClearReset) {
-      return this.pendingSearchClearReset;
-    }
-
-    this.pendingSearchClearReset = this.runClearAndResetSearchIndex().finally(() => {
-      this.pendingSearchClearReset = null;
-    });
-    return this.pendingSearchClearReset;
-  }
-
-  private async runClearAndResetSearchIndex(): Promise<void> {
-    if (!this.searchManager) {
-      await this.initializeSearchService();
-    }
-
-    if (!this.searchManager) {
-      new Notice(this.getUiStrings().app.searchIndexUnavailable);
-      return;
-    }
-
-    const clearResult = await this.searchManager.clearAndReset(
-      "Manual clear/reset command requested local search index reset.",
-    );
-    if (clearResult.outcome === "failed") {
-      new Notice(this.getUiStrings().app.searchIndexResetFailed);
-      return;
-    }
-
-    new Notice(this.getUiStrings().app.searchIndexClearedAndRebuilding);
-    await this.rebuildSearchIndex("Manual clear/reset command requested full local search index rebuild.");
-  }
-
-  private async recoverSearchIndex(
-    rebuildDetail = "Recovery command requested full search rebuild.",
-  ): Promise<void> {
-    if (this.pendingSearchRecovery) {
-      return this.pendingSearchRecovery;
-    }
-
-    this.pendingSearchRecovery = this.runRecoverSearchIndex(rebuildDetail).finally(() => {
-      this.pendingSearchRecovery = null;
-    });
-    return this.pendingSearchRecovery;
-  }
-
-  private async runRecoverSearchIndex(rebuildDetail: string): Promise<void> {
-    if (!this.searchManager) {
-      await this.initializeSearchService();
-      if (!this.searchManager) {
-        new Notice(this.getUiStrings().app.searchIndexUnavailable);
-        return;
-      }
-
-      if (this.shouldRunStartupSearchRebuild) {
-        await this.rebuildSearchIndex(this.consumeStartupSearchRebuildDetail(rebuildDetail));
-        return;
-      }
-
-      this.scheduleRestoredSearchStateSync();
-      return;
-    }
-
-    if (!this.layoutReady && this.shouldRunStartupSearchRebuild) {
-      return;
-    }
-
-    const result = await this.searchManager.restore(
-      this.createSearchMetadata(this.resolveVaultNamespace()),
-    );
-    if (result.outcome === "rebuild-required") {
-      await this.rebuildSearchIndex(rebuildDetail);
-      return;
-    }
-
-    this.scheduleRestoredSearchStateSync();
-  }
-
-  private queueStartupSearchRebuild(detail: string): void {
-    this.shouldRunStartupSearchRebuild = true;
-    this.pendingStartupSearchRebuildDetail = detail;
-  }
-
-  private consumeStartupSearchRebuildDetail(defaultDetail: string): string {
-    const detail = this.pendingStartupSearchRebuildDetail ?? defaultDetail;
-    this.shouldRunStartupSearchRebuild = false;
-    this.pendingStartupSearchRebuildDetail = null;
-    return detail;
-  }
-
-  private flushDeferredSearchStartupWork(): void {
-    if (this.shouldRunStartupSearchRebuild) {
-      void this.rebuildSearchIndex(
-        this.consumeStartupSearchRebuildDetail("Startup restore required full search rebuild."),
-      );
-    }
-
-    if (this.shouldSyncRestoredSearchState) {
-      this.shouldSyncRestoredSearchState = false;
-      void this.syncRestoredSearchState();
-    }
-  }
-
-  private scheduleRestoredSearchStateSync(): void {
-    if (!this.searchManager) {
-      return;
-    }
-
-    if (!this.layoutReady) {
-      this.shouldSyncRestoredSearchState = true;
-      return;
-    }
-
-    void this.syncRestoredSearchState();
-  }
-
-  private async syncRestoredSearchState(): Promise<void> {
-    if (this.pendingRestoredSearchStateSync) {
-      return this.pendingRestoredSearchStateSync;
-    }
-
-    if (!this.searchManager) {
-      return;
-    }
-
-    const manager = this.searchManager;
-    this.pendingRestoredSearchStateSync = manager.syncDocumentStateFromSource()
-      .catch((error) => {
-        console.warn("[Card Workspace] Restored search state sync failed.", error);
-      })
-      .finally(() => {
-        if (this.searchManager === manager) {
-          this.pendingRestoredSearchStateSync = null;
-        }
-      });
-    await this.pendingRestoredSearchStateSync;
   }
 
   private async loadSettings(): Promise<void> {
@@ -1454,7 +620,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.queueFavoriteTagPrune(event);
 
     try {
-      this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
+      this.searchCoordinator.applyVaultMutation(event);
     } catch (error) {
       console.warn("[Card Workspace] Search service mutation forwarding failed.", error);
     }

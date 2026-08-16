@@ -1,5 +1,5 @@
 import { Modal, Notice, Setting, type App } from "obsidian";
-import type { UiStrings } from "../i18n";
+import type { UiStrings } from "../../i18n";
 
 export interface BoxNameModalOptions {
   strings: UiStrings;

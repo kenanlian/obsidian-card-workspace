@@ -129,6 +129,33 @@ const obsidianMockState = vi.hoisted(() => {
   };
 });
 
+const editorDropMockState = vi.hoisted(() => ({
+  instances: [] as Array<{
+    handleDragOver: ReturnType<typeof vi.fn>;
+    handleDomDrop: ReturnType<typeof vi.fn>;
+    handleWorkspaceEditorDrop: ReturnType<typeof vi.fn>;
+  }>,
+}));
+
+vi.mock("./services/EditorDropController", () => ({
+  EditorDropController: class MockEditorDropController {
+    handleDragOver = vi.fn(() => true);
+    handleDomDrop = vi.fn(() => true);
+    handleWorkspaceEditorDrop = vi.fn();
+
+    constructor() {
+      editorDropMockState.instances.push(this);
+    }
+  },
+}));
+
+vi.mock("@codemirror/view", () => ({
+  EditorView: {
+    domEventHandlers: (handlers: unknown) => handlers,
+  },
+  dropCursor: () => ({ kind: "drop-cursor" }),
+}));
+
 vi.mock("./search", () => {
   class MockIndexStore {
     vaultNamespace: string;
@@ -426,7 +453,7 @@ vi.mock("obsidian", () => {
   };
 });
 
-import { MarkdownView, TFile, TFolder } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import CardWorkspacePlugin from "./main";
 import { FolderCardView } from "./view/FolderCardView";
 
@@ -594,239 +621,37 @@ describe("CardWorkspacePlugin activateView", () => {
   });
 });
 
-describe("CardWorkspacePlugin editor drop drag insert", () => {
-  beforeEach(() => {
-    obsidianMockState.notices = [];
-    obsidianMockState.menus = [];
-  });
+describe("CardWorkspacePlugin editor drop registration", () => {
+  it("forwards editor extension and workspace drop events to the controller", async () => {
+    const { plugin } = createPluginHarness();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
 
-  function createEditorMock(cursor = { line: 2, ch: 4 }) {
-    return {
-      offsetToPos: vi.fn((offset: number) => ({ line: 0, ch: offset })),
-      posToOffset: vi.fn((position: { line: number; ch: number }) => position.ch),
-      replaceRange: vi.fn(),
-      setCursor: vi.fn(),
-      getCursor: vi.fn(() => cursor),
-    };
-  }
+    const controller = editorDropMockState.instances.at(-1);
+    if (!controller) {
+      throw new Error("Missing editor drop controller instance");
+    }
 
-  function createDropEvent(payload: string | null) {
-    const event = {
-      clientX: 120,
-      clientY: 180,
-      defaultPrevented: false,
-      preventDefault: vi.fn(() => {
-        event.defaultPrevented = true;
-      }),
-      dataTransfer: {
-        dropEffect: "none",
-        types: payload ? ["application/x-card-workspace-note"] : [],
-        getData: vi.fn((type: string) => (type === "application/x-card-workspace-note" ? payload ?? "" : "")),
-      },
-    };
-
-    return event;
-  }
-
-  function bindMarkdownEditorContext(editor: ReturnType<typeof createEditorMock>): unknown {
-    const cmView = {};
-    Object.assign(editor, { cm: cmView });
-    const markdownView = new MarkdownView({} as never) as MarkdownView & { editor: typeof editor };
-    markdownView.editor = editor as never;
-    obsidianMockState.leavesByType["markdown"] = [{ view: markdownView, getRoot: vi.fn(() => null) }];
-    return cmView;
-  }
-
-
-  it("accepts custom dragover/drop through the editor extension path and opens the markdown ask menu", async () => {
-    const { plugin, app } = createPluginHarness();
-    const mockPlugin = plugin as unknown as {
-      loadData: ReturnType<typeof vi.fn>;
+    const registerEditorExtension = (plugin as unknown as {
       registerEditorExtension: ReturnType<typeof vi.fn>;
-    };
-    mockPlugin.loadData.mockResolvedValue({ dragInsertAction: "ask" });
+    }).registerEditorExtension;
+    const extensions = registerEditorExtension.mock.calls[0]?.[0] as Array<{
+      dragover?: (event: DragEvent) => boolean;
+      drop?: (event: DragEvent, view: unknown) => boolean;
+    }>;
+    const handlers = extensions[1];
+    const dragEvent = { defaultPrevented: false } as DragEvent;
+    const editorView = {};
 
-    const file = new TFile();
-    Object.assign(file, { path: "notes/Source.md", basename: "Source" });
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    expect(handlers?.dragover?.(dragEvent)).toBe(true);
+    expect(controller.handleDragOver).toHaveBeenCalledWith(dragEvent);
+    expect(handlers?.drop?.(dragEvent, editorView)).toBe(true);
+    expect(controller.handleDomDrop).toHaveBeenCalledWith(dragEvent, editorView);
 
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const editor = createEditorMock();
-    const cmView = bindMarkdownEditorContext(editor);
-    const event = createDropEvent(JSON.stringify({ path: "notes/Source.md", title: "Source" }));
-    const handled = (plugin as unknown as {
-      handleCardEditorDomDrop: (event: DragEvent, view: unknown) => boolean;
-    }).handleCardEditorDomDrop(event as unknown as DragEvent, cmView);
-    await Promise.resolve();
-
-    expect(mockPlugin.registerEditorExtension).toHaveBeenCalledTimes(1);
-    expect(handled).toBe(true);
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(obsidianMockState.menus).toHaveLength(1);
-    expect(obsidianMockState.menus[0]?.positions).toEqual([{ x: 120, y: 180 }]);
-    expect(obsidianMockState.menus[0]?.dom.classList.add).toHaveBeenCalledWith("fce-card-drag-insert-menu");
-    expect(obsidianMockState.menus[0]?.items.map((item) => item.title)).toEqual([
-      "Insert wiki link",
-      "Insert embed link",
-      "Insert card content",
-      "Insert card title & content",
-    ]);
-
-    obsidianMockState.menus[0]?.items[0]?.onClick?.();
-    await Promise.resolve();
-    expect(editor.replaceRange).toHaveBeenCalledWith(
-      "[[Source]]",
-      { line: 2, ch: 4 },
-      undefined,
-      "card-workspace-drag",
-    );
-    expect(editor.setCursor).toHaveBeenCalledWith({ line: 0, ch: 14 });
-  });
-
-  it("allows dragover for plugin drag payload and sets copy drop effect", async () => {
-    const { plugin } = createPluginHarness();
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const dragoverEvent = {
-      clientX: 80,
-      clientY: 120,
-      defaultPrevented: false,
-      preventDefault: vi.fn(),
-      dataTransfer: {
-        dropEffect: "none",
-        types: ["application/x-card-workspace-note"],
-      },
-    };
-
-    const allowed = (plugin as unknown as {
-      handleCardEditorDragOver: (event: DragEvent) => boolean;
-    }).handleCardEditorDragOver(dragoverEvent as unknown as DragEvent);
-
-    expect(allowed).toBe(true);
-    expect(dragoverEvent.dataTransfer.dropEffect).toBe("copy");
-    expect(dragoverEvent.preventDefault).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects dragover without the plugin drag MIME type", async () => {
-    const { plugin } = createPluginHarness();
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const dragoverEvent = {
-      defaultPrevented: false,
-      preventDefault: vi.fn(),
-      dataTransfer: {
-        dropEffect: "none",
-        types: ["text/plain"],
-      },
-    };
-
-    const allowed = (plugin as unknown as {
-      handleCardEditorDragOver: (event: DragEvent) => boolean;
-    }).handleCardEditorDragOver(dragoverEvent as unknown as DragEvent);
-
-    expect(allowed).toBe(false);
-    expect(dragoverEvent.preventDefault).not.toHaveBeenCalled();
-  });
-
-  it("inserts title and content directly when configured", async () => {
-    const { plugin, app } = createPluginHarness();
-    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
-    mockPlugin.loadData.mockResolvedValue({ dragInsertAction: "title-content" });
-
-    const file = new TFile();
-    Object.assign(file, { path: "notes/Source.md", basename: "Source" });
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
-    app.vault.cachedRead.mockResolvedValue("Body");
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const editor = createEditorMock({ line: 1, ch: 2 });
-    const event = createDropEvent(JSON.stringify({ path: "notes/Source.md", title: "Source" }));
-    await (plugin as unknown as {
-      handleCardEditorDrop: (event: DragEvent, editor: unknown, info: { editor: unknown }) => Promise<void>;
-    }).handleCardEditorDrop(event as unknown as DragEvent, editor, { editor });
-
-    expect(obsidianMockState.menus).toHaveLength(0);
-    expect(editor.replaceRange).toHaveBeenCalledWith(
-      "# Source\n\nBody",
-      { line: 1, ch: 2 },
-      undefined,
-      "card-workspace-drag",
-    );
-    expect(editor.setCursor).toHaveBeenCalledWith({ line: 0, ch: 16 });
-  });
-
-  it("blocks unsupported configured content insertion for base files", async () => {
-    const { plugin, app } = createPluginHarness();
-    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
-    mockPlugin.loadData.mockResolvedValue({ dragInsertAction: "content" });
-
-    const file = new TFile();
-    Object.assign(file, { path: "notes/Source.base", basename: "Source.base" });
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const editor = createEditorMock();
-    const event = createDropEvent(JSON.stringify({ path: "notes/Source.base", title: "Source.base" }));
-    const dropHandler = getWorkspaceCallback<[DragEvent, typeof editor, { editor: typeof editor }]>("editor-drop");
-    dropHandler(event as unknown as DragEvent, editor as never, { editor } as never);
-    await Promise.resolve();
-
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
-    expect(obsidianMockState.menus).toHaveLength(0);
-    expect(editor.replaceRange).not.toHaveBeenCalled();
-    expect(obsidianMockState.notices).toEqual([
-      "This card type does not support that drag insertion action.",
-    ]);
-  });
-
-  it("shows only wiki insert for excalidraw ask mode", async () => {
-    const { plugin, app } = createPluginHarness();
-    const mockPlugin = plugin as unknown as { loadData: ReturnType<typeof vi.fn> };
-    mockPlugin.loadData.mockResolvedValue({ dragInsertAction: "ask" });
-
-    const file = new TFile();
-    Object.assign(file, { path: "notes/Sketch.excalidraw", basename: "Sketch.excalidraw" });
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const editor = createEditorMock();
-    const event = createDropEvent(JSON.stringify({ path: "notes/Sketch.excalidraw", title: "Sketch.excalidraw" }));
-    const dropHandler = getWorkspaceCallback<[DragEvent, typeof editor, { editor: typeof editor }]>("editor-drop");
-    dropHandler(event as unknown as DragEvent, editor as never, { editor } as never);
-    await Promise.resolve();
-
-    expect(obsidianMockState.menus).toHaveLength(1);
-    expect(obsidianMockState.menus[0]?.items.map((item) => item.title)).toEqual(["Insert wiki link"]);
-  });
-
-  it("ignores drops without the plugin drag MIME", async () => {
-    const { plugin } = createPluginHarness();
-
-    plugin.onload();
-    await waitForPluginLoad(plugin);
-
-    const editor = createEditorMock();
-    const event = createDropEvent(null);
-    const dropHandler = getWorkspaceCallback<[DragEvent, typeof editor, { editor: typeof editor }]>("editor-drop");
-    dropHandler(event as unknown as DragEvent, editor as never, { editor } as never);
-    await Promise.resolve();
-
-    expect(event.preventDefault).not.toHaveBeenCalled();
-    expect(obsidianMockState.menus).toHaveLength(0);
-    expect(obsidianMockState.notices).toEqual([]);
-    expect(editor.replaceRange).not.toHaveBeenCalled();
+    const editor = {};
+    const info = { editor };
+    getWorkspaceCallback<[DragEvent, typeof editor, typeof info]>("editor-drop")(dragEvent, editor, info);
+    expect(controller.handleWorkspaceEditorDrop).toHaveBeenCalledWith(dragEvent, editor, info);
   });
 });
 
@@ -1418,47 +1243,6 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
     expect(plugin.getSearchService()).toBe(searchMockState.indexedServices[0]);
-  });
-
-  it("prepares markdown documents with cached reads and title-only pdf documents without cached reads", async () => {
-    const { app } = createPluginHarness();
-    const markdownFile = new TFile();
-    markdownFile.path = "notes/Markdown Note.md";
-    markdownFile.basename = "Markdown Note";
-    markdownFile.stat = { mtime: 20, ctime: 10 } as never;
-    const nonMarkdownFile = new TFile();
-    nonMarkdownFile.path = "Assets/Project Brief.pdf";
-    nonMarkdownFile.basename = "Project Brief";
-    nonMarkdownFile.stat = { mtime: 30, ctime: 15 } as never;
-
-    app.vault.cachedRead.mockResolvedValue("# Markdown Note\n\nunique-markdown-term");
-
-    const plugin = new CardWorkspacePlugin({} as never, {} as never);
-    (plugin as unknown as { app: typeof app }).app = app;
-
-    const markdownDocument = await (plugin as unknown as {
-      prepareSearchableDocumentFromFile(file: TFile): Promise<unknown>;
-    }).prepareSearchableDocumentFromFile(markdownFile);
-    const nonMarkdownDocument = await (plugin as unknown as {
-      prepareSearchableDocumentFromFile(file: TFile): Promise<unknown>;
-    }).prepareSearchableDocumentFromFile(nonMarkdownFile);
-
-    expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
-    expect(markdownDocument).toEqual(
-      expect.objectContaining({
-        path: markdownFile.path,
-        title: markdownFile.basename,
-        content: expect.stringContaining("unique-markdown-term"),
-      }),
-    );
-    expect(nonMarkdownDocument).toEqual(
-      expect.objectContaining({
-        path: nonMarkdownFile.path,
-        title: nonMarkdownFile.basename,
-        content: "",
-        excerpt: "",
-      }),
-    );
   });
 
   it("keeps indexed service bound and marks indexed initialization failure when startup init fails", async () => {

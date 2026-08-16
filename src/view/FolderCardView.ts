@@ -6,8 +6,6 @@ import {
   Setting,
   TFile,
   TFolder,
-  type App,
-  type ButtonComponent,
   type WorkspaceLeaf,
 } from "obsidian";
 import { mount, unmount } from "svelte";
@@ -28,7 +26,6 @@ import {
   batchMoveFiles,
   batchRemoveTagsFromFiles,
   batchTrashFiles,
-  buildMergedNoteContent,
   copyContentToClipboard,
   copyPathToClipboard,
   copyTitleAndContentToClipboard,
@@ -43,6 +40,7 @@ import {
   trashAbstractFileUsingObsidianPreference,
 } from "./note-ops";
 import { canResolveSystemPath, getSystemPath, showInSystemExplorer } from "./desktop-shell";
+import { getMenuDom, type MenuDomLike } from "./menu-dom";
 import {
   buildNavContextMenu,
   resolveNavMenuDangerLabel,
@@ -71,8 +69,20 @@ import {
   translateBrowseScopeToRule,
   upsertCardBox,
 } from "./card-boxes";
-import { BoxConfigModal } from "./BoxConfigModal";
-import { BoxNameModal } from "./BoxNameModal";
+import { BoxConfigModal } from "./modals/BoxConfigModal";
+import { BoxNameModal } from "./modals/BoxNameModal";
+import { BulkActionConfirmModal } from "./modals/BulkActionConfirmModal";
+import {
+  BulkMergeModal,
+  type MergeModalSubmitResult,
+} from "./modals/BulkMergeModal";
+import {
+  BulkRemoveTagsModal,
+  type BulkRemovableTagOption,
+} from "./modals/BulkRemoveTagsModal";
+import { CreateFolderModal } from "./modals/CreateFolderModal";
+import { RenameFileModal } from "./modals/RenameFileModal";
+import { TagInputModal, type TagMutationMode } from "./modals/TagInputModal";
 import {
   clearSelection,
   migrateRenamedPath,
@@ -157,13 +167,6 @@ function stripCardFileExtension(fileName: string): string {
 }
 
 
-type TagMutationMode = "add" | "remove";
-
-interface BulkRemovableTagOption {
-  normalizedTag: string;
-  label: string;
-}
-
 type CardMenuAction =
   | OpenDestination
   | "make-copy"
@@ -175,718 +178,6 @@ type CardMenuAction =
   | "copy-title"
   | "copy-content"
   | "copy-title-and-content";
-
-interface MenuDomLike {
-  classList: {
-    add: (token: string) => void;
-  };
-  querySelectorAll?: (selectors: string) => Iterable<Element>;
-}
-
-class BulkActionConfirmModal extends Modal {
-  private readonly titleText: string;
-  private readonly message: string;
-  private readonly cancelButtonText: string;
-  private readonly confirmButtonText: string;
-  private readonly onDecision: (confirmed: boolean) => void;
-  private resolved = false;
-
-  constructor(
-    app: App,
-    options: {
-      title: string;
-      message: string;
-      cancelButtonText: string;
-      confirmButtonText: string;
-    },
-    onDecision: (confirmed: boolean) => void,
-  ) {
-    super(app);
-    this.titleText = options.title;
-    this.message = options.message;
-    this.cancelButtonText = options.cancelButtonText;
-    this.confirmButtonText = options.confirmButtonText;
-    this.onDecision = onDecision;
-  }
-
-  onOpen(): void {
-    this.setTitle(this.titleText);
-    this.contentEl.empty();
-    this.contentEl.createEl("p", { text: this.message });
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.cancelButtonText).onClick(() => {
-          this.resolve(false);
-        });
-      })
-      .addButton((button) => {
-        button
-          .setButtonText(this.confirmButtonText)
-          .setWarning()
-          .onClick(() => {
-            this.resolve(true);
-          });
-      });
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-
-    if (!this.resolved) {
-      this.onDecision(false);
-    }
-  }
-
-  private resolve(confirmed: boolean): void {
-    if (this.resolved) {
-      return;
-    }
-
-    this.resolved = true;
-    this.close();
-    this.onDecision(confirmed);
-  }
-}
-
-type MergeCleanupMode = "keep" | "trash";
-
-interface MergeModalSubmitResult {
-  files: TFile[];
-  targetFolder: TFolder;
-  mergedTitle: string;
-  separator: string;
-  cleanupMode: MergeCleanupMode;
-}
-
-
-class BulkMergeModal extends Modal {
-  private readonly strings: UiStrings["view"]["merge"];
-  private readonly folderPickerTitle: string;
-  private readonly onSubmit: (result: MergeModalSubmitResult) => Promise<boolean>;
-  private orderedFiles: TFile[];
-  private targetFolder: TFolder;
-  private mergedTitle: string;
-  private separator = "\n\n";
-  private cleanupMode: MergeCleanupMode = "keep";
-  private previewText: string;
-  private previewError: string | null = null;
-  private submitting = false;
-  private closed = true;
-  private previewRequestSeq = 0;
-  private submitRequestSeq = 0;
-
-  constructor(
-    app: App,
-    options: {
-      files: TFile[];
-      initialTargetFolder: TFolder;
-      initialMergedTitle: string;
-      strings: UiStrings["view"]["merge"];
-      folderPickerTitle: string;
-    },
-    onSubmit: (result: MergeModalSubmitResult) => Promise<boolean>,
-  ) {
-    super(app);
-    this.orderedFiles = [...options.files];
-    this.targetFolder = options.initialTargetFolder;
-    this.mergedTitle = options.initialMergedTitle;
-    this.strings = options.strings;
-    this.folderPickerTitle = options.folderPickerTitle;
-    this.previewText = options.strings.loadingPreview;
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen(): void {
-    this.closed = false;
-    void this.refreshPreview();
-    this.render();
-  }
-
-  onClose(): void {
-    this.closed = true;
-    this.previewRequestSeq += 1;
-    this.submitRequestSeq += 1;
-    this.contentEl.empty();
-  }
-  private getScrollContainer(): HTMLElement {
-    if (this.modalEl.scrollTop > 0 || this.modalEl.scrollHeight > this.modalEl.clientHeight) {
-      return this.modalEl;
-    }
-
-    return this.contentEl;
-  }
-
-
-  private render(): void {
-    if (this.closed) {
-      return;
-    }
-
-    this.setTitle(this.strings.title);
-    const scrollContainer = this.getScrollContainer();
-    const scrollTop = scrollContainer.scrollTop;
-    this.contentEl.empty();
-    this.contentEl.createEl("p", {
-      text: this.strings.sourceCount(this.orderedFiles.length),
-    });
-
-    new Setting(this.contentEl)
-      .setName(this.strings.mergedTitle)
-      .addText((text) => {
-        text.setValue(this.mergedTitle).onChange((value) => {
-          this.mergedTitle = value;
-        });
-      });
-
-    new Setting(this.contentEl)
-      .setName(this.strings.targetFolder)
-      .setDesc(this.targetFolder.path === "" ? "/" : this.targetFolder.path)
-      .addButton((button) => {
-        button.setButtonText(this.strings.chooseFolder).onClick(() => {
-          const picker = new FolderPickerModal(this.app, (folder: TFolder) => {
-            this.targetFolder = folder;
-            this.render();
-          }, this.folderPickerTitle);
-          picker.open();
-        });
-      });
-
-    new Setting(this.contentEl)
-      .setName(this.strings.separator)
-      .addText((text) => {
-        text.setValue(this.separator).onChange((value) => {
-          this.separator = value;
-          void this.refreshPreview();
-        });
-      });
-
-    this.contentEl.createEl("h4", { text: this.strings.sourceOrder });
-    this.orderedFiles.forEach((file, index) => {
-      new Setting(this.contentEl)
-        .setName(`${index + 1}. ${file.path}`)
-        .addButton((button) => {
-          button.setButtonText(this.strings.up).onClick(() => {
-            this.moveFile(index, -1);
-          });
-        })
-        .addButton((button) => {
-          button.setButtonText(this.strings.down).onClick(() => {
-            this.moveFile(index, 1);
-          });
-        });
-    });
-
-    new Setting(this.contentEl)
-      .setName(this.strings.sourceCleanup)
-      .setDesc(this.cleanupMode === "keep" ? this.strings.keepSourceNotes : this.strings.trashSourceNotesAfterMerge)
-      .addButton((button) => {
-        button
-          .setButtonText(this.strings.keepSourceNotes)
-          .setCta()
-          .onClick(() => {
-            this.cleanupMode = "keep";
-            this.render();
-          });
-      })
-      .addButton((button) => {
-        button
-          .setButtonText(this.strings.trashSourceNotesAfterMerge)
-          .setWarning()
-          .onClick(() => {
-            this.cleanupMode = "trash";
-            this.render();
-          });
-      });
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.strings.cancel).onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(this.submitting ? this.strings.merging : this.strings.mergeNotes)
-          .onClick(() => {
-            void this.submit();
-          });
-      });
-
-    this.contentEl.createEl("h4", { text: this.strings.preview });
-    this.contentEl.createEl("pre", {
-      text: this.previewError ?? this.previewText,
-    });
-    scrollContainer.scrollTop = scrollTop;
-  }
-
-  private moveFile(index: number, delta: -1 | 1): void {
-    const nextIndex = index + delta;
-    if (nextIndex < 0 || nextIndex >= this.orderedFiles.length) {
-      return;
-    }
-
-    const nextFiles = [...this.orderedFiles];
-    const [moved] = nextFiles.splice(index, 1);
-    if (!moved) {
-      return;
-    }
-    nextFiles.splice(nextIndex, 0, moved);
-    this.orderedFiles = nextFiles;
-    void this.refreshPreview();
-    this.render();
-  }
-
-  private async refreshPreview(): Promise<void> {
-    const requestSeq = ++this.previewRequestSeq;
-    const orderedFiles = [...this.orderedFiles];
-    const separator = this.separator;
-
-    try {
-      const notes: Array<{ basename: string; content: string }> = [];
-      for (const file of orderedFiles) {
-        const content = await this.app.vault.read(file);
-        if (this.closed || requestSeq !== this.previewRequestSeq) {
-          return;
-        }
-        notes.push({ basename: file.basename, content });
-      }
-      if (this.closed || requestSeq !== this.previewRequestSeq) {
-        return;
-      }
-      this.previewText = buildMergedNoteContent(notes, separator);
-      this.previewError = null;
-    } catch (error) {
-      if (this.closed || requestSeq !== this.previewRequestSeq) {
-        return;
-      }
-      this.previewError = this.strings.failedToBuildPreview(String(error));
-    }
-
-    this.render();
-  }
-
-  private async submit(): Promise<void> {
-    if (this.submitting || this.orderedFiles.length < 2) {
-      return;
-    }
-
-    const requestSeq = ++this.submitRequestSeq;
-    this.submitting = true;
-    this.render();
-
-    try {
-      const mergedTitle = this.mergedTitle.trim();
-      const shouldClose = await this.onSubmit({
-        files: [...this.orderedFiles],
-        targetFolder: this.targetFolder,
-        mergedTitle: mergedTitle.length > 0 ? mergedTitle : this.strings.defaultMergedTitle,
-        separator: this.separator,
-        cleanupMode: this.cleanupMode,
-      });
-      if (this.closed || requestSeq !== this.submitRequestSeq) {
-        return;
-      }
-      if (shouldClose) {
-        this.close();
-      }
-    } catch (error) {
-      if (this.closed || requestSeq !== this.submitRequestSeq) {
-        return;
-      }
-      new Notice(this.strings.failedToMergeNotes(String(error)));
-    } finally {
-      if (requestSeq === this.submitRequestSeq) {
-        this.submitting = false;
-        this.render();
-      }
-    }
-  }
-}
-
-
-class TagInputModal extends Modal {
-  private readonly strings: UiStrings["view"]["tagInput"];
-  private readonly mode: TagMutationMode;
-  private readonly onSubmit: (tag: string) => Promise<boolean>;
-  private tagValue = "";
-  private submitting = false;
-  private closed = true;
-
-  constructor(
-    app: App,
-    options: {
-      mode: TagMutationMode;
-      strings: UiStrings["view"]["tagInput"];
-    },
-    onSubmit: (tag: string) => Promise<boolean>,
-  ) {
-    super(app);
-    this.mode = options.mode;
-    this.strings = options.strings;
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen(): void {
-    this.closed = false;
-    this.render();
-  }
-
-  onClose(): void {
-    this.closed = true;
-    this.contentEl.empty();
-  }
-
-  private render(): void {
-    this.setTitle(this.mode === "add" ? this.strings.addTitle : this.strings.removeTitle);
-    this.contentEl.empty();
-
-    new Setting(this.contentEl).setName(this.strings.tagLabel).addText((text) => {
-      text.setValue(this.tagValue).setPlaceholder(this.strings.tagPlaceholder).onChange((value) => {
-        this.tagValue = value;
-      });
-    });
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.strings.cancel).onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(this.getSubmitButtonText())
-          .onClick(() => {
-            void this.submit();
-          });
-      });
-  }
-
-  private getSubmitButtonText(): string {
-    if (this.mode === "add") {
-      return this.submitting ? this.strings.adding : this.strings.add;
-    }
-
-    return this.submitting ? this.strings.removing : this.strings.remove;
-  }
-
-  private async submit(): Promise<void> {
-    if (this.submitting) {
-      return;
-    }
-
-    const normalizedTag = normalizeTagForFrontmatter(this.tagValue);
-    if (normalizedTag.length === 0) {
-      new Notice(this.strings.invalidTag);
-      return;
-    }
-
-    this.submitting = true;
-    this.render();
-
-    try {
-      const shouldClose = await this.onSubmit(normalizedTag);
-      if (shouldClose) {
-        this.close();
-      }
-    } finally {
-      this.submitting = false;
-      if (!this.closed) {
-        this.render();
-      }
-    }
-  }
-}
-
-class BulkRemoveTagsModal extends Modal {
-  private readonly titleText: string;
-  private readonly emptyMessage: string;
-  private readonly selectionSummary: (count: number) => string;
-  private readonly cancelText: string;
-  private readonly submitText: string;
-  private readonly submittingText: string;
-  private readonly tagOptions: BulkRemovableTagOption[];
-  private readonly onSubmit: (tags: string[]) => Promise<boolean>;
-  private readonly selectedTags = new Set<string>();
-  private submitting = false;
-  private closed = true;
-
-  constructor(
-    app: App,
-    options: {
-      titleText: string;
-      emptyMessage: string;
-      selectionSummary: (count: number) => string;
-      cancelText: string;
-      submitText: string;
-      submittingText: string;
-      tagOptions: BulkRemovableTagOption[];
-    },
-    onSubmit: (tags: string[]) => Promise<boolean>,
-  ) {
-    super(app);
-    this.titleText = options.titleText;
-    this.emptyMessage = options.emptyMessage;
-    this.selectionSummary = options.selectionSummary;
-    this.cancelText = options.cancelText;
-    this.submitText = options.submitText;
-    this.submittingText = options.submittingText;
-    this.tagOptions = options.tagOptions;
-    this.onSubmit = onSubmit;
-  }
-  
-
-  onOpen(): void {
-    this.closed = false;
-    this.render();
-  }
-
-  onClose(): void {
-    this.closed = true;
-    this.contentEl.empty();
-  }
-
-  private render(): void {
-    this.setTitle(this.titleText);
-    this.contentEl.empty();
-
-    if (this.tagOptions.length === 0) {
-      this.contentEl.createEl("p", { text: this.emptyMessage });
-    } else {
-      this.contentEl.createEl("p", { text: this.selectionSummary(this.selectedTags.size) });
-      const checkboxGrid = this.contentEl.createDiv({ cls: "fce-tag-checkbox-grid" });
-      for (const tagOption of this.tagOptions) {
-        const optionEl = checkboxGrid.createEl("label", { cls: "fce-tag-checkbox-option" });
-        const checkboxEl = optionEl.createEl("input", {
-          cls: "fce-tag-checkbox-input",
-          type: "checkbox",
-        });
-        checkboxEl.checked = this.selectedTags.has(tagOption.normalizedTag);
-        checkboxEl.addEventListener("change", () => {
-          if (checkboxEl.checked) {
-            this.selectedTags.add(tagOption.normalizedTag);
-          } else {
-            this.selectedTags.delete(tagOption.normalizedTag);
-          }
-          if (!this.closed) {
-            this.render();
-          }
-        });
-        optionEl.createEl("span", {
-          cls: "fce-tag-checkbox-label",
-          text: tagOption.label,
-        });
-      }
-    }
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.cancelText).onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button: ButtonComponent) => {
-        button
-          .setCta()
-          .setButtonText(this.submitting ? this.submittingText : this.submitText)
-          .onClick(() => {
-            void this.submit();
-          });
-        button.setDisabled(this.submitting || this.selectedTags.size === 0);
-      });
-  }
-
-  private async submit(): Promise<void> {
-    if (this.submitting || this.selectedTags.size === 0) {
-      return;
-    }
-
-    this.submitting = true;
-    this.render();
-
-    try {
-      const shouldClose = await this.onSubmit(Array.from(this.selectedTags));
-      if (shouldClose) {
-        this.close();
-      }
-    } finally {
-      this.submitting = false;
-      if (!this.closed) {
-        this.render();
-      }
-    }
-  }
-}
-class RenameFileModal extends Modal {
-  private readonly strings: UiStrings["view"]["rename"];
-  private readonly initialName: string;
-  private readonly onSubmit: (nextName: string) => Promise<void>;
-  private nextName: string;
-  private submitting = false;
-
-  constructor(
-    app: App,
-    options: {
-      initialName: string;
-      strings: UiStrings["view"]["rename"];
-    },
-    onSubmit: (nextName: string) => Promise<void>,
-  ) {
-    super(app);
-    this.initialName = options.initialName;
-    this.strings = options.strings;
-    this.nextName = options.initialName;
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen(): void {
-    this.render();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private render(): void {
-    this.setTitle(this.strings.title);
-    this.contentEl.empty();
-
-    new Setting(this.contentEl).setName(this.strings.nameLabel).addText((text) => {
-      text.setValue(this.nextName).setPlaceholder(this.initialName).onChange((value) => {
-        this.nextName = value;
-      });
-      text.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void this.submit();
-        }
-      });
-    });
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.strings.cancel).onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(this.submitting ? this.strings.renaming : this.strings.rename)
-          .onClick(() => {
-            void this.submit();
-          });
-      });
-  }
-
-  private async submit(): Promise<void> {
-    if (this.submitting) {
-      return;
-    }
-
-    this.submitting = true;
-    this.render();
-
-    try {
-      await this.onSubmit(this.nextName);
-      this.close();
-    } finally {
-      this.submitting = false;
-      this.render();
-    }
-  }
-}
-
-interface FolderNameModalOptions {
-  title: string;
-  submitLabel: string;
-  submittingLabel: string;
-  initialName?: string;
-}
-
-class CreateFolderModal extends Modal {
-  private readonly strings: UiStrings["view"]["folderManagement"];
-  private readonly options: FolderNameModalOptions;
-  private readonly onSubmit: (nextName: string) => Promise<boolean>;
-  private nextName: string;
-  private submitting = false;
-
-  constructor(
-    app: App,
-    strings: UiStrings["view"]["folderManagement"],
-    options: FolderNameModalOptions,
-    onSubmit: (nextName: string) => Promise<boolean>,
-  ) {
-    super(app);
-    this.strings = strings;
-    this.options = options;
-    this.onSubmit = onSubmit;
-    this.nextName = options.initialName ?? "";
-  }
-
-  onOpen(): void {
-    this.render();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private render(): void {
-    this.setTitle(this.options.title);
-    this.contentEl.empty();
-
-    new Setting(this.contentEl).setName(this.strings.nameLabel).addText((text) => {
-      text.setValue(this.nextName).onChange((value) => {
-        this.nextName = value;
-      });
-      text.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void this.submit();
-        }
-      });
-    });
-
-    new Setting(this.contentEl)
-      .addButton((button) => {
-        button.setButtonText(this.strings.cancel).onClick(() => {
-          this.close();
-        });
-      })
-      .addButton((button) => {
-        button
-          .setCta()
-          .setButtonText(this.submitting ? this.options.submittingLabel : this.options.submitLabel)
-          .onClick(() => {
-            void this.submit();
-          });
-      });
-  }
-
-  private async submit(): Promise<void> {
-    if (this.submitting) {
-      return;
-    }
-
-    this.submitting = true;
-    this.render();
-
-    try {
-      const shouldClose = await this.onSubmit(this.nextName);
-      if (shouldClose) {
-        this.close();
-      }
-    } finally {
-      this.submitting = false;
-      if (this.contentEl.isConnected) {
-        this.render();
-      }
-    }
-  }
-}
 
 export class FolderCardView extends ItemView {
   private plugin: CardWorkspacePlugin;
@@ -2193,20 +1484,12 @@ export class FolderCardView extends ItemView {
       menu.showAtMouseEvent(mouseEvent);
     }
 
-    const menuDom = this.getMenuDom(menu);
+    const menuDom = getMenuDom(menu);
     if (menuDom) {
       this.decorateCardContextMenu(menuDom, this.strings.view.contextMenu.delete);
     }
   }
 
-  private getMenuDom(menu: Menu): MenuDomLike | null {
-    const candidate = menu as unknown as { dom?: unknown };
-    if (!this.isMenuDomLike(candidate.dom)) {
-      return null;
-    }
-
-    return candidate.dom;
-  }
   private decorateCardContextMenu(menuDom: MenuDomLike, deleteLabel: string | null): void {
     menuDom.classList.add("fce-card-context-menu");
     if (deleteLabel !== null) {
@@ -2227,15 +1510,6 @@ export class FolderCardView extends ItemView {
 
       item.classList.add("fce-menu-item-danger");
     }
-  }
-
-  private isMenuDomLike(value: unknown): value is MenuDomLike {
-    if (typeof value !== "object" || value === null || !("classList" in value)) {
-      return false;
-    }
-
-    const { classList } = value;
-    return typeof classList === "object" && classList !== null && "add" in classList && typeof classList.add === "function";
   }
 
   private isMouseEventLike(event: unknown): event is MouseEvent {
@@ -2431,7 +1705,7 @@ export class FolderCardView extends ItemView {
 
     menu.showAtMouseEvent(payload.mouseEvent);
 
-    const menuDom = this.getMenuDom(menu);
+    const menuDom = getMenuDom(menu);
     if (menuDom) {
       this.decorateCardContextMenu(menuDom, resolveNavMenuDangerLabel(payload, deps));
     }
@@ -2646,6 +1920,7 @@ export class FolderCardView extends ItemView {
       { initialName: file.basename, strings: this.strings.view.rename },
       async (nextName: string) => {
         await this.submitRename(notePath, nextName);
+        return true;
       },
     );
     modal.open();

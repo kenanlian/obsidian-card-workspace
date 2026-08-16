@@ -1,8 +1,8 @@
 import { Modal, Setting, type App } from "obsidian";
-import type { UiStrings } from "../i18n";
-import type { SortDirection, SortField } from "../settings";
-import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
-import { removeRuleFromBox, restoreExcludedPaths } from "./card-boxes";
+import type { UiStrings } from "../../i18n";
+import type { SortDirection, SortField } from "../../settings";
+import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "../types";
+import { removeRuleFromBox, restoreExcludedPaths } from "../card-boxes";
 
 export interface BoxConfigModalOptions {
   box: CardBoxDefinition;

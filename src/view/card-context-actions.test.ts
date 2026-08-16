@@ -423,6 +423,7 @@ const mockState = vi.hoisted(() => {
     };
     contentEl: MockModalElement & {
       scrollTop: number;
+      isConnected: boolean;
       empty: () => void;
     };
 
@@ -435,6 +436,7 @@ const mockState = vi.hoisted(() => {
       };
       const contentEl = new MockModalElement(this, "div") as MockModal["contentEl"];
       contentEl.scrollTop = 0;
+      contentEl.isConnected = true;
       contentEl.empty = () => {
         this.descriptions = [];
         this.messages = [];
@@ -461,6 +463,7 @@ const mockState = vi.hoisted(() => {
     }
 
     close(): void {
+      this.contentEl.isConnected = false;
       if ("onClose" in this && typeof (this as any).onClose === "function") {
         (this as any).onClose();
       }
