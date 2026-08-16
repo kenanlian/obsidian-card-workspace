@@ -34,51 +34,55 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
 function createInitialPanelState(): PanelModelState {
   return {
     strings: getUiStrings("en"),
-    cards: [],
-    searchMatchCountsByPath: {},
-    emptyStateMessage: "No supported files found in this folder.",
-    folderPath: "notes",
-    selectedPath: null,
-    loading: false,
-    generation: 0,
-    searchQuery: "",
-    searchStatus: "idle",
-    sortField: "mtime",
-    sortDirection: "desc",
-    availableTags: [],
-    tagCounts: {},
-    activeFilterTags: [],
-    pinnedPaths: [],
-    cardCornerRadius: "compact",
-    previewLines: 5,
-    folderTree: [],
-    includeSubfolders: true,
-    tooltipSide: "right",
-    bulkMode: false,
-    selectedPaths: [],
-    selectedCount: 0,
-    bulkAnchorPath: null,
-    canBulkSelectAll: false,
-    canBulkClearSelection: false,
-    canBulkMoveSelected: false,
-    canBulkAddTagSelected: false,
-    canBulkRemoveTagSelected: false,
-    canBulkDeleteSelected: false,
-    canBulkMergeSelected: false,
-    activeBoxId: null,
-    activeBoxName: null,
-    boxSummaries: [],
-    boxExcludedCount: 0,
-    navPaneWidth: 240,
-    layoutMode: "dual",
-    navVisible: true,
-    folderSectionCollapsed: false,
-    tagSectionCollapsed: false,
-    boxSectionCollapsed: false,
-    favorites: [],
-    favoritesSectionCollapsed: false,
-    searchFocusToken: 0,
-    showNavItemCounts: false,
+    scope: {
+      displayPath: "notes",
+      includeSubfolders: true,
+      activeBoxId: null,
+      activeBoxName: null,
+      boxExcludedCount: 0,
+      emptyStateMessage: "No supported files found in this folder.",
+    },
+    cards: {
+      records: [],
+      searchMatchCountsByPath: {},
+      selectedPath: null,
+      loading: false,
+      generation: 0,
+    },
+    search: { query: "", status: "idle", focusToken: 0 },
+    projection: {
+      sortField: "mtime",
+      sortDirection: "desc",
+      availableTags: [],
+      tagCounts: {},
+      activeFilterTags: [],
+      pinnedPaths: [],
+    },
+    bulk: {
+      bulkMode: false,
+      selectedPaths: [],
+      selectedCount: 0,
+      bulkAnchorPath: null,
+      canBulkSelectAll: false,
+      canBulkClearSelection: false,
+      canBulkMoveSelected: false,
+      canBulkAddTagSelected: false,
+      canBulkRemoveTagSelected: false,
+      canBulkDeleteSelected: false,
+      canBulkMergeSelected: false,
+    },
+    nav: {
+      folderTree: [],
+      favorites: [],
+      boxSummaries: [],
+      paneWidth: 240,
+      layoutMode: "dual",
+      visible: true,
+      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      showItemCounts: false,
+      tooltipSide: "right",
+    },
+    appearance: { cardCornerRadius: "compact", previewLines: 5 },
   };
 }
 
@@ -114,10 +118,16 @@ describe("FolderCardPanel.svelte", () => {
     expect(target.textContent).toContain("No supported files found in this folder.");
 
     panelModel.mutate((state) => {
-      state.cards = [createCard("notes/runtime.md", "Runtime note")];
-      state.emptyStateMessage = "No supported files found in this folder.";
-      state.generation = 1;
-      state.folderPath = "notes";
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/runtime.md", "Runtime note")],
+        generation: 1,
+      };
+      state.scope = {
+        ...state.scope,
+        emptyStateMessage: "No supported files found in this folder.",
+        displayPath: "notes",
+      };
     });
     await tick();
 
@@ -146,10 +156,13 @@ describe("FolderCardPanel.svelte", () => {
     });
 
     panelModel.mutate((state) => {
-      state.cards = Array.from({ length: 40 }, (_unused, index) =>
-        createCard(`notes/card-${index}.md`, `Card ${index}`),
-      );
-      state.generation = 1;
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 40 }, (_unused, index) =>
+          createCard(`notes/card-${index}.md`, `Card ${index}`),
+        ),
+        generation: 1,
+      };
     });
     await tick();
 
@@ -179,9 +192,12 @@ describe("FolderCardPanel.svelte", () => {
     });
 
     panelModel.mutate((state) => {
-      state.cards = [createCard("notes/runtime.md", "Runtime note")];
-      state.cardCornerRadius = "rounded";
-      state.generation = 1;
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/runtime.md", "Runtime note")],
+        generation: 1,
+      };
+      state.appearance = { ...state.appearance, cardCornerRadius: "rounded" };
     });
     await tick();
 
@@ -209,14 +225,20 @@ describe("FolderCardPanel.svelte", () => {
     expect(target.textContent).toContain("No supported files found in this folder.");
 
     panelModel.mutate((state) => {
-      state.cards = [
-        createCard("notes/reference.base", "reference.base", "base"),
-        createCard("notes/flow.canvas", "flow.canvas", "canvas"),
-        createCard("notes/sketch.excalidraw", "sketch.excalidraw", "excalidraw"),
-      ];
-      state.emptyStateMessage = "No supported files found in this folder.";
-      state.generation = 2;
-      state.folderPath = "notes";
+      state.cards = {
+        ...state.cards,
+        records: [
+          createCard("notes/reference.base", "reference.base", "base"),
+          createCard("notes/flow.canvas", "flow.canvas", "canvas"),
+          createCard("notes/sketch.excalidraw", "sketch.excalidraw", "excalidraw"),
+        ],
+        generation: 2,
+      };
+      state.scope = {
+        ...state.scope,
+        emptyStateMessage: "No supported files found in this folder.",
+        displayPath: "notes",
+      };
     });
     await tick();
 
@@ -245,8 +267,11 @@ describe("FolderCardPanel.svelte", () => {
     });
 
     panelModel.mutate((state) => {
-      state.cards = [createCard("notes/action.md", "Action note")];
-      state.generation = 1;
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/action.md", "Action note")],
+        generation: 1,
+      };
     });
     await tick();
 
@@ -288,18 +313,23 @@ describe("FolderCardPanel.svelte", () => {
 
     await tick();
     panelModel.mutate((state) => {
-      state.searchQuery = "  query  ";
-      state.activeFilterTags = ["tag-a"];
-      state.cards = [];
-      state.emptyStateMessage = "No results for “query” in current folder and tag scope.";
-      state.generation = 1;
+      state.search = { ...state.search, query: "  query  " };
+      state.projection = { ...state.projection, activeFilterTags: ["tag-a"] };
+      state.cards = { ...state.cards, records: [], generation: 1 };
+      state.scope = {
+        ...state.scope,
+        emptyStateMessage: "No results for “query” in current folder and tag scope.",
+      };
     });
     await tick();
 
     expect(target.textContent).toContain("No results for “query” in current folder and tag scope.");
 
     panelModel.mutate((state) => {
-      state.emptyStateMessage = "No results for “query” in current folder.";
+      state.scope = {
+        ...state.scope,
+        emptyStateMessage: "No results for “query” in current folder.",
+      };
     });
     await tick();
 
@@ -322,12 +352,14 @@ describe("FolderCardPanel.svelte", () => {
 
     await tick();
     panelModel.mutate((state) => {
-      state.searchQuery = "blocked query";
-      state.searchStatus = "building";
-      state.searchIndexReadiness = "restoring";
-      state.cards = [];
-      state.emptyStateMessage = "This should not be shown";
-      state.generation = 1;
+      state.search = {
+        ...state.search,
+        query: "blocked query",
+        status: "building",
+        readiness: "restoring",
+      };
+      state.cards = { ...state.cards, records: [], generation: 1 };
+      state.scope = { ...state.scope, emptyStateMessage: "This should not be shown" };
     });
     await tick();
 
@@ -336,8 +368,11 @@ describe("FolderCardPanel.svelte", () => {
     expect(target.textContent).not.toContain("This should not be shown");
 
     panelModel.mutate((state) => {
-      state.searchStatus = "rebuild-required";
-      state.searchIndexRebuildReason = "corrupt";
+      state.search = {
+        ...state.search,
+        status: "rebuild-required",
+        rebuildReason: "corrupt",
+      };
     });
     await tick();
 
@@ -357,19 +392,22 @@ describe("FolderCardPanel.svelte", () => {
     });
 
     panelModel.mutate((state) => {
-      state.cards = [
-        createCard("notes/singular.md", "Singular note"),
-        createCard("notes/plural.md", "Plural note"),
-        createCard("notes/zero.md", "Zero note"),
-        createCard("notes/missing.md", "Missing note"),
-      ];
-      state.searchQuery = "test";
-      state.searchMatchCountsByPath = {
-        "notes/singular.md": 1,
-        "notes/plural.md": 3,
-        "notes/zero.md": 0,
+      state.cards = {
+        ...state.cards,
+        records: [
+          createCard("notes/singular.md", "Singular note"),
+          createCard("notes/plural.md", "Plural note"),
+          createCard("notes/zero.md", "Zero note"),
+          createCard("notes/missing.md", "Missing note"),
+        ],
+        searchMatchCountsByPath: {
+          "notes/singular.md": 1,
+          "notes/plural.md": 3,
+          "notes/zero.md": 0,
+        },
+        generation: 1,
       };
-      state.generation = 1;
+      state.search = { ...state.search, query: "test" };
     });
     await tick();
 
@@ -392,7 +430,7 @@ describe("FolderCardPanel.svelte", () => {
     expect(missingCard?.querySelector(".fce-card-search-count")).toBeNull();
 
     panelModel.mutate((state) => {
-      state.searchQuery = "   ";
+      state.search = { ...state.search, query: "   " };
     });
     await tick();
     expect(target.querySelectorAll(".fce-card-search-count").length).toBe(0);
@@ -411,30 +449,40 @@ describe("FolderCardPanel.svelte", () => {
     });
 
     panelModel.mutate((state) => {
-      state.cards = [createCard("notes/blocked.md", "Blocked note")];
-      state.searchQuery = "alpha";
-      state.searchStatus = "building";
-      state.searchIndexReadiness = "restoring";
-      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
-      state.generation = 1;
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/blocked.md", "Blocked note")],
+        searchMatchCountsByPath: { "notes/blocked.md": 6 },
+        generation: 1,
+      };
+      state.search = {
+        ...state.search,
+        query: "alpha",
+        status: "building",
+        readiness: "restoring",
+      };
     });
     await tick();
 
     expect(target.querySelector(".fce-card-search-count")).toBeNull();
 
     panelModel.mutate((state) => {
-      state.searchStatus = "unavailable";
-      state.searchIndexReadiness = "ready";
-      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
+      state.search = { ...state.search, status: "unavailable", readiness: "ready" };
+      state.cards = {
+        ...state.cards,
+        searchMatchCountsByPath: { "notes/blocked.md": 6 },
+      };
     });
     await tick();
 
     expect(target.querySelector(".fce-card-search-count")).toBeNull();
 
     panelModel.mutate((state) => {
-      state.searchStatus = "ready";
-      state.searchQuery = "   ";
-      state.searchMatchCountsByPath = { "notes/blocked.md": 6 };
+      state.search = { ...state.search, status: "ready", query: "   " };
+      state.cards = {
+        ...state.cards,
+        searchMatchCountsByPath: { "notes/blocked.md": 6 },
+      };
     });
     await tick();
 

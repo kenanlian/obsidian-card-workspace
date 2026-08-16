@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import NavigationPane from "./NavigationPane.svelte";
 import { PLAIN_FOLDER_ICON } from "../icons";
+import { getUiStrings } from "../i18n";
 import type {
   FavoriteEntry,
   FolderActionPayload,
@@ -166,27 +167,42 @@ function mountNav(
   const target = document.createElement("div");
   target.className = "folder-card-view";
   document.body.appendChild(target);
+  const values = props as Record<string, any>;
   const component = mount(NavigationPane, {
     target,
     props: {
-      folderTree: createFolderTree(),
-      folderPath: "notes",
-      includeSubfolders: true,
-      availableTags: ["work", "work/ai", "personal"],
-      tagCounts: { work: 3, "work/ai": 1, personal: 2 },
-      activeFilterTags: [],
-      boxSummaries: [
-        { id: "box-1", name: "Alpha", cardCount: 4 },
-        { id: "box-2", name: "Beta", cardCount: 0 },
-      ],
-      activeBoxId: null,
-      navPaneWidth: 240,
-      layoutMode: "dual",
-      folderSectionCollapsed: false,
-      tagSectionCollapsed: false,
-      boxSectionCollapsed: false,
+      strings: getUiStrings("en"),
+      nav: {
+        folderTree: values.folderTree ?? createFolderTree(),
+        favorites: values.favorites ?? [],
+        boxSummaries: values.boxSummaries ?? [
+          { id: "box-1", name: "Alpha", cardCount: 4 },
+          { id: "box-2", name: "Beta", cardCount: 0 },
+        ],
+        paneWidth: values.navPaneWidth ?? 240,
+        layoutMode: values.layoutMode ?? "dual",
+        visible: true,
+        sectionCollapsed: {
+          favorites: values.favoritesSectionCollapsed ?? false,
+          folders: values.folderSectionCollapsed ?? false,
+          tags: values.tagSectionCollapsed ?? false,
+          boxes: values.boxSectionCollapsed ?? false,
+        },
+        showItemCounts: values.showNavItemCounts ?? false,
+        tooltipSide: values.tooltipSide ?? "right",
+      },
+      scope: {
+        displayPath: values.folderPath ?? "notes",
+        includeSubfolders: values.includeSubfolders ?? true,
+        activeBoxId: values.activeBoxId ?? null,
+        activeBoxName: null,
+        boxExcludedCount: 0,
+        emptyStateMessage: "",
+      },
+      availableTags: values.availableTags ?? ["work", "work/ai", "personal"],
+      tagCounts: values.tagCounts ?? { work: 3, "work/ai": 1, personal: 2 },
+      activeFilterTags: values.activeFilterTags ?? [],
       ...callbacks,
-      ...props,
     },
   });
   mountedComponents.push(component);

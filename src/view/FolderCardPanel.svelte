@@ -3,7 +3,12 @@
   import Toolbar from "./Toolbar.svelte";
   import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
-  import type { OpenNotePayload, PanelModel, PanelModelState } from "./panel-model";
+  import type {
+    OpenNotePayload,
+    PanelModel,
+    PanelModelState,
+    PanelSearchState,
+  } from "./panel-model";
   import {
     captureScrollAnchor,
     computeAnchoredScrollTop,
@@ -107,51 +112,55 @@
 
   const EMPTY_PANEL_STATE: PanelModelState = {
     strings: getUiStrings("en"),
-    cards: [],
-    searchMatchCountsByPath: {},
-    emptyStateMessage: "",
-    folderPath: "",
-    selectedPath: null,
-    loading: false,
-    generation: 0,
-    searchQuery: "",
-    searchStatus: "idle",
-    sortField: "mtime",
-    sortDirection: "desc",
-    availableTags: [],
-    tagCounts: {},
-    activeFilterTags: [],
-    pinnedPaths: [],
-    cardCornerRadius: "compact",
-    previewLines: 5,
-    folderTree: [],
-    includeSubfolders: true,
-    tooltipSide: "right",
-    bulkMode: false,
-    selectedPaths: [],
-    selectedCount: 0,
-    bulkAnchorPath: null,
-    canBulkSelectAll: false,
-    canBulkClearSelection: false,
-    canBulkMoveSelected: false,
-    canBulkAddTagSelected: false,
-    canBulkRemoveTagSelected: false,
-    canBulkDeleteSelected: false,
-    canBulkMergeSelected: false,
-    activeBoxId: null,
-    activeBoxName: null,
-    boxSummaries: [],
-    boxExcludedCount: 0,
-    navPaneWidth: 240,
-    layoutMode: "dual",
-    navVisible: true,
-    folderSectionCollapsed: false,
-    tagSectionCollapsed: false,
-    boxSectionCollapsed: false,
-    favorites: [],
-    favoritesSectionCollapsed: false,
-    searchFocusToken: 0,
-    showNavItemCounts: false,
+    scope: {
+      displayPath: "",
+      includeSubfolders: true,
+      activeBoxId: null,
+      activeBoxName: null,
+      boxExcludedCount: 0,
+      emptyStateMessage: "",
+    },
+    cards: {
+      records: [],
+      searchMatchCountsByPath: {},
+      selectedPath: null,
+      loading: false,
+      generation: 0,
+    },
+    search: { query: "", status: "idle", focusToken: 0 },
+    projection: {
+      sortField: "mtime",
+      sortDirection: "desc",
+      availableTags: [],
+      tagCounts: {},
+      activeFilterTags: [],
+      pinnedPaths: [],
+    },
+    bulk: {
+      bulkMode: false,
+      selectedPaths: [],
+      selectedCount: 0,
+      bulkAnchorPath: null,
+      canBulkSelectAll: false,
+      canBulkClearSelection: false,
+      canBulkMoveSelected: false,
+      canBulkAddTagSelected: false,
+      canBulkRemoveTagSelected: false,
+      canBulkDeleteSelected: false,
+      canBulkMergeSelected: false,
+    },
+    nav: {
+      folderTree: [],
+      favorites: [],
+      boxSummaries: [],
+      paneWidth: 240,
+      layoutMode: "dual",
+      visible: true,
+      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      showItemCounts: false,
+      tooltipSide: "right",
+    },
+    appearance: { cardCornerRadius: "compact", previewLines: 5 },
   };
 
   let {
@@ -201,82 +210,54 @@
     };
   });
 
+  const strings = $derived(panelState.strings);
+  const scope = $derived(panelState.scope);
   const cards = $derived(panelState.cards);
-  const emptyStateMessage = $derived(panelState.emptyStateMessage);
-  const folderPath = $derived(panelState.folderPath);
-  const selectedPath = $derived(panelState.selectedPath);
-  const loading = $derived(panelState.loading);
-  const generation = $derived(panelState.generation);
-  const searchQuery = $derived(panelState.searchQuery);
-  const searchStatus = $derived(panelState.searchStatus);
-  const sortField = $derived(panelState.sortField);
-  const sortDirection = $derived(panelState.sortDirection);
-  const activeFilterTags = $derived(panelState.activeFilterTags);
-  const pinnedPaths = $derived(panelState.pinnedPaths);
+  const search = $derived(panelState.search);
+  const projection = $derived(panelState.projection);
+  const bulk = $derived(panelState.bulk);
+  const nav = $derived(panelState.nav);
+  const appearance = $derived(panelState.appearance);
+  const cardRecords = $derived(cards.records);
 
-  function isBlockedSearchState(state: PanelModelState): boolean {
+  function isBlockedSearchState(state: PanelSearchState): boolean {
     return (
-      state.searchQuery.trim().length > 0 &&
-      state.searchStatus !== "idle" &&
-      state.searchStatus !== "ready"
+      state.query.trim().length > 0 &&
+      state.status !== "idle" &&
+      state.status !== "ready"
     );
   }
 
-  function getBlockedSearchLabel(state: PanelModelState): string {
-    const strings = state.strings.toolbar.searchStatus;
-    const status = state.searchStatus;
-    const readiness = state.searchIndexReadiness ?? "ready";
-    const persistence = state.searchIndexPersistence ?? "healthy";
-    const rebuildReason = state.searchIndexRebuildReason ?? null;
+  function getBlockedSearchLabel(state: PanelSearchState): string {
+    const searchStrings = strings.toolbar.searchStatus;
+    const status = state.status;
+    const readiness = state.readiness ?? "ready";
+    const persistence = state.persistence ?? "healthy";
+    const rebuildReason = state.rebuildReason ?? null;
 
     if (status === "building") {
-      return readiness === "restoring" ? strings.buildingRestoring : strings.building;
+      return readiness === "restoring" ? searchStrings.buildingRestoring : searchStrings.building;
     }
 
     if (status === "rebuild-required") {
-      if (rebuildReason === "version-drift") return strings.rebuildVersionDrift;
-      if (rebuildReason === "corrupt") return strings.rebuildCorrupt;
-      if (rebuildReason === "folder-rebuild-required") return strings.rebuildFolderChanged;
-      return strings.rebuildRequired;
+      if (rebuildReason === "version-drift") return searchStrings.rebuildVersionDrift;
+      if (rebuildReason === "corrupt") return searchStrings.rebuildCorrupt;
+      if (rebuildReason === "folder-rebuild-required") return searchStrings.rebuildFolderChanged;
+      return searchStrings.rebuildRequired;
     }
 
     if (status === "storage-unavailable" || persistence === "storage-unavailable") {
-      return strings.storageUnavailable;
+      return searchStrings.storageUnavailable;
     }
 
     if (status === "error") {
-      return strings.error;
+      return searchStrings.error;
     }
 
-    return strings.unavailable;
+    return searchStrings.unavailable;
   }
 
-  const cardCornerRadius = $derived(panelState.cardCornerRadius);
-  const previewLines = $derived(panelState.previewLines);
-  const folderTree = $derived(panelState.folderTree);
-  const includeSubfolders = $derived(panelState.includeSubfolders);
-  const tooltipSide = $derived(panelState.tooltipSide);
-  const bulkMode = $derived(panelState.bulkMode);
-  const selectedPaths = $derived(panelState.selectedPaths);
-  const selectedCount = $derived(panelState.selectedCount);
-  const bulkAnchorPath = $derived(panelState.bulkAnchorPath);
-  const canBulkSelectAll = $derived(panelState.canBulkSelectAll);
-  const canBulkClearSelection = $derived(panelState.canBulkClearSelection);
-  const canBulkMoveSelected = $derived(panelState.canBulkMoveSelected);
-  const canBulkAddTagSelected = $derived(panelState.canBulkAddTagSelected);
-  const canBulkRemoveTagSelected = $derived(panelState.canBulkRemoveTagSelected);
-  const canBulkDeleteSelected = $derived(panelState.canBulkDeleteSelected);
-  const canBulkMergeSelected = $derived(panelState.canBulkMergeSelected);
-  const showSearchMatchCounts = $derived(!isBlockedSearchState(panelState));
-  const navPaneWidth = $derived(panelState.navPaneWidth);
-  const navVisible = $derived(panelState.navVisible);
-  const layoutMode = $derived(panelState.layoutMode);
-  const folderSectionCollapsed = $derived(panelState.folderSectionCollapsed);
-  const tagSectionCollapsed = $derived(panelState.tagSectionCollapsed);
-  const boxSectionCollapsed = $derived(panelState.boxSectionCollapsed);
-  const favorites = $derived(panelState.favorites);
-  const favoritesSectionCollapsed = $derived(panelState.favoritesSectionCollapsed);
-  const showNavItemCounts = $derived(panelState.showNavItemCounts);
+  const showSearchMatchCounts = $derived(!isBlockedSearchState(search));
 
   function handleCardOpenNote(detail: OpenNotePayload): void {
     onOpenNote?.(detail);
@@ -379,7 +360,7 @@
   let userScrollLockUntilMs = $state(0);
   let lastMeasuredColumnCount = $state(1);
 
-  const projectedRows = $derived(projectCardsToRows(cards, columnCount));
+  const projectedRows = $derived(projectCardsToRows(cardRecords, columnCount));
   const projectedRowKeys = $derived(projectedRows.map((row) => row.key));
   const baseStartRowIndex = $derived(findIndexAtOffset(scrollTop, rowPositions));
   const baseEndRowIndex = $derived(findIndexAtOffset(scrollTop + viewportHeight, rowPositions));
@@ -518,8 +499,8 @@
   }
 
   $effect(() => {
-    if (generation !== lastHydrateGeneration) {
-      lastHydrateGeneration = generation;
+    if (cards.generation !== lastHydrateGeneration) {
+      lastHydrateGeneration = cards.generation;
       lastRangeStart = -1;
       lastRangeEnd = -1;
       pendingLayoutAnchor = null;
@@ -565,7 +546,7 @@
           anchorOffset: pendingLayoutAnchor.anchorOffset,
           columnCount,
           rowPositions,
-          cardCount: cards.length,
+          cardCount: cardRecords.length,
         }),
       );
       pendingLayoutAnchor = null;
@@ -573,7 +554,7 @@
   });
 
   $effect(() => {
-    if (cards.length === 0 && pendingLayoutAnchor) {
+    if (cardRecords.length === 0 && pendingLayoutAnchor) {
       pendingLayoutAnchor = null;
     }
   });
@@ -656,29 +637,16 @@
 </script>
 
 <div
-  class="fce-shell {bulkMode ? 'is-bulk-mode' : ''} {layoutMode === 'single' ? 'is-single' : 'is-dual'} {navVisible ? 'is-nav-visible' : 'is-nav-hidden'}"
+  class="fce-shell {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {nav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
   use:bindShell
 >
   <NavigationPane
-    strings={panelState.strings.toolbar}
-    boxStrings={panelState.strings.box}
-    {tooltipSide}
-    {folderTree}
-    {folderPath}
-    {includeSubfolders}
-    availableTags={panelState.availableTags}
-    tagCounts={panelState.tagCounts}
-    {activeFilterTags}
-    boxSummaries={panelState.boxSummaries}
-    activeBoxId={panelState.activeBoxId}
-    {navPaneWidth}
-    {layoutMode}
-    {folderSectionCollapsed}
-    {tagSectionCollapsed}
-    {boxSectionCollapsed}
-    {favorites}
-    {favoritesSectionCollapsed}
-    {showNavItemCounts}
+    {strings}
+    {nav}
+    {scope}
+    availableTags={projection.availableTags}
+    tagCounts={projection.tagCounts}
+    activeFilterTags={projection.activeFilterTags}
     onSelectFolder={handleSelectFolder}
     onFolderAction={handleFolderAction}
     onFilterChange={handleFilterChange}
@@ -690,36 +658,17 @@
     onToggleNavPane={handleToggleNavPane}
     onToggleNavSection={handleToggleNavSection}
   />
-  <div class="fce-main-pane {bulkMode ? 'is-bulk-mode' : ''}">
+  <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
-    strings={panelState.strings.toolbar}
-    boxStrings={panelState.strings.box}
-    activeBoxId={panelState.activeBoxId}
-    activeBoxName={panelState.activeBoxName}
-    boxSummaries={panelState.boxSummaries}
-    {folderPath}
-    {activeFilterTags}
-    {navVisible}
+    {strings}
+    {scope}
+    {search}
+    {projection}
+    {bulk}
+    boxSummaries={nav.boxSummaries}
+    navVisible={nav.visible}
     onToggleNavPane={handleToggleNavPane}
-    {sortField}
-    {sortDirection}
-    {searchQuery}
-    {searchStatus}
-    searchFocusToken={panelState.searchFocusToken}
-    searchIndexReadiness={panelState.searchIndexReadiness ?? "ready"}
-    searchIndexPersistence={panelState.searchIndexPersistence ?? "healthy"}
-    searchIndexRebuildReason={panelState.searchIndexRebuildReason ?? null}
-    {tooltipSide}
-    {bulkMode}
-    {selectedCount}
-    {bulkAnchorPath}
-    {canBulkSelectAll}
-    {canBulkClearSelection}
-    {canBulkMoveSelected}
-    {canBulkAddTagSelected}
-    {canBulkRemoveTagSelected}
-    {canBulkDeleteSelected}
-    {canBulkMergeSelected}
+    tooltipSide={nav.tooltipSide}
     onToolbarAction={handleToolbarAction}
     onSortChange={handleSortChange}
     onSearchQueryChange={handleSearchQueryChange}
@@ -727,24 +676,24 @@
     onBoxCommand={handleBoxCommand}
   />
   <div
-    class="fce-list {bulkMode ? 'is-bulk-mode' : ''}"
+    class="fce-list {bulk.bulkMode ? 'is-bulk-mode' : ''}"
     bind:this={viewportEl}
     use:bindViewport
     onscroll={handleScroll}
     onwheel={markUserScrolling}
   >
-    {#if loading}
-      <div class="fce-empty">{panelState.strings.panel.loadingCards}</div>
-   {:else if cards.length === 0}
-    {#if isBlockedSearchState(panelState)}
+    {#if cards.loading}
+      <div class="fce-empty">{strings.panel.loadingCards}</div>
+   {:else if cardRecords.length === 0}
+    {#if isBlockedSearchState(search)}
       <div class="fce-empty fce-search-blocked">
-        <div class="fce-search-blocked-title">{panelState.strings.panel.searchBlockedTitle}</div>
+        <div class="fce-search-blocked-title">{strings.panel.searchBlockedTitle}</div>
         <div class="fce-search-blocked-status">
-          {panelState.strings.panel.searchBlockedStatusPrefix} {getBlockedSearchLabel(panelState)}
+          {strings.panel.searchBlockedStatusPrefix} {getBlockedSearchLabel(search)}
         </div>
       </div>
     {:else}
-      <div class="fce-empty">{emptyStateMessage}</div>
+      <div class="fce-empty">{scope.emptyStateMessage}</div>
     {/if}
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
@@ -754,16 +703,14 @@
             {#each row.cards as card (card.path)}
               <CardItem
                 {card}
-                strings={panelState.strings.cardItem}
-                fileKindStrings={panelState.strings.fileKind}
-                {pinnedPaths}
-                {cardCornerRadius}
-                {previewLines}
-                {searchQuery}
-                {bulkMode}
-                searchMatchCount={showSearchMatchCounts ? (panelState.searchMatchCountsByPath[card.path] ?? 0) : 0}
-                bulkSelected={bulkMode && selectedPaths.includes(card.path)}
-                selected={selectedPath === card.path}
+                {strings}
+                {appearance}
+                pinnedPaths={projection.pinnedPaths}
+                searchQuery={search.query}
+                bulkMode={bulk.bulkMode}
+                searchMatchCount={showSearchMatchCounts ? (cards.searchMatchCountsByPath[card.path] ?? 0) : 0}
+                bulkSelected={bulk.bulkMode && bulk.selectedPaths.includes(card.path)}
+                selected={cards.selectedPath === card.path}
                 onOpenNote={handleCardOpenNote}
                 onBulkSelectCard={handleCardBulkSelect}
                 onCardContextMenu={handleCardContextMenu}

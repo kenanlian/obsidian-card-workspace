@@ -124,18 +124,26 @@ function mountCardItem(
 ): MountedCardItem {
   const target = document.createElement("div");
   document.body.appendChild(target);
+  const values = props as Record<string, any>;
+  const defaultStrings = getUiStrings("en");
   const component = mount(CardItem, {
     target,
     props: {
-      card: createCard(),
-      selected: false,
-      bulkMode: false,
-      bulkSelected: false,
-      pinnedPaths: [],
-      cardCornerRadius: "compact",
-      previewLines: 5,
+      card: values.card ?? createCard(),
+      strings: values.strings
+        ? { ...defaultStrings, cardItem: values.strings }
+        : defaultStrings,
+      appearance: {
+        cardCornerRadius: values.cardCornerRadius ?? "compact",
+        previewLines: values.previewLines ?? 5,
+      },
+      selected: values.selected ?? false,
+      bulkMode: values.bulkMode ?? false,
+      bulkSelected: values.bulkSelected ?? false,
+      pinnedPaths: values.pinnedPaths ?? [],
+      searchQuery: values.searchQuery ?? "",
+      searchMatchCount: values.searchMatchCount ?? 0,
       ...callbacks,
-      ...props,
     },
   });
   mountedComponents.push(component);

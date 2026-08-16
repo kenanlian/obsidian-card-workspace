@@ -138,9 +138,11 @@ import {
   isSupportedCardFile,
 } from "./file-kind";
 import {
+  PANEL_GROUPS,
   createPanelModel,
   type BoxSummary,
   type FavoriteRowModel,
+  type PanelGroup,
   type PanelModel,
   type PanelModelState,
 } from "./panel-model";
@@ -242,6 +244,8 @@ export class FolderCardView extends ItemView {
   } | null = null;
   private vaultTagCountsCache: { seq: number; counts: Record<string, number> } | null = null;
   private folderTreeCountsByPath = new Map<string, { direct: number; recursive: number }>();
+  /** Cached so layout-only nav publications do not walk the vault. */
+  private folderTree: FolderTreeNode[] = [];
 
   private static readonly HYDRATION_BATCH_SIZE = 5;
   private static readonly STARTUP_PREVIEW_CARD_COUNT = 6;
@@ -260,7 +264,16 @@ export class FolderCardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: CardWorkspacePlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.panelModel = createPanelModel(this.buildPanelModelState());
+    this.panelModel = createPanelModel({
+      strings: this.strings,
+      scope: this.buildScopeGroup(),
+      cards: this.buildCardsGroup(),
+      search: this.buildSearchGroup(),
+      projection: this.buildProjectionGroup(),
+      bulk: this.buildBulkGroup(),
+      nav: this.buildNavGroup(),
+      appearance: this.buildAppearanceGroup(),
+    });
   }
 
   getViewType(): string {
@@ -358,7 +371,7 @@ export class FolderCardView extends ItemView {
   /**
    * Member count for a box, cached per membership signature.
    *
-   * Counting scans every rule's folder scope, so the cache keeps `pushState()`
+   * Counting scans every rule's folder scope, so the cache keeps nav publishing
    * cheap; it is cleared on vault mutations and on box persistence.
    */
   private countBoxCards(box: CardBoxDefinition): number {
@@ -554,42 +567,6 @@ export class FolderCardView extends ItemView {
       count: context.showCounts ? (summary?.cardCount ?? 0) : 0,
       selected: ref === context.activeBoxId,
       missing: summary === null,
-    };
-  }
-
-  private applyBoxProjectionToState(
-    state: PanelModelState,
-    boxFields: ReturnType<FolderCardView["buildBoxPanelFields"]>,
-  ): void {
-    const projection = this.effectiveSortAndPins();
-    state.sortField = projection.sortField;
-    state.sortDirection = projection.sortDirection;
-    state.pinnedPaths = projection.pinnedPaths;
-
-    state.activeBoxId = boxFields.activeBoxId;
-    state.activeBoxName = boxFields.activeBoxName;
-    state.boxSummaries = boxFields.boxSummaries;
-    state.boxExcludedCount = boxFields.boxExcludedCount;
-  }
-
-  private effectiveSortAndPins(): {
-    sortField: SortField;
-    sortDirection: SortDirection;
-    pinnedPaths: string[];
-  } {
-    const settings = this.plugin.getSettings();
-    const box = this.getScopeBox();
-    if (box) {
-      return {
-        sortField: box.sort.field,
-        sortDirection: box.sort.direction,
-        pinnedPaths: box.pinnedPaths,
-      };
-    }
-    return {
-      sortField: settings.sort.field,
-      sortDirection: settings.sort.direction,
-      pinnedPaths: settings.pinnedPaths,
     };
   }
 
@@ -917,45 +894,7 @@ export class FolderCardView extends ItemView {
   async onOpen(): Promise<void> {
     const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
     this.initializeSearchSnapshotState();
-    this.panelModel.mutate((state) => {
-      const settings = this.plugin.getSettings();
-      const bulkRuntimeState = this.buildBulkRuntimePanelState();
-
-      state.strings = this.strings;
-      state.cards = this.visibleCards;
-      state.emptyStateMessage = this.buildEmptyStateMessage();
-      state.folderPath = this.getDisplayFolderPath();
-      state.selectedPath = this.selectedPath;
-      state.bulkMode = bulkRuntimeState.bulkMode;
-      state.selectedPaths = bulkRuntimeState.selectedPaths;
-      state.selectedCount = bulkRuntimeState.selectedCount;
-      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
-      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
-      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
-      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
-      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
-      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
-      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
-      state.loading = this.loading;
-      state.generation = this.loadEpoch.value;
-      state.searchQuery = this.searchQuery;
-      state.searchStatus = this.getSearchStatus();
-      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
-      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
-      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
-      state.sortField = settings.sort.field;
-      state.sortDirection = settings.sort.direction;
-      state.availableTags = this.deriveAvailableTags();
-      state.tagCounts = this.deriveTagCounts();
-      state.activeFilterTags = settings.filter.tags;
-      state.pinnedPaths = settings.pinnedPaths;
-      state.cardCornerRadius = settings.cardCornerRadius;
-      state.previewLines = settings.previewLines;
-      state.includeSubfolders = settings.includeSubfolders;
-      state.tooltipSide = this.getTooltipSide();
-      this.applyBoxProjectionToState(state, this.buildBoxPanelFields());
-    });
+    this.publishGroups(...PANEL_GROUPS);
 
     const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
     target.empty();
@@ -1051,7 +990,6 @@ export class FolderCardView extends ItemView {
     });
 
     this.refreshFolderTreeState();
-
     this.hydrateVisibleCardsOnOpen();
   }
 
@@ -1221,7 +1159,7 @@ export class FolderCardView extends ItemView {
 
     if (this.inFlight) {
       if (clearedBulkSelection) {
-        this.pushSelectionState();
+        this.publishGroups("cards", "bulk");
       }
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
@@ -1316,25 +1254,27 @@ export class FolderCardView extends ItemView {
         }
         this.pendingHydration.clear();
         this.reprojectCards();
+        this.publishForIntent(intent);
         this.hydrateVisibleCardsOnOpen();
         return;
       case "reproject":
         this.reprojectCards();
+        this.publishForIntent(intent);
         return;
       case "patch":
-        this.pushPresentationState();
+        this.publishForIntent(intent);
         return;
     }
   }
 
   /** Re-sorts the loaded cards in place and republishes; never re-collects files. */
   private reprojectCards(): void {
-    const projection = this.effectiveSortAndPins();
+    const projection = this.buildProjectionGroup();
     this.baseCards.sort((left, right) =>
       this.compareCards(left, right, projection.sortField, projection.sortDirection),
     );
     this.folderLoadKey = this.serializeLoadKey(this.buildLoadKey(this.cardScope));
-    this.pushState();
+    this.projectVisibleCards();
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
@@ -1359,7 +1299,8 @@ export class FolderCardView extends ItemView {
     if (!this.inFlight && !this.loading) {
       const incrementalResult = this.applyIncrementalMutation(event);
       if (incrementalResult.handled) {
-        this.pushState();
+        this.projectVisibleCards();
+        this.publishGroups("cards", "projection", "bulk", "scope");
         return {
           shouldRefresh: false,
           queueAction: "ignored",
@@ -1403,7 +1344,7 @@ export class FolderCardView extends ItemView {
   /** Re-push nav-derived state after the plugin reconciled boxes/favorites outside the view. */
   refreshNavState(): void {
     this.invalidateNavCounts();
-    this.pushState();
+    this.publishGroups("nav", "scope");
   }
 
   /** Card box counts and vault-wide tag counts both walk the vault, so they expire together. */
@@ -1424,7 +1365,7 @@ export class FolderCardView extends ItemView {
     this.navCountRefreshHandle = view.setTimeout(() => {
       this.navCountRefreshHandle = null;
       this.invalidateNavCounts();
-      this.pushState();
+      this.publishGroups("nav");
     }, FolderCardView.NAV_COUNT_REFRESH_DEBOUNCE_MS);
   }
 
@@ -1476,7 +1417,7 @@ export class FolderCardView extends ItemView {
     }
 
     this.selectedPath = path;
-    this.pushState();
+    this.publishGroups("cards", "bulk");
   }
 
   getCurrentFolderPath(): string | null {
@@ -1506,7 +1447,8 @@ export class FolderCardView extends ItemView {
       this.searchOrderedPaths = undefined;
       this.searchStatus = this.deriveSearchStatus();
       if (pushState) {
-        this.pushState();
+        this.projectVisibleCards();
+        this.publishGroups("search", "cards", "bulk", "scope");
       }
       return;
     }
@@ -1516,7 +1458,8 @@ export class FolderCardView extends ItemView {
     this.searchStatus = this.deriveSearchStatus();
 
     if (pushState) {
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
     }
 
     if (snapshot?.mode === "indexed" && snapshot.status === "ready") {
@@ -2214,11 +2157,9 @@ export class FolderCardView extends ItemView {
   }
 
   private refreshFolderTreeState(): void {
-    const tree = this.buildFolderTree();
-    this.cacheFolderTreeCounts(tree);
-    this.panelModel.mutate((state) => {
-      state.folderTree = tree;
-    });
+    this.folderTree = this.buildFolderTree();
+    this.cacheFolderTreeCounts(this.folderTree);
+    this.publishGroups("nav");
   }
 
   /**
@@ -2474,7 +2415,7 @@ export class FolderCardView extends ItemView {
     await this.selectFolderFromNav(folderUiPath);
     this.resetSearchQuery();
     this.searchFocusToken += 1;
-    this.pushState();
+    this.publishGroups("search");
   }
 
   /** Folder-tree create actions always land in browse mode on the target folder, never inside an open card box. */
@@ -2853,7 +2794,8 @@ export class FolderCardView extends ItemView {
     this.clearSearchDebounce();
     this.searchRequestEpoch.bump();
     this.searchStatus = this.deriveSearchStatus();
-    this.pushState();
+    this.projectVisibleCards();
+    this.publishGroups(...PANEL_GROUPS);
 
     try {
       const files = this.collectScopeFiles(loadScope.scope);
@@ -2895,8 +2837,8 @@ export class FolderCardView extends ItemView {
     } finally {
       if (this.loadEpoch.isCurrent(loadToken)) {
         this.loading = false;
-        this.pushState();
-        this.refreshFolderTreeState();
+        this.projectVisibleCards();
+        this.publishGroups(...PANEL_GROUPS);
         void this.refreshSearchProjection();
       }
     }
@@ -2994,7 +2936,7 @@ export class FolderCardView extends ItemView {
   }
 
   private findSortedInsertIndex(newCard: NoteCardRecord): number {
-    const projection = this.effectiveSortAndPins();
+    const projection = this.buildProjectionGroup();
     let low = 0;
     let high = this.baseCards.length;
     while (low < high) {
@@ -3105,7 +3047,7 @@ export class FolderCardView extends ItemView {
       const hydrationToken = this.loadEpoch.token();
       void this.hydrateCard(newCard.path, hydrationToken).then(() => {
         if (this.loadEpoch.isCurrent(hydrationToken)) {
-          this.pushState();
+          this.publishGroups("cards");
         }
       });
 
@@ -3130,7 +3072,7 @@ export class FolderCardView extends ItemView {
       const hydrationToken = this.loadEpoch.token();
       void this.hydrateCard(card.path, hydrationToken).then(() => {
         if (this.loadEpoch.isCurrent(hydrationToken)) {
-          this.pushState();
+          this.publishGroups("cards");
         }
       });
 
@@ -3233,7 +3175,7 @@ export class FolderCardView extends ItemView {
           this.baseCards.splice(insertIndex, 0, newCard);
 
           void this.hydrateCard(newCard.path, this.loadEpoch.token()).then(() => {
-            this.pushState();
+            this.publishGroups("cards");
           });
 
           return { handled: true, action: "inserted" };
@@ -3314,7 +3256,7 @@ export class FolderCardView extends ItemView {
     }
 
     if (options.pushState && this.loadEpoch.isCurrent(token)) {
-      this.pushState();
+      this.publishGroups("cards");
     }
   }
 
@@ -3348,7 +3290,7 @@ export class FolderCardView extends ItemView {
       void hydration.then(
         () => {
           if (this.loadEpoch.isCurrent(token)) {
-            this.pushState();
+            this.publishGroups("cards");
           }
         },
         (error: unknown) => {
@@ -3532,7 +3474,7 @@ export class FolderCardView extends ItemView {
   }
 
   /**
-   * Tags for the current scope. Memoized because `pushState` is hot (hydration
+   * Tags for the current scope. Memoized because card publishing is hot (hydration
    * batches, selection, search) while this walks every loaded card, which at
    * vault-root scope means the whole vault.
    */
@@ -3590,6 +3532,11 @@ export class FolderCardView extends ItemView {
 
   private deriveVisibleCards(): NoteCardRecord[] {
     return this.deriveVisibleCardsFrom(this.baseCards);
+  }
+
+  private projectVisibleCards(): void {
+    this.visibleCards = this.deriveVisibleCards();
+    this.reconcileBulkSelectionToVisibleCards();
   }
 
   private deriveVisibleCardsFrom(cards: NoteCardRecord[]): NoteCardRecord[] {
@@ -3724,7 +3671,8 @@ export class FolderCardView extends ItemView {
     this.clearSearchMatchCounts();
     this.searchRequestEpoch.bump();
     this.searchStatus = this.deriveSearchStatus();
-    this.pushState();
+    this.projectVisibleCards();
+    this.publishGroups("search", "cards", "bulk", "scope");
 
     if (this.searchQuery.trim().length > 0) {
       this.scheduleDebouncedSearchProjection();
@@ -3741,7 +3689,8 @@ export class FolderCardView extends ItemView {
 
     if (this.searchQuery.length === 0 && this.searchOrderedPaths === undefined) {
       this.searchStatus = this.deriveSearchStatus();
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
       return;
     }
 
@@ -3749,7 +3698,8 @@ export class FolderCardView extends ItemView {
     this.searchExecution = this.derivePendingSearchExecution();
     this.searchOrderedPaths = undefined;
     this.searchStatus = this.deriveSearchStatus();
-    this.pushState();
+    this.projectVisibleCards();
+    this.publishGroups("search", "cards", "bulk", "scope");
   }
 
   private async refreshSearchProjection(): Promise<void> {
@@ -3759,7 +3709,8 @@ export class FolderCardView extends ItemView {
       this.searchOrderedPaths = undefined;
       this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
       return;
     }
 
@@ -3769,7 +3720,8 @@ export class FolderCardView extends ItemView {
       this.searchOrderedPaths = undefined;
       this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
       return;
     }
 
@@ -3801,7 +3753,8 @@ export class FolderCardView extends ItemView {
         this.clearSearchMatchCounts();
       }
       this.searchStatus = this.toRuntimeSearchStatus(result);
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
     } catch {
       if (!this.isSearchRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query)) {
         return;
@@ -3811,7 +3764,8 @@ export class FolderCardView extends ItemView {
       this.searchOrderedPaths = undefined;
       this.clearSearchMatchCounts();
       this.searchStatus = this.deriveSearchStatus();
-      this.pushState();
+      this.projectVisibleCards();
+      this.publishGroups("search", "cards", "bulk", "scope");
     }
   }
 
@@ -3919,7 +3873,7 @@ export class FolderCardView extends ItemView {
     this.bulkAnchorPath = result.anchorPath;
 
     if (result.changed) {
-      this.pushSelectionState();
+      this.publishGroups("bulk", "cards");
     }
   }
 
@@ -3931,7 +3885,7 @@ export class FolderCardView extends ItemView {
       this.bulkAnchorPath = null;
     }
 
-    this.pushSelectionState();
+    this.publishGroups("bulk", "cards");
   }
 
   private bulkSelectAll(): void {
@@ -3991,7 +3945,7 @@ export class FolderCardView extends ItemView {
     if (filesToMove.length === 0) {
       this.selectedPaths = new Set<string>();
       this.bulkAnchorPath = null;
-      this.pushSelectionState();
+      this.publishGroups("bulk", "cards");
       new Notice(moveStrings.noSelectedNotes);
       return;
     }
@@ -4009,7 +3963,7 @@ export class FolderCardView extends ItemView {
       });
       this.selectedPaths = new Set<string>(alreadyTargetPathsInOrder);
       this.bulkAnchorPath = alreadyTargetPathsInOrder[0] ?? null;
-      this.pushSelectionState();
+      this.publishGroups("bulk", "cards");
       new Notice(moveStrings.allAlreadyInTargetFolder);
       return;
     }
@@ -4024,7 +3978,7 @@ export class FolderCardView extends ItemView {
 
     this.selectedPaths = new Set<string>(failedPathsInOrder);
     this.bulkAnchorPath = failedPathsInOrder[0] ?? null;
-    this.pushSelectionState();
+    this.publishGroups("bulk", "cards");
 
     const succeededCount = summary.succeeded.length;
     const failedCount = summary.failed.length + filesAlreadyInTarget.length;
@@ -4241,7 +4195,7 @@ export class FolderCardView extends ItemView {
   private reconcileSelectionToOrderedPaths(pathsInOrder: string[]): void {
     this.selectedPaths = new Set<string>(pathsInOrder);
     this.bulkAnchorPath = pathsInOrder[0] ?? null;
-    this.pushSelectionState();
+    this.publishGroups("bulk", "cards");
   }
 
   private requestDestructiveConfirmation(options: {
@@ -4515,179 +4469,136 @@ export class FolderCardView extends ItemView {
     };
   }
 
-  private buildPanelModelState(): PanelModelState {
+  private buildScopeGroup(): PanelModelState["scope"] {
     const settings = this.plugin.getSettings();
-    const bulkRuntimeState = this.buildBulkRuntimePanelState();
-    const projection = this.effectiveSortAndPins();
-    const availableTags = this.deriveAvailableTags();
-    const tagCounts = this.deriveTagCounts();
-    const boxFields = this.buildBoxPanelFields();
+    const box = this.getScopeBox();
 
     return {
-      strings: this.strings,
-      cards: this.visibleCards,
-      searchMatchCountsByPath: { ...this.searchMatchCountsByPath },
-      emptyStateMessage: this.buildEmptyStateMessage(),
-      folderPath: this.getDisplayFolderPath(),
-      selectedPath: this.selectedPath,
-      ...bulkRuntimeState,
-      loading: this.loading,
-      generation: this.loadEpoch.value,
-      searchQuery: this.searchQuery,
-      searchStatus: this.getSearchStatus(),
-      searchIndexReadiness: this.searchSnapshot?.health?.readiness,
-      searchIndexPersistence: this.searchSnapshot?.health?.persistence,
-      searchIndexRebuildReason: this.searchSnapshot?.health?.rebuildReason ?? null,
-      sortField: projection.sortField,
-      sortDirection: projection.sortDirection,
-      availableTags,
-      tagCounts,
-      activeFilterTags: settings.filter.tags,
-      pinnedPaths: projection.pinnedPaths,
-      cardCornerRadius: settings.cardCornerRadius,
-      previewLines: settings.previewLines,
-      folderTree: [],
+      displayPath: this.getDisplayFolderPath(),
       includeSubfolders: settings.includeSubfolders,
-      tooltipSide: this.getTooltipSide(),
-      navPaneWidth: settings.navPaneWidth,
-      layoutMode: this.getLayoutMode(),
-      navVisible: this.getNavVisible(),
-      folderSectionCollapsed: settings.folderSectionCollapsed,
-      tagSectionCollapsed: settings.tagSectionCollapsed,
-      boxSectionCollapsed: settings.boxSectionCollapsed,
-      favorites: this.buildFavoriteRowModels({
-        boxSummaries: boxFields.boxSummaries,
-      }),
-      favoritesSectionCollapsed: settings.favoritesSectionCollapsed,
-      searchFocusToken: this.searchFocusToken,
-      showNavItemCounts: settings.showNavItemCounts,
-      ...boxFields,
+      activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
+      activeBoxName: box?.name ?? null,
+      boxExcludedCount: box?.excludedPaths.length ?? 0,
+      emptyStateMessage: this.buildEmptyStateMessage(),
     };
   }
 
-  private pushSelectionState(): void {
-    this.reconcileBulkSelectionToVisibleCards();
+  private buildCardsGroup(): PanelModelState["cards"] {
+    return {
+      records: [...this.visibleCards],
+      searchMatchCountsByPath: { ...this.searchMatchCountsByPath },
+      selectedPath: this.selectedPath,
+      loading: this.loading,
+      generation: this.loadEpoch.value,
+    };
+  }
 
+  private buildSearchGroup(): PanelModelState["search"] {
+    return {
+      query: this.searchQuery,
+      status: this.getSearchStatus(),
+      readiness: this.searchSnapshot?.health?.readiness,
+      persistence: this.searchSnapshot?.health?.persistence,
+      rebuildReason: this.searchSnapshot?.health?.rebuildReason ?? null,
+      focusToken: this.searchFocusToken,
+    };
+  }
+
+  private buildProjectionGroup(): PanelModelState["projection"] {
     const settings = this.plugin.getSettings();
-    const bulkRuntimeState = this.buildBulkRuntimePanelState();
+    const box = this.getScopeBox();
+    return {
+      sortField: box?.sort.field ?? settings.sort.field,
+      sortDirection: box?.sort.direction ?? settings.sort.direction,
+      availableTags: this.deriveAvailableTags(),
+      tagCounts: this.deriveTagCounts(),
+      activeFilterTags: settings.filter.tags,
+      pinnedPaths: box?.pinnedPaths ?? settings.pinnedPaths,
+    };
+  }
 
-    this.panelModel.mutate((state) => {
-      state.cards = this.visibleCards;
-      state.searchMatchCountsByPath = { ...this.searchMatchCountsByPath };
-      state.emptyStateMessage = this.buildEmptyStateMessage();
-      state.folderPath = this.getDisplayFolderPath();
-      state.selectedPath = this.selectedPath;
-      state.bulkMode = bulkRuntimeState.bulkMode;
-      state.selectedPaths = bulkRuntimeState.selectedPaths;
-      state.selectedCount = bulkRuntimeState.selectedCount;
-      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
-      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
-      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
-      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
-      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
-      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
-      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
-      state.loading = this.loading;
-      state.generation = this.loadEpoch.value;
-      state.searchQuery = this.searchQuery;
-      state.searchStatus = this.getSearchStatus();
-      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
-      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
-      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
-      state.sortField = settings.sort.field;
-      state.sortDirection = settings.sort.direction;
-      state.activeFilterTags = settings.filter.tags;
-      state.pinnedPaths = settings.pinnedPaths;
-      state.cardCornerRadius = settings.cardCornerRadius;
-      state.previewLines = settings.previewLines;
-      state.includeSubfolders = settings.includeSubfolders;
-      this.applyBoxProjectionToState(state, this.buildBoxPanelFields());
+  private buildBulkGroup(): PanelModelState["bulk"] {
+    return this.buildBulkRuntimePanelState();
+  }
+
+  private buildNavGroup(): PanelModelState["nav"] {
+    const settings = this.plugin.getSettings();
+    const boxFields = this.buildBoxPanelFields();
+    return {
+      folderTree: this.folderTree,
+      favorites: this.buildFavoriteRowModels({ boxSummaries: boxFields.boxSummaries }),
+      boxSummaries: boxFields.boxSummaries,
+      paneWidth: settings.navPaneWidth,
+      layoutMode: this.getLayoutMode(),
+      visible: this.getNavVisible(),
+      sectionCollapsed: {
+        favorites: settings.favoritesSectionCollapsed,
+        folders: settings.folderSectionCollapsed,
+        tags: settings.tagSectionCollapsed,
+        boxes: settings.boxSectionCollapsed,
+      },
+      showItemCounts: settings.showNavItemCounts,
+      tooltipSide: this.getTooltipSide(),
+    };
+  }
+
+  private buildAppearanceGroup(): PanelModelState["appearance"] {
+    const settings = this.plugin.getSettings();
+    return {
+      cardCornerRadius: settings.cardCornerRadius,
+      previewLines: settings.previewLines,
+    };
+  }
+
+  /** Runtime events replace only the requested groups and notify listeners once. */
+  private publishGroups(...groups: PanelGroup[]): void {
+    const uniqueGroups = new Set(groups);
+    this.panelModel.batch((state) => {
+      for (const group of uniqueGroups) {
+        switch (group) {
+          case "strings":
+            state.strings = this.strings;
+            break;
+          case "scope":
+            state.scope = this.buildScopeGroup();
+            break;
+          case "cards":
+            state.cards = this.buildCardsGroup();
+            break;
+          case "search":
+            state.search = this.buildSearchGroup();
+            break;
+          case "projection":
+            state.projection = this.buildProjectionGroup();
+            break;
+          case "bulk":
+            state.bulk = this.buildBulkGroup();
+            break;
+          case "nav":
+            state.nav = this.buildNavGroup();
+            break;
+          case "appearance":
+            state.appearance = this.buildAppearanceGroup();
+            break;
+        }
+      }
     });
   }
 
-  private pushState(): void {
-    this.visibleCards = this.deriveVisibleCards();
-    this.reconcileBulkSelectionToVisibleCards();
-
-    const settings = this.plugin.getSettings();
-    const bulkRuntimeState = this.buildBulkRuntimePanelState();
-    const availableTags = this.deriveAvailableTags();
-    const tagCounts = this.deriveTagCounts();
-    const boxFields = this.buildBoxPanelFields();
-
-    this.panelModel.mutate((state) => {
-      state.cards = this.visibleCards;
-      state.searchMatchCountsByPath = { ...this.searchMatchCountsByPath };
-      state.emptyStateMessage = this.buildEmptyStateMessage();
-      state.folderPath = this.getDisplayFolderPath();
-      state.selectedPath = this.selectedPath;
-      state.bulkMode = bulkRuntimeState.bulkMode;
-      state.selectedPaths = bulkRuntimeState.selectedPaths;
-      state.selectedCount = bulkRuntimeState.selectedCount;
-      state.bulkAnchorPath = bulkRuntimeState.bulkAnchorPath;
-      state.canBulkSelectAll = bulkRuntimeState.canBulkSelectAll;
-      state.canBulkClearSelection = bulkRuntimeState.canBulkClearSelection;
-      state.canBulkMoveSelected = bulkRuntimeState.canBulkMoveSelected;
-      state.canBulkAddTagSelected = bulkRuntimeState.canBulkAddTagSelected;
-      state.canBulkRemoveTagSelected = bulkRuntimeState.canBulkRemoveTagSelected;
-      state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
-      state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
-      state.loading = this.loading;
-      state.generation = this.loadEpoch.value;
-      state.searchQuery = this.searchQuery;
-      state.searchStatus = this.getSearchStatus();
-      state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
-      state.searchIndexPersistence = this.searchSnapshot?.health?.persistence;
-      state.searchIndexRebuildReason = this.searchSnapshot?.health?.rebuildReason ?? null;
-      state.sortField = settings.sort.field;
-      state.sortDirection = settings.sort.direction;
-      state.availableTags = availableTags;
-      state.tagCounts = tagCounts;
-      state.activeFilterTags = settings.filter.tags;
-      state.pinnedPaths = settings.pinnedPaths;
-      state.cardCornerRadius = settings.cardCornerRadius;
-      state.previewLines = settings.previewLines;
-      state.includeSubfolders = settings.includeSubfolders;
-      state.navPaneWidth = settings.navPaneWidth;
-      state.layoutMode = this.getLayoutMode();
-      state.navVisible = this.getNavVisible();
-      state.folderSectionCollapsed = settings.folderSectionCollapsed;
-      state.tagSectionCollapsed = settings.tagSectionCollapsed;
-      state.boxSectionCollapsed = settings.boxSectionCollapsed;
-      state.favorites = this.buildFavoriteRowModels({
-        boxSummaries: boxFields.boxSummaries,
-      });
-      state.favoritesSectionCollapsed = settings.favoritesSectionCollapsed;
-      state.searchFocusToken = this.searchFocusToken;
-      state.showNavItemCounts = settings.showNavItemCounts;
-      this.applyBoxProjectionToState(state, boxFields);
-    });
-  }
-
-  /** Publishes only the fields that do not depend on the card projection. */
-  private pushPresentationState(): void {
-    const settings = this.plugin.getSettings();
-    const boxFields = this.buildBoxPanelFields();
-
-    this.panelModel.mutate((state) => {
-      state.strings = this.strings;
-      state.cardCornerRadius = settings.cardCornerRadius;
-      state.previewLines = settings.previewLines;
-      state.navPaneWidth = settings.navPaneWidth;
-      state.layoutMode = this.getLayoutMode();
-      state.navVisible = this.getNavVisible();
-      state.folderSectionCollapsed = settings.folderSectionCollapsed;
-      state.tagSectionCollapsed = settings.tagSectionCollapsed;
-      state.boxSectionCollapsed = settings.boxSectionCollapsed;
-      state.favoritesSectionCollapsed = settings.favoritesSectionCollapsed;
-      state.favorites = this.buildFavoriteRowModels({
-        boxSummaries: boxFields.boxSummaries,
-      });
-      state.showNavItemCounts = settings.showNavItemCounts;
-      state.tooltipSide = this.getTooltipSide();
-      state.boxSummaries = boxFields.boxSummaries;
-    });
+  /** Settings changes translate their four update tiers into explicit groups. */
+  private publishForIntent(intent: ViewUpdateIntent): void {
+    switch (intent) {
+      case "patch":
+        this.publishGroups("nav", "appearance", "strings", "scope");
+        return;
+      case "reproject":
+      case "rehydrate":
+        this.publishGroups("cards", "projection", "bulk", "scope");
+        return;
+      case "reload":
+        this.publishGroups(...PANEL_GROUPS);
+        return;
+    }
   }
 
   private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
@@ -4774,13 +4685,6 @@ export class FolderCardView extends ItemView {
     return !this.plugin.getSettings().navPaneCollapsed;
   }
 
-  private pushNavLayoutState(): void {
-    this.panelModel.mutate((state) => {
-      state.layoutMode = this.getLayoutMode();
-      state.navVisible = this.getNavVisible();
-    });
-  }
-
   private onShellResize(width: number): void {
     if (typeof width !== "number" || !Number.isFinite(width)) {
       return;
@@ -4799,7 +4703,7 @@ export class FolderCardView extends ItemView {
       this.singlePaneView = "cards";
     }
 
-    this.pushNavLayoutState();
+    this.publishGroups("nav");
   }
 
   private returnToCardsViewIfSinglePane(): void {
@@ -4808,14 +4712,14 @@ export class FolderCardView extends ItemView {
     }
 
     this.singlePaneView = "cards";
-    this.pushNavLayoutState();
+    this.publishGroups("nav");
   }
 
   private async onToggleNavPane(): Promise<void> {
     // Single-pane swapping stays transient so widening the panel restores both panes.
     if (this.getLayoutMode() === "single") {
       this.singlePaneView = this.singlePaneView === "nav" ? "cards" : "nav";
-      this.pushNavLayoutState();
+      this.publishGroups("nav");
       return;
     }
 

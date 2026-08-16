@@ -3,6 +3,7 @@ import { mount, unmount } from "svelte";
 import { tick } from "svelte";
 import Toolbar from "./Toolbar.svelte";
 import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
+import { getUiStrings } from "../i18n";
 
 interface SortChangePayload {
   field: string;
@@ -89,26 +90,52 @@ function mountToolbar(
   const target = document.createElement("div");
   target.className = "folder-card-view";
   document.body.appendChild(target);
+  const values = props as Record<string, any>;
   const component = mount(Toolbar, {
     target,
     props: {
-      folderPath: "notes",
-      sortField: "mtime",
-      sortDirection: "desc",
-      searchQuery: "",
-      searchStatus: "idle",
-      bulkMode: false,
-      selectedCount: 0,
-      bulkAnchorPath: null,
-      canBulkSelectAll: false,
-      canBulkClearSelection: false,
-      canBulkMoveSelected: false,
-      canBulkAddTagSelected: false,
-      canBulkRemoveTagSelected: false,
-      canBulkDeleteSelected: false,
-      canBulkMergeSelected: false,
+      strings: getUiStrings("en"),
+      scope: {
+        displayPath: values.folderPath ?? "notes",
+        includeSubfolders: true,
+        activeBoxId: values.activeBoxId ?? null,
+        activeBoxName: values.activeBoxName ?? null,
+        boxExcludedCount: 0,
+        emptyStateMessage: "",
+      },
+      search: {
+        query: values.searchQuery ?? "",
+        status: values.searchStatus ?? "idle",
+        readiness: values.searchIndexReadiness,
+        persistence: values.searchIndexPersistence,
+        rebuildReason: values.searchIndexRebuildReason,
+        focusToken: values.searchFocusToken ?? 0,
+      },
+      projection: {
+        sortField: values.sortField ?? "mtime",
+        sortDirection: values.sortDirection ?? "desc",
+        availableTags: [],
+        tagCounts: {},
+        activeFilterTags: values.activeFilterTags ?? [],
+        pinnedPaths: [],
+      },
+      bulk: {
+        bulkMode: values.bulkMode ?? false,
+        selectedPaths: [],
+        selectedCount: values.selectedCount ?? 0,
+        bulkAnchorPath: values.bulkAnchorPath ?? null,
+        canBulkSelectAll: values.canBulkSelectAll ?? false,
+        canBulkClearSelection: values.canBulkClearSelection ?? false,
+        canBulkMoveSelected: values.canBulkMoveSelected ?? false,
+        canBulkAddTagSelected: values.canBulkAddTagSelected ?? false,
+        canBulkRemoveTagSelected: values.canBulkRemoveTagSelected ?? false,
+        canBulkDeleteSelected: values.canBulkDeleteSelected ?? false,
+        canBulkMergeSelected: values.canBulkMergeSelected ?? false,
+      },
+      boxSummaries: values.boxSummaries ?? [],
+      navVisible: values.navVisible ?? false,
+      onToggleNavPane: values.onToggleNavPane,
       ...callbacks,
-      ...props,
     },
   });
   mountedComponents.push(component);

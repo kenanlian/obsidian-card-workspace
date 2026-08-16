@@ -1,10 +1,15 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
-  import { getUiStrings, type BoxStrings, type ToolbarStrings } from "../i18n";
+  import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
   import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
-  import type { BoxSummary } from "./panel-model";
-  import type { SearchStatus } from "./types";
+  import type {
+    BoxSummary,
+    PanelProjectionState,
+    PanelScopeState,
+    PanelSearchState,
+  } from "./panel-model";
+  import type { BulkRuntimePanelState, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
     action: string;
@@ -32,34 +37,15 @@
   const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
 
   interface ToolbarProps {
-    strings?: ToolbarStrings;
-    boxStrings?: BoxStrings;
-    activeBoxId?: string | null;
-    activeBoxName?: string | null;
+    strings?: UiStrings;
+    scope?: PanelScopeState;
+    search?: PanelSearchState;
+    projection?: PanelProjectionState;
+    bulk?: BulkRuntimePanelState;
     boxSummaries?: BoxSummary[];
-    folderPath?: string;
-    activeFilterTags?: string[];
     navVisible?: boolean;
     onToggleNavPane?: () => void;
-    sortField?: string;
-    sortDirection?: string;
     tooltipSide?: "top" | "right" | "bottom" | "left";
-    searchQuery?: string;
-    searchStatus?: SearchStatus;
-    searchFocusToken?: number;
-    searchIndexReadiness?: import("./types").SearchIndexReadinessState;
-    searchIndexPersistence?: import("./types").SearchIndexPersistenceHealth;
-    searchIndexRebuildReason?: import("./types").SearchIndexRebuildReason | null;
-    bulkMode?: boolean;
-    selectedCount?: number;
-    bulkAnchorPath?: string | null;
-    canBulkSelectAll?: boolean;
-    canBulkClearSelection?: boolean;
-    canBulkMoveSelected?: boolean;
-    canBulkAddTagSelected?: boolean;
-    canBulkRemoveTagSelected?: boolean;
-    canBulkDeleteSelected?: boolean;
-    canBulkMergeSelected?: boolean;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
@@ -143,59 +129,69 @@
     icon: string;
   }
 
+  const DEFAULT_SCOPE: PanelScopeState = { displayPath: "", includeSubfolders: true, activeBoxId: null, activeBoxName: null, boxExcludedCount: 0, emptyStateMessage: "" };
+  const DEFAULT_SEARCH: PanelSearchState = { query: "", status: "idle", focusToken: 0 };
+  const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [] };
+  const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
+
   let {
-    strings = getUiStrings("en").toolbar,
-    boxStrings = getUiStrings("en").box,
-    activeBoxId = null,
-    activeBoxName = null,
+    strings = getUiStrings("en"),
+    scope = DEFAULT_SCOPE,
+    search = DEFAULT_SEARCH,
+    projection = DEFAULT_PROJECTION,
+    bulk = DEFAULT_BULK,
     boxSummaries = [],
-    folderPath = "",
-    activeFilterTags = [],
     navVisible = false,
     onToggleNavPane,
-    sortField = "mtime",
-    sortDirection = "desc",
     tooltipSide = "right",
-    searchQuery = "",
-    searchStatus = "idle",
-    searchFocusToken = 0,
-    searchIndexReadiness = "ready",
-    searchIndexPersistence = "healthy",
-    searchIndexRebuildReason = null,
-    bulkMode = false,
-    selectedCount = 0,
-    bulkAnchorPath = null,
-    canBulkSelectAll = false,
-    canBulkClearSelection = false,
-    canBulkMoveSelected = false,
-    canBulkAddTagSelected = false,
-    canBulkRemoveTagSelected = false,
-    canBulkDeleteSelected = false,
-    canBulkMergeSelected = false,
     onToolbarAction,
     onSortChange,
     onSearchQueryChange,
     onSearchQueryReset,
     onBoxCommand,
   }: ToolbarProps = $props();
+  const toolbarStrings = $derived(strings.toolbar);
+  const boxStrings = $derived(strings.box);
+  const activeBoxId = $derived(scope.activeBoxId);
+  const activeBoxName = $derived(scope.activeBoxName);
+  const folderPath = $derived(scope.displayPath);
+  const activeFilterTags = $derived(projection.activeFilterTags);
+  const sortField = $derived(projection.sortField);
+  const sortDirection = $derived(projection.sortDirection);
+  const searchQuery = $derived(search.query);
+  const searchStatus = $derived(search.status);
+  const searchFocusToken = $derived(search.focusToken);
+  const searchIndexReadiness = $derived(search.readiness ?? "ready");
+  const searchIndexPersistence = $derived(search.persistence ?? "healthy");
+  const searchIndexRebuildReason = $derived(search.rebuildReason ?? null);
+  const bulkMode = $derived(bulk.bulkMode);
+  const selectedCount = $derived(bulk.selectedCount);
+  const bulkAnchorPath = $derived(bulk.bulkAnchorPath);
+  const canBulkSelectAll = $derived(bulk.canBulkSelectAll);
+  const canBulkClearSelection = $derived(bulk.canBulkClearSelection);
+  const canBulkMoveSelected = $derived(bulk.canBulkMoveSelected);
+  const canBulkAddTagSelected = $derived(bulk.canBulkAddTagSelected);
+  const canBulkRemoveTagSelected = $derived(bulk.canBulkRemoveTagSelected);
+  const canBulkDeleteSelected = $derived(bulk.canBulkDeleteSelected);
+  const canBulkMergeSelected = $derived(bulk.canBulkMergeSelected);
   const sortButtonId = "fce-sort-button";
   const boxPickerButtonId = "fce-box-picker-button";
 
   const SORT_OPTIONS = $derived<SortMenuOption[]>([
-    { field: "name", direction: "asc", label: strings.sortOptions.nameAsc },
-    { field: "name", direction: "desc", label: strings.sortOptions.nameDesc },
+    { field: "name", direction: "asc", label: toolbarStrings.sortOptions.nameAsc },
+    { field: "name", direction: "desc", label: toolbarStrings.sortOptions.nameDesc },
     { type: "separator" },
-    { field: "mtime", direction: "desc", label: strings.sortOptions.mtimeDesc },
-    { field: "mtime", direction: "asc", label: strings.sortOptions.mtimeAsc },
+    { field: "mtime", direction: "desc", label: toolbarStrings.sortOptions.mtimeDesc },
+    { field: "mtime", direction: "asc", label: toolbarStrings.sortOptions.mtimeAsc },
     { type: "separator" },
-    { field: "ctime", direction: "desc", label: strings.sortOptions.ctimeDesc },
-    { field: "ctime", direction: "asc", label: strings.sortOptions.ctimeAsc },
+    { field: "ctime", direction: "desc", label: toolbarStrings.sortOptions.ctimeDesc },
+    { field: "ctime", direction: "asc", label: toolbarStrings.sortOptions.ctimeAsc },
   ]);
 
   const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
-    { id: "new-note", label: strings.actions.newNote, title: strings.actions.newNoteTitle, icon: "square-pen" },
-    { id: "sort", label: strings.actions.sort, title: strings.actions.sortTitle, icon: "arrow-up-narrow-wide" },
-    { id: "bulk", label: strings.actions.bulk, title: strings.actions.bulkTitle, icon: "check-check" },
+    { id: "new-note", label: toolbarStrings.actions.newNote, title: toolbarStrings.actions.newNoteTitle, icon: "square-pen" },
+    { id: "sort", label: toolbarStrings.actions.sort, title: toolbarStrings.actions.sortTitle, icon: "arrow-up-narrow-wide" },
+    { id: "bulk", label: toolbarStrings.actions.bulk, title: toolbarStrings.actions.bulkTitle, icon: "check-check" },
   ]);
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
@@ -225,16 +221,16 @@
 
   const isVaultRootScope = $derived(folderPath === "/" || folderPath === "");
   const folderScopeName = $derived(
-    isVaultRootScope ? strings.folderMenu.rootFolder : (folderPath.split("/").pop() ?? folderPath),
+    isVaultRootScope ? toolbarStrings.folderMenu.rootFolder : (folderPath.split("/").pop() ?? folderPath),
   );
   const folderScopeFullLabel = $derived(
-    isVaultRootScope ? strings.folderMenu.rootFolder : folderPath,
+    isVaultRootScope ? toolbarStrings.folderMenu.rootFolder : folderPath,
   );
   const tagScopeLabel = $derived(activeFilterTags.map(formatScopeTag).join(", "));
 
   function joinScope(folderLabel: string): string {
     return tagScopeLabel.length > 0
-      ? `${folderLabel}${strings.scope.separator}${tagScopeLabel}`
+      ? `${folderLabel}${toolbarStrings.scope.separator}${tagScopeLabel}`
       : folderLabel;
   }
 
@@ -265,15 +261,15 @@
     });
   });
 
-  const bulkSelectionSummary = $derived(strings.bulkSummary(selectedCount));
+  const bulkSelectionSummary = $derived(toolbarStrings.bulkSummary(selectedCount));
   const bulkActions = $derived<BulkToolbarOption[]>([
-    { id: "bulk-select-all", label: strings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
-    { id: "bulk-clear-selection", label: strings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
+    { id: "bulk-select-all", label: toolbarStrings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
+    { id: "bulk-clear-selection", label: toolbarStrings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
     { type: "separator" },
-    { id: "bulk-add-tag-selected", label: strings.bulkActionLabels.addTagSelected, icon: BULK_ADD_TAG_ICON, disabled: !canBulkAddTagSelected },
-    { id: "bulk-remove-tag-selected", label: strings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
+    { id: "bulk-add-tag-selected", label: toolbarStrings.bulkActionLabels.addTagSelected, icon: BULK_ADD_TAG_ICON, disabled: !canBulkAddTagSelected },
+    { id: "bulk-remove-tag-selected", label: toolbarStrings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
     { type: "separator" },
-    { id: "bulk-move-selected", label: strings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
+    { id: "bulk-move-selected", label: toolbarStrings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
     { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: BULK_ADD_TO_BOX_ICON, disabled: !canBulkClearSelection },
     ...(isBoxMode
       ? [{
@@ -283,8 +279,8 @@
           disabled: !canBulkClearSelection,
         } as BulkActionOption]
       : []),
-    { id: "bulk-merge-selected", label: strings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
-    { id: "bulk-delete-selected", label: strings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
+    { id: "bulk-merge-selected", label: toolbarStrings.bulkActionLabels.mergeSelected, icon: "combine", disabled: !canBulkMergeSelected },
+    { id: "bulk-delete-selected", label: toolbarStrings.bulkActionLabels.deleteSelected, icon: "trash-2", disabled: !canBulkDeleteSelected, danger: true },
   ]);
 
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
@@ -297,7 +293,7 @@
     || searchIndexPersistence === "storage-unavailable"
   );
   const searchStatusLabel = $derived(
-    getSearchStatusLabel(strings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
+    getSearchStatusLabel(toolbarStrings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
   const hasSummary = $derived(showSearchStatus);
 
@@ -491,21 +487,21 @@
 </script>
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
-  <div class="fce-toolbar" role="toolbar" aria-label={strings.actions.toolbarAriaLabel}>
+  <div class="fce-toolbar" role="toolbar" aria-label={toolbarStrings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons">
       <button
         type="button"
         class="clickable-icon fce-toolbar-button"
-        aria-label={navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}
+        aria-label={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
         aria-pressed={navVisible}
         onclick={() => onToggleNavPane?.()}
         use:applyIcon={navVisible ? "panel-left-close" : "panel-left-open"}
-        use:applyTooltip={navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}
+        use:applyTooltip={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
       >
-        <span class="fce-sr-only">{navVisible ? strings.navPane.collapsePane : strings.navPane.expandPane}</span>
+        <span class="fce-sr-only">{navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}</span>
       </button>
       <div class="fce-toolbar-scope {isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
-        <span class="fce-sr-only">{strings.scope.ariaLabel}</span>
+        <span class="fce-sr-only">{toolbarStrings.scope.ariaLabel}</span>
         <span class="fce-toolbar-scope-text">{scopeText}</span>
       </div>
       <div class="fce-toolbar-actions">
@@ -534,11 +530,11 @@
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
-            aria-label={strings.actions.bulkTitle}
+            aria-label={toolbarStrings.actions.bulkTitle}
             onclick={(event) => selectToolbarAction("bulk", event)}
             use:applyIcon={"check-check"}
           >
-            <span class="fce-sr-only">{strings.actions.bulk}</span>
+            <span class="fce-sr-only">{toolbarStrings.actions.bulk}</span>
           </button>
         {:else}
           {#each TOOLBAR_ACTIONS as action}
@@ -594,11 +590,11 @@
         <button
           type="button"
           class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
-          aria-label={strings.actions.toggleSearch}
+          aria-label={toolbarStrings.actions.toggleSearch}
           onclick={toggleSearch}
           use:applyIcon={"search"}
         >
-          <span class="fce-sr-only">{strings.actions.toggleSearch}</span>
+          <span class="fce-sr-only">{toolbarStrings.actions.toggleSearch}</span>
         </button>
       </div>
     </div>
@@ -607,14 +603,14 @@
   {#if searchExpanded}
     <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}">
       <div class="fce-toolbar-search" role="search">
-        <label class="fce-sr-only" for="fce-search-input">{strings.search.inputLabel}</label>
+        <label class="fce-sr-only" for="fce-search-input">{toolbarStrings.search.inputLabel}</label>
         <input
           bind:this={searchInputEl}
           id="fce-search-input"
           class="fce-search-input"
           type="search"
-          aria-label={strings.search.inputLabel}
-          placeholder={strings.search.placeholder}
+          aria-label={toolbarStrings.search.inputLabel}
+          placeholder={toolbarStrings.search.placeholder}
           value={searchQuery}
           oninput={handleSearchInput}
         />
@@ -622,11 +618,11 @@
           <button
             type="button"
             class="clickable-icon fce-search-clear"
-            aria-label={strings.search.clear}
+            aria-label={toolbarStrings.search.clear}
             onclick={clearSearchQuery}
             use:applyIcon={"x"}
           >
-            <span class="fce-sr-only">{strings.search.clear}</span>
+            <span class="fce-sr-only">{toolbarStrings.search.clear}</span>
           </button>
         {/if}
       </div>
@@ -644,7 +640,7 @@
   {/if}
 
   {#if bulkMode}
-    <div class="fce-toolbar-bulk-strip" role="group" aria-label={strings.actions.bulkTitle}>
+    <div class="fce-toolbar-bulk-strip" role="group" aria-label={toolbarStrings.actions.bulkTitle}>
       <div class="fce-toolbar-bulk-actions">
         {#each bulkActions as action}
           {#if "type" in action}

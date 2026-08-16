@@ -4,9 +4,9 @@
 
 <script lang="ts">
   import { setIcon } from "obsidian";
-  import { getUiStrings, type CardItemStrings, type FileKindStrings } from "../i18n";
+  import { getUiStrings, type UiStrings } from "../i18n";
   import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
-  import type { OpenNotePayload } from "./panel-model";
+  import type { OpenNotePayload, PanelAppearanceState } from "./panel-model";
   import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
   interface BulkSelectCardPayload {
@@ -28,14 +28,12 @@
 
   interface CardItemProps {
     card: NoteCardRecord;
-    strings?: CardItemStrings;
-    fileKindStrings?: FileKindStrings;
+    strings?: UiStrings;
+    appearance?: PanelAppearanceState;
     selected?: boolean;
     bulkMode?: boolean;
     bulkSelected?: boolean;
     pinnedPaths?: string[];
-    cardCornerRadius?: "compact" | "medium" | "rounded";
-    previewLines?: number;
     searchQuery?: string;
     searchMatchCount?: number;
     onOpenNote?: (payload: OpenNotePayload) => void;
@@ -59,14 +57,12 @@
 
   let {
     card,
-    strings = getUiStrings("en").cardItem,
-    fileKindStrings = getUiStrings("en").fileKind,
+    strings = getUiStrings("en"),
+    appearance = { cardCornerRadius: "compact", previewLines: 5 },
     selected = false,
     bulkMode = false,
     bulkSelected = false,
     pinnedPaths = [],
-    cardCornerRadius = "compact",
-    previewLines = 5,
     searchQuery = "",
     searchMatchCount = 0,
     onOpenNote,
@@ -76,6 +72,10 @@
     onCardHoverLink,
   }: CardItemProps = $props();
 
+  const cardStrings = $derived(strings.cardItem);
+  const fileKindStrings = $derived(strings.fileKind);
+  const cardCornerRadius = $derived(appearance.cardCornerRadius);
+  const previewLines = $derived(appearance.previewLines);
   const isPinned = $derived(pinnedPaths.includes(card.path));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
   const highlightedPreviewHtml = $derived(getHighlightedPreviewHtml(card.previewHtml, searchQuery));
@@ -119,7 +119,7 @@
 
     const action = doc.createElement("div");
     action.className = "fce-card-drag-ghost-action";
-    action.textContent = strings.dragInsert;
+    action.textContent = cardStrings.dragInsert;
 
     self.append(icon, title);
     ghost.append(self, action);
@@ -489,9 +489,9 @@
         {#if searchQuery.trim().length > 0 && searchMatchCount > 0}
           <span
             class="fce-card-search-count"
-              aria-label={strings.searchCountAria(searchMatchCount)}
+              aria-label={cardStrings.searchCountAria(searchMatchCount)}
             >
-              {strings.searchCount(searchMatchCount)}
+              {cardStrings.searchCount(searchMatchCount)}
             </span>
         {/if}
       </div>
@@ -500,7 +500,7 @@
           <input
             type="checkbox"
             class="fce-card-bulk-checkbox"
-            aria-label={bulkSelected ? strings.bulkCheckboxRemove : strings.bulkCheckboxAdd}
+            aria-label={bulkSelected ? cardStrings.bulkCheckboxRemove : cardStrings.bulkCheckboxAdd}
             checked={bulkSelected}
             onclick={onBulkSelectClick}
             onkeydown={onBulkSelectKeydown}
@@ -509,7 +509,7 @@
           <button
             type="button"
             class="clickable-icon fce-card-pin-btn"
-            aria-label={isPinned ? strings.unpin : strings.pin}
+            aria-label={isPinned ? cardStrings.unpin : cardStrings.pin}
             aria-pressed={isPinned}
             onclick={onPinClick}
             onkeydown={onPinKeydown}
@@ -518,7 +518,7 @@
           <button
             type="button"
             class="clickable-icon fce-more-actions-btn"
-            aria-label={strings.moreActions}
+            aria-label={cardStrings.moreActions}
             onclick={onMoreActionsClick}
             onkeydown={onMoreActionsKeydown}
             use:applyIcon={"ellipsis"}
@@ -536,12 +536,12 @@
         {#if card.previewMode === "placeholder"}
           <p class="fce-preview-placeholder">{getCardPlaceholderText(card.fileKind, fileKindStrings)}</p>
         {:else if card.previewMode === "empty" || !card.previewHtml}
-          <p class="fce-preview-empty">{strings.placeholderEmpty}</p>
+          <p class="fce-preview-empty">{cardStrings.placeholderEmpty}</p>
         {:else}
           {@html highlightedPreviewHtml}
         {/if}
       {:else}
-        <p class="fce-preview-empty">{strings.placeholderLoading}</p>
+        <p class="fce-preview-empty">{cardStrings.placeholderLoading}</p>
       {/if}
     </div>
   </div>

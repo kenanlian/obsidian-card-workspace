@@ -913,6 +913,11 @@ function createCardRecordFromPath(
   return createCardRecord(file, fileKind);
 }
 
+function publishAll(view: FolderCardView): void {
+  (view as any).projectVisibleCards();
+  (view as any).publishGroups("strings", "scope", "cards", "search", "projection", "bulk", "nav", "appearance");
+}
+
 function createIndexedSearchServiceStub(result: {
   mode: "indexed";
   status: "ready" | "building" | "error";
@@ -1374,9 +1379,8 @@ describe("FolderCardView card context actions", () => {
           expect((view as any).searchStatus).toBe("unavailable");
           expect((view as any).searchOrderedPaths).toBeUndefined();
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
-            searchQuery: "roadmap",
-            searchStatus: "unavailable",
-            cards: [],
+            search: { query: "roadmap", status: "unavailable" },
+            cards: { records: [] },
           });
         } finally {
           vi.useRealTimers();
@@ -1724,17 +1728,19 @@ describe("FolderCardView card context actions", () => {
         expect(typeof mockState.panelEventHandlers["bulk-select-card"]).toBe("function");
         expect(mockState.panelInstances).toHaveLength(1);
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
-          bulkMode: true,
-          selectedPaths: ["notes/bulk-subscriptions.md"],
-          selectedCount: 1,
-          bulkAnchorPath: "notes/bulk-subscriptions.md",
-          canBulkSelectAll: false,
-          canBulkClearSelection: true,
-          canBulkMoveSelected: true,
-          canBulkAddTagSelected: true,
-          canBulkRemoveTagSelected: true,
-          canBulkDeleteSelected: true,
-          canBulkMergeSelected: false,
+          bulk: {
+            bulkMode: true,
+            selectedPaths: ["notes/bulk-subscriptions.md"],
+            selectedCount: 1,
+            bulkAnchorPath: "notes/bulk-subscriptions.md",
+            canBulkSelectAll: false,
+            canBulkClearSelection: true,
+            canBulkMoveSelected: true,
+            canBulkAddTagSelected: true,
+            canBulkRemoveTagSelected: true,
+            canBulkDeleteSelected: true,
+            canBulkMergeSelected: false,
+          },
         });
       });
 
@@ -1768,16 +1774,18 @@ describe("FolderCardView card context actions", () => {
 
         const afterSelectAll = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSelectAll).toMatchObject({
-          selectedPaths: ["notes/alpha.md", "notes/gamma.md", "notes/beta.md"],
-          selectedCount: 3,
-          bulkAnchorPath: "notes/alpha.md",
-          canBulkSelectAll: true,
-          canBulkClearSelection: true,
-          canBulkMoveSelected: true,
-          canBulkAddTagSelected: true,
-          canBulkRemoveTagSelected: true,
-          canBulkDeleteSelected: true,
-          canBulkMergeSelected: true,
+          bulk: {
+            selectedPaths: ["notes/alpha.md", "notes/gamma.md", "notes/beta.md"],
+            selectedCount: 3,
+            bulkAnchorPath: "notes/alpha.md",
+            canBulkSelectAll: true,
+            canBulkClearSelection: true,
+            canBulkMoveSelected: true,
+            canBulkAddTagSelected: true,
+            canBulkRemoveTagSelected: true,
+            canBulkDeleteSelected: true,
+            canBulkMergeSelected: true,
+          },
         });
 
         toolbarActionHandler({ detail: { action: "bulk-clear-selection" } });
@@ -1787,16 +1795,18 @@ describe("FolderCardView card context actions", () => {
 
         const afterClear = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterClear).toMatchObject({
-          selectedPaths: [],
-          selectedCount: 0,
-          bulkAnchorPath: null,
-          canBulkSelectAll: true,
-          canBulkClearSelection: false,
-          canBulkMoveSelected: false,
-          canBulkAddTagSelected: false,
-          canBulkRemoveTagSelected: false,
-          canBulkDeleteSelected: false,
-          canBulkMergeSelected: false,
+          bulk: {
+            selectedPaths: [],
+            selectedCount: 0,
+            bulkAnchorPath: null,
+            canBulkSelectAll: true,
+            canBulkClearSelection: false,
+            canBulkMoveSelected: false,
+            canBulkAddTagSelected: false,
+            canBulkRemoveTagSelected: false,
+            canBulkDeleteSelected: false,
+            canBulkMergeSelected: false,
+          },
         });
       });
 
@@ -1818,35 +1828,39 @@ describe("FolderCardView card context actions", () => {
 
         expect(mockState.panelInstances).toHaveLength(1);
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
-          bulkMode: true,
-          selectedPaths: [],
-          selectedCount: 0,
-          bulkAnchorPath: null,
-          canBulkSelectAll: true,
-          canBulkClearSelection: false,
-          canBulkMoveSelected: false,
-          canBulkAddTagSelected: false,
-          canBulkRemoveTagSelected: false,
-          canBulkDeleteSelected: false,
-          canBulkMergeSelected: false,
+          bulk: {
+            bulkMode: true,
+            selectedPaths: [],
+            selectedCount: 0,
+            bulkAnchorPath: null,
+            canBulkSelectAll: true,
+            canBulkClearSelection: false,
+            canBulkMoveSelected: false,
+            canBulkAddTagSelected: false,
+            canBulkRemoveTagSelected: false,
+            canBulkDeleteSelected: false,
+            canBulkMergeSelected: false,
+          },
         });
 
         (view as any).selectedPaths = new Set(["notes/beta.md"]);
         (view as any).bulkAnchorPath = "notes/beta.md";
-        (view as any).pushState();
+        publishAll(view);
 
         const afterSingleSelect = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSingleSelect).toMatchObject({
-          selectedPaths: ["notes/beta.md"],
-          selectedCount: 1,
-          bulkAnchorPath: "notes/beta.md",
-          canBulkSelectAll: true,
-          canBulkClearSelection: true,
-          canBulkMoveSelected: true,
-          canBulkAddTagSelected: true,
-          canBulkRemoveTagSelected: true,
-          canBulkDeleteSelected: true,
-          canBulkMergeSelected: false,
+          bulk: {
+            selectedPaths: ["notes/beta.md"],
+            selectedCount: 1,
+            bulkAnchorPath: "notes/beta.md",
+            canBulkSelectAll: true,
+            canBulkClearSelection: true,
+            canBulkMoveSelected: true,
+            canBulkAddTagSelected: true,
+            canBulkRemoveTagSelected: true,
+            canBulkDeleteSelected: true,
+            canBulkMergeSelected: false,
+          },
         });
 
         const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
@@ -1860,16 +1874,18 @@ describe("FolderCardView card context actions", () => {
 
         const afterSelectAll = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSelectAll).toMatchObject({
-          selectedPaths: ["notes/alpha.md", "notes/beta.md", "notes/gamma.md"],
-          selectedCount: 3,
-          bulkAnchorPath: "notes/beta.md",
-          canBulkSelectAll: true,
-          canBulkClearSelection: true,
-          canBulkMoveSelected: true,
-          canBulkAddTagSelected: true,
-          canBulkRemoveTagSelected: true,
-          canBulkDeleteSelected: true,
-          canBulkMergeSelected: true,
+          bulk: {
+            selectedPaths: ["notes/alpha.md", "notes/beta.md", "notes/gamma.md"],
+            selectedCount: 3,
+            bulkAnchorPath: "notes/beta.md",
+            canBulkSelectAll: true,
+            canBulkClearSelection: true,
+            canBulkMoveSelected: true,
+            canBulkAddTagSelected: true,
+            canBulkRemoveTagSelected: true,
+            canBulkDeleteSelected: true,
+            canBulkMergeSelected: true,
+          },
         });
       });
 
@@ -1895,17 +1911,19 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).selectedPaths.size).toBe(0);
         expect((view as any).bulkAnchorPath).toBeNull();
         expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
-          bulkMode: false,
-          selectedPaths: [],
-          selectedCount: 0,
-          bulkAnchorPath: null,
-          canBulkSelectAll: true,
-          canBulkClearSelection: false,
-          canBulkMoveSelected: false,
-          canBulkAddTagSelected: false,
-          canBulkRemoveTagSelected: false,
-          canBulkDeleteSelected: false,
-          canBulkMergeSelected: false,
+          bulk: {
+            bulkMode: false,
+            selectedPaths: [],
+            selectedCount: 0,
+            bulkAnchorPath: null,
+            canBulkSelectAll: true,
+            canBulkClearSelection: false,
+            canBulkMoveSelected: false,
+            canBulkAddTagSelected: false,
+            canBulkRemoveTagSelected: false,
+            canBulkDeleteSelected: false,
+            canBulkMergeSelected: false,
+          },
         });
       });
 
@@ -1918,9 +1936,8 @@ describe("FolderCardView card context actions", () => {
 
         expect(mockState.panelInstances).toHaveLength(1);
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
-          folderPath: "projects/active",
-          includeSubfolders: true,
-          previewLines: 5,
+          scope: { displayPath: "projects/active", includeSubfolders: true },
+          appearance: { previewLines: 5 },
         });
       });
 
@@ -1933,8 +1950,7 @@ describe("FolderCardView card context actions", () => {
 
         expect(mockState.panelInstances).toHaveLength(1);
         expect(mockState.panelInstances[0]?.initialProps).toMatchObject({
-          folderPath: "/",
-          includeSubfolders: true,
+          scope: { displayPath: "/", includeSubfolders: true },
         });
       });
 
@@ -2108,16 +2124,16 @@ describe("FolderCardView card context actions", () => {
 
         const firstStableSnapshot = mockState.panelInstances[0]?.modelSnapshots.find(
           (snapshot: any) =>
-            snapshot.loading === false &&
-            Array.isArray(snapshot.cards) &&
-            snapshot.cards.length > 0,
-        ) as { cards?: Array<{ path: string; hydrated: boolean }> } | undefined;
+            snapshot.cards?.loading === false &&
+            Array.isArray(snapshot.cards?.records) &&
+            snapshot.cards.records.length > 0,
+        ) as { cards?: { records: Array<{ path: string; hydrated: boolean }> } } | undefined;
 
         expect(firstStableSnapshot).toBeDefined();
-        expect(firstStableSnapshot?.cards).toHaveLength(13);
-        expect(firstStableSnapshot?.cards?.[0]?.path).toBe(pinnedFile.path);
-        expect(firstStableSnapshot?.cards?.slice(0, 6).every((card) => card.hydrated)).toBe(true);
-        expect(firstStableSnapshot?.cards?.[6]?.hydrated).toBe(false);
+        expect(firstStableSnapshot?.cards?.records).toHaveLength(13);
+        expect(firstStableSnapshot?.cards?.records[0]?.path).toBe(pinnedFile.path);
+        expect(firstStableSnapshot?.cards?.records.slice(0, 6).every((card) => card.hydrated)).toBe(true);
+        expect(firstStableSnapshot?.cards?.records[6]?.hydrated).toBe(false);
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
         expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
       });
@@ -2257,7 +2273,7 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).pendingHydration.size).toBe(0);
       });
 
-      it("hydrateRange pushes state once after finishing a multi-batch visible range", async () => {
+      it("hydrateRange publishes cards once after finishing a multi-batch visible range", async () => {
         const { view, app } = createViewWithFile("notes/range-single-push.md");
         const files = Array.from({ length: 12 }, (_, index) => {
           const file = createMarkdownFile(`notes/range-${index + 1}.md`);
@@ -2294,13 +2310,14 @@ describe("FolderCardView card context actions", () => {
         }
         (view as any).pendingHydration.clear();
 
-        const pushStateSpy = vi.spyOn(view as any, "pushState");
-        pushStateSpy.mockClear();
+        const publishGroupsSpy = vi.spyOn(view as any, "publishGroups");
+        publishGroupsSpy.mockClear();
 
         await (view as any).hydrateRange(0, 12);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
-        expect(pushStateSpy).toHaveBeenCalledTimes(1);
+        expect(publishGroupsSpy).toHaveBeenCalledTimes(1);
+        expect(publishGroupsSpy).toHaveBeenCalledWith("cards");
         expect((view as any).baseCards.every((card: { hydrated: boolean }) => card.hydrated)).toBe(true);
       });
 
@@ -2531,12 +2548,14 @@ describe("FolderCardView card context actions", () => {
           );
           expect(mockState.panelInstances).toHaveLength(1);
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
-            sortField: "ctime",
-            sortDirection: "asc",
-            activeFilterTags: [],
-            pinnedPaths,
-            includeSubfolders: false,
-            previewLines: 4,
+            projection: {
+              sortField: "ctime",
+              sortDirection: "asc",
+              activeFilterTags: [],
+              pinnedPaths,
+            },
+            scope: { includeSubfolders: false },
+            appearance: { previewLines: 4 },
           });
 
           previewLines = 10;
@@ -2552,12 +2571,14 @@ describe("FolderCardView card context actions", () => {
             10,
           );
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
-            sortField: "ctime",
-            sortDirection: "asc",
-            activeFilterTags: [],
-            pinnedPaths,
-            includeSubfolders: false,
-            previewLines: 10,
+            projection: {
+              sortField: "ctime",
+              sortDirection: "asc",
+              activeFilterTags: [],
+              pinnedPaths,
+            },
+            scope: { includeSubfolders: false },
+            appearance: { previewLines: 10 },
           });
         });
 
@@ -4651,7 +4672,7 @@ describe("FolderCardView card context actions", () => {
   });
 
   describe("Phase 1 regression hardening", () => {
-    it("pushState updates the panel to root scope while preserving sort, filter, and pinned props", () => {
+    it("grouped publishing updates root scope while preserving sort, filter, and pins", () => {
       const { view, plugin } = createViewWithFile("notes/push-state-root.md");
 
       plugin.getSettings = vi.fn(() => ({
@@ -4669,15 +4690,16 @@ describe("FolderCardView card context actions", () => {
       (view as any).cardScope = createFolderScope("", true);
       (view as any).baseCards = [createCardRecord(createMarkdownFile("notes/pinned.md"))];
 
-      (view as any).pushState();
+      publishAll(view);
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
-        folderPath: "/",
-        sortField: "ctime",
-        sortDirection: "asc",
-        activeFilterTags: ["alpha", "beta"],
-        pinnedPaths: ["notes/pinned.md"],
-        includeSubfolders: false,
+        scope: { displayPath: "/", includeSubfolders: false },
+        projection: {
+          sortField: "ctime",
+          sortDirection: "asc",
+          activeFilterTags: ["alpha", "beta"],
+          pinnedPaths: ["notes/pinned.md"],
+        },
       });
     });
 
@@ -4705,14 +4727,16 @@ describe("FolderCardView card context actions", () => {
       expect(Array.from((view as any).selectedPaths)).toEqual(["notes/a.md", "notes/b.md"]);
       expect((view as any).bulkAnchorPath).toBe("notes/a.md");
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
-        selectedPath: "notes/independent-selection.md",
-        bulkMode: true,
-        selectedPaths: ["notes/a.md", "notes/b.md"],
-        selectedCount: 2,
+        cards: { selectedPath: "notes/independent-selection.md" },
+        bulk: {
+          bulkMode: true,
+          selectedPaths: ["notes/a.md", "notes/b.md"],
+          selectedCount: 2,
+        },
       });
     });
 
-    it("pushState includes bulk runtime payload", () => {
+    it("grouped publishing includes the bulk runtime payload", () => {
       const { view, app, plugin } = createViewWithFile("notes/bulk-runtime-payload.md");
       const firstSelectedPath = "notes/first.md";
       const secondSelectedPath = "notes/second.md";
@@ -4749,19 +4773,21 @@ describe("FolderCardView card context actions", () => {
       (view as any).bulkMode = true;
       (view as any).selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
       (view as any).bulkAnchorPath = firstSelectedPath;
-      (view as any).pushState();
+      publishAll(view);
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
-        selectedPath: "notes/editor-sync.md",
-        bulkMode: true,
-        selectedPaths: [firstSelectedPath, secondSelectedPath],
-        selectedCount: 2,
-        bulkAnchorPath: firstSelectedPath,
-        canBulkSelectAll: true,
-        canBulkClearSelection: true,
-        canBulkMoveSelected: true,
-        canBulkDeleteSelected: true,
-        canBulkMergeSelected: true,
+        cards: { selectedPath: "notes/editor-sync.md" },
+        bulk: {
+          bulkMode: true,
+          selectedPaths: [firstSelectedPath, secondSelectedPath],
+          selectedCount: 2,
+          bulkAnchorPath: firstSelectedPath,
+          canBulkSelectAll: true,
+          canBulkClearSelection: true,
+          canBulkMoveSelected: true,
+          canBulkDeleteSelected: true,
+          canBulkMergeSelected: true,
+        },
       });
     });
 
@@ -4891,13 +4917,13 @@ describe("FolderCardView card context actions", () => {
       (view as any).baseCards = [cardA, cardB, cardC];
       (view as any).deriveVisibleCards = vi.fn(() => [cardC, cardA]);
 
-      (view as any).pushState();
+      publishAll(view);
 
       expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md", "notes/a.md"]);
       expect((view as any).bulkAnchorPath).toBe("notes/a.md");
 
       (view as any).deriveVisibleCards = vi.fn(() => [cardC]);
-      (view as any).pushState();
+      publishAll(view);
 
       expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md"]);
       expect((view as any).bulkAnchorPath).toBe("notes/c.md");
@@ -4962,7 +4988,7 @@ describe("FolderCardView card context actions", () => {
       (view as any).bulkAnchorPath = "notes/direct.md";
       (view as any).deriveVisibleCards = vi.fn(() => [createCardRecordFromPath("notes/direct.md")]);
 
-      (view as any).pushState();
+      publishAll(view);
 
       expect(Array.from((view as any).selectedPaths)).toEqual(["notes/direct.md"]);
       expect((view as any).bulkAnchorPath).toBe("notes/direct.md");
@@ -5050,10 +5076,12 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).selectedPaths.size).toBe(0);
       expect((view as any).bulkAnchorPath).toBeNull();
       expect(component.modelSnapshots.at(-1)).toMatchObject({
-        bulkMode: true,
-        selectedPaths: [],
-        selectedCount: 0,
-        bulkAnchorPath: null,
+        bulk: {
+          bulkMode: true,
+          selectedPaths: [],
+          selectedCount: 0,
+          bulkAnchorPath: null,
+        },
       });
     });
 
