@@ -18,7 +18,9 @@ vi.mock("obsidian", () => ({
 import { getUiStrings } from "../i18n";
 import { createPanelModel, PANEL_GROUPS, type PanelGroup, type PanelModelState } from "./panel-model";
 import { FolderCardView } from "./FolderCardView";
-import { createBoxScope } from "./scope";
+import { createBoxScope, createFolderScope } from "./scope";
+import { createViewEpochs } from "./view-epochs";
+import { createViewStateStore } from "./view-state-store";
 
 function buildState(): PanelModelState {
   return {
@@ -94,6 +96,8 @@ function createPublishHarness(): {
   };
   const view = Object.create(FolderCardView.prototype) as FolderCardView;
   const host = view as unknown as Record<string, unknown>;
+  host.store = createViewStateStore(createFolderScope("", true));
+  host.epochs = createViewEpochs();
   host.visibleCards = [];
   host.deriveVisibleCards = vi.fn(() => []);
   host.reconcileBulkSelectionToVisibleCards = vi.fn();
@@ -171,12 +175,21 @@ describe("FolderCardView grouped panel publishing", () => {
   it("builds a fresh card-record array", () => {
     const view = Object.create(FolderCardView.prototype) as FolderCardView;
     const records: PanelModelState["cards"]["records"] = [];
+    const epochs = createViewEpochs();
+    for (let index = 0; index < 4; index += 1) {
+      epochs.load.bump();
+    }
     Object.assign(view as object, {
+      store: createViewStateStore(createFolderScope("", true)),
+      epochs,
       visibleCards: records,
       searchMatchCountsByPath: {},
       selectedPath: null,
       loading: false,
-      loadEpoch: { value: 4 },
+      modules: {
+        search: { getMatchCountsByPath: () => ({}) },
+        scopeController: { isLoading: () => false },
+      },
     });
 
     const cards = (view as unknown as { buildCardsGroup: () => PanelModelState["cards"] }).buildCardsGroup();
@@ -197,9 +210,15 @@ describe("FolderCardView grouped panel publishing", () => {
       sort: { field: "mtime", direction: "desc" },
     };
     Object.assign(view as object, {
+      store: createViewStateStore(createFolderScope("", true)),
+      epochs: createViewEpochs(),
       cardScope: createBoxScope(box.id),
       searchQuery: "",
       visibleCards: [],
+      modules: {
+        search: { getQuery: () => "" },
+        boxActions: { getActiveBox: () => box },
+      },
       plugin: {
         getUiStrings: () => getUiStrings("en"),
         getSettings: () => ({

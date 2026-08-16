@@ -204,7 +204,7 @@ describe("R2 Svelte components stay inside the presentation layer", () => {
 });
 
 describe("R3 the visible-card projection has exactly one caller", () => {
-  const PIPELINE_CONSUMERS = ["src/view/FolderCardView.ts"];
+  const PIPELINE_CONSUMERS = ["src/view/controllers/ProjectionController.ts"];
 
   it("keeps pipeline.ts behind the single projection owner", () => {
     const consumers: string[] = [];
@@ -246,10 +246,14 @@ describe("R5 line-count ratchet", () => {
    * new real line count.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 4836,
+    "src/view/FolderCardView.ts": 655,
     "src/main.ts": 770,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 588,
+    // Scope selection, single-flight loading, and vault mutation routing form one invariant.
+    "src/view/controllers/ScopeController.ts": 453,
+    // Card boxes are one wide domain spanning scope, CRUD, membership, and menu actions.
+    "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1103,
     "src/view/note-ops.ts": 877,
     "src/view/NavigationPane.svelte": 802,

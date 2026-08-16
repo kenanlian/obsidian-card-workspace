@@ -781,7 +781,6 @@ import * as markdownUtils from "./markdown-utils";
 function createFolder(path: string): InstanceType<typeof mockState.MockTFolder> {
   return new mockState.MockTFolder(path);
 }
-
 function createMarkdownFile(path: string): InstanceType<typeof mockState.MockTFile> {
   const file = new mockState.MockTFile(path);
   (file as unknown as { extension: string }).extension = "md";
@@ -914,7 +913,8 @@ function createCardRecordFromPath(
 }
 
 function publishAll(view: FolderCardView): void {
-  (view as any).projectVisibleCards();
+  (view as any).modules.projection.reprojectCards();
+  (view as any).modules.bulk.reconcileToVisibleCards();
   (view as any).publishGroups("strings", "scope", "cards", "search", "projection", "bulk", "nav", "appearance");
 }
 
@@ -950,8 +950,6 @@ function createIndexedSearchServiceStub(result: {
     handleVaultMutation: vi.fn(() => undefined),
   };
 }
-
-
 function getLatestModalButton(
   buttonText: string,
   occurrence: number = 0,
@@ -1124,7 +1122,7 @@ describe("FolderCardView card context actions", () => {
       app.vault.cachedRead = vi.fn(async () => "# Startup restore\nHydrated preview body");
       (view as any).baseCards = [card];
       (view as any).visibleCards = [card];
-      (view as any).loading = false;
+      (view as any).modules.scopeController.loading = false;
 
       await (view as any).onOpen();
       await flushAsyncWork();
@@ -1365,7 +1363,7 @@ describe("FolderCardView card context actions", () => {
           vi.advanceTimersByTime(1);
           await flushAsyncWork();
 
-          expect((view as any).searchQuery).toBe("roadmap");
+          expect((view as any).modules.search.query).toBe("roadmap");
           expect(plugin.saveSettings).not.toHaveBeenCalled();
           expect(querySpy).toHaveBeenCalledWith({
             query: "roadmap",
@@ -1376,8 +1374,8 @@ describe("FolderCardView card context actions", () => {
             candidatePaths: visibleCards.map((card) => card.path),
           });
           expect((view as any).visibleCards).toEqual([]);
-          expect((view as any).searchStatus).toBe("unavailable");
-          expect((view as any).searchOrderedPaths).toBeUndefined();
+          expect((view as any).modules.search.status).toBe("unavailable");
+          expect((view as any).modules.search.orderedPaths).toBeUndefined();
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
             search: { query: "roadmap", status: "unavailable" },
             cards: { records: [] },
@@ -1415,18 +1413,18 @@ describe("FolderCardView card context actions", () => {
 
           await (view as any).onOpen();
 
-          expect((view as any).searchStatus).toBe("error");
+          expect((view as any).modules.search.status).toBe("error");
 
           const queryChangeHandler = mockState.panelEventHandlers["search-query-change"];
           const queryResetHandler = mockState.panelEventHandlers["search-query-reset"];
 
           queryChangeHandler({ detail: { query: "alpha" } });
-          expect((view as any).searchStatus).toBe("error");
+          expect((view as any).modules.search.status).toBe("error");
 
             queryResetHandler({ detail: { source: "clear-button" } });
-            expect((view as any).searchQuery).toBe("");
-            expect((view as any).searchOrderedPaths).toBeUndefined();
-            expect((view as any).searchStatus).toBe("error");
+            expect((view as any).modules.search.query).toBe("");
+            expect((view as any).modules.search.orderedPaths).toBeUndefined();
+            expect((view as any).modules.search.status).toBe("error");
 
           vi.advanceTimersByTime(200);
           await flushAsyncWork();
@@ -1532,15 +1530,15 @@ describe("FolderCardView card context actions", () => {
           });
           await flushAsyncWork();
 
-          expect((view as any).searchStatus).toBe("rebuild-required");
-          expect((view as any).searchOrderedPaths).toBeUndefined();
+          expect((view as any).modules.search.status).toBe("rebuild-required");
+          expect((view as any).modules.search.orderedPaths).toBeUndefined();
 
           queryChangeHandler({ detail: { query: "gamma" } });
           vi.advanceTimersByTime(120);
           await flushAsyncWork();
           expect(query).toHaveBeenCalledTimes(3);
 
-          (view as any).loadEpoch.bump();
+          (view as any).epochs.load.bump();
           (view as any).cardScope = createFolderScope("archive", true);
 
           pending[2]?.resolve({
@@ -1557,9 +1555,9 @@ describe("FolderCardView card context actions", () => {
           });
           await flushAsyncWork();
 
-          expect((view as any).searchQuery).toBe("gamma");
-          expect((view as any).searchStatus).toBe("rebuild-required");
-          expect((view as any).searchOrderedPaths).toBeUndefined();
+          expect((view as any).modules.search.query).toBe("gamma");
+          expect((view as any).modules.search.status).toBe("rebuild-required");
+          expect((view as any).modules.search.orderedPaths).toBeUndefined();
         } finally {
           vi.useRealTimers();
         }
@@ -1716,9 +1714,9 @@ describe("FolderCardView card context actions", () => {
       it("registers bulk subscriptions", async () => {
         const { view } = createViewWithFile("notes/bulk-subscriptions.md");
 
-        (view as any).bulkMode = true;
-        (view as any).selectedPaths = new Set(["notes/bulk-subscriptions.md"]);
-        (view as any).bulkAnchorPath = "notes/bulk-subscriptions.md";
+        (view as any).modules.bulk.bulkMode = true;
+        (view as any).modules.bulk.selectedPaths = new Set(["notes/bulk-subscriptions.md"]);
+        (view as any).modules.bulk.anchorPath = "notes/bulk-subscriptions.md";
 
         await (view as any).onOpen();
 
@@ -1755,22 +1753,22 @@ describe("FolderCardView card context actions", () => {
 
         app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
         (view as any).visibleCards = visibleCards;
-        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-        (view as any).bulkMode = true;
-        (view as any).selectedPaths = new Set(["notes/gamma.md"]);
-        (view as any).bulkAnchorPath = "notes/alpha.md";
+        (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).modules.bulk.bulkMode = true;
+        (view as any).modules.bulk.selectedPaths = new Set(["notes/gamma.md"]);
+        (view as any).modules.bulk.anchorPath = "notes/alpha.md";
 
         await (view as any).onOpen();
 
         const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
         toolbarActionHandler({ detail: { action: "bulk-select-all" } });
 
-        expect(Array.from((view as any).selectedPaths)).toEqual([
+        expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([
           "notes/alpha.md",
           "notes/gamma.md",
           "notes/beta.md",
         ]);
-        expect((view as any).bulkAnchorPath).toBe("notes/alpha.md");
+        expect((view as any).modules.bulk.anchorPath).toBe("notes/alpha.md");
 
         const afterSelectAll = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterSelectAll).toMatchObject({
@@ -1790,8 +1788,8 @@ describe("FolderCardView card context actions", () => {
 
         toolbarActionHandler({ detail: { action: "bulk-clear-selection" } });
 
-        expect((view as any).selectedPaths.size).toBe(0);
-        expect((view as any).bulkAnchorPath).toBeNull();
+        expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+        expect((view as any).modules.bulk.anchorPath).toBeNull();
 
         const afterClear = mockState.panelInstances[0]?.modelSnapshots.at(-1);
         expect(afterClear).toMatchObject({
@@ -1821,8 +1819,8 @@ describe("FolderCardView card context actions", () => {
 
         app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
         (view as any).visibleCards = visibleCards;
-        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-        (view as any).bulkMode = true;
+        (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).modules.bulk.bulkMode = true;
 
         await (view as any).onOpen();
 
@@ -1843,8 +1841,8 @@ describe("FolderCardView card context actions", () => {
           },
         });
 
-        (view as any).selectedPaths = new Set(["notes/beta.md"]);
-        (view as any).bulkAnchorPath = "notes/beta.md";
+        (view as any).modules.bulk.selectedPaths = new Set(["notes/beta.md"]);
+        (view as any).modules.bulk.anchorPath = "notes/beta.md";
         publishAll(view);
 
         const afterSingleSelect = mockState.panelInstances[0]?.modelSnapshots.at(-1);
@@ -1866,7 +1864,7 @@ describe("FolderCardView card context actions", () => {
         const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
         toolbarActionHandler({ detail: { action: "bulk-select-all" } });
 
-        expect(Array.from((view as any).selectedPaths)).toEqual([
+        expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([
           "notes/alpha.md",
           "notes/beta.md",
           "notes/gamma.md",
@@ -1897,19 +1895,19 @@ describe("FolderCardView card context actions", () => {
         ];
 
         (view as any).visibleCards = visibleCards;
-        (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-        (view as any).bulkMode = true;
-        (view as any).selectedPaths = new Set(["notes/alpha.md", "notes/beta.md"]);
-        (view as any).bulkAnchorPath = "notes/alpha.md";
+        (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+        (view as any).modules.bulk.bulkMode = true;
+        (view as any).modules.bulk.selectedPaths = new Set(["notes/alpha.md", "notes/beta.md"]);
+        (view as any).modules.bulk.anchorPath = "notes/alpha.md";
 
         await (view as any).onOpen();
 
         const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
         toolbarActionHandler({ detail: { action: "bulk" } });
 
-        expect((view as any).bulkMode).toBe(false);
-        expect((view as any).selectedPaths.size).toBe(0);
-        expect((view as any).bulkAnchorPath).toBeNull();
+        expect((view as any).modules.bulk.bulkMode).toBe(false);
+        expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+        expect((view as any).modules.bulk.anchorPath).toBeNull();
         expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
           bulk: {
             bulkMode: false,
@@ -2054,7 +2052,7 @@ describe("FolderCardView card context actions", () => {
         app.vault.cachedRead = vi.fn(async () => "# Hydrate me\nBody");
         (view as any).baseCards = [card];
         (view as any).visibleCards = [card];
-        (view as any).loading = false;
+        (view as any).modules.scopeController.loading = false;
 
         await (view as any).onOpen();
 
@@ -2124,16 +2122,18 @@ describe("FolderCardView card context actions", () => {
 
         const firstStableSnapshot = mockState.panelInstances[0]?.modelSnapshots.find(
           (snapshot: any) =>
-            snapshot.cards?.loading === false &&
-            Array.isArray(snapshot.cards?.records) &&
+            snapshot.cards.loading === false &&
+            Array.isArray(snapshot.cards.records) &&
             snapshot.cards.records.length > 0,
         ) as { cards?: { records: Array<{ path: string; hydrated: boolean }> } } | undefined;
 
         expect(firstStableSnapshot).toBeDefined();
         expect(firstStableSnapshot?.cards?.records).toHaveLength(13);
-        expect(firstStableSnapshot?.cards?.records[0]?.path).toBe(pinnedFile.path);
-        expect(firstStableSnapshot?.cards?.records.slice(0, 6).every((card) => card.hydrated)).toBe(true);
-        expect(firstStableSnapshot?.cards?.records[6]?.hydrated).toBe(false);
+        expect(firstStableSnapshot?.cards?.records?.[0]?.path).toBe(pinnedFile.path);
+        expect(
+          firstStableSnapshot?.cards?.records?.slice(0, 6).every((card) => card.hydrated),
+        ).toBe(true);
+        expect(firstStableSnapshot?.cards?.records?.[6]?.hydrated).toBe(false);
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
         expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
       });
@@ -2199,7 +2199,7 @@ describe("FolderCardView card context actions", () => {
           });
           app.vault.cachedRead = vi.fn(() => delayedRead.promise);
 
-          const loadPromise = (view as any).loadScope(
+          const loadPromise = (view as any).modules.scopeController.loadScope(
             {
               scope: createFolderScope("notes", true),
               sort: { field: "mtime", direction: "desc" },
@@ -2208,14 +2208,14 @@ describe("FolderCardView card context actions", () => {
           );
 
           await flushAsyncWork(1);
-          expect((view as any).loading).toBe(true);
-          expect((view as any).pendingHydration.has(file.path)).toBe(true);
+          expect((view as any).modules.scopeController.loading).toBe(true);
+          expect((view as any).modules.hydration.pendingHydration.has(file.path)).toBe(true);
 
           vi.advanceTimersByTime(120);
           await loadPromise;
 
           const card = (view as any).baseCards[0];
-          expect((view as any).loading).toBe(false);
+          expect((view as any).modules.scopeController.loading).toBe(false);
           expect(card?.hydrated).toBe(false);
           expect(card?.previewHtml).toBe("");
 
@@ -2224,7 +2224,7 @@ describe("FolderCardView card context actions", () => {
 
           expect(card?.hydrated).toBe(true);
           expect(card?.previewHtml).not.toBe("");
-          expect((view as any).pendingHydration.size).toBe(0);
+          expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
         } finally {
           vi.useRealTimers();
         }
@@ -2248,7 +2248,7 @@ describe("FolderCardView card context actions", () => {
         });
         app.vault.cachedRead = vi.fn(() => staleRead.promise);
 
-        const loadPromise = (view as any).loadScope(
+        const loadPromise = (view as any).modules.scopeController.loadScope(
           {
             scope: createFolderScope("notes", true),
             sort: { field: "mtime", direction: "desc" },
@@ -2258,10 +2258,10 @@ describe("FolderCardView card context actions", () => {
 
         await flushAsyncWork(1);
 
-        expect((view as any).pendingHydration.has(file.path)).toBe(true);
+        expect((view as any).modules.hydration.pendingHydration.has(file.path)).toBe(true);
 
-        (view as any).loadEpoch.bump();
-        (view as any).pendingHydration.clear();
+        (view as any).epochs.load.bump();
+        (view as any).modules.hydration.pendingHydration.clear();
 
         staleRead.resolve("# stale\ncontent");
         await loadPromise;
@@ -2270,10 +2270,10 @@ describe("FolderCardView card context actions", () => {
         expect(card?.hydrated).toBe(false);
         expect(card?.previewHtml).toBe("");
         expect(card?.previewMode).toBe("empty");
-        expect((view as any).pendingHydration.size).toBe(0);
+        expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
       });
 
-      it("hydrateRange publishes cards once after finishing a multi-batch visible range", async () => {
+      it("hydrateRange pushes state once after finishing a multi-batch visible range", async () => {
         const { view, app } = createViewWithFile("notes/range-single-push.md");
         const files = Array.from({ length: 12 }, (_, index) => {
           const file = createMarkdownFile(`notes/range-${index + 1}.md`);
@@ -2308,16 +2308,15 @@ describe("FolderCardView card context actions", () => {
           card.previewHtml = "";
           card.previewMode = "empty";
         }
-        (view as any).pendingHydration.clear();
+        (view as any).modules.hydration.pendingHydration.clear();
 
-        const publishGroupsSpy = vi.spyOn(view as any, "publishGroups");
-        publishGroupsSpy.mockClear();
+        const publishHydrationSpy = vi.spyOn((view as any).context, "publishGroups");
+        publishHydrationSpy.mockClear();
 
-        await (view as any).hydrateRange(0, 12);
+        await (view as any).modules.hydration.hydrateRange(0, 12);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
-        expect(publishGroupsSpy).toHaveBeenCalledTimes(1);
-        expect(publishGroupsSpy).toHaveBeenCalledWith("cards");
+        expect(publishHydrationSpy).toHaveBeenCalledTimes(1);
         expect((view as any).baseCards.every((card: { hydrated: boolean }) => card.hydrated)).toBe(true);
       });
 
@@ -2325,13 +2324,13 @@ describe("FolderCardView card context actions", () => {
       it("onClose unmounts the panel instance and clears registered handlers", async () => {
         const { view } = createViewWithFile("notes/close-cleanup.md");
 
-        (view as any).queuedRequest = { requestId: 1 };
-        (view as any).refreshQueued = true;
-        (view as any).pendingHydration = new Set(["notes/close-cleanup.md"]);
-        (view as any).inFlight = Promise.resolve();
-        (view as any).inFlightKey = "notes/close-cleanup.md";
-        (view as any).loading = true;
-        const generationBeforeClose = (view as any).loadEpoch.value;
+        (view as any).modules.scopeController.queuedRequest = { requestId: 1 };
+        (view as any).modules.scopeController.refreshQueued = true;
+        (view as any).modules.hydration.pendingHydration = new Set(["notes/close-cleanup.md"]);
+        (view as any).modules.scopeController.inFlight = Promise.resolve();
+        (view as any).modules.scopeController.inFlightKey = "notes/close-cleanup.md";
+        (view as any).modules.scopeController.loading = true;
+        const generationBeforeClose = (view as any).epochs.load.value;
 
         await (view as any).onOpen();
 
@@ -2343,13 +2342,13 @@ describe("FolderCardView card context actions", () => {
         expect(mockState.svelteUnmountMock).toHaveBeenCalledWith(mountedComponent);
         expect((view as any).component).toBeNull();
         expect((view as any).hostEl).toBeNull();
-        expect((view as any).queuedRequest).toBeNull();
-        expect((view as any).refreshQueued).toBe(false);
-        expect((view as any).pendingHydration.size).toBe(0);
-        expect((view as any).inFlight).toBeNull();
-        expect((view as any).inFlightKey).toBeNull();
-        expect((view as any).loading).toBe(false);
-        expect((view as any).loadEpoch.value).toBe(generationBeforeClose + 1);
+        expect((view as any).modules.scopeController.queuedRequest).toBeNull();
+        expect((view as any).modules.scopeController.refreshQueued).toBe(false);
+        expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
+        expect((view as any).modules.scopeController.inFlight).toBeNull();
+        expect((view as any).modules.scopeController.inFlightKey).toBeNull();
+        expect((view as any).modules.scopeController.loading).toBe(false);
+        expect((view as any).epochs.load.value).toBe(generationBeforeClose + 1);
       });
 
       describe("Task 6: preview settings refresh wiring and generation safety", () => {
@@ -2393,7 +2392,7 @@ describe("FolderCardView card context actions", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateRange(0, 1);
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "line1\nline2\nline3\nline4",
@@ -2405,9 +2404,10 @@ describe("FolderCardView card context actions", () => {
 
           await (view as any).refresh({
             reason: "settings-change",
+            folderPath: "notes",
             forceRefresh: true,
           });
-          await (view as any).hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateRange(0, 1);
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "line1\nline2\nline3\nline4",
@@ -2470,12 +2470,12 @@ describe("FolderCardView card context actions", () => {
           vi.mocked(app.vault.cachedRead).mockClear();
           previewSpy.mockClear();
 
-          const staleHydration = (view as any).hydrateRange(12, 13);
+          const staleHydration = (view as any).modules.hydration.hydrateRange(12, 13);
           await flushAsyncWork(1);
 
           previewLines = 8;
-          (view as any).loadEpoch.bump();
-          (view as any).pendingHydration.clear();
+          (view as any).epochs.load.bump();
+          (view as any).modules.hydration.pendingHydration.clear();
           staleRead.reject(firstReadError);
           await staleHydration;
           vi.mocked(app.vault.cachedRead).mockImplementation(async () => "fresh\npreview\ncontent");
@@ -2486,7 +2486,7 @@ describe("FolderCardView card context actions", () => {
           expect(staleCard?.previewHtml).toBe("");
           expect(staleCard?.previewMode).toBe("empty");
 
-          await (view as any).hydrateRange(12, 13);
+          await (view as any).modules.hydration.hydrateRange(12, 13);
 
           expect(previewSpy).toHaveBeenCalledTimes(1);
           expect(previewSpy).toHaveBeenLastCalledWith(
@@ -2539,7 +2539,7 @@ describe("FolderCardView card context actions", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateRange(0, 1);
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "only\none\ntwo\nthree",
@@ -2561,9 +2561,10 @@ describe("FolderCardView card context actions", () => {
           previewLines = 10;
           await (view as any).refresh({
             reason: "settings-change",
+            folderPath: "notes",
             forceRefresh: true,
           });
-          await (view as any).hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateRange(0, 1);
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "only\none\ntwo\nthree",
@@ -2626,7 +2627,7 @@ describe("FolderCardView card context actions", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).hydrateRange(0, 2);
+          await (view as any).modules.hydration.hydrateRange(0, 2);
 
           const emptyCard = (view as any).baseCards.find((card: { path: string }) => card.path === emptyFile.path);
           const sparseCard = (view as any).baseCards.find((card: { path: string }) => card.path === sparseFile.path);
@@ -2668,7 +2669,7 @@ describe("FolderCardView card context actions", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateRange(0, 1);
 
           const codeCard = (view as any).baseCards.find((card: { path: string }) => card.path === codeFile.path);
 
@@ -2684,7 +2685,7 @@ describe("FolderCardView card context actions", () => {
       const { view, file } = createViewWithFile();
       const mouseEvent = { clientX: 12, clientY: 24 } as MouseEvent;
 
-      (view as any).openCardContextMenu({
+      (view as any).modules.cardMenu.open({
         notePath: file.path,
         trigger: "contextmenu",
         mouseEvent,
@@ -2726,7 +2727,7 @@ describe("FolderCardView card context actions", () => {
       fullPath: "/vault/notes/desktop-markdown-parity.md",
     });
 
-    (view as any).openCardContextMenu({
+    (view as any).modules.cardMenu.open({
       notePath: file.path,
       trigger: "contextmenu",
       mouseEvent: { clientX: 16, clientY: 24 },
@@ -2761,19 +2762,19 @@ describe("FolderCardView card context actions", () => {
   it("openCardContextMenu aborts and does not render menu on invalid inputs", () => {
     const { view } = createViewWithFile();
 
-    (view as any).openCardContextMenu({
+    (view as any).modules.cardMenu.open({
       notePath: 123,
       trigger: "contextmenu",
       mouseEvent: { clientX: 12, clientY: 24 },
     });
-    (view as any).openCardContextMenu({ notePath: "path.md", trigger: "contextmenu", mouseEvent: null });
-    (view as any).openCardContextMenu({
+    (view as any).modules.cardMenu.open({ notePath: "path.md", trigger: "contextmenu", mouseEvent: null });
+    (view as any).modules.cardMenu.open({
       notePath: "path.md",
       trigger: "contextmenu",
       mouseEvent: { clientX: 12 },
     });
-    (view as any).openCardContextMenu({ notePath: "path.md", trigger: "button", position: null });
-    (view as any).openCardContextMenu({
+    (view as any).modules.cardMenu.open({ notePath: "path.md", trigger: "button", position: null });
+    (view as any).modules.cardMenu.open({
       notePath: "path.md",
       trigger: "button",
       position: { x: 12 },
@@ -2784,29 +2785,29 @@ describe("FolderCardView card context actions", () => {
 
   it("routeCardMenuAction opens note for destination actions and preserves remaining file-mutation routes", async () => {
     const { view, file, plugin } = createViewWithFile("notes/context-route.md");
-    const makeCopySpy = vi.spyOn(view as any, "makeCardFileCopy").mockResolvedValue(undefined);
-    const moveSpy = vi.spyOn(view as any, "moveCardNote");
-    const renameSpy = vi.spyOn(view as any, "renameCardFile").mockImplementation(() => undefined);
-    const addTagSpy = vi.spyOn(view as any, "openSingleTagModal").mockImplementation(() => undefined);
-    const deleteSpy = vi.spyOn(view as any, "deleteCardFile").mockResolvedValue(undefined);
-    const copyTitleSpy = vi.spyOn(view as any, "copyCardTitle").mockResolvedValue(undefined);
-    const copyContentSpy = vi.spyOn(view as any, "copyCardContent").mockResolvedValue(undefined);
-    const copyTitleAndContentSpy = vi.spyOn(view as any, "copyCardTitleAndContent").mockResolvedValue(undefined);
+    const makeCopySpy = vi.spyOn((view as any).modules.fileActions, "makeCardFileCopy").mockResolvedValue(undefined);
+    const moveSpy = vi.spyOn((view as any).modules.fileActions, "moveCardNote");
+    const renameSpy = vi.spyOn((view as any).modules.fileActions, "renameCardFile").mockImplementation(() => undefined);
+    const addTagSpy = vi.spyOn((view as any).modules.tagActions, "openSingleTagModal").mockImplementation(() => undefined);
+    const deleteSpy = vi.spyOn((view as any).modules.fileActions, "deleteCardFile").mockResolvedValue(undefined);
+    const copyTitleSpy = vi.spyOn((view as any).modules.fileActions, "copyCardTitle").mockResolvedValue(undefined);
+    const copyContentSpy = vi.spyOn((view as any).modules.fileActions, "copyCardContent").mockResolvedValue(undefined);
+    const copyTitleAndContentSpy = vi.spyOn((view as any).modules.fileActions, "copyCardTitleAndContent").mockResolvedValue(undefined);
 
-    await (view as any).routeCardMenuAction("current-area", file.path);
-    await (view as any).routeCardMenuAction("new-tab", file.path);
-    await (view as any).routeCardMenuAction("split-right", file.path);
-    await (view as any).routeCardMenuAction("new-window", file.path);
-    await (view as any).routeCardMenuAction("make-copy", file.path);
-    await (view as any).routeCardMenuAction("move", file.path);
-    await (view as any).routeCardMenuAction("rename", file.path);
-    await (view as any).routeCardMenuAction("add-tag", file.path);
-    await (view as any).routeCardMenuAction("remove-tag", file.path);
-    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
-      .routeCardMenuAction("delete", file.path);
-    await (view as any).routeCardMenuAction("copy-title", file.path);
-    await (view as any).routeCardMenuAction("copy-content", file.path);
-    await (view as any).routeCardMenuAction("copy-title-and-content", file.path);
+    await (view as any).modules.cardMenu.routeAction("current-area", file.path);
+    await (view as any).modules.cardMenu.routeAction("new-tab", file.path);
+    await (view as any).modules.cardMenu.routeAction("split-right", file.path);
+    await (view as any).modules.cardMenu.routeAction("new-window", file.path);
+    await (view as any).modules.cardMenu.routeAction("make-copy", file.path);
+    await (view as any).modules.cardMenu.routeAction("move", file.path);
+    await (view as any).modules.cardMenu.routeAction("rename", file.path);
+    await (view as any).modules.cardMenu.routeAction("add-tag", file.path);
+    await (view as any).modules.cardMenu.routeAction("remove-tag", file.path);
+    await (view as any).modules
+      .cardMenu.routeAction("delete", file.path);
+    await (view as any).modules.cardMenu.routeAction("copy-title", file.path);
+    await (view as any).modules.cardMenu.routeAction("copy-content", file.path);
+    await (view as any).modules.cardMenu.routeAction("copy-title-and-content", file.path);
 
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(1, file.path, "current-area");
     expect(plugin.openNoteFromCard).toHaveBeenNthCalledWith(2, file.path, "new-tab");
@@ -2834,7 +2835,7 @@ describe("FolderCardView card context actions", () => {
   it("single tag actions keep add freeform and require explicit remove selection", async () => {
     const { view, file, app, plugin } = createViewWithFile("notes/tag-action.md");
 
-    await (view as any).routeCardMenuAction("add-tag", file.path);
+    await (view as any).modules.cardMenu.routeAction("add-tag", file.path);
     expect(mockState.modalInstances.at(-1)?.title).toBe("Add tag");
     setLatestModalTextInput(0, "  #Project/Alpha ");
     clickLatestModalButton("Add tag");
@@ -2852,7 +2853,7 @@ describe("FolderCardView card context actions", () => {
       file,
     } as any);
 
-    await (view as any).routeCardMenuAction("remove-tag", file.path);
+    await (view as any).modules.cardMenu.routeAction("remove-tag", file.path);
     const singleTagModal = mockState.modalInstances.at(-1);
     expect(singleTagModal?.title).toBe("Remove tags");
     expect(singleTagModal?.textInputs).toEqual([]);
@@ -2875,7 +2876,7 @@ describe("FolderCardView card context actions", () => {
       failed: [],
     } as any);
 
-    await (view as any).routeCardMenuAction("remove-tag", file.path);
+    await (view as any).modules.cardMenu.routeAction("remove-tag", file.path);
     const multiTagModal = mockState.modalInstances.at(-1);
     expect(multiTagModal?.title).toBe("Remove tags");
     expect(multiTagModal?.checkboxes.map((checkbox) => checkbox.label)).toEqual([
@@ -2911,10 +2912,10 @@ describe("FolderCardView card context actions", () => {
 
     app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
     (view as any).visibleCards = visibleCards;
-    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).bulkMode = true;
-    (view as any).selectedPaths = new Set([first.path, second.path, third.path]);
-    (view as any).bulkAnchorPath = first.path;
+    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).modules.bulk.bulkMode = true;
+    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path, third.path]);
+    (view as any).modules.bulk.anchorPath = first.path;
 
     vi.mocked(batchAddTagToFiles).mockResolvedValueOnce({
       succeeded: [{ ok: true, file: first }],
@@ -2933,8 +2934,8 @@ describe("FolderCardView card context actions", () => {
       expect(batchAddTagToFiles).toHaveBeenCalledWith(app, [first, second], "project");
     });
 
-    expect(Array.from((view as any).selectedPaths)).toEqual([second.path]);
-    expect((view as any).bulkAnchorPath).toBe(second.path);
+    expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([second.path]);
+    expect((view as any).modules.bulk.anchorPath).toBe(second.path);
     expect(mockState.noticeMessages).toContain("Added #project to 1 note; 1 failed.");
   });
 
@@ -2976,10 +2977,10 @@ describe("FolderCardView card context actions", () => {
     });
     (view as any).baseCards = visibleCards;
     (view as any).visibleCards = visibleCards;
-    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).bulkMode = true;
-    (view as any).selectedPaths = new Set([first.path, second.path, third.path]);
-    (view as any).bulkAnchorPath = first.path;
+    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).modules.bulk.bulkMode = true;
+    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path, third.path]);
+    (view as any).modules.bulk.anchorPath = first.path;
 
     vi.mocked(batchRemoveTagsFromFiles).mockImplementationOnce(async () => {
       tagsByPath.set(first.path, []);
@@ -3024,8 +3025,8 @@ describe("FolderCardView card context actions", () => {
         tags: [],
       },
     });
-    expect(Array.from((view as any).selectedPaths)).toEqual([]);
-    expect((view as any).bulkAnchorPath).toBeNull();
+    expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([]);
+    expect((view as any).modules.bulk.anchorPath).toBeNull();
     await vi.waitFor(() => {
       expect(mockState.noticeMessages).toContain("Removed 2 tags from 2 notes.");
     });
@@ -3050,10 +3051,10 @@ describe("FolderCardView card context actions", () => {
     }));
     (view as any).baseCards = visibleCards;
     (view as any).visibleCards = visibleCards;
-    (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).bulkMode = true;
-    (view as any).selectedPaths = new Set([first.path, second.path]);
-    (view as any).bulkAnchorPath = first.path;
+    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+    (view as any).modules.bulk.bulkMode = true;
+    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+    (view as any).modules.bulk.anchorPath = first.path;
 
     vi.mocked(batchRemoveTagsFromFiles).mockResolvedValueOnce({
       changed: [],
@@ -3095,7 +3096,7 @@ describe("FolderCardView card context actions", () => {
     (desktopNonMarkdownView as any).baseCards = [desktopNonMarkdownCard];
     (desktopNonMarkdownView as any).visibleCards = [desktopNonMarkdownCard];
 
-    (desktopNonMarkdownView as any).openCardContextMenu({
+    (desktopNonMarkdownView as any).modules.cardMenu.open({
       notePath: desktopNonMarkdownFile.path,
       trigger: "contextmenu",
       mouseEvent: { clientX: 2, clientY: 2 },
@@ -3126,7 +3127,7 @@ describe("FolderCardView card context actions", () => {
       fullPath: null,
     });
 
-    (nonDesktopMarkdownView as any).openCardContextMenu({
+    (nonDesktopMarkdownView as any).modules.cardMenu.open({
       notePath: nonDesktopMarkdownFile.path,
       trigger: "button",
       position: { x: 12, y: 18 },
@@ -3168,7 +3169,7 @@ describe("FolderCardView card context actions", () => {
       receiverCalls.push({ receiver: this, path, destination });
     } as unknown as typeof plugin.openNoteFromCard;
 
-    (view as any).openCardContextMenu({
+    (view as any).modules.cardMenu.open({
       notePath: file.path,
       trigger: "button",
       position: { x: 32, y: 64 },
@@ -3202,7 +3203,7 @@ describe("FolderCardView card context actions", () => {
   it("copyCardTitle delegates to copyTitleToClipboard exactly once", async () => {
     const { view, file, app } = createViewWithFile("notes/copy-target.md");
 
-    await (view as any).copyCardTitle(file.path);
+    await (view as any).modules.fileActions.copyCardTitle(file.path);
 
     expect(copyTitleToClipboard).toHaveBeenCalledTimes(1);
     expect(copyTitleToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
@@ -3211,7 +3212,7 @@ describe("FolderCardView card context actions", () => {
   it("copyCardContent delegates to copyContentToClipboard exactly once", async () => {
     const { view, file, app } = createViewWithFile("notes/copy-target.md");
 
-    await (view as any).copyCardContent(file.path);
+    await (view as any).modules.fileActions.copyCardContent(file.path);
 
     expect(copyContentToClipboard).toHaveBeenCalledTimes(1);
     expect(copyContentToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
@@ -3220,7 +3221,7 @@ describe("FolderCardView card context actions", () => {
   it("copyCardTitleAndContent delegates to copyTitleAndContentToClipboard exactly once", async () => {
     const { view, file, app } = createViewWithFile("notes/copy-target.md");
 
-    await (view as any).copyCardTitleAndContent(file.path);
+    await (view as any).modules.fileActions.copyCardTitleAndContent(file.path);
 
     expect(copyTitleAndContentToClipboard).toHaveBeenCalledTimes(1);
     expect(copyTitleAndContentToClipboard).toHaveBeenCalledWith(app, file, getUiStrings("en").noteOps);
@@ -3231,9 +3232,9 @@ describe("FolderCardView card context actions", () => {
     const missingPath = "notes/deleted.md";
     app.vault.getAbstractFileByPath = vi.fn(() => null);
 
-    await (view as any).copyCardTitle(missingPath);
-    await (view as any).copyCardContent(missingPath);
-    await (view as any).copyCardTitleAndContent(missingPath);
+    await (view as any).modules.fileActions.copyCardTitle(missingPath);
+    await (view as any).modules.fileActions.copyCardContent(missingPath);
+    await (view as any).modules.fileActions.copyCardTitleAndContent(missingPath);
 
     expect(copyTitleToClipboard).not.toHaveBeenCalled();
     expect(copyContentToClipboard).not.toHaveBeenCalled();
@@ -3242,9 +3243,9 @@ describe("FolderCardView card context actions", () => {
 
   it("moveCardNote opens FolderPickerModal for the clicked file", () => {
     const { view, file } = createViewWithFile("notes/move-target.md");
-    const openMoveFolderPickerSpy = vi.spyOn(view as any, "openMoveFolderPicker");
+    const openMoveFolderPickerSpy = vi.spyOn((view as any).modules.fileActions, "openMoveFolderPicker");
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
 
     expect(openMoveFolderPickerSpy).toHaveBeenCalledTimes(1);
     expect(openMoveFolderPickerSpy).toHaveBeenCalledWith(file);
@@ -3255,7 +3256,7 @@ describe("FolderCardView card context actions", () => {
   it("move selection no-ops when no folder is chosen", async () => {
     const { view, file } = createViewWithFile("notes/no-selection.md");
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     const picker = mockState.folderPickerInstances[0];
     expect(picker).toBeDefined();
 
@@ -3268,7 +3269,7 @@ describe("FolderCardView card context actions", () => {
   it("move selection no-ops when destination equals current parent folder", async () => {
     const { view, file } = createViewWithFile("notes/same-folder.md");
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     const picker = mockState.folderPickerInstances[0];
     const sameFolder = createFolder("notes");
 
@@ -3282,7 +3283,7 @@ describe("FolderCardView card context actions", () => {
     const { view, file, app } = createViewWithFile("notes/move-me.md");
     const destination = createFolder("archive");
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     const picker = mockState.folderPickerInstances[0];
     await picker?.onChoose(destination);
 
@@ -3296,7 +3297,7 @@ describe("FolderCardView card context actions", () => {
     const { view, file, app } = createViewWithFile("notes/missing-on-move.md");
     const destination = createFolder("archive");
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     app.vault.getAbstractFileByPath = vi.fn(() => null);
     const picker = mockState.folderPickerInstances[0];
 
@@ -3315,7 +3316,7 @@ describe("FolderCardView card context actions", () => {
       path: file.path,
     });
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     const picker = mockState.folderPickerInstances[0];
 
     await picker?.onChoose(destination);
@@ -3334,13 +3335,13 @@ describe("FolderCardView card context actions", () => {
       return null;
     });
 
-    await (view as any).routeCardMenuAction("make-copy", "notes/original.md");
+    await (view as any).modules.cardMenu.routeAction("make-copy", "notes/original.md");
 
     expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith("notes/original.md");
     expect(duplicateFile).toHaveBeenCalledTimes(1);
     expect(duplicateFile).toHaveBeenCalledWith(app, liveFile);
 
-    await (view as any).routeCardMenuAction("rename", "notes/original.md");
+    await (view as any).modules.cardMenu.routeAction("rename", "notes/original.md");
 
     const renameModal = mockState.modalInstances.at(-1);
     expect(renameModal?.title).toBe("Rename file");
@@ -3365,7 +3366,7 @@ describe("FolderCardView card context actions", () => {
       return null;
     });
 
-    await (view as any).routeCardMenuAction("rename", "notes/original.md");
+    await (view as any).modules.cardMenu.routeAction("rename", "notes/original.md");
 
     setLatestModalTextInput(0, "renamed.md");
     clickLatestModalButton("Rename");
@@ -3380,15 +3381,15 @@ describe("FolderCardView card context actions", () => {
       promptForDeletion: async () => false,
     });
 
-    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
-      .routeCardMenuAction("delete", file.path);
+    await (view as any).modules
+      .cardMenu.routeAction("delete", file.path);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
     expect(deleteFileUsingObsidianPreference).not.toHaveBeenCalled();
     expect(app.fileManager.trashFile).not.toHaveBeenCalled();
 
     app.fileManager.promptForDeletion = vi.fn(async () => true);
-    await (view as any).routeCardMenuAction("delete", file.path);
+    await (view as any).modules.cardMenu.routeAction("delete", file.path);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(deleteFileUsingObsidianPreference).toHaveBeenCalledTimes(1);
     expect(deleteFileUsingObsidianPreference).toHaveBeenCalledWith(app, file);
@@ -3401,7 +3402,7 @@ describe("FolderCardView card context actions", () => {
       path: file.path,
     });
 
-    (view as any).moveCardNote(file.path);
+    (view as any).modules.fileActions.moveCardNote(file.path);
     const picker = mockState.folderPickerInstances.at(-1);
     await picker?.onChoose(destination);
 
@@ -3422,7 +3423,7 @@ describe("FolderCardView card context actions", () => {
       return file;
     });
 
-    await (view as any).routeCardMenuAction("delete", file.path);
+    await (view as any).modules.cardMenu.routeAction("delete", file.path);
 
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
@@ -3447,8 +3448,8 @@ describe("FolderCardView card context actions", () => {
       return file;
     });
 
-    await (view as unknown as { routeCardMenuAction: (action: "delete", notePath: string) => Promise<void> })
-      .routeCardMenuAction("delete", file.path);
+    await (view as any).modules
+      .cardMenu.routeAction("delete", file.path);
 
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(app.fileManager.promptForDeletion).toHaveBeenCalledWith(file);
@@ -3477,8 +3478,8 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([
         second.path,
         "notes/missing.md",
         first.path,
@@ -3494,7 +3495,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(third.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(second.path),
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(third.path),
@@ -3546,14 +3547,14 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([
         successA.path,
         "notes/stale.md",
         failedB.path,
         successC.path,
       ]);
-      (view as any).bulkAnchorPath = successA.path;
+      (view as any).modules.bulk.anchorPath = successA.path;
       (view as any).baseCards = [
         createCardRecordFromPath(successA.path),
         createCardRecordFromPath(failedB.path),
@@ -3564,7 +3565,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(failedB.path),
         createCardRecordFromPath(successC.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(successA.path),
         createCardRecordFromPath(failedB.path),
         createCardRecordFromPath(successC.path),
@@ -3586,8 +3587,8 @@ describe("FolderCardView card context actions", () => {
       const picker = mockState.folderPickerInstances.at(-1);
       await picker?.onChoose(destination);
 
-      expect(Array.from((view as any).selectedPaths)).toEqual([failedB.path]);
-      expect((view as any).bulkAnchorPath).toBe(failedB.path);
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([failedB.path]);
+      expect((view as any).modules.bulk.anchorPath).toBe(failedB.path);
       expect(mockState.noticeMessages).toEqual(["Moved 2 notes; 1 failed."]);
     });
 
@@ -3597,9 +3598,9 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn(() => null);
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
-      (view as any).bulkAnchorPath = "notes/stale-a.md";
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/stale-a.md";
       (view as any).baseCards = [
         createCardRecordFromPath("notes/stale-a.md"),
         createCardRecordFromPath("notes/stale-b.md"),
@@ -3608,7 +3609,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath("notes/stale-a.md"),
         createCardRecordFromPath("notes/stale-b.md"),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => []);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => []);
 
       await (view as any).onOpen();
 
@@ -3619,8 +3620,8 @@ describe("FolderCardView card context actions", () => {
       await picker?.onChoose(destination);
 
       expect(batchMoveFiles).not.toHaveBeenCalled();
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
       expect(mockState.noticeMessages).toEqual(["No selected notes are available to move."]);
     });
 
@@ -3640,14 +3641,14 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([
         "notes/stale-before.md",
         alreadySecond.path,
         "notes/stale-middle.md",
         alreadyFirst.path,
       ]);
-      (view as any).bulkAnchorPath = "notes/stale-before.md";
+      (view as any).modules.bulk.anchorPath = "notes/stale-before.md";
       (view as any).baseCards = [
         createCardRecordFromPath(alreadyFirst.path),
         createCardRecordFromPath(alreadySecond.path),
@@ -3656,7 +3657,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(alreadySecond.path),
         createCardRecordFromPath(alreadyFirst.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(alreadySecond.path),
         createCardRecordFromPath(alreadyFirst.path),
       ]);
@@ -3670,11 +3671,11 @@ describe("FolderCardView card context actions", () => {
       await picker?.onChoose(destination);
 
       expect(batchMoveFiles).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([
         alreadySecond.path,
         alreadyFirst.path,
       ]);
-      expect((view as any).bulkAnchorPath).toBe(alreadySecond.path);
+      expect((view as any).modules.bulk.anchorPath).toBe(alreadySecond.path);
       expect(mockState.noticeMessages).toEqual(["All selected notes are already in the target folder."]);
     });
   });
@@ -3685,9 +3686,9 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn(() => null);
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
-      (view as any).bulkAnchorPath = "notes/stale-a.md";
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/stale-a.md", "notes/stale-b.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/stale-a.md";
       (view as any).baseCards = [
         createCardRecordFromPath("notes/stale-a.md"),
         createCardRecordFromPath("notes/stale-b.md"),
@@ -3696,7 +3697,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath("notes/stale-a.md"),
         createCardRecordFromPath("notes/stale-b.md"),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => []);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => []);
 
       await (view as any).onOpen();
 
@@ -3706,8 +3707,8 @@ describe("FolderCardView card context actions", () => {
 
       expect(mockState.modalInstances).toHaveLength(0);
       expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([]);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([]);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
       expect(mockState.noticeMessages).toEqual(["No selected notes are available to delete."]);
 
     });
@@ -3729,9 +3730,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -3740,7 +3741,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -3762,8 +3763,8 @@ describe("FolderCardView card context actions", () => {
       await flushAsyncWork();
 
       expect(batchDeleteFilesUsingObsidianPreference).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([first.path, second.path]);
-      expect((view as any).bulkAnchorPath).toBe(first.path);
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([first.path, second.path]);
+      expect((view as any).modules.bulk.anchorPath).toBe(first.path);
       expect(mockState.noticeMessages).toEqual([]);
     });
   });
@@ -3806,9 +3807,9 @@ describe("FolderCardView card context actions", () => {
         sourceCount: 3,
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([third.path, first.path, second.path]);
-      (view as any).bulkAnchorPath = third.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([third.path, first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = third.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -3819,7 +3820,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(second.path),
         createCardRecordFromPath(third.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
         createCardRecordFromPath(third.path),
@@ -3889,14 +3890,14 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
       (view as any).visibleCards = visibleCards;
-      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, canvas.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, canvas.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
 
       await (view as any).onOpen();
 
-      expect((view as any).buildBulkRuntimePanelState().canBulkMergeSelected).toBe(false);
+      expect((view as any).modules.bulk.buildPanelState().canBulkMergeSelected).toBe(false);
 
       const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
       toolbarActionHandler({ detail: { action: "bulk-merge-selected" } });
@@ -3935,9 +3936,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -3946,7 +3947,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -3993,9 +3994,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([third.path, first.path, second.path]);
-      (view as any).bulkAnchorPath = third.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([third.path, first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = third.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4006,7 +4007,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(second.path),
         createCardRecordFromPath(third.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
         createCardRecordFromPath(third.path),
@@ -4053,9 +4054,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4064,7 +4065,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4119,9 +4120,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4130,7 +4131,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4204,9 +4205,9 @@ describe("FolderCardView card context actions", () => {
         sourceCount: 2,
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4215,7 +4216,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4260,9 +4261,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4271,7 +4272,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4316,8 +4317,8 @@ describe("FolderCardView card context actions", () => {
 
       expect(batchTrashFiles).toHaveBeenCalledTimes(1);
       expect(batchTrashFiles).toHaveBeenCalledWith(app, [first, second]);
-      expect(Array.from((view as any).selectedPaths)).toEqual([second.path]);
-      expect((view as any).bulkAnchorPath).toBe(second.path);
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([second.path]);
+      expect((view as any).modules.bulk.anchorPath).toBe(second.path);
     });
   });
 
@@ -4339,7 +4340,7 @@ describe("FolderCardView card context actions", () => {
       expect(result.queueAction).toBe("ignored");
       expect(result.incrementalResult).toEqual({ handled: true, action: "removed" });
       expect((view as any).baseCards).toHaveLength(0);
-      expect((view as any).refreshQueued).toBe(false);
+      expect((view as any).modules.scopeController.refreshQueued).toBe(false);
     });
 
     it("rename updates card path when move stays visible in recursive root scope", () => {
@@ -4367,7 +4368,7 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).baseCards[0]?.path).toBe("archive/move-me.md");
       expect((view as any).baseCards[0]?.title).toBe("move-me");
       expect((view as any).baseCards[0]?.file).toBe(movedFile);
-      expect((view as any).refreshQueued).toBe(false);
+      expect((view as any).modules.scopeController.refreshQueued).toBe(false);
     });
   });
 
@@ -4382,18 +4383,18 @@ describe("FolderCardView card context actions", () => {
       const openNoteHandler = mockState.panelEventHandlers["open-note"];
       const contextMenuHandler = mockState.panelEventHandlers["card-context-menu"];
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([file.path]);
-      (view as any).bulkAnchorPath = file.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([file.path]);
+      (view as any).modules.bulk.anchorPath = file.path;
 
       openNoteHandler({ detail: { path: file.path } });
       expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
 
       toolbarActionHandler({ detail: { action: "bulk" } });
 
-      expect((view as any).bulkMode).toBe(false);
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.bulkMode).toBe(false);
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
 
       openNoteHandler({ detail: { path: file.path } });
       contextMenuHandler({
@@ -4442,9 +4443,9 @@ describe("FolderCardView card context actions", () => {
     it("treats zero-selection bulk actions as safe no-ops", async () => {
       const { view } = createViewWithFile("notes/zero-selection.md");
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set<string>();
-      (view as any).bulkAnchorPath = null;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set<string>();
+      (view as any).modules.bulk.anchorPath = null;
 
       await (view as any).onOpen();
 
@@ -4472,15 +4473,15 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(secondPath),
       ];
 
-      (view as any).bulkMode = true;
+      (view as any).modules.bulk.bulkMode = true;
       (view as any).baseCards = visibleCards;
       (view as any).visibleCards = visibleCards;
-      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
 
       await (view as any).onOpen();
 
-      const deriveVisibleCardsSpy = vi.spyOn(view as any, "deriveVisibleCards");
-      const deriveAvailableTagsSpy = vi.spyOn(view as any, "deriveAvailableTags");
+      const deriveVisibleCardsSpy = vi.spyOn((view as any).modules.projection, "deriveVisibleCardsFrom");
+      const deriveAvailableTagsSpy = vi.spyOn((view as any).modules.projection, "deriveAvailableTags");
 
       const bulkSelectCardHandler = mockState.panelEventHandlers["bulk-select-card"];
       const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
@@ -4507,9 +4508,9 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([stalePath, liveFile.path]);
-      (view as any).bulkAnchorPath = stalePath;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([stalePath, liveFile.path]);
+      (view as any).modules.bulk.anchorPath = stalePath;
       (view as any).baseCards = [
         createCardRecordFromPath(stalePath),
         createCardRecordFromPath(liveFile.path),
@@ -4518,7 +4519,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(stalePath),
         createCardRecordFromPath(liveFile.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(stalePath),
         createCardRecordFromPath(liveFile.path),
       ]);
@@ -4536,8 +4537,8 @@ describe("FolderCardView card context actions", () => {
       toolbarActionHandler({ detail: { action: "bulk-delete-selected" } });
       await flushAsyncWork(1);
 
-      expect(Array.from((view as any).selectedPaths)).toEqual([liveFile.path]);
-      expect((view as any).bulkAnchorPath).toBe(liveFile.path);
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([liveFile.path]);
+      expect((view as any).modules.bulk.anchorPath).toBe(liveFile.path);
       expect(mockState.modalInstances).toHaveLength(1);
       expect(mockState.modalInstances[0]?.title).toBe("Delete selected notes?");
       expect(mockState.modalInstances[0]?.messages).toEqual([
@@ -4550,8 +4551,8 @@ describe("FolderCardView card context actions", () => {
       expect(batchDeleteFilesUsingObsidianPreference).toHaveBeenCalledTimes(1);
       expect(batchDeleteFilesUsingObsidianPreference).toHaveBeenCalledWith(app, [liveFile] as unknown as any);
       expect(batchTrashFiles).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([]);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([]);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
       expect(mockState.noticeMessages).toEqual(["Deleted 1 note."]);
     });
 
@@ -4578,9 +4579,9 @@ describe("FolderCardView card context actions", () => {
       vi.mocked(mergeNotes).mockReset();
       vi.mocked(mergeNotes).mockRejectedValueOnce(new Error("boom"));
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4589,7 +4590,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4631,9 +4632,9 @@ describe("FolderCardView card context actions", () => {
       });
 
       (view as any).selectedPath = "notes/editor-focused.md";
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([first.path, second.path]);
-      (view as any).bulkAnchorPath = first.path;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
+      (view as any).modules.bulk.anchorPath = first.path;
       (view as any).baseCards = [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
@@ -4642,7 +4643,7 @@ describe("FolderCardView card context actions", () => {
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath(first.path),
         createCardRecordFromPath(second.path),
       ]);
@@ -4664,15 +4665,15 @@ describe("FolderCardView card context actions", () => {
 
       expect(mergeNotes).toHaveBeenCalledTimes(1);
       expect(batchTrashFiles).not.toHaveBeenCalled();
-      expect(Array.from((view as any).selectedPaths)).toEqual([]);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([]);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
       expect((view as any).selectedPath).toBe("notes/editor-focused.md");
-      expect((view as any).bulkMode).toBe(true);
+      expect((view as any).modules.bulk.bulkMode).toBe(true);
     });
   });
 
   describe("Phase 1 regression hardening", () => {
-    it("grouped publishing updates root scope while preserving sort, filter, and pins", () => {
+    it("pushState updates the panel to root scope while preserving sort, filter, and pinned props", () => {
       const { view, plugin } = createViewWithFile("notes/push-state-root.md");
 
       plugin.getSettings = vi.fn(() => ({
@@ -4693,7 +4694,10 @@ describe("FolderCardView card context actions", () => {
       publishAll(view);
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
-        scope: { displayPath: "/", includeSubfolders: false },
+        scope: {
+          displayPath: "/",
+          includeSubfolders: false,
+        },
         projection: {
           sortField: "ctime",
           sortDirection: "asc",
@@ -4715,17 +4719,18 @@ describe("FolderCardView card context actions", () => {
         props: { panelModel: (view as any).panelModel },
       });
       (view as any).selectedPath = "notes/previous.md";
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = selectedPaths;
-      (view as any).bulkAnchorPath = "notes/a.md";
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = selectedPaths;
+      (view as any).modules.bulk.anchorPath = "notes/a.md";
       (view as any).baseCards = visibleCards;
-      (view as any).deriveVisibleCards = vi.fn(() => visibleCards);
+      (view as any).visibleCards = visibleCards;
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
 
       (view as any).setSelectedFile("notes/independent-selection.md");
 
       expect((view as any).selectedPath).toBe("notes/independent-selection.md");
-      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/a.md", "notes/b.md"]);
-      expect((view as any).bulkAnchorPath).toBe("notes/a.md");
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual(["notes/a.md", "notes/b.md"]);
+      expect((view as any).modules.bulk.anchorPath).toBe("notes/a.md");
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
         cards: { selectedPath: "notes/independent-selection.md" },
         bulk: {
@@ -4736,7 +4741,7 @@ describe("FolderCardView card context actions", () => {
       });
     });
 
-    it("grouped publishing includes the bulk runtime payload", () => {
+    it("pushState includes bulk runtime payload", () => {
       const { view, app, plugin } = createViewWithFile("notes/bulk-runtime-payload.md");
       const firstSelectedPath = "notes/first.md";
       const secondSelectedPath = "notes/second.md";
@@ -4767,12 +4772,12 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
       (view as any).visibleCards = [createCardRecord(firstFile), createCardRecord(secondFile)];
-      (view as any).deriveVisibleCards = vi.fn(() => (view as any).visibleCards);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => (view as any).visibleCards);
       (view as any).cardScope = createFolderScope("notes", true);
       (view as any).selectedPath = "notes/editor-sync.md";
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
-      (view as any).bulkAnchorPath = firstSelectedPath;
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
+      (view as any).modules.bulk.anchorPath = firstSelectedPath;
       publishAll(view);
 
       expect((view as any).component.modelSnapshots.at(-1)).toMatchObject({
@@ -4804,7 +4809,7 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn(() => root);
 
-      expect((view as any).collectSupportedFiles("projects/active", false).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).modules.scopeController.collectScopeFiles(createFolderScope("projects/active", false)).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/reference.base",
         "projects/active/flow.canvas",
@@ -4824,7 +4829,7 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getAbstractFileByPath = vi.fn(() => root);
 
-      expect((view as any).collectSupportedFiles("projects/active", true).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).modules.scopeController.collectScopeFiles(createFolderScope("projects/active", true)).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/nested/deep.md",
       ]);
@@ -4841,7 +4846,7 @@ describe("FolderCardView card context actions", () => {
 
       app.vault.getRoot = vi.fn(() => root);
 
-      expect((view as any).collectSupportedFiles("", true).map((file: { path: string }) => file.path)).toEqual([
+      expect((view as any).modules.scopeController.collectScopeFiles(createFolderScope("", true)).map((file: { path: string }) => file.path)).toEqual([
         "projects/active/direct.md",
         "projects/active/nested/deep.md",
       ]);
@@ -4852,9 +4857,9 @@ describe("FolderCardView card context actions", () => {
 
       (view as any).cardScope = createFolderScope("", true);
 
-      expect((view as any).isPathInScope("root.md", false)).toBe(true);
-      expect((view as any).isPathInScope("archive/nested.md", false)).toBe(false);
-      expect((view as any).isPathInScope("archive/nested.md", true)).toBe(true);
+      expect((view as any).modules.scopeController.isPathInScope("root.md", false)).toBe(true);
+      expect((view as any).modules.scopeController.isPathInScope("archive/nested.md", false)).toBe(false);
+      expect((view as any).modules.scopeController.isPathInScope("archive/nested.md", true)).toBe(true);
     });
 
     it("vault mutations ignore nested descendants when includeSubfolders is false", () => {
@@ -4872,11 +4877,12 @@ describe("FolderCardView card context actions", () => {
       }));
 
       expect(
-        (view as any).shouldRefreshForVaultEvent({
+        (view as any).modules.scopeController.shouldRefreshForVaultEvent({
           eventType: "create",
           path: "projects/active/nested/deep.md",
           isFolder: false,
           fileKind: "markdown",
+          oldPath: null,
         }),
       ).toBe(false);
     });
@@ -4896,7 +4902,7 @@ describe("FolderCardView card context actions", () => {
       }));
 
       expect(
-        (view as any).shouldRefreshForVaultEvent({
+        (view as any).modules.scopeController.shouldRefreshForVaultEvent({
           eventType: "create",
           path: "projects/active/nested/deep.md",
           isFolder: false,
@@ -4911,30 +4917,30 @@ describe("FolderCardView card context actions", () => {
       const cardB = createCardRecordFromPath("notes/b.md");
       const cardC = createCardRecordFromPath("notes/c.md");
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set(["notes/a.md", "notes/c.md"]);
-      (view as any).bulkAnchorPath = "notes/a.md";
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/a.md", "notes/c.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/a.md";
       (view as any).baseCards = [cardA, cardB, cardC];
-      (view as any).deriveVisibleCards = vi.fn(() => [cardC, cardA]);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [cardC, cardA]);
 
       publishAll(view);
 
-      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md", "notes/a.md"]);
-      expect((view as any).bulkAnchorPath).toBe("notes/a.md");
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual(["notes/c.md", "notes/a.md"]);
+      expect((view as any).modules.bulk.anchorPath).toBe("notes/a.md");
 
-      (view as any).deriveVisibleCards = vi.fn(() => [cardC]);
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [cardC]);
       publishAll(view);
 
-      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/c.md"]);
-      expect((view as any).bulkAnchorPath).toBe("notes/c.md");
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual(["notes/c.md"]);
+      expect((view as any).modules.bulk.anchorPath).toBe("notes/c.md");
 
-      (view as any).selectedPaths = new Set(["notes/stale.md"]);
-      (view as any).bulkAnchorPath = "notes/stale.md";
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/stale.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/stale.md";
       (view as any).cleanupLifecycle();
 
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
-      expect((view as any).bulkMode).toBe(true);
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
+      expect((view as any).modules.bulk.bulkMode).toBe(true);
     });
 
     it("filter and scope changes reconcile bulk selection", async () => {
@@ -4983,15 +4989,15 @@ describe("FolderCardView card context actions", () => {
         forceRefresh: false,
       });
 
-      (view as any).bulkMode = true;
-      (view as any).selectedPaths = new Set(["notes/direct.md", "notes/nested/deep.md"]);
-      (view as any).bulkAnchorPath = "notes/direct.md";
-      (view as any).deriveVisibleCards = vi.fn(() => [createCardRecordFromPath("notes/direct.md")]);
+      (view as any).modules.bulk.bulkMode = true;
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/direct.md", "notes/nested/deep.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/direct.md";
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [createCardRecordFromPath("notes/direct.md")]);
 
       publishAll(view);
 
-      expect(Array.from((view as any).selectedPaths)).toEqual(["notes/direct.md"]);
-      expect((view as any).bulkAnchorPath).toBe("notes/direct.md");
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual(["notes/direct.md"]);
+      expect((view as any).modules.bulk.anchorPath).toBe("notes/direct.md");
 
       includeSubfolders = false;
       await (view as any).handleScopeSelection({
@@ -5002,12 +5008,12 @@ describe("FolderCardView card context actions", () => {
         forceRefresh: true,
       });
 
-      expect((view as any).bulkMode).toBe(true);
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.bulkMode).toBe(true);
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
 
-      (view as any).selectedPaths = new Set(["notes/direct.md"]);
-      (view as any).bulkAnchorPath = "notes/direct.md";
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/direct.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/direct.md";
       await (view as any).handleScopeSelection({
         requestId: 23,
         scope: createFolderScope("", true),
@@ -5016,9 +5022,9 @@ describe("FolderCardView card context actions", () => {
         forceRefresh: true,
       });
 
-      expect((view as any).bulkMode).toBe(true);
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.bulkMode).toBe(true);
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
     });
 
     it("scope changes clear bulk selection immediately while load is in flight", async () => {
@@ -5033,21 +5039,21 @@ describe("FolderCardView card context actions", () => {
       });
 
       (view as any).component = component;
-      (view as any).bulkMode = true;
+      (view as any).modules.bulk.bulkMode = true;
       (view as any).cardScope = createFolderScope("notes", true);
-      (view as any).selectedPaths = new Set(["notes/keep.md", "notes/drop.md"]);
-      (view as any).bulkAnchorPath = "notes/keep.md";
+      (view as any).modules.bulk.selectedPaths = new Set(["notes/keep.md", "notes/drop.md"]);
+      (view as any).modules.bulk.anchorPath = "notes/keep.md";
       (view as any).baseCards = [
         createCardRecordFromPath("notes/keep.md"),
         createCardRecordFromPath("notes/drop.md"),
       ];
-      (view as any).deriveVisibleCards = vi.fn(() => [
+      (view as any).modules.projection.deriveVisibleCards = vi.fn(() => [
         createCardRecordFromPath("notes/keep.md"),
         createCardRecordFromPath("notes/drop.md"),
       ]);
-      (view as any).inFlight = Promise.resolve();
-      (view as any).inFlightKey = "notes::true::mtime::desc";
-      (view as any).inFlightLoadScope = {
+      (view as any).modules.scopeController.inFlight = Promise.resolve();
+      (view as any).modules.scopeController.inFlightKey = "notes::true::mtime::desc";
+      (view as any).modules.scopeController.inFlightLoadKey = {
         scope: createFolderScope("notes", true),
         sort: { field: "mtime", direction: "desc" },
       };
@@ -5072,9 +5078,9 @@ describe("FolderCardView card context actions", () => {
       });
 
       expect(result.action).toBe("queued_latest");
-      expect((view as any).bulkMode).toBe(true);
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.bulkMode).toBe(true);
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
       expect(component.modelSnapshots.at(-1)).toMatchObject({
         bulk: {
           bulkMode: true,
@@ -5099,10 +5105,10 @@ describe("FolderCardView card context actions", () => {
       });
 
       (view as any).cardScope = createFolderScope("notes", true);
-      (view as any).bulkMode = true;
+      (view as any).modules.bulk.bulkMode = true;
       (view as any).baseCards = [createCardRecord(fileA), createCardRecord(fileB)];
-      (view as any).selectedPaths = new Set([fileA.path, fileB.path]);
-      (view as any).bulkAnchorPath = fileA.path;
+      (view as any).modules.bulk.selectedPaths = new Set([fileA.path, fileB.path]);
+      (view as any).modules.bulk.anchorPath = fileA.path;
 
       const renameResult = (view as any).handleVaultMutation({
         eventType: "rename",
@@ -5114,9 +5120,9 @@ describe("FolderCardView card context actions", () => {
 
       expect(renameResult.shouldRefresh).toBe(false);
       expect(renameResult.incrementalResult).toEqual({ handled: true, action: "updated" });
-      expect((view as any).selectedPaths.has(fileA.path)).toBe(false);
-      expect((view as any).selectedPaths.has(renamedFile.path)).toBe(true);
-      expect((view as any).bulkAnchorPath).toBe(renamedFile.path);
+      expect((view as any).modules.bulk.selectedPaths.has(fileA.path)).toBe(false);
+      expect((view as any).modules.bulk.selectedPaths.has(renamedFile.path)).toBe(true);
+      expect((view as any).modules.bulk.anchorPath).toBe(renamedFile.path);
 
       const deleteResult = (view as any).handleVaultMutation({
         eventType: "delete",
@@ -5127,7 +5133,7 @@ describe("FolderCardView card context actions", () => {
 
       expect(deleteResult.shouldRefresh).toBe(false);
       expect(deleteResult.incrementalResult).toEqual({ handled: true, action: "removed" });
-      expect(Array.from((view as any).selectedPaths)).toEqual([renamedFile.path]);
+      expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([renamedFile.path]);
 
       const movedOutOfScopeResult = (view as any).handleVaultMutation({
         eventType: "rename",
@@ -5139,8 +5145,8 @@ describe("FolderCardView card context actions", () => {
 
       expect(movedOutOfScopeResult.shouldRefresh).toBe(false);
       expect(movedOutOfScopeResult.incrementalResult).toEqual({ handled: true, action: "removed" });
-      expect((view as any).selectedPaths.size).toBe(0);
-      expect((view as any).bulkAnchorPath).toBeNull();
+      expect((view as any).modules.bulk.selectedPaths.size).toBe(0);
+      expect((view as any).modules.bulk.anchorPath).toBeNull();
     });
 
     it("open-note, sort-change, filter-change, and pin-toggle still work after switching to root scope", async () => {
@@ -5188,7 +5194,7 @@ describe("FolderCardView card context actions", () => {
       // Obsidian reports "/" as the root folder path.
       app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
 
-      await (view as any).createNoteIn("/", ["work"]);
+      await (view as any).modules.folderActions.createNoteIn("/", ["work"]);
 
       expect(app.vault.getRoot).toHaveBeenCalled();
       expect(plugin.createNoteInFolder).toHaveBeenCalledWith("/", ["work"]);
@@ -5201,7 +5207,7 @@ describe("FolderCardView card context actions", () => {
         throw new Error("permission denied");
       });
 
-      await (view as any).createNoteIn("/");
+      await (view as any).modules.folderActions.createNoteIn("/");
 
       expect(mockState.noticeMessages).toContain("Failed to create file: Error: permission denied");
     });
@@ -5209,9 +5215,9 @@ describe("FolderCardView card context actions", () => {
     it("builds root-level sibling paths without a leading slash", () => {
       const { view } = createViewWithFile();
 
-      expect((view as any).buildSiblingPath("/", "Untitled.md")).toBe("Untitled.md");
-      expect((view as any).buildSiblingPath("", "Untitled.md")).toBe("Untitled.md");
-      expect((view as any).buildSiblingPath("notes", "Untitled.md")).toBe("notes/Untitled.md");
+      expect((view as any).modules.folderActions.buildSiblingPath("/", "Untitled.md")).toBe("Untitled.md");
+      expect((view as any).modules.folderActions.buildSiblingPath("", "Untitled.md")).toBe("Untitled.md");
+      expect((view as any).modules.folderActions.buildSiblingPath("notes", "Untitled.md")).toBe("notes/Untitled.md");
     });
   });
 
@@ -5325,7 +5331,7 @@ describe("FolderCardView card context actions", () => {
 
     it("add-current-view submenu targets every card box and routes to the scope rule", () => {
       const { view } = createViewWithBox();
-      const addScopeToBox = vi.spyOn(view as any, "addScopeToBox").mockImplementation(() => undefined);
+      const addScopeToBox = vi.spyOn((view as any).modules.boxActions, "addScopeToBox").mockImplementation(() => undefined);
 
       (view as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
 
@@ -5342,10 +5348,10 @@ describe("FolderCardView card context actions", () => {
     it("add-to-box submenu lists every card box with a box icon", () => {
       const { view } = createViewWithBox();
       const addPathsToBox = vi
-        .spyOn(view as any, "addPathsToBox")
+        .spyOn((view as any).modules.boxActions, "addPathsToBox")
         .mockImplementation(async () => undefined);
 
-      (view as any).openCardContextMenu({
+      (view as any).modules.cardMenu.open({
         notePath: "notes/box-menu.md",
         trigger: "contextmenu",
         mouseEvent: { clientX: 3, clientY: 4 },
@@ -5381,10 +5387,10 @@ describe("FolderCardView card context actions", () => {
 
     it("opens a flat box picker when a submenu is unavailable", () => {
       const { view } = createViewWithBox();
-      const addScopeToBox = vi.spyOn(view as any, "addScopeToBox").mockImplementation(() => undefined);
+      const addScopeToBox = vi.spyOn((view as any).modules.boxActions, "addScopeToBox").mockImplementation(() => undefined);
       const mouseEvent = { clientX: 9, clientY: 11 };
 
-      (view as any).openAddScopeToBoxPicker(mouseEvent);
+      (view as any).modules.boxActions.openAddScopeToBoxPicker(mouseEvent);
 
       expect(mockState.menuInstances).toHaveLength(1);
       const menu = mockState.menuInstances[0];
@@ -5397,14 +5403,14 @@ describe("FolderCardView card context actions", () => {
 
     it("skips the flat box picker inside a box, without boxes, or without a mouse event", () => {
       const { view: boxModeView } = createViewWithBox(BOX_ID);
-      (boxModeView as any).openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
+      (boxModeView as any).modules.boxActions.openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
 
       const { view, plugin } = createViewWithBox();
-      (view as any).openAddScopeToBoxPicker(null);
+      (view as any).modules.boxActions.openAddScopeToBoxPicker(null);
 
       const settings = plugin.getSettings();
       plugin.getSettings = vi.fn(() => ({ ...settings, boxes: [] }));
-      (view as any).openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
+      (view as any).modules.boxActions.openAddScopeToBoxPicker({ clientX: 1, clientY: 2 });
 
       expect(mockState.menuInstances).toHaveLength(0);
     });

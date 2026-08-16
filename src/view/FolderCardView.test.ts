@@ -265,6 +265,8 @@ vi.mock("./note-ops", async () => {
 });
 
 import { FolderCardView } from "./FolderCardView";
+import { buildNavMenuDeps } from "./menus/nav-menu-deps";
+import type { SearchController } from "./controllers/SearchController";
 import { createBoxScope, createFolderScope } from "./scope";
 import type { SearchServiceSnapshot } from "../search";
 import type { CardFileKind } from "./file-kind";
@@ -386,7 +388,7 @@ function createHarness(): TestHarness {
       return;
     }),
     selectFolderByPath: vi.fn(async (path: string) => {
-      return view.moveScopeToFolder(path);
+      return (view as any).modules.scopeController.moveScopeToFolder(path);
     }),
   };
 
@@ -402,6 +404,10 @@ function createHarness(): TestHarness {
 
 function getPanelState(view: FolderCardView): PanelModelState {
   return (view as any).panelModel.getState();
+}
+
+function getSearchController(view: FolderCardView): SearchController {
+  return (view as any).modules.search;
 }
 
 function publishAll(view: FolderCardView): void {
@@ -604,7 +610,7 @@ describe("FolderCardView host contract", () => {
 
     expect((view as any).buildEmptyStateMessage()).toBe("No supported files found in this folder.");
 
-    (view as any).searchQuery = "  alpha  ";
+    (getSearchController(view) as any).query = "  alpha  ";
     (view as any).cardScope = createFolderScope("notes", true);
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
@@ -692,10 +698,10 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
-      expect((view as any).searchStatus).toBe("ready");
+      expect(getSearchController(view).getStatus()).toBe("ready");
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
 
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(119);
       await Promise.resolve();
       expect(query).not.toHaveBeenCalled();
@@ -706,10 +712,10 @@ describe("FolderCardView host contract", () => {
       await Promise.resolve();
       expect(query).toHaveBeenCalledTimes(1);
 
-      (view as any).resetSearchQuery();
-      expect((view as any).searchQuery).toBe("");
-      expect((view as any).searchOrderedPaths).toBeUndefined();
-      expect((view as any).searchStatus).toBe("ready");
+      getSearchController(view).resetQuery();
+      expect(getSearchController(view).getQuery()).toBe("");
+      expect((getSearchController(view) as any).orderedPaths).toBeUndefined();
+      expect(getSearchController(view).getStatus()).toBe("ready");
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
     } finally {
       vi.useRealTimers();
@@ -775,10 +781,10 @@ describe("FolderCardView host contract", () => {
       ];
 
       await view.onOpen();
-      expect((view as any).searchStatus).toBe("rebuild-required");
+      expect(getSearchController(view).getStatus()).toBe("rebuild-required");
 
-      (view as any).onSearchQueryChange({ query: "beta" });
-      expect((view as any).searchQuery).toBe("beta");
+      getSearchController(view).onQueryChange({ query: "beta" });
+      expect(getSearchController(view).getQuery()).toBe("beta");
       expect((view as any).visibleCards).toEqual([]);
 
       vi.advanceTimersByTime(120);
@@ -808,8 +814,8 @@ describe("FolderCardView host contract", () => {
       await Promise.resolve();
 
       expect(query).toHaveBeenCalledTimes(2);
-      expect((view as any).searchQuery).toBe("beta");
-      expect((view as any).searchStatus).toBe("ready");
+      expect(getSearchController(view).getQuery()).toBe("beta");
+      expect(getSearchController(view).getStatus()).toBe("ready");
       expect((view as any).visibleCards.map((card: NoteCardRecord) => card.path)).toEqual(["notes/beta.md"]);
     } finally {
       vi.useRealTimers();
@@ -856,7 +862,7 @@ describe("FolderCardView host contract", () => {
 
       await view.onOpen();
 
-      (view as any).onSearchQueryChange({ query: "beta" });
+      getSearchController(view).onQueryChange({ query: "beta" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       expect(query).toHaveBeenCalledTimes(1);
@@ -889,8 +895,8 @@ describe("FolderCardView host contract", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect((view as any).searchStatus).toBe("rebuild-required");
-      expect((view as any).searchOrderedPaths).toBeUndefined();
+      expect(getSearchController(view).getStatus()).toBe("rebuild-required");
+      expect((getSearchController(view) as any).orderedPaths).toBeUndefined();
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
 
       await view.onClose();
@@ -920,28 +926,28 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
 
-      expect((view as any).searchDebounceTimer).not.toBeNull();
-      expect((view as any).searchSnapshotUnsubscribe).toBeTypeOf("function");
+      expect((getSearchController(view) as any).debounceTimer).not.toBeNull();
+      expect((getSearchController(view) as any).snapshotUnsubscribe).toBeTypeOf("function");
 
       await view.onClose();
 
       expect(unsubscribe).toHaveBeenCalledTimes(1);
       expect((view as any).component).toBeNull();
       expect((view as any).hostEl).toBeNull();
-      expect((view as any).searchDebounceTimer).toBeNull();
-      expect((view as any).searchSnapshotUnsubscribe).toBeNull();
-      expect((view as any).searchQuery).toBe("");
-      expect((view as any).searchOrderedPaths).toBeUndefined();
-      expect((view as any).searchSnapshot).toBeNull();
+      expect((getSearchController(view) as any).debounceTimer).toBeNull();
+      expect((getSearchController(view) as any).snapshotUnsubscribe).toBeNull();
+      expect(getSearchController(view).getQuery()).toBe("");
+      expect((getSearchController(view) as any).orderedPaths).toBeUndefined();
+      expect(getSearchController(view).getSnapshot()).toBeNull();
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
 
       await view.onClose();
 
       expect(unsubscribe).toHaveBeenCalledTimes(1);
-      expect((view as any).searchDebounceTimer).toBeNull();
-      expect((view as any).searchSnapshotUnsubscribe).toBeNull();
+      expect((getSearchController(view) as any).debounceTimer).toBeNull();
+      expect((getSearchController(view) as any).snapshotUnsubscribe).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -982,29 +988,29 @@ describe("FolderCardView host contract", () => {
       await harnessA.view.onOpen();
       await harnessB.view.onOpen();
 
-      (harnessA.view as any).onSearchQueryChange({ query: "alpha" });
-      (harnessB.view as any).onSearchQueryChange({ query: "beta" });
+      getSearchController(harnessA.view).onQueryChange({ query: "alpha" });
+      getSearchController(harnessB.view).onQueryChange({ query: "beta" });
 
-      expect((harnessA.view as any).searchDebounceTimer).not.toBeNull();
-      expect((harnessB.view as any).searchDebounceTimer).not.toBeNull();
+      expect((getSearchController(harnessA.view) as any).debounceTimer).not.toBeNull();
+      expect((getSearchController(harnessB.view) as any).debounceTimer).not.toBeNull();
 
       await harnessA.view.onClose();
 
       expect(unsubscribeA).toHaveBeenCalledTimes(1);
       expect(unsubscribeB).not.toHaveBeenCalled();
       expect((harnessA.view as any).hostEl).toBeNull();
-      expect((harnessA.view as any).searchDebounceTimer).toBeNull();
-      expect((harnessA.view as any).searchSnapshotUnsubscribe).toBeNull();
+      expect((getSearchController(harnessA.view) as any).debounceTimer).toBeNull();
+      expect((getSearchController(harnessA.view) as any).snapshotUnsubscribe).toBeNull();
       expect((harnessB.view as any).hostEl).not.toBeNull();
-      expect((harnessB.view as any).searchDebounceTimer).not.toBeNull();
-      expect((harnessB.view as any).searchSnapshotUnsubscribe).toBeTypeOf("function");
+      expect((getSearchController(harnessB.view) as any).debounceTimer).not.toBeNull();
+      expect((getSearchController(harnessB.view) as any).snapshotUnsubscribe).toBeTypeOf("function");
 
       await harnessB.view.onClose();
 
       expect(unsubscribeB).toHaveBeenCalledTimes(1);
       expect((harnessB.view as any).hostEl).toBeNull();
-      expect((harnessB.view as any).searchDebounceTimer).toBeNull();
-      expect((harnessB.view as any).searchSnapshotUnsubscribe).toBeNull();
+      expect((getSearchController(harnessB.view) as any).debounceTimer).toBeNull();
+      expect((getSearchController(harnessB.view) as any).snapshotUnsubscribe).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1036,7 +1042,7 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [card];
 
       await view.onOpen();
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       await Promise.resolve();
@@ -1080,7 +1086,7 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [deepHitCard];
 
       await view.onOpen();
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       await Promise.resolve();
@@ -1121,11 +1127,11 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
 
-      (view as any).resetSearchQuery();
+      getSearchController(view).resetQuery();
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
 
       pending[0]?.resolve({
@@ -1138,7 +1144,7 @@ describe("FolderCardView host contract", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect((view as any).searchQuery).toBe("");
+      expect(getSearchController(view).getQuery()).toBe("");
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
     } finally {
       vi.useRealTimers();
@@ -1171,10 +1177,10 @@ describe("FolderCardView host contract", () => {
     (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
     await view.onOpen();
-    (view as any).onSearchQueryChange({ query: "alpha" });
+    getSearchController(view).onQueryChange({ query: "alpha" });
 
     expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
-    expect((view as any).searchStatus).toBe("rebuild-required");
+    expect(getSearchController(view).getStatus()).toBe("rebuild-required");
   });
 
   it("does not let stale indexed-ready results overwrite current counts", async () => {
@@ -1201,12 +1207,12 @@ describe("FolderCardView host contract", () => {
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
 
       await view.onOpen();
-      (view as any).onSearchQueryChange({ query: "alpha" });
+      getSearchController(view).onQueryChange({ query: "alpha" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       expect(query).toHaveBeenCalledTimes(1);
 
-      (view as any).onSearchQueryChange({ query: "beta" });
+      getSearchController(view).onQueryChange({ query: "beta" });
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       expect(query).toHaveBeenCalledTimes(2);
@@ -1327,7 +1333,7 @@ describe("FolderCardView host contract", () => {
     root.children = [projects, archive];
     (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
 
-    const tree = (view as any).buildFolderTree();
+    const tree = (view as any).modules.navLayout.buildFolderTree();
 
     expect(tree).toEqual([
       {
@@ -1391,7 +1397,7 @@ describe("FolderCardView host contract", () => {
 
     settings.showNavItemCounts = true;
 
-    const [rootNode, projectsNode] = (view as any).buildFolderTree() as FolderTreeNode[];
+    const [rootNode, projectsNode] = (view as any).modules.navLayout.buildFolderTree() as FolderTreeNode[];
 
     expect(rootNode.directCount).toBe(1);
     expect(rootNode.recursiveCount).toBe(4);
@@ -1405,7 +1411,7 @@ describe("FolderCardView host contract", () => {
 
     settings.showNavItemCounts = false;
 
-    const [disabledRootNode, disabledProjectsNode] = (view as any).buildFolderTree() as FolderTreeNode[];
+    const [disabledRootNode, disabledProjectsNode] = (view as any).modules.navLayout.buildFolderTree() as FolderTreeNode[];
 
     expect(disabledRootNode.recursiveCount).toBe(4);
     expect(disabledRootNode.recursiveFolderCount).toBe(2);
@@ -1477,7 +1483,7 @@ describe("FolderCardView host contract", () => {
     const aHydration = new Promise<void>((resolve) => {
       releaseA = resolve;
     });
-    vi.spyOn(view as any, "hydrateStartupCardPaths")
+    vi.spyOn((view as any).modules.hydration, "hydrateStartupCardPaths")
       .mockImplementationOnce(async () => aHydration)
       .mockResolvedValue(undefined);
     plugin.saveSettings.mockClear();
@@ -1515,7 +1521,7 @@ describe("FolderCardView host contract", () => {
     const maintenanceHydration = new Promise<void>((resolve) => {
       releaseMaintenance = resolve;
     });
-    vi.spyOn(view as any, "hydrateStartupCardPaths")
+    vi.spyOn((view as any).modules.hydration, "hydrateStartupCardPaths")
       .mockImplementationOnce(async () => maintenanceHydration)
       .mockResolvedValue(undefined);
     plugin.saveSettings.mockClear();
@@ -1549,7 +1555,7 @@ describe("FolderCardView host contract", () => {
     const maintenanceHydration = new Promise<void>((resolve) => {
       releaseMaintenance = resolve;
     });
-    vi.spyOn(view as any, "hydrateStartupCardPaths")
+    vi.spyOn((view as any).modules.hydration, "hydrateStartupCardPaths")
       .mockImplementationOnce(async () => maintenanceHydration)
       .mockResolvedValue(undefined);
     plugin.saveSettings.mockClear();
@@ -1629,14 +1635,14 @@ describe("FolderCardView host contract", () => {
   it("swaps the single-pane view without persisting navPaneCollapsed", async () => {
     const { view, plugin } = createHarness();
 
-    (view as any).onShellResize(400);
+    (view as any).modules.navLayout.onShellResize(400);
     expect(getPanelState(view).nav.layoutMode).toBe("single");
     expect(getPanelState(view).nav.visible).toBe(false);
 
-    await (view as any).onToggleNavPane();
+    void (view as any).modules.navLayout.onToggleNavPane();
     expect(getPanelState(view).nav.visible).toBe(true);
 
-    await (view as any).onToggleNavPane();
+    await (view as any).modules.navLayout.onToggleNavPane();
     expect(getPanelState(view).nav.visible).toBe(false);
 
     expect(plugin.saveSettings).not.toHaveBeenCalled();
@@ -1645,10 +1651,10 @@ describe("FolderCardView host contract", () => {
   it("persists navPaneCollapsed when toggling in dual layout", async () => {
     const { view, plugin } = createHarness();
 
-    (view as any).onShellResize(800);
+    (view as any).modules.navLayout.onShellResize(800);
     expect(getPanelState(view).nav.layoutMode).toBe("dual");
 
-    await (view as any).onToggleNavPane();
+    await (view as any).modules.navLayout.onToggleNavPane();
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({ navPaneCollapsed: true });
   });
@@ -1656,8 +1662,8 @@ describe("FolderCardView host contract", () => {
   it("returns to the cards view when a folder is selected in single-pane layout", async () => {
     const { view } = createHarness();
 
-    (view as any).onShellResize(400);
-    (view as any).singlePaneView = "nav";
+    (view as any).modules.navLayout.onShellResize(400);
+    await (view as any).modules.navLayout.onToggleNavPane();
 
     await (view as any).selectFolderFromNav("projects");
 
@@ -1667,9 +1673,10 @@ describe("FolderCardView host contract", () => {
   it("falls back to the cards view when narrowing below the dual-layout threshold", () => {
     const { view } = createHarness();
 
-    (view as any).onShellResize(800);
-    (view as any).singlePaneView = "nav";
-    (view as any).onShellResize(400);
+    (view as any).modules.navLayout.onShellResize(400);
+    void (view as any).modules.navLayout.onToggleNavPane();
+    (view as any).modules.navLayout.onShellResize(800);
+    (view as any).modules.navLayout.onShellResize(400);
 
     expect(getPanelState(view).nav.layoutMode).toBe("single");
     expect(getPanelState(view).nav.visible).toBe(false);
@@ -1677,7 +1684,7 @@ describe("FolderCardView host contract", () => {
 
   it("routes folder action intents to the matching handlers", () => {
     const { view } = createHarness();
-    const createSpy = vi.spyOn(view as any, "openCreateChildFolderModal").mockImplementation(() => undefined);
+    const createSpy = vi.spyOn((view as any).modules.folderActions, "openCreateChildFolderModal").mockImplementation(() => undefined);
 
     (view as any).handleFolderActionRequest({ action: "create-child-folder", path: "projects" });
 
@@ -1700,11 +1707,13 @@ describe("FolderCardView host contract", () => {
       return child;
     });
 
-    const created = await (view as any).createChildFolder("projects", "client-a");
+    const created = await (view as any).modules.folderActions.createChildFolder("projects", "client-a");
 
     expect(created).toBe(true);
     expect(view.app.vault.createFolder).toHaveBeenCalledWith("projects/client-a");
-    expect(getPanelState(view).nav.folderTree).toEqual((view as any).buildFolderTree());
+    expect(getPanelState(view).nav.folderTree).toEqual(
+      (view as any).modules.navLayout.buildFolderTree(),
+    );
   });
 
   it("refreshes the folder tree state on folder vault mutations", async () => {
@@ -1724,12 +1733,14 @@ describe("FolderCardView host contract", () => {
     const treePaths = getPanelState(view).nav.folderTree.map((node) => node.path);
     expect(treePaths).toContain("/");
     expect(treePaths).toContain("alpha");
-    expect(getPanelState(view).nav.folderTree).toEqual((view as any).buildFolderTree());
+    expect(getPanelState(view).nav.folderTree).toEqual(
+      (view as any).modules.navLayout.buildFolderTree(),
+    );
   });
 
   it("does not rebuild the folder tree for non-folder vault mutations", async () => {
     const { view } = createHarness();
-    const buildSpy = vi.spyOn(view as any, "buildFolderTree");
+    const buildSpy = vi.spyOn((view as any).modules.navLayout, "buildFolderTree");
 
     (view as any).handleVaultMutation({
       eventType: "modify",
@@ -1750,8 +1761,8 @@ describe("FolderCardView host contract", () => {
       return path === "projects" ? projects : null;
     });
 
-    await expect((view as any).createChildFolder("projects", "bad/name")).resolves.toBe(false);
-    await expect((view as any).createChildFolder("missing", "client-a")).resolves.toBe(false);
+    await expect((view as any).modules.folderActions.createChildFolder("projects", "bad/name")).resolves.toBe(false);
+    await expect((view as any).modules.folderActions.createChildFolder("missing", "client-a")).resolves.toBe(false);
 
     expect(view.app.vault.createFolder).not.toHaveBeenCalled();
     expect(testState.noticeMessages).toEqual([
@@ -1770,8 +1781,8 @@ describe("FolderCardView host contract", () => {
       return path === "projects" ? projects : null;
     });
 
-    (view as any).openMoveFolderPickerForFolder("projects");
-    (view as any).openMoveFolderPickerForFolder("/");
+    (view as any).modules.folderActions.openMoveFolderPickerForFolder("projects");
+    (view as any).modules.folderActions.openMoveFolderPickerForFolder("/");
 
     expect((testState as any).folderPickerOpenCount).toBe(1);
     expect((testState as any).folderPickerTitle).toBe("Select a folder");
@@ -1786,8 +1797,8 @@ describe("FolderCardView host contract", () => {
       return path === "projects" ? projects : path === "projects/client-a" ? clientA : null;
     });
 
-    await (view as any).onFolderMoveTargetChosen("projects", createFolder(""));
-    await (view as any).onFolderMoveTargetChosen("projects", clientA);
+    await (view as any).modules.folderActions.onFolderMoveTargetChosen("projects", createFolder(""));
+    await (view as any).modules.folderActions.onFolderMoveTargetChosen("projects", clientA);
 
     expect(view.app.fileManager.renameFile).not.toHaveBeenCalled();
     expect(testState.noticeMessages).toEqual([
@@ -1800,17 +1811,17 @@ describe("FolderCardView host contract", () => {
     const { view } = createHarness();
     const projects = createFolder("projects");
     const archive = createFolder("archive");
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue({ action: "started", inFlightKey: null });
+    const refreshSpy = vi.spyOn((view as any).modules.scopeController, "moveScopeToFolder").mockResolvedValue({ action: "started", scope: createFolderScope("archive/projects", true) });
 
     (view as any).cardScope = createFolderScope("projects", true);
     (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
       return path === "projects" ? projects : path === "archive" ? archive : null;
     });
 
-    await (view as any).onFolderMoveTargetChosen("projects", archive);
+    await (view as any).modules.folderActions.onFolderMoveTargetChosen("projects", archive);
 
     expect(view.app.fileManager.renameFile).toHaveBeenCalledWith(projects, "archive/projects");
-    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", forceRefresh: true });
+    expect(refreshSpy).toHaveBeenCalledWith("archive/projects");
   });
 
   it("deletes the active folder scope back to root via prompt live re-fetch and skips root deletion", async () => {
@@ -1818,7 +1829,7 @@ describe("FolderCardView host contract", () => {
     const initialClientA = createFolder("projects/client-a");
     const liveClientA = createFolder("projects/client-a");
     const root = createFolder("");
-    const moveSpy = vi.spyOn(view as any, "moveScopeToFolder").mockResolvedValue({ action: "started", scope: createFolderScope("", true) });
+    const moveSpy = vi.spyOn((view as any).modules.scopeController, "moveScopeToFolder").mockResolvedValue({ action: "started", scope: createFolderScope("", true) });
 
     (view as any).cardScope = createFolderScope("projects/client-a", true);
     (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
@@ -1827,8 +1838,8 @@ describe("FolderCardView host contract", () => {
       .mockImplementationOnce((path: string) => path === "projects/client-a" ? liveClientA : null)
       .mockImplementation((path: string) => path === "projects/client-a" ? initialClientA : null);
 
-    await (view as any).deleteFolder("projects/client-a");
-    await (view as any).deleteFolder("/");
+    await (view as any).modules.folderActions.deleteFolder("projects/client-a");
+    await (view as any).modules.folderActions.deleteFolder("/");
 
     expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledWith(initialClientA);
@@ -1839,7 +1850,9 @@ describe("FolderCardView host contract", () => {
   it("treats slash-selected root scope as eligible for modify-driven preview refresh", () => {
     const { view } = createHarness();
     const card = createCard("nested/note.md", "Nested note");
-    const hydrateSpy = vi.spyOn(view as any, "hydrateCard").mockResolvedValue(undefined);
+    const hydrateSpy = vi
+      .spyOn((view as any).modules.hydration, "hydrateCard")
+      .mockResolvedValue(undefined);
 
     (view as any).cardScope = createFolderScope("/", true);
     (view as any).baseCards = [card];
@@ -1854,7 +1867,7 @@ describe("FolderCardView host contract", () => {
 
     expect(result.shouldRefresh).toBe(false);
     expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
-    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).loadEpoch.token());
+    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).epochs.load.token());
   });
 
   it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {
@@ -1868,7 +1881,10 @@ describe("FolderCardView host contract", () => {
     (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [card];
 
-    await (view as any).hydrateCard(card.path, (view as any).loadEpoch.token());
+    await (view as any).modules.hydration.hydrateCard(
+      card.path,
+      (view as any).epochs.load.token(),
+    );
 
     expect(card.previewHtml).toContain("这是一个 Canvas 文件。");
   });
@@ -1934,7 +1950,7 @@ describe("FolderCardView graded update intents", () => {
   it("patch republishes presentation without touching the card projection", async () => {
     const { view } = createHarness();
     seedLoadedView(view);
-    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
+    const collectSpy = vi.spyOn((view as any).modules.scopeController, "collectScopeFiles");
     const cardsBefore = getPanelState(view).cards;
     const generationBefore = getPanelState(view).cards.generation;
 
@@ -1948,8 +1964,8 @@ describe("FolderCardView graded update intents", () => {
   it("reproject reorders the loaded cards without starting a new load generation", async () => {
     const { view, plugin } = createHarness();
     seedLoadedView(view);
-    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
-    const generationBefore = (view as any).loadEpoch.value;
+    const collectSpy = vi.spyOn((view as any).modules.scopeController, "collectScopeFiles");
+    const generationBefore = (view as any).epochs.load.value;
     const currentSettings = (plugin.getSettings as unknown as () => PluginSettings)();
     plugin.getSettings.mockReturnValue({
       ...currentSettings,
@@ -1959,15 +1975,15 @@ describe("FolderCardView graded update intents", () => {
     await view.applyUpdateIntent("reproject", "settings-change");
 
     expect(getPanelState(view).cards.records.map((card) => card.title)).toEqual(["Alpha", "Zeta"]);
-    expect((view as any).loadEpoch.value).toBe(generationBefore);
+    expect((view as any).epochs.load.value).toBe(generationBefore);
     expect(collectSpy).not.toHaveBeenCalled();
   });
 
   it("rehydrate discards previews and rebuilds them without a new load generation", async () => {
     const { view } = createHarness();
     seedLoadedView(view);
-    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
-    const generationBefore = (view as any).loadEpoch.value;
+    const collectSpy = vi.spyOn((view as any).modules.scopeController, "collectScopeFiles");
+    const generationBefore = (view as any).epochs.load.value;
     const baseCards = (view as any).baseCards as NoteCardRecord[];
 
     const rehydrated = view.applyUpdateIntent("rehydrate", "settings-change");
@@ -1979,7 +1995,7 @@ describe("FolderCardView graded update intents", () => {
     await tick();
 
     expect(baseCards.every((card) => card.hydrated === true)).toBe(true);
-    expect((view as any).loadEpoch.value).toBe(generationBefore);
+    expect((view as any).epochs.load.value).toBe(generationBefore);
     expect(collectSpy).not.toHaveBeenCalled();
   });
 });
@@ -2034,7 +2050,7 @@ describe("FolderCardView card box mode", () => {
     (view as any).cardScope = createBoxScope("box-1");
     (view as any).baseCards = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
 
-    const visible = (view as any).deriveVisibleCards() as NoteCardRecord[];
+    const visible = (view as any).modules.projection.deriveVisibleCards() as NoteCardRecord[];
 
     expect(visible.map((card) => card.path)).toEqual(["notes/b.md", "notes/a.md"]);
   });
@@ -2071,7 +2087,7 @@ describe("FolderCardView card box mode", () => {
       { id: "box-1", name: "Ideas", cardCount: 2 },
     ]);
 
-    const collectSpy = vi.spyOn(view as any, "collectBoxFiles");
+    const collectSpy = vi.spyOn((view as any).modules.boxActions, "collectBoxFiles");
     publishAll(view);
 
     expect(collectSpy).not.toHaveBeenCalled();
@@ -2091,10 +2107,10 @@ describe("FolderCardView card box mode", () => {
     settings.boxes = [makeTestBox(), makeTestBox({ id: "box-2", name: "Plans" })];
     settings.activeBoxId = null;
 
-    (view as any).handleBoxCommand({ command: "switch", boxId: "box-2" });
+    (view as any).modules.boxActions.handleBoxCommand({ command: "switch", boxId: "box-2" });
     await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBe("box-2"));
 
-    (view as any).handleBoxCommand({ command: "exit" });
+    (view as any).modules.boxActions.handleBoxCommand({ command: "exit" });
     await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
   });
 });
@@ -2150,7 +2166,7 @@ describe("FolderCardView navigation scope activation", () => {
     settings.filter = { tags: ["stale"] };
     (view as any).cardScope = createBoxScope("box-1");
 
-    await (view as any).activateFavoriteTag("alpha");
+    await (view as any).modules.favoriteActions.activateFavoriteTag("alpha");
 
     await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
     expect(readSettings(plugin).filter.tags).toEqual(["alpha"]);
@@ -2167,8 +2183,12 @@ describe("FolderCardView navigation scope activation", () => {
       (path: string) => new testState.TestTFolder(path),
     );
 
-    const createSpy = vi.spyOn(view as any, "createFromFolderTree");
-    const actions = (view as any).buildNavMenuDeps().actions;
+    const createSpy = vi.spyOn((view as any).modules.folderActions, "createFromFolderTree");
+    const actions = buildNavMenuDeps({
+      context: (view as any).context,
+      modules: (view as any).modules,
+      onIncludeSubfoldersChange: async () => undefined,
+    }).actions;
     actions.createNote("notes");
     actions.createFolder("notes");
     actions.createCanvas("notes");
@@ -2182,7 +2202,7 @@ describe("FolderCardView navigation scope activation", () => {
     ]);
 
     createSpy.mockRestore();
-    await (view as any).createFromFolderTree("notes", "note");
+    await (view as any).modules.folderActions.createFromFolderTree("notes", "note");
 
     await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("notes", "panel-picker");
@@ -2219,7 +2239,7 @@ describe("FolderCardView navigation scope activation", () => {
     // Browsing an unrelated, empty scope must not shrink any of the numbers.
     (view as any).cardScope = createFolderScope("elsewhere", true);
     (view as any).baseCards = [];
-    (view as any).refreshFolderTreeState();
+    (view as any).modules.navLayout.refreshFolderTreeState();
     publishAll(view);
 
     const favorites = getPanelState(view).nav.favorites;
