@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
 import { getUiStrings } from "../i18n";
+import {
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  normalizeSettings,
+  type PartialPluginSettings,
+  type PluginSettings,
+} from "../settings";
+import { resolveSettingsUpdateIntent } from "./update-intent";
 
 const testState = vi.hoisted(() => {
   class TestTFile {
@@ -257,6 +265,7 @@ vi.mock("./note-ops", async () => {
 });
 
 import { FolderCardView } from "./FolderCardView";
+import { createBoxScope, createFolderScope } from "./scope";
 import type { SearchServiceSnapshot } from "../search";
 import type { CardFileKind } from "./file-kind";
 import type { FolderTreeNode, NoteCardRecord } from "./types";
@@ -305,7 +314,7 @@ function createFolder(path: string, children: Array<InstanceType<typeof testStat
 }
 
 function createHarness(): TestHarness {
-  const settings = {
+  let settings: PluginSettings = mergeSettings(normalizeSettings(DEFAULT_SETTINGS), {
     sort: { field: "mtime", direction: "desc" },
     filter: { tags: [] },
     pinnedPaths: [],
@@ -317,7 +326,7 @@ function createHarness(): TestHarness {
     navPaneWidth: 240,
     navPaneCollapsed: false,
     showNavItemCounts: false,
-  };
+  });
 
   const app = {
     workspace: {
@@ -348,6 +357,7 @@ function createHarness(): TestHarness {
     getRoot: vi.fn(() => app.workspace.leftSplit),
   };
 
+  let view: FolderCardView;
   const plugin = {
     getSettings: vi.fn(() => settings),
     getUiLanguage: vi.fn(() => "en"),
@@ -355,8 +365,14 @@ function createHarness(): TestHarness {
     getSearchService: vi.fn(() => null),
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
-    saveSettings: vi.fn(async (partial: Record<string, unknown>) => {
-      Object.assign(settings, partial);
+    saveSettings: vi.fn(async (partial: PartialPluginSettings) => {
+      const previous = mergeSettings(settings, {});
+      const next = mergeSettings(previous, partial);
+      Object.assign(settings, next);
+      const intent = resolveSettingsUpdateIntent(previous, next);
+      if (intent !== null) {
+        void view.applyUpdateIntent(intent, "settings-change");
+      }
     }),
     openNoteFromCard: vi.fn(),
     selectAllNotes: vi.fn(async () => {
@@ -368,12 +384,12 @@ function createHarness(): TestHarness {
     createNoteInFolder: vi.fn(async () => {
       return;
     }),
-    selectFolderByPath: vi.fn(async () => {
-      return;
+    selectFolderByPath: vi.fn(async (path: string) => {
+      return view.moveScopeToFolder(path);
     }),
   };
 
-  const view = new FolderCardView(leaf as never, plugin as never);
+  view = new FolderCardView(leaf as never, plugin as never);
   const panelContainer = (view.containerEl.children[1] as HTMLElement);
 
   return {
@@ -421,7 +437,7 @@ describe("FolderCardView host contract", () => {
     expect(panelContainer.querySelector(".fce-shell")).not.toBeNull();
     expect((view as any).panelModel.getState().cardCornerRadius).toBe("compact");
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [createCard("notes/runtime.md", "Runtime host note")];
     (view as any).pushState();
     await tick();
@@ -436,7 +452,7 @@ describe("FolderCardView host contract", () => {
     const zetaCard = createCard("notes/zeta.md", "Zeta");
     const alphaCard = createCard("notes/alpha.md", "Alpha");
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [zetaCard, alphaCard];
 
     await (view as any).onSortChange({ field: "name", direction: "asc" });
@@ -471,7 +487,7 @@ describe("FolderCardView host contract", () => {
       path === "notes/zulu.md" ? renamedFile : null,
     );
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [alphaCard, zetaCard];
 
     const result = (view as any).handleVaultMutation({
@@ -587,7 +603,7 @@ describe("FolderCardView host contract", () => {
     expect((view as any).buildEmptyStateMessage()).toBe("No supported files found in this folder.");
 
     (view as any).searchQuery = "  alpha  ";
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: [] },
@@ -608,7 +624,7 @@ describe("FolderCardView host contract", () => {
     }));
     expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
 
-    (view as any).folderPath = "";
+    (view as any).cardScope = createFolderScope("", true);
     expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
 
     plugin.getSettings = vi.fn(() => ({
@@ -625,7 +641,7 @@ describe("FolderCardView host contract", () => {
   it("repeated open/close cycles do not leave stale panel DOM or duplicate open handlers", async () => {
     const { view, plugin, panelContainer } = createHarness();
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [createCard("notes/cycle.md", "Cycle note")];
 
     for (let cycle = 0; cycle < 2; cycle += 1) {
@@ -670,7 +686,7 @@ describe("FolderCardView host contract", () => {
         health: createSearchHealth(),
       }));
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
@@ -750,7 +766,7 @@ describe("FolderCardView host contract", () => {
         };
       });
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [
         createCard("notes/alpha.md", "Alpha"),
         createCard("notes/beta.md", "Beta"),
@@ -833,7 +849,7 @@ describe("FolderCardView host contract", () => {
         return unsubscribe;
       });
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
 
       await view.onOpen();
@@ -898,7 +914,7 @@ describe("FolderCardView host contract", () => {
       }));
       plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribe);
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
@@ -956,9 +972,9 @@ describe("FolderCardView host contract", () => {
       harnessA.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeA);
       harnessB.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeB);
 
-      (harnessA.view as any).folderPath = "notes-a";
+      (harnessA.view as any).cardScope = createFolderScope("notes-a", true);
       (harnessA.view as any).baseCards = [createCard("notes-a/alpha.md", "Alpha")];
-      (harnessB.view as any).folderPath = "notes-b";
+      (harnessB.view as any).cardScope = createFolderScope("notes-b", true);
       (harnessB.view as any).baseCards = [createCard("notes-b/beta.md", "Beta")];
 
       await harnessA.view.onOpen();
@@ -1013,7 +1029,7 @@ describe("FolderCardView host contract", () => {
         health: createSearchHealth(),
       }));
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       const card = createCard("notes/alpha.md", "Alpha");
       (view as any).baseCards = [card];
 
@@ -1058,7 +1074,7 @@ describe("FolderCardView host contract", () => {
       const deepHitCard = createCard("notes/deep-hit.md", "Roadmap");
       deepHitCard.previewHtml = "<p>Visible preview only</p>";
       deepHitCard.excerpt = "Visible preview only";
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [deepHitCard];
 
       await view.onOpen();
@@ -1099,7 +1115,7 @@ describe("FolderCardView host contract", () => {
         health: createSearchHealth(),
       }));
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
       await view.onOpen();
@@ -1149,7 +1165,7 @@ describe("FolderCardView host contract", () => {
     }));
     plugin.getSearchService = vi.fn(() => null);
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
 
     await view.onOpen();
@@ -1179,7 +1195,7 @@ describe("FolderCardView host contract", () => {
         health: createSearchHealth(),
       }));
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
 
       await view.onOpen();
@@ -1224,7 +1240,7 @@ describe("FolderCardView host contract", () => {
   it("forwards allowed card hover surfaces through to workspace hover-link trigger for markdown cards", async () => {
     const { view } = createHarness();
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [createCard("notes/hover.md", "Hover card")];
 
     await view.onOpen();
@@ -1264,7 +1280,7 @@ describe("FolderCardView host contract", () => {
   it("forwards allowed card hover surfaces for supported non-markdown cards but excludes action controls", async () => {
     const { view } = createHarness();
 
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [createCard("notes/diagram.canvas", "diagram.canvas", "canvas")];
 
     await view.onOpen();
@@ -1399,9 +1415,9 @@ describe("FolderCardView host contract", () => {
     const root = new testState.TestTFolder("");
     (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
 
-    const result = await (view as any).handleFolderSelection({
+    const result = await (view as any).handleScopeSelection({
       requestId: 1,
-      folderPath: "/",
+      scope: createFolderScope("/", true),
       source: "programmatic",
       requestedAtMs: Date.now(),
       forceRefresh: true,
@@ -1409,9 +1425,203 @@ describe("FolderCardView host contract", () => {
 
     expect(result).toMatchObject({
       action: "started",
-      folderPath: "",
+      scope: createFolderScope("", true),
     });
-    expect((view as any).folderPath).toBe("");
+    expect((view as any).cardScope).toEqual(createFolderScope("", true));
+  });
+
+  it("persists a committed folder scope migration atomically exactly once", async () => {
+    const { view, plugin } = createHarness();
+    const notes = new testState.TestTFolder("notes");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(notes);
+    plugin.saveSettings.mockClear();
+
+    await view.handleScopeSelection({
+      requestId: 2,
+      scope: createFolderScope("notes", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+      forceRefresh: true,
+    });
+
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      lastFolderPath: "notes",
+      activeBoxId: null,
+    });
+  });
+
+  it("does not persist the global scope projection for maintenance reloads", async () => {
+    const { view, plugin } = createHarness();
+    const notes = new testState.TestTFolder("notes");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(notes);
+    (view as any).cardScope = createFolderScope("notes", true);
+    plugin.saveSettings.mockClear();
+
+    await view.refresh({ reason: "manual", forceRefresh: true });
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("V27b-1 persists queued B after running A even though A returns last", async () => {
+    const { view, plugin } = createHarness();
+    const folders = new Map([
+      ["A", new testState.TestTFolder("A")],
+      ["B", new testState.TestTFolder("B")],
+    ]);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => folders.get(path) ?? null);
+    let releaseA!: () => void;
+    const aHydration = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    vi.spyOn(view as any, "hydrateStartupCardPaths")
+      .mockImplementationOnce(async () => aHydration)
+      .mockResolvedValue(undefined);
+    plugin.saveSettings.mockClear();
+
+    const runningA = view.handleScopeSelection({
+      requestId: 10,
+      scope: createFolderScope("A", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+    const queuedB = await view.handleScopeSelection({
+      requestId: 11,
+      scope: createFolderScope("B", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+    expect(queuedB.action).toBe("queued_latest");
+
+    releaseA();
+    expect((await runningA).action).toBe("started");
+    expect((plugin.getSettings as any)()).toMatchObject({ lastFolderPath: "B", activeBoxId: null });
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ lastFolderPath: "B", activeBoxId: null });
+    expect(plugin.saveSettings).not.toHaveBeenCalledWith(expect.objectContaining({ lastFolderPath: "A" }));
+  });
+
+  it("V27b-2 never persists queued A after C overwrites the queue slot", async () => {
+    const { view, plugin } = createHarness();
+    const folders = new Map([
+      ["A", new testState.TestTFolder("A")],
+      ["C", new testState.TestTFolder("C")],
+    ]);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => folders.get(path) ?? null);
+    let releaseMaintenance!: () => void;
+    const maintenanceHydration = new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    vi.spyOn(view as any, "hydrateStartupCardPaths")
+      .mockImplementationOnce(async () => maintenanceHydration)
+      .mockResolvedValue(undefined);
+    plugin.saveSettings.mockClear();
+
+    const maintenance = view.refresh({ reason: "manual", forceRefresh: true });
+    expect((await view.handleScopeSelection({
+      requestId: 20,
+      scope: createFolderScope("A", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    })).action).toBe("queued_latest");
+    expect((await view.handleScopeSelection({
+      requestId: 21,
+      scope: createFolderScope("C", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    })).action).toBe("queued_latest");
+
+    releaseMaintenance();
+    await maintenance;
+    expect((plugin.getSettings as any)()).toMatchObject({ lastFolderPath: "C", activeBoxId: null });
+    expect(plugin.saveSettings).not.toHaveBeenCalledWith(expect.objectContaining({ lastFolderPath: "A" }));
+  });
+
+  it("V27b-3 drops a queued migration during cleanup without projection writes", async () => {
+    const { view, plugin } = createHarness();
+    const queuedFolder = new testState.TestTFolder("queued");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => path === "queued" ? queuedFolder : null);
+    let releaseMaintenance!: () => void;
+    const maintenanceHydration = new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    vi.spyOn(view as any, "hydrateStartupCardPaths")
+      .mockImplementationOnce(async () => maintenanceHydration)
+      .mockResolvedValue(undefined);
+    plugin.saveSettings.mockClear();
+
+    const maintenance = view.refresh({ reason: "manual", forceRefresh: true });
+    expect((await view.handleScopeSelection({
+      requestId: 30,
+      scope: createFolderScope("queued", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    })).action).toBe("queued_latest");
+    view.cleanupLifecycle();
+    releaseMaintenance();
+    await maintenance;
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("V27b-4 treats repeated current-scope selection as a write-free noop", async () => {
+    const { view, plugin } = createHarness();
+    const notes = new testState.TestTFolder("notes");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(notes);
+    await view.handleScopeSelection({
+      requestId: 40,
+      scope: createFolderScope("notes", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+    plugin.saveSettings.mockClear();
+
+    const result = await view.handleScopeSelection({
+      requestId: 41,
+      scope: createFolderScope("notes", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+
+    expect(result.action).toBe("noop");
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("V27b-5 keeps B's multi-view projection when view A maintenance-reloads A", async () => {
+    const harnessA = createHarness();
+    const harnessB = createHarness();
+    let sharedSettings = mergeSettings(normalizeSettings(DEFAULT_SETTINGS), {
+      lastFolderPath: "A",
+      activeBoxId: null,
+    });
+    const saveProjection = vi.fn(async (patch: PartialPluginSettings) => {
+      sharedSettings = mergeSettings(sharedSettings, patch);
+    });
+    for (const harness of [harnessA, harnessB]) {
+      harness.plugin.getSettings.mockImplementation(() => sharedSettings);
+      harness.plugin.saveSettings.mockImplementation(saveProjection);
+    }
+    const folderA = new testState.TestTFolder("A");
+    const folderB = new testState.TestTFolder("B");
+    (harnessA.view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(folderA);
+    (harnessB.view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(folderB);
+    (harnessA.view as any).cardScope = createFolderScope("A", true);
+
+    await harnessB.view.handleScopeSelection({
+      requestId: 50,
+      scope: createFolderScope("B", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+    expect(sharedSettings).toMatchObject({ lastFolderPath: "B", activeBoxId: null });
+    saveProjection.mockClear();
+
+    await harnessA.view.refresh({ reason: "vault-change", forceRefresh: true });
+
+    expect(sharedSettings).toMatchObject({ lastFolderPath: "B", activeBoxId: null });
+    expect(saveProjection).not.toHaveBeenCalled();
   });
 
   it("swaps the single-pane view without persisting navPaneCollapsed", async () => {
@@ -1590,7 +1800,7 @@ describe("FolderCardView host contract", () => {
     const archive = createFolder("archive");
     const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue({ action: "started", inFlightKey: null });
 
-    (view as any).folderPath = "projects";
+    (view as any).cardScope = createFolderScope("projects", true);
     (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
       return path === "projects" ? projects : path === "archive" ? archive : null;
     });
@@ -1598,7 +1808,7 @@ describe("FolderCardView host contract", () => {
     await (view as any).onFolderMoveTargetChosen("projects", archive);
 
     expect(view.app.fileManager.renameFile).toHaveBeenCalledWith(projects, "archive/projects");
-    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", folderPath: "archive/projects", forceRefresh: true });
+    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", forceRefresh: true });
   });
 
   it("deletes the active folder scope back to root via prompt live re-fetch and skips root deletion", async () => {
@@ -1606,9 +1816,9 @@ describe("FolderCardView host contract", () => {
     const initialClientA = createFolder("projects/client-a");
     const liveClientA = createFolder("projects/client-a");
     const root = createFolder("");
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue({ action: "started", inFlightKey: null });
+    const moveSpy = vi.spyOn(view as any, "moveScopeToFolder").mockResolvedValue({ action: "started", scope: createFolderScope("", true) });
 
-    (view as any).folderPath = "projects/client-a";
+    (view as any).cardScope = createFolderScope("projects/client-a", true);
     (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
     (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
       .mockImplementationOnce((path: string) => path === "projects/client-a" ? initialClientA : null)
@@ -1621,7 +1831,7 @@ describe("FolderCardView host contract", () => {
     expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledTimes(1);
     expect(view.app.fileManager.promptForDeletion).toHaveBeenCalledWith(initialClientA);
     expect(view.app.fileManager.trashFile).toHaveBeenCalledWith(liveClientA);
-    expect(refreshSpy).toHaveBeenCalledWith({ reason: "manual", folderPath: "", forceRefresh: true });
+    expect(moveSpy).toHaveBeenCalledWith("");
   });
 
   it("treats slash-selected root scope as eligible for modify-driven preview refresh", () => {
@@ -1629,7 +1839,7 @@ describe("FolderCardView host contract", () => {
     const card = createCard("nested/note.md", "Nested note");
     const hydrateSpy = vi.spyOn(view as any, "hydrateCard").mockResolvedValue(undefined);
 
-    (view as any).folderPath = "/";
+    (view as any).cardScope = createFolderScope("/", true);
     (view as any).baseCards = [card];
 
     const result = (view as any).handleVaultMutation({
@@ -1653,7 +1863,7 @@ describe("FolderCardView host contract", () => {
     const card = createCard("notes/diagram.canvas", "diagram.canvas", "canvas");
     card.hydrated = false;
     card.previewHtml = "";
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [card];
 
     await (view as any).hydrateCard(card.path, (view as any).loadEpoch.token());
@@ -1698,6 +1908,80 @@ function makeTestBox(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+describe("FolderCardView graded update intents", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+      testState.ResizeObserverStub as never;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  function seedLoadedView(view: FolderCardView): void {
+    (view as any).cardScope = createFolderScope("notes", true);
+    (view as any).baseCards = [
+      createCard("notes/zeta.md", "Zeta"),
+      createCard("notes/alpha.md", "Alpha"),
+    ];
+    (view as any).pushState();
+  }
+
+  it("patch republishes presentation without touching the card projection", async () => {
+    const { view } = createHarness();
+    seedLoadedView(view);
+    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
+    const cardsBefore = getPanelState(view).cards;
+    const generationBefore = getPanelState(view).generation;
+
+    await view.applyUpdateIntent("patch", "settings-change");
+
+    expect(getPanelState(view).cards).toBe(cardsBefore);
+    expect(getPanelState(view).generation).toBe(generationBefore);
+    expect(collectSpy).not.toHaveBeenCalled();
+  });
+
+  it("reproject reorders the loaded cards without starting a new load generation", async () => {
+    const { view, plugin } = createHarness();
+    seedLoadedView(view);
+    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
+    const generationBefore = (view as any).loadEpoch.value;
+    const currentSettings = (plugin.getSettings as unknown as () => PluginSettings)();
+    plugin.getSettings.mockReturnValue({
+      ...currentSettings,
+      sort: { field: "name", direction: "asc" },
+    });
+
+    await view.applyUpdateIntent("reproject", "settings-change");
+
+    expect(getPanelState(view).cards.map((card) => card.title)).toEqual(["Alpha", "Zeta"]);
+    expect((view as any).loadEpoch.value).toBe(generationBefore);
+    expect(collectSpy).not.toHaveBeenCalled();
+  });
+
+  it("rehydrate discards previews and rebuilds them without a new load generation", async () => {
+    const { view } = createHarness();
+    seedLoadedView(view);
+    const collectSpy = vi.spyOn(view as any, "collectSupportedFiles");
+    const generationBefore = (view as any).loadEpoch.value;
+    const baseCards = (view as any).baseCards as NoteCardRecord[];
+
+    const rehydrated = view.applyUpdateIntent("rehydrate", "settings-change");
+    expect(baseCards.every((card) => card.hydrated === false)).toBe(true);
+    expect(baseCards.every((card) => card.previewHtml === "")).toBe(true);
+    expect(baseCards.every((card) => card.previewMode === "empty")).toBe(true);
+
+    await rehydrated;
+    await tick();
+
+    expect(baseCards.every((card) => card.hydrated === true)).toBe(true);
+    expect((view as any).loadEpoch.value).toBe(generationBefore);
+    expect(collectSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("FolderCardView card box mode", () => {
   function readSettings(plugin: TestHarness["plugin"]): Record<string, any> {
     return (plugin.getSettings as unknown as () => Record<string, any>)();
@@ -1719,6 +2003,7 @@ describe("FolderCardView card box mode", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
 
     await (view as any).onPinToggle({ path: "notes/a.md", pinned: true });
 
@@ -1731,6 +2016,7 @@ describe("FolderCardView card box mode", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
 
     await (view as any).onSortChange({ field: "name", direction: "asc" });
 
@@ -1743,6 +2029,7 @@ describe("FolderCardView card box mode", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox({ pinnedPaths: ["notes/b.md"] })];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
     (view as any).baseCards = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
 
     const visible = (view as any).deriveVisibleCards() as NoteCardRecord[];
@@ -1755,6 +2042,7 @@ describe("FolderCardView card box mode", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
 
     await view.onOpen();
     await tick();
@@ -1795,17 +2083,17 @@ describe("FolderCardView card box mode", () => {
     ]);
   });
 
-  it("switches and exits boxes via box commands", () => {
+  it("switches and exits boxes via box commands", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox(), makeTestBox({ id: "box-2", name: "Plans" })];
     settings.activeBoxId = null;
 
     (view as any).handleBoxCommand({ command: "switch", boxId: "box-2" });
-    expect(settings.activeBoxId).toBe("box-2");
+    await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBe("box-2"));
 
     (view as any).handleBoxCommand({ command: "exit" });
-    expect(settings.activeBoxId).toBeNull();
+    await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
   });
 });
 
@@ -1830,7 +2118,7 @@ describe("FolderCardView navigation scope activation", () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = { tags: ["alpha"] };
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
 
     await (view as any).selectFolderFromNav("other");
 
@@ -1842,7 +2130,7 @@ describe("FolderCardView navigation scope activation", () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = { tags: ["alpha"] };
-    (view as any).folderPath = "other";
+    (view as any).cardScope = createFolderScope("other", true);
 
     await (view as any).selectFolderFromNav("other");
 
@@ -1856,13 +2144,14 @@ describe("FolderCardView navigation scope activation", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
     settings.filter = { tags: ["stale"] };
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createBoxScope("box-1");
 
     await (view as any).activateFavoriteTag("alpha");
 
-    expect(settings.activeBoxId).toBeNull();
-    expect(settings.filter.tags).toEqual(["alpha"]);
+    await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
+    expect(readSettings(plugin).filter.tags).toEqual(["alpha"]);
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("", "panel-picker");
   });
 
@@ -1871,6 +2160,7 @@ describe("FolderCardView navigation scope activation", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
     (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
       (path: string) => new testState.TestTFolder(path),
     );
@@ -1892,7 +2182,7 @@ describe("FolderCardView navigation scope activation", () => {
     createSpy.mockRestore();
     await (view as any).createFromFolderTree("notes", "note");
 
-    expect(settings.activeBoxId).toBeNull();
+    await vi.waitFor(() => expect(readSettings(plugin).activeBoxId).toBeNull());
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("notes", "panel-picker");
     expect(plugin.createNoteInFolder).toHaveBeenCalledWith("notes", []);
   });
@@ -1925,7 +2215,7 @@ describe("FolderCardView navigation scope activation", () => {
     ) as never;
 
     // Browsing an unrelated, empty scope must not shrink any of the numbers.
-    (view as any).folderPath = "elsewhere";
+    (view as any).cardScope = createFolderScope("elsewhere", true);
     (view as any).baseCards = [];
     (view as any).refreshFolderTreeState();
     (view as any).pushState();
@@ -1942,7 +2232,7 @@ describe("FolderCardView navigation scope activation", () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     const alpha = createCard("notes/a.md", "A");
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [alpha];
     settings.showNavItemCounts = true;
 
@@ -1977,7 +2267,7 @@ describe("FolderCardView navigation scope activation", () => {
       { kind: "tag", ref: "work" },
       { kind: "folder", ref: "gone" },
     ];
-    (view as any).folderPath = "notes";
+    (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [];
 
     (view as any).pushState();
@@ -1998,7 +2288,7 @@ describe("FolderCardView navigation scope activation", () => {
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox({ manualPaths: ["notes/member.md"] })];
     settings.activeBoxId = "box-1";
-    (view as any).folderPath = "";
+    (view as any).cardScope = createBoxScope("box-1");
     (view as any).baseCards = [];
     (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
       (path: string) => new testState.TestTFile(path),

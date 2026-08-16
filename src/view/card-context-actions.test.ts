@@ -758,6 +758,7 @@ vi.mock("../FolderPickerModal", () => {
 });
 
 import { FolderCardView } from "./FolderCardView";
+import { createBoxScope, createFolderScope } from "./scope";
 import {
   addTagToFile,
   batchAddTagToFiles,
@@ -1341,7 +1342,7 @@ describe("FolderCardView card context actions", () => {
           const querySpy = service.query;
           plugin.getSearchService = vi.fn(() => service);
 
-          (view as any).folderPath = "notes";
+          (view as any).cardScope = createFolderScope("notes", true);
           (view as any).baseCards = visibleCards;
           (view as any).visibleCards = visibleCards;
 
@@ -1482,7 +1483,7 @@ describe("FolderCardView card context actions", () => {
           });
           plugin.getSearchService = vi.fn(() => ({ query }));
 
-          (view as any).folderPath = "notes";
+          (view as any).cardScope = createFolderScope("notes", true);
           (view as any).baseCards = visibleCards;
           (view as any).visibleCards = visibleCards;
 
@@ -1536,7 +1537,7 @@ describe("FolderCardView card context actions", () => {
           expect(query).toHaveBeenCalledTimes(3);
 
           (view as any).loadEpoch.bump();
-          (view as any).folderPath = "archive";
+          (view as any).cardScope = createFolderScope("archive", true);
 
           pending[2]?.resolve({
             mode: "indexed",
@@ -1911,7 +1912,7 @@ describe("FolderCardView card context actions", () => {
       it("onOpen passes includeSubfolders and folder scope props to the panel", async () => {
         const { view } = createViewWithFile("notes/folder-scope-props.md");
 
-        (view as any).folderPath = "projects/active";
+        (view as any).cardScope = createFolderScope("projects/active", true);
 
         await (view as any).onOpen();
 
@@ -1926,7 +1927,7 @@ describe("FolderCardView card context actions", () => {
       it("onOpen passes a legible root folder scope state to the panel", async () => {
         const { view } = createViewWithFile("notes/root-props.md");
 
-        (view as any).folderPath = "";
+        (view as any).cardScope = createFolderScope("", true);
 
         await (view as any).onOpen();
 
@@ -1940,7 +1941,7 @@ describe("FolderCardView card context actions", () => {
       it("include-subfolders-change persists valid boolean values in folder scope", async () => {
         const { view, plugin } = createViewWithFile("notes/include-subfolders.md");
 
-        (view as any).folderPath = "projects/active";
+        (view as any).cardScope = createFolderScope("projects/active", true);
 
         await (view as any).onOpen();
 
@@ -1958,7 +1959,7 @@ describe("FolderCardView card context actions", () => {
       it("include-subfolders-change ignores invalid values", async () => {
         const { view, plugin } = createViewWithFile("notes/include-subfolders-invalid.md");
 
-        (view as any).folderPath = "projects/active";
+        (view as any).cardScope = createFolderScope("projects/active", true);
 
         await (view as any).onOpen();
 
@@ -1971,7 +1972,7 @@ describe("FolderCardView card context actions", () => {
       it("include-subfolders-change persists valid boolean values in root folder scope", async () => {
         const { view, plugin } = createViewWithFile("notes/include-subfolders-root.md");
 
-        (view as any).folderPath = "";
+        (view as any).cardScope = createFolderScope("", true);
 
         await (view as any).onOpen();
 
@@ -1986,7 +1987,7 @@ describe("FolderCardView card context actions", () => {
       it("include-subfolders-change is a no-op when the requested value already matches settings", async () => {
         const { view, plugin } = createViewWithFile("notes/include-subfolders-same-value.md");
 
-        (view as any).folderPath = "projects/active";
+        (view as any).cardScope = createFolderScope("projects/active", true);
 
         await (view as any).onOpen();
 
@@ -2097,9 +2098,9 @@ describe("FolderCardView card context actions", () => {
         app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody ${file.basename}`);
 
         await (view as any).onOpen();
-        await (view as any).handleFolderSelection({
+        await (view as any).handleScopeSelection({
           requestId: 6,
-          folderPath: "notes",
+          scope: createFolderScope("notes", true),
           source: "programmatic",
           requestedAtMs: Date.now(),
           forceRefresh: false,
@@ -2143,9 +2144,9 @@ describe("FolderCardView card context actions", () => {
         app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody`);
 
         await (view as any).onOpen();
-        await (view as any).handleFolderSelection({
+        await (view as any).handleScopeSelection({
           requestId: 7,
-          folderPath: "notes",
+          scope: createFolderScope("notes", true),
           source: "programmatic",
           requestedAtMs: Date.now(),
           forceRefresh: false,
@@ -2182,13 +2183,10 @@ describe("FolderCardView card context actions", () => {
           });
           app.vault.cachedRead = vi.fn(() => delayedRead.promise);
 
-          const loadPromise = (view as any).loadFolder(
-            "notes",
+          const loadPromise = (view as any).loadScope(
             {
-              folderPath: "notes",
-              includeSubfolders: true,
-              sortField: "mtime",
-              sortDirection: "desc",
+              scope: createFolderScope("notes", true),
+              sort: { field: "mtime", direction: "desc" },
             },
             "notes|true|mtime|desc",
           );
@@ -2234,13 +2232,10 @@ describe("FolderCardView card context actions", () => {
         });
         app.vault.cachedRead = vi.fn(() => staleRead.promise);
 
-        const loadPromise = (view as any).loadFolder(
-          "notes",
+        const loadPromise = (view as any).loadScope(
           {
-            folderPath: "notes",
-            includeSubfolders: true,
-            sortField: "mtime",
-            sortDirection: "desc",
+            scope: createFolderScope("notes", true),
+            sort: { field: "mtime", direction: "desc" },
           },
           "notes|true|mtime|desc",
         );
@@ -2283,9 +2278,9 @@ describe("FolderCardView card context actions", () => {
         });
         app.vault.cachedRead = vi.fn(async (file: { basename: string }) => `# ${file.basename}\nBody`);
 
-        await (view as any).handleFolderSelection({
+        await (view as any).handleScopeSelection({
           requestId: 8,
-          folderPath: "notes",
+          scope: createFolderScope("notes", true),
           source: "programmatic",
           requestedAtMs: Date.now(),
           forceRefresh: false,
@@ -2374,9 +2369,9 @@ describe("FolderCardView card context actions", () => {
           });
           app.vault.cachedRead = vi.fn(async () => "line1\nline2\nline3\nline4");
 
-          await (view as any).handleFolderSelection({
+          await (view as any).handleScopeSelection({
             requestId: 1,
-            folderPath: "notes",
+            scope: createFolderScope("notes", true),
             source: "programmatic",
             requestedAtMs: Date.now(),
             forceRefresh: false,
@@ -2393,7 +2388,6 @@ describe("FolderCardView card context actions", () => {
 
           await (view as any).refresh({
             reason: "settings-change",
-            folderPath: "notes",
             forceRefresh: true,
           });
           await (view as any).hydrateRange(0, 1);
@@ -2448,9 +2442,9 @@ describe("FolderCardView card context actions", () => {
             return Promise.resolve("fresh\npreview\ncontent");
           });
 
-          await (view as any).handleFolderSelection({
+          await (view as any).handleScopeSelection({
             requestId: 2,
-            folderPath: "notes",
+            scope: createFolderScope("notes", true),
             source: "programmatic",
             requestedAtMs: Date.now(),
             forceRefresh: false,
@@ -2521,9 +2515,9 @@ describe("FolderCardView card context actions", () => {
           app.vault.cachedRead = vi.fn(async () => "only\none\ntwo\nthree");
 
           await (view as any).onOpen();
-          await (view as any).handleFolderSelection({
+          await (view as any).handleScopeSelection({
             requestId: 3,
-            folderPath: "notes",
+            scope: createFolderScope("notes", true),
             source: "programmatic",
             requestedAtMs: Date.now(),
             forceRefresh: false,
@@ -2548,7 +2542,6 @@ describe("FolderCardView card context actions", () => {
           previewLines = 10;
           await (view as any).refresh({
             reason: "settings-change",
-            folderPath: "notes",
             forceRefresh: true,
           });
           await (view as any).hydrateRange(0, 1);
@@ -2605,9 +2598,9 @@ describe("FolderCardView card context actions", () => {
             return "";
           });
 
-          await (view as any).handleFolderSelection({
+          await (view as any).handleScopeSelection({
             requestId: 4,
-            folderPath: "notes",
+            scope: createFolderScope("notes", true),
             source: "programmatic",
             requestedAtMs: Date.now(),
             forceRefresh: false,
@@ -2647,9 +2640,9 @@ describe("FolderCardView card context actions", () => {
 
           app.vault.cachedRead = vi.fn(async () => "```ts\nconst alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n```");
 
-          await (view as any).handleFolderSelection({
+          await (view as any).handleScopeSelection({
             requestId: 5,
-            folderPath: "notes",
+            scope: createFolderScope("notes", true),
             source: "programmatic",
             requestedAtMs: Date.now(),
             forceRefresh: false,
@@ -4310,7 +4303,7 @@ describe("FolderCardView card context actions", () => {
   describe("rename-driven incremental refresh after move", () => {
     it("rename removes card when move leaves current folder scope", () => {
       const { view, file } = createViewWithFile("notes/inside.md");
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCardRecord(file)];
 
       const result = (view as any).handleVaultMutation({
@@ -4335,7 +4328,7 @@ describe("FolderCardView card context actions", () => {
         return requestedPath === movedFile.path ? movedFile : null;
       });
 
-      (view as any).folderPath = "";
+      (view as any).cardScope = createFolderScope("", true);
       (view as any).baseCards = [createCardRecord(file)];
 
       const result = (view as any).handleVaultMutation({
@@ -4395,7 +4388,7 @@ describe("FolderCardView card context actions", () => {
     it("keeps filter, pin, and include-subfolders toolbar actions functional after bulk mode toggles", async () => {
       const { view, plugin } = createViewWithFile("projects/active/phase2-toggle.md");
 
-      (view as any).folderPath = "projects/active";
+      (view as any).cardScope = createFolderScope("projects/active", true);
 
       await (view as any).onOpen();
 
@@ -4673,7 +4666,7 @@ describe("FolderCardView card context actions", () => {
       (view as any).component = mockState.createMountedPanel({
         props: { panelModel: (view as any).panelModel },
       });
-      (view as any).folderPath = "";
+      (view as any).cardScope = createFolderScope("", true);
       (view as any).baseCards = [createCardRecord(createMarkdownFile("notes/pinned.md"))];
 
       (view as any).pushState();
@@ -4751,7 +4744,7 @@ describe("FolderCardView card context actions", () => {
       });
       (view as any).visibleCards = [createCardRecord(firstFile), createCardRecord(secondFile)];
       (view as any).deriveVisibleCards = vi.fn(() => (view as any).visibleCards);
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).selectedPath = "notes/editor-sync.md";
       (view as any).bulkMode = true;
       (view as any).selectedPaths = new Set([firstSelectedPath, secondSelectedPath]);
@@ -4831,7 +4824,7 @@ describe("FolderCardView card context actions", () => {
     it("isPathInScope excludes nested descendants for direct root scope and includes them recursively", () => {
       const { view } = createViewWithFile("notes/root.md");
 
-      (view as any).folderPath = "";
+      (view as any).cardScope = createFolderScope("", true);
 
       expect((view as any).isPathInScope("root.md", false)).toBe(true);
       expect((view as any).isPathInScope("archive/nested.md", false)).toBe(false);
@@ -4841,7 +4834,7 @@ describe("FolderCardView card context actions", () => {
     it("vault mutations ignore nested descendants when includeSubfolders is false", () => {
       const { view, plugin } = createViewWithFile("projects/active/direct.md");
 
-      (view as any).folderPath = "projects/active";
+      (view as any).cardScope = createFolderScope("projects/active", false);
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: false,
         sort: { field: "mtime", direction: "desc" },
@@ -4865,7 +4858,7 @@ describe("FolderCardView card context actions", () => {
     it("vault mutations include nested descendants when includeSubfolders is true", () => {
       const { view, plugin } = createViewWithFile("projects/active/direct.md");
 
-      (view as any).folderPath = "projects/active";
+      (view as any).cardScope = createFolderScope("projects/active", true);
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
@@ -4956,9 +4949,9 @@ describe("FolderCardView card context actions", () => {
       app.vault.getRoot = vi.fn(() => rootFolder);
       app.vault.cachedRead = vi.fn(async () => "preview");
 
-      await (view as any).handleFolderSelection({
+      await (view as any).handleScopeSelection({
         requestId: 21,
-        folderPath: "notes",
+        scope: createFolderScope("notes", true),
         source: "programmatic",
         requestedAtMs: Date.now(),
         forceRefresh: false,
@@ -4975,9 +4968,9 @@ describe("FolderCardView card context actions", () => {
       expect((view as any).bulkAnchorPath).toBe("notes/direct.md");
 
       includeSubfolders = false;
-      await (view as any).handleFolderSelection({
+      await (view as any).handleScopeSelection({
         requestId: 22,
-        folderPath: "notes",
+        scope: createFolderScope("notes", includeSubfolders),
         source: "programmatic",
         requestedAtMs: Date.now(),
         forceRefresh: true,
@@ -4989,9 +4982,9 @@ describe("FolderCardView card context actions", () => {
 
       (view as any).selectedPaths = new Set(["notes/direct.md"]);
       (view as any).bulkAnchorPath = "notes/direct.md";
-      await (view as any).handleFolderSelection({
+      await (view as any).handleScopeSelection({
         requestId: 23,
-        folderPath: "",
+        scope: createFolderScope("", true),
         source: "programmatic",
         requestedAtMs: Date.now(),
         forceRefresh: true,
@@ -5015,7 +5008,7 @@ describe("FolderCardView card context actions", () => {
 
       (view as any).component = component;
       (view as any).bulkMode = true;
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).selectedPaths = new Set(["notes/keep.md", "notes/drop.md"]);
       (view as any).bulkAnchorPath = "notes/keep.md";
       (view as any).baseCards = [
@@ -5029,10 +5022,8 @@ describe("FolderCardView card context actions", () => {
       (view as any).inFlight = Promise.resolve();
       (view as any).inFlightKey = "notes::true::mtime::desc";
       (view as any).inFlightLoadScope = {
-        folderPath: "notes",
-        includeSubfolders: true,
-        sortField: "mtime",
-        sortDirection: "desc",
+        scope: createFolderScope("notes", true),
+        sort: { field: "mtime", direction: "desc" },
       };
 
       plugin.getSettings = vi.fn(() => ({
@@ -5046,9 +5037,9 @@ describe("FolderCardView card context actions", () => {
         previewLines: 5,
       }));
 
-      const result = await (view as any).handleFolderSelection({
+      const result = await (view as any).handleScopeSelection({
         requestId: 24,
-        folderPath: "notes",
+        scope: createFolderScope("notes", false),
         source: "programmatic",
         requestedAtMs: Date.now(),
         forceRefresh: true,
@@ -5079,7 +5070,7 @@ describe("FolderCardView card context actions", () => {
         return null;
       });
 
-      (view as any).folderPath = "notes";
+      (view as any).cardScope = createFolderScope("notes", true);
       (view as any).bulkMode = true;
       (view as any).baseCards = [createCardRecord(fileA), createCardRecord(fileB)];
       (view as any).selectedPaths = new Set([fileA.path, fileB.path]);
@@ -5136,7 +5127,7 @@ describe("FolderCardView card context actions", () => {
         pinnedPaths: [],
               }));
 
-      (view as any).folderPath = "";
+      (view as any).cardScope = createFolderScope("", true);
       await (view as any).onOpen();
       await (view as any).onOpen();
 
@@ -5225,6 +5216,9 @@ describe("FolderCardView card context actions", () => {
           },
         ],
       }));
+      if (activeBoxId !== null) {
+        (view as any).cardScope = createBoxScope(activeBoxId);
+      }
       return { view, plugin };
     }
 
@@ -5452,6 +5446,10 @@ describe("FolderCardView card context actions", () => {
         boxSectionCollapsed: false,
         ...settingsOverrides,
       }));
+      const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;
+      if (activeBox !== null) {
+        (view as any).cardScope = createBoxScope(activeBox);
+      }
       return { view, plugin };
     }
 

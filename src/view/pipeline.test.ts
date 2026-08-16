@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, DEFAULT_PIPELINE_STEPS } from "./pipeline";
+import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
+import { createBoxScope, createFolderScope } from "./scope";
 import type { PipelineContext } from "./pipeline";
 import type { NoteCardRecord } from "./types";
 import type { CardFileKind } from "./file-kind";
 import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
 import * as metadataUtils from "./metadata-utils";
+
+const folderSteps = () => stepsForScope(createFolderScope("", true));
 
 // ---------------------------------------------------------------------------
 // Mock Helpers
@@ -90,10 +93,10 @@ describe("runPipeline", () => {
     expect(result).toBe(cards);
   });
 
-  it("returns input unchanged with identity steps (DEFAULT_PIPELINE_STEPS)", () => {
+  it("returns input unchanged with identity folder-scope steps", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md")];
     const context = createMockContext();
-    const result = runPipeline(cards, DEFAULT_PIPELINE_STEPS, context);
+    const result = runPipeline(cards, folderSteps(), context);
     expect(result).toEqual(cards);
   });
 
@@ -115,7 +118,7 @@ describe("runPipeline", () => {
 
   it("returns empty array when given empty cards", () => {
     const context = createMockContext();
-    const result = runPipeline([], DEFAULT_PIPELINE_STEPS, context);
+    const result = runPipeline([], folderSteps(), context);
     expect(result).toEqual([]);
   });
 
@@ -457,7 +460,7 @@ describe("applyPinReorder", () => {
       return file.path !== "filtered-pinned.md";
     });
 
-    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -475,7 +478,7 @@ describe("applyPinReorder", () => {
     baseContext.search.orderedPaths = ["visible-pinned.md", "visible-unpinned.md"];
     const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
 
-    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -499,7 +502,7 @@ describe("applyPinReorder", () => {
       return file.path !== "tag-filtered-pinned.md";
     });
 
-    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -523,7 +526,7 @@ describe("applyPinReorder", () => {
       return file.path !== "b.md";
     });
 
-    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
       "a.md",
       "d.md",
     ]);
@@ -544,7 +547,7 @@ describe("applyPinReorder", () => {
       return file.path !== "b.md";
     });
 
-    expect(runPipeline(cards, DEFAULT_PIPELINE_STEPS, context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
       "a.md",
       "c.md",
       "d.md",
@@ -694,22 +697,34 @@ describe("applyPinReorder", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DEFAULT_PIPELINE_STEPS
+// stepsForScope
 // ---------------------------------------------------------------------------
 
-describe("DEFAULT_PIPELINE_STEPS", () => {
+describe("stepsForScope", () => {
   it("contains exactly 3 steps in correct order", () => {
-    expect(DEFAULT_PIPELINE_STEPS).toHaveLength(3);
-    expect(DEFAULT_PIPELINE_STEPS[0]).toBe(applyTagFilter);
-    expect(DEFAULT_PIPELINE_STEPS[1]).toBe(applySearchFilter);
-    expect(DEFAULT_PIPELINE_STEPS[2]).toBe(applyPinReorder);
+    const steps = folderSteps();
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toBe(applyTagFilter);
+    expect(steps[1]).toBe(applySearchFilter);
+    expect(steps[2]).toBe(applyPinReorder);
   });
 
   it("full pipeline with defaults returns input unchanged", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md"), createMockCard("c.md")];
     const context = createMockContext();
-    const result = runPipeline(cards, DEFAULT_PIPELINE_STEPS, context);
+    const result = runPipeline(cards, folderSteps(), context);
     expect(result).toEqual(cards);
     expect(result).toHaveLength(3);
+  });
+
+  it("skips tag filtering for box scopes without shrinking box membership", () => {
+    const cards = [createMockCard("box-a.md"), createMockCard("box-b.md")];
+    const context = createMockContext();
+    context.settings.filter.tags = ["folder-only-filter"];
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
+
+    const steps = stepsForScope(createBoxScope("box-1"));
+    expect(steps).not.toContain(applyTagFilter);
+    expect(runPipeline(cards, steps, context)).toEqual(cards);
   });
 });

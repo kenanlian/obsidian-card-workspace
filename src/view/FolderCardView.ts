@@ -55,7 +55,25 @@ import {
 } from "./favorites";
 import { normalizeTagPath } from "./tag-tree";
 import { AsyncEpoch, type EpochToken } from "./async-epoch";
-import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
+import { runPipeline, stepsForScope } from "./pipeline";
+import {
+  createBoxScope,
+  createFolderScope,
+  isBoxScope,
+  isFolderScope,
+  normalizeScopePath,
+  scopeDisplayPath,
+  scopesEqual,
+  serializeScopeKey,
+  validateScope,
+  type CardScope,
+} from "./scope";
+import {
+  collectSupportedFiles as collectFolderScopeFiles,
+  isPathInFolderScope,
+  rewritePathAfterRename,
+} from "./scope-files";
+import type { ViewUpdateIntent } from "./update-intent";
 import { isBoxMember } from "./card-box-membership";
 import {
   addManualPaths,
@@ -64,6 +82,7 @@ import {
   deleteCardBox,
   duplicateCardBox,
   findCardBox,
+  getBoxMembershipSignature,
   removeMemberFromBox,
   renameCardBox,
   restoreExcludedPaths,
@@ -128,11 +147,12 @@ import {
 import type {
   BulkRuntimePanelState,
   CleanupResult,
-  FolderLoadKey,
+  CardLoadKey,
   FolderSelectionRequest,
   FolderTreeNode,
   IncrementalMutationResult,
   NoteCardRecord,
+  RefreshReason,
   RefreshRequest,
   RefreshResult,
   SearchStatus,
@@ -143,11 +163,6 @@ import type {
 } from "./types";
 import type { SearchQueryExecutionState, SearchQueryResult, SearchServiceSnapshot } from "../search";
 import type CardWorkspacePlugin from "../main";
-
-function normalizeFolderScopePath(path: string): string {
-  return path === "/" ? "" : path;
-}
-
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 const TAG_ADD_ICON = "card-workspace-tag-plus";
@@ -186,9 +201,9 @@ export class FolderCardView extends ItemView {
   private hostEl: HTMLElement | null = null;
   private readonly panelModel: PanelModel;
 
-  private folderPath = "";
+  /** The runtime source of truth for what feeds the card stream. */
+  private cardScope: CardScope = createFolderScope("", true);
   private folderLoadKey: string | null = null;
-  private lastLoadedIncludeSubfolders: boolean | null = null;
   private baseCards: NoteCardRecord[] = [];
   private visibleCards: NoteCardRecord[] = [];
   // Runtime-only query state is view-owned and intentionally excluded from persisted settings.
@@ -236,9 +251,9 @@ export class FolderCardView extends ItemView {
   private static readonly NAV_COUNT_REFRESH_DEBOUNCE_MS = 250;
   private static readonly FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 
-  private inFlight: Promise<void> | null = null;
+  private inFlight: Promise<unknown> | null = null;
   private inFlightKey: string | null = null;
-  private inFlightLoadScope: FolderLoadKey | null = null;
+  private inFlightLoadScope: CardLoadKey | null = null;
   private queuedRequest: FolderSelectionRequest | null = null;
   private refreshQueued = false;
 
@@ -292,21 +307,52 @@ export class FolderCardView extends ItemView {
   // Card box mode
   // ---------------------------------------------------------------------------
 
-  private getActiveBox(): CardBoxDefinition | null {
+  private getScopeBox(): CardBoxDefinition | null {
+    if (!isBoxScope(this.cardScope)) {
+      return null;
+    }
+    return findCardBox(this.plugin.getSettings().boxes ?? [], this.cardScope.boxId);
+  }
+
+  async moveScopeToFolder(path: string): Promise<SelectionResult> {
+    const request = this.createProgrammaticSelectionRequest(
+      createFolderScope(path, this.plugin.getSettings().includeSubfolders),
+      false,
+    );
+    return this.handleScopeSelection(request);
+  }
+
+  async enterBoxScope(boxId: string): Promise<void> {
+    const request = this.createProgrammaticSelectionRequest(createBoxScope(boxId), false);
+    const result = await this.handleScopeSelection(request);
+    if (result.action === "rejected_invalid") {
+      return;
+    }
+    this.returnToCardsViewIfSinglePane();
+  }
+
+  async exitBoxScope(): Promise<void> {
+    const result = await this.moveScopeToFolder(this.plugin.getSettings().lastFolderPath);
+    if (result.action === "rejected_invalid") {
+      return;
+    }
+    this.returnToCardsViewIfSinglePane();
+  }
+
+  private async persistScopeProjection(): Promise<void> {
+    const scope = this.cardScope;
     const settings = this.plugin.getSettings();
-    return findCardBox(settings.boxes ?? [], settings.activeBoxId ?? null);
-  }
-
-  private isBoxMode(): boolean {
-    return (this.plugin.getSettings().activeBoxId ?? null) !== null;
-  }
-
-  private boxSignature(box: CardBoxDefinition): string {
-    return JSON.stringify({
-      rules: box.rules,
-      manual: box.manualPaths,
-      excluded: box.excludedPaths,
-    });
+    if (isFolderScope(scope)) {
+      if (settings.lastFolderPath === scope.path && settings.activeBoxId === null) {
+        return;
+      }
+      await this.plugin.saveSettings({ lastFolderPath: scope.path, activeBoxId: null });
+      return;
+    }
+    if (settings.activeBoxId === scope.boxId) {
+      return;
+    }
+    await this.plugin.saveSettings({ activeBoxId: scope.boxId });
   }
 
   /**
@@ -316,7 +362,7 @@ export class FolderCardView extends ItemView {
    * cheap; it is cleared on vault mutations and on box persistence.
    */
   private countBoxCards(box: CardBoxDefinition): number {
-    const signature = this.boxSignature(box);
+    const signature = getBoxMembershipSignature(box);
     const cached = this.boxCardCountCache.get(box.id);
     if (cached && cached.signature === signature) {
       return cached.count;
@@ -359,26 +405,19 @@ export class FolderCardView extends ItemView {
     return files;
   }
 
-  private async persistBoxes(
-    boxes: CardBoxDefinition[],
-    activeBoxId?: string | null,
-  ): Promise<void> {
+  private async persistBoxes(boxes: CardBoxDefinition[]): Promise<void> {
     const favorites = pruneFavoriteBoxes(
       this.plugin.getSettings().favorites ?? [],
       boxes.map((box) => box.id),
     );
-    if (activeBoxId === undefined) {
-      await this.plugin.saveSettings({ boxes, favorites });
-      return;
-    }
-    await this.plugin.saveSettings({ boxes, activeBoxId, favorites });
+    await this.plugin.saveSettings({ boxes, favorites });
   }
 
   private async updateActiveBox(
     mutate: (box: CardBoxDefinition) => CardBoxDefinition,
   ): Promise<void> {
     const settings = this.plugin.getSettings();
-    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    const box = this.getScopeBox();
     if (box === null) {
       return;
     }
@@ -396,9 +435,9 @@ export class FolderCardView extends ItemView {
     boxExcludedCount: number;
   } {
     const settings = this.plugin.getSettings();
-    const box = this.getActiveBox();
+    const box = this.getScopeBox();
     return {
-      activeBoxId: settings.activeBoxId ?? null,
+      activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
       activeBoxName: box ? box.name : null,
       boxSummaries: (settings.boxes ?? []).map((entry) => ({
         id: entry.id,
@@ -425,9 +464,9 @@ export class FolderCardView extends ItemView {
     const showCounts = settings.showNavItemCounts;
     const hasTagFavorite = favorites.some((entry) => entry.kind === "tag");
     const boxSummaries = precomputed.boxSummaries;
-    const activeBoxId = settings.activeBoxId ?? null;
-    const isBoxMode = this.isBoxMode();
-    const activeFolderPath = this.normalizeActiveFolderScopePath();
+    const activeBoxId = isBoxScope(this.cardScope) ? this.cardScope.boxId : null;
+    const isBoxMode = isBoxScope(this.cardScope);
+    const activeFolderPath = scopeDisplayPath(this.cardScope);
     const activeTags = new Set(settings.filter.tags.map((tag) => normalizeTagPath(tag)));
 
     return favorites.map((entry) => this.buildFavoriteRowModel(entry, {
@@ -445,7 +484,7 @@ export class FolderCardView extends ItemView {
 
   /** Mirrors the folder section so the same folder never shows two different numbers. */
   private getFavoriteFolderCount(folderPath: string, includeSubfolders: boolean): number {
-    const counts = this.folderTreeCountsByPath.get(normalizeFolderScopePath(folderPath));
+    const counts = this.folderTreeCountsByPath.get(normalizeScopePath(folderPath));
     if (!counts) {
       return 0;
     }
@@ -539,7 +578,7 @@ export class FolderCardView extends ItemView {
     pinnedPaths: string[];
   } {
     const settings = this.plugin.getSettings();
-    const box = this.getActiveBox();
+    const box = this.getScopeBox();
     if (box) {
       return {
         sortField: box.sort.field,
@@ -557,8 +596,10 @@ export class FolderCardView extends ItemView {
   private getBrowseScope(): { folder: string; includeSubfolders: boolean; tags: string[] } {
     const settings = this.plugin.getSettings();
     return {
-      folder: this.normalizeActiveFolderScopePath(),
-      includeSubfolders: settings.includeSubfolders,
+      folder: scopeDisplayPath(this.cardScope),
+      includeSubfolders: isFolderScope(this.cardScope)
+        ? this.cardScope.includeSubfolders
+        : settings.includeSubfolders,
       tags: [...settings.filter.tags],
     };
   }
@@ -582,25 +623,23 @@ export class FolderCardView extends ItemView {
     switch (command) {
       case "switch":
         if (boxId) {
-          this.returnToCardsViewIfSinglePane();
-          void this.plugin.saveSettings({ activeBoxId: boxId });
+          void this.enterBoxScope(boxId);
         }
         return;
       case "exit":
-        this.returnToCardsViewIfSinglePane();
-        void this.plugin.saveSettings({ activeBoxId: null });
+        void this.exitBoxScope();
         return;
       case "create":
         this.openCreateBoxModal();
         return;
       case "rename":
-        this.openRenameBoxModal(boxId ?? this.plugin.getSettings().activeBoxId);
+        this.openRenameBoxModal(boxId ?? this.getScopeBox()?.id ?? null);
         return;
       case "duplicate":
-        this.duplicateBoxById(boxId ?? this.plugin.getSettings().activeBoxId);
+        this.duplicateBoxById(boxId ?? this.getScopeBox()?.id ?? null);
         return;
       case "delete":
-        this.openDeleteBoxConfirm(boxId ?? this.plugin.getSettings().activeBoxId);
+        this.openDeleteBoxConfirm(boxId ?? this.getScopeBox()?.id ?? null);
         return;
       case "save-scope-as-box":
         this.openSaveScopeAsBoxModal();
@@ -609,7 +648,7 @@ export class FolderCardView extends ItemView {
         this.addScopeToBox(boxId);
         return;
       case "configure":
-        this.openBoxConfig(boxId ?? this.plugin.getSettings().activeBoxId);
+        this.openBoxConfig(boxId ?? this.getScopeBox()?.id ?? null);
         return;
       default:
         return;
@@ -626,7 +665,8 @@ export class FolderCardView extends ItemView {
       onSubmit: async (name) => {
         const settings = this.plugin.getSettings();
         const box = createCardBox(name, settings.boxes);
-        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+        await this.persistBoxes(upsertCardBox(settings.boxes, box));
+        await this.enterBoxScope(box.id);
       },
     }).open();
   }
@@ -678,11 +718,13 @@ export class FolderCardView extends ItemView {
         button
           .setWarning()
           .setButtonText(strings.deleteConfirm)
-          .onClick(() => {
+          .onClick(async () => {
             const current = this.plugin.getSettings();
             const nextBoxes = deleteCardBox(current.boxes, box.id);
-            const nextActive = current.activeBoxId === box.id ? null : current.activeBoxId;
-            void this.persistBoxes(nextBoxes, nextActive);
+            if (isBoxScope(this.cardScope) && this.cardScope.boxId === box.id) {
+              await this.moveScopeToFolder(current.lastFolderPath);
+            }
+            await this.persistBoxes(nextBoxes);
             modal.close();
           });
       });
@@ -702,7 +744,8 @@ export class FolderCardView extends ItemView {
       onSubmit: async (name) => {
         const settings = this.plugin.getSettings();
         const box = createCardBox(name, settings.boxes, { rules: [rule] });
-        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+        await this.persistBoxes(upsertCardBox(settings.boxes, box));
+        await this.enterBoxScope(box.id);
       },
     }).open();
   }
@@ -720,7 +763,7 @@ export class FolderCardView extends ItemView {
   }
 
   private canAddScopeToBox(): boolean {
-    return !this.isBoxMode() && this.plugin.getSettings().boxes.length > 0;
+    return !isBoxScope(this.cardScope) && this.plugin.getSettings().boxes.length > 0;
   }
 
   private appendScopeTargetBoxItems(menu: Menu): void {
@@ -826,7 +869,7 @@ export class FolderCardView extends ItemView {
   /** Remove a single card entirely from the active box (manual delete or exclude). */
   private async removeMemberFromActiveBox(path: string): Promise<void> {
     const settings = this.plugin.getSettings();
-    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    const box = this.getScopeBox();
     if (box === null) {
       return;
     }
@@ -1122,7 +1165,7 @@ export class FolderCardView extends ItemView {
 
   private async bulkRemoveFromBox(): Promise<void> {
     const settings = this.plugin.getSettings();
-    const box = findCardBox(settings.boxes, settings.activeBoxId);
+    const box = this.getScopeBox();
     if (box === null) {
       return;
     }
@@ -1157,36 +1200,22 @@ export class FolderCardView extends ItemView {
   }
 
   async setFolder(folder: TFolder): Promise<SelectionResult> {
-    const request = this.createProgrammaticSelectionRequest(folder.path, false);
-    return this.handleFolderSelection(request);
+    const scope = createFolderScope(folder.path, this.plugin.getSettings().includeSubfolders);
+    return this.handleScopeSelection(this.createProgrammaticSelectionRequest(scope, false));
   }
 
-  async handleFolderSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
-    // External folder navigation exits an active box back into browse mode.
-    if (this.isBoxMode() && request.source === "panel-picker") {
-      await this.plugin.saveSettings({ activeBoxId: null });
-    }
-
-    const normalizedFolderPath = normalizeFolderScopePath(request.folderPath);
-    const normalizedRequest =
-      normalizedFolderPath === request.folderPath
-        ? request
-        : { ...request, folderPath: normalizedFolderPath };
-    const folder = normalizedFolderPath === ""
-      ? this.app.vault.getRoot()
-      : this.app.vault.getAbstractFileByPath(normalizedFolderPath);
-
-    if (!(folder instanceof TFolder)) {
+  async handleScopeSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
+    if (!validateScope(this.app, request.scope, this.plugin.getSettings().boxes ?? [])) {
       return {
         action: "rejected_invalid",
-        folderPath: normalizedRequest.folderPath,
+        scope: request.scope,
         generationChanged: false,
         preserveUiState: true,
       };
     }
 
-    const forceRefresh = normalizedRequest.forceRefresh ?? false;
-    const nextLoadScope = this.buildLoadScope(normalizedRequest.folderPath);
+    const forceRefresh = request.forceRefresh ?? false;
+    const nextLoadScope = this.buildLoadKey(request.scope);
     const loadKey = this.serializeLoadKey(nextLoadScope);
     const clearedBulkSelection = this.reconcileBulkSelectionBeforeLoad(nextLoadScope);
 
@@ -1197,16 +1226,16 @@ export class FolderCardView extends ItemView {
       if (!forceRefresh && this.inFlightKey === loadKey) {
         return {
           action: "reused_inflight",
-          folderPath: normalizedRequest.folderPath,
+          scope: request.scope,
           generationChanged: false,
           preserveUiState: true,
         };
       }
 
-      this.queuedRequest = normalizedRequest;
+      this.queuedRequest = request;
       return {
         action: "queued_latest",
-        folderPath: normalizedRequest.folderPath,
+        scope: request.scope,
         generationChanged: false,
         preserveUiState: true,
       };
@@ -1215,36 +1244,41 @@ export class FolderCardView extends ItemView {
     if (!forceRefresh && this.folderLoadKey === loadKey) {
       return {
         action: "noop",
-        folderPath: normalizedRequest.folderPath,
+        scope: request.scope,
         generationChanged: false,
         preserveUiState: true,
       };
     }
 
-    await this.runLoad(normalizedRequest.folderPath, nextLoadScope, loadKey);
+    const scopeBeforeRequest = this.cardScope;
+    const committed = await this.runLoad(nextLoadScope, loadKey);
     await this.drainQueuedRequest();
+    // Only a real committed migration claims the global persistence projection.
+    if (committed && !scopesEqual(scopeBeforeRequest, this.cardScope)) {
+      await this.persistScopeProjection();
+    }
 
     return {
       action: "started",
-      folderPath: normalizedRequest.folderPath,
+      scope: request.scope,
       generationChanged: true,
       preserveUiState: false,
     };
   }
 
   async refresh(request: RefreshRequest = { reason: "manual" }): Promise<RefreshResult> {
-    const targetPath = request.folderPath ?? this.folderPath;
-
     if (request.reason === "vault-change") {
       this.refreshQueued = false;
     }
 
     const selectionRequest = this.createProgrammaticSelectionRequest(
-      targetPath,
+      isFolderScope(this.cardScope)
+        ? createFolderScope(this.cardScope.path, this.plugin.getSettings().includeSubfolders)
+        : this.cardScope,
       request.forceRefresh ?? true,
     );
 
-    const selectionResult = await this.handleFolderSelection(selectionRequest);
+    const selectionResult = await this.handleScopeSelection(selectionRequest);
     if (selectionResult.action === "rejected_invalid") {
       return {
         action: "skipped_invalid_folder",
@@ -1265,6 +1299,44 @@ export class FolderCardView extends ItemView {
     };
   }
 
+  /**
+   * Applies the weakest update that still reflects a change. Only `"reload"`
+   * re-collects files; the weaker tiers keep scroll position and loaded previews.
+   */
+  async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
+    switch (intent) {
+      case "reload":
+        await this.refresh({ reason, forceRefresh: true });
+        return;
+      case "rehydrate":
+        for (const card of this.baseCards) {
+          card.hydrated = false;
+          card.previewHtml = "";
+          card.previewMode = "empty";
+        }
+        this.pendingHydration.clear();
+        this.reprojectCards();
+        this.hydrateVisibleCardsOnOpen();
+        return;
+      case "reproject":
+        this.reprojectCards();
+        return;
+      case "patch":
+        this.pushPresentationState();
+        return;
+    }
+  }
+
+  /** Re-sorts the loaded cards in place and republishes; never re-collects files. */
+  private reprojectCards(): void {
+    const projection = this.effectiveSortAndPins();
+    this.baseCards.sort((left, right) =>
+      this.compareCards(left, right, projection.sortField, projection.sortDirection),
+    );
+    this.folderLoadKey = this.serializeLoadKey(this.buildLoadKey(this.cardScope));
+    this.pushState();
+  }
+
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
     this.vaultContentEpoch.bump();
     this.scheduleNavCountRefresh();
@@ -1273,16 +1345,7 @@ export class FolderCardView extends ItemView {
     } else if (event.eventType !== "modify") {
       this.scheduleFolderTreeRefresh();
     }
-    const currentFolderPath = this.normalizeActiveFolderScopePath();
-    let selectedFolderPathAfterRename: string | null = null;
-    if (event.eventType === "rename" && event.isFolder && event.oldPath) {
-      const renamedPath = this.rewritePathAfterRename(currentFolderPath, event.oldPath, event.path);
-      if (renamedPath !== currentFolderPath) {
-        this.folderPath = renamedPath;
-        this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(renamedPath));
-        selectedFolderPathAfterRename = renamedPath;
-      }
-    }
+    const selectedFolderPathAfterRename = this.applyScopeRename(event);
 
     if (!this.shouldRefreshForVaultEvent(event)) {
       return {
@@ -1315,6 +1378,26 @@ export class FolderCardView extends ItemView {
       selectedFolderPathAfterRename,
       incrementalResult: null,
     };
+  }
+
+  private applyScopeRename(event: VaultMutationEvent): string | null {
+    if (
+      event.eventType !== "rename" ||
+      !event.isFolder ||
+      !event.oldPath ||
+      !isFolderScope(this.cardScope)
+    ) {
+      return null;
+    }
+
+    const renamedPath = rewritePathAfterRename(this.cardScope.path, event.oldPath, event.path);
+    if (renamedPath === this.cardScope.path) {
+      return null;
+    }
+
+    this.cardScope = createFolderScope(renamedPath, this.cardScope.includeSubfolders);
+    this.folderLoadKey = this.serializeLoadKey(this.buildLoadKey(this.cardScope));
+    return renamedPath;
   }
 
   /** Re-push nav-derived state after the plugin reconciled boxes/favorites outside the view. */
@@ -1369,7 +1452,6 @@ export class FolderCardView extends ItemView {
     this.inFlightKey = null;
     this.inFlightLoadScope = null;
     this.loading = false;
-    this.lastLoadedIncludeSubfolders = null;
     this.selectedPaths = new Set<string>();
     this.bulkAnchorPath = null;
     this.searchQuery = "";
@@ -1398,7 +1480,7 @@ export class FolderCardView extends ItemView {
   }
 
   getCurrentFolderPath(): string | null {
-    return this.folderPath;
+    return isFolderScope(this.cardScope) ? this.cardScope.path : null;
   }
 
   onSearchSnapshot(searchSnapshot: SearchServiceSnapshot): void {
@@ -1607,7 +1689,7 @@ export class FolderCardView extends ItemView {
     menu.addSeparator();
     this.appendAddToBoxMenu(menu, [notePath]);
     this.appendCardFavoriteMenuItem(menu, notePath);
-    if (this.isBoxMode()) {
+    if (isBoxScope(this.cardScope)) {
       menu.addItem((item) => {
         item
           .setTitle(this.strings.box.removeFromBox)
@@ -1713,13 +1795,13 @@ export class FolderCardView extends ItemView {
     const settings = this.plugin.getSettings();
     return {
       strings: this.strings,
-      isBoxMode: this.isBoxMode(),
+      isBoxMode: isBoxScope(this.cardScope),
       includeSubfolders: settings.includeSubfolders,
       activeFilterTags: settings.filter.tags,
       canResolveSystemPath: canResolveSystemPath(this.app),
       favorites: settings.favorites ?? [],
       boxes: settings.boxes ?? [],
-      activeBoxId: settings.activeBoxId ?? null,
+      activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
       boxExcludedCount: (boxId) => this.getBoxExcludedCount(boxId),
       sectionCollapsed: {
         favorites: settings.favoritesSectionCollapsed,
@@ -2119,7 +2201,7 @@ export class FolderCardView extends ItemView {
   }
 
   private buildSiblingPath(parentPath: string, fileName: string): string {
-    const scopePath = normalizeFolderScopePath(parentPath);
+    const scopePath = normalizeScopePath(parentPath);
     if (scopePath.length === 0) {
       return fileName;
     }
@@ -2146,7 +2228,7 @@ export class FolderCardView extends ItemView {
   private cacheFolderTreeCounts(tree: FolderTreeNode[]): void {
     this.folderTreeCountsByPath.clear();
     const visit = (node: FolderTreeNode): void => {
-      this.folderTreeCountsByPath.set(normalizeFolderScopePath(node.path), {
+      this.folderTreeCountsByPath.set(normalizeScopePath(node.path), {
         direct: node.directCount,
         recursive: node.recursiveCount,
       });
@@ -2160,7 +2242,7 @@ export class FolderCardView extends ItemView {
   }
 
   private resolveFolderFromUiPath(folderPath: string): TFolder | null {
-    const normalizedPath = normalizeFolderScopePath(folderPath);
+    const normalizedPath = normalizeScopePath(folderPath);
     const folder = normalizedPath === ""
       ? this.app.vault.getRoot()
       : this.app.vault.getAbstractFileByPath(normalizedPath);
@@ -2400,7 +2482,7 @@ export class FolderCardView extends ItemView {
     folderUiPath: string,
     kind: "note" | "folder" | "canvas" | "base",
   ): Promise<void> {
-    if (this.isBoxMode()) {
+    if (isBoxScope(this.cardScope)) {
       await this.selectFolderFromNav(folderUiPath);
     }
 
@@ -2609,7 +2691,7 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const activeBoxId = this.plugin.getSettings().activeBoxId ?? null;
+    const activeBoxId = isBoxScope(this.cardScope) ? this.cardScope.boxId : null;
     this.handleBoxCommand({ command: ref === activeBoxId ? "exit" : "switch", boxId: ref });
   }
 
@@ -2647,7 +2729,7 @@ export class FolderCardView extends ItemView {
       await trashAbstractFileUsingObsidianPreference(this.app, liveFolder);
       this.refreshFolderTreeState();
       if (nextFolderPath !== null) {
-        await this.refresh({ reason: "manual", folderPath: nextFolderPath, forceRefresh: true });
+        await this.moveScopeToFolder(nextFolderPath);
       }
     } catch (error) {
       new Notice(strings.deleteFailed(String(error)));
@@ -2655,17 +2737,23 @@ export class FolderCardView extends ItemView {
   }
 
   private async refreshFolderScopeAfterFolderRename(previousPath: string, nextPath: string): Promise<void> {
-    const currentFolderPath = this.normalizeActiveFolderScopePath();
-    const rewrittenPath = this.rewritePathAfterRename(currentFolderPath, previousPath, nextPath);
-    if (rewrittenPath === null || rewrittenPath === currentFolderPath) {
+    if (!isFolderScope(this.cardScope)) {
       return;
     }
-
-    await this.refresh({ reason: "manual", folderPath: rewrittenPath, forceRefresh: true });
+    const rewrittenPath = rewritePathAfterRename(this.cardScope.path, previousPath, nextPath);
+    if (rewrittenPath === this.cardScope.path) {
+      return;
+    }
+    this.cardScope = createFolderScope(rewrittenPath, this.cardScope.includeSubfolders);
+    this.folderLoadKey = this.serializeLoadKey(this.buildLoadKey(this.cardScope));
+    await this.refresh({ reason: "manual", forceRefresh: true });
   }
 
   private getFallbackFolderPathAfterFolderDeletion(deletedPath: string): string | null {
-    const currentFolderPath = this.normalizeActiveFolderScopePath();
+    if (!isFolderScope(this.cardScope)) {
+      return null;
+    }
+    const currentFolderPath = this.cardScope.path;
     if (currentFolderPath !== deletedPath && !currentFolderPath.startsWith(`${deletedPath}/`)) {
       return null;
     }
@@ -2687,7 +2775,7 @@ export class FolderCardView extends ItemView {
     return `${trimmedName}${extensionSuffix}`;
   }
 
-  private reconcileBulkSelectionBeforeLoad(nextLoadScope: FolderLoadKey): boolean {
+  private reconcileBulkSelectionBeforeLoad(nextLoadScope: CardLoadKey): boolean {
     if (!this.shouldClearBulkSelectionForScopeChange(nextLoadScope)) {
       return false;
     }
@@ -2697,77 +2785,54 @@ export class FolderCardView extends ItemView {
     return true;
   }
 
-  private shouldClearBulkSelectionForScopeChange(nextLoadScope: FolderLoadKey): boolean {
+  private shouldClearBulkSelectionForScopeChange(nextLoadScope: CardLoadKey): boolean {
     if (this.inFlightLoadScope) {
-      if (this.inFlightLoadScope.folderPath !== nextLoadScope.folderPath) {
-        return true;
-      }
-      return this.inFlightLoadScope.includeSubfolders !== nextLoadScope.includeSubfolders;
+      return !scopesEqual(this.inFlightLoadScope.scope, nextLoadScope.scope);
     }
-
-    const currentFolderPath = this.normalizeActiveFolderScopePath();
-    if (currentFolderPath !== nextLoadScope.folderPath) {
-      return true;
-    }
-
-    return (
-      this.lastLoadedIncludeSubfolders !== null &&
-      this.lastLoadedIncludeSubfolders !== nextLoadScope.includeSubfolders
-    );
+    return !scopesEqual(this.cardScope, nextLoadScope.scope);
   }
 
   private createProgrammaticSelectionRequest(
-    folderPath: string,
+    scope: CardScope,
     forceRefresh: boolean,
   ): FolderSelectionRequest {
     const token = this.selectionEpoch.bump();
     return {
       requestId: token.value,
-      folderPath: normalizeFolderScopePath(folderPath),
+      scope,
       source: "programmatic",
       requestedAtMs: Date.now(),
       forceRefresh,
     };
   }
-  private buildLoadScope(folderPath: string): FolderLoadKey {
-    const settings = this.plugin.getSettings();
-    const box = this.getActiveBox();
-    if (box) {
-      return {
-        folderPath: `__box__:${box.id}`,
-        includeSubfolders: true,
-        sortField: box.sort.field,
-        sortDirection: box.sort.direction,
-      };
+  private buildLoadKey(scope: CardScope): CardLoadKey {
+    if (scope.kind === "box") {
+      const box = findCardBox(this.plugin.getSettings().boxes ?? [], scope.boxId);
+      return { scope, sort: box?.sort ?? this.plugin.getSettings().sort };
     }
-    return {
-      folderPath: normalizeFolderScopePath(folderPath),
-      includeSubfolders: settings.includeSubfolders,
-      sortField: settings.sort.field,
-      sortDirection: settings.sort.direction,
-    };
+    return { scope, sort: this.plugin.getSettings().sort };
   }
 
-  private serializeLoadKey(loadKey: FolderLoadKey): string {
-    const box = this.getActiveBox();
-    if (box && loadKey.folderPath === `__box__:${box.id}`) {
-      return `box::${box.id}::${loadKey.sortField}::${loadKey.sortDirection}::${this.boxSignature(box)}`;
+  private serializeLoadKey(loadKey: CardLoadKey): string {
+    if (loadKey.scope.kind === "box") {
+      const box = findCardBox(this.plugin.getSettings().boxes ?? [], loadKey.scope.boxId);
+      return serializeScopeKey(
+        loadKey.scope,
+        loadKey.sort,
+        box ? getBoxMembershipSignature(box) : "",
+      );
     }
-    return `${loadKey.folderPath}::${loadKey.includeSubfolders}::${loadKey.sortField}::${loadKey.sortDirection}`;
+    return serializeScopeKey(loadKey.scope, loadKey.sort);
   }
 
-  private async runLoad(
-    folderPath: string,
-    loadScope: FolderLoadKey,
-    loadKey: string,
-  ): Promise<void> {
-    const task = this.loadFolder(folderPath, loadScope, loadKey);
+  private async runLoad(loadScope: CardLoadKey, loadKey: string): Promise<boolean> {
+    const task = this.loadScope(loadScope, loadKey);
     this.inFlight = task;
     this.inFlightKey = loadKey;
     this.inFlightLoadScope = loadScope;
 
     try {
-      await task;
+      return await task;
     } finally {
       if (this.inFlight === task) {
         this.inFlight = null;
@@ -2777,12 +2842,8 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  private async loadFolder(
-    folderPath: string,
-    loadScope: FolderLoadKey,
-    loadKey: string,
-  ): Promise<void> {
-    this.folderPath = folderPath;
+  private async loadScope(loadScope: CardLoadKey, loadKey: string): Promise<boolean> {
+    this.cardScope = loadScope.scope;
     this.loading = true;
     const loadToken = this.loadEpoch.bump();
     this.pendingHydration.clear();
@@ -2795,10 +2856,7 @@ export class FolderCardView extends ItemView {
     this.pushState();
 
     try {
-      const activeBox = this.getActiveBox();
-      const files = activeBox
-        ? this.collectBoxFiles(activeBox)
-        : this.collectSupportedFiles(folderPath, loadScope.includeSubfolders);
+      const files = this.collectScopeFiles(loadScope.scope);
       const records: NoteCardRecord[] = [];
       for (const file of files) {
         const fileKind = resolveCardFileKind(file);
@@ -2821,19 +2879,19 @@ export class FolderCardView extends ItemView {
       }
 
       if (!this.loadEpoch.isCurrent(loadToken)) {
-        return;
+        return false;
       }
 
       records.sort((left, right) =>
-        this.compareCards(left, right, loadScope.sortField, loadScope.sortDirection),
+        this.compareCards(left, right, loadScope.sort.field, loadScope.sort.direction),
       );
       this.baseCards = records;
       this.folderLoadKey = loadKey;
-      this.lastLoadedIncludeSubfolders = loadScope.includeSubfolders;
       const startupPaths = this.deriveVisibleCardsFrom(records)
         .slice(0, FolderCardView.STARTUP_PREVIEW_CARD_COUNT)
         .map((card) => card.path);
       await this.hydrateStartupCardPaths(startupPaths, loadToken);
+      return true;
     } finally {
       if (this.loadEpoch.isCurrent(loadToken)) {
         this.loading = false;
@@ -2855,7 +2913,7 @@ export class FolderCardView extends ItemView {
     }
 
     this.queuedRequest = null;
-    await this.handleFolderSelection(queued);
+    await this.handleScopeSelection(queued);
   }
 
   private shouldRefreshForVaultEvent(event: VaultMutationEvent): boolean {
@@ -2869,23 +2927,13 @@ export class FolderCardView extends ItemView {
       }
     }
 
-    const includeSubfolders = this.plugin.getSettings().includeSubfolders;
-    const pathInScope = this.isPathInScope(event.path, includeSubfolders);
+    const pathInScope = this.isPathInActiveScope(event.path);
     const oldPathInScope =
       typeof event.oldPath === "string" && event.oldPath.length > 0
-        ? this.isPathInScope(event.oldPath, includeSubfolders)
+        ? this.isPathInActiveScope(event.oldPath)
         : false;
 
     return pathInScope || oldPathInScope;
-  }
-
-  private normalizeActiveFolderScopePath(): string {
-    const normalizedFolderPath = normalizeFolderScopePath(this.folderPath);
-    if (normalizedFolderPath !== this.folderPath) {
-      this.folderPath = normalizedFolderPath;
-    }
-
-    return normalizedFolderPath;
   }
 
   /**
@@ -2893,100 +2941,34 @@ export class FolderCardView extends ItemView {
    * membership in box mode, browse folder scope otherwise.
    */
   private isPathInActiveScope(path: string): boolean {
-    const box = this.getActiveBox();
-    if (box) {
-      return isBoxMember(this.app, path, box);
+    if (this.cardScope.kind === "box") {
+      const box = findCardBox(this.plugin.getSettings().boxes ?? [], this.cardScope.boxId);
+      return box ? isBoxMember(this.app, path, box) : false;
     }
-    return this.isPathInScope(path, this.plugin.getSettings().includeSubfolders);
+    return isPathInFolderScope(path, this.cardScope.path, this.cardScope.includeSubfolders);
   }
 
-  private isPathInScope(path: string, includeSubfolders: boolean): boolean {
-    const currentFolderPath = this.normalizeActiveFolderScopePath();
-    if (currentFolderPath === "") {
-      return includeSubfolders || !path.includes("/");
+  private collectScopeFiles(scope: CardScope): TFile[] {
+    switch (scope.kind) {
+      case "folder":
+        return this.collectSupportedFiles(scope.path, scope.includeSubfolders);
+      case "box": {
+        const box = findCardBox(this.plugin.getSettings().boxes ?? [], scope.boxId);
+        return box ? this.collectBoxFiles(box) : [];
+      }
+      default: {
+        const exhaustive: never = scope;
+        return exhaustive;
+      }
     }
-
-    if (path === currentFolderPath) {
-      return true;
-    }
-
-    const prefix = `${currentFolderPath}/`;
-    if (!path.startsWith(prefix)) {
-      return false;
-    }
-
-    if (includeSubfolders) {
-      return true;
-    }
-
-    const relative = path.slice(prefix.length);
-    return !relative.includes("/");
-  }
-
-  private rewritePathAfterRename(
-    currentPath: string,
-    oldPath: string,
-    newPath: string,
-  ): string {
-    if (currentPath === "") {
-      return currentPath;
-    }
-
-    if (currentPath === oldPath) {
-      return newPath;
-    }
-
-    const prefix = `${oldPath}/`;
-    if (!currentPath.startsWith(prefix)) {
-      return currentPath;
-    }
-
-    return `${newPath}${currentPath.slice(oldPath.length)}`;
   }
 
   private collectSupportedFiles(folderPath: string, includeSubfolders: boolean): TFile[] {
-    const root = folderPath === ""
-      ? this.app.vault.getRoot()
-      : this.app.vault.getAbstractFileByPath(folderPath);
+    return collectFolderScopeFiles(this.app, folderPath, includeSubfolders);
+  }
 
-    if (!(root instanceof TFolder)) {
-      return [];
-    }
-
-    if (!includeSubfolders) {
-      const directFiles: TFile[] = [];
-      for (const child of root.children) {
-        if (child instanceof TFile && isSupportedCardFile(child)) {
-          directFiles.push(child);
-        }
-      }
-
-      return directFiles;
-    }
-
-    // recursive
-    const result: TFile[] = [];
-    const stack: TFolder[] = [root];
-
-    while (stack.length > 0) {
-      const folder = stack.pop();
-      if (!folder) {
-        continue;
-      }
-
-      for (const child of folder.children) {
-        if (child instanceof TFolder) {
-          stack.push(child);
-          continue;
-        }
-
-        if (child instanceof TFile && isSupportedCardFile(child)) {
-          result.push(child);
-        }
-      }
-    }
-
-    return result;
+  private isPathInScope(path: string, includeSubfolders: boolean): boolean {
+    return isPathInFolderScope(path, scopeDisplayPath(this.cardScope), includeSubfolders);
   }
 
   private compareCards(
@@ -3012,6 +2994,7 @@ export class FolderCardView extends ItemView {
   }
 
   private findSortedInsertIndex(newCard: NoteCardRecord): number {
+    const projection = this.effectiveSortAndPins();
     let low = 0;
     let high = this.baseCards.length;
     while (low < high) {
@@ -3023,8 +3006,8 @@ export class FolderCardView extends ItemView {
       const cmp = this.compareCards(
         existingCard,
         newCard,
-        this.plugin.getSettings().sort.field,
-        this.plugin.getSettings().sort.direction,
+        projection.sortField,
+        projection.sortDirection,
       );
       if (cmp <= 0) {
         low = mid + 1;
@@ -3439,7 +3422,7 @@ export class FolderCardView extends ItemView {
     const nextField: SortField =
       detail.field === "ctime" || detail.field === "name" ? detail.field : "mtime";
     const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
-    const activeBox = this.getActiveBox();
+    const activeBox = this.getScopeBox();
 
     if (activeBox) {
       if (
@@ -3452,9 +3435,7 @@ export class FolderCardView extends ItemView {
         ...box,
         sort: { field: nextField, direction: nextDirection },
       }));
-      this.baseCards.sort((left, right) => this.compareCards(left, right, nextField, nextDirection));
-      this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(this.folderPath));
-      this.pushState();
+      this.reprojectCards();
       return;
     }
 
@@ -3473,11 +3454,6 @@ export class FolderCardView extends ItemView {
         direction: nextDirection,
       },
     });
-    this.baseCards.sort((left, right) => this.compareCards(left, right, nextField, nextDirection));
-    this.folderLoadKey = this.serializeLoadKey(this.buildLoadScope(this.folderPath));
-
-
-    this.pushState();
   }
 
   private buildFolderTree(): FolderTreeNode[] {
@@ -3618,7 +3594,7 @@ export class FolderCardView extends ItemView {
 
   private deriveVisibleCardsFrom(cards: NoteCardRecord[]): NoteCardRecord[] {
     const settings = this.plugin.getSettings();
-    const box = this.getActiveBox();
+    const box = this.getScopeBox();
     const context: PipelineContext = {
       app: this.app,
       settings,
@@ -3626,7 +3602,7 @@ export class FolderCardView extends ItemView {
       pinnedPaths: box ? box.pinnedPaths : settings.pinnedPaths,
     };
 
-    return runPipeline(cards, box ? BOX_PIPELINE_STEPS : DEFAULT_PIPELINE_STEPS, context);
+    return runPipeline(cards, stepsForScope(this.cardScope), context);
   }
 
   private buildPipelineSearchInput(): PipelineSearchInput {
@@ -3799,20 +3775,20 @@ export class FolderCardView extends ItemView {
 
     const requestToken = this.searchRequestEpoch.bump();
     const loadToken = this.loadEpoch.token();
-    const requestFolderPath = this.folderPath;
+    const requestScope = this.cardScope;
     const snapshotToken = this.searchSnapshotEpoch.token();
 
     try {
       const result = await service.query({
         query,
         scope: {
-          folderPath: this.folderPath,
-          includeSubfolders: this.plugin.getSettings().includeSubfolders,
+          folderPath: scopeDisplayPath(this.cardScope),
+          includeSubfolders: isFolderScope(this.cardScope) ? this.cardScope.includeSubfolders : true,
         },
         candidatePaths: this.baseCards.map((card) => card.path),
       });
 
-      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestFolderPath, snapshotToken, query)) {
+      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query)) {
         return;
       }
 
@@ -3827,7 +3803,7 @@ export class FolderCardView extends ItemView {
       this.searchStatus = this.toRuntimeSearchStatus(result);
       this.pushState();
     } catch {
-      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestFolderPath, snapshotToken, query)) {
+      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query)) {
         return;
       }
 
@@ -3842,7 +3818,7 @@ export class FolderCardView extends ItemView {
   private isSearchRequestCurrent(
     requestToken: EpochToken,
     loadToken: EpochToken,
-    requestFolderPath: string | null,
+    requestScope: CardScope,
     snapshotToken: EpochToken,
     requestQuery: string,
   ): boolean {
@@ -3854,7 +3830,7 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
-    if (requestFolderPath !== this.folderPath) {
+    if (!scopesEqual(requestScope, this.cardScope)) {
       return false;
     }
 
@@ -4510,11 +4486,12 @@ export class FolderCardView extends ItemView {
   }
 
   private getDisplayFolderPath(): string {
-    if (this.folderPath === "") {
+    const path = scopeDisplayPath(this.cardScope);
+    if (path === "") {
       return "/";
     }
 
-    return this.folderPath;
+    return path;
   }
 
   private buildBulkRuntimePanelState(): BulkRuntimePanelState {
@@ -4688,9 +4665,34 @@ export class FolderCardView extends ItemView {
     });
   }
 
+  /** Publishes only the fields that do not depend on the card projection. */
+  private pushPresentationState(): void {
+    const settings = this.plugin.getSettings();
+    const boxFields = this.buildBoxPanelFields();
+
+    this.panelModel.mutate((state) => {
+      state.strings = this.strings;
+      state.cardCornerRadius = settings.cardCornerRadius;
+      state.previewLines = settings.previewLines;
+      state.navPaneWidth = settings.navPaneWidth;
+      state.layoutMode = this.getLayoutMode();
+      state.navVisible = this.getNavVisible();
+      state.folderSectionCollapsed = settings.folderSectionCollapsed;
+      state.tagSectionCollapsed = settings.tagSectionCollapsed;
+      state.boxSectionCollapsed = settings.boxSectionCollapsed;
+      state.favoritesSectionCollapsed = settings.favoritesSectionCollapsed;
+      state.favorites = this.buildFavoriteRowModels({
+        boxSummaries: boxFields.boxSummaries,
+      });
+      state.showNavItemCounts = settings.showNavItemCounts;
+      state.tooltipSide = this.getTooltipSide();
+      state.boxSummaries = boxFields.boxSummaries;
+    });
+  }
+
   private async onFilterChange(detail: { tags?: unknown }): Promise<void> {
     this.returnToCardsViewIfSinglePane();
-    if (this.isBoxMode()) {
+    if (isBoxScope(this.cardScope)) {
       return;
     }
     const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
@@ -4723,17 +4725,14 @@ export class FolderCardView extends ItemView {
   private async selectFolderFromNav(path: string): Promise<void> {
     this.returnToCardsViewIfSinglePane();
 
-    const targetFolderPath = normalizeFolderScopePath(path);
-    const inBoxMode = this.isBoxMode();
+    const targetFolderPath = normalizeScopePath(path);
+    const inBoxMode = isBoxScope(this.cardScope);
     // Leaving a card box counts as a scope change: tag filters never applied
     // inside a box, so browse mode should resume from a clean state.
-    const scopeChanged = inBoxMode || targetFolderPath !== this.normalizeActiveFolderScopePath();
+    const scopeChanged = inBoxMode || targetFolderPath !== scopeDisplayPath(this.cardScope);
     const hasTagFilter = this.plugin.getSettings().filter.tags.length > 0;
 
     const patch: PartialPluginSettings = {};
-    if (inBoxMode) {
-      patch.activeBoxId = null;
-    }
     if (scopeChanged && hasTagFilter) {
       patch.filter = { tags: [] };
     }
@@ -4848,7 +4847,7 @@ export class FolderCardView extends ItemView {
 
   private async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
     this.returnToCardsViewIfSinglePane();
-    if (this.isBoxMode()) {
+    if (isBoxScope(this.cardScope)) {
       return;
     }
     if (typeof detail.value !== "boolean") {
@@ -4870,7 +4869,7 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const activeBox = this.getActiveBox();
+    const activeBox = this.getScopeBox();
     const currentPinnedPaths = activeBox ? activeBox.pinnedPaths : this.plugin.getSettings().pinnedPaths;
     const currentlyPinned = currentPinnedPaths.includes(path);
     const shouldPin = typeof detail.pinned === "boolean" ? detail.pinned : !currentlyPinned;

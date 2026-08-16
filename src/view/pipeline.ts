@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { PluginSettings } from "../settings";
 import { matchesTagFilter } from "./metadata-utils";
+import type { CardScope } from "./scope";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
@@ -106,20 +107,13 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
   return [...pinnedCards, ...unpinnedCards];
 }
 
-export const DEFAULT_PIPELINE_STEPS: PipelineStep[] = [
-  applyTagFilter,
-  applySearchFilter,
-  applyPinReorder,
-];
-
 /**
- * Card-box projection step set.
- *
  * The member set (rule hits ∪ manual − excluded) is resolved during box load,
  * so the box pipeline skips the browse tag filter and only runs
  * `search -> pin`. `context.pinnedPaths` carries the box's own pinned paths.
  */
-export const BOX_PIPELINE_STEPS: PipelineStep[] = [
-  applySearchFilter,
-  applyPinReorder,
-];
+export function stepsForScope(scope: CardScope): PipelineStep[] {
+  return scope.kind === "box"
+    ? [applySearchFilter, applyPinReorder]
+    : [applyTagFilter, applySearchFilter, applyPinReorder];
+}

@@ -1,11 +1,11 @@
 import type { App } from "obsidian";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
 import { matchesRule } from "./card-box-membership";
-
 export const DEFAULT_BOX_SORT: CardBoxSortSpec = { field: "mtime", direction: "desc" };
-
 export const DEFAULT_BOX_NAME = "New card box";
-
+export function getBoxMembershipSignature(box: CardBoxDefinition): string {
+  return JSON.stringify({ rules: box.rules, manual: box.manualPaths, excluded: box.excludedPaths });
+}
 /** Browse-mode scope snapshot used to seed a rule. */
 export interface BrowseScope {
   folder: string;

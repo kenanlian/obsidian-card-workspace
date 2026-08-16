@@ -2,6 +2,7 @@ import type { TFile } from "obsidian";
 import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
+import type { CardScope } from "./scope";
 
 export type {
   SearchIndexPersistenceHealth,
@@ -118,17 +119,15 @@ export type FolderSelectionSource = "programmatic" | "panel-picker";
 
 export interface FolderSelectionRequest {
   requestId: number;
-  folderPath: string;
+  scope: CardScope;
   source: FolderSelectionSource;
   requestedAtMs: number;
   forceRefresh?: boolean;
 }
 
-export interface FolderLoadKey {
-  folderPath: string;
-  includeSubfolders: boolean;
-  sortField: SortField;
-  sortDirection: SortDirection;
+export interface CardLoadKey {
+  scope: CardScope;
+  sort: CardBoxSortSpec;
 }
 
 export interface BulkRuntimeState {
@@ -152,7 +151,7 @@ export interface BulkRuntimePanelState {
 }
 
 export interface FolderLoadSnapshot {
-  folderPath: string | null;
+  scope: CardScope | null;
   loadKey: string | null;
   generation: number;
   cards: NoteCardRecord[];
@@ -189,7 +188,7 @@ export type SelectionAction =
 
 export interface SelectionResult {
   action: SelectionAction;
-  folderPath: string;
+  scope: CardScope;
   generationChanged: boolean;
   preserveUiState: boolean;
 }
@@ -198,7 +197,6 @@ export type RefreshReason = "vault-change" | "settings-change" | "manual";
 
 export interface RefreshRequest {
   reason: RefreshReason;
-  folderPath?: string;
   forceRefresh?: boolean;
 }
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockSearchSnapshot {
   initialized: boolean;
@@ -290,15 +290,16 @@ vi.mock("./view/FolderCardView", () => {
     FOLDER_CARD_VIEW: "folder-card-view",
     FolderCardView: class MockFolderCardView {
       onSearchSnapshot = vi.fn();
+      applyUpdateIntent = vi.fn(async () => undefined);
       cleanupLifecycle(): void {}
-      async handleFolderSelection(): Promise<{ action: "rejected_invalid"; folderPath: string; generationChanged: false; preserveUiState: true }> {
+      handleScopeSelection = vi.fn(async (request: { scope: unknown }) => {
         return {
-          action: "rejected_invalid",
-          folderPath: "",
-          generationChanged: false,
-          preserveUiState: true,
+          action: "rejected_invalid" as const,
+          scope: request.scope,
+          generationChanged: false as const,
+          preserveUiState: true as const,
         };
-      }
+      });
       handleVaultMutation(): { shouldRefresh: false; queueAction: "ignored"; selectedFolderPathAfterRename: null; incrementalResult: null } {
         return {
           shouldRefresh: false,
@@ -456,6 +457,11 @@ vi.mock("obsidian", () => {
 import { TFile, TFolder } from "obsidian";
 import CardWorkspacePlugin from "./main";
 import { FolderCardView } from "./view/FolderCardView";
+import { createBoxScope, createFolderScope } from "./view/scope";
+
+function setLastFolderPath(plugin: CardWorkspacePlugin, path: string): void {
+  (plugin as unknown as { settings: { lastFolderPath: string } }).settings.lastFolderPath = path;
+}
 
 function createPluginHarness(): {
   plugin: CardWorkspacePlugin;
@@ -558,6 +564,261 @@ function getWorkspaceCallback<TArgs extends unknown[]>(eventName: string): (...a
 
   return callback as (...args: TArgs) => unknown;
 }
+
+describe("CardWorkspacePlugin settings update intents", () => {
+  afterEach(() => {
+    obsidianMockState.leavesByType = {};
+  });
+
+  function attachView(): {
+    plugin: CardWorkspacePlugin;
+    view: FolderCardView & { applyUpdateIntent: ReturnType<typeof vi.fn> };
+  } {
+    const { plugin } = createPluginHarness();
+    const ViewCtor = FolderCardView as unknown as {
+      new (): FolderCardView & { applyUpdateIntent: ReturnType<typeof vi.fn> };
+    };
+    const view = new ViewCtor();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
+    return { plugin, view };
+  }
+
+  it("does not update views when a patch has no semantic difference", async () => {
+    const { plugin, view } = attachView();
+
+    await plugin.saveSettings({ previewLines: plugin.getSettings().previewLines });
+
+    expect(view.applyUpdateIntent).not.toHaveBeenCalled();
+  });
+
+  it("dispatches rehydrate when previewLines changes", async () => {
+    const { plugin, view } = attachView();
+
+    await plugin.saveSettings({ previewLines: plugin.getSettings().previewLines + 1 });
+
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("rehydrate", "settings-change");
+  });
+
+  it("dispatches the strongest intent when several settings change", async () => {
+    const { plugin, view } = attachView();
+
+    await plugin.saveSettings({
+      sort: { field: "name" },
+      includeSubfolders: !plugin.getSettings().includeSubfolders,
+    });
+
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("reload", "settings-change");
+  });
+});
+
+describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
+  type MockFolderCardView = {
+    handleScopeSelection: ReturnType<typeof vi.fn>;
+    handleVaultMutation: ReturnType<typeof vi.fn>;
+    refresh: ReturnType<typeof vi.fn>;
+    cardScope?: unknown;
+  };
+
+  afterEach(() => {
+    obsidianMockState.leavesByType = {};
+    vi.restoreAllMocks();
+  });
+
+  function createMockView(): MockFolderCardView {
+    const ViewCtor = FolderCardView as unknown as {
+      new (): MockFolderCardView;
+    };
+    const view = new ViewCtor();
+    view.handleVaultMutation = vi.fn(() => ({
+      shouldRefresh: false,
+      queueAction: "ignored",
+      selectedFolderPathAfterRename: null,
+      incrementalResult: null,
+    }));
+    view.refresh = vi.fn(async () => ({ action: "started", inFlightKey: null }));
+    return view;
+  }
+
+  function attachViews(...views: MockFolderCardView[]): void {
+    obsidianMockState.leavesByType["folder-card-view"] = views.map((view) => ({ view }));
+  }
+
+  function createFolder(path: string): TFolder {
+    const FolderCtor = TFolder as unknown as { new (folderPath: string): TFolder };
+    return new FolderCtor(path);
+  }
+
+  function dispatchFolderRename(
+    plugin: CardWorkspacePlugin,
+    oldPath: string,
+    path: string,
+  ): void {
+    (plugin as unknown as {
+      dispatchVaultMutation: (event: {
+        eventType: "rename";
+        path: string;
+        oldPath: string;
+        isFolder: true;
+        fileKind: null;
+      }) => void;
+    }).dispatchVaultMutation({
+      eventType: "rename",
+      path,
+      oldPath,
+      isFolder: true,
+      fileKind: null,
+    });
+  }
+
+  it("passes an explicit folder CardScope end-to-end without caller persistence", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
+    const notes = createFolder("notes");
+    app.vault.getAbstractFileByPath.mockReturnValue(notes);
+    view.handleScopeSelection.mockImplementation(async (request: { scope: unknown }) => ({
+      action: "started",
+      scope: request.scope,
+      generationChanged: true,
+      preserveUiState: false,
+    }));
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockClear();
+
+    await plugin.selectFolderByPath("notes", "panel-picker");
+
+    expect(view.handleScopeSelection).toHaveBeenCalledWith(expect.objectContaining({
+      scope: createFolderScope("notes", plugin.getSettings().includeSubfolders),
+      source: "panel-picker",
+    }));
+    expect(saveData).not.toHaveBeenCalled();
+  });
+
+  it("awaits every view sequentially and returns the first accepted selection", async () => {
+    const { plugin } = createPluginHarness();
+    const first = createMockView();
+    const second = createMockView();
+    attachViews(first, second);
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    first.handleScopeSelection.mockImplementation(async (request: { scope: unknown }) => {
+      await firstPending;
+      return {
+        action: "started",
+        scope: request.scope,
+        generationChanged: true,
+        preserveUiState: false,
+      };
+    });
+    second.handleScopeSelection.mockImplementation(async (request: { scope: unknown }) => ({
+      action: "rejected_invalid",
+      scope: request.scope,
+      generationChanged: false,
+      preserveUiState: true,
+    }));
+    const scope = createBoxScope("box-1");
+    const request = (plugin as any).createSelectionRequest(scope, "programmatic");
+
+    const dispatched = (plugin as any).dispatchSelectionRequest(request);
+    expect(second.handleScopeSelection).not.toHaveBeenCalled();
+    releaseFirst();
+
+    await expect(dispatched).resolves.toMatchObject({ action: "started", scope });
+    expect(second.handleScopeSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes views with intent only and never supplies an external scope", async () => {
+    const { plugin } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
+
+    await (plugin as any).requestRefreshForViews("manual");
+
+    expect(view.refresh).toHaveBeenCalledWith({ reason: "manual", forceRefresh: true });
+  });
+
+  it("restores only a folder CardScope and clears persisted activeBoxId on load", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
+    const notes = createFolder("notes");
+    app.vault.getAbstractFileByPath.mockReturnValue(notes);
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      lastFolderPath: "notes",
+      activeBoxId: "box-1",
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalled());
+
+    expect(plugin.getSettings().activeBoxId).toBeNull();
+    expect(view.handleScopeSelection).toHaveBeenCalledWith(expect.objectContaining({
+      scope: createFolderScope("notes", plugin.getSettings().includeSubfolders),
+    }));
+  });
+
+  it("V27b-6 reconciles the projection independently of viewed scopes, including all-box views", async () => {
+    const { plugin } = createPluginHarness();
+    const viewA = createMockView();
+    const viewB = createMockView();
+    viewA.cardScope = createBoxScope("box-a");
+    viewB.cardScope = createBoxScope("box-b");
+    attachViews(viewA, viewB);
+    setLastFolderPath(plugin, "B/deep");
+
+    dispatchFolderRename(plugin, "A", "renamed-A");
+    await Promise.resolve();
+    expect(plugin.getSettings().lastFolderPath).toBe("B/deep");
+
+    dispatchFolderRename(plugin, "B", "renamed-B");
+    await vi.waitFor(() => expect(plugin.getSettings().lastFolderPath).toBe("renamed-B/deep"));
+  });
+
+  it("V27b-7 rewrites X/b from the projection rather than the first view's X/a", async () => {
+    const { plugin } = createPluginHarness();
+    const viewA = createMockView();
+    const viewB = createMockView();
+    viewA.cardScope = createFolderScope("X/a", true);
+    viewB.cardScope = createFolderScope("X/b", true);
+    viewA.handleVaultMutation.mockReturnValue({
+      shouldRefresh: false,
+      queueAction: "ignored",
+      selectedFolderPathAfterRename: "Y/a",
+      incrementalResult: null,
+    });
+    attachViews(viewA, viewB);
+    setLastFolderPath(plugin, "X/b");
+
+    dispatchFolderRename(plugin, "X", "Y");
+
+    await vi.waitFor(() => expect(plugin.getSettings().lastFolderPath).toBe("Y/b"));
+  });
+
+  it("V27b-8 catches and warns on transitional projection persistence rejection", async () => {
+    const { plugin } = createPluginHarness();
+    setLastFolderPath(plugin, "X/b");
+    vi.spyOn(plugin, "saveSettings").mockRejectedValue(new Error("disk unavailable"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    try {
+      expect(() => dispatchFolderRename(plugin, "X", "Y")).not.toThrow();
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(
+          "[Card Workspace] Scope projection reconcile failed.",
+          expect.objectContaining({ message: "disk unavailable" }),
+        );
+      });
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+});
 
 describe("CardWorkspacePlugin activateView", () => {
   it("creates the panel in the left sidebar when no card view leaf exists", async () => {
@@ -1065,7 +1326,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("opens newly created notes in new-tab explicitly", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
+    setLastFolderPath(plugin, "notes");
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -1076,7 +1337,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("seeds new notes with a tags property by default", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
+    setLastFolderPath(plugin, "notes");
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -1087,7 +1348,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("creates a completely blank note when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
+    setLastFolderPath(plugin, "notes");
     (plugin as unknown as { settings: { newNoteTemplate: string } }).settings.newNoteTemplate = "blank";
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
@@ -1097,9 +1358,9 @@ describe("CardWorkspacePlugin open destination routing", () => {
     expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "");
   });
 
-  it("targets the current scope from createNoteInCurrentFolder", async () => {
+  it("targets the recent-folder projection from createNoteInCurrentFolder", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes/sub";
+    setLastFolderPath(plugin, "notes/sub");
     app.vault.create.mockResolvedValue({ path: "notes/sub/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -1110,7 +1371,6 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("creates a note in an explicit folder", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { selectedFolderPath: string | null }).selectedFolderPath = "notes";
     app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
     const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 

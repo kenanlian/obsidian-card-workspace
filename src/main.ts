@@ -26,11 +26,14 @@ import type {
   SearchServiceSnapshot,
 } from "./search";
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
-import type { FolderSelectionRequest, FolderSelectionSource, VaultMutationEvent, VaultMutationEventType } from "./view/types";
+import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult, VaultMutationEvent, VaultMutationEventType } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
+import { createFolderScope, type CardScope } from "./view/scope";
+import { rewritePathAfterRename } from "./view/scope-files";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
 import { pruneFavoriteTags, reconcileFavoritesForVaultMutation } from "./view/favorites";
 import { collectVaultTagIndex } from "./view/metadata-utils";
+import { resolveSettingsUpdateIntent } from "./view/update-intent";
 import {
   BULK_ADD_TO_BOX_ICON,
   BULK_ADD_TO_BOX_ICON_SVG,
@@ -54,7 +57,6 @@ const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
 
 export default class CardWorkspacePlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
-  private selectedFolderPath = "";
   private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
@@ -197,7 +199,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
 
   async createNoteInCurrentFolder(): Promise<void> {
-    await this.createNoteInFolder(this.selectedFolderPath);
+    await this.createNoteInFolder(this.settings.lastFolderPath);
   }
 
   async createNoteInFolder(folderPath: string, tags: string[] = []): Promise<void> {
@@ -365,18 +367,12 @@ export default class CardWorkspacePlugin extends Plugin {
     folder: TFolder,
     source: FolderSelectionSource,
   ): Promise<void> {
-    const request = this.createSelectionRequest(folder.path, source);
+    const request = this.createSelectionRequest(createFolderScope(folder.path, this.settings.includeSubfolders), source);
     await this.activateView();
     if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
-    this.dispatchSelectionRequest(request);
-    await this.saveData(
-      mergeSettings(this.settings, { lastFolderPath: folder.path }),
-    );
-    this.settings = mergeSettings(this.settings, {
-      lastFolderPath: folder.path,
-    });
+    await this.dispatchSelectionRequest(request);
   }
 
   getSettings(): PluginSettings {
@@ -408,9 +404,19 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
-    this.settings = mergeSettings(this.settings, patch);
+    // Intent resolution depends on mergeSettings returning a new snapshot rather than mutating this one.
+    const previous = this.settings;
+    this.settings = mergeSettings(previous, patch);
     await this.saveData(this.settings);
-    await this.requestRefreshForViews("settings-change");
+
+    const intent = resolveSettingsUpdateIntent(previous, this.settings);
+    if (intent === null) {
+      return;
+    }
+
+    this.withFolderViews((view) => {
+      void view.applyUpdateIntent(intent, "settings-change");
+    });
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {
@@ -555,23 +561,19 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    const request = this.createSelectionRequest(folder.path, "programmatic");
+    const request = this.createSelectionRequest(createFolderScope(folder.path, this.settings.includeSubfolders), "programmatic");
     await this.activateView();
     if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
-    this.dispatchSelectionRequest(request);
+    await this.dispatchSelectionRequest(request);
   }
 
-  private createSelectionRequest(
-    folderPath: string,
-    source: FolderSelectionSource,
-    forceRefresh = false,
-  ): FolderSelectionRequest {
+  private createSelectionRequest(scope: CardScope, source: FolderSelectionSource, forceRefresh = false): FolderSelectionRequest {
     this.selectionRequestSeq += 1;
     const request: FolderSelectionRequest = {
       requestId: this.selectionRequestSeq,
-      folderPath: normalizeFolderScopePath(folderPath),
+      scope,
       source,
       requestedAtMs: Date.now(),
       forceRefresh,
@@ -581,22 +583,30 @@ export default class CardWorkspacePlugin extends Plugin {
     return request;
   }
 
-  private dispatchSelectionRequest(request: FolderSelectionRequest): void {
+  /** Returns the first accepted result, the final rejection, or null when no views exist. */
+  private async dispatchSelectionRequest(request: FolderSelectionRequest): Promise<SelectionResult | null> {
+    const views: FolderCardView[] = [];
     this.withFolderViews((view) => {
-      void this.handleSelectionResult(view, request);
+      views.push(view);
     });
+
+    let fallback: SelectionResult | null = null;
+    let accepted: SelectionResult | null = null;
+    for (const view of views) {
+      const result = await this.handleSelectionResult(view, request);
+      fallback = result;
+      if (accepted === null && result.action !== "rejected_invalid") {
+        accepted = result;
+      }
+    }
+    return accepted ?? fallback;
   }
 
   private async handleSelectionResult(
     view: FolderCardView,
     request: FolderSelectionRequest,
-  ): Promise<void> {
-    const result = await view.handleFolderSelection(request);
-    if (result.action === "rejected_invalid") {
-      return;
-    }
-
-    this.selectedFolderPath = result.folderPath;
+  ): Promise<SelectionResult> {
+    return view.handleScopeSelection(request);
   }
 
   private buildVaultMutationEvent(
@@ -614,7 +624,10 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private dispatchVaultMutation(event: VaultMutationEvent): void {
-    this.reconcileSelectedFolderPath(event);
+    // TODO(WP-32): 注册到 VaultEventBus 后删除，由 publish 的 try/catch 接管。
+    void this.reconcileLastFolderPath(event).catch((error: unknown) => {
+      console.warn("[Card Workspace] Scope projection reconcile failed.", error);
+    });
     this.reconcileBoxesForVaultMutation(event);
     this.reconcileFavoritesForVaultMutation(event);
     this.queueFavoriteTagPrune(event);
@@ -628,9 +641,6 @@ export default class CardWorkspacePlugin extends Plugin {
     let shouldQueueRefresh = false;
     this.withFolderViews((view) => {
       const result = view.handleVaultMutation(event);
-      if (result.selectedFolderPathAfterRename !== null) {
-        this.selectedFolderPath = result.selectedFolderPathAfterRename;
-      }
       if (result.shouldRefresh) {
         shouldQueueRefresh = true;
       }
@@ -737,33 +747,22 @@ export default class CardWorkspacePlugin extends Plugin {
     this.debouncedNavStateRefresh();
   }
 
-  private reconcileSelectedFolderPath(event: VaultMutationEvent): void {
-    if (
-      event.eventType !== "rename" ||
-      !event.isFolder ||
-      !event.oldPath
-    ) {
+  private async reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {
+    if (event.eventType !== "rename" || !event.isFolder || !event.oldPath) {
       return;
     }
 
-    if (this.selectedFolderPath === event.oldPath) {
-      this.selectedFolderPath = event.path;
-      return;
-    }
-
-    const prefix = `${event.oldPath}/`;
-    if (this.selectedFolderPath.startsWith(prefix)) {
-      this.selectedFolderPath = `${event.path}${this.selectedFolderPath.slice(event.oldPath.length)}`;
+    const currentPath = this.settings.lastFolderPath;
+    const nextPath = rewritePathAfterRename(currentPath, event.oldPath, event.path);
+    if (nextPath !== currentPath) {
+      await this.saveSettings({ lastFolderPath: nextPath });
     }
   }
 
-  private async requestRefreshForViews(
-    reason: "vault-change" | "settings-change" | "manual",
-  ): Promise<void> {
+  private async requestRefreshForViews(reason: "vault-change" | "manual"): Promise<void> {
     this.withFolderViews((view) => {
       void view.refresh({
         reason,
-        folderPath: this.selectedFolderPath,
         forceRefresh: true,
       });
     });

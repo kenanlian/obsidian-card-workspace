@@ -7,6 +7,7 @@ import {
   deleteCardBox,
   duplicateCardBox,
   ensureUniqueBoxName,
+  getBoxMembershipSignature,
   reconcileBoxForVaultMutation,
   removeMemberFromBox,
   removeRuleFromBox,
@@ -102,6 +103,23 @@ describe("crud", () => {
 });
 
 describe("rule + membership helpers", () => {
+  it("serializes only the membership-defining fields", () => {
+    const box = makeBox({
+      rules: [makeRule({ folder: "Projects" })],
+      manualPaths: ["Manual.md"],
+      excludedPaths: ["Excluded.md"],
+      pinnedPaths: ["Pinned.md"],
+    });
+
+    expect(getBoxMembershipSignature(box)).toBe(JSON.stringify({
+      rules: box.rules,
+      manual: box.manualPaths,
+      excluded: box.excludedPaths,
+    }));
+    expect(getBoxMembershipSignature({ ...box, name: "Renamed", pinnedPaths: [] }))
+      .toBe(getBoxMembershipSignature(box));
+  });
+
   it("translates a browse scope into a rule", () => {
     expect(
       translateBrowseScopeToRule({ folder: "/", includeSubfolders: false, tags: ["wip"] }),
