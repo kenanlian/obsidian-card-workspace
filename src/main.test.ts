@@ -459,8 +459,13 @@ import CardWorkspacePlugin from "./main";
 import { FolderCardView } from "./view/FolderCardView";
 import { createBoxScope, createFolderScope } from "./view/scope";
 
+function mutateStoreMemory(plugin: CardWorkspacePlugin, patch: Record<string, unknown>): void {
+  const store = (plugin as unknown as { settingsStore: { memory: Record<string, unknown> } }).settingsStore;
+  Object.assign(store.memory, patch);
+}
+
 function setLastFolderPath(plugin: CardWorkspacePlugin, path: string): void {
-  (plugin as unknown as { settings: { lastFolderPath: string } }).settings.lastFolderPath = path;
+  mutateStoreMemory(plugin, { lastFolderPath: path });
 }
 
 function createPluginHarness(): {
@@ -925,7 +930,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
     plugin: CardWorkspacePlugin,
     value: "smart" | "new-tab" | "split-right" | "new-window",
   ): void {
-    (plugin as unknown as { settings: { defaultCardOpenBehavior: string } }).settings.defaultCardOpenBehavior = value;
+    mutateStoreMemory(plugin, { defaultCardOpenBehavior: value });
   }
 
   it("reuses the most recent root markdown leaf for default card opens when unpinned", async () => {
@@ -1349,7 +1354,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
   it("creates a completely blank note when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
     setLastFolderPath(plugin, "notes");
-    (plugin as unknown as { settings: { newNoteTemplate: string } }).settings.newNoteTemplate = "blank";
+    mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -1394,7 +1399,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("writes explicit tags even when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
-    (plugin as unknown as { settings: { newNoteTemplate: string } }).settings.newNoteTemplate = "blank";
+    mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 

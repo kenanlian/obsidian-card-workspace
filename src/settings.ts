@@ -139,34 +139,10 @@ export interface PluginSettings {
   showNavItemCounts: boolean;
 }
 
-export interface PartialPluginSettings {
-  sort?: {
-    field?: SortField;
-    direction?: SortDirection;
-  };
-  filter?: {
-    tags?: string[];
-  };
-  pinnedPaths?: string[];
-  includeSubfolders?: boolean;
-  defaultView?: DefaultViewMode;
-  defaultCardOpenBehavior?: DefaultCardOpenBehavior;
-  dragInsertAction?: DragInsertAction;
-  cardCornerRadius?: CardCornerRadius;
-  newNoteTemplate?: NewNoteTemplate;
-  previewLines?: number;
-  lastFolderPath?: string;
-  boxes?: CardBoxDefinition[];
-  favorites?: FavoriteEntry[];
-  activeBoxId?: string | null;
-  navPaneWidth?: number;
-  navPaneCollapsed?: boolean;
-  folderSectionCollapsed?: boolean;
-  tagSectionCollapsed?: boolean;
-  boxSectionCollapsed?: boolean;
-  favoritesSectionCollapsed?: boolean;
-  showNavItemCounts?: boolean;
-}
+export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter"> & {
+  sort?: Partial<PluginSettings["sort"]>;
+  filter?: Partial<PluginSettings["filter"]>;
+};
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   sort: {
@@ -196,6 +172,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   favoritesSectionCollapsed: false,
   showNavItemCounts: false,
 };
+
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -448,7 +426,29 @@ function normalizeActiveBoxId(value: unknown, boxes: CardBoxDefinition[]): strin
   return boxes.some((box) => box.id === value) ? value : null;
 }
 
-export function normalizeSettings(raw: unknown): PluginSettings {
+function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
+  const preferences = isRecord(raw.preferences) ? raw.preferences : {};
+  const workspace = isRecord(raw.workspace) ? raw.workspace : {};
+  const userData = isRecord(raw.userData) ? raw.userData : {};
+  const collapsed = isRecord(workspace.sectionCollapsed) ? workspace.sectionCollapsed : {};
+  return {
+    ...preferences,
+    lastFolderPath: workspace.lastFolderPath,
+    activeBoxId: workspace.activeBoxId,
+    filter: { tags: workspace.filterTags },
+    navPaneWidth: workspace.navPaneWidth,
+    navPaneCollapsed: workspace.navPaneCollapsed,
+    favoritesSectionCollapsed: collapsed.favorites,
+    folderSectionCollapsed: collapsed.folders,
+    tagSectionCollapsed: collapsed.tags,
+    boxSectionCollapsed: collapsed.boxes,
+    boxes: userData.boxes,
+    favorites: userData.favorites,
+    pinnedPaths: userData.pinnedPaths,
+  };
+}
+
+function normalizeFlatSettings(raw: unknown): PluginSettings {
   const data = isRecord(raw) ? raw : {};
   const sort = isRecord(data.sort) ? data.sort : {};
   const filter = isRecord(data.filter) ? data.filter : {};
@@ -463,10 +463,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
       tags: normalizeTags(filter.tags),
     },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
-    includeSubfolders:
-      typeof data.includeSubfolders === "boolean"
-        ? data.includeSubfolders
-        : DEFAULT_SETTINGS.includeSubfolders,
+    includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),
@@ -478,31 +475,22 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
     navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),
-    navPaneCollapsed: normalizeBooleanSetting(
-      data.navPaneCollapsed,
-      DEFAULT_SETTINGS.navPaneCollapsed,
-    ),
-    folderSectionCollapsed: normalizeBooleanSetting(
-      data.folderSectionCollapsed,
-      DEFAULT_SETTINGS.folderSectionCollapsed,
-    ),
-    tagSectionCollapsed: normalizeBooleanSetting(
-      data.tagSectionCollapsed,
-      DEFAULT_SETTINGS.tagSectionCollapsed,
-    ),
-    boxSectionCollapsed: normalizeBooleanSetting(
-      data.boxSectionCollapsed,
-      DEFAULT_SETTINGS.boxSectionCollapsed,
-    ),
-    favoritesSectionCollapsed: normalizeBooleanSetting(
-      data.favoritesSectionCollapsed,
-      DEFAULT_SETTINGS.favoritesSectionCollapsed,
-    ),
-    showNavItemCounts: normalizeBooleanSetting(
-      data.showNavItemCounts,
-      DEFAULT_SETTINGS.showNavItemCounts,
-    ),
+    navPaneCollapsed: normalizeBooleanSetting(data.navPaneCollapsed, DEFAULT_SETTINGS.navPaneCollapsed),
+    folderSectionCollapsed: normalizeBooleanSetting(data.folderSectionCollapsed, DEFAULT_SETTINGS.folderSectionCollapsed),
+    tagSectionCollapsed: normalizeBooleanSetting(data.tagSectionCollapsed, DEFAULT_SETTINGS.tagSectionCollapsed),
+    boxSectionCollapsed: normalizeBooleanSetting(data.boxSectionCollapsed, DEFAULT_SETTINGS.boxSectionCollapsed),
+    favoritesSectionCollapsed: normalizeBooleanSetting(data.favoritesSectionCollapsed, DEFAULT_SETTINGS.favoritesSectionCollapsed),
+    showNavItemCounts: normalizeBooleanSetting(data.showNavItemCounts, DEFAULT_SETTINGS.showNavItemCounts),
   };
+}
+
+export function migrateSettings(raw: unknown): PluginSettings {
+  const data = isRecord(raw) ? raw : {};
+  return normalizeFlatSettings(data.schemaVersion === 2 ? flattenV2(data) : data);
+}
+
+export function normalizeSettings(raw: unknown): PluginSettings {
+  return migrateSettings(raw);
 }
 
 export function mergeSettings(current: PluginSettings, patch: PartialPluginSettings): PluginSettings {

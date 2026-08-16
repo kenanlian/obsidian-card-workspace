@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSettings, mergeSettings, DEFAULT_SETTINGS } from "./settings";
+import {
+  normalizeSettings,
+  mergeSettings,
+  migrateSettings,
+  DEFAULT_SETTINGS,
+  SETTINGS_SCHEMA_VERSION,
+  type PartialPluginSettings,
+} from "./settings";
+import { serializeSettings } from "./services/SettingsStore";
 
 // ---------------------------------------------------------------------------
 // normalizeSettings — pinnedPaths handling
@@ -657,5 +665,121 @@ describe("favorites settings normalization", () => {
       { kind: "tag", ref: "work/ai" },
       { kind: "box", ref: "box-1" },
     ]);
+  });
+});
+
+describe("migrateSettings — V47 schema versions", () => {
+  it("migrates v0 lastViewMode all-notes to vault-root lastFolderPath", () => {
+    expect(migrateSettings({ lastViewMode: "all-notes" }).lastFolderPath).toBe("");
+    expect(migrateSettings({ lastViewMode: "all-notes", lastFolderPath: 12 }).lastFolderPath).toBe("");
+    expect("lastViewMode" in migrateSettings({ lastViewMode: "all-notes" })).toBe(false);
+  });
+
+  it("migrates a v1 flat document including boxes, favorites, pins, and section collapse", () => {
+    const result = migrateSettings({
+      lastFolderPath: "Projects",
+      pinnedPaths: ["Projects/a.md"],
+      folderSectionCollapsed: true,
+      tagSectionCollapsed: true,
+      boxSectionCollapsed: false,
+      favoritesSectionCollapsed: true,
+      boxes: [{ id: "box-1", name: "Inbox" }],
+      favorites: [{ kind: "folder", ref: "Projects" }],
+      activeBoxId: "box-1",
+      filter: { tags: ["work"] },
+    });
+
+    expect(result).toMatchObject({
+      lastFolderPath: "Projects",
+      pinnedPaths: ["Projects/a.md"],
+      folderSectionCollapsed: true,
+      tagSectionCollapsed: true,
+      boxSectionCollapsed: false,
+      favoritesSectionCollapsed: true,
+      activeBoxId: "box-1",
+      filter: { tags: ["work"] },
+    });
+    expect(result.boxes).toEqual([
+      expect.objectContaining({ id: "box-1", name: "Inbox" }),
+    ]);
+    expect(result.favorites).toEqual([{ kind: "folder", ref: "Projects" }]);
+    expect("lastViewMode" in result).toBe(false);
+  });
+
+  it("is idempotent for v2 documents and round-trips through serializeSettings", () => {
+    const v2 = {
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      leftover: "drop-me",
+      preferences: {
+        sort: { field: "name", direction: "asc" },
+        includeSubfolders: false,
+        previewLines: 8,
+        showNavItemCounts: true,
+      },
+      workspace: {
+        lastFolderPath: "Projects",
+        activeBoxId: "box-1",
+        filterTags: ["work"],
+        navPaneWidth: 200,
+        navPaneCollapsed: true,
+        sectionCollapsed: { favorites: true, folders: true, tags: false, boxes: true },
+      },
+      userData: {
+        boxes: [{ id: "box-1", name: "Inbox" }],
+        favorites: [{ kind: "folder", ref: "Projects" }],
+        pinnedPaths: ["Projects/a.md"],
+      },
+    };
+
+    const once = migrateSettings(v2);
+    expect(migrateSettings(once)).toEqual(once);
+    expect(migrateSettings(serializeSettings(once))).toEqual(once);
+    expect(once.activeBoxId).toBe("box-1");
+    expect(once.filter.tags).toEqual(["work"]);
+    expect(once.favoritesSectionCollapsed).toBe(true);
+    expect(once.folderSectionCollapsed).toBe(true);
+    expect(once.tagSectionCollapsed).toBe(false);
+    expect(once.boxSectionCollapsed).toBe(true);
+  });
+
+  it("discards unrecognized top-level keys from v1 and v2 documents", () => {
+    const v1 = migrateSettings({
+      ...DEFAULT_SETTINGS,
+      unknownTop: 1,
+      searchQuery: "roadmap",
+    });
+    expect(v1).not.toHaveProperty("unknownTop");
+    expect(v1).not.toHaveProperty("searchQuery");
+
+    const v2 = migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      leftover: true,
+      preferences: { previewLines: 6, unknownPref: 1 },
+      workspace: { extra: "nope" },
+    });
+    expect(v2).not.toHaveProperty("leftover");
+    expect(v2).not.toHaveProperty("unknownPref");
+    expect(v2).not.toHaveProperty("extra");
+    expect(v2.previewLines).toBe(6);
+  });
+
+  it("fills missing v2 layers from DEFAULT_SETTINGS", () => {
+    expect(migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION })).toEqual(DEFAULT_SETTINGS);
+    expect(
+      migrateSettings({
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        preferences: { previewLines: 7 },
+      }),
+    ).toEqual({ ...DEFAULT_SETTINGS, previewLines: 7 });
+  });
+
+  it("keeps PartialPluginSettings deep-partial for sort and filter", () => {
+    const patch: PartialPluginSettings = {
+      sort: { field: "name" },
+      filter: { tags: ["work"] },
+    };
+    const result = mergeSettings(DEFAULT_SETTINGS, patch);
+    expect(result.sort).toEqual({ field: "name", direction: "desc" });
+    expect(result.filter.tags).toEqual(["work"]);
   });
 });

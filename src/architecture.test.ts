@@ -261,7 +261,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/Toolbar.svelte": 728,
     "src/view/CardItem.svelte": 548,
     "src/view/nav-context-menu.ts": 543,
-    "src/settings.ts": 521,
+    "src/settings.ts": 509,
     "src/view/markdown-utils.ts": 466,
     "src/search/IndexStore.ts": 446,
     "src/view/card-boxes.ts": 394,

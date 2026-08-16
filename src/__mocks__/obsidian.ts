@@ -1,3 +1,49 @@
+export function debounce<T extends unknown[]>(
+  callback: (...args: T) => void,
+  timeout = 0,
+  resetTimer = false,
+): ((...args: T) => void) & { cancel: () => void; run: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let queuedArgs: T | null = null;
+
+  const invoke = (): void => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (queuedArgs === null) {
+      return;
+    }
+    const args = queuedArgs;
+    queuedArgs = null;
+    callback(...args);
+  };
+
+  const debounced = ((...args: T) => {
+    queuedArgs = args;
+    if (timer !== null) {
+      if (!resetTimer) {
+        return;
+      }
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      invoke();
+    }, timeout);
+  }) as ((...args: T) => void) & { cancel: () => void; run: () => void };
+
+  debounced.cancel = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    queuedArgs = null;
+  };
+  debounced.run = invoke;
+  return debounced;
+}
+
 // Mock Obsidian module for testing
 export class FuzzySuggestModal<T> {
   protected app: any;

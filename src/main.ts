@@ -14,11 +14,7 @@ import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { EditorDropController } from "./services/EditorDropController";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
-import {
-  DEFAULT_SETTINGS,
-  mergeSettings,
-  normalizeSettings,
-} from "./settings";
+import { SettingsStore, hasPatchValues, splitFlatPatch } from "./services/SettingsStore";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
   SearchIndexObservabilitySnapshot,
@@ -33,7 +29,7 @@ import { rewritePathAfterRename } from "./view/scope-files";
 import { reconcileBoxForVaultMutation } from "./view/card-boxes";
 import { pruneFavoriteTags, reconcileFavoritesForVaultMutation } from "./view/favorites";
 import { collectVaultTagIndex } from "./view/metadata-utils";
-import { resolveSettingsUpdateIntent } from "./view/update-intent";
+import { maxIntent, type ViewUpdateIntent } from "./view/update-intent";
 import {
   BULK_ADD_TO_BOX_ICON,
   BULK_ADD_TO_BOX_ICON_SVG,
@@ -57,14 +53,17 @@ const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
 
 export default class CardWorkspacePlugin extends Plugin {
   private readonly uiLanguage: UiLanguage = resolveUiLanguage();
-  private settings: PluginSettings = normalizeSettings(DEFAULT_SETTINGS);
+  private readonly settingsStore = new SettingsStore({
+    load: () => this.loadData(),
+    save: (data) => this.saveData(data),
+  });
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
   private vaultObserversRegistered = false;
   private startupPromise: Promise<void> = Promise.resolve();
   private readonly editorDropController = new EditorDropController({
     app: this.app,
-    getSettings: () => this.settings,
+    getSettings: () => this.getSettings(),
     getUiStrings: () => this.getUiStrings(),
   });
   private readonly searchCoordinator = new SearchCoordinator({
@@ -75,13 +74,6 @@ export default class CardWorkspacePlugin extends Plugin {
   private debouncedRefresh = debounce(
     () => {
       void this.requestRefreshForViews("vault-change");
-    },
-    250,
-    false,
-  );
-  private debouncedReconciledSettingsSave = debounce(
-    () => {
-      void this.saveData(this.settings);
     },
     250,
     false,
@@ -179,10 +171,7 @@ export default class CardWorkspacePlugin extends Plugin {
       cancel?: () => void;
     };
     debouncedRefresh.cancel?.();
-    const reconciledSave = this.debouncedReconciledSettingsSave as (() => void) & {
-      run?: () => void;
-    };
-    reconciledSave.run?.();
+    void this.settingsStore.flushPendingWrites();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
     };
@@ -199,7 +188,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
 
   async createNoteInCurrentFolder(): Promise<void> {
-    await this.createNoteInFolder(this.settings.lastFolderPath);
+    await this.createNoteInFolder(this.getSettings().lastFolderPath);
   }
 
   async createNoteInFolder(folderPath: string, tags: string[] = []): Promise<void> {
@@ -213,7 +202,7 @@ export default class CardWorkspacePlugin extends Plugin {
       return `---\ntags:\n${tags.map((tag) => `  - ${tag}\n`).join("")}---\n\n`;
     }
 
-    return this.settings.newNoteTemplate === "tags-frontmatter" ? NEW_NOTE_TAGS_FRONTMATTER : "";
+    return this.getSettings().newNoteTemplate === "tags-frontmatter" ? NEW_NOTE_TAGS_FRONTMATTER : "";
   }
 
   private generateUniqueNotePath(folderPath: string): string {
@@ -289,8 +278,9 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private async resolveDefaultCardOpenLeaf(): Promise<WorkspaceLeaf | null> {
-    if (this.settings.defaultCardOpenBehavior !== "smart") {
-      return this.resolveOpenDestinationLeaf(this.settings.defaultCardOpenBehavior);
+    const defaultCardOpenBehavior = this.getSettings().defaultCardOpenBehavior;
+    if (defaultCardOpenBehavior !== "smart") {
+      return this.resolveOpenDestinationLeaf(defaultCardOpenBehavior);
     }
 
     return this.resolveSmartDefaultCardOpenLeaf();
@@ -367,7 +357,7 @@ export default class CardWorkspacePlugin extends Plugin {
     folder: TFolder,
     source: FolderSelectionSource,
   ): Promise<void> {
-    const request = this.createSelectionRequest(createFolderScope(folder.path, this.settings.includeSubfolders), source);
+    const request = this.createSelectionRequest(createFolderScope(folder.path, this.getSettings().includeSubfolders), source);
     await this.activateView();
     if (request.requestId !== this.latestHandledRequestId) {
       return;
@@ -376,7 +366,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   getSettings(): PluginSettings {
-    return normalizeSettings(this.settings);
+    return this.settingsStore.getFlat();
   }
 
   getUiLanguage(): UiLanguage {
@@ -404,12 +394,25 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
-    // Intent resolution depends on mergeSettings returning a new snapshot rather than mutating this one.
-    const previous = this.settings;
-    this.settings = mergeSettings(previous, patch);
-    await this.saveData(this.settings);
+    const { preferences, workspace, userData } = splitFlatPatch(patch);
+    const writes: Array<Promise<ViewUpdateIntent | null>> = [];
+    if (hasPatchValues(preferences)) {
+      writes.push(this.settingsStore.updatePreferences(preferences));
+    }
+    if (hasPatchValues(workspace)) {
+      writes.push(this.settingsStore.updateWorkspace(workspace));
+    }
+    if (hasPatchValues(userData)) {
+      writes.push(this.settingsStore.updateUserData(userData));
+    }
+    if (writes.length === 0) {
+      return;
+    }
 
-    const intent = resolveSettingsUpdateIntent(previous, this.settings);
+    const intent = (await Promise.all(writes)).reduce<ViewUpdateIntent | null>(
+      (current, next) => (current === null ? next : next === null ? current : maxIntent(current, next)),
+      null,
+    );
     if (intent === null) {
       return;
     }
@@ -548,20 +551,20 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    const rawData: unknown = await this.loadData();
-    this.settings = normalizeSettings(rawData);
+    await this.settingsStore.init();
     // Card boxes always start collapsed to browse mode on launch.
-    this.settings.activeBoxId = null;
+    this.settingsStore.applyLaunchOverride();
   }
 
   private async restoreLastSession(): Promise<void> {
-    const lastPath = normalizeFolderScopePath(this.settings.lastFolderPath);
+    const settings = this.getSettings();
+    const lastPath = normalizeFolderScopePath(settings.lastFolderPath);
     const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
     if (!(folder instanceof TFolder)) {
       return;
     }
 
-    const request = this.createSelectionRequest(createFolderScope(folder.path, this.settings.includeSubfolders), "programmatic");
+    const request = this.createSelectionRequest(createFolderScope(folder.path, settings.includeSubfolders), "programmatic");
     await this.activateView();
     if (request.requestId !== this.latestHandledRequestId) {
       return;
@@ -652,7 +655,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private reconcileBoxesForVaultMutation(event: VaultMutationEvent): void {
-    const boxes = this.settings.boxes;
+    const boxes = this.getSettings().boxes;
     if (boxes.length === 0) {
       return;
     }
@@ -679,13 +682,12 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    this.settings = { ...this.settings, boxes: nextBoxes };
-    this.debouncedReconciledSettingsSave();
+    void this.settingsStore.updateUserData({ boxes: nextBoxes });
     this.debouncedNavStateRefresh();
   }
 
   private reconcileFavoritesForVaultMutation(event: VaultMutationEvent): void {
-    const favorites = this.settings.favorites;
+    const favorites = this.getSettings().favorites;
     if (favorites.length === 0) {
       return;
     }
@@ -705,8 +707,7 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    this.settings = { ...this.settings, favorites: nextFavorites };
-    this.debouncedReconciledSettingsSave();
+    void this.settingsStore.updateUserData({ favorites: nextFavorites });
     this.debouncedNavStateRefresh();
   }
 
@@ -719,7 +720,7 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    if (!this.settings.favorites.some((entry) => entry.kind === "tag")) {
+    if (!this.getSettings().favorites.some((entry) => entry.kind === "tag")) {
       return;
     }
 
@@ -727,7 +728,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private pruneFavoriteTagsNow(): void {
-    const favorites = this.settings.favorites;
+    const favorites = this.getSettings().favorites;
     if (!favorites.some((entry) => entry.kind === "tag")) {
       return;
     }
@@ -742,8 +743,7 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    this.settings = { ...this.settings, favorites: nextFavorites };
-    this.debouncedReconciledSettingsSave();
+    void this.settingsStore.updateUserData({ favorites: nextFavorites });
     this.debouncedNavStateRefresh();
   }
 
@@ -752,7 +752,7 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    const currentPath = this.settings.lastFolderPath;
+    const currentPath = this.getSettings().lastFolderPath;
     const nextPath = rewritePathAfterRename(currentPath, event.oldPath, event.path);
     if (nextPath !== currentPath) {
       await this.saveSettings({ lastFolderPath: nextPath });
