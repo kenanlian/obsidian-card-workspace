@@ -54,6 +54,7 @@ import {
   toggleFavorite,
 } from "./favorites";
 import { normalizeTagPath } from "./tag-tree";
+import { AsyncEpoch, type EpochToken } from "./async-epoch";
 import { runPipeline, DEFAULT_PIPELINE_STEPS, BOX_PIPELINE_STEPS } from "./pipeline";
 import { isBoxMember } from "./card-box-membership";
 import {
@@ -205,24 +206,21 @@ export class FolderCardView extends ItemView {
   private singlePaneView: "nav" | "cards" = "cards";
   private searchFocusToken = 0;
 
-  private generation = 0;
+  /** Independent guards for load, selection, search, and derived-cache freshness. */
+  private readonly loadEpoch = new AsyncEpoch();
+  private readonly selectionEpoch = new AsyncEpoch();
+  private readonly searchRequestEpoch = new AsyncEpoch();
+  private readonly searchSnapshotEpoch = new AsyncEpoch();
+  private readonly vaultContentEpoch = new AsyncEpoch();
+  private readonly navCountEpoch = new AsyncEpoch();
+
   private pendingHydration = new Set<string>();
-  private requestSeq = 0;
-  private searchRequestSeq = 0;
-  private searchSnapshotSeq = 0;
   private searchSnapshot: SearchServiceSnapshot | null = null;
   private searchSnapshotUnsubscribe: (() => void) | null = null;
   private searchDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private boxCardCountCache = new Map<string, { signature: string; count: number }>();
   private navCountRefreshHandle: ReturnType<Window["setTimeout"]> | null = null;
-  /** Bumped by every vault mutation; keeps the scope-derived tag memo honest. */
-  private vaultContentSeq = 0;
-  /**
-   * Bumped once per debounced nav-count refresh rather than per vault event, so
-   * a folder delete costs one vault-wide recount instead of one per contained file.
-   */
-  private navCountSeq = 0;
   private scopeTagCache: {
     key: string;
     value: { availableTags: string[]; tagCounts: Record<string, number> };
@@ -897,7 +895,7 @@ export class FolderCardView extends ItemView {
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
-      state.generation = this.generation;
+      state.generation = this.loadEpoch.value;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
       state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
@@ -1268,7 +1266,7 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
-    this.vaultContentSeq += 1;
+    this.vaultContentEpoch.bump();
     this.scheduleNavCountRefresh();
     if (event.isFolder) {
       this.refreshFolderTreeState();
@@ -1328,7 +1326,7 @@ export class FolderCardView extends ItemView {
   /** Card box counts and vault-wide tag counts both walk the vault, so they expire together. */
   private invalidateNavCounts(): void {
     this.boxCardCountCache.clear();
-    this.navCountSeq += 1;
+    this.navCountEpoch.bump();
   }
 
   /**
@@ -1379,9 +1377,9 @@ export class FolderCardView extends ItemView {
     this.searchOrderedPaths = undefined;
     this.clearSearchMatchCounts();
     this.searchStatus = "idle";
-    this.searchRequestSeq += 1;
-    this.searchSnapshotSeq += 1;
-    this.generation += 1;
+    this.searchRequestEpoch.bump();
+    this.searchSnapshotEpoch.bump();
+    this.loadEpoch.bump();
 
     return {
       cancelledDebounce,
@@ -1417,8 +1415,8 @@ export class FolderCardView extends ItemView {
 
   private applySearchSnapshot(snapshot: SearchServiceSnapshot | null, pushState: boolean): void {
     this.searchSnapshot = snapshot;
-    this.searchSnapshotSeq += 1;
-    this.searchRequestSeq += 1;
+    this.searchSnapshotEpoch.bump();
+    this.searchRequestEpoch.bump();
     this.clearSearchMatchCounts();
 
     if (this.searchQuery.trim().length === 0) {
@@ -2722,9 +2720,9 @@ export class FolderCardView extends ItemView {
     folderPath: string,
     forceRefresh: boolean,
   ): FolderSelectionRequest {
-    this.requestSeq += 1;
+    const token = this.selectionEpoch.bump();
     return {
-      requestId: this.requestSeq,
+      requestId: token.value,
       folderPath: normalizeFolderScopePath(folderPath),
       source: "programmatic",
       requestedAtMs: Date.now(),
@@ -2786,17 +2784,15 @@ export class FolderCardView extends ItemView {
   ): Promise<void> {
     this.folderPath = folderPath;
     this.loading = true;
-    this.generation += 1;
+    const loadToken = this.loadEpoch.bump();
     this.pendingHydration.clear();
     this.searchExecution = this.derivePendingSearchExecution();
     this.searchOrderedPaths = undefined;
     this.clearSearchMatchCounts();
     this.clearSearchDebounce();
-    this.searchRequestSeq += 1;
+    this.searchRequestEpoch.bump();
     this.searchStatus = this.deriveSearchStatus();
     this.pushState();
-
-    const buildGeneration = this.generation;
 
     try {
       const activeBox = this.getActiveBox();
@@ -2824,7 +2820,7 @@ export class FolderCardView extends ItemView {
         });
       }
 
-      if (buildGeneration !== this.generation) {
+      if (!this.loadEpoch.isCurrent(loadToken)) {
         return;
       }
 
@@ -2837,9 +2833,9 @@ export class FolderCardView extends ItemView {
       const startupPaths = this.deriveVisibleCardsFrom(records)
         .slice(0, FolderCardView.STARTUP_PREVIEW_CARD_COUNT)
         .map((card) => card.path);
-      await this.hydrateStartupCardPaths(startupPaths, buildGeneration);
+      await this.hydrateStartupCardPaths(startupPaths, loadToken);
     } finally {
-      if (buildGeneration === this.generation) {
+      if (this.loadEpoch.isCurrent(loadToken)) {
         this.loading = false;
         this.pushState();
         this.refreshFolderTreeState();
@@ -3123,9 +3119,9 @@ export class FolderCardView extends ItemView {
       this.baseCards.splice(insertIndex, 0, newCard);
 
       // Hydrate the new card immediately
-      const capturedGeneration = this.generation;
-      void this.hydrateCard(newCard.path, capturedGeneration).then(() => {
-        if (capturedGeneration === this.generation) {
+      const hydrationToken = this.loadEpoch.token();
+      void this.hydrateCard(newCard.path, hydrationToken).then(() => {
+        if (this.loadEpoch.isCurrent(hydrationToken)) {
           this.pushState();
         }
       });
@@ -3148,9 +3144,9 @@ export class FolderCardView extends ItemView {
 
       // Re-hydrate immediately; Obsidian already debounces modify events.
       // Keep old preview visible until new content is ready.
-      const capturedGeneration = this.generation;
-      void this.hydrateCard(card.path, capturedGeneration).then(() => {
-        if (capturedGeneration === this.generation) {
+      const hydrationToken = this.loadEpoch.token();
+      void this.hydrateCard(card.path, hydrationToken).then(() => {
+        if (this.loadEpoch.isCurrent(hydrationToken)) {
           this.pushState();
         }
       });
@@ -3253,7 +3249,7 @@ export class FolderCardView extends ItemView {
           const insertIndex = this.findSortedInsertIndex(newCard);
           this.baseCards.splice(insertIndex, 0, newCard);
 
-          void this.hydrateCard(newCard.path, this.generation).then(() => {
+          void this.hydrateCard(newCard.path, this.loadEpoch.token()).then(() => {
             this.pushState();
           });
 
@@ -3278,7 +3274,7 @@ export class FolderCardView extends ItemView {
       .slice(safeStart, safeEnd)
       .map((card) => card.path);
 
-    await this.hydrateCardPaths(targets, this.generation, {
+    await this.hydrateCardPaths(targets, this.loadEpoch.token(), {
       pushState: true,
       batchSize: FolderCardView.HYDRATION_BATCH_SIZE,
     });
@@ -3286,13 +3282,13 @@ export class FolderCardView extends ItemView {
 
   private async hydrateCardPaths(
     paths: string[],
-    generation: number,
+    token: EpochToken,
     options: {
       pushState: boolean;
       batchSize?: number;
     },
   ): Promise<void> {
-    if (paths.length === 0 || generation !== this.generation) {
+    if (paths.length === 0 || !this.loadEpoch.isCurrent(token)) {
       return;
     }
 
@@ -3315,36 +3311,36 @@ export class FolderCardView extends ItemView {
 
     try {
       for (let batchStart = 0; batchStart < targets.length; batchStart += batchSize) {
-        if (generation !== this.generation) {
+        if (!this.loadEpoch.isCurrent(token)) {
           return;
         }
 
         const batch = targets.slice(batchStart, batchStart + batchSize);
-        await Promise.all(batch.map((path) => this.hydrateCard(path, generation)));
+        await Promise.all(batch.map((path) => this.hydrateCard(path, token)));
 
-        if (generation !== this.generation) {
+        if (!this.loadEpoch.isCurrent(token)) {
           return;
         }
 
         batch.forEach((path) => this.pendingHydration.delete(path));
       }
     } finally {
-      if (generation === this.generation) {
+      if (this.loadEpoch.isCurrent(token)) {
         targets.forEach((path) => this.pendingHydration.delete(path));
       }
     }
 
-    if (options.pushState && generation === this.generation) {
+    if (options.pushState && this.loadEpoch.isCurrent(token)) {
       this.pushState();
     }
   }
 
-  private async hydrateStartupCardPaths(paths: string[], generation: number): Promise<void> {
-    if (paths.length === 0 || generation !== this.generation) {
+  private async hydrateStartupCardPaths(paths: string[], token: EpochToken): Promise<void> {
+    if (paths.length === 0 || !this.loadEpoch.isCurrent(token)) {
       return;
     }
 
-    const hydration = this.hydrateCardPaths(paths, generation, {
+    const hydration = this.hydrateCardPaths(paths, token, {
       pushState: false,
       batchSize: FolderCardView.HYDRATION_BATCH_SIZE,
     });
@@ -3368,7 +3364,7 @@ export class FolderCardView extends ItemView {
     if (result === "timeout") {
       void hydration.then(
         () => {
-          if (generation === this.generation) {
+          if (this.loadEpoch.isCurrent(token)) {
             this.pushState();
           }
         },
@@ -3391,14 +3387,14 @@ export class FolderCardView extends ItemView {
     void this.hydrateRange(0, end);
   }
 
-  private async hydrateCard(cardPath: string, generation: number): Promise<void> {
+  private async hydrateCard(cardPath: string, token: EpochToken): Promise<void> {
     const card = this.baseCards.find((c) => c.path === cardPath);
     if (!card) {
       return;
     }
 
     if (!isMarkdownCardKind(card.fileKind)) {
-      if (generation !== this.generation) {
+      if (!this.loadEpoch.isCurrent(token)) {
         return;
       }
 
@@ -3411,7 +3407,7 @@ export class FolderCardView extends ItemView {
 
     try {
       const markdown = await this.app.vault.cachedRead(card.file);
-      if (generation !== this.generation) {
+      if (!this.loadEpoch.isCurrent(token)) {
         return;
       }
 
@@ -3425,7 +3421,7 @@ export class FolderCardView extends ItemView {
       card.previewMode = preview.mode;
       card.hydrated = true;
     } catch {
-      if (generation !== this.generation) {
+      if (!this.loadEpoch.isCurrent(token)) {
         return;
       }
 
@@ -3556,7 +3552,7 @@ export class FolderCardView extends ItemView {
    * subfolder inclusion and sort), the loaded card set, and vault content.
    */
   private scopeTagCacheKey(): string {
-    return `${this.folderLoadKey}::${this.baseCards.length}::${this.vaultContentSeq}`;
+    return `${this.folderLoadKey}::${this.baseCards.length}::${this.vaultContentEpoch.value}`;
   }
 
   /**
@@ -3602,17 +3598,17 @@ export class FolderCardView extends ItemView {
    * Vault-wide tag counts, used by favorites: activating a favorited tag browses
    * the whole vault, so a scope-derived number would contradict the click.
    *
-   * The browse scope cannot move these, so they only follow `navCountSeq`, which
+   * The browse scope cannot move these, so they only follow `navCountEpoch`, which
    * lags vault events by one debounce interval — same deal as box card counts.
    */
   private getVaultTagCounts(): Record<string, number> {
     const cached = this.vaultTagCountsCache;
-    if (cached && cached.seq === this.navCountSeq) {
+    if (cached && cached.seq === this.navCountEpoch.value) {
       return cached.counts;
     }
 
     const counts = collectVaultTagIndex(this.app)?.counts ?? {};
-    this.vaultTagCountsCache = { seq: this.navCountSeq, counts };
+    this.vaultTagCountsCache = { seq: this.navCountEpoch.value, counts };
     return counts;
   }
 
@@ -3750,7 +3746,7 @@ export class FolderCardView extends ItemView {
     this.searchExecution = this.derivePendingSearchExecution();
     this.searchOrderedPaths = undefined;
     this.clearSearchMatchCounts();
-    this.searchRequestSeq += 1;
+    this.searchRequestEpoch.bump();
     this.searchStatus = this.deriveSearchStatus();
     this.pushState();
 
@@ -3764,7 +3760,7 @@ export class FolderCardView extends ItemView {
 
   private resetSearchQuery(): void {
     this.clearSearchDebounce();
-    this.searchRequestSeq += 1;
+    this.searchRequestEpoch.bump();
     this.clearSearchMatchCounts();
 
     if (this.searchQuery.length === 0 && this.searchOrderedPaths === undefined) {
@@ -3801,11 +3797,10 @@ export class FolderCardView extends ItemView {
       return;
     }
 
-    const requestSeq = this.searchRequestSeq + 1;
-    this.searchRequestSeq = requestSeq;
-    const requestGeneration = this.generation;
+    const requestToken = this.searchRequestEpoch.bump();
+    const loadToken = this.loadEpoch.token();
     const requestFolderPath = this.folderPath;
-    const requestSnapshotSeq = this.searchSnapshotSeq;
+    const snapshotToken = this.searchSnapshotEpoch.token();
 
     try {
       const result = await service.query({
@@ -3817,7 +3812,7 @@ export class FolderCardView extends ItemView {
         candidatePaths: this.baseCards.map((card) => card.path),
       });
 
-      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, requestSnapshotSeq, query)) {
+      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestFolderPath, snapshotToken, query)) {
         return;
       }
 
@@ -3832,7 +3827,7 @@ export class FolderCardView extends ItemView {
       this.searchStatus = this.toRuntimeSearchStatus(result);
       this.pushState();
     } catch {
-      if (!this.isSearchRequestCurrent(requestSeq, requestGeneration, requestFolderPath, requestSnapshotSeq, query)) {
+      if (!this.isSearchRequestCurrent(requestToken, loadToken, requestFolderPath, snapshotToken, query)) {
         return;
       }
 
@@ -3845,17 +3840,17 @@ export class FolderCardView extends ItemView {
   }
 
   private isSearchRequestCurrent(
-    requestSeq: number,
-    requestGeneration: number,
+    requestToken: EpochToken,
+    loadToken: EpochToken,
     requestFolderPath: string | null,
-    requestSnapshotSeq: number,
+    snapshotToken: EpochToken,
     requestQuery: string,
   ): boolean {
-    if (requestSeq !== this.searchRequestSeq) {
+    if (!this.searchRequestEpoch.isCurrent(requestToken)) {
       return false;
     }
 
-    if (requestGeneration !== this.generation) {
+    if (!this.loadEpoch.isCurrent(loadToken)) {
       return false;
     }
 
@@ -3863,7 +3858,7 @@ export class FolderCardView extends ItemView {
       return false;
     }
 
-    if (requestSnapshotSeq !== this.searchSnapshotSeq) {
+    if (!this.searchSnapshotEpoch.isCurrent(snapshotToken)) {
       return false;
     }
 
@@ -4560,7 +4555,7 @@ export class FolderCardView extends ItemView {
       selectedPath: this.selectedPath,
       ...bulkRuntimeState,
       loading: this.loading,
-      generation: this.generation,
+      generation: this.loadEpoch.value,
       searchQuery: this.searchQuery,
       searchStatus: this.getSearchStatus(),
       searchIndexReadiness: this.searchSnapshot?.health?.readiness,
@@ -4617,7 +4612,7 @@ export class FolderCardView extends ItemView {
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
-      state.generation = this.generation;
+      state.generation = this.loadEpoch.value;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
       state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;
@@ -4662,7 +4657,7 @@ export class FolderCardView extends ItemView {
       state.canBulkDeleteSelected = bulkRuntimeState.canBulkDeleteSelected;
       state.canBulkMergeSelected = bulkRuntimeState.canBulkMergeSelected;
       state.loading = this.loading;
-      state.generation = this.generation;
+      state.generation = this.loadEpoch.value;
       state.searchQuery = this.searchQuery;
       state.searchStatus = this.getSearchStatus();
       state.searchIndexReadiness = this.searchSnapshot?.health?.readiness;

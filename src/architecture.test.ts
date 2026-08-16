@@ -246,7 +246,7 @@ describe("R5 line-count ratchet", () => {
    * new real line count.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 4938,
+    "src/view/FolderCardView.ts": 4933,
     "src/main.ts": 771,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 588,

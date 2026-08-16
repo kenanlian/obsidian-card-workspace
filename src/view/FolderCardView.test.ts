@@ -1642,7 +1642,7 @@ describe("FolderCardView host contract", () => {
 
     expect(result.shouldRefresh).toBe(false);
     expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
-    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).generation);
+    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).loadEpoch.token());
   });
 
   it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {
@@ -1656,7 +1656,7 @@ describe("FolderCardView host contract", () => {
     (view as any).folderPath = "notes";
     (view as any).baseCards = [card];
 
-    await (view as any).hydrateCard(card.path, (view as any).generation);
+    await (view as any).hydrateCard(card.path, (view as any).loadEpoch.token());
 
     expect(card.previewHtml).toContain("这是一个 Canvas 文件。");
   });

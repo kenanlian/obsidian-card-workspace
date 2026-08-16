@@ -1535,7 +1535,7 @@ describe("FolderCardView card context actions", () => {
           await flushAsyncWork();
           expect(query).toHaveBeenCalledTimes(3);
 
-          (view as any).generation += 1;
+          (view as any).loadEpoch.bump();
           (view as any).folderPath = "archive";
 
           pending[2]?.resolve({
@@ -2249,7 +2249,7 @@ describe("FolderCardView card context actions", () => {
 
         expect((view as any).pendingHydration.has(file.path)).toBe(true);
 
-        (view as any).generation += 1;
+        (view as any).loadEpoch.bump();
         (view as any).pendingHydration.clear();
 
         staleRead.resolve("# stale\ncontent");
@@ -2319,7 +2319,7 @@ describe("FolderCardView card context actions", () => {
         (view as any).inFlight = Promise.resolve();
         (view as any).inFlightKey = "notes/close-cleanup.md";
         (view as any).loading = true;
-        const generationBeforeClose = (view as any).generation;
+        const generationBeforeClose = (view as any).loadEpoch.value;
 
         await (view as any).onOpen();
 
@@ -2337,7 +2337,7 @@ describe("FolderCardView card context actions", () => {
         expect((view as any).inFlight).toBeNull();
         expect((view as any).inFlightKey).toBeNull();
         expect((view as any).loading).toBe(false);
-        expect((view as any).generation).toBe(generationBeforeClose + 1);
+        expect((view as any).loadEpoch.value).toBe(generationBeforeClose + 1);
       });
 
       describe("Task 6: preview settings refresh wiring and generation safety", () => {
@@ -2463,7 +2463,7 @@ describe("FolderCardView card context actions", () => {
           await flushAsyncWork(1);
 
           previewLines = 8;
-          (view as any).generation += 1;
+          (view as any).loadEpoch.bump();
           (view as any).pendingHydration.clear();
           staleRead.reject(firstReadError);
           await staleHydration;
