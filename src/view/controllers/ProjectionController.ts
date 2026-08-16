@@ -31,7 +31,7 @@ export class ProjectionController {
   deriveVisibleCardsFrom(cards: readonly NoteCardRecord[]): NoteCardRecord[] {
     const pipelineContext: PipelineContext = {
       app: this.context.getApp(),
-      settings: this.context.getSettings(),
+      filterTags: this.context.getSettings().filter.tags,
       search: this.deps.getSearchInput(),
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
     };

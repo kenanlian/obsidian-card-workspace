@@ -1,12 +1,11 @@
 import type { App } from "obsidian";
-import type { PluginSettings } from "../settings";
 import { matchesTagFilter } from "./metadata-utils";
 import type { CardScope } from "./scope";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
   app: App;
-  settings: PluginSettings;
+  filterTags: string[];
   // Runtime-only input from FolderCardView; query stays out of persisted settings.
   search: PipelineSearchInput;
   // Explicit ordered pin input for projection; prevents reaching through settings with casts.
@@ -32,7 +31,7 @@ export function runPipeline(
 
 /** Tag filter step — filter cards by metadata tags using AND logic. */
 export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
-  const filterTags = context.settings.filter.tags;
+  const filterTags = context.filterTags;
 
   // Pass-through when no tags are selected (empty filter always matches)
   if (filterTags.length === 0) {

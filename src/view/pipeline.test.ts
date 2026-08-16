@@ -16,29 +16,7 @@ const folderSteps = () => stepsForScope(createFolderScope("", true));
 function createMockContext(): PipelineContext {
   return {
     app: {} as PipelineContext["app"],
-    settings: {
-      sort: { field: "mtime", direction: "desc" },
-      filter: { tags: [] },
-      includeSubfolders: true,
-      defaultView: "cards",
-      defaultCardOpenBehavior: "smart",
-      dragInsertAction: "ask",
-      cardCornerRadius: "rounded",
-      newNoteTemplate: "tags-frontmatter",
-      previewLines: 5,
-      lastFolderPath: "",
-      pinnedPaths: [],
-      boxes: [],
-      favorites: [],
-      activeBoxId: null,
-      navPaneWidth: 240,
-      navPaneCollapsed: false,
-      folderSectionCollapsed: false,
-      tagSectionCollapsed: false,
-      boxSectionCollapsed: false,
-      favoritesSectionCollapsed: false,
-      showNavItemCounts: false,
-    },
+    filterTags: [],
     search: {
       query: "",
       execution: "indexed-unavailable",
@@ -51,10 +29,6 @@ function createMockContext(): PipelineContext {
 function withPinnedPaths(context: PipelineContext, pinnedPaths: string[]): PipelineContext {
   return {
     ...context,
-    settings: {
-      ...context.settings,
-      pinnedPaths: [...pinnedPaths],
-    },
     pinnedPaths: [...pinnedPaths],
   };
 }
@@ -142,14 +116,14 @@ describe("applyTagFilter behavior", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns all cards when settings.filter.tags is empty", () => {
+  it("returns all cards when filterTags is empty", () => {
     const cards = [
       createMockCard("note-a.md"),
       createMockCard("note-b.md"),
       createMockCard("note-c.md"),
     ];
     const context = createMockContext();
-    context.settings.filter.tags = [];
+    context.filterTags = [];
 
     // Mock matchesTagFilter to return true (accepting all cards)
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(true);
@@ -167,7 +141,7 @@ describe("applyTagFilter behavior", () => {
 
     const cards = [cardA, cardB, cardC, cardD];
     const context = createMockContext();
-    context.settings.filter.tags = ["important", "archived"];
+    context.filterTags = ["important", "archived"];
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file, filterTags) => {
       if (file.path === "has-both.md") {
@@ -193,7 +167,7 @@ describe("applyTagFilter behavior", () => {
       createMockCard("note-b.md"),
     ];
     const context = createMockContext();
-    context.settings.filter.tags = ["nonexistent-tag"];
+    context.filterTags = ["nonexistent-tag"];
 
     // Mock: no cards match
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
@@ -208,7 +182,7 @@ describe("applyTagFilter behavior", () => {
       createMockCard("no-tags-b.md"),
     ];
     const context = createMockContext();
-    context.settings.filter.tags = ["work"];
+    context.filterTags = ["work"];
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
 
@@ -220,7 +194,7 @@ describe("applyTagFilter behavior", () => {
   it("passes selected tags through to metadata matching helper", () => {
     const cards = [createMockCard("sample.md")];
     const context = createMockContext();
-    context.settings.filter.tags = ["#Important", "Work"];
+    context.filterTags = ["#Important", "Work"];
 
     const matchesSpy = vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(true);
 
@@ -238,7 +212,7 @@ describe("applyTagFilter behavior", () => {
     const cards = [cardA, cardB, cardC];
 
     const context = createMockContext();
-    context.settings.filter.tags = ["selected"];
+    context.filterTags = ["selected"];
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file, filterTags) => {
       const aHasTags = ["selected"].includes(filterTags[0]);
@@ -261,7 +235,7 @@ describe("applyTagFilter behavior", () => {
     const cards = [cardMatch, cardMissOne];
 
     const context = createMockContext();
-    context.settings.filter.tags = ["tag1", "tag2", "tag3"];
+    context.filterTags = ["tag1", "tag2", "tag3"];
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file, filterTags) => {
       if (file.path === "matches-all.md") {
@@ -453,7 +427,7 @@ describe("applyPinReorder", () => {
       createMockCard("visible-unpinned.md"),
     ];
     const baseContext = createMockContext();
-    baseContext.settings.filter.tags = ["project"];
+    baseContext.filterTags = ["project"];
     const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
@@ -492,7 +466,7 @@ describe("applyPinReorder", () => {
       createMockCard("search-filtered.md", "no-match"),
     ];
     const baseContext = createMockContext();
-    baseContext.settings.filter.tags = ["project"];
+    baseContext.filterTags = ["project"];
     baseContext.search.query = "query-hit";
     baseContext.search.execution = "indexed-ready";
     baseContext.search.orderedPaths = ["visible-pinned.md", "tag-filtered-pinned.md", "visible-unpinned.md"];
@@ -516,7 +490,7 @@ describe("applyPinReorder", () => {
       createMockCard("d.md", "query-hit"),
     ];
     const baseContext = createMockContext();
-    baseContext.settings.filter.tags = ["project"];
+    baseContext.filterTags = ["project"];
     baseContext.search.query = "query-hit";
     baseContext.search.execution = "indexed-ready";
     baseContext.search.orderedPaths = ["d.md", "b.md", "a.md"];
@@ -540,7 +514,7 @@ describe("applyPinReorder", () => {
       createMockCard("d.md"),
     ];
     const baseContext = createMockContext();
-    baseContext.settings.filter.tags = ["active"];
+    baseContext.filterTags = ["active"];
     const context = withPinnedPaths(baseContext, ["c.md", "a.md", "duplicate-missing.md", "c.md"]);
 
     vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
@@ -720,7 +694,7 @@ describe("stepsForScope", () => {
   it("skips tag filtering for box scopes without shrinking box membership", () => {
     const cards = [createMockCard("box-a.md"), createMockCard("box-b.md")];
     const context = createMockContext();
-    context.settings.filter.tags = ["folder-only-filter"];
+    context.filterTags = ["folder-only-filter"];
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
 
     const steps = stepsForScope(createBoxScope("box-1"));
