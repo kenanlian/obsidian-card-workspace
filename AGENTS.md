@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, and boxes.
+**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, and boxes.
 
 - **Plugin ID**: `card-workspace`
 - **Version**: `1.0.2` (source of truth: `manifest.json`)
@@ -19,14 +19,18 @@
 - `docs/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
 - `docs/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
 
+Enumerable implementation details (settings keys, panel fields, module methods, file line counts) live in TypeScript types and `src/architecture.test.ts`, not in these docs.
+
 ## Architecture Quick Reference
 
 - **Detailed source of truth**: `docs/architecture.md`
-- **Plugin ownership**: `src/main.ts` owns plugin lifecycle, settings, search service lifecycle, vault mutation fanout, and default card open behavior
-- **Per-view ownership**: `src/view/FolderCardView.ts` owns folder scope, `baseCards` / `visibleCards`, hydration, bulk state, and runtime search state
-- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path, in fixed order: `tag filter -> search filter -> pin reorder`
-- **UI boundary**: `src/view/panel-model.ts` bridges host state into Svelte; `FolderCardPanel.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
+- **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`) plus default card open behavior
+- **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/`, `src/view/actions/`, and `src/view/menus/`
+- **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`
+- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. Folders: `tag filter -> search filter -> pin reorder`. Boxes skip the browse tag filter
+- **UI boundary**: `src/view/panel-model.ts` bridges grouped host state into Svelte; `FolderCardPanel.svelte`, `NavigationPane.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready
+- **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2
 
 ## Current Project Status
 
@@ -37,15 +41,23 @@
 - Markdown keeps full preview and full-text indexing; the other supported kinds remain title/placeholder-oriented.
 - Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
+- Startup restores **folder** scope only and forces `activeBoxId = null`.
 - Default card open behavior is owned by `main.ts`.
+
 ## Key Directories
 
 | Directory | Purpose |
 |-----------|---------|
 | `src/` | All source code |
-| `src/view/` | Obsidian view layer, Svelte components, and view utilities |
+| `src/view/` | Obsidian view host, Svelte components, and view utilities |
+| `src/view/controllers/` | Per-view runtime: scope, projection, search, hydration, bulk, nav layout |
+| `src/view/actions/` | User commands: file, folder, box, tag, favorite, merge |
+| `src/view/menus/` | Card and navigation context-menu builders |
+| `src/view/modals/` | `FormModal` subclasses; host/actions route into them |
+| `src/services/` | Plugin-level assembly: settings, search coordinator, editor drop, vault bus, reconcilers |
 | `src/search/` | Local search subsystem (MiniSearch + IndexedDB) |
-| `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte` |
+| `src/i18n/` | Domain-split UI strings; callers still import `../i18n` |
+| `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
 | `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
 | `docs/` | Developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/` |
@@ -58,6 +70,7 @@
 | `npm install` | Install dependencies |
 | `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
 | `npm run build` | Production build (`main.js`, no sourcemaps) |
+| `npm run lint` | `oxlint --config .oxlintrc.json src` |
 | `npm run check` | TypeScript type check (`tsc --noEmit`) |
 | `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |
 | `npm test` | Full Vitest suite (node + jsdom projects) |
@@ -71,10 +84,10 @@
 
 For normal changes, run:
 ```
-npm run check && npm run build && npm test
+npm run lint && npm run check && npm run check:svelte && npm run build && npm test
 ```
 
-CI/release also requires `npm run check:svelte` before the chain.
+CI already runs this chain with lint first.
 
 ## Code Conventions & Common Patterns
 
@@ -83,20 +96,21 @@ CI/release also requires `npm run check:svelte` before the chain.
 - **TypeScript strict**: `strict: true`, `moduleResolution: "Bundler"`, `isolatedModules: true`
 - **Svelte 5 only**: components use `$props`, `$state`, `$derived`, `$effect` runes
 - **Host seam**: `FolderCardView` dynamically imports the Svelte panel and uses `mount()` / `unmount()` — never `new`, `$set`, `$on`, or `$destroy`
-- **Host-owned state**: keep the source of truth in `FolderCardView` / `panel-model`; do not move it into Svelte components
+- **Host-owned state**: keep the source of truth in the view store / `panel-model`, assembled through `createViewModules`; do not move it into Svelte components
 
 ### State management
 
-- **PanelModel**: simple observable bridge between imperative host and declarative Svelte
+- **PanelModel**: grouped observable bridge between imperative host and declarative Svelte. Groups are replaced wholesale; `batch` notifies once; unpublished groups keep identity
   ```ts
   // src/view/panel-model.ts
   const model = createPanelModel(initialState);
   model.subscribe(listener);  // Svelte panel subscribes
-  model.mutate(fn);           // FolderCardView pushes state
+  model.mutate(fn);           // replace assigned groups
+  model.batch(fn);            // nested calls still notify once
   ```
 - **Snapshot pattern**: `SearchService` and `IndexStore` use snapshot + `Set<listener>`; snapshots are cloned before emission
-- **Generation guards**: all async view operations track `this.generation` to discard stale results (selection, search, hydration)
-- **Settings**: owned by plugin; views read on load; `saveSettings()` triggers `requestRefreshForViews`
+- **Generation guards**: async view operations use `AsyncEpoch` / `ViewEpochs` to discard stale results (selection, load, search, hydration)
+- **Settings**: owned by `SettingsStore`; views read `getFlat()`; `saveSettings()` applies a graded update intent to open views
 
 ### Naming
 
@@ -110,7 +124,7 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 ### Async & error handling
 
-- **Async**: explicit `async/await` with generation tracking and pending-operation guards (e.g., `pendingSearchRebuild`, `pendingSearchRecovery`)
+- **Async**: explicit `async/await` with epoch guards and pending-operation guards (e.g., `pendingSearchRebuild`, `pendingSearchRecovery`)
 - **File operations**: typed result unions with `outcome: 'ok' | 'error'` (`NoteOpResult`, `BatchOpSummary`, `MergeOpResult`)
 - **Search errors**: caught with `console.warn`; no global error boundary
 - **Debouncing**: `debounce(..., 250, false)` for vault changes; `120ms` for search query changes
@@ -124,7 +138,7 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 ### CSS
 
-- Single flat file (`styles.css`, ~1,289 lines) — no preprocessor, no Tailwind
+- Single flat file (`styles.css`) — no preprocessor, no Tailwind
 - Design tokens: `--fce-*` custom properties scoped under `.folder-card-view` that map to Obsidian theme variables (`--background-primary`, `--text-normal`, `--interactive-accent`, etc.)
 - BEM-like classes: `.fce-toolbar`, `.fce-card`, `.fce-search-hit`, `.fce-preview-code`
 
@@ -132,18 +146,24 @@ CI/release also requires `npm run check:svelte` before the chain.
 
 | File | Role |
 |------|------|
-| `src/main.ts` | Plugin entry point — lifecycle, settings, search wiring, vault observers, command registration, view activation, drag-insert handling (~1,605 lines) |
-| `src/view/FolderCardView.ts` | Per-view runtime coordinator — folder loading, card arrays, pipeline, search, bulk state, hydration, context menus, modals (~5,663 lines) |
-| `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring (~781 lines) |
+| `src/main.ts` | Plugin shell — lifecycle, command registration, view activation, and assembly of settings/search/drop/vault-bus |
+| `src/services/SettingsStore.ts` | Three-layer settings persistence, serialized writes, flattened `getFlat()` read view |
+| `src/services/SearchCoordinator.ts` | Search service lifecycle, restore/rebuild, vault-to-index forwarding |
+| `src/services/VaultEventBus.ts` | Ordered vault-event fanout; views self-subscribe |
+| `src/view/FolderCardView.ts` | `ItemView` lifecycle and `createViewModules` assembly; grouped panel publish |
+| `src/view/view-modules.ts` | Cross-wires controllers, actions, and menus for one view |
+| `src/view/scope.ts` | `CardScope` union and folder/box helpers |
+| `src/view/update-intent.ts` | Four-grade settings update intents |
+| `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring |
 | `src/view/NavigationPane.svelte` | Svelte 5 navigation column — folder/tag/box trees, favorites section, resize handle |
-| `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode (~732 lines) |
-| `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source (~548 lines) |
-| `src/view/panel-model.ts` | Host-to-Svelte observable state bridge |
-| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → search filter → pin reorder |
-| `src/view/types.ts` | View-layer type definitions (~20 interfaces, Phase 3 ownership docs) |
-| `src/settings.ts` | Settings types, `DEFAULT_SETTINGS`, `normalizeSettings`, `mergeSettings` |
-| `src/i18n.ts` | i18n strings (`en` / `zh`) — ~1,439 lines |
-| `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations (~1,103 lines) |
+| `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode |
+| `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source |
+| `src/view/panel-model.ts` | Host-to-Svelte grouped state bridge |
+| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → search filter → pin reorder (boxes skip tag filter) |
+| `src/view/types.ts` | View-layer type definitions |
+| `src/settings.ts` | `PluginSettings`, `DEFAULT_SETTINGS`, `schemaVersion`, `migrateSettings`, `mergeSettings` |
+| `src/i18n/` | i18n strings (`en` / `zh`), domain-split; callers still import `../i18n` |
+| `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations |
 | `src/search/IndexedSearchService.ts` | SearchService adapter — query bounding, blocked-state gating |
 | `src/search/IndexStore.ts` | IndexedDB persistence with schema-version checks |
 | `src/search/types.ts` | Search subsystem contracts (`PHASE3_MINISEARCH_CONTRACT`) |
@@ -174,7 +194,7 @@ CI/release also requires `npm run check:svelte` before the chain.
   - `@codemirror/view`
   - `@codemirror/language`
 - **No ESLint / No Prettier** — do not add unless explicitly requested
-- `oxlint` is installed as a devDependency but not wired into any script or CI
+- `oxlint` is wired via `npm run lint` and CI
 - `typescript-language-server` is a devDependency for editor LSP support
 
 ## Testing & QA
@@ -187,18 +207,20 @@ Vitest 4 with two named projects:
    - Environment: `node`
    - Includes: `src/**/*.test.ts` **excluding** `*.svelte.test.ts` and `FolderCardView.test.ts`
    - Aliases: `obsidian` → `src/__mocks__/obsidian.ts`, `./FolderCardPanel.svelte` → `src/__mocks__/FolderCardPanel.svelte.ts`
-   - Good for: settings, note-ops, search subsystem, markdown-utils, pipeline
+   - Shared FolderCardView node harness lives under `src/__mocks__/`
+   - Good for: settings, note-ops, search subsystem, markdown-utils, pipeline, view-event routing, actions, menus
 
 2. **`jsdom` project** — DOM/Svelte tests
    - Environment: `jsdom`
    - Includes: `*.svelte.test.ts` and `FolderCardView.test.ts`
    - Uses `@sveltejs/vite-plugin-svelte` with `conditions: ['browser']`
-   - Good for: Toolbar, FolderCardView, CardItem, scroll anchoring, row projection
+   - Good for: Toolbar, FolderCardView, CardItem, NavigationPane, scroll anchoring, row projection
 
 ### Mock seam
 
 - `src/__mocks__/obsidian.ts` — shared minimal stubs for `App`, `Vault`, `Modal`, `TFolder`, `setIcon`, `setTooltip`, `getAllTags`
 - `src/__mocks__/FolderCardPanel.svelte.ts` — mock Svelte component that captures callback props into `__mockState.panelEventHandlers`
+- Shared FolderCardView node harness under `src/__mocks__/` — node tests assemble a view without the jsdom project
 - `vi.hoisted()` — mutable mock state shared across `vi.mock()` factories and test bodies
 - Module-level `vi.mock()` for `obsidian`, `note-ops`, `FolderPickerModal`, and search modules per test file
 
@@ -221,10 +243,12 @@ npm run test:node
 npm run test:component
 ```
 
+Node integration that used to sit in a single card-context test file now lives next to the module: `src/view/view-event-routing.test.ts` for host routing, `src/view/actions/*.test.ts` for commands, and `src/view/menus/card-context-menu.test.ts` for the card menu.
+
 ### Key testing patterns
 
 - **Event contract verification**: views register callbacks on `onOpen()`; tests fire them via mock state and assert downstream effects
-- **Stale-protection testing**: create pending promises, advance generation/snapshot state, then resolve and verify old results are discarded
+- **Stale-protection testing**: create pending promises, advance epoch/snapshot state, then resolve and verify old results are discarded
 - **Debounce testing**: `vi.useFakeTimers()` + `vi.advanceTimersByTime(119)` (should not fire) then `+1` (should fire)
 - **Confirmation modal testing**: inspect modal structure via mock state arrays, simulate clicks via `clickLatestModalButton`
 - **Batch operation testing**: verify partial-failure continuation, selection reconciliation, and notice accumulation
@@ -236,6 +260,7 @@ npm run test:component
 - Viewport-driven lazy hydration and row-projected virtualization in `FolderCardPanel.svelte`
 - `debounce(..., 250, false)` refresh behavior for vault changes
 - Vault `create`/`modify`/`delete`/`rename` observers registered after `workspace.onLayoutReady()`
+- Vault events go through `VaultEventBus`; views self-subscribe and debounce their own reload
 - Pinning only reorders cards; it does not bypass active filters or search constraints
 - Non-ready indexed-search states intentionally block non-empty queries and project zero cards
 
