@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clickLatestModalButton,
+  createDeferred,
   mockState,
   resetFolderCardViewHarness,
   createViewWithFile,
   findMenuItemByTitle,
+  flushAsyncWork,
   registerFolderCardView,
+  setLatestModalTextInput,
 } from "../../__mocks__/folder-card-view-harness";
+import { getUiStrings } from "../../i18n";
 import { createBoxScope, createFolderScope } from "../scope";
 import { BoxActions } from "./box-actions";
 import { FolderCardView } from "../FolderCardView";
@@ -13,13 +18,65 @@ import { FolderCardView } from "../FolderCardView";
 registerFolderCardView(FolderCardView);
 
 describe("BoxActions", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  const box = {
+    id: "box-1",
+    name: "One",
+    rules: [],
+    manualPaths: [],
+    excludedPaths: [],
+    pinnedPaths: [],
+    sort: { field: "mtime" as const, direction: "desc" as const },
+  };
+
+  function createSettings(overrides: Record<string, unknown> = {}) {
+    return {
+      activeBoxId: null,
+      boxes: [box],
+      favorites: [],
+      filter: { tags: ["project"] },
+      includeSubfolders: true,
+      lastFolderPath: "notes",
+      ...overrides,
+    };
+  }
+
+  function createModalActions(options: {
+    scope?: ReturnType<typeof createFolderScope> | ReturnType<typeof createBoxScope>;
+    settings?: ReturnType<typeof createSettings>;
+    saveSettings?: ReturnType<typeof vi.fn>;
+    moveScopeToFolder?: ReturnType<typeof vi.fn>;
+  } = {}): BoxActions {
+    const scope = options.scope ?? createFolderScope("notes", false);
+    return new BoxActions({
+      context: {
+        getApp: () => ({}),
+        store: {
+          getScope: () => scope,
+          getBaseCards: () => [],
+        },
+        getSettings: () => options.settings ?? createSettings(),
+        getUiStrings: () => getUiStrings("en"),
+        saveSettings: options.saveSettings ?? vi.fn(async () => undefined),
+      },
+      createProgrammaticSelectionRequest: vi.fn((nextScope) => ({ scope: nextScope })),
+      handleScopeSelection: vi.fn(async () => ({ action: "started" })),
+      moveScopeToFolder:
+        options.moveScopeToFolder ?? vi.fn(async () => ({ action: "started" })),
+      returnToCardsViewIfSinglePane: vi.fn(),
+    } as never);
+  }
+
   it("derives active-box list semantics from runtime scope, not persisted activeBoxId", () => {
     let scope = createFolderScope("notes", true);
-    const box = { id: "box-1", name: "One" };
+    const activeBoxEntry = { id: "box-1", name: "One" };
     const actions = new BoxActions({
       context: {
         store: { getScope: () => scope },
-        getSettings: () => ({ activeBoxId: "stale", boxes: [box] }),
+        getSettings: () => ({ activeBoxId: "stale", boxes: [activeBoxEntry] }),
       },
     } as never);
 
@@ -28,7 +85,7 @@ describe("BoxActions", () => {
 
     scope = createBoxScope("box-1");
     expect(actions.isBoxMode()).toBe(true);
-    expect(actions.getActiveBox()).toBe(box);
+    expect(actions.getActiveBox()).toBe(activeBoxEntry);
   });
 
   it("does not return to cards or persist when entering a rejected box scope", async () => {
@@ -97,6 +154,153 @@ describe("BoxActions", () => {
 
     expect(returnToCards).toHaveBeenCalledTimes(1);
     expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("persists a newly created box before entering it without writing activeBoxId directly", async () => {
+    const persistence = createDeferred<void>();
+    const order: string[] = [];
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => {
+      order.push("persist");
+      await persistence.promise;
+    });
+    const actions = createModalActions({
+      settings: createSettings({ boxes: [] }),
+      saveSettings,
+    });
+    const enterBoxScope = vi
+      .spyOn(actions, "enterBoxScope")
+      .mockImplementation(async (boxId) => {
+        order.push(`enter:${boxId}`);
+      });
+
+    actions.openCreateBoxModal();
+    setLatestModalTextInput(0, "Created");
+    clickLatestModalButton("Create");
+    await flushAsyncWork();
+
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(enterBoxScope).not.toHaveBeenCalled();
+
+    persistence.resolve();
+    await flushAsyncWork();
+
+    const patch = saveSettings.mock.calls[0]?.[0];
+    const createdId = patch.boxes[0].id;
+    expect(order).toEqual(["persist", `enter:${createdId}`]);
+    expect(patch).not.toHaveProperty("activeBoxId");
+    expect(mockState.modalInstances.at(-1)?.contentEl.isConnected).toBe(false);
+  });
+
+  it("does not enter or close the create modal when box persistence rejects", async () => {
+    const persistenceError = new Error("box persistence failed");
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => {
+      throw persistenceError;
+    });
+    const actions = createModalActions({
+      settings: createSettings({ boxes: [] }),
+      saveSettings,
+    });
+    const enterBoxScope = vi.spyOn(actions, "enterBoxScope");
+
+    actions.openCreateBoxModal();
+    setLatestModalTextInput(0, "Unpersisted");
+    const modal = mockState.modalInstances.at(-1) as unknown as {
+      contentEl: { isConnected: boolean };
+      submit: () => Promise<void>;
+    };
+
+    await expect(modal.submit()).rejects.toBe(persistenceError);
+
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(enterBoxScope).not.toHaveBeenCalled();
+    expect(modal.contentEl.isConnected).toBe(true);
+  });
+
+  it("saves a rule from one committed folder-scope snapshot, then enters the persisted box", async () => {
+    const order: string[] = [];
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => {
+      order.push("persist");
+    });
+    const actions = createModalActions({
+      scope: createFolderScope("screened", false),
+      settings: createSettings({ boxes: [], includeSubfolders: true }),
+      saveSettings,
+    });
+    vi.spyOn(actions, "enterBoxScope").mockImplementation(async (boxId) => {
+      order.push(`enter:${boxId}`);
+    });
+
+    actions.openSaveScopeAsBoxModal();
+    clickLatestModalButton("Create");
+    await flushAsyncWork();
+
+    const patch = saveSettings.mock.calls[0]?.[0];
+    const created = patch.boxes[0];
+    expect(created.rules).toEqual([
+      { folder: "screened", includeSubfolders: false, tags: ["project"] },
+    ]);
+    expect(order).toEqual(["persist", `enter:${created.id}`]);
+    expect(patch).not.toHaveProperty("activeBoxId");
+  });
+
+  it("moves away from the runtime-active box before deleting despite stale activeBoxId", async () => {
+    const order: string[] = [];
+    const moveScopeToFolder = vi.fn(async () => {
+      order.push("move");
+      return { action: "started" as const };
+    });
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => {
+      order.push("persist");
+    });
+    const actions = createModalActions({
+      scope: createBoxScope(box.id),
+      settings: createSettings({ activeBoxId: "stale-other-box" }),
+      moveScopeToFolder,
+      saveSettings,
+    });
+
+    actions.handleBoxCommand({ command: "delete", boxId: box.id });
+    clickLatestModalButton("Delete");
+    await flushAsyncWork();
+
+    expect(moveScopeToFolder).toHaveBeenCalledWith("notes");
+    expect(order).toEqual(["move", "persist"]);
+    expect(saveSettings.mock.calls[0]?.[0]).toEqual({ boxes: [], favorites: [] });
+    expect(mockState.modalInstances.at(-1)?.contentEl.isConnected).toBe(false);
+  });
+
+  it("keeps the active box and confirmation open when the folder migration is rejected", async () => {
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const actions = createModalActions({
+      scope: createBoxScope(box.id),
+      saveSettings,
+      moveScopeToFolder: vi.fn(async () => ({ action: "rejected_invalid" })),
+    });
+
+    actions.handleBoxCommand({ command: "delete", boxId: box.id });
+    clickLatestModalButton("Delete");
+    await flushAsyncWork();
+
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(mockState.modalInstances.at(-1)?.contentEl.isConnected).toBe(true);
+  });
+
+  it("deletes a non-active box without moving scope even when activeBoxId is stale", async () => {
+    const moveScopeToFolder = vi.fn(async () => ({ action: "started" }));
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const actions = createModalActions({
+      scope: createFolderScope("notes", false),
+      settings: createSettings({ activeBoxId: box.id }),
+      moveScopeToFolder,
+      saveSettings,
+    });
+
+    actions.handleBoxCommand({ command: "delete", boxId: box.id });
+    clickLatestModalButton("Delete");
+    await flushAsyncWork();
+
+    expect(moveScopeToFolder).not.toHaveBeenCalled();
+    expect(saveSettings.mock.calls[0]?.[0]).toEqual({ boxes: [], favorites: [] });
   });
 });
 

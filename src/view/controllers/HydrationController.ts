@@ -15,6 +15,9 @@ export interface HydrationControllerDeps {
 /** Hydrates card previews and rejects writes from stale scope loads. */
 export class HydrationController implements DisposableController {
   private pendingHydration = new Set<string>();
+  private readonly pendingOwners = new Map<string, symbol>();
+  private startupWaitTimer: ReturnType<Window["setTimeout"]> | null = null;
+  private disposed = false;
 
   constructor(private readonly deps: HydrationControllerDeps) {}
 
@@ -35,11 +38,25 @@ export class HydrationController implements DisposableController {
   }
 
   deletePending(path: string): boolean {
+    this.pendingOwners.delete(path);
     return this.pendingHydration.delete(path);
   }
 
   clearPending(): void {
     this.pendingHydration.clear();
+    this.pendingOwners.clear();
+  }
+
+  schedulePath(path: string): void {
+    if (this.disposed) {
+      return;
+    }
+    const token = this.context.epochs.load.token();
+    void this.hydrateCardPaths([path], token, {
+      publish: true,
+      batchSize: 1,
+      force: true,
+    });
   }
 
   async hydrateRange(start: number, end: number): Promise<void> {
@@ -60,20 +77,22 @@ export class HydrationController implements DisposableController {
   async hydrateCardPaths(
     paths: string[],
     token: EpochToken,
-    options: { publish: boolean; batchSize?: number },
+    options: { publish: boolean; batchSize?: number; force?: boolean },
   ): Promise<void> {
     const loadEpoch = this.context.epochs.load;
-    if (paths.length === 0 || !loadEpoch.isCurrent(token)) {
+    if (this.disposed || paths.length === 0 || !loadEpoch.isCurrent(token)) {
       return;
     }
 
     const targets: string[] = [];
+    const owner = Symbol("hydration");
     for (const path of paths) {
       const card = this.context.store.getBaseCards().find((candidate) => candidate.path === path);
-      if (!card || card.hydrated || this.pendingHydration.has(path)) {
+      if (!card || (!options.force && card.hydrated) || this.pendingHydration.has(path)) {
         continue;
       }
       this.pendingHydration.add(path);
+      this.pendingOwners.set(path, owner);
       targets.push(path);
     }
 
@@ -92,22 +111,28 @@ export class HydrationController implements DisposableController {
         if (!loadEpoch.isCurrent(token)) {
           return;
         }
-        batch.forEach((path) => this.pendingHydration.delete(path));
+        batch.forEach((path) => this.clearPendingOwnedBy(path, owner));
       }
     } finally {
-      if (loadEpoch.isCurrent(token)) {
-        targets.forEach((path) => this.pendingHydration.delete(path));
-      }
+      targets.forEach((path) => this.clearPendingOwnedBy(path, owner));
     }
 
-    if (options.publish && loadEpoch.isCurrent(token)) {
+    if (options.publish && !this.disposed && loadEpoch.isCurrent(token)) {
       this.context.publishGroups("cards");
     }
   }
 
+  private clearPendingOwnedBy(path: string, owner: symbol): void {
+    if (this.pendingOwners.get(path) !== owner) {
+      return;
+    }
+    this.pendingOwners.delete(path);
+    this.pendingHydration.delete(path);
+  }
+
   async hydrateStartupCardPaths(paths: string[], token: EpochToken): Promise<void> {
     const loadEpoch = this.context.epochs.load;
-    if (paths.length === 0 || !loadEpoch.isCurrent(token)) {
+    if (this.disposed || paths.length === 0 || !loadEpoch.isCurrent(token)) {
       return;
     }
 
@@ -116,19 +141,22 @@ export class HydrationController implements DisposableController {
       batchSize: HYDRATION_BATCH_SIZE,
     });
     const viewWindow = this.context.getViewWindow();
-    let timeoutId: ReturnType<Window["setTimeout"]> | null = null;
     const waitBudget = new Promise<"timeout">((resolve) => {
-      timeoutId = viewWindow.setTimeout(() => resolve("timeout"), STARTUP_PREVIEW_WAIT_MS);
+      this.startupWaitTimer = viewWindow.setTimeout(() => {
+        this.startupWaitTimer = null;
+        resolve("timeout");
+      }, STARTUP_PREVIEW_WAIT_MS);
     });
     const result = await Promise.race([hydration.then(() => "hydrated" as const), waitBudget]);
-    if (timeoutId !== null) {
-      viewWindow.clearTimeout(timeoutId);
+    if (this.startupWaitTimer !== null) {
+      viewWindow.clearTimeout(this.startupWaitTimer);
+      this.startupWaitTimer = null;
     }
 
-    if (result === "timeout") {
+    if (result === "timeout" && !this.disposed) {
       void hydration.then(
         () => {
-          if (loadEpoch.isCurrent(token)) {
+          if (!this.disposed && loadEpoch.isCurrent(token)) {
             this.context.publishGroups("cards");
           }
         },
@@ -141,7 +169,7 @@ export class HydrationController implements DisposableController {
 
   hydrateVisibleCardsOnOpen(): void {
     const visibleCards = this.context.store.getVisibleCards();
-    if (this.deps.isLoading() || visibleCards.length === 0) {
+    if (this.disposed || this.deps.isLoading() || visibleCards.length === 0) {
       return;
     }
     void this.hydrateRange(0, Math.min(visibleCards.length, STARTUP_PREVIEW_CARD_COUNT));
@@ -150,12 +178,12 @@ export class HydrationController implements DisposableController {
   async hydrateCard(cardPath: string, token: EpochToken): Promise<void> {
     const loadEpoch = this.context.epochs.load;
     const card = this.context.store.getBaseCards().find((candidate) => candidate.path === cardPath);
-    if (!card) {
+    if (this.disposed || !card) {
       return;
     }
 
     if (!isMarkdownCardKind(card.fileKind)) {
-      if (!loadEpoch.isCurrent(token)) {
+      if (this.disposed || !loadEpoch.isCurrent(token)) {
         return;
       }
       const placeholder = getCardPlaceholderText(
@@ -173,7 +201,7 @@ export class HydrationController implements DisposableController {
 
     try {
       const markdown = await this.context.getApp().vault.cachedRead(card.file);
-      if (!loadEpoch.isCurrent(token)) {
+      if (this.disposed || !loadEpoch.isCurrent(token)) {
         return;
       }
       const preview = buildLightPreview(
@@ -187,7 +215,7 @@ export class HydrationController implements DisposableController {
         hydrated: true,
       });
     } catch {
-      if (!loadEpoch.isCurrent(token)) {
+      if (this.disposed || !loadEpoch.isCurrent(token)) {
         return;
       }
       this.context.store.patchCard(cardPath, {
@@ -201,7 +229,16 @@ export class HydrationController implements DisposableController {
 
   dispose(): DisposeReport {
     const clearedPendingHydration = this.pendingHydration.size > 0;
-    this.pendingHydration.clear();
-    return { clearedPendingHydration };
+    const cancelledDebounce = this.startupWaitTimer !== null;
+    if (this.startupWaitTimer !== null) {
+      this.context.getViewWindow().clearTimeout(this.startupWaitTimer);
+      this.startupWaitTimer = null;
+    }
+    this.disposed = true;
+    this.clearPending();
+    return {
+      clearedPendingHydration,
+      ...(cancelledDebounce ? { cancelledDebounce: true } : {}),
+    };
   }
 }

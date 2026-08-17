@@ -15,20 +15,20 @@ export interface IncrementalMutationDeps {
   app: App;
   sort: { field: SortField; direction: SortDirection };
   pendingHydration: {
-    add: (path: string) => void;
+    has: (path: string) => boolean;
     delete: (path: string) => boolean;
   };
   getBulkSelection: () => BulkSelectionState;
   setBulkSelection: (state: BulkSelectionState) => void;
   isPathInActiveScope: (path: string) => boolean;
-  /** Fire-and-forget; its owner guards writes with the shared load epoch. */
-  hydrateCard: (path: string) => void;
 }
 
 export interface IncrementalMutationOutcome {
   result: IncrementalMutationResult;
   /** `null` means no collection change; `[]` means the collection became empty. */
   nextCards: NoteCardRecord[] | null;
+  /** Paths the caller schedules only after installing `nextCards`. */
+  hydrationPaths: readonly string[];
 }
 
 function createRecord(file: TFile, fileKind: NoteCardRecord["fileKind"]): NoteCardRecord {
@@ -54,6 +54,7 @@ export function applyIncrementalMutation(
   const unchanged = (result: IncrementalMutationResult): IncrementalMutationOutcome => ({
     result,
     nextCards: null,
+    hydrationPaths: [],
   });
 
   if (event.isFolder) {
@@ -82,7 +83,7 @@ export function applyIncrementalMutation(
     deps.pendingHydration.delete(event.path);
     cards.splice(index, 1);
     setBulkAfterRemoval(event.path);
-    return { result: { handled: true, action: "removed" }, nextCards: cards };
+    return { result: { handled: true, action: "removed" }, nextCards: cards, hydrationPaths: [] };
   }
 
   if (event.eventType === "create") {
@@ -99,8 +100,11 @@ export function applyIncrementalMutation(
     }
     const card = createRecord(file, fileKind);
     insertSorted(card);
-    deps.hydrateCard(card.path);
-    return { result: { handled: true, action: "inserted" }, nextCards: cards };
+    return {
+      result: { handled: true, action: "inserted" },
+      nextCards: cards,
+      hydrationPaths: [card.path],
+    };
   }
 
   if (event.eventType === "modify") {
@@ -109,8 +113,11 @@ export function applyIncrementalMutation(
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
     deps.pendingHydration.delete(card.path);
-    deps.hydrateCard(card.path);
-    return { result: { handled: true, action: "hydration_reset" }, nextCards: null };
+    return {
+      result: { handled: true, action: "hydration_reset" },
+      nextCards: null,
+      hydrationPaths: [card.path],
+    };
   }
 
   if (event.eventType === "rename") {
@@ -130,21 +137,23 @@ export function applyIncrementalMutation(
         if (event.oldPath) {
           setBulkAfterRemoval(event.oldPath);
         }
-        return { result: { handled: true, action: "removed" }, nextCards: cards };
+        return {
+          result: { handled: true, action: "removed" },
+          nextCards: cards,
+          hydrationPaths: [],
+        };
       }
 
       const file = deps.app.vault.getAbstractFileByPath(event.path);
       if (!oldCard || !(file instanceof TFile)) {
         return unchanged({ handled: false, action: "deferred_full_reload" });
       }
-      const hadPending = deps.pendingHydration.delete(oldCard.path);
+      const hadPending = deps.pendingHydration.has(oldCard.path);
+      deps.pendingHydration.delete(oldCard.path);
       oldCard.file = file;
       oldCard.fileKind = newKind;
       oldCard.path = file.path;
       oldCard.title = file.basename;
-      if (hadPending) {
-        deps.pendingHydration.add(file.path);
-      }
       if (event.oldPath) {
         deps.setBulkSelection(migrateRenamedPath(
           deps.getBulkSelection(),
@@ -154,7 +163,11 @@ export function applyIncrementalMutation(
       }
       cards.splice(oldIndex, 1);
       insertSorted(oldCard);
-      return { result: { handled: true, action: "updated" }, nextCards: cards };
+      return {
+        result: { handled: true, action: "updated" },
+        nextCards: cards,
+        hydrationPaths: hadPending ? [file.path] : [],
+      };
     }
 
     if (newInScope && newKind !== null && !cards.some((card) => card.path === event.path)) {
@@ -164,8 +177,11 @@ export function applyIncrementalMutation(
       }
       const card = createRecord(file, newKind);
       insertSorted(card);
-      deps.hydrateCard(card.path);
-      return { result: { handled: true, action: "inserted" }, nextCards: cards };
+      return {
+        result: { handled: true, action: "inserted" },
+        nextCards: cards,
+        hydrationPaths: [card.path],
+      };
     }
     return unchanged({ handled: true, action: "skipped_not_found" });
   }

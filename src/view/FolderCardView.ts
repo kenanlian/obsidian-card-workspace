@@ -279,6 +279,7 @@ export class FolderCardView extends ItemView {
     return this.modules.scopeController.refresh(request);
   }
 
+  getCardScope(): CardScope { return this.cardScope; }
   /**
    * Applies the weakest update that still reflects a change. Only `"reload"`
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
@@ -289,11 +290,9 @@ export class FolderCardView extends ItemView {
         await this.refresh({ reason, forceRefresh: true });
         return;
       case "rehydrate":
-        for (const card of this.baseCards) {
-          card.hydrated = false;
-          card.previewHtml = "";
-          card.previewMode = "empty";
-        }
+        this.baseCards = this.baseCards.map((card) => ({
+          ...card, hydrated: false, previewHtml: "", previewMode: "empty",
+        }));
         this.modules.hydration.clearPending();
         this.sortAndReprojectCards();
         this.publishForIntent(intent);
@@ -341,7 +340,8 @@ export class FolderCardView extends ItemView {
       cancelledDebounce:
         (searchReport.cancelledDebounce ?? false)
         || (navLayoutReport.cancelledDebounce ?? false)
-        || (scopeReport.cancelledDebounce ?? false),
+        || (scopeReport.cancelledDebounce ?? false)
+        || (hydrationReport.cancelledDebounce ?? false),
       clearedQueuedRequest: scopeReport.clearedQueuedRequest ?? false,
       clearedPendingHydration: hydrationReport.clearedPendingHydration ?? false,
     };
@@ -564,7 +564,7 @@ export class FolderCardView extends ItemView {
         return;
       case "reproject":
       case "rehydrate":
-        this.publishGroups("cards", "projection", "bulk", "scope");
+        this.publishGroups("nav", "appearance", "strings", "scope", "cards", "projection", "bulk");
         return;
       case "reload":
         this.publishGroups(...PANEL_GROUPS);

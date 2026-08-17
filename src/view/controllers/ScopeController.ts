@@ -43,12 +43,12 @@ export interface ScopeControllerDeps {
   setBulkSelection: (state: BulkSelectionState) => void;
   clearBulkSelection: () => void;
   pendingHydration: {
-    add: (path: string) => void;
+    has: (path: string) => boolean;
     delete: (path: string) => boolean;
     clear: () => void;
   };
   hydrateStartupCardPaths: (paths: string[], token: EpochToken) => Promise<void>;
-  hydrateCardNow: (path: string) => void;
+  scheduleHydrationPath: (path: string) => void;
   resetSearchForLoad: () => void;
   refreshSearchProjection: () => void;
   scheduleNavCountRefresh: () => void;
@@ -396,12 +396,12 @@ export class ScopeController implements DisposableController {
         getBulkSelection: this.deps.getBulkSelection,
         setBulkSelection: this.deps.setBulkSelection,
         isPathInActiveScope: (path) => this.isPathInActiveScope(path),
-        hydrateCard: this.deps.hydrateCardNow,
       });
       if (outcome.result.handled) {
         if (outcome.nextCards !== null) {
           this.context.store.replaceBaseCards(outcome.nextCards);
         }
+        outcome.hydrationPaths.forEach((path) => this.deps.scheduleHydrationPath(path));
         this.deps.projectVisibleCards();
         this.context.publishGroups("cards", "projection", "bulk", "scope");
         return {

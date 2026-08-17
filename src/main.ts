@@ -30,7 +30,7 @@ import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } f
 import { resolveCardFileKind } from "./view/file-kind";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { rewritePathAfterRename } from "./view/scope-files";
-import { maxIntent, type ViewUpdateIntent } from "./view/update-intent";
+import { resolveSettingsUpdateIntent } from "./view/update-intent";
 import {
   BULK_ADD_TO_BOX_ICON,
   BULK_ADD_TO_BOX_ICON_SVG,
@@ -395,8 +395,9 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
+    const previous = this.getSettings();
     const { preferences, workspace, userData } = splitFlatPatch(patch);
-    const writes: Array<Promise<ViewUpdateIntent | null>> = [];
+    const writes: Array<Promise<unknown>> = [];
     if (hasPatchValues(preferences)) {
       writes.push(this.settingsStore.updatePreferences(preferences));
     }
@@ -410,16 +411,15 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    const intent = (await Promise.all(writes)).reduce<ViewUpdateIntent | null>(
-      (current, next) => (current === null ? next : next === null ? current : maxIntent(current, next)),
-      null,
-    );
-    if (intent === null) {
-      return;
-    }
+    // Capture the synchronously installed combined snapshot before awaiting persistence.
+    const next = this.getSettings();
+    await Promise.all(writes);
 
     this.withFolderViews((view) => {
-      void view.applyUpdateIntent(intent, "settings-change");
+      const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
+      if (intent !== null) {
+        void view.applyUpdateIntent(intent, "settings-change");
+      }
     });
   }
 

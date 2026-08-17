@@ -63,8 +63,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       await flushAsyncWork();
 
       expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
-      expect(card.hydrated).toBe(true);
-      expect(card.previewMode).not.toBe("empty");
+      const hydratedCard = (view as any).baseCards.find((entry: { path: string }) => entry.path === card.path);
+      expect(hydratedCard?.hydrated).toBe(true);
+      expect(hydratedCard?.previewMode).not.toBe("empty");
     });
 
     it("onOpen() registers open-note subscription that calls plugin.openNoteFromCard", async () => {
@@ -998,7 +999,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
         expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
-        expect(card.hydrated).toBe(true);
+        const hydratedCard = (view as any).baseCards.find((entry: { path: string }) => entry.path === card.path);
+        expect(hydratedCard?.hydrated).toBe(true);
       });
       it("prewarms projected startup cards within the first-screen wait budget", async () => {
         const { view, app, plugin } = createViewWithFile("notes/prewarm-projection-seed.md");
@@ -1155,8 +1157,11 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           delayedRead.resolve("# delayed\ncontent");
           await flushAsyncWork(2);
 
-          expect(card?.hydrated).toBe(true);
-          expect(card?.previewHtml).not.toBe("");
+          const hydratedCard = (view as any).baseCards.find(
+            (entry: { path: string }) => entry.path === file.path,
+          );
+          expect(hydratedCard?.hydrated).toBe(true);
+          expect(hydratedCard?.previewHtml).not.toBe("");
           expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
         } finally {
           vi.useRealTimers();

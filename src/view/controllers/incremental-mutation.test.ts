@@ -67,7 +67,6 @@ describe("applyIncrementalMutation", () => {
           getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
           setBulkSelection: vi.fn(),
           isPathInActiveScope: () => true,
-          hydrateCard: vi.fn(),
         });
         expect(outcome.result.action).toBe(testCase.action);
       });
@@ -82,10 +81,60 @@ describe("applyIncrementalMutation", () => {
       getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
       setBulkSelection: vi.fn(),
       isPathInActiveScope: () => true,
-      hydrateCard: vi.fn(),
     };
     const event: VaultMutationEvent = { eventType: "delete", path: "scope/old.md", oldPath: null, isFolder: false, fileKind: "markdown" };
     expect(applyIncrementalMutation(event, [], deps).nextCards).toBeNull();
     expect(applyIncrementalMutation(event, [record(event.path)], deps).nextCards).toEqual([]);
+  });
+
+  it("returns create and modify hydration paths while clearing a modified pending path", () => {
+    const pending = new Set(["scope/old.md"]);
+    const deps = {
+      app: {
+        vault: {
+          getAbstractFileByPath: (path: string) => file(path),
+        },
+      } as any,
+      sort: { field: "name" as const, direction: "asc" as const },
+      pendingHydration: pending,
+      getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+      setBulkSelection: vi.fn(),
+      isPathInActiveScope: () => true,
+    };
+
+    const created = applyIncrementalMutation(
+      { eventType: "create", path: "scope/new.md", oldPath: null, isFolder: false, fileKind: "markdown" },
+      [record("scope/old.md")],
+      deps,
+    );
+    expect(created.hydrationPaths).toEqual(["scope/new.md"]);
+
+    const modified = applyIncrementalMutation(
+      { eventType: "modify", path: "scope/old.md", oldPath: null, isFolder: false, fileKind: "markdown" },
+      [record("scope/old.md")],
+      deps,
+    );
+    expect(modified.hydrationPaths).toEqual(["scope/old.md"]);
+    expect(pending.has("scope/old.md")).toBe(false);
+  });
+
+  it("migrates pending rename hydration through the outcome without pre-marking the new path", () => {
+    const pending = new Set(["scope/old.md"]);
+    const renamed = applyIncrementalMutation(
+      { eventType: "rename", path: "scope/new.md", oldPath: "scope/old.md", isFolder: false, fileKind: "markdown" },
+      [record("scope/old.md")],
+      {
+        app: { vault: { getAbstractFileByPath: () => file("scope/new.md") } } as any,
+        sort: { field: "name", direction: "asc" },
+        pendingHydration: pending,
+        getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+        setBulkSelection: vi.fn(),
+        isPathInActiveScope: () => true,
+      },
+    );
+
+    expect(renamed.hydrationPaths).toEqual(["scope/new.md"]);
+    expect(pending.has("scope/old.md")).toBe(false);
+    expect(pending.has("scope/new.md")).toBe(false);
   });
 });

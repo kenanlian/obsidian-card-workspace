@@ -135,6 +135,10 @@ describe("R1 search subsystem is only reachable through its public entry points"
   const ALLOWED_SEARCH_ENTRIES = ["src/search/index.ts", "src/search/types.ts"];
   const EXEMPT_FILES = ["src/services/SearchCoordinator.ts"];
 
+  it("keeps SearchCoordinator as the unique direct search-layer exemption", () => {
+    expect(EXEMPT_FILES).toEqual(["src/services/SearchCoordinator.ts"]);
+  });
+
   it("keeps view and service layers on the public search surface", () => {
     const violations: string[] = [];
     for (const [file, deps] of dependencyGraph) {

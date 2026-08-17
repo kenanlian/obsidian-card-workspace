@@ -289,8 +289,12 @@ vi.mock("./view/FolderCardView", () => {
   return {
     FOLDER_CARD_VIEW: "folder-card-view",
     FolderCardView: class MockFolderCardView {
+      cardScope: unknown = { kind: "folder", path: "", includeSubfolders: true };
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
+      getCardScope(): unknown {
+        return this.cardScope;
+      }
       cleanupLifecycle(): void {}
       handleScopeSelection = vi.fn(async (request: { scope: unknown }) => {
         return {
@@ -613,6 +617,73 @@ describe("CardWorkspacePlugin settings update intents", () => {
     });
 
     expect(view.applyUpdateIntent).toHaveBeenCalledWith("reload", "settings-change");
+  });
+
+  it("keeps the stronger intent for mixed projection and presentation changes", async () => {
+    const { plugin, view } = attachView();
+
+    await plugin.saveSettings({
+      sort: { field: "name" },
+      cardCornerRadius: "compact",
+    });
+
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+  });
+
+  it("dispatches box changes independently for each view runtime scope", async () => {
+    const { plugin } = createPluginHarness();
+    const ViewCtor = FolderCardView as unknown as {
+      new (): {
+        cardScope: unknown;
+        applyUpdateIntent: ReturnType<typeof vi.fn>;
+      };
+    };
+    const viewX = new ViewCtor();
+    const viewY = new ViewCtor();
+    viewX.cardScope = { kind: "box", boxId: "box-x" };
+    viewY.cardScope = { kind: "box", boxId: "box-y" };
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view: viewX }, { view: viewY }];
+    const baseBox = (id: string) => ({
+      id,
+      name: id,
+      rules: [],
+      manualPaths: [],
+      excludedPaths: [],
+      pinnedPaths: [],
+      sort: { field: "mtime" as const, direction: "desc" as const },
+    });
+
+    await plugin.saveSettings({ boxes: [baseBox("box-x"), baseBox("box-y")] });
+    await plugin.saveSettings({ activeBoxId: "box-y" });
+    viewX.applyUpdateIntent.mockClear();
+    viewY.applyUpdateIntent.mockClear();
+
+    await plugin.saveSettings({
+      boxes: [
+        { ...baseBox("box-x"), manualPaths: ["notes/member.md"] },
+        baseBox("box-y"),
+      ],
+    });
+
+    expect(plugin.getSettings().activeBoxId).toBe("box-y");
+    expect(viewX.applyUpdateIntent).toHaveBeenLastCalledWith("reload", "settings-change");
+    expect(viewY.applyUpdateIntent).toHaveBeenLastCalledWith("patch", "settings-change");
+
+    viewX.applyUpdateIntent.mockClear();
+    viewY.applyUpdateIntent.mockClear();
+    await plugin.saveSettings({
+      boxes: [
+        {
+          ...baseBox("box-x"),
+          manualPaths: ["notes/member.md"],
+          sort: { field: "name", direction: "asc" },
+        },
+        baseBox("box-y"),
+      ],
+    });
+
+    expect(viewX.applyUpdateIntent).toHaveBeenLastCalledWith("reproject", "settings-change");
+    expect(viewY.applyUpdateIntent).toHaveBeenLastCalledWith("patch", "settings-change");
   });
 });
 

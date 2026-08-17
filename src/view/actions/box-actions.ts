@@ -144,21 +144,13 @@ export class BoxActions {
     return files;
   }
 
-  private async persistBoxes(
-    boxes: CardBoxDefinition[],
-    activeBoxId?: string | null,
-  ): Promise<void> {
+  private async persistBoxes(boxes: CardBoxDefinition[]): Promise<void> {
     const favorites = pruneFavoriteBoxes(
       this.deps.context.getSettings().favorites ?? [],
       boxes.map((box) => box.id),
     );
-    if (activeBoxId === undefined) {
-      await this.deps.context.saveSettings({ boxes, favorites });
-      return;
-    }
-    await this.deps.context.saveSettings({ boxes, activeBoxId, favorites });
+    await this.deps.context.saveSettings({ boxes, favorites });
   }
-
   /** Box-scope resolution for the loader, which only knows the box id. */
   collectBoxFilesById(boxId: string): TFile[] {
     const box = findCardBox(this.deps.context.getSettings().boxes ?? [], boxId);
@@ -184,7 +176,6 @@ export class BoxActions {
     }
     await this.persistBoxes(upsertCardBox(settings.boxes, nextBox));
   }
-
   /** Counting walks each box's rule scopes, so only the nav group pays for this. */
   buildBoxSummaries(): BoxSummary[] {
     return (this.deps.context.getSettings().boxes ?? []).map((entry) => ({
@@ -195,10 +186,11 @@ export class BoxActions {
   }
 
   getBrowseScope(): { folder: string; includeSubfolders: boolean; tags: string[] } {
+    const scope = this.deps.context.store.getScope();
     const settings = this.deps.context.getSettings();
     return {
-      folder: scopeDisplayPath(this.deps.context.store.getScope()),
-      includeSubfolders: settings.includeSubfolders,
+      folder: scopeDisplayPath(scope),
+      includeSubfolders: scope.kind === "folder" ? scope.includeSubfolders : settings.includeSubfolders,
       tags: [...settings.filter.tags],
     };
   }
@@ -256,7 +248,8 @@ export class BoxActions {
       onSubmit: async (name) => {
         const settings = this.deps.context.getSettings();
         const box = createCardBox(name, settings.boxes);
-        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+        await this.persistBoxes(upsertCardBox(settings.boxes, box));
+        await this.enterBoxScope(box.id);
       },
     }).open();
   }
@@ -308,11 +301,17 @@ export class BoxActions {
         button
           .setWarning()
           .setButtonText(strings.deleteConfirm)
-          .onClick(() => {
+          .onClick(async () => {
             const current = this.deps.context.getSettings();
+            const scope = this.deps.context.store.getScope();
+            if (isBoxScope(scope) && scope.boxId === box.id) {
+              const result = await this.deps.moveScopeToFolder(current.lastFolderPath);
+              if (result.action === "rejected_invalid") {
+                return;
+              }
+            }
             const nextBoxes = deleteCardBox(current.boxes, box.id);
-            const nextActive = current.activeBoxId === box.id ? null : current.activeBoxId;
-            void this.persistBoxes(nextBoxes, nextActive);
+            await this.persistBoxes(nextBoxes);
             modal.close();
           });
       });
@@ -332,7 +331,8 @@ export class BoxActions {
       onSubmit: async (name) => {
         const settings = this.deps.context.getSettings();
         const box = createCardBox(name, settings.boxes, { rules: [rule] });
-        await this.persistBoxes(upsertCardBox(settings.boxes, box), box.id);
+        await this.persistBoxes(upsertCardBox(settings.boxes, box));
+        await this.enterBoxScope(box.id);
       },
     }).open();
   }

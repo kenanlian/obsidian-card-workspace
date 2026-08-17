@@ -9,7 +9,7 @@ export interface ViewStateStore {
   replaceBaseCards(cards: NoteCardRecord[]): void;
   getVisibleCards(): readonly NoteCardRecord[];
   replaceVisibleCards(cards: NoteCardRecord[]): void;
-  /** Applies a patch to the shared record object; unknown paths are ignored. */
+  /** Replaces the matching record in each containing array; unknown paths are ignored. */
   patchCard(path: string, patch: Partial<NoteCardRecord>): void;
   getSelectedPath(): string | null;
   setSelectedPath(path: string | null): void;
@@ -35,11 +35,19 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
       visibleCards = cards;
     },
     patchCard(path, patch) {
-      const record =
+      const currentRecord =
         baseCards.find((card) => card.path === path) ??
         visibleCards.find((card) => card.path === path);
-      if (record) {
-        Object.assign(record, patch);
+      if (!currentRecord) {
+        return;
+      }
+
+      const replacement = { ...currentRecord, ...patch };
+      if (baseCards.some((card) => card.path === path)) {
+        baseCards = baseCards.map((card) => card.path === path ? replacement : card);
+      }
+      if (visibleCards.some((card) => card.path === path)) {
+        visibleCards = visibleCards.map((card) => card.path === path ? replacement : card);
       }
     },
     getSelectedPath: () => selectedPath,

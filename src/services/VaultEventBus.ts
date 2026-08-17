@@ -4,6 +4,7 @@ export type { VaultEventListener };
 
 export class VaultEventBus {
   private readonly listeners: VaultEventListener[] = [];
+  private deliveryTail: Promise<void> = Promise.resolve();
 
   subscribe(listener: VaultEventListener): () => void {
     this.listeners.push(listener);
@@ -19,14 +20,19 @@ export class VaultEventBus {
    * Await listeners in registration order. Isolate per-listener throw/reject with
    * console.warn; do not reject publish.
    */
-  async publish(event: VaultMutationEvent): Promise<void> {
+  publish(event: VaultMutationEvent): Promise<void> {
     const listeners = this.listeners.slice();
-    for (const listener of listeners) {
-      try {
-        await listener(event);
-      } catch (error) {
-        console.warn("[Card Workspace] Vault event listener failed.", error);
+    const deliver = async (): Promise<void> => {
+      for (const listener of listeners) {
+        try {
+          await listener(event);
+        } catch (error) {
+          console.warn("[Card Workspace] Vault event listener failed.", error);
+        }
       }
-    }
+    };
+    const completion = this.deliveryTail.then(deliver, deliver);
+    this.deliveryTail = completion.catch(() => undefined);
+    return completion;
   }
 }

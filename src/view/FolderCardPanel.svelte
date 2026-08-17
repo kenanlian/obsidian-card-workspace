@@ -188,7 +188,7 @@
     onToggleNavSection,
   }: FolderCardPanelProps = $props();
 
-  let panelState = $state<PanelModelState>(EMPTY_PANEL_STATE);
+  let panelState = $state.raw<PanelModelState>(EMPTY_PANEL_STATE);
 
   $effect(() => {
     if (

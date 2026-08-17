@@ -6,6 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
+import { TFile } from "obsidian";
 import { createFolderScope } from "../scope";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -18,8 +19,9 @@ function createHarness() {
     Object.assign(settings, patch);
   });
   const requestUpdate = vi.fn(async () => undefined);
+  const app = { vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() } };
   const context = {
-    getApp: () => ({ vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() } }),
+    getApp: () => app,
     store: createViewStateStore(createFolderScope("old/nested", true)),
     epochs: createViewEpochs(),
     getSettings: () => settings,
@@ -31,6 +33,7 @@ function createHarness() {
     getViewWindow: () => globalThis,
   } as unknown as ViewContext;
   const pending = new Set<string>();
+  const scheduleHydrationPath = vi.fn();
   const controller = new ScopeController({
     context,
     collectBoxFiles: () => [],
@@ -42,7 +45,7 @@ function createHarness() {
     clearBulkSelection: vi.fn(),
     pendingHydration: pending,
     hydrateStartupCardPaths: vi.fn(async () => undefined),
-    hydrateCardNow: vi.fn(),
+    scheduleHydrationPath,
     resetSearchForLoad: vi.fn(),
     refreshSearchProjection: vi.fn(),
     scheduleNavCountRefresh: vi.fn(),
@@ -50,7 +53,7 @@ function createHarness() {
     scheduleFolderTreeRefresh: vi.fn(),
     startupCardCount: 6,
   });
-  return { context, controller, requestUpdate, saveSettings };
+  return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath };
 }
 
 describe("ScopeController", () => {
@@ -129,5 +132,65 @@ describe("ScopeController", () => {
     expect(report.cancelledDebounce).toBe(true);
     expect(context.epochs.load.value).toBe(before + 1);
     expect(requestUpdate).not.toHaveBeenCalled();
+  });
+
+  it("installs an incrementally created record before scheduling its hydration", () => {
+    const { context, controller, scheduleHydrationPath } = createHarness();
+    const liveFile = Object.assign(new TFile(), {
+      path: "old/nested/new.md",
+      name: "new.md",
+      basename: "new",
+      extension: "md",
+      stat: { ctime: 1, mtime: 2 },
+    });
+    (context.getApp() as any).vault.getAbstractFileByPath = () => liveFile;
+    scheduleHydrationPath.mockImplementation((path: string) => {
+      expect(context.store.getBaseCards().some((card) => card.path === path)).toBe(true);
+    });
+
+    const result = controller.handleVaultMutation({
+      eventType: "create",
+      path: liveFile.path,
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(result.incrementalResult?.action).toBe("inserted");
+    expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
+  });
+
+  it("schedules an existing modified card for forced hydration", () => {
+    const { context, controller, scheduleHydrationPath } = createHarness();
+    const liveFile = Object.assign(new TFile(), {
+      path: "old/nested/existing.md",
+      name: "existing.md",
+      basename: "existing",
+      extension: "md",
+      stat: { ctime: 1, mtime: 2 },
+    });
+    context.store.replaceBaseCards([{
+      file: liveFile,
+      fileKind: "markdown",
+      path: liveFile.path,
+      title: liveFile.basename,
+      ctime: 1,
+      mtime: 2,
+      excerpt: "old",
+      previewHtml: "<p>old</p>",
+      previewMode: "text",
+      hydrated: true,
+    }]);
+
+    const result = controller.handleVaultMutation({
+      eventType: "modify",
+      path: liveFile.path,
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(result.incrementalResult?.action).toBe("hydration_reset");
+    expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
   });
 });

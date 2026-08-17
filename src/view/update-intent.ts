@@ -1,5 +1,6 @@
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
+import { isBoxScope, type CardScope } from "./scope";
 import type { CardBoxDefinition, FavoriteEntry } from "./types";
 
 /**
@@ -77,6 +78,7 @@ export function resolveBoxesUpdateIntent(
 export function resolveSettingsUpdateIntent(
   previous: PluginSettings,
   next: PluginSettings,
+  scope?: CardScope,
 ): ViewUpdateIntent | null {
   let intent: ViewUpdateIntent | null = null;
 
@@ -114,5 +116,10 @@ export function resolveSettingsUpdateIntent(
   if (previous.favoritesSectionCollapsed !== next.favoritesSectionCollapsed) intent = mergeIntent(intent, "patch");
   if (previous.showNavItemCounts !== next.showNavItemCounts) intent = mergeIntent(intent, "patch");
 
-  return mergeIntent(intent, resolveBoxesUpdateIntent(previous.boxes, next.boxes, next.activeBoxId));
+  // SettingsStore callers have no view scope and retain the global/default
+  // classification. View dispatch must always pass its runtime scope (C7).
+  const activeBoxId = scope === undefined
+    ? next.activeBoxId
+    : isBoxScope(scope) ? scope.boxId : null;
+  return mergeIntent(intent, resolveBoxesUpdateIntent(previous.boxes, next.boxes, activeBoxId));
 }

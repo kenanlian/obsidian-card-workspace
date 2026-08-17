@@ -62,6 +62,7 @@ describe("VaultEventBus", () => {
     });
 
     const published = bus.publish(createEvent());
+    await Promise.resolve();
     expect(log).toEqual(["first-start"]);
     expect(stamps).toEqual([1]);
 
@@ -123,5 +124,99 @@ describe("VaultEventBus", () => {
     await bus.publish(createEvent());
 
     expect(log).toEqual(["kept"]);
+  });
+
+  it("serializes complete listener chains across consecutive publications", async () => {
+    const bus = new VaultEventBus();
+    const log: string[] = [];
+    let releaseFirstEvent!: () => void;
+    const firstEventHold = new Promise<void>((resolve) => {
+      releaseFirstEvent = resolve;
+    });
+
+    bus.subscribe(async (event) => {
+      log.push(`${event.path}:first-start`);
+      if (event.path === "notes/a.md") {
+        await firstEventHold;
+      }
+      log.push(`${event.path}:first-end`);
+    });
+    bus.subscribe((event) => {
+      log.push(`${event.path}:second`);
+    });
+
+    const first = bus.publish(createEvent({ path: "notes/a.md" }));
+    const second = bus.publish(createEvent({ path: "notes/b.md" }));
+    await Promise.resolve();
+
+    expect(log).toEqual(["notes/a.md:first-start"]);
+
+    releaseFirstEvent();
+    await Promise.all([first, second]);
+
+    expect(log).toEqual([
+      "notes/a.md:first-start",
+      "notes/a.md:first-end",
+      "notes/a.md:second",
+      "notes/b.md:first-start",
+      "notes/b.md:first-end",
+      "notes/b.md:second",
+    ]);
+  });
+
+  it("continues queued publications after a listener rejection", async () => {
+    const bus = new VaultEventBus();
+    const log: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const boom = new Error("first event failed");
+
+    bus.subscribe((event) => {
+      if (event.path === "notes/a.md") {
+        return Promise.reject(boom);
+      }
+      log.push(`${event.path}:first`);
+    });
+    bus.subscribe((event) => {
+      log.push(`${event.path}:second`);
+    });
+
+    const first = bus.publish(createEvent({ path: "notes/a.md" }));
+    const second = bus.publish(createEvent({ path: "notes/b.md" }));
+
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+
+    expect(log).toEqual(["notes/a.md:second", "notes/b.md:first", "notes/b.md:second"]);
+    expect(warn).toHaveBeenCalledWith("[Card Workspace] Vault event listener failed.", boom);
+  });
+
+  it("snapshots listeners when publish is called even while the event waits", async () => {
+    const bus = new VaultEventBus();
+    const log: string[] = [];
+    let releaseFirstEvent!: () => void;
+    const firstEventHold = new Promise<void>((resolve) => {
+      releaseFirstEvent = resolve;
+    });
+
+    bus.subscribe(async (event) => {
+      if (event.path === "notes/a.md") {
+        await firstEventHold;
+      }
+    });
+    const unsubscribeSnapshotted = bus.subscribe((event) => {
+      log.push(`${event.path}:snapshotted`);
+    });
+
+    const first = bus.publish(createEvent({ path: "notes/a.md" }));
+    const second = bus.publish(createEvent({ path: "notes/b.md" }));
+    unsubscribeSnapshotted();
+    bus.subscribe((event) => {
+      log.push(`${event.path}:late`);
+    });
+
+    releaseFirstEvent();
+    await Promise.all([first, second]);
+
+    expect(log).toEqual(["notes/a.md:snapshotted", "notes/b.md:snapshotted"]);
   });
 });

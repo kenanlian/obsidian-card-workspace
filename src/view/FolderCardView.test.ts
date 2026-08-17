@@ -962,6 +962,39 @@ describe("FolderCardView host contract", () => {
     }
   });
 
+  it("disposes controllers in reverse order and aggregates every cleanup report", () => {
+    const { view } = createHarness();
+    const order: string[] = [];
+    (view as any).viewEventUnsubscribe = vi.fn(() => order.push("unsubscribe"));
+    vi.spyOn((view as any).modules.scopeController, "dispose").mockImplementation(() => {
+      order.push("scope");
+      return { clearedQueuedRequest: true };
+    });
+    vi.spyOn((view as any).modules.navLayout, "dispose").mockImplementation(() => {
+      order.push("nav");
+      return {};
+    });
+    vi.spyOn((view as any).modules.bulk, "dispose").mockImplementation(() => {
+      order.push("bulk");
+      return {};
+    });
+    vi.spyOn((view as any).modules.search, "dispose").mockImplementation(() => {
+      order.push("search");
+      return {};
+    });
+    vi.spyOn((view as any).modules.hydration, "dispose").mockImplementation(() => {
+      order.push("hydration");
+      return { cancelledDebounce: true, clearedPendingHydration: true };
+    });
+
+    expect(view.cleanupLifecycle()).toEqual({
+      cancelledDebounce: true,
+      clearedQueuedRequest: true,
+      clearedPendingHydration: true,
+    });
+    expect(order).toEqual(["unsubscribe", "scope", "nav", "bulk", "search", "hydration"]);
+  });
+
   it("keeps cleanup isolated across multiple leaves of the same view type", async () => {
     vi.useFakeTimers();
     try {
@@ -1902,7 +1935,7 @@ describe("FolderCardView host contract", () => {
       (view as any).epochs.load.token(),
     );
 
-    expect(card.previewHtml).toContain("这是一个 Canvas 文件。");
+    expect((view as any).baseCards[0]?.previewHtml).toContain("这是一个 Canvas 文件。");
   });
 });
 function createSearchHealth(overrides: Partial<SearchServiceSnapshot["health"]> = {}): SearchServiceSnapshot["health"] {
@@ -1986,31 +2019,45 @@ describe("FolderCardView graded update intents", () => {
     plugin.getSettings.mockReturnValue({
       ...currentSettings,
       sort: { field: "name", direction: "asc" },
+      cardCornerRadius: "compact",
     });
+    const appearanceBefore = getPanelState(view).appearance;
 
     await view.applyUpdateIntent("reproject", "settings-change");
 
     expect(getPanelState(view).cards.records.map((card) => card.title)).toEqual(["Alpha", "Zeta"]);
+    expect(getPanelState(view).appearance).not.toBe(appearanceBefore);
+    expect(getPanelState(view).appearance.cardCornerRadius).toBe("compact");
     expect((view as any).epochs.load.value).toBe(generationBefore);
     expect(collectSpy).not.toHaveBeenCalled();
   });
 
   it("rehydrate discards previews and rebuilds them without a new load generation", async () => {
-    const { view } = createHarness();
+    const { view, plugin } = createHarness();
     seedLoadedView(view);
     const collectSpy = vi.spyOn((view as any).modules.scopeController, "collectScopeFiles");
     const generationBefore = (view as any).epochs.load.value;
     const baseCards = (view as any).baseCards as NoteCardRecord[];
+    const currentSettings = (plugin.getSettings as unknown as () => PluginSettings)();
+    plugin.getSettings.mockReturnValue({
+      ...currentSettings,
+      previewLines: currentSettings.previewLines + 1,
+    });
+    const appearanceBefore = getPanelState(view).appearance;
 
     const rehydrated = view.applyUpdateIntent("rehydrate", "settings-change");
-    expect(baseCards.every((card) => card.hydrated === false)).toBe(true);
-    expect(baseCards.every((card) => card.previewHtml === "")).toBe(true);
-    expect(baseCards.every((card) => card.previewMode === "empty")).toBe(true);
+    const resetCards = (view as any).baseCards as NoteCardRecord[];
+    expect(resetCards).not.toBe(baseCards);
+    expect(resetCards.every((card) => card.hydrated === false)).toBe(true);
+    expect(resetCards.every((card) => card.previewHtml === "")).toBe(true);
+    expect(resetCards.every((card) => card.previewMode === "empty")).toBe(true);
+    expect(getPanelState(view).appearance).not.toBe(appearanceBefore);
+    expect(getPanelState(view).appearance.previewLines).toBe(currentSettings.previewLines + 1);
 
     await rehydrated;
     await tick();
 
-    expect(baseCards.every((card) => card.hydrated === true)).toBe(true);
+    expect(((view as any).baseCards as NoteCardRecord[]).every((card) => card.hydrated === true)).toBe(true);
     expect((view as any).epochs.load.value).toBe(generationBefore);
     expect(collectSpy).not.toHaveBeenCalled();
   });
@@ -2030,6 +2077,15 @@ describe("FolderCardView card box mode", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     vi.restoreAllMocks();
+  });
+
+  it("exposes the runtime CardScope independently of settings projection", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.activeBoxId = "box-y";
+    (view as any).cardScope = createBoxScope("box-x");
+
+    expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-x" });
   });
 
   it("pin toggle writes to the active box, not global settings", async () => {

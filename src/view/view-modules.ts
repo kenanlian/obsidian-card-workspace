@@ -116,20 +116,13 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     },
     clearBulkSelection: () => bulk.clearSelectionState(),
     pendingHydration: {
-      add: (path) => hydration.addPending(path),
+      has: (path) => hydration.hasPending(path),
       delete: (path) => hydration.deletePending(path),
       clear: () => hydration.clearPending(),
     },
     hydrateStartupCardPaths: (paths, token) =>
       hydration.hydrateStartupCardPaths(paths, token),
-    hydrateCardNow: (path) => {
-      const token = context.epochs.load.token();
-      void hydration.hydrateCard(path, token).then(() => {
-        if (context.epochs.load.isCurrent(token)) {
-          host.publishHydration();
-        }
-      });
-    },
+    scheduleHydrationPath: (path) => hydration.schedulePath(path),
     resetSearchForLoad: () => {
       search.resetForLoad();
     },

@@ -145,6 +145,59 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("updates only the hydrated card while preserving its keyed sibling DOM", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const targetCard = {
+      ...createCard("notes/target.md", "Target note"),
+      hydrated: false,
+      previewHtml: "",
+    };
+    const siblingCard = createCard("notes/sibling.md", "Sibling note");
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [targetCard, siblingCard],
+        generation: 1,
+      };
+    });
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel },
+    });
+    await tick();
+
+    const findCard = (title: string): Element | undefined =>
+      Array.from(target.querySelectorAll(".fce-card")).find((card) =>
+        card.querySelector("h4")?.textContent?.includes(title),
+      );
+    const siblingElement = findCard("Sibling note");
+    expect(siblingElement).toBeDefined();
+    expect(findCard("Target note")?.textContent).toContain("Loading preview");
+
+    const hydratedTarget = {
+      ...targetCard,
+      hydrated: true,
+      previewHtml: "<p>Hydrated target preview</p>",
+    };
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [hydratedTarget, siblingCard],
+        generation: 2,
+      };
+    });
+    await tick();
+
+    expect(findCard("Target note")?.textContent).toContain("Hydrated target preview");
+    expect(findCard("Sibling note")).toBe(siblingElement);
+
+    await unmount(component);
+  });
+
   it("keeps the list scrollable inside the main pane and survives scroll events", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

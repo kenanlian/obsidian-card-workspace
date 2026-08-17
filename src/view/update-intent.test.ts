@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_SETTINGS, type DefaultViewMode, type PluginSettings } from "../settings";
 import type { CardBoxDefinition } from "./types";
+import { createBoxScope, createFolderScope } from "./scope";
 import {
   UPDATE_INTENT_RANK,
   maxIntent,
@@ -130,6 +131,35 @@ describe("resolveSettingsUpdateIntent", () => {
     next.sort = { field: "name", direction: "asc" };
     next.includeSubfolders = !next.includeSubfolders;
     expect(resolveSettingsUpdateIntent(previous, next)).toBe("reload");
+  });
+
+  it("resolves box changes against the supplied runtime scope", () => {
+    const previous = createSettings();
+    previous.boxes = [createBox({ id: "box-x" }), createBox({ id: "box-y" })];
+    previous.activeBoxId = "box-y";
+    const next = createSettings();
+    next.boxes = [
+      createBox({ id: "box-x", manualPaths: ["notes/member.md"] }),
+      createBox({ id: "box-y" }),
+    ];
+    next.activeBoxId = "box-y";
+
+    expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-x"))).toBe("reload");
+    expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-y"))).toBe("patch");
+    expect(resolveSettingsUpdateIntent(previous, next, createFolderScope("", true))).toBe("patch");
+  });
+
+  it("resolves active-box sort and pins per runtime box", () => {
+    const previous = createSettings();
+    previous.boxes = [createBox({ id: "box-x" }), createBox({ id: "box-y" })];
+    const next = createSettings();
+    next.boxes = [
+      createBox({ id: "box-x", sort: { field: "name", direction: "asc" } }),
+      createBox({ id: "box-y" }),
+    ];
+
+    expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-x"))).toBe("reproject");
+    expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-y"))).toBe("patch");
   });
 });
 
