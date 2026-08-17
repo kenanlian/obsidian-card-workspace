@@ -246,10 +246,10 @@ describe("R5 line-count ratchet", () => {
    * new real line count.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 655,
-    "src/main.ts": 770,
+    "src/view/FolderCardView.ts": 652,
+    "src/main.ts": 661,
     // The extracted indexed-search lifecycle is one cohesive state machine.
-    "src/services/SearchCoordinator.ts": 588,
+    "src/services/SearchCoordinator.ts": 573,
     // Scope selection, single-flight loading, and vault mutation routing form one invariant.
     "src/view/controllers/ScopeController.ts": 453,
     // Card boxes are one wide domain spanning scope, CRUD, membership, and menu actions.

@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getUiStrings } from "../i18n";
 import { SearchCoordinator } from "./SearchCoordinator";
+import { VaultEventBus } from "./VaultEventBus";
+import type { VaultMutationEvent } from "./vault-events";
 
 vi.mock("../search", () => {
   return {
@@ -100,6 +102,65 @@ describe("SearchCoordinator document preparation", () => {
         content: "",
         excerpt: "",
       }),
+    );
+  });
+});
+
+function createVaultEvent(overrides: Partial<VaultMutationEvent> = {}): VaultMutationEvent {
+  return {
+    eventType: "modify",
+    path: "notes/a.md",
+    oldPath: null,
+    isFolder: false,
+    fileKind: "markdown",
+    ...overrides,
+  };
+}
+
+describe("SearchCoordinator vault subscription", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("subscribeTo forwards events through applyVaultMutation and dispose unsubscribes", async () => {
+    const bus = new VaultEventBus();
+    const { coordinator } = createHarness("");
+    const apply = vi.spyOn(coordinator, "applyVaultMutation");
+
+    coordinator.subscribeTo(bus);
+    await bus.publish(createVaultEvent());
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    coordinator.dispose();
+    await bus.publish(createVaultEvent({ path: "notes/b.md" }));
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("subscribeTo replaces a previous subscription so one event is forwarded once", async () => {
+    const bus = new VaultEventBus();
+    const { coordinator } = createHarness("");
+    const apply = vi.spyOn(coordinator, "applyVaultMutation");
+
+    coordinator.subscribeTo(bus);
+    coordinator.subscribeTo(bus);
+    await bus.publish(createVaultEvent());
+
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates applyVaultMutation throws with the search-forwarding warn", async () => {
+    const bus = new VaultEventBus();
+    const { coordinator } = createHarness("");
+    vi.spyOn(coordinator, "applyVaultMutation").mockImplementation(() => {
+      throw new Error("search boom");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    coordinator.subscribeTo(bus);
+    await expect(bus.publish(createVaultEvent())).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      "[Card Workspace] Search service mutation forwarding failed.",
+      expect.objectContaining({ message: "search boom" }),
     );
   });
 });

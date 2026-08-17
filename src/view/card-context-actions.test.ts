@@ -870,6 +870,7 @@ function createViewWithFile(
     getSearchService: vi.fn(() => null),
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
+    subscribeVaultEvents: vi.fn(() => () => undefined),
     openNoteFromCard: vi.fn(),
     selectAllNotes: vi.fn(),
     createNoteInCurrentFolder: vi.fn(),

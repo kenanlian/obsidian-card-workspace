@@ -280,6 +280,7 @@ interface TestHarness {
     getSearchService: ReturnType<typeof vi.fn>;
     getSearchSnapshot: ReturnType<typeof vi.fn>;
     subscribeSearchSnapshots: ReturnType<typeof vi.fn>;
+    subscribeVaultEvents: ReturnType<typeof vi.fn>;
     saveSettings: ReturnType<typeof vi.fn>;
     openNoteFromCard: ReturnType<typeof vi.fn>;
     selectAllNotes: ReturnType<typeof vi.fn>;
@@ -368,6 +369,7 @@ function createHarness(): TestHarness {
     getSearchService: vi.fn(() => null),
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
+    subscribeVaultEvents: vi.fn(() => () => undefined),
     saveSettings: vi.fn(async (partial: PartialPluginSettings) => {
       const previous = mergeSettings(settings, {});
       const next = mergeSettings(previous, partial);
@@ -856,6 +858,8 @@ describe("FolderCardView host contract", () => {
         snapshotListener = listener;
         return unsubscribe;
       });
+      const vaultUnsubscribe = vi.fn();
+      plugin.subscribeVaultEvents = vi.fn(() => vaultUnsubscribe);
 
       (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha"), createCard("notes/beta.md", "Beta")];
@@ -901,6 +905,7 @@ describe("FolderCardView host contract", () => {
 
       await view.onClose();
       expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(vaultUnsubscribe).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -921,6 +926,8 @@ describe("FolderCardView host contract", () => {
         health: createSearchHealth({ documentCount: 1, lastIndexedAt: 1 }),
       }));
       plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribe);
+      const vaultUnsubscribe = vi.fn();
+      plugin.subscribeVaultEvents = vi.fn(() => vaultUnsubscribe);
 
       (view as any).cardScope = createFolderScope("notes", true);
       (view as any).baseCards = [createCard("notes/alpha.md", "Alpha")];
@@ -934,6 +941,7 @@ describe("FolderCardView host contract", () => {
       await view.onClose();
 
       expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(vaultUnsubscribe).toHaveBeenCalledTimes(1);
       expect((view as any).component).toBeNull();
       expect((view as any).hostEl).toBeNull();
       expect((getSearchController(view) as any).debounceTimer).toBeNull();
@@ -946,6 +954,7 @@ describe("FolderCardView host contract", () => {
       await view.onClose();
 
       expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(vaultUnsubscribe).toHaveBeenCalledTimes(1);
       expect((getSearchController(view) as any).debounceTimer).toBeNull();
       expect((getSearchController(view) as any).snapshotUnsubscribe).toBeNull();
     } finally {
@@ -979,6 +988,10 @@ describe("FolderCardView host contract", () => {
       }));
       harnessA.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeA);
       harnessB.plugin.subscribeSearchSnapshots = vi.fn(() => unsubscribeB);
+      const vaultUnsubscribeA = vi.fn();
+      const vaultUnsubscribeB = vi.fn();
+      harnessA.plugin.subscribeVaultEvents = vi.fn(() => vaultUnsubscribeA);
+      harnessB.plugin.subscribeVaultEvents = vi.fn(() => vaultUnsubscribeB);
 
       (harnessA.view as any).cardScope = createFolderScope("notes-a", true);
       (harnessA.view as any).baseCards = [createCard("notes-a/alpha.md", "Alpha")];
@@ -997,7 +1010,9 @@ describe("FolderCardView host contract", () => {
       await harnessA.view.onClose();
 
       expect(unsubscribeA).toHaveBeenCalledTimes(1);
+      expect(vaultUnsubscribeA).toHaveBeenCalledTimes(1);
       expect(unsubscribeB).not.toHaveBeenCalled();
+      expect(vaultUnsubscribeB).not.toHaveBeenCalled();
       expect((harnessA.view as any).hostEl).toBeNull();
       expect((getSearchController(harnessA.view) as any).debounceTimer).toBeNull();
       expect((getSearchController(harnessA.view) as any).snapshotUnsubscribe).toBeNull();
@@ -1008,6 +1023,7 @@ describe("FolderCardView host contract", () => {
       await harnessB.view.onClose();
 
       expect(unsubscribeB).toHaveBeenCalledTimes(1);
+      expect(vaultUnsubscribeB).toHaveBeenCalledTimes(1);
       expect((harnessB.view as any).hostEl).toBeNull();
       expect((getSearchController(harnessB.view) as any).debounceTimer).toBeNull();
       expect((getSearchController(harnessB.view) as any).snapshotUnsubscribe).toBeNull();

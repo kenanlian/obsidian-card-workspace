@@ -88,6 +88,37 @@ describe("ScopeController", () => {
     expect(requestUpdate).toHaveBeenCalledWith("reload", "vault-change");
   });
 
+  it("V53 collapses multiple scheduleVaultRefresh calls within 250ms to one reload", () => {
+    vi.useFakeTimers();
+    const { controller, requestUpdate } = createHarness();
+    controller.scheduleVaultRefresh();
+    vi.advanceTimersByTime(100);
+    controller.scheduleVaultRefresh();
+    vi.advanceTimersByTime(249);
+    expect(requestUpdate).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(requestUpdate).toHaveBeenCalledTimes(1);
+    expect(requestUpdate).toHaveBeenCalledWith("reload", "vault-change");
+  });
+
+  it("V53 defers an in-scope vault event while a load is in flight and refresh clears the queue", async () => {
+    const { controller } = createHarness();
+    (controller as any).inFlight = Promise.resolve(true);
+    const result = controller.handleVaultMutation({
+      eventType: "create",
+      path: "old/nested/note.md",
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+    expect(result.shouldRefresh).toBe(true);
+    expect(result.queueAction).toBe("deferred_while_inflight");
+    expect((controller as any).refreshQueued).toBe(true);
+
+    await controller.refresh({ reason: "vault-change" });
+    expect((controller as any).refreshQueued).toBe(false);
+  });
+
   it("dispose cancels debounce, clears queued refresh state, and invalidates epochs", () => {
     vi.useFakeTimers();
     const { context, controller, requestUpdate } = createHarness();

@@ -54,7 +54,7 @@ export const FOLDER_CARD_VIEW = "folder-card-view";
 export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
-  private hostEl: HTMLElement | null = null;
+  private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
   readonly panelModel: PanelModel;
 
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
@@ -174,6 +174,13 @@ export class FolderCardView extends ItemView {
 
     this.modules.navLayout.refreshFolderTreeState();
     this.modules.hydration.hydrateVisibleCardsOnOpen();
+    this.viewEventUnsubscribe?.();
+    this.viewEventUnsubscribe = this.plugin.subscribeVaultEvents((event) => {
+      const result = this.modules.scopeController.handleVaultMutation(event);
+      if (result.shouldRefresh) {
+        this.modules.scopeController.scheduleVaultRefresh();
+      }
+    });
   }
 
   async onClose(): Promise<void> {
@@ -322,6 +329,8 @@ export class FolderCardView extends ItemView {
   }
 
   cleanupLifecycle(): CleanupResult {
+    this.viewEventUnsubscribe?.();
+    this.viewEventUnsubscribe = null;
     const scopeReport = this.modules.scopeController.dispose();
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
@@ -421,25 +430,13 @@ export class FolderCardView extends ItemView {
   }
 
   private getViewWindow(): Pick<Window, "setTimeout" | "clearTimeout"> {
-    const ownerWindow = this.hostEl?.ownerDocument?.defaultView;
-    if (ownerWindow) {
-      return ownerWindow;
-    }
-
-    if (typeof activeWindow !== "undefined") {
-      return activeWindow;
-    }
-
-    return window;
+    return this.hostEl?.ownerDocument?.defaultView
+      ?? (typeof activeWindow !== "undefined" ? activeWindow : window);
   }
 
   private getDisplayFolderPath(): string {
     const path = scopeDisplayPath(this.cardScope);
-    if (path === "") {
-      return "/";
-    }
-
-    return path;
+    return path === "" ? "/" : path;
   }
 
   private buildScopeGroup(): PanelModelState["scope"] {

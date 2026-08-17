@@ -169,15 +169,7 @@ export interface RefreshQueueState {
   refreshQueued: boolean;
 }
 
-export type VaultMutationEventType = "create" | "modify" | "delete" | "rename";
-
-export interface VaultMutationEvent {
-  eventType: VaultMutationEventType;
-  path: string;
-  oldPath: string | null;
-  isFolder: boolean;
-  fileKind: CardFileKind | null;
-}
+export type { VaultMutationEvent, VaultMutationEventType } from "../services/vault-events";
 
 export type SelectionAction =
   | "noop"

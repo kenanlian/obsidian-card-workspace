@@ -13,8 +13,12 @@ import { EditorView, dropCursor } from "@codemirror/view";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { EditorDropController } from "./services/EditorDropController";
+import { BoxReconciler } from "./services/BoxReconciler";
+import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import { SettingsStore, hasPatchValues, splitFlatPatch } from "./services/SettingsStore";
+import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
+import type { VaultMutationEvent, VaultMutationEventType } from "./services/vault-events";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
   SearchIndexObservabilitySnapshot,
@@ -22,13 +26,10 @@ import type {
   SearchServiceSnapshot,
 } from "./search";
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
-import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult, VaultMutationEvent, VaultMutationEventType } from "./view/types";
+import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { rewritePathAfterRename } from "./view/scope-files";
-import { reconcileBoxForVaultMutation } from "./view/card-boxes";
-import { pruneFavoriteTags, reconcileFavoritesForVaultMutation } from "./view/favorites";
-import { collectVaultTagIndex } from "./view/metadata-utils";
 import { maxIntent, type ViewUpdateIntent } from "./view/update-intent";
 import {
   BULK_ADD_TO_BOX_ICON,
@@ -60,6 +61,9 @@ export default class CardWorkspacePlugin extends Plugin {
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
   private vaultObserversRegistered = false;
+  private vaultEventListenersRegistered = false;
+  private readonly vaultEventBus = new VaultEventBus();
+  private vaultEventUnsubscribers: Array<() => void> = [];
   private startupPromise: Promise<void> = Promise.resolve();
   private readonly editorDropController = new EditorDropController({
     app: this.app,
@@ -71,13 +75,6 @@ export default class CardWorkspacePlugin extends Plugin {
     getUiStrings: () => this.getUiStrings(),
     getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
   });
-  private debouncedRefresh = debounce(
-    () => {
-      void this.requestRefreshForViews("vault-change");
-    },
-    250,
-    false,
-  );
   private debouncedNavStateRefresh = debounce(
     () => {
       this.withFolderViews((view) => {
@@ -87,15 +84,17 @@ export default class CardWorkspacePlugin extends Plugin {
     250,
     false,
   );
-  // Longer than the other vault-change debouncers: this one walks every markdown
-  // file's cache, and the cache lags the vault events that trigger it.
-  private debouncedFavoriteTagPrune = debounce(
-    () => {
-      this.pruneFavoriteTagsNow();
-    },
-    1000,
-    false,
-  );
+  private readonly boxReconciler = new BoxReconciler({
+    getSettings: () => this.getSettings(),
+    updateUserData: (patch) => this.settingsStore.updateUserData(patch),
+    onUserDataReconciled: () => this.debouncedNavStateRefresh(),
+  });
+  private readonly favoriteReconciler = new FavoriteReconciler({
+    getSettings: () => this.getSettings(),
+    updateUserData: (patch) => this.settingsStore.updateUserData(patch),
+    onUserDataReconciled: () => this.debouncedNavStateRefresh(),
+    getApp: () => this.app,
+  });
 
   onload(): void {
     this.startupPromise = this.initializePlugin().catch((error: unknown) => {
@@ -106,6 +105,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private async initializePlugin(): Promise<void> {
     await this.loadSettings();
     await this.searchCoordinator.initialize();
+    this.registerVaultEventListeners();
     this.registerCustomIcons();
 
     this.register(() => {
@@ -167,25 +167,22 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onunload(): void {
-    const debouncedRefresh = this.debouncedRefresh as (() => void) & {
-      cancel?: () => void;
-    };
-    debouncedRefresh.cancel?.();
     void this.settingsStore.flushPendingWrites();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
     };
     navStateRefresh.cancel?.();
-    const favoriteTagPrune = this.debouncedFavoriteTagPrune as (() => void) & {
-      cancel?: () => void;
-    };
-    favoriteTagPrune.cancel?.();
+    this.favoriteReconciler.dispose();
+    for (const unsubscribe of this.vaultEventUnsubscribers) {
+      unsubscribe();
+    }
+    this.vaultEventUnsubscribers = [];
+    this.vaultEventListenersRegistered = false;
     this.searchCoordinator.dispose();
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
     });
   }
-
 
   async createNoteInCurrentFolder(): Promise<void> {
     await this.createNoteInFolder(this.getSettings().lastFolderPath);
@@ -391,6 +388,10 @@ export default class CardWorkspacePlugin extends Plugin {
 
   subscribeSearchSnapshots(listener: SearchSnapshotListener): () => void {
     return this.searchCoordinator.subscribe(listener);
+  }
+
+  subscribeVaultEvents(listener: VaultEventListener): () => void {
+    return this.vaultEventBus.subscribe(listener);
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
@@ -626,125 +627,24 @@ export default class CardWorkspacePlugin extends Plugin {
     };
   }
 
+  private registerVaultEventListeners(): void {
+    if (this.vaultEventListenersRegistered) {
+      return;
+    }
+
+    this.vaultEventListenersRegistered = true;
+    // C12 plugin order: scopePath → boxes → favorites → tagPrune → search. Views subscribe later.
+    this.vaultEventUnsubscribers = [
+      this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
+      this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),
+      this.subscribeVaultEvents((event) => this.favoriteReconciler.handleVaultMutation(event)),
+    ];
+    this.searchCoordinator.subscribeTo(this.vaultEventBus);
+  }
+
   private dispatchVaultMutation(event: VaultMutationEvent): void {
-    // TODO(WP-32): 注册到 VaultEventBus 后删除，由 publish 的 try/catch 接管。
-    void this.reconcileLastFolderPath(event).catch((error: unknown) => {
-      console.warn("[Card Workspace] Scope projection reconcile failed.", error);
-    });
-    this.reconcileBoxesForVaultMutation(event);
-    this.reconcileFavoritesForVaultMutation(event);
-    this.queueFavoriteTagPrune(event);
-
-    try {
-      this.searchCoordinator.applyVaultMutation(event);
-    } catch (error) {
-      console.warn("[Card Workspace] Search service mutation forwarding failed.", error);
-    }
-
-    let shouldQueueRefresh = false;
-    this.withFolderViews((view) => {
-      const result = view.handleVaultMutation(event);
-      if (result.shouldRefresh) {
-        shouldQueueRefresh = true;
-      }
-    });
-
-    if (shouldQueueRefresh) {
-      this.debouncedRefresh();
-    }
-  }
-
-  private reconcileBoxesForVaultMutation(event: VaultMutationEvent): void {
-    const boxes = this.getSettings().boxes;
-    if (boxes.length === 0) {
-      return;
-    }
-
-    if (event.eventType !== "rename" && event.eventType !== "delete") {
-      return;
-    }
-
-    let changed = false;
-    const nextBoxes = boxes.map((box) => {
-      const reconciled = reconcileBoxForVaultMutation(box, {
-        eventType: event.eventType,
-        path: event.path,
-        oldPath: event.oldPath,
-        isFolder: event.isFolder,
-      });
-      if (reconciled !== box) {
-        changed = true;
-      }
-      return reconciled;
-    });
-
-    if (!changed) {
-      return;
-    }
-
-    void this.settingsStore.updateUserData({ boxes: nextBoxes });
-    this.debouncedNavStateRefresh();
-  }
-
-  private reconcileFavoritesForVaultMutation(event: VaultMutationEvent): void {
-    const favorites = this.getSettings().favorites;
-    if (favorites.length === 0) {
-      return;
-    }
-
-    if (event.eventType !== "rename" && event.eventType !== "delete") {
-      return;
-    }
-
-    const nextFavorites = reconcileFavoritesForVaultMutation(favorites, {
-      eventType: event.eventType,
-      path: event.path,
-      oldPath: event.oldPath,
-      isFolder: event.isFolder,
-    });
-
-    if (nextFavorites === favorites) {
-      return;
-    }
-
-    void this.settingsStore.updateUserData({ favorites: nextFavorites });
-    this.debouncedNavStateRefresh();
-  }
-
-  /**
-   * `create` is skipped on purpose: it can only add tags, and the metadata cache
-   * may not have parsed the new file yet, which would look like a vanished tag.
-   */
-  private queueFavoriteTagPrune(event: VaultMutationEvent): void {
-    if (event.eventType === "create") {
-      return;
-    }
-
-    if (!this.getSettings().favorites.some((entry) => entry.kind === "tag")) {
-      return;
-    }
-
-    this.debouncedFavoriteTagPrune();
-  }
-
-  private pruneFavoriteTagsNow(): void {
-    const favorites = this.getSettings().favorites;
-    if (!favorites.some((entry) => entry.kind === "tag")) {
-      return;
-    }
-
-    const vaultTags = collectVaultTagIndex(this.app);
-    if (vaultTags === null) {
-      return;
-    }
-
-    const nextFavorites = pruneFavoriteTags(favorites, vaultTags.tagPaths);
-    if (nextFavorites === favorites) {
-      return;
-    }
-
-    void this.settingsStore.updateUserData({ favorites: nextFavorites });
-    this.debouncedNavStateRefresh();
+    // Obsidian vault callbacks are sync; this is the only allowed fire-and-forget point.
+    void this.vaultEventBus.publish(event);
   }
 
   private async reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {
@@ -757,14 +657,5 @@ export default class CardWorkspacePlugin extends Plugin {
     if (nextPath !== currentPath) {
       await this.saveSettings({ lastFolderPath: nextPath });
     }
-  }
-
-  private async requestRefreshForViews(reason: "vault-change" | "manual"): Promise<void> {
-    this.withFolderViews((view) => {
-      void view.refresh({
-        reason,
-        forceRefresh: true,
-      });
-    });
   }
 }

@@ -648,6 +648,15 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     obsidianMockState.leavesByType["folder-card-view"] = views.map((view) => ({ view }));
   }
 
+  function subscribeViewToVaultEvents(
+    plugin: CardWorkspacePlugin,
+    view: MockFolderCardView,
+  ): void {
+    plugin.subscribeVaultEvents((event) => {
+      (view.handleVaultMutation as unknown as (payload: unknown) => unknown)(event);
+    });
+  }
+
   function createFolder(path: string): TFolder {
     const FolderCtor = TFolder as unknown as { new (folderPath: string): TFolder };
     return new FolderCtor(path);
@@ -658,6 +667,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     oldPath: string,
     path: string,
   ): void {
+    (plugin as unknown as { registerVaultEventListeners: () => void }).registerVaultEventListeners();
     (plugin as unknown as {
       dispatchVaultMutation: (event: {
         eventType: "rename";
@@ -734,16 +744,6 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     expect(second.handleScopeSelection).toHaveBeenCalledTimes(1);
   });
 
-  it("refreshes views with intent only and never supplies an external scope", async () => {
-    const { plugin } = createPluginHarness();
-    const view = createMockView();
-    attachViews(view);
-
-    await (plugin as any).requestRefreshForViews("manual");
-
-    expect(view.refresh).toHaveBeenCalledWith({ reason: "manual", forceRefresh: true });
-  });
-
   it("restores only a folder CardScope and clears persisted activeBoxId on load", async () => {
     const { plugin, app } = createPluginHarness();
     const view = createMockView();
@@ -804,6 +804,8 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
 
   it("V27b-8 catches and warns on transitional projection persistence rejection", async () => {
     const { plugin } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
     setLastFolderPath(plugin, "X/b");
     vi.spyOn(plugin, "saveSettings").mockRejectedValue(new Error("disk unavailable"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -811,17 +813,201 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     process.on("unhandledRejection", unhandled);
 
     try {
+      (plugin as unknown as { registerVaultEventListeners: () => void }).registerVaultEventListeners();
+      subscribeViewToVaultEvents(plugin, view);
       expect(() => dispatchFolderRename(plugin, "X", "Y")).not.toThrow();
       await vi.waitFor(() => {
         expect(warn).toHaveBeenCalledWith(
-          "[Card Workspace] Scope projection reconcile failed.",
+          "[Card Workspace] Vault event listener failed.",
           expect.objectContaining({ message: "disk unavailable" }),
         );
       });
       expect(unhandled).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(view.handleVaultMutation).toHaveBeenCalled();
+      });
     } finally {
       process.off("unhandledRejection", unhandled);
     }
+  });
+
+  it("V52 records C12 order scopePath → boxes → favorites → tagPrune → search → views", async () => {
+    const { plugin } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
+    setLastFolderPath(plugin, "X/b");
+    const internals = plugin as unknown as {
+      registerVaultEventListeners: () => void;
+      vaultEventBus: {
+        publish: (event: {
+          eventType: "rename";
+          path: string;
+          oldPath: string;
+          isFolder: true;
+          fileKind: null;
+        }) => Promise<void>;
+      };
+      reconcileLastFolderPath: (event: unknown) => Promise<void>;
+      boxReconciler: { onStep?: (step: string) => void };
+      favoriteReconciler: { onStep?: (step: string) => void };
+      searchCoordinator: { applyVaultMutation: (event: unknown) => void };
+    };
+    internals.registerVaultEventListeners();
+
+    const steps: string[] = [];
+    const originalScope = internals.reconcileLastFolderPath.bind(plugin);
+    vi.spyOn(internals, "reconcileLastFolderPath").mockImplementation(async (event) => {
+      steps.push("scopePath");
+      return originalScope(event);
+    });
+    internals.boxReconciler.onStep = (step) => steps.push(step);
+    internals.favoriteReconciler.onStep = (step) => steps.push(step);
+    const originalSearch = internals.searchCoordinator.applyVaultMutation.bind(internals.searchCoordinator);
+    vi.spyOn(internals.searchCoordinator, "applyVaultMutation").mockImplementation((event) => {
+      steps.push("search");
+      return originalSearch(event);
+    });
+    view.handleVaultMutation.mockImplementation(() => {
+      steps.push("views");
+      return {
+        shouldRefresh: false,
+        queueAction: "ignored",
+        selectedFolderPathAfterRename: null,
+        incrementalResult: null,
+      };
+    });
+    subscribeViewToVaultEvents(plugin, view);
+
+    await internals.vaultEventBus.publish({
+      eventType: "rename",
+      path: "Y",
+      oldPath: "X",
+      isFolder: true,
+      fileKind: null,
+    });
+
+    expect(steps).toEqual(["scopePath", "boxes", "favorites", "tagPrune", "search", "views"]);
+  });
+
+  it("V52 isolates L-scopePath saveSettings rejection so the other five steps still run", async () => {
+    const { plugin } = createPluginHarness();
+    const view = createMockView();
+    attachViews(view);
+    setLastFolderPath(plugin, "X/b");
+    vi.spyOn(plugin, "saveSettings").mockRejectedValue(new Error("disk unavailable"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    const internals = plugin as unknown as {
+      registerVaultEventListeners: () => void;
+      vaultEventBus: {
+        publish: (event: {
+          eventType: "rename";
+          path: string;
+          oldPath: string;
+          isFolder: true;
+          fileKind: null;
+        }) => Promise<void>;
+      };
+      reconcileLastFolderPath: (event: unknown) => Promise<void>;
+      boxReconciler: { onStep?: (step: string) => void };
+      favoriteReconciler: { onStep?: (step: string) => void };
+      searchCoordinator: { applyVaultMutation: (event: unknown) => void };
+    };
+    internals.registerVaultEventListeners();
+
+    const steps: string[] = [];
+    const originalScope = internals.reconcileLastFolderPath.bind(plugin);
+    vi.spyOn(internals, "reconcileLastFolderPath").mockImplementation(async (event) => {
+      steps.push("scopePath");
+      return originalScope(event);
+    });
+    internals.boxReconciler.onStep = (step) => steps.push(step);
+    internals.favoriteReconciler.onStep = (step) => steps.push(step);
+    const originalSearch = internals.searchCoordinator.applyVaultMutation.bind(internals.searchCoordinator);
+    vi.spyOn(internals.searchCoordinator, "applyVaultMutation").mockImplementation((event) => {
+      steps.push("search");
+      return originalSearch(event);
+    });
+    view.handleVaultMutation.mockImplementation(() => {
+      steps.push("views");
+      return {
+        shouldRefresh: false,
+        queueAction: "ignored",
+        selectedFolderPathAfterRename: null,
+        incrementalResult: null,
+      };
+    });
+    subscribeViewToVaultEvents(plugin, view);
+
+    try {
+      await expect(
+        internals.vaultEventBus.publish({
+          eventType: "rename",
+          path: "Y",
+          oldPath: "X",
+          isFolder: true,
+          fileKind: null,
+        }),
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(
+        "[Card Workspace] Vault event listener failed.",
+        expect.objectContaining({ message: "disk unavailable" }),
+      );
+      expect(steps).toEqual(["scopePath", "boxes", "favorites", "tagPrune", "search", "views"]);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
+  it("V53 view listener observes reconciled boxes and favorites, not pre-reconcile paths", async () => {
+    const { plugin } = createPluginHarness();
+    mutateStoreMemory(plugin, {
+      boxes: [{
+        id: "box-1",
+        name: "Inbox",
+        rules: [],
+        manualPaths: ["Projects/A.md"],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "mtime", direction: "desc" },
+      }],
+      favorites: [{ kind: "folder", ref: "Projects" }],
+    });
+    const internals = plugin as unknown as {
+      registerVaultEventListeners: () => void;
+      vaultEventBus: {
+        publish: (event: {
+          eventType: "rename";
+          path: string;
+          oldPath: string;
+          isFolder: true;
+          fileKind: null;
+        }) => Promise<void>;
+      };
+    };
+    internals.registerVaultEventListeners();
+
+    let observedManualPaths: string[] | null = null;
+    let observedFavorites: Array<{ kind: string; ref: string }> | null = null;
+    plugin.subscribeVaultEvents(() => {
+      const settings = plugin.getSettings();
+      observedManualPaths = settings.boxes[0]?.manualPaths ?? [];
+      observedFavorites = settings.favorites;
+    });
+
+    await internals.vaultEventBus.publish({
+      eventType: "rename",
+      path: "Work",
+      oldPath: "Projects",
+      isFolder: true,
+      fileKind: null,
+    });
+
+    expect(observedManualPaths).toEqual(["Work/A.md"]);
+    expect(observedFavorites).toEqual([{ kind: "folder", ref: "Work" }]);
   });
 });
 
@@ -1844,12 +2030,14 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     createdFile.extension = "md";
     createCallback?.(createdFile);
 
-    expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
-      type: "create",
-      path: "notes/new-note.md",
-      oldPath: null,
-      isMarkdown: true,
-      isFolder: false,
+    await vi.waitFor(() => {
+      expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
+        type: "create",
+        path: "notes/new-note.md",
+        oldPath: null,
+        isMarkdown: true,
+        isFolder: false,
+      });
     });
 
     await plugin.onunload();
@@ -1887,10 +2075,12 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.vaultCallbacks.delete?.(deleted);
 
     // "work" survives through its child tag; "archive" is gone for good.
-    expect(plugin.getSettings().favorites).toEqual([
-      { kind: "folder", ref: "notes" },
-      { kind: "tag", ref: "work" },
-    ]);
+    await vi.waitFor(() => {
+      expect(plugin.getSettings().favorites).toEqual([
+        { kind: "folder", ref: "notes" },
+        { kind: "tag", ref: "work" },
+      ]);
+    });
   });
 
   it("never prunes favorited tags on create, where the metadata cache may lag", async () => {
@@ -1943,12 +2133,14 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     renamedFile.extension = "canvas";
     renameCallback?.(renamedFile, "notes/renamed.md");
 
-    expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
-      type: "rename",
-      path: "notes/renamed.canvas",
-      oldPath: "notes/renamed.md",
-      isMarkdown: true,
-      isFolder: false,
+    await vi.waitFor(() => {
+      expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
+        type: "rename",
+        path: "notes/renamed.canvas",
+        oldPath: "notes/renamed.md",
+        isMarkdown: true,
+        isFolder: false,
+      });
     });
   });
 
@@ -1962,12 +2154,14 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     const renamedFolder = new TFolderCtor("archive");
     renameCallback?.(renamedFolder, "notes");
 
-    expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
-      type: "rename",
-      path: "archive",
-      oldPath: "notes",
-      isMarkdown: false,
-      isFolder: true,
+    await vi.waitFor(() => {
+      expect(searchMockState.indexedServices[0]?.handleVaultMutation).toHaveBeenCalledWith({
+        type: "rename",
+        path: "archive",
+        oldPath: "notes",
+        isMarkdown: false,
+        isFolder: true,
+      });
     });
 
     const service = searchMockState.indexedServices[0];

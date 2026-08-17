@@ -16,6 +16,7 @@ import type {
 } from "../search";
 import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "../view/file-kind";
 import type { VaultMutationEvent } from "../view/types";
+import type { VaultEventBus } from "./VaultEventBus";
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
 export const SEARCH_TOKENIZER_VERSION = "search-text-v2";
@@ -43,6 +44,7 @@ export class SearchCoordinator {
   private searchService: SearchService | null = null;
   private searchManager: SearchIndexManager | null = null;
   private searchServiceUnsubscribe: (() => void) | null = null;
+  private vaultEventUnsubscribe: (() => void) | null = null;
   private searchSnapshot: SearchServiceSnapshot | null = null;
   private readonly searchSnapshotListeners = new Set<SearchSnapshotListener>();
   private searchRecoveryBoundaryState: SearchRecoveryBoundaryState = "healthy";
@@ -91,17 +93,15 @@ export class SearchCoordinator {
   }
 
   dispose(): void {
-    if (this.searchServiceUnsubscribe) {
-      this.searchServiceUnsubscribe();
-      this.searchServiceUnsubscribe = null;
-    }
-
+    this.vaultEventUnsubscribe?.();
+    this.vaultEventUnsubscribe = null;
+    this.searchServiceUnsubscribe?.();
+    this.searchServiceUnsubscribe = null;
     if (!this.searchService) {
       this.searchManager = null;
       this.searchSnapshot = null;
       return;
     }
-
     this.searchService.dispose();
     this.searchService = null;
     this.searchManager = null;
@@ -117,18 +117,13 @@ export class SearchCoordinator {
   }
 
   getSnapshot(): SearchServiceSnapshot | null {
-    if (!this.searchSnapshot) {
-      return null;
-    }
-
-    return this.cloneSearchSnapshot(this.searchSnapshot);
+    return this.searchSnapshot ? this.cloneSearchSnapshot(this.searchSnapshot) : null;
   }
 
   getObservabilitySnapshot(): SearchIndexObservabilitySnapshot | null {
     if (!this.searchSnapshot) {
       return null;
     }
-
     const snapshot = this.cloneSearchSnapshot(this.searchSnapshot);
     return {
       status: snapshot.status,
@@ -142,7 +137,6 @@ export class SearchCoordinator {
     if (this.searchSnapshot) {
       listener(this.cloneSearchSnapshot(this.searchSnapshot));
     }
-
     return () => {
       this.searchSnapshotListeners.delete(listener);
     };
@@ -150,6 +144,17 @@ export class SearchCoordinator {
 
   applyVaultMutation(event: VaultMutationEvent): void {
     this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
+  }
+
+  subscribeTo(bus: VaultEventBus): void {
+    this.vaultEventUnsubscribe?.();
+    this.vaultEventUnsubscribe = bus.subscribe((event) => {
+      try {
+        this.applyVaultMutation(event);
+      } catch (error) {
+        console.warn("[Card Workspace] Search service mutation forwarding failed.", error);
+      }
+    });
   }
 
   showStatus(): void {
@@ -350,11 +355,8 @@ export class SearchCoordinator {
   }
 
   private bindSearchService(service: SearchService): void {
-    if (this.searchServiceUnsubscribe) {
-      this.searchServiceUnsubscribe();
-      this.searchServiceUnsubscribe = null;
-    }
-
+    this.searchServiceUnsubscribe?.();
+    this.searchServiceUnsubscribe = null;
     this.searchService = service;
     this.searchServiceUnsubscribe = service.subscribe((snapshot) => {
       this.handleSearchSnapshot(snapshot);
@@ -364,15 +366,12 @@ export class SearchCoordinator {
   private handleSearchSnapshot(snapshot: SearchServiceSnapshot): void {
     const nextSnapshot = this.cloneSearchSnapshot(snapshot);
     this.searchSnapshot = nextSnapshot;
-
     for (const listener of this.searchSnapshotListeners) {
       listener(this.cloneSearchSnapshot(nextSnapshot));
     }
-
     if (this.shouldRunMutationRecoveryRebuild(nextSnapshot)) {
       this.scheduleMutationRecoveryRebuild();
     }
-
     this.emitRecoveryBoundaryNotice(nextSnapshot);
   }
 
@@ -381,7 +380,6 @@ export class SearchCoordinator {
       snapshot.status === "error" ||
       snapshot.health.outcome === "rebuild-required" ||
       snapshot.health.outcome === "failed";
-
     if (isDegraded) {
       if (this.searchRecoveryBoundaryState === "degraded") {
         return;
@@ -390,31 +388,23 @@ export class SearchCoordinator {
       new Notice(this.getUiStrings().app.searchIndexRequiresRecovery);
       return;
     }
-
     if (this.searchRecoveryBoundaryState === "degraded" && snapshot.status === "ready") {
       this.searchRecoveryBoundaryState = "healthy";
       new Notice(this.getUiStrings().app.searchIndexReady);
       return;
     }
-
     this.searchRecoveryBoundaryState = "healthy";
   }
 
   private cloneSearchSnapshot(snapshot: SearchServiceSnapshot): SearchServiceSnapshot {
+    const cloneSuccess = (entry: SearchServiceSnapshot["health"]["lastSuccessfulRestore"]) =>
+      entry ? { ...entry } : null;
     return {
       ...snapshot,
       health: {
         ...snapshot.health,
-        lastSuccessfulRestore: snapshot.health.lastSuccessfulRestore
-          ? {
-              ...snapshot.health.lastSuccessfulRestore,
-            }
-          : null,
-        lastSuccessfulBuild: snapshot.health.lastSuccessfulBuild
-          ? {
-              ...snapshot.health.lastSuccessfulBuild,
-            }
-          : null,
+        lastSuccessfulRestore: cloneSuccess(snapshot.health.lastSuccessfulRestore),
+        lastSuccessfulBuild: cloneSuccess(snapshot.health.lastSuccessfulBuild),
       },
     };
   }
@@ -452,11 +442,9 @@ export class SearchCoordinator {
   private formatSearchIndexSuccess(
     snapshot: SearchIndexObservabilitySnapshot["health"]["lastSuccessfulRestore"],
   ): string {
-    if (!snapshot) {
-      return this.getUiStrings().app.searchIndexNone;
-    }
-
-    return `${snapshot.outcome} at ${snapshot.at} (${snapshot.documentCount} docs)`;
+    return snapshot
+      ? `${snapshot.outcome} at ${snapshot.at} (${snapshot.documentCount} docs)`
+      : this.getUiStrings().app.searchIndexNone;
   }
 
   private shouldRunMutationRecoveryRebuild(snapshot: SearchServiceSnapshot): boolean {
@@ -473,7 +461,6 @@ export class SearchCoordinator {
     if (this.pendingMutationRecoveryRebuild) {
       return;
     }
-
     this.pendingMutationRecoveryRebuild = this.rebuild(
       "Unsafe vault mutation requires full search rebuild.",
     )
@@ -555,12 +542,10 @@ export class SearchCoordinator {
     if (!this.searchManager) {
       return;
     }
-
     if (!this.layoutReady) {
       this.shouldSyncRestoredSearchState = true;
       return;
     }
-
     void this.syncRestoredSearchState();
   }
 
