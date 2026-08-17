@@ -1,8 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  mockState,
+  resetFolderCardViewHarness,
+  createViewWithFile,
+  getDangerMenuTitles,
+  registerFolderCardView,
+} from "../__mocks__/folder-card-view-harness";
 import type { Menu } from "obsidian";
 import { getUiStrings } from "../i18n";
+import { createBoxScope } from "./scope";
+import { FolderCardView } from "./FolderCardView";
 import { buildNavContextMenu, resolveNavMenuDangerLabel, type NavMenuActions, type NavMenuDeps } from "./nav-context-menu";
 import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload, NavMenuBridge } from "./types";
+
+registerFolderCardView(FolderCardView);
 
 // ---------------------------------------------------------------------------
 // Mock menu
@@ -783,4 +794,140 @@ describe("resolveNavMenuDangerLabel", () => {
       ).toBe(expected);
     }
   });
+});
+
+describe("nav context menu wiring", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+    function createNavView(
+      settingsOverrides: Record<string, unknown> = {},
+    ): { view: FolderCardView; plugin: any } {
+      const { view, plugin } = createViewWithFile("notes/nav-menu.md");
+      plugin.getSettings = vi.fn(() => ({
+        includeSubfolders: true,
+        sort: { field: "mtime", direction: "desc" },
+        filter: { tags: [] },
+        defaultView: "cards",
+        lastFolderPath: "notes",
+        pinnedPaths: [],
+        previewLines: 5,
+        activeBoxId: null,
+        boxes: [],
+        favorites: [],
+        favoritesSectionCollapsed: false,
+        folderSectionCollapsed: false,
+        tagSectionCollapsed: false,
+        boxSectionCollapsed: false,
+        ...settingsOverrides,
+      }));
+      const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;
+      if (activeBox !== null) {
+        (view as any).cardScope = createBoxScope(activeBox);
+      }
+      return { view, plugin };
+    }
+
+    function navPayload(overrides: Record<string, unknown>): Record<string, unknown> {
+      return {
+        bridge: {
+          hasExpandedFolders: false,
+          hasExpandedTags: false,
+          toggleAllFolders: vi.fn(),
+          toggleAllTags: vi.fn(),
+          tagHasChildren: false,
+          tagExpanded: false,
+          toggleTagExpansion: vi.fn(),
+        },
+        mouseEvent: { clientX: 7, clientY: 8 },
+        ...overrides,
+      };
+    }
+
+    function latestMenuTitles(): string[] {
+      const menu = mockState.menuInstances[0];
+      return menu.items
+        .filter((item: any) => item.kind !== "separator")
+        .map((item: any) => item.title);
+    }
+
+    it("shows the folders header menu at the mouse event without a danger row", () => {
+      const { view } = createNavView();
+
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+
+      const menu = mockState.menuInstances[0];
+      expect(menu.showAtMouseEvent).toHaveBeenCalledTimes(1);
+      expect(menu.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
+      expect(getDangerMenuTitles(menu)).toEqual([]);
+    });
+
+    it("marks the folder delete row as dangerous for a folder row menu", () => {
+      const { view } = createNavView();
+
+      (view as any).openNavContextMenu(
+        navPayload({ section: "folders", scope: "item", itemId: "notes" }),
+      );
+
+      expect(latestMenuTitles()).toContain("Delete folder");
+      expect(getDangerMenuTitles(mockState.menuInstances[0])).toEqual(["Delete folder"]);
+    });
+
+    it("shows the favorites row menu for a file favorite", () => {
+      const { view } = createNavView({ favorites: [{ kind: "file", ref: "notes/nav-menu.md" }] });
+
+      (view as any).openNavContextMenu(
+        navPayload({
+          section: "favorites",
+          scope: "item",
+          favorite: { kind: "file", ref: "notes/nav-menu.md" },
+        }),
+      );
+
+      const titles = latestMenuTitles();
+      expect(titles.slice(0, 3)).toEqual(["Remove from favorites", "Move up", "Move down"]);
+      expect(titles).toContain("Open in new tab");
+      expect(mockState.menuInstances[0].showAtMouseEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips the menu entirely for a tag row in box mode", () => {
+      const { view } = createNavView({
+        activeBoxId: "box-1",
+        boxes: [
+          {
+            id: "box-1",
+            name: "Reading",
+            rules: [],
+            manualPaths: [],
+            excludedPaths: [],
+            pinnedPaths: [],
+            sort: { field: "mtime", direction: "desc" },
+          },
+        ],
+      });
+
+      (view as any).openNavContextMenu(
+        navPayload({ section: "tags", scope: "item", itemId: "work" }),
+      );
+
+      expect(mockState.menuInstances[0].showAtMouseEvent).not.toHaveBeenCalled();
+    });
+
+    // Cross-module: panel favorite-activate event -> FolderCardView.selectFolderFromNav.
+    // Call entry is not FavoriteActions (that module owns tag-favorite activation).
+    it("routes the panel favorite-activate callback into the folder scope", async () => {
+      const { view } = createNavView();
+      await (view as any).onOpen();
+
+      const selectFolderFromNav = vi
+        .spyOn(view as any, "selectFolderFromNav")
+        .mockResolvedValue(undefined);
+
+      mockState.panelEventHandlers["favorite-activate"]({
+        detail: { favorite: { kind: "folder", ref: "notes" } },
+      });
+
+      expect(selectFolderFromNav).toHaveBeenCalledWith("notes");
+    });
 });
