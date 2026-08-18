@@ -281,7 +281,7 @@ export class ScopeController implements DisposableController {
         .slice(0, this.deps.startupCardCount)
         .map((card) => card.path);
       await this.deps.hydrateStartupCardPaths(startupPaths, loadToken);
-      return true;
+      return this.context.epochs.load.isCurrent(loadToken);
     } finally {
       if (this.context.epochs.load.isCurrent(loadToken)) {
         this.loading = false;

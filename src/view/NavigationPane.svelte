@@ -110,6 +110,9 @@
 
   const isBoxMode = $derived(activeBoxId !== null);
   const paneWidth = $derived(dragWidth ?? navPaneWidth);
+  $effect(() => {
+    if (dragWidth === navPaneWidth) dragWidth = null;
+  });
 
   const tagTree = $derived(buildTagTree(availableTags));
   const visibleTagNodes = $derived(flattenVisibleTagTree(tagTree, expandedTagPaths));
@@ -277,9 +280,7 @@
   }
 
   function leaveFolderRow(path: string): void {
-    if (hoveredFolderPath === path) {
-      hoveredFolderPath = null;
-    }
+    if (hoveredFolderPath === path) hoveredFolderPath = null;
   }
 
   function enterTagRow(tag: string): void {
@@ -287,9 +288,7 @@
   }
 
   function leaveTagRow(tag: string): void {
-    if (hoveredTagPath === tag) {
-      hoveredTagPath = null;
-    }
+    if (hoveredTagPath === tag) hoveredTagPath = null;
   }
 
   /** Guards against a hovered row being unmounted before its leave event fires. */
@@ -445,7 +444,7 @@
     const handle = event.currentTarget as HTMLElement;
     handle.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const startWidth = navPaneWidth;
+    const startWidth = dragWidth ?? navPaneWidth;
 
     const clamp = (value: number): number =>
       Math.max(NAV_PANE_WIDTH_MIN, Math.min(NAV_PANE_WIDTH_MAX, value));
@@ -459,10 +458,7 @@
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       const finalWidth = dragWidth ?? startWidth;
-      dragWidth = null;
-      if (finalWidth !== startWidth) {
-        onNavPaneResize?.(finalWidth);
-      }
+      if (finalWidth !== startWidth) onNavPaneResize?.(finalWidth);
     };
 
     handle.addEventListener("pointermove", onMove);

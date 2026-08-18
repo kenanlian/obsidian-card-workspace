@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import { createFolderScope } from "../scope";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -34,6 +34,7 @@ function createHarness() {
   } as unknown as ViewContext;
   const pending = new Set<string>();
   const scheduleHydrationPath = vi.fn();
+  const hydrateStartupCardPaths = vi.fn(async () => undefined);
   const controller = new ScopeController({
     context,
     collectBoxFiles: () => [],
@@ -44,7 +45,7 @@ function createHarness() {
     setBulkSelection: vi.fn(),
     clearBulkSelection: vi.fn(),
     pendingHydration: pending,
-    hydrateStartupCardPaths: vi.fn(async () => undefined),
+    hydrateStartupCardPaths,
     scheduleHydrationPath,
     resetSearchForLoad: vi.fn(),
     refreshSearchProjection: vi.fn(),
@@ -53,7 +54,7 @@ function createHarness() {
     scheduleFolderTreeRefresh: vi.fn(),
     startupCardCount: 6,
   });
-  return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath };
+  return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath, hydrateStartupCardPaths };
 }
 
 describe("ScopeController", () => {
@@ -120,6 +121,26 @@ describe("ScopeController", () => {
 
     await controller.refresh({ reason: "vault-change" });
     expect((controller as any).refreshQueued).toBe(false);
+  });
+
+  it("does not persist an in-flight different-scope load after dispose", async () => {
+    const { context, controller, saveSettings, hydrateStartupCardPaths } = createHarness();
+    const folder = Object.assign(new TFolder(), { path: "notes", children: [] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === "notes" ? folder : null;
+    let release!: () => void;
+    hydrateStartupCardPaths.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      release = () => resolve(undefined);
+    }));
+
+    const loading = controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("notes", true), false),
+    );
+    controller.dispose();
+    release();
+    await loading;
+
+    expect(saveSettings).not.toHaveBeenCalled();
   });
 
   it("dispose cancels debounce, clears queued refresh state, and invalidates epochs", () => {

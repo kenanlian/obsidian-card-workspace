@@ -1623,6 +1623,33 @@ describe("FolderCardView host contract", () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
+  it("V27b-3b does not persist an in-flight different-scope load after cleanup", async () => {
+    const { view, plugin } = createHarness();
+    const notes = new testState.TestTFolder("notes");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => path === "notes" ? notes : null);
+    let releaseLoad!: () => void;
+    const loadHydration = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    vi.spyOn((view as any).modules.hydration, "hydrateStartupCardPaths")
+      .mockImplementationOnce(async () => loadHydration)
+      .mockResolvedValue(undefined);
+    plugin.saveSettings.mockClear();
+
+    const loading = view.handleScopeSelection({
+      requestId: 31,
+      scope: createFolderScope("notes", true),
+      source: "programmatic",
+      requestedAtMs: Date.now(),
+    });
+    view.cleanupLifecycle();
+    releaseLoad();
+    await loading;
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
   it("V27b-4 treats repeated current-scope selection as a write-free noop", async () => {
     const { view, plugin } = createHarness();
     const notes = new testState.TestTFolder("notes");

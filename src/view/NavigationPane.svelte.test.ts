@@ -817,6 +817,36 @@ describe("NavigationPane.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it("keeps the dragged pane width after pointerup until the host paneWidth catches up", async () => {
+    const captured = createCaptured();
+    const { component } = mountNav({ navPaneWidth: 240 }, captured.callbacks);
+
+    const handle = document.querySelector<HTMLElement>(".fce-nav-resize-handle");
+    const pane = document.querySelector<HTMLElement>(".fce-nav-pane");
+    expect(handle).not.toBeNull();
+
+    if (typeof PointerEvent === "function" && handle) {
+      handle.setPointerCapture = () => undefined;
+      handle.releasePointerCapture = () => undefined;
+      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 100, pointerId: 1 }));
+      handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 160, pointerId: 1 }));
+      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 160, pointerId: 1 }));
+      await tick();
+
+      expect(captured.resizeEvents).toEqual([300]);
+      expect(pane?.style.width).toBe("300px");
+
+      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 160, pointerId: 1 }));
+      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 160, pointerId: 1 }));
+      await tick();
+
+      expect(captured.resizeEvents).toEqual([300]);
+      expect(pane?.style.width).toBe("300px");
+    }
+
+    await disposeMountedComponent(component);
+  });
+
   describe("favorites section", () => {
     it("renders first among the sections with one row per favorite", async () => {
       const { component } = mountNav({ favorites: FAVORITE_ROWS });
