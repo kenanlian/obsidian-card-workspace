@@ -36,11 +36,8 @@ Thumbs.db
 .cursor/
 .dmux-hooks/
 
-# Local-only working docs (agent execution plans, external research, roadmap, QA checklists)
-docs/plan/
-docs/explore/
-docs/roadmap/
-docs/qa/
+# Private development artifacts companion
+/.dev
 
 # Local helper/debug leftovers
 run-test.js
