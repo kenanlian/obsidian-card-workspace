@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MiniSearch from "minisearch";
 import { SearchIndexManager, type SearchIndexDocumentSource } from "./SearchIndexManager";
+import { createMiniSearchOptions } from "./minisearch-options";
 import type {
   IndexStoreClearResult,
   IndexStoreNamespaceMetadata,
@@ -109,12 +110,7 @@ function createDocumentSource(initial: SearchableDocument[] = []): {
 }
 
 async function createSerializedIndex(documents: SearchableDocument[]): Promise<string> {
-  const index = new MiniSearch<SearchableDocument>({
-    idField: "path",
-    fields: ["title", "content"],
-    storeFields: ["path", "title", "excerpt"],
-    processTerm: (term): string => term.toLowerCase(),
-  });
+  const index = new MiniSearch<SearchableDocument>(createMiniSearchOptions());
 
   if (documents.length > 0) {
     await index.addAllAsync(documents);
@@ -661,6 +657,92 @@ describe("SearchIndexManager", () => {
     });
   });
 
+  it("retrieves contiguous Han text from titles and Markdown content without false AND matches", async () => {
+    const docs = [
+      createSearchableDocument("notes/title.md", "中华人民共和国", "title fixture"),
+      createSearchableDocument("notes/content.md", "Reference", "这里记录中华人民共和国的资料"),
+      createSearchableDocument("notes/separated.md", "Distractor", "人民各自出现，随后共和"),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial Han build");
+
+    const candidates = docs.map(({ path }) => path);
+    expect(await manager.search("华人民", candidates)).toMatchObject({
+      orderedPaths: ["notes/title.md", "notes/content.md"],
+    });
+    expect(await manager.search("人民共和", candidates)).toMatchObject({
+      orderedPaths: ["notes/title.md", "notes/content.md"],
+    });
+    expect(await manager.search("华", candidates)).toMatchObject({
+      orderedPaths: ["notes/title.md", "notes/content.md"],
+    });
+  });
+
+  it("restores Han postings and keeps them current across incremental mutations and candidate bounds", async () => {
+    const original = createSearchableDocument("notes/original.md", "中国资料", "中华人民共和国");
+    const serialized = await createSerializedIndex([original]);
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: { serializedIndexJson: serialized, documentCount: 1, lastIndexedAt: 111 },
+    });
+    const { source, byPath } = createDocumentSource([original]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.syncDocumentStateFromSource();
+    expect(await manager.search("人民共和", [original.path])).toMatchObject({ orderedPaths: [original.path] });
+    expect(await manager.search("人民共和", [])).toMatchObject({ orderedPaths: [] });
+
+    const modified = createSearchableDocument(original.path, "更新", "中文搜索已替换旧内容");
+    byPath.set(original.path, modified);
+    await manager.applyMutation(createMutation({ type: "modify", path: original.path }));
+    expect(await manager.search("人民共和", [original.path])).toMatchObject({ orderedPaths: [] });
+    expect(await manager.search("中文搜索", [original.path])).toMatchObject({ orderedPaths: [original.path] });
+
+    const created = createSearchableDocument("notes/created.md", "新增中华人民共和国", "created");
+    byPath.set(created.path, created);
+    await manager.applyMutation(createMutation({ type: "create", path: created.path }));
+    expect(await manager.search("人民共和", [original.path, created.path])).toMatchObject({ orderedPaths: [created.path] });
+
+    byPath.delete(created.path);
+    byPath.set("notes/renamed.md", { ...created, path: "notes/renamed.md" });
+    await manager.applyMutation(createMutation({
+      type: "rename",
+      oldPath: created.path,
+      path: "notes/renamed.md",
+    }));
+    expect(await manager.search("人民共和", [created.path, "notes/renamed.md"])).toMatchObject({
+      orderedPaths: ["notes/renamed.md"],
+    });
+
+    byPath.delete("notes/renamed.md");
+    await manager.applyMutation(createMutation({ type: "delete", path: "notes/renamed.md" }));
+    expect(await manager.search("人民共和", ["notes/renamed.md"])).toMatchObject({ orderedPaths: [] });
+  });
+
+  it("combines Han and non-Han query terms while retaining English prefix and case behavior", async () => {
+    const docs = [
+      createSearchableDocument("notes/mixed.md", "中文 Roadmap", "release plan"),
+      createSearchableDocument("notes/han-only.md", "中文", "unrelated"),
+      createSearchableDocument("notes/english-only.md", "ROADMAP", "unrelated"),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Mixed query build");
+
+    expect(await manager.search("中文 road", docs.map(({ path }) => path))).toMatchObject({
+      orderedPaths: ["notes/mixed.md"],
+    });
+  });
+
   it("first-indexes a deterministic large corpus with usable search state", async () => {
     const docs = createLargeCorpusDocuments(640);
     const store = createStoreMock();
@@ -950,6 +1032,40 @@ describe("SearchIndexManager", () => {
       matchCountsByPath: {
         "notes/aa.md": 1,
       },
+    });
+  });
+
+  it("counts display literals rather than Han postings, including mixed and supplementary Han terms", async () => {
+    const supplementaryHan = "𠀀";
+    const docs = [
+      createSearchableDocument(
+        "notes/han-counts.md",
+        "中文搜索",
+        `中文搜索中文搜索 华华 ${supplementaryHan}${supplementaryHan} search SEARCH`,
+      ),
+    ];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Han count build");
+
+    expect(await manager.search("中文搜索", [docs[0].path])).toEqual({
+      orderedPaths: [docs[0].path],
+      matchCountsByPath: { [docs[0].path]: 3 },
+    });
+    expect(await manager.search("华", [docs[0].path])).toEqual({
+      orderedPaths: [docs[0].path],
+      matchCountsByPath: { [docs[0].path]: 2 },
+    });
+    expect(await manager.search(supplementaryHan, [docs[0].path])).toEqual({
+      orderedPaths: [docs[0].path],
+      matchCountsByPath: { [docs[0].path]: 2 },
+    });
+    expect(await manager.search("中文-search", [docs[0].path])).toEqual({
+      orderedPaths: [docs[0].path],
+      matchCountsByPath: { [docs[0].path]: 5 },
     });
   });
 

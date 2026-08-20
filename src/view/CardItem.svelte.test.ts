@@ -483,6 +483,88 @@ describe("CardItem.svelte", () => {
     expect(excerpt?.textContent).toContain("Preview text");
   });
 
+  it("highlights a full Chinese phrase in the title and preview", () => {
+    const { target } = mountCardItem({
+      searchQuery: "中文搜索",
+      card: createCard("notes/chinese-phrase.md", {
+        title: "开始中文搜索结束",
+        previewHtml: "<p>预览中文搜索内容</p>",
+      }),
+    });
+
+    expect(target.querySelector("h4")?.innerHTML).toContain(
+      '<mark class="fce-search-hit">中文搜索</mark>',
+    );
+    expect(getExcerptHtml(target)).toContain(
+      '<mark class="fce-search-hit">中文搜索</mark>',
+    );
+    expect(target.querySelectorAll("mark.fce-search-hit")).toHaveLength(2);
+  });
+
+  it("highlights interior single and supplementary Han code points", () => {
+    const interior = mountCardItem({
+      searchQuery: "文",
+      card: createCard("notes/interior-han.md", {
+        title: "中文搜索",
+        previewHtml: "<p>正文内容</p>",
+      }),
+    });
+    const supplementary = mountCardItem({
+      searchQuery: "𠀀",
+      card: createCard("notes/supplementary-han.md", {
+        title: "甲𠀀乙",
+        previewHtml: "<p>预览𠀀内容</p>",
+      }),
+    });
+
+    expect(interior.target.querySelector("h4")?.innerHTML).toContain(
+      '<mark class="fce-search-hit">文</mark>',
+    );
+    expect(supplementary.target.querySelector("h4")?.innerHTML).toContain(
+      '<mark class="fce-search-hit">𠀀</mark>',
+    );
+    expect(getExcerptHtml(supplementary.target)).toContain(
+      '<mark class="fce-search-hit">𠀀</mark>',
+    );
+  });
+
+  it("highlights shared display terms from a mixed Han and non-Han query", () => {
+    const { target } = mountCardItem({
+      searchQuery: "OpenAI中文-search",
+      card: createCard("notes/mixed-query.md", {
+        title: "OpenAI 中文 search",
+        previewHtml: "<p>search 中文 OpenAI</p>",
+      }),
+    });
+
+    const titleMarks = Array.from(target.querySelectorAll("h4 mark.fce-search-hit"), (mark) =>
+      mark.textContent,
+    );
+    const previewMarks = Array.from(
+      target.querySelectorAll(".fce-excerpt mark.fce-search-hit"),
+      (mark) => mark.textContent,
+    );
+    expect(titleMarks).toEqual(["OpenAI", "中文", "search"]);
+    expect(previewMarks).toEqual(["search", "中文", "OpenAI"]);
+  });
+
+  it("escapes regex metacharacters and highlights them literally", () => {
+    const { target } = mountCardItem({
+      searchQuery: "[draft] a+b",
+      card: createCard("notes/literal-query.md", {
+        title: "Plan [draft] a+b",
+        previewHtml: "<p>[draft] and a+b, not aaab</p>",
+      }),
+    });
+
+    expect(Array.from(target.querySelectorAll("mark.fce-search-hit"), (mark) => mark.textContent)).toEqual([
+      "[draft]",
+      "a+b",
+      "[draft]",
+      "a+b",
+    ]);
+  });
+
   it("does not add highlighting when the query is empty", () => {
     const { target } = mountCardItem({
       searchQuery: "   ",

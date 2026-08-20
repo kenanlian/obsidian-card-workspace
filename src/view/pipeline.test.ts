@@ -397,8 +397,13 @@ describe("apply search filter behavior", () => {
     expect(PHASE3_MINISEARCH_CONTRACT.indexFields).toEqual(["title", "content"]);
     expect(PHASE3_MINISEARCH_CONTRACT.storeFields).toEqual(["path", "title", "excerpt"]);
     expect(PHASE3_MINISEARCH_CONTRACT.normalize).toBe("lowercase");
+    expect(PHASE3_MINISEARCH_CONTRACT.tokenizer).toEqual({
+      hanScope: "unicode-script-han",
+      indexStrategy: "unigram-and-overlapping-bigram",
+      queryStrategy: "single-unigram-else-overlapping-bigram",
+    });
     expect(PHASE3_MINISEARCH_CONTRACT.query).toEqual({
-      prefix: true,
+      prefixPolicy: "non-han-only",
       fuzzy: false,
       combineWith: "AND",
     });

@@ -60,6 +60,12 @@ Svelte UI
 src/search/IndexStore.ts
   └─ IndexedDB persisted index snapshots
           ↓
+src/search-tokenization.ts
+  └─ 无状态 Han / non-Han 索引词、查询词与展示词策略
+          ↓
+src/search/minisearch-options.ts
+  └─ MiniSearch 构造、恢复与查询 option 装配
+          ↓
 src/search/SearchIndexManager.ts
   └─ restore / build / mutation / health snapshots
           ↓
@@ -104,6 +110,8 @@ Vault 事件经 `VaultEventBus` 的同步顺序是：`lastFolderPath` reconcile 
 | 收藏域（`FavoriteActions` + `favorites.ts` + `FavoriteReconciler`） | 收藏条目、排序、vault 变更后的路径/标签收敛；userData 持久化 | 拥有卡片投影 |
 | 导航布局（`NavLayoutController`） | 文件夹/标签/盒子树、收藏区、分栏宽度与折叠；workspace 持久化投影 | 拥有卡片候选集 |
 | `src/i18n/` | 按域拆分的 UI 文案；调用方仍 `import` `../i18n` | 依赖 view / services / settings |
+| `src/search-tokenization.ts` | 无状态的 Han / non-Han 分段、索引/查询 term 与展示 literal 策略，供搜索层和 Svelte presentation 共同使用 | 持有索引生命周期、MiniSearch option、DOM 或设置状态 |
+| `src/search/minisearch-options.ts` | 把共享 token policy 装配成 MiniSearch 构造/恢复 option 与查询 option | 持有索引状态、执行 restore/build/mutation、决定 view 投影 |
 | `src/search/IndexStore.ts` | IndexedDB 持久化、恢复、写入、清理 | 执行查询、决定 UI 状态 |
 | `src/search/SearchIndexManager.ts` | restore、full build、mutation apply、health snapshots、unsafe rename 保护 | 持有 view query、直接产出 UI |
 | `src/search/IndexedSearchService.ts` | 把 manager 快照翻译为 query contract、限制 candidate paths、返回 indexed ordering 或 blocked state | 拥有 view state、伪造非 Markdown 全文索引 |
@@ -151,9 +159,12 @@ type CardScope =
 ### 2. query 到搜索投影
 
 1. UI 把 query intent 回传给宿主，由 `SearchController` 持有 runtime-only `searchQuery`。
-2. `SearchController` 向 `IndexedSearchService` 发起带 candidate paths 的查询。
-3. 服务在 `indexed-ready` 时返回当前候选范围内的 `orderedPaths`；非 ready 时返回 blocked execution state。
-4. `pipeline.ts` 基于搜索输入做统一投影；文件夹仍保证 `tag -> search -> pin`，盒子保证 `search -> pin`。
+2. `src/search-tokenization.ts` 为索引检索、literal count 与 `CardItem.svelte` 高亮提供同一套 Han / non-Han 边界；MiniSearch 专属 option 只在 `src/search/minisearch-options.ts` 装配。
+3. `SearchController` 向 `IndexedSearchService` 发起带 candidate paths 的查询。
+4. 服务在 `indexed-ready` 时返回当前候选范围内的 `orderedPaths`；非 ready 时返回 blocked execution state。
+5. `pipeline.ts` 基于搜索输入做统一投影；文件夹仍保证 `tag -> search -> pin`，盒子保证 `search -> pin`。
+
+搜索内容边界没有因 Han tokenizer 改变：Markdown 的 leading frontmatter 仍整体排除，正文 inline tags 仍只是普通 body text，索引不增加 `tags` 字段；tag navigation/filtering 继续独立使用 Obsidian metadata lane。Tokenizer metadata 版本变化会拒绝旧快照并沿既有 rebuild-required lifecycle 重建；`IndexStore` 仍按 vault 保存单个完整 MiniSearch snapshot，不改为 journal 或增量持久化格式。
 
 ### 3. vault mutation 到 refresh / index update
 
@@ -200,6 +211,9 @@ type CardScope =
 - 运行时作用域是 `CardScope`；vault root 是 `path === ""` 的 folder scope。
 - `pipeline.ts` 是唯一 visible-card projection；盒子跳过 browse tag filter。
 - 搜索是 indexed-only；索引未就绪时，非空查询必须阻塞显示。
+- Han / non-Han term 边界由根级纯 helper 统一；MiniSearch 构造、恢复和查询 option 只在 `src/search/` 内装配。
+- Tokenizer metadata 不匹配必须拒绝旧索引并重建；IndexedDB 仍保存 whole-snapshot payload。
+- Markdown leading frontmatter 不进入全文索引，正文 inline tags 保留为 body text；不存在独立 `tags` 搜索字段。
 - Markdown 继续参与全文索引；`base`、`canvas`、`excalidraw` 目前只参与标题级匹配。
 - pin 只重排通过前序过滤后的卡片，不绕过 filter 或 search constraint。
 - 启动 preview 预热必须针对 pipeline-projected visible prefix，而不是原始 `baseCards` 前缀。

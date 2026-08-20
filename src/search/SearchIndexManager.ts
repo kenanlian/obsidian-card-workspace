@@ -1,4 +1,5 @@
 import MiniSearch from "minisearch";
+import { getSearchDisplayTerms } from "../search-tokenization";
 import type {
   IndexStoreClearResult,
   IndexStore,
@@ -8,7 +9,6 @@ import type {
 } from "./IndexStore";
 import { classifySearchMutation } from "./document-preparation";
 import {
-  PHASE3_MINISEARCH_CONTRACT,
   type SearchIndexHealthSnapshot,
   type SearchIndexPersistenceHealth,
   type SearchIndexRebuildReason,
@@ -17,6 +17,7 @@ import {
   type SearchVaultMutation,
   type SearchableDocument,
 } from "./types";
+import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "./minisearch-options";
 
 export interface SearchIndexManagerRestoreResult {
   status: "ready" | "building";
@@ -81,18 +82,6 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
     detail: "Index manager initializing.",
   },
 };
-
-const SEARCH_OPTIONS = {
-  prefix: PHASE3_MINISEARCH_CONTRACT.query.prefix,
-  fuzzy: PHASE3_MINISEARCH_CONTRACT.query.fuzzy,
-  combineWith: PHASE3_MINISEARCH_CONTRACT.query.combineWith,
-  boost: {
-    title: PHASE3_MINISEARCH_CONTRACT.boost.title,
-    content: PHASE3_MINISEARCH_CONTRACT.boost.content,
-  },
-};
-
-const WHITESPACE_PATTERN = /\s+/g;
 
 export class SearchIndexManager {
   /**
@@ -233,7 +222,7 @@ export class SearchIndexManager {
     try {
       this.index = await MiniSearch.loadJSONAsync<SearchableDocument>(
         restoreResult.payload.serializedIndexJson,
-        this.createMiniSearchOptions(),
+        createMiniSearchOptions(),
       );
       const success = this.createSuccessSnapshot(
         "restored",
@@ -376,7 +365,7 @@ export class SearchIndexManager {
     }
 
     const allowed = new Set(candidatePaths);
-    const results = this.index.search(trimmed, SEARCH_OPTIONS) as SearchIndexMiniSearchResult[];
+    const results = this.index.search(trimmed, MINISEARCH_SEARCH_OPTIONS) as SearchIndexMiniSearchResult[];
     const ordered: string[] = [];
     for (const result of results) {
       if (typeof result.path !== "string") {
@@ -903,7 +892,7 @@ export class SearchIndexManager {
   }
 
   private buildMatchCountsByPath(query: string, orderedPaths: string[]): Record<string, number> | undefined {
-    const uniqueTokens = this.extractUniqueQueryTokens(query);
+    const uniqueTokens = getSearchDisplayTerms(query);
     if (uniqueTokens.length === 0) {
       return undefined;
     }
@@ -923,23 +912,6 @@ export class SearchIndexManager {
     }
 
     return Object.keys(matchCountsByPath).length > 0 ? matchCountsByPath : undefined;
-  }
-
-  private extractUniqueQueryTokens(query: string): string[] {
-    const normalized = query.toLowerCase().replace(WHITESPACE_PATTERN, " ").trim();
-    if (normalized.length === 0) {
-      return [];
-    }
-
-    const uniqueTokens = new Set<string>();
-    for (const token of normalized.split(" ")) {
-      if (token.length === 0) {
-        continue;
-      }
-      uniqueTokens.add(token);
-    }
-
-    return [...uniqueTokens];
   }
 
   private countTokenMatches(searchBasis: string, tokens: string[]): number {
@@ -973,16 +945,7 @@ export class SearchIndexManager {
   }
 
   private createEmptyIndex(): MiniSearch<SearchableDocument> {
-    return new MiniSearch<SearchableDocument>(this.createMiniSearchOptions());
-  }
-
-  private createMiniSearchOptions() {
-    return {
-      idField: "path",
-      fields: [...PHASE3_MINISEARCH_CONTRACT.indexFields],
-      storeFields: [...PHASE3_MINISEARCH_CONTRACT.storeFields],
-      processTerm: (term: string): string => term.toLowerCase(),
-    };
+    return new MiniSearch<SearchableDocument>(createMiniSearchOptions());
   }
 
   private toRebuildDetail(restoreResult: IndexStoreRestoreRebuildRequiredResult): string {

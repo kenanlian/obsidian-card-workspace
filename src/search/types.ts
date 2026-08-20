@@ -88,15 +88,21 @@ export interface SearchableDocument {
  * - index fields: `title` + `content`
  * - stored fields: `path` + `title` + `excerpt`
  * - normalization: lowercase
- * - query options: prefix true, fuzzy false, AND combination
+ * - Han index/query tokenization and non-Han-only prefix search
+ * - query options: fuzzy false, AND combination
  * - ranking: title has 3x boost over content
  */
 export const PHASE3_MINISEARCH_CONTRACT = {
   indexFields: ["title", "content"],
   storeFields: ["path", "title", "excerpt"],
   normalize: "lowercase",
+  tokenizer: {
+    hanScope: "unicode-script-han",
+    indexStrategy: "unigram-and-overlapping-bigram",
+    queryStrategy: "single-unigram-else-overlapping-bigram",
+  },
   query: {
-    prefix: true,
+    prefixPolicy: "non-han-only",
     fuzzy: false,
     combineWith: "AND",
   },

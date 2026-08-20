@@ -19,7 +19,7 @@ import type { VaultMutationEvent } from "../view/types";
 import type { VaultEventBus } from "./VaultEventBus";
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
-export const SEARCH_TOKENIZER_VERSION = "search-text-v2";
+export const SEARCH_TOKENIZER_VERSION = "search-text-v3-han-bigram";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
 
 type SearchRecoveryBoundaryState = "healthy" | "degraded";

@@ -5,6 +5,7 @@
 <script lang="ts">
   import { setIcon } from "obsidian";
   import { getUiStrings, type UiStrings } from "../i18n";
+  import { getSearchDisplayTerms } from "../search-tokenization";
   import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
   import type { OpenNotePayload, PanelAppearanceState } from "./panel-model";
   import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
@@ -127,22 +128,6 @@
     return ghost;
   }
 
-  function getSearchTokens(query: string): string[] {
-    const seen = new Set<string>();
-
-    return query
-      .split(/\s+/)
-      .map((token) => token.trim().toLowerCase())
-      .filter((token) => {
-        if (token.length === 0 || seen.has(token)) {
-          return false;
-        }
-
-        seen.add(token);
-        return true;
-      });
-  }
-
   function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -161,7 +146,7 @@
   }
 
   function buildHighlightedSegments(value: string, query: string): HighlightSegment[] | null {
-    const tokens = getSearchTokens(query);
+    const tokens = getSearchDisplayTerms(query);
     const pattern = createTokenPattern(tokens);
     if (!pattern) {
       return null;
@@ -265,7 +250,7 @@
   }
 
   function applyPreviewHighlights(root: ParentNode, query: string): void {
-    const tokens = getSearchTokens(query);
+    const tokens = getSearchDisplayTerms(query);
     if (tokens.length === 0) {
       return;
     }

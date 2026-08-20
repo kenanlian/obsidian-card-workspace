@@ -25,6 +25,17 @@ describe("extractMarkdownSearchText", () => {
     expect(text).not.toContain("Title Title");
   });
 
+  it("excludes leading frontmatter values while retaining body prose and inline tags", () => {
+    const text = extractMarkdownSearchText(
+      "---\ntags: [secret-frontmatter-tag]\nsummary: hidden frontmatter prose\n---\nVisible body prose with #inline-tag.",
+    );
+
+    expect(text).not.toContain("secret-frontmatter-tag");
+    expect(text).not.toContain("hidden frontmatter prose");
+    expect(text).toContain("Visible body prose");
+    expect(text).toContain("#inline-tag");
+  });
+
   it("does not duplicate plain headings or prose", () => {
     const text = extractMarkdownSearchText("# One\nTwo");
 

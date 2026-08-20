@@ -75,11 +75,18 @@ Workspace-shaped patches may debounce before joining that same serialized queue.
 
 ## Search Contracts
 
+### Shared token policy
+
+- Root `src/search-tokenization.ts` is the stateless Han/non-Han boundary shared by index/query term generation, literal occurrence counts, and Svelte highlighting.
+- `src/search/minisearch-options.ts` is the search-layer assembly point for MiniSearch constructor, restore, and query options. `SearchIndexManager` remains the lifecycle, mutation, and query owner.
+- Markdown leading frontmatter remains wholly excluded from indexed content. Inline tags remain searchable only as ordinary body text; no `tags` field is added, and tag navigation/filtering continues through Obsidian metadata.
+
 ### `IndexStore`
 
 - Persists and restores serialized index payloads.
-- Applies schema/version checks.
+- Applies exact schema/tokenizer/plugin metadata checks. Tokenizer-version drift rejects the incompatible payload and enters the existing rebuild-required path even if best-effort stale-record clearing fails.
 - Clears bad or drifted state when restore is unsafe.
+- Continues to write one whole MiniSearch snapshot per vault; the record shape and persistence model are unchanged.
 - Does not execute queries.
 
 ### `SearchIndexManager`
@@ -124,6 +131,7 @@ Do not broaden non-markdown indexing accidentally. Mixed card support does not i
 - Vault mutation is the source event; persistent index state and userData collections follow vault truth.
 - `VaultEventBus` order is: `lastFolderPath` reconcile → boxes → favorites → tag prune → search (isolated) → views. Views self-subscribe and debounce their own reload.
 - File create/modify/delete should prefer incremental index updates.
+- Tokenizer policy changes require a metadata version bump so old postings rebuild before non-empty queries resume.
 - Unsafe folder rename should prefer `rebuild-required` over speculative path rewriting.
 - Folder rename of the persisted browse path rewrites `lastFolderPath` on the plugin, not via a view's `CardScope`.
 - View projections are disposable and should be rebuilt from current vault + query inputs.
@@ -136,6 +144,8 @@ Do not broaden non-markdown indexing accidentally. Mixed card support does not i
 - Persisting runtime-only fields such as `searchQuery` or selection.
 - Writing v2 on startup instead of on the next real settings write.
 - Reintroducing fallback search when the index is blocked.
+- Restoring an index built with incompatible tokenizer metadata, or changing whole-snapshot persistence as part of a tokenizer-only rollout.
+- Indexing frontmatter values or adding a tag field when the intended content lane is title + extracted Markdown body.
 - Letting pin order or search metadata become stored card truth.
 - Accidentally indexing non-markdown content as if it were markdown.
 - Letting two in-flight `saveData` calls overwrite each other instead of going through the serialized queue.

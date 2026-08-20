@@ -28,6 +28,12 @@ class MemoryIndexStoreAdapter implements IndexStoreStorageAdapter {
   }
 }
 
+class FailingRemoveMemoryIndexStoreAdapter extends MemoryIndexStoreAdapter {
+  override async removeRecord(_key: string): Promise<void> {
+    throw new Error("record deletion failed");
+  }
+}
+
 class ThrowingIndexStoreAdapter implements IndexStoreStorageAdapter {
   constructor(
     private readonly options: {
@@ -154,8 +160,8 @@ describe("IndexStore", () => {
       vaultNamespace: "vault-a",
     });
 
-    await store.write(createMetadata({ tokenizerVersion: "lowercase-v1" }), createPayload());
-    const restore = await store.restore(createMetadata({ tokenizerVersion: "search-text-v2" }));
+    await store.write(createMetadata({ tokenizerVersion: "search-text-v2" }), createPayload());
+    const restore = await store.restore(createMetadata({ tokenizerVersion: "search-text-v3-han-bigram" }));
 
     expect(restore).toEqual({
       outcome: "rebuild-required",
@@ -163,6 +169,24 @@ describe("IndexStore", () => {
       cleared: true,
       detail: "Persisted index metadata version drift detected.",
     });
+  });
+
+  it("rejects tokenizer-drift payload when best-effort stale-record clearing fails", async () => {
+    const adapter = new FailingRemoveMemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    await store.write(createMetadata({ tokenizerVersion: "search-text-v2" }), createPayload());
+    const currentMetadata = createMetadata({ tokenizerVersion: "search-text-v3-han-bigram" });
+    const restore = await store.restore(currentMetadata);
+    const retry = await store.restore(currentMetadata);
+
+    expect(restore).toEqual({
+      outcome: "rebuild-required",
+      reason: "version-drift",
+      cleared: false,
+      detail: "Persisted index metadata version drift detected.",
+    });
+    expect(retry).toEqual(restore);
   });
 
   it("returns rebuild-required corrupt when persisted payload has invalid shape", async () => {

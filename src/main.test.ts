@@ -1763,6 +1763,12 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(searchMockState.stores[0]?.vaultNamespace).toBe("path:/vault/base");
     expect(searchMockState.indexedServices[0]?.initialize).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledWith(expect.objectContaining({
+      vaultNamespace: "path:/vault/base",
+      schemaVersion: "phase3-v1",
+      tokenizerVersion: "search-text-v3-han-bigram",
+      pluginVersion: expect.any(String),
+    }));
     expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
     expect(plugin.getSearchService()).toBe(searchMockState.indexedServices[0]);
   });
