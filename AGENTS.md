@@ -14,16 +14,16 @@
 ## Documentation Map
 
 - `AGENTS.md` — first read; repo workflow, commands, testing entry points, implementation constraints, and current architecture guardrails
-- `docs/architecture.md` — detailed architecture source of truth: module boundaries, runtime flows, state ownership, invariants
-- `docs/state-and-runtime-patterns.md` — runtime ownership, async safety, projection rules, change checklist
-- `docs/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
-- `docs/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
+- `.dev/architecture.md` — detailed architecture source of truth: module boundaries, runtime flows, state ownership, invariants
+- `.dev/state-and-runtime-patterns.md` — runtime ownership, async safety, projection rules, change checklist
+- `.dev/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
+- `.dev/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
 
 Enumerable implementation details (settings keys, panel fields, module methods, file line counts) live in TypeScript types and `src/architecture.test.ts`, not in these docs.
 
 ## Architecture Quick Reference
 
-- **Detailed source of truth**: `docs/architecture.md`
+- **Detailed source of truth**: `.dev/architecture.md`
 - **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`) plus default card open behavior
 - **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/`, `src/view/actions/`, and `src/view/menus/`
 - **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`
@@ -60,7 +60,8 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
 | `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
-| `docs/` | Developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/` |
+| `.dev/` | Private companion-linked developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/` |
+| `docs/` | Public user documentation |
 | `.github/workflows/` | CI (`ci.yml`) and release (`release.yml`) automation |
 
 ## Development Commands
