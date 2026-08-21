@@ -31,16 +31,7 @@ import { resolveCardFileKind } from "./view/file-kind";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { rewritePathAfterRename } from "./view/scope-files";
 import { resolveSettingsUpdateIntent } from "./view/update-intent";
-import {
-  BULK_ADD_TO_BOX_ICON,
-  BULK_ADD_TO_BOX_ICON_SVG,
-  BULK_REMOVE_FROM_BOX_ICON,
-  BULK_REMOVE_FROM_BOX_ICON_SVG,
-  CARD_WORKSPACE_ICON,
-  CARD_WORKSPACE_ICON_SVG,
-  PLAIN_FOLDER_ICON,
-  PLAIN_FOLDER_ICON_SVG,
-} from "./icons";
+import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
 const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
