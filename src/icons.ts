@@ -7,7 +7,13 @@
 const ICON_VIEWBOX_SCALE = 100 / 24;
 
 /** Plugin identity glyph, shared by the view tab and the ribbon entry point. */
-export const CARD_WORKSPACE_ICON = "layout-grid";
+export const CARD_WORKSPACE_ICON = "card-workspace";
+
+/**
+ * Card Workspace's monochrome mark, from
+ * `designs/card-workspace-icon/handoff/card-workspace-mono.svg`.
+ */
+export const CARD_WORKSPACE_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${ICON_VIEWBOX_SCALE})"><path d="M3 4v16"/><rect x="7" y="3" width="11" height="7" rx="1.5"/><rect x="10" y="14" width="11" height="7" rx="1.5"/></g>`;
 
 /**
  * Obsidian's built-in `folder` id resolves to its legacy open-folder glyph and

@@ -1116,7 +1116,7 @@ describe("CardWorkspacePlugin activateView", () => {
       const addRibbonIcon = (plugin as unknown as { addRibbonIcon: ReturnType<typeof vi.fn> }).addRibbonIcon;
       expect(addRibbonIcon).toHaveBeenCalledTimes(1);
       const [icon, title, callback] = addRibbonIcon.mock.calls[0] as [string, string, () => void];
-      expect(icon).toBe("layout-grid");
+      expect(icon).toBe("card-workspace");
       expect(title).toBe("Open Card Workspace");
 
       callback();
@@ -1731,29 +1731,34 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
-    expect(addIcon).toHaveBeenCalledTimes(5);
+    expect(addIcon).toHaveBeenCalledTimes(6);
     expect(addIcon).toHaveBeenNthCalledWith(
       1,
+      "card-workspace",
+      expect.stringContaining('d="M3 4v16"'),
+    );
+    expect(addIcon).toHaveBeenNthCalledWith(
+      2,
       "card-workspace-tag-plus",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      2,
+      3,
       "card-workspace-tag-minus",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      3,
+      4,
       "card-workspace-folder",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      4,
+      5,
       "card-workspace-package-import",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      5,
+      6,
       "card-workspace-package-export",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );

@@ -37,6 +37,7 @@ import {
   BULK_REMOVE_FROM_BOX_ICON,
   BULK_REMOVE_FROM_BOX_ICON_SVG,
   CARD_WORKSPACE_ICON,
+  CARD_WORKSPACE_ICON_SVG,
   PLAIN_FOLDER_ICON,
   PLAIN_FOLDER_ICON_SVG,
 } from "./icons";
@@ -159,6 +160,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private registerCustomIcons(): void {
+    addIcon(CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG);
     addIcon(BULK_ADD_TAG_ICON, BULK_ADD_TAG_ICON_SVG);
     addIcon(BULK_REMOVE_TAG_ICON, BULK_REMOVE_TAG_ICON_SVG);
     addIcon(PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG);
