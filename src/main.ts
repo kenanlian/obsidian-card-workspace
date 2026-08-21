@@ -404,16 +404,16 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
-    // Capture the synchronously installed combined snapshot before awaiting persistence.
+    // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
-    await Promise.all(writes);
-
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
         void view.applyUpdateIntent(intent, "settings-change");
       }
     });
+
+    await Promise.all(writes);
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {

@@ -608,6 +608,27 @@ describe("CardWorkspacePlugin settings update intents", () => {
     expect(view.applyUpdateIntent).toHaveBeenCalledWith("rehydrate", "settings-change");
   });
 
+  it("dispatches a section-collapse patch before persistence resolves", async () => {
+    const { plugin, view } = attachView();
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockImplementationOnce(() => persistence);
+
+    const pending = plugin.saveSettings({
+      folderSectionCollapsed: !plugin.getSettings().folderSectionCollapsed,
+    });
+
+    expect(saveData).toHaveBeenCalledTimes(1);
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("patch", "settings-change");
+
+    releasePersistence();
+    await pending;
+    expect(view.applyUpdateIntent).toHaveBeenCalledTimes(1);
+  });
+
   it("dispatches the strongest intent when several settings change", async () => {
     const { plugin, view } = attachView();
 
