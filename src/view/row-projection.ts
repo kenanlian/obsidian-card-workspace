@@ -13,6 +13,36 @@ export interface ProjectedRow<T extends RowProjectionCard = RowProjectionCard> {
   key: string;
 }
 
+export interface VirtualRowWindow {
+  start: number;
+  end: number;
+}
+
+export function computeVirtualRowWindow(
+  rowCount: number,
+  baseStart: number,
+  baseEnd: number,
+  overscan: number,
+): VirtualRowWindow {
+  const count = Number.isFinite(rowCount) ? Math.max(0, Math.trunc(rowCount)) : 0;
+  if (count === 0) {
+    return { start: 0, end: 0 };
+  }
+
+  const safeStart = Number.isFinite(baseStart)
+    ? Math.min(count - 1, Math.max(0, Math.trunc(baseStart)))
+    : 0;
+  const safeEnd = Number.isFinite(baseEnd)
+    ? Math.min(count - 1, Math.max(safeStart, Math.trunc(baseEnd)))
+    : safeStart;
+  const extra = Number.isFinite(overscan) ? Math.max(0, Math.trunc(overscan)) : 0;
+
+  return {
+    start: Math.max(0, safeStart - extra),
+    end: Math.min(count, safeEnd + 1 + extra),
+  };
+}
+
 export interface ColumnCountInput {
   availableWidth: number;
   minCardWidth: number;

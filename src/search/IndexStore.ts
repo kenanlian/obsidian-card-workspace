@@ -396,8 +396,7 @@ function matchesExpectedMetadata(stored: IndexStoreNamespaceMetadata, expected: 
   return (
     stored.vaultNamespace === expected.vaultNamespace &&
     stored.schemaVersion === expected.schemaVersion &&
-    stored.tokenizerVersion === expected.tokenizerVersion &&
-    stored.pluginVersion === expected.pluginVersion
+    stored.tokenizerVersion === expected.tokenizerVersion
   );
 }
 

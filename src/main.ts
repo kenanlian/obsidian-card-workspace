@@ -31,6 +31,7 @@ import { resolveCardFileKind } from "./view/file-kind";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { rewritePathAfterRename } from "./view/scope-files";
 import { resolveSettingsUpdateIntent } from "./view/update-intent";
+import { activateDeferredView } from "./view/deferred-view-activation";
 import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
@@ -39,9 +40,7 @@ const TABLER_ICON_SCALE = 4.1666666667;
 const BULK_ADD_TAG_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${TABLER_ICON_SCALE})"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M21.002 13c0 -.617 -.235 -1.233 -.706 -1.704l-7.71 -7.71c-.375 -.375 -.884 -.586 -1.414 -.586h-5.172c-1.657 0 -3 1.343 -3 3v5.172c0 .53 .211 1.039 .586 1.414l7.71 7.71c.471 .47 1.087 .706 1.704 .706" /><path d="M16 19h6" /><path d="M19 16v6" /></g>`;
 const BULK_REMOVE_TAG_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${TABLER_ICON_SCALE})"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M18.898 16.102l.699 -.699l.699 -.699c.941 -.941 .941 -2.467 0 -3.408l-7.71 -7.71c-.375 -.375 -.884 -.586 -1.414 -.586h-5.172c-1.657 0 -3 1.343 -3 3v5.172c0 .53 .211 1.039 .586 1.414l7.71 7.71c.471 .47 1.087 .706 1.704 .706" /><path d="M16 19h6" /></g>`;
 
-function normalizeFolderScopePath(path: string): string {
-  return path === "/" ? "" : path;
-}
+function normalizeFolderScopePath(path: string): string { return path === "/" ? "" : path; }
 const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
 
 export default class CardWorkspacePlugin extends Plugin {
@@ -56,7 +55,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private vaultEventListenersRegistered = false;
   private readonly vaultEventBus = new VaultEventBus();
   private vaultEventUnsubscribers: Array<() => void> = [];
-  private startupPromise: Promise<void> = Promise.resolve();
+  private disposed = false; private settingsReadyPromise: Promise<void> = Promise.resolve();
+  private layoutReadyTask: Promise<void> = Promise.resolve(); private startupPromise: Promise<void> = Promise.resolve();
   private readonly editorDropController = new EditorDropController({
     app: this.app,
     getSettings: () => this.getSettings(),
@@ -89,24 +89,12 @@ export default class CardWorkspacePlugin extends Plugin {
   });
 
   onload(): void {
-    this.startupPromise = this.initializePlugin().catch((error: unknown) => {
-      console.error("[Card Workspace] Plugin load failed.", error);
-    });
-  }
-
-  private async initializePlugin(): Promise<void> {
-    await this.loadSettings();
-    await this.searchCoordinator.initialize();
     this.registerVaultEventListeners();
     this.registerCustomIcons();
-
-    this.register(() => {
-      this.searchCoordinator.dispose();
-    });
-
+    this.register(() => this.disposeRuntime());
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addRibbonIcon(CARD_WORKSPACE_ICON, this.getUiStrings().app.ribbonTooltip, () => {
-      void this.activateView();
+      this.runDetached(this.activateView(), "View activation failed.");
     });
     this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
     this.registerHoverLinkSource("card-workspace", {
@@ -118,7 +106,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "open-view",
       name: this.getUiStrings().app.openCardWorkspaceViewCommand,
       callback: () => {
-        void this.activateView();
+        this.runDetached(this.activateView(), "View activation failed.");
       },
     });
     this.registerSearchCommands();
@@ -141,13 +129,23 @@ export default class CardWorkspacePlugin extends Plugin {
       }),
     );
 
+    this.settingsReadyPromise = this.loadSettings();
+    this.startupPromise = this.settingsReadyPromise.catch((error: unknown) =>
+      console.error("[Card Workspace] Plugin load failed.", error));
     this.app.workspace.onLayoutReady(() => {
-      this.registerVaultObservers();
-      const activeFile = this.app.workspace.getActiveFile();
-      this.syncSelection(activeFile?.path ?? null);
-      this.searchCoordinator.flushDeferredStartupWork();
-      void this.restoreLastSession();
+      this.layoutReadyTask = this.runLayoutReadyStartup().catch((error: unknown) =>
+        { if (!this.disposed) console.error("[Card Workspace] Plugin startup failed.", error); });
+      this.startupPromise = this.layoutReadyTask;
     });
+  }
+  private async runLayoutReadyStartup(): Promise<void> {
+    await this.settingsReadyPromise;
+    if (this.disposed) return;
+    this.registerVaultObservers(); this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
+    await this.restoreLastSession();
+    if (this.disposed) return;
+    await this.searchCoordinator.initialize(); if (this.disposed) return;
+    this.searchCoordinator.flushDeferredStartupWork();
   }
 
   private registerCustomIcons(): void {
@@ -160,7 +158,14 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onunload(): void {
-    void this.settingsStore.flushPendingWrites();
+    this.disposeRuntime(); this.runDetached(
+      this.settingsStore.flushPendingWrites(), "Settings flush failed.");
+  }
+
+  private disposeRuntime(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.vaultEventBus.dispose();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
     };
@@ -175,6 +180,10 @@ export default class CardWorkspacePlugin extends Plugin {
     this.withFolderViews((view) => {
       view.cleanupLifecycle();
     });
+  }
+  private runDetached(work: Promise<unknown>, detail: string): void {
+    void work.catch((error: unknown) =>
+      { if (!this.disposed) console.warn(`[Card Workspace] ${detail}`, error); });
   }
 
   async createNoteInCurrentFolder(): Promise<void> {
@@ -332,6 +341,8 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async selectFolderByPath(path: string, source: FolderSelectionSource): Promise<void> {
+    await this.settingsReadyPromise;
+    if (this.disposed) return;
     const normalizedPath = normalizeFolderScopePath(path);
     const folder = normalizedPath === ""
       ? this.app.vault.getRoot()
@@ -348,7 +359,8 @@ export default class CardWorkspacePlugin extends Plugin {
     source: FolderSelectionSource,
   ): Promise<void> {
     const request = this.createSelectionRequest(createFolderScope(folder.path, this.getSettings().includeSubfolders), source);
-    await this.activateView();
+    const primaryView = await this.activateView();
+    if (!primaryView || this.disposed) return;
     if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
@@ -409,7 +421,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
-        void view.applyUpdateIntent(intent, "settings-change");
+        this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "Settings view update failed.");
       }
     });
 
@@ -442,28 +454,15 @@ export default class CardWorkspacePlugin extends Plugin {
     return rootMarkdownLeaf ?? null;
   }
 
-  private async activateView(): Promise<void> {
-    const { workspace } = this.app;
-    let leaf: WorkspaceLeaf | null = null;
-
-    const leaves = workspace.getLeavesOfType(FOLDER_CARD_VIEW);
-    if (leaves.length > 0) {
-      leaf = leaves[0];
-    } else {
-      leaf = workspace.getLeftLeaf(false);
-      if (!leaf) {
-        return;
-      }
-      await leaf.setViewState({
-        type: FOLDER_CARD_VIEW,
-        active: true,
-      });
+  private async activateView(): Promise<FolderCardView | null> {
+    try {
+      if (this.disposed) return null;
+      return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
+        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed);
+    } catch (error) {
+      if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
+      return null;
     }
-
-    if (!leaf) {
-      return;
-    }
-    workspace.setActiveLeaf(leaf, { focus: false });
   }
 
   private withFolderViews(callback: (view: FolderCardView) => void): void {
@@ -492,7 +491,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "recover-folder-card-search-index",
       name: strings.recoverSearchIndexCommand,
       callback: () => {
-        void this.searchCoordinator.recover("Manual recover command requested full local search index rebuild.");
+        this.runDetached(this.searchCoordinator.recover("Manual recover command requested full local search index rebuild."), "Search recovery failed.");
       },
     });
 
@@ -500,7 +499,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "rebuild-folder-card-search-index",
       name: strings.rebuildSearchIndexCommand,
       callback: () => {
-        void this.searchCoordinator.rebuild("Manual rebuild command requested local search index rebuild.");
+        this.runDetached(this.searchCoordinator.rebuild("Manual rebuild command requested local search index rebuild."), "Search rebuild failed.");
       },
     });
 
@@ -508,7 +507,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "clear-reset-folder-card-search-index",
       name: strings.clearResetSearchIndexCommand,
       callback: () => {
-        void this.searchCoordinator.clearAndReset();
+        this.runDetached(this.searchCoordinator.clearAndReset(), "Search reset failed.");
       },
     });
   }
@@ -559,7 +558,8 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     const request = this.createSelectionRequest(createFolderScope(folder.path, settings.includeSubfolders), "programmatic");
-    await this.activateView();
+    const primaryView = await this.activateView();
+    if (!primaryView || this.disposed) return;
     if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
@@ -636,8 +636,8 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private dispatchVaultMutation(event: VaultMutationEvent): void {
-    // Obsidian vault callbacks are sync; this is the only allowed fire-and-forget point.
-    void this.vaultEventBus.publish(event);
+    if (this.disposed) return;
+    this.runDetached(this.vaultEventBus.publish(event), "Vault event publication failed.");
   }
 
   private async reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {

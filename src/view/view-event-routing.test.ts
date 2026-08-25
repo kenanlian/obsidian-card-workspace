@@ -44,6 +44,17 @@ import {
 
 registerFolderCardView(FolderCardView);
 
+function viewportRequest(view: FolderCardView, start: number, end: number) {
+  const cards = (view as any).store.getVisibleCards() as Array<{ path: string }>;
+  return {
+    generation: (view as any).epochs.load.value,
+    hydrationRevision: (view as any).store.getHydrationRevision(),
+    start,
+    end: Math.min(end, cards.length),
+    paths: cards.slice(start, end).map((card) => card.path),
+  };
+}
+
 describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
   beforeEach(() => {
     resetFolderCardViewHarness();
@@ -979,8 +990,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       });
 
 
-      it("hydrate-range subscription forwards visible window to hydrateRange", async () => {
-        const { view, app, file } = createViewWithFile("notes/hydrate-range.md");
+      it("hydrate-viewport subscription forwards an identity-bearing request", async () => {
+        const { view, app, file } = createViewWithFile("notes/hydrate-viewport.md");
         const card = createCardRecord(file);
 
         app.vault.cachedRead = vi.fn(async () => "# Hydrate me\nBody");
@@ -989,14 +1000,25 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         (view as any).modules.scopeController.loading = false;
 
         await (view as any).onOpen();
+        const hydrateViewportSpy = vi.spyOn((view as any).modules.hydration, "hydrateViewport");
 
-        const hydrateRangeHandler = mockState.panelEventHandlers["hydrate-range"];
-        expect(hydrateRangeHandler).toBeDefined();
+        const hydrateViewportHandler = mockState.panelEventHandlers["hydrate-viewport"];
+        expect(hydrateViewportHandler).toBeDefined();
 
-        hydrateRangeHandler({ detail: { start: 0, end: 1 } });
+        hydrateViewportHandler({ detail: null });
+        hydrateViewportHandler({ detail: { start: 0, end: 1 } });
+        hydrateViewportHandler({ detail: { generation: "0", hydrationRevision: 0, start: 0, end: 1, paths: [card.path] } });
+        hydrateViewportHandler({ detail: { generation: 0, hydrationRevision: 0, start: 0, end: 1, paths: [42] } });
+        await flushAsyncWork(1);
+        expect(hydrateViewportSpy).not.toHaveBeenCalled();
+
+        const request = viewportRequest(view, 0, 1);
+        hydrateViewportHandler({ detail: request });
         await flushAsyncWork(1);
         await flushAsyncWork(1);
 
+        expect(hydrateViewportSpy).toHaveBeenCalledOnce();
+        expect(hydrateViewportSpy).toHaveBeenCalledWith(request);
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(1);
         expect(app.vault.cachedRead).toHaveBeenCalledWith(file);
         const hydratedCard = (view as any).baseCards.find((entry: { path: string }) => entry.path === card.path);
@@ -1073,7 +1095,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
       });
 
-      it("startup prewarm prevents duplicate hydrate-range reads on open", async () => {
+      it("startup prewarm prevents duplicate viewport reads on open", async () => {
         const { view, app } = createViewWithFile("notes/prewarm-no-dup.md");
         const files = Array.from({ length: 13 }, (_, index) => {
           const file = createMarkdownFile(`notes/prewarm-${index + 1}.md`);
@@ -1105,11 +1127,11 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
 
-        const hydrateRangeHandler = mockState.panelEventHandlers["hydrate-range"];
-        expect(hydrateRangeHandler).toBeDefined();
+        const hydrateViewportHandler = mockState.panelEventHandlers["hydrate-viewport"];
+        expect(hydrateViewportHandler).toBeDefined();
 
-        hydrateRangeHandler({ detail: { start: 0, end: 12 } });
-        await flushAsyncWork(2);
+        hydrateViewportHandler({ detail: viewportRequest(view, 0, 12) });
+        await flushAsyncWork(8);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
       });
@@ -1144,7 +1166,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
           await flushAsyncWork(1);
           expect((view as any).modules.scopeController.loading).toBe(true);
-          expect((view as any).modules.hydration.pendingHydration.has(file.path)).toBe(true);
+          expect((view as any).modules.hydration.hasPending(file.path)).toBe(true);
 
           vi.advanceTimersByTime(120);
           await loadPromise;
@@ -1155,14 +1177,14 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           expect(card?.previewHtml).toBe("");
 
           delayedRead.resolve("# delayed\ncontent");
-          await flushAsyncWork(2);
+          await flushAsyncWork(8);
 
           const hydratedCard = (view as any).baseCards.find(
             (entry: { path: string }) => entry.path === file.path,
           );
           expect(hydratedCard?.hydrated).toBe(true);
           expect(hydratedCard?.previewHtml).not.toBe("");
-          expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
+          expect((view as any).modules.hydration.hasPending(file.path)).toBe(false);
         } finally {
           vi.useRealTimers();
         }
@@ -1196,10 +1218,10 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
         await flushAsyncWork(1);
 
-        expect((view as any).modules.hydration.pendingHydration.has(file.path)).toBe(true);
+        expect((view as any).modules.hydration.hasPending(file.path)).toBe(true);
 
         (view as any).epochs.load.bump();
-        (view as any).modules.hydration.pendingHydration.clear();
+        (view as any).modules.hydration.clearPending();
 
         staleRead.resolve("# stale\ncontent");
         await loadPromise;
@@ -1208,10 +1230,10 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect(card?.hydrated).toBe(false);
         expect(card?.previewHtml).toBe("");
         expect(card?.previewMode).toBe("empty");
-        expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
+        expect((view as any).modules.hydration.hasPending(file.path)).toBe(false);
       });
 
-      it("hydrateRange pushes state once after finishing a multi-batch visible range", async () => {
+      it("hydrateViewport publishes each bounded scheduler batch", async () => {
         const { view, app } = createViewWithFile("notes/range-single-push.md");
         const files = Array.from({ length: 12 }, (_, index) => {
           const file = createMarkdownFile(`notes/range-${index + 1}.md`);
@@ -1246,15 +1268,16 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           card.previewHtml = "";
           card.previewMode = "empty";
         }
-        (view as any).modules.hydration.pendingHydration.clear();
+        (view as any).modules.hydration.clearPreviewCache();
+        (view as any).modules.hydration.clearPending();
 
         const publishHydrationSpy = vi.spyOn((view as any).context, "publishGroups");
         publishHydrationSpy.mockClear();
 
-        await (view as any).modules.hydration.hydrateRange(0, 12);
+        await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 12));
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(12);
-        expect(publishHydrationSpy).toHaveBeenCalledTimes(1);
+        expect(publishHydrationSpy).toHaveBeenCalledTimes(3);
         expect((view as any).baseCards.every((card: { hydrated: boolean }) => card.hydrated)).toBe(true);
       });
 
@@ -1264,7 +1287,6 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
         (view as any).modules.scopeController.queuedRequest = { requestId: 1 };
         (view as any).modules.scopeController.refreshQueued = true;
-        (view as any).modules.hydration.pendingHydration = new Set(["notes/close-cleanup.md"]);
         (view as any).modules.scopeController.inFlight = Promise.resolve();
         (view as any).modules.scopeController.inFlightKey = "notes/close-cleanup.md";
         (view as any).modules.scopeController.loading = true;
@@ -1282,7 +1304,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect((view as any).hostEl).toBeNull();
         expect((view as any).modules.scopeController.queuedRequest).toBeNull();
         expect((view as any).modules.scopeController.refreshQueued).toBe(false);
-        expect((view as any).modules.hydration.pendingHydration.size).toBe(0);
+        expect((view as any).modules.hydration.hasPending("notes/close-cleanup.md")).toBe(false);
         expect((view as any).modules.scopeController.inFlight).toBeNull();
         expect((view as any).modules.scopeController.inFlightKey).toBeNull();
         expect((view as any).modules.scopeController.loading).toBe(false);
@@ -1330,7 +1352,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 1));
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "line1\nline2\nline3\nline4",
@@ -1345,12 +1367,12 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             folderPath: "notes",
             forceRefresh: true,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 1));
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "line1\nline2\nline3\nline4",
             expect.any(Number),
-            9,
+            8,
           );
         });
 
@@ -1408,12 +1430,12 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           vi.mocked(app.vault.cachedRead).mockClear();
           previewSpy.mockClear();
 
-          const staleHydration = (view as any).modules.hydration.hydrateRange(12, 13);
+          const staleHydration = (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 12, 13));
           await flushAsyncWork(1);
 
           previewLines = 8;
           (view as any).epochs.load.bump();
-          (view as any).modules.hydration.pendingHydration.clear();
+          (view as any).modules.hydration.clearPending();
           staleRead.reject(firstReadError);
           await staleHydration;
           vi.mocked(app.vault.cachedRead).mockImplementation(async () => "fresh\npreview\ncontent");
@@ -1424,7 +1446,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           expect(staleCard?.previewHtml).toBe("");
           expect(staleCard?.previewMode).toBe("empty");
 
-          await (view as any).modules.hydration.hydrateRange(12, 13);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 12, 13));
 
           expect(previewSpy).toHaveBeenCalledTimes(1);
           expect(previewSpy).toHaveBeenLastCalledWith(
@@ -1477,7 +1499,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 1));
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "only\none\ntwo\nthree",
@@ -1502,12 +1524,12 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             folderPath: "notes",
             forceRefresh: true,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 1));
 
           expect(previewSpy).toHaveBeenLastCalledWith(
             "only\none\ntwo\nthree",
             expect.any(Number),
-            10,
+            8,
           );
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
             projection: {
@@ -1521,7 +1543,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           });
         });
 
-        it("hydrateRange keeps sparse content non-empty while empty markdown remains empty", async () => {
+        it("hydrateViewport keeps sparse content non-empty while empty markdown remains empty", async () => {
           const { view, app } = createViewWithFile("notes/preview-sparse-empty.md");
           const emptyFile = createMarkdownFile("notes/empty.md");
           const sparseFile = createMarkdownFile("notes/sparse.md");
@@ -1565,7 +1587,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 2);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 2));
 
           const emptyCard = (view as any).baseCards.find((card: { path: string }) => card.path === emptyFile.path);
           const sparseCard = (view as any).baseCards.find((card: { path: string }) => card.path === sparseFile.path);
@@ -1579,7 +1601,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           expect(sparseCard?.previewHtml).not.toBe("");
         });
 
-        it("hydrateRange keeps code previews in the normalized paragraph clamp surface", async () => {
+        it("hydrateViewport keeps code previews in the normalized paragraph clamp surface", async () => {
           const { view, app } = createViewWithFile("notes/preview-code-clamp.md");
           const codeFile = createMarkdownFile("notes/code.md");
           (codeFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
@@ -1607,7 +1629,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             requestedAtMs: Date.now(),
             forceRefresh: false,
           });
-          await (view as any).modules.hydration.hydrateRange(0, 1);
+          await (view as any).modules.hydration.hydrateViewport(viewportRequest(view, 0, 1));
 
           const codeCard = (view as any).baseCards.find((card: { path: string }) => card.path === codeFile.path);
 

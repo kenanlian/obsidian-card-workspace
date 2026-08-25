@@ -12,12 +12,21 @@ import {
   type SearchIndexHealthSnapshot,
   type SearchIndexPersistenceHealth,
   type SearchIndexRebuildReason,
-  type SearchIndexSuccessOutcome,
   type SearchServiceSnapshot,
   type SearchVaultMutation,
   type SearchableDocument,
 } from "./types";
 import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "./minisearch-options";
+import {
+  countNonOverlappingLiteralOccurrences,
+  createSearchSuccessSnapshot,
+  hasPathPrefix,
+  rewriteFolderPath,
+  rewritePathPrefix,
+  searchErrorMessage,
+  SearchMutationGate,
+  SearchReconciliationRunner,
+} from "./SearchReconciliationRunner";
 
 export interface SearchIndexManagerRestoreResult {
   status: "ready" | "building";
@@ -36,7 +45,7 @@ export interface SearchIndexManagerSearchResult {
 }
 
 export interface SearchIndexDocumentSource {
-  readAllDocuments(): Promise<SearchableDocument[]>;
+  readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]>;
   readDocument(path: string): Promise<SearchableDocument | null>;
 }
 
@@ -102,11 +111,15 @@ export class SearchIndexManager {
   };
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private readonly documentsByPath = new Map<string, SearchableDocument>();
-  private pendingMutations = new Map<string, SearchVaultMutation>();
   private expectedMetadata: IndexStoreNamespaceMetadata | null = null;
-  private isBuilding = false;
-  private rebuildRequestedDuringBuild = false;
-  private pendingRebuildDetail: string | null = null;
+  private readonly sourceRunner = new SearchReconciliationRunner();
+  private readonly mutationGate = new SearchMutationGate();
+  private mutationJournal: SearchVaultMutation[] | null = null;
+  private sourceWorkPending = 0;
+  private sourceWorkPromise: Promise<void> | null = null;
+  private queuedRebuildDetail: string | null = null;
+  private disposed = false;
+  private generation = 0;
 
   constructor(options: SearchIndexManagerOptions) {
     this.store = options.store;
@@ -119,7 +132,8 @@ export class SearchIndexManager {
   }
 
   markInitializationFailure(error: unknown): void {
-    const detail = this.errorMessage(error, "Indexed search initialization failed.");
+    if (this.disposed) return;
+    const detail = searchErrorMessage(error, "Indexed search initialization failed.");
     this.snapshot = {
       ...this.snapshot,
       initialized: true,
@@ -145,11 +159,12 @@ export class SearchIndexManager {
   }
 
   dispose(): void {
-    void this.flushPendingPersist();
-
-    if (this.snapshot.disposed) {
-      return;
-    }
+    if (this.disposed) return;
+    this.disposed = true;
+    this.generation += 1;
+    this.sourceRunner.dispose();
+    this.cancelPendingPersist();
+    this.mutationJournal = null;
 
     this.snapshot = {
       ...this.snapshot,
@@ -176,6 +191,7 @@ export class SearchIndexManager {
   }
 
   subscribe(listener: (snapshot: SearchServiceSnapshot) => void): () => void {
+    if (this.disposed) return () => undefined;
     this.listeners.add(listener);
     listener(this.getSnapshot());
     return () => {
@@ -184,10 +200,15 @@ export class SearchIndexManager {
   }
 
   async restore(expectedMetadata: IndexStoreNamespaceMetadata): Promise<SearchIndexManagerRestoreResult> {
+    if (this.disposed) return { status: "building", outcome: "rebuild-required", detail: null };
+    const generation = this.generation;
     this.expectedMetadata = expectedMetadata;
     this.setBuilding("Restoring persisted search index...", "restoring");
 
     const restoreResult = await this.store.restore(expectedMetadata);
+    if (!this.isCurrent(generation)) {
+      return { status: "building", outcome: "rebuild-required", detail: null };
+    }
     if (restoreResult.outcome !== "restored") {
       const detail = this.toRebuildDetail(restoreResult);
       const persistence = this.toRestorePersistence(restoreResult.reason);
@@ -220,11 +241,15 @@ export class SearchIndexManager {
     }
 
     try {
-      this.index = await MiniSearch.loadJSONAsync<SearchableDocument>(
+      const restoredIndex = await MiniSearch.loadJSONAsync<SearchableDocument>(
         restoreResult.payload.serializedIndexJson,
         createMiniSearchOptions(),
       );
-      const success = this.createSuccessSnapshot(
+      if (!this.isCurrent(generation)) {
+        return { status: "building", outcome: "rebuild-required", detail: null };
+      }
+      this.index = restoredIndex;
+      const success = createSearchSuccessSnapshot(
         "restored",
         restoreResult.payload.documentCount,
         restoreResult.payload.lastIndexedAt,
@@ -257,8 +282,12 @@ export class SearchIndexManager {
         detail: "Search index restored from persistent storage.",
       };
     } catch (error) {
+      if (!this.isCurrent(generation)) return { status: "building", outcome: "rebuild-required", detail: null };
       await this.store.clear();
-      const detail = this.errorMessage(error, "Persisted index could not be restored; full rebuild required.");
+      if (!this.isCurrent(generation)) {
+        return { status: "building", outcome: "rebuild-required", detail: null };
+      }
+      const detail = searchErrorMessage(error, "Persisted index could not be restored; full rebuild required.");
       this.snapshot = {
         ...this.snapshot,
         status: "building",
@@ -288,11 +317,11 @@ export class SearchIndexManager {
   }
 
   async syncDocumentStateFromSource(): Promise<void> {
-    await this.refreshDocumentStateFromSource();
+    await this.runReplacement("reconcile", "Search index reconciled with vault source.");
   }
 
   async rebuildFromSource(detail = "Manual rebuild requested."): Promise<void> {
-    await this.runFullBuild(detail);
+    await this.runReplacement("rebuild", detail);
   }
 
   async clearAndReset(detail = "Manual clear/reset requested."): Promise<IndexStoreClearResult> {
@@ -324,9 +353,7 @@ export class SearchIndexManager {
 
     this.index = this.createEmptyIndex();
     this.documentsByPath.clear();
-    this.pendingMutations.clear();
-    this.rebuildRequestedDuringBuild = false;
-    this.pendingRebuildDetail = null;
+    this.mutationJournal = null;
     this.snapshot = {
       ...this.snapshot,
       status: "building",
@@ -409,7 +436,7 @@ export class SearchIndexManager {
           lastIndexedAt,
           rebuildReason: null,
           lastError: null,
-          lastSuccessfulBuild: this.createSuccessSnapshot("rebuilt", documentCount, lastIndexedAt, "Search index rebuilt."),
+          lastSuccessfulBuild: createSearchSuccessSnapshot("rebuilt", documentCount, lastIndexedAt, "Search index rebuilt."),
           detail: "Search index rebuilt.",
         },
       };
@@ -421,77 +448,114 @@ export class SearchIndexManager {
   }
 
   async applyMutation(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
-    if (this.isBuilding) {
-      this.queueMutation(event);
-      return {
-        action: "ignored",
-        rebuildRequired: false,
-      };
+    if (this.disposed) return { action: "ignored", rebuildRequired: false };
+    const scanning = this.sourceWorkPending > 0;
+    const decision = classifySearchMutation(event);
+    if (scanning && decision.action === "rebuild-required") {
+      this.queuedRebuildDetail = "Rebuild requested after queued mutations.";
+      return { action: "ignored", rebuildRequired: false };
     }
-
-    return this.applyMutationNow(event);
+    const result = await this.mutationGate.run(() => {
+      if (!this.disposed) this.mutationJournal?.push({ ...event });
+      return this.disposed ? Promise.resolve<SearchIndexManagerMutationResult>({ action: "ignored", rebuildRequired: false }) : this.applyMutationNow(event);
+    });
+    if (scanning && result.rebuildRequired) {
+      this.queuedRebuildDetail = "Rebuild requested after queued mutations.";
+    }
+    return scanning ? { action: "ignored", rebuildRequired: false } : result;
   }
 
-  private async runFullBuild(detail: string): Promise<void> {
-    if (this.isBuilding) {
-      this.rebuildRequestedDuringBuild = true;
-      this.pendingRebuildDetail = detail;
-      return;
+  private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+    if (this.sourceWorkPromise) {
+      if (kind === "rebuild") this.queuedRebuildDetail = detail;
+      return this.sourceWorkPromise;
     }
-
-    // A full build writes the whole index anyway, so a pending incremental write is moot.
-    this.cancelPendingPersist();
-    this.isBuilding = true;
+    const run = this.runReplacementLoop(kind, detail);
+    this.sourceWorkPromise = run;
     try {
-      let nextDetail = detail;
-      do {
-        this.rebuildRequestedDuringBuild = false;
-        this.pendingRebuildDetail = null;
-        await this.executeFullBuild(nextDetail);
-        await this.flushPendingMutations();
-        nextDetail = this.pendingRebuildDetail ?? "Rebuild requested after queued mutations.";
-      } while (this.rebuildRequestedDuringBuild);
+      await run;
     } finally {
-      this.isBuilding = false;
+      if (this.sourceWorkPromise === run) this.sourceWorkPromise = null;
     }
   }
 
-  private async executeFullBuild(detail: string): Promise<void> {
-    this.setBuilding(detail, "building");
-    const documents = await this.documentSource.readAllDocuments();
-    const nextIndex = this.createEmptyIndex();
-    if (documents.length > 0) {
-      await nextIndex.addAllAsync(documents);
-    }
-    this.index = nextIndex;
-    this.documentsByPath.clear();
-    for (const document of documents) {
-      this.documentsByPath.set(document.path, document);
-    }
+  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+    let nextKind = kind;
+    let nextDetail = detail;
+    this.sourceWorkPending = 1;
+    try {
+      do {
+        this.queuedRebuildDetail = null;
+        await this.sourceRunner.run(async (signal, isCurrent) => {
+      if (nextKind === "rebuild") this.setBuilding(nextDetail, "building");
+      this.cancelPendingPersist();
+      this.mutationJournal = [];
+      const documents = await this.documentSource.readAllDocuments(signal);
+      if (!isCurrent()) return;
+      const replacement = this.createEmptyIndex();
+      if (documents.length > 0) await replacement.addAllAsync(documents);
+      if (!isCurrent()) return;
+      const replacementDocuments = new Map(documents.map((document) => [document.path, document]));
 
-    const now = Date.now();
-    const persistSucceeded = await this.persistCurrentIndex(documents.length, now);
-    if (!persistSucceeded) {
-      return;
-    }
+      const release = await this.mutationGate.acquire();
+      let persisted = false;
+      try {
+        if (!isCurrent()) return;
+        const journal = this.mutationJournal ?? [];
+        this.mutationJournal = null;
+        for (const event of journal) {
+          await this.applyMutationToState(event, replacement, replacementDocuments, false);
+          if (!isCurrent()) return;
+        }
+        const now = Date.now();
+        persisted = await this.persistIndex(replacement, replacement.documentCount, now);
+        if (persisted && isCurrent()) {
+          this.index = replacement;
+          this.documentsByPath.clear();
+          for (const [path, document] of replacementDocuments) this.documentsByPath.set(path, document);
+          this.publishReplacementSuccess(nextKind, nextDetail, now);
+        }
+      } finally {
+        this.mutationJournal = null;
+        release();
+      }
 
+      await this.mutationGate.run(async () => undefined);
+      if (isCurrent() && this.persistScheduled) await this.flushPendingPersist();
+        });
+        if (this.queuedRebuildDetail) {
+          nextKind = "rebuild";
+          nextDetail = this.queuedRebuildDetail;
+        }
+      } while (this.queuedRebuildDetail && !this.disposed);
+    } finally {
+      this.sourceWorkPending = 0;
+    }
+  }
+
+  private publishReplacementSuccess(kind: "reconcile" | "rebuild", detail: string, at: number): void {
+    if (this.disposed) return;
+    const documentCount = this.index.documentCount;
+    const outcome = kind === "rebuild" ? "rebuilt" : "restored";
     this.snapshot = {
       ...this.snapshot,
       status: "ready",
       lastError: null,
       health: {
         ...this.snapshot.health,
-        outcome: "rebuilt",
+        outcome,
         readiness: "ready",
         healthy: true,
         rebuilding: false,
         rebuildRequired: false,
         persistence: "healthy",
-        documentCount: documents.length,
-        lastIndexedAt: now,
+        documentCount,
+        lastIndexedAt: at,
         rebuildReason: null,
         lastError: null,
-        lastSuccessfulBuild: this.createSuccessSnapshot("rebuilt", documents.length, now, detail),
+        lastSuccessfulBuild: kind === "rebuild"
+          ? createSearchSuccessSnapshot("rebuilt", documentCount, at, detail)
+          : this.snapshot.health.lastSuccessfulBuild,
         detail,
       },
     };
@@ -499,6 +563,14 @@ export class SearchIndexManager {
   }
 
   private async persistCurrentIndex(documentCount: number, lastIndexedAt: number): Promise<boolean> {
+    return this.persistIndex(this.index, documentCount, lastIndexedAt);
+  }
+
+  private async persistIndex(
+    index: MiniSearch<SearchableDocument>,
+    documentCount: number,
+    lastIndexedAt: number,
+  ): Promise<boolean> {
     if (!this.expectedMetadata) {
       return false;
     }
@@ -510,12 +582,13 @@ export class SearchIndexManager {
         lastIndexedAt,
       },
       {
-        serializedIndexJson: JSON.stringify(this.index.toJSON()),
+        serializedIndexJson: JSON.stringify(index.toJSON()),
         documentCount,
         lastIndexedAt,
       },
     );
 
+    if (this.disposed) return false;
     if (writeResult.outcome === "failed") {
       this.applyWriteFailure(writeResult);
       return false;
@@ -544,39 +617,18 @@ export class SearchIndexManager {
     this.emit();
   }
 
-  private async flushPendingMutations(): Promise<void> {
-    if (this.pendingMutations.size === 0) {
-      return;
-    }
-
-    const queued = [...this.pendingMutations.values()];
-    this.pendingMutations.clear();
-    for (const event of queued) {
-      const result = await this.applyMutationNow(event);
-      if (result.rebuildRequired) {
-        this.rebuildRequestedDuringBuild = true;
-      }
-    }
-  }
-
-  private queueMutation(event: SearchVaultMutation): void {
-    const key = this.queueKey(event);
-    this.pendingMutations.set(key, event);
-    const decision = classifySearchMutation(event);
-    if (decision.action === "rebuild-required") {
-      this.rebuildRequestedDuringBuild = true;
-      this.pendingRebuildDetail = "Queued folder rename requires full rebuild.";
-    }
-  }
-
-  private queueKey(event: SearchVaultMutation): string {
-    if (event.type === "rename") {
-      return `rename:${event.oldPath ?? "missing"}->${event.path}`;
-    }
-    return `${event.type}:${event.path}`;
-  }
-
   private async applyMutationNow(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
+    const result = await this.applyMutationToState(event, this.index, this.documentsByPath, true);
+    if (result.action === "applied") this.schedulePersistMutationState();
+    return result;
+  }
+
+  private async applyMutationToState(
+    event: SearchVaultMutation,
+    index: MiniSearch<SearchableDocument>,
+    documents: Map<string, SearchableDocument>,
+    live: boolean,
+  ): Promise<SearchIndexManagerMutationResult> {
     const decision = classifySearchMutation(event);
 
     if (decision.action === "ignored") {
@@ -587,7 +639,7 @@ export class SearchIndexManager {
     }
 
     if (decision.action === "rebuild-required") {
-      this.markFolderRebuildRequired("Folder rename cannot be safely rewritten; full rebuild required.");
+      if (live) this.markFolderRebuildRequired("Folder rename cannot be safely rewritten; full rebuild required.");
       return {
         action: "rebuild-required",
         rebuildRequired: true,
@@ -595,8 +647,7 @@ export class SearchIndexManager {
     }
 
     if (decision.action === "delete") {
-      this.discardIndexedPath(event.path);
-      this.schedulePersistMutationState();
+      this.discardIndexedPath(event.path, index, documents);
       return {
         action: "applied",
         rebuildRequired: false,
@@ -604,8 +655,7 @@ export class SearchIndexManager {
     }
 
     if (decision.action === "create" || decision.action === "modify") {
-      await this.upsertDocument(event.path);
-      this.schedulePersistMutationState();
+      await this.upsertDocument(event.path, index, documents);
       return {
         action: "applied",
         rebuildRequired: false,
@@ -621,9 +671,8 @@ export class SearchIndexManager {
         };
       }
 
-      this.discardIndexedPath(oldPath);
-      await this.upsertDocument(event.path);
-      this.schedulePersistMutationState();
+      this.discardIndexedPath(oldPath, index, documents);
+      await this.upsertDocument(event.path, index, documents);
       return {
         action: "applied",
         rebuildRequired: false,
@@ -639,16 +688,14 @@ export class SearchIndexManager {
         };
       }
 
-      const didRewrite = this.rewriteFolderPrefix(oldPrefix, event.path);
+      const didRewrite = this.rewriteFolderPrefix(oldPrefix, event.path, index, documents);
       if (!didRewrite) {
-        this.markFolderRebuildRequired("Folder rename could not be safely rewritten from restored index metadata; full rebuild required.");
+        if (live) this.markFolderRebuildRequired("Folder rename could not be safely rewritten from restored index metadata; full rebuild required.");
         return {
           action: "rebuild-required",
           rebuildRequired: true,
         };
       }
-
-      this.schedulePersistMutationState();
 
       return {
         action: "applied",
@@ -670,7 +717,7 @@ export class SearchIndexManager {
     }
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
-      void this.flushPendingPersist();
+      void this.mutationGate.run(() => this.flushPendingPersist());
     }, SearchIndexManager.MUTATION_PERSIST_DEBOUNCE_MS);
   }
 
@@ -730,22 +777,27 @@ export class SearchIndexManager {
     }
   }
 
-  private rewriteFolderPrefix(oldPrefix: string, newPrefix: string): boolean {
-    const affected = this.collectIndexedFolderRenames(oldPrefix, newPrefix);
+  private rewriteFolderPrefix(
+    oldPrefix: string,
+    newPrefix: string,
+    index = this.index,
+    documents = this.documentsByPath,
+  ): boolean {
+    const affected = this.collectIndexedFolderRenames(oldPrefix, newPrefix, index);
     if (affected.length === 0) {
       return false;
     }
 
     for (const rename of affected) {
-      this.rewriteIndexedPath(rename.oldPath, rename.newPath);
+      this.rewriteIndexedPath(rename.oldPath, rename.newPath, index);
 
-      const hydratedDocument = this.documentsByPath.get(rename.oldPath);
+      const hydratedDocument = documents.get(rename.oldPath);
       if (!hydratedDocument) {
         continue;
       }
 
-      this.documentsByPath.delete(rename.oldPath);
-      this.documentsByPath.set(rename.newPath, {
+      documents.delete(rename.oldPath);
+      documents.set(rename.newPath, {
         ...hydratedDocument,
         path: rename.newPath,
         folderPath: rewriteFolderPath(hydratedDocument.folderPath, oldPrefix, newPrefix),
@@ -755,26 +807,23 @@ export class SearchIndexManager {
     return true;
   }
 
-  private async upsertDocument(path: string): Promise<void> {
+  private async upsertDocument(
+    path: string,
+    index = this.index,
+    documents = this.documentsByPath,
+  ): Promise<void> {
     const document = await this.documentSource.readDocument(path);
+    if (this.disposed) return;
     if (!document) {
-      this.discardIndexedPath(path);
+      this.discardIndexedPath(path, index, documents);
       return;
     }
 
-    if (this.index.has(path)) {
-      this.index.discard(path);
+    if (index.has(path)) {
+      index.discard(path);
     }
-    this.index.add(document);
-    this.documentsByPath.set(path, document);
-  }
-
-  private async refreshDocumentStateFromSource(): Promise<void> {
-    const allDocuments = await this.documentSource.readAllDocuments();
-    this.documentsByPath.clear();
-    for (const document of allDocuments) {
-      this.documentsByPath.set(document.path, document);
-    }
+    index.add(document);
+    documents.set(path, document);
   }
 
   private async persistMutationState(): Promise<void> {
@@ -836,15 +885,23 @@ export class SearchIndexManager {
     this.emit();
   }
 
-  private discardIndexedPath(path: string): void {
-    if (this.index.has(path)) {
-      this.index.discard(path);
+  private discardIndexedPath(
+    path: string,
+    index = this.index,
+    documents = this.documentsByPath,
+  ): void {
+    if (index.has(path)) {
+      index.discard(path);
     }
-    this.documentsByPath.delete(path);
+    documents.delete(path);
   }
 
-  private collectIndexedFolderRenames(oldPrefix: string, newPrefix: string): Array<{ oldPath: string; newPath: string }> {
-    const indexState = this.getInternalIndexState();
+  private collectIndexedFolderRenames(
+    oldPrefix: string,
+    newPrefix: string,
+    index = this.index,
+  ): Array<{ oldPath: string; newPath: string }> {
+    const indexState = this.getInternalIndexState(index);
     if (!indexState) {
       return [];
     }
@@ -870,8 +927,8 @@ export class SearchIndexManager {
     return affected;
   }
 
-  private rewriteIndexedPath(oldPath: string, newPath: string): void {
-    const indexState = this.getInternalIndexState();
+  private rewriteIndexedPath(oldPath: string, newPath: string, index = this.index): void {
+    const indexState = this.getInternalIndexState(index);
     if (!indexState) {
       return;
     }
@@ -924,8 +981,8 @@ export class SearchIndexManager {
     return total;
   }
 
-  private getInternalIndexState(): MiniSearchInternalState | null {
-    const internalIndex = this.index as unknown as Record<string, unknown>;
+  private getInternalIndexState(index = this.index): MiniSearchInternalState | null {
+    const internalIndex = index as unknown as Record<string, unknown>;
     const storedFields = internalIndex["_storedFields"];
     const documentIds = internalIndex["_documentIds"];
     const idToShortId = internalIndex["_idToShortId"];
@@ -995,72 +1052,15 @@ export class SearchIndexManager {
     }
   }
 
-  private createSuccessSnapshot(
-    outcome: SearchIndexSuccessOutcome,
-    documentCount: number,
-    at: number,
-    detail: string | null,
-  ): SearchIndexHealthSnapshot["lastSuccessfulBuild"] {
-    return {
-      outcome,
-      at,
-      documentCount,
-      detail,
-    };
-  }
-
-  private errorMessage(error: unknown, defaultMessage: string): string {
-    if (error instanceof Error && error.message.length > 0) {
-      return error.message;
-    }
-    return defaultMessage;
+  private isCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
   }
 
   private emit(): void {
+    if (this.disposed) return;
     const snapshot = this.getSnapshot();
     for (const listener of this.listeners) {
       listener(snapshot);
     }
   }
-}
-
-function hasPathPrefix(path: string, prefix: string): boolean {
-  return path === prefix || path.startsWith(`${prefix}/`);
-}
-
-function rewritePathPrefix(path: string, oldPrefix: string, newPrefix: string): string {
-  if (path === oldPrefix) {
-    return newPrefix;
-  }
-  return `${newPrefix}${path.slice(oldPrefix.length)}`;
-}
-
-function rewriteFolderPath(folderPath: string, oldPrefix: string, newPrefix: string): string {
-  if (folderPath.length === 0) {
-    return "";
-  }
-  if (folderPath === oldPrefix || folderPath.startsWith(`${oldPrefix}/`)) {
-    return rewritePathPrefix(folderPath, oldPrefix, newPrefix);
-  }
-  return folderPath;
-}
-
-function countNonOverlappingLiteralOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0 || haystack.length === 0) {
-    return 0;
-  }
-
-  let count = 0;
-  let searchStart = 0;
-  while (searchStart < haystack.length) {
-    const matchIndex = haystack.indexOf(needle, searchStart);
-    if (matchIndex === -1) {
-      break;
-    }
-
-    count += 1;
-    searchStart = matchIndex + needle.length;
-  }
-
-  return count;
 }

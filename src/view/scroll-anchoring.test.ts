@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureScrollAnchor,
   computeAnchoredScrollTop,
+  clampLayoutScrollTop,
   computeScrollAnchorDelta,
 } from "./scroll-anchoring";
 
@@ -76,6 +77,18 @@ describe("computeScrollAnchorDelta", () => {
         userScrollLockUntilMs: 900,
       }),
     ).toBe(24);
+  });
+});
+
+describe("clampLayoutScrollTop", () => {
+  it.each([
+    [500, 300, 100, 200],
+    [50, 300, 100, 50],
+    [-20, 300, 100, 0],
+    [50, 80, 100, 0],
+    [Number.NaN, 300, 100, 0],
+  ])("clamps scroll to the installed layout", (scrollTop, totalHeight, viewportHeight, expected) => {
+    expect(clampLayoutScrollTop(scrollTop, totalHeight, viewportHeight)).toBe(expected);
   });
 });
 

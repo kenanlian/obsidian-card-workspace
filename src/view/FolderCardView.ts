@@ -7,23 +7,14 @@ import type CardWorkspacePlugin from "../main";
 import { compareCards } from "./card-sort";
 import { findCardBox } from "./card-boxes";
 import { getMenuDom } from "./menu-dom";
-import {
-  buildNavContextMenu,
-  resolveNavMenuDangerLabel,
-} from "./nav-context-menu";
-import {
-  createFolderScope,
-  isBoxScope,
-  isFolderScope,
-  normalizeScopePath,
-  scopeDisplayPath,
-  type CardScope,
-} from "./scope";
+import { buildNavContextMenu, resolveNavMenuDangerLabel } from "./nav-context-menu";
+import { createFolderScope, isBoxScope, isFolderScope, normalizeScopePath, scopeDisplayPath, type CardScope } from "./scope";
 import type { ViewUpdateIntent } from "./update-intent";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
 import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
+import { remapFavoriteSelection } from "./actions/favorite-actions";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
 import { decorateCardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
 import {
@@ -34,20 +25,8 @@ import {
   type PanelModelState,
 } from "./panel-model";
 import { buildPanelProps } from "./panel-props";
-import type {
-  CardHoverLinkPayload,
-  CleanupResult,
-  FolderActionPayload,
-  FolderSelectionRequest,
-  NavContextMenuPayload,
-  NoteCardRecord,
-  RefreshReason,
-  RefreshRequest,
-  RefreshResult,
-  SelectionResult,
-  VaultMutationEvent,
-  VaultMutationResult,
-} from "./types";
+import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSelectionRequest, NavContextMenuPayload,
+  NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
@@ -55,6 +34,7 @@ export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
+  private suppressScopeProjectionPatch = false;
   readonly panelModel: PanelModel;
 
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
@@ -66,7 +46,7 @@ export class FolderCardView extends ItemView {
     this.plugin = plugin;
     this.context = {
       getApp: () => this.app, store: this.store, epochs: this.epochs,
-      getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.plugin.saveSettings(patch),
+      getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.saveViewSettings(patch),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
       requestUpdate: (intent, reason) => this.applyUpdateIntent(intent, reason),
       notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
@@ -94,6 +74,8 @@ export class FolderCardView extends ItemView {
       },
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
+      publishLoadStart: (scopeChanged) => this.publishLoadStart(scopeChanged),
+      publishLoadCommit: () => this.publishGroups("cards", "search", "projection", "bulk"),
       publishGroups: (...groups) => this.publishGroups(...groups),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
       createNoteInFolder: (folderPath, tags) => this.plugin.createNoteInFolder(folderPath, tags),
@@ -112,12 +94,10 @@ export class FolderCardView extends ItemView {
       appearance: this.buildAppearanceGroup(),
     });
   }
-
   private get cardScope(): CardScope { return this.store.getScope(); } private set cardScope(scope: CardScope) { this.store.setScope(scope); }
   private get baseCards(): NoteCardRecord[] { return this.store.getBaseCards() as NoteCardRecord[]; } private set baseCards(cards: NoteCardRecord[]) { this.store.replaceBaseCards(cards); }
   private get visibleCards(): NoteCardRecord[] { return this.store.getVisibleCards() as NoteCardRecord[]; } private set visibleCards(cards: NoteCardRecord[]) { this.store.replaceVisibleCards(cards); }
   private get selectedPath(): string | null { return this.store.getSelectedPath(); } private set selectedPath(path: string | null) { this.store.setSelectedPath(path); }
-
   getViewType(): string {
     return FOLDER_CARD_VIEW;
   }
@@ -134,6 +114,12 @@ export class FolderCardView extends ItemView {
     return this.plugin.getUiStrings();
   }
 
+  private saveViewSettings(patch: PartialPluginSettings): Promise<void> {
+    const scopeOnly = Object.keys(patch).every((key) => key === "lastFolderPath" || key === "activeBoxId");
+    if (!scopeOnly) return this.plugin.saveSettings(patch);
+    this.suppressScopeProjectionPatch = true; try { return this.plugin.saveSettings(patch); }
+    finally { this.suppressScopeProjectionPatch = false; }
+  }
   private resolveTooltipSide(): "left" | "right" {
     const root = this.leaf.getRoot();
     return root === this.app.workspace.leftSplit ? "right" : "left";
@@ -290,28 +276,30 @@ export class FolderCardView extends ItemView {
         await this.refresh({ reason, forceRefresh: true });
         return;
       case "rehydrate":
+        this.modules.hydration.clearPreviewCache();
+        this.modules.hydration.resetForLoad();
+        this.store.advanceHydrationRevision();
         this.baseCards = this.baseCards.map((card) => ({
           ...card, hydrated: false, previewHtml: "", previewMode: "empty",
         }));
-        this.modules.hydration.clearPending();
-        this.sortAndReprojectCards();
+        this.projectVisibleCards();
         this.publishForIntent(intent);
-        this.modules.hydration.hydrateVisibleCardsOnOpen();
         return;
       case "reproject":
         this.sortAndReprojectCards();
         this.publishForIntent(intent);
         return;
       case "patch":
+        if (this.suppressScopeProjectionPatch) return;
         this.publishForIntent(intent);
         return;
     }
   }
 
-  /** Re-sorts the loaded cards in place and republishes; never re-collects files. */
+  /** Re-sorts a copied card collection and republishes; never re-collects files. */
   private sortAndReprojectCards(): void {
     const projection = this.buildProjectionGroup();
-    this.baseCards.sort((left, right) =>
+    this.baseCards = [...this.baseCards].sort((left, right) =>
       compareCards(left, right, projection.sortField, projection.sortDirection),
     );
     this.modules.scopeController.refreshLoadKeyForCurrentScope();
@@ -438,7 +426,6 @@ export class FolderCardView extends ItemView {
     const path = scopeDisplayPath(this.cardScope);
     return path === "" ? "/" : path;
   }
-
   private buildScopeGroup(): PanelModelState["scope"] {
     const settings = this.plugin.getSettings();
     const box = this.modules.boxActions.getActiveBox();
@@ -459,7 +446,7 @@ export class FolderCardView extends ItemView {
       searchMatchCountsByPath: { ...this.modules.search.getMatchCountsByPath() },
       selectedPath: this.selectedPath,
       loading: this.modules.scopeController.isLoading(),
-      generation: this.epochs.load.value,
+      generation: this.epochs.load.value, sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
     };
   }
 
@@ -556,6 +543,19 @@ export class FolderCardView extends ItemView {
     });
   }
 
+  private publishLoadStart(scopeChanged: boolean): void {
+    this.panelModel.batch((state) => {
+      this.publishGroups("scope", "cards", "search", "projection", "bulk");
+      if (state.appearance.previewLines !== this.plugin.getSettings().previewLines) {
+        this.publishGroups("appearance");
+      }
+      if (!scopeChanged) return;
+      const favorites = remapFavoriteSelection(
+        state.nav.favorites, this.cardScope, this.plugin.getSettings().filter.tags, this.selectedPath,
+      );
+      if (favorites !== state.nav.favorites) state.nav = { ...state.nav, favorites };
+    });
+  }
   /** Settings changes translate their four update tiers into explicit groups. */
   private publishForIntent(intent: ViewUpdateIntent): void {
     switch (intent) {

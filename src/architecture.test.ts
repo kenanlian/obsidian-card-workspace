@@ -253,9 +253,9 @@ describe("R5 line-count ratchet", () => {
     "src/view/FolderCardView.ts": 652,
     "src/main.ts": 654,
     // The extracted indexed-search lifecycle is one cohesive state machine.
-    "src/services/SearchCoordinator.ts": 573,
+    "src/services/SearchCoordinator.ts": 572,
     // Scope selection, single-flight loading, and vault mutation routing form one invariant.
-    "src/view/controllers/ScopeController.ts": 453,
+    "src/view/controllers/ScopeController.ts": 451,
     // Card boxes are one wide domain spanning scope, CRUD, membership, and menu actions.
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
@@ -263,11 +263,11 @@ describe("R5 line-count ratchet", () => {
     "src/view/NavigationPane.svelte": 798,
     "src/view/FolderCardPanel.svelte": 728,
     "src/view/Toolbar.svelte": 728,
-    "src/view/CardItem.svelte": 533,
+    "src/view/CardItem.svelte": 434,
     "src/view/nav-context-menu.ts": 543,
     "src/settings.ts": 509,
-    "src/view/markdown-utils.ts": 466,
-    "src/search/IndexStore.ts": 446,
+    "src/view/markdown-utils.ts": 462,
+    "src/search/IndexStore.ts": 445,
     "src/view/card-boxes.ts": 394,
   };
   const DEFAULT_LINE_LIMIT = 400;

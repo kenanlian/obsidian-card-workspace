@@ -1,11 +1,10 @@
-import { Notice, TAbstractFile, TFile, type App } from "obsidian";
+import { Notice, TFile, type App } from "obsidian";
 
 import type { UiStrings } from "../i18n";
 import {
   IndexedSearchService,
   IndexStore,
   SearchIndexManager,
-  prepareSearchableDocument,
 } from "../search";
 import type {
   IndexStoreNamespaceMetadata,
@@ -14,9 +13,14 @@ import type {
   SearchServiceSnapshot,
   SearchVaultMutation,
 } from "../search";
-import { isMarkdownCardKind, resolveCardFileKind, resolveCardFileKindFromPath } from "../view/file-kind";
+import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../view/file-kind";
 import type { VaultMutationEvent } from "../view/types";
 import type { VaultEventBus } from "./VaultEventBus";
+import {
+  prepareSearchDocument,
+  resolveSearchVaultNamespace,
+  SearchDocumentSource,
+} from "./SearchDocumentSource";
 
 const SEARCH_SCHEMA_VERSION = "phase3-v1";
 export const SEARCH_TOKENIZER_VERSION = "search-text-v3-han-bigram";
@@ -57,6 +61,10 @@ export class SearchCoordinator {
   private pendingSearchRecovery: Promise<void> | null = null;
   private pendingSearchClearReset: Promise<void> | null = null;
   private pendingMutationRecoveryRebuild: Promise<void> | null = null;
+  private readonly bufferedMutations: VaultMutationEvent[] = [];
+  private mutationForwardingReady = false;
+  private pendingInitialization: Promise<void> | null = null;
+  private disposed = false;
 
   constructor(deps: SearchCoordinatorDeps) {
     this.getApp = deps.getApp;
@@ -69,7 +77,19 @@ export class SearchCoordinator {
   }
 
   async initialize(): Promise<void> {
-    this.dispose();
+    if (this.disposed) return;
+    if (this.pendingInitialization) return this.pendingInitialization;
+    if (this.searchService && this.mutationForwardingReady) return;
+    const run = this.initializeRuntime();
+    const completion = run.finally(() => {
+      if (this.pendingInitialization === completion) this.pendingInitialization = null;
+    });
+    this.pendingInitialization = completion;
+    return completion;
+  }
+
+  private async initializeRuntime(): Promise<void> {
+    this.resetSearchRuntime();
 
     const indexed = this.createIndexedSearchService();
     this.searchManager = indexed.manager;
@@ -77,13 +97,20 @@ export class SearchCoordinator {
 
     try {
       await indexed.service.initialize();
+      if (this.disposed || this.searchManager !== indexed.manager) return;
       const restoreResult = await indexed.manager.restore(this.createSearchMetadata(indexed.store.vaultNamespace));
+      if (this.disposed || this.searchManager !== indexed.manager) return;
+      this.mutationForwardingReady = true;
+      this.replayBufferedMutations();
       if (restoreResult.outcome === "rebuild-required") {
-        this.queueStartupSearchRebuild("Startup restore required full search rebuild.");
+        if (!this.shouldRunStartupSearchRebuild) {
+          this.queueStartupSearchRebuild("Startup restore required full search rebuild.");
+        }
       } else {
         this.scheduleRestoredSearchStateSync();
       }
     } catch (error) {
+      if (this.disposed || this.searchManager !== indexed.manager) return;
       console.warn("[Card Workspace] Indexed search initialization failed.", error);
       indexed.manager.markInitializationFailure(error);
       this.shouldRunStartupSearchRebuild = false;
@@ -93,8 +120,17 @@ export class SearchCoordinator {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.vaultEventUnsubscribe?.();
     this.vaultEventUnsubscribe = null;
+    this.bufferedMutations.splice(0);
+    this.searchSnapshotListeners.clear();
+    this.resetSearchRuntime();
+  }
+
+  private resetSearchRuntime(): void {
+    this.mutationForwardingReady = false;
     this.searchServiceUnsubscribe?.();
     this.searchServiceUnsubscribe = null;
     if (!this.searchService) {
@@ -133,6 +169,7 @@ export class SearchCoordinator {
   }
 
   subscribe(listener: SearchSnapshotListener): () => void {
+    if (this.disposed) return () => undefined;
     this.searchSnapshotListeners.add(listener);
     if (this.searchSnapshot) {
       listener(this.cloneSearchSnapshot(this.searchSnapshot));
@@ -143,10 +180,16 @@ export class SearchCoordinator {
   }
 
   applyVaultMutation(event: VaultMutationEvent): void {
-    this.searchService?.handleVaultMutation(this.toSearchVaultMutation(event));
+    if (this.disposed) return;
+    if (!this.mutationForwardingReady || !this.searchService) {
+      this.bufferedMutations.push({ ...event });
+      return;
+    }
+    this.searchService.handleVaultMutation(this.toSearchVaultMutation(event));
   }
 
   subscribeTo(bus: VaultEventBus): void {
+    if (this.disposed) return;
     this.vaultEventUnsubscribe?.();
     this.vaultEventUnsubscribe = bus.subscribe((event) => {
       try {
@@ -158,6 +201,7 @@ export class SearchCoordinator {
   }
 
   showStatus(): void {
+    if (this.disposed) return;
     const snapshot = this.getObservabilitySnapshot();
     if (!snapshot) {
       new Notice(this.getUiStrings().app.searchIndexUnavailableNotice);
@@ -168,11 +212,13 @@ export class SearchCoordinator {
   }
 
   async rebuild(detail: string): Promise<void> {
+    if (this.disposed) return;
     if (this.pendingSearchRebuild) {
       return this.pendingSearchRebuild;
     }
 
     if (!this.searchManager) {
+      this.queueStartupSearchRebuild(detail);
       await this.recover(detail);
       return;
     }
@@ -192,6 +238,7 @@ export class SearchCoordinator {
   }
 
   async recover(rebuildDetail = "Recovery command requested full search rebuild."): Promise<void> {
+    if (this.disposed) return;
     if (this.pendingSearchRecovery) {
       return this.pendingSearchRecovery;
     }
@@ -203,6 +250,7 @@ export class SearchCoordinator {
   }
 
   async clearAndReset(): Promise<void> {
+    if (this.disposed) return;
     if (this.pendingSearchClearReset) {
       return this.pendingSearchClearReset;
     }
@@ -215,12 +263,13 @@ export class SearchCoordinator {
 
   /** Called once the workspace layout is ready; runs work deferred during startup. */
   flushDeferredStartupWork(): void {
+    if (this.disposed) return;
     this.layoutReady = true;
 
     if (this.shouldRunStartupSearchRebuild) {
       void this.rebuild(
         this.consumeStartupSearchRebuildDetail("Startup restore required full search rebuild."),
-      );
+      ).catch((error) => { if (!this.disposed) console.warn("[Card Workspace] Startup search rebuild failed.", error); });
     }
 
     if (this.shouldSyncRestoredSearchState) {
@@ -250,35 +299,17 @@ export class SearchCoordinator {
     service: IndexedSearchService;
     store: IndexStore;
   } {
-    const vaultNamespace = this.resolveVaultNamespace();
+    const vaultNamespace = resolveSearchVaultNamespace(this.app);
     const store = new IndexStore({
       vaultNamespace,
     });
+    const documentSource = new SearchDocumentSource(
+      this.app,
+      (file) => this.prepareSearchableDocumentFromFile(file),
+    );
     const manager = new SearchIndexManager({
       store,
-      documentSource: {
-        readAllDocuments: async () => {
-          const getFiles = (this.app.vault as { getFiles?: () => TAbstractFile[] }).getFiles;
-          if (typeof getFiles !== "function") {
-            return [];
-          }
-
-          const files = getFiles.call(this.app.vault);
-          const documents = await Promise.all(
-            files
-              .filter((file): file is TFile => file instanceof TFile)
-              .map((file) => this.prepareSearchableDocumentFromFile(file)),
-          );
-          return documents.filter((document): document is NonNullable<typeof document> => document !== null);
-        },
-        readDocument: async (path) => {
-          const target = this.app.vault.getAbstractFileByPath(path);
-          if (!(target instanceof TFile)) {
-            return null;
-          }
-          return this.prepareSearchableDocumentFromFile(target);
-        },
-      },
+      documentSource,
     });
 
     const service = new IndexedSearchService(manager, {
@@ -293,54 +324,7 @@ export class SearchCoordinator {
   }
 
   private async prepareSearchableDocumentFromFile(file: TFile) {
-    try {
-      const fileKind = resolveCardFileKind(file);
-      const title = file.basename;
-      if (fileKind === null || !isMarkdownCardKind(fileKind)) {
-        return prepareSearchableDocument({
-          path: file.path,
-          title,
-          mtime: file.stat.mtime,
-          ctime: file.stat.ctime,
-        });
-      }
-
-      const cachedRead = (this.app.vault as { cachedRead?: (target: TFile) => Promise<string> }).cachedRead;
-      if (typeof cachedRead !== "function") {
-        return null;
-      }
-
-      const markdown = await cachedRead.call(this.app.vault, file);
-      return prepareSearchableDocument({
-        path: file.path,
-        title,
-        markdown,
-        mtime: file.stat.mtime,
-        ctime: file.stat.ctime,
-      });
-    } catch {
-      return null;
-    }
-  }
-
-  private resolveVaultNamespace(): string {
-    const adapter = this.app.vault.adapter as {
-      getBasePath?: () => string;
-      basePath?: string;
-    };
-    const basePath =
-      typeof adapter.getBasePath === "function"
-        ? adapter.getBasePath()
-        : typeof adapter.basePath === "string"
-          ? adapter.basePath
-          : "";
-    if (basePath.trim().length > 0) {
-      return `path:${basePath}`;
-    }
-
-    const getName = (this.app.vault as { getName?: () => string }).getName;
-    const vaultName = typeof getName === "function" ? getName.call(this.app.vault) : "unknown-vault";
-    return `name:${vaultName}`;
+    return prepareSearchDocument(this.app, file);
   }
 
   private createSearchMetadata(vaultNamespace: string): IndexStoreNamespaceMetadata {
@@ -364,6 +348,7 @@ export class SearchCoordinator {
   }
 
   private handleSearchSnapshot(snapshot: SearchServiceSnapshot): void {
+    if (this.disposed) return;
     const nextSnapshot = this.cloneSearchSnapshot(snapshot);
     this.searchSnapshot = nextSnapshot;
     for (const listener of this.searchSnapshotListeners) {
@@ -473,6 +458,7 @@ export class SearchCoordinator {
   }
 
   private async runClearAndResetSearchIndex(): Promise<void> {
+    if (this.disposed) return;
     if (!this.searchManager) {
       await this.initialize();
     }
@@ -485,6 +471,7 @@ export class SearchCoordinator {
     const clearResult = await this.searchManager.clearAndReset(
       "Manual clear/reset command requested local search index reset.",
     );
+    if (this.disposed) return;
     if (clearResult.outcome === "failed") {
       new Notice(this.getUiStrings().app.searchIndexResetFailed);
       return;
@@ -495,6 +482,7 @@ export class SearchCoordinator {
   }
 
   private async runRecoverSearchIndex(rebuildDetail: string): Promise<void> {
+    if (this.disposed) return;
     if (!this.searchManager) {
       await this.initialize();
       if (!this.searchManager) {
@@ -516,8 +504,9 @@ export class SearchCoordinator {
     }
 
     const result = await this.searchManager.restore(
-      this.createSearchMetadata(this.resolveVaultNamespace()),
+      this.createSearchMetadata(resolveSearchVaultNamespace(this.app)),
     );
+    if (this.disposed) return;
     if (result.outcome === "rebuild-required") {
       await this.rebuild(rebuildDetail);
       return;
@@ -561,6 +550,7 @@ export class SearchCoordinator {
     const manager = this.searchManager;
     this.pendingRestoredSearchStateSync = manager.syncDocumentStateFromSource()
       .catch((error) => {
+        if (this.disposed) return;
         console.warn("[Card Workspace] Restored search state sync failed.", error);
       })
       .finally(() => {
@@ -569,5 +559,14 @@ export class SearchCoordinator {
         }
       });
     await this.pendingRestoredSearchStateSync;
+  }
+
+  private replayBufferedMutations(): void {
+    if (this.disposed || !this.searchService) return;
+    const events = this.bufferedMutations.splice(0);
+    for (const event of events) {
+      if (this.disposed || !this.searchService) return;
+      this.searchService.handleVaultMutation(this.toSearchVaultMutation(event));
+    }
   }
 }

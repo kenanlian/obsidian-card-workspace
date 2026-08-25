@@ -54,7 +54,7 @@ const mockState = vi.hoisted(() => {
     onFolderAction?: (payload: Record<string, unknown>) => void;
     onNavContextMenu?: (payload: Record<string, unknown>) => void;
     onFavoriteActivate?: (payload: Record<string, unknown>) => void;
-    onHydrateRange?: (payload: Record<string, unknown>) => void;
+    onHydrateViewport?: (payload: Record<string, unknown>) => void;
   }
 
   interface MockPanelMountOptions {
@@ -97,7 +97,7 @@ const mockState = vi.hoisted(() => {
       onFolderAction: "folder-action",
       onNavContextMenu: "nav-context-menu",
       onFavoriteActivate: "favorite-activate",
-      onHydrateRange: "hydrate-range",
+      onHydrateViewport: "hydrate-viewport",
     };
 
     for (const [callbackPropName, eventName] of Object.entries(callbackPropToEvent)) {

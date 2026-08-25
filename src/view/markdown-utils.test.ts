@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { stripMarkdownToText, buildLightPreview } from "./markdown-utils";
+import type { PreviewTextSource } from "./preview-source-collector";
 
 // ---------------------------------------------------------------------------
 // stripMarkdownToText
@@ -105,6 +106,73 @@ describe("buildLightPreview", () => {
     const result = buildLightPreview(md);
     expect(result.html).not.toContain("title");
     expect(result.html).toContain("Actual content");
+  });
+
+  it("preserves CRLF preview output", () => {
+    expect(buildLightPreview("---\r\ntitle: Test\r\n---\r\nFirst\r\nSecond", 500, 2)).toEqual(
+      buildLightPreview("---\ntitle: Test\n---\nFirst\nSecond", 500, 2),
+    );
+  });
+
+  it("recognizes frontmatter closed exactly on line 400", () => {
+    const markdown = [
+      "---",
+      ...Array.from({ length: 398 }, (_, index) => `field-${index}: value`),
+      "---",
+      "Visible body",
+    ].join("\n");
+
+    expect(buildLightPreview(markdown).html).toBe("<p>Visible body</p>");
+  });
+
+  it("ignores body content after the 400-line scan window", () => {
+    const markdown = [
+      ...Array.from({ length: 400 }, (_, index) => `body-${index}`),
+      "unique forbidden tail sentinel",
+    ].join("\n");
+    const result = buildLightPreview(markdown, 50_000, 400);
+
+    expect(result.html).not.toContain("unique forbidden tail sentinel");
+  });
+
+  it("treats frontmatter closed after line 400 as body", () => {
+    const markdown = ["---", ...Array.from({ length: 399 }, (_, index) => `field-${index}`), "---", "tail sentinel"].join("\n");
+    const result = buildLightPreview(markdown, 500, 5);
+
+    expect(result.html).toContain("---");
+    expect(result.html).toContain("field-0");
+    expect(result.html).not.toContain("tail sentinel");
+  });
+
+  it("treats unclosed leading frontmatter as body", () => {
+    const result = buildLightPreview("---\ntitle: Unclosed\nBody text");
+
+    expect(result.html).toContain("--- title: Unclosed Body text");
+  });
+
+  it("treats a non-leading delimiter as body", () => {
+    const result = buildLightPreview("Before\n---\ntitle: Body\n---\nAfter", 500, 5);
+
+    expect(result.html).toContain("Before --- title: Body --- After");
+  });
+
+  it("never reads a guarded tail through normalization before collection", () => {
+    const prefix = `${Array.from({ length: 400 }, (_, index) => `line-${index}`).join("\n")}\n`;
+    const raw = `${prefix}${"forbidden-tail".repeat(100_000)}`;
+    const source: PreviewTextSource = {
+      length: raw.length,
+      readCodeUnit(index) {
+        if (index >= prefix.length) {
+          throw new Error("forbidden tail access");
+        }
+        return raw[index] ?? "";
+      },
+    };
+
+    const result = buildLightPreview(source, 500, 5);
+
+    expect(result.html).toContain("line-0");
+    expect(result.html).not.toContain("forbidden-tail");
   });
 
   it("renders a heading with fce-preview-heading class", () => {

@@ -1520,6 +1520,28 @@ describe("FolderCardView host contract", () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
+  it("keeps structural navigation builders out of same- and cross-scope load snapshots", async () => {
+    const { view } = createHarness();
+    const notes = new testState.TestTFolder("notes");
+    const archive = new testState.TestTFolder("archive");
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => path === "notes" ? notes : path === "archive" ? archive : null);
+    (view as any).cardScope = createFolderScope("notes", true);
+    const buildNavSpy = vi.spyOn(view as any, "buildNavGroup");
+    const favoriteBuildSpy = vi.spyOn((view as any).modules.favoriteActions, "buildFavoriteRowModels");
+    const boxBuildSpy = vi.spyOn((view as any).modules.boxActions, "buildBoxSummaries");
+    const folderTreeSpy = vi.spyOn((view as any).modules.navLayout, "refreshFolderTreeState");
+
+    await view.refresh({ reason: "manual", forceRefresh: true });
+    await view.handleScopeSelection({ requestId: 9, scope: createFolderScope("archive", true),
+      source: "programmatic", requestedAtMs: Date.now(), forceRefresh: true });
+
+    expect(buildNavSpy).not.toHaveBeenCalled();
+    expect(favoriteBuildSpy).not.toHaveBeenCalled();
+    expect(boxBuildSpy).not.toHaveBeenCalled();
+    expect(folderTreeSpy).not.toHaveBeenCalled();
+  });
+
   it("V27b-1 persists queued B after running A even though A returns last", async () => {
     const { view, plugin } = createHarness();
     const folders = new Map([
@@ -1927,8 +1949,8 @@ describe("FolderCardView host contract", () => {
     const { view } = createHarness();
     const card = createCard("nested/note.md", "Nested note");
     const hydrateSpy = vi
-      .spyOn((view as any).modules.hydration, "hydrateCard")
-      .mockResolvedValue(undefined);
+      .spyOn((view as any).modules.hydration, "schedulePath")
+      .mockImplementation(() => undefined);
 
     (view as any).cardScope = createFolderScope("/", true);
     (view as any).baseCards = [card];
@@ -1943,7 +1965,7 @@ describe("FolderCardView host contract", () => {
 
     expect(result.shouldRefresh).toBe(false);
     expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
-    expect(hydrateSpy).toHaveBeenCalledWith(card.path, (view as any).epochs.load.token());
+    expect(hydrateSpy).toHaveBeenCalledWith(card.path);
   });
 
   it("localizes hydrated non-markdown placeholders when the Obsidian language is Chinese", async () => {
@@ -1957,10 +1979,7 @@ describe("FolderCardView host contract", () => {
     (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [card];
 
-    await (view as any).modules.hydration.hydrateCard(
-      card.path,
-      (view as any).epochs.load.token(),
-    );
+    (view as any).modules.hydration.prepareRecordsFromCache((view as any).baseCards);
 
     expect((view as any).baseCards[0]?.previewHtml).toContain("这是一个 Canvas 文件。");
   });
@@ -2082,11 +2101,55 @@ describe("FolderCardView graded update intents", () => {
     expect(getPanelState(view).appearance.previewLines).toBe(currentSettings.previewLines + 1);
 
     await rehydrated;
+    const revisionAfter = (view as any).store.getHydrationRevision();
+    await (view as any).modules.hydration.hydrateViewport({
+      generation: generationBefore, hydrationRevision: revisionAfter,
+      start: 0, end: 2, paths: getPanelState(view).cards.records.map((card) => card.path),
+    });
     await tick();
 
     expect(((view as any).baseCards as NoteCardRecord[]).every((card) => card.hydrated === true)).toBe(true);
     expect((view as any).epochs.load.value).toBe(generationBefore);
     expect(collectSpy).not.toHaveBeenCalled();
+  });
+
+  it("renews the current scrolled viewport once when previewLines advances hydration revision", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    const { view, plugin } = createHarness();
+    await view.onOpen();
+    (view as any).cardScope = createFolderScope("notes", true);
+    (view as any).baseCards = Array.from({ length: 30 }, (_, index) =>
+      createCard(`notes/card-${index}.md`, `Card ${index}`));
+    publishAll(view);
+    await tick();
+
+    const viewport = view.containerEl.querySelector<HTMLElement>(".fce-list");
+    expect(viewport).not.toBeNull();
+    if (!viewport) return;
+    viewport.scrollTop = 2_000;
+    viewport.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    const generation = (view as any).epochs.load.value;
+    const pathsBefore = getPanelState(view).cards.records.map((card) => card.path);
+    const revisionBefore = (view as any).store.getHydrationRevision();
+    const hydrateSpy = vi.spyOn((view as any).modules.hydration, "hydrateViewport");
+    const currentSettings = (plugin.getSettings as unknown as () => PluginSettings)();
+    plugin.getSettings.mockReturnValue({ ...currentSettings, previewLines: currentSettings.previewLines + 1 });
+
+    await view.applyUpdateIntent("rehydrate", "settings-change");
+    await tick();
+    await Promise.resolve();
+
+    expect((view as any).epochs.load.value).toBe(generation);
+    expect(getPanelState(view).cards.records.map((card) => card.path)).toEqual(pathsBefore);
+    expect((view as any).store.getHydrationRevision()).toBe(revisionBefore + 1);
+    expect(hydrateSpy).toHaveBeenCalledTimes(1);
+    const request = hydrateSpy.mock.calls[0]?.[0] as { start: number; hydrationRevision: number };
+    expect(request.start).toBeGreaterThan(5);
+    expect(request.hydrationRevision).toBe(revisionBefore + 1);
+    await view.onClose();
   });
 });
 

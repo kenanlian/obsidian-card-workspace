@@ -4,17 +4,9 @@ import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { compareCards } from "../card-sort";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
-import {
-  createFolderScope,
-  isFolderScope,
-  scopeDisplayPath,
-  scopesEqual,
-  serializeScopeKey,
-  validateScope,
-  type CardScope,
-} from "../scope";
+import { createFolderScope, isFolderScope, scopeDisplayPath, scopesEqual,
+  serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
-import { PANEL_GROUPS } from "../panel-model";
 import type {
   CardLoadKey,
   FolderSelectionRequest,
@@ -42,11 +34,9 @@ export interface ScopeControllerDeps {
   getBulkSelection: () => BulkSelectionState;
   setBulkSelection: (state: BulkSelectionState) => void;
   clearBulkSelection: () => void;
-  pendingHydration: {
-    has: (path: string) => boolean;
-    delete: (path: string) => boolean;
-    clear: () => void;
-  };
+  hasPendingHydration: (path: string) => boolean; deletePendingHydration: (path: string) => boolean;
+  resetHydrationForLoad: () => void; prepareRecordsFromCache: (records: NoteCardRecord[]) => void;
+  invalidateForVaultMutation: (event: VaultMutationEvent) => void;
   hydrateStartupCardPaths: (paths: string[], token: EpochToken) => Promise<void>;
   scheduleHydrationPath: (path: string) => void;
   resetSearchForLoad: () => void;
@@ -54,6 +44,7 @@ export interface ScopeControllerDeps {
   scheduleNavCountRefresh: () => void;
   refreshFolderTreeState: () => void;
   scheduleFolderTreeRefresh: () => void;
+  publishLoadStart: (scopeChanged: boolean) => void; publishLoadCommit: () => void;
   startupCardCount: number;
 }
 
@@ -243,13 +234,16 @@ export class ScopeController implements DisposableController {
   }
 
   private async loadScope(loadScope: CardLoadKey, loadKey: string): Promise<boolean> {
+    const scopeChanged = !scopesEqual(this.context.store.getScope(), loadScope.scope);
     this.context.store.setScope(loadScope.scope);
     this.loading = true;
     const loadToken = this.context.epochs.load.bump();
-    this.deps.pendingHydration.clear();
+    this.deps.resetHydrationForLoad();
     this.deps.resetSearchForLoad();
-    this.deps.projectVisibleCards();
-    this.context.publishGroups(...PANEL_GROUPS);
+    if (scopeChanged) {
+      this.context.store.replaceBaseCards([]); this.context.store.replaceVisibleCards([]);
+    }
+    this.deps.publishLoadStart(scopeChanged);
 
     try {
       const records = this.collectScopeFiles(loadScope.scope).flatMap((file) => {
@@ -270,6 +264,7 @@ export class ScopeController implements DisposableController {
       if (!this.context.epochs.load.isCurrent(loadToken)) {
         return false;
       }
+      this.deps.prepareRecordsFromCache(records);
       records.sort((left, right) =>
         compareCards(left, right, loadScope.sort.field, loadScope.sort.direction));
       this.context.store.replaceBaseCards(records);
@@ -286,8 +281,7 @@ export class ScopeController implements DisposableController {
       if (this.context.epochs.load.isCurrent(loadToken)) {
         this.loading = false;
         this.deps.projectVisibleCards();
-        this.context.publishGroups(...PANEL_GROUPS);
-        this.deps.refreshFolderTreeState();
+        this.deps.publishLoadCommit();
         this.deps.refreshSearchProjection();
       }
     }
@@ -371,6 +365,7 @@ export class ScopeController implements DisposableController {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    this.deps.invalidateForVaultMutation(event);
     this.context.epochs.vaultContent.bump();
     this.deps.scheduleNavCountRefresh();
     if (event.isFolder) {
@@ -392,7 +387,10 @@ export class ScopeController implements DisposableController {
       const outcome = applyIncrementalMutation(event, this.context.store.getBaseCards(), {
         app: this.context.getApp(),
         sort: this.buildLoadKey(this.context.store.getScope()).sort,
-        pendingHydration: this.deps.pendingHydration,
+        pendingHydration: {
+          has: this.deps.hasPendingHydration,
+          delete: this.deps.deletePendingHydration,
+        },
         getBulkSelection: this.deps.getBulkSelection,
         setBulkSelection: this.deps.setBulkSelection,
         isPathInActiveScope: (path) => this.isPathInActiveScope(path),

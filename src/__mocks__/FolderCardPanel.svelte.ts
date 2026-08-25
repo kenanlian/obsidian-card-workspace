@@ -22,7 +22,7 @@ interface PanelProps {
   onFolderAction?: (payload: unknown) => void;
   onNavContextMenu?: (payload: unknown) => void;
   onFavoriteActivate?: (payload: unknown) => void;
-  onHydrateRange?: (payload: unknown) => void;
+  onHydrateViewport?: (payload: unknown) => void;
 }
 
 interface PanelMountOptions {
@@ -48,7 +48,7 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onFolderAction: "folder-action",
   onNavContextMenu: "nav-context-menu",
   onFavoriteActivate: "favorite-activate",
-  onHydrateRange: "hydrate-range",
+  onHydrateViewport: "hydrate-viewport",
 };
 
 function createMountedPanel(options: PanelMountOptions = {}): MockMountedPanel {

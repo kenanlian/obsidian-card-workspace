@@ -208,4 +208,19 @@ describe("SearchController", () => {
     expect((controller as any).requestEpoch.isCurrent(requestToken)).toBe(false);
     expect((controller as any).snapshotEpoch.isCurrent(snapshotToken)).toBe(false);
   });
+
+  it("does not publish a redundant post-load projection for an empty query", async () => {
+    const context = createContext();
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => null,
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.resetForLoad();
+    await controller.refreshProjection();
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+  });
 });

@@ -68,6 +68,7 @@ function createMockHealth(overrides: Partial<MockSearchSnapshot["health"]> = {})
 const searchMockState = vi.hoisted(() => {
   return {
     indexedInitializeShouldFail: false,
+    restoreBarrier: null as Promise<void> | null,
     restoreResult: {
       status: "ready",
       outcome: "restored",
@@ -169,7 +170,10 @@ vi.mock("./search", () => {
   class MockSearchIndexManager {
     private syncDocumentStateCounter = 0;
 
-    restore = vi.fn(async () => searchMockState.restoreResult);
+    restore = vi.fn(async () => {
+      if (searchMockState.restoreBarrier) await searchMockState.restoreBarrier;
+      return searchMockState.restoreResult;
+    });
     rebuildFromSource = vi.fn(async () => undefined);
     syncDocumentStateFromSource = vi.fn(async () => {
       this.syncDocumentStateCounter += 1;
@@ -488,6 +492,7 @@ function createPluginHarness(): {
       openPopoutLeaf?: ReturnType<typeof vi.fn>;
       getLeftLeaf: ReturnType<typeof vi.fn>;
       getRightLeaf: ReturnType<typeof vi.fn>;
+      revealLeaf: ReturnType<typeof vi.fn>;
       setActiveLeaf: ReturnType<typeof vi.fn>;
       rootSplit: { id: string };
       leftSplit: { id: string };
@@ -531,6 +536,7 @@ function createPluginHarness(): {
       openPopoutLeaf: vi.fn(async () => ({ openFile: vi.fn(async () => undefined) })),
       getLeftLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
       getRightLeaf: vi.fn(() => ({ setViewState: vi.fn(async () => undefined) })),
+      revealLeaf: vi.fn(async () => undefined),
       setActiveLeaf: vi.fn(),
       rootSplit: { id: "root-split" },
       leftSplit: { id: "left-split" },
@@ -563,6 +569,13 @@ function createPluginHarness(): {
 
 async function waitForPluginLoad(plugin: CardWorkspacePlugin): Promise<void> {
   await (plugin as unknown as { startupPromise: Promise<void> }).startupPromise;
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+  return { promise, resolve, reject };
 }
 
 function getWorkspaceCallback<TArgs extends unknown[]>(eventName: string): (...args: TArgs) => unknown {
@@ -1104,14 +1117,20 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
 });
 
 describe("CardWorkspacePlugin activateView", () => {
+  beforeEach(() => { obsidianMockState.leavesByType = {}; });
+
+  function createView(): FolderCardView {
+    const ViewCtor = FolderCardView as unknown as { new (): FolderCardView };
+    return new ViewCtor();
+  }
+
   it("creates the panel in the left sidebar when no card view leaf exists", async () => {
     const { plugin, app } = createPluginHarness();
-    const leaf = {
-      setViewState: vi.fn(async () => undefined),
-    };
+    const view = createView();
+    const leaf = { view: null as unknown, setViewState: vi.fn(async () => { leaf.view = view; }) };
     app.workspace.getLeftLeaf.mockReturnValue(leaf);
 
-    await (plugin as unknown as { activateView: () => Promise<void> }).activateView();
+    await expect((plugin as unknown as { activateView: () => Promise<FolderCardView | null> }).activateView()).resolves.toBe(view);
 
     expect(app.workspace.getLeftLeaf).toHaveBeenCalledWith(false);
     expect(app.workspace.getRightLeaf).not.toHaveBeenCalled();
@@ -1119,12 +1138,13 @@ describe("CardWorkspacePlugin activateView", () => {
       type: "folder-card-view",
       active: true,
     });
+    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
     expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, { focus: false });
   });
 
   it("registers a ribbon entry point that activates the view", async () => {
     const { plugin, app } = createPluginHarness();
-    const existingLeaf = { setViewState: vi.fn(async () => undefined) };
+    const existingLeaf = { view: createView(), setViewState: vi.fn(async () => undefined) };
     obsidianMockState.leavesByType["folder-card-view"] = [existingLeaf];
     const globals = globalThis as unknown as { document?: unknown; activeDocument?: unknown };
     globals.document = {};
@@ -1152,16 +1172,70 @@ describe("CardWorkspacePlugin activateView", () => {
 
   it("reuses an existing card view leaf before creating a new sidebar leaf", async () => {
     const { plugin, app } = createPluginHarness();
-    const existingLeaf = {
-      setViewState: vi.fn(async () => undefined),
-    };
+    const existingLeaf = { view: createView(), setViewState: vi.fn(async () => undefined) };
     obsidianMockState.leavesByType["folder-card-view"] = [existingLeaf];
 
     await (plugin as unknown as { activateView: () => Promise<void> }).activateView();
 
     expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
     expect(existingLeaf.setViewState).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
     expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: false });
+  });
+
+  it("loads only the selected deferred leaf before returning its checked view", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createView();
+    const first = { view: {}, loadIfDeferred: vi.fn(async () => { first.view = view; }) };
+    const second = { view: {}, loadIfDeferred: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [first, second];
+
+    await expect((plugin as any).activateView()).resolves.toBe(view);
+
+    expect(first.loadIfDeferred).toHaveBeenCalledTimes(1);
+    expect(second.loadIfDeferred).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(first, { focus: false });
+  });
+
+  it("does not start deferred loading after unload wins a delayed reveal", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+    const reveal = deferred<void>();
+    const leaf = { view: {}, loadIfDeferred: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [leaf];
+    app.workspace.revealLeaf.mockReturnValueOnce(reveal.promise);
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const activation = (plugin as any).activateView();
+    await vi.waitFor(() => expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf));
+    plugin.onunload();
+    reveal.resolve();
+
+    await expect(activation).resolves.toBeNull();
+    expect(leaf.loadIfDeferred).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+  });
+
+  it("returns null for no left leaf, a wrong loaded view, or deferred-load rejection", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const missing = createPluginHarness();
+    missing.app.workspace.getLeftLeaf.mockReturnValue(null);
+    await expect((missing.plugin as any).activateView()).resolves.toBeNull();
+
+    const wrong = createPluginHarness();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view: {} }];
+    await expect((wrong.plugin as any).activateView()).resolves.toBeNull();
+    expect(wrong.app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+
+    const rejected = createPluginHarness();
+    obsidianMockState.leavesByType["folder-card-view"] = [{
+      view: {}, loadIfDeferred: vi.fn(async () => { throw new Error("deferred failed"); }),
+    }];
+    await expect((rejected.plugin as any).activateView()).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      "[Card Workspace] View activation failed.", expect.objectContaining({ message: "deferred failed" }),
+    );
   });
 });
 
@@ -1696,6 +1770,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     (globalThis as unknown as { activeDocument?: unknown }).activeDocument =
       (globalThis as unknown as { document?: unknown }).document;
     searchMockState.indexedInitializeShouldFail = false;
+    searchMockState.restoreBarrier = null;
     searchMockState.restoreResult = {
       status: "ready",
       outcome: "restored",
@@ -1720,6 +1795,128 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.notices = [];
     obsidianMockState.leavesByType = {};
     vi.clearAllMocks();
+  });
+
+  it("registers every user surface and the core bus prefix before delayed settings or search I/O", async () => {
+    const settings = deferred<unknown>();
+    const { plugin, app } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
+    const coreListeners = vi.spyOn(plugin as any, "registerVaultEventListeners");
+
+    plugin.onload();
+
+    const host = plugin as unknown as {
+      registerView: ReturnType<typeof vi.fn>; addRibbonIcon: ReturnType<typeof vi.fn>;
+      addSettingTab: ReturnType<typeof vi.fn>; addCommand: ReturnType<typeof vi.fn>;
+      registerEditorExtension: ReturnType<typeof vi.fn>; registerEvent: ReturnType<typeof vi.fn>;
+    };
+    expect(coreListeners).toHaveBeenCalledTimes(1);
+    expect(coreListeners.mock.invocationCallOrder[0]).toBeLessThan(host.registerView.mock.invocationCallOrder[0]!);
+    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
+    expect(host.addSettingTab).toHaveBeenCalledTimes(1);
+    expect(host.addCommand).toHaveBeenCalled();
+    expect(host.registerEditorExtension).toHaveBeenCalledTimes(1);
+    expect(host.registerEvent).toHaveBeenCalled();
+    expect(app.workspace.onLayoutReady).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers).toHaveLength(0);
+    expect(app.vault.on).not.toHaveBeenCalled();
+
+    settings.resolve(null);
+    await waitForPluginLoad(plugin);
+    expect(searchMockState.managers).toHaveLength(1);
+  });
+
+  it("does not restore search until the selected scope foreground promise resolves", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+    const scopeLoad = deferred<{
+      action: "started"; scope: unknown; generationChanged: true; preserveUiState: false;
+    }>();
+    const ViewCtor = FolderCardView as unknown as { new (): FolderCardView & { handleScopeSelection: ReturnType<typeof vi.fn> } };
+    const view = new ViewCtor();
+    view.handleScopeSelection.mockImplementation(() => scopeLoad.promise);
+    const root = new (TFolder as unknown as { new (path: string): TFolder })("");
+    app.vault.getRoot.mockReturnValue(root);
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    obsidianMockState.layoutReadyCallback?.();
+    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
+    expect(searchMockState.managers).toHaveLength(0);
+    scopeLoad.resolve({ action: "started", scope: createFolderScope("", true), generationChanged: true, preserveUiState: false });
+    await waitForPluginLoad(plugin);
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps registered surfaces available while IndexedDB restore is delayed", async () => {
+    const restore = deferred<void>();
+    searchMockState.restoreBarrier = restore.promise;
+    const { plugin } = createPluginHarness();
+
+    plugin.onload();
+    await vi.waitFor(() => expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1));
+
+    const host = plugin as unknown as {
+      registerView: ReturnType<typeof vi.fn>; addRibbonIcon: ReturnType<typeof vi.fn>;
+      addCommand: ReturnType<typeof vi.fn>; registerEditorExtension: ReturnType<typeof vi.fn>;
+    };
+    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
+    expect(host.addCommand).toHaveBeenCalled();
+    expect(host.registerEditorExtension).toHaveBeenCalledTimes(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).not.toHaveBeenCalled();
+
+    restore.resolve();
+    await waitForPluginLoad(plugin);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes unload final during settings, deferred-view load, and search restore", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const settingsCase = createPluginHarness();
+    const settings = deferred<unknown>();
+    (settingsCase.plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
+    settingsCase.plugin.onload();
+    settingsCase.app.workspace.onLayoutReady.mock.calls[0]?.[0]?.();
+    settingsCase.plugin.onunload();
+    settings.resolve(null);
+    await waitForPluginLoad(settingsCase.plugin);
+    expect(settingsCase.app.vault.on).not.toHaveBeenCalled();
+
+    const viewCase = createPluginHarness();
+    const viewLoad = deferred<void>();
+    const ViewCtor = FolderCardView as unknown as { new (): FolderCardView & { handleScopeSelection: ReturnType<typeof vi.fn> } };
+    const deferredLeaf = { view: {}, loadIfDeferred: vi.fn(async () => {
+      await viewLoad.promise; deferredLeaf.view = new ViewCtor();
+    }) };
+    const root = new (TFolder as unknown as { new (path: string): TFolder })("");
+    viewCase.app.vault.getRoot.mockReturnValue(root);
+    obsidianMockState.leavesByType["folder-card-view"] = [deferredLeaf];
+    viewCase.plugin.onload(); await waitForPluginLoad(viewCase.plugin);
+    obsidianMockState.layoutReadyCallback?.();
+    await vi.waitFor(() => expect(deferredLeaf.loadIfDeferred).toHaveBeenCalledTimes(1));
+    viewCase.plugin.onunload(); viewLoad.resolve();
+    await waitForPluginLoad(viewCase.plugin);
+    expect((deferredLeaf.view as any).handleScopeSelection).not.toHaveBeenCalled();
+    expect(viewCase.app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+    expect(searchMockState.managers).toHaveLength(0);
+
+    const restoreCase = createPluginHarness();
+    const restore = deferred<void>();
+    searchMockState.restoreBarrier = restore.promise;
+    restoreCase.plugin.onload(); await waitForPluginLoad(restoreCase.plugin);
+    obsidianMockState.layoutReadyCallback?.();
+    await vi.waitFor(() => expect(searchMockState.managers.at(-1)?.restore).toHaveBeenCalledTimes(1));
+    const manager = searchMockState.managers.at(-1)!;
+    restoreCase.plugin.onunload(); restore.resolve();
+    await waitForPluginLoad(restoreCase.plugin);
+    expect(manager.syncDocumentStateFromSource).not.toHaveBeenCalled();
+    expect(manager.rebuildFromSource).not.toHaveBeenCalled();
   });
 
   it("initializes indexed service and attempts restore during startup", async () => {
@@ -2372,12 +2569,11 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     plugin.onload();
     await waitForPluginLoad(plugin);
 
-    expect(searchMockState.managers[0]?.rebuildFromSource).not.toHaveBeenCalled();
+    expect(searchMockState.managers).toHaveLength(0);
     expect(app.vault.on).not.toHaveBeenCalled();
 
     obsidianMockState.layoutReadyCallback?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitForPluginLoad(plugin);
 
     expect(app.vault.on).toHaveBeenCalledTimes(4);
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
@@ -2386,11 +2582,18 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     );
   });
 
-  it("keeps restored index query-capable before layout ready while deferred sync waits", async () => {
+  it("restores the index only after the foreground layout startup boundary", async () => {
     obsidianMockState.autoRunLayoutReady = false;
     const { plugin, app } = createPluginHarness();
 
     plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    expect(plugin.getSearchIndexObservabilitySnapshot()).toBeNull();
+    expect(searchMockState.managers).toHaveLength(0);
+    expect(app.vault.on).not.toHaveBeenCalled();
+
+    obsidianMockState.layoutReadyCallback?.();
     await waitForPluginLoad(plugin);
 
     expect(plugin.getSearchIndexObservabilitySnapshot()).toEqual({
@@ -2403,9 +2606,9 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
         rebuildRequired: false,
       }),
     });
-    expect(searchMockState.managers[0]?.syncDocumentStateCallCount()).toBe(0);
-    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).not.toHaveBeenCalled();
-    expect(app.vault.on).not.toHaveBeenCalled();
+    expect(searchMockState.managers[0]?.syncDocumentStateCallCount()).toBe(1);
+    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
 
     const indexedService = searchMockState.indexedServices[0] as {
       query: (request: {
@@ -2426,12 +2629,6 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       orderedPaths: [],
     });
 
-    obsidianMockState.layoutReadyCallback?.();
-    await Promise.resolve();
-
-    expect(searchMockState.managers[0]?.syncDocumentStateCallCount()).toBe(1);
-    expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);
-    expect(app.vault.on).toHaveBeenCalledTimes(4);
   });
 
   it("keeps recovery and rebuild commands idempotent before layout ready after missing store restore", async () => {
@@ -2464,8 +2661,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(app.vault.on).not.toHaveBeenCalled();
 
     obsidianMockState.layoutReadyCallback?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitForPluginLoad(plugin);
 
     expect(app.vault.on).toHaveBeenCalledTimes(4);
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);

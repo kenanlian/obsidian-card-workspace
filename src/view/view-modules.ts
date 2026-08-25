@@ -33,6 +33,8 @@ export interface ViewModuleHost {
   publishSearch: () => void;
   publishSelection: () => void;
   publishHydration: () => void;
+  publishLoadStart: (scopeChanged: boolean) => void;
+  publishLoadCommit: () => void;
   publishGroups: ViewContext["publishGroups"];
   openNoteFromCard: (path: string, destination?: OpenDestination) => Promise<void>;
   createNoteInFolder: (folderPath: string, tags: string[]) => Promise<void>;
@@ -115,11 +117,11 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       bulk.setAnchorPath(state.anchorPath);
     },
     clearBulkSelection: () => bulk.clearSelectionState(),
-    pendingHydration: {
-      has: (path) => hydration.hasPending(path),
-      delete: (path) => hydration.deletePending(path),
-      clear: () => hydration.clearPending(),
-    },
+    hasPendingHydration: (path) => hydration.hasPending(path),
+    deletePendingHydration: (path) => hydration.deletePending(path),
+    resetHydrationForLoad: () => hydration.resetForLoad(),
+    prepareRecordsFromCache: (records) => hydration.prepareRecordsFromCache(records),
+    invalidateForVaultMutation: (event) => hydration.invalidateForVaultMutation(event),
     hydrateStartupCardPaths: (paths, token) =>
       hydration.hydrateStartupCardPaths(paths, token),
     scheduleHydrationPath: (path) => hydration.schedulePath(path),
@@ -134,6 +136,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       navLayout.refreshFolderTreeState();
     },
     scheduleFolderTreeRefresh: () => navLayout.scheduleFolderTreeRefresh(),
+    publishLoadStart: (scopeChanged) => host.publishLoadStart(scopeChanged),
+    publishLoadCommit: () => host.publishLoadCommit(),
     startupCardCount: HydrationController.startupCardCount,
   });
 

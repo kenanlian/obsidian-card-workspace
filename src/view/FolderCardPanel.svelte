@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { getUiStrings } from "../i18n";
   import Toolbar from "./Toolbar.svelte";
   import NavigationPane from "./NavigationPane.svelte";
@@ -11,17 +12,21 @@
   } from "./panel-model";
   import {
     captureScrollAnchor,
+    clampLayoutScrollTop,
     computeAnchoredScrollTop,
     computeScrollAnchorDelta,
   } from "./scroll-anchoring";
   import {
     computeColumnCount,
+    computeVirtualRowWindow,
     FALLBACK_GRID_GAP,
     FALLBACK_MIN_CARD_WIDTH,
     findIndexAtOffset,
     getHydrateRangeForRows,
     projectCardsToRows,
   } from "./row-projection";
+  import { buildRowPositions, createViewportRequest, getSpacerStyle,
+    readFiniteNumber, resolvePanelScopeIdentity } from "./virtual-layout";
   import type {
     CardHoverLinkPayload,
     FavoriteEntry,
@@ -30,7 +35,6 @@
     NavSectionId,
     NoteCardRecord,
   } from "./types";
-
   interface BulkSelectCardPayload {
     path: string;
     shiftKey: boolean;
@@ -80,11 +84,6 @@
 
   type SelectFolderPayload = Pick<FolderActionPayload, "path">;
 
-  interface HydrateRangePayload {
-    start: number;
-    end: number;
-  }
-
   interface FolderCardPanelProps {
     panelModel: PanelModel;
     onOpenNote?: (payload: OpenNotePayload) => void;
@@ -103,7 +102,7 @@
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onNavContextMenu?: (payload: NavContextMenuPayload) => void;
     onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
-    onHydrateRange?: (payload: HydrateRangePayload) => void;
+    onHydrateViewport?: (payload: ReturnType<typeof createViewportRequest>["request"]) => void;
     onNavPaneResize?: (width: number) => void;
     onShellResize?: (width: number) => void;
     onToggleNavPane?: () => void;
@@ -125,7 +124,7 @@
       searchMatchCountsByPath: {},
       selectedPath: null,
       loading: false,
-      generation: 0,
+      generation: 0, sequenceRevision: 0, hydrationRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -181,7 +180,7 @@
     onBoxCommand,
     onNavContextMenu,
     onFavoriteActivate,
-    onHydrateRange,
+    onHydrateViewport,
     onNavPaneResize,
     onShellResize,
     onToggleNavPane,
@@ -339,7 +338,7 @@
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
 
-  type ProjectedRow = ReturnType<typeof projectCardsToRows<NoteCardRecord>>[number];
+  type ProjectedRow = ReturnType<typeof projectCardsToRows<{ path: string }>>[number];
 
   let viewportEl = $state<HTMLDivElement | null>(null);
   let viewportHeight = $state(0);
@@ -347,31 +346,35 @@
   let scrollTop = $state(0);
   let columnCount = $state(1);
 
-  let lastRangeStart = $state(-1);
-  let lastRangeEnd = $state(-1);
-  let lastHydrateGeneration = $state(-1);
+  let lastRequestIdentity = $state<string | null>(null);
+  let lastScopeIdentity = $state<string | null>(null);
 
   let pendingLayoutAnchor = $state<{ anchorCardIndex: number; anchorOffset: number } | null>(null);
   let rowHeightMap = $state<Map<string, number>>(new Map());
-  let rowKeys = $state<string[]>([]);
+  let projectedRows = $state<ProjectedRow[]>([]);
   let rowPositions = $state<number[]>([]);
   let totalHeight = $state(0);
   let isAdjustingScroll = $state(false);
   let userScrollLockUntilMs = $state(0);
   let lastMeasuredColumnCount = $state(1);
 
-  const projectedRows = $derived(projectCardsToRows(cardRecords, columnCount));
-  const projectedRowKeys = $derived(projectedRows.map((row) => row.key));
+  const scopeIdentity = $derived(resolvePanelScopeIdentity(scope));
   const baseStartRowIndex = $derived(findIndexAtOffset(scrollTop, rowPositions));
   const baseEndRowIndex = $derived(findIndexAtOffset(scrollTop + viewportHeight, rowPositions));
-  const startRowIndex = $derived(Math.max(0, baseStartRowIndex - OVERSCAN));
-  const endRowIndex = $derived(Math.min(projectedRows.length, baseEndRowIndex + 1 + OVERSCAN));
+  const virtualWindow = $derived(computeVirtualRowWindow(
+    projectedRows.length, baseStartRowIndex, baseEndRowIndex, OVERSCAN,
+  ));
+  const startRowIndex = $derived(virtualWindow.start);
+  const endRowIndex = $derived(virtualWindow.end);
   const topPadding = $derived(rowPositions[startRowIndex] || 0);
   const bottomPadding = $derived(
     endRowIndex < projectedRows.length ? totalHeight - (rowPositions[endRowIndex] || 0) : 0,
   );
   const visibleRows = $derived(projectedRows.slice(startRowIndex, endRowIndex));
-  const hydrateRange = $derived(getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex));
+  const viewportBounds = $derived(getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex));
+  const hydratePaths = $derived(cardRecords
+    .slice(viewportBounds.start, viewportBounds.end)
+    .map((card) => card.path));
 
   function markUserScrolling(): void {
     userScrollLockUntilMs = Date.now() + USER_SCROLL_LOCK_MS;
@@ -390,26 +393,10 @@
 
   function rebuildPositionsFrom(fromIndex: number, heightDelta?: number): void {
     const start = Math.max(0, fromIndex);
-    const nextRowPositions = [...rowPositions];
-    nextRowPositions.length = projectedRows.length;
-
-    if (start === 0) {
-      let y = 0;
-      for (let i = 0; i < projectedRows.length; i += 1) {
-        const row = projectedRows[i];
-        nextRowPositions[i] = y;
-        y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
-      }
-      totalHeight = y;
-    } else {
-      let y = nextRowPositions[start] ?? 0;
-      for (let i = start; i < projectedRows.length; i += 1) {
-        const row = projectedRows[i];
-        nextRowPositions[i] = y;
-        y += row ? rowHeightMap.get(row.key) || ESTIMATED_ROW_HEIGHT : ESTIMATED_ROW_HEIGHT;
-      }
-      totalHeight = y;
-    }
+    const layout = buildRowPositions(
+      projectedRows, rowHeightMap, ESTIMATED_ROW_HEIGHT, rowPositions, start,
+    );
+    totalHeight = layout.totalHeight;
 
     const anchorDelta = computeScrollAnchorDelta({
       heightDelta: heightDelta ?? 0,
@@ -423,12 +410,9 @@
       applyScrollTop(viewportEl.scrollTop + anchorDelta);
     }
 
-    rowPositions = nextRowPositions;
-  }
-
-  function readNumber(value: string, defaultValue: number): number {
-    const parsedValue = Number.parseFloat(value);
-    return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
+    rowPositions = layout.positions;
+    const clamped = clampLayoutScrollTop(scrollTop, totalHeight, viewportHeight);
+    if (clamped !== scrollTop) applyScrollTop(clamped);
   }
 
   function syncViewportMetrics(node: HTMLDivElement): void {
@@ -438,15 +422,15 @@
     }
 
     const styles = getComputedStyle(node);
-    const horizontalPadding = readNumber(styles.paddingLeft, 0) + readNumber(styles.paddingRight, 0);
+    const horizontalPadding = readFiniteNumber(styles.paddingLeft, 0) + readFiniteNumber(styles.paddingRight, 0);
     const availableWidth = Math.max(0, node.clientWidth - horizontalPadding);
     const nextColumnCount = computeColumnCount({
       availableWidth,
-      minCardWidth: readNumber(
+      minCardWidth: readFiniteNumber(
         styles.getPropertyValue("--fce-card-min-width"),
         FALLBACK_MIN_CARD_WIDTH,
       ),
-      columnGap: readNumber(styles.getPropertyValue("--fce-wall-gap"), FALLBACK_GRID_GAP),
+      columnGap: readFiniteNumber(styles.getPropertyValue("--fce-wall-gap"), FALLBACK_GRID_GAP),
     });
 
     if (nextColumnCount !== columnCount && projectedRows.length > 0) {
@@ -460,6 +444,7 @@
     viewportWidth = availableWidth;
     viewportHeight = node.clientHeight;
     columnCount = nextColumnCount;
+    applyScrollTop(clampLayoutScrollTop(scrollTop, totalHeight, viewportHeight));
   }
 
   function bindShell(node: HTMLDivElement): { destroy: () => void } {
@@ -499,17 +484,15 @@
   }
 
   $effect(() => {
-    if (cards.generation !== lastHydrateGeneration) {
-      lastHydrateGeneration = cards.generation;
-      lastRangeStart = -1;
-      lastRangeEnd = -1;
+    if (scopeIdentity !== lastScopeIdentity) {
+      lastScopeIdentity = scopeIdentity;
+      lastRequestIdentity = null;
       pendingLayoutAnchor = null;
       rowHeightMap = new Map();
-      rowKeys = [];
+      projectedRows = [];
       rowPositions = [];
       totalHeight = 0;
-      lastMeasuredColumnCount = columnCount;
-      rebuildPositionsFrom(0);
+      applyScrollTop(0);
     }
   });
 
@@ -521,33 +504,49 @@
   });
 
   $effect(() => {
-    if (
-      projectedRowKeys.length !== rowKeys.length ||
-      projectedRowKeys.some((key, index) => key !== rowKeys[index])
-    ) {
-      rowKeys = projectedRowKeys;
+    const revision = cards.sequenceRevision;
+    const columns = columnCount;
+    untrack(() => {
+      if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
+        pendingLayoutAnchor = captureScrollAnchor({ scrollTop, rowPositions, rows: projectedRows });
+      }
+      projectedRows = projectCardsToRows(cards.records.map((card) => ({ path: card.path })), columns);
+      rebuildPositionsFrom(0);
+    });
+    void revision;
+  });
+
+  $effect(() => {
+    if (!cards.loading && cardRecords.length > 0 && projectedRows.length === 0) {
+      projectedRows = projectCardsToRows(cardRecords.map((card) => ({ path: card.path })), columnCount);
       rebuildPositionsFrom(0);
     }
   });
 
   $effect(() => {
-    if (hydrateRange.start !== lastRangeStart || hydrateRange.end !== lastRangeEnd) {
-      lastRangeStart = hydrateRange.start;
-      lastRangeEnd = hydrateRange.end;
-      onHydrateRange?.(hydrateRange);
+    if (cards.loading) {
+      lastRequestIdentity = null;
+      return;
     }
+    if (!viewportEl || viewportWidth === 0 || hydratePaths.length === 0) return;
+    const { identity, request } = createViewportRequest(
+      cards.generation, cards.hydrationRevision, viewportBounds.start, viewportBounds.end, hydratePaths,
+    );
+    if (identity === lastRequestIdentity) return;
+    lastRequestIdentity = identity;
+    onHydrateViewport?.(request);
   });
 
   $effect(() => {
     if (pendingLayoutAnchor && viewportEl) {
       applyScrollTop(
-        computeAnchoredScrollTop({
+        clampLayoutScrollTop(computeAnchoredScrollTop({
           anchorCardIndex: pendingLayoutAnchor.anchorCardIndex,
           anchorOffset: pendingLayoutAnchor.anchorOffset,
           columnCount,
           rowPositions,
           cardCount: cardRecords.length,
-        }),
+        }), totalHeight, viewportHeight),
       );
       pendingLayoutAnchor = null;
     }
@@ -565,8 +564,12 @@
     }
   });
 
+  function getRowCards(row: ProjectedRow): NoteCardRecord[] {
+    return cardRecords.slice(row.startIndex, row.endIndex);
+  }
+
   function rowNeedsMeasuredHeight(row: ProjectedRow): boolean {
-    return row.cards.every((card) => card.hydrated);
+    return getRowCards(row).every((card) => card.hydrated);
   }
 
   function measureRow(node: HTMLDivElement, row: ProjectedRow): { update: (nextRow: ProjectedRow) => void; destroy: () => void } {
@@ -604,10 +607,6 @@
 
   function isLastRow(rowIndex: number): boolean {
     return rowIndex === projectedRows.length - 1;
-  }
-
-  function getSpacerStyle(height: number): string {
-    return `height: ${height}px;`;
   }
 
   function getRowClass(rowIndex: number): string {
@@ -681,8 +680,9 @@
     use:bindViewport
     onscroll={handleScroll}
     onwheel={markUserScrolling}
+    aria-busy={cards.loading}
   >
-    {#if cards.loading}
+    {#if cards.loading && cardRecords.length === 0}
       <div class="fce-empty">{strings.panel.loadingCards}</div>
    {:else if cardRecords.length === 0}
     {#if isBlockedSearchState(search)}
@@ -700,7 +700,7 @@
       {#each visibleRows as row (row.key)}
         <div class={getRowClass(row.index)} use:measureRow={row}>
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
-            {#each row.cards as card (card.path)}
+            {#each getRowCards(row) as card (card.path)}
               <CardItem
                 {card}
                 {strings}

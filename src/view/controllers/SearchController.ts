@@ -165,7 +165,6 @@ export class SearchController implements DisposableController {
   async refreshProjection(): Promise<void> {
     const query = this.query.trim();
     if (query.length === 0) {
-      this.fallBackToPendingExecution();
       return;
     }
 

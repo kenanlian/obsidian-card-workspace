@@ -1,4 +1,5 @@
 import type { PanelModel } from "./panel-model";
+import type { HydrateViewportRequest } from "./hydration-request";
 import type { CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
 
@@ -47,11 +48,26 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
         position: detail.position,
       });
     },
-    onHydrateRange: (detail: { start?: unknown; end?: unknown }) => {
-      if (typeof detail.start !== "number" || typeof detail.end !== "number") {
+    onHydrateViewport: (detail: unknown) => {
+      if (typeof detail !== "object" || detail === null) return;
+      const request = detail as Partial<Record<keyof HydrateViewportRequest, unknown>>;
+      if (
+        typeof request.generation !== "number"
+        || typeof request.hydrationRevision !== "number"
+        || typeof request.start !== "number"
+        || typeof request.end !== "number"
+        || !Array.isArray(request.paths)
+        || !request.paths.every((path) => typeof path === "string")
+      ) {
         return;
       }
-      void view.modules.hydration.hydrateRange(detail.start, detail.end);
+      void view.modules.hydration.hydrateViewport({
+        generation: request.generation,
+        hydrationRevision: request.hydrationRevision,
+        start: request.start,
+        end: request.end,
+        paths: request.paths,
+      });
     },
     onToolbarAction: (detail: { action?: unknown }) => {
       view.handleToolbarAction(detail);

@@ -96,6 +96,17 @@ export function computeAnchoredScrollTop(input: AnchoredScrollTopInput): number 
   return Math.max(0, rowTop + Math.max(0, anchorOffset));
 }
 
+export function clampLayoutScrollTop(
+  scrollTop: number,
+  totalHeight: number,
+  viewportHeight: number,
+): number {
+  const safeScrollTop = Number.isFinite(scrollTop) ? scrollTop : 0;
+  const safeTotalHeight = Number.isFinite(totalHeight) ? Math.max(0, totalHeight) : 0;
+  const safeViewportHeight = Number.isFinite(viewportHeight) ? Math.max(0, viewportHeight) : 0;
+  return Math.min(Math.max(0, safeScrollTop), Math.max(0, safeTotalHeight - safeViewportHeight));
+}
+
 function findRowIndexAtOffset(offset: number, rowPositions: readonly number[]): number {
   const safeOffset = Number.isFinite(offset) ? offset : 0;
   let low = 0;

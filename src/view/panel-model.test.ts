@@ -24,6 +24,8 @@ function buildState(): PanelModelState {
       selectedPath: null,
       loading: false,
       generation: 1,
+      sequenceRevision: 0,
+      hydrationRevision: 0,
     },
     search: {
       query: "",

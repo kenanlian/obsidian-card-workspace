@@ -3,8 +3,11 @@ import {
   PREVIEW_LINES_MAX,
   PREVIEW_LINES_MIN,
 } from "../settings";
-
-const MAX_PREVIEW_SCAN_LINES = 400;
+import {
+  collectPreviewSource,
+  createStringPreviewTextSource,
+  type PreviewTextSource,
+} from "./preview-source-collector";
 
 // Contract preset for preview normalization workstream: unified summary with weak cues only.
 export const PREVIEW_STYLE_PRESET = "unified-summary-weak-cues" as const;
@@ -59,16 +62,13 @@ export function stripMarkdownToText(markdown: string, maxLength = 260): string {
 }
 
 export function buildLightPreview(
-  markdown: string,
+  markdown: string | PreviewTextSource,
   maxVisibleChars = DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
   previewLines = DEFAULT_PREVIEW_LINES,
 ): LightPreviewResult {
-  const content = stripFrontmatter(markdown).replace(/\r\n/g, "\n");
-  if (content.trim().length === 0) {
-    return { html: "", mode: "empty" };
-  }
-  const lines = content.split("\n");
-  const scanLimit = Math.min(lines.length, MAX_PREVIEW_SCAN_LINES);
+  const source = typeof markdown === "string" ? createStringPreviewTextSource(markdown) : markdown;
+  const lines = collectPreviewSource(source).lines;
+  const scanLimit = lines.length;
   const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
 
   let index = 0;
@@ -234,10 +234,6 @@ export function buildLightPreview(
   }
 
   return { html: htmlParts.join(""), mode: sawCodeBlock && !sawTextBlock ? "code" : "text" };
-}
-
-function stripFrontmatter(markdown: string): string {
-  return markdown.replace(/^---[\s\S]*?---\s*/m, "");
 }
 
 function isBlockStarter(line: string): boolean {

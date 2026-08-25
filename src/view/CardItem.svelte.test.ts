@@ -4,6 +4,10 @@ import CardItem from "./CardItem.svelte";
 import { getUiStrings } from "../i18n";
 import type { CardFileKind } from "./file-kind";
 import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
+import {
+  highlightSanitizedPreviewHtml,
+  sanitizePreviewHtml,
+} from "./preview-html";
 
 interface OpenNotePayload {
   path: string;
@@ -143,6 +147,7 @@ function mountCardItem(
       pinnedPaths: values.pinnedPaths ?? [],
       searchQuery: values.searchQuery ?? "",
       searchMatchCount: values.searchMatchCount ?? 0,
+      previewHtmlSanitizer: values.previewHtmlSanitizer,
       ...callbacks,
     },
   });
@@ -620,6 +625,60 @@ describe("CardItem.svelte", () => {
     expect(excerpt?.textContent).toContain("Safe bold");
     expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">Safe</mark>');
     expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">bold</mark>');
+  });
+
+  it.each(["", "safe bold"])("uses the same sanitizer allow-list for query %j", (searchQuery) => {
+    const { target } = mountCardItem({
+      searchQuery,
+      card: createCard("notes/hostile-preview.md", {
+        previewHtml: '<section class="unapproved"><p class="fce-preview-heading unapproved" onmouseover="alert(1)">Safe <strong data-bad="1">bold</strong><script>alert(2)</script><code onclick="alert(3)">code</code></p></section>',
+      }),
+    });
+    const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
+
+    expect(excerpt?.querySelector("script, section, strong")).toBeNull();
+    expect(excerpt?.querySelector("[onmouseover], [onclick], [data-bad]")).toBeNull();
+    expect(excerpt?.querySelector(".unapproved")).toBeNull();
+    expect(excerpt?.querySelector("p")?.className).toBe("fce-preview-heading");
+    expect(excerpt?.textContent).toContain("Safe boldalert(2)code");
+  });
+
+  it("sanitizes the base once before applying query-only highlight stages", () => {
+    const sanitizer = vi.fn(sanitizePreviewHtml);
+    const { target } = mountCardItem({
+      card: createCard("notes/query-update.md", { previewHtml: "<p>alpha beta</p>" }),
+      searchQuery: "alpha",
+      previewHtmlSanitizer: sanitizer,
+    });
+
+    expect(sanitizer).toHaveBeenCalledTimes(1);
+    expect(getExcerptHtml(target)).toContain('<mark class="fce-search-hit">alpha</mark>');
+
+    const sanitizedBase = sanitizer.mock.results[0]?.value ?? "";
+    const betaHtml = highlightSanitizedPreviewHtml(sanitizedBase, "beta", document);
+
+    expect(sanitizer).toHaveBeenCalledTimes(1);
+    expect(betaHtml).not.toContain('<mark class="fce-search-hit">alpha</mark>');
+    expect(betaHtml).toContain('<mark class="fce-search-hit">beta</mark>');
+  });
+
+  it("returns sanitized base HTML for an empty query before highlighting", () => {
+    const hostile = '<p class="fce-preview-heading bad" onclick="alert(1)">Safe <em>text</em><script>bad()</script></p>';
+    const sanitized = sanitizePreviewHtml(hostile, document);
+
+    expect(highlightSanitizedPreviewHtml(sanitized, "", document)).toBe(sanitized);
+    expect(sanitized).toBe('<p class="fce-preview-heading">Safe textbad()</p>');
+  });
+
+  it("keeps the sanitized base when highlighting throws", () => {
+    const sanitized = sanitizePreviewHtml('<p onclick="alert(1)">Safe text</p><script>bad()</script>', document);
+    const treeWalker = vi.spyOn(document, "createTreeWalker").mockImplementationOnce(() => {
+      throw new Error("highlight failure");
+    });
+
+    expect(highlightSanitizedPreviewHtml(sanitized, "safe", document)).toBe(sanitized);
+    expect(sanitized).toBe("<p>Safe text</p>bad()");
+    treeWalker.mockRestore();
   });
 
   it("non-markdown cards remain title-searchable only", () => {

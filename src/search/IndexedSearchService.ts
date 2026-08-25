@@ -36,6 +36,7 @@ export class IndexedSearchService implements SearchService {
   private snapshot: SearchServiceSnapshot;
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private managerUnsubscribe: (() => void) | null = null;
+  private disposed = false;
 
   constructor(manager: IndexedSearchManagerAdapter, options: IndexedSearchServiceOptions) {
     this.manager = manager;
@@ -44,6 +45,7 @@ export class IndexedSearchService implements SearchService {
   }
 
   async initialize(): Promise<void> {
+    if (this.disposed) return;
     if (!this.managerUnsubscribe) {
       this.managerUnsubscribe = this.manager.subscribe((snapshot) => {
         this.snapshot = cloneSnapshot(snapshot);
@@ -52,19 +54,21 @@ export class IndexedSearchService implements SearchService {
     }
 
     await this.manager.initialize();
+    if (this.disposed) return;
     this.snapshot = cloneSnapshot(this.manager.getSnapshot());
     this.emit();
   }
 
   dispose(): void {
-    this.manager.dispose();
-    this.snapshot = cloneSnapshot(this.manager.getSnapshot());
-    this.emit();
-
+    if (this.disposed) return;
+    this.disposed = true;
     if (this.managerUnsubscribe) {
       this.managerUnsubscribe();
       this.managerUnsubscribe = null;
     }
+    this.manager.dispose();
+    this.snapshot = cloneSnapshot(this.manager.getSnapshot());
+    this.emit();
     this.listeners.clear();
   }
 
@@ -73,6 +77,7 @@ export class IndexedSearchService implements SearchService {
   }
 
   subscribe(listener: (snapshot: SearchServiceSnapshot) => void): () => void {
+    if (this.disposed) return () => undefined;
     this.listeners.add(listener);
     listener(this.getSnapshot());
     return () => {
@@ -101,6 +106,9 @@ export class IndexedSearchService implements SearchService {
     }
 
     const searchResult = await this.manager.search(request.query, boundedCandidates);
+    if (this.disposed) {
+      return { mode: "indexed", status: this.snapshot.status, execution: "indexed-unavailable" };
+    }
     const postSearchBlockedExecution = this.getBlockedExecution(this.snapshot);
     if (postSearchBlockedExecution) {
       return {
@@ -132,6 +140,7 @@ export class IndexedSearchService implements SearchService {
   }
 
   handleVaultMutation(event: SearchVaultMutation): void {
+    if (this.disposed) return;
     this.manager.handleVaultMutation(event);
   }
 

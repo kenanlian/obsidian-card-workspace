@@ -31,6 +31,22 @@ import { FolderCardView } from "./FolderCardView";
 import { createBoxScope, createFolderScope } from "./scope";
 import { createViewEpochs } from "./view-epochs";
 import { createViewStateStore } from "./view-state-store";
+import type { NoteCardRecord } from "./types";
+
+function createCard(path: string): NoteCardRecord {
+  return {
+    file: {} as never,
+    fileKind: "markdown",
+    path,
+    title: path,
+    ctime: 1,
+    mtime: 2,
+    excerpt: "",
+    previewHtml: "",
+    previewMode: "empty",
+    hydrated: false,
+  };
+}
 
 function buildState(): PanelModelState {
   return {
@@ -49,6 +65,8 @@ function buildState(): PanelModelState {
       selectedPath: null,
       loading: false,
       generation: 0,
+      sequenceRevision: 0,
+      hydrationRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -334,7 +352,13 @@ describe("FolderCardView grouped panel publishing", () => {
     store.replaceBaseCards([card as never]);
     store.replaceVisibleCards([card as never]);
 
-    await view.modules.hydration.hydrateRange(0, 1);
+    await view.modules.hydration.hydrateViewport({
+      generation: (view as any).epochs.load.value,
+      hydrationRevision: store.getHydrationRevision(),
+      start: 0,
+      end: 1,
+      paths: [card.path],
+    });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["cards"]);
@@ -375,6 +399,30 @@ describe("FolderCardView grouped panel publishing", () => {
 
     expect(cards.records).toEqual(records);
     expect(cards.records).not.toBe(records);
+    expect(cards.sequenceRevision).toBe(0);
+    expect(cards.hydrationRevision).toBe(0);
+  });
+
+  it("publishes independent visible-sequence and hydration revisions", () => {
+    const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    const store = createViewStateStore(createFolderScope("", true));
+    const first = createCard("first.md");
+    store.replaceBaseCards([first]);
+    store.replaceVisibleCards([first]);
+    store.advanceHydrationRevision();
+    Object.assign(view as object, {
+      store,
+      epochs: createViewEpochs(),
+      modules: {
+        search: { getMatchCountsByPath: () => ({}) },
+        scopeController: { isLoading: () => false },
+      },
+    });
+
+    const cards = (view as unknown as { buildCardsGroup: () => PanelModelState["cards"] }).buildCardsGroup();
+
+    expect(cards.sequenceRevision).toBe(1);
+    expect(cards.hydrationRevision).toBe(1);
   });
 
   it("derives active box identity and name from the runtime scope", () => {

@@ -148,6 +148,33 @@ describe("SearchCoordinator vault subscription", () => {
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
+  it("buffers cloned pre-initialize mutations across runtime reset and replays once in arrival order", async () => {
+    const bus = new VaultEventBus();
+    const { coordinator } = createHarness("");
+    coordinator.subscribeTo(bus);
+    const original = createVaultEvent({ eventType: "create", path: "notes/created.md" });
+    await bus.publish(original);
+    original.path = "mutated-after-publish.md";
+    (coordinator as unknown as { resetSearchRuntime(): void }).resetSearchRuntime();
+    await bus.publish(createVaultEvent({ eventType: "delete", path: "notes/deleted.md" }));
+
+    const forwarded: unknown[] = [];
+    const internals = coordinator as unknown as {
+      searchService: { handleVaultMutation(event: unknown): void };
+      mutationForwardingReady: boolean;
+      replayBufferedMutations(): void;
+    };
+    internals.searchService = { handleVaultMutation: (event) => forwarded.push(event) };
+    internals.mutationForwardingReady = true;
+    internals.replayBufferedMutations();
+    internals.replayBufferedMutations();
+
+    expect(forwarded).toMatchObject([
+      { type: "create", path: "notes/created.md" },
+      { type: "delete", path: "notes/deleted.md" },
+    ]);
+  });
+
   it("isolates applyVaultMutation throws with the search-forwarding warn", async () => {
     const bus = new VaultEventBus();
     const { coordinator } = createHarness("");

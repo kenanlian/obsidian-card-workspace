@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeColumnCount,
+  computeVirtualRowWindow,
   findIndexAtOffset,
   getHydrateRangeForRows,
   projectCardsToRows,
@@ -63,5 +64,21 @@ describe("row-projection", () => {
     expect(findIndexAtOffset(119, [0, 120, 260])).toBe(0);
     expect(findIndexAtOffset(120, [0, 120, 260])).toBe(1);
     expect(findIndexAtOffset(600, [0, 120, 260])).toBe(2);
+  });
+
+  it.each([
+    [0, 99, 101, 5, { start: 0, end: 0 }],
+    [3, 99, 101, 0, { start: 2, end: 3 }],
+    [12, 2, 4, 2, { start: 0, end: 7 }],
+    [4, -8, -2, 1, { start: 0, end: 2 }],
+    [4, Number.NaN, Number.NaN, Number.NaN, { start: 0, end: 1 }],
+  ])("computes a valid virtual window for stale or invalid inputs", (count, start, end, overscan, expected) => {
+    const window = computeVirtualRowWindow(count, start, end, overscan);
+    expect(window).toEqual(expected);
+    if (count > 0) {
+      expect(window.start).toBeGreaterThanOrEqual(0);
+      expect(window.start).toBeLessThan(window.end);
+      expect(window.end).toBeLessThanOrEqual(count);
+    }
   });
 });

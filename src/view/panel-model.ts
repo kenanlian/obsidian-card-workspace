@@ -46,6 +46,8 @@ export interface PanelCardsState {
   selectedPath: string | null;
   loading: boolean;
   generation: number;
+  sequenceRevision: number;
+  hydrationRevision: number;
 }
 
 export interface PanelSearchState {

@@ -85,6 +85,14 @@ function createPayload(overrides: Partial<IndexStoreSerializedPayload> = {}): In
 }
 
 describe("IndexStore", () => {
+  it("restores when only the diagnostic plugin version differs", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+    await store.write(createMetadata({ pluginVersion: "plugin-old" }), createPayload());
+    const restore = await store.restore(createMetadata({ pluginVersion: "plugin-new" }));
+    expect(restore.outcome).toBe("restored");
+  });
+
   it("restores persisted record when metadata versions match", async () => {
     const adapter = new MemoryIndexStoreAdapter();
     const store = new IndexStore({

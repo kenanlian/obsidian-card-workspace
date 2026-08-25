@@ -1,18 +1,36 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { getUiStrings } from "../i18n";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
 import type { CardFileKind } from "./file-kind";
+import type { HydrateViewportRequest } from "./hydration-request";
 import type { NoteCardRecord } from "./types";
 
 class ResizeObserverStub {
-  observe(): void {
-    return;
+  static instances: ResizeObserverStub[] = [];
+  private nodes: Element[] = [];
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    ResizeObserverStub.instances.push(this);
+  }
+
+  observe(node: Element): void {
+    this.nodes.push(node);
   }
 
   disconnect(): void {
-    return;
+    this.nodes = [];
+  }
+
+  static reset(): void {
+    ResizeObserverStub.instances = [];
+  }
+
+  static trigger(): void {
+    for (const observer of ResizeObserverStub.instances) {
+      observer.callback(observer.nodes.map((target) => ({ target }) as ResizeObserverEntry), observer as never);
+    }
   }
 }
 
@@ -48,6 +66,8 @@ function createInitialPanelState(): PanelModelState {
       selectedPath: null,
       loading: false,
       generation: 0,
+      sequenceRevision: 0,
+      hydrationRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -89,26 +109,30 @@ function createInitialPanelState(): PanelModelState {
 describe("FolderCardPanel.svelte", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    ResizeObserverStub.reset();
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
     (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
       ResizeObserverStub as never;
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
   });
 
-  it("renders empty state, populated list, and emits hydrate-range with numeric bounds", async () => {
+  it("renders empty state, populated list, and emits an identity-bearing viewport request", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);
 
     const panelModel = createPanelModel(createInitialPanelState());
-    const hydrateEvents: Array<{ start: number; end: number }> = [];
+    const hydrateEvents: Array<{ generation: number; hydrationRevision: number; start: number; end: number; paths: readonly string[] }> = [];
 
     const component = mount(FolderCardPanel, {
       target,
       props: {
         panelModel,
-        onHydrateRange: (detail: { start: number; end: number }) => {
+        onHydrateViewport: (detail: HydrateViewportRequest) => {
           hydrateEvents.push(detail);
         },
       },
@@ -141,6 +165,7 @@ describe("FolderCardPanel.svelte", () => {
     const event = hydrateEvents[hydrateEvents.length - 1];
     expect(typeof event?.start).toBe("number");
     expect(typeof event?.end).toBe("number");
+    expect(event?.paths).toEqual(["notes/runtime.md"]);
 
     await unmount(component);
   });
@@ -187,7 +212,7 @@ describe("FolderCardPanel.svelte", () => {
       state.cards = {
         ...state.cards,
         records: [hydratedTarget, siblingCard],
-        generation: 2,
+        hydrationRevision: 1,
       };
     });
     await tick();
@@ -232,6 +257,219 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("resets cross-scope scroll and clamps same-scope replacements", async () => {
+    let width = 600;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.scope = { ...state.scope, displayPath: "/" };
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`root/${index}.md`, `Root ${index}`)),
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    panelModel.mutate((state) => {
+      state.scope = { ...state.scope, displayPath: "short" };
+      state.cards = {
+        ...state.cards,
+        records: [createCard("short/first.md", "Short first")],
+        loading: false,
+        generation: 2,
+        sequenceRevision: 2,
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(0);
+    expect(target.textContent).toContain("Short first");
+    expect(target.textContent).not.toContain("Root 0");
+
+    panelModel.mutate((state) => {
+      state.scope = { ...state.scope, displayPath: "/" };
+      state.cards = {
+        ...state.cards,
+        records: [createCard("root/returned.md", "Root returned")],
+        generation: 3,
+        sequenceRevision: 3,
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(0);
+    expect(target.textContent).toContain("Root returned");
+    expect(target.textContent).not.toContain("Short first");
+
+    panelModel.mutate((state) => {
+      state.scope = { ...state.scope, displayPath: "short" };
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`short/${index}.md`, `Short ${index}`)),
+        generation: 4,
+        sequenceRevision: 4,
+      };
+    });
+    await tick();
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    const rowBeforeMaintenance = target.querySelector(".fce-wall-row");
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, generation: 5 };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(900);
+    expect(target.querySelector(".fce-wall-row")).toBe(rowBeforeMaintenance);
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, hydrationRevision: 1 };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(900);
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: state.cards.records.map((card, index) => index === 0
+          ? { ...card, previewHtml: "<p>Updated</p>" }
+          : card),
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(900);
+    expect(target.querySelector(".fce-wall-row")).toBe(rowBeforeMaintenance);
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [...state.cards.records].reverse(),
+        sequenceRevision: 5,
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(900);
+    width = 900;
+    ResizeObserverStub.trigger();
+    await tick();
+    expect(list.scrollTop).toBe(668);
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 4 }, (_, index) => createCard(`short/new-${index}.md`, `New ${index}`)),
+        generation: 6,
+        sequenceRevision: 6,
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(164);
+    expect(target.querySelectorAll(".fce-wall-row").length).toBeGreaterThan(0);
+    for (const spacer of Array.from(target.querySelectorAll<HTMLElement>(".fce-virtual-spacer"))) {
+      expect(Number.parseFloat(spacer.style.height)).toBeGreaterThanOrEqual(0);
+    }
+    await unmount(component);
+  });
+
+  it("emits stable viewport demand by generation, hydration revision, and ordered paths", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const requests: Array<{ generation: number; hydrationRevision: number; paths: readonly string[] }> = [];
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")],
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel, onHydrateViewport: (request: HydrateViewportRequest) => requests.push(request) },
+    });
+    await tick();
+    expect(requests).toHaveLength(1);
+
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, records: [...state.cards.records] };
+    });
+    await tick();
+    expect(requests).toHaveLength(1);
+
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, loading: true };
+    });
+    await tick();
+    expect(requests).toHaveLength(1);
+    expect(target.querySelector(".fce-list")?.getAttribute("aria-busy")).toBe("true");
+    expect(target.textContent).toContain("A");
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, loading: false };
+    });
+    await tick();
+    expect(requests).toHaveLength(2);
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/c.md", "C"), createCard("notes/d.md", "D")],
+        sequenceRevision: 2,
+      };
+    });
+    await tick();
+    expect(requests.at(-1)?.paths).toEqual(["notes/c.md", "notes/d.md"]);
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, hydrationRevision: 1 };
+    });
+    await tick();
+    expect(requests.at(-1)?.hydrationRevision).toBe(1);
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, generation: 2 };
+    });
+    await tick();
+    expect(requests.at(-1)?.generation).toBe(2);
+    expect(requests).toHaveLength(5);
+    await unmount(component);
+  });
+
+  it("retains hidden geometry and emits once when first becoming visible", async () => {
+    let width = 0;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/visible.md", "Visible")],
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const requests: unknown[] = [];
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel, onHydrateViewport: (request: HydrateViewportRequest) => requests.push(request) },
+    });
+    await tick();
+    expect(requests).toHaveLength(0);
+    width = 600;
+    ResizeObserverStub.trigger();
+    await tick();
+    expect(requests).toHaveLength(1);
+    ResizeObserverStub.trigger();
+    await tick();
+    expect(requests).toHaveLength(1);
+    await unmount(component);
+  });
+
   it("applies card corner radius classes from panel state", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);
@@ -268,7 +506,7 @@ describe("FolderCardPanel.svelte", () => {
       target,
       props: {
         panelModel,
-        onHydrateRange: () => {
+        onHydrateViewport: () => {
           return;
         },
       },
@@ -358,7 +596,7 @@ describe("FolderCardPanel.svelte", () => {
       target,
       props: {
         panelModel,
-        onHydrateRange: () => {
+        onHydrateViewport: () => {
           return;
         },
       },

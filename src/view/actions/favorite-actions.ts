@@ -8,13 +8,35 @@ import { isFavorite, isFavoriteKind, moveFavorite, toggleFavorite } from "../fav
 import { getCardFileIcon, resolveCardFileKindFromPath } from "../file-kind";
 import { copyPathToClipboard } from "../note-ops";
 import type { BoxSummary, FavoriteRowModel } from "../panel-model";
-import { scopeDisplayPath } from "../scope";
+import { isBoxScope, scopeDisplayPath, type CardScope } from "../scope";
 import { normalizeTagPath } from "../tag-tree";
 import type { FavoriteEntry, FavoriteKind } from "../types";
 import type { ViewContext } from "../view-context";
 
 /** `Foo.excalidraw.md` keeps the `.excalidraw` half. */
 const CARD_FILE_EXTENSIONS = [".md", ".canvas", ".base"];
+
+/** Recomputes only favorite selection state for a scope snapshot. */
+export function remapFavoriteSelection(
+  rows: readonly FavoriteRowModel[], scope: CardScope,
+  activeTags: readonly string[], selectedPath: string | null,
+): FavoriteRowModel[] {
+  const normalizedTags = new Set(activeTags.map((tag) => normalizeTagPath(tag)));
+  let changed = false;
+  const next = rows.map((row) => {
+    const selected = row.kind === "folder"
+      ? !isBoxScope(scope) && row.ref === scope.path
+      : row.kind === "box"
+        ? isBoxScope(scope) && row.ref === scope.boxId
+        : row.kind === "tag"
+          ? normalizedTags.has(normalizeTagPath(row.ref))
+          : row.ref === selectedPath;
+    if (selected === row.selected) return row;
+    changed = true;
+    return { ...row, selected };
+  });
+  return changed ? next : rows as FavoriteRowModel[];
+}
 
 function stripCardFileExtension(fileName: string): string {
   for (const extension of CARD_FILE_EXTENSIONS) {

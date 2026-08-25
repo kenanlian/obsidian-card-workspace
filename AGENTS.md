@@ -5,7 +5,7 @@
 **Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, and boxes.
 
 - **Plugin ID**: `card-workspace`
-- **Version**: `1.0.2` (source of truth: `manifest.json`)
+- **Version**: `1.1.4` (source of truth: `manifest.json`)
 - **License**: MIT
 - **Min Obsidian**: `1.9.0`
 - **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
@@ -40,6 +40,10 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - Supported card file kinds are `markdown`, `base`, `canvas`, and `excalidraw`.
 - Markdown keeps full preview and full-text indexing; the other supported kinds remain title/placeholder-oriented.
 - Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
+- Per-view preview hydration uses a five-read scheduler and a runtime-only 512-entry LRU; viewport demand carries generation, hydration revision, and ordered paths.
+- Full-vault search reconciliation uses eight readers, is serialized/cancellable, and treats plugin version as diagnostic rather than an index compatibility gate.
+- Plugin surfaces register synchronously; restored card scope foreground work completes before search restore/reconciliation is released.
+- Production builds are minified and automatically checked for externals and sourcemap policy.
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
 - Startup restores **folder** scope only and forces `activeBoxId = null`.
 - Default card open behavior is owned by `main.ts`.

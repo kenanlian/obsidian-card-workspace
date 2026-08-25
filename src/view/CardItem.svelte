@@ -8,6 +8,11 @@
   import { getSearchDisplayTerms } from "../search-tokenization";
   import { getCardFileIcon, getCardPlaceholderText } from "./file-kind";
   import type { OpenNotePayload, PanelAppearanceState } from "./panel-model";
+  import {
+    highlightSanitizedPreviewHtml,
+    sanitizePreviewHtml,
+    type PreviewHtmlSanitizer,
+  } from "./preview-html";
   import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
 
   interface BulkSelectCardPayload {
@@ -42,19 +47,13 @@
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
+    previewHtmlSanitizer?: PreviewHtmlSanitizer;
   }
 
   interface HighlightSegment {
     text: string;
     highlighted: boolean;
   }
-
-  const ALLOWED_PREVIEW_TAGS = new Set(["P", "CODE", "MARK"]);
-  const ALLOWED_PREVIEW_CLASSES = {
-    P: new Set(["fce-preview-code", "fce-preview-heading"]),
-    CODE: new Set<string>(),
-    MARK: new Set(["fce-search-hit"]),
-  } as const;
 
   let {
     card,
@@ -71,6 +70,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
+    previewHtmlSanitizer = sanitizePreviewHtml,
   }: CardItemProps = $props();
 
   const cardStrings = $derived(strings.cardItem);
@@ -79,7 +79,17 @@
   const previewLines = $derived(appearance.previewLines);
   const isPinned = $derived(pinnedPaths.includes(card.path));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
-  const highlightedPreviewHtml = $derived(getHighlightedPreviewHtml(card.previewHtml, searchQuery));
+  const normalizedSearchQuery = $derived(searchQuery.trim());
+  const sanitizedPreviewHtml = $derived(
+    typeof document === "undefined"
+      ? card.previewHtml
+      : previewHtmlSanitizer(card.previewHtml, document),
+  );
+  const highlightedPreviewHtml = $derived(
+    typeof document === "undefined"
+      ? sanitizedPreviewHtml
+      : highlightSanitizedPreviewHtml(sanitizedPreviewHtml, normalizedSearchQuery, document),
+  );
   let activeDragGhost: HTMLElement | null = null;
 
   function moveDragGhost(event: DragEvent): void {
@@ -189,115 +199,6 @@
 
   function getHighlightedTitleSegments(title: string, query: string): HighlightSegment[] {
     return buildHighlightedSegments(title, query) ?? [{ text: title, highlighted: false }];
-  }
-
-  function createHighlightedFragment(value: string, query: string): DocumentFragment | null {
-    const segments = buildHighlightedSegments(value, query);
-    if (!segments) {
-      return null;
-    }
-
-    const fragment = document.createDocumentFragment();
-    for (const segment of segments) {
-      if (segment.highlighted) {
-        const mark = document.createElement("mark");
-        mark.className = "fce-search-hit";
-        mark.textContent = segment.text;
-        fragment.appendChild(mark);
-        continue;
-      }
-
-      fragment.appendChild(document.createTextNode(segment.text));
-    }
-
-    return fragment;
-  }
-
-  function appendSanitizedPreviewNode(parent: Node, node: Node): void {
-    if (node instanceof Text) {
-      parent.appendChild(document.createTextNode(node.nodeValue ?? ""));
-      return;
-    }
-
-    if (!(node instanceof Element)) {
-      return;
-    }
-
-    if (!ALLOWED_PREVIEW_TAGS.has(node.tagName)) {
-      for (const child of Array.from(node.childNodes)) {
-        appendSanitizedPreviewNode(parent, child);
-      }
-      return;
-    }
-
-    const safeElement = document.createElement(node.tagName.toLowerCase());
-    const allowedClasses = ALLOWED_PREVIEW_CLASSES[node.tagName as keyof typeof ALLOWED_PREVIEW_CLASSES];
-    const nextClassName = (node.getAttribute("class") ?? "")
-      .split(/\s+/)
-      .map((className) => className.trim())
-      .filter((className) => allowedClasses.has(className))
-      .join(" ");
-
-    if (nextClassName.length > 0) {
-      safeElement.className = nextClassName;
-    }
-
-    for (const child of Array.from(node.childNodes)) {
-      appendSanitizedPreviewNode(safeElement, child);
-    }
-
-    parent.appendChild(safeElement);
-  }
-
-  function applyPreviewHighlights(root: ParentNode, query: string): void {
-    const tokens = getSearchDisplayTerms(query);
-    if (tokens.length === 0) {
-      return;
-    }
-
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const textNodes: Text[] = [];
-    let currentNode = walker.nextNode();
-
-    while (currentNode) {
-      if (currentNode instanceof Text && !currentNode.parentElement?.closest("mark.fce-search-hit")) {
-        textNodes.push(currentNode);
-      }
-      currentNode = walker.nextNode();
-    }
-
-    for (const textNode of textNodes) {
-      const value = textNode.nodeValue ?? "";
-      const fragment = createHighlightedFragment(value, query);
-      if (!fragment) {
-        continue;
-      }
-
-      textNode.replaceWith(fragment);
-    }
-  }
-
-  function serializeFragment(fragment: DocumentFragment): string {
-    const container = document.createElement("div");
-    container.appendChild(fragment);
-    return container.innerHTML;
-  }
-
-  function getHighlightedPreviewHtml(previewHtml: string, query: string): string {
-    if (previewHtml.length === 0 || typeof document === "undefined") {
-      return previewHtml;
-    }
-
-    const template = document.createElement("template");
-    template.innerHTML = previewHtml;
-
-    const sanitizedFragment = document.createDocumentFragment();
-    for (const child of Array.from(template.content.childNodes)) {
-      appendSanitizedPreviewNode(sanitizedFragment, child);
-    }
-
-    applyPreviewHighlights(sanitizedFragment, query);
-    return serializeFragment(sanitizedFragment);
   }
 
   function applyIcon(node: HTMLElement, iconName: string) {

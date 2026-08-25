@@ -7,7 +7,9 @@ vi.mock("obsidian", () => ({
 
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { TFile, TFolder } from "obsidian";
+import type { EpochToken } from "../async-epoch";
 import { createFolderScope } from "../scope";
+import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
@@ -34,17 +36,28 @@ function createHarness() {
   } as unknown as ViewContext;
   const pending = new Set<string>();
   const scheduleHydrationPath = vi.fn();
-  const hydrateStartupCardPaths = vi.fn(async () => undefined);
+  const hydrateStartupCardPaths = vi.fn(async (_paths: string[], _token: EpochToken) => undefined);
+  const projectVisibleCards = vi.fn(() => {
+    context.store.replaceVisibleCards([...context.store.getBaseCards()]);
+  });
+  const prepareRecordsFromCache = vi.fn((_records: NoteCardRecord[]) => undefined);
+  const invalidateForVaultMutation = vi.fn();
+  const publishLoadStart = vi.fn();
+  const publishLoadCommit = vi.fn();
   const controller = new ScopeController({
     context,
     collectBoxFiles: () => [],
     isPathInBox: () => false,
-    deriveVisibleCardsFrom: () => [],
-    projectVisibleCards: vi.fn(),
+    deriveVisibleCardsFrom: (cards) => [...cards],
+    projectVisibleCards,
     getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
     setBulkSelection: vi.fn(),
     clearBulkSelection: vi.fn(),
-    pendingHydration: pending,
+    hasPendingHydration: (path) => pending.has(path),
+    deletePendingHydration: (path) => pending.delete(path),
+    resetHydrationForLoad: () => pending.clear(),
+    prepareRecordsFromCache,
+    invalidateForVaultMutation,
     hydrateStartupCardPaths,
     scheduleHydrationPath,
     resetSearchForLoad: vi.fn(),
@@ -52,9 +65,13 @@ function createHarness() {
     scheduleNavCountRefresh: vi.fn(),
     refreshFolderTreeState: vi.fn(),
     scheduleFolderTreeRefresh: vi.fn(),
+    publishLoadStart,
+    publishLoadCommit,
     startupCardCount: 6,
   });
-  return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath, hydrateStartupCardPaths };
+  return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath,
+    hydrateStartupCardPaths, projectVisibleCards, prepareRecordsFromCache,
+    invalidateForVaultMutation, publishLoadStart, publishLoadCommit };
 }
 
 describe("ScopeController", () => {
@@ -213,5 +230,104 @@ describe("ScopeController", () => {
 
     expect(result.incrementalResult?.action).toBe("hydration_reset");
     expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
+  });
+
+  it("clears cross-scope records before loading and commits one prepared projection", async () => {
+    const harness = createHarness();
+    const { context, controller, projectVisibleCards, prepareRecordsFromCache,
+      publishLoadStart, publishLoadCommit, hydrateStartupCardPaths } = harness;
+    const oldFile = Object.assign(new TFile(), { path: "old.md", basename: "old", stat: { ctime: 1, mtime: 1 } });
+    context.store.replaceBaseCards([{ file: oldFile, fileKind: "markdown", path: oldFile.path,
+      title: "old", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text", hydrated: true }]);
+    context.store.replaceVisibleCards([...context.store.getBaseCards()]);
+    const nextFile = Object.assign(new TFile(), { path: "next/a.md", basename: "a", extension: "md", stat: { ctime: 2, mtime: 2 } });
+    const folder = Object.assign(new TFolder(), { path: "next", children: [nextFile] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) => path === "next" ? folder : null;
+    let release!: () => void;
+    hydrateStartupCardPaths.mockImplementationOnce(() => new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
+    publishLoadStart.mockImplementationOnce((changed: boolean) => {
+      expect(changed).toBe(true);
+      expect(context.store.getBaseCards()).toEqual([]);
+      expect(context.store.getVisibleCards()).toEqual([]);
+    });
+
+    const loading = controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+    );
+    expect(projectVisibleCards).not.toHaveBeenCalled();
+    expect(prepareRecordsFromCache).toHaveBeenCalledTimes(1);
+    release();
+    await loading;
+
+    expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+    expect(publishLoadCommit).toHaveBeenCalledTimes(1);
+    expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([nextFile.path]);
+  });
+
+  it("keeps same-scope committed cards busy until one final projection", async () => {
+    const { context, controller, projectVisibleCards, publishLoadStart,
+      publishLoadCommit, hydrateStartupCardPaths } = createHarness();
+    const oldFile = Object.assign(new TFile(), { path: "old/nested/a.md", basename: "a", stat: { ctime: 1, mtime: 1 } });
+    const record = { file: oldFile, fileKind: "markdown" as const, path: oldFile.path,
+      title: "a", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text" as const, hydrated: true };
+    context.store.replaceBaseCards([record]);
+    context.store.replaceVisibleCards([record]);
+    const folder = Object.assign(new TFolder(), { path: "old/nested", children: [oldFile] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) => path === folder.path ? folder : null;
+    let release!: () => void;
+    hydrateStartupCardPaths.mockImplementationOnce(() => new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
+    publishLoadStart.mockImplementationOnce((changed: boolean) => {
+      expect(changed).toBe(false);
+      expect(context.store.getVisibleCards()).toEqual([record]);
+    });
+
+    const loading = controller.refresh({ reason: "manual", forceRefresh: true });
+    expect(projectVisibleCards).not.toHaveBeenCalled();
+    release();
+    await loading;
+    expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+    expect(publishLoadCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates offscreen cache entries before rejecting a vault event", () => {
+    const { controller, invalidateForVaultMutation } = createHarness();
+    const event = { eventType: "rename" as const, path: "archive/new", oldPath: "archive/old",
+      isFolder: true, fileKind: null };
+    const result = controller.handleVaultMutation(event);
+    expect(result.shouldRefresh).toBe(false);
+    expect(invalidateForVaultMutation).toHaveBeenCalledWith(event);
+  });
+
+  it("reuses prepared records across root to folder to root transitions", async () => {
+    const { context, controller, prepareRecordsFromCache, hydrateStartupCardPaths } = createHarness();
+    const rootFile = Object.assign(new TFile(), { path: "root.md", basename: "root", extension: "md", stat: { ctime: 1, mtime: 1 } });
+    const childFile = Object.assign(new TFile(), { path: "child/note.md", basename: "note", extension: "md", stat: { ctime: 2, mtime: 2 } });
+    const child = Object.assign(new TFolder(), { path: "child", children: [childFile] });
+    const root = Object.assign(new TFolder(), { path: "", children: [rootFile, child] });
+    (context.getApp() as any).vault.getRoot = () => root;
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) => path === "child" ? child : null;
+    const cached = new Set<string>();
+    let reads = 0;
+    prepareRecordsFromCache.mockImplementation((records) => {
+      records.forEach((record) => { if (cached.has(record.path)) record.hydrated = true; });
+    });
+    hydrateStartupCardPaths.mockImplementation(async (paths) => {
+      paths.forEach((path) => { const card = context.store.getBaseCard(path); if (card && !card.hydrated) { reads += 1; cached.add(path); } });
+      return undefined;
+    });
+
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("", true), true),
+    );
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("child", true), true),
+    );
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("", true), true),
+    );
+
+    expect(reads).toBe(2);
+    expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([childFile.path, rootFile.path]);
+    expect(context.store.getVisibleCards().every((card) => card.hydrated)).toBe(true);
   });
 });
