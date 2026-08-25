@@ -14,13 +14,15 @@ export const sanitizePreviewHtml: PreviewHtmlSanitizer = (previewHtml, doc) => {
     return previewHtml;
   }
 
-  const template = doc.createElement("template");
-  template.innerHTML = previewHtml;
+  const parsedDocument = parsePreviewHtml(previewHtml, doc);
+  if (!parsedDocument) {
+    return "";
+  }
   const sanitizedFragment = doc.createDocumentFragment();
-  for (const child of Array.from(template.content.childNodes)) {
+  for (const child of Array.from(parsedDocument.body.childNodes)) {
     appendSanitizedPreviewNode(sanitizedFragment, child, doc);
   }
-  return serializeFragment(sanitizedFragment, doc);
+  return serializeFragment(sanitizedFragment);
 };
 
 export function highlightSanitizedPreviewHtml(
@@ -33,13 +35,23 @@ export function highlightSanitizedPreviewHtml(
   }
 
   try {
-    const template = doc.createElement("template");
-    template.innerHTML = sanitizedHtml;
-    applyPreviewHighlights(template.content, normalizedQuery, doc);
-    return serializeFragment(template.content, doc);
+    const parsedDocument = parsePreviewHtml(sanitizedHtml, doc);
+    if (!parsedDocument) {
+      return sanitizedHtml;
+    }
+    applyPreviewHighlights(parsedDocument.body, normalizedQuery, doc);
+    return serializeFragment(parsedDocument.body);
   } catch {
     return sanitizedHtml;
   }
+}
+
+function parsePreviewHtml(value: string, doc: Document): Document | null {
+  const DOMParserConstructor = doc.defaultView?.DOMParser;
+  if (!DOMParserConstructor) {
+    return null;
+  }
+  return new DOMParserConstructor().parseFromString(value, "text/html");
 }
 
 function appendSanitizedPreviewNode(parent: Node, node: Node, doc: Document): void {
@@ -134,8 +146,38 @@ function createTokenPattern(tokens: string[]): RegExp | null {
   return new RegExp(`(${pattern})`, "gi");
 }
 
-function serializeFragment(fragment: DocumentFragment, doc: Document): string {
-  const container = doc.createElement("div");
-  container.appendChild(fragment);
-  return container.innerHTML;
+function serializeFragment(root: ParentNode): string {
+  return Array.from(root.childNodes, serializePreviewNode).join("");
+}
+
+function serializePreviewNode(node: Node): string {
+  if (node.nodeType === 3) {
+    return escapeHtmlText(node.nodeValue ?? "");
+  }
+  if (node.nodeType !== 1) {
+    return "";
+  }
+
+  const element = node as Element;
+  if (!ALLOWED_PREVIEW_TAGS.has(element.tagName)) {
+    return Array.from(element.childNodes, serializePreviewNode).join("");
+  }
+
+  const tagName = element.tagName.toLowerCase();
+  const allowedClasses = ALLOWED_PREVIEW_CLASSES[element.tagName as keyof typeof ALLOWED_PREVIEW_CLASSES];
+  const className = (element.getAttribute("class") ?? "")
+    .split(/\s+/)
+    .filter((candidate) => allowedClasses.has(candidate))
+    .join(" ");
+  const classAttribute = className.length > 0 ? ` class="${escapeHtmlAttribute(className)}"` : "";
+  const children = Array.from(element.childNodes, serializePreviewNode).join("");
+  return `<${tagName}${classAttribute}>${children}</${tagName}>`;
+}
+
+function escapeHtmlText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return escapeHtmlText(value).replace(/"/g, "&quot;");
 }

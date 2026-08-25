@@ -670,6 +670,15 @@ describe("CardItem.svelte", () => {
     expect(sanitized).toBe('<p class="fce-preview-heading">Safe textbad()</p>');
   });
 
+  it("escapes parsed text when serializing sanitized preview HTML", () => {
+    const sanitized = sanitizePreviewHtml(
+      "<p>Fish &amp; chips &lt;img src=x onerror=alert(1)&gt;</p>",
+      document,
+    );
+
+    expect(sanitized).toBe("<p>Fish &amp; chips &lt;img src=x onerror=alert(1)&gt;</p>");
+  });
+
   it("keeps the sanitized base when highlighting throws", () => {
     const sanitized = sanitizePreviewHtml('<p onclick="alert(1)">Safe text</p><script>bad()</script>', document);
     const treeWalker = vi.spyOn(document, "createTreeWalker").mockImplementationOnce(() => {
