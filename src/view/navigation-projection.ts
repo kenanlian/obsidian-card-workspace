@@ -79,13 +79,14 @@ function favoriteSemanticState(
 function filterFolderTree(
   nodes: readonly FolderTreeNode[],
   needle: string,
+  rootFolderLabel: string,
 ): MatchedTreeNode<FolderTreeNode>[] {
   const result: MatchedTreeNode<FolderTreeNode>[] = [];
   for (const node of nodes) {
     if (!validString(node?.path, true) || !validString(node?.name, true)) continue;
-    const children = filterFolderTree(Array.isArray(node.children) ? node.children : [], needle);
+    const children = filterFolderTree(Array.isArray(node.children) ? node.children : [], needle, rootFolderLabel);
     const canonicalPath = normalizeScopePath(node.path);
-    const selfMatches = matches(needle, node.name || "/", canonicalPath || "/");
+    const selfMatches = matches(needle, node.name || "/", canonicalPath || "/", canonicalPath === "" ? rootFolderLabel : "");
     if (selfMatches || children.length > 0) result.push({ source: node, children, selfMatches });
   }
   return result;
@@ -128,7 +129,7 @@ function projectFolders(
   if (!sectionExpanded) return [];
   const querying = needle.length > 0;
   const matched = querying
-    ? filterFolderTree(input.folders, needle)
+    ? filterFolderTree(input.folders, needle, input.rootFolderLabel)
     : input.folders
         .filter((node) => validString(node?.path, true) && validString(node?.name, true))
         .map((source) => ({ source, children: [], selfMatches: true }));
@@ -167,11 +168,9 @@ function projectFolders(
           input.scope.kind === "folder" && canonicalPath === input.scope.path
             ? "current-range"
             : "none",
-        label: node.name || "/",
+        label: canonicalPath === "" ? input.rootFolderLabel : node.name || "/",
         fullPath: canonicalPath || "/",
-        count: input.showItemCounts
-          ? count(input.includeSubfolders ? node.recursiveCount : node.directCount)
-          : 0,
+        count: count(input.includeSubfolders ? node.recursiveCount : node.directCount),
         icon: canonicalPath === "" ? "house" : expandable ? (expanded ? "folder-open" : "folders") : PLAIN_FOLDER_ICON,
         menuTarget: { section: "folders", scope: "item", itemId: node.path },
         folderPath: canonicalPath,
@@ -237,7 +236,7 @@ function projectTags(
         semanticState: activeTags.has(tagPath) ? "checked-filter" : "none",
         label: node.label,
         fullPath: tagPath,
-        count: input.showItemCounts ? count(input.tagCounts[tagPath]) : 0,
+        count: count(input.tagCounts[tagPath]),
         icon: node.synthetic ? "tags" : "tag",
         menuTarget: { section: "tags", scope: "item", itemId: tagPath },
         tagPath,
@@ -287,7 +286,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   }
   matchedCounts.set("favorites", favoriteRows.length);
 
-  const folderMatches = querying ? filterFolderTree(input.folders, normalizedQuery).length : input.folders.length;
+  const folderMatches = querying ? filterFolderTree(input.folders, normalizedQuery, input.rootFolderLabel).length : input.folders.length;
   matchedCounts.set("folders", folderMatches);
   const tagMatches = querying ? filterTagTree(input.tags, normalizedQuery).length : input.tags.length;
   matchedCounts.set("tags", tagMatches);
@@ -311,7 +310,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
         input.scope.kind === "box" && input.scope.boxId === box.id ? "current-range" : "none",
       label: box.name,
       fullPath: null,
-      count: input.showItemCounts ? count(box.cardCount) : 0,
+      count: count(box.cardCount),
       icon: "box",
       menuTarget: { section: "boxes", scope: "item", itemId: box.id },
       boxId: box.id,

@@ -257,6 +257,7 @@ describe("navigation projection is isolated from card search and projection", ()
     "src/view/navigation-keyboard.ts",
     "src/view/navigation-model.ts",
     "src/view/navigation-projection.ts",
+    "src/view/navigation-tooltip.ts",
   ]);
 
   it("does not import the card pipeline or search subsystem", () => {
@@ -294,7 +295,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
     "src/view/note-ops.ts": 877,
-    "src/view/NavigationPane.svelte": 283,
+    "src/view/NavigationPane.svelte": 282,
     "src/view/FolderCardPanel.svelte": 728,
     "src/view/Toolbar.svelte": 728,
     "src/view/CardItem.svelte": 434,

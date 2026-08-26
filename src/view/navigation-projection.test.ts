@@ -87,10 +87,10 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     ],
     tagCounts: { work: 5, "work/current": 3, "work/历史": 2 },
     includeSubfolders: true,
-    showItemCounts: true,
     tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
     sectionLabels,
+    rootFolderLabel: "Root /",
     expansion: {
       folders: {
         manual: ["Projects"],
@@ -303,6 +303,20 @@ describe("projectNavigation", () => {
       disabled: true,
     });
     expect(byId.get(navigationBoxId("box-a"))?.semanticState).toBe("current-range");
+  });
+
+  it("labels the vault root with the supplied localized copy", () => {
+    expect(projectNavigation(buildInput()).rows.find((row) => row.id === navigationFolderId(""))).toMatchObject({
+      label: "Root /",
+    });
+    expect(projectNavigation(buildInput({ rootFolderLabel: "根目录 /" }))
+      .rows.find((row) => row.id === navigationFolderId(""))?.label).toBe("根目录 /");
+  });
+
+  it("matches the localized root folder label", () => {
+    expect(ids(projectNavigation(buildInput({ query: "root" })).rows)).toContain(navigationFolderId(""));
+    expect(ids(projectNavigation(buildInput({ query: "根目录", rootFolderLabel: "根目录 /" })).rows))
+      .toContain(navigationFolderId(""));
   });
 
   it("omits malformed rows without disturbing valid siblings", () => {

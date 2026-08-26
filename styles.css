@@ -73,7 +73,7 @@
    */
   --fce-nav-section-divider: color-mix(
     in srgb,
-    var(--background-modifier-border-hover, var(--background-modifier-border, rgba(127, 127, 127, 0.35))) 80%,
+    var(--background-modifier-border-hover, var(--background-modifier-border, rgba(127, 127, 127, 0.35))) 45%,
     transparent
   );
   --fce-nav-count-color: var(--text-faint, var(--text-muted, #6b6b6b));
@@ -308,22 +308,18 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section {
   min-height: var(--fce-nav-section-height);
+  margin-block-start: 10px;
   margin-block-end: 3px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-smaller, 12px);
   font-weight: var(--font-semibold, 600);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:not(:first-child) {
-  margin-block-start: 10px;
-}
-
 /*
- * Group separator painted inside the existing section gap, so it adds no height and
- * stays off the header box. Only projected sections render, so `:not(:first-child)`
- * already tracks the first *visible* section while the filter hides others.
+ * Group separator painted inside the existing section gap, so it adds no height.
+ * The first section uses the same hairline to separate the filter from Favorites.
  */
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:not(:first-child)::before {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section::before {
   content: "";
   position: absolute;
   inset-inline: var(--fce-nav-section-divider-inset);

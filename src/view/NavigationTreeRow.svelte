@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { setIcon } from "obsidian";
+  import { setIcon, setTooltip } from "obsidian";
   import type { Snippet } from "svelte";
+  import type { UiStrings } from "../i18n";
   import type { NavigationRow } from "./navigation-model";
+  import { resolveNavigationRowTooltip } from "./navigation-tooltip";
 
   interface Props {
     row: NavigationRow;
     tabIndex: number;
+    strings: UiStrings;
+    activeFilterTags?: string[];
+    showItemCounts?: boolean;
+    tooltipSide?: "left" | "right";
     subtreeHovered?: boolean;
-    summaryCount?: number;
-    summaryLabel?: string;
-    summaryClass?: string;
-    activeFileDescription: string;
-    expandLabel: string;
-    collapseLabel: string;
     rowRef?: (node: HTMLElement, rowId: string) => { destroy: () => void };
     onFocus?: (rowId: string) => void;
     onActivate?: (event: MouseEvent, row: NavigationRow) => void;
@@ -25,13 +25,11 @@
   let {
     row,
     tabIndex,
+    strings,
+    activeFilterTags = [],
+    showItemCounts = false,
+    tooltipSide = "right",
     subtreeHovered = false,
-    summaryCount,
-    summaryLabel,
-    summaryClass,
-    activeFileDescription,
-    expandLabel,
-    collapseLabel,
     rowRef = () => ({ destroy: () => undefined }),
     onFocus,
     onActivate,
@@ -41,12 +39,25 @@
     actions,
   }: Props = $props();
 
+  const labels = $derived(strings.toolbar.navPane);
   const descriptionId = $props.id();
-  const visibleCount = $derived(summaryCount ?? row.count);
+  const tagSection = $derived(row.kind === "section" && row.section === "tags");
+  const visibleCount = $derived(tagSection ? activeFilterTags.length : showItemCounts ? row.count : 0);
+  const summaryLabel = $derived(tagSection && activeFilterTags.length > 0
+    ? labels.activeTagCount(activeFilterTags.length) : undefined);
+  const tooltipText = $derived(resolveNavigationRowTooltip(row, strings));
 
   function icon(node: HTMLElement, name: string): { update: (next: string) => void } {
     setIcon(node, name);
     return { update: (next) => setIcon(node, next) };
+  }
+
+  function applyTooltip(node: HTMLElement, text: string): { update: (next: string) => void } {
+    const apply = (value: string): void => {
+      if (value) setTooltip(node, value, { placement: tooltipSide, gap: 8 });
+    };
+    apply(text);
+    return { update: apply };
   }
 </script>
 
@@ -69,6 +80,7 @@
   aria-disabled={row.disabled || undefined}
   aria-describedby={row.semanticState === "active-file" ? descriptionId : undefined}
   use:rowRef={row.id}
+  use:applyTooltip={tooltipText}
   onfocus={() => onFocus?.(row.id)}
   onclick={(event) => onActivate?.(event, row)}
   onkeydown={(event) => onKeydown?.(event, row)}
@@ -80,7 +92,7 @@
         type="button"
         class="fce-tree-item-icon"
         tabindex="-1"
-        aria-label={row.expanded ? collapseLabel : expandLabel}
+        aria-label={row.expanded ? strings.toolbar.folderMenu.collapse : strings.toolbar.folderMenu.expand}
         onclick={(event) => onToggleExpansion?.(event, row)}
       >
         <span class="fce-tree-item-glyph" aria-hidden="true" use:icon={row.icon}></span>
@@ -93,12 +105,12 @@
     {/if}
   </div>
   <div class="fce-popup-row-content fce-tree-button">
-    <span class="fce-tree-label" title={row.label}>{row.label}</span>
+    <span class="fce-tree-label">{row.label}</span>
   </div>
   <div class="fce-popup-row-trailing fce-nav-row-trailing {actions ? 'has-actions' : ''}">
     <div class="fce-nav-row-summary">
       {#if visibleCount > 0}
-        <span class="fce-nav-row-count {summaryClass ?? ''}" aria-label={summaryLabel}>{visibleCount}</span>
+        <span class="fce-nav-row-count {tagSection ? 'fce-nav-active-tag-count' : ''}" aria-label={summaryLabel}>{visibleCount}</span>
       {/if}
       {#if row.semanticState === "checked-filter"}
         <span class="fce-popup-row-selected-indicator fce-tree-row-check" aria-hidden="true" use:icon={"check"}></span>
@@ -109,6 +121,6 @@
     {/if}
   </div>
   {#if row.semanticState === "active-file"}
-    <span class="fce-sr-only" id={descriptionId}>{activeFileDescription}</span>
+    <span class="fce-sr-only" id={descriptionId}>{labels.activeFileDescription}</span>
   {/if}
 </div>

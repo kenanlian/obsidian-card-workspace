@@ -205,6 +205,10 @@
     event.preventDefault(); dragWidth = width; onNavPaneResize?.(width);
   }
 </script>
+<!--
+  The accessible name is a hidden element rather than `aria-label`, because
+  Obsidian renders a hover tooltip for every element carrying `aria-label`.
+-->
 <nav class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
   <span class="fce-sr-only" id={paneLabelId}>{labels.ariaLabel}</span>
   <div class="fce-nav-pane-header">
@@ -227,19 +231,14 @@
     {#if nav.projection.noResults}
       <div class="fce-tree-empty fce-nav-no-results">{labels.noResults}</div>
     {:else}
-      <div class="fce-nav-tree" role="tree" tabindex="-1" aria-label={labels.ariaLabel} bind:this={treeEl}
+      <div class="fce-nav-tree" role="tree" tabindex="-1" aria-labelledby={paneLabelId} bind:this={treeEl}
         use:navigationSubtreeHover={{ rows, onChange: (ids) => hoveredRowIds = ids }}
         onfocusin={() => treeHasFocus = true}
         onfocusout={() => queueMicrotask(() => treeHasFocus = Boolean(treeEl?.contains(document.activeElement)))}>
         {#each rows as row (row.id)}
           <NavigationTreeRow {row} tabIndex={row.id === focusId ? 0 : -1}
-            subtreeHovered={hoveredRowIds.has(row.id)}
-            summaryCount={row.kind === "section" && row.section === "tags" ? activeFilterTags.length : undefined}
-            summaryLabel={row.kind === "section" && row.section === "tags" && activeFilterTags.length > 0
-              ? labels.activeTagCount(activeFilterTags.length) : undefined}
-            summaryClass={row.kind === "section" && row.section === "tags" ? "fce-nav-active-tag-count" : undefined}
-            activeFileDescription={labels.activeFileDescription}
-            expandLabel={strings.toolbar.folderMenu.expand} collapseLabel={strings.toolbar.folderMenu.collapse}
+            subtreeHovered={hoveredRowIds.has(row.id)} {strings} {activeFilterTags}
+            showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}
             rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
             onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}>
             {#snippet actions()}

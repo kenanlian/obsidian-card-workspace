@@ -65,10 +65,10 @@ export interface NavigationProjectionInput {
   boxes: readonly NavigationBoxSource[];
   tagCounts: Readonly<Record<string, number>>;
   includeSubfolders: boolean;
-  showItemCounts: boolean;
   tagsDisabled: boolean;
   sectionCollapsed: Readonly<Record<NavSectionId, boolean>>;
   sectionLabels: Readonly<Record<NavSectionId, NavigationSectionLabels>>;
+  rootFolderLabel: string;
   expansion: NavigationExpansionLayers;
 }
 

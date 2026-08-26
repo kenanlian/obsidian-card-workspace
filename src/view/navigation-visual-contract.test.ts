@@ -29,13 +29,14 @@ describe("navigation visual contract", () => {
 
   it("separates sections with a hairline painted inside the existing section gap", () => {
     expect(styles).toMatch(
-      /--fce-nav-section-divider: color-mix\(\s*in srgb,\s*var\(--background-modifier-border-hover,[\s\S]*?\) 80%,\s*transparent\s*\);/,
+      /--fce-nav-section-divider: color-mix\(\s*in srgb,\s*var\(--background-modifier-border-hover,[\s\S]*?\) 45%,\s*transparent\s*\);/,
     );
     expect(styles).toMatch(
-      /\.fce-tree-row\.is-section:not\(:first-child\)::before \{[\s\S]*?position: absolute;[\s\S]*?inset-inline: var\(--fce-nav-section-divider-inset\);[\s\S]*?top: calc\(-1 \* var\(--fce-nav-section-divider-offset\)\);[\s\S]*?height: 1px;[\s\S]*?background: var\(--fce-nav-section-divider\);/,
+      /\.fce-tree-row\.is-section::before \{[\s\S]*?position: absolute;[\s\S]*?inset-inline: var\(--fce-nav-section-divider-inset\);[\s\S]*?top: calc\(-1 \* var\(--fce-nav-section-divider-offset\)\);[\s\S]*?height: 1px;[\s\S]*?background: var\(--fce-nav-section-divider\);/,
     );
     expect(styles).toContain("--fce-nav-section-divider-offset: 6px;");
     expect(styles).not.toMatch(/\.fce-tree-row\.is-section \{[^}]*border-block-start:/);
+    expect(styles).not.toContain(".fce-tree-row.is-section:not(:first-child)::before");
   });
 
   it("stacks summary and actions in the same trailing area and swaps them on interaction", () => {

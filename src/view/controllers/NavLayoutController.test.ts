@@ -91,7 +91,6 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
     boxes: [],
     tagCounts: {},
     includeSubfolders: true,
-    showItemCounts: false,
     tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
     sectionLabels: {
@@ -100,6 +99,7 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
       tags: { label: "Tags", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
     },
+    rootFolderLabel: "Root /",
   };
 }
 

@@ -40,7 +40,6 @@ export function buildNavigationPanelState(input: {
     boxes: input.boxSummaries,
     tagCounts: input.cardProjection.tagCounts,
     includeSubfolders: settings.includeSubfolders,
-    showItemCounts: settings.showNavItemCounts,
     tagsDisabled: isBoxScope(scope),
     sectionCollapsed,
     sectionLabels: {
@@ -49,6 +48,7 @@ export function buildNavigationPanelState(input: {
       tags: { label: strings.toolbar.navPane.tagsSection, emptyLabel: null },
       boxes: { label: strings.toolbar.navPane.boxesSection, emptyLabel: strings.toolbar.navPane.boxesEmpty },
     },
+    rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
   });
   return {
     folderTree: input.folderTree, favorites: input.favorites, boxSummaries: input.boxSummaries,

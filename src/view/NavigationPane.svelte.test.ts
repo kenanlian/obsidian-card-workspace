@@ -20,18 +20,20 @@ function projection(query = "") {
     activeTags: ["work"], selectedPath: "notes/A.md",
     favorites: [{ kind: "file", ref: "notes/A.md", label: "A", icon: "file-text", count: 0, missing: false }],
     folders: [
+      { name: "/", path: "/", depth: 0, directCount: 1, recursiveCount: 4, recursiveFolderCount: 2, children: [] },
       { name: "notes", path: "notes", depth: 0, directCount: 2, recursiveCount: 3, recursiveFolderCount: 1,
         children: [{ name: "child", path: "notes/child", depth: 1, directCount: 1, recursiveCount: 1, recursiveFolderCount: 0, children: [] }] },
     ],
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
-    includeSubfolders: true, showItemCounts: true, tagsDisabled: false,
+    includeSubfolders: true, tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
     },
+    rootFolderLabel: "Root /",
     expansion: {
       folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
       tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
@@ -132,7 +134,29 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(row("favorite:file:notes/A.md").hasAttribute("aria-current")).toBe(false);
     expect(row("favorite:file:notes/A.md").hasAttribute("aria-checked")).toBe(false);
     expect(row("folder:notes/child").hasAttribute("aria-expanded")).toBe(false);
-    expect(row("folder:notes").querySelector(".fce-tree-label")?.getAttribute("title")).toBe("notes");
+    expect(row("folder:").querySelector(".fce-tree-label")?.textContent).toBe("Root /");
+    expect(row("folder:notes").querySelector(".fce-tree-label")?.textContent).toBe("notes");
+    expect(document.querySelector('[role="tree"]')?.hasAttribute("aria-label")).toBe(false);
+    expect(document.querySelector('[role="tree"]')?.hasAttribute("aria-labelledby")).toBe(true);
+  });
+
+  it("restores 1.1.5 item hover tooltips instead of the pane accessible name", async () => {
+    render();
+    await tick();
+    expect(row("folder:").getAttribute("data-tooltip")).toBe("4 files, 2 folders");
+    expect(row("folder:notes").getAttribute("data-tooltip")).toBe("3 files, 1 folder");
+    expect(row("tag:work").getAttribute("data-tooltip")).toBe("2 files, 0 subtags");
+    expect(row("box:box-1").getAttribute("data-tooltip")).toBe("2 files");
+    expect(row("favorite:file:notes/A.md").getAttribute("data-tooltip")).toBe("A");
+    expect(row("section:favorites").getAttribute("data-tooltip")).toBeNull();
+  });
+
+  it("keeps count tooltips when the visible count badges are hidden", async () => {
+    render({ nav: nav({ showItemCounts: false }) });
+    await tick();
+    expect(row("folder:notes").querySelector(".fce-nav-row-count")).toBeNull();
+    expect(row("folder:notes").getAttribute("data-tooltip")).toBe("3 files, 1 folder");
+    expect(row("tag:work").getAttribute("data-tooltip")).toBe("2 files, 0 subtags");
   });
 
   it("keeps the navigation search icon inside a stable icon-input-clear layout", async () => {
