@@ -15,6 +15,7 @@ import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { EditorDropController } from "./services/EditorDropController";
 import { BoxReconciler } from "./services/BoxReconciler";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
+import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import { SettingsStore, hasPatchValues, splitFlatPatch } from "./services/SettingsStore";
 import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
@@ -29,7 +30,6 @@ import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./s
 import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
 import { createFolderScope, type CardScope } from "./view/scope";
-import { rewritePathAfterRename } from "./view/scope-files";
 import { resolveSettingsUpdateIntent } from "./view/update-intent";
 import { activateDeferredView } from "./view/deferred-view-activation";
 import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
@@ -85,6 +85,11 @@ export default class CardWorkspacePlugin extends Plugin {
     getSettings: () => this.getSettings(),
     updateUserData: (patch) => this.settingsStore.updateUserData(patch),
     onUserDataReconciled: () => this.debouncedNavStateRefresh(),
+    getApp: () => this.app,
+  });
+  private readonly navigationWorkspaceReconciler = new NavigationWorkspaceReconciler({
+    getSettings: () => this.getSettings(),
+    saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
   });
 
@@ -144,6 +149,8 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerVaultObservers(); this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
     await this.restoreLastSession();
     if (this.disposed) return;
+    this.runDetached(this.navigationWorkspaceReconciler.reconcileInitial(),
+      "Initial navigation reconciliation failed.");
     await this.searchCoordinator.initialize(); if (this.disposed) return;
     this.searchCoordinator.flushDeferredStartupWork();
   }
@@ -171,6 +178,7 @@ export default class CardWorkspacePlugin extends Plugin {
     };
     navStateRefresh.cancel?.();
     this.favoriteReconciler.dispose();
+    this.navigationWorkspaceReconciler.dispose();
     for (const unsubscribe of this.vaultEventUnsubscribers) {
       unsubscribe();
     }
@@ -626,7 +634,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.vaultEventListenersRegistered = true;
-    // C12 plugin order: scopePath → boxes → favorites → tagPrune → search. Views subscribe later.
+    // Plugin order: navigation workspace → boxes → favorites/tag prune → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
       this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),
@@ -640,15 +648,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.runDetached(this.vaultEventBus.publish(event), "Vault event publication failed.");
   }
 
-  private async reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {
-    if (event.eventType !== "rename" || !event.isFolder || !event.oldPath) {
-      return;
-    }
-
-    const currentPath = this.getSettings().lastFolderPath;
-    const nextPath = rewritePathAfterRename(currentPath, event.oldPath, event.path);
-    if (nextPath !== currentPath) {
-      await this.saveSettings({ lastFolderPath: nextPath });
-    }
+  private reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {
+    return this.navigationWorkspaceReconciler.handleVaultMutation(event);
   }
 }

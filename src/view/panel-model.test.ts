@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { getUiStrings } from "../i18n";
+import { EMPTY_NAVIGATION_PROJECTION } from "./navigation-model";
 import {
   createPanelModel,
   type PanelModelState,
@@ -68,6 +69,11 @@ function buildState(): PanelModelState {
       },
       showItemCounts: true,
       tooltipSide: "right",
+      projection: EMPTY_NAVIGATION_PROJECTION,
+      query: "",
+      focusId: null,
+      focusRequest: null,
+      revealRequest: null,
     },
     appearance: {
       cardCornerRadius: "medium",

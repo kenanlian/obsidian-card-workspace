@@ -1,6 +1,12 @@
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type { UiStrings } from "../i18n";
 import type {
+  NavigationFocusRequest,
+  NavigationProjection,
+  NavigationRevealRequest,
+  NavigationSemanticState,
+} from "./navigation-model";
+import type {
   BulkRuntimePanelState,
   FavoriteKind,
   FolderTreeNode,
@@ -27,7 +33,7 @@ export interface FavoriteRowModel {
   label: string;
   icon: string;
   count: number;
-  selected: boolean;
+  semanticState: NavigationSemanticState;
   missing: boolean;
 }
 
@@ -84,6 +90,11 @@ export interface PanelNavState {
   };
   showItemCounts: boolean;
   tooltipSide: "left" | "right";
+  projection: NavigationProjection;
+  query: string;
+  focusId: string | null;
+  focusRequest: NavigationFocusRequest | null;
+  revealRequest: NavigationRevealRequest | null;
 }
 
 export interface PanelAppearanceState {

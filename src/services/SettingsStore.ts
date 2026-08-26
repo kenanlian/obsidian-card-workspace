@@ -31,6 +31,8 @@ export interface WorkspaceSectionCollapsed {
 
 export interface WorkspaceSettings {
   lastFolderPath: string;
+  expandedFolderPaths: string[];
+  expandedTagPaths: string[];
   activeBoxId: string | null;
   filterTags: string[];
   navPaneWidth: number;
@@ -65,6 +67,8 @@ const USER_DATA_KEYS = new Set<string>(["boxes", "favorites", "pinnedPaths"]);
 
 const WORKSPACE_FLAT_KEYS = new Set<string>([
   "lastFolderPath",
+  "expandedFolderPaths",
+  "expandedTagPaths",
   "activeBoxId",
   "navPaneWidth",
   "navPaneCollapsed",
@@ -122,6 +126,8 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.showNavItemCounts !== undefined) preferences.showNavItemCounts = patch.showNavItemCounts;
 
   if (patch.lastFolderPath !== undefined) workspace.lastFolderPath = patch.lastFolderPath;
+  if (patch.expandedFolderPaths !== undefined) workspace.expandedFolderPaths = patch.expandedFolderPaths;
+  if (patch.expandedTagPaths !== undefined) workspace.expandedTagPaths = patch.expandedTagPaths;
   if (patch.activeBoxId !== undefined) workspace.activeBoxId = patch.activeBoxId;
   if (patch.filter?.tags !== undefined) workspace.filterTags = patch.filter.tags;
   if (patch.navPaneWidth !== undefined) workspace.navPaneWidth = patch.navPaneWidth;
@@ -173,6 +179,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
     },
     workspace: {
       lastFolderPath: settings.lastFolderPath,
+      expandedFolderPaths: [...settings.expandedFolderPaths],
+      expandedTagPaths: [...settings.expandedTagPaths],
       activeBoxId: settings.activeBoxId,
       filterTags: [...settings.filter.tags],
       navPaneWidth: settings.navPaneWidth,
@@ -195,6 +203,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
 function workspacePatchToFlat(patch: Partial<WorkspaceSettings>): PartialPluginSettings {
   const flat: PartialPluginSettings = {};
   if (patch.lastFolderPath !== undefined) flat.lastFolderPath = patch.lastFolderPath;
+  if (patch.expandedFolderPaths !== undefined) flat.expandedFolderPaths = patch.expandedFolderPaths;
+  if (patch.expandedTagPaths !== undefined) flat.expandedTagPaths = patch.expandedTagPaths;
   if (patch.activeBoxId !== undefined) flat.activeBoxId = patch.activeBoxId;
   if (patch.filterTags !== undefined) flat.filter = { tags: patch.filterTags };
   if (patch.navPaneWidth !== undefined) flat.navPaneWidth = patch.navPaneWidth;

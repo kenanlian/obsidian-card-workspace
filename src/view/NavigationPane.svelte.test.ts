@@ -1,1004 +1,437 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
-import NavigationPane from "./NavigationPane.svelte";
-import { PLAIN_FOLDER_ICON } from "../icons";
 import { getUiStrings } from "../i18n";
-import type {
-  FavoriteEntry,
-  FolderActionPayload,
-  FolderTreeNode,
-  NavContextMenuPayload,
-  NavSectionId,
-} from "./types";
+import type { PanelNavState, PanelScopeState } from "./panel-model";
+import type { NavigationIntent } from "./navigation-model";
+import { resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
+import { projectNavigation } from "./navigation-projection";
+import NavigationPane from "./NavigationPane.svelte";
+import NavigationPaneHarness from "../__mocks__/NavigationPaneHarness.svelte";
+import type { NavContextMenuPayload } from "./types";
 
-interface SelectFolderPayload {
-  path: string;
-}
+const components: Array<Record<string, unknown>> = [];
+const originalRect = HTMLElement.prototype.getBoundingClientRect;
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
-interface FilterChangePayload {
-  tags: string[];
-}
-
-interface BoxCommandPayload {
-  command: string;
-  boxId?: string;
-}
-
-interface IncludeSubfoldersChangePayload {
-  value: boolean;
-}
-
-type NavSection = NavSectionId;
-
-interface NavCallbacks {
-  onSelectFolder?: (payload: SelectFolderPayload) => void;
-  onFolderAction?: (payload: FolderActionPayload) => void;
-  onFilterChange?: (payload: FilterChangePayload) => void;
-  onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
-  onBoxCommand?: (payload: BoxCommandPayload) => void;
-  onNavContextMenu?: (payload: NavContextMenuPayload) => void;
-  onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
-  onNavPaneResize?: (width: number) => void;
-  onToggleNavPane?: () => void;
-  onToggleNavSection?: (section: NavSection) => void;
-}
-
-interface Captured {
-  callbacks: NavCallbacks;
-  selectFolderEvents: SelectFolderPayload[];
-  folderActionEvents: FolderActionPayload[];
-  filterEvents: FilterChangePayload[];
-  includeEvents: IncludeSubfoldersChangePayload[];
-  boxCommandEvents: BoxCommandPayload[];
-  navContextMenuEvents: NavContextMenuPayload[];
-  favoriteActivateEvents: Array<{ favorite: FavoriteEntry }>;
-  resizeEvents: number[];
-  togglePaneEvents: number;
-  toggleSectionEvents: NavSection[];
-}
-
-let mountedComponents: Array<Record<string, unknown>> = [];
-
-function createFolderTree(): FolderTreeNode[] {
-  return [
-    {
-      name: "/",
-      path: "/",
-      depth: 0,
-      children: [],
-      directCount: 0,
-      recursiveCount: 5,
-      recursiveFolderCount: 3,
+function projection(query = "") {
+  return projectNavigation({
+    query,
+    scope: { kind: "folder", path: "notes", includeSubfolders: true },
+    activeTags: ["work"], selectedPath: "notes/A.md",
+    favorites: [{ kind: "file", ref: "notes/A.md", label: "A", icon: "file-text", count: 0, missing: false }],
+    folders: [
+      { name: "notes", path: "notes", depth: 0, directCount: 2, recursiveCount: 3, recursiveFolderCount: 1,
+        children: [{ name: "child", path: "notes/child", depth: 1, directCount: 1, recursiveCount: 1, recursiveFolderCount: 0, children: [] }] },
+    ],
+    tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
+    boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
+    includeSubfolders: true, showItemCounts: true, tagsDisabled: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionLabels: {
+      favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
+      folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
+      boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
     },
-    {
-      name: "notes",
-      path: "notes",
-      depth: 0,
-      children: [],
-      directCount: 0,
-      recursiveCount: 0,
-      recursiveFolderCount: 0,
+    expansion: {
+      folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
+      tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
     },
-    {
-      name: "projects",
-      path: "projects",
-      depth: 0,
-      children: [
-        {
-          name: "alpha",
-          path: "projects/alpha",
-          depth: 1,
-          children: [],
-          directCount: 3,
-          recursiveCount: 3,
-          recursiveFolderCount: 0,
-        },
-      ],
-      directCount: 2,
-      recursiveCount: 5,
-      recursiveFolderCount: 1,
-    },
-  ];
+  });
 }
 
-function createCaptured(): Captured {
-  const selectFolderEvents: SelectFolderPayload[] = [];
-  const folderActionEvents: FolderActionPayload[] = [];
-  const filterEvents: FilterChangePayload[] = [];
-  const includeEvents: IncludeSubfoldersChangePayload[] = [];
-  const boxCommandEvents: BoxCommandPayload[] = [];
-  const navContextMenuEvents: NavContextMenuPayload[] = [];
-  const favoriteActivateEvents: Array<{ favorite: FavoriteEntry }> = [];
-  const resizeEvents: number[] = [];
-  const toggleSectionEvents: NavSection[] = [];
-  let togglePaneEvents = 0;
-  const captured: Captured = {
-    callbacks: {
-      onSelectFolder: (payload) => {
-        selectFolderEvents.push(payload);
-      },
-      onFolderAction: (payload) => {
-        folderActionEvents.push(payload);
-      },
-      onFilterChange: (payload) => {
-        filterEvents.push(payload);
-      },
-      onIncludeSubfoldersChange: (payload) => {
-        includeEvents.push(payload);
-      },
-      onBoxCommand: (payload) => {
-        boxCommandEvents.push(payload);
-      },
-      onNavContextMenu: (payload) => {
-        navContextMenuEvents.push(payload);
-      },
-      onFavoriteActivate: (payload) => {
-        favoriteActivateEvents.push(payload);
-      },
-      onNavPaneResize: (width) => {
-        resizeEvents.push(width);
-      },
-      onToggleNavPane: () => {
-        togglePaneEvents += 1;
-        captured.togglePaneEvents = togglePaneEvents;
-      },
-      onToggleNavSection: (section) => {
-        toggleSectionEvents.push(section);
-      },
-    },
-    selectFolderEvents,
-    folderActionEvents,
-    filterEvents,
-    includeEvents,
-    boxCommandEvents,
-    navContextMenuEvents,
-    favoriteActivateEvents,
-    resizeEvents,
-    togglePaneEvents: 0,
-    toggleSectionEvents,
+function nav(overrides: Partial<PanelNavState> = {}): PanelNavState {
+  return {
+    folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false }, showItemCounts: true,
+    tooltipSide: "right", projection: projection(), query: "", focusId: "section:favorites",
+    focusRequest: null, revealRequest: null,
+    ...overrides,
   };
-  return captured;
 }
 
-function mountNav(
-  props: Record<string, unknown> = {},
-  callbacks: NavCallbacks = {},
-): { component: Record<string, unknown> } {
+const scope: PanelScopeState = {
+  displayPath: "notes", includeSubfolders: true, activeBoxId: null, activeBoxName: null,
+  boxExcludedCount: 0, emptyStateMessage: "",
+};
+
+function render(options: {
+  nav?: PanelNavState;
+  scope?: PanelScopeState;
+  activeFilterTags?: string[];
+  onIntent?: (intent: NavigationIntent) => void;
+  onMenu?: (payload: NavContextMenuPayload) => void;
+  onResize?: (width: number) => void;
+} = {}) {
   const target = document.createElement("div");
   target.className = "folder-card-view";
   document.body.appendChild(target);
-  const values = props as Record<string, any>;
-  const component = mount(NavigationPane, {
+  const component = mount(NavigationPane, { target, props: {
+    strings: getUiStrings("en"), nav: options.nav ?? nav(), scope: options.scope ?? scope,
+    activeFilterTags: options.activeFilterTags ?? ["work"], onNavigationIntent: options.onIntent,
+    onNavContextMenu: options.onMenu, onNavPaneResize: options.onResize,
+  } });
+  components.push(component);
+  return component;
+}
+
+function renderHarness(initialNav: PanelNavState, onIntent: (intent: NavigationIntent) => void) {
+  const target = document.createElement("div");
+  target.className = "folder-card-view";
+  document.body.appendChild(target);
+  const component = mount(NavigationPaneHarness, {
     target,
-    props: {
-      strings: getUiStrings("en"),
-      nav: {
-        folderTree: values.folderTree ?? createFolderTree(),
-        favorites: values.favorites ?? [],
-        boxSummaries: values.boxSummaries ?? [
-          { id: "box-1", name: "Alpha", cardCount: 4 },
-          { id: "box-2", name: "Beta", cardCount: 0 },
-        ],
-        paneWidth: values.navPaneWidth ?? 240,
-        layoutMode: values.layoutMode ?? "dual",
-        visible: true,
-        sectionCollapsed: {
-          favorites: values.favoritesSectionCollapsed ?? false,
-          folders: values.folderSectionCollapsed ?? false,
-          tags: values.tagSectionCollapsed ?? false,
-          boxes: values.boxSectionCollapsed ?? false,
-        },
-        showItemCounts: values.showNavItemCounts ?? false,
-        tooltipSide: values.tooltipSide ?? "right",
-      },
-      scope: {
-        displayPath: values.folderPath ?? "notes",
-        includeSubfolders: values.includeSubfolders ?? true,
-        activeBoxId: values.activeBoxId ?? null,
-        activeBoxName: null,
-        boxExcludedCount: 0,
-        emptyStateMessage: "",
-      },
-      availableTags: values.availableTags ?? ["work", "work/ai", "personal"],
-      tagCounts: values.tagCounts ?? { work: 3, "work/ai": 1, personal: 2 },
-      activeFilterTags: values.activeFilterTags ?? [],
-      ...callbacks,
-    },
+    props: { initialNav, scope, activeFilterTags: ["work"], onIntent },
   });
-  mountedComponents.push(component);
-  return { component };
+  components.push(component);
+  return component as typeof component & { setNav: (next: PanelNavState) => void };
 }
 
-async function disposeMountedComponent(component: Record<string, unknown>): Promise<void> {
-  mountedComponents = mountedComponents.filter((candidate) => candidate !== component);
-  await unmount(component);
+function row(id: string): HTMLElement {
+  return document.querySelector<HTMLElement>(`[data-nav-row-id="${id}"]`)!;
 }
 
-function getSectionToggle(title: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tree-section-toggle"))
-    .find((button) => button.textContent?.trim() === title) ?? null;
-}
-
-function getTreeButtonByText(menuSelector: string, text: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>(`${menuSelector} .fce-tree-button`))
-    .find((button) => button.querySelector(".fce-tree-label")?.textContent?.trim() === text) ?? null;
-}
-
-function getFolderRowCount(label: string): string | null {
-  const button = getTreeButtonByText(".fce-folder-menu", label);
-  return button?.querySelector(".fce-nav-row-count")?.textContent?.trim() ?? null;
-}
-
-function getTagRowCount(label: string): string | null {
-  const button = getTreeButtonByText(".fce-tag-menu", label);
-  return button?.querySelector(".fce-nav-row-count")?.textContent?.trim() ?? null;
-}
-
-function getRowGlyphIcon(menuSelector: string, label: string): string | null {
-  const row = getTreeButtonByText(menuSelector, label)?.closest(".fce-tree-row");
-  return row?.querySelector(".fce-tree-item-glyph")?.getAttribute("data-icon") ?? null;
-}
-
-function getRow(menuSelector: string, label: string): HTMLElement | null {
-  return (getTreeButtonByText(menuSelector, label)?.closest(".fce-tree-row") as HTMLElement | null) ?? null;
-}
-
-function getRowTooltip(menuSelector: string, label: string): string | null {
-  return getTreeButtonByText(menuSelector, label)?.getAttribute("data-tooltip") ?? null;
-}
-
-function getBoxItemByName(name: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-nav-box-item"))
-    .find((button) => button.querySelector(".fce-nav-box-label")?.textContent?.trim() === name) ?? null;
-}
-
-const FAVORITE_ROWS = [
-  {
-    kind: "folder" as const,
-    ref: "notes",
-    label: "notes",
-    icon: "card-workspace-plain-folder",
-    count: 0,
-    selected: true,
-    missing: false,
-  },
-  {
-    kind: "file" as const,
-    ref: "notes/A.md",
-    label: "A",
-    icon: "file-text",
-    count: 0,
-    selected: false,
-    missing: true,
-  },
-  {
-    kind: "tag" as const,
-    ref: "work",
-    label: "work",
-    icon: "tag",
-    count: 3,
-    selected: false,
-    missing: false,
-  },
-  {
-    kind: "box" as const,
-    ref: "box-1",
-    label: "Alpha",
-    icon: "box",
-    count: 4,
-    selected: false,
-    missing: false,
-  },
-];
-
-function dispatchContextMenu(element: Element | null | undefined): void {
-  element?.dispatchEvent(
-    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
-  );
-}
-
-describe("NavigationPane.svelte", () => {
-  beforeEach(() => {
-    mountedComponents = [];
-    document.body.innerHTML = "";
-  });
-
+describe("NavigationPane projected ARIA tree", () => {
+  beforeEach(() => { document.body.innerHTML = ""; });
   afterEach(async () => {
-    await Promise.all(mountedComponents.map((component) => unmount(component)));
-    mountedComponents = [];
+    await Promise.all(components.splice(0).map((component) => unmount(component)));
     document.body.innerHTML = "";
+    HTMLElement.prototype.getBoundingClientRect = originalRect;
+    if (originalScrollIntoView) HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
   });
 
-  it("renders the three collapsible sections", async () => {
-    const { component } = mountNav();
-
-    expect(getSectionToggle("Folders")).not.toBeNull();
-    expect(getSectionToggle("Tags")).not.toBeNull();
-    expect(getSectionToggle("Boxes")).not.toBeNull();
-
-    await disposeMountedComponent(component);
+  it("defines every tree key without handling Tab or unrelated host keys", () => {
+    const rows = projection().rows;
+    const command = (key: string, rowId: string, shiftKey = false) =>
+      resolveNavigationKey({ key, shiftKey }, rows, rowId);
+    expect(command("ArrowDown", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
+    expect(command("ArrowUp", "favorite:file:notes/A.md")).toEqual({ type: "focus", rowId: "section:favorites" });
+    expect(command("Home", "box:box-1")).toEqual({ type: "focus", rowId: "section:favorites" });
+    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "box:box-1" });
+    expect(command("ArrowRight", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
+    expect(command("ArrowRight", "folder:notes")).toEqual({ type: "focus", rowId: "folder:notes/child" });
+    expect(command("ArrowLeft", "folder:notes/child")).toEqual({ type: "focus", rowId: "folder:notes" });
+    expect(command("ArrowLeft", "folder:notes")).toEqual({ type: "expand", rowId: "folder:notes", expanded: false });
+    expect(command("Enter", "tag:work")).toEqual({ type: "activate", rowId: "tag:work", mode: "ordinary" });
+    expect(command(" ", "tag:work")).toEqual({ type: "activate", rowId: "tag:work", mode: "additive" });
+    expect(command("ContextMenu", "tag:work")).toEqual({ type: "menu", rowId: "tag:work" });
+    expect(command("F10", "tag:work", true)).toEqual({ type: "menu", rowId: "tag:work" });
+    expect(command("Tab", "tag:work")).toBeNull();
+    expect(resolveSeparatorWidth("ArrowRight", 240, false, true)).toBe(232);
+    expect(resolveSeparatorWidth("ArrowLeft", 160, false, false)).toBeNull();
   });
 
-  it("emits onToggleNavSection when a section header is clicked", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({}, captured.callbacks);
+  it("renders one flat tree with one roving target and no sequential embedded controls", () => {
+    render();
+    expect(document.querySelectorAll('[role="tree"]')).toHaveLength(1);
+    const items = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    expect(items.filter((item) => item.tabIndex === 0).map((item) => item.dataset.navRowId)).toEqual(["section:favorites"]);
+    expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"] button')).every((button) => button.tabIndex === -1)).toBe(true);
+    expect(row("folder:notes").getAttribute("aria-current")).toBe("page");
+    expect(row("tag:work").getAttribute("aria-checked")).toBe("true");
+    expect(row("favorite:file:notes/A.md").hasAttribute("aria-current")).toBe(false);
+    expect(row("favorite:file:notes/A.md").hasAttribute("aria-checked")).toBe(false);
+    expect(row("folder:notes/child").hasAttribute("aria-expanded")).toBe(false);
+    expect(row("folder:notes").querySelector(".fce-tree-label")?.getAttribute("title")).toBe("notes");
+  });
 
-    getSectionToggle("Folders")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    getSectionToggle("Tags")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    getSectionToggle("Boxes")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  it("prefers a restored visible current range when the tree is entered for the first time", async () => {
+    const intents: NavigationIntent[] = [];
+    const restored = projection();
+    const loading = {
+      ...restored,
+      rows: restored.rows.filter((candidate) => candidate.kind === "section" || candidate.section !== "folders"),
+    };
+    const component = renderHarness(
+      nav({ focusId: null, projection: loading }),
+      (intent) => intents.push(intent),
+    );
+    await tick(); await tick();
+    expect(row("section:favorites").tabIndex).toBe(0);
+    expect(intents).not.toContainEqual(expect.objectContaining({ type: "focus" }));
+
+    component.setNav(nav({ focusId: null, projection: restored }));
+    await tick(); await tick();
+    expect(row("section:favorites").tabIndex).toBe(-1);
+    expect(row("folder:notes").tabIndex).toBe(0);
+    expect(intents).not.toContainEqual(expect.objectContaining({ type: "focus" }));
+
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!;
+    input.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    input.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(row("folder:notes"));
+    expect(intents).toContainEqual({ type: "focus", rowId: "folder:notes" });
+  });
+
+  it("keeps forward filter Tab inside its own mounted navigation instance", async () => {
+    const firstIntents: NavigationIntent[] = [];
+    const secondIntents: NavigationIntent[] = [];
+    render({ nav: nav({ focusId: null }), onIntent: (intent) => firstIntents.push(intent) });
+    render({ nav: nav({ layoutMode: "single", focusId: "box:box-1" }), onIntent: (intent) => secondIntents.push(intent) });
     await tick();
+    const [firstView, secondView] = Array.from(document.querySelectorAll<HTMLElement>(".folder-card-view"));
+    const firstInput = firstView.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!;
+    const localCurrent = firstView.querySelector<HTMLElement>('[data-nav-row-id="folder:notes"]')!;
+    const foreignBack = secondView.querySelector<HTMLButtonElement>(".fce-nav-header-button")!;
+    foreignBack.focus(); firstInput.focus();
 
-    expect(captured.toggleSectionEvents).toEqual(["folders", "tags", "boxes"]);
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    firstInput.dispatchEvent(tab);
 
-    await disposeMountedComponent(component);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(localCurrent);
+    expect(document.activeElement).not.toBe(foreignBack);
+    expect(firstIntents).toContainEqual({ type: "focus", rowId: "folder:notes" });
+    expect(secondIntents).toEqual([]);
   });
 
-  it("hides section body when collapsed", async () => {
-    const { component } = mountNav({ folderSectionCollapsed: true });
+  it("uses the local fallback but leaves backward, hidden, and no-result Tab native", async () => {
+    const base = projection();
+    const withoutCurrent = { ...base, rows: base.rows.filter((candidate) => candidate.kind !== "folder") };
+    render({ nav: nav({ focusId: null, projection: withoutCurrent }) });
+    render({ nav: nav({ visible: false, focusId: null }) });
+    render({ nav: nav({ focusId: null, query: "missing", projection: projection("missing") }) });
+    await tick();
+    const [fallbackView, hiddenView, emptyView] = Array.from(document.querySelectorAll<HTMLElement>(".folder-card-view"));
+    const fallbackInput = fallbackView.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!;
+    const fallback = fallbackView.querySelector<HTMLElement>('[data-nav-row-id="section:favorites"]')!;
+    fallbackInput.focus();
+    const forward = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    fallbackInput.dispatchEvent(forward);
+    expect(forward.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(fallback);
 
-    expect(getTreeButtonByText(".fce-folder-menu", "notes")).toBeNull();
-
-    await disposeMountedComponent(component);
+    fallbackInput.focus();
+    const backward = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    fallbackInput.dispatchEvent(backward);
+    expect(backward.defaultPrevented).toBe(false);
+    const hiddenTab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    hiddenView.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!.dispatchEvent(hiddenTab);
+    expect(hiddenTab.defaultPrevented).toBe(false);
+    const emptyTab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    emptyView.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!.dispatchEvent(emptyTab);
+    expect(emptyTab.defaultPrevented).toBe(false);
   });
 
-  it("emits onSelectFolder when a folder row is clicked", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({}, captured.callbacks);
-
-    getTreeButtonByText(".fce-folder-menu", "projects")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.selectFolderEvents).toEqual([{ path: "projects" }]);
-
-    await disposeMountedComponent(component);
+  it("keeps current range, checked filter, and active file semantics independent", () => {
+    render();
+    const range = row("folder:notes");
+    const checked = row("tag:work");
+    const file = row("favorite:file:notes/A.md");
+    expect(range.classList.contains("is-current-range")).toBe(true);
+    expect(range.classList.contains("is-checked-filter")).toBe(false);
+    expect(range.hasAttribute("aria-checked")).toBe(false);
+    expect(checked.classList.contains("is-checked-filter")).toBe(true);
+    expect(checked.classList.contains("is-current-range")).toBe(false);
+    expect(checked.hasAttribute("aria-current")).toBe(false);
+    expect(checked.querySelector(".fce-tree-button")?.hasAttribute("aria-checked")).toBe(false);
+    expect(file.classList.contains("is-active-file")).toBe(true);
+    expect(file.classList.contains("is-current-range")).toBe(false);
+    expect(file.classList.contains("is-checked-filter")).toBe(false);
+    expect(file.hasAttribute("aria-current")).toBe(false);
+    expect(file.hasAttribute("aria-checked")).toBe(false);
+    expect(document.querySelector(".fce-tree-row.is-selected")).toBeNull();
   });
 
-  it("replaces the filter on a plain tag click instead of accumulating", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
-
-    getTreeButtonByText(".fce-tag-menu", "personal")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.filterEvents).toEqual([{ tags: ["personal"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("collapses a multi-tag filter down to the plainly clicked tag", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeFilterTags: ["work", "personal"] }, captured.callbacks);
-
-    getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.filterEvents).toEqual([{ tags: ["work"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("clears the filter when the only active tag is clicked again", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
-
-    getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.filterEvents).toEqual([{ tags: [] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("adds a tag to the filter on ctrl-click", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeFilterTags: ["work"] }, captured.callbacks);
-
-    getTreeButtonByText(".fce-tag-menu", "personal")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, ctrlKey: true }),
-    );
-
-    expect(captured.filterEvents).toEqual([{ tags: ["work", "personal"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("removes an already-selected tag on meta-click without dropping the rest", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeFilterTags: ["work", "personal"] }, captured.callbacks);
-
-    getTreeButtonByText(".fce-tag-menu", "work")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, metaKey: true }),
-    );
-
-    expect(captured.filterEvents).toEqual([{ tags: ["personal"] }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("disables tag filtering while in a box", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ activeBoxId: "box-1" }, captured.callbacks);
-
-    const tagMenu = document.querySelector<HTMLElement>(".fce-tag-menu");
-    expect(tagMenu?.classList.contains("is-disabled")).toBe(true);
-    expect(tagMenu?.textContent).toContain("Tag filter is unavailable in a box");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("activates a box on click and exits when the active box is clicked", async () => {
-    const captured = createCaptured();
-    let { component } = mountNav({}, captured.callbacks);
-
-    document.querySelector<HTMLButtonElement>(".fce-nav-box-item")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
-    expect(captured.boxCommandEvents).toEqual([{ command: "switch", boxId: "box-1" }]);
-
-    await disposeMountedComponent(component);
-
-    const captured2 = createCaptured();
-    ({ component } = mountNav({ activeBoxId: "box-1" }, captured2.callbacks));
-
-    document.querySelector<HTMLButtonElement>(".fce-nav-box-item.is-active")?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
-    expect(captured2.boxCommandEvents).toEqual([{ command: "exit" }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("emits a box row context menu request with the box id", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({}, captured.callbacks);
-
-    document.querySelector<HTMLButtonElement>(".fce-nav-box-item")?.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
-    );
-
-    expect(captured.navContextMenuEvents).toHaveLength(1);
-    expect(captured.navContextMenuEvents[0]?.section).toBe("boxes");
-    expect(captured.navContextMenuEvents[0]?.scope).toBe("item");
-    expect(captured.navContextMenuEvents[0]?.itemId).toBe("box-1");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("emits a header-scoped box menu request from the section header and the list body", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({}, captured.callbacks);
-
-    getSectionToggle("Boxes")?.closest(".fce-tree-section-header")?.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
-    );
-    document.querySelector<HTMLElement>(".fce-nav-box-list")?.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }),
-    );
-
-    expect(captured.navContextMenuEvents).toHaveLength(2);
-    expect(captured.navContextMenuEvents.map((payload) => payload.scope)).toEqual([
-      "header",
-      "header",
+  it("renders occupied blank-query section copy in order and hides it for query no-results", async () => {
+    const base = projection();
+    const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
+    render({
+      nav: nav({ projection: { ...base, rows: emptyRows } }),
+      scope: { ...scope, activeBoxId: "box-1" },
+      activeFilterTags: [],
+    });
+    expect(Array.from(document.querySelectorAll<HTMLElement>("[data-nav-empty-section]")).map((node) => [
+      node.dataset.navEmptySection, node.textContent?.trim(),
+    ])).toEqual([
+      ["favorites", "No favorites yet — right-click an item to add one"],
+      ["tags", "Tag filter is unavailable in a box"],
+      ["boxes", "No card boxes yet — right-click to create one"],
     ]);
-    expect(captured.navContextMenuEvents.map((payload) => payload.itemId)).toEqual([
-      undefined,
-      undefined,
+    await unmount(components.pop()!);
+    render({ nav: nav({ projection: { ...base, rows: emptyRows } }), activeFilterTags: [] });
+    expect(document.querySelector('[data-nav-empty-section="tags"]')?.textContent?.trim()).toBe("No tags found");
+    await unmount(components.pop()!);
+    const noMatch = projection("does-not-exist");
+    render({ nav: nav({ query: "does-not-exist", projection: noMatch }) });
+    expect(document.querySelector(".fce-nav-no-results")?.textContent).toBe("No navigation items found");
+    expect(document.querySelector("[data-nav-empty-section]")).toBeNull();
+  });
+
+  it("maps traversal, expansion, activation, additive Space, and keyboard menu keys", async () => {
+    const intents: NavigationIntent[] = [];
+    const menus: NavContextMenuPayload[] = [];
+    render({ onIntent: (intent) => intents.push(intent), onMenu: (payload) => menus.push(payload) });
+    const first = row("section:favorites");
+    first.focus();
+    first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    row("folder:notes").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    row("tag:work").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    row("box:box-1").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    row("box:box-1").dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
+    await tick();
+    expect(intents).toContainEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
+    expect(intents).toContainEqual({ type: "set-expanded", rowId: "folder:notes", expanded: false });
+    expect(intents).toContainEqual({ type: "activate", rowId: "tag:work", mode: "additive" });
+    expect(intents).toContainEqual({ type: "activate", rowId: "box:box-1", mode: "ordinary" });
+    expect(menus[0]).toMatchObject({ section: "boxes", scope: "item", itemId: "box-1", originId: "box:box-1", trigger: { kind: "position" } });
+  });
+
+  it("moves focus to an ancestor before publishing its descendant-removing collapse", () => {
+    const intents: NavigationIntent[] = [];
+    render({ onIntent: (intent) => intents.push(intent) });
+    row("folder:notes/child").focus();
+    row("folder:notes").querySelector<HTMLButtonElement>(".fce-tree-item-icon")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    expect(document.activeElement).toBe(row("folder:notes"));
+    expect(intents.slice(-2)).toEqual([
+      { type: "focus", rowId: "folder:notes" },
+      { type: "set-expanded", rowId: "folder:notes", expanded: false },
     ]);
-
-    await disposeMountedComponent(component);
   });
 
-  it("emits include-subfolders toggle from the pane header", async () => {
-    const captured = createCaptured();
-    let { component } = mountNav({ folderPath: "notes", includeSubfolders: true }, captured.callbacks);
-
-    const includeToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
-    expect(includeToggle).not.toBeNull();
-    includeToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.includeEvents).toEqual([{ value: false }]);
-
-    await disposeMountedComponent(component);
-
-    const rootCaptured = createCaptured();
-    ({ component } = mountNav({ folderPath: "/", includeSubfolders: true }, rootCaptured.callbacks));
-
-    const rootToggle = document.querySelector<HTMLButtonElement>('button[aria-label="Including subfolders"]');
-    expect(rootToggle).not.toBeNull();
-    rootToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(rootCaptured.includeEvents).toEqual([{ value: false }]);
-
-    await disposeMountedComponent(component);
+  it("publishes persistent filter input and Escape clear while respecting IME", () => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: nav({ query: "wor", projection: projection("wor") }), onIntent: (intent) => intents.push(intent) });
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!;
+    input.value = "work";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "query-update", query: "work" });
+    expect(intents.filter((intent) => intent.type === "query-clear")).toEqual([{ type: "query-clear", origin: "input" }]);
   });
 
-  it("hides the include-subfolders toggle in box mode", async () => {
-    const { component } = mountNav({ activeBoxId: "box-1" });
-
-    expect(document.querySelector('button[aria-label="Including subfolders"]')).toBeNull();
-
-    await disposeMountedComponent(component);
+  it("uses equivalent pointer and positioned menu targets", () => {
+    const menus: NavContextMenuPayload[] = [];
+    render({ onMenu: (payload) => menus.push(payload) });
+    const target = row("tag:work");
+    target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 8, clientY: 9 }));
+    target.querySelector<HTMLButtonElement>(".fce-nav-row-more")!.click();
+    expect(menus.map(({ section, scope: menuScope, itemId, originId }) => ({ section, scope: menuScope, itemId, originId }))).toEqual([
+      { section: "tags", scope: "item", itemId: "work", originId: "tag:work" },
+      { section: "tags", scope: "item", itemId: "work", originId: "tag:work" },
+    ]);
+    expect(menus.map((payload) => payload.trigger.kind)).toEqual(["pointer", "position"]);
+    expect(menus.every(Object.isFrozen)).toBe(true);
   });
 
-  it("renders the header toolbar in dual layout", async () => {
-    const { component } = mountNav();
-
-    expect(document.querySelector(".fce-nav-pane-header")).not.toBeNull();
-    expect(document.querySelector('button[aria-label="Back to cards"]')).toBeNull();
-    expect(document.querySelector('button[aria-label="New folder in vault root"]')).not.toBeNull();
-
-    await disposeMountedComponent(component);
+  it("keeps owned section actions out of the tab order and disables Include in Box scope", () => {
+    render({ scope: { ...scope, activeBoxId: "box-1" } });
+    const include = document.querySelector<HTMLButtonElement>(".fce-nav-section-include")!;
+    expect(include.disabled).toBe(true);
+    expect(include.tabIndex).toBe(-1);
+    expect(document.querySelector(".fce-favorites-menu .fce-nav-section-create")).toBeNull();
+    expect(document.querySelector(".fce-folder-menu .fce-nav-section-create")).not.toBeNull();
+    expect(document.querySelector(".fce-tag-menu .fce-nav-section-clear")).not.toBeNull();
+    expect(document.querySelector(".fce-nav-box-menu .fce-nav-section-create")).not.toBeNull();
   });
 
-  it("expands every folder and tag node, then collapses them", async () => {
-    const { component } = mountNav();
+  it("exposes and operates the keyboard separator including boundaries", () => {
+    const widths: number[] = [];
+    render({ onResize: (width) => widths.push(width) });
+    const separator = document.querySelector<HTMLElement>('[role="separator"]')!;
+    expect(separator.tabIndex).toBe(0);
+    expect(separator.getAttribute("aria-valuemin")).toBe("160");
+    expect(separator.getAttribute("aria-valuenow")).toBe("240");
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", shiftKey: true, bubbles: true, cancelable: true }));
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+    expect(widths).toEqual([248, 216, 160, 480]);
+  });
 
-    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
-
-    const expandAll = document.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]');
-    expect(expandAll).not.toBeNull();
-    expandAll?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  it("cancels pointer resize without persisting the transient width", async () => {
+    const widths: number[] = [];
+    render({ onResize: (width) => widths.push(width) });
+    const separator = document.querySelector<HTMLElement>('[role="separator"]')!;
+    separator.setPointerCapture = vi.fn();
+    separator.releasePointerCapture = vi.fn();
+    const pointer = (type: string, clientX: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX });
+      Object.defineProperty(event, "pointerId", { value: 7 });
+      separator.dispatchEvent(event);
+    };
+    pointer("pointerdown", 100);
+    pointer("pointermove", 180);
     await tick();
-
-    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).not.toBeNull();
-    expect(getTreeButtonByText(".fce-tag-menu", "ai")).not.toBeNull();
-
-    const collapseAll = document.querySelector<HTMLButtonElement>('button[aria-label="Collapse all"]');
-    expect(collapseAll).not.toBeNull();
-    collapseAll?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector<HTMLElement>(".fce-nav-pane")?.style.width).toBe("320px");
+    pointer("pointercancel", 180);
     await tick();
-
-    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
-
-    await disposeMountedComponent(component);
+    expect(widths).toEqual([]);
+    expect(document.querySelector<HTMLElement>(".fce-nav-pane")?.style.width).toBe("240px");
   });
 
-  it("emits create-child-folder targeting the vault root from the pane header", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ folderPath: "notes" }, captured.callbacks);
+  it("consumes a mounted reveal once without scrolling a fully visible row", async () => {
+    const intents: NavigationIntent[] = [];
+    const scroll = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scroll;
+    render({ nav: nav({ revealRequest: { token: 4, rowId: "folder:notes" } }), onIntent: (intent) => intents.push(intent) });
+    await tick(); await tick();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(intents).toContainEqual({ type: "reveal-consumed", token: 4 });
+  });
 
-    document.querySelector<HTMLButtonElement>('button[aria-label="New folder in vault root"]')?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
+  it("restores real DOM focus after a menu closes even when the tree no longer owns focus", async () => {
+    const intents: NavigationIntent[] = [];
+    render({
+      nav: nav({ focusId: "tag:work", focusRequest: { token: 1, rowId: "tag:work" } }),
+      onIntent: (intent) => intents.push(intent),
+    });
+    await tick(); await tick();
+    expect(document.activeElement).toBe(row("tag:work"));
+    expect(intents.filter((intent) => intent.type === "focus-return-consumed")).toEqual([
+      { type: "focus-return-consumed", token: 1 },
+    ]);
+  });
+
+  it("scrolls an out-of-bounds reveal nearest", async () => {
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.dataset.navRowId === "folder:notes") return { top: 120, bottom: 140, left: 0, right: 100 } as DOMRect;
+      if (this.classList.contains("fce-nav-pane-sections")) return { top: 0, bottom: 100, left: 0, right: 100 } as DOMRect;
+      return originalRect.call(this);
+    };
+    const scroll = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scroll;
+    const consumed: NavigationIntent[] = [];
+    render({ nav: nav({ revealRequest: { token: 5, rowId: "folder:notes" } }), onIntent: (intent) => consumed.push(intent) });
+    await tick(); await tick();
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+    expect(consumed).toContainEqual({ type: "reveal-consumed", token: 5 });
+  });
+
+  it("defers hidden reveal requests, consumes them once when visible, and rejects stale tokens", async () => {
+    const scroll = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scroll;
+    const hidden: NavigationIntent[] = [];
+    const component = renderHarness(
+      nav({ visible: false, revealRequest: { token: 6, rowId: "folder:notes" } }),
+      (intent) => hidden.push(intent),
     );
-
-    expect(captured.folderActionEvents).toEqual([{ action: "create-child-folder", path: "/" }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders a back button in single layout that emits onToggleNavPane", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ layoutMode: "single" }, captured.callbacks);
-
-    const backButton = document.querySelector<HTMLButtonElement>('button[aria-label="Back to cards"]');
-    expect(backButton).not.toBeNull();
-    backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.togglePaneEvents).toBe(1);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("marks the selected folder row and leaves tag checks intact", async () => {
-    const { component } = mountNav({ folderPath: "notes", activeFilterTags: ["work"] });
-
-    const selectedFolderRow = document.querySelector<HTMLElement>(".fce-folder-menu .fce-tree-row.is-selected");
-    expect(selectedFolderRow).not.toBeNull();
-    expect(selectedFolderRow?.querySelector(".fce-tree-row-check")).toBeNull();
-
-    expect(document.querySelector(".fce-tag-menu .fce-tree-row.is-selected .fce-tree-row-check")).not.toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders counts only when enabled and follows include-subfolders", async () => {
-    let { component } = mountNav({ showNavItemCounts: true, includeSubfolders: true });
-
-    expect(getFolderRowCount("projects")).toBe("5");
-
-    await disposeMountedComponent(component);
-
-    ({ component } = mountNav({ showNavItemCounts: true, includeSubfolders: false }));
-
-    expect(getFolderRowCount("projects")).toBe("2");
-
-    await disposeMountedComponent(component);
-
-    ({ component } = mountNav({ showNavItemCounts: false, includeSubfolders: true }));
-
-    expect(document.querySelector(".fce-nav-row-count")).toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders tag counts only when enabled", async () => {
-    let { component } = mountNav({ showNavItemCounts: true });
-
-    expect(getTagRowCount("work")).toBe("3");
-    expect(getTagRowCount("personal")).toBe("2");
-
-    await disposeMountedComponent(component);
-
-    ({ component } = mountNav({ showNavItemCounts: false }));
-
-    expect(document.querySelector(".fce-tag-menu .fce-nav-row-count")).toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("leading icon toggles folder expansion and marks tag leaf icons", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    expect(getTreeButtonByText(".fce-folder-menu", "projects")?.querySelector("[data-icon]")).toBeNull();
-    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).toBeNull();
-
-    const projectsRow = getTreeButtonByText(".fce-folder-menu", "projects")?.closest(".fce-tree-row");
-    const expandButton = projectsRow?.querySelector<HTMLButtonElement>(
-      '.fce-tree-item-icon[aria-label="Expand"]',
-    );
-    expect(expandButton).not.toBeNull();
-    expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(getTreeButtonByText(".fce-folder-menu", "alpha")).not.toBeNull();
-
-    expect(getRowGlyphIcon(".fce-tag-menu", "work")).toBe("tags");
-    expect(getRowGlyphIcon(".fce-tag-menu", "personal")).toBe("tag");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("shows recursive counts instead of names in row tooltips", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    expect(getRowTooltip(".fce-folder-menu", "Root /")).toBe("5 files, 3 folders");
-    expect(getRowTooltip(".fce-folder-menu", "projects")).toBe("5 files, 1 folder");
-    expect(getRowTooltip(".fce-folder-menu", "notes")).toBe("0 files, 0 folders");
-    expect(getRowTooltip(".fce-tag-menu", "work")).toBe("3 files, 1 subtag");
-    expect(getRowTooltip(".fce-tag-menu", "personal")).toBe("2 files, 0 subtags");
-    expect(getBoxItemByName("Alpha")?.getAttribute("data-tooltip")).toBe("4 files");
-    expect(getBoxItemByName("Beta")?.getAttribute("data-tooltip")).toBe("0 files");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders inline box counts only when enabled, including for the active box", async () => {
-    const { component } = mountNav({ showNavItemCounts: true, activeBoxId: "box-1" });
-    await tick();
-
-    expect(getBoxItemByName("Alpha")?.querySelector(".fce-nav-row-count")?.textContent).toBe("4");
-    // Beta holds no cards, so it gets no badge rather than a "0".
-    expect(getBoxItemByName("Beta")?.querySelector(".fce-nav-row-count")).toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("keeps tooltip counts when inline counts are disabled and labels the active box with the exit action", async () => {
-    const { component } = mountNav({ showNavItemCounts: false, activeBoxId: "box-1" });
-    await tick();
-
-    expect(document.querySelector(".fce-nav-row-count")).toBeNull();
-    expect(getRowTooltip(".fce-folder-menu", "projects")).toBe("5 files, 1 folder");
-    expect(getBoxItemByName("Alpha")?.getAttribute("data-tooltip")).toBe("Exit box");
-    expect(getBoxItemByName("Beta")?.getAttribute("data-tooltip")).toBe("0 files");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("uses the plugin folder glyph, folders, folder-open, and house by node shape", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    expect(getRowGlyphIcon(".fce-folder-menu", "Root /")).toBe("house");
-    expect(getRowGlyphIcon(".fce-folder-menu", "notes")).toBe(PLAIN_FOLDER_ICON);
-    expect(getRowGlyphIcon(".fce-folder-menu", "projects")).toBe("folders");
-
-    getRow(".fce-folder-menu", "projects")
-      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(getRowGlyphIcon(".fce-folder-menu", "projects")).toBe("folder-open");
-    expect(getRowGlyphIcon(".fce-folder-menu", "alpha")).toBe(PLAIN_FOLDER_ICON);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("marks a row as hovered while the pointer is anywhere in its subtree", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    const parentRow = getRow(".fce-folder-menu", "projects");
-    parentRow
-      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    const childRow = getRow(".fce-folder-menu", "alpha");
-    childRow?.dispatchEvent(new Event("pointerenter"));
-    await tick();
-
-    expect(parentRow?.classList.contains("is-hovered")).toBe(true);
-    expect(childRow?.classList.contains("is-hovered")).toBe(true);
-    expect(getRow(".fce-folder-menu", "notes")?.classList.contains("is-hovered")).toBe(false);
-
-    childRow?.dispatchEvent(new Event("pointerleave"));
-    await tick();
-
-    expect(parentRow?.classList.contains("is-hovered")).toBe(false);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("indents rows by one indent step per depth level plus a base step", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    getRow(".fce-folder-menu", "projects")
-      ?.querySelector<HTMLButtonElement>(".fce-tree-item-icon")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-
-    expect(getRow(".fce-folder-menu", "projects")?.getAttribute("style")).toContain(
-      "calc(var(--fce-nav-indent-step) * (0 + 1))",
-    );
-    expect(getRow(".fce-folder-menu", "alpha")?.getAttribute("style")).toContain(
-      "calc(var(--fce-nav-indent-step) * (1 + 1))",
-    );
-
-    await disposeMountedComponent(component);
-  });
-
-  it("names the pane and resize handle without an aria-label tooltip", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    const pane = document.querySelector<HTMLElement>(".fce-nav-pane");
-    expect(pane?.hasAttribute("aria-label")).toBe(false);
-    const paneLabelId = pane?.getAttribute("aria-labelledby") ?? "";
-    expect(document.getElementById(paneLabelId)?.textContent?.trim()).toBe("Navigation");
-
-    const handle = document.querySelector<HTMLElement>(".fce-nav-resize-handle");
-    expect(handle?.hasAttribute("aria-label")).toBe(false);
-    const handleLabelId = handle?.getAttribute("aria-labelledby") ?? "";
-    expect(document.getElementById(handleLabelId)?.textContent?.trim()).toBe("Resize navigation");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders section identity icons", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    const glyphIcons = Array.from(document.querySelectorAll(".fce-tree-section-glyph")).map((glyph) =>
-      glyph.getAttribute("data-icon"),
-    );
-    expect(glyphIcons).toEqual(["star", "folders", "tags", "package"]);
-    expect(document.querySelectorAll(".fce-tree-section-chevron")).toHaveLength(4);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders box rows with the box icon", async () => {
-    const { component } = mountNav();
-    await tick();
-
-    expect(document.querySelector(".fce-nav-box-icon")?.getAttribute("data-icon")).toBe("box");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("applies the persisted nav pane width", async () => {
-    const { component } = mountNav({ navPaneWidth: 320 });
-
-    const pane = document.querySelector<HTMLElement>(".fce-nav-pane");
-    expect(pane?.style.width).toBe("320px");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("exposes a resize handle and emits a clamped width after a pointer drag", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ navPaneWidth: 240 }, captured.callbacks);
-
-    const handle = document.querySelector<HTMLElement>(".fce-nav-resize-handle");
-    expect(handle).not.toBeNull();
-    expect(handle?.getAttribute("role")).toBe("separator");
-
-    if (typeof PointerEvent === "function" && handle) {
-      handle.setPointerCapture = () => undefined;
-      handle.releasePointerCapture = () => undefined;
-      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 100, pointerId: 1 }));
-      handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 160, pointerId: 1 }));
-      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 160, pointerId: 1 }));
-      await tick();
-
-      expect(captured.resizeEvents).toEqual([300]);
-    }
-
-    await disposeMountedComponent(component);
-  });
-
-  it("keeps the dragged pane width after pointerup until the host paneWidth catches up", async () => {
-    const captured = createCaptured();
-    const { component } = mountNav({ navPaneWidth: 240 }, captured.callbacks);
-
-    const handle = document.querySelector<HTMLElement>(".fce-nav-resize-handle");
-    const pane = document.querySelector<HTMLElement>(".fce-nav-pane");
-    expect(handle).not.toBeNull();
-
-    if (typeof PointerEvent === "function" && handle) {
-      handle.setPointerCapture = () => undefined;
-      handle.releasePointerCapture = () => undefined;
-      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 100, pointerId: 1 }));
-      handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 160, pointerId: 1 }));
-      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 160, pointerId: 1 }));
-      await tick();
-
-      expect(captured.resizeEvents).toEqual([300]);
-      expect(pane?.style.width).toBe("300px");
-
-      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 160, pointerId: 1 }));
-      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 160, pointerId: 1 }));
-      await tick();
-
-      expect(captured.resizeEvents).toEqual([300]);
-      expect(pane?.style.width).toBe("300px");
-    }
-
-    await disposeMountedComponent(component);
-  });
-
-  describe("favorites section", () => {
-    it("renders first among the sections with one row per favorite", async () => {
-      const { component } = mountNav({ favorites: FAVORITE_ROWS });
-      await tick();
-
-      const sectionTitles = Array.from(
-        document.querySelectorAll(".fce-tree-section .fce-tree-section-title"),
-      ).map((title) => title.textContent?.trim());
-      expect(sectionTitles).toEqual(["Favorites", "Folders", "Tags", "Boxes"]);
-
-      const rows = document.querySelectorAll(".fce-favorites-menu .fce-tree-row");
-      expect(rows).toHaveLength(4);
-      expect(
-        Array.from(document.querySelectorAll(".fce-favorites-menu .fce-tree-item-glyph")).map((glyph) =>
-          glyph.getAttribute("data-icon"),
-        ),
-      ).toEqual(["card-workspace-plain-folder", "file-text", "tag", "box"]);
-
-      expect(getRow(".fce-favorites-menu", "notes")?.classList.contains("is-selected")).toBe(true);
-      expect(getRow(".fce-favorites-menu", "A")?.classList.contains("is-missing")).toBe(true);
-
-      await disposeMountedComponent(component);
-    });
-
-    it("renders the empty state when there are no favorites", async () => {
-      const { component } = mountNav({ favorites: [] });
-      await tick();
-
-      expect(document.querySelector(".fce-favorites-menu .fce-tree-empty")?.textContent?.trim()).toBe(
-        "No favorites yet — right-click an item to add one",
-      );
-
-      await disposeMountedComponent(component);
-    });
-
-    it("activates every row, including tag rows", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({ favorites: FAVORITE_ROWS }, captured.callbacks);
-      await tick();
-
-      for (const label of ["notes", "A", "work", "Alpha"]) {
-        getTreeButtonByText(".fce-favorites-menu", label)?.click();
-      }
-
-      expect(captured.favoriteActivateEvents.map((payload) => payload.favorite)).toEqual([
-        { kind: "folder", ref: "notes" },
-        { kind: "file", ref: "notes/A.md" },
-        { kind: "tag", ref: "work" },
-        { kind: "box", ref: "box-1" },
-      ]);
-
-      await disposeMountedComponent(component);
-    });
-
-    it("emits header, body, and row context menus with a single payload each", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({ favorites: FAVORITE_ROWS }, captured.callbacks);
-      await tick();
-
-      dispatchContextMenu(getSectionToggle("Favorites")?.closest(".fce-tree-section-header"));
-      dispatchContextMenu(document.querySelector(".fce-favorites-menu"));
-      dispatchContextMenu(getRow(".fce-favorites-menu", "work"));
-
-      expect(captured.navContextMenuEvents).toHaveLength(3);
-      expect(captured.navContextMenuEvents.map((payload) => payload.section)).toEqual([
-        "favorites",
-        "favorites",
-        "favorites",
-      ]);
-      expect(captured.navContextMenuEvents.map((payload) => payload.scope)).toEqual([
-        "header",
-        "header",
-        "item",
-      ]);
-      expect(captured.navContextMenuEvents[2]?.favorite).toEqual({ kind: "tag", ref: "work" });
-
-      await disposeMountedComponent(component);
-    });
-  });
-
-  describe("nav context menu emission", () => {
-    it("emits header, body, and row payloads for the folders section", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({}, captured.callbacks);
-      await tick();
-
-      dispatchContextMenu(getSectionToggle("Folders")?.closest(".fce-tree-section-header"));
-      dispatchContextMenu(document.querySelector(".fce-folder-menu"));
-      dispatchContextMenu(getRow(".fce-folder-menu", "notes"));
-
-      expect(captured.navContextMenuEvents).toHaveLength(3);
-      expect(
-        captured.navContextMenuEvents.map((payload) => [payload.section, payload.scope, payload.itemId]),
-      ).toEqual([
-        ["folders", "header", undefined],
-        ["folders", "header", undefined],
-        ["folders", "item", "notes"],
-      ]);
-
-      await disposeMountedComponent(component);
-    });
-
-    it("emits header, body, and row payloads for the tags section", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({}, captured.callbacks);
-      await tick();
-
-      dispatchContextMenu(getSectionToggle("Tags")?.closest(".fce-tree-section-header"));
-      dispatchContextMenu(document.querySelector(".fce-tag-menu"));
-      dispatchContextMenu(getRow(".fce-tag-menu", "work"));
-
-      expect(captured.navContextMenuEvents).toHaveLength(3);
-      expect(
-        captured.navContextMenuEvents.map((payload) => [payload.section, payload.scope, payload.itemId]),
-      ).toEqual([
-        ["tags", "header", undefined],
-        ["tags", "header", undefined],
-        ["tags", "item", "work"],
-      ]);
-
-      await disposeMountedComponent(component);
-    });
-
-    it("reports tag children on the bridge only for a parent tag", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({}, captured.callbacks);
-      await tick();
-
-      dispatchContextMenu(getRow(".fce-tag-menu", "work"));
-      dispatchContextMenu(getRow(".fce-tag-menu", "personal"));
-
-      expect(captured.navContextMenuEvents[0]?.bridge.tagHasChildren).toBe(true);
-      expect(captured.navContextMenuEvents[1]?.bridge.tagHasChildren).toBe(false);
-
-      await disposeMountedComponent(component);
-    });
-
-    it("flips hasExpandedFolders on the bridge after toggleAllFolders runs", async () => {
-      const captured = createCaptured();
-      const { component } = mountNav({}, captured.callbacks);
-      await tick();
-
-      dispatchContextMenu(getSectionToggle("Folders")?.closest(".fce-tree-section-header"));
-      expect(captured.navContextMenuEvents[0]?.bridge.hasExpandedFolders).toBe(false);
-
-      captured.navContextMenuEvents[0]?.bridge.toggleAllFolders();
-      await tick();
-
-      dispatchContextMenu(getSectionToggle("Folders")?.closest(".fce-tree-section-header"));
-      expect(captured.navContextMenuEvents[1]?.bridge.hasExpandedFolders).toBe(true);
-
-      await disposeMountedComponent(component);
-    });
+    await tick(); await tick();
+    expect(hidden).not.toContainEqual({ type: "reveal-consumed", token: 6 });
+    component.setNav(nav({ visible: true, revealRequest: { token: 6, rowId: "folder:notes" } }));
+    await tick(); await tick();
+    expect(hidden.filter((intent) => intent.type === "reveal-consumed")).toEqual([
+      { type: "reveal-consumed", token: 6 },
+    ]);
+    component.setNav(nav({ visible: true, revealRequest: { token: 6, rowId: "folder:notes" } }));
+    await tick(); await tick();
+    expect(hidden.filter((intent) => intent.type === "reveal-consumed")).toHaveLength(1);
+    component.setNav(nav({ visible: false, revealRequest: { token: 7, rowId: "folder:notes" } }));
+    await tick(); await tick();
+    component.setNav(nav({ visible: true, revealRequest: { token: 8, rowId: "folder:notes" } }));
+    await tick(); await tick();
+    expect(hidden).not.toContainEqual({ type: "reveal-consumed", token: 7 });
+    expect(hidden.filter((intent) => intent.type === "reveal-consumed")).toEqual([
+      { type: "reveal-consumed", token: 6 },
+      { type: "reveal-consumed", token: 8 },
+    ]);
   });
 });

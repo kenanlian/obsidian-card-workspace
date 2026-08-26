@@ -458,6 +458,7 @@ vi.mock("obsidian", () => {
     TFile: MockTFile,
     TFolder: MockTFolder,
     WorkspaceLeaf: class MockWorkspaceLeaf {},
+    normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, ""),
     debounce,
   };
 });
@@ -723,6 +724,7 @@ describe("CardWorkspacePlugin settings update intents", () => {
 
 describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
   type MockFolderCardView = {
+    applyUpdateIntent: ReturnType<typeof vi.fn>;
     handleScopeSelection: ReturnType<typeof vi.fn>;
     handleVaultMutation: ReturnType<typeof vi.fn>;
     refresh: ReturnType<typeof vi.fn>;
@@ -868,6 +870,19 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     expect(view.handleScopeSelection).toHaveBeenCalledWith(expect.objectContaining({
       scope: createFolderScope("notes", plugin.getSettings().includeSubfolders),
     }));
+  });
+
+  it("fans expansion-only patches out synchronously to every open view", async () => {
+    const { plugin } = createPluginHarness();
+    const first = createMockView();
+    const second = createMockView();
+    attachViews(first, second);
+
+    const pending = plugin.saveSettings({ expandedFolderPaths: ["Notes"] });
+    expect(plugin.getSettings().expandedFolderPaths).toEqual(["Notes"]);
+    expect(first.applyUpdateIntent).toHaveBeenCalledWith("patch", "settings-change");
+    expect(second.applyUpdateIntent).toHaveBeenCalledWith("patch", "settings-change");
+    await pending;
   });
 
   it("V27b-6 reconciles the projection independently of viewed scopes, including all-box views", async () => {
@@ -1825,6 +1840,58 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     settings.resolve(null);
     await waitForPluginLoad(plugin);
     expect(searchMockState.managers).toHaveLength(1);
+  });
+
+  it("runs initial navigation reconciliation with zero vault events", async () => {
+    const { plugin, app } = createPluginHarness();
+    const canonical = new (TFolder as unknown as { new (path: string): TFolder })("Projects/Alpha");
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+      path === "projects/alpha" ? canonical : null);
+    const FileCtor = TFile as unknown as { new (path: string): TFile };
+    app.vault.getMarkdownFiles.mockReturnValue([new FileCtor("tagged.md")]);
+    obsidianMockState.vaultTagsByPath["tagged.md"] = ["#Work/AI"];
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      expandedFolderPaths: ["projects/alpha", "missing"],
+      expandedTagPaths: ["work", "work/ai", "stale"],
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    await vi.waitFor(() => expect(plugin.getSettings().expandedFolderPaths).toEqual(["Projects/Alpha"]));
+    expect(plugin.getSettings().expandedTagPaths).toEqual(["work", "work/ai"]);
+    expect(app.vault.on).toHaveBeenCalledTimes(4);
+  });
+
+  it("retains startup Tags on an untrustworthy vault and still starts search", async () => {
+    const { plugin, app } = createPluginHarness();
+    app.vault.getMarkdownFiles.mockReturnValue([]);
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      expandedTagPaths: ["keep"],
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    expect(plugin.getSettings().expandedTagPaths).toEqual(["keep"]);
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates initial navigation persistence failure from search startup", async () => {
+    const { plugin } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      expandedFolderPaths: ["missing"],
+    });
+    (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData.mockRejectedValue(
+      new Error("disk unavailable"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(
+      "[Card Workspace] Initial navigation reconciliation failed.",
+      expect.objectContaining({ message: "disk unavailable" }),
+    ));
+    expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
   });
 
   it("does not restore search until the selected scope foreground promise resolves", async () => {

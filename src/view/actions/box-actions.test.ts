@@ -351,18 +351,16 @@ describe("card box context menus", () => {
     }
 
     function createNavPayload(overrides: Record<string, unknown>): Record<string, unknown> {
+      const section = String(overrides.section ?? "boxes");
+      const scope = overrides.scope === "item" ? "item" : "header";
+      const itemId = typeof overrides.itemId === "string" ? overrides.itemId : "";
+      const mouseEvent = Object.prototype.hasOwnProperty.call(overrides, "mouseEvent")
+        ? overrides.mouseEvent
+        : { clientX: 1, clientY: 2 };
       return {
-        bridge: {
-          hasExpandedFolders: false,
-          hasExpandedTags: false,
-          toggleAllFolders: vi.fn(),
-          toggleAllTags: vi.fn(),
-          tagHasChildren: false,
-          tagExpanded: false,
-          toggleTagExpansion: vi.fn(),
-        },
-        mouseEvent: { clientX: 1, clientY: 2 },
         ...overrides,
+        originId: scope === "header" ? `section:${section}` : `${section.slice(0, -1)}:${itemId}`,
+        trigger: { kind: "pointer", mouseEvent },
       };
     }
 

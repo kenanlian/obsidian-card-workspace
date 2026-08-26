@@ -28,6 +28,14 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       tags: settings.tagSectionCollapsed,
       boxes: settings.boxSectionCollapsed,
     },
+    hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
+    hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
+    tagExpansion: (tag) => deps.modules.navLayout.getTagExpansion(tag),
+    expansionActions: {
+      toggleAllFolders: () => { void deps.modules.navLayout.toggleAll("folder"); },
+      toggleAllTags: () => { void deps.modules.navLayout.toggleAll("tag"); },
+      toggleTag: (tag) => { void deps.modules.navLayout.toggleById(`tag:${tag}`); },
+    },
     actions: {
       createNote: (folderUiPath) => {
         void deps.modules.folderActions.createFromFolderTree(folderUiPath, "note");

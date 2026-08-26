@@ -101,6 +101,11 @@ function createInitialPanelState(): PanelModelState {
       sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
       showItemCounts: false,
       tooltipSide: "right",
+      projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
+      query: "",
+      focusId: null,
+      focusRequest: null,
+      revealRequest: null,
     },
     appearance: { cardCornerRadius: "compact", previewLines: 5 },
   };

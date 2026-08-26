@@ -11,7 +11,7 @@ import { getUiStrings } from "../i18n";
 import { createBoxScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
 import { buildNavContextMenu, resolveNavMenuDangerLabel, type NavMenuActions, type NavMenuDeps } from "./nav-context-menu";
-import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload, NavMenuBridge } from "./types";
+import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload } from "./types";
 
 registerFolderCardView(FolderCardView);
 
@@ -165,20 +165,11 @@ function createDeps(overrides: Partial<NavMenuDeps> = {}): NavMenuDeps {
     activeBoxId: null,
     boxExcludedCount: () => 0,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
-    actions: createActions(),
-    ...overrides,
-  };
-}
-
-function createBridge(overrides: Partial<NavMenuBridge> = {}): NavMenuBridge {
-  return {
     hasExpandedFolders: false,
     hasExpandedTags: false,
-    toggleAllFolders: vi.fn(),
-    toggleAllTags: vi.fn(),
-    tagHasChildren: false,
-    tagExpanded: false,
-    toggleTagExpansion: vi.fn(),
+    tagExpansion: () => ({ hasChildren: false, expanded: false }),
+    expansionActions: { toggleAllFolders: vi.fn(), toggleAllTags: vi.fn(), toggleTag: vi.fn() },
+    actions: createActions(),
     ...overrides,
   };
 }
@@ -187,8 +178,8 @@ function createPayload(
   overrides: Partial<NavContextMenuPayload> & Pick<NavContextMenuPayload, "section" | "scope">,
 ): NavContextMenuPayload {
   return {
-    bridge: createBridge(),
-    mouseEvent: { clientX: 1, clientY: 2 } as MouseEvent,
+    originId: `section:${overrides.section}`,
+    trigger: { kind: "pointer", mouseEvent: { clientX: 1, clientY: 2 } as MouseEvent },
     ...overrides,
   };
 }
@@ -229,11 +220,12 @@ describe("folders header menu", () => {
   it("flips the expand-all title and the section toggle from current state", () => {
     const deps = createDeps({
       sectionCollapsed: { favorites: false, folders: true, tags: false, boxes: false },
+      hasExpandedFolders: true,
     });
     const payload = createPayload({
       section: "folders",
       scope: "header",
-      bridge: createBridge({ hasExpandedFolders: true }),
+      originId: "section:folders",
     });
     const { menu } = build(payload, deps);
 
@@ -261,7 +253,7 @@ describe("folders header menu", () => {
 
 describe("root folder row menu", () => {
   it("offers only the four create items, search, and reveal", () => {
-    const deps = createDeps();
+    const deps = createDeps({ tagExpansion: () => ({ hasChildren: true, expanded: true }) });
     const { menu, result } = build(
       createPayload({ section: "folders", scope: "item", itemId: "/" }),
       deps,
@@ -448,12 +440,12 @@ describe("tag row menu", () => {
   });
 
   it("adds the subtag expansion item only for a parent tag", () => {
-    const deps = createDeps();
+    const deps = createDeps({ tagExpansion: () => ({ hasChildren: true, expanded: true }) });
     const payload = createPayload({
       section: "tags",
       scope: "item",
       itemId: "work",
-      bridge: createBridge({ tagHasChildren: true, tagExpanded: true }),
+      originId: "tag:work",
     });
     const { menu } = build(payload, deps);
 
@@ -487,7 +479,7 @@ describe("tag row menu", () => {
 
 describe("boxes header menu", () => {
   it("renders create, save-scope, the scope submenu hook, and the section toggle", () => {
-    const deps = createDeps();
+    const deps = createDeps({ tagExpansion: () => ({ hasChildren: true, expanded: true }) });
     const { menu, result } = build(createPayload({ section: "boxes", scope: "header" }), deps);
 
     expect(result).toBe(true);
@@ -830,18 +822,18 @@ describe("nav context menu wiring", () => {
     }
 
     function navPayload(overrides: Record<string, unknown>): Record<string, unknown> {
+      const section = String(overrides.section ?? "folders");
+      const scope = overrides.scope === "item" ? "item" : "header";
+      const itemId = typeof overrides.itemId === "string" ? overrides.itemId : "";
+      const favorite = overrides.favorite as FavoriteEntry | undefined;
+      const originId = scope === "header" ? `section:${section}`
+        : section === "favorites" && favorite ? `favorite:${favorite.kind}:${favorite.ref}`
+          : `${section.slice(0, -1)}:${itemId === "/" ? "" : itemId}`;
+      const mouseEvent = overrides.mouseEvent ?? { clientX: 7, clientY: 8 };
       return {
-        bridge: {
-          hasExpandedFolders: false,
-          hasExpandedTags: false,
-          toggleAllFolders: vi.fn(),
-          toggleAllTags: vi.fn(),
-          tagHasChildren: false,
-          tagExpanded: false,
-          toggleTagExpansion: vi.fn(),
-        },
-        mouseEvent: { clientX: 7, clientY: 8 },
         ...overrides,
+        originId,
+        trigger: { kind: "pointer", mouseEvent },
       };
     }
 
@@ -863,15 +855,43 @@ describe("nav context menu wiring", () => {
       expect(getDangerMenuTitles(menu)).toEqual([]);
     });
 
-    it("marks the folder delete row as dangerous for a folder row menu", () => {
+    it("supports positioned triggers and returns focus when the menu hides", () => {
+      const { view } = createNavView();
+      const restoreFocus = vi.spyOn((view as any).modules.navLayout, "restoreFocus");
+      (view as any).openNavContextMenu({
+        section: "folders",
+        scope: "header",
+        originId: "section:folders",
+        trigger: { kind: "position", position: { x: 12, y: 18 } },
+      });
+
+      const menu = mockState.menuInstances[0];
+      expect(menu.showAtPosition).toHaveBeenCalledWith({ x: 12, y: 18 });
+      expect(menu.showAtMouseEvent).not.toHaveBeenCalled();
+      menu.hideHandler?.();
+      expect(restoreFocus).toHaveBeenCalledWith("section:folders");
+    });
+
+    it("builds identical capabilities for pointer and positioned triggers", () => {
+      const { view } = createNavView();
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+      (view as any).openNavContextMenu({
+        section: "folders", scope: "header", originId: "section:folders",
+        trigger: { kind: "position", position: { x: 4, y: 6 } },
+      });
+      expect(mockState.menuInstances).toHaveLength(2);
+      const titles = (menu: any) => menu.items.map((item: any) => `${item.kind}:${item.title}`);
+      expect(titles(mockState.menuInstances[1])).toEqual(titles(mockState.menuInstances[0]));
+    });
+
+    it("re-resolves and rejects a stale folder row before constructing a menu", () => {
       const { view } = createNavView();
 
       (view as any).openNavContextMenu(
         navPayload({ section: "folders", scope: "item", itemId: "notes" }),
       );
 
-      expect(latestMenuTitles()).toContain("Delete folder");
-      expect(getDangerMenuTitles(mockState.menuInstances[0])).toEqual(["Delete folder"]);
+      expect(mockState.menuInstances).toHaveLength(0);
     });
 
     it("shows the favorites row menu for a file favorite", () => {
@@ -911,7 +931,7 @@ describe("nav context menu wiring", () => {
         navPayload({ section: "tags", scope: "item", itemId: "work" }),
       );
 
-      expect(mockState.menuInstances[0].showAtMouseEvent).not.toHaveBeenCalled();
+      expect(mockState.menuInstances).toHaveLength(0);
     });
 
     // Cross-module: panel favorite-activate event -> FolderCardView.selectFolderFromNav.

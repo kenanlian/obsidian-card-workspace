@@ -44,6 +44,10 @@ export function debounce<T extends unknown[]>(
   return debounced;
 }
 
+export function normalizePath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
 // Mock Obsidian module for testing
 export class FuzzySuggestModal<T> {
   protected app: any;

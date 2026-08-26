@@ -197,6 +197,46 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, showNavItemCounts: true } as unknown).showNavItemCounts).toBe(true);
   });
 });
+
+describe("navigation expansion settings", () => {
+  it("defaults additive schema-v2 fields and normalizes malformed arrays", () => {
+    expect(DEFAULT_SETTINGS.expandedFolderPaths).toEqual([]);
+    expect(DEFAULT_SETTINGS.expandedTagPaths).toEqual([]);
+    expect(migrateSettings({ schemaVersion: 2, workspace: {} })).toMatchObject({
+      expandedFolderPaths: [],
+      expandedTagPaths: [],
+    });
+    expect(normalizeSettings({
+      expandedFolderPaths: "bad",
+      expandedTagPaths: [null, 3, "# Work / AI ", ""],
+    } as unknown)).toMatchObject({
+      expandedFolderPaths: [],
+      expandedTagPaths: ["work/ai"],
+    });
+  });
+
+  it("structurally normalizes, deduplicates, omits root, and sorts expansion paths", () => {
+    const normalized = normalizeSettings({
+      expandedFolderPaths: ["/", "", " Projects//Alpha/ ", "Projects/Alpha", "Zed"],
+      expandedTagPaths: [" #Work / AI ", "work/ai", "Personal", "//"],
+    });
+    expect(normalized.expandedFolderPaths).toEqual(["Projects/Alpha", "Zed"]);
+    expect(normalized.expandedTagPaths).toEqual(["personal", "work/ai"]);
+  });
+
+  it("threads normalized expansion through v2 serialization and flattening", () => {
+    const document = serializeSettings(normalizeSettings({
+      expandedFolderPaths: ["B", "A"],
+      expandedTagPaths: ["Z", "a"],
+    }));
+    expect(document.workspace.expandedFolderPaths).toEqual(["A", "B"]);
+    expect(document.workspace.expandedTagPaths).toEqual(["a", "z"]);
+    expect(migrateSettings(document)).toMatchObject({
+      expandedFolderPaths: ["A", "B"],
+      expandedTagPaths: ["a", "z"],
+    });
+  });
+});
 describe("normalizeSettings — sort fields", () => {
   it("preserves filename sort and falls back invalid sort fields to mtime", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, sort: { field: "name", direction: "asc" } } as unknown).sort).toEqual({

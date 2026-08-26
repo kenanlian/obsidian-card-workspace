@@ -8,6 +8,7 @@ import { isFavorite, isFavoriteKind, moveFavorite, toggleFavorite } from "../fav
 import { getCardFileIcon, resolveCardFileKindFromPath } from "../file-kind";
 import { copyPathToClipboard } from "../note-ops";
 import type { BoxSummary, FavoriteRowModel } from "../panel-model";
+import type { NavigationSemanticState } from "../navigation-model";
 import { isBoxScope, scopeDisplayPath, type CardScope } from "../scope";
 import { normalizeTagPath } from "../tag-tree";
 import type { FavoriteEntry, FavoriteKind } from "../types";
@@ -24,16 +25,17 @@ export function remapFavoriteSelection(
   const normalizedTags = new Set(activeTags.map((tag) => normalizeTagPath(tag)));
   let changed = false;
   const next = rows.map((row) => {
-    const selected = row.kind === "folder"
+    const semanticState: NavigationSemanticState = row.kind === "folder"
       ? !isBoxScope(scope) && row.ref === scope.path
+        ? "current-range" : "none"
       : row.kind === "box"
-        ? isBoxScope(scope) && row.ref === scope.boxId
+        ? isBoxScope(scope) && row.ref === scope.boxId ? "current-range" : "none"
         : row.kind === "tag"
-          ? normalizedTags.has(normalizeTagPath(row.ref))
-          : row.ref === selectedPath;
-    if (selected === row.selected) return row;
+          ? normalizedTags.has(normalizeTagPath(row.ref)) ? "checked-filter" : "none"
+          : row.ref === selectedPath ? "active-file" : "none";
+    if (semanticState === row.semanticState) return row;
     changed = true;
-    return { ...row, selected };
+    return { ...row, semanticState };
   });
   return changed ? next : rows as FavoriteRowModel[];
 }
@@ -151,7 +153,8 @@ export class FavoriteActions {
     }
 
     const activeBoxId = this.deps.getActiveBoxId();
-    this.deps.handleBoxCommand({ command: ref === activeBoxId ? "exit" : "switch", boxId: ref });
+    if (ref === activeBoxId) return;
+    this.deps.handleBoxCommand({ command: "switch", boxId: ref });
   }
 
   /** A favorited tag means "show every note with this tag": vault root + that one tag. */
@@ -214,7 +217,7 @@ export class FavoriteActions {
         label: ref === "" ? this.strings.toolbar.folderMenu.rootFolder : ref.slice(ref.lastIndexOf("/") + 1),
         icon: ref === "" ? "house" : PLAIN_FOLDER_ICON,
         count: context.showCounts ? this.getFavoriteFolderCount(ref, context.includeSubfolders) : 0,
-        selected: !context.isBoxMode && ref === context.activeFolderPath,
+        semanticState: !context.isBoxMode && ref === context.activeFolderPath ? "current-range" : "none",
         missing: this.deps.resolveFolderFromUiPath(ref) === null,
       };
     }
@@ -226,7 +229,7 @@ export class FavoriteActions {
         label: stripCardFileExtension(ref.slice(ref.lastIndexOf("/") + 1)),
         icon: getCardFileIcon(resolveCardFileKindFromPath(ref) ?? "markdown"),
         count: 0,
-        selected: ref === this.deps.context.store.getSelectedPath(),
+        semanticState: ref === this.deps.context.store.getSelectedPath() ? "active-file" : "none",
         missing: !(this.deps.context.getApp().vault.getAbstractFileByPath(ref) instanceof TFile),
       };
     }
@@ -241,7 +244,7 @@ export class FavoriteActions {
         label: ref,
         icon: "tag",
         count: context.vaultTagCounts[normalizeTagPath(ref)] ?? 0,
-        selected: context.activeTags.has(ref),
+        semanticState: context.activeTags.has(normalizeTagPath(ref)) ? "checked-filter" : "none",
         missing: false,
       };
     }
@@ -253,7 +256,7 @@ export class FavoriteActions {
       label: summary?.name ?? ref,
       icon: "box",
       count: context.showCounts ? (summary?.cardCount ?? 0) : 0,
-      selected: ref === context.activeBoxId,
+      semanticState: ref === context.activeBoxId ? "current-range" : "none",
       missing: summary === null,
     };
   }

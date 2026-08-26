@@ -104,6 +104,14 @@ const testState = vi.hoisted(() => {
     showAtMouseEvent(): void {
       return;
     }
+
+    showAtPosition(): void {
+      return;
+    }
+
+    onHide(): this {
+      return this;
+    }
   }
 
   class TestModal {
@@ -520,15 +528,11 @@ describe("FolderCardView host contract", () => {
 
   it("persists a selected nested tag from the navigation pane tag tree", async () => {
     const { view, plugin } = createHarness();
-
-    plugin.getSettings = vi.fn(() => ({
-      sort: { field: "mtime", direction: "desc" },
-      filter: { tags: [] },
-      pinnedPaths: [],
-      cardCornerRadius: "compact",
-      previewLines: 5,
-      includeSubfolders: true,
-    }));
+    const settings = normalizeSettings({ ...DEFAULT_SETTINGS, filter: { tags: [] } });
+    plugin.getSettings = vi.fn(() => settings);
+    plugin.saveSettings = vi.fn(async (partial: PartialPluginSettings) => {
+      Object.assign(settings, mergeSettings(settings, partial));
+    });
     view.app.metadataCache.getFileCache = vi.fn(() => ({
       tags: [{ tag: "#Work/AI/harness", position: { start: { col: 0, line: 0, offset: 0 }, end: { col: 16, line: 0, offset: 16 } } }],
     }));
@@ -544,6 +548,8 @@ describe("FolderCardView host contract", () => {
     const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-item-icon[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    publishAll(view);
     await tick();
 
     const nestedNode = getTagNode("AI");
@@ -554,6 +560,8 @@ describe("FolderCardView host contract", () => {
       .find((button) => button.getAttribute("aria-label") === "Expand");
     expect(nestedChevron).not.toBeUndefined();
     nestedChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    publishAll(view);
     await tick();
 
     const leafNode = getTagNode("harness");
@@ -563,6 +571,7 @@ describe("FolderCardView host contract", () => {
     leafNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
 
+    expect(settings.expandedTagPaths).toEqual(["work", "work/ai"]);
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       filter: {
         tags: ["work/ai/harness"],
@@ -572,18 +581,15 @@ describe("FolderCardView host contract", () => {
 
   it("toggles off an active tag from the navigation pane tag tree", async () => {
     const { view, plugin } = createHarness();
-    const settings = {
-      sort: { field: "mtime", direction: "desc" },
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
       filter: { tags: ["work/ai"] },
-      pinnedPaths: [],
-      cardCornerRadius: "compact",
-      previewLines: 5,
-      includeSubfolders: true,
-    };
+      expandedTagPaths: ["work"],
+    });
 
     plugin.getSettings = vi.fn(() => settings);
-    plugin.saveSettings = vi.fn(async (partial: Record<string, unknown>) => {
-      Object.assign(settings, partial);
+    plugin.saveSettings = vi.fn(async (partial: PartialPluginSettings) => {
+      Object.assign(settings, mergeSettings(settings, partial));
     });
 
     view.app.metadataCache.getFileCache = vi.fn(() => ({
@@ -597,7 +603,7 @@ describe("FolderCardView host contract", () => {
 
     const nestedNode = getTagNode("AI");
     expect(nestedNode).not.toBeUndefined();
-    expect(nestedNode?.getAttribute("aria-checked")).toBe("true");
+    expect(nestedNode?.closest('[role="treeitem"]')?.getAttribute("aria-checked")).toBe("true");
     nestedNode?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
 
@@ -1542,6 +1548,56 @@ describe("FolderCardView host contract", () => {
     expect(folderTreeSpy).not.toHaveBeenCalled();
   });
 
+  it("reprojects each provisional root nav to its restored visible scope without rebuilding sources", async () => {
+    const harnessA = createHarness();
+    const harnessB = createHarness();
+    const leafPath = "Hermes/Atlas/Repeated/Leaf";
+    const expandedFolderPaths = ["Hermes", "Hermes/Atlas", "Hermes/Atlas/Repeated"];
+
+    for (const { view, plugin } of [harnessA, harnessB]) {
+      const settings = (plugin.getSettings as unknown as () => PluginSettings)();
+      Object.assign(settings, { lastFolderPath: leafPath, expandedFolderPaths });
+      const leaf = createFolder(leafPath);
+      const repeated = createFolder("Hermes/Atlas/Repeated", [leaf]);
+      const atlas = createFolder("Hermes/Atlas", [repeated]);
+      const hermes = createFolder("Hermes", [atlas]);
+      const root = createFolder("", [hermes]);
+      (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+      (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+        .mockImplementation((path: string) => path === leafPath ? leaf : null);
+      (view as any).modules.navLayout.refreshFolderTreeState();
+    }
+
+    const currentRowId = (target: FolderCardView): string | undefined =>
+      getPanelState(target).nav.projection.rows
+        .find((row) => row.semanticState === "current-range")?.id;
+    expect(currentRowId(harnessA.view)).toBe("folder:");
+    expect(currentRowId(harnessB.view)).toBe("folder:");
+
+    await harnessA.view.handleScopeSelection({
+      requestId: 60, scope: createFolderScope(leafPath, true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+
+    expect(getPanelState(harnessA.view).scope.displayPath).toBe(leafPath);
+    expect(currentRowId(harnessA.view)).toBe(`folder:${leafPath}`);
+    expect(getPanelState(harnessA.view).nav.projection.rows
+      .find((row) => row.id === "folder:")?.semanticState).toBe("none");
+    expect(getPanelState(harnessA.view).nav.focusId).toBeNull();
+    expect(currentRowId(harnessB.view)).toBe("folder:");
+
+    await harnessB.view.handleScopeSelection({
+      requestId: 60, scope: createFolderScope(leafPath, true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+
+    expect(currentRowId(harnessA.view)).toBe(`folder:${leafPath}`);
+    expect(currentRowId(harnessB.view)).toBe(`folder:${leafPath}`);
+    expect(getPanelState(harnessB.view).nav.focusId).toBeNull();
+    expect(harnessA.plugin.saveSettings).not.toHaveBeenCalled();
+    expect(harnessB.plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
   it("V27b-1 persists queued B after running A even though A returns last", async () => {
     const { view, plugin } = createHarness();
     const folders = new Map([
@@ -2176,6 +2232,17 @@ describe("FolderCardView card box mode", () => {
     (view as any).cardScope = createBoxScope("box-x");
 
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-x" });
+  });
+
+  it("ignores include-subfolders changes completely while in Box scope", async () => {
+    const { view, plugin } = createHarness();
+    (view as any).cardScope = createBoxScope("box-1");
+    const returnToCards = vi.spyOn((view as any).modules.navLayout, "returnToCardsViewIfSinglePane");
+
+    await view.onIncludeSubfoldersChange({ value: false });
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(returnToCards).not.toHaveBeenCalled();
   });
 
   it("pin toggle writes to the active box, not global settings", async () => {

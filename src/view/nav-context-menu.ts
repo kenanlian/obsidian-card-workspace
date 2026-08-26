@@ -3,6 +3,7 @@ import type { UiStrings } from "../i18n";
 import { findCardBox } from "./card-boxes";
 import { isFavorite } from "./favorites";
 import { normalizeTagPath } from "./tag-tree";
+import { appendNavSectionToggleItem } from "./menus/nav-menu-expansion";
 import type {
   CardBoxDefinition,
   FavoriteEntry,
@@ -51,7 +52,15 @@ export interface NavMenuDeps {
   activeBoxId: string | null;
   boxExcludedCount: (boxId: string) => number;
   sectionCollapsed: Record<NavSectionId, boolean>;
+  hasExpandedFolders: boolean;
+  hasExpandedTags: boolean;
+  tagExpansion: (tag: string) => { hasChildren: boolean; expanded: boolean };
   actions: NavMenuActions;
+  expansionActions: {
+    toggleAllFolders: () => void;
+    toggleAllTags: () => void;
+    toggleTag: (tag: string) => void;
+  };
 }
 
 type MenuItemLike = Parameters<Parameters<Menu["addItem"]>[0]>[0];
@@ -111,16 +120,6 @@ function appendFavoriteToggleItem(
   );
 }
 
-function appendSectionToggleItem(menu: Menu, deps: NavMenuDeps, section: NavSectionId): void {
-  const collapsed = deps.sectionCollapsed[section];
-  addItem(
-    menu,
-    collapsed ? deps.strings.toolbar.navPane.expandSection : deps.strings.toolbar.navPane.collapseSection,
-    collapsed ? "chevron-right" : "chevron-down",
-    () => deps.actions.toggleSection(section),
-  );
-}
-
 function appendCreateItems(menu: Menu, deps: NavMenuDeps, folderUiPath: string, atRoot: boolean): void {
   const navMenu = deps.strings.view.navMenu;
   addItem(menu, atRoot ? navMenu.newNoteAtRoot : navMenu.newNote, "square-pen", () =>
@@ -168,12 +167,12 @@ function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps
   appendCreateItems(menu, deps, "/", true);
   menu.addSeparator();
 
-  const expanded = payload.bridge.hasExpandedFolders;
+  const expanded = deps.hasExpandedFolders;
   addItem(
     menu,
     expanded ? navMenu.collapseAllFolders : navMenu.expandAllFolders,
     expanded ? "chevrons-down-up" : "chevrons-up-down",
-    () => payload.bridge.toggleAllFolders(),
+    () => deps.expansionActions.toggleAllFolders(),
   );
 
   addItem(
@@ -188,7 +187,7 @@ function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps
   );
 
   menu.addSeparator();
-  appendSectionToggleItem(menu, deps, "folders");
+  appendNavSectionToggleItem(menu, deps, "folders");
   return true;
 }
 
@@ -233,7 +232,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
 
 function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: NavMenuDeps): boolean {
   if (deps.isBoxMode) {
-    appendSectionToggleItem(menu, deps, "tags");
+    appendNavSectionToggleItem(menu, deps, "tags");
     return true;
   }
 
@@ -250,16 +249,16 @@ function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: N
 
   menu.addSeparator();
 
-  const expanded = payload.bridge.hasExpandedTags;
+  const expanded = deps.hasExpandedTags;
   addItem(
     menu,
     expanded ? navMenu.collapseAllTags : navMenu.expandAllTags,
     expanded ? "chevrons-down-up" : "chevrons-up-down",
-    () => payload.bridge.toggleAllTags(),
+    () => deps.expansionActions.toggleAllTags(),
   );
 
   menu.addSeparator();
-  appendSectionToggleItem(menu, deps, "tags");
+  appendNavSectionToggleItem(menu, deps, "tags");
   return true;
 }
 
@@ -296,13 +295,14 @@ function buildTagItemMenu(
     },
   );
 
-  if (payload.bridge.tagHasChildren) {
+  const expansion = deps.tagExpansion(itemId);
+  if (expansion.hasChildren) {
     menu.addSeparator();
     addItem(
       menu,
-      payload.bridge.tagExpanded ? navMenu.collapseSubtags : navMenu.expandSubtags,
-      payload.bridge.tagExpanded ? "chevron-down" : "chevron-right",
-      () => payload.bridge.toggleTagExpansion(),
+      expansion.expanded ? navMenu.collapseSubtags : navMenu.expandSubtags,
+      expansion.expanded ? "chevron-down" : "chevron-right",
+      () => deps.expansionActions.toggleTag(itemId),
     );
   }
 
@@ -325,7 +325,7 @@ function buildBoxesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   }
 
   menu.addSeparator();
-  appendSectionToggleItem(menu, deps, "boxes");
+  appendNavSectionToggleItem(menu, deps, "boxes");
   return true;
 }
 
@@ -382,7 +382,7 @@ function buildFavoritesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   );
 
   menu.addSeparator();
-  appendSectionToggleItem(menu, deps, "favorites");
+  appendNavSectionToggleItem(menu, deps, "favorites");
   return true;
 }
 

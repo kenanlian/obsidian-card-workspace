@@ -31,4 +31,17 @@ describe("i18n", () => {
     expect(getDragInsertActionOptions("zh")[4]?.label).toBe("插入卡片标题&内容");
     expect(getCardCornerRadiusOptions("zh")[2]?.label).toBe("圆角");
   });
+
+  it("provides exact navigation filter, empty, and accessibility copy", () => {
+    const en = getUiStrings("en").toolbar.navPane;
+    const zh = getUiStrings("zh").toolbar.navPane;
+    expect([en.filterLabel, en.filterPlaceholder, en.clearFilter, en.noResults]).toEqual([
+      "Filter navigation", "Filter navigation…", "Clear navigation filter", "No navigation items found",
+    ]);
+    expect([zh.filterLabel, zh.filterPlaceholder, zh.clearFilter, zh.noResults]).toEqual([
+      "筛选导航", "筛选导航…", "清除导航筛选", "未找到导航项目",
+    ]);
+    expect(en.resizeValue(240)).toContain("240");
+    expect(zh.activeFileDescription).toBe("当前文件");
+  });
 });

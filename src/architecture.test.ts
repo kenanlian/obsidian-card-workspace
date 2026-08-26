@@ -243,6 +243,40 @@ describe("R4 i18n is a leaf module", () => {
   });
 });
 
+describe("navigation projection is isolated from card search and projection", () => {
+  const NAVIGATION_RUNTIME_FILES = new Set([
+    "src/navigation-expansion-settings.ts",
+    "src/services/NavigationWorkspaceReconciler.ts",
+    "src/view/NavigationPane.svelte",
+    "src/view/NavigationTreeRow.svelte",
+    "src/view/controllers/NavLayoutController.ts",
+    "src/view/controllers/nav-folder-tree.ts",
+    "src/view/controllers/nav-query-session.ts",
+    "src/view/controllers/navigation-requests.ts",
+    "src/view/navigation-host.ts",
+    "src/view/navigation-keyboard.ts",
+    "src/view/navigation-model.ts",
+    "src/view/navigation-projection.ts",
+  ]);
+
+  it("does not import the card pipeline or search subsystem", () => {
+    const violations: string[] = [];
+    for (const file of NAVIGATION_RUNTIME_FILES) {
+      const deps = dependencyGraph.get(file);
+      if (!deps) {
+        violations.push(`${file} (missing from dependency graph)`);
+        continue;
+      }
+      for (const dependency of deps.local) {
+        if (dependency === "src/view/pipeline.ts" || isUnder(dependency, "src/search")) {
+          violations.push(`${file} -> ${dependency}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("R5 line-count ratchet", () => {
   /**
    * Explicit caps for files that are still oversized. The ratchet may only be
@@ -260,7 +294,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
     "src/view/note-ops.ts": 877,
-    "src/view/NavigationPane.svelte": 798,
+    "src/view/NavigationPane.svelte": 283,
     "src/view/FolderCardPanel.svelte": 728,
     "src/view/Toolbar.svelte": 728,
     "src/view/CardItem.svelte": 434,

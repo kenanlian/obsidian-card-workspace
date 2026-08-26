@@ -280,6 +280,7 @@ const mockState = vi.hoisted(() => {
     items: MockMenuItem[] = [];
     showAtMouseEvent = vi.fn();
     showAtPosition = vi.fn();
+    hideHandler: (() => void) | null = null;
     dom: MockMenuDom;
 
     constructor() {
@@ -300,6 +301,11 @@ const mockState = vi.hoisted(() => {
       separator.kind = "separator";
       this.items.push(separator);
       this.dom.appendSeparator();
+      return this;
+    }
+
+    onHide(handler: () => void): this {
+      this.hideHandler = handler;
       return this;
     }
   }

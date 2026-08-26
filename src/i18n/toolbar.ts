@@ -68,6 +68,18 @@ export interface ToolbarStrings {
     expandAll: string;
     collapseAll: string;
     resizeHandle: string;
+    resizeValue: (width: number) => string;
+    resizeKeyboardHelp: string;
+    filterLabel: string;
+    filterPlaceholder: string;
+    clearFilter: string;
+    noResults: string;
+    moreActions: (label: string) => string;
+    createFolder: string;
+    createBox: string;
+    clearActiveTags: string;
+    activeTagCount: (count: number) => string;
+    activeFileDescription: string;
     foldersSection: string;
     tagsSection: string;
     boxesSection: string;
@@ -173,6 +185,18 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       expandAll: "Expand all",
       collapseAll: "Collapse all",
       resizeHandle: "Resize navigation",
+      resizeValue: (width: number) => `Navigation width: ${width} pixels`,
+      resizeKeyboardHelp: "Use arrow keys to resize navigation",
+      filterLabel: "Filter navigation",
+      filterPlaceholder: "Filter navigation…",
+      clearFilter: "Clear navigation filter",
+      noResults: "No navigation items found",
+      moreActions: (label: string) => `More actions for ${label}`,
+      createFolder: "Create folder",
+      createBox: "Create card box",
+      clearActiveTags: "Clear active tag filters",
+      activeTagCount: (count: number) => `${count} active tag${count === 1 ? "" : "s"}`,
+      activeFileDescription: "Active file",
       foldersSection: "Folders",
       tagsSection: "Tags",
       boxesSection: "Boxes",
@@ -278,6 +302,18 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       expandAll: "全部展开",
       collapseAll: "全部折叠",
       resizeHandle: "调整导航栏宽度",
+      resizeValue: (width: number) => `导航栏宽度：${width} 像素`,
+      resizeKeyboardHelp: "使用方向键调整导航栏宽度",
+      filterLabel: "筛选导航",
+      filterPlaceholder: "筛选导航…",
+      clearFilter: "清除导航筛选",
+      noResults: "未找到导航项目",
+      moreActions: (label: string) => `${label}的更多操作`,
+      createFolder: "新建文件夹",
+      createBox: "新建卡片盒",
+      clearActiveTags: "清除启用的标签筛选",
+      activeTagCount: (count: number) => `${count} 个启用的标签`,
+      activeFileDescription: "当前文件",
       foldersSection: "文件夹",
       tagsSection: "标签",
       boxesSection: "卡片盒",

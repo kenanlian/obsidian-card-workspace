@@ -48,6 +48,8 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   newNoteTemplate: "patch",
   previewLines: "rehydrate",
   lastFolderPath: "patch",
+  expandedFolderPaths: "patch",
+  expandedTagPaths: "patch",
   boxes: "reload",
   favorites: "patch",
   activeBoxId: "patch",
@@ -75,6 +77,8 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "previewLines": settings.previewLines += 1; break;
     case "lastFolderPath": settings.lastFolderPath = "changed"; break;
+    case "expandedFolderPaths": settings.expandedFolderPaths = ["changed"]; break;
+    case "expandedTagPaths": settings.expandedTagPaths = ["changed"]; break;
     case "boxes": settings.boxes = [createBox({ manualPaths: ["notes/member.md"] })]; break;
     case "favorites": settings.favorites = [{ kind: "folder", ref: "changed" }]; break;
     case "activeBoxId": settings.activeBoxId = null; break;

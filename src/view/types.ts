@@ -251,19 +251,13 @@ export interface FolderActionPayload {
 export type NavSectionId = "favorites" | "folders" | "tags" | "boxes";
 
 /**
- * Tree expansion lives in `NavigationPane.svelte` component state, so the host
- * receives it — and the commands to change it — as a bridge on the payload.
- * Tag fields are only meaningful for `section: "tags"`, `scope: "item"`.
+ * Expansion and logical focus live in the host-owned navigation runtime.
+ * Menu triggers carry either the original pointer event or a stable screen
+ * position. Expansion truth and commands remain host-owned, not payload-owned.
  */
-export interface NavMenuBridge {
-  hasExpandedFolders: boolean;
-  hasExpandedTags: boolean;
-  toggleAllFolders: () => void;
-  toggleAllTags: () => void;
-  tagHasChildren: boolean;
-  tagExpanded: boolean;
-  toggleTagExpansion: () => void;
-}
+export type NavMenuTrigger =
+  | { kind: "pointer"; mouseEvent: MouseEvent }
+  | { kind: "position"; position: { x: number; y: number } };
 
 export interface NavContextMenuPayload {
   section: NavSectionId;
@@ -272,6 +266,7 @@ export interface NavContextMenuPayload {
   itemId?: string;
   /** Present only for `section: "favorites"`, `scope: "item"`. */
   favorite?: FavoriteEntry;
-  bridge: NavMenuBridge;
-  mouseEvent: MouseEvent;
+  /** Stable row/section ID to restore logical focus when the menu closes. */
+  originId: string;
+  trigger: NavMenuTrigger;
 }

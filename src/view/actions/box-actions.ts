@@ -205,7 +205,7 @@ export class BoxActions {
 
     switch (command) {
       case "switch":
-        if (boxId) {
+        if (boxId && this.getActiveBox()?.id !== boxId) {
           void this.enterBoxScope(boxId);
         }
         return;

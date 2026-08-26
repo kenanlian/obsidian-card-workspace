@@ -1,4 +1,4 @@
-import { ItemView, Menu, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
@@ -6,17 +6,22 @@ import type { OpenDestination, PartialPluginSettings, SortDirection, SortField }
 import type CardWorkspacePlugin from "../main";
 import { compareCards } from "./card-sort";
 import { findCardBox } from "./card-boxes";
-import { getMenuDom } from "./menu-dom";
-import { buildNavContextMenu, resolveNavMenuDangerLabel } from "./nav-context-menu";
 import { createFolderScope, isBoxScope, isFolderScope, normalizeScopePath, scopeDisplayPath, type CardScope } from "./scope";
 import type { ViewUpdateIntent } from "./update-intent";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
 import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
+import { rewritePathAfterRename } from "./scope-files";
 import { remapFavoriteSelection } from "./actions/favorite-actions";
+import type { NavigationIntent } from "./navigation-model";
+import {
+  buildNavigationPanelState,
+  isCurrentNavigationMenuTarget,
+  openNavigationContextMenu,
+  routeNavigationIntent,
+} from "./navigation-host";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
-import { decorateCardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
 import {
   PANEL_GROUPS,
   createPanelModel,
@@ -29,7 +34,6 @@ import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSe
   NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
-
 export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
@@ -101,19 +105,15 @@ export class FolderCardView extends ItemView {
   getViewType(): string {
     return FOLDER_CARD_VIEW;
   }
-
   getDisplayText(): string {
     return this.strings.view.displayName;
   }
-
   getIcon(): string {
     return CARD_WORKSPACE_ICON;
   }
-
   private get strings(): UiStrings {
     return this.plugin.getUiStrings();
   }
-
   private saveViewSettings(patch: PartialPluginSettings): Promise<void> {
     const scopeOnly = Object.keys(patch).every((key) => key === "lastFolderPath" || key === "activeBoxId");
     if (!scopeOnly) return this.plugin.saveSettings(patch);
@@ -124,7 +124,6 @@ export class FolderCardView extends ItemView {
     const root = this.leaf.getRoot();
     return root === this.app.workspace.leftSplit ? "right" : "left";
   }
-
   private buildEmptyStateMessage(): string {
     const strings = this.strings.view;
     const query = this.modules.search.getQuery().trim();
@@ -139,11 +138,9 @@ export class FolderCardView extends ItemView {
       ? strings.emptySearchCurrentFolderWithTags(query)
       : strings.emptySearchCurrentFolder(query);
   }
-
   private openCardWithDestination(path: string, destination: OpenDestination): void {
     void this.plugin.openNoteFromCard(path, destination);
   }
-
   async onOpen(): Promise<void> {
     const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
     this.modules.search.initializeSnapshotState();
@@ -162,7 +159,7 @@ export class FolderCardView extends ItemView {
     this.modules.hydration.hydrateVisibleCardsOnOpen();
     this.viewEventUnsubscribe?.();
     this.viewEventUnsubscribe = this.plugin.subscribeVaultEvents((event) => {
-      const result = this.modules.scopeController.handleVaultMutation(event);
+      const result = this.handleVaultMutation(event);
       if (result.shouldRefresh) {
         this.modules.scopeController.scheduleVaultRefresh();
       }
@@ -307,6 +304,10 @@ export class FolderCardView extends ItemView {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    if (event.eventType === "rename" && event.isFolder && event.oldPath) {
+      this.modules.navLayout.rewriteFolderIdentity((path) =>
+        rewritePathAfterRename(path, event.oldPath ?? "", event.path));
+    }
     return this.modules.scopeController.handleVaultMutation(event);
   }
 
@@ -341,7 +342,7 @@ export class FolderCardView extends ItemView {
     }
 
     this.selectedPath = path;
-    this.publishGroups("cards", "bulk");
+    this.publishGroups("cards", "bulk", "nav");
   }
 
   getCurrentFolderPath(): string | null {
@@ -349,26 +350,31 @@ export class FolderCardView extends ItemView {
   }
 
   openNavContextMenu(payload: NavContextMenuPayload): void {
-    if (!isMouseEventLike(payload.mouseEvent)) {
-      return;
-    }
-
-    const deps = buildNavMenuDepsFor({
-      context: this.context,
-      modules: this.modules,
-      onIncludeSubfoldersChange: (detail) => this.onIncludeSubfoldersChange(detail),
+    const targetCurrent = isCurrentNavigationMenuTarget({
+      payload,
+      settings: this.plugin.getSettings(),
+      navLayout: this.modules.navLayout,
+      resolveFolder: (path) => this.modules.folderActions.resolveFolderFromUiPath(path),
     });
-    const menu = new Menu();
-    if (!buildNavContextMenu(menu, payload, deps)) {
-      return;
-    }
+    openNavigationContextMenu({
+      payload, disposed: this.modules.navLayout.isDisposed(), targetCurrent,
+      deps: buildNavMenuDepsFor({
+        context: this.context, modules: this.modules,
+        onIncludeSubfoldersChange: (detail) => this.onIncludeSubfoldersChange(detail),
+      }),
+      restoreFocus: (originId) => this.modules.navLayout.restoreFocus(originId),
+    });
+  }
 
-    menu.showAtMouseEvent(payload.mouseEvent);
-
-    const menuDom = getMenuDom(menu);
-    if (menuDom) {
-      decorateCardContextMenu(menuDom, resolveNavMenuDangerLabel(payload, deps));
-    }
+  handleNavigationIntent(intent: NavigationIntent): void {
+    routeNavigationIntent({
+      intent, navLayout: this.modules.navLayout, scope: this.cardScope,
+      activeTags: this.plugin.getSettings().filter.tags,
+      selectFolder: (path) => { void this.selectFolderFromNav(path); },
+      switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
+      applyTagFilter: (tags) => { void this.modules.tagActions.applyTagFilter(tags); },
+      activateFavorite: (favorite) => this.modules.favoriteActions.handleFavoriteActivate({ favorite }),
+    });
   }
 
   async onSortChange(detail: {
@@ -480,26 +486,19 @@ export class FolderCardView extends ItemView {
   }
 
   private buildNavGroup(): PanelModelState["nav"] {
-    const settings = this.plugin.getSettings();
-    const boxSummaries = this.modules.boxActions.buildBoxSummaries();
-    return {
-      folderTree: this.modules.navLayout.getFolderTree(),
-      favorites: this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries }),
-      boxSummaries,
-      paneWidth: settings.navPaneWidth,
-      layoutMode: this.modules.navLayout.getLayoutMode(),
-      visible: this.modules.navLayout.getNavVisible(),
-      sectionCollapsed: {
-        favorites: settings.favoritesSectionCollapsed,
-        folders: settings.folderSectionCollapsed,
-        tags: settings.tagSectionCollapsed,
-        boxes: settings.boxSectionCollapsed,
-      },
-      showItemCounts: settings.showNavItemCounts,
-      tooltipSide: this.modules.navLayout.getTooltipSide(),
-    };
+    const boxSummaries = this.modules.boxActions.buildBoxSummaries(); const folderTree = this.modules.navLayout.getFolderTree();
+    const favorites = this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries });
+    // Navigation-only republishes reuse published Tag sources/counts, staying off the card projection path.
+    const projectionGroup = this.panelModel?.getState().projection ?? this.buildProjectionGroup();
+    return this.projectNavGroup(folderTree, favorites, boxSummaries, projectionGroup);
   }
-
+  private projectNavGroup(folderTree: PanelModelState["nav"]["folderTree"], favorites: PanelModelState["nav"]["favorites"],
+    boxSummaries: PanelModelState["nav"]["boxSummaries"], projectionGroup: PanelModelState["projection"]): PanelModelState["nav"] {
+    return buildNavigationPanelState({
+      settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
+      folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
+    });
+  }
   private buildAppearanceGroup(): PanelModelState["appearance"] {
     const settings = this.plugin.getSettings();
     return {
@@ -542,8 +541,8 @@ export class FolderCardView extends ItemView {
       }
     });
   }
-
   private publishLoadStart(scopeChanged: boolean): void {
+    const navBeforeLoad = this.panelModel.getState().nav;
     this.panelModel.batch((state) => {
       this.publishGroups("scope", "cards", "search", "projection", "bulk");
       if (state.appearance.previewLines !== this.plugin.getSettings().previewLines) {
@@ -553,7 +552,8 @@ export class FolderCardView extends ItemView {
       const favorites = remapFavoriteSelection(
         state.nav.favorites, this.cardScope, this.plugin.getSettings().filter.tags, this.selectedPath,
       );
-      if (favorites !== state.nav.favorites) state.nav = { ...state.nav, favorites };
+      state.nav = this.projectNavGroup(navBeforeLoad.folderTree, favorites, navBeforeLoad.boxSummaries,
+        this.panelModel.getState().projection);
     });
   }
   /** Settings changes translate their four update tiers into explicit groups. */
@@ -594,10 +594,10 @@ export class FolderCardView extends ItemView {
   }
 
   async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
-    this.modules.navLayout.returnToCardsViewIfSinglePane();
     if (isBoxScope(this.cardScope)) {
       return;
     }
+    this.modules.navLayout.returnToCardsViewIfSinglePane();
     if (typeof detail.value !== "boolean") {
       return;
     }

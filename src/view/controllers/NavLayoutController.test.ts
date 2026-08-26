@@ -22,6 +22,8 @@ vi.mock("obsidian", () => ({
 
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { createFolderScope } from "../scope";
+import { navigationFolderId } from "../navigation-model";
+import type { NavigationProjectionInput } from "../navigation-model";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
@@ -68,6 +70,37 @@ function createHarness(root = folder("")) {
     getTooltipSide: () => "right",
   });
   return { context, controller, onNavCountsInvalidated, publishGroups, saveSettings, settings };
+}
+
+function projectionInput(scope = createFolderScope("a/b", true)): Omit<NavigationProjectionInput, "query" | "expansion"> {
+  return {
+    scope,
+    activeTags: [],
+    selectedPath: null,
+    favorites: [],
+    folders: [{
+      name: "a", path: "a", depth: 0, directCount: 0, recursiveCount: 0,
+      recursiveFolderCount: 1,
+      children: [{
+        name: "b", path: "a/b", depth: 1, directCount: 0, recursiveCount: 0,
+        recursiveFolderCount: 1,
+        children: [{ name: "c", path: "a/b/c", depth: 2, directCount: 0, recursiveCount: 0, recursiveFolderCount: 0, children: [] }],
+      }],
+    }],
+    tags: [],
+    boxes: [],
+    tagCounts: {},
+    includeSubfolders: true,
+    showItemCounts: false,
+    tagsDisabled: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionLabels: {
+      favorites: { label: "Favorites", emptyLabel: null },
+      folders: { label: "Folders", emptyLabel: null },
+      tags: { label: "Tags", emptyLabel: null },
+      boxes: { label: "Boxes", emptyLabel: null },
+    },
+  };
 }
 
 describe("NavLayoutController", () => {
@@ -142,5 +175,189 @@ describe("NavLayoutController", () => {
     expect(controller.dispose()).toEqual({ cancelledDebounce: true });
     vi.runAllTimers();
     expect(onNavCountsInvalidated).toHaveBeenCalledTimes(1);
+  });
+
+  it("seeds a one-shot reveal only for initial and distinct folder scopes", () => {
+    const { controller } = createHarness();
+    controller.syncScope(createFolderScope("a/b", true));
+    const first = controller.getRevealRequest();
+    expect(first).toEqual({ token: 1, rowId: navigationFolderId("a/b") });
+
+    controller.syncScope(createFolderScope("a/b", false));
+    expect(controller.getRevealRequest()).toBe(first);
+    controller.syncScope(createFolderScope("a/c", true));
+    expect(controller.getRevealRequest()).toEqual({ token: 2, rowId: navigationFolderId("a/c") });
+  });
+
+  it("keeps initial focus unresolved while a restored current folder becomes visible", () => {
+    const { controller } = createHarness();
+    const loading = projectionInput();
+    loading.folders = [];
+    controller.project(loading);
+    expect(controller.getFocusId()).toBeNull();
+
+    const restored = controller.project(projectionInput());
+    expect(restored.rows.find((row) => row.id === "folder:a/b")?.semanticState).toBe("current-range");
+    expect(controller.getFocusId()).toBeNull();
+
+    controller.setFocus("folder:a/b");
+    controller.project(projectionInput());
+    expect(controller.getFocusId()).toBe("folder:a/b");
+  });
+
+  it("temporarily exposes a persisted-collapsed Folders section and lets collapse consume it", async () => {
+    const { controller, saveSettings, settings } = createHarness();
+    settings.folderSectionCollapsed = true;
+    const base = projectionInput();
+    const input = { ...base, sectionCollapsed: { ...base.sectionCollapsed, folders: true } };
+    let projection = controller.project(input);
+    const section = projection.rows.find((row) => row.id === "section:folders");
+    expect(section?.expanded).toBe(true);
+    expect(projection.rows.some((row) => row.id === "folder:a/b")).toBe(true);
+    if (!section) throw new Error("missing Folders section fixture");
+    await controller.setExpanded(section, false);
+    expect(saveSettings).not.toHaveBeenCalled();
+    projection = controller.project(input);
+    expect(projection.sections.find((item) => item.section === "folders")?.expanded).toBe(false);
+  });
+
+  it("keeps query and reveal runtime per-view and rejects callbacks after disposal", () => {
+    const first = createHarness();
+    const second = createHarness();
+    first.controller.updateQuery("alpha");
+    expect(first.controller.getQuery()).toBe("alpha");
+    expect(second.controller.getQuery()).toBe("");
+
+    first.controller.syncScope(createFolderScope("a", true));
+    const request = first.controller.getRevealRequest();
+    first.controller.dispose();
+    first.controller.updateQuery("stale");
+    if (request) first.controller.consumeReveal(request.token);
+    expect(first.controller.getQuery()).toBe("");
+    expect(first.controller.getRevealRequest()).toBeNull();
+  });
+
+  it("consumes reveal expansion on manual collapse and recovers focus after query loss", async () => {
+    const { controller, saveSettings } = createHarness();
+    let projection = controller.project(projectionInput());
+    const ancestor = projection.rows.find((row) => row.id === "folder:a");
+    expect(ancestor?.expanded).toBe(true);
+    if (!ancestor) throw new Error("missing ancestor fixture");
+
+    await controller.setExpanded(ancestor, false);
+    expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: [] });
+    projection = controller.project(projectionInput());
+    expect(projection.rows.find((row) => row.id === "folder:a")?.expanded).toBe(false);
+
+    const focusController = createHarness().controller;
+    focusController.project(projectionInput());
+    focusController.setFocus("folder:a");
+    focusController.updateQuery("missing");
+    projection = focusController.project(projectionInput());
+    expect(projection.noResults).toBe(true);
+    expect(focusController.getFocusId()).toBeNull();
+    focusController.clearQuery();
+    focusController.project(projectionInput());
+    expect(focusController.getFocusId()).toBe("folder:a/b");
+  });
+
+  it("consumes descendant reveal overrides and does not reopen them after re-expanding the ancestor", async () => {
+    const { controller } = createHarness();
+    let projection = controller.project(projectionInput(createFolderScope("a/b/c", true)));
+    const a = projection.rows.find((row) => row.id === "folder:a");
+    if (!a) throw new Error("missing ancestor fixture");
+    await controller.setExpanded(a, false);
+    projection = controller.project(projectionInput(createFolderScope("a/b/c", true)));
+    const collapsedA = projection.rows.find((row) => row.id === "folder:a");
+    if (!collapsedA) throw new Error("missing collapsed ancestor fixture");
+    await controller.setExpanded(collapsedA, true);
+    projection = controller.project(projectionInput(createFolderScope("a/b/c", true)));
+    expect(projection.rows.find((row) => row.id === "folder:a")?.expanded).toBe(true);
+    expect(projection.rows.find((row) => row.id === "folder:a/b")?.expanded).toBe(false);
+  });
+
+  it("lets query-induced expansion override a prior reveal suppression", async () => {
+    const { controller } = createHarness();
+    let projection = controller.project(projectionInput(createFolderScope("a/b/c", true)));
+    const ancestor = projection.rows.find((row) => row.id === "folder:a");
+    if (!ancestor) throw new Error("missing ancestor fixture");
+    await controller.setExpanded(ancestor, false);
+    controller.updateQuery("c");
+    projection = controller.project(projectionInput(createFolderScope("a/b/c", true)));
+    expect(projection.rows.find((row) => row.id === "folder:a")?.expanded).toBe(true);
+    expect(projection.rows.some((row) => row.id === "folder:a/b/c")).toBe(true);
+  });
+
+  it("captures query baseline once, adopts legitimate shared changes, and clears only temporary state", async () => {
+    const { controller, settings } = createHarness();
+    settings.expandedFolderPaths = ["a"];
+    settings.folderSectionCollapsed = true;
+    controller.updateQuery("a");
+    const captured = controller.getQueryBaseline();
+    controller.updateQuery("A");
+    expect(controller.getQueryBaseline()).toBe(captured);
+
+    settings.expandedFolderPaths = ["a", "shared"];
+    settings.expandedTagPaths = ["work"];
+    settings.folderSectionCollapsed = false;
+    let projection = controller.project(projectionInput());
+    expect(controller.getQueryBaseline()).toEqual({
+      expandedFolderPaths: ["a", "shared"],
+      expandedTagPaths: ["work"],
+      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    });
+    const a = projection.rows.find((row) => row.id === "folder:a");
+    if (!a) throw new Error("missing query row fixture");
+    await controller.setExpanded(a, false);
+    controller.clearQuery();
+    projection = controller.project(projectionInput());
+    expect(controller.getQueryBaseline()).toBeNull();
+    expect(projection.rows.find((row) => row.id === "folder:a")?.expanded).toBe(true);
+    expect(projection.sections.find((section) => section.section === "folders")?.expanded).toBe(true);
+    expect(controller.getRevealRequest()?.rowId).toBe("folder:a/b");
+  });
+
+  it("rewrites focus, suppression baseline, and pending reveal without incrementing its token", () => {
+    const { controller, settings } = createHarness();
+    settings.expandedFolderPaths = ["old"];
+    const oldInput = projectionInput(createFolderScope("old/child", true));
+    oldInput.folders = [{
+      name: "old", path: "old", depth: 0, directCount: 0, recursiveCount: 0,
+      recursiveFolderCount: 1,
+      children: [{ name: "child", path: "old/child", depth: 1, directCount: 0, recursiveCount: 0, recursiveFolderCount: 0, children: [] }],
+    }];
+    controller.updateQuery("old");
+    const oldProjection = controller.project(oldInput);
+    const oldRow = oldProjection.rows.find((row) => row.id === "folder:old");
+    if (!oldRow) throw new Error("missing old folder fixture");
+    void controller.setExpanded(oldRow, false);
+    controller.setFocus("folder:old/child");
+    const token = controller.getRevealRequest()?.token;
+    controller.rewriteFolderIdentity((path) => path.replace(/^old(?=\/|$)/, "renamed"));
+    expect(controller.getFocusId()).toBe("folder:renamed/child");
+    expect(controller.getQueryBaseline()?.expandedFolderPaths).toEqual(["renamed"]);
+    expect(controller.getRevealRequest()).toEqual({ token, rowId: "folder:renamed/child" });
+    controller.updateQuery("renamed");
+    const renamedInput = projectionInput(createFolderScope("renamed/child", true));
+    renamedInput.folders = [{
+      name: "renamed", path: "renamed", depth: 0, directCount: 0, recursiveCount: 0,
+      recursiveFolderCount: 1,
+      children: [{ name: "child", path: "renamed/child", depth: 1, directCount: 0, recursiveCount: 0, recursiveFolderCount: 0, children: [] }],
+    }];
+    const renamedProjection = controller.project(renamedInput);
+    expect(controller.getRevealRequest()).toEqual({ token, rowId: "folder:renamed/child" });
+    expect(renamedProjection.rows.find((row) => row.id === "folder:renamed")?.expanded).toBe(false);
+  });
+
+  it("returns menu focus through deterministic fallback when the origin vanished", () => {
+    const { controller } = createHarness();
+    controller.project(projectionInput());
+    controller.restoreFocus("folder:deleted");
+    expect(controller.getFocusId()).toBe("folder:a/b");
+    expect(controller.getFocusRequest()).toEqual({ token: 1, rowId: "folder:a/b" });
+    controller.consumeFocusReturn(0);
+    expect(controller.getFocusRequest()).not.toBeNull();
+    controller.consumeFocusReturn(1);
+    expect(controller.getFocusRequest()).toBeNull();
   });
 });

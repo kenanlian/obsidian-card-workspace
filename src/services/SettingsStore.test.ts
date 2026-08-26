@@ -233,6 +233,29 @@ describe("SettingsStore", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  it("coalesces normalized expansion updates through the workspace debounce", async () => {
+    const { store, save } = createStore();
+    await store.init();
+
+    const folders = store.updateWorkspace({ expandedFolderPaths: ["B", "A", "A"] });
+    const tags = store.updateWorkspace({ expandedTagPaths: ["#Work / AI", "personal"] });
+    expect(store.getFlat()).toMatchObject({
+      expandedFolderPaths: ["A", "B"],
+      expandedTagPaths: ["personal", "work/ai"],
+    });
+    expect(save).not.toHaveBeenCalled();
+
+    await store.flushPendingWrites();
+    await Promise.all([folders, tags]);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0]).toMatchObject({
+      workspace: {
+        expandedFolderPaths: ["A", "B"],
+        expandedTagPaths: ["personal", "work/ai"],
+      },
+    });
+  });
+
   it("keeps dirty memory and retries after a failed save", async () => {
     const save = vi.fn()
       .mockRejectedValueOnce(new Error("disk full"))

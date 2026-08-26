@@ -2044,6 +2044,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       (view as any).baseCards = visibleCards;
       (view as any).visibleCards = visibleCards;
       (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
+      const reprojectCards = vi.spyOn((view as any).modules.projection, "reprojectCards");
+      const deriveAvailableTags = vi.spyOn((view as any).modules.projection, "deriveAvailableTags");
+      const searchRefresh = vi.spyOn((view as any).modules.search, "refreshProjection");
 
       (view as any).setSelectedFile("notes/independent-selection.md");
 
@@ -2058,6 +2061,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           selectedCount: 2,
         },
       });
+      expect(reprojectCards).not.toHaveBeenCalled();
+      expect(deriveAvailableTags).not.toHaveBeenCalled();
+      expect(searchRefresh).not.toHaveBeenCalled();
     });
 
     it("pushState includes bulk runtime payload", () => {

@@ -100,6 +100,11 @@ function buildState(): PanelModelState {
       sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
       showItemCounts: true,
       tooltipSide: "right",
+      projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
+      query: "",
+      focusId: null,
+      focusRequest: null,
+      revealRequest: null,
     },
     appearance: { cardCornerRadius: "medium", previewLines: 8 },
   };
@@ -300,7 +305,7 @@ describe("FolderCardView grouped panel publishing", () => {
     view.setSelectedFile("notes/selected.md");
 
     expect(listener).toHaveBeenCalledTimes(1);
-    expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["cards", "bulk"]);
+    expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["cards", "bulk", "nav"]);
     view.cleanupLifecycle();
   });
 

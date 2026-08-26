@@ -21,6 +21,7 @@ interface PanelProps {
   onSelectFolder?: (payload: unknown) => void;
   onFolderAction?: (payload: unknown) => void;
   onNavContextMenu?: (payload: unknown) => void;
+  onNavigationIntent?: (payload: unknown) => void;
   onFavoriteActivate?: (payload: unknown) => void;
   onHydrateViewport?: (payload: unknown) => void;
 }
@@ -47,6 +48,7 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onSelectFolder: "select-folder",
   onFolderAction: "folder-action",
   onNavContextMenu: "nav-context-menu",
+  onNavigationIntent: "navigation-intent",
   onFavoriteActivate: "favorite-activate",
   onHydrateViewport: "hydrate-viewport",
 };

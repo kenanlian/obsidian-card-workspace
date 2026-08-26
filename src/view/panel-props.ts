@@ -2,6 +2,7 @@ import type { PanelModel } from "./panel-model";
 import type { HydrateViewportRequest } from "./hydration-request";
 import type { CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
+import type { NavigationIntent } from "./navigation-model";
 
 /** The slice of `FolderCardView` the panel callbacks route through. */
 export interface PanelHost {
@@ -18,6 +19,7 @@ export interface PanelHost {
   selectFolderFromNav: (path: string) => Promise<void>;
   handleFolderActionRequest: (detail: FolderActionPayload) => void;
   openNavContextMenu: (payload: NavContextMenuPayload) => void;
+  handleNavigationIntent: (intent: NavigationIntent) => void;
 }
 
 type PanelCallbackProps = { panelModel: PanelModel } & Record<string, unknown>;
@@ -107,6 +109,9 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     },
     onNavContextMenu: (detail: NavContextMenuPayload) => {
       view.openNavContextMenu(detail);
+    },
+    onNavigationIntent: (detail: NavigationIntent) => {
+      view.handleNavigationIntent(detail);
     },
     onFavoriteActivate: (detail: { favorite?: unknown }) => {
       view.modules.favoriteActions.handleFavoriteActivate(detail);

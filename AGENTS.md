@@ -160,7 +160,7 @@ CI already runs this chain with lint first.
 | `src/view/scope.ts` | `CardScope` union and folder/box helpers |
 | `src/view/update-intent.ts` | Four-grade settings update intents |
 | `src/view/FolderCardPanel.svelte` | Svelte 5 root — virtualized scrolling, row projection, hydration callbacks, scroll anchoring |
-| `src/view/NavigationPane.svelte` | Svelte 5 navigation column — folder/tag/box trees, favorites section, resize handle |
+| `src/view/NavigationPane.svelte` | Svelte 5 navigation column — one host-projected ARIA tree, navigation filter, focus/reveal DOM seam, resize handle |
 | `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode |
 | `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source |
 | `src/view/panel-model.ts` | Host-to-Svelte grouped state bridge |

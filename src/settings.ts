@@ -1,3 +1,4 @@
+import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, Rule } from "./view/types";
 
@@ -115,9 +116,7 @@ export interface PluginSettings {
     field: SortField;
     direction: SortDirection;
   };
-  filter: {
-    tags: string[];
-  };
+  filter: { tags: string[] };
   pinnedPaths: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
@@ -127,6 +126,8 @@ export interface PluginSettings {
   newNoteTemplate: NewNoteTemplate;
   previewLines: number;
   lastFolderPath: string;
+  expandedFolderPaths: string[];
+  expandedTagPaths: string[];
   boxes: CardBoxDefinition[];
   favorites: FavoriteEntry[];
   activeBoxId: string | null;
@@ -149,9 +150,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     field: "mtime",
     direction: "desc",
   },
-  filter: {
-    tags: [],
-  },
+  filter: { tags: [] },
   pinnedPaths: [],
   includeSubfolders: true,
   defaultView: "cards",
@@ -161,6 +160,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
+  expandedFolderPaths: [], expandedTagPaths: [],
   boxes: [],
   favorites: [],
   activeBoxId: null,
@@ -434,6 +434,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
   return {
     ...preferences,
     lastFolderPath: workspace.lastFolderPath,
+    expandedFolderPaths: workspace.expandedFolderPaths, expandedTagPaths: workspace.expandedTagPaths,
     activeBoxId: workspace.activeBoxId,
     filter: { tags: workspace.filterTags },
     navPaneWidth: workspace.navPaneWidth,
@@ -459,9 +460,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
       field: normalizeSortField(sort.field),
       direction: normalizeSortDirection(sort.direction),
     },
-    filter: {
-      tags: normalizeTags(filter.tags),
-    },
+    filter: { tags: normalizeTags(filter.tags) },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
@@ -471,6 +470,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
+    expandedFolderPaths: normalizeExpandedFolderPaths(data.expandedFolderPaths), expandedTagPaths: normalizeExpandedTagPaths(data.expandedTagPaths),
     boxes,
     favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),

@@ -39,14 +39,12 @@
     path: string;
     shiftKey: boolean;
   }
-
   interface CardContextMenuPayload {
     path: string;
     mouseEvent?: MouseEvent;
     trigger?: "button";
     position?: { x: number; y: number };
   }
-
   interface PinTogglePayload {
     path: string;
     pinned: boolean;
@@ -101,6 +99,7 @@
     onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onNavContextMenu?: (payload: NavContextMenuPayload) => void;
+    onNavigationIntent?: (payload: import("./navigation-model").NavigationIntent) => void;
     onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
     onHydrateViewport?: (payload: ReturnType<typeof createViewportRequest>["request"]) => void;
     onNavPaneResize?: (width: number) => void;
@@ -158,6 +157,10 @@
       sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
       showItemCounts: false,
       tooltipSide: "right",
+      projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
+      query: "",
+      focusId: null, focusRequest: null,
+      revealRequest: null,
     },
     appearance: { cardCornerRadius: "compact", previewLines: 5 },
   };
@@ -179,6 +182,7 @@
     onFolderAction,
     onBoxCommand,
     onNavContextMenu,
+    onNavigationIntent,
     onFavoriteActivate,
     onHydrateViewport,
     onNavPaneResize,
@@ -643,19 +647,15 @@
     {strings}
     {nav}
     {scope}
-    availableTags={projection.availableTags}
-    tagCounts={projection.tagCounts}
     activeFilterTags={projection.activeFilterTags}
-    onSelectFolder={handleSelectFolder}
     onFolderAction={handleFolderAction}
     onFilterChange={handleFilterChange}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onBoxCommand={handleBoxCommand}
     onNavContextMenu={handleNavContextMenu}
-    onFavoriteActivate={handleFavoriteActivate}
+    {onNavigationIntent}
     onNavPaneResize={handleNavPaneResize}
     onToggleNavPane={handleToggleNavPane}
-    onToggleNavSection={handleToggleNavSection}
   />
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
