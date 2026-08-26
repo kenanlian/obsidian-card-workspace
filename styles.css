@@ -49,6 +49,8 @@
   --fce-nav-focus-inset: 2px;
   --fce-nav-divider-size: 1px;
   --fce-nav-divider-hit-size: 10px;
+  --fce-nav-section-divider-inset: 2px;
+  --fce-nav-section-divider-offset: 6px;
   --fce-nav-row-hover: var(--nav-item-background-hover, var(--background-modifier-hover, rgba(127, 127, 127, 0.12)));
   --fce-nav-row-active-bg: var(--nav-item-background-active, var(--background-modifier-hover, rgba(127, 127, 127, 0.12)));
   --fce-nav-row-active-color: var(--nav-item-color-active, var(--text-normal, #202020));
@@ -64,6 +66,16 @@
    * same value, leaving the chevron hover invisible.
    */
   --fce-nav-chevron-hover-bg: color-mix(in srgb, var(--text-normal, #202020) 16%, transparent);
+  /*
+   * Built from the stronger hover border because the plain border token is nearly
+   * invisible in most themes at the widths this separator uses; the mix keeps it
+   * below a hard rule while staying legible against the pane background.
+   */
+  --fce-nav-section-divider: color-mix(
+    in srgb,
+    var(--background-modifier-border-hover, var(--background-modifier-border, rgba(127, 127, 127, 0.35))) 80%,
+    transparent
+  );
   --fce-nav-count-color: var(--text-faint, var(--text-muted, #6b6b6b));
 }
 
@@ -304,6 +316,21 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section:not(:first-child) {
   margin-block-start: 10px;
+}
+
+/*
+ * Group separator painted inside the existing section gap, so it adds no height and
+ * stays off the header box. Only projected sections render, so `:not(:first-child)`
+ * already tracks the first *visible* section while the filter hides others.
+ */
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  inset-inline: var(--fce-nav-section-divider-inset);
+  top: calc(-1 * var(--fce-nav-section-divider-offset));
+  height: 1px;
+  background: var(--fce-nav-section-divider);
+  pointer-events: none;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:hover {

@@ -275,6 +275,21 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(document.querySelector("[data-nav-empty-section]")).toBeNull();
   });
 
+  it("keeps the first visible section as the tree's first child so filtered sections drop their separator", () => {
+    render();
+    const tree = document.querySelector<HTMLElement>('[role="tree"]')!;
+    expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:favorites");
+    unmount(components.pop()!);
+    document.body.innerHTML = "";
+    const filtered = projection("child");
+    expect(filtered.rows.filter((candidate) => candidate.kind === "section").map((candidate) => candidate.id))
+      .toEqual(["section:folders"]);
+    render({ nav: nav({ query: "child", projection: filtered, focusId: "section:folders" }) });
+    const filteredTree = document.querySelector<HTMLElement>('[role="tree"]')!;
+    expect(filteredTree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:folders");
+    expect(filteredTree.firstElementChild?.classList.contains("is-section")).toBe(true);
+  });
+
   it("maps traversal, expansion, activation, additive Space, and keyboard menu keys", async () => {
     const intents: NavigationIntent[] = [];
     const menus: NavContextMenuPayload[] = [];
