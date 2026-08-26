@@ -1,3 +1,4 @@
+import { PLAIN_FOLDER_ICON } from "../icons";
 import { normalizeScopePath } from "./scope";
 import { normalizeTagPath, type TagTreeNode } from "./tag-tree";
 import type { FavoriteKind, FolderTreeNode, NavSectionId } from "./types";
@@ -171,7 +172,7 @@ function projectFolders(
         count: input.showItemCounts
           ? count(input.includeSubfolders ? node.recursiveCount : node.directCount)
           : 0,
-        icon: canonicalPath === "" ? "house" : "folder",
+        icon: canonicalPath === "" ? "house" : expandable ? (expanded ? "folder-open" : "folders") : PLAIN_FOLDER_ICON,
         menuTarget: { section: "folders", scope: "item", itemId: node.path },
         folderPath: canonicalPath,
         directCount: count(node.directCount),

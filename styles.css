@@ -54,12 +54,9 @@
   --fce-nav-row-active-color: var(--nav-item-color-active, var(--text-normal, #202020));
   --fce-nav-bg: var(--background-secondary, #f3f3f3);
   --fce-nav-icon-color: var(--text-muted, #6b6b6b);
-  --fce-nav-row-selected-bg: color-mix(in srgb, var(--interactive-accent, #7c3aed) 10%, transparent);
+  --fce-nav-row-selected-bg: var(--fce-nav-row-active-bg);
   --fce-nav-row-selected-marker: var(--interactive-accent, #7c3aed);
-  --fce-nav-checked-bg: color-mix(in srgb, var(--interactive-accent, #7c3aed) 8%, transparent);
-  --fce-nav-checked-border: color-mix(in srgb, var(--interactive-accent, #7c3aed) 58%, transparent);
-  --fce-nav-active-file-bg: color-mix(in srgb, var(--text-accent, #7c3aed) 7%, transparent);
-  --fce-nav-active-file-border: var(--text-accent, var(--interactive-accent, #7c3aed));
+  --fce-nav-checked-bg: var(--fce-nav-row-active-bg);
   --fce-nav-focus-ring: var(--background-modifier-border-focus, var(--interactive-accent, #7c3aed));
   /*
    * Derived from the text color instead of a theme hover token: the row is
@@ -147,21 +144,82 @@
 
 .folder-card-view .fce-nav-filter {
   position: relative;
+  display: grid;
+  grid-template-columns: var(--fce-nav-leading-slot) minmax(0, 1fr) 22px;
+  align-items: center;
+  column-gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
+  height: 30px;
+  padding-inline: 7px 3px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s, 4px);
+  background: color-mix(in srgb, var(--background-modifier-form-field, transparent) 55%, transparent);
+  box-shadow: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.folder-card-view .fce-nav-filter:hover {
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--background-modifier-form-field, transparent) 75%, transparent);
+}
+
+.folder-card-view .fce-nav-filter:focus-within {
+  border-color: var(--fce-nav-focus-ring);
+  background: var(--background-modifier-form-field);
+}
+
+.folder-card-view .fce-nav-filter-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fce-nav-leading-slot);
+  height: var(--fce-nav-leading-slot);
+  color: var(--fce-nav-icon-color);
+  pointer-events: none;
 }
 
 .folder-card-view .fce-nav-filter input {
+  grid-column: 2;
   width: 100%;
+  height: 100%;
   min-width: 0;
-  padding-inline-end: 28px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fce-text);
+  font-size: var(--font-ui-small, 13px);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.folder-card-view .fce-nav-filter input:focus {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+.folder-card-view .fce-nav-filter input::placeholder {
+  color: var(--text-faint, var(--fce-text-muted));
+}
+
+.folder-card-view .fce-nav-filter input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .folder-card-view .fce-nav-filter-clear {
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-end: 2px;
-  transform: translateY(-50%);
+  grid-column: 3;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 3px;
+  color: var(--fce-nav-icon-color);
 }
 
 /*
@@ -238,25 +296,36 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section {
   min-height: var(--fce-nav-section-height);
-  margin-block-end: 4px;
+  margin-block-end: 3px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-smaller, 12px);
   font-weight: var(--font-semibold, 600);
 }
 
-/* The former section wrapper contributed 8px below the section plus 4px below its body. */
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section:not(:first-child) {
-  margin-block-start: 12px;
+  margin-block-start: 10px;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:hover {
   background: var(--fce-nav-row-hover);
 }
 
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:hover,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-visible,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within {
+  background: transparent;
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:hover .fce-tree-item-icon,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-visible .fce-tree-item-icon,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within .fce-tree-item-icon {
+  color: var(--fce-text);
+}
+
 .folder-card-view .fce-nav-tree .fce-tree-item-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
   width: var(--fce-nav-leading-slot);
   height: var(--fce-nav-leading-slot);
   padding: 0;
@@ -283,29 +352,38 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-item-glyph,
 .folder-card-view .fce-nav-tree .fce-tree-item-chevron {
+  grid-area: 1 / 1;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: var(--fce-nav-leading-slot);
   height: var(--fce-nav-leading-slot);
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-item-glyph {
-  display: flex;
+  opacity: 1;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-item-chevron {
-  display: none;
+  opacity: 0;
 }
 
 /* Identity and Chevron share one leading slot; subtree hover preserves the old ancestor affordance. */
 .folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph,
 .folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph {
-  display: none;
+  opacity: 0;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron,
 .folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron {
-  display: flex;
+  opacity: 1;
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static),
+.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) {
+  color: var(--text-normal);
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:focus-visible {
@@ -331,12 +409,22 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-checked-filter {
   background: var(--fce-nav-checked-bg);
-  box-shadow: inset 0 0 0 1px var(--fce-nav-checked-border);
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-active-file {
-  border-inline-end: 2px solid var(--fce-nav-active-file-border);
-  background: var(--fce-nav-active-file-bg);
+  color: var(--text-accent, var(--fce-text));
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-active-file .fce-tree-item-icon {
+  color: var(--text-accent, var(--fce-nav-icon-color));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-card-view .fce-nav-filter,
+  .folder-card-view .fce-nav-tree .fce-tree-item-glyph,
+  .folder-card-view .fce-nav-tree .fce-tree-item-chevron {
+    transition: none;
+  }
 }
 
 .folder-card-view .fce-nav-tree .fce-popup-row-leading,

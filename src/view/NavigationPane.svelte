@@ -213,7 +213,7 @@
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
     <div class="fce-nav-filter">
-      <label class="fce-sr-only" for={`${paneLabelId}-filter`}>{labels.filterLabel}</label>
+      <label class="fce-sr-only" for={`${paneLabelId}-filter`}>{labels.filterLabel}</label><span class="fce-nav-filter-icon" aria-hidden="true" use:icon={"search"}></span>
       <input id={`${paneLabelId}-filter`} bind:this={filterEl} value={nav.query} type="search"
         aria-label={labels.filterLabel} placeholder={labels.filterPlaceholder} oninput={onFilterInput} onkeydown={onFilterKeydown}
         oncompositionstart={() => composing = true} oncompositionend={() => composing = false} />

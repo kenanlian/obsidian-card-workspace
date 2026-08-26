@@ -135,6 +135,21 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(row("folder:notes").querySelector(".fce-tree-label")?.getAttribute("title")).toBe("notes");
   });
 
+  it("keeps the navigation search icon inside a stable icon-input-clear layout", async () => {
+    render();
+    await tick();
+    const filter = document.querySelector<HTMLElement>(".fce-nav-filter")!;
+    expect(Array.from(filter.children).map((child) => child.tagName)).toEqual(["LABEL", "SPAN", "INPUT"]);
+    expect(filter.querySelector<HTMLElement>(".fce-nav-filter-icon")?.dataset.icon).toBe("search");
+    expect(filter.querySelector(".fce-nav-filter-clear")).toBeNull();
+
+    render({ nav: nav({ query: "work", projection: projection("work") }) });
+    await tick();
+    const populatedFilter = document.querySelectorAll<HTMLElement>(".fce-nav-filter")[1]!;
+    expect(Array.from(populatedFilter.children).map((child) => child.tagName)).toEqual(["LABEL", "SPAN", "INPUT", "BUTTON"]);
+    expect(populatedFilter.querySelector<HTMLButtonElement>(".fce-nav-filter-clear")?.getAttribute("aria-label")).toBe("Clear navigation filter");
+  });
+
   it("prefers a restored visible current range when the tree is entered for the first time", async () => {
     const intents: NavigationIntent[] = [];
     const restored = projection();

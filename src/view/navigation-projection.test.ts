@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PLAIN_FOLDER_ICON } from "../icons";
 import type { FolderTreeNode } from "./types";
 import type { TagTreeNode } from "./tag-tree";
 import {
@@ -126,6 +127,54 @@ describe("projectNavigation", () => {
       navigationFolderId("Projects"),
       navigationFolderId("Projects/Alpha"),
     ]);
+  });
+
+  it("picks folder glyphs by child presence and expand/collapse", () => {
+    const collapsed = projectNavigation(buildInput({
+      expansion: {
+        folders: { manual: [], reveal: [], query: [], suppressed: [] },
+        tags: { manual: [], reveal: [], query: [], suppressed: [] },
+        queryCollapsedSections: [],
+      },
+    }));
+    const expanded = projectNavigation(buildInput());
+    const collapsedById = new Map(collapsed.rows.map((row) => [row.id, row]));
+    const expandedById = new Map(expanded.rows.map((row) => [row.id, row]));
+
+    expect(collapsedById.get(navigationFolderId(""))?.icon).toBe("house");
+    expect(expandedById.get(navigationFolderId(""))?.icon).toBe("house");
+
+    expect(collapsedById.get(navigationFolderId("Projects"))).toMatchObject({
+      expandable: true,
+      expanded: false,
+      icon: "folders",
+    });
+    expect(expandedById.get(navigationFolderId("Projects"))).toMatchObject({
+      expandable: true,
+      expanded: true,
+      icon: "folder-open",
+    });
+    expect(expandedById.get(navigationFolderId("Projects/Alpha"))).toMatchObject({
+      expandable: true,
+      expanded: true,
+      icon: "folder-open",
+    });
+
+    expect(expandedById.get(navigationFolderId("Projects/Alpha/Résumé"))).toMatchObject({
+      expandable: false,
+      expanded: false,
+      icon: PLAIN_FOLDER_ICON,
+    });
+    expect(expandedById.get(navigationFolderId("Projects/Archive/Alpha"))).toMatchObject({
+      expandable: false,
+      expanded: false,
+      icon: PLAIN_FOLDER_ICON,
+    });
+
+    for (const row of [...collapsed.rows, ...expanded.rows]) {
+      if (row.kind !== "folder") continue;
+      expect(row.icon).not.toBe("folder");
+    }
   });
 
   it("matches trimmed case-insensitive substrings without ranking or reordering", () => {
