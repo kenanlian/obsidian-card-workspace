@@ -242,6 +242,17 @@ describe("folders header menu", () => {
     expect(item?.disabled).toBe(true);
   });
 
+  it("reflects enabled include-subfolders state and toggles it directly", () => {
+    const deps = createDeps({ includeSubfolders: true, isBoxMode: false });
+    const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
+
+    const item = findItem(menu, "Including subfolders");
+    expect(item?.checked).toBe(true);
+    expect(item?.disabled).toBe(false);
+    item?.clickHandler?.();
+    expect(deps.actions.toggleIncludeSubfolders).toHaveBeenCalledOnce();
+  });
+
   it("routes the create actions to the root path", () => {
     const deps = createDeps();
     const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);

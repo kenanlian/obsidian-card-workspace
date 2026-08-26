@@ -321,15 +321,68 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(menus.every(Object.isFrozen)).toBe(true);
   });
 
-  it("keeps owned section actions out of the tab order and disables Include in Box scope", () => {
+  it("keeps owned section actions out of the tab order and omits the persistent Include control", () => {
     render({ scope: { ...scope, activeBoxId: "box-1" } });
-    const include = document.querySelector<HTMLButtonElement>(".fce-nav-section-include")!;
-    expect(include.disabled).toBe(true);
-    expect(include.tabIndex).toBe(-1);
+    expect(document.querySelector(".fce-nav-section-include")).toBeNull();
     expect(document.querySelector(".fce-favorites-menu .fce-nav-section-create")).toBeNull();
     expect(document.querySelector(".fce-folder-menu .fce-nav-section-create")).not.toBeNull();
     expect(document.querySelector(".fce-tag-menu .fce-nav-section-clear")).not.toBeNull();
     expect(document.querySelector(".fce-nav-box-menu .fce-nav-section-create")).not.toBeNull();
+    expect(Array.from(document.querySelectorAll<HTMLElement>(".fce-nav-row-actions button"))
+      .every((button) => button.tabIndex === -1)).toBe(true);
+  });
+
+  it("places counts and actions in one stable trailing slot", () => {
+    render();
+    const folder = row("folder:notes");
+    const trailing = folder.querySelector<HTMLElement>(":scope > .fce-nav-row-trailing")!;
+    const summary = trailing.querySelector<HTMLElement>(":scope > .fce-nav-row-summary")!;
+    const actions = trailing.querySelector<HTMLElement>(":scope > .fce-nav-row-actions")!;
+
+    expect(folder.querySelector(".fce-tree-button .fce-nav-row-count")).toBeNull();
+    expect(summary.querySelector(".fce-nav-row-count")?.textContent).toBe("3");
+    expect(actions.querySelector(".fce-nav-row-more")).not.toBeNull();
+    expect(trailing.children).toEqual(expect.objectContaining({ length: 2 }));
+
+    const tagHeader = row("section:tags");
+    expect(tagHeader.querySelector(".fce-nav-row-summary .fce-nav-active-tag-count")?.textContent).toBe("1");
+    expect(tagHeader.querySelector(".fce-nav-row-actions .fce-nav-section-clear")).not.toBeNull();
+  });
+
+  it("keeps expandable ancestors in hover affordance state while the pointer is in their subtree", async () => {
+    render();
+    await tick();
+    const parent = row("folder:notes");
+    const child = row("folder:notes/child");
+    const identity = parent.querySelector(".fce-tree-item-glyph");
+    const chevron = parent.querySelector(".fce-tree-item-chevron");
+    expect(identity).not.toBeNull();
+    expect(chevron).not.toBeNull();
+    expect(parent.classList.contains("is-subtree-hovered")).toBe(false);
+
+    child.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    await tick();
+    expect(parent.classList.contains("is-subtree-hovered")).toBe(true);
+    expect(child.classList.contains("is-subtree-hovered")).toBe(true);
+    expect(row("section:folders").classList.contains("is-subtree-hovered")).toBe(false);
+
+    document.querySelector<HTMLElement>(".fce-nav-tree")?.dispatchEvent(new MouseEvent("pointerleave"));
+    await tick();
+    expect(parent.classList.contains("is-subtree-hovered")).toBe(false);
+  });
+
+  it("clears hover lineage when the filtered tree unmounts and remounts", async () => {
+    const component = renderHarness(nav(), () => undefined);
+    await tick();
+    row("folder:notes/child").dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    await tick();
+    expect(row("folder:notes").classList.contains("is-subtree-hovered")).toBe(true);
+
+    component.setNav(nav({ query: "missing", projection: projection("missing") }));
+    await tick();
+    component.setNav(nav());
+    await tick();
+    expect(row("folder:notes").classList.contains("is-subtree-hovered")).toBe(false);
   });
 
   it("exposes and operates the keyboard separator including boundaries", () => {

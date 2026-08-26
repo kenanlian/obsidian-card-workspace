@@ -6,6 +6,10 @@
   interface Props {
     row: NavigationRow;
     tabIndex: number;
+    subtreeHovered?: boolean;
+    summaryCount?: number;
+    summaryLabel?: string;
+    summaryClass?: string;
     activeFileDescription: string;
     expandLabel: string;
     collapseLabel: string;
@@ -21,6 +25,10 @@
   let {
     row,
     tabIndex,
+    subtreeHovered = false,
+    summaryCount,
+    summaryLabel,
+    summaryClass,
     activeFileDescription,
     expandLabel,
     collapseLabel,
@@ -34,6 +42,7 @@
   }: Props = $props();
 
   const descriptionId = $props.id();
+  const visibleCount = $derived(summaryCount ?? row.count);
 
   function icon(node: HTMLElement, name: string): { update: (next: string) => void } {
     setIcon(node, name);
@@ -43,7 +52,7 @@
 
 <!-- svelte-ignore a11y_role_has_required_aria_props -- tree semantics use current/checked, not selection -->
 <div
-  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''}"
+  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''}"
   data-nav-row-id={row.id}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
@@ -85,12 +94,18 @@
   </div>
   <div class="fce-popup-row-content fce-tree-button">
     <span class="fce-tree-label" title={row.label}>{row.label}</span>
-    {#if row.count > 0}<span class="fce-nav-row-count">{row.count}</span>{/if}
   </div>
-  <div class="fce-popup-row-trailing fce-nav-row-actions">
-    {#if actions}{@render actions()}{/if}
-    {#if row.semanticState === "checked-filter"}
-      <span class="fce-popup-row-selected-indicator fce-tree-row-check" aria-hidden="true" use:icon={"check"}></span>
+  <div class="fce-popup-row-trailing fce-nav-row-trailing {actions ? 'has-actions' : ''}">
+    <div class="fce-nav-row-summary">
+      {#if visibleCount > 0}
+        <span class="fce-nav-row-count {summaryClass ?? ''}" aria-label={summaryLabel}>{visibleCount}</span>
+      {/if}
+      {#if row.semanticState === "checked-filter"}
+        <span class="fce-popup-row-selected-indicator fce-tree-row-check" aria-hidden="true" use:icon={"check"}></span>
+      {/if}
+    </div>
+    {#if actions}
+      <div class="fce-nav-row-actions">{@render actions()}</div>
     {/if}
   </div>
   {#if row.semanticState === "active-file"}

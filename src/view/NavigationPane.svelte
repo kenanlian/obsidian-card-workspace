@@ -5,6 +5,7 @@
   import { NAV_PANE_WIDTH_MAX, NAV_PANE_WIDTH_MIN } from "../settings";
   import type { PanelNavState, PanelScopeState } from "./panel-model";
   import type { NavigationIntent, NavigationRow } from "./navigation-model";
+  import { navigationSubtreeHover } from "./navigation-hover";
   import { resolveNavigationFocus, resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
   import NavigationTreeRow from "./NavigationTreeRow.svelte";
   import type { FolderActionPayload, NavContextMenuPayload } from "./types";
@@ -15,13 +16,11 @@
     activeFilterTags?: string[];
     onFolderAction?: (payload: FolderActionPayload) => void;
     onFilterChange?: (payload: { tags: string[] }) => void;
-    onIncludeSubfoldersChange?: (payload: { value: boolean }) => void;
     onBoxCommand?: (payload: { command: string; boxId?: string }) => void;
     onNavContextMenu?: (payload: NavContextMenuPayload) => void;
     onNavigationIntent?: (payload: NavigationIntent) => void;
     onNavPaneResize?: (width: number) => void;
-    onToggleNavPane?: () => void;
-    [key: string]: unknown;
+    onToggleNavPane?: () => void; [key: string]: unknown;
   }
   const EMPTY_NAV: PanelNavState = {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
@@ -35,7 +34,7 @@
   };
   let {
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
-    onFolderAction, onFilterChange, onIncludeSubfoldersChange, onBoxCommand,
+    onFolderAction, onFilterChange, onBoxCommand,
     onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane,
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
@@ -47,6 +46,7 @@
   let treeEl: HTMLElement | null = $state(null);
   let scrollerEl: HTMLElement | null = $state(null);
   let filterEl: HTMLInputElement | null = $state(null);
+  let hoveredRowIds = $state<ReadonlySet<string>>(new Set());
   let previousRowIds: string[] = [];
   let rowElements = new Map<string, HTMLElement>();
   let consumedRevealToken = 0;
@@ -227,27 +227,27 @@
     {#if nav.projection.noResults}
       <div class="fce-tree-empty fce-nav-no-results">{labels.noResults}</div>
     {:else}
-      <div class="fce-nav-tree" role="tree" aria-label={labels.ariaLabel} bind:this={treeEl}
+      <div class="fce-nav-tree" role="tree" tabindex="-1" aria-label={labels.ariaLabel} bind:this={treeEl}
+        use:navigationSubtreeHover={{ rows, onChange: (ids) => hoveredRowIds = ids }}
         onfocusin={() => treeHasFocus = true}
         onfocusout={() => queueMicrotask(() => treeHasFocus = Boolean(treeEl?.contains(document.activeElement)))}>
         {#each rows as row (row.id)}
           <NavigationTreeRow {row} tabIndex={row.id === focusId ? 0 : -1}
+            subtreeHovered={hoveredRowIds.has(row.id)}
+            summaryCount={row.kind === "section" && row.section === "tags" ? activeFilterTags.length : undefined}
+            summaryLabel={row.kind === "section" && row.section === "tags" && activeFilterTags.length > 0
+              ? labels.activeTagCount(activeFilterTags.length) : undefined}
+            summaryClass={row.kind === "section" && row.section === "tags" ? "fce-nav-active-tag-count" : undefined}
             activeFileDescription={labels.activeFileDescription}
             expandLabel={strings.toolbar.folderMenu.expand} collapseLabel={strings.toolbar.folderMenu.collapse}
             rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
             onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}>
             {#snippet actions()}
               {#if row.kind === "section" && row.section === "folders"}
-                <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-include {scope.includeSubfolders ? 'is-active' : ''}"
-                  aria-label={scope.includeSubfolders ? strings.toolbar.folderMenu.includeSubfolders : strings.toolbar.folderMenu.directFolderOnly}
-                  aria-pressed={scope.includeSubfolders} disabled={isBoxScope}
-                  onclick={(event) => actionClick(event, () => onIncludeSubfoldersChange?.({ value: !scope.includeSubfolders }))}
-                  use:icon={"folder-tree"}></button>
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-create" aria-label={labels.createFolder}
                   onclick={(event) => actionClick(event, () => onFolderAction?.({ action: "create-child-folder", path: "/" }))}
                   use:icon={"folder-plus"}></button>
               {:else if row.kind === "section" && row.section === "tags" && activeFilterTags.length > 0}
-                <span class="fce-nav-active-tag-count" aria-label={labels.activeTagCount(activeFilterTags.length)}>{activeFilterTags.length}</span>
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-clear" aria-label={labels.clearActiveTags}
                   onclick={(event) => actionClick(event, () => onFilterChange?.({ tags: [] }))} use:icon={"filter-x"}></button>
               {:else if row.kind === "section" && row.section === "boxes"}
