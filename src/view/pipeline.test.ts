@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, type CardScope } from "./scope";
 import type { PipelineContext } from "./pipeline";
 import type { NoteCardRecord } from "./types";
 import type { CardFileKind } from "./file-kind";
@@ -705,5 +705,10 @@ describe("stepsForScope", () => {
     const steps = stepsForScope(createBoxScope("box-1"));
     expect(steps).not.toContain(applyTagFilter);
     expect(runPipeline(cards, steps, context)).toEqual(cards);
+  });
+
+  it("throws for an unhandled card source instead of inheriting folder steps", () => {
+    const unknownScope = { kind: "links", targetPath: "a.md" } as unknown as CardScope;
+    expect(() => stepsForScope(unknownScope)).toThrow(/Unhandled card source/);
   });
 });

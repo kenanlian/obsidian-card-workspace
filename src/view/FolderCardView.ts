@@ -5,9 +5,9 @@ import type { UiStrings } from "../i18n";
 import type { OpenDestination, PartialPluginSettings, SortDirection, SortField } from "../settings";
 import type CardWorkspacePlugin from "../main";
 import { compareCards } from "./card-sort";
-import { findCardBox } from "./card-boxes";
 import { createFolderScope, isBoxScope, isFolderScope, normalizeScopePath, scopeDisplayPath, type CardScope } from "./scope";
 import type { ViewUpdateIntent } from "./update-intent";
+import { resolveViewConfig } from "./view-config";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
 import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
@@ -57,12 +57,8 @@ export class FolderCardView extends ItemView {
     };
     this.modules = createViewModules(this.context, {
       effectiveSortAndPins: () => {
-        const settings = this.plugin.getSettings();
-        const scope = this.store.getScope();
-        const box = isBoxScope(scope) ? findCardBox(settings.boxes ?? [], scope.boxId) : null;
-        return box
-          ? { sortField: box.sort.field, sortDirection: box.sort.direction, pinnedPaths: box.pinnedPaths }
-          : { sortField: settings.sort.field, sortDirection: settings.sort.direction, pinnedPaths: settings.pinnedPaths };
+        const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), this.plugin.getSettings());
+        return { sortField: sort.field, sortDirection: sort.direction, pinnedPaths };
       },
       getDisplayFolderPath: () => this.getDisplayFolderPath(),
       getTooltipSide: () => this.resolveTooltipSide(),
@@ -469,15 +465,14 @@ export class FolderCardView extends ItemView {
 
   private buildProjectionGroup(): PanelModelState["projection"] {
     const settings = this.plugin.getSettings();
-    const scope = this.store.getScope();
-    const box = isBoxScope(scope) ? findCardBox(settings.boxes ?? [], scope.boxId) : null;
+    const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), settings);
     return {
-      sortField: box?.sort.field ?? settings.sort.field,
-      sortDirection: box?.sort.direction ?? settings.sort.direction,
+      sortField: sort.field,
+      sortDirection: sort.direction,
       availableTags: this.modules.projection.deriveAvailableTags(),
       tagCounts: this.modules.projection.deriveTagCounts(),
       activeFilterTags: settings.filter.tags,
-      pinnedPaths: box?.pinnedPaths ?? settings.pinnedPaths,
+      pinnedPaths,
     };
   }
 

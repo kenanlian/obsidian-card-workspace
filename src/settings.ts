@@ -1,6 +1,6 @@
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
-import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, Rule } from "./view/types";
+import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
 
 export type SortField = "mtime" | "ctime" | "name";
 
@@ -133,16 +133,14 @@ export interface PluginSettings {
   activeBoxId: string | null;
   navPaneWidth: number;
   navPaneCollapsed: boolean;
-  folderSectionCollapsed: boolean;
-  tagSectionCollapsed: boolean;
-  boxSectionCollapsed: boolean;
-  favoritesSectionCollapsed: boolean;
+  sectionCollapsed: Record<NavSectionId, boolean>;
   showNavItemCounts: boolean;
 }
 
-export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter"> & {
+export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter" | "sectionCollapsed"> & {
   sort?: Partial<PluginSettings["sort"]>;
   filter?: Partial<PluginSettings["filter"]>;
+  sectionCollapsed?: Partial<PluginSettings["sectionCollapsed"]>;
 };
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -166,10 +164,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   activeBoxId: null,
   navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
   navPaneCollapsed: false,
-  folderSectionCollapsed: false,
-  tagSectionCollapsed: false,
-  boxSectionCollapsed: false,
-  favoritesSectionCollapsed: false,
+  sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
   showNavItemCounts: false,
 };
 
@@ -430,7 +425,6 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
   const preferences = isRecord(raw.preferences) ? raw.preferences : {};
   const workspace = isRecord(raw.workspace) ? raw.workspace : {};
   const userData = isRecord(raw.userData) ? raw.userData : {};
-  const collapsed = isRecord(workspace.sectionCollapsed) ? workspace.sectionCollapsed : {};
   return {
     ...preferences,
     lastFolderPath: workspace.lastFolderPath,
@@ -439,14 +433,22 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     filter: { tags: workspace.filterTags },
     navPaneWidth: workspace.navPaneWidth,
     navPaneCollapsed: workspace.navPaneCollapsed,
-    favoritesSectionCollapsed: collapsed.favorites,
-    folderSectionCollapsed: collapsed.folders,
-    tagSectionCollapsed: collapsed.tags,
-    boxSectionCollapsed: collapsed.boxes,
+    sectionCollapsed: workspace.sectionCollapsed,
     boxes: userData.boxes,
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
   };
+}
+
+function normalizeSectionCollapsed(data: Record<string, unknown>): Record<NavSectionId, boolean> {
+  const record = isRecord(data.sectionCollapsed) ? data.sectionCollapsed : {};
+  const result = { ...DEFAULT_SETTINGS.sectionCollapsed };
+  for (const section of Object.keys(result) as NavSectionId[]) {
+    const legacy = data[{ favorites: "favoritesSectionCollapsed", folders: "folderSectionCollapsed", tags: "tagSectionCollapsed", boxes: "boxSectionCollapsed" }[section]];
+    if (typeof legacy === "boolean") result[section] = legacy;
+    if (typeof record[section] === "boolean") result[section] = record[section];
+  }
+  return result;
 }
 
 function normalizeFlatSettings(raw: unknown): PluginSettings {
@@ -476,10 +478,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
     navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),
     navPaneCollapsed: normalizeBooleanSetting(data.navPaneCollapsed, DEFAULT_SETTINGS.navPaneCollapsed),
-    folderSectionCollapsed: normalizeBooleanSetting(data.folderSectionCollapsed, DEFAULT_SETTINGS.folderSectionCollapsed),
-    tagSectionCollapsed: normalizeBooleanSetting(data.tagSectionCollapsed, DEFAULT_SETTINGS.tagSectionCollapsed),
-    boxSectionCollapsed: normalizeBooleanSetting(data.boxSectionCollapsed, DEFAULT_SETTINGS.boxSectionCollapsed),
-    favoritesSectionCollapsed: normalizeBooleanSetting(data.favoritesSectionCollapsed, DEFAULT_SETTINGS.favoritesSectionCollapsed),
+    sectionCollapsed: normalizeSectionCollapsed(data),
     showNavItemCounts: normalizeBooleanSetting(data.showNavItemCounts, DEFAULT_SETTINGS.showNavItemCounts),
   };
 }
@@ -497,13 +496,8 @@ export function mergeSettings(current: PluginSettings, patch: PartialPluginSetti
   return normalizeSettings({
     ...current,
     ...patch,
-    sort: {
-      ...current.sort,
-      ...patch.sort,
-    },
-    filter: {
-      ...current.filter,
-      ...patch.filter,
-    },
+    sort: { ...current.sort, ...patch.sort },
+    filter: { ...current.filter, ...patch.filter },
+    sectionCollapsed: { ...current.sectionCollapsed, ...patch.sectionCollapsed },
   });
 }

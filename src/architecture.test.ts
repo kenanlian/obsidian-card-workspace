@@ -278,6 +278,49 @@ describe("navigation projection is isolated from card search and projection", ()
   });
 });
 
+describe("R6 MetadataCache subscription ownership", () => {
+  /**
+   * Mirrors the existing vault-event ownership pattern: `main.ts` registers the
+   * Obsidian events (`registerVaultObservers`) and a dedicated bus owns ordered
+   * fan-out to views (`src/services/VaultEventBus.ts`). Metadata gets the same
+   * two owners so feature code consumes a fanned-out channel instead of
+   * registering its own listener and inventing a private ordering.
+   *
+   * `src/services/MetadataEventBus.ts` does not exist yet by design — it ships
+   * with the first consumer that needs per-note metadata. Listing it now records
+   * the contract so that consumer does not have to relitigate ownership.
+   *
+   * Deliberately not asserted: that the current match count is zero. Having zero
+   * subscriptions today is expected, but asserting it would force the first
+   * legitimate owner to edit this guardrail for the wrong reason.
+   *
+   * Accepted limitation: this is a text-level check, not an AST check. It will
+   * not catch a destructured alias such as `const { metadataCache } = app`
+   * followed by a bare `metadataCache.on(...)` without the property access.
+   * Read-only usage (`getFileCache`, `getAllTags`) is unaffected because the
+   * pattern requires `.on(` or `.off(`.
+   */
+  const METADATA_SUBSCRIPTION_OWNERS = ["src/main.ts", "src/services/MetadataEventBus.ts"];
+  const SUBSCRIPTION_PATTERN = /metadataCache\s*\.\s*(?:on|off)\s*\(/;
+
+  it("keeps the metadata subscription owner list closed", () => {
+    expect(METADATA_SUBSCRIPTION_OWNERS).toEqual([
+      "src/main.ts",
+      "src/services/MetadataEventBus.ts",
+    ]);
+  });
+
+  it("allows direct metadataCache subscription only in owner modules", () => {
+    const violations: string[] = [];
+    for (const file of dependencyGraph.keys()) {
+      if (METADATA_SUBSCRIPTION_OWNERS.includes(file)) continue;
+      const source = fs.readFileSync(path.join(repoRoot, file), "utf8");
+      if (SUBSCRIPTION_PATTERN.test(source)) violations.push(file);
+    }
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("R5 line-count ratchet", () => {
   /**
    * Explicit caps for files that are still oversized. The ratchet may only be
@@ -285,12 +328,12 @@ describe("R5 line-count ratchet", () => {
    * new real line count.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 652,
+    "src/view/FolderCardView.ts": 647,
     "src/main.ts": 654,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 572,
     // Scope selection, single-flight loading, and vault mutation routing form one invariant.
-    "src/view/controllers/ScopeController.ts": 451,
+    "src/view/controllers/ScopeController.ts": 447,
     // Card boxes are one wide domain spanning scope, CRUD, membership, and menu actions.
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
@@ -300,7 +343,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/Toolbar.svelte": 728,
     "src/view/CardItem.svelte": 434,
     "src/view/nav-context-menu.ts": 543,
-    "src/settings.ts": 509,
+    "src/settings.ts": 503,
     "src/view/markdown-utils.ts": 462,
     "src/search/IndexStore.ts": 445,
     "src/view/card-boxes.ts": 394,

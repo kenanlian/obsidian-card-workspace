@@ -2,6 +2,7 @@ import { CARD_PANE_MIN_WIDTH } from "../../settings";
 import { normalizeScopePath } from "../scope";
 import type { CardScope } from "../scope";
 import {
+  NAVIGATION_SECTION_ORDER,
   navigationFolderId,
   type NavigationFocusRequest,
   type NavigationProjection,
@@ -175,7 +176,7 @@ export class NavLayoutController implements DisposableController {
         this.pushNavLayoutState();
       } else if (row.section === "folders" && !expanded && this.revealFoldersSection) {
         this.revealFoldersSection = false;
-        if (this.context.getSettings().folderSectionCollapsed) this.pushNavLayoutState();
+        if (this.context.getSettings().sectionCollapsed.folders) this.pushNavLayoutState();
         else await this.onToggleNavSection(row.section);
       } else await this.onToggleNavSection(row.section);
       return;
@@ -292,24 +293,10 @@ export class NavLayoutController implements DisposableController {
     await this.context.saveSettings({ navPaneCollapsed: !current });
   }
   async onToggleNavSection(section: unknown): Promise<void> {
-    const settings = this.context.getSettings();
-    if (section === "favorites") {
-      await this.context.saveSettings({
-        favoritesSectionCollapsed: !settings.favoritesSectionCollapsed,
-      });
-      return;
-    }
-    if (section === "folders") {
-      await this.context.saveSettings({ folderSectionCollapsed: !settings.folderSectionCollapsed });
-      return;
-    }
-    if (section === "tags") {
-      await this.context.saveSettings({ tagSectionCollapsed: !settings.tagSectionCollapsed });
-      return;
-    }
-    if (section === "boxes") {
-      await this.context.saveSettings({ boxSectionCollapsed: !settings.boxSectionCollapsed });
-    }
+    const id = NAVIGATION_SECTION_ORDER.find((candidate) => candidate === section);
+    if (!id) return;
+    const collapsed = this.context.getSettings().sectionCollapsed;
+    await this.context.saveSettings({ sectionCollapsed: { [id]: !collapsed[id] } });
   }
   async onNavPaneResize(width: number): Promise<void> {
     if (typeof width !== "number" || !Number.isFinite(width)) {

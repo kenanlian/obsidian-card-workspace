@@ -324,6 +324,7 @@ describe("card box context menus", () => {
         lastFolderPath: "notes",
         pinnedPaths: [],
         previewLines: 5,
+        sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
         activeBoxId,
         boxes: [
           {

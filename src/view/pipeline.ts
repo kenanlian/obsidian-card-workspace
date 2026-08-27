@@ -110,9 +110,20 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
  * The member set (rule hits ∪ manual − excluded) is resolved during box load,
  * so the box pipeline skips the browse tag filter and only runs
  * `search -> pin`. `context.pinnedPaths` carries the box's own pinned paths.
+ *
+ * Dispatch is total over `CardScope["kind"]`: the `never` arm exists so a new
+ * Card Source must declare its own filter chain rather than silently inheriting
+ * Folder's.
  */
 export function stepsForScope(scope: CardScope): PipelineStep[] {
-  return scope.kind === "box"
-    ? [applySearchFilter, applyPinReorder]
-    : [applyTagFilter, applySearchFilter, applyPinReorder];
+  switch (scope.kind) {
+    case "folder":
+      return [applyTagFilter, applySearchFilter, applyPinReorder];
+    case "box":
+      return [applySearchFilter, applyPinReorder];
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }

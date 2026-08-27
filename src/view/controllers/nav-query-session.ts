@@ -11,12 +11,7 @@ export function captureNavigationQueryBaseline(settings: PluginSettings): Naviga
   return {
     expandedFolderPaths: [...(settings.expandedFolderPaths ?? [])],
     expandedTagPaths: [...(settings.expandedTagPaths ?? [])],
-    sectionCollapsed: {
-      favorites: settings.favoritesSectionCollapsed,
-      folders: settings.folderSectionCollapsed,
-      tags: settings.tagSectionCollapsed,
-      boxes: settings.boxSectionCollapsed,
-    },
+    sectionCollapsed: { ...settings.sectionCollapsed },
   };
 }
 

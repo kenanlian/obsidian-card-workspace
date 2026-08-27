@@ -207,7 +207,7 @@ describe("NavLayoutController", () => {
 
   it("temporarily exposes a persisted-collapsed Folders section and lets collapse consume it", async () => {
     const { controller, saveSettings, settings } = createHarness();
-    settings.folderSectionCollapsed = true;
+    settings.sectionCollapsed.folders = true;
     const base = projectionInput();
     const input = { ...base, sectionCollapsed: { ...base.sectionCollapsed, folders: true } };
     let projection = controller.project(input);
@@ -288,10 +288,23 @@ describe("NavLayoutController", () => {
     expect(projection.rows.some((row) => row.id === "folder:a/b/c")).toBe(true);
   });
 
+  it("snapshots section collapse into the query baseline instead of aliasing live settings", () => {
+    const { controller, settings } = createHarness();
+    settings.sectionCollapsed.folders = false;
+    controller.updateQuery("a");
+    const captured = controller.getQueryBaseline();
+
+    // Mutating only the live record must not reach through into the captured
+    // baseline; an alias here would make every later comparison report equality.
+    settings.sectionCollapsed.folders = true;
+
+    expect(captured?.sectionCollapsed.folders).toBe(false);
+  });
+
   it("captures query baseline once, adopts legitimate shared changes, and clears only temporary state", async () => {
     const { controller, settings } = createHarness();
     settings.expandedFolderPaths = ["a"];
-    settings.folderSectionCollapsed = true;
+    settings.sectionCollapsed.folders = true;
     controller.updateQuery("a");
     const captured = controller.getQueryBaseline();
     controller.updateQuery("A");
@@ -299,7 +312,7 @@ describe("NavLayoutController", () => {
 
     settings.expandedFolderPaths = ["a", "shared"];
     settings.expandedTagPaths = ["work"];
-    settings.folderSectionCollapsed = false;
+    settings.sectionCollapsed.folders = false;
     let projection = controller.project(projectionInput());
     expect(controller.getQueryBaseline()).toEqual({
       expandedFolderPaths: ["a", "shared"],

@@ -22,12 +22,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     boxes: settings.boxes ?? [],
     activeBoxId: deps.modules.boxActions.getActiveBox()?.id ?? null,
     boxExcludedCount: (boxId) => deps.modules.boxActions.getBoxExcludedCount(boxId),
-    sectionCollapsed: {
-      favorites: settings.favoritesSectionCollapsed,
-      folders: settings.folderSectionCollapsed,
-      tags: settings.tagSectionCollapsed,
-      boxes: settings.boxSectionCollapsed,
-    },
+    sectionCollapsed: settings.sectionCollapsed,
     hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
     hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
     tagExpansion: (tag) => deps.modules.navLayout.getTagExpansion(tag),

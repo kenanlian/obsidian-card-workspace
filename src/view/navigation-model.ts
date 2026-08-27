@@ -134,7 +134,13 @@ export interface NavigationBoxRow extends NavigationRowBase {
 
 /**
  * Stable, non-DOM row seam. Future row variants can extend this union without
- * changing focus/filter ordering; property rows are intentionally absent.
+ * changing focus/filter ordering.
+ *
+ * Row variants are extended through section-owned projection, so a future
+ * Properties section may contribute Property Value rows as ordinary section
+ * items. What stays prohibited is embedding an Obsidian Property Editor or an
+ * arbitrary property table into the navigation pane, and anything that breaks
+ * the single-ARIA-tree model.
  */
 export type NavigationRow =
   | NavigationSectionRow

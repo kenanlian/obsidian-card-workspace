@@ -40,6 +40,10 @@ export interface WorkspaceSettings {
   sectionCollapsed: WorkspaceSectionCollapsed;
 }
 
+export type WorkspaceSettingsPatch = Omit<Partial<WorkspaceSettings>, "sectionCollapsed"> & {
+  sectionCollapsed?: Partial<WorkspaceSectionCollapsed>;
+};
+
 export interface UserDataSettings {
   boxes: PluginSettings["boxes"];
   favorites: PluginSettings["favorites"];
@@ -72,10 +76,7 @@ const WORKSPACE_FLAT_KEYS = new Set<string>([
   "activeBoxId",
   "navPaneWidth",
   "navPaneCollapsed",
-  "folderSectionCollapsed",
-  "tagSectionCollapsed",
-  "boxSectionCollapsed",
-  "favoritesSectionCollapsed",
+  "sectionCollapsed",
   "filter",
 ]);
 
@@ -105,11 +106,11 @@ export function hasPatchValues(patch: object): boolean {
 
 export function splitFlatPatch(patch: PartialPluginSettings): {
   preferences: Partial<PreferencesSettings>;
-  workspace: Partial<WorkspaceSettings>;
+  workspace: WorkspaceSettingsPatch;
   userData: Partial<UserDataSettings>;
 } {
   const preferences: Partial<PreferencesSettings> = {};
-  const workspace: Partial<WorkspaceSettings> = {};
+  const workspace: WorkspaceSettingsPatch = {};
   const userData: Partial<UserDataSettings> = {};
   const sectionCollapsed: Partial<WorkspaceSectionCollapsed> = {};
 
@@ -132,14 +133,9 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.filter?.tags !== undefined) workspace.filterTags = patch.filter.tags;
   if (patch.navPaneWidth !== undefined) workspace.navPaneWidth = patch.navPaneWidth;
   if (patch.navPaneCollapsed !== undefined) workspace.navPaneCollapsed = patch.navPaneCollapsed;
-  if (patch.folderSectionCollapsed !== undefined) sectionCollapsed.folders = patch.folderSectionCollapsed;
-  if (patch.tagSectionCollapsed !== undefined) sectionCollapsed.tags = patch.tagSectionCollapsed;
-  if (patch.boxSectionCollapsed !== undefined) sectionCollapsed.boxes = patch.boxSectionCollapsed;
-  if (patch.favoritesSectionCollapsed !== undefined) {
-    sectionCollapsed.favorites = patch.favoritesSectionCollapsed;
-  }
+  if (patch.sectionCollapsed) Object.assign(sectionCollapsed, patch.sectionCollapsed);
   if (hasPatchValues(sectionCollapsed)) {
-    workspace.sectionCollapsed = sectionCollapsed as WorkspaceSectionCollapsed;
+    workspace.sectionCollapsed = sectionCollapsed;
   }
 
   if (patch.boxes !== undefined) userData.boxes = patch.boxes;
@@ -185,12 +181,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       filterTags: [...settings.filter.tags],
       navPaneWidth: settings.navPaneWidth,
       navPaneCollapsed: settings.navPaneCollapsed,
-      sectionCollapsed: {
-        favorites: settings.favoritesSectionCollapsed,
-        folders: settings.folderSectionCollapsed,
-        tags: settings.tagSectionCollapsed,
-        boxes: settings.boxSectionCollapsed,
-      },
+      sectionCollapsed: { ...settings.sectionCollapsed },
     },
     userData: {
       boxes: settings.boxes,
@@ -200,7 +191,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
   };
 }
 
-function workspacePatchToFlat(patch: Partial<WorkspaceSettings>): PartialPluginSettings {
+function workspacePatchToFlat(patch: WorkspaceSettingsPatch): PartialPluginSettings {
   const flat: PartialPluginSettings = {};
   if (patch.lastFolderPath !== undefined) flat.lastFolderPath = patch.lastFolderPath;
   if (patch.expandedFolderPaths !== undefined) flat.expandedFolderPaths = patch.expandedFolderPaths;
@@ -210,12 +201,7 @@ function workspacePatchToFlat(patch: Partial<WorkspaceSettings>): PartialPluginS
   if (patch.navPaneWidth !== undefined) flat.navPaneWidth = patch.navPaneWidth;
   if (patch.navPaneCollapsed !== undefined) flat.navPaneCollapsed = patch.navPaneCollapsed;
   const collapsed = patch.sectionCollapsed;
-  if (collapsed) {
-    if (collapsed.favorites !== undefined) flat.favoritesSectionCollapsed = collapsed.favorites;
-    if (collapsed.folders !== undefined) flat.folderSectionCollapsed = collapsed.folders;
-    if (collapsed.tags !== undefined) flat.tagSectionCollapsed = collapsed.tags;
-    if (collapsed.boxes !== undefined) flat.boxSectionCollapsed = collapsed.boxes;
-  }
+  if (collapsed) flat.sectionCollapsed = { ...collapsed };
   return flat;
 }
 
@@ -269,7 +255,7 @@ export class SettingsStore {
     return this.commitPatch(patch as PartialPluginSettings, "immediate");
   }
 
-  updateWorkspace(patch: Partial<WorkspaceSettings>): Promise<ViewUpdateIntent | null> {
+  updateWorkspace(patch: WorkspaceSettingsPatch): Promise<ViewUpdateIntent | null> {
     return this.commitPatch(workspacePatchToFlat(patch), "workspace");
   }
 

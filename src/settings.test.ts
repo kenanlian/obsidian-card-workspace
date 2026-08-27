@@ -644,12 +644,12 @@ describe("favorites settings normalization", () => {
   it("defaults to an empty list and an expanded section", () => {
     const result = normalizeSettings({});
     expect(result.favorites).toEqual([]);
-    expect(result.favoritesSectionCollapsed).toBe(false);
+    expect(result.sectionCollapsed.favorites).toBe(false);
   });
 
   it("persists the section collapse flag", () => {
-    expect(normalizeSettings({ favoritesSectionCollapsed: true } as never).favoritesSectionCollapsed).toBe(true);
-    expect(normalizeSettings({ favoritesSectionCollapsed: "yes" } as never).favoritesSectionCollapsed).toBe(false);
+    expect(normalizeSettings({ favoritesSectionCollapsed: true } as never).sectionCollapsed.favorites).toBe(true);
+    expect(normalizeSettings({ favoritesSectionCollapsed: "yes" } as never).sectionCollapsed.favorites).toBe(false);
   });
 
   it("drops non-objects, unknown kinds, non-string refs, and empty tag refs", () => {
@@ -732,10 +732,7 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(result).toMatchObject({
       lastFolderPath: "Projects",
       pinnedPaths: ["Projects/a.md"],
-      folderSectionCollapsed: true,
-      tagSectionCollapsed: true,
-      boxSectionCollapsed: false,
-      favoritesSectionCollapsed: true,
+      sectionCollapsed: { folders: true, tags: true, boxes: false, favorites: true },
       activeBoxId: "box-1",
       filter: { tags: ["work"] },
     });
@@ -774,12 +771,52 @@ describe("migrateSettings — V47 schema versions", () => {
     const once = migrateSettings(v2);
     expect(migrateSettings(once)).toEqual(once);
     expect(migrateSettings(serializeSettings(once))).toEqual(once);
+    expect(serializeSettings(once).workspace.sectionCollapsed).toEqual({
+      favorites: true, folders: true, tags: false, boxes: true,
+    });
     expect(once.activeBoxId).toBe("box-1");
     expect(once.filter.tags).toEqual(["work"]);
-    expect(once.favoritesSectionCollapsed).toBe(true);
-    expect(once.folderSectionCollapsed).toBe(true);
-    expect(once.tagSectionCollapsed).toBe(false);
-    expect(once.boxSectionCollapsed).toBe(true);
+    expect(once.sectionCollapsed).toEqual({
+      favorites: true, folders: true, tags: false, boxes: true,
+    });
+  });
+
+  it("re-serializes a v2 payload to a byte-identical payload", () => {
+    const v2 = {
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: {
+        sort: { field: "name", direction: "asc" },
+        includeSubfolders: false,
+        previewLines: 8,
+        showNavItemCounts: true,
+      },
+      workspace: {
+        lastFolderPath: "Projects",
+        activeBoxId: "box-1",
+        filterTags: ["work"],
+        navPaneWidth: 200,
+        navPaneCollapsed: true,
+        sectionCollapsed: { favorites: true, folders: true, tags: false, boxes: true },
+      },
+      userData: {
+        boxes: [{ id: "box-1", name: "Inbox" }],
+        favorites: [{ kind: "folder", ref: "Projects" }],
+        pinnedPaths: ["Projects/a.md"],
+      },
+    };
+
+    const serializedOnce = serializeSettings(migrateSettings(v2));
+    const serializedTwice = serializeSettings(migrateSettings(serializedOnce));
+
+    // Re-serialization must be a fixed point: a persisted file rewritten by a
+    // later load is byte-identical, not merely semantically equivalent.
+    expect(JSON.stringify(serializedTwice)).toBe(JSON.stringify(serializedOnce));
+    // Pinned against the canonical pre-Phase-0 emission order rather than
+    // toEqual, which ignores key order and would accept a silently reordered
+    // payload that rewrites every synced vault's data.json on first load.
+    expect(JSON.stringify(serializedOnce.workspace.sectionCollapsed)).toBe(
+      JSON.stringify({ favorites: true, folders: true, tags: false, boxes: true }),
+    );
   });
 
   it("discards unrecognized top-level keys from v1 and v2 documents", () => {
@@ -821,5 +858,44 @@ describe("migrateSettings — V47 schema versions", () => {
     const result = mergeSettings(DEFAULT_SETTINGS, patch);
     expect(result.sort).toEqual({ field: "name", direction: "desc" });
     expect(result.filter.tags).toEqual(["work"]);
+  });
+
+  it("populates sectionCollapsed from all four v1 legacy flat keys", () => {
+    expect(migrateSettings({
+      folderSectionCollapsed: true,
+      tagSectionCollapsed: true,
+      boxSectionCollapsed: true,
+      favoritesSectionCollapsed: true,
+    }).sectionCollapsed).toEqual({
+      favorites: true, folders: true, tags: true, boxes: true,
+    });
+  });
+
+  it("lets a v2 sectionCollapsed record win over leftover legacy flat keys", () => {
+    expect(normalizeSettings({
+      folderSectionCollapsed: true,
+      tagSectionCollapsed: true,
+      boxSectionCollapsed: true,
+      favoritesSectionCollapsed: true,
+      sectionCollapsed: { folders: false, tags: false },
+    } as never).sectionCollapsed).toEqual({
+      favorites: true, folders: false, tags: false, boxes: true,
+    });
+  });
+
+  it("defaults every section to expanded on a v0 payload", () => {
+    expect(migrateSettings({ lastViewMode: "all-notes" }).sectionCollapsed).toEqual({
+      favorites: false, folders: false, tags: false, boxes: false,
+    });
+  });
+
+  it("does not reset unpatched sections when merging a partial collapse patch", () => {
+    const current = mergeSettings(DEFAULT_SETTINGS, {
+      sectionCollapsed: { favorites: true, folders: true, tags: true, boxes: true },
+    });
+    const result = mergeSettings(current, { sectionCollapsed: { folders: false } });
+    expect(result.sectionCollapsed).toEqual({
+      favorites: true, folders: false, tags: true, boxes: true,
+    });
   });
 });

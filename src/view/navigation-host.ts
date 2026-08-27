@@ -24,12 +24,7 @@ export function buildNavigationPanelState(input: {
   tooltipSide: "left" | "right";
 }): PanelModelState["nav"] {
   const { settings, strings, scope, navLayout } = input;
-  const sectionCollapsed = {
-    favorites: settings.favoritesSectionCollapsed,
-    folders: settings.folderSectionCollapsed,
-    tags: settings.tagSectionCollapsed,
-    boxes: settings.boxSectionCollapsed,
-  };
+  const sectionCollapsed = settings.sectionCollapsed;
   const projection = navLayout.project({
     scope,
     activeTags: settings.filter.tags,

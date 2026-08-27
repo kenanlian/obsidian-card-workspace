@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SettingsStore, serializeSettings } from "./SettingsStore";
+import { SettingsStore, serializeSettings, splitFlatPatch } from "./SettingsStore";
 import { SETTINGS_SCHEMA_VERSION } from "../settings";
 
 interface SaveHarness {
@@ -331,5 +331,37 @@ describe("SettingsStore", () => {
     expect(after.pinnedPaths).not.toBe(before.pinnedPaths);
     expect(after.pinnedPaths).toEqual(["note.md"]);
     await pending;
+  });
+
+  it("places sectionCollapsed on the workspace layer and merges a single-section patch", async () => {
+    const { store, documents } = createStore();
+    await store.init();
+
+    const split = splitFlatPatch({ sectionCollapsed: { folders: false } });
+    expect(split.workspace.sectionCollapsed).toEqual({ folders: false });
+    expect(split.preferences).not.toHaveProperty("sectionCollapsed");
+    expect(split.userData).not.toHaveProperty("sectionCollapsed");
+
+    const allCollapsed = store.updateWorkspace({
+      sectionCollapsed: { favorites: true, folders: true, tags: true, boxes: true },
+    });
+    await store.flushPendingWrites();
+    await allCollapsed;
+
+    const pending = store.updateWorkspace({ sectionCollapsed: { folders: false } });
+    await store.flushPendingWrites();
+    await pending;
+
+    const persisted = documents.at(-1) as {
+      preferences: Record<string, unknown>;
+      workspace: { sectionCollapsed: Record<string, boolean> };
+    };
+    expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
+    expect(persisted.workspace.sectionCollapsed).toEqual({
+      favorites: true, folders: false, tags: true, boxes: true,
+    });
+    expect(store.getFlat().sectionCollapsed).toEqual({
+      favorites: true, folders: false, tags: true, boxes: true,
+    });
   });
 });

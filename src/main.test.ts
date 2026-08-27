@@ -632,7 +632,7 @@ describe("CardWorkspacePlugin settings update intents", () => {
     saveData.mockImplementationOnce(() => persistence);
 
     const pending = plugin.saveSettings({
-      folderSectionCollapsed: !plugin.getSettings().folderSectionCollapsed,
+      sectionCollapsed: { folders: !plugin.getSettings().sectionCollapsed.folders },
     });
 
     expect(saveData).toHaveBeenCalledTimes(1);

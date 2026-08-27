@@ -8,7 +8,8 @@ vi.mock("obsidian", () => ({
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { TFile, TFolder } from "obsidian";
 import type { EpochToken } from "../async-epoch";
-import { createFolderScope } from "../scope";
+import { getBoxMembershipSignature } from "../card-boxes";
+import { createBoxScope, createFolderScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -329,5 +330,53 @@ describe("ScopeController", () => {
     expect(reads).toBe(2);
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([childFile.path, rootFile.path]);
     expect(context.store.getVisibleCards().every((card) => card.hydrated)).toBe(true);
+  });
+
+  describe("buildLoadKey", () => {
+    function configurePerBoxSort() {
+      const { context, controller } = createHarness();
+      const settings = context.getSettings();
+      settings.sort = { field: "mtime", direction: "desc" };
+      settings.boxes = [{
+        id: "box-1",
+        name: "Ideas",
+        rules: [],
+        manualPaths: [],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "name", direction: "asc" },
+      }];
+      return { controller, settings };
+    }
+
+    it("returns the box sort by reference for a resolvable box scope", () => {
+      const { controller, settings } = configurePerBoxSort();
+      const result = controller.buildLoadKey(createBoxScope("box-1"));
+
+      expect(result.sort).toEqual({ field: "name", direction: "asc" });
+      expect(result.sort).toBe(settings.boxes[0].sort);
+    });
+
+    it("returns the global sort by reference for a folder scope", () => {
+      const { controller, settings } = configurePerBoxSort();
+      const result = controller.buildLoadKey(createFolderScope("notes", true));
+
+      expect(result.sort).toBe(settings.sort);
+    });
+
+    it("falls back to the global sort by reference when the box id is unresolvable", () => {
+      const { controller, settings } = configurePerBoxSort();
+      const result = controller.buildLoadKey(createBoxScope("ghost"));
+
+      expect(result.sort).toBe(settings.sort);
+    });
+
+    it("embeds the box sort and membership signature in the load-key identity", () => {
+      const { controller, settings } = configurePerBoxSort();
+      const serialized = controller.serializeLoadKey(controller.buildLoadKey(createBoxScope("box-1")));
+
+      expect(serialized).toContain("name::asc");
+      expect(serialized).toContain(getBoxMembershipSignature(settings.boxes[0]));
+    });
   });
 });

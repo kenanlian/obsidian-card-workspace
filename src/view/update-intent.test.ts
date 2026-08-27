@@ -32,6 +32,7 @@ function createSettings(): PluginSettings {
     pinnedPaths: [...DEFAULT_SETTINGS.pinnedPaths],
     boxes: [createBox()],
     favorites: DEFAULT_SETTINGS.favorites.map((favorite) => ({ ...favorite })),
+    sectionCollapsed: { ...DEFAULT_SETTINGS.sectionCollapsed },
     activeBoxId: "box-1",
   };
 }
@@ -55,10 +56,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   activeBoxId: "patch",
   navPaneWidth: "patch",
   navPaneCollapsed: "patch",
-  folderSectionCollapsed: "patch",
-  tagSectionCollapsed: "patch",
-  boxSectionCollapsed: "patch",
-  favoritesSectionCollapsed: "patch",
+  sectionCollapsed: "patch",
   showNavItemCounts: "patch",
 };
 
@@ -84,10 +82,12 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "activeBoxId": settings.activeBoxId = null; break;
     case "navPaneWidth": settings.navPaneWidth += 1; break;
     case "navPaneCollapsed": settings.navPaneCollapsed = !settings.navPaneCollapsed; break;
-    case "folderSectionCollapsed": settings.folderSectionCollapsed = !settings.folderSectionCollapsed; break;
-    case "tagSectionCollapsed": settings.tagSectionCollapsed = !settings.tagSectionCollapsed; break;
-    case "boxSectionCollapsed": settings.boxSectionCollapsed = !settings.boxSectionCollapsed; break;
-    case "favoritesSectionCollapsed": settings.favoritesSectionCollapsed = !settings.favoritesSectionCollapsed; break;
+    case "sectionCollapsed":
+      settings.sectionCollapsed = {
+        ...settings.sectionCollapsed,
+        folders: !settings.sectionCollapsed.folders,
+      };
+      break;
     case "showNavItemCounts": settings.showNavItemCounts = !settings.showNavItemCounts; break;
     default: {
       const exhaustive: never = key;

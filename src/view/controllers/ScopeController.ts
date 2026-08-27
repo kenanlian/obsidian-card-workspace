@@ -6,6 +6,7 @@ import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
 import { createFolderScope, isFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
+import { resolveViewConfig } from "../view-config";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
 import type {
   CardLoadKey,
@@ -80,12 +81,7 @@ export class ScopeController implements DisposableController {
   }
 
   buildLoadKey(scope: CardScope): CardLoadKey {
-    const settings = this.context.getSettings();
-    if (scope.kind === "box") {
-      const box = findCardBox(settings.boxes ?? [], scope.boxId);
-      return { scope, sort: box?.sort ?? settings.sort };
-    }
-    return { scope, sort: settings.sort };
+    return { scope, sort: resolveViewConfig(scope, this.context.getSettings()).sort };
   }
 
   serializeLoadKey(loadKey: CardLoadKey): string {

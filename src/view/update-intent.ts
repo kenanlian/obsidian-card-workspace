@@ -1,5 +1,6 @@
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
+import { NAVIGATION_SECTION_ORDER } from "./navigation-model";
 import { isBoxScope, type CardScope } from "./scope";
 import type { CardBoxDefinition, FavoriteEntry } from "./types";
 
@@ -112,10 +113,12 @@ export function resolveSettingsUpdateIntent(
   if (previous.activeBoxId !== next.activeBoxId) intent = mergeIntent(intent, "patch");
   if (previous.navPaneWidth !== next.navPaneWidth) intent = mergeIntent(intent, "patch");
   if (previous.navPaneCollapsed !== next.navPaneCollapsed) intent = mergeIntent(intent, "patch");
-  if (previous.folderSectionCollapsed !== next.folderSectionCollapsed) intent = mergeIntent(intent, "patch");
-  if (previous.tagSectionCollapsed !== next.tagSectionCollapsed) intent = mergeIntent(intent, "patch");
-  if (previous.boxSectionCollapsed !== next.boxSectionCollapsed) intent = mergeIntent(intent, "patch");
-  if (previous.favoritesSectionCollapsed !== next.favoritesSectionCollapsed) intent = mergeIntent(intent, "patch");
+  for (const section of NAVIGATION_SECTION_ORDER) {
+    if (previous.sectionCollapsed[section] !== next.sectionCollapsed[section]) {
+      intent = mergeIntent(intent, "patch");
+      break;
+    }
+  }
   if (previous.showNavItemCounts !== next.showNavItemCounts) intent = mergeIntent(intent, "patch");
 
   // SettingsStore callers have no view scope and retain the global/default

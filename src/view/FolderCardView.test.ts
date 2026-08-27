@@ -2284,6 +2284,30 @@ describe("FolderCardView card box mode", () => {
     expect(visible.map((card) => card.path)).toEqual(["notes/b.md", "notes/a.md"]);
   });
 
+  it("reads per-box sort back through the projection group", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.sort = { field: "mtime", direction: "desc" };
+    settings.boxes = [makeTestBox({ sort: { field: "name", direction: "asc" } })];
+    (view as any).cardScope = createBoxScope("box-1");
+    publishAll(view);
+
+    expect(getPanelState(view).projection.sortField).toBe("name");
+    expect(getPanelState(view).projection.sortDirection).toBe("asc");
+  });
+
+  it("falls back to global sort when the box scope is unresolvable", () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.sort = { field: "mtime", direction: "desc" };
+    settings.boxes = [];
+    (view as any).cardScope = createBoxScope("ghost");
+    publishAll(view);
+
+    expect(getPanelState(view).projection.sortField).toBe("mtime");
+    expect(getPanelState(view).projection.sortDirection).toBe("desc");
+  });
+
   it("exposes active box metadata in panel state", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);

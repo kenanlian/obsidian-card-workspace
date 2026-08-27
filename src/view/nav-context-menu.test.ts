@@ -819,10 +819,7 @@ describe("nav context menu wiring", () => {
         activeBoxId: null,
         boxes: [],
         favorites: [],
-        favoritesSectionCollapsed: false,
-        folderSectionCollapsed: false,
-        tagSectionCollapsed: false,
-        boxSectionCollapsed: false,
+        sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
         ...settingsOverrides,
       }));
       const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;
