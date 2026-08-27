@@ -45,6 +45,7 @@ function createCard(path: string): NoteCardRecord {
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
+    taskSummary: null,
   };
 }
 
@@ -352,6 +353,7 @@ describe("FolderCardView grouped panel publishing", () => {
       previewHtml: "",
       previewMode: "empty",
       hydrated: false,
+      taskSummary: null,
     };
     const store = (view as unknown as { store: ReturnType<typeof createViewStateStore> }).store;
     store.replaceBaseCards([card as never]);

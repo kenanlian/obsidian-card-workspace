@@ -8,6 +8,7 @@ import { createFolderScope, isFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
+import { deriveCardTaskSummary } from "../task-summary";
 import type {
   CardLoadKey,
   FolderSelectionRequest,
@@ -242,6 +243,7 @@ export class ScopeController implements DisposableController {
     this.deps.publishLoadStart(scopeChanged);
 
     try {
+      const app = this.context.getApp();
       const records = this.collectScopeFiles(loadScope.scope).flatMap((file) => {
         const fileKind = resolveCardFileKind(file);
         return fileKind === null ? [] : [{
@@ -255,6 +257,7 @@ export class ScopeController implements DisposableController {
           previewHtml: "",
           previewMode: "empty" as const,
           hydrated: false,
+          taskSummary: deriveCardTaskSummary(app, file, fileKind),
         }];
       });
       if (!this.context.epochs.load.isCurrent(loadToken)) {

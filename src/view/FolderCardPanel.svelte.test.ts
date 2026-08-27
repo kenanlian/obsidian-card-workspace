@@ -46,6 +46,7 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
     previewHtml: "<p>Preview text</p>",
     previewMode: "text",
     hydrated: true,
+    taskSummary: null,
   };
 }
 

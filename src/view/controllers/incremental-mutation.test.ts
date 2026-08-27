@@ -26,11 +26,11 @@ function file(path: string): TFile {
   return value as TFile;
 }
 
-function record(path: string): NoteCardRecord {
+function record(path: string, fileKind: NoteCardRecord["fileKind"] = "markdown"): NoteCardRecord {
   const value = file(path);
   return {
     file: value,
-    fileKind: "markdown",
+    fileKind,
     path,
     title: value.basename,
     ctime: 1,
@@ -39,6 +39,7 @@ function record(path: string): NoteCardRecord {
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
+    taskSummary: null,
   };
 }
 
@@ -60,8 +61,8 @@ describe("applyIncrementalMutation", () => {
       it(`${testCase.eventType} reports ${testCase.action} in ${scopeKind} scope`, () => {
         const liveFiles = new Map<string, TFile>([[testCase.event.path, file(testCase.event.path)]]);
         const pending = new Set<string>();
-        const outcome = applyIncrementalMutation(testCase.event, testCase.cardPaths.map(record), {
-          app: { vault: { getAbstractFileByPath: (path: string) => liveFiles.get(path) ?? null } } as any,
+        const outcome = applyIncrementalMutation(testCase.event, testCase.cardPaths.map((path) => record(path)), {
+          app: { vault: { getAbstractFileByPath: (path: string) => liveFiles.get(path) ?? null }, metadataCache: { getFileCache: vi.fn(() => null) } } as any,
           sort: { field: "name", direction: "asc" },
           pendingHydration: pending,
           getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
@@ -94,6 +95,7 @@ describe("applyIncrementalMutation", () => {
         vault: {
           getAbstractFileByPath: (path: string) => file(path),
         },
+        metadataCache: { getFileCache: vi.fn(() => null) },
       } as any,
       sort: { field: "name" as const, direction: "asc" as const },
       pendingHydration: pending,
@@ -136,5 +138,95 @@ describe("applyIncrementalMutation", () => {
     expect(renamed.hydrationPaths).toEqual(["scope/new.md"]);
     expect(pending.has("scope/old.md")).toBe(false);
     expect(pending.has("scope/new.md")).toBe(false);
+  });
+
+  it("populates taskSummary from the injected metadata stub on create", () => {
+    const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }, { task: "x" }] }));
+    const created = applyIncrementalMutation(
+      { eventType: "create", path: "scope/new.md", oldPath: null, isFolder: false, fileKind: "markdown" },
+      [],
+      {
+        app: {
+          vault: { getAbstractFileByPath: (path: string) => file(path) },
+          metadataCache: { getFileCache },
+        } as any,
+        sort: { field: "name", direction: "asc" },
+        pendingHydration: new Set<string>(),
+        getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+        setBulkSelection: vi.fn(),
+        isPathInActiveScope: () => true,
+      },
+    );
+
+    expect(created.nextCards?.[0]?.taskSummary).toEqual({ total: 2, incomplete: 1 });
+    expect(getFileCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears taskSummary when a markdown card is renamed to canvas within scope", () => {
+    const existing = record("scope/old.md");
+    existing.taskSummary = { total: 2, incomplete: 1 };
+    const renamed = applyIncrementalMutation(
+      { eventType: "rename", path: "scope/new.canvas", oldPath: "scope/old.md", isFolder: false, fileKind: "canvas" },
+      [existing],
+      {
+        app: { vault: { getAbstractFileByPath: () => file("scope/new.canvas") } } as any,
+        sort: { field: "name", direction: "asc" },
+        pendingHydration: new Set<string>(),
+        getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+        setBulkSelection: vi.fn(),
+        isPathInActiveScope: () => true,
+      },
+    );
+
+    expect(renamed.nextCards?.[0]?.fileKind).toBe("canvas");
+    expect(renamed.nextCards?.[0]?.taskSummary).toBeNull();
+  });
+
+  it("populates taskSummary when a canvas card is renamed to markdown within scope", () => {
+    const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }, { task: "x" }] }));
+    const renamed = applyIncrementalMutation(
+      { eventType: "rename", path: "scope/new.md", oldPath: "scope/old.canvas", isFolder: false, fileKind: "markdown" },
+      [record("scope/old.canvas", "canvas")],
+      {
+        app: {
+          vault: { getAbstractFileByPath: () => file("scope/new.md") },
+          metadataCache: { getFileCache },
+        } as any,
+        sort: { field: "name", direction: "asc" },
+        pendingHydration: new Set<string>(),
+        getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+        setBulkSelection: vi.fn(),
+        isPathInActiveScope: () => true,
+      },
+    );
+
+    expect(renamed.nextCards?.[0]?.fileKind).toBe("markdown");
+    expect(renamed.nextCards?.[0]?.taskSummary).toEqual({ total: 2, incomplete: 1 });
+    expect(getFileCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not recompute taskSummary on a markdown-to-markdown rename", () => {
+    const existing = record("scope/old.md");
+    const summary = { total: 3, incomplete: 2 };
+    existing.taskSummary = summary;
+    const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }] }));
+    const renamed = applyIncrementalMutation(
+      { eventType: "rename", path: "scope/new.md", oldPath: "scope/old.md", isFolder: false, fileKind: "markdown" },
+      [existing],
+      {
+        app: {
+          vault: { getAbstractFileByPath: () => file("scope/new.md") },
+          metadataCache: { getFileCache },
+        } as any,
+        sort: { field: "name", direction: "asc" },
+        pendingHydration: new Set<string>(),
+        getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
+        setBulkSelection: vi.fn(),
+        isPathInActiveScope: () => true,
+      },
+    );
+
+    expect(getFileCache).not.toHaveBeenCalled();
+    expect(renamed.nextCards?.[0]?.taskSummary).toBe(summary);
   });
 });

@@ -60,6 +60,7 @@ interface CreateCardOptions {
   previewHtml?: string;
   previewMode?: NoteCardRecord["previewMode"];
   excerpt?: string;
+  taskSummary?: NoteCardRecord["taskSummary"];
 }
 
 function createCard(path: string = "notes/a.md", options: CreateCardOptions = {}): NoteCardRecord {
@@ -69,6 +70,7 @@ function createCard(path: string = "notes/a.md", options: CreateCardOptions = {}
     previewHtml = "<p>Preview text</p>",
     previewMode = "text",
     excerpt = "excerpt",
+    taskSummary = null,
   } = options;
 
   return {
@@ -82,6 +84,7 @@ function createCard(path: string = "notes/a.md", options: CreateCardOptions = {}
     previewHtml,
     previewMode,
     hydrated: true,
+    taskSummary,
   };
 }
 
@@ -833,5 +836,113 @@ describe("CardItem.svelte", () => {
     bulkCheckbox?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
 
     expect(bulkCaptured.hoverEvents).toEqual([]);
+  });
+
+  it("does not render a task footer when taskSummary is null", () => {
+    const { target } = mountCardItem();
+
+    expect(target.querySelector(".fce-card-task-footer")).toBeNull();
+    expect(target.querySelector(".fce-meta")).toBeNull();
+    expect(target.textContent).not.toContain("Modified");
+    expect(target.textContent).not.toContain("Created");
+  });
+
+  it("renders an incomplete-task footer with a bare count", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 3 } }),
+    });
+
+    await tick();
+
+    const footer = target.querySelector<HTMLElement>(".fce-card-task-footer");
+    const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
+    expect(footer).not.toBeNull();
+    expect(footer?.classList.contains("is-complete")).toBe(false);
+    expect(icon?.getAttribute("data-icon")).toBe("list-checks");
+    expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("3");
+    expect(footer?.textContent?.trim()).toBe("3");
+  });
+
+  it("renders a de-emphasized complete-task footer without a count", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/done.md", { taskSummary: { total: 5, incomplete: 0 } }),
+    });
+
+    await tick();
+
+    const footer = target.querySelector<HTMLElement>(".fce-card-task-footer");
+    const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
+    expect(footer).not.toBeNull();
+    expect(footer?.classList.contains("is-complete")).toBe(true);
+    expect(icon?.getAttribute("data-icon")).toBe("check");
+    expect(footer?.querySelector(".fce-card-task-count")).toBeNull();
+    expect(footer?.textContent).not.toMatch(/\d/);
+  });
+
+  it("does not render a task footer for a canvas card with a null summary", () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/diagram.canvas", {
+        fileKind: "canvas",
+        title: "diagram.canvas",
+        previewMode: "placeholder",
+        previewHtml: "",
+        taskSummary: null,
+      }),
+    });
+
+    expect(target.querySelector(".fce-card-task-footer")).toBeNull();
+  });
+
+  it("places the task footer as the last child of the card body after the excerpt", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 3 } }),
+    });
+
+    await tick();
+
+    const body = target.querySelector(".fce-card-body");
+    const excerpt = target.querySelector(".fce-excerpt");
+    const footer = target.querySelector(".fce-card-task-footer");
+    expect(body?.lastElementChild).toBe(footer);
+    expect(excerpt?.nextElementSibling).toBe(footer);
+  });
+
+  it("exposes the task footer as a non-interactive image with a descriptive label", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 3 } }),
+    });
+
+    await tick();
+
+    const footer = target.querySelector<HTMLElement>(".fce-card-task-footer");
+    expect(footer?.getAttribute("role")).toBe("img");
+    expect(footer?.getAttribute("aria-label")).toBe("3 incomplete tasks");
+    expect(footer?.hasAttribute("tabindex")).toBe(false);
+    expect(footer?.classList.contains("clickable-icon")).toBe(false);
+    expect(footer?.querySelector("[role='button'], [tabindex], .clickable-icon")).toBeNull();
+  });
+
+  it("uses Chinese task-footer aria-label strings", async () => {
+    const incomplete = mountCardItem({
+      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 3 } }),
+      strings: {
+        ...getUiStrings("zh").cardItem,
+      },
+    });
+    const complete = mountCardItem({
+      card: createCard("notes/done.md", { taskSummary: { total: 5, incomplete: 0 } }),
+      strings: {
+        ...getUiStrings("zh").cardItem,
+      },
+    });
+
+    await tick();
+
+    expect(incomplete.target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(
+      "3 个未完成任务",
+    );
+    expect(complete.target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(
+      "任务已全部完成",
+    );
   });
 });

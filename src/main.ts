@@ -19,6 +19,7 @@ import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceRec
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import { SettingsStore, hasPatchValues, splitFlatPatch } from "./services/SettingsStore";
 import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
+import { MetadataEventBus, type MetadataEventListener } from "./services/MetadataEventBus";
 import type { VaultMutationEvent, VaultMutationEventType } from "./services/vault-events";
 import { FOLDER_CARD_VIEW, FolderCardView } from "./view/FolderCardView";
 import type {
@@ -52,8 +53,10 @@ export default class CardWorkspacePlugin extends Plugin {
   private selectionRequestSeq = 0;
   private latestHandledRequestId = 0;
   private vaultObserversRegistered = false;
+  private metadataObserversRegistered = false;
   private vaultEventListenersRegistered = false;
   private readonly vaultEventBus = new VaultEventBus();
+  private readonly metadataEventBus = new MetadataEventBus();
   private vaultEventUnsubscribers: Array<() => void> = [];
   private disposed = false; private settingsReadyPromise: Promise<void> = Promise.resolve();
   private layoutReadyTask: Promise<void> = Promise.resolve(); private startupPromise: Promise<void> = Promise.resolve();
@@ -146,7 +149,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private async runLayoutReadyStartup(): Promise<void> {
     await this.settingsReadyPromise;
     if (this.disposed) return;
-    this.registerVaultObservers(); this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
+    this.registerVaultObservers(); this.registerMetadataObservers();
+    this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
     await this.restoreLastSession();
     if (this.disposed) return;
     this.runDetached(this.navigationWorkspaceReconciler.reconcileInitial(),
@@ -173,6 +177,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (this.disposed) return;
     this.disposed = true;
     this.vaultEventBus.dispose();
+    this.metadataEventBus.dispose();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
     };
@@ -407,6 +412,10 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.vaultEventBus.subscribe(listener);
   }
 
+  subscribeMetadataEvents(listener: MetadataEventListener): () => void {
+    return this.metadataEventBus.subscribe(listener);
+  }
+
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
     const previous = this.getSettings();
     const { preferences, workspace, userData } = splitFlatPatch(patch);
@@ -518,6 +527,20 @@ export default class CardWorkspacePlugin extends Plugin {
         this.runDetached(this.searchCoordinator.clearAndReset(), "Search reset failed.");
       },
     });
+  }
+
+  private registerMetadataObservers(): void {
+    if (this.metadataObserversRegistered) {
+      return;
+    }
+
+    this.metadataObserversRegistered = true;
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file) => {
+        if (this.disposed) return;
+        this.runDetached(this.metadataEventBus.publish({ path: file.path }), "Metadata event publication failed.");
+      }),
+    );
   }
 
   private registerVaultObservers(): void {

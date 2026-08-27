@@ -289,6 +289,7 @@ interface TestHarness {
     getSearchSnapshot: ReturnType<typeof vi.fn>;
     subscribeSearchSnapshots: ReturnType<typeof vi.fn>;
     subscribeVaultEvents: ReturnType<typeof vi.fn>;
+    subscribeMetadataEvents: ReturnType<typeof vi.fn>;
     saveSettings: ReturnType<typeof vi.fn>;
     openNoteFromCard: ReturnType<typeof vi.fn>;
     selectAllNotes: ReturnType<typeof vi.fn>;
@@ -313,6 +314,7 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
     previewHtml: isMarkdown ? "<p>Preview text</p>" : "",
     previewMode: isMarkdown ? "text" : "placeholder",
     hydrated: true,
+    taskSummary: null,
   };
 }
 
@@ -378,6 +380,7 @@ function createHarness(): TestHarness {
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
     subscribeVaultEvents: vi.fn(() => () => undefined),
+    subscribeMetadataEvents: vi.fn(() => () => undefined),
     saveSettings: vi.fn(async (partial: PartialPluginSettings) => {
       const previous = mergeSettings(settings, {});
       const next = mergeSettings(previous, partial);
@@ -1069,6 +1072,59 @@ describe("FolderCardView host contract", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("V28: onOpen registers one metadata listener, patches in place, and unsubscribes on close", async () => {
+    const { view, plugin } = createHarness();
+    let metadataListener: ((event: { path: string }) => void) | null = null;
+    const metadataUnsubscribe = vi.fn();
+    plugin.subscribeMetadataEvents = vi.fn((listener: (event: { path: string }) => void) => {
+      metadataListener = listener;
+      return metadataUnsubscribe;
+    });
+
+    const card = createCard("notes/alpha.md", "Alpha");
+    (view as any).cardScope = createFolderScope("notes", true);
+    (view as any).baseCards = [card];
+    (view as any).visibleCards = [card];
+    (view as any).app.metadataCache.getFileCache.mockReturnValue({
+      listItems: [{ task: " " }, { task: "x" }],
+    });
+
+    await view.onOpen();
+
+    expect(plugin.subscribeMetadataEvents).toHaveBeenCalledTimes(1);
+    expect(metadataListener).toBeTypeOf("function");
+
+    const handleMetadataChange = vi.spyOn((view as any).modules.taskSummary, "handleMetadataChange");
+    const panelListener = vi.fn();
+    view.panelModel.subscribe(panelListener);
+    panelListener.mockClear();
+    const cardsBefore = getPanelState(view).cards;
+    const sequenceBefore = cardsBefore.sequenceRevision;
+    const hydrationBefore = cardsBefore.hydrationRevision;
+
+    metadataListener!({ path: "notes/alpha.md" });
+
+    expect(handleMetadataChange).toHaveBeenCalledTimes(1);
+    expect(handleMetadataChange).toHaveBeenCalledWith("notes/alpha.md");
+    expect(panelListener).toHaveBeenCalledTimes(1);
+    const cardsAfter = getPanelState(view).cards;
+    expect(cardsAfter).not.toBe(cardsBefore);
+    expect(cardsAfter.records[0]?.taskSummary).toEqual({ total: 2, incomplete: 1 });
+    expect(cardsAfter.sequenceRevision).toBe(sequenceBefore);
+    expect(cardsAfter.hydrationRevision).toBe(hydrationBefore);
+
+    panelListener.mockClear();
+    metadataListener!({ path: "notes/unrelated.md" });
+
+    expect(handleMetadataChange).toHaveBeenCalledTimes(2);
+    expect(handleMetadataChange).toHaveBeenCalledWith("notes/unrelated.md");
+    expect(panelListener).not.toHaveBeenCalled();
+    expect(getPanelState(view).cards).toBe(cardsAfter);
+
+    await view.onClose();
+    expect(metadataUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("threads indexed-ready match counts through panel state without mutating cards", async () => {

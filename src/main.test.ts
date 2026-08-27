@@ -119,6 +119,7 @@ const obsidianMockState = vi.hoisted(() => {
     autoRunLayoutReady: true,
     workspaceCallbacks: {} as Record<string, (...args: unknown[]) => unknown>,
     vaultCallbacks: {} as Record<string, (...args: unknown[]) => void>,
+    metadataCacheCallbacks: {} as Record<string, (...args: unknown[]) => unknown>,
     vaultTagsByPath: {} as Record<string, string[]>,
     notices: [] as string[],
     leavesByType: {} as Record<string, unknown[]>,
@@ -501,6 +502,7 @@ function createPluginHarness(): {
     };
     metadataCache: {
       getFileCache: ReturnType<typeof vi.fn>;
+      on: ReturnType<typeof vi.fn>;
     };
     vault: {
       on: ReturnType<typeof vi.fn>;
@@ -545,6 +547,10 @@ function createPluginHarness(): {
     },
     metadataCache: {
       getFileCache: vi.fn((file: { path: string }) => ({ path: file.path })),
+      on: vi.fn((eventName: string, callback: (...args: unknown[]) => unknown) => {
+        obsidianMockState.metadataCacheCallbacks[eventName] = callback;
+        return { eventName };
+      }),
     },
     vault: {
       on: vi.fn((eventName: string, callback: (...args: unknown[]) => void) => {
@@ -1806,6 +1812,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.autoRunLayoutReady = true;
     obsidianMockState.workspaceCallbacks = {};
     obsidianMockState.vaultCallbacks = {};
+    obsidianMockState.metadataCacheCallbacks = {};
     obsidianMockState.vaultTagsByPath = {};
     obsidianMockState.notices = [];
     obsidianMockState.leavesByType = {};
@@ -2767,5 +2774,53 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     });
 
     expect(obsidianMockState.notices.filter((message) => message.includes("requires recovery"))).toHaveLength(1);
+  });
+});
+
+describe("CardWorkspacePlugin metadata event bus", () => {
+  beforeEach(() => {
+    obsidianMockState.layoutReadyCallback = null;
+    obsidianMockState.autoRunLayoutReady = true;
+    obsidianMockState.workspaceCallbacks = {};
+    obsidianMockState.vaultCallbacks = {};
+    obsidianMockState.metadataCacheCallbacks = {};
+    obsidianMockState.leavesByType = {};
+    vi.clearAllMocks();
+  });
+
+  it("registers exactly one metadataCache changed observer through registerEvent at layout-ready", async () => {
+    obsidianMockState.autoRunLayoutReady = false;
+    const { plugin, app } = createPluginHarness();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    expect(app.metadataCache.on).not.toHaveBeenCalled();
+
+    obsidianMockState.layoutReadyCallback?.();
+    await waitForPluginLoad(plugin);
+
+    expect(app.metadataCache.on).toHaveBeenCalledTimes(1);
+    expect(app.metadataCache.on).toHaveBeenCalledWith("changed", expect.any(Function));
+    const eventRef = app.metadataCache.on.mock.results[0]?.value;
+    expect((plugin as unknown as { registerEvent: ReturnType<typeof vi.fn> }).registerEvent)
+      .toHaveBeenCalledWith(eventRef);
+  });
+
+  it("disposeRuntime disposes the metadata event bus so later publish delivers nothing", async () => {
+    const { plugin } = createPluginHarness();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const received: string[] = [];
+    plugin.subscribeMetadataEvents((event) => {
+      received.push(event.path);
+    });
+
+    (plugin as unknown as { disposeRuntime: () => void }).disposeRuntime();
+    await (plugin as unknown as {
+      metadataEventBus: { publish: (event: { path: string }) => Promise<void> };
+    }).metadataEventBus.publish({ path: "notes/a.md" });
+
+    expect(received).toEqual([]);
   });
 });

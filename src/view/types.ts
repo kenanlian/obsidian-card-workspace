@@ -3,6 +3,7 @@ import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
 import type { CardScope } from "./scope";
+import type { CardTaskSummary } from "./task-summary";
 
 export type {
   SearchIndexPersistenceHealth,
@@ -107,6 +108,7 @@ export interface NoteCardRecord {
   previewHtml: string;
   previewMode: "text" | "code" | "empty" | "placeholder";
   hydrated: boolean;
+  taskSummary: CardTaskSummary | null;
 }
 
 export interface CardHoverLinkPayload {

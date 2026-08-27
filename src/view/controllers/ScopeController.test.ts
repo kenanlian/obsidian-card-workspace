@@ -22,7 +22,7 @@ function createHarness() {
     Object.assign(settings, patch);
   });
   const requestUpdate = vi.fn(async () => undefined);
-  const app = { vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() } };
+  const app = { vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() }, metadataCache: { getFileCache: vi.fn(() => null) } };
   const context = {
     getApp: () => app,
     store: createViewStateStore(createFolderScope("old/nested", true)),
@@ -219,6 +219,7 @@ describe("ScopeController", () => {
       previewHtml: "<p>old</p>",
       previewMode: "text",
       hydrated: true,
+      taskSummary: null,
     }]);
 
     const result = controller.handleVaultMutation({
@@ -239,7 +240,7 @@ describe("ScopeController", () => {
       publishLoadStart, publishLoadCommit, hydrateStartupCardPaths } = harness;
     const oldFile = Object.assign(new TFile(), { path: "old.md", basename: "old", stat: { ctime: 1, mtime: 1 } });
     context.store.replaceBaseCards([{ file: oldFile, fileKind: "markdown", path: oldFile.path,
-      title: "old", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text", hydrated: true }]);
+      title: "old", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text", hydrated: true, taskSummary: null }]);
     context.store.replaceVisibleCards([...context.store.getBaseCards()]);
     const nextFile = Object.assign(new TFile(), { path: "next/a.md", basename: "a", extension: "md", stat: { ctime: 2, mtime: 2 } });
     const folder = Object.assign(new TFolder(), { path: "next", children: [nextFile] });
@@ -270,7 +271,7 @@ describe("ScopeController", () => {
       publishLoadCommit, hydrateStartupCardPaths } = createHarness();
     const oldFile = Object.assign(new TFile(), { path: "old/nested/a.md", basename: "a", stat: { ctime: 1, mtime: 1 } });
     const record = { file: oldFile, fileKind: "markdown" as const, path: oldFile.path,
-      title: "a", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text" as const, hydrated: true };
+      title: "a", ctime: 1, mtime: 1, excerpt: "old", previewHtml: "old", previewMode: "text" as const, hydrated: true, taskSummary: null };
     context.store.replaceBaseCards([record]);
     context.store.replaceVisibleCards([record]);
     const folder = Object.assign(new TFolder(), { path: "old/nested", children: [oldFile] });
@@ -330,6 +331,29 @@ describe("ScopeController", () => {
     expect(reads).toBe(2);
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([childFile.path, rootFile.path]);
     expect(context.store.getVisibleCards().every((card) => card.hydrated)).toBe(true);
+  });
+
+  it("populates taskSummary from the metadata cache on folder load", async () => {
+    const { context, controller } = createHarness();
+    const nextFile = Object.assign(new TFile(), {
+      path: "next/a.md",
+      basename: "a",
+      extension: "md",
+      stat: { ctime: 2, mtime: 2 },
+    });
+    const folder = Object.assign(new TFolder(), { path: "next", children: [nextFile] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === "next" ? folder : null;
+    (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
+      listItems: [{ task: " " }, { task: "x" }],
+    }));
+
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+    );
+
+    expect(context.store.getBaseCards()).toHaveLength(1);
+    expect(context.store.getBaseCards()[0]?.taskSummary).toEqual({ total: 2, incomplete: 1 });
   });
 
   describe("buildLoadKey", () => {

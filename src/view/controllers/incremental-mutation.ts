@@ -4,6 +4,7 @@ import type { SortDirection, SortField } from "../../settings";
 import { migrateRenamedPath, pruneRemovedPath } from "../bulk-selection";
 import { findSortedInsertIndex } from "../card-sort";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
+import { deriveCardTaskSummary } from "../task-summary";
 import type { IncrementalMutationResult, NoteCardRecord, VaultMutationEvent } from "../types";
 
 export interface BulkSelectionState {
@@ -31,7 +32,7 @@ export interface IncrementalMutationOutcome {
   hydrationPaths: readonly string[];
 }
 
-function createRecord(file: TFile, fileKind: NoteCardRecord["fileKind"]): NoteCardRecord {
+function createRecord(app: App, file: TFile, fileKind: NoteCardRecord["fileKind"]): NoteCardRecord {
   return {
     file,
     fileKind,
@@ -43,6 +44,7 @@ function createRecord(file: TFile, fileKind: NoteCardRecord["fileKind"]): NoteCa
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
+    taskSummary: deriveCardTaskSummary(app, file, fileKind),
   };
 }
 
@@ -98,7 +100,7 @@ export function applyIncrementalMutation(
     if (fileKind === null) {
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
-    const card = createRecord(file, fileKind);
+    const card = createRecord(deps.app, file, fileKind);
     insertSorted(card);
     return {
       result: { handled: true, action: "inserted" },
@@ -150,8 +152,12 @@ export function applyIncrementalMutation(
       }
       const hadPending = deps.pendingHydration.has(oldCard.path);
       deps.pendingHydration.delete(oldCard.path);
+      const previousKind = oldCard.fileKind;
       oldCard.file = file;
       oldCard.fileKind = newKind;
+      if (previousKind !== newKind) {
+        oldCard.taskSummary = deriveCardTaskSummary(deps.app, file, newKind);
+      }
       oldCard.path = file.path;
       oldCard.title = file.basename;
       if (event.oldPath) {
@@ -175,7 +181,7 @@ export function applyIncrementalMutation(
       if (!(file instanceof TFile)) {
         return unchanged({ handled: false, action: "deferred_full_reload" });
       }
-      const card = createRecord(file, newKind);
+      const card = createRecord(deps.app, file, newKind);
       insertSorted(card);
       return {
         result: { handled: true, action: "inserted" },

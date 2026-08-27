@@ -11,6 +11,8 @@ export interface CardItemStrings {
   dragInsert: string;
   placeholderLoading: string;
   placeholderEmpty: string;
+  taskIncompleteAria: (count: number) => string;
+  taskAllCompleteAria: string;
 }
 
 export const cardItemStrings: Record<UiLanguage, CardItemStrings> = {
@@ -26,6 +28,9 @@ export const cardItemStrings: Record<UiLanguage, CardItemStrings> = {
     dragInsert: "Insert here",
     placeholderLoading: "Loading preview...",
     placeholderEmpty: "No previewable text near the top.",
+    taskIncompleteAria: (count: number) =>
+      count === 1 ? "1 incomplete task" : `${count} incomplete tasks`,
+    taskAllCompleteAria: "All tasks complete",
   },
   zh: {
     searchCount: (count: number) => `${count} 次命中`,
@@ -38,5 +43,7 @@ export const cardItemStrings: Record<UiLanguage, CardItemStrings> = {
     dragInsert: "在此处插入",
     placeholderLoading: "正在加载预览...",
     placeholderEmpty: "顶部附近没有可预览的文本。",
+    taskIncompleteAria: (count: number) => `${count} 个未完成任务`,
+    taskAllCompleteAria: "任务已全部完成",
   },
 };

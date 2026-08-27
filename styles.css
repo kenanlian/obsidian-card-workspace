@@ -1304,6 +1304,31 @@
   flex: 0 0 auto;
 }
 
+.folder-card-view .fce-card-task-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--fce-text-muted);
+}
+
+.folder-card-view .fce-card-task-footer.is-complete {
+  color: var(--text-faint, var(--fce-text-muted));
+  opacity: 0.75;
+}
+
+.folder-card-view .fce-card-task-icon {
+  display: flex;
+  align-items: center;
+}
+
+.folder-card-view .fce-card-task-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
 .folder-card-view .fce-card-file-icon {
   display: flex;
   align-items: center;

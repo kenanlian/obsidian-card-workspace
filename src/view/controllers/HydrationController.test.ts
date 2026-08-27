@@ -19,6 +19,7 @@ function card(path: string, fileKind: NoteCardRecord["fileKind"] = "markdown"): 
   return {
     file: { path, stat: { mtime: 2 } }, fileKind, path, title: path,
     ctime: 1, mtime: 2, excerpt: "", previewHtml: "", previewMode: "empty", hydrated: false,
+    taskSummary: null,
   } as NoteCardRecord;
 }
 

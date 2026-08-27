@@ -12,6 +12,7 @@ import { NavLayoutController } from "./controllers/NavLayoutController";
 import { ProjectionController } from "./controllers/ProjectionController";
 import { ScopeController } from "./controllers/ScopeController";
 import { SearchController } from "./controllers/SearchController";
+import { TaskSummaryController } from "./controllers/TaskSummaryController";
 import { CardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
 import { collectSupportedFiles, rewritePathAfterRename } from "./scope-files";
 import type { SelectionResult } from "./types";
@@ -46,6 +47,7 @@ export interface ViewModuleHost {
 export interface ViewModules {
   projection: ProjectionController;
   hydration: HydrationController;
+  taskSummary: TaskSummaryController;
   search: SearchController;
   bulk: BulkController;
   navLayout: NavLayoutController;
@@ -73,6 +75,9 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const hydration: HydrationController = new HydrationController({
     context,
     isLoading: () => scopeController.isLoading(),
+  });
+  const taskSummary: TaskSummaryController = new TaskSummaryController({
+    context,
   });
   const search: SearchController = new SearchController({
     context,
@@ -267,6 +272,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   return {
     projection,
     hydration,
+    taskSummary,
     search,
     bulk,
     navLayout,

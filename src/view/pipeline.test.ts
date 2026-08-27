@@ -52,6 +52,7 @@ function createMockCard(path: string, excerpt = "", options: CreateMockCardOptio
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
+    taskSummary: null,
   };
 }
 

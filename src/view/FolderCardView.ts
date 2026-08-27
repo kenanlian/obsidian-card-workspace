@@ -38,6 +38,7 @@ export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
+  private metadataEventUnsubscribe: (() => void) | null = null;
   private suppressScopeProjectionPatch = false;
   readonly panelModel: PanelModel;
 
@@ -159,6 +160,10 @@ export class FolderCardView extends ItemView {
       if (result.shouldRefresh) {
         this.modules.scopeController.scheduleVaultRefresh();
       }
+    });
+    this.metadataEventUnsubscribe?.();
+    this.metadataEventUnsubscribe = this.plugin.subscribeMetadataEvents((event) => {
+      this.modules.taskSummary.handleMetadataChange(event.path);
     });
   }
 
@@ -315,11 +320,14 @@ export class FolderCardView extends ItemView {
   cleanupLifecycle(): CleanupResult {
     this.viewEventUnsubscribe?.();
     this.viewEventUnsubscribe = null;
+    this.metadataEventUnsubscribe?.();
+    this.metadataEventUnsubscribe = null;
     const scopeReport = this.modules.scopeController.dispose();
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
     const searchReport = this.modules.search.dispose();
     const hydrationReport = this.modules.hydration.dispose();
+    this.modules.taskSummary.dispose();
 
     return {
       cancelledDebounce:

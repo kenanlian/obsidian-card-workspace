@@ -14,6 +14,7 @@
     type PreviewHtmlSanitizer,
   } from "./preview-html";
   import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
+  import CardTaskFooter from "./CardTaskFooter.svelte";
 
   interface BulkSelectCardPayload {
     path: string;
@@ -430,5 +431,8 @@
         <p class="fce-preview-empty">{cardStrings.placeholderLoading}</p>
       {/if}
     </div>
+    {#if card.taskSummary}
+      <CardTaskFooter summary={card.taskSummary} strings={cardStrings} />
+    {/if}
   </div>
 </div>

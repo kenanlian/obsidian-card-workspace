@@ -22,6 +22,7 @@ function createCard(path: string): NoteCardRecord {
     previewHtml: "",
     previewMode: "empty",
     hydrated: false,
+    taskSummary: null,
   };
 }
 

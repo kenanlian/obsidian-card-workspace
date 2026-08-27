@@ -877,6 +877,7 @@ export function createViewWithFile(
     getSearchSnapshot: vi.fn(() => null),
     subscribeSearchSnapshots: vi.fn(() => () => undefined),
     subscribeVaultEvents: vi.fn(() => () => undefined),
+    subscribeMetadataEvents: vi.fn(() => () => undefined),
     openNoteFromCard: vi.fn(),
     selectAllNotes: vi.fn(),
     createNoteInCurrentFolder: vi.fn(),
@@ -907,6 +908,7 @@ export function createCardRecord(
     previewHtml: "",
     previewMode: "empty" as const,
     hydrated: false,
+    taskSummary: null,
   };
 }
 

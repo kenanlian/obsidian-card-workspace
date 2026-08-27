@@ -15,6 +15,7 @@ function createCard(path: string, title: string): NoteCardRecord {
     previewHtml: "<p>Preview</p>",
     previewMode: "text",
     hydrated: false,
+    taskSummary: null,
   };
 }
 
@@ -154,5 +155,24 @@ describe("createViewStateStore", () => {
     store.replaceVisibleCards([createCard("first.md", "First")]);
     expect(store.getHydrationRevision()).toBe(1);
     expect(store.advanceHydrationRevision()).toBe(2);
+  });
+
+  it("patchCardPreviews can set taskSummary and preserves it when patching unrelated preview fields", () => {
+    const store = createViewStateStore({ kind: "folder", path: "notes", includeSubfolders: false });
+    const target = createCard("notes/target.md", "Target");
+    store.replaceBaseCards([target]);
+    store.replaceVisibleCards([target]);
+
+    const summary = { total: 2, incomplete: 1 };
+    store.patchCardPreviews([{ path: target.path, patch: { taskSummary: summary } }]);
+    expect(store.getBaseCard(target.path)?.taskSummary).toBe(summary);
+    expect(store.getVisibleCards()[0]?.taskSummary).toBe(summary);
+
+    store.patchCardPreviews([{ path: target.path, patch: { hydrated: true, previewHtml: "<p>Later</p>" } }]);
+    expect(store.getBaseCard(target.path)?.taskSummary).toBe(summary);
+    expect(store.getBaseCard(target.path)).toMatchObject({
+      hydrated: true,
+      previewHtml: "<p>Later</p>",
+    });
   });
 });
