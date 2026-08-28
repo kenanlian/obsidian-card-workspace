@@ -73,7 +73,7 @@
    */
   --fce-nav-section-divider: color-mix(
     in srgb,
-    var(--background-modifier-border-hover, var(--background-modifier-border, rgba(127, 127, 127, 0.35))) 45%,
+    var(--background-modifier-border-hover, var(--background-modifier-border, rgba(127, 127, 127, 0.35))) 35%,
     transparent
   );
   --fce-nav-count-color: var(--text-faint, var(--text-muted, #6b6b6b));

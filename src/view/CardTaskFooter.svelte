@@ -27,6 +27,6 @@
 </script>
 
 <div class="fce-card-task-footer {summary.incomplete === 0 ? 'is-complete' : ''}" role="img" aria-label={ariaLabel}>
-  <span class="fce-card-task-icon" aria-hidden="true" use:applyIcon={summary.incomplete === 0 ? "check" : "list-checks"}></span>
+  <span class="fce-card-task-icon" aria-hidden="true" use:applyIcon={summary.incomplete === 0 ? "square-check-big" : "list-todo"}></span>
   {#if summary.incomplete > 0}<span class="fce-card-task-count">{summary.incomplete}</span>{/if}
 </div>

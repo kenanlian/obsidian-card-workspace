@@ -858,7 +858,7 @@ describe("CardItem.svelte", () => {
     const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
     expect(footer).not.toBeNull();
     expect(footer?.classList.contains("is-complete")).toBe(false);
-    expect(icon?.getAttribute("data-icon")).toBe("list-checks");
+    expect(icon?.getAttribute("data-icon")).toBe("list-todo");
     expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("3");
     expect(footer?.textContent?.trim()).toBe("3");
   });
@@ -874,7 +874,7 @@ describe("CardItem.svelte", () => {
     const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
     expect(footer).not.toBeNull();
     expect(footer?.classList.contains("is-complete")).toBe(true);
-    expect(icon?.getAttribute("data-icon")).toBe("check");
+    expect(icon?.getAttribute("data-icon")).toBe("square-check-big");
     expect(footer?.querySelector(".fce-card-task-count")).toBeNull();
     expect(footer?.textContent).not.toMatch(/\d/);
   });
