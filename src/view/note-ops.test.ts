@@ -704,6 +704,31 @@ describe("clipboard operations", () => {
     await expect(buildTitleAndContentClipboardText(app as unknown as any, file)).resolves.toBe("# Weekly Note\n\nLine 1\nLine 2");
   });
 
+  it("omits leading YAML frontmatter from content and title-plus-content clipboard text", async () => {
+    const file = createFile("notes/Weekly Note.md");
+    const app = {
+      vault: {
+        cachedRead: vi.fn(async (): Promise<string> => "---\ntags:\n  - weekly\n---\n\nLine 1\nLine 2"),
+      },
+    };
+
+    await expect(buildContentClipboardText(app as unknown as any, file)).resolves.toBe("Line 1\nLine 2");
+    await expect(buildTitleAndContentClipboardText(app as unknown as any, file)).resolves.toBe(
+      "# Weekly Note\n\nLine 1\nLine 2",
+    );
+  });
+
+  it("keeps a mid-note horizontal rule when building clipboard content", async () => {
+    const file = createFile("notes/Weekly Note.md");
+    const app = {
+      vault: {
+        cachedRead: vi.fn(async (): Promise<string> => "Intro\n\n---\n\nOutro"),
+      },
+    };
+
+    await expect(buildContentClipboardText(app as unknown as any, file)).resolves.toBe("Intro\n\n---\n\nOutro");
+  });
+
   it("copies title, content, and title-plus-content to the clipboard", async () => {
     const file = createFile("notes/Weekly Note.md");
     const clipboardWriteText = vi.fn(async (_text: string) => undefined);

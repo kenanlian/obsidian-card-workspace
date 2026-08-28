@@ -239,10 +239,10 @@ export function buildTitleClipboardText(file: TFile): string {
 }
 
 /**
- * Build clipboard-ready full body text for a file.
+ * Build clipboard-ready body text for a file, omitting leading YAML frontmatter.
  */
 export async function buildContentClipboardText(app: App, file: TFile): Promise<string> {
-  return await app.vault.cachedRead(file);
+  return splitFrontmatter(await app.vault.cachedRead(file)).body;
 }
 
 /**

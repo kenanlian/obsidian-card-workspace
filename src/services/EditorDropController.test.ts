@@ -231,6 +231,36 @@ describe("EditorDropController", () => {
     expect(editor.setCursor).toHaveBeenCalledWith({ line: 0, ch: 16 });
   });
 
+  it("strips leading frontmatter when inserting content", async () => {
+    const app = createAppMock();
+    const controller = createController(app, { dragInsertAction: "content" });
+    const file = new TFile();
+    Object.assign(file, { path: "notes/Source.md", basename: "Source" });
+    app.vault.getAbstractFileByPath.mockReturnValue(file as never);
+    app.vault.cachedRead.mockResolvedValue("---\ntags:\n  - keep\n---\n\nBody");
+
+    const editor = createEditorMock({ line: 1, ch: 2 });
+    const event = createDropEvent(JSON.stringify({ path: "notes/Source.md", title: "Source" }));
+    await controller.handleCardEditorDrop(event as unknown as DragEvent, editor as never, { editor } as never);
+
+    expect(editor.replaceRange).toHaveBeenCalledWith("Body", { line: 1, ch: 2 }, undefined, "card-workspace-drag");
+  });
+
+  it("strips leading frontmatter when inserting title and content", async () => {
+    const app = createAppMock();
+    const controller = createController(app, { dragInsertAction: "title-content" });
+    const file = new TFile();
+    Object.assign(file, { path: "notes/Source.md", basename: "Source" });
+    app.vault.getAbstractFileByPath.mockReturnValue(file as never);
+    app.vault.cachedRead.mockResolvedValue("---\ntags:\n  - keep\n---\n\nBody");
+
+    const editor = createEditorMock({ line: 1, ch: 2 });
+    const event = createDropEvent(JSON.stringify({ path: "notes/Source.md", title: "Source" }));
+    await controller.handleCardEditorDrop(event as unknown as DragEvent, editor as never, { editor } as never);
+
+    expect(editor.replaceRange).toHaveBeenCalledWith("# Source\n\nBody", { line: 1, ch: 2 }, undefined, "card-workspace-drag");
+  });
+
   it("blocks unsupported configured content insertion for base files", async () => {
     const app = createAppMock();
     const controller = createController(app, { dragInsertAction: "content" });
