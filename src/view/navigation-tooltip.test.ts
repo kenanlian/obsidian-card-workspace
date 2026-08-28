@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { getUiStrings } from "../i18n";
+import { defaultNavSectionOrder } from "../navigation-section-order";
 import { projectNavigation } from "./navigation-projection";
 import { resolveNavigationRowTooltip } from "./navigation-tooltip";
 import {
@@ -37,6 +38,7 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
     includeSubfolders: true,
     tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
       folders: { label: "Folders", emptyLabel: null },

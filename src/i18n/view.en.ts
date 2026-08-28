@@ -181,6 +181,8 @@ export const viewStringsEn: ViewStrings = {
       unfavorite: "Remove from favorites",
       moveFavoriteUp: "Move up",
       moveFavoriteDown: "Move down",
+      moveSectionUp: "Move section up",
+      moveSectionDown: "Move section down",
       clearFavorites: "Clear favorites",
       clearFavoritesConfirmTitle: "Clear favorites",
       clearFavoritesConfirmBody: (count: number) =>

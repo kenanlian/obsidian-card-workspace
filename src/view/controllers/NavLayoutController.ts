@@ -1,3 +1,4 @@
+import { moveNavSection } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
 import { normalizeScopePath } from "../scope";
 import type { CardScope } from "../scope";
@@ -297,6 +298,11 @@ export class NavLayoutController implements DisposableController {
     if (!id) return;
     const collapsed = this.context.getSettings().sectionCollapsed;
     await this.context.saveSettings({ sectionCollapsed: { [id]: !collapsed[id] } });
+  }
+  async onMoveNavSection(section: NavSectionId, delta: -1 | 1): Promise<void> {
+    const next = moveNavSection(this.context.getSettings().navSectionOrder, section, delta);
+    if (next === null) return;
+    await this.context.saveSettings({ navSectionOrder: next });
   }
   async onNavPaneResize(width: number): Promise<void> {
     if (typeof width !== "number" || !Number.isFinite(width)) {

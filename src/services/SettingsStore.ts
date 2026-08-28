@@ -20,6 +20,7 @@ export interface PreferencesSettings {
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   previewLines: number;
   showNavItemCounts: boolean;
+  navSectionOrder: PluginSettings["navSectionOrder"];
 }
 
 export interface WorkspaceSectionCollapsed {
@@ -65,6 +66,7 @@ const PREFERENCE_KEYS = new Set<string>([
   "newNoteTemplate",
   "previewLines",
   "showNavItemCounts",
+  "navSectionOrder",
 ]);
 
 const USER_DATA_KEYS = new Set<string>(["boxes", "favorites", "pinnedPaths"]);
@@ -125,6 +127,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
   if (patch.showNavItemCounts !== undefined) preferences.showNavItemCounts = patch.showNavItemCounts;
+  if (patch.navSectionOrder !== undefined) preferences.navSectionOrder = patch.navSectionOrder;
 
   if (patch.lastFolderPath !== undefined) workspace.lastFolderPath = patch.lastFolderPath;
   if (patch.expandedFolderPaths !== undefined) workspace.expandedFolderPaths = patch.expandedFolderPaths;
@@ -172,6 +175,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       newNoteTemplate: settings.newNoteTemplate,
       previewLines: settings.previewLines,
       showNavItemCounts: settings.showNavItemCounts,
+      navSectionOrder: [...settings.navSectionOrder],
     },
     workspace: {
       lastFolderPath: settings.lastFolderPath,

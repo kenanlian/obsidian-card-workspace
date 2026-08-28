@@ -109,6 +109,7 @@ export function resolveSettingsUpdateIntent(
   if (previous.lastFolderPath !== next.lastFolderPath) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.expandedFolderPaths, next.expandedFolderPaths)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.expandedTagPaths, next.expandedTagPaths)) intent = mergeIntent(intent, "patch");
+  if (!stringArraysEqual(previous.navSectionOrder, next.navSectionOrder)) intent = mergeIntent(intent, "patch");
   if (!favoritesEqual(previous.favorites, next.favorites)) intent = mergeIntent(intent, "patch");
   if (previous.activeBoxId !== next.activeBoxId) intent = mergeIntent(intent, "patch");
   if (previous.navPaneWidth !== next.navPaneWidth) intent = mergeIntent(intent, "patch");

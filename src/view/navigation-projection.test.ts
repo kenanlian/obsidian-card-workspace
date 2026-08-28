@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PLAIN_FOLDER_ICON } from "../icons";
+import { defaultNavSectionOrder } from "../navigation-section-order";
 import type { FolderTreeNode } from "./types";
 import type { TagTreeNode } from "./tag-tree";
 import {
@@ -89,6 +90,7 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     includeSubfolders: true,
     tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
     sectionLabels,
     rootFolderLabel: "Root /",
     expansion: {
@@ -373,6 +375,40 @@ describe("projectNavigation", () => {
     expect(ids(projection.rows)).toContain(navigationBoxId("ok"));
     expect(ids(projection.rows)).not.toContain(navigationFavoriteId("file", ""));
     expect(ids(projection.rows)).not.toContain(navigationBoxId(""));
+  });
+
+  it("projects sections, rows, and ARIA positions from the supplied section order", () => {
+    const order = ["boxes", "tags", "folders", "favorites"] as const;
+    const projection = projectNavigation(buildInput({ sectionOrder: order }));
+    expect(projection.sections.map((section) => section.section)).toEqual([...order]);
+    expect(projection.rows[0]?.id).toBe(navigationSectionId("boxes"));
+    const sectionRows = projection.rows.filter((row) => row.kind === "section");
+    expect(sectionRows.map((row) => ({
+      section: row.section, positionInSet: row.positionInSet, setSize: row.setSize,
+    }))).toEqual(order.map((section, index) => ({
+      section, positionInSet: index + 1, setSize: 4,
+    })));
+  });
+
+  it("normalizes a malformed section order before projecting", () => {
+    const projection = projectNavigation(buildInput({
+      sectionOrder: ["tags", "tags", "nope", 7] as unknown as NavigationProjectionInput["sectionOrder"],
+    }));
+    expect(projection.sections.map((section) => section.section)).toEqual([
+      "tags", "favorites", "folders", "boxes",
+    ]);
+  });
+
+  it("keeps reordered relative sequence and filtered ARIA positions under query", () => {
+    const projection = projectNavigation(buildInput({
+      sectionOrder: ["boxes", "tags", "folders", "favorites"],
+      query: "current",
+    }));
+    expect(projection.sections.map((section) => section.section)).toEqual(["tags", "favorites"]);
+    const sectionRows = projection.rows.filter((row) => row.kind === "section");
+    expect(sectionRows).toHaveLength(2);
+    expect(sectionRows[0]).toMatchObject({ section: "tags", positionInSet: 1, setSize: 2 });
+    expect(sectionRows[1]).toMatchObject({ section: "favorites", positionInSet: 2, setSize: 2 });
   });
 });
 

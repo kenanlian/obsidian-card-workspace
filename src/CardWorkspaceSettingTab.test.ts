@@ -74,12 +74,63 @@ const mockState = vi.hoisted(() => {
     }
   }
 
+  class MockExtraButtonComponent {
+    icon = "";
+    tooltip = "";
+    disabled = false;
+    clickHandler: (() => Promise<void> | void) | null = null;
+
+    setIcon(icon: string): this {
+      this.icon = icon;
+      return this;
+    }
+
+    setTooltip(tooltip: string): this {
+      this.tooltip = tooltip;
+      return this;
+    }
+
+    setDisabled(disabled: boolean): this {
+      this.disabled = disabled;
+      return this;
+    }
+
+    onClick(handler: () => Promise<void> | void): this {
+      this.clickHandler = handler;
+      return this;
+    }
+  }
+
+  class MockButtonComponent {
+    buttonText = "";
+    disabled = false;
+    clickHandler: (() => Promise<void> | void) | null = null;
+
+    setButtonText(text: string): this {
+      this.buttonText = text;
+      return this;
+    }
+
+    setDisabled(disabled: boolean): this {
+      this.disabled = disabled;
+      return this;
+    }
+
+    onClick(handler: () => Promise<void> | void): this {
+      this.clickHandler = handler;
+      return this;
+    }
+  }
+
   class MockSetting {
     name = "";
     desc = "";
+    heading = false;
     slider: MockSliderComponent | null = null;
     dropdown: MockDropdownComponent | null = null;
     toggle: MockToggleComponent | null = null;
+    extraButtons: MockExtraButtonComponent[] = [];
+    button: MockButtonComponent | null = null;
 
     constructor(_containerEl: unknown) {
       settings.push(this);
@@ -92,6 +143,11 @@ const mockState = vi.hoisted(() => {
 
     setDesc(desc: string): this {
       this.desc = desc;
+      return this;
+    }
+
+    setHeading(): this {
+      this.heading = true;
       return this;
     }
 
@@ -110,6 +166,19 @@ const mockState = vi.hoisted(() => {
     addToggle(configure: (toggle: MockToggleComponent) => void): this {
       this.toggle = new MockToggleComponent();
       configure(this.toggle);
+      return this;
+    }
+
+    addExtraButton(configure: (button: MockExtraButtonComponent) => void): this {
+      const extra = new MockExtraButtonComponent();
+      configure(extra);
+      this.extraButtons.push(extra);
+      return this;
+    }
+
+    addButton(configure: (button: MockButtonComponent) => void): this {
+      this.button = new MockButtonComponent();
+      configure(this.button);
       return this;
     }
   }
@@ -144,6 +213,12 @@ vi.mock("obsidian", () => {
 
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 
+const DEFAULT_NAV_SECTION_ORDER = ["favorites", "folders", "tags", "boxes"];
+
+function sectionRows() {
+  return mockState.settings.filter((setting) => setting.extraButtons.length === 2);
+}
+
 describe("CardWorkspaceSettingTab", () => {
   beforeEach(() => {
     mockState.settings.length = 0;
@@ -159,6 +234,7 @@ describe("CardWorkspaceSettingTab", () => {
         newNoteTemplate: "blank",
         previewLines: 6,
         showNavItemCounts: false,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(),
       getUiLanguage: vi.fn(() => "en"),
@@ -168,7 +244,7 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
 
     expect(mockState.containerEl.empty).toHaveBeenCalledTimes(1);
-    expect(mockState.settings).toHaveLength(6);
+    expect(mockState.settings).toHaveLength(12);
     expect(mockState.settings.map((setting) => setting.name)).toEqual([
       "Default card open behavior",
       "Card drag insert behavior",
@@ -176,6 +252,12 @@ describe("CardWorkspaceSettingTab", () => {
       "Card corner radius",
       "Preview lines",
       "Show item counts in navigation",
+      "Navigation section order",
+      "Favorites",
+      "Folders",
+      "Tags",
+      "Boxes",
+      "",
     ]);
     expect(mockState.settings[0]?.dropdown).toMatchObject({
       value: "split-right",
@@ -221,6 +303,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(mockState.settings[5]?.toggle).toMatchObject({
       value: false,
     });
+    expect(mockState.settings[11]?.button?.buttonText).toBe("Restore default order");
   });
 
   it("renders Chinese labels when the Obsidian language is Chinese", () => {
@@ -232,6 +315,7 @@ describe("CardWorkspaceSettingTab", () => {
         newNoteTemplate: "tags-frontmatter",
         previewLines: 6,
         showNavItemCounts: false,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(),
       getUiLanguage: vi.fn(() => "zh"),
@@ -247,6 +331,12 @@ describe("CardWorkspaceSettingTab", () => {
       "卡片圆角",
       "预览行数",
       "在导航栏显示条目计数",
+      "导航区分区顺序",
+      "收藏",
+      "文件夹",
+      "标签",
+      "卡片盒",
+      "",
     ]);
     expect(mockState.settings[0]?.dropdown?.options[0]).toEqual({
       value: "smart",
@@ -263,6 +353,7 @@ describe("CardWorkspaceSettingTab", () => {
       { value: "tags-frontmatter", label: "带 tags 属性" },
       { value: "blank", label: "完全空白" },
     ]);
+    expect(mockState.settings[11]?.button?.buttonText).toBe("恢复默认顺序");
   });
 
   it("saves defaultCardOpenBehavior changes from the dropdown", async () => {
@@ -273,6 +364,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "ask",
         newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(async () => undefined),
       getUiLanguage: vi.fn(() => "en"),
@@ -294,6 +386,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "ask",
         newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(async () => undefined),
       getUiLanguage: vi.fn(() => "en"),
@@ -315,6 +408,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "ask",
         newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(async () => undefined),
       getUiLanguage: vi.fn(() => "en"),
@@ -336,6 +430,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "ask",
         newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(async () => undefined),
       getUiLanguage: vi.fn(() => "en"),
@@ -357,6 +452,7 @@ describe("CardWorkspaceSettingTab", () => {
         dragInsertAction: "ask",
         newNoteTemplate: "tags-frontmatter",
         previewLines: 5,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
       })),
       saveSettings: vi.fn(async () => undefined),
       getUiLanguage: vi.fn(() => "en"),
@@ -370,4 +466,226 @@ describe("CardWorkspaceSettingTab", () => {
     expect(plugin.saveSettings).toHaveBeenCalledWith({ cardCornerRadius: "rounded" });
   });
 
+  it("renders section rows in the persisted navigation order", () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: ["boxes", "tags", "folders", "favorites"],
+      })),
+      saveSettings: vi.fn(),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    expect(sectionRows().map((setting) => setting.name)).toEqual([
+      "Boxes",
+      "Tags",
+      "Folders",
+      "Favorites",
+    ]);
+  });
+
+  it("disables only the first-row up button and the last-row down button", () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
+      })),
+      saveSettings: vi.fn(),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    const rows = sectionRows();
+    expect(rows).toHaveLength(4);
+    expect(rows.flatMap((row) => row.extraButtons.map((button) => button.disabled))).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+  });
+
+  it("saves the swapped order when the second row moves up", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await sectionRows()[1]?.extraButtons[0]?.clickHandler?.();
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      navSectionOrder: ["folders", "favorites", "tags", "boxes"],
+    });
+  });
+
+  it("does not save when a disabled end move still fires", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: DEFAULT_NAV_SECTION_ORDER,
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await sectionRows()[0]?.extraButtons[0]?.clickHandler?.();
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves the default order when restore default is clicked", async () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: ["boxes", "tags", "folders", "favorites"],
+      })),
+      saveSettings: vi.fn(async () => undefined),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    await mockState.settings[11]?.button?.clickHandler?.();
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      navSectionOrder: ["favorites", "folders", "tags", "boxes"],
+    });
+  });
+
+  it("applies sequential moves correctly when clicks overlap an in-flight save", async () => {
+    let stored: string[] = [...DEFAULT_NAV_SECTION_ORDER];
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: stored,
+      })),
+      // Mirrors SettingsStore.commitPatch: memory updates synchronously while the
+      // returned promise still waits for persistence.
+      saveSettings: vi.fn(async (patch: { navSectionOrder: string[] }) => {
+        stored = patch.navSectionOrder;
+      }),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    const tagsMoveUp = sectionRows()[2]?.extraButtons[0]?.clickHandler;
+    await Promise.all([tagsMoveUp?.(), tagsMoveUp?.()]);
+
+    expect(plugin.saveSettings.mock.calls.map((call) => call[0].navSectionOrder)).toEqual([
+      ["favorites", "tags", "folders", "boxes"],
+      ["tags", "favorites", "folders", "boxes"],
+    ]);
+    expect(stored).toEqual(["tags", "favorites", "folders", "boxes"]);
+  });
+
+  it("does not persist from a control that rendered disabled when an overlapping move frees it", async () => {
+    let stored: string[] = [...DEFAULT_NAV_SECTION_ORDER];
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: stored,
+      })),
+      saveSettings: vi.fn(async (patch: { navSectionOrder: string[] }) => {
+        stored = patch.navSectionOrder;
+      }),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    // Favorites renders first, so its up control is disabled; Folders' up control is not.
+    const favoritesMoveUp = sectionRows()[0]?.extraButtons[0]?.clickHandler;
+    const foldersMoveUp = sectionRows()[1]?.extraButtons[0]?.clickHandler;
+    await Promise.all([foldersMoveUp?.(), favoritesMoveUp?.()]);
+
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      navSectionOrder: ["folders", "favorites", "tags", "boxes"],
+    });
+    expect(stored).toEqual(["folders", "favorites", "tags", "boxes"]);
+  });
+
+  it("renders four normalized section rows when the stored order is malformed", () => {
+    const plugin = {
+      getSettings: vi.fn(() => ({
+        cardCornerRadius: "medium",
+        defaultCardOpenBehavior: "split-right",
+        dragInsertAction: "embed",
+        newNoteTemplate: "blank",
+        previewLines: 6,
+        showNavItemCounts: false,
+        navSectionOrder: ["tags", "tags", "unknown", "boxes"],
+      })),
+      saveSettings: vi.fn(),
+      getUiLanguage: vi.fn(() => "en"),
+    };
+
+    const tab = new CardWorkspaceSettingTab({} as never, plugin as never);
+    tab.display();
+
+    expect(sectionRows().map((setting) => setting.name)).toEqual([
+      "Tags",
+      "Boxes",
+      "Favorites",
+      "Folders",
+    ]);
+  });
 });

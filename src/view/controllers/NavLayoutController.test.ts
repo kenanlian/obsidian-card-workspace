@@ -20,10 +20,12 @@ vi.mock("obsidian", () => ({
   TFolder: obsidianTypes.MockTFolder,
 }));
 
+import { defaultNavSectionOrder } from "../../navigation-section-order";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { createFolderScope } from "../scope";
 import { navigationFolderId } from "../navigation-model";
 import type { NavigationProjectionInput } from "../navigation-model";
+import type { NavSectionId } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
@@ -93,6 +95,7 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
     includeSubfolders: true,
     tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
       folders: { label: "Folders", emptyLabel: null },
@@ -372,5 +375,36 @@ describe("NavLayoutController", () => {
     expect(controller.getFocusRequest()).not.toBeNull();
     controller.consumeFocusReturn(1);
     expect(controller.getFocusRequest()).toBeNull();
+  });
+
+  it("persists a swapped navSectionOrder through saveSettings", async () => {
+    const { controller, saveSettings } = createHarness();
+
+    await controller.onMoveNavSection("folders", -1);
+
+    expect(saveSettings).toHaveBeenCalledWith({
+      navSectionOrder: ["folders", "favorites", "tags", "boxes"],
+    });
+  });
+
+  it("is a silent no-op for an impossible delta or unknown section", async () => {
+    const { controller, saveSettings } = createHarness();
+
+    await controller.onMoveNavSection("favorites", -1);
+    await controller.onMoveNavSection("boxes", 1);
+    await controller.onMoveNavSection("mystery" as NavSectionId, 1);
+
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a malformed stored order before swapping", async () => {
+    const { controller, saveSettings, settings } = createHarness();
+    settings.navSectionOrder = ["tags", "nope", "boxes"] as unknown as NavSectionId[];
+
+    await controller.onMoveNavSection("boxes", 1);
+
+    expect(saveSettings).toHaveBeenCalledWith({
+      navSectionOrder: ["tags", "favorites", "boxes", "folders"],
+    });
   });
 });

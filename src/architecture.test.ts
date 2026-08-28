@@ -246,6 +246,7 @@ describe("R4 i18n is a leaf module", () => {
 describe("navigation projection is isolated from card search and projection", () => {
   const NAVIGATION_RUNTIME_FILES = new Set([
     "src/navigation-expansion-settings.ts",
+    "src/navigation-section-order.ts",
     "src/services/NavigationWorkspaceReconciler.ts",
     "src/view/NavigationPane.svelte",
     "src/view/NavigationTreeRow.svelte",
@@ -345,8 +346,12 @@ describe("R5 line-count ratchet", () => {
     "src/view/FolderCardPanel.svelte": 728,
     "src/view/Toolbar.svelte": 728,
     "src/view/CardItem.svelte": 438,
-    "src/view/nav-context-menu.ts": 543,
-    "src/settings.ts": 503,
+    // Section-header menus gained a shared move-order dependency contract, with the
+    // items themselves extracted to src/view/menus/nav-section-header-items.ts.
+    "src/view/nav-context-menu.ts": 545,
+    // One new persisted preference, with its normalization extracted to
+    // src/navigation-section-order.ts rather than inlined here.
+    "src/settings.ts": 507,
     "src/view/markdown-utils.ts": 462,
     "src/search/IndexStore.ts": 445,
     "src/view/card-boxes.ts": 394,

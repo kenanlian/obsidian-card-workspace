@@ -8,10 +8,11 @@ import {
 } from "../__mocks__/folder-card-view-harness";
 import type { Menu } from "obsidian";
 import { getUiStrings } from "../i18n";
+import { defaultNavSectionOrder } from "../navigation-section-order";
 import { createBoxScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
 import { buildNavContextMenu, resolveNavMenuDangerLabel, type NavMenuActions, type NavMenuDeps } from "./nav-context-menu";
-import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload } from "./types";
+import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload, NavSectionId } from "./types";
 
 registerFolderCardView(FolderCardView);
 
@@ -137,6 +138,7 @@ function createActions(): NavMenuActions {
     revealInSystemExplorer: vi.fn(),
     toggleIncludeSubfolders: vi.fn(),
     toggleSection: vi.fn(),
+    moveSection: vi.fn(),
     addTagToFilter: vi.fn(),
     removeTagFromFilter: vi.fn(),
     filterByOnlyTag: vi.fn(),
@@ -165,6 +167,7 @@ function createDeps(overrides: Partial<NavMenuDeps> = {}): NavMenuDeps {
     activeBoxId: null,
     boxExcludedCount: () => 0,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
     hasExpandedFolders: false,
     hasExpandedTags: false,
     tagExpansion: () => ({ hasChildren: false, expanded: false }),
@@ -214,6 +217,8 @@ describe("folders header menu", () => {
       { title: "Including subfolders", icon: "folder-tree" },
       "sep",
       { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
     ]);
   });
 
@@ -400,6 +405,8 @@ describe("tags header menu", () => {
       { title: "Expand all tags", icon: "chevrons-up-down" },
       "sep",
       { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
     ]);
     expect(findItem(menu, "Clear tag filter")?.disabled).toBe(false);
   });
@@ -411,11 +418,16 @@ describe("tags header menu", () => {
     expect(findItem(menu, "Clear tag filter")?.disabled).toBe(true);
   });
 
-  it("reduces to the section toggle in box mode", () => {
+  it("reduces to the section toggle and move items in box mode", () => {
     const deps = createDeps({ isBoxMode: true, activeFilterTags: ["work"] });
-    const { menu } = build(createPayload({ section: "tags", scope: "header" }), deps);
+    const { menu, result } = build(createPayload({ section: "tags", scope: "header" }), deps);
 
-    expect(getSignature(menu)).toEqual([{ title: "Collapse section", icon: "chevron-down" }]);
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([
+      { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
+    ]);
   });
 });
 
@@ -499,6 +511,8 @@ describe("boxes header menu", () => {
       { title: "Save current view as card box…", icon: "package-plus" },
       "sep",
       { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
     ]);
     expect(deps.actions.appendAddScopeSubmenu).toHaveBeenCalledTimes(1);
   });
@@ -511,6 +525,8 @@ describe("boxes header menu", () => {
       { title: "New card box…", icon: "box" },
       "sep",
       { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
     ]);
     expect(deps.actions.appendAddScopeSubmenu).not.toHaveBeenCalled();
   });
@@ -591,6 +607,8 @@ describe("favorites header menu", () => {
       { title: "Clear favorites", icon: "star-off" },
       "sep",
       { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
     ]);
     expect(findItem(menu, "Clear favorites")?.disabled).toBe(false);
   });
@@ -715,7 +733,70 @@ describe("favorites row menu", () => {
 // Localization + danger labels
 // ---------------------------------------------------------------------------
 
+describe("section header move items", () => {
+  function moveFlags(menu: MockMenu): { up: boolean; down: boolean } {
+    return {
+      up: findItem(menu, "Move section up")?.disabled ?? false,
+      down: findItem(menu, "Move section down")?.disabled ?? false,
+    };
+  }
+
+  it("disables the default first-section up and last-section down ends", () => {
+    const deps = createDeps();
+    const favorites = build(createPayload({ section: "favorites", scope: "header" }), deps);
+    const folders = build(createPayload({ section: "folders", scope: "header" }), deps);
+    const tags = build(createPayload({ section: "tags", scope: "header" }), deps);
+    const boxes = build(createPayload({ section: "boxes", scope: "header" }), deps);
+
+    expect(moveFlags(favorites.menu)).toEqual({ up: true, down: false });
+    expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: true });
+  });
+
+  it("follows a reordered sectionOrder for the disabled ends", () => {
+    const sectionOrder: NavSectionId[] = ["boxes", "tags", "folders", "favorites"];
+    const deps = createDeps({ sectionOrder });
+    const boxes = build(createPayload({ section: "boxes", scope: "header" }), deps);
+    const tags = build(createPayload({ section: "tags", scope: "header" }), deps);
+    const folders = build(createPayload({ section: "folders", scope: "header" }), deps);
+    const favorites = build(createPayload({ section: "favorites", scope: "header" }), deps);
+
+    expect(moveFlags(boxes.menu)).toEqual({ up: true, down: false });
+    expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(favorites.menu)).toEqual({ up: false, down: true });
+  });
+
+  it("routes move-up and move-down clicks to moveSection with the section and delta", () => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
+
+    findItem(menu, "Move section up")?.clickHandler?.();
+    findItem(menu, "Move section down")?.clickHandler?.();
+    expect(deps.actions.moveSection).toHaveBeenNthCalledWith(1, "folders", -1);
+    expect(deps.actions.moveSection).toHaveBeenNthCalledWith(2, "folders", 1);
+  });
+});
+
 describe("localization", () => {
+  it("renders the folders header menu in zh", () => {
+    const deps = createDeps({ strings: getUiStrings("zh") });
+    const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
+
+    expect(getTitles(menu)).toEqual([
+      "在库根目录新建笔记",
+      "在库根目录新建文件夹",
+      "在库根目录新建白板",
+      "在库根目录新建数据库",
+      "展开全部文件夹",
+      "包含子文件夹",
+      "折叠此区",
+      "分区上移",
+      "分区下移",
+    ]);
+  });
+
   it("renders the folder row menu in zh", () => {
     const deps = createDeps({ strings: getUiStrings("zh") });
     const { menu } = build(

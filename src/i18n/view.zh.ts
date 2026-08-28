@@ -177,6 +177,8 @@ export const viewStringsZh: ViewStrings = {
       unfavorite: "取消收藏",
       moveFavoriteUp: "上移",
       moveFavoriteDown: "下移",
+      moveSectionUp: "分区上移",
+      moveSectionDown: "分区下移",
       clearFavorites: "清空收藏",
       clearFavoritesConfirmTitle: "清空收藏",
       clearFavoritesConfirmBody: (count: number) =>

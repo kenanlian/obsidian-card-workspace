@@ -13,6 +13,11 @@ export interface SettingTabStrings {
   previewLinesDesc: (min: number, max: number) => string;
   showNavItemCountsName: string;
   showNavItemCountsDesc: string;
+  navSectionOrderName: string;
+  navSectionOrderDesc: string;
+  navSectionOrderMoveUp: string;
+  navSectionOrderMoveDown: string;
+  navSectionOrderReset: string;
 }
 
 export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
@@ -33,6 +38,12 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     showNavItemCountsName: "Show item counts in navigation",
     showNavItemCountsDesc:
       "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
+    navSectionOrderName: "Navigation section order",
+    navSectionOrderDesc:
+      "Arrange the order of the navigation pane's sections. Collapse state is tracked separately and is unaffected.",
+    navSectionOrderMoveUp: "Move up",
+    navSectionOrderMoveDown: "Move down",
+    navSectionOrderReset: "Restore default order",
   },
   zh: {
     defaultCardOpenBehaviorName: "卡片默认打开方式",
@@ -48,5 +59,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     showNavItemCountsName: "在导航栏显示条目计数",
     showNavItemCountsDesc:
       "在导航栏中显示每个文件夹和标签包含的卡片数量。文件夹计数会跟随“包含子文件夹”开关变化，标签计数包含其子标签。",
+    navSectionOrderName: "导航区分区顺序",
+    navSectionOrderDesc: "调整导航区各分区的上下顺序。折叠状态单独记录，不受影响。",
+    navSectionOrderMoveUp: "上移",
+    navSectionOrderMoveDown: "下移",
+    navSectionOrderReset: "恢复默认顺序",
   },
 };

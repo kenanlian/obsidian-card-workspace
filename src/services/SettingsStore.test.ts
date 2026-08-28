@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsStore, serializeSettings, splitFlatPatch } from "./SettingsStore";
-import { SETTINGS_SCHEMA_VERSION } from "../settings";
+import { SETTINGS_SCHEMA_VERSION, type PluginSettings } from "../settings";
 
 interface SaveHarness {
   store: SettingsStore;
@@ -363,5 +363,36 @@ describe("SettingsStore", () => {
     expect(store.getFlat().sectionCollapsed).toEqual({
       favorites: true, folders: false, tags: true, boxes: true,
     });
+  });
+
+  it("places navSectionOrder on the preferences layer without moving sectionCollapsed", async () => {
+    const { store, documents } = createStore();
+    await store.init();
+
+    const order: PluginSettings["navSectionOrder"] = ["boxes", "favorites", "folders", "tags"];
+    const split = splitFlatPatch({ navSectionOrder: order });
+    expect(split.preferences.navSectionOrder).toEqual(order);
+    expect(split.workspace).not.toHaveProperty("navSectionOrder");
+    expect(split.userData).not.toHaveProperty("navSectionOrder");
+
+    const prefsWrite = store.updatePreferences({ navSectionOrder: order });
+    const workspaceWrite = store.updateWorkspace({
+      sectionCollapsed: { favorites: true, folders: false, tags: true, boxes: false },
+    });
+    await store.flushPendingWrites();
+    await prefsWrite;
+    await workspaceWrite;
+
+    const persisted = documents.at(-1) as {
+      preferences: Record<string, unknown>;
+      workspace: Record<string, unknown>;
+    };
+    expect(persisted.preferences.navSectionOrder).toEqual(order);
+    expect(persisted).not.toHaveProperty("navSectionOrder");
+    expect(persisted.workspace).not.toHaveProperty("navSectionOrder");
+    expect(persisted.workspace.sectionCollapsed).toEqual({
+      favorites: true, folders: false, tags: true, boxes: false,
+    });
+    expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
   });
 });

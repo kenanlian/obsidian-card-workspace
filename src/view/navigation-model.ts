@@ -67,6 +67,7 @@ export interface NavigationProjectionInput {
   includeSubfolders: boolean;
   tagsDisabled: boolean;
   sectionCollapsed: Readonly<Record<NavSectionId, boolean>>;
+  sectionOrder: readonly NavSectionId[];
   sectionLabels: Readonly<Record<NavSectionId, NavigationSectionLabels>>;
   rootFolderLabel: string;
   expansion: NavigationExpansionLayers;

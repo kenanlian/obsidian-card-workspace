@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA_VERSION,
   type PartialPluginSettings,
+  type PluginSettings,
 } from "./settings";
 import { serializeSettings } from "./services/SettingsStore";
 
@@ -297,6 +298,57 @@ describe("normalizeSettings — previewLines", () => {
 });
 
 
+describe("normalizeSettings — navSectionOrder", () => {
+  const defaultOrder = ["favorites", "folders", "tags", "boxes"];
+
+  it("defaults navSectionOrder when the value is missing", () => {
+    const { navSectionOrder: _omitted, ...rest } = DEFAULT_SETTINGS;
+    expect(normalizeSettings(rest).navSectionOrder).toEqual(defaultOrder);
+    expect(normalizeSettings({}).navSectionOrder).toEqual(defaultOrder);
+  });
+
+  it("falls back to default for null and non-array navSectionOrder inputs", () => {
+    const invalidValues: unknown[] = [null, "favorites", 0, false, { folders: true }];
+
+    for (const invalidValue of invalidValues) {
+      const raw = {
+        ...DEFAULT_SETTINGS,
+        navSectionOrder: invalidValue,
+      } as unknown;
+
+      expect(normalizeSettings(raw).navSectionOrder).toEqual(defaultOrder);
+    }
+  });
+
+  it("preserves a valid permutation", () => {
+    const permutation = ["boxes", "tags", "favorites", "folders"];
+    const raw = {
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: permutation,
+    } as unknown;
+
+    expect(normalizeSettings(raw).navSectionOrder).toEqual(permutation);
+  });
+
+  it("normalizes duplicates, unknown ids, and partial input", () => {
+    expect(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["folders", "folders", "tags", "folders"],
+    } as unknown).navSectionOrder).toEqual(["folders", "tags", "favorites", "boxes"]);
+
+    expect(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["favorites", "nope", "folders", "mystery", "tags", "boxes"],
+    } as unknown).navSectionOrder).toEqual(defaultOrder);
+
+    expect(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["boxes"],
+    } as unknown).navSectionOrder).toEqual(["boxes", "favorites", "folders", "tags"]);
+  });
+});
+
+
 describe("search query settings boundary", () => {
   it("normalizeSettings ignores runtime search query fields", () => {
     const raw = {
@@ -529,7 +581,42 @@ describe("mergeSettings — previewLines", () => {
 
     expect(result.previewLines).toBe(5);
   });
+});
 
+
+describe("mergeSettings — navSectionOrder", () => {
+  it("replaces navSectionOrder wholesale and leaves sectionCollapsed intact", () => {
+    const current: PluginSettings = {
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["folders", "tags", "boxes", "favorites"],
+      sectionCollapsed: { favorites: true, folders: true, tags: false, boxes: true },
+      previewLines: 8,
+      includeSubfolders: false,
+    };
+
+    const next: PluginSettings["navSectionOrder"] = ["boxes", "tags", "folders", "favorites"];
+    const result = mergeSettings(current, { navSectionOrder: next });
+
+    expect(result.navSectionOrder).toEqual(next);
+    expect(result.sectionCollapsed).toEqual({
+      favorites: true, folders: true, tags: false, boxes: true,
+    });
+    expect(result.previewLines).toBe(8);
+    expect(result.includeSubfolders).toBe(false);
+  });
+
+  it("normalizes a partial or invalid navSectionOrder patch", () => {
+    expect(mergeSettings(DEFAULT_SETTINGS, { navSectionOrder: ["boxes"] }).navSectionOrder)
+      .toEqual(["boxes", "favorites", "folders", "tags"]);
+
+    const patch = { navSectionOrder: null } as unknown;
+    expect(mergeSettings(DEFAULT_SETTINGS, patch as never).navSectionOrder)
+      .toEqual(["favorites", "folders", "tags", "boxes"]);
+  });
+});
+
+
+describe("mergeSettings — defaultCardOpenBehavior", () => {
   it("updates defaultCardOpenBehavior while preserving unrelated settings fields", () => {
     const current = {
       ...DEFAULT_SETTINGS,
@@ -713,6 +800,9 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(migrateSettings({ lastViewMode: "all-notes" }).lastFolderPath).toBe("");
     expect(migrateSettings({ lastViewMode: "all-notes", lastFolderPath: 12 }).lastFolderPath).toBe("");
     expect("lastViewMode" in migrateSettings({ lastViewMode: "all-notes" })).toBe(false);
+    expect(migrateSettings({ lastViewMode: "all-notes" }).navSectionOrder).toEqual([
+      "favorites", "folders", "tags", "boxes",
+    ]);
   });
 
   it("migrates a v1 flat document including boxes, favorites, pins, and section collapse", () => {
@@ -741,6 +831,7 @@ describe("migrateSettings — V47 schema versions", () => {
     ]);
     expect(result.favorites).toEqual([{ kind: "folder", ref: "Projects" }]);
     expect("lastViewMode" in result).toBe(false);
+    expect(result.navSectionOrder).toEqual(["favorites", "folders", "tags", "boxes"]);
   });
 
   it("is idempotent for v2 documents and round-trips through serializeSettings", () => {
@@ -752,6 +843,7 @@ describe("migrateSettings — V47 schema versions", () => {
         includeSubfolders: false,
         previewLines: 8,
         showNavItemCounts: true,
+        navSectionOrder: ["boxes", "tags", "folders", "favorites"],
       },
       workspace: {
         lastFolderPath: "Projects",
@@ -771,14 +863,19 @@ describe("migrateSettings — V47 schema versions", () => {
     const once = migrateSettings(v2);
     expect(migrateSettings(once)).toEqual(once);
     expect(migrateSettings(serializeSettings(once))).toEqual(once);
+    expect(serializeSettings(once).schemaVersion).toBe(2);
     expect(serializeSettings(once).workspace.sectionCollapsed).toEqual({
       favorites: true, folders: true, tags: false, boxes: true,
     });
+    expect(serializeSettings(once).preferences.navSectionOrder).toEqual([
+      "boxes", "tags", "folders", "favorites",
+    ]);
     expect(once.activeBoxId).toBe("box-1");
     expect(once.filter.tags).toEqual(["work"]);
     expect(once.sectionCollapsed).toEqual({
       favorites: true, folders: true, tags: false, boxes: true,
     });
+    expect(once.navSectionOrder).toEqual(["boxes", "tags", "folders", "favorites"]);
   });
 
   it("re-serializes a v2 payload to a byte-identical payload", () => {
@@ -789,6 +886,7 @@ describe("migrateSettings — V47 schema versions", () => {
         includeSubfolders: false,
         previewLines: 8,
         showNavItemCounts: true,
+        navSectionOrder: ["boxes", "tags", "folders", "favorites"],
       },
       workspace: {
         lastFolderPath: "Projects",
@@ -838,6 +936,15 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(v2).not.toHaveProperty("unknownPref");
     expect(v2).not.toHaveProperty("extra");
     expect(v2.previewLines).toBe(6);
+  });
+
+  it("normalizes malformed preferences.navSectionOrder without changing schemaVersion", () => {
+    const loaded = migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { navSectionOrder: ["boxes", "boxes", "nope"] },
+    });
+    expect(loaded.navSectionOrder).toEqual(["boxes", "favorites", "folders", "tags"]);
+    expect(serializeSettings(loaded).schemaVersion).toBe(2);
   });
 
   it("fills missing v2 layers from DEFAULT_SETTINGS", () => {

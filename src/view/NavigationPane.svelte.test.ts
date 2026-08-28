@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { getUiStrings } from "../i18n";
+import { defaultNavSectionOrder } from "../navigation-section-order";
 import type { PanelNavState, PanelScopeState } from "./panel-model";
 import type { NavigationIntent } from "./navigation-model";
 import { resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
@@ -13,7 +14,7 @@ const components: Array<Record<string, unknown>> = [];
 const originalRect = HTMLElement.prototype.getBoundingClientRect;
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
-function projection(query = "") {
+function projection(query = "", sectionOrder = defaultNavSectionOrder()) {
   return projectNavigation({
     query,
     scope: { kind: "folder", path: "notes", includeSubfolders: true },
@@ -28,6 +29,7 @@ function projection(query = "") {
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true, tagsDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionOrder,
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
@@ -312,6 +314,29 @@ describe("NavigationPane projected ARIA tree", () => {
     const filteredTree = document.querySelector<HTMLElement>('[role="tree"]')!;
     expect(filteredTree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:folders");
     expect(filteredTree.firstElementChild?.classList.contains("is-section")).toBe(true);
+  });
+
+  it("keeps focus and section chrome when projected section order changes", async () => {
+    const focusId = "folder:notes";
+    const component = renderHarness(nav({ focusId, projection: projection() }), () => undefined);
+    await tick();
+    expect(row(focusId).tabIndex).toBe(0);
+
+    const reordered = ["boxes", "tags", "folders", "favorites"] as const;
+    component.setNav(nav({ focusId, projection: projection("", [...reordered]) }));
+    await tick();
+
+    expect(document.querySelectorAll('[role="tree"]')).toHaveLength(1);
+    const tree = document.querySelector<HTMLElement>('[role="tree"]')!;
+    expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:boxes");
+    const sectionRows = Array.from(document.querySelectorAll<HTMLElement>('[data-nav-row-id^="section:"]'));
+    expect(sectionRows.map((node) => node.dataset.navRowId)).toEqual([
+      "section:boxes", "section:tags", "section:folders", "section:favorites",
+    ]);
+    expect(sectionRows.every((node) => node.classList.contains("is-section"))).toBe(true);
+    expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+      .filter((item) => item.tabIndex === 0)
+      .map((item) => item.dataset.navRowId)).toEqual([focusId]);
   });
 
   it("maps traversal, expansion, activation, additive Space, and keyboard menu keys", async () => {

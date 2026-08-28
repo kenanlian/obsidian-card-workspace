@@ -23,6 +23,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     activeBoxId: deps.modules.boxActions.getActiveBox()?.id ?? null,
     boxExcludedCount: (boxId) => deps.modules.boxActions.getBoxExcludedCount(boxId),
     sectionCollapsed: settings.sectionCollapsed,
+    sectionOrder: settings.navSectionOrder,
     hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
     hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
     tagExpansion: (tag) => deps.modules.navLayout.getTagExpansion(tag),
@@ -70,6 +71,9 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       },
       toggleSection: (section) => {
         void deps.modules.navLayout.onToggleNavSection(section);
+      },
+      moveSection: (section, delta) => {
+        void deps.modules.navLayout.onMoveNavSection(section, delta);
       },
       addTagToFilter: (tag) => {
         void deps.modules.tagActions.addTagToFilter(tag);

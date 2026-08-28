@@ -399,13 +399,20 @@ describe("card box context menus", () => {
         "Save current view as card box…",
         "Add current view to card box",
         "Collapse section",
+        "Move section up",
+        "Move section down",
       ]);
 
       mockState.menuInstances.length = 0;
 
       const { view: boxModeView } = createViewWithBox(BOX_ID);
       (boxModeView as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
-      expect(getMenuTitles()).toEqual(["New card box…", "Collapse section"]);
+      expect(getMenuTitles()).toEqual([
+        "New card box…",
+        "Collapse section",
+        "Move section up",
+        "Move section down",
+      ]);
 
       mockState.menuInstances.length = 0;
 
@@ -468,6 +475,8 @@ describe("card box context menus", () => {
         "New card box…",
         "Save current view as card box…",
         "Collapse section",
+        "Move section up",
+        "Move section down",
       ]);
     });
 

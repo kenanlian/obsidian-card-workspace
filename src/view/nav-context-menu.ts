@@ -3,7 +3,7 @@ import type { UiStrings } from "../i18n";
 import { findCardBox } from "./card-boxes";
 import { isFavorite } from "./favorites";
 import { normalizeTagPath } from "./tag-tree";
-import { appendNavSectionToggleItem } from "./menus/nav-menu-expansion";
+import { appendNavSectionHeaderItems } from "./menus/nav-section-header-items";
 import type {
   CardBoxDefinition,
   FavoriteEntry,
@@ -26,6 +26,7 @@ export interface NavMenuActions {
   revealInSystemExplorer: (ref: string) => void;
   toggleIncludeSubfolders: () => void;
   toggleSection: (section: NavSectionId) => void;
+  moveSection: (section: NavSectionId, delta: -1 | 1) => void;
   addTagToFilter: (tag: string) => void;
   removeTagFromFilter: (tag: string) => void;
   filterByOnlyTag: (tag: string) => void;
@@ -52,6 +53,7 @@ export interface NavMenuDeps {
   activeBoxId: string | null;
   boxExcludedCount: (boxId: string) => number;
   sectionCollapsed: Record<NavSectionId, boolean>;
+  sectionOrder: readonly NavSectionId[];
   hasExpandedFolders: boolean;
   hasExpandedTags: boolean;
   tagExpansion: (tag: string) => { hasChildren: boolean; expanded: boolean };
@@ -187,7 +189,7 @@ function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps
   );
 
   menu.addSeparator();
-  appendNavSectionToggleItem(menu, deps, "folders");
+  appendNavSectionHeaderItems(menu, deps, "folders");
   return true;
 }
 
@@ -232,7 +234,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
 
 function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: NavMenuDeps): boolean {
   if (deps.isBoxMode) {
-    appendNavSectionToggleItem(menu, deps, "tags");
+    appendNavSectionHeaderItems(menu, deps, "tags");
     return true;
   }
 
@@ -258,7 +260,7 @@ function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: N
   );
 
   menu.addSeparator();
-  appendNavSectionToggleItem(menu, deps, "tags");
+  appendNavSectionHeaderItems(menu, deps, "tags");
   return true;
 }
 
@@ -325,7 +327,7 @@ function buildBoxesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   }
 
   menu.addSeparator();
-  appendNavSectionToggleItem(menu, deps, "boxes");
+  appendNavSectionHeaderItems(menu, deps, "boxes");
   return true;
 }
 
@@ -382,7 +384,7 @@ function buildFavoritesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   );
 
   menu.addSeparator();
-  appendNavSectionToggleItem(menu, deps, "favorites");
+  appendNavSectionHeaderItems(menu, deps, "favorites");
   return true;
 }
 

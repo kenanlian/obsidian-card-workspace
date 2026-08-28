@@ -1,4 +1,5 @@
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
+import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
 import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
 
@@ -135,6 +136,7 @@ export interface PluginSettings {
   navPaneCollapsed: boolean;
   sectionCollapsed: Record<NavSectionId, boolean>;
   showNavItemCounts: boolean;
+  navSectionOrder: NavSectionId[];
 }
 
 export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter" | "sectionCollapsed"> & {
@@ -166,6 +168,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   navPaneCollapsed: false,
   sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
   showNavItemCounts: false,
+  navSectionOrder: defaultNavSectionOrder(),
 };
 
 export const SETTINGS_SCHEMA_VERSION = 2;
@@ -480,6 +483,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     navPaneCollapsed: normalizeBooleanSetting(data.navPaneCollapsed, DEFAULT_SETTINGS.navPaneCollapsed),
     sectionCollapsed: normalizeSectionCollapsed(data),
     showNavItemCounts: normalizeBooleanSetting(data.showNavItemCounts, DEFAULT_SETTINGS.showNavItemCounts),
+    navSectionOrder: normalizeNavSectionOrder(data.navSectionOrder),
   };
 }
 

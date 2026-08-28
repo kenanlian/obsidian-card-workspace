@@ -178,6 +178,8 @@ export interface ViewStrings {
     unfavorite: string;
     moveFavoriteUp: string;
     moveFavoriteDown: string;
+    moveSectionUp: string;
+    moveSectionDown: string;
     clearFavorites: string;
     clearFavoritesConfirmTitle: string;
     clearFavoritesConfirmBody: (count: number) => string;

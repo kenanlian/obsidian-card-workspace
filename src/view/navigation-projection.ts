@@ -1,9 +1,9 @@
 import { PLAIN_FOLDER_ICON } from "../icons";
+import { normalizeNavSectionOrder } from "../navigation-section-order";
 import { normalizeScopePath } from "./scope";
 import { normalizeTagPath, type TagTreeNode } from "./tag-tree";
 import type { FavoriteKind, FolderTreeNode, NavSectionId } from "./types";
 import {
-  NAVIGATION_SECTION_ORDER,
   navigationBoxId,
   navigationFavoriteId,
   navigationFolderId,
@@ -318,7 +318,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   }
   matchedCounts.set("boxes", boxRows.length);
 
-  const visibleSectionIds = NAVIGATION_SECTION_ORDER.filter((section) =>
+  const visibleSectionIds = normalizeNavSectionOrder(input.sectionOrder).filter((section) =>
     !querying || (matchedCounts.get(section) ?? 0) > 0,
   );
   const sections: NavigationProjectedSection[] = [];

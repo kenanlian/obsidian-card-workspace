@@ -33,6 +33,7 @@ function createSettings(): PluginSettings {
     boxes: [createBox()],
     favorites: DEFAULT_SETTINGS.favorites.map((favorite) => ({ ...favorite })),
     sectionCollapsed: { ...DEFAULT_SETTINGS.sectionCollapsed },
+    navSectionOrder: [...DEFAULT_SETTINGS.navSectionOrder],
     activeBoxId: "box-1",
   };
 }
@@ -58,6 +59,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   navPaneCollapsed: "patch",
   sectionCollapsed: "patch",
   showNavItemCounts: "patch",
+  navSectionOrder: "patch",
 };
 
 function changeSetting(settings: PluginSettings, key: keyof PluginSettings): void {
@@ -89,6 +91,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
       };
       break;
     case "showNavItemCounts": settings.showNavItemCounts = !settings.showNavItemCounts; break;
+    case "navSectionOrder": settings.navSectionOrder = ["boxes", "favorites", "folders", "tags"]; break;
     default: {
       const exhaustive: never = key;
       throw new Error(`Unhandled settings key: ${String(exhaustive)}`);

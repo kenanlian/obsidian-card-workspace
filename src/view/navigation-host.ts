@@ -45,6 +45,7 @@ export function buildNavigationPanelState(input: {
     includeSubfolders: settings.includeSubfolders,
     tagsDisabled: isBoxScope(scope),
     sectionCollapsed,
+    sectionOrder: settings.navSectionOrder,
     sectionLabels: {
       favorites: { label: strings.toolbar.navPane.favoritesSection, emptyLabel: strings.toolbar.navPane.favoritesEmpty },
       folders: { label: strings.toolbar.navPane.foldersSection, emptyLabel: null },
