@@ -1604,6 +1604,30 @@ describe("FolderCardView host contract", () => {
     expect(folderTreeSpy).not.toHaveBeenCalled();
   });
 
+  it("republishes navigation tag rows once a cross-scope load commits", async () => {
+    const { view } = createHarness();
+    const notes = createFolder("notes");
+    notes.children = [new testState.TestTFile("notes/alpha.md")];
+    const archive = createFolder("archive");
+    archive.children = [new testState.TestTFile("archive/beta.md")];
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>)
+      .mockImplementation((path: string) => path === "notes" ? notes : path === "archive" ? archive : null);
+    view.app.metadataCache.getFileCache = vi.fn((file: { path: string }) =>
+      file.path === "notes/alpha.md" ? { tags: [{ tag: "#notes-only" }] } : { tags: [{ tag: "#archive-only" }] },
+    ) as never;
+
+    const readTagPaths = (): string[] => getPanelState(view).nav.projection.rows
+      .flatMap((row) => row.kind === "tag" ? [row.tagPath] : []);
+
+    await view.handleScopeSelection({ requestId: 8, scope: createFolderScope("notes", true),
+      source: "programmatic", requestedAtMs: Date.now(), forceRefresh: true });
+    expect(readTagPaths()).toEqual(["notes-only"]);
+
+    await view.handleScopeSelection({ requestId: 9, scope: createFolderScope("archive", true),
+      source: "programmatic", requestedAtMs: Date.now(), forceRefresh: true });
+    expect(readTagPaths()).toEqual(["archive-only"]);
+  });
+
   it("reprojects each provisional root nav to its restored visible scope without rebuilding sources", async () => {
     const harnessA = createHarness();
     const harnessB = createHarness();

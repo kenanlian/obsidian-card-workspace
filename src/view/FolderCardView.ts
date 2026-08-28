@@ -13,13 +13,15 @@ import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
 import { rewritePathAfterRename } from "./scope-files";
-import { remapFavoriteSelection } from "./actions/favorite-actions";
 import type { NavigationIntent } from "./navigation-model";
 import {
   buildNavigationPanelState,
   isCurrentNavigationMenuTarget,
   openNavigationContextMenu,
+  publishLoadCommit,
+  publishLoadStart,
   routeNavigationIntent,
+  type LoadBoundaryHost,
 } from "./navigation-host";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
 import {
@@ -75,8 +77,8 @@ export class FolderCardView extends ItemView {
       },
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
-      publishLoadStart: (scopeChanged) => this.publishLoadStart(scopeChanged),
-      publishLoadCommit: () => this.publishGroups("cards", "search", "projection", "bulk"),
+      publishLoadStart: (scopeChanged) => publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged),
+      publishLoadCommit: () => publishLoadCommit(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
       createNoteInFolder: (folderPath, tags) => this.plugin.createNoteInFolder(folderPath, tags),
@@ -544,20 +546,14 @@ export class FolderCardView extends ItemView {
       }
     });
   }
-  private publishLoadStart(scopeChanged: boolean): void {
-    const navBeforeLoad = this.panelModel.getState().nav;
-    this.panelModel.batch((state) => {
-      this.publishGroups("scope", "cards", "search", "projection", "bulk");
-      if (state.appearance.previewLines !== this.plugin.getSettings().previewLines) {
-        this.publishGroups("appearance");
-      }
-      if (!scopeChanged) return;
-      const favorites = remapFavoriteSelection(
-        state.nav.favorites, this.cardScope, this.plugin.getSettings().filter.tags, this.selectedPath,
-      );
-      state.nav = this.projectNavGroup(navBeforeLoad.folderTree, favorites, navBeforeLoad.boxSummaries,
-        this.panelModel.getState().projection);
-    });
+  private buildLoadBoundaryHost(): LoadBoundaryHost {
+    return {
+      panelModel: this.panelModel, publishGroups: (...groups) => this.publishGroups(...groups),
+      projectNav: (folderTree, favorites, boxSummaries, cardProjection) =>
+        this.projectNavGroup(folderTree, favorites, boxSummaries, cardProjection),
+      getSettings: () => this.plugin.getSettings(), getScope: () => this.cardScope,
+      getSelectedPath: () => this.selectedPath,
+    };
   }
   /** Settings changes translate their four update tiers into explicit groups. */
   private publishForIntent(intent: ViewUpdateIntent): void {

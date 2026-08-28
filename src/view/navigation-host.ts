@@ -1,9 +1,17 @@
 import { Menu } from "obsidian";
 import type { UiStrings } from "../i18n";
 import type { PluginSettings } from "../settings";
+import { remapFavoriteSelection } from "./actions/favorite-actions";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
 import type { NavigationIntent } from "./navigation-model";
-import type { BoxSummary, FavoriteRowModel, PanelModelState, PanelProjectionState } from "./panel-model";
+import type {
+  BoxSummary,
+  FavoriteRowModel,
+  PanelGroup,
+  PanelModel,
+  PanelModelState,
+  PanelProjectionState,
+} from "./panel-model";
 import { isBoxScope, type CardScope } from "./scope";
 import { buildTagTree, resolveTagSelection } from "./tag-tree";
 import type { FavoriteEntry, FolderTreeNode, NavContextMenuPayload } from "./types";
@@ -54,6 +62,48 @@ export function buildNavigationPanelState(input: {
     focusRequest: navLayout.getFocusRequest(),
     revealRequest: navLayout.getRevealRequest(),
   };
+}
+
+export interface LoadBoundaryHost {
+  panelModel: PanelModel;
+  publishGroups: (...groups: PanelGroup[]) => void;
+  projectNav: (
+    folderTree: FolderTreeNode[], favorites: FavoriteRowModel[],
+    boxSummaries: BoxSummary[], cardProjection: PanelProjectionState,
+  ) => PanelModelState["nav"];
+  getSettings: () => PluginSettings;
+  getScope: () => CardScope;
+  getSelectedPath: () => string | null;
+}
+
+/** Load boundaries reproject navigation from published sources; only the view host rebuilds those sources. */
+function reprojectNavigation(
+  host: LoadBoundaryHost,
+  favorites: FavoriteRowModel[] | null,
+): PanelModelState["nav"] {
+  const { nav, projection } = host.panelModel.getState();
+  return host.projectNav(nav.folderTree, favorites ?? nav.favorites, nav.boxSummaries, projection);
+}
+
+export function publishLoadStart(host: LoadBoundaryHost, scopeChanged: boolean): void {
+  host.panelModel.batch((state) => {
+    host.publishGroups("scope", "cards", "search", "projection", "bulk");
+    if (state.appearance.previewLines !== host.getSettings().previewLines) {
+      host.publishGroups("appearance");
+    }
+    if (!scopeChanged) return;
+    state.nav = reprojectNavigation(host, remapFavoriteSelection(
+      state.nav.favorites, host.getScope(), host.getSettings().filter.tags, host.getSelectedPath(),
+    ));
+  });
+}
+
+/** Tag rows are derived from the card projection, so a committed load must reproject navigation too. */
+export function publishLoadCommit(host: LoadBoundaryHost): void {
+  host.panelModel.batch((state) => {
+    host.publishGroups("cards", "search", "projection", "bulk");
+    state.nav = reprojectNavigation(host, null);
+  });
 }
 
 export function isCurrentNavigationMenuTarget(input: {

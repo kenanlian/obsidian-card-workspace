@@ -331,7 +331,7 @@ describe("R5 line-count ratchet", () => {
    * instead of growing the host file. Absent that, a cap must only fall.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 655,
+    "src/view/FolderCardView.ts": 651,
     "src/main.ts": 677,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 572,
