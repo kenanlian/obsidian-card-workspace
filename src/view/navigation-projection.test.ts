@@ -129,7 +129,7 @@ describe("projectNavigation", () => {
     ]);
   });
 
-  it("picks folder glyphs by child presence and expand/collapse", () => {
+  it("assigns a constant folder identity icon by path, not expansion state", () => {
     const collapsed = projectNavigation(buildInput({
       expansion: {
         folders: { manual: [], reveal: [], query: [], suppressed: [] },
@@ -147,17 +147,17 @@ describe("projectNavigation", () => {
     expect(collapsedById.get(navigationFolderId("Projects"))).toMatchObject({
       expandable: true,
       expanded: false,
-      icon: "folders",
+      icon: PLAIN_FOLDER_ICON,
     });
     expect(expandedById.get(navigationFolderId("Projects"))).toMatchObject({
       expandable: true,
       expanded: true,
-      icon: "folder-open",
+      icon: PLAIN_FOLDER_ICON,
     });
     expect(expandedById.get(navigationFolderId("Projects/Alpha"))).toMatchObject({
       expandable: true,
       expanded: true,
-      icon: "folder-open",
+      icon: PLAIN_FOLDER_ICON,
     });
 
     expect(expandedById.get(navigationFolderId("Projects/Alpha/Résumé"))).toMatchObject({
@@ -174,6 +174,45 @@ describe("projectNavigation", () => {
     for (const row of [...collapsed.rows, ...expanded.rows]) {
       if (row.kind !== "folder") continue;
       expect(row.icon).not.toBe("folder");
+    }
+  });
+
+  it("keeps the same folder identity icon regardless of expandable or expanded", () => {
+    const collapsed = projectNavigation(buildInput({
+      expansion: {
+        folders: { manual: [], reveal: [], query: [], suppressed: [] },
+        tags: { manual: [], reveal: [], query: [], suppressed: [] },
+        queryCollapsedSections: [],
+      },
+    }));
+    const expanded = projectNavigation(buildInput());
+    const folders = [...collapsed.rows, ...expanded.rows].filter((row) => row.kind === "folder");
+    expect(folders.length).toBeGreaterThan(0);
+    for (const row of folders) {
+      expect(row.icon).toBe(row.folderPath === "" ? "house" : PLAIN_FOLDER_ICON);
+    }
+    const collapsedProjects = collapsed.rows.find((row) => row.id === navigationFolderId("Projects"));
+    const expandedProjects = expanded.rows.find((row) => row.id === navigationFolderId("Projects"));
+    expect(collapsedProjects).toMatchObject({ expandable: true, expanded: false, icon: PLAIN_FOLDER_ICON });
+    expect(expandedProjects).toMatchObject({ expandable: true, expanded: true, icon: PLAIN_FOLDER_ICON });
+    expect(collapsedProjects?.icon).toBe(expandedProjects?.icon);
+  });
+
+  it("assigns null icons to section header rows", () => {
+    const projection = projectNavigation(buildInput());
+    const sections = projection.rows.filter((row) => row.kind === "section");
+    expect(sections.length).toBeGreaterThan(0);
+    for (const row of sections) {
+      expect(row.icon).toBeNull();
+    }
+  });
+
+  it("uses the tag identity icon for every tag row including synthetic parents", () => {
+    const projection = projectNavigation(buildInput());
+    const tags = projection.rows.filter((row) => row.kind === "tag");
+    expect(tags.some((row) => row.synthetic)).toBe(true);
+    for (const row of tags) {
+      expect(row.icon).toBe("tag");
     }
   });
 
@@ -353,7 +392,7 @@ describe("resolveNavigationFocus", () => {
     label: id,
     fullPath: null,
     count: 0,
-    icon: "folders",
+    icon: null,
     menuTarget: { section: "folders", scope: "header" },
   });
 

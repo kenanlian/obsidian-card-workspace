@@ -40,7 +40,13 @@
   --fce-nav-section-height: 30px;
   --fce-nav-row-radius: var(--radius-s, 4px);
   --fce-nav-leading-slot: var(--icon-size, 16px);
-  --fce-nav-indent-step: 16px;
+  --fce-nav-disclosure-slot: 12px;
+  --fce-nav-disclosure-target: 16px;
+  --fce-nav-disclosure-gap: 6px;
+  /* Shifts the disclosure square toward the indent without resizing its track. */
+  --fce-nav-disclosure-nudge: 2px;
+  --fce-nav-leading-track: calc(var(--fce-nav-disclosure-slot) + var(--fce-nav-disclosure-gap) + var(--fce-nav-leading-slot));
+  --fce-nav-indent-step: 12px;
   --fce-nav-label-gap: 8px;
   --fce-nav-metadata-slot: 24px;
   --fce-nav-action-slot: 22px;
@@ -287,7 +293,7 @@
 .folder-card-view .fce-nav-tree .fce-tree-row {
   position: relative;
   display: grid;
-  grid-template-columns: var(--fce-nav-leading-slot) minmax(0, 1fr) max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   column-gap: var(--fce-nav-label-gap);
   width: auto;
@@ -329,84 +335,105 @@
   pointer-events: none;
 }
 
+/*
+ * Ancestor-chain highlight. Deliberately not scoped to `.fce-tree-row`: the
+ * extra class would outrank `:hover` below and paint the pointer's own row with
+ * the quieter ancestor background instead of the full hover background.
+ */
+.folder-card-view .fce-nav-tree .is-subtree-hovered {
+  background: color-mix(in srgb, var(--fce-nav-row-hover) 40%, transparent);
+}
+
 .folder-card-view .fce-nav-tree .fce-tree-row:hover {
   background: var(--fce-nav-row-hover);
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section:hover,
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-visible,
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section.is-subtree-hovered {
   background: transparent;
   color: var(--fce-text);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:hover .fce-tree-item-icon,
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-visible .fce-tree-item-icon,
-.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within .fce-tree-item-icon {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:hover .fce-tree-item-chevron,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-visible .fce-tree-item-chevron,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-section:focus-within .fce-tree-item-chevron {
   color: var(--fce-text);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-item-icon {
-  display: inline-grid;
-  place-items: center;
-  width: var(--fce-nav-leading-slot);
-  height: var(--fce-nav-leading-slot);
+/*
+ * The painted surface is square and wider than the layout track, so negative
+ * inline margins pull it back onto the track. The two margins must keep summing
+ * to slot - target, which is what lets the nudge bias the square toward the
+ * indent while the track width, identity column, and total indent stay put.
+ */
+.folder-card-view .fce-nav-tree .fce-tree-item-disclosure {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--fce-nav-disclosure-target);
+  height: var(--fce-nav-disclosure-target);
+  margin-inline-start: calc(
+    (var(--fce-nav-disclosure-slot) - var(--fce-nav-disclosure-target)) / 2 - var(--fce-nav-disclosure-nudge)
+  );
+  margin-inline-end: calc(
+    (var(--fce-nav-disclosure-slot) - var(--fce-nav-disclosure-target)) / 2 + var(--fce-nav-disclosure-nudge)
+  );
+  margin-block: 0;
   padding: 0;
   border: 0;
   border-radius: var(--fce-nav-row-radius);
   background: transparent;
   box-shadow: none;
-  color: var(--fce-nav-icon-color);
+  color: var(--text-faint, var(--fce-text-muted));
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-/* Match the legacy 22px expandable hit target without shifting the 16px leading column. */
-.folder-card-view .fce-nav-tree .fce-tree-item-icon:not(.is-static) {
-  width: 22px;
-  height: 22px;
-  margin: -3px;
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure {
+  cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-item-icon:not(.is-static):hover,
-.folder-card-view .fce-nav-tree .fce-tree-item-icon:not(.is-static):focus-visible {
+/*
+ * Hit area grows to the full row height without widening the painted square,
+ * so it never reaches the identity glyph.
+ */
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block: calc((var(--fce-nav-row-height) - var(--fce-nav-disclosure-target)) / -2);
+}
+
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure:hover,
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure:focus-visible {
   background: var(--fce-nav-chevron-hover-bg);
   color: var(--text-normal);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-item-glyph,
 .folder-card-view .fce-nav-tree .fce-tree-item-chevron {
-  grid-area: 1 / 1;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fce-nav-disclosure-slot);
+  height: var(--fce-nav-disclosure-slot);
+  --icon-size: var(--fce-nav-disclosure-slot);
+  pointer-events: none;
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-item-identity {
+  display: inline-flex;
+  flex: 0 0 var(--fce-nav-leading-slot);
   align-items: center;
   justify-content: center;
   width: var(--fce-nav-leading-slot);
   height: var(--fce-nav-leading-slot);
+  color: var(--fce-nav-icon-color);
   pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.folder-card-view .fce-nav-tree .fce-tree-item-glyph {
-  opacity: 1;
-}
-
-.folder-card-view .fce-nav-tree .fce-tree-item-chevron {
-  opacity: 0;
-}
-
-/* Identity and Chevron share one leading slot; subtree hover preserves the old ancestor affordance. */
-.folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) .fce-tree-item-glyph {
-  opacity: 0;
-}
-
-.folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) .fce-tree-item-chevron {
-  opacity: 1;
-}
-
-.folder-card-view .fce-nav-tree .fce-tree-row.is-subtree-hovered .fce-tree-item-icon:not(.is-static),
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-tree-item-icon:not(.is-static) {
-  color: var(--text-normal);
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:focus-visible {
@@ -438,14 +465,17 @@
   color: var(--text-accent, var(--fce-text));
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row.is-active-file .fce-tree-item-icon {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-active-file .fce-tree-item-identity {
   color: var(--text-accent, var(--fce-nav-icon-color));
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-synthetic .fce-tree-label {
+  color: var(--text-faint, var(--fce-text-muted));
 }
 
 @media (prefers-reduced-motion: reduce) {
   .folder-card-view .fce-nav-filter,
-  .folder-card-view .fce-nav-tree .fce-tree-item-glyph,
-  .folder-card-view .fce-nav-tree .fce-tree-item-chevron {
+  .folder-card-view .fce-nav-tree button.fce-tree-item-disclosure {
     transition: none;
   }
 }
@@ -457,7 +487,11 @@
 }
 
 .folder-card-view .fce-nav-tree .fce-popup-row-leading {
-  width: var(--fce-nav-leading-slot);
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: var(--fce-nav-disclosure-gap);
+  width: max-content;
+  min-width: max-content;
   min-height: var(--fce-nav-leading-slot);
 }
 
@@ -560,7 +594,7 @@
 .folder-card-view .fce-nav-section-empty {
   min-width: 0;
   padding-block: 6px 8px;
-  padding-inline: calc(var(--fce-nav-leading-slot) + var(--fce-nav-label-gap) + 4px) 8px;
+  padding-inline: calc(var(--fce-nav-leading-track) + var(--fce-nav-label-gap) + 4px) 8px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-small, 13px);
   line-height: 1.4;
@@ -928,42 +962,11 @@
 }
 
 /* === nav === */
-.fce-tree-menu {
-  padding: var(--size-2-3, 6px) 0;
-  overflow-x: hidden;
-}
-
-.fce-popup-menu .fce-tree-menu {
-  width: 250px;
-  max-height: 444px;
-  overflow-y: auto;
-}
-
-.fce-tree-menu .fce-popup-row {
-  min-height: 24px;
-  padding-block: 2px;
-  padding-inline-end: 12px;
-}
-
-.fce-tree-menu .fce-tree-row.is-selected {
-  color: var(--text-accent);
-}
-
 .fce-folder-menu .fce-tree-row.is-selected,
 .fce-tag-menu .fce-tree-row.is-selected,
 .fce-favorites-menu .fce-tree-row.is-selected {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
-}
-
-.fce-tree-menu .fce-tree-item-icon:not(.is-static):hover,
-.fce-tree-menu .fce-tree-item-icon:focus-visible {
-  background: var(--fce-nav-chevron-hover-bg);
-  color: var(--text-normal);
-}
-
-.fce-tree-menu .fce-tree-button {
-  width: 100%;
 }
 
 .fce-folder-menu .fce-tree-row-check,
@@ -1000,90 +1003,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.fce-tree-menu .fce-tree-item-icon,
-.fce-tree-menu .fce-tree-button {
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-  font: inherit;
-  color: inherit;
-}
-
-.fce-tree-menu .fce-tree-item-icon {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.fce-tree-menu .fce-tree-item-icon.is-static {
-  cursor: default;
-}
-
-/*
- * Expandable rows get a 22px rounded hit target so the chevron reads as a
- * button. The negative margin keeps the leading column at 16px, so row
- * indentation stays aligned with the static leaf icons.
- */
-.fce-tree-menu .fce-tree-item-icon:not(.is-static) {
-  width: 22px;
-  height: 22px;
-  margin: -3px;
-  border-radius: var(--radius-s, 4px);
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.fce-tree-menu .fce-tree-item-icon:focus-visible {
-  outline: 2px solid var(--fce-accent);
-  outline-offset: 1px;
-  border-radius: var(--radius-s, 4px);
-}
-
-.fce-tree-menu .fce-tree-button {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1;
-  text-align: left;
-  cursor: pointer;
-}
-.fce-tree-menu .fce-tree-item-glyph,
-.fce-tree-menu .fce-tree-item-chevron {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-}
-
-.fce-tree-menu .fce-tree-item-chevron {
-  display: none;
-}
-
-.fce-tree-menu .fce-tree-label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fce-tree-menu .fce-tree-empty {
-  padding: 6px var(--size-4-4, 16px) 8px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small, 13px);
-  line-height: 1.4;
 }
 
 /* === utility === */

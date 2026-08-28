@@ -46,6 +46,7 @@
   const summaryLabel = $derived(tagSection && activeFilterTags.length > 0
     ? labels.activeTagCount(activeFilterTags.length) : undefined);
   const tooltipText = $derived(resolveNavigationRowTooltip(row, strings));
+  const identityIcon = $derived(row.icon);
 
   function icon(node: HTMLElement, name: string): { update: (next: string) => void } {
     setIcon(node, name);
@@ -63,7 +64,7 @@
 
 <!-- svelte-ignore a11y_role_has_required_aria_props -- tree semantics use current/checked, not selection -->
 <div
-  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''}"
+  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''}"
   data-nav-row-id={row.id}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
@@ -90,18 +91,18 @@
     {#if row.expandable}
       <button
         type="button"
-        class="fce-tree-item-icon"
+        class="fce-tree-item-disclosure"
         tabindex="-1"
         aria-label={row.expanded ? strings.toolbar.folderMenu.collapse : strings.toolbar.folderMenu.expand}
         onclick={(event) => onToggleExpansion?.(event, row)}
       >
-        <span class="fce-tree-item-glyph" aria-hidden="true" use:icon={row.icon}></span>
         <span class="fce-tree-item-chevron" aria-hidden="true" use:icon={row.expanded ? "chevron-down" : "chevron-right"}></span>
       </button>
     {:else}
-      <span class="fce-tree-item-icon is-static" aria-hidden="true">
-        <span class="fce-tree-item-glyph" use:icon={row.icon}></span>
-      </span>
+      <span class="fce-tree-item-disclosure is-placeholder" aria-hidden="true"></span>
+    {/if}
+    {#if identityIcon !== null}
+      <span class="fce-tree-item-identity" aria-hidden="true" use:icon={identityIcon}></span>
     {/if}
   </div>
   <div class="fce-popup-row-content fce-tree-button">

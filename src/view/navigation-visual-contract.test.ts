@@ -18,13 +18,15 @@ describe("navigation visual contract", () => {
   it("keeps the accepted navigation density with conservatively tightened section rhythm", () => {
     expect(styles).toContain("--fce-nav-row-height: 30px;");
     expect(styles).toContain("--fce-nav-section-height: 30px;");
-    expect(styles).toContain("--fce-nav-indent-step: 16px;");
+    expect(styles).toContain("--fce-nav-indent-step: 12px;");
     expect(styles).toContain("margin-block-start: 10px;");
     expect(styles).toContain("margin-block-end: 3px;");
     expect(styles).not.toContain("--fce-nav-row-action-slot");
     expect(styles).not.toContain("--fce-nav-section-action-slot");
     expect(styles).not.toContain("--fce-nav-row-action-track");
-    expect(styles).toMatch(/\.fce-tree-item-icon:not\(\.is-static\) \{\s*width: 22px;\s*height: 22px;\s*margin: -3px;/);
+    expect(styles).toMatch(
+      /button\.fce-tree-item-disclosure::before \{[\s\S]*?inset-block: calc\(\(var\(--fce-nav-row-height\) - var\(--fce-nav-disclosure-target\)\) \/ -2\);/,
+    );
   });
 
   it("separates sections with a hairline painted inside the existing section gap", () => {
@@ -52,11 +54,43 @@ describe("navigation visual contract", () => {
     );
   });
 
-  it("uses subtree hover and keyboard focus to swap identity glyphs for chevrons", () => {
-    expect(styles).toMatch(/\.fce-tree-item-glyph,\s*\.folder-card-view [^{]*\.fce-tree-item-chevron \{[\s\S]*?grid-area: 1 \/ 1;/);
-    expect(styles).toMatch(/\.is-subtree-hovered [^{]*\.fce-tree-item-glyph,[\s\S]*?:focus-visible [^{]*\.fce-tree-item-glyph \{\s*opacity: 0;/);
-    expect(styles).toMatch(/\.is-subtree-hovered [^{]*\.fce-tree-item-chevron,[\s\S]*?:focus-visible [^{]*\.fce-tree-item-chevron \{\s*opacity: 1;/);
-    expect(styles).toMatch(/\.is-subtree-hovered [^{]*\.fce-tree-item-icon:not\(\.is-static\),[\s\S]*?:focus-visible [^{]*\.fce-tree-item-icon:not\(\.is-static\) \{\s*color: var\(--text-normal\);/);
+  it("renders a two-column leading track with a permanent chevron and a state-invariant identity glyph", () => {
+    expect(styles).toContain("--fce-nav-disclosure-slot: 12px;");
+    expect(styles).toContain("--fce-nav-disclosure-gap: 6px;");
+    expect(styles).toMatch(
+      /--fce-nav-leading-track: calc\(var\(--fce-nav-disclosure-slot\) \+ var\(--fce-nav-disclosure-gap\) \+ var\(--fce-nav-leading-slot\)\);/,
+    );
+    expect(styles).toContain("--fce-nav-leading-slot: var(--icon-size, 16px);");
+    expect(styles).toMatch(
+      /\.fce-tree-row \{[\s\S]*?grid-template-columns: max-content minmax\(0, 1fr\) max-content;/,
+    );
+    expect(styles).toMatch(
+      /\.fce-popup-row-leading \{[\s\S]*?gap: var\(--fce-nav-disclosure-gap\);[\s\S]*?width: max-content;/,
+    );
+    expect(styles).toContain("--fce-nav-disclosure-target: 16px;");
+    expect(styles).toMatch(
+      /\.fce-tree-item-disclosure \{[\s\S]*?width: var\(--fce-nav-disclosure-target\);\s*height: var\(--fce-nav-disclosure-target\);/,
+    );
+    expect(styles).toContain("--fce-nav-disclosure-nudge: 2px;");
+    expect(styles).toMatch(
+      /\.fce-tree-item-disclosure \{[\s\S]*?margin-inline-start: calc\(\s*\(var\(--fce-nav-disclosure-slot\) - var\(--fce-nav-disclosure-target\)\) \/ 2 - var\(--fce-nav-disclosure-nudge\)\s*\);/,
+    );
+    expect(styles).toMatch(
+      /\.fce-tree-item-disclosure \{[\s\S]*?margin-inline-end: calc\(\s*\(var\(--fce-nav-disclosure-slot\) - var\(--fce-nav-disclosure-target\)\) \/ 2 \+ var\(--fce-nav-disclosure-nudge\)\s*\);/,
+    );
+    expect(styles).toMatch(
+      /\.fce-tree-item-chevron \{[\s\S]*?width: var\(--fce-nav-disclosure-slot\);[\s\S]*?height: var\(--fce-nav-disclosure-slot\);/,
+    );
+    expect(styles).toMatch(
+      /\.fce-tree-item-identity \{[\s\S]*?width: var\(--fce-nav-leading-slot\);[\s\S]*?pointer-events: none;/,
+    );
+    expect(styles).not.toMatch(/\.fce-tree-item-chevron \{[^}]*opacity:/);
+    expect(styles).not.toContain("fce-tree-item-glyph");
+    expect(styles).not.toMatch(/\.is-subtree-hovered[^{]*\.fce-tree-item-/);
+    expect(styles).toMatch(
+      /\.is-subtree-hovered \{\s*background: color-mix\(in srgb, var\(--fce-nav-row-hover\) 40%, transparent\);/,
+    );
+    expect(styles).toMatch(/\.is-synthetic \.fce-tree-label \{\s*color: var\(--text-faint,/);
   });
 
   it("uses quiet native navigation states without stacked accent borders", () => {

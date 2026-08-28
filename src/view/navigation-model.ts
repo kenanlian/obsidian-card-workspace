@@ -91,7 +91,7 @@ interface NavigationRowBase {
   label: string;
   fullPath: string | null;
   count: number;
-  icon: string;
+  icon: string | null;
   menuTarget: NavigationMenuTarget;
 }
 

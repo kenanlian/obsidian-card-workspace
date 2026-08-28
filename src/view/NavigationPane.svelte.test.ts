@@ -337,7 +337,7 @@ describe("NavigationPane projected ARIA tree", () => {
     const intents: NavigationIntent[] = [];
     render({ onIntent: (intent) => intents.push(intent) });
     row("folder:notes/child").focus();
-    row("folder:notes").querySelector<HTMLButtonElement>(".fce-tree-item-icon")!.dispatchEvent(
+    row("folder:notes").querySelector<HTMLButtonElement>(".fce-tree-item-disclosure")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     expect(document.activeElement).toBe(row("folder:notes"));
@@ -408,7 +408,7 @@ describe("NavigationPane projected ARIA tree", () => {
     await tick();
     const parent = row("folder:notes");
     const child = row("folder:notes/child");
-    const identity = parent.querySelector(".fce-tree-item-glyph");
+    const identity = parent.querySelector(".fce-tree-item-identity");
     const chevron = parent.querySelector(".fce-tree-item-chevron");
     expect(identity).not.toBeNull();
     expect(chevron).not.toBeNull();

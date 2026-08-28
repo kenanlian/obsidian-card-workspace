@@ -171,7 +171,7 @@ function projectFolders(
         label: canonicalPath === "" ? input.rootFolderLabel : node.name || "/",
         fullPath: canonicalPath || "/",
         count: count(input.includeSubfolders ? node.recursiveCount : node.directCount),
-        icon: canonicalPath === "" ? "house" : expandable ? (expanded ? "folder-open" : "folders") : PLAIN_FOLDER_ICON,
+        icon: canonicalPath === "" ? "house" : PLAIN_FOLDER_ICON,
         menuTarget: { section: "folders", scope: "item", itemId: node.path },
         folderPath: canonicalPath,
         directCount: count(node.directCount),
@@ -237,7 +237,7 @@ function projectTags(
         label: node.label,
         fullPath: tagPath,
         count: count(input.tagCounts[tagPath]),
-        icon: node.synthetic ? "tags" : "tag",
+        icon: "tag",
         menuTarget: { section: "tags", scope: "item", itemId: tagPath },
         tagPath,
         synthetic: Boolean(node.synthetic),
@@ -344,7 +344,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
       label: input.sectionLabels[section].label,
       fullPath: null,
       count: 0,
-      icon: section === "favorites" ? "star" : section === "folders" ? "folders" : section === "tags" ? "tags" : "package",
+      icon: null,
       menuTarget: { section, scope: "header" as const },
     };
     rows.push(sectionRow);

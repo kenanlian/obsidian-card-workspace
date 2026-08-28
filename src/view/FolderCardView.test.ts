@@ -548,7 +548,7 @@ describe("FolderCardView host contract", () => {
     expect(getTagNode("Work")).not.toBeUndefined();
     expect(getTagNode("Work/AI")).toBeUndefined();
 
-    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-item-icon[aria-label='Expand']");
+    const workChevron = document.querySelector<HTMLButtonElement>(".fce-tag-menu .fce-tree-item-disclosure[aria-label='Expand']");
     expect(workChevron).not.toBeNull();
     workChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
@@ -559,7 +559,7 @@ describe("FolderCardView host contract", () => {
     expect(nestedNode).not.toBeUndefined();
     expect(getTagNode("Work/AI")).toBeUndefined();
 
-    const nestedChevron = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-item-icon"))
+    const nestedChevron = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-tag-menu .fce-tree-item-disclosure"))
       .find((button) => button.getAttribute("aria-label") === "Expand");
     expect(nestedChevron).not.toBeUndefined();
     nestedChevron?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
