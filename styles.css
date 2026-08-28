@@ -590,11 +590,12 @@
   text-align: center;
 }
 
+/* Caption under a section: align with the header label, not the item icon+label column. */
 .folder-card-view .fce-nav-no-results,
 .folder-card-view .fce-nav-section-empty {
   min-width: 0;
   padding-block: 6px 8px;
-  padding-inline: calc(var(--fce-nav-leading-track) + var(--fce-nav-label-gap) + 4px) 8px;
+  padding-inline: calc(4px + var(--fce-nav-disclosure-slot) + var(--fce-nav-label-gap)) 8px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-small, 13px);
   line-height: 1.4;

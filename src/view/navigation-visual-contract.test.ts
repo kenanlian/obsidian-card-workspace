@@ -93,6 +93,15 @@ describe("navigation visual contract", () => {
     expect(styles).toMatch(/\.is-synthetic \.fce-tree-label \{\s*color: var\(--text-faint,/);
   });
 
+  it("indents empty-section copy with the section label, not the item leading track", () => {
+    expect(styles).toMatch(
+      /\.fce-nav-no-results,\s*\.folder-card-view \.fce-nav-section-empty \{[\s\S]*?padding-inline: calc\(4px \+ var\(--fce-nav-disclosure-slot\) \+ var\(--fce-nav-label-gap\)\) 8px;/,
+    );
+    expect(styles).not.toMatch(
+      /\.fce-nav-section-empty \{[\s\S]*?--fce-nav-leading-track/,
+    );
+  });
+
   it("uses quiet native navigation states without stacked accent borders", () => {
     expect(styles).toContain("--fce-nav-row-selected-bg: var(--fce-nav-row-active-bg);");
     expect(styles).toContain("--fce-nav-checked-bg: var(--fce-nav-row-active-bg);");
