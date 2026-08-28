@@ -36,8 +36,8 @@
   --fce-preview-font-size: var(--font-ui-small, 13px);
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
-  --fce-nav-row-height: 26px;
-  --fce-nav-section-height: 26px;
+  --fce-nav-row-height: 30px;
+  --fce-nav-section-height: 30px;
   --fce-nav-row-radius: var(--radius-s, 4px);
   --fce-nav-leading-slot: var(--icon-size, 16px);
   --fce-nav-indent-step: 16px;

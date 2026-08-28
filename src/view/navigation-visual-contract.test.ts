@@ -16,8 +16,8 @@ describe("navigation visual contract", () => {
   });
 
   it("keeps the accepted navigation density with conservatively tightened section rhythm", () => {
-    expect(styles).toContain("--fce-nav-row-height: 26px;");
-    expect(styles).toContain("--fce-nav-section-height: 26px;");
+    expect(styles).toContain("--fce-nav-row-height: 30px;");
+    expect(styles).toContain("--fce-nav-section-height: 30px;");
     expect(styles).toContain("--fce-nav-indent-step: 16px;");
     expect(styles).toContain("margin-block-start: 10px;");
     expect(styles).toContain("margin-block-end: 3px;");
