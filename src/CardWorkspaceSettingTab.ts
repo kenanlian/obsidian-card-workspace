@@ -5,13 +5,7 @@ import {
   getDragInsertActionOptions,
   getNewNoteTemplateOptions,
   getSettingTabStrings,
-  getToolbarStrings,
 } from "./i18n";
-import {
-  defaultNavSectionOrder,
-  moveNavSection,
-  normalizeNavSectionOrder,
-} from "./navigation-section-order";
 import {
   PREVIEW_LINES_MAX,
   PREVIEW_LINES_MIN,
@@ -21,7 +15,6 @@ import {
   isNewNoteTemplate,
 } from "./settings";
 import type CardWorkspacePlugin from "./main";
-import type { NavSectionId } from "./view/types";
 
 export class CardWorkspaceSettingTab extends PluginSettingTab {
   private plugin: CardWorkspacePlugin;
@@ -40,7 +33,6 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       newNoteTemplate,
       previewLines,
       showNavItemCounts,
-      navSectionOrder,
     } = this.plugin.getSettings();
     const language = this.plugin.getUiLanguage();
     const strings = getSettingTabStrings(language);
@@ -136,67 +128,5 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings({ showNavItemCounts: value });
         });
       });
-
-    const order = normalizeNavSectionOrder(navSectionOrder);
-    const navPane = getToolbarStrings(language).navPane;
-    const sectionLabels: Record<NavSectionId, string> = {
-      favorites: navPane.favoritesSection,
-      folders: navPane.foldersSection,
-      tags: navPane.tagsSection,
-      boxes: navPane.boxesSection,
-    };
-
-    new Setting(containerEl)
-      .setName(strings.navSectionOrderName)
-      .setDesc(strings.navSectionOrderDesc)
-      .setHeading();
-
-    for (const [index, section] of order.entries()) {
-      const canMoveUp = index > 0;
-      const canMoveDown = index < order.length - 1;
-      new Setting(containerEl)
-        .setName(sectionLabels[section])
-        .addExtraButton((button) => {
-          button
-            .setIcon("arrow-up")
-            .setTooltip(strings.navSectionOrderMoveUp)
-            .setDisabled(!canMoveUp)
-            .onClick(() => this.moveNavSectionFromCurrent(section, -1, canMoveUp));
-        })
-        .addExtraButton((button) => {
-          button
-            .setIcon("arrow-down")
-            .setTooltip(strings.navSectionOrderMoveDown)
-            .setDisabled(!canMoveDown)
-            .onClick(() => this.moveNavSectionFromCurrent(section, 1, canMoveDown));
-        });
-    }
-
-    new Setting(containerEl).addButton((button) => {
-      button.setButtonText(strings.navSectionOrderReset).onClick(() => {
-        return this.applyNavSectionOrder(defaultNavSectionOrder());
-      });
-    });
-  }
-
-  /**
-   * Rows stay live until the awaited save resolves and display() re-renders. The swap
-   * reads current settings so overlapping clicks compose, while `enabled` carries the
-   * render-time affordance so a control that rendered disabled never persists.
-   */
-  private moveNavSectionFromCurrent(
-    section: NavSectionId,
-    delta: -1 | 1,
-    enabled: boolean,
-  ): Promise<void> {
-    if (!enabled) return Promise.resolve();
-    const current = this.plugin.getSettings().navSectionOrder;
-    return this.applyNavSectionOrder(moveNavSection(current, section, delta));
-  }
-
-  private async applyNavSectionOrder(next: NavSectionId[] | null): Promise<void> {
-    if (next === null) return;
-    await this.plugin.saveSettings({ navSectionOrder: next });
-    this.display();
   }
 }
