@@ -465,6 +465,7 @@ vi.mock("obsidian", () => {
 });
 
 import { TFile, TFolder } from "obsidian";
+import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import CardWorkspacePlugin from "./main";
 import { FolderCardView } from "./view/FolderCardView";
 import { createBoxScope, createFolderScope } from "./view/scope";
@@ -692,6 +693,7 @@ describe("CardWorkspacePlugin settings update intents", () => {
       excludedPaths: [],
       pinnedPaths: [],
       sort: { field: "mtime" as const, direction: "desc" as const },
+      group: { ...DEFAULT_GROUP_SPEC },
     });
 
     await plugin.saveSettings({ boxes: [baseBox("box-x"), baseBox("box-y")] });
@@ -1099,6 +1101,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
         excludedPaths: [],
         pinnedPaths: [],
         sort: { field: "mtime", direction: "desc" },
+        group: { ...DEFAULT_GROUP_SPEC },
       }],
       favorites: [{ kind: "folder", ref: "Projects" }],
     });

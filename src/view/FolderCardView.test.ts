@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "svelte";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
 import {
   DEFAULT_SETTINGS,
@@ -318,6 +319,30 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
   };
 }
 
+function readSettingsObject(plugin: TestHarness["plugin"]): PluginSettings {
+  return (plugin.getSettings as unknown as () => PluginSettings)();
+}
+
+function savePartialSettings(
+  plugin: TestHarness["plugin"],
+  patch: PartialPluginSettings,
+): Promise<void> {
+  return (plugin.saveSettings as unknown as (value: PartialPluginSettings) => Promise<void>)(patch);
+}
+
+function createBox() {
+  return {
+    id: "box-1",
+    name: "Box",
+    rules: [{ id: "rule-1", name: "Original", folder: "notes", includeSubfolders: true, tags: [] }],
+    manualPaths: [],
+    excludedPaths: [],
+    pinnedPaths: [],
+    sort: { field: "mtime" as const, direction: "desc" as const },
+    group: { dimension: "box-rule" as const, orderBy: "default" as const, orderDirection: "asc" as const },
+  };
+}
+
 function createFolder(path: string, children: Array<InstanceType<typeof testState.TestTFolder>> = []): InstanceType<typeof testState.TestTFolder> {
   const folder = new testState.TestTFolder(path);
   folder.children = children;
@@ -487,6 +512,105 @@ describe("FolderCardView host contract", () => {
     expect((view as any).baseCards.map((card: NoteCardRecord) => card.title)).toEqual(["Alpha", "Zeta"]);
     expect(getPanelState(view).projection.sortField).toBe("name");
     expect(getPanelState(view).projection.sortDirection).toBe("asc");
+  });
+
+  it("publishes group segments and the resolved dimension after a group change", async () => {
+    const { view } = createHarness();
+
+    (view as any).cardScope = createFolderScope("", true);
+    (view as any).baseCards = [
+      createCard("notes/alpha.md", "Alpha"),
+      createCard("notes/beta.md", "Beta"),
+      createCard("archive/gamma.md", "Gamma"),
+    ];
+
+    await view.onGroupChange({ dimension: "folder" });
+
+    const state = getPanelState(view);
+    expect(state.projection.group.dimension).toBe("folder");
+    expect(state.cards.groupSegments).toHaveLength(2);
+    expect(state.projection.groupSegmentCount).toBe(state.cards.groupSegments.length);
+  });
+
+  it("collapses and expands published segments without dropping membership counts", async () => {
+    const { view } = createHarness();
+
+    (view as any).cardScope = createFolderScope("", true);
+    (view as any).baseCards = [
+      createCard("notes/alpha.md", "Alpha"),
+      createCard("notes/beta.md", "Beta"),
+      createCard("archive/gamma.md", "Gamma"),
+    ];
+
+    await view.onGroupChange({ dimension: "folder" });
+
+    const grouped = getPanelState(view);
+    const totalRecords = grouped.cards.records.length;
+    const target = grouped.cards.groupSegments[0]!;
+
+    view.onGroupCollapseCommand({ command: "toggle", key: target.key });
+
+    const collapsed = getPanelState(view);
+    const collapsedSegment = collapsed.cards.groupSegments.find((segment) => segment.key === target.key)!;
+    expect(collapsedSegment.collapsed).toBe(true);
+    expect(collapsedSegment.count).toBe(target.count);
+    expect(collapsedSegment.visibleCount).toBe(0);
+    expect(collapsed.cards.records).toHaveLength(totalRecords - target.count);
+
+    view.onGroupCollapseCommand({ command: "collapse-all" });
+    expect(getPanelState(view).cards.records).toHaveLength(0);
+
+    view.onGroupCollapseCommand({ command: "expand-all" });
+    expect(getPanelState(view).cards.records).toHaveLength(totalRecords);
+  });
+
+  it("offers box-rule grouping only in box scope", () => {
+    const { view, plugin } = createHarness();
+
+    expect(getPanelState(view).projection.availableGroupDimensions).toEqual([
+      "none",
+      "folder",
+      "tag",
+      "task",
+    ]);
+
+    Object.assign(readSettingsObject(plugin), { boxes: [createBox()], activeBoxId: "box-1" });
+    (view as any).cardScope = createBoxScope("box-1");
+    (view as any).publishGroups("projection");
+
+    expect(getPanelState(view).projection.availableGroupDimensions).toEqual([
+      "none",
+      "folder",
+      "tag",
+      "box-rule",
+      "task",
+    ]);
+  });
+
+  it("republishes renamed box-rule segment labels without reordering cards", async () => {
+    const { view, plugin } = createHarness();
+    const box = createBox();
+
+    Object.assign(readSettingsObject(plugin), { boxes: [box], activeBoxId: box.id });
+    (view as any).cardScope = createBoxScope(box.id);
+    (view as any).baseCards = [
+      createCard("notes/alpha.md", "Alpha"),
+      createCard("notes/beta.md", "Beta"),
+    ];
+    publishAll(view);
+
+    const before = getPanelState(view);
+    expect(before.cards.groupSegments.map((segment) => segment.label)).toEqual(["Original"]);
+    const orderedPaths = before.cards.records.map((card) => card.path);
+
+    await savePartialSettings(plugin, {
+      boxes: [{ ...box, rules: [{ ...box.rules[0], name: "Renamed" }] }],
+    });
+
+    const after = getPanelState(view);
+    expect(after.cards.groupSegments.map((segment) => segment.label)).toEqual(["Renamed"]);
+    expect(after.cards.records.map((card) => card.path)).toEqual(orderedPaths);
+    expect(after.cards.groupRevision).toBeGreaterThan(before.cards.groupRevision);
   });
 
   it("repositions an in-scope renamed card under filename sorting", () => {
@@ -1125,6 +1249,53 @@ describe("FolderCardView host contract", () => {
 
     await view.onClose();
     expect(metadataUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles a tag-departed rule member out of a Box during metadata refresh", async () => {
+    const { view, plugin } = createHarness();
+    let metadataListener: ((event: { path: string }) => void) | null = null;
+    plugin.subscribeMetadataEvents = vi.fn((listener: (event: { path: string }) => void) => {
+      metadataListener = listener;
+      return () => undefined;
+    });
+
+    const target = createCard("notes/target.md", "Target");
+    const settings = readSettingsObject(plugin);
+    settings.boxes = [makeTestBox({
+      rules: [{
+        id: "rule-work",
+        name: "Work",
+        folder: "notes",
+        includeSubfolders: true,
+        tags: ["work"],
+      }],
+      group: { dimension: "box-rule", orderBy: "default", orderDirection: "asc" },
+    }) as never];
+    settings.activeBoxId = "box-1";
+    (view as any).cardScope = createBoxScope("box-1");
+    (view as any).baseCards = [target];
+    (view as any).visibleCards = [target];
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => path === target.path ? target.file : null,
+    );
+    let currentTags = [{ tag: "#work" }];
+    view.app.metadataCache.getFileCache = vi.fn(() => ({ tags: currentTags })) as never;
+
+    await view.onOpen();
+    publishAll(view);
+    expect(getPanelState(view).cards.groupSegments.map((segment) => segment.key)).toEqual([
+      "rule:rule-work",
+    ]);
+
+    currentTags = [];
+    metadataListener!({ path: target.path });
+
+    expect((view as any).baseCards).toEqual([]);
+    expect(getPanelState(view).cards.records).toEqual([]);
+    expect(getPanelState(view).cards.groupSegments).toEqual([]);
+    expect(getPanelState(view).cards.groupSegments.some(
+      (segment) => segment.key === "rule:__manual__",
+    )).toBe(false);
   });
 
   it("threads indexed-ready match counts through panel state without mutating cards", async () => {
@@ -2153,6 +2324,7 @@ function makeTestBox(overrides: Record<string, unknown> = {}): Record<string, un
     excludedPaths: [],
     pinnedPaths: [],
     sort: { field: "mtime", direction: "desc" },
+    group: { ...DEFAULT_GROUP_SPEC },
     ...overrides,
   };
 }

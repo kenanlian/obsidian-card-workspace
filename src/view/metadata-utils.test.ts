@@ -10,6 +10,7 @@ import {
   collectAllTags,
   collectTagCounts,
   collectVaultTagIndex,
+  getFileTagEntries,
   matchesSearchQuery,
   matchesTagFilter,
 } from "./metadata-utils";
@@ -91,6 +92,54 @@ describe("matchesTagFilter", () => {
     expect(matchesTagFilter(app, file, ["领域", "project/archived"])).toBe(false);
   });
 });
+describe("getFileTagEntries", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("returns normalized and display forms for every tag", () => {
+    getAllTagsMock.mockReturnValue(["#Work/AI", "#project"]);
+
+    expect(getFileTagEntries(createMockApp(), createMockFile("Alpha"))).toEqual([
+      { normalized: "work/ai", display: "Work/AI" },
+      { normalized: "project", display: "project" },
+    ]);
+  });
+
+  it("keeps the lexicographically smaller display form on a normalized collision", () => {
+    getAllTagsMock.mockReturnValue(["#Work", "#work", "#WORK"]);
+
+    expect(getFileTagEntries(createMockApp(), createMockFile("Alpha"))).toEqual([
+      { normalized: "work", display: "WORK" },
+    ]);
+  });
+
+  it("drops tags whose normalized form is empty", () => {
+    getAllTagsMock.mockReturnValue(["#", "  ", "#kept"]);
+
+    expect(getFileTagEntries(createMockApp(), createMockFile("Alpha"))).toEqual([
+      { normalized: "kept", display: "kept" },
+    ]);
+  });
+
+  it("returns an empty array for a null cache", () => {
+    const app = {
+      metadataCache: {
+        getFileCache: () => null,
+      },
+    } as unknown as App;
+
+    expect(getFileTagEntries(app, createMockFile("Alpha"))).toEqual([]);
+    expect(getAllTagsMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty array when the file carries no tags", () => {
+    getAllTagsMock.mockReturnValue(null);
+
+    expect(getFileTagEntries(createMockApp(), createMockFile("Alpha"))).toEqual([]);
+  });
+});
+
 describe("collectAllTags", () => {
   beforeEach(() => {
     getAllTagsMock.mockReset();

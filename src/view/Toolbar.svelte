@@ -1,14 +1,17 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
+  import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../card-grouping-settings";
   import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
   import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
+  import type { SortDirection, SortField } from "../settings";
   import type {
     BoxSummary,
     PanelProjectionState,
     PanelScopeState,
     PanelSearchState,
   } from "./panel-model";
+  import SortGroupPopover from "./SortGroupPopover.svelte";
   import type { BulkRuntimePanelState, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -23,6 +26,17 @@
   interface SortChangePayload {
     field: string;
     direction: string;
+  }
+
+  interface GroupChangePayload {
+    dimension: string;
+    orderBy: string;
+    orderDirection: string;
+  }
+
+  interface GroupCollapseCommandPayload {
+    command: string;
+    key?: string;
   }
 
   interface SearchQueryChangePayload {
@@ -48,19 +62,11 @@
     tooltipSide?: "top" | "right" | "bottom" | "left";
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
+    onGroupChange?: (payload: GroupChangePayload) => void;
+    onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
-  }
-
-  interface SortOption {
-    field: string;
-    direction: string;
-    label: string;
-  }
-
-  interface SortSeparatorOption {
-    type: "separator";
   }
 
   interface BulkActionOption {
@@ -75,7 +81,6 @@
     type: "separator";
   }
 
-  type SortMenuOption = SortOption | SortSeparatorOption;
   type BulkToolbarOption = BulkActionOption | BulkActionSeparatorOption;
 
   interface PopupLifecycleOptions {
@@ -131,7 +136,7 @@
 
   const DEFAULT_SCOPE: PanelScopeState = { displayPath: "", includeSubfolders: true, activeBoxId: null, activeBoxName: null, boxExcludedCount: 0, emptyStateMessage: "" };
   const DEFAULT_SEARCH: PanelSearchState = { query: "", status: "idle", focusToken: 0 };
-  const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [] };
+  const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0 };
   const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
 
   let {
@@ -146,18 +151,24 @@
     tooltipSide = "right",
     onToolbarAction,
     onSortChange,
+    onGroupChange,
+    onGroupCollapseCommand,
     onSearchQueryChange,
     onSearchQueryReset,
     onBoxCommand,
   }: ToolbarProps = $props();
   const toolbarStrings = $derived(strings.toolbar);
   const boxStrings = $derived(strings.box);
+  const sortGroupStrings = $derived(strings.sortGroup);
   const activeBoxId = $derived(scope.activeBoxId);
   const activeBoxName = $derived(scope.activeBoxName);
   const folderPath = $derived(scope.displayPath);
   const activeFilterTags = $derived(projection.activeFilterTags);
   const sortField = $derived(projection.sortField);
   const sortDirection = $derived(projection.sortDirection);
+  const group = $derived(projection.group);
+  const availableGroupDimensions = $derived(projection.availableGroupDimensions);
+  const hasSegments = $derived(projection.groupSegmentCount > 0);
   const searchQuery = $derived(search.query);
   const searchStatus = $derived(search.status);
   const searchFocusToken = $derived(search.focusToken);
@@ -177,17 +188,6 @@
   const sortButtonId = "fce-sort-button";
   const boxPickerButtonId = "fce-box-picker-button";
 
-  const SORT_OPTIONS = $derived<SortMenuOption[]>([
-    { field: "name", direction: "asc", label: toolbarStrings.sortOptions.nameAsc },
-    { field: "name", direction: "desc", label: toolbarStrings.sortOptions.nameDesc },
-    { type: "separator" },
-    { field: "mtime", direction: "desc", label: toolbarStrings.sortOptions.mtimeDesc },
-    { field: "mtime", direction: "asc", label: toolbarStrings.sortOptions.mtimeAsc },
-    { type: "separator" },
-    { field: "ctime", direction: "desc", label: toolbarStrings.sortOptions.ctimeDesc },
-    { field: "ctime", direction: "asc", label: toolbarStrings.sortOptions.ctimeAsc },
-  ]);
-
   const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
     { id: "new-note", label: toolbarStrings.actions.newNote, title: toolbarStrings.actions.newNoteTitle, icon: "square-pen" },
     { id: "sort", label: toolbarStrings.actions.sort, title: toolbarStrings.actions.sortTitle, icon: "arrow-up-narrow-wide" },
@@ -195,14 +195,11 @@
   ]);
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
-  function isSortSeparatorOption(option: SortMenuOption): option is SortSeparatorOption {
-    return "type" in option;
-  }
-
   let activeToolbarAction = $state("");
-  let showSortMenu = $state(false);
+  let showSortGroupMenu = $state(false);
   let sortMenuX = $state(0);
   let sortMenuY = $state(0);
+  let sortMenuMaxHeight = $state(0);
   let showBoxPickerMenu = $state(false);
   let boxPickerMenuX = $state(0);
   let boxPickerMenuY = $state(0);
@@ -214,6 +211,7 @@
 
   const isBoxMode = $derived(activeBoxId !== null);
   const hasBoxes = $derived(boxSummaries.length > 0);
+  const isSortGroupTriggerSelected = $derived(showSortGroupMenu || group.dimension !== "none");
 
   function formatScopeTag(tag: string): string {
     return tag.startsWith("#") ? tag : `#${tag}`;
@@ -255,7 +253,7 @@
     }
 
     searchExpanded = true;
-    closeSortMenu();
+    closeSortGroupMenu();
     tick().then(() => {
       searchInputEl?.focus();
     });
@@ -315,37 +313,73 @@
     };
   }
 
+  /**
+   * The menu is `position: fixed` at the click point, so height alone cannot
+   * keep it on screen: a vertically stacked sidebar leaf can put the toolbar
+   * well down the window. Lift the top when the space below it is too small to
+   * read, then bound the height by whatever space actually remains.
+   */
+  const SORT_MENU_VIEWPORT_MARGIN = 12;
+  const SORT_MENU_MIN_HEIGHT = 220;
+
+  function viewportHeight(): number {
+    const height = typeof window === "undefined" ? 0 : window.innerHeight;
+    return Number.isFinite(height) && height > 0 ? height : SORT_MENU_MIN_HEIGHT;
+  }
+
+  function clampSortMenuTop(clientY: number): number {
+    const available = viewportHeight() - clientY - SORT_MENU_VIEWPORT_MARGIN;
+    if (available >= SORT_MENU_MIN_HEIGHT) {
+      return clientY;
+    }
+    const lifted = viewportHeight() - SORT_MENU_MIN_HEIGHT - SORT_MENU_VIEWPORT_MARGIN;
+    return Math.max(SORT_MENU_VIEWPORT_MARGIN, lifted);
+  }
+
   function selectToolbarAction(actionId: string, event: MouseEvent): void {
     closeBoxPickerMenu();
 
     if (actionId === "sort") {
-      if (showSortMenu) {
-        closeSortMenu();
+      if (showSortGroupMenu) {
+        closeSortGroupMenu();
       } else {
         sortMenuX = event.clientX;
-        sortMenuY = event.clientY;
-        showSortMenu = true;
+        sortMenuY = clampSortMenuTop(event.clientY);
+        sortMenuMaxHeight = viewportHeight() - sortMenuY - SORT_MENU_VIEWPORT_MARGIN;
+        showSortGroupMenu = true;
       }
       return;
     }
 
-    closeSortMenu();
+    closeSortGroupMenu();
     if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
       activeToolbarAction = actionId;
     }
     onToolbarAction?.({ action: actionId });
   }
 
-  function selectSortOption(option: SortOption): void {
-    closeSortMenu();
-    if (option.field === sortField && option.direction === sortDirection) {
+  function applySort(field: SortField, direction: SortDirection): void {
+    closeSortGroupMenu();
+    if (field === sortField && direction === sortDirection) {
       return;
     }
 
-    onSortChange?.({
-      field: option.field,
-      direction: option.direction,
-    });
+    onSortChange?.({ field, direction });
+  }
+
+  function applyGroupSpec(next: GroupSpec): void {
+    closeSortGroupMenu();
+    const { dimension, orderBy, orderDirection } = next;
+    if (dimension === group.dimension && orderBy === group.orderBy && orderDirection === group.orderDirection) {
+      return;
+    }
+
+    onGroupChange?.({ dimension, orderBy, orderDirection });
+  }
+
+  function emitGroupCollapseCommand(command: string): void {
+    closeSortGroupMenu();
+    onGroupCollapseCommand?.({ command });
   }
 
   function createElementCapture(assign: (node: HTMLElement | null) => void): (node: HTMLElement) => { destroy: () => void } {
@@ -411,8 +445,8 @@
     boxPickerButtonEl = node;
   });
 
-  function closeSortMenu(): void {
-    showSortMenu = false;
+  function closeSortGroupMenu(): void {
+    showSortGroupMenu = false;
   }
 
   function closeBoxPickerMenu(): void {
@@ -429,7 +463,7 @@
       return;
     }
 
-    closeSortMenu();
+    closeSortGroupMenu();
     boxPickerMenuX = event.clientX;
     boxPickerMenuY = event.clientY;
     showBoxPickerMenu = true;
@@ -445,7 +479,7 @@
     setMenu: (node) => {
       sortMenuEl = node;
     },
-    close: closeSortMenu,
+    close: closeSortGroupMenu,
     closeOnEscape: true,
   });
 
@@ -478,7 +512,7 @@
   function toggleSearch(): void {
     searchExpanded = !searchExpanded;
       if (searchExpanded) {
-        closeSortMenu();
+        closeSortGroupMenu();
         tick().then(() => {
           searchInputEl?.focus();
         });
@@ -508,14 +542,15 @@
         {#if isBoxMode}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button {isSortGroupTriggerSelected ? 'is-selected' : ''}"
             id={sortButtonId}
-            aria-label={boxStrings.sortTitle}
+            aria-label={sortGroupStrings.title}
+            aria-expanded={showSortGroupMenu}
             onclick={(event) => selectToolbarAction("sort", event)}
             use:applyIcon={"arrow-up-narrow-wide"}
             use:captureSortButton
           >
-            <span class="fce-sr-only">{boxStrings.sortTitle}</span>
+            <span class="fce-sr-only">{sortGroupStrings.title}</span>
           </button>
           <button
             type="button"
@@ -541,14 +576,15 @@
             {#if action.id === "sort"}
               <button
                 type="button"
-                class="clickable-icon fce-toolbar-button {showSortMenu ? 'is-selected' : ''}"
+                class="clickable-icon fce-toolbar-button {isSortGroupTriggerSelected ? 'is-selected' : ''}"
                 id={sortButtonId}
-                aria-label={action.title}
+                aria-label={sortGroupStrings.title}
+                aria-expanded={showSortGroupMenu}
                 onclick={(event) => selectToolbarAction(action.id, event)}
                 use:applyIcon={action.icon}
                 use:captureSortButton
               >
-                <span class="fce-sr-only">{action.label}</span>
+                <span class="fce-sr-only">{sortGroupStrings.title}</span>
               </button>
             {:else}
               <button
@@ -669,37 +705,24 @@
 
 </header>
 
-{#if showSortMenu}
+{#if showSortGroupMenu}
   <div
     class="fce-popup-menu fce-sort-menu"
     role="menu"
     aria-labelledby={sortButtonId}
-    style="left: {sortMenuX}px; top: {sortMenuY}px;"
+    style="left: {sortMenuX}px; top: {sortMenuY}px; --fce-sort-menu-available: {sortMenuMaxHeight}px;"
     use:sortMenuAction
   >
-    {#each SORT_OPTIONS as option}
-      {#if isSortSeparatorOption(option)}
-        <div class="fce-sort-menu-separator" role="separator" aria-hidden="true"></div>
-      {:else}
-        {@const selected = sortField === option.field && sortDirection === option.direction}
-        <button
-          type="button"
-          class="fce-popup-row fce-sort-menu-item"
-          role="menuitemradio"
-          aria-checked={selected}
-          onclick={() => selectSortOption(option)}
-        >
-          <span class="fce-popup-row-content">
-            <span class="fce-sort-menu-item-label">{option.label}</span>
-          </span>
-          <span class="fce-popup-row-trailing" aria-hidden={!selected}>
-            {#if selected}
-              <span class="fce-popup-row-selected-indicator fce-sort-menu-item-check" use:applyIcon={"check"}></span>
-            {/if}
-          </span>
-        </button>
-      {/if}
-    {/each}
+    <SortGroupPopover
+      strings={sortGroupStrings} {sortField} {sortDirection} {group} {availableGroupDimensions} {hasSegments}
+      onSelectSort={(field) => applySort(field, sortDirection)}
+      onSelectDirection={(direction) => applySort(sortField, direction)}
+      onSelectDimension={(dimension) => applyGroupSpec({ ...group, dimension })}
+      onSelectOrderBy={(orderBy) => applyGroupSpec({ ...group, orderBy })}
+      onSelectOrderDirection={(orderDirection) => applyGroupSpec({ ...group, orderDirection })}
+      onCollapseAll={() => emitGroupCollapseCommand("collapse-all")}
+      onExpandAll={() => emitGroupCollapseCommand("expand-all")}
+    />
   </div>
 {/if}
 

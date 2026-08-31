@@ -10,6 +10,7 @@ import {
   registerFolderCardView,
   setLatestModalTextInput,
 } from "../../__mocks__/folder-card-view-harness";
+import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { getUiStrings } from "../../i18n";
 import { createBoxScope, createFolderScope } from "../scope";
 import { BoxActions } from "./box-actions";
@@ -30,6 +31,7 @@ describe("BoxActions", () => {
     excludedPaths: [],
     pinnedPaths: [],
     sort: { field: "mtime" as const, direction: "desc" as const },
+    group: { ...DEFAULT_GROUP_SPEC },
   };
 
   function createSettings(overrides: Record<string, unknown> = {}) {
@@ -237,7 +239,13 @@ describe("BoxActions", () => {
     const patch = saveSettings.mock.calls[0]?.[0];
     const created = patch.boxes[0];
     expect(created.rules).toEqual([
-      { folder: "screened", includeSubfolders: false, tags: ["project"] },
+      {
+        folder: "screened",
+        includeSubfolders: false,
+        tags: ["project"],
+        id: "r:screened|false|project",
+        name: "",
+      },
     ]);
     expect(order).toEqual(["persist", `enter:${created.id}`]);
     expect(patch).not.toHaveProperty("activeBoxId");
@@ -335,6 +343,7 @@ describe("card box context menus", () => {
             excludedPaths: [],
             pinnedPaths: [],
             sort: { field: "mtime", direction: "desc" },
+            group: { ...DEFAULT_GROUP_SPEC },
           },
         ],
       }));

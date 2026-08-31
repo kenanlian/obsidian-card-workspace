@@ -38,6 +38,8 @@ export interface BoxStrings {
   ruleSubfolderSuffix: string;
   ruleTagsSeparator: string;
   ruleFolderMissing: string;
+  ruleNameLabel: string;
+  ruleNamePlaceholder: string;
   removeRule: string;
   noRules: string;
   sortHeading: string;
@@ -95,6 +97,8 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     ruleSubfolderSuffix: "incl. subfolders",
     ruleTagsSeparator: " · ",
     ruleFolderMissing: "Folder no longer exists",
+    ruleNameLabel: "Rule name",
+    ruleNamePlaceholder: "Leave empty to use the rule description",
     removeRule: "Remove rule",
     noRules:
       "No rules yet. Use “Add current view to card box” from the card box's right-click menu.",
@@ -148,6 +152,8 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     ruleSubfolderSuffix: "含子文件夹",
     ruleTagsSeparator: " · ",
     ruleFolderMissing: "文件夹已不存在",
+    ruleNameLabel: "规则名称",
+    ruleNamePlaceholder: "留空则使用规则描述",
     removeRule: "删除规则",
     noRules: "还没有规则。请在卡片盒右键菜单中使用「加入当前视图」。",
     sortHeading: "排序",

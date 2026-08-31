@@ -32,7 +32,7 @@ vi.mock("./note-ops", async (importOriginal) => {
 });
 
 import * as markdownUtils from "./markdown-utils";
-import { createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
 import type { SearchServiceSnapshot } from "../search";
 import {
@@ -973,6 +973,110 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             direction: "asc",
           },
         });
+      });
+
+      it("group-change subscription persists the requested group settings in folder scope", async () => {
+        const { view, plugin } = createViewWithFile("notes/group-change.md");
+
+        await (view as any).onOpen();
+
+        const groupChangeHandler = mockState.panelEventHandlers["group-change"];
+        expect(groupChangeHandler).toBeDefined();
+
+        groupChangeHandler({ detail: { dimension: "folder", orderBy: "name", orderDirection: "desc" } });
+        await flushAsyncWork();
+
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({
+          group: { dimension: "folder", orderBy: "name", orderDirection: "desc" },
+        });
+      });
+
+      it("group-change writes nothing for an equal or malformed request", async () => {
+        const { view, plugin } = createViewWithFile("notes/group-change-noop.md");
+
+        await (view as any).onOpen();
+
+        const groupChangeHandler = mockState.panelEventHandlers["group-change"];
+        groupChangeHandler({ detail: { dimension: "none", orderBy: "default", orderDirection: "asc" } });
+        groupChangeHandler({ detail: { dimension: "not-a-dimension" } });
+        groupChangeHandler({ detail: {} });
+        await flushAsyncWork();
+
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+      });
+
+      it("group-change in box scope updates the active box instead of the global group", async () => {
+        const { view, plugin } = createViewWithFile("notes/group-change-box.md");
+        const box = {
+          id: "box-1",
+          name: "Box",
+          rules: [],
+          manualPaths: [],
+          excludedPaths: [],
+          pinnedPaths: [],
+          sort: { field: "mtime", direction: "desc" },
+          group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+        };
+        plugin.getSettings = vi.fn(() => ({
+          includeSubfolders: true,
+          sort: { field: "mtime", direction: "desc" },
+          filter: { tags: [] },
+          pinnedPaths: [],
+          previewLines: 5,
+          group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+          boxes: [box],
+          favorites: [],
+          activeBoxId: box.id,
+          sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+        }));
+        (view as any).cardScope = createBoxScope(box.id);
+
+        await (view as any).onOpen();
+
+        mockState.panelEventHandlers["group-change"]({ detail: { dimension: "box-rule" } });
+        await flushAsyncWork();
+
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        const patch = plugin.saveSettings.mock.calls[0][0];
+        expect(patch.group).toBeUndefined();
+        expect(patch.boxes[0].group).toEqual({
+          dimension: "box-rule",
+          orderBy: "default",
+          orderDirection: "asc",
+        });
+      });
+
+      it("group-collapse routes into runtime collapse state without any settings write", async () => {
+        const { view, plugin } = createViewWithFile("notes/group-collapse.md");
+        plugin.getSettings = vi.fn(() => ({
+          includeSubfolders: true,
+          sort: { field: "mtime", direction: "desc" },
+          filter: { tags: [] },
+          pinnedPaths: [],
+          previewLines: 5,
+          group: { dimension: "folder", orderBy: "default", orderDirection: "asc" },
+        }));
+
+        await (view as any).onOpen();
+
+        const collapseHandler = mockState.panelEventHandlers["group-collapse"];
+        expect(collapseHandler).toBeDefined();
+
+        const scope = view.getCardScope();
+        const collapsedKeys = () => (view as any).modules.groupCollapse.getCollapsedKeys(scope, "folder");
+
+        collapseHandler({ detail: { command: "toggle", key: "folder:notes" } });
+        expect(collapsedKeys().has("folder:notes")).toBe(true);
+
+        collapseHandler({ detail: { command: "expand-all" } });
+        expect(collapsedKeys().size).toBe(0);
+
+        collapseHandler({ detail: { command: "collapse-all" } });
+        collapseHandler({ detail: { command: "toggle" } });
+        collapseHandler({ detail: { command: "not-a-command" } });
+
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
       });
 
       it("select-folder subscription routes to plugin.selectFolderByPath with panel-picker source", async () => {

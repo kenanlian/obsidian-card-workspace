@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import type { SearchIndexHealthSnapshot, SearchService, SearchServiceSnapshot } from "../../search";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { ProjectionController } from "./ProjectionController";
@@ -116,6 +117,8 @@ describe("SearchController", () => {
       getSearchInput: () => controller.buildPipelineSearchInput(),
       getEffectivePinnedPaths: () => [],
       getLoadKey: () => "notes",
+      getGroupConfig: () => DEFAULT_GROUP_SPEC,
+      getCollapsedGroupKeys: () => new Set(),
     });
     controller = new SearchController({
       context,

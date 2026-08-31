@@ -25,6 +25,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { getUiStrings } from "../i18n";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../settings";
 import { createPanelModel, PANEL_GROUPS, type PanelGroup, type PanelModelState } from "./panel-model";
 import { FolderCardView } from "./FolderCardView";
@@ -68,6 +69,8 @@ function buildState(): PanelModelState {
       generation: 0,
       sequenceRevision: 0,
       hydrationRevision: 0,
+      groupSegments: [],
+      groupRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -77,6 +80,9 @@ function buildState(): PanelModelState {
       tagCounts: {},
       activeFilterTags: [],
       pinnedPaths: [],
+      group: { ...DEFAULT_GROUP_SPEC },
+      availableGroupDimensions: ["none", "folder", "tag", "task"],
+      groupSegmentCount: 0,
     },
     bulk: {
       bulkMode: false,
@@ -207,6 +213,42 @@ function createRuntimeRouteHarness(): {
   return { view, initial, listener };
 }
 
+/** Real build groups, real projection: the grouped-publish invariants need both. */
+function createGroupedRuntimeView(): FolderCardView {
+  const settings = normalizeSettings({
+    ...DEFAULT_SETTINGS,
+    group: { dimension: "folder", orderBy: "default", orderDirection: "asc" },
+  });
+  const app = {
+    metadataCache: { getFileCache: vi.fn(() => null) },
+    vault: {
+      getAbstractFileByPath: vi.fn(() => null),
+      getMarkdownFiles: vi.fn(() => []),
+      getRoot: vi.fn(() => ({ path: "", children: [] })),
+    },
+    workspace: { leftSplit: {}, trigger: vi.fn() },
+  };
+  const plugin = {
+    getSettings: () => settings,
+    getUiStrings: () => getUiStrings("en"),
+    saveSettings: vi.fn(async () => undefined),
+    getSearchService: () => null,
+    getSearchSnapshot: () => null,
+    subscribeSearchSnapshots: () => () => undefined,
+    openNoteFromCard: vi.fn(async () => undefined),
+    createNoteInFolder: vi.fn(async () => undefined),
+  };
+  // The node project has no window; the search debounce reaches for one.
+  (globalThis as unknown as { activeWindow?: Pick<Window, "setTimeout" | "clearTimeout"> })
+    .activeWindow = { setTimeout: vi.fn(() => 0), clearTimeout: vi.fn() } as never;
+  const view = new FolderCardView({ app, getRoot: () => null } as never, plugin as never);
+  (view as unknown as { store: ReturnType<typeof createViewStateStore> }).store.replaceBaseCards([
+    createCard("notes/alpha.md"),
+    createCard("archive/beta.md"),
+  ]);
+  return view;
+}
+
 function expectOnlyGroupsChanged(
   initial: PanelModelState,
   next: PanelModelState,
@@ -224,7 +266,7 @@ function expectOnlyGroupsChanged(
 
 const runtimeMappings: Array<[string, PanelGroup[]]> = [
   ["complete load or scope switch", [...PANEL_GROUPS]],
-  ["search query or snapshot", ["search", "cards", "bulk", "scope"]],
+  ["search query or snapshot", ["search", "cards", "bulk", "scope", "projection"]],
   ["search focus token", ["search"]],
   ["hydration batch", ["cards"]],
   ["single-card selection", ["cards", "bulk"]],
@@ -326,7 +368,42 @@ describe("FolderCardView grouped panel publishing", () => {
     view.modules.search.resetQuery();
 
     expect(listener).toHaveBeenCalledTimes(1);
-    expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["search", "cards", "bulk", "scope"]);
+    expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["search", "cards", "bulk", "scope", "projection"]);
+    view.cleanupLifecycle();
+  });
+
+  it("routes a group collapse command through the cards and bulk groups only", () => {
+    const { view, initial, listener } = createRuntimeRouteHarness();
+
+    view.onGroupCollapseCommand({ command: "toggle", key: "folder:notes" });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["cards", "bulk"]);
+    view.cleanupLifecycle();
+  });
+
+  it("keeps the published segment count aligned with the segments across the search pause", () => {
+    const view = createGroupedRuntimeView();
+
+    (view as unknown as { projectVisibleCards: () => void }).projectVisibleCards();
+    (view as unknown as { publishGroups: (...groups: PanelGroup[]) => void })
+      .publishGroups("cards", "projection");
+
+    const grouped = view.panelModel.getState();
+    expect(grouped.cards.groupSegments).toHaveLength(2);
+    expect(grouped.projection.groupSegmentCount).toBe(grouped.cards.groupSegments.length);
+
+    view.modules.search.onQueryChange({ query: "alpha" });
+
+    const paused = view.panelModel.getState();
+    expect(paused.cards.groupSegments).toHaveLength(0);
+    expect(paused.projection.groupSegmentCount).toBe(paused.cards.groupSegments.length);
+
+    view.modules.search.onQueryChange({ query: "" });
+
+    const restored = view.panelModel.getState();
+    expect(restored.cards.groupSegments).toHaveLength(2);
+    expect(restored.projection.groupSegmentCount).toBe(restored.cards.groupSegments.length);
     view.cleanupLifecycle();
   });
 
@@ -399,6 +476,7 @@ describe("FolderCardView grouped panel publishing", () => {
       modules: {
         search: { getMatchCountsByPath: () => ({}) },
         scopeController: { isLoading: () => false },
+        projection: { getGroupSegments: () => [], getGroupRevision: () => 0 },
       },
     });
 
@@ -423,6 +501,7 @@ describe("FolderCardView grouped panel publishing", () => {
       modules: {
         search: { getMatchCountsByPath: () => ({}) },
         scopeController: { isLoading: () => false },
+        projection: { getGroupSegments: () => [], getGroupRevision: () => 0 },
       },
     });
 
@@ -442,6 +521,7 @@ describe("FolderCardView grouped panel publishing", () => {
       excludedPaths: ["excluded.md"],
       pinnedPaths: [],
       sort: { field: "mtime", direction: "desc" },
+      group: { ...DEFAULT_GROUP_SPEC },
     };
     Object.assign(view as object, {
       store: createViewStateStore(createFolderScope("", true)),

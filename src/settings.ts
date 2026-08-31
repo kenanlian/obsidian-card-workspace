@@ -1,5 +1,7 @@
+import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
+import { deriveRuleId } from "./view/box-rule-identity";
 import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
 
@@ -117,6 +119,7 @@ export interface PluginSettings {
     field: SortField;
     direction: SortDirection;
   };
+  group: GroupSpec;
   filter: { tags: string[] };
   pinnedPaths: string[];
   includeSubfolders: boolean;
@@ -150,6 +153,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     field: "mtime",
     direction: "desc",
   },
+  group: { ...DEFAULT_GROUP_SPEC },
   filter: { tags: [] },
   pinnedPaths: [],
   includeSubfolders: true,
@@ -325,8 +329,14 @@ function normalizeRule(value: unknown): Rule | null {
   const includeSubfolders =
     typeof value.includeSubfolders === "boolean" ? value.includeSubfolders : true;
   const tags = normalizeTags(value.tags);
+  const rawId = typeof value.id === "string" ? value.id.trim() : "";
+  const content = { folder, includeSubfolders, tags };
 
-  return { folder, includeSubfolders, tags };
+  return {
+    ...content,
+    id: rawId.length > 0 ? rawId : deriveRuleId(content),
+    name: typeof value.name === "string" ? value.name.trim() : "",
+  };
 }
 
 function normalizeRules(value: unknown): Rule[] {
@@ -335,11 +345,26 @@ function normalizeRules(value: unknown): Rule[] {
   }
 
   const result: Rule[] = [];
-  for (const entry of value) {
+  const seenIds = new Set<string>();
+  for (const [index, entry] of value.entries()) {
     const rule = normalizeRule(entry);
-    if (rule !== null) {
-      result.push(rule);
+    if (rule === null) {
+      continue;
     }
+    if (seenIds.has(rule.id)) {
+      // A hand-edited box can carry an explicit id equal to the indexed
+      // candidate, so keep advancing the suffix until it is genuinely free.
+      const derived = deriveRuleId(rule);
+      let candidate = derived;
+      let suffix = index;
+      while (seenIds.has(candidate)) {
+        candidate = `${derived}#${suffix}`;
+        suffix += 1;
+      }
+      rule.id = candidate;
+    }
+    seenIds.add(rule.id);
+    result.push(rule);
   }
   return result;
 }
@@ -370,6 +395,7 @@ function normalizeBox(value: unknown): CardBoxDefinition | null {
     excludedPaths,
     pinnedPaths: normalizeStringArray(value.pinnedPaths),
     sort: normalizeBoxSort(value.sort),
+    group: normalizeGroupSpec(value.group),
   };
 }
 
@@ -465,6 +491,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
       field: normalizeSortField(sort.field),
       direction: normalizeSortDirection(sort.direction),
     },
+    group: normalizeGroupSpec(data.group),
     filter: { tags: normalizeTags(filter.tags) },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),

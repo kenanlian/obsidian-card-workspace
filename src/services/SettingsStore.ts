@@ -12,6 +12,7 @@ import { resolveSettingsUpdateIntent, type ViewUpdateIntent } from "../view/upda
 
 export interface PreferencesSettings {
   sort: PluginSettings["sort"];
+  group: PluginSettings["group"];
   includeSubfolders: boolean;
   defaultView: PluginSettings["defaultView"];
   defaultCardOpenBehavior: PluginSettings["defaultCardOpenBehavior"];
@@ -58,6 +59,7 @@ export interface SettingsStoreDeps {
 
 const PREFERENCE_KEYS = new Set<string>([
   "sort",
+  "group",
   "includeSubfolders",
   "defaultView",
   "defaultCardOpenBehavior",
@@ -117,6 +119,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   const sectionCollapsed: Partial<WorkspaceSectionCollapsed> = {};
 
   if (patch.sort !== undefined) preferences.sort = patch.sort as PreferencesSettings["sort"];
+  if (patch.group !== undefined) preferences.group = patch.group;
   if (patch.includeSubfolders !== undefined) preferences.includeSubfolders = patch.includeSubfolders;
   if (patch.defaultView !== undefined) preferences.defaultView = patch.defaultView;
   if (patch.defaultCardOpenBehavior !== undefined) {
@@ -167,6 +170,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     preferences: {
       sort: { ...settings.sort },
+      group: { ...settings.group },
       includeSubfolders: settings.includeSubfolders,
       defaultView: settings.defaultView,
       defaultCardOpenBehavior: settings.defaultCardOpenBehavior,

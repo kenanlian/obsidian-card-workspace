@@ -14,6 +14,8 @@ interface PanelProps {
   onPinToggle?: (payload: unknown) => void;
   onToolbarAction?: (payload: unknown) => void;
   onSortChange?: (payload: unknown) => void;
+  onGroupChange?: (payload: unknown) => void;
+  onGroupCollapseCommand?: (payload: unknown) => void;
   onFilterChange?: (payload: unknown) => void;
   onIncludeSubfoldersChange?: (payload: unknown) => void;
   onSearchQueryChange?: (payload: unknown) => void;
@@ -41,6 +43,8 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onPinToggle: "pin-toggle",
   onToolbarAction: "toolbar-action",
   onSortChange: "sort-change",
+  onGroupChange: "group-change",
+  onGroupCollapseCommand: "group-collapse",
   onFilterChange: "filter-change",
   onIncludeSubfoldersChange: "include-subfolders-change",
   onSearchQueryChange: "search-query-change",

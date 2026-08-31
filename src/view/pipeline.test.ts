@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
 import { createBoxScope, createFolderScope, type CardScope } from "./scope";
 import type { PipelineContext } from "./pipeline";
+import type { GroupBucket } from "./card-grouping";
+import type { GroupSpec } from "../card-grouping-settings";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import type { NoteCardRecord } from "./types";
 import type { CardFileKind } from "./file-kind";
 import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
@@ -23,6 +26,8 @@ function createMockContext(): PipelineContext {
       orderedPaths: undefined,
     },
     pinnedPaths: [],
+    group: { spec: { ...DEFAULT_GROUP_SPEC }, buckets: new Map() },
+    collapsedGroupKeys: new Set(),
   };
 }
 
@@ -30,6 +35,31 @@ function withPinnedPaths(context: PipelineContext, pinnedPaths: string[]): Pipel
   return {
     ...context,
     pinnedPaths: [...pinnedPaths],
+  };
+}
+
+/** Buckets a card by its top-level folder, which is enough to exercise grouping. */
+function withFolderGrouping(
+  context: PipelineContext,
+  cards: readonly NoteCardRecord[],
+  spec: Partial<GroupSpec> = {},
+): PipelineContext {
+  const buckets = new Map<string, GroupBucket>();
+  for (const card of cards) {
+    const separatorIndex = card.path.lastIndexOf("/");
+    const parentPath = separatorIndex === -1 ? "" : card.path.slice(0, separatorIndex);
+    buckets.set(card.path, {
+      key: `folder:${parentPath}`,
+      label: parentPath === "" ? "Vault root" : parentPath,
+      detail: parentPath,
+      sortKey: parentPath,
+      isMissing: false,
+    });
+  }
+
+  return {
+    ...context,
+    group: { spec: { ...DEFAULT_GROUP_SPEC, dimension: "folder", ...spec }, buckets },
   };
 }
 
@@ -65,14 +95,15 @@ describe("runPipeline", () => {
     const cards = [createMockCard("test.md")];
     const context = createMockContext();
     const result = runPipeline(cards, [], context);
-    expect(result).toBe(cards);
+    expect(result.cards).toBe(cards);
+    expect(result.segments).toEqual([]);
   });
 
   it("returns input unchanged with identity folder-scope steps", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md")];
     const context = createMockContext();
     const result = runPipeline(cards, folderSteps(), context);
-    expect(result).toEqual(cards);
+    expect(result.cards).toEqual(cards);
   });
 
   it("chains steps in order — step N receives step N-1 output", () => {
@@ -88,13 +119,13 @@ describe("runPipeline", () => {
     expect(step1).toHaveBeenCalledWith(cards, context);
     expect(step2).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ path: "added-step1.md" })]), context);
     expect(step3).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ path: "added-step2.md" })]), context);
-    expect(result).toHaveLength(4);
+    expect(result.cards).toHaveLength(4);
   });
 
   it("returns empty array when given empty cards", () => {
     const context = createMockContext();
     const result = runPipeline([], folderSteps(), context);
-    expect(result).toEqual([]);
+    expect(result.cards).toEqual([]);
   });
 
   it("passes context to each step", () => {
@@ -105,6 +136,105 @@ describe("runPipeline", () => {
     runPipeline(cards, [mockStep], context);
 
     expect(mockStep).toHaveBeenCalledWith(cards, context);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group arrangement stage
+// ---------------------------------------------------------------------------
+
+describe("group arrangement stage", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns the same card array reference and no segments for dimension none", () => {
+    const cards = [createMockCard("notes/a.md"), createMockCard("b.md")];
+    const context = createMockContext();
+
+    const result = runPipeline(cards, [], context);
+
+    expect(result.cards).toBe(cards);
+    expect(result.segments).toEqual([]);
+  });
+
+  it("returns populated segments for an empty query with a dimension set", () => {
+    const cards = [
+      createMockCard("notes/a.md"),
+      createMockCard("archive/b.md"),
+      createMockCard("notes/c.md"),
+    ];
+    const context = withFolderGrouping(createMockContext(), cards);
+
+    const result = runPipeline(cards, folderSteps(), context);
+
+    expect(result.segments.map((segment) => segment.key)).toEqual([
+      "folder:archive",
+      "folder:notes",
+    ]);
+    expect(result.segments.map((segment) => segment.count)).toEqual([1, 2]);
+    expect(result.cards.map((card) => card.path)).toEqual([
+      "archive/b.md",
+      "notes/a.md",
+      "notes/c.md",
+    ]);
+  });
+
+  it("pauses grouping for a non-empty query regardless of execution state", () => {
+    const cards = [createMockCard("notes/a.md"), createMockCard("archive/b.md")];
+    const executions = ["indexed-ready", "indexed-building", "indexed-unavailable"] as const;
+
+    for (const execution of executions) {
+      const context = withFolderGrouping(createMockContext(), cards);
+      context.search.query = "roadmap";
+      context.search.execution = execution;
+      context.search.orderedPaths = ["notes/a.md", "archive/b.md"];
+
+      const result = runPipeline(cards, folderSteps(), context);
+      expect(result.segments, execution).toEqual([]);
+    }
+  });
+
+  it("leaves the collapse set intact while paused so clearing the query restores it", () => {
+    const cards = [createMockCard("notes/a.md"), createMockCard("archive/b.md")];
+    const context = withFolderGrouping(createMockContext(), cards);
+    context.collapsedGroupKeys = new Set(["folder:archive"]);
+
+    context.search.query = "roadmap";
+    context.search.execution = "indexed-ready";
+    context.search.orderedPaths = ["notes/a.md", "archive/b.md"];
+    expect(runPipeline(cards, folderSteps(), context).segments).toEqual([]);
+
+    context.search.query = "";
+    context.search.orderedPaths = undefined;
+    const restored = runPipeline(cards, folderSteps(), context);
+    expect(restored.cards.map((card) => card.path)).toEqual(["notes/a.md"]);
+    expect(restored.segments.map((segment) => [segment.key, segment.collapsed])).toEqual([
+      ["folder:archive", true],
+      ["folder:notes", false],
+    ]);
+  });
+
+  it("keeps a pinned card leading its own group instead of the whole stream", () => {
+    const cards = [
+      createMockCard("archive/a.md"),
+      createMockCard("archive/b.md"),
+      createMockCard("notes/c.md"),
+      createMockCard("notes/d.md"),
+    ];
+    const context = withFolderGrouping(
+      withPinnedPaths(createMockContext(), ["notes/d.md"]),
+      cards,
+    );
+
+    const result = runPipeline(cards, folderSteps(), context);
+
+    expect(result.cards.map((card) => card.path)).toEqual([
+      "archive/a.md",
+      "archive/b.md",
+      "notes/d.md",
+      "notes/c.md",
+    ]);
   });
 });
 
@@ -440,7 +570,7 @@ describe("applyPinReorder", () => {
       return file.path !== "filtered-pinned.md";
     });
 
-    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -458,7 +588,7 @@ describe("applyPinReorder", () => {
     baseContext.search.orderedPaths = ["visible-pinned.md", "visible-unpinned.md"];
     const context = withPinnedPaths(baseContext, ["filtered-pinned.md", "visible-pinned.md"]);
 
-    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -482,7 +612,7 @@ describe("applyPinReorder", () => {
       return file.path !== "tag-filtered-pinned.md";
     });
 
-    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
       "visible-pinned.md",
       "visible-unpinned.md",
     ]);
@@ -506,7 +636,7 @@ describe("applyPinReorder", () => {
       return file.path !== "b.md";
     });
 
-    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
       "a.md",
       "d.md",
     ]);
@@ -527,7 +657,7 @@ describe("applyPinReorder", () => {
       return file.path !== "b.md";
     });
 
-    expect(runPipeline(cards, folderSteps(), context).map((card) => card.path)).toEqual([
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
       "a.md",
       "c.md",
       "d.md",
@@ -693,8 +823,8 @@ describe("stepsForScope", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md"), createMockCard("c.md")];
     const context = createMockContext();
     const result = runPipeline(cards, folderSteps(), context);
-    expect(result).toEqual(cards);
-    expect(result).toHaveLength(3);
+    expect(result.cards).toEqual(cards);
+    expect(result.cards).toHaveLength(3);
   });
 
   it("skips tag filtering for box scopes without shrinking box membership", () => {
@@ -705,7 +835,7 @@ describe("stepsForScope", () => {
 
     const steps = stepsForScope(createBoxScope("box-1"));
     expect(steps).not.toContain(applyTagFilter);
-    expect(runPipeline(cards, steps, context)).toEqual(cards);
+    expect(runPipeline(cards, steps, context).cards).toEqual(cards);
   });
 
   it("throws for an unhandled card source instead of inheriting folder steps", () => {

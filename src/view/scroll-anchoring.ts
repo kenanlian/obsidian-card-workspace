@@ -9,27 +9,35 @@ export interface ScrollAnchorInput {
   maxAnchorDelta?: number;
 }
 
-export interface ScrollAnchorRow {
-  startIndex: number;
+/**
+ * Structural stand-in for `PanelRow`. Declared locally so this module keeps
+ * zero imports, which is what exempts it from the Svelte layering rule.
+ */
+export interface AnchorCandidateRow {
+  readonly kind: "group-header" | "cards";
+  readonly key: string;
+  readonly cards?: readonly { readonly path: string }[];
+  readonly startIndex?: number;
+  readonly endIndex?: number;
 }
 
-export interface LayoutScrollAnchorInput {
-  scrollTop: number;
-  rowPositions: readonly number[];
-  rows: readonly ScrollAnchorRow[];
-}
+/**
+ * `card-index` names a position in the card array rather than a card, which is
+ * how anchoring behaved before groups existed: a reorder holds the viewport
+ * still instead of chasing the card that used to be there. It stays valid only
+ * while rows are uniform, so callers select it exactly when there are no
+ * segments; grouped layouts must use `card` or `group`, whose row lookup
+ * survives the partial tail row a segment boundary produces.
+ */
+export type RowAnchorRef =
+  | { kind: "card"; path: string }
+  | { kind: "card-index"; index: number }
+  | { kind: "group"; key: string };
 
-export interface LayoutScrollAnchor {
-  anchorCardIndex: number;
-  anchorOffset: number;
-}
-
-export interface AnchoredScrollTopInput {
-  anchorCardIndex: number;
-  anchorOffset: number;
-  columnCount: number;
-  rowPositions: readonly number[];
-  cardCount: number;
+/** `offset` is `scrollTop - rowTop` and may be negative. */
+export interface RowAnchor {
+  ref: RowAnchorRef;
+  offset: number;
 }
 
 export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
@@ -62,8 +70,19 @@ export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
   return Math.sign(heightDelta) * maxAnchorDelta;
 }
 
-export function captureScrollAnchor(input: LayoutScrollAnchorInput): LayoutScrollAnchor | null {
-  const { scrollTop, rowPositions, rows } = input;
+/**
+ * Anchors on the top visible row, so its offset is structurally non-negative.
+ *
+ * `preferCardIndex` selects the pre-group positional ref for ungrouped layouts;
+ * see `RowAnchorRef`.
+ */
+export function captureLayoutAnchor(input: {
+  scrollTop: number;
+  rowPositions: readonly number[];
+  rows: readonly AnchorCandidateRow[];
+  preferCardIndex?: boolean;
+}): RowAnchor | null {
+  const { scrollTop, rowPositions, rows, preferCardIndex = false } = input;
 
   if (rowPositions.length === 0 || rows.length === 0) {
     return null;
@@ -75,25 +94,105 @@ export function captureScrollAnchor(input: LayoutScrollAnchorInput): LayoutScrol
     return null;
   }
 
-  const rowTop = rowPositions[rowIndex] ?? 0;
   return {
-    anchorCardIndex: row.startIndex,
-    anchorOffset: Math.max(0, scrollTop - rowTop),
+    ref: buildRowAnchorRef(row, preferCardIndex),
+    offset: Math.max(0, scrollTop - (rowPositions[rowIndex] ?? 0)),
   };
 }
 
-export function computeAnchoredScrollTop(input: AnchoredScrollTopInput): number {
-  const { anchorCardIndex, anchorOffset, columnCount, rowPositions, cardCount } = input;
-  if (rowPositions.length === 0 || cardCount <= 0) {
-    return 0;
+/**
+ * Anchors on a caller-chosen row. A row below the viewport top yields a
+ * negative offset, which is the whole point: an interaction anchor names the
+ * row the user acted on, not the row that happens to be scrolled to.
+ */
+export function captureRowAnchor(input: {
+  scrollTop: number;
+  rowPositions: readonly number[];
+  rows: readonly AnchorCandidateRow[];
+  rowIndex: number;
+}): RowAnchor | null {
+  const { scrollTop, rowPositions, rows, rowIndex } = input;
+
+  const row = rows[rowIndex];
+  if (!row || rowPositions.length === 0) {
+    return null;
   }
 
-  const safeColumnCount = Math.max(1, Math.trunc(columnCount) || 1);
-  const safeCardIndex = Math.max(0, Math.min(cardCount - 1, Math.trunc(anchorCardIndex) || 0));
-  const rowIndex = Math.min(rowPositions.length - 1, Math.floor(safeCardIndex / safeColumnCount));
-  const rowTop = rowPositions[rowIndex] ?? 0;
+  return {
+    // Always identity-based: this anchor exists for the group-header toggle,
+    // which only happens when segments are present.
+    ref: buildRowAnchorRef(row, false),
+    offset: scrollTop - (rowPositions[rowIndex] ?? 0),
+  };
+}
 
-  return Math.max(0, rowTop + Math.max(0, anchorOffset));
+export function resolveAnchoredScrollTop(input: {
+  anchor: RowAnchor;
+  rows: readonly AnchorCandidateRow[];
+  rowPositions: readonly number[];
+}): number | null {
+  const { anchor, rows, rowPositions } = input;
+  const rowIndex = findAnchorRowIndex(rows, anchor.ref);
+  if (rowIndex === -1) {
+    return null;
+  }
+
+  const rowTop = rowPositions[rowIndex];
+  if (rowTop === undefined) {
+    return null;
+  }
+
+  return rowTop + anchor.offset;
+}
+
+function buildRowAnchorRef(row: AnchorCandidateRow, preferCardIndex: boolean): RowAnchorRef {
+  const firstCard = row.cards?.[0];
+  if (!firstCard) {
+    return { kind: "group", key: row.key };
+  }
+  return preferCardIndex && row.startIndex !== undefined
+    ? { kind: "card-index", index: row.startIndex }
+    : { kind: "card", path: firstCard.path };
+}
+
+/**
+ * Locates the card row whose span covers `index`, falling back to the last card
+ * row when the array shrank. For the uniform rows an ungrouped layout produces
+ * this is the same row `Math.floor(index / columnCount)` selected before groups
+ * existed, without needing the column count.
+ */
+function findCardIndexRow(rows: readonly AnchorCandidateRow[], index: number): number {
+  let lastCardRow = -1;
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (row.startIndex === undefined || row.endIndex === undefined) {
+      continue;
+    }
+    lastCardRow = rowIndex;
+    if (index >= row.startIndex && index < row.endIndex) {
+      return rowIndex;
+    }
+  }
+
+  return lastCardRow;
+}
+
+function findAnchorRowIndex(rows: readonly AnchorCandidateRow[], ref: RowAnchorRef): number {
+  if (ref.kind === "card-index") {
+    return findCardIndexRow(rows, ref.index);
+  }
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const matches = ref.kind === "group"
+      ? row.key === ref.key
+      : (row.cards?.some((card) => card.path === ref.path) ?? false);
+    if (matches) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 export function clampLayoutScrollTop(

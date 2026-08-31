@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, type DefaultViewMode, type PluginSettings } from "../settings";
-import type { CardBoxDefinition } from "./types";
+import { deriveRuleId } from "./box-rule-identity";
+import type { CardBoxDefinition, Rule } from "./types";
 import { createBoxScope, createFolderScope } from "./scope";
 import {
   UPDATE_INTENT_RANK,
@@ -20,14 +22,21 @@ function createBox(overrides: Partial<CardBoxDefinition> = {}): CardBoxDefinitio
     excludedPaths: [],
     pinnedPaths: [],
     sort: { field: "mtime", direction: "desc" },
+    group: { ...DEFAULT_GROUP_SPEC },
     ...overrides,
   };
+}
+
+function createRule(overrides: Partial<Rule> = {}): Rule {
+  const content = { folder: "Notes", includeSubfolders: true, tags: [], ...overrides };
+  return { ...content, id: overrides.id ?? deriveRuleId(content), name: overrides.name ?? "" };
 }
 
 function createSettings(): PluginSettings {
   return {
     ...DEFAULT_SETTINGS,
     sort: { ...DEFAULT_SETTINGS.sort },
+    group: { ...DEFAULT_SETTINGS.group },
     filter: { tags: [...DEFAULT_SETTINGS.filter.tags] },
     pinnedPaths: [...DEFAULT_SETTINGS.pinnedPaths],
     boxes: [createBox()],
@@ -40,6 +49,7 @@ function createSettings(): PluginSettings {
 
 const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   sort: "reproject",
+  group: "reproject",
   filter: "reproject",
   pinnedPaths: "reproject",
   includeSubfolders: "reload",
@@ -65,6 +75,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
 function changeSetting(settings: PluginSettings, key: keyof PluginSettings): void {
   switch (key) {
     case "sort": settings.sort = { field: "ctime", direction: "asc" }; break;
+    case "group": settings.group = { dimension: "folder", orderBy: "name", orderDirection: "desc" }; break;
     case "filter": settings.filter = { tags: ["changed"] }; break;
     case "pinnedPaths": settings.pinnedPaths = ["notes/pinned.md"]; break;
     case "includeSubfolders": settings.includeSubfolders = !settings.includeSubfolders; break;
@@ -199,5 +210,28 @@ describe("resolveBoxesUpdateIntent", () => {
   it("returns patch for other box-list changes", () => {
     const renamed = createBox({ name: "Renamed" });
     expect(resolveBoxesUpdateIntent([createBox()], [renamed], "box-1")).toBe("patch");
+  });
+
+  it("returns reproject when the active box's group changes", () => {
+    const grouped = createBox({
+      group: { dimension: "box-rule", orderBy: "name", orderDirection: "desc" },
+    });
+    expect(resolveBoxesUpdateIntent([createBox()], [grouped], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent([createBox()], [grouped], "other-box")).toBe("patch");
+  });
+
+  it("returns reproject, not reload, when only a rule's name or id changes", () => {
+    const previous = createBox({ rules: [createRule()] });
+    const renamed = createBox({ rules: [createRule({ name: "Client work" })] });
+    const reidentified = createBox({ rules: [createRule({ id: "custom" })] });
+
+    expect(resolveBoxesUpdateIntent([previous], [renamed], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent([previous], [reidentified], "box-1")).toBe("reproject");
+  });
+
+  it("still returns reload when a rule's folder changes", () => {
+    const previous = createBox({ rules: [createRule()] });
+    const moved = createBox({ rules: [createRule({ folder: "Archive", name: "Client work" })] });
+    expect(resolveBoxesUpdateIntent([previous], [moved], "box-1")).toBe("reload");
   });
 });

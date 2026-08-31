@@ -46,6 +46,8 @@ const mockState = vi.hoisted(() => {
     onPinToggle?: (payload: Record<string, unknown>) => void;
     onToolbarAction?: (payload: Record<string, unknown>) => void;
     onSortChange?: (payload: Record<string, unknown>) => void;
+    onGroupChange?: (payload: Record<string, unknown>) => void;
+    onGroupCollapseCommand?: (payload: Record<string, unknown>) => void;
     onFilterChange?: (payload: Record<string, unknown>) => void;
     onIncludeSubfoldersChange?: (payload: Record<string, unknown>) => void;
     onSearchQueryChange?: (payload: Record<string, unknown>) => void;
@@ -89,6 +91,8 @@ const mockState = vi.hoisted(() => {
       onPinToggle: "pin-toggle",
       onToolbarAction: "toolbar-action",
       onSortChange: "sort-change",
+      onGroupChange: "group-change",
+      onGroupCollapseCommand: "group-collapse",
       onFilterChange: "filter-change",
       onIncludeSubfoldersChange: "include-subfolders-change",
       onSearchQueryChange: "search-query-change",

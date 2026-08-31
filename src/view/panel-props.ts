@@ -13,6 +13,8 @@ export interface PanelHost {
   };
   handleToolbarAction: (detail: { action?: unknown }) => void;
   onSortChange: (detail: { field?: unknown; direction?: unknown }) => Promise<void>;
+  onGroupChange: (detail: { dimension?: unknown; orderBy?: unknown; orderDirection?: unknown }) => Promise<void>;
+  onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => void;
   onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
   onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => Promise<void>;
   onCardHoverLink: (detail: CardHoverLinkPayload) => void;
@@ -76,6 +78,12 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     },
     onSortChange: (detail: { field?: unknown; direction?: unknown }) => {
       void view.onSortChange(detail);
+    },
+    onGroupChange: (detail: { dimension?: unknown; orderBy?: unknown; orderDirection?: unknown }) => {
+      void view.onGroupChange(detail);
+    },
+    onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => {
+      view.onGroupCollapseCommand(detail);
     },
     onFilterChange: (detail: { tags?: unknown }) => {
       void view.modules.tagActions.onFilterChange(detail);

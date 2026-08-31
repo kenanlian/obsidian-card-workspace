@@ -1,9 +1,11 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
   import { getUiStrings } from "../i18n";
   import Toolbar from "./Toolbar.svelte";
   import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
+  import GroupHeaderRow from "./GroupHeaderRow.svelte";
   import type {
     OpenNotePayload,
     PanelModel,
@@ -11,10 +13,12 @@
     PanelSearchState,
   } from "./panel-model";
   import {
-    captureScrollAnchor,
+    captureLayoutAnchor,
+    captureRowAnchor,
     clampLayoutScrollTop,
-    computeAnchoredScrollTop,
     computeScrollAnchorDelta,
+    resolveAnchoredScrollTop,
+    type RowAnchorRef,
   } from "./scroll-anchoring";
   import {
     computeColumnCount,
@@ -22,8 +26,9 @@
     FALLBACK_GRID_GAP,
     FALLBACK_MIN_CARD_WIDTH,
     findIndexAtOffset,
-    getHydrateRangeForRows,
-    projectCardsToRows,
+    getHydrateRangeForPanelRows,
+    projectPanelRows,
+    type PanelRow,
   } from "./row-projection";
   import { buildRowPositions, createViewportRequest, getSpacerStyle,
     readFiniteNumber, resolvePanelScopeIdentity } from "./virtual-layout";
@@ -64,6 +69,17 @@
     direction: string;
   }
 
+  interface GroupChangePayload {
+    dimension: string;
+    orderBy: string;
+    orderDirection: string;
+  }
+
+  interface GroupCollapseCommandPayload {
+    command: string;
+    key?: string;
+  }
+
   interface FilterChangePayload {
     tags: string[];
   }
@@ -91,6 +107,8 @@
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
+    onGroupChange?: (payload: GroupChangePayload) => void;
+    onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
@@ -124,6 +142,7 @@
       selectedPath: null,
       loading: false,
       generation: 0, sequenceRevision: 0, hydrationRevision: 0,
+      groupSegments: [], groupRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -133,6 +152,9 @@
       tagCounts: {},
       activeFilterTags: [],
       pinnedPaths: [],
+      group: DEFAULT_GROUP_SPEC,
+      availableGroupDimensions: [],
+      groupSegmentCount: 0,
     },
     bulk: {
       bulkMode: false,
@@ -174,6 +196,8 @@
     onCardHoverLink,
     onToolbarAction,
     onSortChange,
+    onGroupChange,
+    onGroupCollapseCommand,
     onFilterChange,
     onIncludeSubfoldersChange,
     onSearchQueryChange,
@@ -222,6 +246,7 @@
   const nav = $derived(panelState.nav);
   const appearance = $derived(panelState.appearance);
   const cardRecords = $derived(cards.records);
+  const groupSegments = $derived(cards.groupSegments);
 
   function isBlockedSearchState(state: PanelSearchState): boolean {
     return (
@@ -294,6 +319,14 @@
     onSortChange?.(detail);
   }
 
+  function handleGroupChange(detail: GroupChangePayload): void {
+    onGroupChange?.(detail);
+  }
+
+  function handleGroupCollapseCommand(detail: GroupCollapseCommandPayload): void {
+    onGroupCollapseCommand?.(detail);
+  }
+
   function handleFilterChange(detail: FilterChangePayload): void {
     onFilterChange?.(detail);
   }
@@ -341,8 +374,10 @@
   const ESTIMATED_ROW_HEIGHT = 232;
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
+  const panelInstanceId = $props.id();
 
-  type ProjectedRow = ReturnType<typeof projectCardsToRows<{ path: string }>>[number];
+  type ProjectedRow = PanelRow<{ path: string }>;
+  type ProjectedCardRow = Extract<ProjectedRow, { kind: "cards" }>;
 
   let viewportEl = $state<HTMLDivElement | null>(null);
   let viewportHeight = $state(0);
@@ -353,7 +388,19 @@
   let lastRequestIdentity = $state<string | null>(null);
   let lastScopeIdentity = $state<string | null>(null);
 
-  let pendingLayoutAnchor = $state<{ anchorCardIndex: number; anchorOffset: number } | null>(null);
+  /**
+   * Whether a projected layout has no group headers. Read from the rows rather
+   * than from `groupSegments`, because at capture time `groupSegments` is the
+   * incoming publish while `projectedRows` is still the previous layout — on a
+   * grouped-to-flat transition those disagree, and the anchor must describe the
+   * layout it was captured from. `projectPanelRows` stamps `segmentIndex: -1`
+   * on every row of an ungrouped projection and a header at row 0 otherwise.
+   */
+  function isFlatLayout(rows: readonly ProjectedRow[]): boolean {
+    return rows[0]?.segmentIndex === -1;
+  }
+
+  let pendingLayoutAnchor = $state<{ ref: RowAnchorRef; offset: number } | null>(null);
   let rowHeightMap = $state<Map<string, number>>(new Map());
   let projectedRows = $state<ProjectedRow[]>([]);
   let rowPositions = $state<number[]>([]);
@@ -375,7 +422,7 @@
     endRowIndex < projectedRows.length ? totalHeight - (rowPositions[endRowIndex] || 0) : 0,
   );
   const visibleRows = $derived(projectedRows.slice(startRowIndex, endRowIndex));
-  const viewportBounds = $derived(getHydrateRangeForRows(projectedRows, startRowIndex, endRowIndex));
+  const viewportBounds = $derived(getHydrateRangeForPanelRows(projectedRows, startRowIndex, endRowIndex));
   const hydratePaths = $derived(cardRecords
     .slice(viewportBounds.start, viewportBounds.end)
     .map((card) => card.path));
@@ -438,10 +485,11 @@
     });
 
     if (nextColumnCount !== columnCount && projectedRows.length > 0) {
-      pendingLayoutAnchor = captureScrollAnchor({
+      pendingLayoutAnchor = captureLayoutAnchor({
         scrollTop,
         rowPositions,
         rows: projectedRows,
+        preferCardIndex: isFlatLayout(projectedRows),
       });
     }
 
@@ -509,20 +557,27 @@
 
   $effect(() => {
     const revision = cards.sequenceRevision;
+    const groupRevision = cards.groupRevision;
     const columns = columnCount;
     untrack(() => {
       if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
-        pendingLayoutAnchor = captureScrollAnchor({ scrollTop, rowPositions, rows: projectedRows });
+        // Ungrouped reorders hold the viewport position, as they did before
+        // groups existed; only a grouped layout needs the card/group ref.
+        pendingLayoutAnchor = captureLayoutAnchor({
+          scrollTop, rowPositions, rows: projectedRows,
+          preferCardIndex: isFlatLayout(projectedRows),
+        });
       }
-      projectedRows = projectCardsToRows(cards.records.map((card) => ({ path: card.path })), columns);
+      projectedRows = projectPanelRows(cards.records.map((card) => ({ path: card.path })), groupSegments, columns);
       rebuildPositionsFrom(0);
     });
     void revision;
+    void groupRevision;
   });
 
   $effect(() => {
     if (!cards.loading && cardRecords.length > 0 && projectedRows.length === 0) {
-      projectedRows = projectCardsToRows(cardRecords.map((card) => ({ path: card.path })), columnCount);
+      projectedRows = projectPanelRows(cardRecords.map((card) => ({ path: card.path })), groupSegments, columnCount);
       rebuildPositionsFrom(0);
     }
   });
@@ -543,21 +598,20 @@
 
   $effect(() => {
     if (pendingLayoutAnchor && viewportEl) {
-      applyScrollTop(
-        clampLayoutScrollTop(computeAnchoredScrollTop({
-          anchorCardIndex: pendingLayoutAnchor.anchorCardIndex,
-          anchorOffset: pendingLayoutAnchor.anchorOffset,
-          columnCount,
-          rowPositions,
-          cardCount: cardRecords.length,
-        }), totalHeight, viewportHeight),
-      );
+      const resolved = resolveAnchoredScrollTop({
+        anchor: pendingLayoutAnchor,
+        rows: projectedRows,
+        rowPositions,
+      });
+      if (resolved !== null) {
+        applyScrollTop(clampLayoutScrollTop(resolved, totalHeight, viewportHeight));
+      }
       pendingLayoutAnchor = null;
     }
   });
 
   $effect(() => {
-    if (cardRecords.length === 0 && pendingLayoutAnchor) {
+    if (cardRecords.length === 0 && groupSegments.length === 0 && pendingLayoutAnchor) {
       pendingLayoutAnchor = null;
     }
   });
@@ -568,12 +622,27 @@
     }
   });
 
-  function getRowCards(row: ProjectedRow): NoteCardRecord[] {
+  function getRowCards(row: ProjectedCardRow): NoteCardRecord[] {
     return cardRecords.slice(row.startIndex, row.endIndex);
   }
 
   function rowNeedsMeasuredHeight(row: ProjectedRow): boolean {
-    return getRowCards(row).every((card) => card.hydrated);
+    return row.kind === "group-header" || getRowCards(row).every((card) => card.hydrated);
+  }
+
+  function getGroupHeaderId(segmentIndex: number): string {
+    return `${panelInstanceId}-group-${segmentIndex}`;
+  }
+
+  function getGroupAriaLabel(segmentIndex: number): string {
+    const segment = groupSegments[segmentIndex];
+    return segment ? strings.sortGroup.groupHeaderAria(segment.label, segment.count) : "";
+  }
+
+  function handleGroupToggle(key: string): void {
+    const rowIndex = projectedRows.findIndex((row) => row.kind === "group-header" && row.key === `h:${key}`);
+    pendingLayoutAnchor = captureRowAnchor({ scrollTop, rowPositions, rows: projectedRows, rowIndex });
+    onGroupCollapseCommand?.({ command: "toggle", key });
   }
 
   function measureRow(node: HTMLDivElement, row: ProjectedRow): { update: (nextRow: ProjectedRow) => void; destroy: () => void } {
@@ -670,6 +739,8 @@
     tooltipSide={nav.tooltipSide}
     onToolbarAction={handleToolbarAction}
     onSortChange={handleSortChange}
+    onGroupChange={handleGroupChange}
+    onGroupCollapseCommand={handleGroupCollapseCommand}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
     onBoxCommand={handleBoxCommand}
@@ -684,7 +755,7 @@
   >
     {#if cards.loading && cardRecords.length === 0}
       <div class="fce-empty">{strings.panel.loadingCards}</div>
-   {:else if cardRecords.length === 0}
+   {:else if cardRecords.length === 0 && groupSegments.length === 0}
     {#if isBlockedSearchState(search)}
       <div class="fce-empty fce-search-blocked">
         <div class="fce-search-blocked-title">{strings.panel.searchBlockedTitle}</div>
@@ -698,7 +769,27 @@
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>
       {#each visibleRows as row (row.key)}
-        <div class={getRowClass(row.index)} use:measureRow={row}>
+        {#if row.kind === "group-header"}
+          <!-- Segments render a frame ahead of the projection effect, so a shrinking table can briefly orphan a header row. -->
+          {@const segment = groupSegments[row.segmentIndex]}
+          <div class="fce-wall-group-row" use:measureRow={row}>
+            {#if segment}
+              <GroupHeaderRow
+                {segment}
+                {strings}
+                headerId={getGroupHeaderId(row.segmentIndex)}
+                onToggle={handleGroupToggle}
+              />
+            {/if}
+          </div>
+        {:else}
+        <div
+          class={getRowClass(row.index)}
+          use:measureRow={row}
+          role={row.segmentIndex === -1 ? undefined : "group"}
+          aria-labelledby={row.segmentIndex === -1 ? undefined : getGroupHeaderId(row.segmentIndex)}
+          aria-label={row.segmentIndex === -1 ? undefined : getGroupAriaLabel(row.segmentIndex)}
+        >
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
             {#each getRowCards(row) as card (card.path)}
               <CardItem
@@ -720,6 +811,7 @@
             {/each}
           </div>
         </div>
+        {/if}
       {/each}
       <div class="fce-virtual-spacer" style={getBottomPaddingStyle()}></div>
     {/if}

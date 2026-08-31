@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
 import { EMPTY_NAVIGATION_PROJECTION } from "./navigation-model";
 import {
@@ -27,6 +28,8 @@ function buildState(): PanelModelState {
       generation: 1,
       sequenceRevision: 0,
       hydrationRevision: 0,
+      groupSegments: [],
+      groupRevision: 0,
     },
     search: {
       query: "",
@@ -40,6 +43,9 @@ function buildState(): PanelModelState {
       tagCounts: {},
       activeFilterTags: [],
       pinnedPaths: [],
+      group: { ...DEFAULT_GROUP_SPEC },
+      availableGroupDimensions: ["none", "folder", "tag", "task"],
+      groupSegmentCount: 0,
     },
     bulk: {
       bulkMode: false,
@@ -166,6 +172,53 @@ describe("createPanelModel", () => {
     expect(model.getState().scope.displayPath).toBe("Archive");
     expect(model.getState().search.query).toBe("nested");
     expect(model.getState().cards.loading).toBe(true);
+  });
+
+  it("replaces records and group segments in a single cards notification", () => {
+    const initial = buildState();
+    const model = createPanelModel(initial);
+    const listener = vi.fn();
+    model.subscribe(listener);
+    listener.mockClear();
+
+    const records: PanelModelState["cards"]["records"] = [
+      {
+        file: {} as never,
+        fileKind: "markdown",
+        path: "notes/alpha.md",
+        title: "Alpha",
+        ctime: 1,
+        mtime: 2,
+        excerpt: "",
+        previewHtml: "",
+        previewMode: "empty",
+        hydrated: false,
+        taskSummary: null,
+      },
+    ];
+    const groupSegments: PanelModelState["cards"]["groupSegments"] = [
+      {
+        key: "folder:notes",
+        label: "notes",
+        detail: "notes",
+        count: 1,
+        visibleCount: 1,
+        startIndex: 0,
+        collapsed: false,
+        isMissingBucket: false,
+      },
+    ];
+
+    model.mutate((draft) => {
+      draft.cards = { ...draft.cards, records, groupSegments, groupRevision: 1 };
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const next = model.getState();
+    expect(next.cards.records).toBe(records);
+    expect(next.cards.groupSegments).toBe(groupSegments);
+    expect(next.cards.groupRevision).toBe(1);
+    expect(next.projection).toBe(initial.projection);
   });
 
   it("publishes a new outer snapshot without mutating the previous one", () => {

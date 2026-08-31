@@ -395,4 +395,36 @@ describe("SettingsStore", () => {
     });
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
   });
+
+  it("places group on the preferences layer and writes it without the workspace debounce", async () => {
+    const { store, documents, save } = createStore();
+    await store.init();
+
+    const group: PluginSettings["group"] = {
+      dimension: "tag",
+      orderBy: "count",
+      orderDirection: "desc",
+    };
+    const split = splitFlatPatch({ group });
+    expect(split.preferences.group).toEqual(group);
+    expect(split.workspace).not.toHaveProperty("group");
+    expect(split.userData).not.toHaveProperty("group");
+
+    const pending = store.updatePreferences({ group });
+    await Promise.resolve();
+    // Preferences bypass the 300ms workspace debounce, matching `sort`.
+    expect(save).toHaveBeenCalledTimes(1);
+    await pending;
+
+    const persisted = documents.at(-1) as {
+      preferences: Record<string, unknown>;
+      workspace: Record<string, unknown>;
+      userData: Record<string, unknown>;
+    };
+    expect(persisted.preferences.group).toEqual(group);
+    expect(persisted).not.toHaveProperty("group");
+    expect(persisted.workspace).not.toHaveProperty("group");
+    expect(persisted.userData).not.toHaveProperty("group");
+    expect(store.getFlat().group).toEqual(group);
+  });
 });

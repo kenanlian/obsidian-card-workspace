@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
+import type { GroupDimension } from "../../card-grouping-settings";
 import { createFolderScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
@@ -30,7 +31,13 @@ function cacheWithTasks(total = 2, incomplete = 1) {
   return { listItems };
 }
 
-function harness(records: NoteCardRecord[], getFileCache: Mock = vi.fn(() => null)) {
+function harness(
+  records: NoteCardRecord[],
+  getFileCache: Mock = vi.fn(() => null),
+  dimension: GroupDimension = "none",
+  bucketMoved = false,
+  membershipDeparted = false,
+) {
   const store = createViewStateStore(createFolderScope("", true));
   store.replaceBaseCards(records);
   store.replaceVisibleCards(records);
@@ -40,11 +47,23 @@ function harness(records: NoteCardRecord[], getFileCache: Mock = vi.fn(() => nul
     epochs: createViewEpochs(),
     publishGroups: vi.fn(),
   } as unknown as ViewContext;
+  const reprojectAndPublish = vi.fn();
+  const reconcileMetadataMembershipForPath = vi.fn(() => membershipDeparted);
+  const refreshGroupBucketForPath = vi.fn(() => bucketMoved);
   return {
     context,
     store,
     getFileCache,
-    controller: new TaskSummaryController({ context }),
+    reprojectAndPublish,
+    reconcileMetadataMembershipForPath,
+    refreshGroupBucketForPath,
+    controller: new TaskSummaryController({
+      context,
+      getGroupDimension: () => dimension,
+      reprojectAndPublish,
+      reconcileMetadataMembershipForPath,
+      refreshGroupBucketForPath,
+    }),
   };
 }
 
@@ -154,5 +173,145 @@ describe("TaskSummaryController", () => {
     expect(applyTagFilter).not.toHaveBeenCalled();
     expect(applySearchFilter).not.toHaveBeenCalled();
     expect(applyPinReorder).not.toHaveBeenCalled();
+  });
+
+  describe("task-dimension freshness", () => {
+    it("reprojects instead of patching when the bucket changes under dimension task", () => {
+      const target = card("notes/target.md");
+      const { context, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "task",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(2, 0));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("keeps the minimal patch path when the bucket is unchanged under dimension task", () => {
+      const target = card("notes/target.md");
+      target.taskSummary = { total: 3, incomplete: 2 };
+      const { context, store, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "task",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(3, 1));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).toHaveBeenCalledWith("cards");
+      expect(store.getBaseCard(target.path)?.taskSummary).toEqual({ total: 3, incomplete: 1 });
+    });
+
+    it("preserves the patch path for every other dimension", () => {
+      const target = card("notes/target.md");
+      const { context, store, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "folder",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(2, 0));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).toHaveBeenCalledWith("cards");
+      expect(store.getBaseCard(target.path)?.taskSummary).toEqual({ total: 2, incomplete: 0 });
+    });
+
+    it("still performs no patch and no publish for a value-equal summary", () => {
+      const target = card("notes/target.md");
+      target.taskSummary = { total: 2, incomplete: 1 };
+      const { context, store, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "task",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(2, 1));
+      const original = store.getBaseCard(target.path);
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).not.toHaveBeenCalled();
+      expect(store.getBaseCard(target.path)).toBe(original);
+    });
+  });
+
+  describe("metadata-derived group buckets", () => {
+    it("reprojects a departed Box member before it can fall through to a manual bucket", () => {
+      const target = card("notes/target.md");
+      const {
+        context,
+        controller,
+        reprojectAndPublish,
+        reconcileMetadataMembershipForPath,
+        refreshGroupBucketForPath,
+      } = harness([target], vi.fn(() => null), "box-rule", false, true);
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reconcileMetadataMembershipForPath).toHaveBeenCalledWith(target.path);
+      expect(refreshGroupBucketForPath).not.toHaveBeenCalled();
+      expect(reprojectAndPublish).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("reprojects when a tag edit moved the card's bucket", () => {
+      const target = card("notes/target.md");
+      target.taskSummary = null;
+      const { context, controller, reprojectAndPublish, refreshGroupBucketForPath } = harness(
+        [target],
+        vi.fn(() => null),
+        "tag",
+        true,
+      );
+
+      controller.handleMetadataChange(target.path);
+
+      // The vault-content epoch does not move on a metadata-only edit, so
+      // without this the card keeps its pre-edit header.
+      expect(refreshGroupBucketForPath).toHaveBeenCalledWith(target.path);
+      expect(reprojectAndPublish).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("does not reproject when the bucket did not move", () => {
+      const target = card("notes/target.md");
+      target.taskSummary = null;
+      const { context, controller, reprojectAndPublish, refreshGroupBucketForPath } = harness(
+        [target],
+        vi.fn(() => null),
+        "tag",
+        false,
+      );
+
+      controller.handleMetadataChange(target.path);
+
+      expect(refreshGroupBucketForPath).toHaveBeenCalledWith(target.path);
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("leaves the folder dimension on its minimal patch path", () => {
+      const target = card("notes/target.md");
+      target.taskSummary = { total: 2, incomplete: 1 };
+      const { context, controller, getFileCache, reprojectAndPublish, refreshGroupBucketForPath } =
+        harness([target], vi.fn(() => null), "folder");
+      getFileCache.mockReturnValue(cacheWithTasks(2, 0));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(refreshGroupBucketForPath).toHaveBeenCalledWith(target.path);
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledWith("cards");
+    });
   });
 });

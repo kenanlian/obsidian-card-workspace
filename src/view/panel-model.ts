@@ -1,5 +1,7 @@
+import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type { UiStrings } from "../i18n";
+import type { CardGroupSegment } from "./card-grouping";
 import type {
   NavigationFocusRequest,
   NavigationProjection,
@@ -54,6 +56,13 @@ export interface PanelCardsState {
   generation: number;
   sequenceRevision: number;
   hydrationRevision: number;
+  groupSegments: CardGroupSegment[];
+  /**
+   * Bumped only when the segment table's content changes. `groupSegments` is a
+   * fresh array on every `cards` publish, so its identity says nothing; this is
+   * the equality signal, published alongside the segments it describes.
+   */
+  groupRevision: number;
 }
 
 export interface PanelSearchState {
@@ -73,6 +82,13 @@ export interface PanelProjectionState {
   tagCounts: Record<string, number>;
   activeFilterTags: string[];
   pinnedPaths: string[];
+  group: GroupSpec;
+  availableGroupDimensions: GroupDimension[];
+  /**
+   * Segment presence for the toolbar, which never receives the cards group and
+   * so cannot read `groupSegments` itself.
+   */
+  groupSegmentCount: number;
 }
 
 export interface PanelNavState {

@@ -1,8 +1,9 @@
+import type { GroupSpec } from "../card-grouping-settings";
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
 import { NAVIGATION_SECTION_ORDER } from "./navigation-model";
 import { isBoxScope, type CardScope } from "./scope";
-import type { CardBoxDefinition, FavoriteEntry } from "./types";
+import type { CardBoxDefinition, FavoriteEntry, Rule } from "./types";
 
 /**
  * Update strength, weakest to strongest. When a settings key is added, update
@@ -44,6 +45,19 @@ function favoritesEqual(
   );
 }
 
+function groupsEqual(previous: GroupSpec, next: GroupSpec): boolean {
+  return previous.dimension === next.dimension
+    && previous.orderBy === next.orderBy
+    && previous.orderDirection === next.orderDirection;
+}
+
+/** Membership lives in the box signature; identity only changes header labels. */
+function ruleIdentitiesEqual(previous: readonly Rule[], next: readonly Rule[]): boolean {
+  return previous.length === next.length && previous.every(
+    (rule, index) => rule.id === next[index]?.id && rule.name === next[index]?.name,
+  );
+}
+
 export function resolveBoxesUpdateIntent(
   previousBoxes: readonly CardBoxDefinition[],
   nextBoxes: readonly CardBoxDefinition[],
@@ -67,7 +81,10 @@ export function resolveBoxesUpdateIntent(
 
   const sortChanged = previousBox.sort.field !== nextBox.sort.field
     || previousBox.sort.direction !== nextBox.sort.direction;
-  return sortChanged || !stringArraysEqual(previousBox.pinnedPaths, nextBox.pinnedPaths)
+  return sortChanged
+    || !stringArraysEqual(previousBox.pinnedPaths, nextBox.pinnedPaths)
+    || !groupsEqual(previousBox.group, nextBox.group)
+    || !ruleIdentitiesEqual(previousBox.rules, nextBox.rules)
     ? "reproject"
     : "patch";
 }
@@ -94,6 +111,9 @@ export function resolveSettingsUpdateIntent(
     intent = mergeIntent(intent, "reproject");
   }
   if (previous.sort.field !== next.sort.field || previous.sort.direction !== next.sort.direction) {
+    intent = mergeIntent(intent, "reproject");
+  }
+  if (!groupsEqual(previous.group, next.group)) {
     intent = mergeIntent(intent, "reproject");
   }
 

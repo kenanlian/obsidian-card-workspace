@@ -7,6 +7,7 @@ import {
   registerFolderCardView,
 } from "../__mocks__/folder-card-view-harness";
 import type { Menu } from "obsidian";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
 import { defaultNavSectionOrder } from "../navigation-section-order";
 import { createBoxScope } from "./scope";
@@ -120,6 +121,7 @@ function makeBox(id: string, name: string): CardBoxDefinition {
     excludedPaths: [],
     pinnedPaths: [],
     sort: { field: "mtime", direction: "desc" },
+    group: { ...DEFAULT_GROUP_SPEC },
   };
 }
 

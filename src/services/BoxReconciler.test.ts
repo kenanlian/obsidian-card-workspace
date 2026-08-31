@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import type { PluginSettings } from "../settings";
 import type { CardBoxDefinition } from "../view/types";
 import { BoxReconciler } from "./BoxReconciler";
@@ -14,6 +15,7 @@ function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
     excludedPaths: partial.excludedPaths ?? [],
     pinnedPaths: partial.pinnedPaths ?? [],
     sort: partial.sort ?? { field: "mtime", direction: "desc" },
+    group: partial.group ?? { ...DEFAULT_GROUP_SPEC },
   };
 }
 

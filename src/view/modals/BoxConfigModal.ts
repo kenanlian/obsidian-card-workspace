@@ -48,6 +48,7 @@ export class BoxConfigModal extends Modal {
       excludedPaths: [...options.box.excludedPaths],
       pinnedPaths: [...options.box.pinnedPaths],
       sort: { ...options.box.sort },
+      group: { ...options.box.group },
     };
   }
 
@@ -81,6 +82,20 @@ export class BoxConfigModal extends Modal {
           setting.setDesc(strings.ruleFolderMissing);
           setting.setClass("fce-box-config__rule-missing");
         }
+        setting.addText((text) => {
+          text.inputEl.setAttribute("aria-label", strings.ruleNameLabel);
+          text
+            .setPlaceholder(strings.ruleNamePlaceholder)
+            .setValue(rule.name)
+            .onChange((value) => {
+              this.draft = {
+                ...this.draft,
+                rules: this.draft.rules.map((entry, entryIndex) => (
+                  entryIndex === index ? { ...entry, name: value } : entry
+                )),
+              };
+            });
+        });
         setting.addExtraButton((button) => {
           button
             .setIcon("trash-2")

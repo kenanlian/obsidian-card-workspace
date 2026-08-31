@@ -13,6 +13,34 @@ export interface ProjectedRow<T extends RowProjectionCard = RowProjectionCard> {
   key: string;
 }
 
+/**
+ * Structural stand-in for `CardGroupSegment`. Declared locally so this module
+ * keeps zero imports, which is what exempts it from the Svelte layering rule.
+ */
+export interface RowSegment {
+  readonly key: string;
+  readonly startIndex: number;
+  readonly visibleCount: number;
+  readonly collapsed: boolean;
+}
+
+/**
+ * `index`, `startIndex`, and `endIndex` are global: `index` counts header rows
+ * and indexes the row-position table, while the card offsets address the whole
+ * post-collapse card array.
+ */
+export type PanelRow<T extends RowProjectionCard = RowProjectionCard> =
+  | { kind: "group-header"; index: number; key: string; segmentIndex: number }
+  | {
+      kind: "cards";
+      index: number;
+      startIndex: number;
+      endIndex: number;
+      cards: T[];
+      key: string;
+      segmentIndex: number;
+    };
+
 export interface VirtualRowWindow {
   start: number;
   end: number;
@@ -88,6 +116,62 @@ export function projectCardsToRows<T extends RowProjectionCard>(
   return rows;
 }
 
+export function projectPanelRows<T extends RowProjectionCard>(
+  cards: readonly T[],
+  segments: readonly RowSegment[],
+  columnCount: number,
+): PanelRow<T>[] {
+  if (segments.length === 0) {
+    return projectCardsToRows(cards, columnCount).map((row) => ({
+      kind: "cards" as const,
+      index: row.index,
+      startIndex: row.startIndex,
+      endIndex: row.endIndex,
+      cards: row.cards,
+      key: row.key,
+      segmentIndex: -1,
+    }));
+  }
+
+  const rows: PanelRow<T>[] = [];
+
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex];
+    rows.push({
+      kind: "group-header",
+      index: rows.length,
+      key: `h:${segment.key}`,
+      segmentIndex,
+    });
+
+    if (segment.collapsed) {
+      continue;
+    }
+
+    const start = clampCardOffset(segment.startIndex, cards.length);
+    const end = clampCardOffset(start + clampCardOffset(segment.visibleCount, cards.length), cards.length);
+
+    for (const row of projectCardsToRows(cards.slice(start, end), columnCount)) {
+      rows.push({
+        kind: "cards",
+        index: rows.length,
+        startIndex: start + row.startIndex,
+        endIndex: start + row.endIndex,
+        cards: row.cards,
+        key: row.key,
+        segmentIndex,
+      });
+    }
+  }
+
+  return rows;
+}
+
+function clampCardOffset(value: number, cardCount: number): number {
+  const truncated = Number.isFinite(value) ? Math.trunc(value) : 0;
+  return Math.max(0, Math.min(cardCount, truncated));
+}
+
 export function findIndexAtOffset(offset: number, positions: readonly number[]): number {
   if (positions.length === 0) {
     return 0;
@@ -136,4 +220,29 @@ export function getHydrateRangeForRows<T extends RowProjectionCard>(
     start: firstRow.startIndex,
     end: lastRow.endIndex,
   };
+}
+
+export function getHydrateRangeForPanelRows<T extends RowProjectionCard>(
+  rows: readonly PanelRow<T>[],
+  startRowIndex: number,
+  endRowIndex: number,
+): { start: number; end: number } {
+  const safeStart = Math.max(0, Math.min(rows.length, startRowIndex));
+  const safeEnd = Math.max(safeStart, Math.min(rows.length, endRowIndex));
+
+  let start = -1;
+  let end = 0;
+
+  for (let index = safeStart; index < safeEnd; index += 1) {
+    const row = rows[index];
+    if (!row || row.kind !== "cards") {
+      continue;
+    }
+    if (start === -1) {
+      start = row.startIndex;
+    }
+    end = row.endIndex;
+  }
+
+  return start === -1 ? { start: 0, end: 0 } : { start, end };
 }

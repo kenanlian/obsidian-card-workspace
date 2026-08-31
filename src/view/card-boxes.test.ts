@@ -16,6 +16,8 @@ import {
   translateBrowseScopeToRule,
   upsertCardBox,
 } from "./card-boxes";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
 
 function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
@@ -27,11 +29,13 @@ function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
     excludedPaths: partial.excludedPaths ?? [],
     pinnedPaths: partial.pinnedPaths ?? [],
     sort: partial.sort ?? { field: "mtime", direction: "desc" },
+    group: partial.group ?? { ...DEFAULT_GROUP_SPEC },
   };
 }
 
 function makeRule(partial: Partial<Rule> = {}): Rule {
-  return { folder: "", includeSubfolders: true, tags: [], ...partial };
+  const content = { folder: "", includeSubfolders: true, tags: [], ...partial };
+  return { ...content, id: partial.id ?? deriveRuleId(content), name: partial.name ?? "" };
 }
 
 function createApp(tagsByPath: Record<string, string[]>): App {
@@ -105,25 +109,66 @@ describe("crud", () => {
 describe("rule + membership helpers", () => {
   it("serializes only the membership-defining fields", () => {
     const box = makeBox({
-      rules: [makeRule({ folder: "Projects" })],
+      rules: [makeRule({ folder: "Projects", name: "Client work" })],
       manualPaths: ["Manual.md"],
       excludedPaths: ["Excluded.md"],
       pinnedPaths: ["Pinned.md"],
     });
 
-    expect(getBoxMembershipSignature(box)).toBe(JSON.stringify({
-      rules: box.rules,
-      manual: box.manualPaths,
-      excluded: box.excludedPaths,
-    }));
+    // Pinned as a literal: rule identity must stay out of the signature so a
+    // vault upgraded from a pre-identity release produces the same bytes and
+    // does not trigger a spurious reload.
+    expect(getBoxMembershipSignature(box)).toBe(
+      '{"rules":[{"folder":"Projects","includeSubfolders":true,"tags":[]}],'
+      + '"manual":["Manual.md"],"excluded":["Excluded.md"]}',
+    );
     expect(getBoxMembershipSignature({ ...box, name: "Renamed", pinnedPaths: [] }))
       .toBe(getBoxMembershipSignature(box));
   });
 
-  it("translates a browse scope into a rule", () => {
+  it("ignores rule renames but not rule folder changes in the signature", () => {
+    const box = makeBox({ rules: [makeRule({ folder: "Projects" })] });
+    const renamed = makeBox({
+      rules: [makeRule({ folder: "Projects", id: "custom", name: "Client work" })],
+    });
+    const moved = makeBox({ rules: [makeRule({ folder: "Archive" })] });
+
+    expect(getBoxMembershipSignature(renamed)).toBe(getBoxMembershipSignature(box));
+    expect(getBoxMembershipSignature(moved)).not.toBe(getBoxMembershipSignature(box));
+  });
+
+  it("translates a browse scope into a rule with derived identity", () => {
     expect(
       translateBrowseScopeToRule({ folder: "/", includeSubfolders: false, tags: ["wip"] }),
-    ).toEqual({ folder: "", includeSubfolders: false, tags: ["wip"] });
+    ).toEqual({
+      folder: "",
+      includeSubfolders: false,
+      tags: ["wip"],
+      id: "r:|false|wip",
+      name: "",
+    });
+  });
+
+  it("carries rule identity and box grouping through clone and duplicate", () => {
+    const rule = makeRule({ folder: "Projects", id: "custom", name: "Client work" });
+    const group = { dimension: "tag", orderBy: "count", orderDirection: "desc" } as const;
+    const source = makeBox({ id: "a", rules: [rule], group });
+
+    const [, copy] = duplicateCardBox([source], "a");
+
+    expect(copy.rules).toEqual([rule]);
+    expect(copy.rules[0]).not.toBe(rule);
+    expect(copy.group).toEqual(group);
+    expect(copy.group).not.toBe(source.group);
+  });
+
+  it("defaults a created box to ungrouped and clones an explicit group", () => {
+    expect(createCardBox("Box", []).group).toEqual(DEFAULT_GROUP_SPEC);
+
+    const group = { dimension: "folder", orderBy: "name", orderDirection: "asc" } as const;
+    const created = createCardBox("Box", [], { group });
+    expect(created.group).toEqual(group);
+    expect(created.group).not.toBe(group);
   });
 
   it("dedupes identical rules", () => {

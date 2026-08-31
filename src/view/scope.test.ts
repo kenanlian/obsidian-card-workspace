@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TFolder } from "obsidian";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import type { CardBoxDefinition } from "./types";
 import {
   createBoxScope,
@@ -9,6 +10,7 @@ import {
   isFolderScope,
   normalizeScopePath,
   scopeDisplayPath,
+  scopeIdentity,
   scopesEqual,
   serializeScopeKey,
   validateScope,
@@ -25,6 +27,7 @@ function createBox(id: string = "box-1"): CardBoxDefinition {
     excludedPaths: [],
     pinnedPaths: [],
     sort: SORT,
+    group: { ...DEFAULT_GROUP_SPEC },
   };
 }
 
@@ -103,6 +106,30 @@ describe("serializeScopeKey", () => {
     expect(serializeScopeKey(createFolderScope("box", true), SORT)).not.toBe(
       serializeScopeKey(createBoxScope("box"), SORT, ""),
     );
+  });
+});
+
+describe("scopeIdentity", () => {
+  it("separates folders, recursion flags, and boxes", () => {
+    expect(scopeIdentity(createFolderScope("notes", true))).not.toBe(
+      scopeIdentity(createFolderScope("archive", true)),
+    );
+    expect(scopeIdentity(createFolderScope("notes", true))).not.toBe(
+      scopeIdentity(createFolderScope("notes", false)),
+    );
+    expect(scopeIdentity(createBoxScope("box-1"))).not.toBe(scopeIdentity(createBoxScope("box-2")));
+    expect(scopeIdentity(createFolderScope("", true))).toBe("folder::true");
+    expect(scopeIdentity(createBoxScope("box-1"))).toBe("box:box-1");
+  });
+
+  it("ignores sort, unlike serializeScopeKey", () => {
+    const folder = createFolderScope("notes", true);
+    const box = createBoxScope("box-1");
+    const otherSort = { field: "name", direction: "asc" } as const;
+
+    expect(scopeIdentity(folder)).toBe(scopeIdentity(folder));
+    expect(serializeScopeKey(folder, SORT)).not.toBe(serializeScopeKey(folder, otherSort));
+    expect(serializeScopeKey(box, SORT)).not.toBe(serializeScopeKey(box, otherSort));
   });
 });
 

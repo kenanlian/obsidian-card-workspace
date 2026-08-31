@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { App, TFile } from "obsidian";
 import { inFolderScope, isBoxMember, matchesRule } from "./card-box-membership";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
 
 interface FileFixture {
@@ -40,12 +42,13 @@ function createApp(files: FileFixture[]): App {
 }
 
 function makeRule(partial: Partial<Rule> = {}): Rule {
-  return {
+  const content = {
     folder: "",
     includeSubfolders: true,
     tags: [],
     ...partial,
   };
+  return { ...content, id: partial.id ?? deriveRuleId(content), name: partial.name ?? "" };
 }
 
 function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
@@ -57,6 +60,7 @@ function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
     excludedPaths: [],
     pinnedPaths: [],
     sort: { field: "mtime", direction: "desc" },
+    group: { ...DEFAULT_GROUP_SPEC },
     ...partial,
   };
 }

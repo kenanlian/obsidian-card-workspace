@@ -1,4 +1,5 @@
 import type { TFile } from "obsidian";
+import type { GroupSpec } from "../card-grouping-settings";
 import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
@@ -52,6 +53,8 @@ export interface PipelineSearchInput {
  * - `folder`: folder scope path (`""` = vault root).
  * - `includeSubfolders`: whether the folder scope descends recursively.
  * - `tags`: normalized tags applied with AND semantics (same as browse tag filter).
+ * - `id`: stable identity; self-heals from rule content when absent.
+ * - `name`: user override; `""` means "use the derived label".
  *
  * A path matches a rule when it is inside the folder scope AND matches every tag.
  * Rules within a box combine with OR semantics.
@@ -60,6 +63,8 @@ export interface Rule {
   folder: string;
   includeSubfolders: boolean;
   tags: string[];
+  id: string;
+  name: string;
 }
 
 export interface CardBoxSortSpec {
@@ -81,6 +86,7 @@ export interface CardBoxDefinition {
   excludedPaths: string[];
   pinnedPaths: string[];
   sort: CardBoxSortSpec;
+  group: GroupSpec;
 }
 
 export type FavoriteKind = "folder" | "file" | "tag" | "box";

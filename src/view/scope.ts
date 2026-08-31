@@ -56,6 +56,20 @@ export function serializeScopeKey(
   return `${scope.path}::${String(scope.includeSubfolders)}::${sort.field}::${sort.direction}`;
 }
 
+/**
+ * Runtime identity of a scope, independent of sort and box membership.
+ *
+ * Deliberately not `serializeScopeKey`: that key embeds sort, so runtime state
+ * keyed by it would reset on every sort change.
+ */
+export function scopeIdentity(scope: CardScope): string {
+  if (scope.kind === "box") {
+    return `box:${scope.boxId}`;
+  }
+
+  return `folder:${scope.path}:${String(scope.includeSubfolders)}`;
+}
+
 /** Folder path for display and path-scoped operations; boxes have none. */
 export function scopeDisplayPath(scope: CardScope): string {
   return scope.kind === "folder" ? scope.path : "";

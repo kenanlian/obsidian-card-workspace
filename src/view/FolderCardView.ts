@@ -1,5 +1,6 @@
 import { ItemView, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
+import { normalizeGroupSpec, type GroupDimension, type GroupSpec } from "../card-grouping-settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
 import type { OpenDestination, PartialPluginSettings, SortDirection, SortField } from "../settings";
@@ -36,6 +37,24 @@ import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSe
   NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
+
+/** `box-rule` needs a box's rule list; every other dimension resolves in both scopes. */
+const FOLDER_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "task"];
+const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "box-rule", "task"];
+
+/**
+ * Unrecognized input falls back to the current value rather than the spec
+ * default, so a malformed detail cannot silently reset the other two fields.
+ */
+function coerceGroupField<K extends keyof GroupSpec>(
+  key: K,
+  value: unknown,
+  current: GroupSpec[K],
+): GroupSpec[K] {
+  const normalized = normalizeGroupSpec({ [key]: value })[key];
+  return value === normalized ? normalized : current;
+}
+
 export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
@@ -73,7 +92,9 @@ export class FolderCardView extends ItemView {
       publishSearch: () => {
         this.modules.projection.reprojectCards();
         this.modules.bulk.reconcileToVisibleCards();
-        this.publishGroups("search", "cards", "bulk", "scope");
+        // "projection" is in the set because pausing or resuming search moves
+        // `groupSegmentCount`, which the toolbar reads to enable collapse-all.
+        this.publishGroups("search", "cards", "bulk", "scope", "projection");
       },
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
@@ -330,6 +351,7 @@ export class FolderCardView extends ItemView {
     const searchReport = this.modules.search.dispose();
     const hydrationReport = this.modules.hydration.dispose();
     this.modules.taskSummary.dispose();
+    this.modules.groupCollapse.dispose();
 
     return {
       cancelledDebounce:
@@ -424,6 +446,69 @@ export class FolderCardView extends ItemView {
     });
   }
 
+  private resolveGroupSpec(): GroupSpec {
+    return normalizeGroupSpec(resolveViewConfig(this.cardScope, this.plugin.getSettings()).group);
+  }
+
+  async onGroupChange(detail: {
+    dimension?: unknown;
+    orderBy?: unknown;
+    orderDirection?: unknown;
+  }): Promise<void> {
+    const current = this.resolveGroupSpec();
+    const group: GroupSpec = {
+      dimension: coerceGroupField("dimension", detail.dimension, current.dimension),
+      orderBy: coerceGroupField("orderBy", detail.orderBy, current.orderBy),
+      orderDirection: coerceGroupField("orderDirection", detail.orderDirection, current.orderDirection),
+    };
+
+    if (
+      group.dimension === current.dimension &&
+      group.orderBy === current.orderBy &&
+      group.orderDirection === current.orderDirection
+    ) {
+      return;
+    }
+
+    if (isBoxScope(this.cardScope)) {
+      await this.modules.boxActions.updateActiveBox((box) => ({ ...box, group }));
+      this.sortAndReprojectCards();
+      return;
+    }
+
+    await this.plugin.saveSettings({ group });
+  }
+
+  /** Collapse state is runtime-only: never persisted, never a settings write. */
+  onGroupCollapseCommand(detail: { command?: unknown; key?: unknown }): void {
+    const dimension = this.resolveGroupSpec().dimension;
+    const collapse = this.modules.groupCollapse;
+
+    switch (detail.command) {
+      case "toggle":
+        if (typeof detail.key !== "string" || detail.key.length === 0) {
+          return;
+        }
+        collapse.toggle(this.cardScope, dimension, detail.key);
+        break;
+      case "collapse-all":
+        collapse.collapseAll(
+          this.cardScope,
+          dimension,
+          this.modules.projection.getGroupSegments().map((segment) => segment.key),
+        );
+        break;
+      case "expand-all":
+        collapse.expandAll(this.cardScope, dimension);
+        break;
+      default:
+        return;
+    }
+
+    this.projectVisibleCards();
+    this.publishGroups("cards", "bulk");
+  }
+
   private projectVisibleCards(): void {
     this.modules.projection.reprojectCards();
     this.modules.bulk.reconcileToVisibleCards();
@@ -459,6 +544,8 @@ export class FolderCardView extends ItemView {
       selectedPath: this.selectedPath,
       loading: this.modules.scopeController.isLoading(),
       generation: this.epochs.load.value, sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
+      groupSegments: [...this.modules.projection.getGroupSegments()],
+      groupRevision: this.modules.projection.getGroupRevision(),
     };
   }
 
@@ -475,7 +562,7 @@ export class FolderCardView extends ItemView {
 
   private buildProjectionGroup(): PanelModelState["projection"] {
     const settings = this.plugin.getSettings();
-    const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), settings);
+    const { sort, pinnedPaths, group } = resolveViewConfig(this.store.getScope(), settings);
     return {
       sortField: sort.field,
       sortDirection: sort.direction,
@@ -483,6 +570,11 @@ export class FolderCardView extends ItemView {
       tagCounts: this.modules.projection.deriveTagCounts(),
       activeFilterTags: settings.filter.tags,
       pinnedPaths,
+      group: normalizeGroupSpec(group),
+      availableGroupDimensions: [
+        ...(isBoxScope(this.cardScope) ? BOX_GROUP_DIMENSIONS : FOLDER_GROUP_DIMENSIONS),
+      ],
+      groupSegmentCount: this.modules.projection.getGroupSegments().length,
     };
   }
 

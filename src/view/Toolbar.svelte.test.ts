@@ -10,6 +10,17 @@ interface SortChangePayload {
   direction: string;
 }
 
+interface GroupChangePayload {
+  dimension: string;
+  orderBy: string;
+  orderDirection: string;
+}
+
+interface GroupCollapseCommandPayload {
+  command: string;
+  key?: string;
+}
+
 interface SearchQueryChangePayload {
   query: string;
 }
@@ -32,8 +43,13 @@ const BOX_SUMMARIES = [
   { id: "box-2", name: "Plans", cardCount: 1 },
 ];
 
+const AVAILABLE_FOLDER_DIMENSIONS = ["none", "folder", "tag", "task"];
+const AVAILABLE_BOX_DIMENSIONS = ["none", "folder", "tag", "box-rule", "task"];
+
 interface ToolbarCallbacks {
   onSortChange?: (payload: SortChangePayload) => void;
+  onGroupChange?: (payload: GroupChangePayload) => void;
+  onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
   onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
   onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
   onToolbarAction?: (payload: ToolbarActionPayload) => void;
@@ -43,6 +59,8 @@ interface ToolbarCallbacks {
 interface CapturedCallbacks {
   callbacks: ToolbarCallbacks;
   sortEvents: SortChangePayload[];
+  groupChangeEvents: GroupChangePayload[];
+  groupCollapseEvents: GroupCollapseCommandPayload[];
   searchQueryChangeEvents: SearchQueryChangePayload[];
   searchQueryResetEvents: SearchQueryResetPayload[];
   toolbarActionEvents: ToolbarActionPayload[];
@@ -53,6 +71,8 @@ let mountedComponents: Array<Record<string, unknown>> = [];
 
 function createCapturedCallbacks(): CapturedCallbacks {
   const sortEvents: SortChangePayload[] = [];
+  const groupChangeEvents: GroupChangePayload[] = [];
+  const groupCollapseEvents: GroupCollapseCommandPayload[] = [];
   const searchQueryChangeEvents: SearchQueryChangePayload[] = [];
   const searchQueryResetEvents: SearchQueryResetPayload[] = [];
   const toolbarActionEvents: ToolbarActionPayload[] = [];
@@ -61,6 +81,12 @@ function createCapturedCallbacks(): CapturedCallbacks {
     callbacks: {
       onSortChange: (payload) => {
         sortEvents.push(payload);
+      },
+      onGroupChange: (payload) => {
+        groupChangeEvents.push(payload);
+      },
+      onGroupCollapseCommand: (payload) => {
+        groupCollapseEvents.push(payload);
       },
       onSearchQueryChange: (payload) => {
         searchQueryChangeEvents.push(payload);
@@ -76,6 +102,8 @@ function createCapturedCallbacks(): CapturedCallbacks {
       },
     },
     sortEvents,
+    groupChangeEvents,
+    groupCollapseEvents,
     searchQueryChangeEvents,
     searchQueryResetEvents,
     toolbarActionEvents,
@@ -94,7 +122,7 @@ function mountToolbar(
   const component = mount(Toolbar, {
     target,
     props: {
-      strings: getUiStrings("en"),
+      strings: values.strings ?? getUiStrings("en"),
       scope: {
         displayPath: values.folderPath ?? "notes",
         includeSubfolders: true,
@@ -118,6 +146,9 @@ function mountToolbar(
         tagCounts: {},
         activeFilterTags: values.activeFilterTags ?? [],
         pinnedPaths: [],
+        group: values.group ?? { dimension: "none", orderBy: "default", orderDirection: "asc" },
+        availableGroupDimensions: values.availableGroupDimensions ?? AVAILABLE_FOLDER_DIMENSIONS,
+        groupSegmentCount: values.groupSegmentCount ?? 0,
       },
       bulk: {
         bulkMode: values.bulkMode ?? false,
@@ -149,7 +180,11 @@ async function disposeMountedComponent(component: Record<string, unknown>): Prom
 }
 
 function getSortButton(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>('button[aria-label="Sort cards"]');
+  return document.querySelector<HTMLButtonElement>("button#fce-sort-button");
+}
+
+function readPx(menu: HTMLElement, property: string): number {
+  return Number.parseFloat(menu.style.getPropertyValue(property).replace("px", ""));
 }
 
 async function openSortPopup(): Promise<void> {
@@ -174,6 +209,28 @@ function getSelectedSortOption(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(
     ".fce-sort-menu button[role='menuitemradio'][aria-checked='true']",
   );
+}
+
+function getPopoverRow(rowId: string): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(`.fce-sort-menu [data-sort-group-row="${rowId}"]`);
+}
+
+function clickPopoverRow(rowId: string): void {
+  const row = getPopoverRow(rowId);
+  expect(row).not.toBeNull();
+  row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+
+function isRowDisabled(rowId: string): boolean {
+  const row = getPopoverRow(rowId);
+  expect(row).not.toBeNull();
+  return row?.disabled === true && row?.getAttribute("aria-disabled") === "true";
+}
+
+function isRowEnabled(rowId: string): boolean {
+  const row = getPopoverRow(rowId);
+  expect(row).not.toBeNull();
+  return row?.disabled === false && row?.hasAttribute("aria-disabled") === false;
 }
 
 describe("Toolbar.svelte", () => {
@@ -230,7 +287,7 @@ describe("Toolbar.svelte", () => {
     const expectedLabels = [
       "Expand navigation",
       "Create note",
-      "Sort cards",
+      "Sort & group",
       "Bulk actions",
       "Save current view as card box",
       "Toggle search",
@@ -254,7 +311,7 @@ describe("Toolbar.svelte", () => {
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "Expand navigation",
       "Create note",
-      "Sort cards",
+      "Sort & group",
       "Bulk actions",
       "Save current view as card box",
       "Add current view to card box",
@@ -348,41 +405,213 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("emits sort-change with selected field and direction", async () => {
-    const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({}, captured.callbacks);
-
-    await openSortPopup();
-
-    const filenameDescOption = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".fce-sort-menu button[role='menuitemradio']"),
-    ).find((option) => option.textContent?.includes("Filename (Z to A)"));
-
-    expect(filenameDescOption).not.toBeUndefined();
-    filenameDescOption?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(captured.sortEvents).toEqual([{ field: "name", direction: "desc" }]);
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders filename sort options before time-based options", async () => {
+  it("groups the popover into labelled sort, group, and command sections", async () => {
     const { component } = mountToolbar();
 
     await openSortPopup();
 
-    const labels = Array.from(
-      document.querySelectorAll<HTMLElement>(".fce-sort-menu .fce-sort-menu-item-label"),
-    ).map((element) => element.textContent?.trim());
-
-    expect(labels).toEqual([
-      "Filename (A to Z)",
-      "Filename (Z to A)",
-      "Edited time (newest first)",
-      "Edited time (oldest first)",
-      "Created time (newest first)",
-      "Created time (oldest first)",
+    const sections = Array.from(
+      document.querySelectorAll<HTMLElement>(".fce-sort-menu [role='group']"),
+    );
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([
+      "Sort by",
+      "Order",
+      "Group by",
+      "Group order",
     ]);
+
+    const fieldLabels = Array.from(
+      sections[0]?.querySelectorAll<HTMLElement>(".fce-sort-menu-item-label") ?? [],
+    ).map((element) => element.textContent?.trim());
+    expect(fieldLabels).toEqual(["Edited time", "Created time", "Filename"]);
+
+    const dimensionLabels = Array.from(
+      sections[2]?.querySelectorAll<HTMLElement>(".fce-sort-menu-item-label") ?? [],
+    ).map((element) => element.textContent?.trim());
+    expect(dimensionLabels).toEqual(["None", "Folder", "Tag", "Card box rule", "Task status"]);
+
+    expect(getPopoverRow("collapse-all")?.getAttribute("role")).toBe("menuitem");
+    expect(getPopoverRow("expand-all")?.getAttribute("role")).toBe("menuitem");
+
+    await disposeMountedComponent(component);
+  });
+
+  it("emits sort-change for orthogonal field and direction picks", async () => {
+    const captured = createCapturedCallbacks();
+    let { component } = mountToolbar({ sortField: "mtime", sortDirection: "desc" }, captured.callbacks);
+
+    await openSortPopup();
+    clickPopoverRow("field-name");
+    await tick();
+
+    expect(captured.sortEvents).toEqual([{ field: "name", direction: "desc" }]);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ sortField: "name", sortDirection: "desc" }, captured.callbacks));
+
+    await openSortPopup();
+    clickPopoverRow("direction-asc");
+    await tick();
+
+    expect(captured.sortEvents).toEqual([
+      { field: "name", direction: "desc" },
+      { field: "name", direction: "asc" },
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("does not emit when the already-selected field or direction is picked", async () => {
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar({ sortField: "mtime", sortDirection: "desc" }, captured.callbacks);
+
+    await openSortPopup();
+    clickPopoverRow("field-mtime");
+    await tick();
+
+    expect(captured.sortEvents).toEqual([]);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await openSortPopup();
+    clickPopoverRow("direction-desc");
+    await tick();
+
+    expect(captured.sortEvents).toEqual([]);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await disposeMountedComponent(component);
+  });
+
+  it("disables an unavailable group dimension and keeps the popover open", async () => {
+    const captured = createCapturedCallbacks();
+    let { component } = mountToolbar(
+      { availableGroupDimensions: AVAILABLE_FOLDER_DIMENSIONS },
+      captured.callbacks,
+    );
+
+    await openSortPopup();
+
+    expect(isRowDisabled("dimension-box-rule")).toBe(true);
+    expect(getPopoverRow("dimension-box-rule")?.textContent).toContain("Only available inside a card box");
+    expect(isRowEnabled("dimension-folder")).toBe(true);
+
+    clickPopoverRow("dimension-box-rule");
+    await tick();
+
+    expect(captured.groupChangeEvents).toEqual([]);
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      availableGroupDimensions: AVAILABLE_BOX_DIMENSIONS,
+      activeBoxId: "box-1",
+      activeBoxName: "Reading",
+      group: { dimension: "none", orderBy: "count", orderDirection: "desc" },
+    }, captured.callbacks));
+
+    await openSortPopup();
+
+    expect(isRowEnabled("dimension-box-rule")).toBe(true);
+    clickPopoverRow("dimension-box-rule");
+    await tick();
+
+    expect(captured.groupChangeEvents).toEqual([
+      { dimension: "box-rule", orderBy: "count", orderDirection: "desc" },
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("gates group order and collapse rows on the active dimension and segment count", async () => {
+    const captured = createCapturedCallbacks();
+    let { component } = mountToolbar({ groupSegmentCount: 0 }, captured.callbacks);
+
+    await openSortPopup();
+
+    for (const rowId of [
+      "order-by-default",
+      "order-by-name",
+      "order-by-count",
+      "order-direction-asc",
+      "order-direction-desc",
+      "collapse-all",
+      "expand-all",
+    ]) {
+      expect(isRowDisabled(rowId)).toBe(true);
+    }
+
+    clickPopoverRow("collapse-all");
+    await tick();
+    expect(captured.groupCollapseEvents).toEqual([]);
+    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      group: { dimension: "folder", orderBy: "default", orderDirection: "asc" },
+      groupSegmentCount: 3,
+    }, captured.callbacks));
+
+    await openSortPopup();
+
+    for (const rowId of [
+      "order-by-default",
+      "order-by-name",
+      "order-by-count",
+      "order-direction-asc",
+      "order-direction-desc",
+      "collapse-all",
+      "expand-all",
+    ]) {
+      expect(isRowEnabled(rowId)).toBe(true);
+    }
+
+    clickPopoverRow("collapse-all");
+    await tick();
+
+    expect(captured.groupCollapseEvents).toEqual([{ command: "collapse-all" }]);
+    expect(document.querySelector(".fce-sort-menu")).toBeNull();
+
+    await openSortPopup();
+    clickPopoverRow("order-by-count");
+    await tick();
+
+    expect(captured.groupChangeEvents).toEqual([
+      { dimension: "folder", orderBy: "count", orderDirection: "asc" },
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("reflects popover state and active grouping on the trigger button", async () => {
+    let { component } = mountToolbar();
+
+    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("false");
+    expect(getSortButton()?.classList.contains("is-selected")).toBe(false);
+
+    await openSortPopup();
+    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("true");
+    expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({
+      group: { dimension: "tag", orderBy: "default", orderDirection: "asc" },
+    }));
+    await tick();
+
+    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("false");
+    expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
+
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ strings: getUiStrings("zh") }));
+    await tick();
+
+    expect(getSortButton()?.getAttribute("aria-label")).toBe("排序与分组");
 
     await disposeMountedComponent(component);
   });
@@ -707,5 +936,40 @@ describe("Toolbar.svelte", () => {
 
     expect(addClickCaptureCount).toBeGreaterThan(0);
     expect(removeClickCaptureCount).toBe(addClickCaptureCount);
+  });
+
+  describe("popover viewport fitting", () => {
+    async function openSortPopupAt(clientY: number): Promise<HTMLElement> {
+      const sortButton = getSortButton();
+      expect(sortButton).not.toBeNull();
+      sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY }));
+      await tick();
+      const menu = document.body.querySelector<HTMLElement>(".fce-sort-menu");
+      expect(menu).not.toBeNull();
+      return menu!;
+    }
+
+    it("bounds the menu by the space actually left below a high trigger", async () => {
+      mountToolbar();
+      const menu = await openSortPopupAt(12);
+
+      expect(readPx(menu, "top")).toBe(12);
+      // window.innerHeight is 768 in jsdom: 768 - 12 - 12.
+      expect(readPx(menu, "--fce-sort-menu-available")).toBe(744);
+    });
+
+    it("lifts the menu when a low trigger leaves too little room", async () => {
+      mountToolbar();
+      const menu = await openSortPopupAt(700);
+
+      // A stacked sidebar leaf can put the toolbar this low; leaving top at 700
+      // would render the collapse commands past the viewport edge, where
+      // internal scrolling cannot reach them.
+      const top = readPx(menu, "top");
+      const available = readPx(menu, "--fce-sort-menu-available");
+      expect(top).toBeLessThan(700);
+      expect(available).toBeGreaterThanOrEqual(220);
+      expect(top + available).toBeLessThanOrEqual(768);
+    });
   });
 });

@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
+import type { CardGroupSegment } from "./card-grouping";
 import type { CardFileKind } from "./file-kind";
 import type { HydrateViewportRequest } from "./hydration-request";
 import type { NoteCardRecord } from "./types";
+
+/** Mirrors the panel's own constant; the stub layout never measures a row. */
+const ESTIMATED_ROW_HEIGHT = 232;
 
 class ResizeObserverStub {
   static instances: ResizeObserverStub[] = [];
@@ -50,6 +55,25 @@ function createCard(path: string, title: string, fileKind: CardFileKind = "markd
   };
 }
 
+function createSegment(
+  key: string,
+  label: string,
+  startIndex: number,
+  count: number,
+  collapsed = false,
+): CardGroupSegment {
+  return {
+    key,
+    label,
+    detail: "",
+    count,
+    visibleCount: collapsed ? 0 : count,
+    startIndex,
+    collapsed,
+    isMissingBucket: false,
+  };
+}
+
 function createInitialPanelState(): PanelModelState {
   return {
     strings: getUiStrings("en"),
@@ -69,6 +93,8 @@ function createInitialPanelState(): PanelModelState {
       generation: 0,
       sequenceRevision: 0,
       hydrationRevision: 0,
+      groupSegments: [],
+      groupRevision: 0,
     },
     search: { query: "", status: "idle", focusToken: 0 },
     projection: {
@@ -78,6 +104,9 @@ function createInitialPanelState(): PanelModelState {
       tagCounts: {},
       activeFilterTags: [],
       pinnedPaths: [],
+      group: { ...DEFAULT_GROUP_SPEC },
+      availableGroupDimensions: ["none", "folder", "tag", "task"],
+      groupSegmentCount: 0,
     },
     bulk: {
       bulkMode: false,
@@ -360,6 +389,8 @@ describe("FolderCardPanel.svelte", () => {
       };
     });
     await tick();
+    // R10: with no segments the anchor stays positional, so a reorder holds the
+    // viewport exactly where it was rather than chasing the card that moved.
     expect(list.scrollTop).toBe(900);
     width = 900;
     ResizeObserverStub.trigger();
@@ -784,6 +815,470 @@ describe("FolderCardPanel.svelte", () => {
     await tick();
 
     expect(target.querySelector(".fce-card-search-count")).toBeNull();
+
+    await unmount(component);
+  });
+
+  it("labels every card row with its own group header and omits the labelling when ungrouped", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [
+          createCard("g1/a.md", "Alpha"),
+          createCard("g1/b.md", "Bravo"),
+          createCard("g2/c.md", "Charlie"),
+          createCard("g2/d.md", "Delta"),
+        ],
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [createSegment("folder:g1", "g1", 0, 2), createSegment("folder:g2", "g2", 2, 2)],
+        groupRevision: 1,
+      };
+    });
+    await tick();
+
+    const headers = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-card-group-header"));
+    expect(headers).toHaveLength(2);
+    expect(headers.map((header) => header.getAttribute("aria-expanded"))).toEqual(["true", "true"]);
+    expect(headers[0].textContent).toContain("g1");
+    expect(headers[0].textContent).toContain("2");
+    expect(headers.map((header) => header.getAttribute("aria-label"))).toEqual([
+      "g1, 2 cards",
+      "g2, 2 cards",
+    ]);
+
+    const cardRows = Array.from(target.querySelectorAll<HTMLElement>(".fce-wall-row"));
+    expect(cardRows).toHaveLength(2);
+    for (const [index, row] of cardRows.entries()) {
+      const header = headers[index];
+      expect(row.getAttribute("role")).toBe("group");
+      expect(header.id).not.toBe("");
+      expect(row.getAttribute("aria-labelledby")).toBe(header.id);
+      expect(row.getAttribute("aria-label")).toBe(header.getAttribute("aria-label"));
+      expect(document.getElementById(row.getAttribute("aria-labelledby")!)).toBe(header);
+    }
+
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, groupSegments: [], groupRevision: 2, sequenceRevision: 2 };
+    });
+    await tick();
+
+    expect(target.querySelector(".fce-card-group-header")).toBeNull();
+    for (const row of Array.from(target.querySelectorAll<HTMLElement>(".fce-wall-row"))) {
+      expect(row.hasAttribute("role")).toBe(false);
+      expect(row.hasAttribute("aria-labelledby")).toBe(false);
+      expect(row.hasAttribute("aria-label")).toBe(false);
+    }
+
+    await unmount(component);
+  });
+
+  it("names a card row through aria-label once virtualization unmounts its header", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 40 }, (_unused, index) =>
+          createCard(`big/${index}.md`, `Big ${index}`),
+        ),
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [createSegment("folder:big", "Big group", 0, 40)],
+        groupRevision: 1,
+      };
+    });
+    await tick();
+    expect(target.querySelector(".fce-card-group-header")).not.toBeNull();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 2000;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    expect(target.querySelector(".fce-card-group-header")).toBeNull();
+    const row = target.querySelector<HTMLElement>(".fce-wall-row")!;
+    expect(row.getAttribute("aria-label")).toBe("Big group, 40 cards");
+    expect(document.getElementById(row.getAttribute("aria-labelledby")!)).toBeNull();
+
+    await unmount(component);
+  });
+
+  it("toggles from the header once and drops collapsed members from the DOM", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const collapseEvents: Array<{ command: string; key?: string }> = [];
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onGroupCollapseCommand: (payload: { command: string; key?: string }) => {
+          collapseEvents.push(payload);
+        },
+      },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("g1/a.md", "Alpha"), createCard("g2/c.md", "Charlie")],
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [createSegment("folder:g1", "g1", 0, 1), createSegment("folder:g2", "g2", 1, 1)],
+        groupRevision: 1,
+      };
+    });
+    await tick();
+
+    const firstHeader = target.querySelector<HTMLButtonElement>(".fce-card-group-header")!;
+    firstHeader.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(collapseEvents).toEqual([{ command: "toggle", key: "folder:g1" }]);
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("g2/c.md", "Charlie")],
+        groupSegments: [
+          createSegment("folder:g1", "g1", 0, 1, true),
+          createSegment("folder:g2", "g2", 0, 1),
+        ],
+        groupRevision: 2,
+        sequenceRevision: 2,
+      };
+    });
+    await tick();
+
+    const headers = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-card-group-header"));
+    expect(headers).toHaveLength(2);
+    expect(headers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(target.querySelectorAll(".fce-card")).toHaveLength(1);
+    expect(target.textContent).not.toContain("Alpha");
+
+    await unmount(component);
+  });
+
+  it("holds the toggled header in place when collapsing everything empties the card array", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const expanded = [0, 1, 2, 3].map((index) =>
+      createSegment(`g:${index}`, `Group ${index}`, index * 2, 2),
+    );
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 8 }, (_unused, index) =>
+          createCard(`g${Math.floor(index / 2)}/${index}.md`, `Card ${index}`),
+        ),
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: expanded,
+        groupRevision: 1,
+      };
+    });
+
+    const collapseEvents: Array<{ command: string; key?: string }> = [];
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onGroupCollapseCommand: (payload: { command: string; key?: string }) => {
+          collapseEvents.push(payload);
+          panelModel.mutate((state) => {
+            state.cards = {
+              ...state.cards,
+              records: [],
+              groupSegments: [0, 1, 2, 3].map((index) =>
+                createSegment(`g:${index}`, `Group ${index}`, 0, 2, true),
+              ),
+              groupRevision: 2,
+              sequenceRevision: 2,
+            };
+          });
+        },
+      },
+    });
+    await tick();
+
+    // The third header's post-collapse row top must clear the 300px anchor offset,
+    // or `applyScrollTop`'s zero floor would collapse the assertion to `0 === 0`.
+    const collapsedHeaderRowIndex = 2;
+    expect(collapsedHeaderRowIndex * ESTIMATED_ROW_HEIGHT).toBeGreaterThanOrEqual(300);
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 628;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    const headers = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-card-group-header"));
+    expect(headers).toHaveLength(4);
+    headers[2].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(collapseEvents).toEqual([{ command: "toggle", key: "g:2" }]);
+    expect(list.scrollTop).toBe(164);
+    expect(target.querySelectorAll(".fce-card-group-header")).toHaveLength(4);
+    expect(target.querySelectorAll(".fce-card")).toHaveLength(0);
+    expect(target.textContent).not.toContain("No supported files found in this folder.");
+
+    await unmount(component);
+  });
+
+  it("clears an unresolvable group anchor instead of replaying it on a later publish", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 8 }, (_unused, index) =>
+          createCard(`g${Math.floor(index / 2)}/${index}.md`, `Card ${index}`),
+        ),
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [0, 1, 2, 3].map((index) =>
+          createSegment(`g:${index}`, `Group ${index}`, index * 2, 2),
+        ),
+        groupRevision: 1,
+      };
+    });
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onGroupCollapseCommand: () => {
+          panelModel.mutate((state) => {
+            state.cards = {
+              ...state.cards,
+              records: [],
+              groupSegments: [0, 1, 2, 3].map((index) =>
+                createSegment(`x:${index}`, `Other ${index}`, 0, 2, true),
+              ),
+              groupRevision: 2,
+              sequenceRevision: 2,
+            };
+          });
+        },
+      },
+    });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 628;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    const headers = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-card-group-header"));
+    headers[2].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(list.scrollTop).toBe(628);
+
+    // `g:2` returns at row 0. A stale anchor would resolve to -300 and floor to 0.
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("g1/2.md", "Card 2"), createCard("g1/3.md", "Card 3")],
+        groupSegments: [createSegment("g:2", "Group 2", 0, 2)],
+        groupRevision: 3,
+        sequenceRevision: 3,
+      };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(164);
+
+    await unmount(component);
+  });
+
+  it("keeps scroll and row nodes across an ungrouped hydration republish", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_unused, index) =>
+          createCard(`flat/${index}.md`, `Flat ${index}`),
+        ),
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 700;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+    const rowBefore = target.querySelector(".fce-wall-row");
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: state.cards.records.map((card) => ({ ...card, previewHtml: "<p>Refreshed</p>" })),
+        hydrationRevision: 1,
+      };
+    });
+    await tick();
+
+    expect(list.scrollTop).toBe(700);
+    expect(target.querySelector(".fce-wall-row")).toBe(rowBefore);
+
+    await unmount(component);
+  });
+
+  it("requests hydration only for the paths of expanded groups", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const requests: HydrateViewportRequest[] = [];
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("g1/a.md", "Alpha"), createCard("g3/e.md", "Echo")],
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [
+          createSegment("folder:g1", "g1", 0, 1),
+          createSegment("folder:g2", "g2", 1, 4, true),
+          createSegment("folder:g3", "g3", 1, 1),
+        ],
+        groupRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onHydrateViewport: (request: HydrateViewportRequest) => requests.push(request),
+      },
+    });
+    await tick();
+
+    expect(requests.at(-1)?.paths).toEqual(["g1/a.md", "g3/e.md"]);
+    expect(target.querySelectorAll(".fce-card-group-header")).toHaveLength(3);
+
+    await unmount(component);
+  });
+
+  it("anchors a grouped-to-flat transition on card identity, not position", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const grouped = [
+      "g1/a.md", "g1/b.md", "g1/c.md", "g1/d.md",
+      "g2/e.md", "g2/f.md", "g2/g.md", "g2/h.md",
+    ].map((path) => createCard(path, path));
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: grouped,
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [
+          createSegment("folder:g1", "g1", 0, 4),
+          createSegment("folder:g2", "g2", 4, 4),
+        ],
+        groupRevision: 1,
+      };
+    });
+
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-main-pane .fce-list");
+    expect(list).not.toBeNull();
+    // Two columns and two headers put g2/e.md's row at 928.
+    list!.scrollTop = 950;
+    list!.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    // Search pause: grouping drops out and relevance reorders the sequence.
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [grouped[4], ...grouped.slice(0, 4), ...grouped.slice(5)],
+        sequenceRevision: 2,
+        groupSegments: [],
+        groupRevision: 2,
+      };
+    });
+    await tick();
+
+    // The anchor was captured from a layout containing headers, so it must name
+    // the card. Deciding from the incoming (empty) segments would capture a
+    // positional ref and land on 486 instead.
+    expect(list!.scrollTop).toBe(22);
+
+    await unmount(component);
+  });
+
+  /**
+   * The only case that drives the real Toolbar through the mounted panel. The
+   * popover is proven against a directly mounted Toolbar elsewhere and the
+   * pass-through against a stub in panel-toolbar-forwarding.svelte.test.ts;
+   * neither proves the two halves together. This file is deliberately
+   * `vi.mock`-free, which is what lets the real Toolbar render here.
+   */
+  it("routes a sort and group popover collapse-all through to the host callback", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const received: Array<{ command: string; key?: string }> = [];
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("g1/a.md", "Alpha"), createCard("g2/b.md", "Bravo")],
+        generation: 1,
+        sequenceRevision: 1,
+        groupSegments: [createSegment("folder:g1", "g1", 0, 1), createSegment("folder:g2", "g2", 1, 1)],
+        groupRevision: 1,
+      };
+      state.projection = {
+        ...state.projection,
+        group: { ...DEFAULT_GROUP_SPEC, dimension: "folder" },
+        groupSegmentCount: 2,
+      };
+    });
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onGroupCollapseCommand: (payload: { command: string; key?: string }) => {
+          received.push(payload);
+        },
+      },
+    });
+    await tick();
+
+    const trigger = document.querySelector<HTMLButtonElement>("button#fce-sort-button");
+    expect(trigger).not.toBeNull();
+    trigger?.click();
+    await tick();
+
+    // The popover mounts through a body portal, so query the document, not `target`.
+    const collapseAll = document.querySelector<HTMLElement>('[data-sort-group-row="collapse-all"]');
+    expect(collapseAll).not.toBeNull();
+    expect(collapseAll?.hasAttribute("disabled")).toBe(false);
+
+    collapseAll?.click();
+    await tick();
+
+    expect(received).toEqual([{ command: "collapse-all" }]);
 
     await unmount(component);
   });

@@ -4,7 +4,7 @@ import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { compareCards } from "../card-sort";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
-import { createFolderScope, isFolderScope, scopeDisplayPath, scopesEqual,
+import { createFolderScope, isBoxScope, isFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
@@ -336,6 +336,24 @@ export class ScopeController implements DisposableController {
     return scope.kind === "box"
       ? this.deps.isPathInBox(path, scope.boxId)
       : isPathInFolderScope(path, scope.path, scope.includeSubfolders);
+  }
+
+  /** Removes a loaded Box card whose current metadata no longer grants membership. */
+  reconcileMetadataMembershipForPath(path: string): boolean {
+    const scope = this.context.store.getScope();
+    if (
+      !isBoxScope(scope)
+      || this.context.store.getBaseCard(path) === undefined
+      || this.deps.isPathInBox(path, scope.boxId)
+    ) {
+      return false;
+    }
+
+    this.deps.deletePendingHydration(path);
+    this.context.store.replaceBaseCards(
+      this.context.store.getBaseCards().filter((card) => card.path !== path),
+    );
+    return true;
   }
 
   private shouldRefreshForVaultEvent(event: VaultMutationEvent): boolean {

@@ -1,4 +1,6 @@
 import type { App } from "obsidian";
+import type { GroupSpec } from "../card-grouping-settings";
+import { arrangeCardsByGroup, type CardGroupSegment, type GroupBucket } from "./card-grouping";
 import { matchesTagFilter } from "./metadata-utils";
 import type { CardScope } from "./scope";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
@@ -10,6 +12,18 @@ export interface PipelineContext {
   search: PipelineSearchInput;
   // Explicit ordered pin input for projection; prevents reaching through settings with casts.
   pinnedPaths: string[];
+  group: {
+    spec: GroupSpec;
+    /** One bucket per card, keyed by card path. */
+    buckets: ReadonlyMap<string, GroupBucket>;
+  };
+  // Runtime-only per-view collapse state; never persisted.
+  collapsedGroupKeys: ReadonlySet<string>;
+}
+
+export interface PipelineResult {
+  readonly cards: NoteCardRecord[];
+  readonly segments: CardGroupSegment[];
 }
 
 export type PipelineStep = (
@@ -21,12 +35,40 @@ export function runPipeline(
   cards: NoteCardRecord[],
   steps: PipelineStep[],
   context: PipelineContext,
-): NoteCardRecord[] {
+): PipelineResult {
   let result = cards;
   for (const step of steps) {
     result = step(result, context);
   }
-  return result;
+  return applyGroupArrangement(result, context);
+}
+
+/**
+ * Group arrangement stage.
+ *
+ * This is a stage rather than a `PipelineStep` because it produces two outputs
+ * — the collapse-filtered cards and the segment table — which the
+ * `(cards, context) => cards` step signature cannot carry.
+ *
+ * A non-empty query pauses grouping outright, regardless of search execution
+ * state: search results are relevance-ordered, and bucketing them would fight
+ * that ordering. The collapse set is left untouched while paused, so clearing
+ * the query restores both grouping and collapse.
+ */
+function applyGroupArrangement(
+  cards: NoteCardRecord[],
+  context: PipelineContext,
+): PipelineResult {
+  if (context.search.query.trim().length > 0) {
+    return { cards, segments: [] };
+  }
+
+  return arrangeCardsByGroup(
+    cards,
+    context.group.buckets,
+    context.group.spec,
+    context.collapsedGroupKeys,
+  );
 }
 
 /** Tag filter step — filter cards by metadata tags using AND logic. */

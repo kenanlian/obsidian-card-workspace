@@ -5,6 +5,7 @@ vi.mock("obsidian", () => ({
   TFolder: class TFolder {},
 }));
 
+import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { TFile, TFolder } from "obsidian";
 import type { EpochToken } from "../async-epoch";
@@ -16,7 +17,7 @@ import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
 import { ScopeController } from "./ScopeController";
 
-function createHarness() {
+function createHarness(options: { isPathInBox?: (path: string, boxId: string) => boolean } = {}) {
   const settings = normalizeSettings(DEFAULT_SETTINGS);
   const saveSettings = vi.fn(async (patch: Partial<typeof settings>) => {
     Object.assign(settings, patch);
@@ -48,7 +49,7 @@ function createHarness() {
   const controller = new ScopeController({
     context,
     collectBoxFiles: () => [],
-    isPathInBox: () => false,
+    isPathInBox: options.isPathInBox ?? (() => false),
     deriveVisibleCardsFrom: (cards) => [...cards],
     projectVisibleCards,
     getBulkSelection: () => ({ selectedPaths: new Set<string>(), anchorPath: null }),
@@ -300,6 +301,34 @@ describe("ScopeController", () => {
     expect(invalidateForVaultMutation).toHaveBeenCalledWith(event);
   });
 
+  it("reconciles a loaded card out when refreshed metadata ends its Box membership", () => {
+    const memberPath = "notes/member.md";
+    const siblingPath = "notes/sibling.md";
+    const { context, controller } = createHarness({
+      isPathInBox: (path) => path === siblingPath,
+    });
+    const makeRecord = (path: string): NoteCardRecord => ({
+      file: Object.assign(new TFile(), { path }),
+      fileKind: "markdown",
+      path,
+      title: path,
+      ctime: 1,
+      mtime: 1,
+      excerpt: "",
+      previewHtml: "",
+      previewMode: "empty",
+      hydrated: false,
+      taskSummary: null,
+    });
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([makeRecord(memberPath), makeRecord(siblingPath)]);
+
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(context.store.getBaseCards().map((card) => card.path)).toEqual([siblingPath]);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
+    expect(controller.reconcileMetadataMembershipForPath(siblingPath)).toBe(false);
+  });
+
   it("reuses prepared records across root to folder to root transitions", async () => {
     const { context, controller, prepareRecordsFromCache, hydrateStartupCardPaths } = createHarness();
     const rootFile = Object.assign(new TFile(), { path: "root.md", basename: "root", extension: "md", stat: { ctime: 1, mtime: 1 } });
@@ -369,6 +398,7 @@ describe("ScopeController", () => {
         excludedPaths: [],
         pinnedPaths: [],
         sort: { field: "name", direction: "asc" },
+        group: { ...DEFAULT_GROUP_SPEC },
       }];
       return { controller, settings };
     }

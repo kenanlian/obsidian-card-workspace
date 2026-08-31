@@ -9,6 +9,7 @@ import { folderPickerStrings } from "./folderPicker";
 import { noteOpsStrings } from "./noteOps";
 import { panelStrings } from "./panel";
 import { settingTabStrings, type SettingTabStrings } from "./settingTab";
+import { sortGroupStrings } from "./sortGroup";
 import { toolbarStrings, type ToolbarStrings } from "./toolbar";
 import type { LocalizedOption, UiLanguage, UiStrings } from "./types";
 import { viewStrings } from "./view";
@@ -23,6 +24,7 @@ export type { FolderPickerStrings } from "./folderPicker";
 export type { NoteOpsStrings } from "./noteOps";
 export type { PanelStrings } from "./panel";
 export type { SettingTabStrings } from "./settingTab";
+export type { SortGroupStrings } from "./sortGroup";
 export type { ToolbarStrings } from "./toolbar";
 export type { ViewStrings } from "./view";
 
@@ -42,6 +44,7 @@ export function isChineseLanguage(language: string = safeGetLanguage()): boolean
 const EN: UiStrings = {
   settingTab: settingTabStrings.en,
   toolbar: toolbarStrings.en,
+  sortGroup: sortGroupStrings.en,
   cardItem: cardItemStrings.en,
   folderPicker: folderPickerStrings.en,
   panel: panelStrings.en,
@@ -56,6 +59,7 @@ const EN: UiStrings = {
 const ZH: UiStrings = {
   settingTab: settingTabStrings.zh,
   toolbar: toolbarStrings.zh,
+  sortGroup: sortGroupStrings.zh,
   cardItem: cardItemStrings.zh,
   folderPicker: folderPickerStrings.zh,
   panel: panelStrings.zh,

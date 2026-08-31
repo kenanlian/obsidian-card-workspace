@@ -7,6 +7,7 @@ import type { FolderPickerStrings } from "./folderPicker";
 import type { NoteOpsStrings } from "./noteOps";
 import type { PanelStrings } from "./panel";
 import type { SettingTabStrings } from "./settingTab";
+import type { SortGroupStrings } from "./sortGroup";
 import type { ToolbarStrings } from "./toolbar";
 import type { ViewStrings } from "./view";
 
@@ -20,6 +21,7 @@ export interface LocalizedOption<TValue extends string = string> {
 export interface UiStrings {
   settingTab: SettingTabStrings;
   toolbar: ToolbarStrings;
+  sortGroup: SortGroupStrings;
   cardItem: CardItemStrings;
   folderPicker: FolderPickerStrings;
   panel: PanelStrings;

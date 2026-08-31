@@ -875,6 +875,24 @@
   border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
 }
 
+/*
+ * Sort and group carries four choice sections plus two commands, which is tall
+ * enough to run past a short window. The menu is fixed-positioned at the click
+ * point, so a fraction of the viewport is not a sufficient bound: the toolbar
+ * can sit low in a vertically stacked sidebar. Toolbar.svelte measures the space
+ * actually left below the trigger and publishes it here, lifting the menu first
+ * when that space would be unreadably small.
+ */
+.fce-sort-menu {
+  max-height: min(var(--fce-sort-menu-available, 70vh), 560px);
+  overflow-y: auto;
+}
+
+.fce-sort-menu-section {
+  display: flex;
+  flex-direction: column;
+}
+
 .fce-sort-menu-separator {
   height: 0;
   margin: 4px 0;
@@ -956,6 +974,21 @@
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The hint is a flex sibling of the label, so the row can only give it its own
+   line by stacking the content wrapper it shares with that label. */
+.fce-popup-row-content:has(.fce-sort-menu-item-hint) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.fce-sort-menu-item-hint {
+  color: var(--fce-text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  line-height: 1.3;
+  white-space: normal;
 }
 
 .fce-sort-menu-item-check {
@@ -1063,6 +1096,57 @@
 }
 
 /* === card === */
+.folder-card-view .fce-wall-group-row {
+  box-sizing: border-box;
+  width: 100%;
+  padding-bottom: var(--fce-wall-gap);
+}
+
+.folder-card-view .fce-card-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--fce-text-muted);
+  font-size: var(--font-ui-small, 13px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-card-view .fce-card-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.folder-card-view .fce-card-group-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-card-group-count {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.folder-card-view .fce-card-group-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.6;
+}
+
 .folder-card-view .fce-card {
   border-radius: var(--clickable-icon-radius, var(--radius-s));
   border: 1px solid var(--fce-border);

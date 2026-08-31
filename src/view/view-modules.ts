@@ -1,3 +1,4 @@
+import { normalizeGroupSpec, type GroupSpec } from "../card-grouping-settings";
 import type { SearchService, SearchServiceSnapshot } from "../search";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
 import { BoxActions } from "./actions/box-actions";
@@ -7,6 +8,7 @@ import { FolderActions } from "./actions/folder-actions";
 import { MergeActions } from "./actions/merge-actions";
 import { TagActions } from "./actions/tag-actions";
 import { BulkController } from "./controllers/BulkController";
+import { GroupCollapseController } from "./controllers/GroupCollapseController";
 import { HydrationController } from "./controllers/HydrationController";
 import { NavLayoutController } from "./controllers/NavLayoutController";
 import { ProjectionController } from "./controllers/ProjectionController";
@@ -17,6 +19,7 @@ import { CardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
 import { collectSupportedFiles, rewritePathAfterRename } from "./scope-files";
 import type { SelectionResult } from "./types";
 import type { ViewContext } from "./view-context";
+import { resolveViewConfig } from "./view-config";
 
 /**
  * The view-level capabilities the modules call back into. Everything here is a
@@ -46,6 +49,7 @@ export interface ViewModuleHost {
 
 export interface ViewModules {
   projection: ProjectionController;
+  groupCollapse: GroupCollapseController;
   hydration: HydrationController;
   taskSummary: TaskSummaryController;
   search: SearchController;
@@ -66,11 +70,19 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   // Controllers are constructed before actions because actions reach into them
   // for scope loads and selection; every dependency is a function, so the
   // declaration order below does not have to match the call order at runtime.
+  // Normalized rather than read straight through: settings supplied by older
+  // persisted data (or by a partial test double) may carry no group spec.
+  const resolveGroupSpec = (): GroupSpec =>
+    normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
+  const groupCollapse: GroupCollapseController = new GroupCollapseController();
   const projection: ProjectionController = new ProjectionController({
     context,
     getSearchInput: () => search.buildPipelineSearchInput(),
     getEffectivePinnedPaths: () => host.effectiveSortAndPins().pinnedPaths,
     getLoadKey: () => scopeController.getLoadKey(),
+    getGroupConfig: resolveGroupSpec,
+    getCollapsedGroupKeys: () =>
+      groupCollapse.getCollapsedKeys(context.store.getScope(), resolveGroupSpec().dimension),
   });
   const hydration: HydrationController = new HydrationController({
     context,
@@ -78,6 +90,15 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const taskSummary: TaskSummaryController = new TaskSummaryController({
     context,
+    getGroupDimension: () => resolveGroupSpec().dimension,
+    reprojectAndPublish: () => {
+      projection.reprojectCards();
+      bulk.reconcileToVisibleCards();
+      host.publishGroups("cards", "projection", "bulk");
+    },
+    reconcileMetadataMembershipForPath: (path) =>
+      scopeController.reconcileMetadataMembershipForPath(path),
+    refreshGroupBucketForPath: (path) => projection.refreshGroupBucketForPath(path),
   });
   const search: SearchController = new SearchController({
     context,
@@ -271,6 +292,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
 
   return {
     projection,
+    groupCollapse,
     hydration,
     taskSummary,
     search,

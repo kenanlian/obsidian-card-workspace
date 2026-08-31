@@ -1,5 +1,4 @@
-import type { UiStrings } from "../../i18n";
-import type { Rule } from "../types";
+export { describeBoxRule } from "../box-rule-identity";
 
 /** `Foo.excalidraw.md` keeps the `.excalidraw` half. */
 const CARD_FILE_EXTENSIONS = [".md", ".canvas", ".base"];
@@ -11,18 +10,6 @@ export function stripCardFileExtension(fileName: string): string {
     }
   }
   return fileName;
-}
-
-export function describeBoxRule(strings: UiStrings, rule: Rule): string {
-  const boxStrings = strings.box;
-  let label = rule.folder === "" ? boxStrings.ruleRootLabel : rule.folder;
-  if (rule.includeSubfolders) {
-    label += ` (${boxStrings.ruleSubfolderSuffix})`;
-  }
-  if (rule.tags.length > 0) {
-    label += boxStrings.ruleTagsSeparator + rule.tags.map((tag) => `#${tag}`).join(", ");
-  }
-  return label;
 }
 
 export function deriveDefaultBoxNameFromBrowseScope(scope: {

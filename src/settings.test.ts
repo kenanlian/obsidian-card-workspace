@@ -8,6 +8,7 @@ import {
   type PartialPluginSettings,
   type PluginSettings,
 } from "./settings";
+import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { serializeSettings } from "./services/SettingsStore";
 
 // ---------------------------------------------------------------------------
@@ -717,13 +718,188 @@ describe("card box settings normalization", () => {
     } as never);
 
     expect(result.boxes[0].rules).toEqual([
-      { folder: "", includeSubfolders: false, tags: ["#Wip"] },
+      { folder: "", includeSubfolders: false, tags: ["#Wip"], id: "r:|false|#Wip", name: "" },
     ]);
   });
 
   it("falls back to null activeBoxId when it does not match a box", () => {
     expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "ghost" } as never).activeBoxId).toBeNull();
     expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "a" } as never).activeBoxId).toBe("a");
+  });
+});
+
+describe("card grouping settings normalization", () => {
+  it("defaults a v2 document with no preferences.group to the ungrouped spec", () => {
+    const result = migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { previewLines: 7 },
+    });
+    expect(result.group).toEqual(DEFAULT_GROUP_SPEC);
+  });
+
+  it("defaults a v1 flat document with no group to the ungrouped spec", () => {
+    expect(migrateSettings({ lastFolderPath: "Projects" }).group).toEqual(DEFAULT_GROUP_SPEC);
+  });
+
+  it("rejects null, string, and out-of-domain group values", () => {
+    expect(normalizeSettings({ group: null } as never).group).toEqual(DEFAULT_GROUP_SPEC);
+    expect(normalizeSettings({ group: "folder" } as never).group).toEqual(DEFAULT_GROUP_SPEC);
+    expect(normalizeSettings({ group: { dimension: "author" } } as never).group)
+      .toEqual(DEFAULT_GROUP_SPEC);
+  });
+
+  it("keeps a valid group spec on the flat read view", () => {
+    expect(normalizeSettings({
+      group: { dimension: "task", orderBy: "count", orderDirection: "desc" },
+    } as never).group).toEqual({ dimension: "task", orderBy: "count", orderDirection: "desc" });
+  });
+
+  it("normalizes a box with no group to ungrouped rather than inheriting the global group", () => {
+    const result = normalizeSettings({
+      group: { dimension: "folder", orderBy: "name", orderDirection: "desc" },
+      boxes: [{ id: "a", name: "A" }],
+    } as never);
+
+    expect(result.group).toEqual({ dimension: "folder", orderBy: "name", orderDirection: "desc" });
+    expect(result.boxes[0].group).toEqual(DEFAULT_GROUP_SPEC);
+  });
+
+  it("derives a missing rule id from rule content", () => {
+    const result = normalizeSettings({
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [{ folder: "Projects", includeSubfolders: false, tags: ["b", "a"] }],
+      }],
+    } as never);
+
+    expect(result.boxes[0].rules[0].id).toBe("r:Projects|false|a,b");
+  });
+
+  it("re-derives then index-suffixes rules that share an explicit id", () => {
+    const result = normalizeSettings({
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "dup" },
+          { folder: "Archive", includeSubfolders: true, tags: [], id: "dup" },
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "dup" },
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "dup" },
+        ],
+      }],
+    } as never);
+
+    const ids = result.boxes[0].rules.map((rule) => rule.id);
+    expect(ids).toEqual([
+      "dup",
+      "r:Archive|true|",
+      "r:Projects|true|",
+      "r:Projects|true|#3",
+    ]);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("keeps advancing the suffix when the indexed candidate is also taken", () => {
+    // A hand-edited box can carry an explicit id equal to the candidate the
+    // fallback would generate; accepting it blindly emits the same id twice and
+    // silently merges two rules into one box-rule group.
+    const result = normalizeSettings({
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "r:Projects|true|" },
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "r:Projects|true|#1" },
+          { folder: "Projects", includeSubfolders: true, tags: [], id: "r:Projects|true|" },
+        ],
+      }],
+    } as never);
+
+    const ids = result.boxes[0].rules.map((rule) => rule.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).toEqual([
+      "r:Projects|true|",
+      "r:Projects|true|#1",
+      "r:Projects|true|#2",
+    ]);
+  });
+
+  it("trims a rule name and defaults it to the empty string", () => {
+    const result = normalizeSettings({
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [
+          { folder: "P", tags: [], name: "  Client work  " },
+          { folder: "Q", tags: [], name: 5 },
+        ],
+      }],
+    } as never);
+
+    expect(result.boxes[0].rules.map((rule) => rule.name)).toEqual(["Client work", ""]);
+  });
+
+  it("adds exactly the grouping and rule-identity keys when re-serializing a v2 document", () => {
+    const persisted = {
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: {
+        sort: { field: "name", direction: "asc" },
+        includeSubfolders: false,
+        defaultView: "cards",
+        defaultCardOpenBehavior: "new-tab",
+        dragInsertAction: "wiki",
+        cardCornerRadius: "compact",
+        newNoteTemplate: "blank",
+        previewLines: 8,
+        showNavItemCounts: true,
+        navSectionOrder: ["boxes", "tags", "folders", "favorites"],
+      },
+      workspace: {
+        lastFolderPath: "Projects",
+        expandedFolderPaths: ["Projects"],
+        expandedTagPaths: ["work"],
+        activeBoxId: "box-1",
+        filterTags: ["work"],
+        navPaneWidth: 200,
+        navPaneCollapsed: true,
+        sectionCollapsed: { favorites: true, folders: true, tags: false, boxes: true },
+      },
+      userData: {
+        boxes: [{
+          id: "box-1",
+          name: "Inbox",
+          rules: [{ folder: "Projects", includeSubfolders: true, tags: ["work"] }],
+          manualPaths: ["Projects/A.md"],
+          excludedPaths: ["Projects/B.md"],
+          pinnedPaths: ["Projects/A.md"],
+          sort: { field: "mtime", direction: "desc" },
+        }],
+        favorites: [{ kind: "folder", ref: "Projects" }],
+        pinnedPaths: ["Projects/a.md"],
+      },
+    };
+
+    // Upgrading a pre-grouping vault must add these four keys and nothing else.
+    // Rule identity is written unconditionally: C11's downgrade path re-derives
+    // a dropped id and falls back for a dropped name, which presumes both are
+    // normally persisted.
+    expect(serializeSettings(migrateSettings(persisted))).toEqual({
+      ...persisted,
+      preferences: { ...persisted.preferences, group: DEFAULT_GROUP_SPEC },
+      userData: {
+        ...persisted.userData,
+        boxes: [{
+          ...persisted.userData.boxes[0],
+          rules: [{
+            ...persisted.userData.boxes[0].rules[0],
+            id: "r:Projects|true|work",
+            name: "",
+          }],
+          group: DEFAULT_GROUP_SPEC,
+        }],
+      },
+    });
   });
 });
 

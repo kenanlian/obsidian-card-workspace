@@ -44,6 +44,46 @@ export function getFileTags(app: App, file: TFile): string[] {
     .filter((tag) => tag.length > 0);
 }
 
+export interface FileTagEntry {
+  readonly normalized: string;
+  readonly display: string;
+}
+
+/**
+ * Return every distinct tag on a file as a normalized/display pair.
+ *
+ * Deduplication is by normalized path, keeping the lexicographically smaller
+ * display form — the same rule `collectAllTags` applies. Callers get both forms
+ * so they can order on `normalized` while rendering `display`, keeping `#Work`
+ * from surfacing as `#work`.
+ */
+export function getFileTagEntries(app: App, file: TFile): FileTagEntry[] {
+  const cache = app.metadataCache.getFileCache(file);
+  const rawTags = cache ? getAllTags(cache) : null;
+  if (!rawTags || rawTags.length === 0) {
+    return [];
+  }
+
+  const displayTagsByNormalizedTag = new Map<string, string>();
+  for (const rawTag of rawTags) {
+    const normalizedTag = normalizeTagPath(rawTag);
+    if (normalizedTag.length === 0) {
+      continue;
+    }
+
+    const displayTag = getDisplayTag(rawTag);
+    const currentDisplayTag = displayTagsByNormalizedTag.get(normalizedTag);
+    if (!currentDisplayTag || shouldReplaceDisplayTag(currentDisplayTag, displayTag)) {
+      displayTagsByNormalizedTag.set(normalizedTag, displayTag);
+    }
+  }
+
+  return Array.from(displayTagsByNormalizedTag.entries()).map(([normalized, display]) => ({
+    normalized,
+    display,
+  }));
+}
+
 /**
  * Collect all unique tags across a set of files. Returns a sorted array of
  * display tags without a leading `#`, while deduplicating by normalized tag

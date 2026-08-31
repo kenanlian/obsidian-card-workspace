@@ -1,10 +1,21 @@
 import type { App } from "obsidian";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
 import { matchesRule } from "./card-box-membership";
 export const DEFAULT_BOX_SORT: CardBoxSortSpec = { field: "mtime", direction: "desc" };
 export const DEFAULT_BOX_NAME = "New card box";
+/** Projects membership fields only: renaming a rule is a label change, not a reload. */
 export function getBoxMembershipSignature(box: CardBoxDefinition): string {
-  return JSON.stringify({ rules: box.rules, manual: box.manualPaths, excluded: box.excludedPaths });
+  return JSON.stringify({
+    rules: box.rules.map((rule) => ({
+      folder: rule.folder,
+      includeSubfolders: rule.includeSubfolders,
+      tags: rule.tags,
+    })),
+    manual: box.manualPaths,
+    excluded: box.excludedPaths,
+  });
 }
 /** Browse-mode scope snapshot used to seed a rule. */
 export interface BrowseScope {
@@ -69,6 +80,7 @@ export function createCardBox(
     excludedPaths: init.excludedPaths ? [...init.excludedPaths] : [],
     pinnedPaths: init.pinnedPaths ? [...init.pinnedPaths] : [],
     sort: init.sort ? { ...init.sort } : { ...DEFAULT_BOX_SORT },
+    group: init.group ? { ...init.group } : { ...DEFAULT_GROUP_SPEC },
   };
 }
 
@@ -120,6 +132,7 @@ export function duplicateCardBox(
     excludedPaths: [...source.excludedPaths],
     pinnedPaths: [...source.pinnedPaths],
     sort: { ...source.sort },
+    group: { ...source.group },
   };
 
   const index = boxes.findIndex((box) => box.id === id);
@@ -133,6 +146,8 @@ function cloneRule(rule: Rule): Rule {
     folder: rule.folder,
     includeSubfolders: rule.includeSubfolders,
     tags: [...rule.tags],
+    id: rule.id,
+    name: rule.name,
   };
 }
 
@@ -149,11 +164,12 @@ function rulesEqual(left: Rule, right: Rule): boolean {
 }
 
 export function translateBrowseScopeToRule(scope: BrowseScope): Rule {
-  return {
+  const content = {
     folder: scope.folder === "/" ? "" : scope.folder,
     includeSubfolders: scope.includeSubfolders,
     tags: [...scope.tags],
   };
+  return { ...content, id: deriveRuleId(content), name: "" };
 }
 
 export function addRuleToBox(box: CardBoxDefinition, rule: Rule): CardBoxDefinition {

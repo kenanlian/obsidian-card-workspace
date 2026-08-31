@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
-  captureScrollAnchor,
-  computeAnchoredScrollTop,
+  captureLayoutAnchor,
+  captureRowAnchor,
   clampLayoutScrollTop,
   computeScrollAnchorDelta,
+  resolveAnchoredScrollTop,
+  type AnchorCandidateRow,
 } from "./scroll-anchoring";
+import { projectPanelRows, type RowSegment } from "./row-projection";
+
+function cardRow(...paths: string[]): AnchorCandidateRow {
+  return { kind: "cards", key: `3:${paths.join("\u001f")}`, cards: paths.map((path) => ({ path })) };
+}
+
+function headerRow(key: string): AnchorCandidateRow {
+  return { kind: "group-header", key: `h:${key}` };
+}
 
 describe("computeScrollAnchorDelta", () => {
   it("returns zero while user is actively scrolling", () => {
@@ -93,119 +104,204 @@ describe("clampLayoutScrollTop", () => {
 });
 
 describe("row layout anchoring", () => {
+  const mixedRows = [
+    headerRow("a"),
+    cardRow("notes/0.md", "notes/1.md", "notes/2.md"),
+    cardRow("notes/3.md", "notes/4.md"),
+    headerRow("b"),
+    cardRow("notes/5.md", "notes/6.md", "notes/7.md"),
+  ];
+  const mixedPositions = [0, 40, 240, 440, 480];
+
   it("returns null when there is no row layout to anchor", () => {
+    expect(captureLayoutAnchor({ scrollTop: 120, rowPositions: [], rows: [] })).toBeNull();
     expect(
-      captureScrollAnchor({
-        scrollTop: 120,
-        rowPositions: [],
-        rows: [],
+      captureRowAnchor({ scrollTop: 120, rowPositions: [], rows: [], rowIndex: 0 }),
+    ).toBeNull();
+  });
+
+  it("captures a card ref with the top visible row's offset", () => {
+    expect(
+      captureLayoutAnchor({ scrollTop: 300, rowPositions: mixedPositions, rows: mixedRows }),
+    ).toEqual({ ref: { kind: "card", path: "notes/3.md" }, offset: 60 });
+  });
+
+  it("captures a group ref when the top visible row is a header", () => {
+    expect(
+      captureLayoutAnchor({ scrollTop: 460, rowPositions: mixedPositions, rows: mixedRows }),
+    ).toEqual({ ref: { kind: "group", key: "h:b" }, offset: 20 });
+  });
+
+  it("captures a negative offset for a caller-chosen row below the viewport top", () => {
+    expect(
+      captureRowAnchor({
+        scrollTop: 140,
+        rowPositions: mixedPositions,
+        rows: mixedRows,
+        rowIndex: 3,
+      }),
+    ).toEqual({ ref: { kind: "group", key: "h:b" }, offset: -300 });
+  });
+
+  it("round-trips a negative toggle offset back to the original scrollTop", () => {
+    const anchor = captureRowAnchor({
+      scrollTop: 140,
+      rowPositions: mixedPositions,
+      rows: mixedRows,
+      rowIndex: 3,
+    });
+
+    expect(anchor?.offset).toBeLessThan(0);
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: anchor!,
+        rows: mixedRows,
+        rowPositions: mixedPositions,
+      }),
+    ).toBe(140);
+  });
+
+  it("finds the anchor card again after a column-count change moved its row", () => {
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: { ref: { kind: "card", path: "notes/4.md" }, offset: 25 },
+        rows: [
+          cardRow("notes/0.md", "notes/1.md"),
+          cardRow("notes/2.md", "notes/3.md"),
+          cardRow("notes/4.md", "notes/5.md"),
+        ],
+        rowPositions: [0, 120, 260],
+      }),
+    ).toBe(285);
+  });
+
+  it("returns null when the anchored ref is gone", () => {
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: { ref: { kind: "card", path: "notes/removed.md" }, offset: 25 },
+        rows: mixedRows,
+        rowPositions: mixedPositions,
+      }),
+    ).toBeNull();
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: { ref: { kind: "group", key: "h:gone" }, offset: 0 },
+        rows: mixedRows,
+        rowPositions: mixedPositions,
       }),
     ).toBeNull();
   });
 
-  it("captures the first visible row's leading card index and offset", () => {
-    expect(
-      captureScrollAnchor({
-        scrollTop: 255,
-        rowPositions: [0, 120, 260, 390],
-        rows: [
-          { startIndex: 0 },
-          { startIndex: 3 },
-          { startIndex: 6 },
-          { startIndex: 9 },
-        ],
-      }),
-    ).toEqual({
-      anchorCardIndex: 3,
-      anchorOffset: 135,
-    });
-  });
+  it("holds a grouped card in place across a column reflow", () => {
+    const cards = Array.from({ length: 8 }, (_value, index) => ({ path: `notes/${index}.md` }));
+    const segments: RowSegment[] = [
+      { key: "a", startIndex: 0, visibleCount: 5, collapsed: false },
+      { key: "b", startIndex: 5, visibleCount: 3, collapsed: false },
+    ];
 
-  it("recomputes scrollTop after a column-count change using the same anchor card", () => {
-    expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: 3,
-        anchorOffset: 20,
-        columnCount: 2,
-        rowPositions: [0, 100, 220, 330, 470],
-        cardCount: 10,
-      }),
-    ).toBe(120);
-  });
-
-  it("keeps the same anchor card when column count shrinks", () => {
-    expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: 5,
-        anchorOffset: 18,
-        columnCount: 1,
-        rowPositions: [0, 100, 220, 360, 500, 660, 820],
-        cardCount: 7,
-      }),
-    ).toBe(678);
-  });
-
-  it("treats invalid column counts as single-column during anchor restoration", () => {
-    expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: 2,
-        anchorOffset: 10,
-        columnCount: 0,
-        rowPositions: [0, 120, 260, 420],
-        cardCount: 4,
-      }),
-    ).toBe(270);
-  });
-
-  it("clamps negative anchor offsets to zero", () => {
-    expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: 2,
-        anchorOffset: -15,
-        columnCount: 2,
-        rowPositions: [0, 120, 260],
-        cardCount: 6,
-      }),
-    ).toBe(120);
-  });
-
-  it("clamps anchor scroll calculations to the last available card", () => {
-    expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: 999,
-        anchorOffset: 12,
-        columnCount: 3,
-        rowPositions: [0, 100, 220, 360],
-        cardCount: 10,
-      }),
-    ).toBe(372);
-  });
-
-  it("restores the same anchor card across a wide-to-narrow resize sequence", () => {
-    const anchor = captureScrollAnchor({
-      scrollTop: 255,
-      rowPositions: [0, 120, 260, 390],
-      rows: [
-        { startIndex: 0 },
-        { startIndex: 3 },
-        { startIndex: 6 },
-        { startIndex: 9 },
-      ],
+    const wideRows = projectPanelRows(cards, segments, 3);
+    const widePositions = [0, 40, 240, 440, 480];
+    const anchor = captureLayoutAnchor({
+      scrollTop: 500,
+      rowPositions: widePositions,
+      rows: wideRows,
     });
 
-    expect(anchor).toEqual({
-      anchorCardIndex: 3,
-      anchorOffset: 135,
-    });
+    expect(anchor).toEqual({ ref: { kind: "card", path: "notes/5.md" }, offset: 20 });
+
+    const narrowRows = projectPanelRows(cards, segments, 2);
+    const narrowPositions = [0, 40, 240, 440, 640, 680, 880];
+
+    expect(narrowRows).toHaveLength(narrowPositions.length);
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: anchor!,
+        rows: narrowRows,
+        rowPositions: narrowPositions,
+      }),
+    ).toBe(700);
+  });
+});
+
+describe("positional anchoring for ungrouped layouts", () => {
+  const cards = Array.from({ length: 9 }, (_, index) => ({ path: `notes/${index}.md` }));
+  const positions = [0, 200, 400];
+
+  it("captures a card-index ref instead of a card ref when asked", () => {
+    const rows = projectPanelRows(cards, [], 3);
 
     expect(
-      computeAnchoredScrollTop({
-        anchorCardIndex: anchor?.anchorCardIndex ?? 0,
-        anchorOffset: anchor?.anchorOffset ?? 0,
-        columnCount: 1,
-        rowPositions: [0, 90, 210, 330, 470, 610, 760, 920, 1080, 1260],
-        cardCount: 10,
+      captureLayoutAnchor({
+        scrollTop: 260, rowPositions: positions, rows, preferCardIndex: true,
       }),
-    ).toBe(465);
+    ).toEqual({ ref: { kind: "card-index", index: 3 }, offset: 60 });
+
+    expect(
+      captureLayoutAnchor({ scrollTop: 260, rowPositions: positions, rows }),
+    ).toEqual({ ref: { kind: "card", path: "notes/3.md" }, offset: 60 });
+  });
+
+  it("holds the viewport across a reorder rather than following the card", () => {
+    const rows = projectPanelRows(cards, [], 3);
+    const reversedCards = Array.from(cards, (_, index) => cards[cards.length - 1 - index]);
+    const reversed = projectPanelRows(reversedCards, [], 3);
+
+    // Anchored on row 0, whose first card reversal moves to the last row, so
+    // the two ref kinds are actually distinguishable here.
+    const indexAnchor = captureLayoutAnchor({
+      scrollTop: 60, rowPositions: positions, rows, preferCardIndex: true,
+    });
+    expect(indexAnchor).toEqual({ ref: { kind: "card-index", index: 0 }, offset: 60 });
+    expect(
+      resolveAnchoredScrollTop({ anchor: indexAnchor!, rows: reversed, rowPositions: positions }),
+    ).toBe(60);
+
+    // The path-based ref is what chases the card, and is why grouping needs it.
+    const pathAnchor = captureLayoutAnchor({ scrollTop: 60, rowPositions: positions, rows });
+    expect(pathAnchor).toEqual({ ref: { kind: "card", path: "notes/0.md" }, offset: 60 });
+    expect(
+      resolveAnchoredScrollTop({ anchor: pathAnchor!, rows: reversed, rowPositions: positions }),
+    ).toBe(460);
+  });
+
+  it("selects the row spanning the index after a column change", () => {
+    const anchor = {
+      ref: { kind: "card-index" as const, index: 5 },
+      offset: 10,
+    };
+    const twoColumnRows = projectPanelRows(cards, [], 2);
+    const twoColumnPositions = [0, 100, 200, 300, 400];
+
+    // Index 5 lands in row 2 at two columns, matching floor(5 / 2).
+    expect(
+      resolveAnchoredScrollTop({
+        anchor, rows: twoColumnRows, rowPositions: twoColumnPositions,
+      }),
+    ).toBe(210);
+  });
+
+  it("clamps to the last card row when the array shrank below the index", () => {
+    const shortRows = projectPanelRows(cards.slice(0, 4), [], 3);
+
+    expect(
+      resolveAnchoredScrollTop({
+        anchor: { ref: { kind: "card-index", index: 8 }, offset: 0 },
+        rows: shortRows,
+        rowPositions: [0, 200],
+      }),
+    ).toBe(200);
+  });
+
+  it("still captures a group ref when the top row is a header", () => {
+    const segments: RowSegment[] = [
+      { key: "g:0", startIndex: 0, visibleCount: 9, collapsed: false },
+    ];
+    const rows = projectPanelRows(cards, segments, 3);
+
+    expect(
+      captureLayoutAnchor({
+        scrollTop: 0, rowPositions: [0, 40, 240, 440], rows, preferCardIndex: true,
+      }),
+    ).toEqual({ ref: { kind: "group", key: "h:g:0" }, offset: 0 });
   });
 });
