@@ -27,6 +27,7 @@ vi.mock("obsidian", () => ({
 import { getUiStrings } from "../i18n";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../settings";
+import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 import { createPanelModel, PANEL_GROUPS, type PanelGroup, type PanelModelState } from "./panel-model";
 import { FolderCardView } from "./FolderCardView";
 import { createBoxScope, createFolderScope } from "./scope";
@@ -104,9 +105,10 @@ function buildState(): PanelModelState {
       paneWidth: 260,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
       showItemCounts: true,
       tooltipSide: "right",
+      propertyFilterCount: 0,
       projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
       query: "",
       focusId: null,
@@ -538,7 +540,9 @@ describe("FolderCardView grouped panel publishing", () => {
         getSettings: () => ({
           activeBoxId: "stale-settings-box",
           boxes: [box],
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           includeSubfolders: true,
         }),
       },
@@ -551,5 +555,109 @@ describe("FolderCardView grouped panel publishing", () => {
       activeBoxName: "Runtime box",
       boxExcludedCount: 1,
     });
+  });
+});
+
+function propertyText(value: string): PropertyScalarRef {
+  return { kind: "text", value };
+}
+
+function propertyNumber(value: number): PropertyScalarRef {
+  return { kind: "number", value };
+}
+
+function propertyCard(path: string): NoteCardRecord {
+  return { ...createCard(path), file: { path } as never };
+}
+
+/** Real view with property settings and facets, matching the grouped-runtime pattern. */
+function createPropertyNavView(options: {
+  visiblePropertyKeys: string[];
+  expandedPropertyKeys?: string[];
+  filterProperties: PropertyFilterClause[];
+  baseCards: NoteCardRecord[];
+  frontmatter?: (file: { path: string }) => Record<string, unknown> | null;
+}): FolderCardView {
+  const settings = normalizeSettings({
+    ...DEFAULT_SETTINGS,
+    visiblePropertyKeys: options.visiblePropertyKeys,
+    expandedPropertyKeys: options.expandedPropertyKeys ?? [],
+    filter: { tags: [], properties: options.filterProperties },
+  });
+  const getFileCache = vi.fn((file: { path: string }) => {
+    const frontmatter = options.frontmatter?.(file);
+    return frontmatter === undefined ? null : { frontmatter };
+  });
+  const app = {
+    metadataCache: { getFileCache },
+    vault: {
+      getAbstractFileByPath: vi.fn(() => null),
+      getMarkdownFiles: vi.fn(() => []),
+      getRoot: vi.fn(() => ({ path: "", children: [] })),
+    },
+    workspace: { leftSplit: {}, trigger: vi.fn() },
+  };
+  const plugin = {
+    getSettings: () => settings,
+    getUiStrings: () => getUiStrings("en"),
+    saveSettings: vi.fn(async () => undefined),
+    getSearchService: () => null,
+    getSearchSnapshot: () => null,
+    subscribeSearchSnapshots: () => () => undefined,
+    openNoteFromCard: vi.fn(async () => undefined),
+    createNoteInFolder: vi.fn(async () => undefined),
+  };
+  const view = new FolderCardView({ app, getRoot: () => null } as never, plugin as never);
+  (view as unknown as { store: ReturnType<typeof createViewStateStore> }).store.replaceBaseCards(
+    options.baseCards,
+  );
+  return view;
+}
+
+describe("FolderCardView nav-group property publication", () => {
+  it("carries propertyFilterCount and projects property rows from visible keys", () => {
+    const view = createPropertyNavView({
+      visiblePropertyKeys: ["status", "priority"],
+      expandedPropertyKeys: ["status"],
+      filterProperties: [
+        { key: "status", values: [propertyText("open"), propertyText("done")] },
+        { key: "priority", values: [propertyNumber(1)] },
+      ],
+      baseCards: [propertyCard("notes/a.md")],
+      frontmatter: (file) => (file.path === "notes/a.md" ? { status: "open" } : null),
+    });
+
+    const nav = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
+
+    expect(nav.propertyFilterCount).toBe(3);
+
+    const rows = nav.projection.rows;
+    expect(rows.some((row) => row.kind === "property" && row.propertyKey === "status")).toBe(true);
+    expect(rows.some((row) => row.kind === "property" && row.propertyKey === "priority")).toBe(true);
+    // The expanded status key exposes its active value row with a checked state.
+    expect(
+      rows.some(
+        (row) => row.kind === "property-value"
+          && row.propertyKey === "status"
+          && row.semanticState === "checked-filter",
+      ),
+    ).toBe(true);
+
+    view.cleanupLifecycle();
+  });
+
+  it("projects no property rows when no key is visible", () => {
+    const view = createPropertyNavView({
+      visiblePropertyKeys: [],
+      filterProperties: [],
+      baseCards: [propertyCard("notes/a.md")],
+    });
+
+    const nav = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
+
+    expect(nav.propertyFilterCount).toBe(0);
+    expect(nav.projection.rows.some((row) => row.kind === "property")).toBe(false);
+
+    view.cleanupLifecycle();
   });
 });

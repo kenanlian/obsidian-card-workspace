@@ -8,6 +8,7 @@ import {
   type PartialPluginSettings,
   type PluginSettings,
 } from "../settings";
+import type { PropertyFilterClause } from "../property-filter-settings";
 import { resolveSettingsUpdateIntent, type ViewUpdateIntent } from "../view/update-intent";
 
 export interface PreferencesSettings {
@@ -22,12 +23,14 @@ export interface PreferencesSettings {
   previewLines: number;
   showNavItemCounts: boolean;
   navSectionOrder: PluginSettings["navSectionOrder"];
+  visiblePropertyKeys: string[];
 }
 
 export interface WorkspaceSectionCollapsed {
   favorites: boolean;
   folders: boolean;
   tags: boolean;
+  properties: boolean;
   boxes: boolean;
 }
 
@@ -35,8 +38,10 @@ export interface WorkspaceSettings {
   lastFolderPath: string;
   expandedFolderPaths: string[];
   expandedTagPaths: string[];
+  expandedPropertyKeys: string[];
   activeBoxId: string | null;
   filterTags: string[];
+  filterProperties: PropertyFilterClause[];
   navPaneWidth: number;
   navPaneCollapsed: boolean;
   sectionCollapsed: WorkspaceSectionCollapsed;
@@ -69,6 +74,7 @@ const PREFERENCE_KEYS = new Set<string>([
   "previewLines",
   "showNavItemCounts",
   "navSectionOrder",
+  "visiblePropertyKeys",
 ]);
 
 const USER_DATA_KEYS = new Set<string>(["boxes", "favorites", "pinnedPaths"]);
@@ -77,6 +83,7 @@ const WORKSPACE_FLAT_KEYS = new Set<string>([
   "lastFolderPath",
   "expandedFolderPaths",
   "expandedTagPaths",
+  "expandedPropertyKeys",
   "activeBoxId",
   "navPaneWidth",
   "navPaneCollapsed",
@@ -131,12 +138,15 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
   if (patch.showNavItemCounts !== undefined) preferences.showNavItemCounts = patch.showNavItemCounts;
   if (patch.navSectionOrder !== undefined) preferences.navSectionOrder = patch.navSectionOrder;
+  if (patch.visiblePropertyKeys !== undefined) preferences.visiblePropertyKeys = patch.visiblePropertyKeys;
 
   if (patch.lastFolderPath !== undefined) workspace.lastFolderPath = patch.lastFolderPath;
   if (patch.expandedFolderPaths !== undefined) workspace.expandedFolderPaths = patch.expandedFolderPaths;
   if (patch.expandedTagPaths !== undefined) workspace.expandedTagPaths = patch.expandedTagPaths;
+  if (patch.expandedPropertyKeys !== undefined) workspace.expandedPropertyKeys = patch.expandedPropertyKeys;
   if (patch.activeBoxId !== undefined) workspace.activeBoxId = patch.activeBoxId;
   if (patch.filter?.tags !== undefined) workspace.filterTags = patch.filter.tags;
+  if (patch.filter?.properties !== undefined) workspace.filterProperties = patch.filter.properties;
   if (patch.navPaneWidth !== undefined) workspace.navPaneWidth = patch.navPaneWidth;
   if (patch.navPaneCollapsed !== undefined) workspace.navPaneCollapsed = patch.navPaneCollapsed;
   if (patch.sectionCollapsed) Object.assign(sectionCollapsed, patch.sectionCollapsed);
@@ -180,13 +190,19 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       previewLines: settings.previewLines,
       showNavItemCounts: settings.showNavItemCounts,
       navSectionOrder: [...settings.navSectionOrder],
+      visiblePropertyKeys: [...settings.visiblePropertyKeys],
     },
     workspace: {
       lastFolderPath: settings.lastFolderPath,
       expandedFolderPaths: [...settings.expandedFolderPaths],
       expandedTagPaths: [...settings.expandedTagPaths],
+      expandedPropertyKeys: [...settings.expandedPropertyKeys],
       activeBoxId: settings.activeBoxId,
       filterTags: [...settings.filter.tags],
+      filterProperties: settings.filter.properties.map((clause) => ({
+        key: clause.key,
+        values: clause.values.map((ref) => ({ ...ref })),
+      })),
       navPaneWidth: settings.navPaneWidth,
       navPaneCollapsed: settings.navPaneCollapsed,
       sectionCollapsed: { ...settings.sectionCollapsed },
@@ -204,8 +220,14 @@ function workspacePatchToFlat(patch: WorkspaceSettingsPatch): PartialPluginSetti
   if (patch.lastFolderPath !== undefined) flat.lastFolderPath = patch.lastFolderPath;
   if (patch.expandedFolderPaths !== undefined) flat.expandedFolderPaths = patch.expandedFolderPaths;
   if (patch.expandedTagPaths !== undefined) flat.expandedTagPaths = patch.expandedTagPaths;
+  if (patch.expandedPropertyKeys !== undefined) flat.expandedPropertyKeys = patch.expandedPropertyKeys;
   if (patch.activeBoxId !== undefined) flat.activeBoxId = patch.activeBoxId;
-  if (patch.filterTags !== undefined) flat.filter = { tags: patch.filterTags };
+  // Map each filter arm independently so a tags-only patch never clears
+  // filter.properties and a properties-only patch never clears filter.tags.
+  const filter: { tags?: string[]; properties?: PropertyFilterClause[] } = {};
+  if (patch.filterTags !== undefined) filter.tags = patch.filterTags;
+  if (patch.filterProperties !== undefined) filter.properties = patch.filterProperties;
+  if (filter.tags !== undefined || filter.properties !== undefined) flat.filter = filter;
   if (patch.navPaneWidth !== undefined) flat.navPaneWidth = patch.navPaneWidth;
   if (patch.navPaneCollapsed !== undefined) flat.navPaneCollapsed = patch.navPaneCollapsed;
   const collapsed = patch.sectionCollapsed;
@@ -269,6 +291,21 @@ export class SettingsStore {
 
   updateUserData(patch: Partial<UserDataSettings>): Promise<ViewUpdateIntent | null> {
     return this.commitPatch(patch as PartialPluginSettings, "immediate");
+  }
+
+  /**
+   * Atomic flat-patch entry point used by `main.saveSettings()`: the complete
+   * patch is normalized once, revision increments once, and one whole v2
+   * document is serialized. A patch carrying any preference/userData value
+   * persists immediately; a workspace-only patch retains the 300 ms debounce.
+   * A cross-layer chooser commit therefore never starts a partial first save.
+   */
+  updateFlat(patch: PartialPluginSettings): Promise<ViewUpdateIntent | null> {
+    const { preferences, userData } = splitFlatPatch(patch);
+    const persist = hasPatchValues(preferences) || hasPatchValues(userData)
+      ? "immediate"
+      : "workspace";
+    return this.commitPatch(patch, persist);
   }
 
   async flushPendingWrites(): Promise<void> {

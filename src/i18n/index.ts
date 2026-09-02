@@ -8,6 +8,7 @@ import { fileKindStrings } from "./fileKind";
 import { folderPickerStrings } from "./folderPicker";
 import { noteOpsStrings } from "./noteOps";
 import { panelStrings } from "./panel";
+import { propertyStrings } from "./property";
 import { settingTabStrings, type SettingTabStrings } from "./settingTab";
 import { sortGroupStrings } from "./sortGroup";
 import { toolbarStrings, type ToolbarStrings } from "./toolbar";
@@ -23,6 +24,7 @@ export type { FileKindStrings } from "./fileKind";
 export type { FolderPickerStrings } from "./folderPicker";
 export type { NoteOpsStrings } from "./noteOps";
 export type { PanelStrings } from "./panel";
+export type { PropertyStrings } from "./property";
 export type { SettingTabStrings } from "./settingTab";
 export type { SortGroupStrings } from "./sortGroup";
 export type { ToolbarStrings } from "./toolbar";
@@ -48,6 +50,7 @@ const EN: UiStrings = {
   cardItem: cardItemStrings.en,
   folderPicker: folderPickerStrings.en,
   panel: panelStrings.en,
+  property: propertyStrings.en,
   fileKind: fileKindStrings.en,
   noteOps: noteOpsStrings.en,
   desktopShell: desktopShellStrings.en,
@@ -63,6 +66,7 @@ const ZH: UiStrings = {
   cardItem: cardItemStrings.zh,
   folderPicker: folderPickerStrings.zh,
   panel: panelStrings.zh,
+  property: propertyStrings.zh,
   fileKind: fileKindStrings.zh,
   noteOps: noteOpsStrings.zh,
   desktopShell: desktopShellStrings.zh,

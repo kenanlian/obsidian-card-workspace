@@ -31,6 +31,34 @@ vi.mock("./note-ops", async (importOriginal) => {
   return buildNoteOpsMock(actual);
 });
 
+const propertyPickerMockState = vi.hoisted(() => ({
+  openedOptions: [] as Array<{
+    selectedKeys: string[];
+    collectPropertyInventory: () => unknown;
+    onSubmit: (keys: string[]) => Promise<void>;
+  }>,
+  openCount: 0,
+}));
+
+vi.mock("./modals/PropertyPickerModal", () => ({
+  PropertyPickerModal: class {
+    constructor(
+      _app: unknown,
+      options: {
+        selectedKeys: string[];
+        collectPropertyInventory: () => unknown;
+        onSubmit: (keys: string[]) => Promise<void>;
+      },
+    ) {
+      propertyPickerMockState.openedOptions.push(options);
+    }
+
+    open(): void {
+      propertyPickerMockState.openCount += 1;
+    }
+  },
+}));
+
 import * as markdownUtils from "./markdown-utils";
 import { createBoxScope, createFolderScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
@@ -41,8 +69,86 @@ import {
   batchTrashFiles,
   mergeNotes,
 } from "./note-ops";
+import { buildPanelProps } from "./panel-props";
+import { getUiStrings } from "../i18n";
+import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 
 registerFolderCardView(FolderCardView);
+
+function propertyText(value: string): PropertyScalarRef {
+  return { kind: "text", value };
+}
+
+function propertyClause(key: string, values: PropertyScalarRef[]): PropertyFilterClause {
+  return { key, values };
+}
+
+function propertySettings(overrides: {
+  visiblePropertyKeys?: string[];
+  expandedPropertyKeys?: string[];
+  filterProperties?: PropertyFilterClause[];
+  navPaneWidth?: number;
+} = {}): Record<string, unknown> {
+  return {
+    includeSubfolders: true,
+    sort: { field: "mtime", direction: "desc" },
+    filter: { tags: [], properties: overrides.filterProperties ?? [] },
+    visiblePropertyKeys: overrides.visiblePropertyKeys ?? [],
+    expandedPropertyKeys: overrides.expandedPropertyKeys ?? [],
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    navSectionOrder: ["favorites", "folders", "tags", "properties", "boxes"],
+    defaultView: "cards",
+    lastFolderPath: null,
+    lastViewMode: "folder",
+    pinnedPaths: [],
+    previewLines: 5,
+    navPaneWidth: overrides.navPaneWidth ?? 280,
+    showNavItemCounts: true,
+  };
+}
+
+function createPropertyHarness(options: {
+  settings?: Record<string, unknown>;
+  frontmatter?: Record<string, Record<string, unknown>>;
+  cards?: Array<ReturnType<typeof createCardRecord>>;
+} = {}): ReturnType<typeof createViewWithFile> {
+  const harness = createViewWithFile("notes/a.md");
+  harness.plugin.getSettings = vi.fn(() => options.settings ?? propertySettings());
+  harness.app.metadataCache.getFileCache = vi.fn((file: { path: string }) => {
+    const entry = options.frontmatter?.[file.path];
+    return entry === undefined ? null : { frontmatter: entry };
+  });
+  if (options.cards) {
+    (harness.view as any).baseCards = options.cards;
+    (harness.view as any).visibleCards = options.cards;
+  }
+  return harness;
+}
+
+/** Registers the metadata listener (as `onOpen` does) and returns its emit function. */
+async function openWithMetadataListener(
+  view: FolderCardView,
+  plugin: { subscribeMetadataEvents: ReturnType<typeof vi.fn> },
+): Promise<(event: { path: string }) => void> {
+  let listener: ((event: { path: string }) => void) | null = null;
+  plugin.subscribeMetadataEvents = vi.fn((registered: (event: { path: string }) => void) => {
+    listener = registered;
+    return () => undefined;
+  });
+  await (view as any).onOpen();
+  return (event) => listener!(event);
+}
+
+/** Panel-group identity helper mirroring the grouped-publish assertions. */
+function expectGroupsReplaced(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  groups: readonly string[],
+): void {
+  for (const group of groups) {
+    expect(after[group], `${group} should be replaced`).not.toBe(before[group]);
+  }
+}
 
 function viewportRequest(view: FolderCardView, start: number, end: number) {
   const cards = (view as any).store.getVisibleCards() as Array<{ path: string }>;
@@ -539,7 +645,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           defaultView: "cards",
           lastFolderPath: null,
           lastViewMode: "folder",
@@ -563,7 +671,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           defaultView: "cards",
           lastFolderPath: null,
           lastViewMode: "folder",
@@ -593,7 +703,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           defaultView: "cards",
           lastFolderPath: null,
           lastViewMode: "folder",
@@ -613,7 +725,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           defaultView: "cards",
           lastFolderPath: null,
           lastViewMode: "folder",
@@ -1021,14 +1135,16 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           pinnedPaths: [],
           previewLines: 5,
           group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
           boxes: [box],
           favorites: [],
           activeBoxId: box.id,
-          sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+          sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
         }));
         (view as any).cardScope = createBoxScope(box.id);
 
@@ -1052,7 +1168,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: [] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: [], properties: [] },
           pinnedPaths: [],
           previewLines: 5,
           group: { dimension: "folder", orderBy: "default", orderDirection: "asc" },
@@ -1150,7 +1268,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         plugin.getSettings = vi.fn(() => ({
           includeSubfolders: true,
           sort: { field: "mtime", direction: "desc" },
-          filter: { tags: ["focus"] },
+          visiblePropertyKeys: [],
+          expandedPropertyKeys: [],
+          filter: { tags: ["focus"], properties: [] },
           defaultView: "cards",
           lastFolderPath: null,
           lastViewMode: "folder",
@@ -1430,7 +1550,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           plugin.getSettings = vi.fn(() => ({
             includeSubfolders: true,
             sort: { field: "mtime", direction: "desc" },
-            filter: { tags: [] },
+            visiblePropertyKeys: [],
+            expandedPropertyKeys: [],
+            filter: { tags: [], properties: [] },
             defaultView: "cards",
             lastFolderPath: null,
             lastViewMode: "folder",
@@ -1500,7 +1622,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           plugin.getSettings = vi.fn(() => ({
             includeSubfolders: true,
             sort: { field: "mtime", direction: "desc" },
-            filter: { tags: [] },
+            visiblePropertyKeys: [],
+            expandedPropertyKeys: [],
+            filter: { tags: [], properties: [] },
             defaultView: "cards",
             lastFolderPath: null,
             lastViewMode: "folder",
@@ -1576,7 +1700,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           plugin.getSettings = vi.fn(() => ({
             includeSubfolders: false,
             sort: { field: "ctime", direction: "asc" },
-            filter: { tags: [] },
+            visiblePropertyKeys: [],
+            expandedPropertyKeys: [],
+            filter: { tags: [], properties: [] },
             defaultView: "cards",
             lastFolderPath: null,
             lastViewMode: "folder",
@@ -2102,7 +2228,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: false,
         sort: { field: "ctime", direction: "asc" },
-        filter: { tags: ["alpha", "beta"] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: ["alpha", "beta"], properties: [] },
         defaultView: "cards",
         lastFolderPath: "",
         pinnedPaths: ["notes/pinned.md"],
@@ -2180,7 +2308,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: null,
         lastViewMode: "folder",
@@ -2298,7 +2428,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: false,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: null,
         lastViewMode: "folder",
@@ -2323,7 +2455,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: null,
         lastViewMode: "folder",
@@ -2387,7 +2521,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: null,
         lastViewMode: "folder",
@@ -2490,7 +2626,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: false,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: null,
         lastViewMode: "folder",
@@ -2584,7 +2722,9 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: "",
         pinnedPaths: [],
@@ -2614,6 +2754,307 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
         pinnedPaths: ["notes/phase1-regression.md"],
       });
+    });
+  });
+});
+
+describe("FolderCardView property lane host integration (WP-05)", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+    propertyPickerMockState.openedOptions.length = 0;
+    propertyPickerMockState.openCount = 0;
+  });
+
+  describe("chooser command routing", () => {
+    it("routes choose-visible to the picker modal with a modules.property inventory callback", () => {
+      const { view } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+      });
+      const collectSpy = vi.spyOn((view as any).modules.property, "collectPropertyInventory");
+      const props = buildPanelProps(view as any) as unknown as {
+        onPropertyCommand: (detail: { command?: unknown }) => void;
+      };
+
+      props.onPropertyCommand({ command: "choose-visible" });
+
+      expect(propertyPickerMockState.openCount).toBe(1);
+      const opened = propertyPickerMockState.openedOptions[0];
+      expect(opened?.selectedKeys).toEqual(["status"]);
+      expect(typeof opened?.collectPropertyInventory).toBe("function");
+
+      // The callback is sourced from the per-view PropertyController.
+      opened?.collectPropertyInventory();
+      expect(collectSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("routes clear-filters to an empty clause save only when a filter is active", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({
+          visiblePropertyKeys: ["status"],
+          filterProperties: [propertyClause("status", [propertyText("open")])],
+        }),
+      });
+      const props = buildPanelProps(view as any) as unknown as {
+        onPropertyCommand: (detail: { command?: unknown }) => void;
+      };
+
+      props.onPropertyCommand({ command: "clear-filters" });
+      await flushAsyncWork();
+
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+      expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { properties: [] } });
+    });
+
+    it("writes nothing for clear-filters when no property filter is active", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+      });
+      const props = buildPanelProps(view as any) as unknown as {
+        onPropertyCommand: (detail: { command?: unknown }) => void;
+      };
+
+      props.onPropertyCommand({ command: "clear-filters" });
+      await flushAsyncWork();
+
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("selection persistence", () => {
+    it("routes a projected property-value activation to applyValueFilter and persists the clause", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"], expandedPropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      (view as any).publishGroups("nav");
+
+      const rows = (view as any).modules.navLayout.getProjection().rows;
+      const valueRow = rows.find(
+        (row: any) => row.kind === "property-value" && row.propertyKey === "status",
+      );
+      expect(valueRow).toBeDefined();
+
+      view.handleNavigationIntent({ type: "activate", rowId: valueRow.id, mode: "ordinary" });
+      await flushAsyncWork();
+
+      expect(plugin.saveSettings).toHaveBeenCalledWith({
+        filter: { properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] },
+      });
+    });
+  });
+
+  describe("facet freshness across nav patches", () => {
+    it("publishes fresh property rows on a visible-key patch and reuses facets on unrelated patches", async () => {
+      const { view, app } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"], expandedPropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      await view.applyUpdateIntent("patch", "settings-change");
+
+      let rows = (view as any).modules.navLayout.getProjection().rows;
+      expect(rows.some((row: any) => row.kind === "property" && row.propertyKey === "status")).toBe(true);
+
+      const getFileCache = app.metadataCache.getFileCache as ReturnType<typeof vi.fn>;
+      const callsAfterVisiblePatch = getFileCache.mock.calls.length;
+
+      // An unrelated nav-chrome patch (navPaneWidth) republishes nav from cache.
+      await view.applyUpdateIntent("patch", "settings-change");
+      expect(getFileCache.mock.calls.length).toBe(callsAfterVisiblePatch);
+
+      // Explicit metadata invalidation clears the facet cache and forces a rescan.
+      (view as any).modules.property.invalidateMetadata(["notes/a.md"]);
+      (view as any).publishGroups("nav");
+      expect(getFileCache.mock.calls.length).toBeGreaterThan(callsAfterVisiblePatch);
+    });
+  });
+
+  describe("reproject vs patch publication", () => {
+    it("keeps cards identity for a visible-key patch and replaces it for a clause reproject", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      const initial = view.panelModel.getState();
+
+      await view.applyUpdateIntent("patch", "settings-change");
+      const afterPatch = view.panelModel.getState();
+      expect(afterPatch.cards).toBe(initial.cards);
+      expect(afterPatch.nav).not.toBe(initial.nav);
+
+      plugin.getSettings = vi.fn(() => propertySettings({
+        visiblePropertyKeys: ["status"],
+        filterProperties: [propertyClause("status", [propertyText("open")])],
+      }));
+      await view.applyUpdateIntent("reproject", "settings-change");
+      const afterReproject = view.panelModel.getState();
+
+      expect(afterReproject.cards).not.toBe(afterPatch.cards);
+      expectGroupsReplaced(
+        afterPatch as unknown as Record<string, unknown>,
+        afterReproject as unknown as Record<string, unknown>,
+        ["nav", "scope", "cards", "projection", "bulk"],
+      );
+    });
+  });
+
+  describe("metadata coordination through the view", () => {
+    it("publishes one nav/scope/cards/projection/bulk batch for an in-base change with an active filter", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({
+          visiblePropertyKeys: ["status"],
+          filterProperties: [propertyClause("status", [propertyText("open")])],
+        }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+
+      emitMetadata({ path: "notes/a.md" });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      const next = view.panelModel.getState();
+      expectGroupsReplaced(
+        initial as unknown as Record<string, unknown>,
+        next as unknown as Record<string, unknown>,
+        ["nav", "scope", "cards", "projection", "bulk"],
+      );
+      expect(next.search).toBe(initial.search);
+      expect(next.appearance).toBe(initial.appearance);
+    });
+
+    it("publishes nav only for an in-base change with visible keys but no active filter", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+
+      emitMetadata({ path: "notes/a.md" });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      const next = view.panelModel.getState();
+      expect(next.nav).not.toBe(initial.nav);
+      expect(next.cards).toBe(initial.cards);
+      expect(next.scope).toBe(initial.scope);
+      expect(next.projection).toBe(initial.projection);
+      expect(next.bulk).toBe(initial.bulk);
+    });
+
+    it("performs no property-owned publication for an out-of-base metadata event", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({
+          visiblePropertyKeys: ["status"],
+          filterProperties: [propertyClause("status", [propertyText("open")])],
+        }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+
+      emitMetadata({ path: "elsewhere/unrelated.md" });
+
+      expect(listener).not.toHaveBeenCalled();
+      expect(view.panelModel.getState()).toBe(initial);
+    });
+  });
+
+  describe("empty-state classification", () => {
+    it("classifies property-filter, source-empty, and query empty copies", () => {
+      const { view } = createPropertyHarness({
+        settings: propertySettings({
+          visiblePropertyKeys: ["status"],
+          filterProperties: [propertyClause("status", [propertyText("open")])],
+        }),
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+      const strings = getUiStrings("en");
+      const card = createCardRecordFromPath("notes/a.md");
+
+      (view as any).baseCards = [card];
+      (view as any).visibleCards = [];
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.property.emptyPropertyFilter);
+
+      (view as any).baseCards = [];
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
+
+      (view as any).baseCards = [card];
+      (view as any).modules.search.query = "needle";
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(
+        strings.view.emptySearchCurrentFolder("needle"),
+      );
+
+      // An active tag filter keeps the source-empty copy even while property
+      // clauses exist: the property message claims property filtering alone.
+      (view as any).modules.search.query = "";
+      const settings = (view as any).plugin.getSettings() as {
+        filter: { tags: string[]; properties: unknown };
+      };
+      settings.filter = { ...settings.filter, tags: ["work"] };
+      (view as any).baseCards = [card];
+      (view as any).visibleCards = [];
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
+    });
+  });
+
+  describe("disposal", () => {
+    it("disposes the property controller in cleanupLifecycle", () => {
+      const { view } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      expect((view as any).modules.property.derivePropertyFacets().length).toBe(1);
+
+      view.cleanupLifecycle();
+
+      expect((view as any).modules.property.derivePropertyFacets()).toEqual([]);
+      expect((view as any).modules.property.collectPropertyInventory()).toEqual({
+        status: "unavailable",
+        options: [],
+      });
+    });
+  });
+
+  describe("vault invalidation", () => {
+    it("clears the property facet cache through the nav-count invalidation path", () => {
+      const { view, app } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+
+      (view as any).publishGroups("nav");
+      const getFileCache = app.metadataCache.getFileCache as ReturnType<typeof vi.fn>;
+      const callsAfterFirstBuild = getFileCache.mock.calls.length;
+
+      view.refreshNavState();
+
+      expect(getFileCache.mock.calls.length).toBeGreaterThan(callsAfterFirstBuild);
     });
   });
 });

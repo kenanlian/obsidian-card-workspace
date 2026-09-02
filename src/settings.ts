@@ -1,6 +1,12 @@
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
+import {
+  normalizeExpandedPropertyKeys,
+  normalizePropertyFilterClauses,
+  normalizeVisiblePropertyKeys,
+  type PropertyFilterClause,
+} from "./property-filter-settings";
 import { deriveRuleId } from "./view/box-rule-identity";
 import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
@@ -120,7 +126,7 @@ export interface PluginSettings {
     direction: SortDirection;
   };
   group: GroupSpec;
-  filter: { tags: string[] };
+  filter: { tags: string[]; properties: PropertyFilterClause[] };
   pinnedPaths: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
@@ -132,6 +138,8 @@ export interface PluginSettings {
   lastFolderPath: string;
   expandedFolderPaths: string[];
   expandedTagPaths: string[];
+  visiblePropertyKeys: string[];
+  expandedPropertyKeys: string[];
   boxes: CardBoxDefinition[];
   favorites: FavoriteEntry[];
   activeBoxId: string | null;
@@ -154,7 +162,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     direction: "desc",
   },
   group: { ...DEFAULT_GROUP_SPEC },
-  filter: { tags: [] },
+  filter: { tags: [], properties: [] },
   pinnedPaths: [],
   includeSubfolders: true,
   defaultView: "cards",
@@ -165,12 +173,13 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   previewLines: DEFAULT_PREVIEW_LINES,
   lastFolderPath: "",
   expandedFolderPaths: [], expandedTagPaths: [],
+  visiblePropertyKeys: [], expandedPropertyKeys: [],
   boxes: [],
   favorites: [],
   activeBoxId: null,
   navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
   navPaneCollapsed: false,
-  sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+  sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
   showNavItemCounts: false,
   navSectionOrder: defaultNavSectionOrder(),
 };
@@ -458,8 +467,9 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     ...preferences,
     lastFolderPath: workspace.lastFolderPath,
     expandedFolderPaths: workspace.expandedFolderPaths, expandedTagPaths: workspace.expandedTagPaths,
+    expandedPropertyKeys: workspace.expandedPropertyKeys,
     activeBoxId: workspace.activeBoxId,
-    filter: { tags: workspace.filterTags },
+    filter: { tags: workspace.filterTags, properties: workspace.filterProperties },
     navPaneWidth: workspace.navPaneWidth,
     navPaneCollapsed: workspace.navPaneCollapsed,
     sectionCollapsed: workspace.sectionCollapsed,
@@ -471,9 +481,16 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
 
 function normalizeSectionCollapsed(data: Record<string, unknown>): Record<NavSectionId, boolean> {
   const record = isRecord(data.sectionCollapsed) ? data.sectionCollapsed : {};
+  const legacyKeys: Partial<Record<NavSectionId, string>> = {
+    favorites: "favoritesSectionCollapsed",
+    folders: "folderSectionCollapsed",
+    tags: "tagSectionCollapsed",
+    boxes: "boxSectionCollapsed",
+  };
   const result = { ...DEFAULT_SETTINGS.sectionCollapsed };
   for (const section of Object.keys(result) as NavSectionId[]) {
-    const legacy = data[{ favorites: "favoritesSectionCollapsed", folders: "folderSectionCollapsed", tags: "tagSectionCollapsed", boxes: "boxSectionCollapsed" }[section]];
+    const legacyKey = legacyKeys[section];
+    const legacy = legacyKey === undefined ? undefined : data[legacyKey];
     if (typeof legacy === "boolean") result[section] = legacy;
     if (typeof record[section] === "boolean") result[section] = record[section];
   }
@@ -485,6 +502,10 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
   const sort = isRecord(data.sort) ? data.sort : {};
   const filter = isRecord(data.filter) ? data.filter : {};
   const boxes = normalizeBoxes(data.boxes);
+  // Cross-field pass: visible keys first, then expansion/filters against them,
+  // so no active clause or expansion can survive a hidden key.
+  const visiblePropertyKeys = normalizeVisiblePropertyKeys(data.visiblePropertyKeys);
+  const visiblePropertyKeySet = new Set(visiblePropertyKeys);
 
   return {
     sort: {
@@ -492,7 +513,10 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
       direction: normalizeSortDirection(sort.direction),
     },
     group: normalizeGroupSpec(data.group),
-    filter: { tags: normalizeTags(filter.tags) },
+    filter: {
+      tags: normalizeTags(filter.tags),
+      properties: normalizePropertyFilterClauses(filter.properties, visiblePropertyKeySet),
+    },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
@@ -503,6 +527,8 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     previewLines: normalizePreviewLines(data.previewLines),
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),
     expandedFolderPaths: normalizeExpandedFolderPaths(data.expandedFolderPaths), expandedTagPaths: normalizeExpandedTagPaths(data.expandedTagPaths),
+    visiblePropertyKeys,
+    expandedPropertyKeys: normalizeExpandedPropertyKeys(data.expandedPropertyKeys, visiblePropertyKeySet),
     boxes,
     favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),

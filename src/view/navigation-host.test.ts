@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { NavigationProjection, NavigationRow } from "./navigation-model";
+import { navigationPropertyId, navigationPropertyValueId } from "./navigation-model";
 import { routeNavigationIntent } from "./navigation-host";
 import { createBoxScope, createFolderScope } from "./scope";
 
@@ -24,6 +25,28 @@ function boxRow(): NavigationRow {
     positionInSet: 1, setSize: 1, expandable: false, expanded: false, disabled: false,
     semanticState: "current-range", label: "Box", fullPath: null, count: 0, icon: "box",
     menuTarget: { section: "boxes", scope: "item", itemId: "box-1" }, boxId: "box-1",
+  };
+}
+
+function propertyRow(): NavigationRow {
+  return {
+    id: navigationPropertyId("status"), kind: "property", section: "properties",
+    parentId: "section:properties", level: 2, positionInSet: 1, setSize: 1,
+    expandable: true, expanded: false, disabled: false, semanticState: "none",
+    label: "Status", fullPath: null, count: 3, icon: "list-filter",
+    menuTarget: { section: "properties", scope: "item", itemId: "status" },
+    propertyKey: "status",
+  };
+}
+
+function propertyValueRow(): NavigationRow {
+  return {
+    id: navigationPropertyValueId("status", { kind: "text", value: "open" }),
+    kind: "property-value", section: "properties", parentId: navigationPropertyId("status"),
+    level: 3, positionInSet: 1, setSize: 1, expandable: false, expanded: false, disabled: false,
+    semanticState: "checked-filter", label: "open", fullPath: null, count: 2, icon: null,
+    menuTarget: { section: "properties", scope: "item", itemId: "status", value: { kind: "text", value: "open" } },
+    propertyKey: "status", value: { kind: "text", value: "open" },
   };
 }
 
@@ -61,5 +84,37 @@ describe("navigation host intent routing", () => {
       applyTagFilter: vi.fn(), activateFavorite: vi.fn(),
     });
     expect(consumeFocusReturn).toHaveBeenCalledWith(17);
+  });
+
+  it("toggles a property-key expansion on ordinary activation", () => {
+    const setExpanded = vi.fn();
+    routeNavigationIntent({
+      intent: { type: "activate", rowId: navigationPropertyId("status"), mode: "ordinary" },
+      navLayout: { getProjection: () => projectionWith(propertyRow()), setExpanded } as never,
+      scope: createFolderScope("", true), activeTags: [], selectFolder: vi.fn(), switchBox: vi.fn(),
+      applyTagFilter: vi.fn(), activateFavorite: vi.fn(), selectPropertyValue: vi.fn(),
+    });
+    expect(setExpanded).toHaveBeenCalledWith(expect.objectContaining({ kind: "property" }), true);
+  });
+
+  it("ordinary-selects and additive-toggles property values through the injected callback", () => {
+    const selectPropertyValue = vi.fn();
+    const common = {
+      navLayout: { getProjection: () => projectionWith(propertyValueRow()) } as never,
+      scope: createFolderScope("", true), activeTags: [],
+      selectFolder: vi.fn(), switchBox: vi.fn(), applyTagFilter: vi.fn(), activateFavorite: vi.fn(),
+      selectPropertyValue,
+    };
+    routeNavigationIntent({
+      ...common,
+      intent: { type: "activate", rowId: navigationPropertyValueId("status", { kind: "text", value: "open" }), mode: "ordinary" },
+    });
+    expect(selectPropertyValue).toHaveBeenCalledWith("status", { kind: "text", value: "open" }, false);
+
+    routeNavigationIntent({
+      ...common,
+      intent: { type: "activate", rowId: navigationPropertyValueId("status", { kind: "text", value: "open" }), mode: "additive" },
+    });
+    expect(selectPropertyValue).toHaveBeenLastCalledWith("status", { kind: "text", value: "open" }, true);
   });
 });

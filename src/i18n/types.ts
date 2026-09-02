@@ -6,6 +6,7 @@ import type { FileKindStrings } from "./fileKind";
 import type { FolderPickerStrings } from "./folderPicker";
 import type { NoteOpsStrings } from "./noteOps";
 import type { PanelStrings } from "./panel";
+import type { PropertyStrings } from "./property";
 import type { SettingTabStrings } from "./settingTab";
 import type { SortGroupStrings } from "./sortGroup";
 import type { ToolbarStrings } from "./toolbar";
@@ -25,6 +26,7 @@ export interface UiStrings {
   cardItem: CardItemStrings;
   folderPicker: FolderPickerStrings;
   panel: PanelStrings;
+  property: PropertyStrings;
   fileKind: FileKindStrings;
   noteOps: NoteOpsStrings;
   desktopShell: DesktopShellStrings;

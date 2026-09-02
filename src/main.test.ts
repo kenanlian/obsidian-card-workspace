@@ -629,6 +629,52 @@ describe("CardWorkspacePlugin settings update intents", () => {
     expect(view.applyUpdateIntent).toHaveBeenCalledWith("rehydrate", "settings-change");
   });
 
+  it("commits a chooser-shaped cross-layer patch as one whole-document save", async () => {
+    const { plugin, view } = attachView();
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockClear();
+
+    await plugin.saveSettings({
+      visiblePropertyKeys: ["status"],
+      expandedPropertyKeys: ["status"],
+      filter: { properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] },
+    });
+
+    expect(saveData).toHaveBeenCalledTimes(1);
+    const persisted = saveData.mock.calls[0]?.[0] as {
+      preferences: { visiblePropertyKeys: string[] };
+      workspace: { expandedPropertyKeys: string[]; filterProperties: unknown };
+    };
+    expect(persisted.preferences.visiblePropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.expandedPropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.filterProperties).toEqual([
+      { key: "status", values: [{ kind: "text", value: "open" }] },
+    ]);
+    // The clause change drives reproject even though the key enablement alone is patch.
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+  });
+
+  it("dispatches a visible-key-only patch without touching card projection", async () => {
+    const { plugin, view } = attachView();
+
+    await plugin.saveSettings({ visiblePropertyKeys: ["status"] });
+
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("patch", "settings-change");
+    expect(plugin.getSettings().visiblePropertyKeys).toEqual(["status"]);
+  });
+
+  it("dispatches reproject when a property filter clause changes", async () => {
+    const { plugin, view } = attachView();
+    await plugin.saveSettings({ visiblePropertyKeys: ["status"] });
+    view.applyUpdateIntent.mockClear();
+
+    await plugin.saveSettings({
+      filter: { properties: [{ key: "status", values: [{ kind: "missing" }] }] },
+    });
+
+    expect(view.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+  });
+
   it("dispatches a section-collapse patch before persistence resolves", async () => {
     const { plugin, view } = attachView();
     let releasePersistence!: () => void;

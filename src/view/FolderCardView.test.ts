@@ -355,7 +355,9 @@ function createFolder(path: string, children: Array<InstanceType<typeof testStat
 function createHarness(): TestHarness {
   let settings: PluginSettings = mergeSettings(normalizeSettings(DEFAULT_SETTINGS), {
     sort: { field: "mtime", direction: "desc" },
-    filter: { tags: [] },
+    visiblePropertyKeys: [],
+    expandedPropertyKeys: [],
+    filter: { tags: [], properties: [] },
     pinnedPaths: [],
     cardCornerRadius: "compact",
     previewLines: 5,
@@ -617,7 +619,9 @@ describe("FolderCardView host contract", () => {
     const { view, plugin } = createHarness();
     const settings = {
       sort: { field: "name", direction: "asc" },
-      filter: { tags: [] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: [], properties: [] },
       pinnedPaths: [],
       cardCornerRadius: "compact",
       previewLines: 5,
@@ -710,7 +714,9 @@ describe("FolderCardView host contract", () => {
     const { view, plugin } = createHarness();
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
-      filter: { tags: ["work/ai"] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: ["work/ai"], properties: [] },
       expandedTagPaths: ["work"],
     });
 
@@ -749,7 +755,9 @@ describe("FolderCardView host contract", () => {
     (view as any).cardScope = createFolderScope("notes", true);
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: [] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: [], properties: [] },
       pinnedPaths: [],
       cardCornerRadius: "compact",
       previewLines: 5,
@@ -759,7 +767,9 @@ describe("FolderCardView host contract", () => {
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: ["tag-a"] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: ["tag-a"], properties: [] },
       pinnedPaths: [],
       cardCornerRadius: "compact",
       previewLines: 5,
@@ -772,7 +782,9 @@ describe("FolderCardView host contract", () => {
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: [] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: [], properties: [] },
       pinnedPaths: [],
       cardCornerRadius: "compact",
       previewLines: 5,

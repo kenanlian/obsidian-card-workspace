@@ -10,6 +10,7 @@
     tabIndex: number;
     strings: UiStrings;
     activeFilterTags?: string[];
+    activePropertyFilterCount?: number;
     showItemCounts?: boolean;
     tooltipSide?: "left" | "right";
     subtreeHovered?: boolean;
@@ -27,6 +28,7 @@
     tabIndex,
     strings,
     activeFilterTags = [],
+    activePropertyFilterCount = 0,
     showItemCounts = false,
     tooltipSide = "right",
     subtreeHovered = false,
@@ -42,9 +44,16 @@
   const labels = $derived(strings.toolbar.navPane);
   const descriptionId = $props.id();
   const tagSection = $derived(row.kind === "section" && row.section === "tags");
-  const visibleCount = $derived(tagSection ? activeFilterTags.length : showItemCounts ? row.count : 0);
+  const propertySection = $derived(row.kind === "section" && row.section === "properties");
+  const visibleCount = $derived(
+    tagSection ? activeFilterTags.length
+      : propertySection ? activePropertyFilterCount
+        : showItemCounts ? row.count : 0);
   const summaryLabel = $derived(tagSection && activeFilterTags.length > 0
-    ? labels.activeTagCount(activeFilterTags.length) : undefined);
+    ? labels.activeTagCount(activeFilterTags.length)
+    : propertySection && activePropertyFilterCount > 0
+      ? strings.property.activeFilterSummary(activePropertyFilterCount)
+      : undefined);
   const tooltipText = $derived(resolveNavigationRowTooltip(row, strings));
   const identityIcon = $derived(row.icon);
 
@@ -64,7 +73,7 @@
 
 <!-- svelte-ignore a11y_role_has_required_aria_props -- tree semantics use current/checked, not selection -->
 <div
-  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''}"
+  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''}"
   data-nav-row-id={row.id}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
@@ -75,7 +84,7 @@
   aria-setsize={row.setSize}
   aria-expanded={row.expandable ? row.expanded : undefined}
   aria-current={row.semanticState === "current-range" ? "page" : undefined}
-  aria-checked={row.kind === "tag" || (row.kind === "favorite" && row.favorite.kind === "tag")
+  aria-checked={row.kind === "tag" || row.kind === "property-value" || (row.kind === "favorite" && row.favorite.kind === "tag")
     ? row.semanticState === "checked-filter"
     : undefined}
   aria-disabled={row.disabled || undefined}
@@ -111,7 +120,7 @@
   <div class="fce-popup-row-trailing fce-nav-row-trailing {actions ? 'has-actions' : ''}">
     <div class="fce-nav-row-summary">
       {#if visibleCount > 0}
-        <span class="fce-nav-row-count {tagSection ? 'fce-nav-active-tag-count' : ''}" aria-label={summaryLabel}>{visibleCount}</span>
+        <span class="fce-nav-row-count {tagSection ? 'fce-nav-active-tag-count' : ''} {propertySection ? 'fce-nav-active-property-count' : ''}" aria-label={summaryLabel}>{visibleCount}</span>
       {/if}
       {#if row.semanticState === "checked-filter"}
         <span class="fce-popup-row-selected-indicator fce-tree-row-check" aria-hidden="true" use:icon={"check"}></span>

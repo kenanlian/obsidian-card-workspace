@@ -180,7 +180,9 @@ describe("TagActions single and bulk card workflows", () => {
     plugin.getSettings = vi.fn(() => ({
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: ["project/alpha"] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: ["project/alpha"], properties: [] },
       defaultView: "cards",
       lastFolderPath: null,
       lastViewMode: "folder",

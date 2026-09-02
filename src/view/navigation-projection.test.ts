@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { PLAIN_FOLDER_ICON } from "../icons";
 import { defaultNavSectionOrder } from "../navigation-section-order";
+import type { PropertyScalarRef } from "../property-filter-settings";
+import type { PropertyFacet, PropertyValueFacet } from "./property-facets";
 import type { FolderTreeNode } from "./types";
 import type { TagTreeNode } from "./tag-tree";
 import {
@@ -10,6 +12,8 @@ import {
   navigationBoxId,
   navigationFavoriteId,
   navigationFolderId,
+  navigationPropertyId,
+  navigationPropertyValueId,
   navigationSectionId,
   navigationTagId,
 } from "./navigation-model";
@@ -19,6 +23,7 @@ const sectionLabels = {
   favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
   folders: { label: "Folders", emptyLabel: null },
   tags: { label: "Tags", emptyLabel: "No tags found" },
+  properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
   boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
 } as const;
 
@@ -89,7 +94,7 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     tagCounts: { work: 5, "work/current": 3, "work/历史": 2 },
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels,
     rootFolderLabel: "Root /",
@@ -118,10 +123,11 @@ describe("projectNavigation", () => {
     expect(projection.querying).toBe(false);
     expect(projection.noResults).toBe(false);
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "boxes",
+      "favorites", "folders", "tags", "properties", "boxes",
     ]);
     expect(projection.sections[0]?.emptyLabel).toBe("No favorites yet — right-click an item to add one");
-    expect(projection.sections[3]?.emptyLabel).toBe("No card boxes yet — right-click to create one");
+    expect(projection.sections[3]?.emptyLabel).toBe("No properties selected — choose which properties to show");
+    expect(projection.sections[4]?.emptyLabel).toBe("No card boxes yet — right-click to create one");
     expect(ids(projection.rows).slice(0, 5)).toEqual([
       navigationSectionId("favorites"),
       navigationSectionId("folders"),
@@ -293,6 +299,34 @@ describe("projectNavigation", () => {
     expect(noMatches.noResults).toBe(true);
   });
 
+  it("projects an inert Properties section with empty copy and no child rows", () => {
+    const projection = projectNavigation(buildInput());
+    const section = projection.sections.find((candidate) => candidate.section === "properties");
+
+    expect(section).toMatchObject({
+      id: "section:properties",
+      visible: true,
+      expanded: true,
+      matchedItemCount: 0,
+      emptyLabel: "No properties selected — choose which properties to show",
+    });
+    expect(projection.rows.some((row) => row.section === "properties" && row.kind !== "section"))
+      .toBe(false);
+  });
+
+  it("collapses the Properties section from sectionCollapsed and hides it during a query", () => {
+    const collapsed = projectNavigation(buildInput({
+      sectionCollapsed: {
+        favorites: false, folders: false, tags: false, properties: true, boxes: false,
+      },
+    }));
+    expect(collapsed.sections.find((section) => section.section === "properties")?.expanded)
+      .toBe(false);
+
+    const querying = projectNavigation(buildInput({ query: "work" }));
+    expect(querying.sections.some((section) => section.section === "properties")).toBe(false);
+  });
+
   it("keeps stable IDs independent of labels, counts, expansion, and query", () => {
     const first = projectNavigation(buildInput());
     const second = projectNavigation(buildInput({
@@ -379,14 +413,16 @@ describe("projectNavigation", () => {
 
   it("projects sections, rows, and ARIA positions from the supplied section order", () => {
     const order = ["boxes", "tags", "folders", "favorites"] as const;
+    // C2: Properties inserts immediately before Boxes in a stored old order.
+    const expected = ["properties", "boxes", "tags", "folders", "favorites"] as const;
     const projection = projectNavigation(buildInput({ sectionOrder: order }));
-    expect(projection.sections.map((section) => section.section)).toEqual([...order]);
-    expect(projection.rows[0]?.id).toBe(navigationSectionId("boxes"));
+    expect(projection.sections.map((section) => section.section)).toEqual([...expected]);
+    expect(projection.rows[0]?.id).toBe(navigationSectionId("properties"));
     const sectionRows = projection.rows.filter((row) => row.kind === "section");
     expect(sectionRows.map((row) => ({
       section: row.section, positionInSet: row.positionInSet, setSize: row.setSize,
-    }))).toEqual(order.map((section, index) => ({
-      section, positionInSet: index + 1, setSize: 4,
+    }))).toEqual(expected.map((section, index) => ({
+      section, positionInSet: index + 1, setSize: 5,
     })));
   });
 
@@ -395,7 +431,7 @@ describe("projectNavigation", () => {
       sectionOrder: ["tags", "tags", "nope", 7] as unknown as NavigationProjectionInput["sectionOrder"],
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "tags", "favorites", "folders", "boxes",
+      "tags", "favorites", "folders", "properties", "boxes",
     ]);
   });
 
@@ -439,5 +475,208 @@ describe("resolveNavigationFocus", () => {
     expect(resolveNavigationFocus(previous, [section("a"), section("x")], "c")).toBe("x");
     expect(resolveNavigationFocus([], [section("first")], null)).toBe("first");
     expect(resolveNavigationFocus(previous, [], "b")).toBeNull();
+  });
+});
+
+describe("projectNavigation — properties", () => {
+  const value = (ref: PropertyScalarRef, label: string, count: number): PropertyValueFacet =>
+    ({ ref, label, count });
+
+  const statusFacet: PropertyFacet = {
+    key: "status",
+    label: "Status",
+    valuedCount: 3,
+    missingCount: 1,
+    values: [
+      value({ kind: "text", value: "open" }, "open", 2),
+      value({ kind: "text", value: "closed" }, "closed", 1),
+      value({ kind: "missing" }, "Unassigned", 1),
+    ],
+  };
+
+  const priorityFacet: PropertyFacet = {
+    key: "priority",
+    label: "Priority",
+    valuedCount: 2,
+    missingCount: 2,
+    values: [
+      value({ kind: "number", value: 1 }, "1", 1),
+      value({ kind: "number", value: 2 }, "2", 1),
+    ],
+  };
+
+  const propertyExpansion = (
+    manual: string[] = [],
+    query: string[] = [],
+    suppressed: string[] = [],
+  ) => ({ manual, reveal: [], query, suppressed });
+
+  function withProperties(overrides: Partial<NavigationProjectionInput> = {}): NavigationProjectionInput {
+    return buildInput({
+      properties: [statusFacet, priorityFacet],
+      ...overrides,
+    });
+  }
+
+  it("places property rows between Tags and Boxes in canonical order", () => {
+    const projection = projectNavigation(withProperties({
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
+    }));
+    expect(projection.sections.map((section) => section.section)).toEqual([
+      "favorites", "folders", "tags", "properties", "boxes",
+    ]);
+    const statusIndex = projection.rows.findIndex((row) => row.id === navigationPropertyId("status"));
+    const tagsIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("tags"));
+    const boxesIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("boxes"));
+    expect(statusIndex).toBeGreaterThan(tagsIndex);
+    expect(statusIndex).toBeLessThan(boxesIndex);
+  });
+
+  it("projects key rows at level 2 with list-filter icon and value rows at level 3 with null icon", () => {
+    const projection = projectNavigation(withProperties({
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
+    }));
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))).toMatchObject({
+      kind: "property",
+      section: "properties",
+      level: 2,
+      parentId: navigationSectionId("properties"),
+      expandable: true,
+      expanded: true,
+      count: 3,
+      icon: "list-filter",
+      semanticState: "none",
+      propertyKey: "status",
+    });
+    expect(projection.rows.find((row) =>
+      row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))).toMatchObject({
+      kind: "property-value",
+      section: "properties",
+      level: 3,
+      parentId: navigationPropertyId("status"),
+      expandable: false,
+      expanded: false,
+      count: 2,
+      icon: null,
+      propertyKey: "status",
+      value: { kind: "text", value: "open" },
+    });
+  });
+
+  it("collapses a key without persisted expansion to hide its value rows", () => {
+    const projection = projectNavigation(withProperties({
+      expansion: { ...buildInput().expansion, properties: propertyExpansion([]) },
+    }));
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))).toMatchObject({
+      expandable: true,
+      expanded: false,
+    });
+    expect(projection.rows.some((row) => row.kind === "property-value")).toBe(false);
+  });
+
+  it("marks active-clause value refs checked-filter and leaves key rows unchecked", () => {
+    const projection = projectNavigation(withProperties({
+      propertyClauses: [
+        { key: "status", values: [{ kind: "text", value: "open" }, { kind: "missing" }] },
+      ],
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
+    }));
+    const byId = new Map(projection.rows.map((row) => [row.id, row]));
+    expect(byId.get(navigationPropertyValueId("status", { kind: "text", value: "open" }))?.semanticState)
+      .toBe("checked-filter");
+    expect(byId.get(navigationPropertyValueId("status", { kind: "missing" }))?.semanticState)
+      .toBe("checked-filter");
+    expect(byId.get(navigationPropertyValueId("status", { kind: "text", value: "closed" }))?.semanticState)
+      .toBe("none");
+    expect(byId.get(navigationPropertyId("status"))?.semanticState).toBe("none");
+  });
+
+  it("retains a key-label-only match but does not auto-expand it", () => {
+    const projection = projectNavigation(withProperties({
+      query: "status",
+      expansion: { ...buildInput().expansion, properties: propertyExpansion([]) },
+    }));
+    expect(projection.sections.some((section) => section.section === "properties")).toBe(true);
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("status"))).toBe(true);
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("priority"))).toBe(false);
+    expect(projection.rows.some((row) => row.kind === "property-value")).toBe(false);
+  });
+
+  it("auto-expands an ancestor to matching value labels and drops non-matching siblings", () => {
+    const projection = projectNavigation(withProperties({
+      query: "closed",
+      expansion: { ...buildInput().expansion, properties: propertyExpansion([]) },
+    }));
+    const statusKey = projection.rows.find((row) => row.id === navigationPropertyId("status"));
+    expect(statusKey).toMatchObject({ expanded: true });
+    expect(projection.rows.some((row) =>
+      row.id === navigationPropertyValueId("status", { kind: "text", value: "closed" }))).toBe(true);
+    expect(projection.rows.some((row) =>
+      row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))).toBe(false);
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("priority"))).toBe(false);
+  });
+
+  it("omits unmatched enabled properties during a query and reports no-results when none match", () => {
+    const matching = projectNavigation(withProperties({ query: "closed" }));
+    expect(matching.rows.some((row) => row.id === navigationPropertyId("priority"))).toBe(false);
+    expect(matching.rows.some((row) => row.id === navigationPropertyId("status"))).toBe(true);
+
+    const noMatch = projectNavigation(withProperties({ query: "not-a-property" }));
+    expect(noMatch.sections.some((section) => section.section === "properties")).toBe(false);
+  });
+
+  it("assigns set metadata across keys and their value rows", () => {
+    const projection = projectNavigation(withProperties({
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status", "priority"]) },
+    }));
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))).toMatchObject({
+      positionInSet: 1,
+      setSize: 2,
+    });
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("priority"))).toMatchObject({
+      positionInSet: 2,
+      setSize: 2,
+    });
+    expect(projection.rows.find((row) =>
+      row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))).toMatchObject({
+      positionInSet: 1,
+      setSize: 3,
+    });
+    expect(projection.rows.find((row) =>
+      row.id === navigationPropertyValueId("status", { kind: "missing" }))).toMatchObject({
+      positionInSet: 3,
+      setSize: 3,
+    });
+  });
+
+  it("ignores malformed facet entries without disturbing valid siblings", () => {
+    const projection = projectNavigation(buildInput({
+      properties: [
+        statusFacet,
+        { key: "", label: "Invalid", valuedCount: 0, missingCount: 0, values: [] },
+        { key: "bad", label: "Bad", valuedCount: 0, missingCount: 0, values: "nope" } as unknown as PropertyFacet,
+      ],
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
+    }));
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("status"))).toBe(true);
+    // An empty key is dropped entirely; a malformed `values` field degrades to no value rows.
+    expect(projection.rows.some((row) => row.id === navigationPropertyId(""))).toBe(false);
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("bad"))).toMatchObject({
+      expandable: false,
+      expanded: false,
+    });
+    expect(projection.rows.some((row) => row.kind === "property-value" && row.propertyKey === "bad"))
+      .toBe(false);
+  });
+
+  it("encodes property IDs collision-free for delimiter-like keys and type-distinct values", () => {
+    expect(navigationPropertyId("status:open")).not.toBe(
+      navigationPropertyValueId("status", { kind: "text", value: "open" }));
+    expect(navigationPropertyId('status:["t","open"]')).not.toBe(
+      navigationPropertyValueId("status", { kind: "text", value: "open" }));
+    expect(navigationPropertyValueId("a", { kind: "text", value: "1" })).not.toBe(
+      navigationPropertyValueId("a", { kind: "number", value: 1 }));
+    expect(navigationPropertyValueId("a", { kind: "text", value: "x" })).not.toBe(
+      navigationPropertyValueId("a", { kind: "number", value: 0 }));
   });
 });

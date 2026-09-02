@@ -1,9 +1,15 @@
 import type { Menu } from "obsidian";
 import type { UiStrings } from "../i18n";
 import { findCardBox } from "./card-boxes";
-import { isFavorite } from "./favorites";
 import { normalizeTagPath } from "./tag-tree";
+import { addItem, addSubmenuItem, appendFavoriteToggleItem } from "./menus/nav-menu-items";
 import { appendNavSectionHeaderItems } from "./menus/nav-section-header-items";
+import {
+  buildPropertiesHeaderMenu,
+  buildPropertyKeyMenu,
+  buildPropertyValueMenu,
+} from "./menus/property-menu";
+import type { PropertyScalarRef } from "../property-filter-settings";
 import type {
   CardBoxDefinition,
   FavoriteEntry,
@@ -40,6 +46,11 @@ export interface NavMenuActions {
   moveFavorite: (kind: FavoriteKind, ref: string, delta: -1 | 1) => void;
   clearFavorites: () => void;
   cardMenu: (menu: Menu, notePath: string) => void;
+  chooseVisibleProperties: () => void;
+  clearPropertyFilters: () => void;
+  hideProperty: (key: string) => void;
+  togglePropertyValue: (key: string, ref: PropertyScalarRef) => void;
+  filterByOnlyPropertyValue: (key: string, ref: PropertyScalarRef) => void;
 }
 
 export interface NavMenuDeps {
@@ -47,6 +58,10 @@ export interface NavMenuDeps {
   isBoxMode: boolean;
   includeSubfolders: boolean;
   activeFilterTags: string[];
+  /** Total active property value refs; drives the clear item and summary swap. */
+  propertyFilterCount: number;
+  /** Checked state for one property value menu target (type-sensitive identity). */
+  isPropertyValueActive: (key: string, ref: PropertyScalarRef) => boolean;
   canResolveSystemPath: boolean;
   favorites: FavoriteEntry[];
   boxes: CardBoxDefinition[];
@@ -63,63 +78,6 @@ export interface NavMenuDeps {
     toggleAllTags: () => void;
     toggleTag: (tag: string) => void;
   };
-}
-
-type MenuItemLike = Parameters<Parameters<Menu["addItem"]>[0]>[0];
-
-interface SubmenuCapableItem {
-  setSubmenu?: () => Menu;
-}
-
-function addItem(
-  menu: Menu,
-  title: string,
-  icon: string,
-  onClick: () => void,
-  configure?: (item: MenuItemLike) => void,
-): void {
-  menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon).onClick(onClick);
-    configure?.(item);
-  });
-}
-
-/**
- * `setSubmenu` is absent from the installed `obsidian` typings, so the runtime
- * probe mirrors `appendAddScopeToBoxMenu` in `FolderCardView`.
- */
-function addSubmenuItem(
-  menu: Menu,
-  title: string,
-  icon: string,
-  build: (submenu: Menu) => void,
-  fallback: () => void,
-): void {
-  menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon);
-    const submenu = (item as unknown as SubmenuCapableItem).setSubmenu?.();
-    if (submenu && typeof submenu.addItem === "function") {
-      build(submenu);
-      return;
-    }
-    item.onClick(fallback);
-  });
-}
-
-function appendFavoriteToggleItem(
-  menu: Menu,
-  deps: NavMenuDeps,
-  kind: FavoriteKind,
-  ref: string,
-): void {
-  const navMenu = deps.strings.view.navMenu;
-  const favorited = isFavorite(deps.favorites, kind, ref);
-  addItem(
-    menu,
-    favorited ? navMenu.unfavorite : navMenu.favorite,
-    favorited ? "star-off" : "star",
-    () => deps.actions.toggleFavorite(kind, ref),
-  );
 }
 
 function appendCreateItems(menu: Menu, deps: NavMenuDeps, folderUiPath: string, atRoot: boolean): void {
@@ -492,13 +450,26 @@ export function buildNavContextMenu(
     return buildTagItemMenu(menu, payload, deps, payload.itemId);
   }
 
-  if (payload.scope === "header") {
-    return buildBoxesHeaderMenu(menu, deps);
+  if (payload.section === "properties") {
+    if (payload.scope === "header") {
+      return buildPropertiesHeaderMenu(menu, deps);
+    }
+    if (typeof payload.itemId !== "string") {
+      return false;
+    }
+    return payload.value === undefined
+      ? buildPropertyKeyMenu(menu, deps, payload.itemId)
+      : buildPropertyValueMenu(menu, deps, payload.itemId, payload.value);
   }
-  if (typeof payload.itemId !== "string") {
-    return false;
+
+  if (payload.section === "boxes") {
+    if (payload.scope === "header") {
+      return buildBoxesHeaderMenu(menu, deps);
+    }
+    return typeof payload.itemId === "string" ? buildBoxItemMenu(menu, deps, payload.itemId) : false;
   }
-  return buildBoxItemMenu(menu, deps, payload.itemId);
+
+  return false;
 }
 
 /**

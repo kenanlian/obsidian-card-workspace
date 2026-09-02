@@ -39,7 +39,9 @@ describe("BoxActions", () => {
       activeBoxId: null,
       boxes: [box],
       favorites: [],
-      filter: { tags: ["project"] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      filter: { tags: ["project"], properties: [] },
       includeSubfolders: true,
       lastFolderPath: "notes",
       ...overrides,
@@ -327,12 +329,14 @@ describe("card box context menus", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: "notes",
         pinnedPaths: [],
         previewLines: 5,
-        sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
         activeBoxId,
         boxes: [
           {

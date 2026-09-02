@@ -22,6 +22,7 @@ import {
   type NavigationQueryBaseline,
 } from "./nav-query-session";
 import { NavigationRequests } from "./navigation-requests";
+import { focusReturnOnPropertyCollapse, toggleExpandedKey } from "./property-nav-expansion";
 const FOLDER_TREE_DEBOUNCE_MS = 250;
 const NAV_COUNT_REFRESH_DEBOUNCE_MS = 250;
 export interface NavLayoutControllerDeps {
@@ -47,6 +48,7 @@ export class NavLayoutController implements DisposableController {
   private queryTagPaths = new Set<string>();
   private querySuppressedFolderPaths = new Set<string>();
   private querySuppressedTagPaths = new Set<string>();
+  private querySuppressedPropertyKeys = new Set<string>();
   private queryCollapsedSections = new Set<NavSectionId>();
   private queryBaseline: NavigationQueryBaseline | null = null;
   private revealCurrentRangeAfterProjection = false;
@@ -149,7 +151,7 @@ export class NavLayoutController implements DisposableController {
       this.queryFolderPaths.clear();
       this.queryTagPaths.clear();
       this.querySuppressedFolderPaths.clear();
-      this.querySuppressedTagPaths.clear();
+      this.querySuppressedTagPaths.clear(); this.querySuppressedPropertyKeys.clear();
       this.queryCollapsedSections.clear();
       this.queryBaseline = null;
       this.revealCurrentRangeAfterProjection = true;
@@ -182,6 +184,11 @@ export class NavLayoutController implements DisposableController {
       } else await this.onToggleNavSection(row.section);
       return;
     }
+    if (row.kind === "property") {
+      if (!expanded) this.focusId = focusReturnOnPropertyCollapse(this.projection.rows, this.focusId, row);
+      if (this.query.trim()) { if (expanded) this.querySuppressedPropertyKeys.delete(row.propertyKey); else this.querySuppressedPropertyKeys.add(row.propertyKey); this.pushNavLayoutState(); return; }
+      await this.context.saveSettings({ expandedPropertyKeys: toggleExpandedKey(this.context.getSettings().expandedPropertyKeys, row.propertyKey, expanded) });
+    }
     if (row.kind !== "folder" && row.kind !== "tag") return;
     const identity = row.kind === "folder" ? row.folderPath : row.tagPath;
     if (this.query.trim()) {
@@ -205,9 +212,7 @@ export class NavLayoutController implements DisposableController {
     if (row.kind === "folder" && expanded) this.suppressedFolderPaths.delete(identity);
     const settings = this.context.getSettings();
     const key = row.kind === "folder" ? "expandedFolderPaths" : "expandedTagPaths";
-    const current = new Set<string>((settings[key] ?? []) as string[]);
-    if (expanded) current.add(identity); else current.delete(identity);
-    await this.context.saveSettings({ [key]: [...current].sort() });
+    await this.context.saveSettings({ [key]: toggleExpandedKey(settings[key], identity, expanded) });
   }
   project(input: Omit<NavigationProjectionInput, "query" | "expansion">): NavigationProjection {
     this.syncScope(input.scope);
@@ -234,6 +239,7 @@ export class NavLayoutController implements DisposableController {
           suppressed: querying ? [...this.querySuppressedFolderPaths] : [...this.suppressedFolderPaths],
         },
         tags: { manual: settings.expandedTagPaths ?? [], reveal: [], query: [...this.queryTagPaths], suppressed: [...this.querySuppressedTagPaths] },
+        properties: { manual: settings.expandedPropertyKeys ?? [], reveal: [], query: [], suppressed: [...this.querySuppressedPropertyKeys] },
         queryCollapsedSections: [...this.queryCollapsedSections],
       },
     });
@@ -380,7 +386,7 @@ export class NavLayoutController implements DisposableController {
     this.queryFolderPaths.clear();
     this.queryTagPaths.clear();
     this.querySuppressedFolderPaths.clear();
-    this.querySuppressedTagPaths.clear();
+    this.querySuppressedTagPaths.clear(); this.querySuppressedPropertyKeys.clear();
     this.queryCollapsedSections.clear();
     this.queryBaseline = null;
     this.revealCurrentRangeAfterProjection = false;

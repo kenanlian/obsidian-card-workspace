@@ -9,7 +9,7 @@ import {
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import type { NavSectionId } from "./view/types";
 
-const DEFAULT_ORDER: NavSectionId[] = ["favorites", "folders", "tags", "boxes"];
+const DEFAULT_ORDER: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes"];
 
 describe("defaultNavSectionOrder", () => {
   it("returns a distinct array instance on each call", () => {
@@ -32,7 +32,7 @@ describe("normalizeNavSectionOrder", () => {
   });
 
   it("preserves a full valid permutation exactly", () => {
-    const permutation: NavSectionId[] = ["boxes", "tags", "favorites", "folders"];
+    const permutation: NavSectionId[] = ["boxes", "tags", "properties", "favorites", "folders"];
     expect(normalizeNavSectionOrder(permutation)).toEqual(permutation);
   });
 
@@ -41,17 +41,19 @@ describe("normalizeNavSectionOrder", () => {
       "folders",
       "tags",
       "favorites",
+      "properties",
       "boxes",
     ]);
   });
 
   it("drops unknown ids", () => {
-    expect(normalizeNavSectionOrder(["favorites", "nope", "folders", "mystery", "tags", "boxes"]))
+    expect(normalizeNavSectionOrder(["favorites", "nope", "folders", "mystery", "tags", "properties", "boxes"]))
       .toEqual(DEFAULT_ORDER);
   });
 
   it("appends missing known ids in default order after a partial input", () => {
     expect(normalizeNavSectionOrder(["boxes"])).toEqual([
+      "properties",
       "boxes",
       "favorites",
       "folders",
@@ -65,25 +67,47 @@ describe("normalizeNavSectionOrder", () => {
       "tags",
       "favorites",
       "folders",
+      "properties",
+      "boxes",
+    ]);
+  });
+
+  it("inserts properties immediately before boxes for old four-section orders", () => {
+    expect(normalizeNavSectionOrder(["favorites", "folders", "tags", "boxes"]))
+      .toEqual(DEFAULT_ORDER);
+    expect(normalizeNavSectionOrder(["boxes", "tags", "favorites", "folders"]))
+      .toEqual(["properties", "boxes", "tags", "favorites", "folders"]);
+    expect(normalizeNavSectionOrder(["tags", "boxes", "favorites", "folders"]))
+      .toEqual(["tags", "properties", "boxes", "favorites", "folders"]);
+  });
+
+  it("appends properties when an old order has no boxes entry", () => {
+    expect(normalizeNavSectionOrder(["folders", "tags"])).toEqual([
+      "folders",
+      "tags",
+      "favorites",
+      "properties",
       "boxes",
     ]);
   });
 });
 
 describe("moveNavSection", () => {
-  const order: NavSectionId[] = ["favorites", "folders", "tags", "boxes"];
+  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes"];
 
   it("swaps a middle section up and down", () => {
     expect(moveNavSection(order, "folders", -1)).toEqual([
       "folders",
       "favorites",
       "tags",
+      "properties",
       "boxes",
     ]);
     expect(moveNavSection(order, "folders", 1)).toEqual([
       "favorites",
       "tags",
       "folders",
+      "properties",
       "boxes",
     ]);
   });
@@ -95,7 +119,7 @@ describe("moveNavSection", () => {
   });
 
   it("returns a new array and leaves the input untouched", () => {
-    const input: NavSectionId[] = ["favorites", "folders", "tags", "boxes"];
+    const input: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes"];
     const snapshot = [...input];
     const result = moveNavSection(input, "tags", -1);
     expect(result).not.toBeNull();
@@ -105,7 +129,7 @@ describe("moveNavSection", () => {
 });
 
 describe("canMoveNavSection", () => {
-  const order: NavSectionId[] = ["favorites", "folders", "tags", "boxes"];
+  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes"];
 
   it("agrees with moveNavSection at both boundaries", () => {
     const cases: Array<{ section: NavSectionId; delta: -1 | 1 }> = [

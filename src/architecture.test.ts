@@ -332,8 +332,8 @@ describe("R5 line-count ratchet", () => {
    * instead of growing the host file. Absent that, a cap must only fall.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 743,
-    "src/main.ts": 677,
+    "src/view/FolderCardView.ts": 741,
+    "src/main.ts": 667,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 572,
     // Scope selection, single-flight loading, and vault mutation routing form one invariant.
@@ -342,16 +342,23 @@ describe("R5 line-count ratchet", () => {
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
     "src/view/note-ops.ts": 877,
-    "src/view/NavigationPane.svelte": 282,
-    "src/view/FolderCardPanel.svelte": 820,
+    // Properties added the section header action, value-row additive activation,
+    // and the active-filter count hand-off; the tree/projection logic itself is
+    // host-owned and stays in navigation-* modules.
+    "src/view/NavigationPane.svelte": 290,
+    "src/view/FolderCardPanel.svelte": 827,
     "src/view/Toolbar.svelte": 751,
     "src/view/CardItem.svelte": 438,
     // Section-header menus gained a shared move-order dependency contract, with the
-    // items themselves extracted to src/view/menus/nav-section-header-items.ts.
-    "src/view/nav-context-menu.ts": 545,
-    // One new persisted preference, with its normalization extracted to
-    // src/navigation-section-order.ts rather than inlined here.
-    "src/settings.ts": 534,
+    // items themselves extracted to src/view/menus/nav-section-header-items.ts; the
+    // Properties lane menus and shared item helpers live in src/view/menus/.
+    "src/view/nav-context-menu.ts": 516,
+    // Property fields joined the normalized flat view; the domain normalization
+    // itself is extracted to src/property-filter-settings.ts.
+    "src/settings.ts": 560,
+    // The atomic flat-patch entry (updateFlat) and the property wire mappings are
+    // persistence-owner concerns; layer reconciliation stays layer-specific.
+    "src/services/SettingsStore.ts": 417,
     "src/view/markdown-utils.ts": 462,
     "src/search/IndexStore.ts": 445,
     "src/view/card-boxes.ts": 410,

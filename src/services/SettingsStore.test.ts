@@ -343,7 +343,7 @@ describe("SettingsStore", () => {
     expect(split.userData).not.toHaveProperty("sectionCollapsed");
 
     const allCollapsed = store.updateWorkspace({
-      sectionCollapsed: { favorites: true, folders: true, tags: true, boxes: true },
+      sectionCollapsed: { favorites: true, folders: true, tags: true, properties: true, boxes: true },
     });
     await store.flushPendingWrites();
     await allCollapsed;
@@ -358,10 +358,10 @@ describe("SettingsStore", () => {
     };
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, boxes: true,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true,
     });
     expect(store.getFlat().sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, boxes: true,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true,
     });
   });
 
@@ -370,6 +370,9 @@ describe("SettingsStore", () => {
     await store.init();
 
     const order: PluginSettings["navSectionOrder"] = ["boxes", "favorites", "folders", "tags"];
+    const normalizedOrder: PluginSettings["navSectionOrder"] = [
+      "properties", "boxes", "favorites", "folders", "tags",
+    ];
     const split = splitFlatPatch({ navSectionOrder: order });
     expect(split.preferences.navSectionOrder).toEqual(order);
     expect(split.workspace).not.toHaveProperty("navSectionOrder");
@@ -377,7 +380,7 @@ describe("SettingsStore", () => {
 
     const prefsWrite = store.updatePreferences({ navSectionOrder: order });
     const workspaceWrite = store.updateWorkspace({
-      sectionCollapsed: { favorites: true, folders: false, tags: true, boxes: false },
+      sectionCollapsed: { favorites: true, folders: false, tags: true, properties: false, boxes: false },
     });
     await store.flushPendingWrites();
     await prefsWrite;
@@ -387,11 +390,11 @@ describe("SettingsStore", () => {
       preferences: Record<string, unknown>;
       workspace: Record<string, unknown>;
     };
-    expect(persisted.preferences.navSectionOrder).toEqual(order);
+    expect(persisted.preferences.navSectionOrder).toEqual(normalizedOrder);
     expect(persisted).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, boxes: false,
+      favorites: true, folders: false, tags: true, properties: false, boxes: false,
     });
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
   });
@@ -426,5 +429,137 @@ describe("SettingsStore", () => {
     expect(persisted.workspace).not.toHaveProperty("group");
     expect(persisted.userData).not.toHaveProperty("group");
     expect(store.getFlat().group).toEqual(group);
+  });
+});
+
+describe("SettingsStore — property settings", () => {
+  const openClause = {
+    key: "status",
+    values: [{ kind: "text" as const, value: "open" }],
+  };
+
+  it("splits property fields across preferences and workspace without nesting workspace.filter", () => {
+    const split = splitFlatPatch({
+      visiblePropertyKeys: ["status"],
+      expandedPropertyKeys: ["status"],
+      filter: { tags: ["work"], properties: [openClause] },
+    });
+    expect(split.preferences.visiblePropertyKeys).toEqual(["status"]);
+    expect(split.workspace.expandedPropertyKeys).toEqual(["status"]);
+    expect(split.workspace.filterTags).toEqual(["work"]);
+    expect(split.workspace.filterProperties).toEqual([openClause]);
+    expect(split.workspace).not.toHaveProperty("filter");
+    expect(split.userData).toEqual({});
+  });
+
+  it("keeps the other filter arm when a workspace patch touches only one side", async () => {
+    const { store } = createStore();
+    await store.init();
+    await store.updateFlat({
+      visiblePropertyKeys: ["status"],
+      filter: { tags: ["work"], properties: [openClause] },
+    });
+
+    const tagsOnly = store.updateWorkspace({ filterTags: ["home"] });
+    await store.flushPendingWrites();
+    await tagsOnly;
+    expect(store.getFlat().filter.tags).toEqual(["home"]);
+    expect(store.getFlat().filter.properties).toEqual([openClause]);
+
+    const propertiesOnly = store.updateWorkspace({ filterProperties: [] });
+    await store.flushPendingWrites();
+    await propertiesOnly;
+    expect(store.getFlat().filter.tags).toEqual(["home"]);
+    expect(store.getFlat().filter.properties).toEqual([]);
+  });
+
+  it("serializes the normalized filterProperties array for a missing or malformed old document", async () => {
+    const { store, documents } = createStore({
+      load: async () => ({
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        workspace: { filterTags: ["work"], filterProperties: "nope" },
+      }),
+    });
+    await store.init();
+    expect(store.getFlat().filter.properties).toEqual([]);
+
+    // Clauses only survive normalization for visible keys, so enable it first.
+    await store.updateFlat({ visiblePropertyKeys: ["status"] });
+    const pending = store.updateWorkspace({ filterProperties: [openClause] });
+    await store.flushPendingWrites();
+    await pending;
+
+    const persisted = documents.at(-1) as {
+      workspace: { filterTags: string[]; filterProperties: unknown };
+    };
+    expect(persisted.workspace.filterTags).toEqual(["work"]);
+    expect(persisted.workspace.filterProperties).toEqual([openClause]);
+  });
+
+  it("commits a chooser-shaped cross-layer patch as one revision and one whole-document save", async () => {
+    const { store, documents, save } = createStore();
+    await store.init();
+
+    const pending = store.updateFlat({
+      visiblePropertyKeys: ["status"],
+      expandedPropertyKeys: ["status"],
+      filter: { properties: [openClause] },
+    });
+    await pending;
+
+    // Preference content forces the immediate path: no debounce wait needed.
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(documents).toHaveLength(1);
+    const persisted = documents[0] as {
+      schemaVersion: number;
+      preferences: { visiblePropertyKeys: string[] };
+      workspace: { expandedPropertyKeys: string[]; filterProperties: unknown };
+    };
+    expect(persisted.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
+    expect(persisted.preferences.visiblePropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.expandedPropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.filterProperties).toEqual([openClause]);
+    expect(store.getFlat().visiblePropertyKeys).toEqual(["status"]);
+    expect(store.getFlat().filter.properties).toEqual([openClause]);
+  });
+
+  it("keeps the workspace debounce for a workspace-only flat patch", async () => {
+    const { store, save } = createStore();
+    await store.init();
+
+    const pending = store.updateFlat({ expandedPropertyKeys: ["status"] });
+    await Promise.resolve();
+    expect(save).not.toHaveBeenCalled();
+
+    await store.flushPendingWrites();
+    await pending;
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers coherently when the chooser commit's first save rejects", async () => {
+    const { store, documents, failFirstSave } = createStore({ hangFirst: true });
+    await store.init();
+
+    const rejected = store.updateFlat({
+      visiblePropertyKeys: ["status"],
+      filter: { properties: [openClause] },
+    });
+    failFirstSave(new Error("disk unavailable"));
+    await expect(rejected).rejects.toThrow("disk unavailable");
+    // Synchronous memory stays updated after the rejection.
+    expect(store.getFlat().visiblePropertyKeys).toEqual(["status"]);
+    expect(store.getFlat().filter.properties).toEqual([openClause]);
+
+    const retry = store.updateFlat({ expandedPropertyKeys: ["status"] });
+    await store.flushPendingWrites();
+    await retry;
+
+    const persisted = documents.at(-1) as {
+      preferences: { visiblePropertyKeys: string[] };
+      workspace: { expandedPropertyKeys: string[]; filterProperties: unknown };
+    };
+    expect(persisted.preferences.visiblePropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.expandedPropertyKeys).toEqual(["status"]);
+    expect(persisted.workspace.filterProperties).toEqual([openClause]);
   });
 });

@@ -16,6 +16,7 @@
     activeFilterTags?: string[];
     onFolderAction?: (payload: FolderActionPayload) => void;
     onFilterChange?: (payload: { tags: string[] }) => void;
+    onPropertyCommand?: (payload: { command: "choose-visible" | "clear-filters" }) => void;
     onBoxCommand?: (payload: { command: string; boxId?: string }) => void;
     onNavContextMenu?: (payload: NavContextMenuPayload) => void;
     onNavigationIntent?: (payload: NavigationIntent) => void;
@@ -24,8 +25,8 @@
   }
   const EMPTY_NAV: PanelNavState = {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false }, showItemCounts: false,
-    tooltipSide: "right", projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false }, showItemCounts: false,
+    tooltipSide: "right", propertyFilterCount: 0, projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
     query: "", focusId: null, focusRequest: null, revealRequest: null,
   };
   const EMPTY_SCOPE: PanelScopeState = {
@@ -34,7 +35,7 @@
   };
   let {
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
-    onFolderAction, onFilterChange, onBoxCommand,
+    onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
     onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane,
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
@@ -97,7 +98,7 @@
   function activate(event: MouseEvent, row: NavigationRow): void {
     if (row.disabled) return;
     focusRow(row.id);
-    const additive = (row.kind === "tag" || (row.kind === "favorite" && row.favorite.kind === "tag"))
+    const additive = (row.kind === "tag" || row.kind === "property-value" || (row.kind === "favorite" && row.favorite.kind === "tag"))
       && (event.ctrlKey || event.metaKey);
     emitIntent({ type: "activate", rowId: row.id, mode: additive ? "additive" : "ordinary" });
   }
@@ -238,6 +239,7 @@
         {#each rows as row (row.id)}
           <NavigationTreeRow {row} tabIndex={row.id === focusId ? 0 : -1}
             subtreeHovered={hoveredRowIds.has(row.id)} {strings} {activeFilterTags}
+            activePropertyFilterCount={nav.propertyFilterCount}
             showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}
             rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
             onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}>
@@ -249,6 +251,12 @@
               {:else if row.kind === "section" && row.section === "tags" && activeFilterTags.length > 0}
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-clear" aria-label={labels.clearActiveTags}
                   onclick={(event) => actionClick(event, () => onFilterChange?.({ tags: [] }))} use:icon={"filter-x"}></button>
+              {:else if row.kind === "section" && row.section === "properties"}
+                {@const clearing = nav.propertyFilterCount > 0}
+                <button type="button" tabindex="-1" class="clickable-icon {clearing ? 'fce-nav-section-clear' : 'fce-nav-section-choose'}"
+                  aria-label={clearing ? strings.property.clearFilters : strings.property.chooseVisible}
+                  onclick={(event) => actionClick(event, () => onPropertyCommand?.({ command: clearing ? "clear-filters" : "choose-visible" }))}
+                  use:icon={clearing ? "filter-x" : "settings-2"}></button>
               {:else if row.kind === "section" && row.section === "boxes"}
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-create" aria-label={labels.createBox}
                   onclick={(event) => actionClick(event, () => onBoxCommand?.({ command: "create" }))} use:icon={"plus"}></button>

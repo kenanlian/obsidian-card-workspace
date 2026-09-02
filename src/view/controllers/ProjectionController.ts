@@ -79,9 +79,11 @@ export class ProjectionController {
 
   deriveArrangementFrom(cards: readonly NoteCardRecord[]): GroupArrangement {
     const spec = this.resolveGroupSpec();
+    const settings = this.context.getSettings();
     const pipelineContext: PipelineContext = {
       app: this.context.getApp(),
-      filterTags: this.context.getSettings().filter.tags,
+      filterTags: settings.filter.tags,
+      propertyFilters: settings.filter.properties,
       search: this.deps.getSearchInput(),
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
       group: { spec, buckets: this.resolveGroupBuckets(spec, cards) },

@@ -1,4 +1,5 @@
 import type { NavMenuDeps } from "../nav-context-menu";
+import { propertyScalarRefsEqual } from "../../property-filter-settings";
 import { canResolveSystemPath } from "../desktop-shell";
 import type { ViewContext } from "../view-context";
 import type { ViewModules } from "../view-modules";
@@ -17,6 +18,11 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     isBoxMode: deps.modules.boxActions.isBoxMode(),
     includeSubfolders: settings.includeSubfolders,
     activeFilterTags: settings.filter.tags,
+    propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),
+    isPropertyValueActive: (key, ref) =>
+      settings.filter.properties.some(
+        (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
+      ),
     canResolveSystemPath: canResolveSystemPath(deps.context.getApp()),
     favorites: settings.favorites ?? [],
     boxes: settings.boxes ?? [],
@@ -113,6 +119,21 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       },
       cardMenu: (menu, notePath) => {
         deps.modules.cardMenu.addItems(menu, notePath);
+      },
+      chooseVisibleProperties: () => {
+        deps.modules.propertyActions.chooseVisibleProperties();
+      },
+      clearPropertyFilters: () => {
+        void deps.modules.propertyActions.clearPropertyFilters();
+      },
+      hideProperty: (key) => {
+        void deps.modules.propertyActions.hideProperty(key);
+      },
+      togglePropertyValue: (key, ref) => {
+        void deps.modules.propertyActions.applyValueFilter(key, ref, true);
+      },
+      filterByOnlyPropertyValue: (key, ref) => {
+        void deps.modules.propertyActions.filterByOnlyValue(key, ref);
       },
     },
   };

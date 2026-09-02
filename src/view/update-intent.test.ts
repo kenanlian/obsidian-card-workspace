@@ -37,7 +37,7 @@ function createSettings(): PluginSettings {
     ...DEFAULT_SETTINGS,
     sort: { ...DEFAULT_SETTINGS.sort },
     group: { ...DEFAULT_SETTINGS.group },
-    filter: { tags: [...DEFAULT_SETTINGS.filter.tags] },
+    filter: { tags: [...DEFAULT_SETTINGS.filter.tags], properties: [] },
     pinnedPaths: [...DEFAULT_SETTINGS.pinnedPaths],
     boxes: [createBox()],
     favorites: DEFAULT_SETTINGS.favorites.map((favorite) => ({ ...favorite })),
@@ -62,6 +62,8 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   lastFolderPath: "patch",
   expandedFolderPaths: "patch",
   expandedTagPaths: "patch",
+  visiblePropertyKeys: "patch",
+  expandedPropertyKeys: "patch",
   boxes: "reload",
   favorites: "patch",
   activeBoxId: "patch",
@@ -76,7 +78,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
   switch (key) {
     case "sort": settings.sort = { field: "ctime", direction: "asc" }; break;
     case "group": settings.group = { dimension: "folder", orderBy: "name", orderDirection: "desc" }; break;
-    case "filter": settings.filter = { tags: ["changed"] }; break;
+    case "filter": settings.filter = { tags: ["changed"], properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] }; break;
     case "pinnedPaths": settings.pinnedPaths = ["notes/pinned.md"]; break;
     case "includeSubfolders": settings.includeSubfolders = !settings.includeSubfolders; break;
     // The current union has one member. An out-of-domain value still exercises
@@ -90,6 +92,8 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "lastFolderPath": settings.lastFolderPath = "changed"; break;
     case "expandedFolderPaths": settings.expandedFolderPaths = ["changed"]; break;
     case "expandedTagPaths": settings.expandedTagPaths = ["changed"]; break;
+    case "visiblePropertyKeys": settings.visiblePropertyKeys = ["changed"]; break;
+    case "expandedPropertyKeys": settings.expandedPropertyKeys = ["changed"]; break;
     case "boxes": settings.boxes = [createBox({ manualPaths: ["notes/member.md"] })]; break;
     case "favorites": settings.favorites = [{ kind: "folder", ref: "changed" }]; break;
     case "activeBoxId": settings.activeBoxId = null; break;

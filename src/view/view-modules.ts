@@ -6,12 +6,14 @@ import { FavoriteActions } from "./actions/favorite-actions";
 import { FileActions } from "./actions/file-actions";
 import { FolderActions } from "./actions/folder-actions";
 import { MergeActions } from "./actions/merge-actions";
+import { createPropertyActions, type PropertyActions } from "./actions/property-actions";
 import { TagActions } from "./actions/tag-actions";
 import { BulkController } from "./controllers/BulkController";
 import { GroupCollapseController } from "./controllers/GroupCollapseController";
 import { HydrationController } from "./controllers/HydrationController";
 import { NavLayoutController } from "./controllers/NavLayoutController";
 import { ProjectionController } from "./controllers/ProjectionController";
+import { PropertyController } from "./controllers/PropertyController";
 import { ScopeController } from "./controllers/ScopeController";
 import { SearchController } from "./controllers/SearchController";
 import { TaskSummaryController } from "./controllers/TaskSummaryController";
@@ -55,6 +57,8 @@ export interface ViewModules {
   search: SearchController;
   bulk: BulkController;
   navLayout: NavLayoutController;
+  property: PropertyController;
+  propertyActions: PropertyActions;
   scopeController: ScopeController;
   fileActions: FileActions;
   folderActions: FolderActions;
@@ -75,6 +79,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const resolveGroupSpec = (): GroupSpec =>
     normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
   const groupCollapse: GroupCollapseController = new GroupCollapseController();
+  const property: PropertyController = new PropertyController({
+    context,
+    getLoadKey: () => scopeController.getLoadKey(),
+  });
   const projection: ProjectionController = new ProjectionController({
     context,
     getSearchInput: () => search.buildPipelineSearchInput(),
@@ -94,11 +102,24 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     reprojectAndPublish: () => {
       projection.reprojectCards();
       bulk.reconcileToVisibleCards();
-      host.publishGroups("cards", "projection", "bulk");
+      // Card-reprojecting metadata batches include nav (facet counts/rows move
+      // with the base/visible cards) and scope (property-empty versus
+      // source-empty copy), so one event lands as one coherent batch.
+      host.publishGroups("nav", "scope", "cards", "projection", "bulk");
     },
     reconcileMetadataMembershipForPath: (path) =>
       scopeController.reconcileMetadataMembershipForPath(path),
     refreshGroupBucketForPath: (path) => projection.refreshGroupBucketForPath(path),
+    classifyPropertyMetadataImpact: (path) => {
+      if (!property.invalidateMetadata([path])) {
+        return "none";
+      }
+      const settings = context.getSettings();
+      if (settings.filter.properties.length > 0) {
+        return "reproject";
+      }
+      return settings.visiblePropertyKeys.length > 0 ? "nav" : "none";
+    },
   });
   const search: SearchController = new SearchController({
     context,
@@ -125,6 +146,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     onNavCountsInvalidated: () => {
       boxActions.invalidateCache();
       projection.invalidateVaultCaches();
+      property.invalidateVault();
     },
     getTooltipSide: () => host.getTooltipSide(),
   });
@@ -242,6 +264,13 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getVaultTagCounts: () => projection.getVaultTagCounts(),
     applyTagFilter: (nextTags) => tagActions.applyTagFilter(nextTags),
   });
+  const propertyActions: PropertyActions = createPropertyActions({
+    getApp: () => context.getApp(),
+    getSettings: () => context.getSettings(),
+    saveSettings: (patch) => context.saveSettings(patch),
+    collectPropertyInventory: () => property.collectPropertyInventory(),
+    getStrings: () => context.getUiStrings(),
+  });
   const mergeActions: MergeActions = new MergeActions({
     context,
     getBulkMode: () => bulk.isBulkMode(),
@@ -298,6 +327,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     search,
     bulk,
     navLayout,
+    property,
+    propertyActions,
     scopeController,
     fileActions,
     folderActions,

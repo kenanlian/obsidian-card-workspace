@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
-import { getUiStrings } from "../i18n";
+import { getUiStrings, type UiStrings } from "../i18n";
 import { defaultNavSectionOrder } from "../navigation-section-order";
+import type { PropertyFilterClause } from "../property-filter-settings";
 import type { PanelNavState, PanelScopeState } from "./panel-model";
-import type { NavigationIntent } from "./navigation-model";
+import {
+  navigationPropertyId,
+  navigationPropertyValueId,
+  type NavigationIntent,
+} from "./navigation-model";
 import { resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
 import { projectNavigation } from "./navigation-projection";
+import type { PropertyFacet } from "./property-facets";
 import NavigationPane from "./NavigationPane.svelte";
 import NavigationPaneHarness from "../__mocks__/NavigationPaneHarness.svelte";
 import type { NavContextMenuPayload } from "./types";
@@ -28,11 +34,12 @@ function projection(query = "", sectionOrder = defaultNavSectionOrder()) {
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true, tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
     sectionOrder,
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
+      properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
     },
     rootFolderLabel: "Root /",
@@ -43,11 +50,63 @@ function projection(query = "", sectionOrder = defaultNavSectionOrder()) {
   });
 }
 
+function propertyFacet(overrides: Partial<PropertyFacet> = {}): PropertyFacet {
+  return {
+    key: "status",
+    label: "Status",
+    valuedCount: 2,
+    missingCount: 1,
+    values: [
+      { ref: { kind: "text", value: "Open" }, label: "Open", count: 2 },
+      { ref: { kind: "text", value: "Closed" }, label: "Closed", count: 1 },
+      { ref: { kind: "missing" }, label: "Unassigned", count: 1 },
+    ],
+    ...overrides,
+  };
+}
+
+function propertyProjection(options: {
+  query?: string;
+  clauses?: PropertyFilterClause[];
+  facets?: PropertyFacet[];
+} = {}) {
+  return projectNavigation({
+    query: options.query ?? "",
+    scope: { kind: "folder", path: "notes", includeSubfolders: true },
+    activeTags: ["work"], selectedPath: "notes/A.md",
+    favorites: [{ kind: "file", ref: "notes/A.md", label: "A", icon: "file-text", count: 0, missing: false }],
+    folders: [
+      { name: "/", path: "/", depth: 0, directCount: 1, recursiveCount: 4, recursiveFolderCount: 2, children: [] },
+      { name: "notes", path: "notes", depth: 0, directCount: 2, recursiveCount: 3, recursiveFolderCount: 1,
+        children: [{ name: "child", path: "notes/child", depth: 1, directCount: 1, recursiveCount: 1, recursiveFolderCount: 0, children: [] }] },
+    ],
+    tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
+    boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
+    includeSubfolders: true, tagsDisabled: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
+    sectionLabels: {
+      favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
+      folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
+      properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
+      boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
+    },
+    rootFolderLabel: "Root /",
+    expansion: {
+      folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
+      tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
+      properties: { manual: ["status"], reveal: [], query: [], suppressed: [] },
+    },
+    properties: options.facets ?? [propertyFacet()],
+    propertyClauses: options.clauses ?? [],
+  });
+}
+
 function nav(overrides: Partial<PanelNavState> = {}): PanelNavState {
   return {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false }, showItemCounts: true,
-    tooltipSide: "right", projection: projection(), query: "", focusId: "section:favorites",
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false }, showItemCounts: true,
+    tooltipSide: "right", propertyFilterCount: 0, projection: projection(), query: "", focusId: "section:favorites",
     focusRequest: null, revealRequest: null,
     ...overrides,
   };
@@ -62,17 +121,20 @@ function render(options: {
   nav?: PanelNavState;
   scope?: PanelScopeState;
   activeFilterTags?: string[];
+  strings?: UiStrings;
   onIntent?: (intent: NavigationIntent) => void;
   onMenu?: (payload: NavContextMenuPayload) => void;
+  onPropertyCommand?: (payload: { command: "choose-visible" | "clear-filters" }) => void;
   onResize?: (width: number) => void;
 } = {}) {
   const target = document.createElement("div");
   target.className = "folder-card-view";
   document.body.appendChild(target);
   const component = mount(NavigationPane, { target, props: {
-    strings: getUiStrings("en"), nav: options.nav ?? nav(), scope: options.scope ?? scope,
+    strings: options.strings ?? getUiStrings("en"), nav: options.nav ?? nav(), scope: options.scope ?? scope,
     activeFilterTags: options.activeFilterTags ?? ["work"], onNavigationIntent: options.onIntent,
-    onNavContextMenu: options.onMenu, onNavPaneResize: options.onResize,
+    onNavContextMenu: options.onMenu, onPropertyCommand: options.onPropertyCommand,
+    onNavPaneResize: options.onResize,
   } });
   components.push(component);
   return component;
@@ -92,6 +154,14 @@ function renderHarness(initialNav: PanelNavState, onIntent: (intent: NavigationI
 
 function row(id: string): HTMLElement {
   return document.querySelector<HTMLElement>(`[data-nav-row-id="${id}"]`)!;
+}
+
+/** Property row IDs embed JSON-encoded text (quotes/brackets); find them by value, not CSS selector. */
+function findRow(id: string): HTMLElement {
+  const match = Array.from(document.querySelectorAll<HTMLElement>("[data-nav-row-id]"))
+    .find((node) => node.dataset.navRowId === id);
+  if (!match) throw new Error(`navigation row not found: ${id}`);
+  return match;
 }
 
 describe("NavigationPane projected ARIA tree", () => {
@@ -289,6 +359,7 @@ describe("NavigationPane projected ARIA tree", () => {
     ])).toEqual([
       ["favorites", "No favorites yet — right-click an item to add one"],
       ["tags", "Tag filter is unavailable in a box"],
+      ["properties", "No properties selected — choose which properties to show"],
       ["boxes", "No card boxes yet — right-click to create one"],
     ]);
     await unmount(components.pop()!);
@@ -326,12 +397,13 @@ describe("NavigationPane projected ARIA tree", () => {
     component.setNav(nav({ focusId, projection: projection("", [...reordered]) }));
     await tick();
 
+    // C2: the stored old four-section order gains Properties before Boxes.
     expect(document.querySelectorAll('[role="tree"]')).toHaveLength(1);
     const tree = document.querySelector<HTMLElement>('[role="tree"]')!;
-    expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:boxes");
+    expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:properties");
     const sectionRows = Array.from(document.querySelectorAll<HTMLElement>('[data-nav-row-id^="section:"]'));
     expect(sectionRows.map((node) => node.dataset.navRowId)).toEqual([
-      "section:boxes", "section:tags", "section:folders", "section:favorites",
+      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites",
     ]);
     expect(sectionRows.every((node) => node.classList.contains("is-section"))).toBe(true);
     expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))
@@ -565,5 +637,180 @@ describe("NavigationPane projected ARIA tree", () => {
       { type: "reveal-consumed", token: 6 },
       { type: "reveal-consumed", token: 8 },
     ]);
+  });
+
+  it("renders property key and value rows inside the single navigation tree", async () => {
+    const keyId = navigationPropertyId("status");
+    const valueId = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+    render({ nav: nav({ projection: propertyProjection() }) });
+    await tick();
+
+    expect(document.querySelectorAll('[role="tree"]')).toHaveLength(1);
+    expect(document.querySelectorAll(".fce-nav-pane-sections")).toHaveLength(1);
+
+    const keyRow = findRow(keyId);
+    expect(keyRow.getAttribute("aria-level")).toBe("2");
+    expect(keyRow.classList.contains("fce-property-menu")).toBe(true);
+    expect(keyRow.querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon).toBe("list-filter");
+    expect(keyRow.querySelector<HTMLButtonElement>("button.fce-tree-item-disclosure")).not.toBeNull();
+
+    const valueRow = findRow(valueId);
+    expect(valueRow.getAttribute("aria-level")).toBe("3");
+    expect(valueRow.classList.contains("fce-property-menu")).toBe(true);
+    // Value rows carry no identity icon and no disclosure button — only the
+    // placeholder span keeps their leading track aligned with their key row.
+    expect(valueRow.querySelector(".fce-tree-item-identity")).toBeNull();
+    expect(valueRow.querySelector<HTMLButtonElement>("button.fce-tree-item-disclosure")).toBeNull();
+    expect(valueRow.querySelectorAll(".fce-tree-item-disclosure.is-placeholder")).toHaveLength(1);
+  });
+
+  it("exposes aria-checked only on property value rows, keyed to checked-filter state", () => {
+    const openId = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+    const closedId = navigationPropertyValueId("status", { kind: "text", value: "Closed" });
+    const keyId = navigationPropertyId("status");
+    render({
+      nav: nav({
+        propertyFilterCount: 1,
+        projection: propertyProjection({ clauses: [{ key: "status", values: [{ kind: "text", value: "Open" }] }] }),
+      }),
+    });
+
+    expect(findRow(openId).getAttribute("aria-checked")).toBe("true");
+    expect(findRow(closedId).getAttribute("aria-checked")).toBe("false");
+    expect(findRow(keyId).hasAttribute("aria-checked")).toBe(false);
+    expect(row("section:properties").hasAttribute("aria-checked")).toBe(false);
+  });
+
+  it("summarizes the active property filter count on the section row", async () => {
+    render({ nav: nav({ propertyFilterCount: 2, projection: propertyProjection() }) });
+    const summary = row("section:properties").querySelector<HTMLElement>(".fce-nav-active-property-count");
+    expect(summary?.textContent).toBe("2");
+    expect(summary?.getAttribute("aria-label")).toBe("2 property filters active");
+
+    await unmount(components.pop()!);
+    render({ nav: nav({ propertyFilterCount: 0, projection: propertyProjection() }) });
+    expect(row("section:properties").querySelector(".fce-nav-active-property-count")).toBeNull();
+  });
+
+  it("localizes the property filter summary for Chinese", () => {
+    render({ nav: nav({ propertyFilterCount: 1, projection: propertyProjection() }), strings: getUiStrings("zh") });
+    const summary = row("section:properties").querySelector<HTMLElement>(".fce-nav-active-property-count");
+    expect(summary?.textContent).toBe("1");
+    expect(summary?.getAttribute("aria-label")).toBe("已启用 1 个属性筛选");
+  });
+
+  it("renders the choose-visible header action when no property filter is active", async () => {
+    const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
+    render({
+      nav: nav({ propertyFilterCount: 0, projection: propertyProjection() }),
+      onPropertyCommand: (payload) => commands.push(payload),
+    });
+    await tick();
+    const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-choose");
+    expect(choose?.dataset.icon).toBe("settings-2");
+    expect(choose?.getAttribute("aria-label")).toBe("Choose visible properties");
+    expect(choose?.tabIndex).toBe(-1);
+    expect(row("section:properties").querySelector(".fce-nav-section-clear")).toBeNull();
+    choose?.click();
+    await tick();
+    expect(commands).toEqual([{ command: "choose-visible" }]);
+  });
+
+  it("renders the clear header action when property filters are active", async () => {
+    const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
+    render({
+      nav: nav({ propertyFilterCount: 2, projection: propertyProjection() }),
+      onPropertyCommand: (payload) => commands.push(payload),
+    });
+    await tick();
+    const clear = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-clear");
+    expect(clear?.dataset.icon).toBe("filter-x");
+    expect(clear?.getAttribute("aria-label")).toBe("Clear property filters");
+    expect(clear?.tabIndex).toBe(-1);
+    expect(row("section:properties").querySelector(".fce-nav-section-choose")).toBeNull();
+    clear?.click();
+    await tick();
+    expect(commands).toEqual([{ command: "clear-filters" }]);
+  });
+
+  it("maps pointer additive selection on value rows and expansion toggling on key rows", () => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: nav({ projection: propertyProjection() }), onIntent: (intent) => intents.push(intent) });
+    const valueId = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+    const keyId = navigationPropertyId("status");
+    const valueRow = findRow(valueId);
+
+    valueRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: valueId, mode: "additive" });
+    valueRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: valueId, mode: "additive" });
+    valueRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: valueId, mode: "ordinary" });
+
+    // A Ctrl-click on a key row still activates ordinarily — property keys are
+    // never additive filter selection — and its disclosure toggles expansion.
+    findRow(keyId).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    expect(intents).not.toContainEqual({ type: "activate", rowId: keyId, mode: "additive" });
+    expect(intents).toContainEqual({ type: "activate", rowId: keyId, mode: "ordinary" });
+    findRow(keyId).querySelector<HTMLButtonElement>(".fce-tree-item-disclosure")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    expect(intents).toContainEqual({ type: "set-expanded", rowId: keyId, expanded: false });
+  });
+
+  it("maps property keyboard activation and expansion keys", () => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: nav({ projection: propertyProjection() }), onIntent: (intent) => intents.push(intent) });
+    const valueId = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+    const keyId = navigationPropertyId("status");
+
+    findRow(valueId).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: valueId, mode: "ordinary" });
+    findRow(valueId).dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: valueId, mode: "additive" });
+
+    // Enter on a key row emits an ordinary activate; the host converts it into
+    // an expansion toggle (routeNavigationIntent), so no filter is selected.
+    findRow(keyId).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: keyId, mode: "ordinary" });
+    // ArrowLeft on the expanded key row collapses it through set-expanded.
+    findRow(keyId).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "set-expanded", rowId: keyId, expanded: false });
+  });
+
+  it("renders the localized empty copy for an expanded empty Properties section", () => {
+    render({ nav: nav({ projection: propertyProjection({ facets: [] }) }) });
+    expect(document.querySelector('[role="tree"]')).not.toBeNull();
+    expect(row("section:properties")).not.toBeNull();
+    const empty = document.querySelector<HTMLElement>('[data-nav-empty-section="properties"]');
+    expect(empty?.textContent?.trim()).toBe("No properties selected — choose which properties to show");
+    expect(document.querySelector('[data-nav-row-id^="property:"]')).toBeNull();
+  });
+
+  it("keeps property key/value action slots limited to the shared more button", async () => {
+    render({ nav: nav({ projection: propertyProjection() }) });
+    await tick();
+    const keyId = navigationPropertyId("status");
+    const valueId = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+
+    for (const id of [keyId, valueId]) {
+      const node = findRow(id);
+      expect(node.querySelector(".fce-nav-section-choose")).toBeNull();
+      expect(node.querySelector(".fce-nav-section-clear")).toBeNull();
+      const actionButtons = node.querySelectorAll<HTMLButtonElement>(".fce-nav-row-actions button");
+      expect(actionButtons).toHaveLength(1);
+      expect(actionButtons[0].classList.contains("fce-nav-row-more")).toBe(true);
+      expect(actionButtons[0].tabIndex).toBe(-1);
+    }
+
+    // The section header owns the single section action button alongside the more
+    // button; value rows have no disclosure and no tabbable child other than the
+    // row itself (its roving tab stop lives on the treeitem, not a nested control).
+    const sectionButtons = row("section:properties").querySelectorAll<HTMLButtonElement>(".fce-nav-row-actions button");
+    expect(sectionButtons).toHaveLength(2);
+    const valueRow = findRow(valueId);
+    expect(valueRow.querySelector("button.fce-tree-item-disclosure")).toBeNull();
+    expect(Array.from(valueRow.querySelectorAll<HTMLElement>("*"))
+      .filter((child) => child.tabIndex === 0)).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runPipeline, applyTagFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
+import { runPipeline, applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
 import { createBoxScope, createFolderScope, type CardScope } from "./scope";
 import type { PipelineContext } from "./pipeline";
 import type { GroupBucket } from "./card-grouping";
@@ -8,6 +8,7 @@ import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import type { NoteCardRecord } from "./types";
 import type { CardFileKind } from "./file-kind";
 import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
+import type { PropertyScalarRef } from "../property-filter-settings";
 import * as metadataUtils from "./metadata-utils";
 
 const folderSteps = () => stepsForScope(createFolderScope("", true));
@@ -20,6 +21,7 @@ function createMockContext(): PipelineContext {
   return {
     app: {} as PipelineContext["app"],
     filterTags: [],
+    propertyFilters: [],
     search: {
       query: "",
       execution: "indexed-unavailable",
@@ -85,6 +87,8 @@ function createMockCard(path: string, excerpt = "", options: CreateMockCardOptio
     taskSummary: null,
   };
 }
+
+const text = (value: string): PropertyScalarRef => ({ kind: "text", value });
 
 // ---------------------------------------------------------------------------
 // runPipeline
@@ -381,6 +385,129 @@ describe("applyTagFilter behavior", () => {
     const result = applyTagFilter(cards, context);
     expect(result).toHaveLength(1);
     expect(result[0]).toBe(cardMatch);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyPropertyFilter behavior (WP-02 V10)
+// ---------------------------------------------------------------------------
+
+describe("applyPropertyFilter behavior", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns the same array reference when propertyFilters is empty", () => {
+    const cards = [createMockCard("a.md"), createMockCard("b.md")];
+    const context = createMockContext();
+    context.propertyFilters = [];
+
+    expect(applyPropertyFilter(cards, context)).toBe(cards);
+  });
+
+  it("returns the same array reference when clauses normalize to empty", () => {
+    const cards = [createMockCard("a.md")];
+    const context = createMockContext();
+    context.propertyFilters = [{ key: "status", values: [] }];
+
+    expect(applyPropertyFilter(cards, context)).toBe(cards);
+  });
+
+  it("applies tag, property, and search filters before pin reorder in one folder pass", () => {
+    const cards = [
+      createMockCard("tag-filtered.md", "query-hit"),
+      createMockCard("prop-filtered.md", "query-hit"),
+      createMockCard("visible-pinned.md", "query-hit"),
+      createMockCard("visible-unpinned.md", "query-hit"),
+      createMockCard("search-filtered.md", "query-hit"),
+    ];
+    const baseContext = createMockContext();
+    baseContext.filterTags = ["project"];
+    baseContext.propertyFilters = [{ key: "status", values: [text("open")] }];
+    baseContext.search.query = "query-hit";
+    baseContext.search.execution = "indexed-ready";
+    baseContext.search.orderedPaths = ["visible-pinned.md", "visible-unpinned.md"];
+    // Pinning the property-filtered card must not reintroduce it (non-bypass).
+    const context = withPinnedPaths(baseContext, ["prop-filtered.md", "visible-pinned.md"]);
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => {
+      return file.path !== "tag-filtered.md";
+    });
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
+      return file.path === "prop-filtered.md" ? { status: "done" } : { status: "open" };
+    });
+
+    expect(runPipeline(cards, folderSteps(), context).cards.map((card) => card.path)).toEqual([
+      "visible-pinned.md",
+      "visible-unpinned.md",
+    ]);
+  });
+
+  it("applies property filtering in box scopes before search and pin", () => {
+    const cards = [
+      createMockCard("prop-filtered.md", "query-hit"),
+      createMockCard("visible.md", "query-hit"),
+    ];
+    const baseContext = createMockContext();
+    baseContext.filterTags = ["folder-only-filter"];
+    baseContext.propertyFilters = [{ key: "status", values: [text("open")] }];
+    baseContext.search.query = "query-hit";
+    baseContext.search.execution = "indexed-ready";
+    baseContext.search.orderedPaths = ["visible.md"];
+    const context = withPinnedPaths(baseContext, ["prop-filtered.md", "visible.md"]);
+
+    // Tag filtering is skipped for box scopes; this rejecting mock proves it.
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
+      return file.path === "visible.md" ? { status: "open" } : { status: "done" };
+    });
+
+    const steps = stepsForScope(createBoxScope("box-1"));
+    expect(steps).not.toContain(applyTagFilter);
+    expect(steps[0]).toBe(applyPropertyFilter);
+
+    expect(runPipeline(cards, steps, context).cards.map((card) => card.path)).toEqual(["visible.md"]);
+  });
+
+  it("projects zero cards for a non-ready search even with an active property clause", () => {
+    const cards = [
+      createMockCard("a.md", "query-hit"),
+      createMockCard("b.md", "query-hit"),
+    ];
+    const context = createMockContext();
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
+    context.search.query = "query-hit";
+    context.search.execution = "indexed-unavailable";
+
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockReturnValue({ status: "open" });
+
+    expect(runPipeline(cards, folderSteps(), context).cards).toEqual([]);
+  });
+
+  it("groups only cards that passed the property filter", () => {
+    const cards = [
+      createMockCard("notes/a.md"),
+      createMockCard("notes/b.md"),
+      createMockCard("archive/c.md"),
+    ];
+    const context = withFolderGrouping(createMockContext(), cards);
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
+
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
+      return file.path === "notes/b.md" ? { status: "done" } : { status: "open" };
+    });
+
+    const result = runPipeline(cards, folderSteps(), context);
+
+    expect(result.cards.map((card) => card.path)).toEqual([
+      "archive/c.md",
+      "notes/a.md",
+    ]);
+    expect(result.segments.map((segment) => segment.key)).toEqual([
+      "folder:archive",
+      "folder:notes",
+    ]);
+    expect(result.segments.map((segment) => segment.count)).toEqual([1, 1]);
   });
 });
 
@@ -811,10 +938,19 @@ describe("applyPinReorder", () => {
 // ---------------------------------------------------------------------------
 
 describe("stepsForScope", () => {
-  it("contains exactly 3 steps in correct order", () => {
+  it("contains exactly 4 steps in correct order for folder scopes", () => {
     const steps = folderSteps();
-    expect(steps).toHaveLength(3);
+    expect(steps).toHaveLength(4);
     expect(steps[0]).toBe(applyTagFilter);
+    expect(steps[1]).toBe(applyPropertyFilter);
+    expect(steps[2]).toBe(applySearchFilter);
+    expect(steps[3]).toBe(applyPinReorder);
+  });
+
+  it("contains exactly 3 steps in correct order for box scopes", () => {
+    const steps = stepsForScope(createBoxScope("box-1"));
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toBe(applyPropertyFilter);
     expect(steps[1]).toBe(applySearchFilter);
     expect(steps[2]).toBe(applyPinReorder);
   });

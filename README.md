@@ -8,7 +8,7 @@ An Obsidian plugin that shows folder notes as beautiful card stream in the sideb
 
 > ## What's new in 1.0.0
 >
-> **Dual-pane sidebar layout.** Card Workspace now renders its own navigation column next to the card stream, so folders, tags, card boxes, and favorites are one click away without borrowing Obsidian's File Explorer. Drag the divider to resize the navigation column, or use the toggle button in the header to hide it and give the cards the full width. When the sidebar gets too narrow for two columns, the layout automatically falls back to a single pane and the toggle button swaps between navigation and cards, so the panel stays usable at any width.
+> **Dual-pane sidebar layout.** Card Workspace now renders its own navigation column next to the card stream, so folders, tags, properties, card boxes, and favorites are one click away without borrowing Obsidian's File Explorer. Drag the divider to resize the navigation column, or use the toggle button in the header to hide it and give the cards the full width. When the sidebar gets too narrow for two columns, the layout automatically falls back to a single pane and the toggle button swaps between navigation and cards, so the panel stays usable at any width.
 >
 > **Card boxes.** A card box is a saved, topic-oriented collection that lives in the navigation pane's **Boxes** section. Right-click there to create one, or save your current folder-and-tag scope as a box in one step. Each box keeps its own membership rules (folder scope plus tags, combined with OR across rules), its own sort order, and its own pins, and you can add or exclude individual notes by hand. Use boxes to collect notes that belong together conceptually but live in different folders, without moving files or maintaining an index note.
 
@@ -48,7 +48,7 @@ Card Workspace is installed manually from GitHub releases.
 ## Features
 
 - **Left-sidebar folder browsing.** Open Card Workspace in the left sidebar and browse a folder as a card stream.
-- **Two-column navigation pane.** A resizable navigation column sits next to the card stream, so you can switch folders, tags, card boxes, and favorites without leaving the panel.
+- **Two-column navigation pane.** A resizable navigation column sits next to the card stream, so you can switch folders, tags, properties, card boxes, and favorites without leaving the panel.
 - **Card boxes.** Save a folder-and-tag scope as a reusable, rule-based collection with its own name and sort order, and add the current scope or view to a box in one step.
 - **Favorites.** Keep frequently used folders, files, tags, and boxes in a dedicated Favorites section, grouped by kind and reorderable.
 - **Context menus everywhere.** Right-click in the navigation pane or on a card to create notes, folders, canvases, and bases, rename, duplicate, move, delete, copy vault or system paths, reveal in the system file explorer, and search within a folder.
@@ -58,6 +58,7 @@ Card Workspace is installed manually from GitHub releases.
 - **Two-way sync.** Click a card to open its note. Switch notes in the editor and the corresponding card is selected automatically.
 - **Local search.** Full-text search across the current folder's cards.
 - **Tag filtering.** Filter cards by tags extracted from frontmatter and note content.
+- **Property filtering.** Opt in to the vault properties you care about and filter cards by their frontmatter values — the Properties section stays empty until you choose keys, and value rows show source-relative counts.
 - **Pin reordering.** Pin cards to keep them at the top of the stream.
 - **Bulk actions.** Select multiple cards to move, delete, or merge notes in batches.
 

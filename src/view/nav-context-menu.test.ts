@@ -154,6 +154,11 @@ function createActions(): NavMenuActions {
     moveFavorite: vi.fn(),
     clearFavorites: vi.fn(),
     cardMenu: vi.fn(),
+    chooseVisibleProperties: vi.fn(),
+    clearPropertyFilters: vi.fn(),
+    hideProperty: vi.fn(),
+    togglePropertyValue: vi.fn(),
+    filterByOnlyPropertyValue: vi.fn(),
   };
 }
 
@@ -163,12 +168,14 @@ function createDeps(overrides: Partial<NavMenuDeps> = {}): NavMenuDeps {
     isBoxMode: false,
     includeSubfolders: true,
     activeFilterTags: [],
+    propertyFilterCount: 0,
+    isPropertyValueActive: () => false,
     canResolveSystemPath: true,
     favorites: [],
     boxes: [makeBox("box-1", "Alpha"), makeBox("box-2", "Beta")],
     activeBoxId: null,
     boxExcludedCount: () => 0,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
     sectionOrder: defaultNavSectionOrder(),
     hasExpandedFolders: false,
     hasExpandedTags: false,
@@ -226,7 +233,7 @@ describe("folders header menu", () => {
 
   it("flips the expand-all title and the section toggle from current state", () => {
     const deps = createDeps({
-      sectionCollapsed: { favorites: false, folders: true, tags: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: true, tags: false, properties: false, boxes: false },
       hasExpandedFolders: true,
     });
     const payload = createPayload({
@@ -757,6 +764,8 @@ describe("section header move items", () => {
   });
 
   it("follows a reordered sectionOrder for the disabled ends", () => {
+    // C2: a stored old four-section order gains Properties immediately before
+    // Boxes, so Boxes is no longer the first section in this layout.
     const sectionOrder: NavSectionId[] = ["boxes", "tags", "folders", "favorites"];
     const deps = createDeps({ sectionOrder });
     const boxes = build(createPayload({ section: "boxes", scope: "header" }), deps);
@@ -764,10 +773,96 @@ describe("section header move items", () => {
     const folders = build(createPayload({ section: "folders", scope: "header" }), deps);
     const favorites = build(createPayload({ section: "favorites", scope: "header" }), deps);
 
-    expect(moveFlags(boxes.menu)).toEqual({ up: true, down: false });
+    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(favorites.menu)).toEqual({ up: false, down: true });
+  });
+
+  it("gives the Properties header the chooser, clear, and generic section items, never the Boxes menu", () => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section: "properties", scope: "header" }), deps);
+
+    const titles = menu.items.map((item) => item.title);
+    expect(titles[0]).toBe("Choose visible properties");
+    expect(titles).toContain("Clear property filters");
+    expect(titles).toContain("Collapse section");
+    expect(titles).toContain("Move section up");
+    expect(titles).toContain("Move section down");
+    expect(titles).not.toContain("Create card box");
+    expect(titles).not.toContain("Save scope as card box");
+  });
+
+  it("disables Clear property filters when no property filter is active", () => {
+    const deps = createDeps({ propertyFilterCount: 0 });
+    const { menu } = build(createPayload({ section: "properties", scope: "header" }), deps);
+    expect(findItem(menu, "Clear property filters")?.disabled).toBe(true);
+
+    const active = build(createPayload({ section: "properties", scope: "header" }),
+      createDeps({ propertyFilterCount: 2 }));
+    expect(findItem(active.menu, "Clear property filters")?.disabled).toBe(false);
+  });
+
+  it("opens a Hide-this-property menu for a property key row", () => {
+    const deps = createDeps();
+    const { menu, result } = build(createPayload({
+      section: "properties",
+      scope: "item",
+      itemId: "status",
+    }), deps);
+
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([{ title: "Hide this property", icon: "eye-off" }]);
+    findItem(menu, "Hide this property")?.clickHandler?.();
+    expect(deps.actions.hideProperty).toHaveBeenCalledWith("status");
+  });
+
+  it("opens filter actions for a property value row, reflecting checked state", () => {
+    const value = { kind: "text", value: "open" } as const;
+    const deps = createDeps({
+      propertyFilterCount: 1,
+      isPropertyValueActive: () => true,
+    });
+    const { menu, result } = build(createPayload({
+      section: "properties",
+      scope: "item",
+      itemId: "status",
+      value,
+    }), deps);
+
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([
+      { title: "Remove from filter", icon: "filter-x" },
+      { title: "Filter by only this value", icon: "list-filter" },
+    ]);
+    expect(findItem(menu, "Remove from filter")?.checked).toBe(true);
+    // Sole active value: filter-by-only would be a no-op, so it is disabled.
+    expect(findItem(menu, "Filter by only this value")?.disabled).toBe(true);
+
+    findItem(menu, "Remove from filter")?.clickHandler?.();
+    expect(deps.actions.togglePropertyValue).toHaveBeenCalledWith("status", value);
+  });
+
+  it("opens add/filter-by-only actions for an inactive property value row", () => {
+    const value = { kind: "number", value: 1 } as const;
+    const deps = createDeps();
+    const { menu, result } = build(createPayload({
+      section: "properties",
+      scope: "item",
+      itemId: "priority",
+      value,
+    }), deps);
+
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([
+      { title: "Add to filter", icon: "filter" },
+      { title: "Filter by only this value", icon: "list-filter" },
+    ]);
+    expect(findItem(menu, "Add to filter")?.checked).toBe(false);
+    expect(findItem(menu, "Filter by only this value")?.disabled).toBe(false);
+
+    findItem(menu, "Filter by only this value")?.clickHandler?.();
+    expect(deps.actions.filterByOnlyPropertyValue).toHaveBeenCalledWith("priority", value);
   });
 
   it("routes move-up and move-down clicks to moveSection with the section and delta", () => {
@@ -894,7 +989,7 @@ describe("nav context menu wiring", () => {
       plugin.getSettings = vi.fn(() => ({
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
-        filter: { tags: [] },
+        filter: { tags: [], properties: [] },
         defaultView: "cards",
         lastFolderPath: "notes",
         pinnedPaths: [],
@@ -902,7 +997,10 @@ describe("nav context menu wiring", () => {
         activeBoxId: null,
         boxes: [],
         favorites: [],
-        sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+        visiblePropertyKeys: [],
+        expandedPropertyKeys: [],
+        navSectionOrder: defaultNavSectionOrder(),
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
         ...settingsOverrides,
       }));
       const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;

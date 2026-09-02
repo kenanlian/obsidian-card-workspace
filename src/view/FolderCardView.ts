@@ -12,6 +12,7 @@ import { resolveViewConfig } from "./view-config";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
 import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
+import { resolveEmptyStateMessage } from "./empty-state";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
 import { rewritePathAfterRename } from "./scope-files";
 import type { NavigationIntent } from "./navigation-model";
@@ -145,18 +146,12 @@ export class FolderCardView extends ItemView {
     return root === this.app.workspace.leftSplit ? "right" : "left";
   }
   private buildEmptyStateMessage(): string {
-    const strings = this.strings.view;
-    const query = this.modules.search.getQuery().trim();
-
-    if (query.length === 0) {
-      return strings.emptyFolder;
-    }
-
-    const hasActiveTags = this.plugin.getSettings().filter.tags.length > 0;
-
-    return hasActiveTags
-      ? strings.emptySearchCurrentFolderWithTags(query)
-      : strings.emptySearchCurrentFolder(query);
+    const settings = this.plugin.getSettings();
+    return resolveEmptyStateMessage({
+      strings: this.strings, query: this.modules.search.getQuery().trim(),
+      activeTagCount: settings.filter.tags.length, baseCardCount: this.baseCards.length,
+      visibleCardCount: this.visibleCards.length, propertyClauseCount: settings.filter.properties.length,
+    });
   }
   private openCardWithDestination(path: string, destination: OpenDestination): void {
     void this.plugin.openNoteFromCard(path, destination);
@@ -352,6 +347,7 @@ export class FolderCardView extends ItemView {
     const hydrationReport = this.modules.hydration.dispose();
     this.modules.taskSummary.dispose();
     this.modules.groupCollapse.dispose();
+    this.modules.property.dispose();
 
     return {
       cancelledDebounce:
@@ -402,6 +398,7 @@ export class FolderCardView extends ItemView {
       switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
       applyTagFilter: (tags) => { void this.modules.tagActions.applyTagFilter(tags); },
       activateFavorite: (favorite) => this.modules.favoriteActions.handleFavoriteActivate({ favorite }),
+      selectPropertyValue: (key, ref, additive) => void this.modules.propertyActions.applyValueFilter(key, ref, additive),
     });
   }
 
@@ -594,6 +591,7 @@ export class FolderCardView extends ItemView {
     return buildNavigationPanelState({
       settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
       folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
+      propertyFacets: this.modules.property.derivePropertyFacets(),
     });
   }
   private buildAppearanceGroup(): PanelModelState["appearance"] {

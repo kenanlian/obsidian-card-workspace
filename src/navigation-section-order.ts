@@ -22,7 +22,18 @@ export function normalizeNavSectionOrder(value: unknown): NavSectionId[] {
     result.push(entry);
   }
   for (const id of NAVIGATION_SECTION_ORDER) {
-    if (!seen.has(id)) result.push(id);
+    if (seen.has(id)) continue;
+    // C2: a stored order that predates Properties keeps every recognized
+    // section's relative order; Properties lands immediately before Boxes so
+    // migrated layouts keep filters adjacent instead of being rearranged.
+    if (id === "properties") {
+      const boxesIndex = result.indexOf("boxes");
+      if (boxesIndex >= 0) {
+        result.splice(boxesIndex, 0, id);
+        continue;
+      }
+    }
+    result.push(id);
   }
   return result;
 }

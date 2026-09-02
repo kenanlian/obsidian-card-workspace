@@ -4,6 +4,8 @@ import { normalizeScopePath } from "./scope";
 import { normalizeTagPath, type TagTreeNode } from "./tag-tree";
 import type { FavoriteKind, FolderTreeNode, NavSectionId } from "./types";
 import {
+  assignSetMetadata,
+  EMPTY_NAVIGATION_EXPANSION_LAYER,
   navigationBoxId,
   navigationFavoriteId,
   navigationFolderId,
@@ -20,6 +22,7 @@ import {
   type NavigationSemanticState,
   type NavigationTagRow,
 } from "./navigation-model";
+import { projectPropertyRows } from "./property-navigation-projection";
 
 interface MatchedTreeNode<T> {
   source: T;
@@ -102,23 +105,6 @@ function filterTagTree(nodes: readonly TagTreeNode[], needle: string): MatchedTr
     if (selfMatches || children.length > 0) result.push({ source: node, children, selfMatches });
   }
   return result;
-}
-
-function assignSetMetadata<T extends NavigationRow>(rows: T[]): T[] {
-  const byParent = new Map<string | null, T[]>();
-  for (const row of rows) {
-    const siblings = byParent.get(row.parentId) ?? [];
-    siblings.push(row);
-    byParent.set(row.parentId, siblings);
-  }
-  return rows.map((row) => {
-    const siblings = byParent.get(row.parentId) ?? [row];
-    return {
-      ...row,
-      positionInSet: siblings.findIndex((candidate) => candidate.id === row.id) + 1,
-      setSize: siblings.length,
-    };
-  });
 }
 
 function projectFolders(
@@ -318,6 +304,14 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   }
   matchedCounts.set("boxes", boxRows.length);
 
+  const propertyProjection = projectPropertyRows(
+    input.properties ?? [],
+    input.propertyClauses ?? [],
+    normalizedQuery,
+    input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER,
+  );
+  matchedCounts.set("properties", propertyProjection.matchedItemCount);
+
   const visibleSectionIds = normalizeNavSectionOrder(input.sectionOrder).filter((section) =>
     !querying || (matchedCounts.get(section) ?? 0) > 0,
   );
@@ -353,6 +347,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     if (section === "favorites") children = expanded ? assignSetMetadata(favoriteRows) : [];
     if (section === "folders") children = projectFolders(input, normalizedQuery, expanded);
     if (section === "tags") children = projectTags(input, normalizedQuery, expanded, activeTags);
+    if (section === "properties") children = expanded ? assignSetMetadata(propertyProjection.rows) : [];
     if (section === "boxes") children = expanded ? assignSetMetadata(boxRows) : [];
     rows.push(...children);
     sections.push({

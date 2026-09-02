@@ -84,6 +84,9 @@
     tags: string[];
   }
 
+  interface PropertyCommandPayload {
+    command: "choose-visible" | "clear-filters";
+  }
   interface IncludeSubfoldersChangePayload {
     value: boolean;
   }
@@ -110,6 +113,7 @@
     onGroupChange?: (payload: GroupChangePayload) => void;
     onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
+    onPropertyCommand?: (payload: PropertyCommandPayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
@@ -176,9 +180,10 @@
       paneWidth: 240,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
       showItemCounts: false,
       tooltipSide: "right",
+      propertyFilterCount: 0,
       projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
       query: "",
       focusId: null, focusRequest: null,
@@ -199,6 +204,7 @@
     onGroupChange,
     onGroupCollapseCommand,
     onFilterChange,
+    onPropertyCommand,
     onIncludeSubfoldersChange,
     onSearchQueryChange,
     onSearchQueryReset,
@@ -719,6 +725,7 @@
     activeFilterTags={projection.activeFilterTags}
     onFolderAction={handleFolderAction}
     onFilterChange={handleFilterChange}
+    {onPropertyCommand}
     onIncludeSubfoldersChange={handleIncludeSubfoldersChange}
     onBoxCommand={handleBoxCommand}
     onNavContextMenu={handleNavContextMenu}

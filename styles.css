@@ -583,7 +583,8 @@
   text-overflow: ellipsis;
 }
 
-.folder-card-view .fce-nav-active-tag-count {
+.folder-card-view .fce-nav-active-tag-count,
+.folder-card-view .fce-nav-active-property-count {
   color: var(--fce-nav-count-color);
   font-size: var(--font-ui-smaller, 12px);
   font-variant-numeric: tabular-nums;
@@ -1005,6 +1006,7 @@
 
 .fce-folder-menu .fce-tree-row-check,
 .fce-tag-menu .fce-tree-row-check,
+.fce-property-menu .fce-tree-row-check,
 .fce-favorites-menu .fce-tree-row-check {
   color: var(--text-normal);
 }
@@ -1546,4 +1548,27 @@
   margin: 0 0 8px;
   color: var(--fce-text-muted);
   font-size: var(--font-ui-small, 13px);
+}
+
+.fce-property-picker__list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.fce-property-picker__warning {
+  margin: 0 0 8px;
+  color: var(--text-warning, #b58900);
+  font-size: var(--font-ui-small, 13px);
+}
+
+.fce-property-picker__empty {
+  margin: 0 0 8px;
+  color: var(--fce-text-muted);
+  font-size: var(--font-ui-small, 13px);
+}
+
+.fce-property-picker__unavailable .setting-item-name {
+  color: var(--text-muted);
+  font-style: italic;
 }

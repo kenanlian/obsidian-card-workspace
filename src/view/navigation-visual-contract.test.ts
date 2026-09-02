@@ -110,4 +110,25 @@ describe("navigation visual contract", () => {
     expect(styles).not.toMatch(/\.fce-tree-row\.is-checked-filter \{[^}]*box-shadow:/);
     expect(styles).not.toMatch(/\.fce-tree-row\.is-active-file \{[^}]*border-inline-end:/);
   });
+
+  it("keeps property rows inside the single scroller and tree without new slots", () => {
+    // One nav scroller and one tree; property rows join the existing structure
+    // rather than adding a second scroll surface or ARIA tree.
+    expect(styles.match(/\.folder-card-view \.fce-nav-pane-sections \{/g)).toHaveLength(1);
+    expect(styles.match(/\.folder-card-view \.fce-nav-tree \{/g)).toHaveLength(1);
+    expect(styles).toMatch(/\.folder-card-view \.fce-nav-pane-sections \{[\s\S]*?overflow-y: auto;/);
+    // Row density and indentation are shared: value rows at level 3 reuse the
+    // same 30px row height and 12px indent step as every other row variant.
+    expect(styles).toContain("--fce-nav-row-height: 30px;");
+    expect(styles).toContain("--fce-nav-indent-step: 12px;");
+    // No property-only action slot or second tree/scroller token is introduced;
+    // the actions snippet contributes only the shared section action + more slot.
+    expect(styles).not.toContain("--fce-nav-property-action-slot");
+    expect(styles).not.toContain(".fce-nav-property-tree");
+    expect(styles).not.toContain(".fce-nav-property-scroller");
+    // The active property count reuses the tag summary style, and the property
+    // check indicator shares the quiet checked color with folder/tag/favorites.
+    expect(styles).toMatch(/\.fce-nav-active-tag-count,\s*\.folder-card-view \.fce-nav-active-property-count \{/);
+    expect(styles).toMatch(/\.fce-property-menu \.fce-tree-row-check,/);
+  });
 });

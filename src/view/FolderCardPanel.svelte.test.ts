@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
+import { defaultNavSectionOrder } from "../navigation-section-order";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
+import { projectNavigation } from "./navigation-projection";
 import type { CardGroupSegment } from "./card-grouping";
 import type { CardFileKind } from "./file-kind";
 import type { HydrateViewportRequest } from "./hydration-request";
@@ -128,9 +130,10 @@ function createInitialPanelState(): PanelModelState {
       paneWidth: 240,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
       showItemCounts: false,
       tooltipSide: "right",
+      propertyFilterCount: 0,
       projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
       query: "",
       focusId: null,
@@ -139,6 +142,40 @@ function createInitialPanelState(): PanelModelState {
     },
     appearance: { cardCornerRadius: "compact", previewLines: 5 },
   };
+}
+
+/** A navigation projection whose Properties section owns the header action slot. */
+function propertiesNavProjection() {
+  return projectNavigation({
+    query: "",
+    scope: { kind: "folder", path: "notes", includeSubfolders: true },
+    activeTags: [],
+    selectedPath: null,
+    favorites: [],
+    folders: [],
+    tags: [],
+    boxes: [],
+    tagCounts: {},
+    includeSubfolders: true,
+    tagsDisabled: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionOrder: defaultNavSectionOrder(),
+    sectionLabels: {
+      favorites: { label: "Favorites", emptyLabel: "No favorites yet" },
+      folders: { label: "Folders", emptyLabel: null },
+      tags: { label: "Tags", emptyLabel: null },
+      properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
+      boxes: { label: "Boxes", emptyLabel: "No card boxes yet" },
+    },
+    rootFolderLabel: "Root /",
+    expansion: {
+      folders: { manual: [], reveal: [], query: [], suppressed: [] },
+      tags: { manual: [], reveal: [], query: [], suppressed: [] },
+      queryCollapsedSections: [],
+    },
+    properties: [],
+    propertyClauses: [],
+  });
 }
 
 describe("FolderCardPanel.svelte", () => {
@@ -1280,6 +1317,72 @@ describe("FolderCardPanel.svelte", () => {
 
     expect(received).toEqual([{ command: "collapse-all" }]);
 
+    await unmount(component);
+  });
+
+  it("forwards the choose-visible property command from the navigation pane", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.nav = { ...state.nav, projection: propertiesNavProjection(), propertyFilterCount: 0 };
+    });
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel, onPropertyCommand: (payload: { command: "choose-visible" | "clear-filters" }) => commands.push(payload) },
+    });
+    await tick();
+
+    const choose = target.querySelector<HTMLButtonElement>(".fce-nav-section-choose");
+    expect(choose).not.toBeNull();
+    choose?.click();
+    await tick();
+
+    expect(commands).toEqual([{ command: "choose-visible" }]);
+    await unmount(component);
+  });
+
+  it("forwards the clear-filters property command when filters are active", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.nav = { ...state.nav, projection: propertiesNavProjection(), propertyFilterCount: 2 };
+    });
+
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel, onPropertyCommand: (payload: { command: "choose-visible" | "clear-filters" }) => commands.push(payload) },
+    });
+    await tick();
+
+    const clear = target.querySelector<HTMLButtonElement>(".fce-nav-section-clear");
+    expect(clear).not.toBeNull();
+    clear?.click();
+    await tick();
+
+    expect(commands).toEqual([{ command: "clear-filters" }]);
+    await unmount(component);
+  });
+
+  it("renders the property-filter empty message when no cards match the active filters", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.scope = { ...state.scope, emptyStateMessage: "No notes match the current property filters." };
+    });
+
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    expect(target.textContent).toContain("No notes match the current property filters.");
     await unmount(component);
   });
 });

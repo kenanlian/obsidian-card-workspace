@@ -12,6 +12,7 @@ import type {
   BulkRuntimePanelState,
   FavoriteKind,
   FolderTreeNode,
+  NavSectionId,
   NoteCardRecord,
   SearchIndexPersistenceHealth,
   SearchIndexReadinessState,
@@ -98,14 +99,11 @@ export interface PanelNavState {
   paneWidth: number;
   layoutMode: "dual" | "single";
   visible: boolean;
-  sectionCollapsed: {
-    favorites: boolean;
-    folders: boolean;
-    tags: boolean;
-    boxes: boolean;
-  };
+  sectionCollapsed: Record<NavSectionId, boolean>;
   showItemCounts: boolean;
   tooltipSide: "left" | "right";
+  /** Active property value refs (including missing); drives the section summary/header action. */
+  propertyFilterCount: number;
   projection: NavigationProjection;
   query: string;
   focusId: string | null;

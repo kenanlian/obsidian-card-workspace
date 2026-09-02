@@ -37,6 +37,7 @@ function harness(
   dimension: GroupDimension = "none",
   bucketMoved = false,
   membershipDeparted = false,
+  propertyImpact: "reproject" | "nav" | "none" = "none",
 ) {
   const store = createViewStateStore(createFolderScope("", true));
   store.replaceBaseCards(records);
@@ -50,6 +51,7 @@ function harness(
   const reprojectAndPublish = vi.fn();
   const reconcileMetadataMembershipForPath = vi.fn(() => membershipDeparted);
   const refreshGroupBucketForPath = vi.fn(() => bucketMoved);
+  const classifyPropertyMetadataImpact = vi.fn((): "reproject" | "nav" | "none" => propertyImpact);
   return {
     context,
     store,
@@ -57,12 +59,14 @@ function harness(
     reprojectAndPublish,
     reconcileMetadataMembershipForPath,
     refreshGroupBucketForPath,
+    classifyPropertyMetadataImpact,
     controller: new TaskSummaryController({
       context,
       getGroupDimension: () => dimension,
       reprojectAndPublish,
       reconcileMetadataMembershipForPath,
       refreshGroupBucketForPath,
+      classifyPropertyMetadataImpact,
     }),
   };
 }
@@ -312,6 +316,120 @@ describe("TaskSummaryController", () => {
       expect(refreshGroupBucketForPath).toHaveBeenCalledWith(target.path);
       expect(reprojectAndPublish).not.toHaveBeenCalled();
       expect(context.publishGroups).toHaveBeenCalledWith("cards");
+    });
+  });
+
+  describe("property metadata impact (WP-05)", () => {
+    it("reprojects in one coherent batch when the property lane classifies reproject", () => {
+      const target = card("notes/target.md");
+      const { context, controller, reprojectAndPublish, classifyPropertyMetadataImpact } = harness(
+        [target],
+        vi.fn(() => null),
+        "none",
+        false,
+        false,
+        "reproject",
+      );
+
+      controller.handleMetadataChange(target.path);
+
+      expect(classifyPropertyMetadataImpact).toHaveBeenCalledWith(target.path);
+      expect(reprojectAndPublish).toHaveBeenCalledTimes(1);
+      // The single coherent batch owns publication; no separate cards/nav publish.
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("publishes nav only for a nav-classified impact without active clauses", () => {
+      const target = card("notes/target.md");
+      const { context, controller, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "none",
+        false,
+        false,
+        "nav",
+      );
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).toHaveBeenCalledWith("nav");
+    });
+
+    it("publishes cards and nav once when a nav-classified impact also changes the summary", () => {
+      const target = card("notes/target.md");
+      const { context, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "none",
+        false,
+        false,
+        "nav",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(2, 1));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).toHaveBeenCalledWith("cards", "nav");
+    });
+
+    it("keeps the unused-Properties minimal cards patch for a none-classified impact", () => {
+      const target = card("notes/target.md");
+      const { context, controller, getFileCache, reprojectAndPublish } = harness(
+        [target],
+        vi.fn(() => null),
+        "none",
+        false,
+        false,
+        "none",
+      );
+      getFileCache.mockReturnValue(cacheWithTasks(2, 1));
+
+      controller.handleMetadataChange(target.path);
+
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(context.publishGroups).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).toHaveBeenCalledWith("cards");
+    });
+
+    it("never consults property classification for an out-of-base path", () => {
+      const target = card("notes/target.md");
+      const {
+        context,
+        controller,
+        reprojectAndPublish,
+        classifyPropertyMetadataImpact,
+        refreshGroupBucketForPath,
+      } = harness([target], vi.fn(() => null), "none", false, false, "reproject");
+
+      controller.handleMetadataChange("notes/missing.md");
+
+      expect(classifyPropertyMetadataImpact).not.toHaveBeenCalled();
+      expect(reprojectAndPublish).not.toHaveBeenCalled();
+      expect(refreshGroupBucketForPath).not.toHaveBeenCalled();
+      expect(context.publishGroups).not.toHaveBeenCalled();
+    });
+
+    it("reprojects once for a membership departure without consulting classification", () => {
+      const target = card("notes/target.md");
+      const {
+        context,
+        controller,
+        reprojectAndPublish,
+        classifyPropertyMetadataImpact,
+        refreshGroupBucketForPath,
+      } = harness([target], vi.fn(() => null), "box-rule", false, true, "reproject");
+
+      controller.handleMetadataChange(target.path);
+
+      // Membership departure returns before the property lane is classified.
+      expect(classifyPropertyMetadataImpact).not.toHaveBeenCalled();
+      expect(refreshGroupBucketForPath).not.toHaveBeenCalled();
+      expect(reprojectAndPublish).toHaveBeenCalledTimes(1);
+      expect(context.publishGroups).not.toHaveBeenCalled();
     });
   });
 });

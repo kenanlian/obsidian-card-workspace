@@ -868,7 +868,11 @@ export function createViewWithFile(
     getSettings: vi.fn(() => ({
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
-      filter: { tags: [] },
+      filter: { tags: [], properties: [] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      navSectionOrder: ["favorites", "folders", "tags", "properties", "boxes"],
       defaultView: "cards",
       lastFolderPath: null,
       lastViewMode: "folder",

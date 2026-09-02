@@ -17,7 +17,7 @@ import { BoxReconciler } from "./services/BoxReconciler";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
-import { SettingsStore, hasPatchValues, splitFlatPatch } from "./services/SettingsStore";
+import { SettingsStore, hasPatchValues } from "./services/SettingsStore";
 import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
 import { MetadataEventBus, type MetadataEventListener } from "./services/MetadataEventBus";
 import type { VaultMutationEvent, VaultMutationEventType } from "./services/vault-events";
@@ -417,21 +417,11 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
-    const previous = this.getSettings();
-    const { preferences, workspace, userData } = splitFlatPatch(patch);
-    const writes: Array<Promise<unknown>> = [];
-    if (hasPatchValues(preferences)) {
-      writes.push(this.settingsStore.updatePreferences(preferences));
-    }
-    if (hasPatchValues(workspace)) {
-      writes.push(this.settingsStore.updateWorkspace(workspace));
-    }
-    if (hasPatchValues(userData)) {
-      writes.push(this.settingsStore.updateUserData(userData));
-    }
-    if (writes.length === 0) {
+    if (!hasPatchValues(patch)) {
       return;
     }
+    const previous = this.getSettings();
+    const write = this.settingsStore.updateFlat(patch);
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
@@ -442,7 +432,7 @@ export default class CardWorkspacePlugin extends Plugin {
       }
     });
 
-    await Promise.all(writes);
+    await write;
   }
 
   private resolveTargetLeaf(): WorkspaceLeaf {

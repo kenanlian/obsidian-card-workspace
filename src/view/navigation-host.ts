@@ -1,6 +1,8 @@
 import { Menu } from "obsidian";
 import type { UiStrings } from "../i18n";
 import type { PluginSettings } from "../settings";
+import type { PropertyScalarRef } from "../property-filter-settings";
+import type { PropertyFacet } from "./property-facets";
 import { remapFavoriteSelection } from "./actions/favorite-actions";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
 import type { NavigationIntent } from "./navigation-model";
@@ -30,6 +32,8 @@ export function buildNavigationPanelState(input: {
   cardProjection: PanelProjectionState;
   navLayout: NavLayoutController;
   tooltipSide: "left" | "right";
+  /** Immutable facet snapshot (WP-05 obtains it from PropertyController). */
+  propertyFacets?: readonly PropertyFacet[];
 }): PanelModelState["nav"] {
   const { settings, strings, scope, navLayout } = input;
   const sectionCollapsed = settings.sectionCollapsed;
@@ -50,15 +54,19 @@ export function buildNavigationPanelState(input: {
       favorites: { label: strings.toolbar.navPane.favoritesSection, emptyLabel: strings.toolbar.navPane.favoritesEmpty },
       folders: { label: strings.toolbar.navPane.foldersSection, emptyLabel: null },
       tags: { label: strings.toolbar.navPane.tagsSection, emptyLabel: null },
+      properties: { label: strings.property.sectionLabel, emptyLabel: strings.property.sectionEmpty },
       boxes: { label: strings.toolbar.navPane.boxesSection, emptyLabel: strings.toolbar.navPane.boxesEmpty },
     },
     rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
+    properties: input.propertyFacets ?? [],
+    propertyClauses: settings.filter.properties,
   });
   return {
     folderTree: input.folderTree, favorites: input.favorites, boxSummaries: input.boxSummaries,
     paneWidth: settings.navPaneWidth, layoutMode: navLayout.getLayoutMode(),
     visible: navLayout.getNavVisible(), sectionCollapsed,
     showItemCounts: settings.showNavItemCounts, tooltipSide: input.tooltipSide,
+    propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),
     projection, query: navLayout.getQuery(), focusId: navLayout.getFocusId(),
     focusRequest: navLayout.getFocusRequest(),
     revealRequest: navLayout.getRevealRequest(),
@@ -126,6 +134,11 @@ export function isCurrentNavigationMenuTarget(input: {
   if (payload.section === "folders") {
     return typeof payload.itemId === "string" && input.resolveFolder(payload.itemId) !== null;
   }
+  if (payload.section === "properties") {
+    return typeof payload.itemId === "string" && input.navLayout.getProjection().rows.some((row) =>
+      (row.kind === "property" || row.kind === "property-value")
+      && row.id === payload.originId && row.propertyKey === payload.itemId);
+  }
   return input.navLayout.getProjection().rows.some((row) =>
     row.id === payload.originId && row.kind === "tag" && row.tagPath === payload.itemId);
 }
@@ -162,6 +175,11 @@ export function routeNavigationIntent(input: {
   switchBox: (boxId: string) => void;
   applyTagFilter: (tags: string[]) => void;
   activateFavorite: (favorite: FavoriteEntry) => void;
+  /**
+   * Property-value selection callback (WP-05 binds PropertyActions). Optional so
+   * the pre-WP-05 host caller keeps compiling; absent means a no-op.
+   */
+  selectPropertyValue?: (propertyKey: string, ref: PropertyScalarRef, additive: boolean) => void;
 }): void {
   const { intent, navLayout } = input;
   if (intent.type === "query-update") { navLayout.updateQuery(intent.query); return; }
@@ -190,9 +208,16 @@ export function routeNavigationIntent(input: {
     input.applyTagFilter(resolveTagSelection([...input.activeTags], row.tagPath, intent.mode === "additive"));
     return;
   }
-  if (row.favorite.kind === "tag" && intent.mode === "additive") {
-    input.applyTagFilter(resolveTagSelection([...input.activeTags], row.favorite.ref, true));
+  if (row.kind === "property") { void navLayout.setExpanded(row, !row.expanded); return; }
+  if (row.kind === "property-value") {
+    input.selectPropertyValue?.(row.propertyKey, row.value, intent.mode === "additive");
     return;
   }
-  input.activateFavorite(row.favorite);
+  if (row.kind === "favorite") {
+    if (row.favorite.kind === "tag" && intent.mode === "additive") {
+      input.applyTagFilter(resolveTagSelection([...input.activeTags], row.favorite.ref, true));
+      return;
+    }
+    input.activateFavorite(row.favorite);
+  }
 }

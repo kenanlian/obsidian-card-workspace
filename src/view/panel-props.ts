@@ -88,6 +88,13 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onFilterChange: (detail: { tags?: unknown }) => {
       void view.modules.tagActions.onFilterChange(detail);
     },
+    onPropertyCommand: (detail: { command?: unknown }) => {
+      if (detail.command === "choose-visible") {
+        view.modules.propertyActions.chooseVisibleProperties();
+      } else if (detail.command === "clear-filters") {
+        void view.modules.propertyActions.clearPropertyFilters();
+      }
+    },
     onIncludeSubfoldersChange: (detail: { value?: unknown }) => {
       void view.onIncludeSubfoldersChange(detail);
     },

@@ -22,8 +22,9 @@ vi.mock("obsidian", () => ({
 
 import { defaultNavSectionOrder } from "../../navigation-section-order";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
+import type { PropertyFacet } from "../property-facets";
 import { createFolderScope } from "../scope";
-import { navigationFolderId } from "../navigation-model";
+import { navigationFolderId, navigationPropertyId, navigationPropertyValueId } from "../navigation-model";
 import type { NavigationProjectionInput } from "../navigation-model";
 import type { NavSectionId } from "../types";
 import type { ViewContext } from "../view-context";
@@ -94,16 +95,41 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
     tagCounts: {},
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
       folders: { label: "Folders", emptyLabel: null },
       tags: { label: "Tags", emptyLabel: null },
+      properties: { label: "Properties", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
   };
+}
+
+const statusFacet: PropertyFacet = {
+  key: "status",
+  label: "Status",
+  valuedCount: 3,
+  missingCount: 1,
+  values: [
+    { ref: { kind: "text", value: "open" }, label: "open", count: 2 },
+    { ref: { kind: "text", value: "closed" }, label: "closed", count: 1 },
+    { ref: { kind: "missing" }, label: "Unassigned", count: 1 },
+  ],
+};
+
+const priorityFacet: PropertyFacet = {
+  key: "priority",
+  label: "Priority",
+  valuedCount: 2,
+  missingCount: 2,
+  values: [{ ref: { kind: "number", value: 1 }, label: "1", count: 1 }],
+};
+
+function propertyInput(properties: PropertyFacet[]): Omit<NavigationProjectionInput, "query" | "expansion"> {
+  return { ...projectionInput(), properties };
 }
 
 describe("NavLayoutController", () => {
@@ -320,7 +346,7 @@ describe("NavLayoutController", () => {
     expect(controller.getQueryBaseline()).toEqual({
       expandedFolderPaths: ["a", "shared"],
       expandedTagPaths: ["work"],
-      sectionCollapsed: { favorites: false, folders: false, tags: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
     });
     const a = projection.rows.find((row) => row.id === "folder:a");
     if (!a) throw new Error("missing query row fixture");
@@ -383,7 +409,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("folders", -1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["folders", "favorites", "tags", "boxes"],
+      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes"],
     });
   });
 
@@ -404,7 +430,84 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("boxes", 1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["tags", "favorites", "boxes", "folders"],
+      navSectionOrder: ["tags", "properties", "favorites", "boxes", "folders"],
     });
+  });
+
+  it("persists blank-query property-key expansion through saveSettings", async () => {
+    const { controller, saveSettings } = createHarness();
+    let projection = controller.project(propertyInput([statusFacet]));
+    const key = projection.rows.find((row) => row.id === navigationPropertyId("status"));
+    expect(key?.expanded).toBe(false);
+    if (!key) throw new Error("missing property key fixture");
+
+    await controller.setExpanded(key, true);
+    expect(saveSettings).toHaveBeenCalledWith({ expandedPropertyKeys: ["status"] });
+  });
+
+  it("keeps property query expansion/suppression runtime-only", async () => {
+    const { controller, saveSettings } = createHarness();
+    controller.updateQuery("open");
+    let projection = controller.project(propertyInput([statusFacet]));
+    const openKey = projection.rows.find((row) => row.id === navigationPropertyId("status"));
+    expect(openKey?.expanded).toBe(true);
+    if (!openKey) throw new Error("missing property key fixture");
+
+    await controller.setExpanded(openKey, false);
+    expect(saveSettings).not.toHaveBeenCalled();
+    projection = controller.project(propertyInput([statusFacet]));
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))?.expanded).toBe(false);
+
+    const collapsed = projection.rows.find((row) => row.id === navigationPropertyId("status"));
+    if (!collapsed) throw new Error("missing collapsed property key fixture");
+    await controller.setExpanded(collapsed, true);
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("returns focus to the key row when collapsing a property with a focused descendant", async () => {
+    const { controller, settings } = createHarness();
+    settings.expandedPropertyKeys = ["status"];
+    const valueId = navigationPropertyValueId("status", { kind: "text", value: "open" });
+    let projection = controller.project(propertyInput([statusFacet]));
+    expect(projection.rows.some((row) => row.id === valueId)).toBe(true);
+
+    controller.setFocus(valueId);
+    const key = projection.rows.find((row) => row.id === navigationPropertyId("status"));
+    if (!key) throw new Error("missing property key fixture");
+    await controller.setExpanded(key, false);
+    expect(controller.getFocusId()).toBe(navigationPropertyId("status"));
+  });
+
+  it("drops a key removed from visiblePropertyKeys from projection and expansion", () => {
+    const { controller, settings } = createHarness();
+    settings.expandedPropertyKeys = ["status", "priority"];
+    let projection = controller.project(propertyInput([statusFacet, priorityFacet]));
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("status"))).toBe(true);
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("priority"))).toBe(true);
+
+    // Chooser removal narrows the facet snapshot to the still-visible keys.
+    projection = controller.project(propertyInput([statusFacet]));
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("status"))).toBe(true);
+    expect(projection.rows.some((row) => row.id === navigationPropertyId("priority"))).toBe(false);
+  });
+
+  it("persists the Properties section collapse through the generic section toggle", async () => {
+    const { controller, saveSettings, settings } = createHarness();
+    expect(settings.sectionCollapsed.properties).toBe(false);
+
+    await controller.onToggleNavSection("properties");
+
+    expect(saveSettings).toHaveBeenCalledWith({ sectionCollapsed: { properties: true } });
+  });
+
+  it("clears property query expansion on disposal and resets the projection", () => {
+    const { controller } = createHarness();
+    controller.updateQuery("closed");
+    const projection = controller.project(propertyInput([statusFacet]));
+    expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))?.expanded).toBe(true);
+
+    controller.dispose();
+    expect(controller.getQuery()).toBe("");
+    expect(controller.getProjection().rows).toEqual([]);
   });
 });

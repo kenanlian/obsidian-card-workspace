@@ -300,7 +300,7 @@ describe("normalizeSettings — previewLines", () => {
 
 
 describe("normalizeSettings — navSectionOrder", () => {
-  const defaultOrder = ["favorites", "folders", "tags", "boxes"];
+  const defaultOrder = ["favorites", "folders", "tags", "properties", "boxes"];
 
   it("defaults navSectionOrder when the value is missing", () => {
     const { navSectionOrder: _omitted, ...rest } = DEFAULT_SETTINGS;
@@ -322,7 +322,7 @@ describe("normalizeSettings — navSectionOrder", () => {
   });
 
   it("preserves a valid permutation", () => {
-    const permutation = ["boxes", "tags", "favorites", "folders"];
+    const permutation = ["boxes", "properties", "tags", "favorites", "folders"];
     const raw = {
       ...DEFAULT_SETTINGS,
       navSectionOrder: permutation,
@@ -335,7 +335,7 @@ describe("normalizeSettings — navSectionOrder", () => {
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["folders", "folders", "tags", "folders"],
-    } as unknown).navSectionOrder).toEqual(["folders", "tags", "favorites", "boxes"]);
+    } as unknown).navSectionOrder).toEqual(["folders", "tags", "favorites", "properties", "boxes"]);
 
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
@@ -345,7 +345,19 @@ describe("normalizeSettings — navSectionOrder", () => {
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["boxes"],
-    } as unknown).navSectionOrder).toEqual(["boxes", "favorites", "folders", "tags"]);
+    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
+  });
+
+  it("inserts properties immediately before boxes for a stored old four-section order", () => {
+    expect(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["favorites", "folders", "tags", "boxes"],
+    } as unknown).navSectionOrder).toEqual(defaultOrder);
+
+    expect(normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      navSectionOrder: ["boxes", "tags", "favorites", "folders"],
+    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "tags", "favorites", "folders"]);
   });
 });
 
@@ -511,6 +523,7 @@ describe("mergeSettings — pinnedPaths", () => {
       pinnedPaths: ["notes/pinned.md"],
       filter: {
         tags: ["active"],
+        properties: [],
       },
       includeSubfolders: true,
     };
@@ -589,8 +602,8 @@ describe("mergeSettings — navSectionOrder", () => {
   it("replaces navSectionOrder wholesale and leaves sectionCollapsed intact", () => {
     const current: PluginSettings = {
       ...DEFAULT_SETTINGS,
-      navSectionOrder: ["folders", "tags", "boxes", "favorites"],
-      sectionCollapsed: { favorites: true, folders: true, tags: false, boxes: true },
+      navSectionOrder: ["folders", "tags", "properties", "boxes", "favorites"],
+      sectionCollapsed: { favorites: true, folders: true, tags: false, properties: false, boxes: true },
       previewLines: 8,
       includeSubfolders: false,
     };
@@ -598,9 +611,9 @@ describe("mergeSettings — navSectionOrder", () => {
     const next: PluginSettings["navSectionOrder"] = ["boxes", "tags", "folders", "favorites"];
     const result = mergeSettings(current, { navSectionOrder: next });
 
-    expect(result.navSectionOrder).toEqual(next);
+    expect(result.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites"]);
     expect(result.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true,
     });
     expect(result.previewLines).toBe(8);
     expect(result.includeSubfolders).toBe(false);
@@ -608,11 +621,11 @@ describe("mergeSettings — navSectionOrder", () => {
 
   it("normalizes a partial or invalid navSectionOrder patch", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { navSectionOrder: ["boxes"] }).navSectionOrder)
-      .toEqual(["boxes", "favorites", "folders", "tags"]);
+      .toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
 
     const patch = { navSectionOrder: null } as unknown;
     expect(mergeSettings(DEFAULT_SETTINGS, patch as never).navSectionOrder)
-      .toEqual(["favorites", "folders", "tags", "boxes"]);
+      .toEqual(["favorites", "folders", "tags", "properties", "boxes"]);
   });
 });
 
@@ -880,13 +893,26 @@ describe("card grouping settings normalization", () => {
       },
     };
 
-    // Upgrading a pre-grouping vault must add these four keys and nothing else.
+    // Upgrading a pre-grouping vault must add the grouping/rule-identity keys
+    // plus the Properties defaults (visible keys in preferences; expansion,
+    // clauses, and section collapse in workspace) and nothing else.
     // Rule identity is written unconditionally: C11's downgrade path re-derives
     // a dropped id and falls back for a dropped name, which presumes both are
     // normally persisted.
     expect(serializeSettings(migrateSettings(persisted))).toEqual({
       ...persisted,
-      preferences: { ...persisted.preferences, group: DEFAULT_GROUP_SPEC },
+      preferences: {
+        ...persisted.preferences,
+        group: DEFAULT_GROUP_SPEC,
+        navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites"],
+        visiblePropertyKeys: [],
+      },
+      workspace: {
+        ...persisted.workspace,
+        expandedPropertyKeys: [],
+        filterProperties: [],
+        sectionCollapsed: { ...persisted.workspace.sectionCollapsed, properties: false },
+      },
       userData: {
         ...persisted.userData,
         boxes: [{
@@ -977,7 +1003,7 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(migrateSettings({ lastViewMode: "all-notes", lastFolderPath: 12 }).lastFolderPath).toBe("");
     expect("lastViewMode" in migrateSettings({ lastViewMode: "all-notes" })).toBe(false);
     expect(migrateSettings({ lastViewMode: "all-notes" }).navSectionOrder).toEqual([
-      "favorites", "folders", "tags", "boxes",
+      "favorites", "folders", "tags", "properties", "boxes",
     ]);
   });
 
@@ -1007,7 +1033,7 @@ describe("migrateSettings — V47 schema versions", () => {
     ]);
     expect(result.favorites).toEqual([{ kind: "folder", ref: "Projects" }]);
     expect("lastViewMode" in result).toBe(false);
-    expect(result.navSectionOrder).toEqual(["favorites", "folders", "tags", "boxes"]);
+    expect(result.navSectionOrder).toEqual(["favorites", "folders", "tags", "properties", "boxes"]);
   });
 
   it("is idempotent for v2 documents and round-trips through serializeSettings", () => {
@@ -1041,17 +1067,17 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(migrateSettings(serializeSettings(once))).toEqual(once);
     expect(serializeSettings(once).schemaVersion).toBe(2);
     expect(serializeSettings(once).workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true,
     });
     expect(serializeSettings(once).preferences.navSectionOrder).toEqual([
-      "boxes", "tags", "folders", "favorites",
+      "properties", "boxes", "tags", "folders", "favorites",
     ]);
     expect(once.activeBoxId).toBe("box-1");
     expect(once.filter.tags).toEqual(["work"]);
     expect(once.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true,
     });
-    expect(once.navSectionOrder).toEqual(["boxes", "tags", "folders", "favorites"]);
+    expect(once.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites"]);
   });
 
   it("re-serializes a v2 payload to a byte-identical payload", () => {
@@ -1089,7 +1115,7 @@ describe("migrateSettings — V47 schema versions", () => {
     // toEqual, which ignores key order and would accept a silently reordered
     // payload that rewrites every synced vault's data.json on first load.
     expect(JSON.stringify(serializedOnce.workspace.sectionCollapsed)).toBe(
-      JSON.stringify({ favorites: true, folders: true, tags: false, boxes: true }),
+      JSON.stringify({ favorites: true, folders: true, tags: false, properties: false, boxes: true }),
     );
   });
 
@@ -1119,7 +1145,7 @@ describe("migrateSettings — V47 schema versions", () => {
       schemaVersion: SETTINGS_SCHEMA_VERSION,
       preferences: { navSectionOrder: ["boxes", "boxes", "nope"] },
     });
-    expect(loaded.navSectionOrder).toEqual(["boxes", "favorites", "folders", "tags"]);
+    expect(loaded.navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
     expect(serializeSettings(loaded).schemaVersion).toBe(2);
   });
 
@@ -1150,7 +1176,7 @@ describe("migrateSettings — V47 schema versions", () => {
       boxSectionCollapsed: true,
       favoritesSectionCollapsed: true,
     }).sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: true, boxes: true,
+      favorites: true, folders: true, tags: true, properties: false, boxes: true,
     });
   });
 
@@ -1162,13 +1188,13 @@ describe("migrateSettings — V47 schema versions", () => {
       favoritesSectionCollapsed: true,
       sectionCollapsed: { folders: false, tags: false },
     } as never).sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: false, boxes: true,
+      favorites: true, folders: false, tags: false, properties: false, boxes: true,
     });
   });
 
   it("defaults every section to expanded on a v0 payload", () => {
     expect(migrateSettings({ lastViewMode: "all-notes" }).sectionCollapsed).toEqual({
-      favorites: false, folders: false, tags: false, boxes: false,
+      favorites: false, folders: false, tags: false, properties: false, boxes: false,
     });
   });
 
@@ -1178,7 +1204,134 @@ describe("migrateSettings — V47 schema versions", () => {
     });
     const result = mergeSettings(current, { sectionCollapsed: { folders: false } });
     expect(result.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, boxes: true,
+      favorites: true, folders: false, tags: true, properties: false, boxes: true,
     });
+  });
+});
+
+describe("property settings normalization", () => {
+  it("defaults to no visible keys, no filters, no expansion, and an expanded section", () => {
+    const result = normalizeSettings({});
+    expect(result.visiblePropertyKeys).toEqual([]);
+    expect(result.expandedPropertyKeys).toEqual([]);
+    expect(result.filter.properties).toEqual([]);
+    expect(result.sectionCollapsed.properties).toBe(false);
+  });
+
+  it("normalizes old v0/v1 and old-v2 documents to safe property defaults", () => {
+    const v1 = migrateSettings({ lastViewMode: "all-notes", filterTags: ["work"] });
+    expect(v1.visiblePropertyKeys).toEqual([]);
+    expect(v1.filter.properties).toEqual([]);
+    expect(v1.expandedPropertyKeys).toEqual([]);
+
+    const oldV2 = migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { previewLines: 6 },
+      workspace: { filterTags: ["work"] },
+    });
+    expect(oldV2.visiblePropertyKeys).toEqual([]);
+    expect(oldV2.filter.tags).toEqual(["work"]);
+    expect(oldV2.filter.properties).toEqual([]);
+    expect(oldV2.sectionCollapsed.properties).toBe(false);
+
+    const malformedV2 = migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { visiblePropertyKeys: "nope" },
+      workspace: { filterProperties: { not: "an-array" }, expandedPropertyKeys: 7 },
+    });
+    expect(malformedV2.visiblePropertyKeys).toEqual([]);
+    expect(malformedV2.filter.properties).toEqual([]);
+    expect(malformedV2.expandedPropertyKeys).toEqual([]);
+  });
+
+  it("keeps only visible keys for expansion and clauses in one normalization pass", () => {
+    const result = normalizeSettings({
+      visiblePropertyKeys: [" Status ", "PRIORITY", "status", "position"],
+      expandedPropertyKeys: ["status", "hidden"],
+      filter: {
+        properties: [
+          { key: "Status", values: [{ kind: "text", value: "open" }] },
+          { key: "hidden", values: [{ kind: "text", value: "x" }] },
+        ],
+      },
+    } as never);
+
+    expect(result.visiblePropertyKeys).toEqual(["priority", "status"]);
+    expect(result.expandedPropertyKeys).toEqual(["status"]);
+    expect(result.filter.properties).toEqual([
+      { key: "status", values: [{ kind: "text", value: "open" }] },
+    ]);
+  });
+
+  it("removes the expansion and clause of a key hidden by the same patch", () => {
+    const current = mergeSettings(DEFAULT_SETTINGS, {
+      visiblePropertyKeys: ["status", "priority"],
+      expandedPropertyKeys: ["status"],
+      filter: { properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] },
+    });
+    expect(current.filter.properties).toHaveLength(1);
+
+    const result = mergeSettings(current, { visiblePropertyKeys: ["priority"] });
+    expect(result.visiblePropertyKeys).toEqual(["priority"]);
+    expect(result.expandedPropertyKeys).toEqual([]);
+    expect(result.filter.properties).toEqual([]);
+  });
+
+  it("round-trips type-sensitive clauses through serializeSettings and migrateSettings", () => {
+    const settings = mergeSettings(DEFAULT_SETTINGS, {
+      visiblePropertyKeys: ["status", "priority"],
+      expandedPropertyKeys: ["status"],
+      filter: {
+        tags: ["work"],
+        properties: [
+          {
+            key: "status",
+            values: [
+              { kind: "text", value: "1" },
+              { kind: "missing" },
+            ],
+          },
+          {
+            key: "priority",
+            values: [
+              { kind: "number", value: 1 },
+              { kind: "boolean", value: true },
+            ],
+          },
+        ],
+      },
+    });
+
+    const serialized = serializeSettings(settings);
+    expect(serialized.preferences.visiblePropertyKeys).toEqual(["priority", "status"]);
+    expect(serialized.workspace.expandedPropertyKeys).toEqual(["status"]);
+    expect(serialized.workspace.filterTags).toEqual(["work"]);
+    expect(serialized.workspace.filterProperties).toEqual(settings.filter.properties);
+    expect(serialized.workspace).not.toHaveProperty("filter");
+
+    const restored = migrateSettings(JSON.parse(JSON.stringify(serialized)));
+    expect(restored.visiblePropertyKeys).toEqual(settings.visiblePropertyKeys);
+    expect(restored.expandedPropertyKeys).toEqual(settings.expandedPropertyKeys);
+    expect(restored.filter.tags).toEqual(["work"]);
+    expect(restored.filter.properties).toEqual(settings.filter.properties);
+    expect(migrateSettings(serializeSettings(restored))).toEqual(restored);
+  });
+
+  it("keeps the tags arm when a patch touches only filter.properties and vice versa", () => {
+    const current = mergeSettings(DEFAULT_SETTINGS, {
+      visiblePropertyKeys: ["status"],
+      filter: {
+        tags: ["work"],
+        properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+      },
+    });
+
+    const tagsOnly = mergeSettings(current, { filter: { tags: ["home"] } });
+    expect(tagsOnly.filter.tags).toEqual(["home"]);
+    expect(tagsOnly.filter.properties).toEqual(current.filter.properties);
+
+    const propertiesOnly = mergeSettings(current, { filter: { properties: [] } });
+    expect(propertiesOnly.filter.tags).toEqual(["work"]);
+    expect(propertiesOnly.filter.properties).toEqual([]);
   });
 });

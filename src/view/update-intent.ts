@@ -1,4 +1,5 @@
 import type { GroupSpec } from "../card-grouping-settings";
+import { propertyFilterClausesEqual } from "../property-filter-settings";
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
 import { NAVIGATION_SECTION_ORDER } from "./navigation-model";
@@ -107,6 +108,9 @@ export function resolveSettingsUpdateIntent(
   if (!stringArraysEqual(previous.filter.tags, next.filter.tags)) {
     intent = mergeIntent(intent, "reproject");
   }
+  if (!propertyFilterClausesEqual(previous.filter.properties, next.filter.properties)) {
+    intent = mergeIntent(intent, "reproject");
+  }
   if (!stringArraysEqual(previous.pinnedPaths, next.pinnedPaths)) {
     intent = mergeIntent(intent, "reproject");
   }
@@ -129,6 +133,10 @@ export function resolveSettingsUpdateIntent(
   if (previous.lastFolderPath !== next.lastFolderPath) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.expandedFolderPaths, next.expandedFolderPaths)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.expandedTagPaths, next.expandedTagPaths)) intent = mergeIntent(intent, "patch");
+  // Removing a visible key also removes its clause in the same normalized save;
+  // the reproject above then covers the card-facing effect of that removal.
+  if (!stringArraysEqual(previous.visiblePropertyKeys, next.visiblePropertyKeys)) intent = mergeIntent(intent, "patch");
+  if (!stringArraysEqual(previous.expandedPropertyKeys, next.expandedPropertyKeys)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.navSectionOrder, next.navSectionOrder)) intent = mergeIntent(intent, "patch");
   if (!favoritesEqual(previous.favorites, next.favorites)) intent = mergeIntent(intent, "patch");
   if (previous.activeBoxId !== next.activeBoxId) intent = mergeIntent(intent, "patch");

@@ -1,13 +1,20 @@
 import type { App } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
+import {
+  normalizePropertyFilterClauses,
+  type PropertyFilterClause,
+} from "../property-filter-settings";
 import { arrangeCardsByGroup, type CardGroupSegment, type GroupBucket } from "./card-grouping";
-import { matchesTagFilter } from "./metadata-utils";
+import { getFileFrontmatter, matchesTagFilter } from "./metadata-utils";
+import { matchesPropertyFilters } from "./property-metadata";
 import type { CardScope } from "./scope";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
   app: App;
   filterTags: string[];
+  // Workspace-persisted property clauses; applied in folder and box scopes.
+  propertyFilters: readonly PropertyFilterClause[];
   // Runtime-only input from FolderCardView; query stays out of persisted settings.
   search: PipelineSearchInput;
   // Explicit ordered pin input for projection; prevents reaching through settings with casts.
@@ -85,6 +92,24 @@ export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext
 }
 
 /**
+ * Property filter step.
+ *
+ * Values within one clause combine with OR; clauses for different keys combine
+ * with AND; `missing` matches a card with no supported scalar for that key.
+ * Frontmatter comes from the metadata cache only — no body reads. Passes the
+ * original array through (same reference) when no normalized clauses remain.
+ */
+export function applyPropertyFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+  const clauses = normalizePropertyFilterClauses(context.propertyFilters);
+  if (clauses.length === 0) {
+    return cards;
+  }
+
+  const app = context.app;
+  return matchesPropertyFilters(cards, clauses, (file) => getFileFrontmatter(app, file));
+}
+
+/**
  * Search filter step.
  *
  * Indexed-only semantics:
@@ -150,8 +175,9 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
 
 /**
  * The member set (rule hits ∪ manual − excluded) is resolved during box load,
- * so the box pipeline skips the browse tag filter and only runs
- * `search -> pin`. `context.pinnedPaths` carries the box's own pinned paths.
+ * so the box pipeline skips the browse tag filter and runs
+ * `property -> search -> pin`. `context.pinnedPaths` carries the box's own
+ * pinned paths. Property filtering IS available in boxes, unlike browse Tags.
  *
  * Dispatch is total over `CardScope["kind"]`: the `never` arm exists so a new
  * Card Source must declare its own filter chain rather than silently inheriting
@@ -160,9 +186,9 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
 export function stepsForScope(scope: CardScope): PipelineStep[] {
   switch (scope.kind) {
     case "folder":
-      return [applyTagFilter, applySearchFilter, applyPinReorder];
+      return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "box":
-      return [applySearchFilter, applyPinReorder];
+      return [applyPropertyFilter, applySearchFilter, applyPinReorder];
     default: {
       const exhaustive: never = scope;
       throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);

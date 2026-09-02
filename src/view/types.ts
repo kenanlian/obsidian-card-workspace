@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
+import type { PropertyScalarRef } from "../property-filter-settings";
 import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
@@ -256,7 +257,7 @@ export interface FolderActionPayload {
   path: string;
 }
 
-export type NavSectionId = "favorites" | "folders" | "tags" | "boxes";
+export type NavSectionId = "favorites" | "folders" | "tags" | "properties" | "boxes";
 
 /**
  * Expansion and logical focus live in the host-owned navigation runtime.
@@ -274,6 +275,8 @@ export interface NavContextMenuPayload {
   itemId?: string;
   /** Present only for `section: "favorites"`, `scope: "item"`. */
   favorite?: FavoriteEntry;
+  /** Present only for `section: "properties"`, `scope: "item"` on value rows. */
+  value?: PropertyScalarRef;
   /** Stable row/section ID to restore logical focus when the menu closes. */
   originId: string;
   trigger: NavMenuTrigger;
