@@ -214,18 +214,26 @@ export function collectVaultTagIndex(app: App): VaultTagIndex | null {
 }
 
 /**
- * Check whether a file matches a tag filter. A file matches if it contains
- * ALL of the specified filter tags (AND logic). Filter tags should be
+ * Check whether already-cached metadata matches a tag filter. The cache is the
+ * single read: a `null` cache means the file has no tags. A file matches if it
+ * contains ALL of the specified filter tags (AND logic). Filter tags should be
  * normalized (lowercase, no `#`).
  *
  * Returns `true` if `filterTags` is empty (no filter applied).
  */
-export function matchesTagFilter(app: App, file: TFile, filterTags: string[]): boolean {
+export function matchesTagFilterFromCache(
+  cache: CachedMetadata | null,
+  filterTags: string[],
+): boolean {
   if (filterTags.length === 0) {
     return true;
   }
 
-  const fileTags = getFileTags(app, file);
+  const raw = cache ? getAllTags(cache) : null;
+  const fileTags = raw
+    ?.map((tag) => normalizeTagPath(tag))
+    .filter((tag) => tag.length > 0) ?? [];
+
   const normalizedFilterTags = filterTags
     .map((tag) => normalizeTagPath(tag))
     .filter((tag) => tag.length > 0);
@@ -237,6 +245,21 @@ export function matchesTagFilter(app: App, file: TFile, filterTags: string[]): b
   return normalizedFilterTags.every((filterTag) => {
     return fileTags.some((fileTag) => tagPathMatchesFilter(fileTag, filterTag));
   });
+}
+
+/**
+ * Check whether a file matches a tag filter. A file matches if it contains
+ * ALL of the specified filter tags (AND logic). Filter tags should be
+ * normalized (lowercase, no `#`).
+ *
+ * Returns `true` if `filterTags` is empty (no filter applied).
+ */
+export function matchesTagFilter(app: App, file: TFile, filterTags: string[]): boolean {
+  if (filterTags.length === 0) {
+    return true;
+  }
+
+  return matchesTagFilterFromCache(app.metadataCache.getFileCache(file), filterTags);
 }
 
 // ---------------------------------------------------------------------------

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../../card-grouping-settings";
 import { getUiStrings } from "../../i18n";
+import type { PropertyFilterClause } from "../../property-filter-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import * as metadataUtils from "../metadata-utils";
+import * as pipeline from "../pipeline";
 import { createBoxScope, createFolderScope } from "../scope";
 import type { CardBoxDefinition, NoteCardRecord, PipelineSearchInput, Rule } from "../types";
 import type { ViewContext } from "../view-context";
@@ -35,6 +37,7 @@ function createRule(patch: Partial<Rule> = {}): Rule {
     folder: "notes",
     includeSubfolders: true,
     tags: [],
+    properties: [],
     ...patch,
   };
 }
@@ -55,6 +58,7 @@ function createBox(rules: Rule[]): CardBoxDefinition {
 function createHarness(options: {
   scope?: ReturnType<typeof createFolderScope> | ReturnType<typeof createBoxScope>;
   filterTags?: string[];
+  filterProperties?: PropertyFilterClause[];
   search?: PipelineSearchInput;
   pinnedPaths?: string[];
   group?: GroupSpec;
@@ -83,7 +87,8 @@ function createHarness(options: {
     getSettings: () => ({
       ...normalizeSettings({
         ...DEFAULT_SETTINGS,
-        filter: { tags: options.filterTags ?? [] },
+        filter: { tags: options.filterTags ?? [], properties: options.filterProperties ?? [] },
+        visiblePropertyKeys: options.filterProperties?.map((clause) => clause.key) ?? [],
       }),
       boxes: state.boxes,
     }),
@@ -155,6 +160,36 @@ describe("ProjectionController", () => {
       "a.md",
     ]);
     expect(matches).not.toHaveBeenCalled();
+  });
+
+  it("keeps the full member set visible in box scope despite active workspace property clauses", () => {
+    const cards = [createCard("a.md"), createCard("b.md")];
+    const { controller } = createHarness({
+      scope: createBoxScope("box-1"),
+      filterTags: ["must-not-run"],
+      filterProperties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    });
+    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter");
+
+    expect(controller.deriveVisibleCardsFrom(cards)).toEqual(cards);
+    expect(frontmatter).not.toHaveBeenCalled();
+  });
+
+  it("injects empty propertyFilters into the pipeline context in box scope", () => {
+    const cards = [createCard("a.md"), createCard("b.md")];
+    const clause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const box = createHarness({
+      scope: createBoxScope("box-1"),
+      filterProperties: [clause],
+    });
+    const folder = createHarness({ filterProperties: [clause] });
+    const runPipeline = vi.spyOn(pipeline, "runPipeline");
+
+    box.controller.deriveVisibleCardsFrom(cards);
+    expect(runPipeline.mock.calls[0]?.[2].propertyFilters).toEqual([]);
+
+    folder.controller.deriveVisibleCardsFrom(cards);
+    expect(runPipeline.mock.calls[1]?.[2].propertyFilters).toEqual([clause]);
   });
 
   it("passes the explicit settings filterTags into the pipeline context", () => {

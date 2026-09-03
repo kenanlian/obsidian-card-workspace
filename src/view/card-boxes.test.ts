@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App, TFile } from "obsidian";
+import type { PropertyFilterClause } from "../property-filter-settings";
 import {
   addManualPaths,
   addRuleToBox,
@@ -34,9 +35,11 @@ function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
 }
 
 function makeRule(partial: Partial<Rule> = {}): Rule {
-  const content = { folder: "", includeSubfolders: true, tags: [], ...partial };
+  const content = { folder: "", includeSubfolders: true, tags: [], properties: [], ...partial };
   return { ...content, id: partial.id ?? deriveRuleId(content), name: partial.name ?? "" };
 }
+
+const statusClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
 
 function createApp(tagsByPath: Record<string, string[]>): App {
   return {
@@ -119,7 +122,7 @@ describe("rule + membership helpers", () => {
     // vault upgraded from a pre-identity release produces the same bytes and
     // does not trigger a spurious reload.
     expect(getBoxMembershipSignature(box)).toBe(
-      '{"rules":[{"folder":"Projects","includeSubfolders":true,"tags":[]}],'
+      '{"rules":[{"folder":"Projects","includeSubfolders":true,"tags":[],"properties":[]}],'
       + '"manual":["Manual.md"],"excluded":["Excluded.md"]}',
     );
     expect(getBoxMembershipSignature({ ...box, name: "Renamed", pinnedPaths: [] }))
@@ -144,9 +147,24 @@ describe("rule + membership helpers", () => {
       folder: "",
       includeSubfolders: false,
       tags: ["wip"],
+      properties: [],
       id: "r:|false|wip",
       name: "",
     });
+  });
+
+  it("bakes normalized property clauses into the translated rule (C2/V-B)", () => {
+    const rule = translateBrowseScopeToRule({
+      folder: "Projects",
+      includeSubfolders: false,
+      tags: [],
+      properties: [
+        { key: "Status", values: [{ kind: "text", value: "open" }, { kind: "text", value: "open" }] },
+        "not-a-clause" as never,
+      ],
+    });
+    expect(rule.properties).toEqual([{ key: "status", values: [{ kind: "text", value: "open" }] }]);
+    expect(rule.id).toBe('r:Projects|false||[["status",["[\\"t\\",\\"open\\"]"]]]');
   });
 
   it("carries rule identity and box grouping through clone and duplicate", () => {
@@ -175,6 +193,55 @@ describe("rule + membership helpers", () => {
     const box = makeBox({ rules: [makeRule({ folder: "P", tags: ["a", "b"] })] });
     const next = addRuleToBox(box, makeRule({ folder: "P", tags: ["b", "a"] }));
     expect(next.rules).toHaveLength(1);
+  });
+
+  it("keeps rules with identical folder+tags but different property clauses (S9/V-B)", () => {
+    const box = makeBox({ rules: [makeRule({ folder: "P", tags: ["a"], properties: [statusClause] })] });
+    const other = makeRule({
+      folder: "P",
+      tags: ["a"],
+      properties: [{ key: "priority", values: [{ kind: "number", value: 1 }] }],
+    });
+    expect(addRuleToBox(box, other).rules).toHaveLength(2);
+  });
+
+  it("dedupes rules whose clauses use the same keys in a different order (V-B)", () => {
+    const clauses: PropertyFilterClause[] = [
+      statusClause,
+      { key: "priority", values: [{ kind: "missing" }] },
+    ];
+    const box = makeBox({ rules: [makeRule({ folder: "P", properties: clauses })] });
+    const reordered = makeRule({ folder: "P", properties: [...clauses].reverse() });
+    expect(addRuleToBox(box, reordered).rules).toHaveLength(1);
+  });
+
+  it("deep-isolates duplicated rule property clauses by value (C1/V-B)", () => {
+    const rule = makeRule({ folder: "P", properties: [statusClause] });
+    const source = makeBox({ id: "a", rules: [rule] });
+
+    const [, copy] = duplicateCardBox([source], "a");
+
+    expect(copy.rules[0]?.properties).toEqual([statusClause]);
+    expect(copy.rules[0]?.properties[0]).not.toBe(rule.properties[0]);
+    expect(copy.rules[0]?.properties[0]?.values).not.toBe(rule.properties[0]?.values);
+    source.rules[0].properties[0].values.push({ kind: "missing" });
+    expect(copy.rules[0]?.properties[0]?.values).toEqual([{ kind: "text", value: "open" }]);
+  });
+
+  it("embeds rule properties in the membership signature (V-B)", () => {
+    const withClauses = makeBox({ rules: [makeRule({ folder: "P", properties: [statusClause] })] });
+    const sameClauses = makeBox({ rules: [makeRule({ folder: "P", properties: [statusClause] })] });
+    const otherClauses = makeBox({
+      rules: [
+        makeRule({
+          folder: "P",
+          properties: [{ key: "status", values: [{ kind: "text", value: "done" }] }],
+        }),
+      ],
+    });
+
+    expect(getBoxMembershipSignature(sameClauses)).toBe(getBoxMembershipSignature(withClauses));
+    expect(getBoxMembershipSignature(otherClauses)).not.toBe(getBoxMembershipSignature(withClauses));
   });
 
   it("removes a rule by index", () => {

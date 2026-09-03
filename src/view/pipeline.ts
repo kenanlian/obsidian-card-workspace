@@ -13,7 +13,7 @@ import type { NoteCardRecord, PipelineSearchInput } from "./types";
 export interface PipelineContext {
   app: App;
   filterTags: string[];
-  // Workspace-persisted property clauses; applied in folder and box scopes.
+  // Workspace-persisted property clauses; applied in folder scopes only.
   propertyFilters: readonly PropertyFilterClause[];
   // Runtime-only input from FolderCardView; query stays out of persisted settings.
   search: PipelineSearchInput;
@@ -174,10 +174,10 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
 }
 
 /**
- * The member set (rule hits ∪ manual − excluded) is resolved during box load,
- * so the box pipeline skips the browse tag filter and runs
- * `property -> search -> pin`. `context.pinnedPaths` carries the box's own
- * pinned paths. Property filtering IS available in boxes, unlike browse Tags.
+ * The member set (rule hits ∪ manual − excluded) is resolved during box load
+ * and digests the rule's property clauses there, so the box pipeline skips
+ * the browse tag and property filters and runs `search -> pin`.
+ * `context.pinnedPaths` carries the box's own pinned paths.
  *
  * Dispatch is total over `CardScope["kind"]`: the `never` arm exists so a new
  * Card Source must declare its own filter chain rather than silently inheriting
@@ -188,7 +188,7 @@ export function stepsForScope(scope: CardScope): PipelineStep[] {
     case "folder":
       return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "box":
-      return [applyPropertyFilter, applySearchFilter, applyPinReorder];
+      return [applySearchFilter, applyPinReorder];
     default: {
       const exhaustive: never = scope;
       throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);

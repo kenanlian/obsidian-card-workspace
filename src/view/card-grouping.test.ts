@@ -60,6 +60,7 @@ function createRule(overrides: Partial<Rule> & { id: string }): Rule {
     folder: "",
     includeSubfolders: true,
     tags: [],
+    properties: [],
     name: "",
     ...overrides,
   };

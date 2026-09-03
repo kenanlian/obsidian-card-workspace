@@ -1,5 +1,7 @@
 import type { App, TFile } from "obsidian";
-import { matchesTagFilter } from "./metadata-utils";
+import { isMarkdownCardKind, resolveCardFileKind } from "./file-kind";
+import { matchesTagFilterFromCache } from "./metadata-utils";
+import { matchesPropertyClauses } from "./property-metadata";
 import type { CardBoxDefinition, Rule } from "./types";
 
 /**
@@ -37,17 +39,21 @@ export function inFolderScope(
 
 /**
  * A path matches a rule when it is inside the folder scope AND matches every
- * tag (AND semantics, identical to the browse tag filter).
+ * tag and property clause (AND semantics, identical to the browse filters).
  *
- * Tag matching resolves the file from `MetadataCache`; it is never gated by the
- * search index readiness state.
+ * Tags and frontmatter are evaluated from a single
+ * `metadataCache.getFileCache` read; matching is never gated by the search
+ * index readiness state.
  */
 export function matchesRule(app: App, path: string, rule: Rule): boolean {
   if (!inFolderScope(path, rule.folder, rule.includeSubfolders)) {
     return false;
   }
 
-  if (rule.tags.length === 0) {
+  // Normalized rules always carry `properties`; the fallback keeps stale
+  // unnormalized fixtures evaluating with tags-only semantics.
+  const properties = rule.properties ?? [];
+  if (rule.tags.length === 0 && properties.length === 0) {
     return true;
   }
 
@@ -56,7 +62,15 @@ export function matchesRule(app: App, path: string, rule: Rule): boolean {
     return false;
   }
 
-  return matchesTagFilter(app, file, rule.tags);
+  // The one cache read, shared by tag and property matching.
+  const cache = app.metadataCache.getFileCache(file);
+  const fileKind = resolveCardFileKind(file);
+  return matchesTagFilterFromCache(cache, rule.tags)
+    && matchesPropertyClauses(
+      properties,
+      fileKind !== null && isMarkdownCardKind(fileKind),
+      cache?.frontmatter ?? null,
+    );
 }
 
 /**

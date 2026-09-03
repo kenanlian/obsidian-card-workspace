@@ -344,8 +344,9 @@ describe("R5 line-count ratchet", () => {
     "src/view/note-ops.ts": 877,
     // Properties added the section header action, value-row additive activation,
     // and the active-filter count hand-off; the tree/projection logic itself is
-    // host-owned and stays in navigation-* modules.
-    "src/view/NavigationPane.svelte": 290,
+    // host-owned and stays in navigation-* modules. Box mode adds the properties
+    // disabled-in-box empty copy and pins the chooser header variant (WP-05).
+    "src/view/NavigationPane.svelte": 292,
     "src/view/FolderCardPanel.svelte": 827,
     "src/view/Toolbar.svelte": 751,
     "src/view/CardItem.svelte": 438,
@@ -361,7 +362,7 @@ describe("R5 line-count ratchet", () => {
     "src/services/SettingsStore.ts": 417,
     "src/view/markdown-utils.ts": 462,
     "src/search/IndexStore.ts": 445,
-    "src/view/card-boxes.ts": 410,
+    "src/view/card-boxes.ts": 409,
   };
   const DEFAULT_LINE_LIMIT = 400;
 

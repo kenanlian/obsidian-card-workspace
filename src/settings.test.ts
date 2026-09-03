@@ -731,13 +731,150 @@ describe("card box settings normalization", () => {
     } as never);
 
     expect(result.boxes[0].rules).toEqual([
-      { folder: "", includeSubfolders: false, tags: ["#Wip"], id: "r:|false|#Wip", name: "" },
+      {
+        folder: "",
+        includeSubfolders: false,
+        tags: ["#Wip"],
+        properties: [],
+        id: "r:|false|#Wip",
+        name: "",
+      },
     ]);
   });
 
   it("falls back to null activeBoxId when it does not match a box", () => {
     expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "ghost" } as never).activeBoxId).toBeNull();
     expect(normalizeSettings({ boxes: [{ id: "a", name: "A" }], activeBoxId: "a" } as never).activeBoxId).toBe("a");
+  });
+});
+
+describe("card box rule property clauses", () => {
+  const statusClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+
+  it("defaults rule properties to an empty array when absent (V-C)", () => {
+    const result = normalizeSettings({
+      boxes: [{ id: "a", name: "A", rules: [{ folder: "P", tags: [] }] }],
+    } as never);
+    expect(result.boxes[0]?.rules[0]?.properties).toEqual([]);
+    expect(result.boxes[0]?.rules[0]?.id).toBe("r:P|true|");
+  });
+
+  it("parses valid clauses and drops malformed ones (V-C)", () => {
+    const result = normalizeSettings({
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [{
+          folder: "P",
+          tags: [],
+          properties: [
+            { key: "Status", values: [{ kind: "text", value: "open" }, { kind: "nonsense" }] },
+            { key: "", values: [{ kind: "missing" }] },
+            { key: "priority", values: [] },
+            "not-a-clause",
+          ],
+        }],
+      }],
+    } as never);
+
+    expect(result.boxes[0]?.rules[0]?.properties).toEqual([
+      { key: "status", values: [{ kind: "text", value: "open" }] },
+    ]);
+  });
+
+  it("keeps clauses whose key is not a visible property key (C1/V-C)", () => {
+    const result = normalizeSettings({
+      visiblePropertyKeys: ["priority"],
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [{ folder: "P", tags: [], properties: [statusClause] }],
+      }],
+    } as never);
+
+    // Rule clauses are authored data: unlike workspace filter.properties they
+    // are never trimmed by visiblePropertyKeys.
+    expect(result.boxes[0]?.rules[0]?.properties).toEqual([statusClause]);
+    expect(result.filter.properties).toEqual([]);
+  });
+
+  it("round-trips rule clauses through serialization and keeps them independent of workspace filters (S3/V-C)", () => {
+    const settings = mergeSettings(DEFAULT_SETTINGS, {
+      visiblePropertyKeys: ["priority", "status"],
+      filter: { properties: [{ key: "priority", values: [{ kind: "missing" }] }] },
+      boxes: [{
+        id: "a",
+        name: "A",
+        rules: [{
+          folder: "Projects",
+          includeSubfolders: false,
+          tags: ["work"],
+          id: "r:Projects|false|work",
+          name: "",
+          properties: [
+            { key: "status", values: [{ kind: "number", value: 1 }, { kind: "boolean", value: true }] },
+          ],
+        }],
+        manualPaths: [],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "name", direction: "asc" },
+        group: DEFAULT_GROUP_SPEC,
+      }],
+    });
+
+    const restored = migrateSettings(JSON.parse(JSON.stringify(serializeSettings(settings))));
+    expect(restored.boxes[0]?.rules[0]?.properties).toEqual(settings.boxes[0]?.rules[0]?.properties);
+    expect(restored.filter.properties).toEqual([{ key: "priority", values: [{ kind: "missing" }] }]);
+
+    // A different workspace filter or visible-key set never rewrites baked clauses.
+    const other = mergeSettings(restored, {
+      visiblePropertyKeys: ["other"],
+      filter: { properties: [{ key: "other", values: [{ kind: "text", value: "x" }] }] },
+    });
+    expect(other.boxes[0]?.rules[0]?.properties).toEqual(restored.boxes[0]?.rules[0]?.properties);
+    expect(migrateSettings(serializeSettings(other)).boxes[0]?.rules[0]?.properties)
+      .toEqual(restored.boxes[0]?.rules[0]?.properties);
+  });
+
+  it("strips rule properties under the legacy whitelist while keeping folder/tags/id (route A/V-U)", () => {
+    const serialized = {
+      folder: "Projects",
+      includeSubfolders: false,
+      tags: ["a", "b"],
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+      id: 'r:Projects|false|a,b|[["status",["[\\"t\\",\\"open\\"]"]]]',
+      name: "Client work",
+    };
+
+    // Pre-feature normalizeRule rebuilt rules from a fixed field whitelist;
+    // simulate that downgrade to pin the controlled-degradation promise.
+    const legacy = {
+      folder: typeof serialized.folder === "string" ? (serialized.folder === "/" ? "" : serialized.folder) : "",
+      includeSubfolders: typeof serialized.includeSubfolders === "boolean" ? serialized.includeSubfolders : true,
+      tags: Array.isArray(serialized.tags)
+        ? serialized.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+        : [],
+      id: typeof serialized.id === "string" ? serialized.id.trim() : "",
+      name: typeof serialized.name === "string" ? serialized.name.trim() : "",
+    };
+    expect(legacy).toEqual({
+      folder: "Projects",
+      includeSubfolders: false,
+      tags: ["a", "b"],
+      id: 'r:Projects|false|a,b|[["status",["[\\"t\\",\\"open\\"]"]]]',
+      name: "Client work",
+    });
+    expect("properties" in legacy).toBe(false);
+
+    // The upgrade half: the current normalizer keeps the clauses by value.
+    const restored = normalizeSettings({
+      boxes: [{ id: "a", name: "A", rules: [serialized] }],
+    } as never);
+    expect(restored.boxes[0]?.rules[0]?.properties).toEqual([
+      { key: "status", values: [{ kind: "text", value: "open" }] },
+    ]);
+    expect(restored.boxes[0]?.rules[0]?.id).toBe('r:Projects|false|a,b|[["status",["[\\"t\\",\\"open\\"]"]]]');
   });
 });
 
@@ -919,6 +1056,7 @@ describe("card grouping settings normalization", () => {
           ...persisted.userData.boxes[0],
           rules: [{
             ...persisted.userData.boxes[0].rules[0],
+            properties: [],
             id: "r:Projects|true|work",
             name: "",
           }],

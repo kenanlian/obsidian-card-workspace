@@ -6,22 +6,24 @@ import { appendNavSectionHeaderItems } from "./nav-section-header-items";
 
 /**
  * Properties lane menus (C9). The header offers the chooser first, then the
- * filter clear, then the generic section move/collapse items. Key rows can be
- * hidden with the same coherent cleanup as the chooser; value rows only filter,
- * never edit frontmatter.
+ * filter clear (dropped inside a box), then the generic section move/collapse
+ * items. Key rows can be hidden with the same coherent cleanup as the chooser;
+ * value rows only filter, never edit frontmatter, and offer no menu in a box.
  */
 export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   const property = deps.strings.property;
   addItem(menu, property.chooseVisible, "settings-2", () => deps.actions.chooseVisibleProperties());
-  addItem(
-    menu,
-    property.clearFilters,
-    "filter-x",
-    () => deps.actions.clearPropertyFilters(),
-    (item) => {
-      item.setDisabled(deps.propertyFilterCount === 0);
-    },
-  );
+  if (!deps.isBoxMode) {
+    addItem(
+      menu,
+      property.clearFilters,
+      "filter-x",
+      () => deps.actions.clearPropertyFilters(),
+      (item) => {
+        item.setDisabled(deps.propertyFilterCount === 0);
+      },
+    );
+  }
   menu.addSeparator();
   appendNavSectionHeaderItems(menu, deps, "properties");
   return true;
@@ -40,6 +42,9 @@ export function buildPropertyValueMenu(
   key: string,
   value: PropertyScalarRef,
 ): boolean {
+  if (deps.isBoxMode) {
+    return false;
+  }
   const property = deps.strings.property;
   const isActive = deps.isPropertyValueActive(key, value);
 

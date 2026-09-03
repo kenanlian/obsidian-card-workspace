@@ -37,6 +37,7 @@ export interface BoxStrings {
   ruleRootLabel: string;
   ruleSubfolderSuffix: string;
   ruleTagsSeparator: string;
+  rulePropertiesSeparator: string;
   ruleFolderMissing: string;
   ruleNameLabel: string;
   ruleNamePlaceholder: string;
@@ -96,6 +97,7 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     ruleRootLabel: "Vault root",
     ruleSubfolderSuffix: "incl. subfolders",
     ruleTagsSeparator: " · ",
+    rulePropertiesSeparator: " · ",
     ruleFolderMissing: "Folder no longer exists",
     ruleNameLabel: "Rule name",
     ruleNamePlaceholder: "Leave empty to use the rule description",
@@ -151,6 +153,7 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     ruleRootLabel: "库根目录",
     ruleSubfolderSuffix: "含子文件夹",
     ruleTagsSeparator: " · ",
+    rulePropertiesSeparator: " · ",
     ruleFolderMissing: "文件夹已不存在",
     ruleNameLabel: "规则名称",
     ruleNamePlaceholder: "留空则使用规则描述",

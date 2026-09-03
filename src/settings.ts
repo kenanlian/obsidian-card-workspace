@@ -339,7 +339,7 @@ function normalizeRule(value: unknown): Rule | null {
     typeof value.includeSubfolders === "boolean" ? value.includeSubfolders : true;
   const tags = normalizeTags(value.tags);
   const rawId = typeof value.id === "string" ? value.id.trim() : "";
-  const content = { folder, includeSubfolders, tags };
+  const content = { folder, includeSubfolders, tags, properties: normalizePropertyFilterClauses(value.properties) };
 
   return {
     ...content,

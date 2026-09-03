@@ -252,7 +252,7 @@
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-clear" aria-label={labels.clearActiveTags}
                   onclick={(event) => actionClick(event, () => onFilterChange?.({ tags: [] }))} use:icon={"filter-x"}></button>
               {:else if row.kind === "section" && row.section === "properties"}
-                {@const clearing = nav.propertyFilterCount > 0}
+                {@const clearing = !isBoxScope && nav.propertyFilterCount > 0}
                 <button type="button" tabindex="-1" class="clickable-icon {clearing ? 'fce-nav-section-clear' : 'fce-nav-section-choose'}"
                   aria-label={clearing ? strings.property.clearFilters : strings.property.chooseVisible}
                   onclick={(event) => actionClick(event, () => onPropertyCommand?.({ command: clearing ? "clear-filters" : "choose-visible" }))}
@@ -270,9 +270,11 @@
             && (row.section === "tags" || nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel)
             && !rows.some((candidate) => candidate.kind !== "section" && candidate.section === row.section)}
             <div class="fce-tree-empty fce-nav-section-empty" data-nav-empty-section={row.section} role="none">
-              {row.section === "tags"
-                ? (isBoxScope ? labels.tagsDisabledInBox : strings.toolbar.filter.noTagsFound)
-                : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
+              {row.section === "properties" && isBoxScope
+                ? labels.propertiesDisabledInBox
+                : row.section === "tags"
+                  ? (isBoxScope ? labels.tagsDisabledInBox : strings.toolbar.filter.noTagsFound)
+                  : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
             </div>
           {/if}
         {/each}

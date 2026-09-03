@@ -803,8 +803,39 @@ describe("section header move items", () => {
     expect(findItem(active.menu, "Clear property filters")?.disabled).toBe(false);
   });
 
+  it("keeps the chooser but drops the clear item in box mode (C6/V-O)", () => {
+    const deps = createDeps({ isBoxMode: true, propertyFilterCount: 2 });
+    const { menu, result } = build(createPayload({ section: "properties", scope: "header" }), deps);
+
+    expect(result).toBe(true);
+    const titles = menu.items.map((item) => item.title);
+    expect(titles[0]).toBe("Choose visible properties");
+    expect(titles).not.toContain("Clear property filters");
+    expect(titles).toContain("Collapse section");
+    expect(titles).toContain("Move section up");
+    expect(titles).toContain("Move section down");
+
+    findItem(menu, "Choose visible properties")?.clickHandler?.();
+    expect(deps.actions.chooseVisibleProperties).toHaveBeenCalledOnce();
+    expect(deps.actions.clearPropertyFilters).not.toHaveBeenCalled();
+  });
+
   it("opens a Hide-this-property menu for a property key row", () => {
     const deps = createDeps();
+    const { menu, result } = build(createPayload({
+      section: "properties",
+      scope: "item",
+      itemId: "status",
+    }), deps);
+
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([{ title: "Hide this property", icon: "eye-off" }]);
+    findItem(menu, "Hide this property")?.clickHandler?.();
+    expect(deps.actions.hideProperty).toHaveBeenCalledWith("status");
+  });
+
+  it("keeps the Hide-this-property key-row menu in box mode (C6/V-O)", () => {
+    const deps = createDeps({ isBoxMode: true });
     const { menu, result } = build(createPayload({
       section: "properties",
       scope: "item",
@@ -863,6 +894,19 @@ describe("section header move items", () => {
 
     findItem(menu, "Filter by only this value")?.clickHandler?.();
     expect(deps.actions.filterByOnlyPropertyValue).toHaveBeenCalledWith("priority", value);
+  });
+
+  it("suppresses the property value-row menu entirely in box mode (C6/V-O)", () => {
+    const deps = createDeps({ isBoxMode: true, propertyFilterCount: 1, isPropertyValueActive: () => true });
+    const { menu, result } = build(createPayload({
+      section: "properties",
+      scope: "item",
+      itemId: "status",
+      value: { kind: "text", value: "open" } as const,
+    }), deps);
+
+    expect(result).toBe(false);
+    expect(menu.items).toEqual([]);
   });
 
   it("routes move-up and move-down clicks to moveSection with the section and delta", () => {

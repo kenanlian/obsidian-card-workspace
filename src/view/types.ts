@@ -1,6 +1,6 @@
 import type { TFile } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
-import type { PropertyScalarRef } from "../property-filter-settings";
+import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 import type { SearchQueryExecutionState } from "../search";
 import type { SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
@@ -54,16 +54,19 @@ export interface PipelineSearchInput {
  * - `folder`: folder scope path (`""` = vault root).
  * - `includeSubfolders`: whether the folder scope descends recursively.
  * - `tags`: normalized tags applied with AND semantics (same as browse tag filter).
+ * - `properties`: normalized property clauses applied with AND semantics (same
+ *   as browse property filter); authored data, never trimmed by visible keys.
  * - `id`: stable identity; self-heals from rule content when absent.
  * - `name`: user override; `""` means "use the derived label".
  *
- * A path matches a rule when it is inside the folder scope AND matches every tag.
- * Rules within a box combine with OR semantics.
+ * A path matches a rule when it is inside the folder scope AND matches every
+ * tag and property clause. Rules within a box combine with OR semantics.
  */
 export interface Rule {
   folder: string;
   includeSubfolders: boolean;
   tags: string[];
+  properties: PropertyFilterClause[];
   id: string;
   name: string;
 }
@@ -76,7 +79,7 @@ export interface CardBoxSortSpec {
 /**
  * A topic-oriented collection container.
  *
- * Membership = rule hits (folder + tags) ∪ manualPaths − excludedPaths.
+ * Membership = rule hits (folder + tags + properties) ∪ manualPaths − excludedPaths.
  * Invariant: `manualPaths ∩ excludedPaths = ∅`.
  */
 export interface CardBoxDefinition {

@@ -334,7 +334,7 @@ function createBox() {
   return {
     id: "box-1",
     name: "Box",
-    rules: [{ id: "rule-1", name: "Original", folder: "notes", includeSubfolders: true, tags: [] }],
+    rules: [{ id: "rule-1", name: "Original", folder: "notes", includeSubfolders: true, tags: [], properties: [] }],
     manualPaths: [],
     excludedPaths: [],
     pinnedPaths: [],
@@ -1280,6 +1280,7 @@ describe("FolderCardView host contract", () => {
         folder: "notes",
         includeSubfolders: true,
         tags: ["work"],
+        properties: [],
       }],
       group: { dimension: "box-rule", orderBy: "default", orderDirection: "asc" },
     }) as never];
@@ -2652,19 +2653,49 @@ describe("FolderCardView navigation scope activation", () => {
   it("clears the tag filter when the activated folder differs from the current scope", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
-    settings.filter = { tags: ["alpha"] };
+    settings.filter = { tags: ["alpha"], properties: [] };
     (view as any).cardScope = createFolderScope("notes", true);
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [] } });
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
+  });
+
+  it("clears the workspace property clauses when leaving a box for a folder (C7/S10/V-P)", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = {
+      tags: [],
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    };
+    (view as any).cardScope = createBoxScope("box-1");
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
+  });
+
+  it("clears both tags and property clauses when a box is left with both active (C7/V-P)", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = {
+      tags: ["alpha"],
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    };
+    (view as any).cardScope = createBoxScope("box-1");
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
   });
 
   it("keeps the tag filter when the activated folder is already the current scope", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
-    settings.filter = { tags: ["alpha"] };
+    settings.filter = { tags: ["alpha"], properties: [] };
     (view as any).cardScope = createFolderScope("other", true);
 
     await (view as any).selectFolderFromNav("other");
@@ -2674,13 +2705,29 @@ describe("FolderCardView navigation scope activation", () => {
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
+  it("keeps property clauses when the activated folder is already the current scope (C7/V-P)", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = {
+      tags: [],
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    };
+    (view as any).cardScope = createFolderScope("other", true);
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter.properties).toHaveLength(1);
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
+  });
+
   it("activating a favorited tag exits the box, jumps to the vault root, and keeps only that tag", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.boxes = [makeTestBox()];
     settings.activeBoxId = "box-1";
     (view as any).cardScope = createBoxScope("box-1");
-    settings.filter = { tags: ["stale"] };
+    settings.filter = { tags: ["stale"], properties: [] };
     (view as any).cardScope = createBoxScope("box-1");
 
     await (view as any).modules.favoriteActions.activateFavoriteTag("alpha");

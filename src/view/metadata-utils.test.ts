@@ -6,6 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { getAllTags } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 import {
   collectAllTags,
   collectTagCounts,
@@ -13,6 +14,7 @@ import {
   getFileTagEntries,
   matchesSearchQuery,
   matchesTagFilter,
+  matchesTagFilterFromCache,
 } from "./metadata-utils";
 
 function createMockFile(basename: string): TFile {
@@ -90,6 +92,42 @@ describe("matchesTagFilter", () => {
 
     expect(matchesTagFilter(app, file, ["领域", "project/active"])).toBe(true);
     expect(matchesTagFilter(app, file, ["领域", "project/archived"])).toBe(false);
+  });
+
+  it("returns true for an empty filter without touching the metadata cache", () => {
+    const app = {
+      metadataCache: {
+        getFileCache: vi.fn(),
+      },
+    } as unknown as App;
+
+    expect(matchesTagFilter(app, createMockFile("Alpha"), [])).toBe(true);
+    expect(app.metadataCache.getFileCache).not.toHaveBeenCalled();
+  });
+});
+
+describe("matchesTagFilterFromCache", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("returns true for an empty filter without reading tags", () => {
+    expect(matchesTagFilterFromCache({} as CachedMetadata, [])).toBe(true);
+    expect(getAllTagsMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a null cache as no tags", () => {
+    expect(matchesTagFilterFromCache(null, ["work"])).toBe(false);
+    expect(getAllTagsMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps AND semantics over tags read from the given cache", () => {
+    getAllTagsMock.mockReturnValue(["#领域/AI/harness", "#project/active"]);
+
+    const cache = {} as CachedMetadata;
+    expect(matchesTagFilterFromCache(cache, ["领域", "project/active"])).toBe(true);
+    expect(matchesTagFilterFromCache(cache, ["领域", "project/archived"])).toBe(false);
+    expect(matchesTagFilterFromCache(cache, ["领域/ml"])).toBe(false);
   });
 });
 describe("getFileTagEntries", () => {

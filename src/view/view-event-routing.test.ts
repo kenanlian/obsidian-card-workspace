@@ -2959,6 +2959,47 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       expect(next.bulk).toBe(initial.bulk);
     });
 
+    it("downgrades the property impact to nav inside a box even with active clauses (C6/V-Q)", async () => {
+      const { view, plugin } = createPropertyHarness({
+        settings: {
+          ...propertySettings({
+            visiblePropertyKeys: ["status"],
+            filterProperties: [propertyClause("status", [propertyText("open")])],
+          }),
+          boxes: [{
+            id: "box-1",
+            name: "Box",
+            rules: [{ id: "rule-1", name: "Notes", folder: "notes", includeSubfolders: true, tags: [], properties: [] }],
+            manualPaths: [],
+            excludedPaths: [],
+            pinnedPaths: [],
+            sort: { field: "mtime", direction: "desc" },
+            group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+          }],
+        },
+        frontmatter: { "notes/a.md": { status: "open" } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+      (view as any).cardScope = createBoxScope("box-1");
+
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+
+      emitMetadata({ path: "notes/a.md" });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      const next = view.panelModel.getState();
+      expect(next.nav).not.toBe(initial.nav);
+      expect(next.cards).toBe(initial.cards);
+      expect(next.scope).toBe(initial.scope);
+      expect(next.projection).toBe(initial.projection);
+      expect(next.bulk).toBe(initial.bulk);
+    });
+
     it("performs no property-owned publication for an out-of-base metadata event", async () => {
       const { view, plugin } = createPropertyHarness({
         settings: propertySettings({
@@ -3017,6 +3058,24 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       settings.filter = { ...settings.filter, tags: ["work"] };
       (view as any).baseCards = [card];
       (view as any).visibleCards = [];
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
+    });
+
+    it("treats property clauses as absent inside a box: the source copy wins (C5/V-R)", () => {
+      const card = createCardRecordFromPath("notes/a.md");
+      const { view } = createPropertyHarness({
+        settings: propertySettings({
+          visiblePropertyKeys: ["status"],
+          filterProperties: [propertyClause("status", [propertyText("open")])],
+        }),
+        cards: [card],
+      });
+      const strings = getUiStrings("en");
+
+      (view as any).cardScope = createBoxScope("box-1");
+      (view as any).visibleCards = [];
+
+      expect((view as any).buildScopeGroup().emptyStateMessage).not.toBe(strings.property.emptyPropertyFilter);
       expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
     });
   });

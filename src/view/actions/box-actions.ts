@@ -1,5 +1,6 @@
 import { Menu, Modal, Setting, TFile, TFolder } from "obsidian";
 import type { UiStrings } from "../../i18n";
+import { normalizePropertyFilterClauses } from "../../property-filter-settings";
 import {
   addManualPaths,
   addRuleToBox,
@@ -13,8 +14,9 @@ import {
   restoreExcludedPaths,
   translateBrowseScopeToRule,
   upsertCardBox,
+  type BrowseScope,
 } from "../card-boxes";
-import { isBoxMember } from "../card-box-membership";
+import { isBoxMember, matchesRule } from "../card-box-membership";
 import { isSupportedCardFile } from "../file-kind";
 import { pruneFavoriteBoxes } from "../favorites";
 import { BoxConfigModal } from "../modals/BoxConfigModal";
@@ -62,9 +64,7 @@ export class BoxActions {
 
   getActiveBox(): CardBoxDefinition | null {
     const scope = this.deps.context.store.getScope();
-    if (!isBoxScope(scope)) {
-      return null;
-    }
+    if (!isBoxScope(scope)) return null;
 
     return findCardBox(this.deps.context.getSettings().boxes ?? [], scope.boxId);
   }
@@ -81,9 +81,7 @@ export class BoxActions {
   async enterBoxScope(boxId: string): Promise<void> {
     const request = this.deps.createProgrammaticSelectionRequest(createBoxScope(boxId), false);
     const result = await this.deps.handleScopeSelection(request);
-    if (result.action === "rejected_invalid") {
-      return;
-    }
+    if (result.action === "rejected_invalid") return;
     this.deps.returnToCardsViewIfSinglePane();
   }
 
@@ -91,9 +89,7 @@ export class BoxActions {
   async exitBoxScope(): Promise<void> {
     const settings = this.deps.context.getSettings();
     const result = await this.deps.moveScopeToFolder(settings.lastFolderPath);
-    if (result.action === "rejected_invalid") {
-      return;
-    }
+    if (result.action === "rejected_invalid") return;
     this.deps.returnToCardsViewIfSinglePane();
   }
 
@@ -185,13 +181,14 @@ export class BoxActions {
     }));
   }
 
-  getBrowseScope(): { folder: string; includeSubfolders: boolean; tags: string[] } {
+  getBrowseScope(): BrowseScope {
     const scope = this.deps.context.store.getScope();
     const settings = this.deps.context.getSettings();
     return {
       folder: scopeDisplayPath(scope),
       includeSubfolders: scope.kind === "folder" ? scope.includeSubfolders : settings.includeSubfolders,
       tags: [...settings.filter.tags],
+      properties: normalizePropertyFilterClauses(settings.filter.properties),
     };
   }
 
@@ -257,9 +254,7 @@ export class BoxActions {
   private openRenameBoxModal(boxId: string | null): void {
     const settings = this.deps.context.getSettings();
     const box = findCardBox(settings.boxes, boxId);
-    if (box === null) {
-      return;
-    }
+    if (box === null) return;
     const strings = this.strings.box;
     new BoxNameModal(this.deps.context.getApp(), {
       strings: this.strings,
@@ -274,9 +269,7 @@ export class BoxActions {
   }
 
   private duplicateBoxById(boxId: string | null): void {
-    if (boxId === null) {
-      return;
-    }
+    if (boxId === null) return;
     const settings = this.deps.context.getSettings();
     void this.persistBoxes(duplicateCardBox(settings.boxes, boxId));
   }
@@ -321,7 +314,7 @@ export class BoxActions {
   openSaveScopeAsBoxModal(): void {
     const strings = this.strings.box;
     const rule = translateBrowseScopeToRule(this.getBrowseScope());
-    const hitCount = this.deps.context.store.getBaseCards().length;
+    const hitCount = this.countRuleQualifiedFiles(rule);
     new BoxNameModal(this.deps.context.getApp(), {
       strings: this.strings,
       title: strings.saveScopeTitle,
@@ -339,6 +332,13 @@ export class BoxActions {
 
   private deriveDefaultBoxNameFromScope(): string {
     return deriveDefaultBoxNameFromBrowseScope(this.getBrowseScope());
+  }
+
+  private countRuleQualifiedFiles(rule: Rule): number {
+    const files = this.deps.collectSupportedFiles(rule.folder, rule.includeSubfolders);
+    if (rule.tags.length === 0 && rule.properties.length === 0) return files.length;
+    const app = this.deps.context.getApp();
+    return files.filter((file) => matchesRule(app, file.path, rule)).length;
   }
 
   canAddScopeToBox(): boolean {

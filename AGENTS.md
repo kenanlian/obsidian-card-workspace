@@ -27,7 +27,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`) plus default card open behavior
 - **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/`, `src/view/actions/`, and `src/view/menus/`
 - **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`
-- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. Folders: `tag filter -> property filter -> search filter -> pin reorder`. Boxes skip the browse tag filter but do apply the property filter
+- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. Folders: `tag filter -> property filter -> search filter -> pin reorder`. Boxes skip the browse tag and property filters — rule property clauses are digested at the membership layer; search and pins still apply
 - **UI boundary**: `src/view/panel-model.ts` bridges grouped host state into Svelte; `FolderCardPanel.svelte`, `NavigationPane.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready
 - **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2
@@ -35,7 +35,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 ## Current Project Status
 
 - Search architecture is **indexed-only**. Do not restore fallback search paths without an explicit architecture change.
-- `pipeline.ts` remains the only visible-card projection path. Property filters compose there for both folder and box scopes.
+- `pipeline.ts` remains the only visible-card projection path. Property filters compose there for folder scopes only; in box scopes, rule property clauses are digested at the membership layer and the projection runs `search -> pin`.
 - Non-ready indexed states (`building`, `error`, `rebuild-required`) block non-empty queries.
 - Supported card file kinds are `markdown`, `base`, `canvas`, and `excalidraw`.
 - Markdown keeps full preview and full-text indexing; the other supported kinds remain title/placeholder-oriented.
@@ -164,7 +164,7 @@ CI already runs this chain with lint first.
 | `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode |
 | `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source |
 | `src/view/panel-model.ts` | Host-to-Svelte grouped state bridge |
-| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → property filter → search filter → pin reorder (boxes skip tag filter, keep property filter) |
+| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → property filter → search filter → pin reorder (boxes skip browse tag and property filters; search and pins still apply) |
 | `src/view/types.ts` | View-layer type definitions |
 | `src/settings.ts` | `PluginSettings`, `DEFAULT_SETTINGS`, `schemaVersion`, `migrateSettings`, `mergeSettings` |
 | `src/i18n/` | i18n strings (`en` / `zh`), domain-split; callers still import `../i18n` |

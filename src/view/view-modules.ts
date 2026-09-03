@@ -18,6 +18,7 @@ import { ScopeController } from "./controllers/ScopeController";
 import { SearchController } from "./controllers/SearchController";
 import { TaskSummaryController } from "./controllers/TaskSummaryController";
 import { CardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
+import { isBoxScope } from "./scope";
 import { collectSupportedFiles, rewritePathAfterRename } from "./scope-files";
 import type { SelectionResult } from "./types";
 import type { ViewContext } from "./view-context";
@@ -115,7 +116,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
         return "none";
       }
       const settings = context.getSettings();
-      if (settings.filter.properties.length > 0) {
+      if (!isBoxScope(context.store.getScope()) && settings.filter.properties.length > 0) {
         return "reproject";
       }
       return settings.visiblePropertyKeys.length > 0 ? "nav" : "none";
@@ -270,6 +271,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     saveSettings: (patch) => context.saveSettings(patch),
     collectPropertyInventory: () => property.collectPropertyInventory(),
     getStrings: () => context.getUiStrings(),
+    isBoxScope: () => boxActions.isBoxMode(),
   });
   const mergeActions: MergeActions = new MergeActions({
     context,

@@ -7,9 +7,12 @@ vi.mock("obsidian", () => ({
 
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
+import type { PropertyScalarRef } from "../../property-filter-settings";
 import { TFile, TFolder } from "obsidian";
 import type { EpochToken } from "../async-epoch";
+import { isBoxMember } from "../card-box-membership";
 import { getBoxMembershipSignature } from "../card-boxes";
+import type { CardBoxDefinition } from "../types";
 import { createBoxScope, createFolderScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
@@ -74,6 +77,42 @@ function createHarness(options: { isPathInBox?: (path: string, boxId: string) =>
   return { context, controller, requestUpdate, saveSettings, scheduleHydrationPath,
     hydrateStartupCardPaths, projectVisibleCards, prepareRecordsFromCache,
     invalidateForVaultMutation, publishLoadStart, publishLoadCommit };
+}
+
+function membershipRecord(path: string): NoteCardRecord {
+  return {
+    file: Object.assign(new TFile(), { path }),
+    fileKind: "markdown",
+    path,
+    title: path,
+    ctime: 1,
+    mtime: 1,
+    excerpt: "",
+    previewHtml: "",
+    previewMode: "empty",
+    hydrated: false,
+    taskSummary: null,
+  };
+}
+
+function propertyBox(statusValue: PropertyScalarRef): CardBoxDefinition {
+  return {
+    id: "box-1",
+    name: "Box",
+    rules: [{
+      folder: "",
+      includeSubfolders: true,
+      tags: [],
+      properties: [{ key: "status", values: [statusValue] }],
+      id: "rule-1",
+      name: "",
+    }],
+    manualPaths: [],
+    excludedPaths: [],
+    pinnedPaths: [],
+    sort: { field: "mtime", direction: "desc" },
+    group: { ...DEFAULT_GROUP_SPEC },
+  };
 }
 
 describe("ScopeController", () => {
@@ -327,6 +366,49 @@ describe("ScopeController", () => {
     expect(context.store.getBaseCards().map((card) => card.path)).toEqual([siblingPath]);
     expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
     expect(controller.reconcileMetadataMembershipForPath(siblingPath)).toBe(false);
+  });
+
+  it("V-G2 reconciles a missing-clause member out once metadata arrives with a value", () => {
+    const memberPath = "notes/member.md";
+    const box = propertyBox({ kind: "missing" });
+    const { context, controller } = createHarness({
+      isPathInBox: (path) => isBoxMember(context.getApp(), path, box),
+    });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === memberPath ? Object.assign(new TFile(), { path }) : null;
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([membershipRecord(memberPath)]);
+
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
+
+    (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
+      frontmatter: { status: "done" },
+    }));
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(context.store.getBaseCards().map((card) => card.path)).toEqual([]);
+  });
+
+  it("V-G2 reconciles a member out when a frontmatter change ends a valued-clause match", () => {
+    const memberPath = "notes/member.md";
+    const box = propertyBox({ kind: "text", value: "open" });
+    const { context, controller } = createHarness({
+      isPathInBox: (path) => isBoxMember(context.getApp(), path, box),
+    });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === memberPath ? Object.assign(new TFile(), { path }) : null;
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([membershipRecord(memberPath)]);
+    (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
+      frontmatter: { status: "open" },
+    }));
+
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
+
+    (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
+      frontmatter: { status: "done" },
+    }));
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(context.store.getBaseCards().map((card) => card.path)).toEqual([]);
   });
 
   it("reuses prepared records across root to folder to root transitions", async () => {

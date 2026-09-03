@@ -20,18 +20,20 @@ export interface PropertyActionsDeps {
   /** Fresh vault frontmatter inventory; invoked once per chooser opening. */
   collectPropertyInventory: () => PropertyInventorySnapshot;
   getStrings: () => UiStrings;
+  /** True inside a card box, where browse property filtering is disabled. */
+  isBoxScope: () => boolean;
 }
 
 export interface PropertyActions {
   /** Opens the searchable chooser; the modal collects a fresh inventory per opening. */
   chooseVisibleProperties(): void;
-  /** Clears only `filter.properties`; a no-op when nothing is active. */
+  /** Clears only `filter.properties`; a no-op when nothing is active or in a box. */
   clearPropertyFilters(): Promise<void>;
   /** Hides one key with the same coherent cleanup as the chooser commit. */
   hideProperty(key: string): Promise<void>;
-  /** Ordinary (replace/toggle-off) or additive (within-key OR) value selection. */
+  /** Ordinary (replace/toggle-off) or additive (within-key OR) value selection; no-op in a box. */
   applyValueFilter(key: string, ref: PropertyScalarRef, additive: boolean): Promise<void>;
-  /** Replaces all property clauses with the single key/value, never toggling off. */
+  /** Replaces all property clauses with the single key/value, never toggling off; no-op in a box. */
   filterByOnlyValue(key: string, ref: PropertyScalarRef): Promise<void>;
 }
 
@@ -84,7 +86,7 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
     },
 
     async clearPropertyFilters(): Promise<void> {
-      if (deps.getSettings().filter.properties.length === 0) {
+      if (deps.isBoxScope() || deps.getSettings().filter.properties.length === 0) {
         return;
       }
       await deps.saveSettings({ filter: { properties: [] } });
@@ -104,6 +106,9 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
     },
 
     async applyValueFilter(key, ref, additive): Promise<void> {
+      if (deps.isBoxScope()) {
+        return;
+      }
       const normalizedKey = normalizePropertyKey(key);
       if (normalizedKey === null) {
         return;
@@ -122,6 +127,9 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
     },
 
     async filterByOnlyValue(key, ref): Promise<void> {
+      if (deps.isBoxScope()) {
+        return;
+      }
       const normalizedKey = normalizePropertyKey(key);
       if (normalizedKey === null) {
         return;

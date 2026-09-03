@@ -102,14 +102,47 @@ export function extractPropertyScalars(
 }
 
 /**
- * Filters card records by normalized property clauses.
+ * Pure single-file predicate for normalized property clauses.
  *
  * Clauses combine with AND; values within one clause combine with OR;
- * `missing` matches a card with no supported scalar for that key. Non-Markdown
- * cards have no scalar values, so they match only the `missing` bucket and the
- * accessor is never consulted for them. Clause keys are expected normalized
+ * `missing` matches a key with no supported scalar. Non-Markdown files have
+ * no scalar values, so they match only when every clause includes `missing`,
+ * and `frontmatter` is ignored for them. Clause keys are expected normalized
  * (settings persist them that way); callers pass clauses through
  * `normalizePropertyFilterClauses` first.
+ */
+export function matchesPropertyClauses(
+  clauses: readonly PropertyFilterClause[],
+  isMarkdown: boolean,
+  frontmatter: Record<string, unknown> | null,
+): boolean {
+  if (!isMarkdown) {
+    return clauses.every((clause) =>
+      clause.values.some((ref) => ref.kind === "missing"));
+  }
+
+  const extracted = extractPropertyScalars(frontmatter);
+  const identitiesByKey = new Map<string, Set<string>>(
+    extracted.map((entry) => [
+      entry.key,
+      new Set(entry.values.map(serializePropertyScalarRef)),
+    ]),
+  );
+
+  return clauses.every((clause) => {
+    const present = identitiesByKey.get(clause.key);
+    return clause.values.some((ref) =>
+      ref.kind === "missing"
+        ? present === undefined || present.size === 0
+        : present?.has(serializePropertyScalarRef(ref)) === true);
+  });
+}
+
+/**
+ * Filters card records by normalized property clauses.
+ *
+ * Per-card semantics live in `matchesPropertyClauses`; the accessor is never
+ * consulted for non-Markdown cards.
  */
 export function matchesPropertyFilters(
   cards: readonly NoteCardRecord[],
@@ -121,26 +154,12 @@ export function matchesPropertyFilters(
   }
 
   return cards.filter((card) => {
-    if (!isMarkdownCardKind(card.fileKind)) {
-      return clauses.every((clause) =>
-        clause.values.some((ref) => ref.kind === "missing"));
-    }
-
-    const extracted = extractPropertyScalars(getFrontmatter(card.file));
-    const identitiesByKey = new Map<string, Set<string>>(
-      extracted.map((entry) => [
-        entry.key,
-        new Set(entry.values.map(serializePropertyScalarRef)),
-      ]),
+    const isMarkdown = isMarkdownCardKind(card.fileKind);
+    return matchesPropertyClauses(
+      clauses,
+      isMarkdown,
+      isMarkdown ? getFrontmatter(card.file) : null,
     );
-
-    return clauses.every((clause) => {
-      const present = identitiesByKey.get(clause.key);
-      return clause.values.some((ref) =>
-        ref.kind === "missing"
-          ? present === undefined || present.size === 0
-          : present?.has(serializePropertyScalarRef(ref)) === true);
-    });
   });
 }
 

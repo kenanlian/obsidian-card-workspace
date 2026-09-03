@@ -83,7 +83,7 @@ export class ProjectionController {
     const pipelineContext: PipelineContext = {
       app: this.context.getApp(),
       filterTags: settings.filter.tags,
-      propertyFilters: settings.filter.properties,
+      propertyFilters: isBoxScope(this.context.store.getScope()) ? [] : settings.filter.properties,
       search: this.deps.getSearchInput(),
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
       group: { spec, buckets: this.resolveGroupBuckets(spec, cards) },

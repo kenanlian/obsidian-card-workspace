@@ -359,7 +359,7 @@ describe("NavigationPane projected ARIA tree", () => {
     ])).toEqual([
       ["favorites", "No favorites yet — right-click an item to add one"],
       ["tags", "Tag filter is unavailable in a box"],
-      ["properties", "No properties selected — choose which properties to show"],
+      ["properties", "Property filter is unavailable in a box"],
       ["boxes", "No card boxes yet — right-click to create one"],
     ]);
     await unmount(components.pop()!);
@@ -785,6 +785,38 @@ describe("NavigationPane projected ARIA tree", () => {
     const empty = document.querySelector<HTMLElement>('[data-nav-empty-section="properties"]');
     expect(empty?.textContent?.trim()).toBe("No properties selected — choose which properties to show");
     expect(document.querySelector('[data-nav-row-id^="property:"]')).toBeNull();
+  });
+
+  it("renders the properties disabled-in-box copy and pins the chooser action in a box (V-S)", async () => {
+    const base = projection();
+    const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
+    const boxScope = { ...scope, activeBoxId: "box-1" };
+    const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
+    render({
+      nav: nav({ projection: { ...base, rows: emptyRows }, propertyFilterCount: 2 }),
+      scope: boxScope,
+      activeFilterTags: [],
+      onPropertyCommand: (payload) => commands.push(payload),
+    });
+    await tick();
+    expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
+      .toBe("Property filter is unavailable in a box");
+    expect(row("section:properties").querySelector(".fce-nav-section-clear")).toBeNull();
+    const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-choose");
+    expect(choose).not.toBeNull();
+    choose?.click();
+    await tick();
+    expect(commands).toEqual([{ command: "choose-visible" }]);
+
+    await unmount(components.pop()!);
+    render({
+      nav: nav({ projection: { ...base, rows: emptyRows } }),
+      scope: boxScope,
+      activeFilterTags: [],
+      strings: getUiStrings("zh"),
+    });
+    expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
+      .toBe("卡片盒模式下不可使用属性筛选");
   });
 
   it("keeps property key/value action slots limited to the shared more button", async () => {

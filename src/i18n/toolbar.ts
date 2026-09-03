@@ -90,6 +90,7 @@ export interface ToolbarStrings {
     collapseSection: string;
     expandSection: string;
     tagsDisabledInBox: string;
+    propertiesDisabledInBox: string;
     boxesEmpty: string;
     exitBox: string;
     folderCountsTooltip: (files: number, folders: number) => string;
@@ -207,6 +208,7 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       collapseSection: "Collapse section",
       expandSection: "Expand section",
       tagsDisabledInBox: "Tag filter is unavailable in a box",
+      propertiesDisabledInBox: "Property filter is unavailable in a box",
       boxesEmpty: "No card boxes yet — right-click to create one",
       exitBox: "Exit box",
       folderCountsTooltip: (files: number, folders: number) =>
@@ -324,6 +326,7 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       collapseSection: "折叠此区",
       expandSection: "展开此区",
       tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
+      propertiesDisabledInBox: "卡片盒模式下不可使用属性筛选",
       boxesEmpty: "还没有卡片盒 — 右键新建",
       exitBox: "退出卡片盒",
       folderCountsTooltip: (files: number, folders: number) =>

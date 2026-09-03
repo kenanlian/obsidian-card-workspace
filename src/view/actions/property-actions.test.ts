@@ -69,7 +69,11 @@ function createSettings(overrides: {
   };
 }
 
-function createHarness(initial: PluginSettings, inventory?: PropertyInventorySnapshot) {
+function createHarness(
+  initial: PluginSettings,
+  inventory?: PropertyInventorySnapshot,
+  isBoxScope = false,
+) {
   let settings = initial;
   const saves: PartialPluginSettings[] = [];
   const collect = vi.fn((): PropertyInventorySnapshot => inventory ?? { status: "ready", options: [] });
@@ -82,6 +86,7 @@ function createHarness(initial: PluginSettings, inventory?: PropertyInventorySna
     },
     collectPropertyInventory: collect,
     getStrings: () => getUiStrings("en"),
+    isBoxScope: () => isBoxScope,
   });
   return { actions, saves, collect, getSettings: () => settings };
 }
@@ -254,6 +259,36 @@ describe("createPropertyActions", () => {
     await actions.filterByOnlyValue("alpha", textRef("x"));
     expect(saves).toHaveLength(1);
     expect(getSettings().filter.properties).toEqual([clause("beta", [textRef("y")])]);
+  });
+
+  it("writes nothing for apply/filter-by-only/clear inside a box (C6/S11/V-O)", async () => {
+    const { actions, saves, getSettings } = createHarness(createSettings({
+      visiblePropertyKeys: ["alpha"],
+      filterProperties: [clause("alpha", [textRef("x")])],
+    }), undefined, true);
+
+    await actions.clearPropertyFilters();
+    await actions.applyValueFilter("alpha", textRef("y"), true);
+    await actions.applyValueFilter("alpha", textRef("x"), false);
+    await actions.filterByOnlyValue("alpha", textRef("y"));
+
+    expect(saves).toEqual([]);
+    expect(getSettings().filter.properties).toEqual([clause("alpha", [textRef("x")])]);
+  });
+
+  it("keeps the chooser and hide working inside a box (C6/V-O)", async () => {
+    const { actions, saves } = createHarness(createSettings({
+      visiblePropertyKeys: ["alpha", "beta"],
+    }), undefined, true);
+
+    actions.chooseVisibleProperties();
+    expect(mockState.opened).toHaveLength(1);
+    await mockState.opened[0]?.onSubmit(["beta"]);
+    expect(saves[0]?.visiblePropertyKeys).toEqual(["beta"]);
+
+    await actions.hideProperty("beta");
+    expect(saves).toHaveLength(2);
+    expect(saves[1]?.visiblePropertyKeys).toEqual([]);
   });
 });
 

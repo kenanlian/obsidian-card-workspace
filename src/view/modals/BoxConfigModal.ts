@@ -1,5 +1,6 @@
 import { Modal, Setting, type App } from "obsidian";
 import type { UiStrings } from "../../i18n";
+import { normalizePropertyFilterClauses } from "../../property-filter-settings";
 import type { SortDirection, SortField } from "../../settings";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "../types";
 import { removeRuleFromBox, restoreExcludedPaths } from "../card-boxes";
@@ -43,7 +44,11 @@ export class BoxConfigModal extends Modal {
     this.options = options;
     this.draft = {
       ...options.box,
-      rules: options.box.rules.map((rule) => ({ ...rule, tags: [...rule.tags] })),
+      rules: options.box.rules.map((rule) => ({
+        ...rule,
+        tags: [...rule.tags],
+        properties: normalizePropertyFilterClauses(rule.properties),
+      })),
       manualPaths: [...options.box.manualPaths],
       excludedPaths: [...options.box.excludedPaths],
       pinnedPaths: [...options.box.pinnedPaths],

@@ -1,5 +1,8 @@
 import type { App } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import {
+  normalizePropertyFilterClauses, propertyFilterClausesEqual, type PropertyFilterClause,
+} from "../property-filter-settings";
 import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
 import { matchesRule } from "./card-box-membership";
@@ -12,6 +15,7 @@ export function getBoxMembershipSignature(box: CardBoxDefinition): string {
       folder: rule.folder,
       includeSubfolders: rule.includeSubfolders,
       tags: rule.tags,
+      properties: rule.properties,
     })),
     manual: box.manualPaths,
     excluded: box.excludedPaths,
@@ -22,6 +26,8 @@ export interface BrowseScope {
   folder: string;
   includeSubfolders: boolean;
   tags: string[];
+  /** Baked by-value at save time; absent until the browse scope captures it. */
+  properties?: PropertyFilterClause[];
 }
 
 function randomSuffix(): string {
@@ -31,9 +37,7 @@ function randomSuffix(): string {
 export function generateBoxId(existing: CardBoxDefinition[]): string {
   const taken = new Set(existing.map((box) => box.id));
   let id = `box-${Date.now().toString(36)}-${randomSuffix()}`;
-  while (taken.has(id)) {
-    id = `box-${Date.now().toString(36)}-${randomSuffix()}`;
-  }
+  while (taken.has(id)) id = `box-${Date.now().toString(36)}-${randomSuffix()}`;
   return id;
 }
 
@@ -51,9 +55,7 @@ export function ensureUniqueBoxName(
   }
 
   let counter = 2;
-  while (taken.has(`${base} (${counter})`)) {
-    counter += 1;
-  }
+  while (taken.has(`${base} (${counter})`)) counter += 1;
   return `${base} (${counter})`;
 }
 
@@ -61,9 +63,7 @@ export function findCardBox(
   boxes: CardBoxDefinition[],
   id: string | null,
 ): CardBoxDefinition | null {
-  if (id === null) {
-    return null;
-  }
+  if (id === null) return null;
   return boxes.find((box) => box.id === id) ?? null;
 }
 
@@ -90,9 +90,7 @@ export function upsertCardBox(
   box: CardBoxDefinition,
 ): CardBoxDefinition[] {
   const index = boxes.findIndex((candidate) => candidate.id === box.id);
-  if (index === -1) {
-    return [...boxes, box];
-  }
+  if (index === -1) return [...boxes, box];
   const next = [...boxes];
   next[index] = box;
   return next;
@@ -120,9 +118,7 @@ export function duplicateCardBox(
   id: string,
 ): CardBoxDefinition[] {
   const source = findCardBox(boxes, id);
-  if (source === null) {
-    return boxes;
-  }
+  if (source === null) return boxes;
 
   const copy: CardBoxDefinition = {
     id: generateBoxId(boxes),
@@ -146,10 +142,14 @@ function cloneRule(rule: Rule): Rule {
     folder: rule.folder,
     includeSubfolders: rule.includeSubfolders,
     tags: [...rule.tags],
+    properties: normalizePropertyFilterClauses(rule.properties),
     id: rule.id,
     name: rule.name,
   };
 }
+
+const byKey = (a: PropertyFilterClause, b: PropertyFilterClause): number =>
+  a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 
 function rulesEqual(left: Rule, right: Rule): boolean {
   if (left.folder !== right.folder || left.includeSubfolders !== right.includeSubfolders) {
@@ -160,7 +160,10 @@ function rulesEqual(left: Rule, right: Rule): boolean {
   }
   const sortedLeft = [...left.tags].sort();
   const sortedRight = [...right.tags].sort();
-  return sortedLeft.every((tag, index) => tag === sortedRight[index]);
+  const leftClauses = normalizePropertyFilterClauses(left.properties).sort(byKey);
+  const rightClauses = normalizePropertyFilterClauses(right.properties).sort(byKey);
+  return sortedLeft.every((tag, index) => tag === sortedRight[index])
+    && propertyFilterClausesEqual(leftClauses, rightClauses);
 }
 
 export function translateBrowseScopeToRule(scope: BrowseScope): Rule {
@@ -168,6 +171,7 @@ export function translateBrowseScopeToRule(scope: BrowseScope): Rule {
     folder: scope.folder === "/" ? "" : scope.folder,
     includeSubfolders: scope.includeSubfolders,
     tags: [...scope.tags],
+    properties: normalizePropertyFilterClauses(scope.properties),
   };
   return { ...content, id: deriveRuleId(content), name: "" };
 }
@@ -195,9 +199,7 @@ export function addManualPaths(box: CardBoxDefinition, paths: string[]): CardBox
   }
 
   const manualSet = new Set(box.manualPaths);
-  for (const path of additions) {
-    manualSet.add(path);
-  }
+  for (const path of additions) manualSet.add(path);
   const manualPaths = Array.from(manualSet);
   const excludedPaths = box.excludedPaths.filter((path) => !manualSet.has(path));
   return { ...box, manualPaths, excludedPaths };
@@ -252,10 +254,9 @@ function dedupe(paths: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const path of paths) {
-    if (!seen.has(path)) {
-      seen.add(path);
-      result.push(path);
-    }
+    if (seen.has(path)) continue;
+    seen.add(path);
+    result.push(path);
   }
   return result;
 }
@@ -264,9 +265,7 @@ function mapPathList(paths: string[], mapper: (path: string) => string): string[
   let changed = false;
   const mapped = paths.map((path) => {
     const next = mapper(path);
-    if (next !== path) {
-      changed = true;
-    }
+    if (next !== path) changed = true;
     return next;
   });
   return changed ? dedupe(mapped) : paths;

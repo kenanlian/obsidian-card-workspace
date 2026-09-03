@@ -443,30 +443,43 @@ describe("applyPropertyFilter behavior", () => {
     ]);
   });
 
-  it("applies property filtering in box scopes before search and pin", () => {
+  it("skips the property step in box scopes", () => {
     const cards = [
-      createMockCard("prop-filtered.md", "query-hit"),
-      createMockCard("visible.md", "query-hit"),
+      createMockCard("prop-filtered.md"),
+      createMockCard("visible.md"),
     ];
-    const baseContext = createMockContext();
-    baseContext.filterTags = ["folder-only-filter"];
-    baseContext.propertyFilters = [{ key: "status", values: [text("open")] }];
-    baseContext.search.query = "query-hit";
-    baseContext.search.execution = "indexed-ready";
-    baseContext.search.orderedPaths = ["visible.md"];
-    const context = withPinnedPaths(baseContext, ["prop-filtered.md", "visible.md"]);
+    const context = createMockContext();
+    context.filterTags = ["folder-only-filter"];
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
 
-    // Tag filtering is skipped for box scopes; this rejecting mock proves it.
+    // Tag and property filtering are skipped for box scopes; these rejecting
+    // mocks prove neither step ran (every card stays visible).
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
-    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
-      return file.path === "visible.md" ? { status: "open" } : { status: "done" };
-    });
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockReturnValue({ status: "done" });
 
     const steps = stepsForScope(createBoxScope("box-1"));
     expect(steps).not.toContain(applyTagFilter);
-    expect(steps[0]).toBe(applyPropertyFilter);
+    expect(steps).not.toContain(applyPropertyFilter);
 
-    expect(runPipeline(cards, steps, context).cards.map((card) => card.path)).toEqual(["visible.md"]);
+    expect(runPipeline(cards, steps, context).cards).toEqual(cards);
+
+    // Folder-chain regression: the property step stays in the folder chain.
+    expect(folderSteps()).toEqual([
+      applyTagFilter,
+      applyPropertyFilter,
+      applySearchFilter,
+      applyPinReorder,
+    ]);
+  });
+
+  it("keeps the full member set visible in box scopes despite non-empty workspace property clauses", () => {
+    const cards = [createMockCard("a.md"), createMockCard("b.md")];
+    const context = createMockContext();
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
+    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter");
+
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards).toEqual(cards);
+    expect(frontmatter).not.toHaveBeenCalled();
   });
 
   it("projects zero cards for a non-ready search even with an active property clause", () => {
@@ -947,12 +960,21 @@ describe("stepsForScope", () => {
     expect(steps[3]).toBe(applyPinReorder);
   });
 
-  it("contains exactly 3 steps in correct order for box scopes", () => {
+  it("contains exactly 2 steps in correct order for box scopes", () => {
     const steps = stepsForScope(createBoxScope("box-1"));
-    expect(steps).toHaveLength(3);
-    expect(steps[0]).toBe(applyPropertyFilter);
-    expect(steps[1]).toBe(applySearchFilter);
-    expect(steps[2]).toBe(applyPinReorder);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toBe(applySearchFilter);
+    expect(steps[1]).toBe(applyPinReorder);
+  });
+
+  it("still filters box scopes by indexed search results for a non-empty query", () => {
+    const cards = [createMockCard("a.md", "query-hit"), createMockCard("b.md", "no-match")];
+    const context = createMockContext();
+    context.search.query = "query-hit";
+    context.search.execution = "indexed-ready";
+    context.search.orderedPaths = ["a.md"];
+
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards.map((card) => card.path)).toEqual(["a.md"]);
   });
 
   it("full pipeline with defaults returns input unchanged", () => {

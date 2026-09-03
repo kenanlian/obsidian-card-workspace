@@ -7,6 +7,7 @@ import {
   buildPropertyScalarLabel,
   collectPropertyInventory,
   extractPropertyScalars,
+  matchesPropertyClauses,
   matchesPropertyFilters,
   resolvePropertyScalarLabels,
 } from "./property-metadata";
@@ -270,6 +271,49 @@ describe("matchesPropertyFilters", () => {
     expect(
       matchesPropertyFilters([cards[0]!], [clause("status", text("done"))], accessor),
     ).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchesPropertyClauses (C3 single-file predicate)
+// ---------------------------------------------------------------------------
+
+describe("matchesPropertyClauses", () => {
+  it("matches every file when there are no clauses", () => {
+    expect(matchesPropertyClauses([], true, { status: "open" })).toBe(true);
+    expect(matchesPropertyClauses([], false, null)).toBe(true);
+  });
+
+  it("ANDs clauses and ORs values for markdown frontmatter", () => {
+    const frontmatter = { status: "open", priority: 1 };
+    expect(
+      matchesPropertyClauses(
+        [clause("status", text("open")), clause("priority", num(1))],
+        true,
+        frontmatter,
+      ),
+    ).toBe(true);
+    expect(
+      matchesPropertyClauses(
+        [clause("status", text("open"), text("done")), clause("priority", num(2))],
+        true,
+        frontmatter,
+      ),
+    ).toBe(false);
+  });
+
+  it("treats null frontmatter as missing every key", () => {
+    expect(matchesPropertyClauses([clause("status", missing)], true, null)).toBe(true);
+    expect(matchesPropertyClauses([clause("status", text("open"))], true, null)).toBe(false);
+  });
+
+  it("matches non-markdown only when every clause includes missing", () => {
+    const frontmatter = { status: "open" };
+    expect(matchesPropertyClauses([clause("status", missing)], false, frontmatter)).toBe(true);
+    expect(matchesPropertyClauses([clause("status", text("open"))], false, frontmatter)).toBe(false);
+    expect(
+      matchesPropertyClauses([clause("a", missing), clause("b", text("x"))], false, frontmatter),
+    ).toBe(false);
   });
 });
 

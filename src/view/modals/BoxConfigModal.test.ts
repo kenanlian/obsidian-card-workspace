@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getUiStrings } from "../../i18n";
+import { describeBoxRule } from "../box-rule-identity";
 import type { CardBoxDefinition, Rule } from "../types";
 
 interface TextRecord {
@@ -182,6 +183,7 @@ function createRule(partial: Partial<Rule> = {}): Rule {
     folder: "Projects",
     includeSubfolders: true,
     tags: [],
+    properties: [],
     id: "rule-1",
     name: "",
     ...partial,
@@ -328,5 +330,45 @@ describe("BoxConfigModal rule names", () => {
     expect(confirmed.rules).toHaveLength(1);
     expect(confirmed.rules[0]?.id).toBe("rule-2");
     expect(confirmed.rules[0]?.name).toBe("Inbox");
+  });
+
+  it("shows the property summary in the rule row title via describeRule (S7/V-E)", () => {
+    const box = createBox();
+    box.rules = [
+      createRule({
+        properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+      }),
+    ];
+    const modal = new BoxConfigModal({} as never, {
+      box,
+      strings,
+      describeRule: (rule) => describeBoxRule(strings, rule),
+      isRuleFolderMissing: () => false,
+      describeMemberPath: (path) => path,
+      onConfirm: vi.fn(async () => {}),
+    });
+    modal.open();
+
+    expect(ruleSettings()[0]?.name).toBe(
+      `Projects (${strings.box.ruleSubfolderSuffix})${strings.box.rulePropertiesSeparator}status: open`,
+    );
+  });
+
+  it("isolates the draft's property clauses from the source box (V-E)", async () => {
+    const clause = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+    const box = createBox();
+    box.rules = [createRule({ properties: [clause] })];
+    const { onConfirm } = openModal(box);
+
+    ruleSettings()[0]?.texts[0]?.onChange?.("Renamed");
+    expect(() => ruleSettings()[0]?.extraButtons[0]?.onClick?.()).not.toThrow();
+    clickButton(strings.box.done);
+    await flush();
+
+    expect(box.rules).toHaveLength(1);
+    expect(box.rules[0]?.name).toBe("");
+    expect(box.rules[0]?.properties).toEqual([clause]);
+    const confirmed = onConfirm.mock.calls[0]?.[0] as CardBoxDefinition;
+    expect(confirmed.rules).toHaveLength(0);
   });
 });

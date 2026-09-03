@@ -12,6 +12,7 @@ import {
 } from "../../__mocks__/folder-card-view-harness";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { getUiStrings } from "../../i18n";
+import type { PropertyFilterClause } from "../../property-filter-settings";
 import { createBoxScope, createFolderScope } from "../scope";
 import { BoxActions } from "./box-actions";
 import { FolderCardView } from "../FolderCardView";
@@ -48,19 +49,48 @@ describe("BoxActions", () => {
     };
   }
 
+  interface ScopeFileEntry {
+    path: string;
+    tags?: string[];
+    frontmatter?: Record<string, unknown> | null;
+  }
+
+  function createFileBackedApp(entries: ScopeFileEntry[]): unknown {
+    const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+    return {
+      metadataCache: {
+        getFileCache: vi.fn((file: { path: string }) => {
+          const entry = byPath.get(file.path);
+          if (!entry) return null;
+          return {
+            tags: (entry.tags ?? []).map((tag) => ({ tag: `#${tag}` })),
+            frontmatter: entry.frontmatter ?? undefined,
+          };
+        }),
+      },
+      vault: {
+        getAbstractFileByPath: vi.fn((path: string) =>
+          byPath.has(path) ? new mockState.MockTFile(path) : null),
+      },
+    };
+  }
+
   function createModalActions(options: {
     scope?: ReturnType<typeof createFolderScope> | ReturnType<typeof createBoxScope>;
     settings?: ReturnType<typeof createSettings>;
     saveSettings?: ReturnType<typeof vi.fn>;
     moveScopeToFolder?: ReturnType<typeof vi.fn>;
+    files?: ScopeFileEntry[];
+    baseCards?: unknown[];
   } = {}): BoxActions {
     const scope = options.scope ?? createFolderScope("notes", false);
+    const app = options.files ? createFileBackedApp(options.files) : {};
     return new BoxActions({
       context: {
-        getApp: () => ({}),
+        getApp: () => app,
         store: {
           getScope: () => scope,
-          getBaseCards: () => [],
+          getBaseCards: () => options.baseCards ?? [],
         },
         getSettings: () => options.settings ?? createSettings(),
         getUiStrings: () => getUiStrings("en"),
@@ -71,6 +101,9 @@ describe("BoxActions", () => {
       moveScopeToFolder:
         options.moveScopeToFolder ?? vi.fn(async () => ({ action: "started" })),
       returnToCardsViewIfSinglePane: vi.fn(),
+      collectSupportedFiles: vi.fn(() =>
+        (options.files ?? []).map((entry) => new mockState.MockTFile(entry.path)),
+      ),
     } as never);
   }
 
@@ -245,12 +278,179 @@ describe("BoxActions", () => {
         folder: "screened",
         includeSubfolders: false,
         tags: ["project"],
+        properties: [],
         id: "r:screened|false|project",
         name: "",
       },
     ]);
     expect(order).toEqual(["persist", `enter:${created.id}`]);
     expect(patch).not.toHaveProperty("activeBoxId");
+  });
+
+  it("bakes active property clauses into the saved rule without touching the workspace filter", async () => {
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const actions = createModalActions({
+      scope: createFolderScope("screened", false),
+      settings: createSettings({
+        boxes: [],
+        filter: {
+          tags: [],
+          properties: [
+            { key: "Status", values: [{ kind: "text", value: "open" }, { kind: "text", value: "open" }] },
+            { key: "", values: [{ kind: "missing" }] },
+          ],
+        },
+      }),
+      files: [
+        { path: "screened/open.md", frontmatter: { status: "open" } },
+        { path: "screened/done.md", frontmatter: { status: "done" } },
+      ],
+      saveSettings,
+    });
+    vi.spyOn(actions, "enterBoxScope").mockImplementation(async () => undefined);
+
+    actions.openSaveScopeAsBoxModal();
+    clickLatestModalButton("Create");
+    await flushAsyncWork();
+
+    const patch = saveSettings.mock.calls[0]?.[0];
+    const created = patch.boxes[0];
+    expect(created.rules).toEqual([
+      {
+        folder: "screened",
+        includeSubfolders: false,
+        tags: [],
+        properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+        id: 'r:screened|false||[["status",["[\\"t\\",\\"open\\"]"]]]',
+        name: "",
+      },
+    ]);
+    expect(patch).not.toHaveProperty("filter");
+  });
+
+  it("counts folder files for a clause-free scope without consulting visible cards", () => {
+    const actions = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({ boxes: [], filter: { tags: [], properties: [] } }),
+      files: [{ path: "notes/a.md" }, { path: "notes/b.md" }, { path: "notes/c.md" }],
+      baseCards: [{ path: "notes/a.md" }],
+    });
+
+    actions.openSaveScopeAsBoxModal();
+
+    expect(mockState.modalInstances.at(-1)?.messages).toEqual(["3 notes match the current view."]);
+  });
+
+  it("previews the rule-qualified count, not the visible-card count, matching the saved box's member count", async () => {
+    const openClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const files = [
+      { path: "notes/open-a.md", frontmatter: { status: "open" } },
+      { path: "notes/open-b.md", frontmatter: { status: "open" } },
+      { path: "notes/done.md", frontmatter: { status: "done" } },
+    ];
+    const actions = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({ boxes: [], filter: { tags: [], properties: [openClause] } }),
+      files,
+      baseCards: [{ path: "notes/open-a.md" }],
+      saveSettings,
+    });
+    vi.spyOn(actions, "enterBoxScope").mockImplementation(async () => undefined);
+
+    actions.openSaveScopeAsBoxModal();
+
+    expect(mockState.modalInstances.at(-1)?.messages).toEqual(["2 notes match the current view."]);
+
+    clickLatestModalButton("Create");
+    await flushAsyncWork();
+
+    const created = saveSettings.mock.calls[0]?.[0].boxes[0];
+    const reloaded = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({ boxes: [created], filter: { tags: [], properties: [] } }),
+      files,
+    });
+    expect(reloaded.collectBoxFilesById(created.id)).toHaveLength(2);
+    expect(reloaded.countBoxCards(created)).toBe(2);
+  });
+
+  it("add-scope-to-box appends a property-different rule and dedupes an identical one", async () => {
+    const openClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const doneClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "done" }] };
+    const existingRule = {
+      folder: "notes",
+      includeSubfolders: true,
+      tags: ["project"],
+      properties: [openClause],
+      id: 'r:notes|true|project|[["status",["[\\"t\\",\\"open\\"]"]]]',
+      name: "",
+    };
+    const boxWithRule = { ...box, rules: [existingRule] };
+
+    const appendedSave = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const appended = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({
+        boxes: [boxWithRule],
+        filter: { tags: ["project"], properties: [doneClause] },
+      }),
+      saveSettings: appendedSave,
+    });
+    appended.handleBoxCommand({ command: "add-scope-to-box", boxId: box.id });
+    await flushAsyncWork();
+
+    const appendedRules = appendedSave.mock.calls[0]?.[0].boxes[0].rules;
+    expect(appendedRules).toHaveLength(2);
+    expect(appendedRules[1]).toEqual({
+      folder: "notes",
+      includeSubfolders: true,
+      tags: ["project"],
+      properties: [doneClause],
+      id: 'r:notes|true|project|[["status",["[\\"t\\",\\"done\\"]"]]]',
+      name: "",
+    });
+    expect(appendedSave.mock.calls[0]?.[0]).not.toHaveProperty("filter");
+
+    const dedupedSave = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const deduped = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({
+        boxes: [boxWithRule],
+        filter: { tags: ["project"], properties: [openClause] },
+      }),
+      saveSettings: dedupedSave,
+    });
+    deduped.handleBoxCommand({ command: "add-scope-to-box", boxId: box.id });
+    await flushAsyncWork();
+
+    expect(dedupedSave.mock.calls[0]?.[0].boxes[0].rules).toEqual([existingRule]);
+  });
+
+  it("countBoxCards recomputes when a rule's property clauses change the signature", () => {
+    const openClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const doneClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "done" }] };
+    const baseContent = { folder: "notes", includeSubfolders: true, tags: [] };
+    const ruleWith = (clauses: PropertyFilterClause[]) => ({
+      ...baseContent,
+      properties: clauses,
+      id: "r:notes|true|",
+      name: "",
+    });
+    const actions = createModalActions({
+      scope: createFolderScope("notes", true),
+      settings: createSettings({ boxes: [{ ...box, rules: [ruleWith([openClause])] }] }),
+      files: [
+        { path: "notes/open-a.md", frontmatter: { status: "open" } },
+        { path: "notes/open-b.md", frontmatter: { status: "open" } },
+        { path: "notes/done.md", frontmatter: { status: "done" } },
+      ],
+    });
+
+    const openBox = { ...box, rules: [ruleWith([openClause])] };
+    expect(actions.countBoxCards(openBox)).toBe(2);
+    expect(actions.countBoxCards(openBox)).toBe(2);
+    expect(actions.countBoxCards({ ...box, rules: [ruleWith([doneClause])] })).toBe(1);
   });
 
   it("moves away from the runtime-active box before deleting despite stale activeBoxId", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { getUiStrings, type UiLanguage } from "../i18n";
+import type { PropertyFilterClause } from "../property-filter-settings";
 import { deriveRuleId, describeBoxRule, resolveRuleLabel } from "./box-rule-identity";
 import type { Rule } from "./types";
 
@@ -9,6 +10,7 @@ function makeRule(overrides: Partial<Rule> = {}): Rule {
     folder: "Notes",
     includeSubfolders: false,
     tags: [],
+    properties: [],
     id: "",
     name: "",
     ...overrides,
@@ -32,6 +34,47 @@ describe("deriveRuleId", () => {
 
   it("does not throw on an empty tag list", () => {
     expect(deriveRuleId(makeRule({ folder: "", tags: [] }))).toBe("r:|false|");
+  });
+
+  it("keeps the pre-property id byte-identical for rules without clauses (R7/V-A)", () => {
+    expect(deriveRuleId(makeRule({ folder: "", includeSubfolders: false, tags: [] }))).toBe("r:|false|");
+    expect(deriveRuleId(makeRule({ folder: "Projects", includeSubfolders: false, tags: ["a", "b"] })))
+      .toBe("r:Projects|false|a,b");
+  });
+
+  it("appends a stable serialized clause segment to the id (V-A)", () => {
+    const clause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    expect(deriveRuleId(makeRule({
+      folder: "Projects",
+      includeSubfolders: true,
+      tags: ["a", "b"],
+      properties: [clause],
+    }))).toBe('r:Projects|true|a,b|[["status",["[\\"t\\",\\"open\\"]"]]]');
+  });
+
+  it("differs when the clause set changes (V-A)", () => {
+    const base = { folder: "P", includeSubfolders: true, tags: [] };
+    const open: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const done: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "done" }] };
+    const otherKey: PropertyFilterClause = { key: "priority", values: [{ kind: "missing" }] };
+    const withOpen = deriveRuleId(makeRule({ ...base, properties: [open] }));
+    expect(withOpen).not.toBe(deriveRuleId(makeRule({ ...base, properties: [done] })));
+    expect(withOpen).not.toBe(deriveRuleId(makeRule({ ...base, properties: [otherKey] })));
+    expect(withOpen).not.toBe(deriveRuleId(makeRule(base)));
+  });
+
+  it("is stable under clause value reordering from raw, unnormalized input (V-A)", () => {
+    const open = { kind: "text", value: "open" } as const;
+    const flagged = { kind: "boolean", value: true } as const;
+    const ordered = deriveRuleId(makeRule({
+      folder: "P",
+      properties: [{ key: "status", values: [flagged, open] }],
+    }));
+    const disordered = deriveRuleId(makeRule({
+      folder: "P",
+      properties: [{ key: "status", values: [open, flagged] }],
+    }));
+    expect(disordered).toBe(ordered);
   });
 
   it("differs when the folder changes", () => {
@@ -81,6 +124,27 @@ describe("describeBoxRule", () => {
       ).toBe(`${box.ruleRootLabel} (${box.ruleSubfolderSuffix})${box.ruleTagsSeparator}#alpha`);
     });
   }
+
+  it("appends a property summary with localized value labels (C8/S7/V-E)", () => {
+    const strings = getUiStrings("en");
+    const box = strings.box;
+    const property = strings.property;
+
+    expect(describeBoxRule(strings, makeRule({
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    }))).toBe(`Notes${box.rulePropertiesSeparator}status: open`);
+    expect(describeBoxRule(strings, makeRule({
+      tags: ["alpha"],
+      properties: [
+        { key: "status", values: [{ kind: "boolean", value: true }] },
+        { key: "priority", values: [{ kind: "missing" }] },
+      ],
+    }))).toBe(
+      `Notes${box.ruleTagsSeparator}#alpha`
+      + `${box.rulePropertiesSeparator}status: ${property.valueTrue}`
+      + ` · priority: ${property.valueUnassigned}`,
+    );
+  });
 });
 
 describe("resolveRuleLabel", () => {

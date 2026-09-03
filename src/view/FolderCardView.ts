@@ -150,7 +150,7 @@ export class FolderCardView extends ItemView {
     return resolveEmptyStateMessage({
       strings: this.strings, query: this.modules.search.getQuery().trim(),
       activeTagCount: settings.filter.tags.length, baseCardCount: this.baseCards.length,
-      visibleCardCount: this.visibleCards.length, propertyClauseCount: settings.filter.properties.length,
+      visibleCardCount: this.visibleCards.length, propertyClauseCount: isBoxScope(this.cardScope) ? 0 : settings.filter.properties.length,
     });
   }
   private openCardWithDestination(path: string, destination: OpenDestination): void {
@@ -666,14 +666,14 @@ export class FolderCardView extends ItemView {
 
     const targetFolderPath = normalizeScopePath(path);
     const inBoxMode = isBoxScope(this.cardScope);
-    // Leaving a card box counts as a scope change: tag filters never applied
-    // inside a box, so browse mode should resume from a clean state.
+    // Leaving a card box counts as a scope change: tag and property filters are
+    // never applied inside a box, so browse mode should resume from a clean state.
     const scopeChanged = inBoxMode || targetFolderPath !== scopeDisplayPath(this.cardScope);
-    const hasTagFilter = this.plugin.getSettings().filter.tags.length > 0;
+    const { tags, properties } = this.plugin.getSettings().filter;
 
     const patch: PartialPluginSettings = {};
-    if (scopeChanged && hasTagFilter) {
-      patch.filter = { tags: [] };
+    if (scopeChanged && (tags.length > 0 || properties.length > 0)) {
+      patch.filter = { tags: [], properties: [] };
     }
     if (Object.keys(patch).length > 0) {
       await this.plugin.saveSettings(patch);

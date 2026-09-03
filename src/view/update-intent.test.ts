@@ -28,7 +28,7 @@ function createBox(overrides: Partial<CardBoxDefinition> = {}): CardBoxDefinitio
 }
 
 function createRule(overrides: Partial<Rule> = {}): Rule {
-  const content = { folder: "Notes", includeSubfolders: true, tags: [], ...overrides };
+  const content = { folder: "Notes", includeSubfolders: true, tags: [], properties: [], ...overrides };
   return { ...content, id: overrides.id ?? deriveRuleId(content), name: overrides.name ?? "" };
 }
 
@@ -237,5 +237,15 @@ describe("resolveBoxesUpdateIntent", () => {
     const previous = createBox({ rules: [createRule()] });
     const moved = createBox({ rules: [createRule({ folder: "Archive", name: "Client work" })] });
     expect(resolveBoxesUpdateIntent([previous], [moved], "box-1")).toBe("reload");
+  });
+
+  it("returns reload when the active box's rule properties change (C4/V-D)", () => {
+    const clause = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+    const previous = createBox({ rules: [createRule({ properties: [clause] })] });
+    const changed = createBox({
+      rules: [createRule({ properties: [{ key: "status", values: [{ kind: "text", value: "done" }] }] })],
+    });
+    expect(resolveBoxesUpdateIntent([previous], [changed], "box-1")).toBe("reload");
+    expect(resolveBoxesUpdateIntent([previous], [changed], "other-box")).toBe("patch");
   });
 });
