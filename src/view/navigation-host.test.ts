@@ -33,7 +33,7 @@ function propertyRow(): NavigationRow {
     id: navigationPropertyId("status"), kind: "property", section: "properties",
     parentId: "section:properties", level: 2, positionInSet: 1, setSize: 1,
     expandable: true, expanded: false, disabled: false, semanticState: "none",
-    label: "Status", fullPath: null, count: 3, icon: "list-filter",
+    label: "Status", fullPath: null, count: 3, icon: "list",
     menuTarget: { section: "properties", scope: "item", itemId: "status" },
     propertyKey: "status",
   };
@@ -44,7 +44,7 @@ function propertyValueRow(): NavigationRow {
     id: navigationPropertyValueId("status", { kind: "text", value: "open" }),
     kind: "property-value", section: "properties", parentId: navigationPropertyId("status"),
     level: 3, positionInSet: 1, setSize: 1, expandable: false, expanded: false, disabled: false,
-    semanticState: "checked-filter", label: "open", fullPath: null, count: 2, icon: null,
+    semanticState: "checked-filter", label: "open", fullPath: null, count: 2, icon: "dot",
     menuTarget: { section: "properties", scope: "item", itemId: "status", value: { kind: "text", value: "open" } },
     propertyKey: "status", value: { kind: "text", value: "open" },
   };

@@ -532,7 +532,7 @@ describe("projectNavigation — properties", () => {
     expect(statusIndex).toBeLessThan(boxesIndex);
   });
 
-  it("projects key rows at level 2 with list-filter icon and value rows at level 3 with null icon", () => {
+  it("projects key rows at level 2 with list icon and value rows at level 3 with dot icon", () => {
     const projection = projectNavigation(withProperties({
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
     }));
@@ -544,7 +544,7 @@ describe("projectNavigation — properties", () => {
       expandable: true,
       expanded: true,
       count: 3,
-      icon: "list-filter",
+      icon: "list",
       semanticState: "none",
       propertyKey: "status",
     });
@@ -557,7 +557,7 @@ describe("projectNavigation — properties", () => {
       expandable: false,
       expanded: false,
       count: 2,
-      icon: null,
+      icon: "dot",
       propertyKey: "status",
       value: { kind: "text", value: "open" },
     });

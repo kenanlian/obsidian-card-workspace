@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Workspace · 小红书宣传卡片</title>
+<link rel="stylesheet" href="cards.css">
+</head>
+<body>
+
+<header class="board-head">
+  <div class="board-title">
+    <h1>Card Workspace · 小红书图文</h1>
+    <p>4 张 3:4 轮播（1242×1656）· 莫兰迪纸感 · 痛点切入</p>
+  </div>
+  <div class="board-actions">
+    <button type="button" class="btn" id="copyDeck">文案</button>
+    <button type="button" class="btn" id="toggleTweaks">Tweaks</button>
+    <button type="button" class="btn btn-primary" id="downloadAll">全部下载 PNG</button>
+  </div>
+</header>
+
+<main class="board" id="board">
+
+  <!-- ==================== 01 封面 ==================== -->
+  <figure class="unit">
+    <figcaption class="unit-bar">
+      <span class="unit-label">封面 · 1242×1656</span>
+      <button type="button" class="btn btn-mini" data-download="cover">↓ PNG</button>
+    </figcaption>
+    <div class="frame">
+      <section class="xhs-card card-cover" data-screen-label="01 封面" data-card="cover">
+        <div class="cover-top">
+          <span class="pill">Obsidian 插件 · 桌面端</span>
+          <h2 class="cover-hook" id="coverHook">文件名里<br>看不出<br>笔记写了什么</h2>
+          <p class="cover-sub">所以我把 Obsidian 的文件夹<br>做成了能一眼扫完的卡片流。</p>
+        </div>
+
+        <div class="cover-shot">
+          <div class="slot" data-slot="cover" data-src="assets/plugin-screenshot.jpg" data-zoom="1" data-tx="0" data-ty="0">
+            <div class="slot-hint">拖入截图<span>建议：卡片流全貌（深色主题更出片）</span></div>
+          </div>
+        </div>
+
+        <footer class="card-foot">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-name">Card Workspace</span>
+          </div>
+          <span class="page-num">01 / 04</span>
+        </footer>
+      </section>
+    </div>
+  </figure>
+
+  <!-- ==================== 02 对比 ==================== -->
+  <figure class="unit">
+    <figcaption class="unit-bar">
+      <span class="unit-label">内页 02 · 1242×1656</span>
+      <button type="button" class="btn btn-mini" data-download="compare">↓ PNG</button>
+    </figcaption>
+    <div class="frame">
+      <section class="xhs-card card-page" data-screen-label="02 对比" data-card="compare">
+        <header class="page-head">
+          <span class="eyebrow">问题在哪</span>
+          <h2 class="page-title">同一个文件夹，两种样子</h2>
+        </header>
+
+        <div class="compare">
+          <div class="compare-item">
+            <div class="compare-tag tag-bad"><span class="mark">✗</span>原生文件列表：只有文件名</div>
+            <div class="slot slot-flat" data-slot="cmp-list" data-zoom="1" data-tx="0" data-ty="0">
+              <div class="slot-hint">拖入截图<span>Obsidian 原生文件浏览器</span></div>
+            </div>
+          </div>
+          <div class="compare-item">
+            <div class="compare-tag tag-good"><span class="mark">✓</span>Card Workspace：标题 + 摘要</div>
+            <div class="slot slot-flat" data-slot="cmp-cards" data-src="assets/crop-card-stream.jpg" data-zoom="1" data-tx="0" data-ty="0">
+              <div class="slot-hint">拖入截图<span>卡片流</span></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="page-note">笔记攒到几百篇之后，差的不是几秒钟，<br>是你还愿不愿意回头翻。</p>
+
+        <footer class="card-foot">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-name">Card Workspace</span>
+          </div>
+          <span class="page-num">02 / 04</span>
+        </footer>
+      </section>
+    </div>
+  </figure>
+
+  <!-- ==================== 03 功能 ==================== -->
+  <figure class="unit">
+    <figcaption class="unit-bar">
+      <span class="unit-label">内页 03 · 1242×1656</span>
+      <button type="button" class="btn btn-mini" data-download="features">↓ PNG</button>
+    </figcaption>
+    <div class="frame">
+      <section class="xhs-card card-page" data-screen-label="03 功能" data-card="features">
+        <header class="page-head">
+          <span class="eyebrow">最常用的三点</span>
+          <h2 class="page-title">不是功能多，是路径短</h2>
+        </header>
+
+        <div class="feature-split">
+          <ol class="feature-list">
+            <li>
+              <span class="feature-idx">01</span>
+              <div class="feature-body">
+                <h3>双栏侧边栏</h3>
+                <p>文件夹、标签、卡片盒、收藏都在左边一栏里，切换一次点击，不用来回跳文件浏览器。</p>
+              </div>
+            </li>
+            <li>
+              <span class="feature-idx">02</span>
+              <div class="feature-body">
+                <h3>卡片盒</h3>
+                <p>用「文件夹 + 标签」的规则，把散在各处的相关笔记聚成一个集合——不搬文件，也不用维护索引笔记。</p>
+              </div>
+            </li>
+            <li>
+              <span class="feature-idx">03</span>
+              <div class="feature-body">
+                <h3>拖进编辑器就是链接</h3>
+                <p>卡片拖到正文里，插 wikilink、嵌入，或整段内容。</p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="slot slot-tall" data-slot="feature-shot" data-src="assets/crop-nav.jpg" data-zoom="1" data-tx="0" data-ty="0">
+            <div class="slot-hint">拖入截图<span>导航栏</span></div>
+          </div>
+        </div>
+
+        <footer class="card-foot">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-name">Card Workspace</span>
+          </div>
+          <span class="page-num">03 / 04</span>
+        </footer>
+      </section>
+    </div>
+  </figure>
+
+  <!-- ==================== 04 结尾 ==================== -->
+  <figure class="unit">
+    <figcaption class="unit-bar">
+      <span class="unit-label">尾页 04 · 1242×1656</span>
+      <button type="button" class="btn btn-mini" data-download="cta">↓ PNG</button>
+    </figcaption>
+    <div class="frame">
+      <section class="xhs-card card-cta" data-screen-label="04 结尾" data-card="cta">
+        <header class="page-head">
+          <span class="eyebrow">怎么装</span>
+          <h2 class="cta-title" id="ctaTitle">插件市场<br>搜 Card Workspace</h2>
+        </header>
+
+        <ul class="spec">
+          <li>仅桌面端</li>
+          <li>需要 Obsidian 1.9.0+</li>
+          <li>全本地处理，不发任何网络请求</li>
+          <li>MIT 开源，免费</li>
+        </ul>
+
+        <div class="slot slot-flat slot-short" data-slot="cta-shot" data-zoom="1" data-tx="0" data-ty="0">
+          <div class="slot-hint">拖入截图<span>插件市场里的搜索结果</span></div>
+        </div>
+
+        <div class="cta-block">
+          <p class="cta-ask">你在 Obsidian 里最想要什么功能？<br>评论区告诉我，下个版本我加进去。</p>
+          <p class="cta-follow">还在持续更新，关注一下不迷路。</p>
+        </div>
+
+        <footer class="card-foot">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-name">Card Workspace</span>
+          </div>
+          <span class="page-num">04 / 04</span>
+        </footer>
+      </section>
+    </div>
+  </figure>
+
+</main>
+
+<!-- ==================== Tweaks ==================== -->
+<aside class="panel" id="tweaks" hidden>
+  <div class="panel-head">
+    <strong>Tweaks</strong>
+    <button type="button" class="btn btn-mini" data-close="tweaks">关闭</button>
+  </div>
+
+  <label class="field">
+    <span>封面主标题</span>
+    <select id="hookSelect">
+      <option value="0">文件名里看不出笔记写了什么</option>
+      <option value="1">存了一堆笔记，从来不再打开</option>
+      <option value="2">相关的笔记散在各文件夹，不想搬文件</option>
+      <option value="3">找篇笔记要切回文件浏览器，位置全丢</option>
+    </select>
+  </label>
+
+  <label class="field">
+    <span>配色</span>
+    <select id="paletteSelect">
+      <option value="mist">雾霾蓝（默认）</option>
+      <option value="sage">鼠尾草绿</option>
+      <option value="clay">陶土棕</option>
+    </select>
+  </label>
+
+  <label class="field">
+    <span>结尾 CTA 版本</span>
+    <select id="ctaSelect">
+      <option value="store">插件市场搜 Card Workspace</option>
+      <option value="github">GitHub Release 手动安装</option>
+    </select>
+  </label>
+
+  <label class="field field-row">
+    <span>纸质底纹</span>
+    <input type="checkbox" id="grainToggle" checked>
+  </label>
+
+  <label class="field field-row">
+    <span>品牌水印</span>
+    <input type="checkbox" id="brandToggle" checked>
+  </label>
+
+  <label class="field">
+    <span>预览缩放 <em id="scaleVal">34%</em></span>
+    <input type="range" id="scaleRange" min="18" max="60" value="34">
+  </label>
+
+  <p class="panel-tip">图位：拖入图片文件替换，按住拖动可平移，滚轮缩放。改动会自动存在浏览器里。</p>
+  <button type="button" class="btn btn-mini" id="clearSlots">清空所有图位</button>
+</aside>
+
+<!-- ==================== 文案 ==================== -->
+<aside class="panel panel-copy" id="deck" hidden>
+  <div class="panel-head">
+    <strong>发布文案</strong>
+    <button type="button" class="btn btn-mini" data-close="deck">关闭</button>
+  </div>
+
+  <section class="copy-block">
+    <div class="copy-head"><span>标题（3 选 1）</span><button type="button" class="btn btn-mini" data-copy="title">复制</button></div>
+    <pre id="copy-title">Obsidian 的文件列表，我实在扫不动了
+把 Obsidian 文件夹变成卡片流，终于愿意回头翻笔记了
+写了个 Obsidian 插件：文件夹直接变卡片流</pre>
+  </section>
+
+  <section class="copy-block">
+    <div class="copy-head"><span>正文</span><button type="button" class="btn btn-mini" data-copy="body">复制</button></div>
+    <pre id="copy-body">用 Obsidian 两年，最大的问题不是没记，是记完找不回来。
+
+左边那栏文件列表只有文件名。一个文件夹几十篇，光看名字根本想不起里面写了什么，只能一篇篇点开确认——点到第三篇就懒了。
+
+所以我自己写了个插件：Card Workspace。它把文件夹里的笔记铺成卡片流，每张卡上是标题加一段自动抽出来的摘要，扫一眼就知道要不要打开。
+
+每天真正用到的是这三点：
+
+1｜双栏侧边栏。文件夹、标签、卡片盒、收藏都在同一栏里，切换一次点击，不用来回跳文件浏览器。
+
+2｜卡片盒。散在不同文件夹里但主题相关的笔记，用「文件夹 + 标签」的规则聚成一个集合。不搬文件，也不用手动维护索引笔记。
+
+3｜拖进编辑器就是链接。卡片拖到正文里，可以插 wikilink、嵌入，或者直接把内容带过去。
+
+另外还有全文搜索、标签筛选、置顶、批量移动/删除/合并——都在面板里，不用离开当前位置。
+
+插件市场直接搜 Card Workspace 就能装。仅桌面端，需要 Obsidian 1.9.0 以上；所有处理都在本地，不发任何网络请求，MIT 开源免费。
+
+你在 Obsidian 里最想要什么功能？评论区说一声，下个版本我看着加。</pre>
+  </section>
+
+  <section class="copy-block">
+    <div class="copy-head"><span>标签</span><button type="button" class="btn btn-mini" data-copy="tags">复制</button></div>
+    <pre id="copy-tags">#obsidian #obsidian插件 #笔记软件 #效率工具 #知识管理 #双链笔记 #数字花园 #独立开发</pre>
+  </section>
+
+  <section class="copy-block">
+    <div class="copy-head"><span>评论区话术</span><button type="button" class="btn btn-mini" data-copy="comments">复制</button></div>
+    <pre id="copy-comments">置顶评论：
+插件市场搜 Card Workspace 就能装，桌面端专用（手机上用不了，抱歉）。有问题直接在这条下面问，我都看。
+
+「和 XX 卡片插件有什么区别？」
+它长在左侧边栏里，浏览和编辑同屏；而且卡片盒是规则驱动的，不用手动维护列表。
+
+「支持移动端吗？」
+暂时不行。整套交互是围绕桌面端的双栏侧边栏做的。
+
+「会一直更新吗？」
+我自己每天在用，所以会。想要什么功能这条下面留言。</pre>
+  </section>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

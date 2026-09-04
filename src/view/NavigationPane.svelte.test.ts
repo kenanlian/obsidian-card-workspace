@@ -651,15 +651,13 @@ describe("NavigationPane projected ARIA tree", () => {
     const keyRow = findRow(keyId);
     expect(keyRow.getAttribute("aria-level")).toBe("2");
     expect(keyRow.classList.contains("fce-property-menu")).toBe(true);
-    expect(keyRow.querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon).toBe("list-filter");
+    expect(keyRow.querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon).toBe("list");
     expect(keyRow.querySelector<HTMLButtonElement>("button.fce-tree-item-disclosure")).not.toBeNull();
 
     const valueRow = findRow(valueId);
     expect(valueRow.getAttribute("aria-level")).toBe("3");
     expect(valueRow.classList.contains("fce-property-menu")).toBe(true);
-    // Value rows carry no identity icon and no disclosure button — only the
-    // placeholder span keeps their leading track aligned with their key row.
-    expect(valueRow.querySelector(".fce-tree-item-identity")).toBeNull();
+    expect(valueRow.querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon).toBe("dot");
     expect(valueRow.querySelector<HTMLButtonElement>("button.fce-tree-item-disclosure")).toBeNull();
     expect(valueRow.querySelectorAll(".fce-tree-item-disclosure.is-placeholder")).toHaveLength(1);
   });

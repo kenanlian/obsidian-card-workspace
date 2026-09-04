@@ -47,11 +47,13 @@ describe("navigation visual contract", () => {
     );
     expect(styles).toMatch(/\.fce-nav-row-trailing \{[\s\S]*?width: auto;[\s\S]*?justify-items: end;/);
     expect(styles).toMatch(
-      /\.fce-tree-row:hover \.fce-nav-row-actions,[\s\S]*?\.fce-tree-row:focus-within \.fce-nav-row-actions \{\s*visibility: visible;/,
+      /\.fce-tree-row:hover \.fce-nav-row-actions,[\s\S]*?\.fce-tree-row:focus-visible \.fce-nav-row-actions \{\s*visibility: visible;/,
     );
     expect(styles).toMatch(
-      /\.fce-tree-row:hover \.fce-nav-row-trailing\.has-actions \.fce-nav-row-summary,[\s\S]*?\.fce-tree-row:focus-within \.fce-nav-row-trailing\.has-actions \.fce-nav-row-summary \{\s*visibility: hidden;/,
+      /\.fce-tree-row:hover \.fce-nav-row-trailing\.has-actions \.fce-nav-row-summary,[\s\S]*?\.fce-tree-row:focus-visible \.fce-nav-row-trailing\.has-actions \.fce-nav-row-summary \{\s*visibility: hidden;/,
     );
+    expect(styles).not.toMatch(/\.fce-tree-row:focus-within \.fce-nav-row-actions/);
+    expect(styles).not.toMatch(/\.fce-tree-row:focus-within \.fce-nav-row-trailing\.has-actions \.fce-nav-row-summary/);
   });
 
   it("renders a two-column leading track with a permanent chevron and a state-invariant identity glyph", () => {

@@ -545,16 +545,14 @@
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:hover .fce-nav-row-actions,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-nav-row-actions,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-within .fce-nav-row-actions {
+.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-nav-row-actions {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row:hover .fce-nav-row-trailing.has-actions .fce-nav-row-summary,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-nav-row-trailing.has-actions .fce-nav-row-summary,
-.folder-card-view .fce-nav-tree .fce-tree-row:focus-within .fce-nav-row-trailing.has-actions .fce-nav-row-summary {
+.folder-card-view .fce-nav-tree .fce-tree-row:focus-visible .fce-nav-row-trailing.has-actions .fce-nav-row-summary {
   visibility: hidden;
   opacity: 0;
 }

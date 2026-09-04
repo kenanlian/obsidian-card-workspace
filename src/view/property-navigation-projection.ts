@@ -119,7 +119,7 @@ export function projectPropertyRows(
         label: valueFacet.label,
         fullPath: null,
         count: count(valueFacet.count),
-        icon: null,
+        icon: "dot",
         menuTarget: { section: "properties", scope: "item", itemId: key, value: ref },
         propertyKey: key,
         value: ref,
@@ -148,7 +148,7 @@ export function projectPropertyRows(
       label: typeof facet.label === "string" && facet.label.length > 0 ? facet.label : key,
       fullPath: null,
       count: count(facet.valuedCount),
-      icon: "list-filter",
+      icon: "list",
       menuTarget: { section: "properties", scope: "item", itemId: key },
       propertyKey: key,
     });

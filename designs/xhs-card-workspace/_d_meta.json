@@ -1,0 +1,27 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "小红书图文卡片": {
+      "versions": [
+        {
+          "path": "小红书宣传卡片.html",
+          "createdAt": "2026-08-28T08:01:43.328Z",
+          "status": "needs-review"
+        }
+      ]
+    },
+    "发布文案": {
+      "versions": [
+        {
+          "path": "文案.md",
+          "createdAt": "2026-08-28T08:01:43.356Z",
+          "status": "needs-review"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-28T08:01:43.328Z",
+  "updatedAt": "2026-08-28T08:01:43.356Z"
+}
