@@ -63,7 +63,11 @@
     const nextFocus = resolveNavigationFocus(rows, nav.focusId, previousRowIds);
     if (nextFocus !== nav.focusId && (nav.focusId !== null || treeHasFocus)) emitIntent({ type: "focus", rowId: nextFocus });
     previousRowIds = ids;
-    if (treeHasFocus && nextFocus) void tick().then(() => rowElements.get(nextFocus)?.focus());
+    if (treeHasFocus && nextFocus) void tick().then(() => {
+      const activeRow = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-nav-row-id]");
+      if (activeRow && treeEl?.contains(activeRow)) return;
+      rowElements.get(nextFocus)?.focus();
+    });
   });
   $effect(() => {
     const request = nav.revealRequest;
@@ -104,20 +108,9 @@
   }
   function toggleExpansion(event: MouseEvent, row: NavigationRow): void {
     event.preventDefault(); event.stopPropagation();
-    if (row.expanded && focusedRowIsDescendantOf(row.id)) {
-      emitIntent({ type: "focus", rowId: row.id });
-      (event.currentTarget as HTMLElement).closest<HTMLElement>("[role=treeitem]")?.focus();
-    }
+    emitIntent({ type: "focus", rowId: row.id });
+    (event.currentTarget as HTMLElement).closest<HTMLElement>("[role=treeitem]")?.focus({ preventScroll: true });
     emitIntent({ type: "set-expanded", rowId: row.id, expanded: !row.expanded });
-  }
-  function focusedRowIsDescendantOf(ancestorId: string): boolean {
-    const activeId = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-nav-row-id]")?.dataset.navRowId;
-    let current = rows.find((candidate) => candidate.id === activeId);
-    while (current?.parentId) {
-      if (current.parentId === ancestorId) return true;
-      current = rows.find((candidate) => candidate.id === current?.parentId);
-    }
-    return false;
   }
   function keydown(event: KeyboardEvent, row: NavigationRow): void {
     const command = resolveNavigationKey(event, rows, row.id);

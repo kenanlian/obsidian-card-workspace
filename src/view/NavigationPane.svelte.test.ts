@@ -444,6 +444,36 @@ describe("NavigationPane projected ARIA tree", () => {
     ]);
   });
 
+  it("does not restore stale logical focus over a mounted disclosure", async () => {
+    render({ nav: nav({ projection: propertyProjection(), focusId: "section:favorites" }) });
+    const keyId = navigationPropertyId("status");
+    const disclosure = findRow(keyId).querySelector<HTMLButtonElement>(".fce-tree-item-disclosure")!;
+
+    disclosure.focus();
+    await tick(); await tick();
+
+    expect(document.activeElement).toBe(disclosure);
+  });
+
+  it("gives a disclosure's owning row focus before publishing its toggle", () => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: nav({ projection: propertyProjection() }), onIntent: (intent) => intents.push(intent) });
+    const keyId = navigationPropertyId("status");
+    const keyRow = findRow(keyId);
+    const disclosure = keyRow.querySelector<HTMLButtonElement>(".fce-tree-item-disclosure")!;
+    const focus = vi.spyOn(keyRow, "focus");
+
+    disclosure.focus();
+    disclosure.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(document.activeElement).toBe(keyRow);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(intents.slice(-2)).toEqual([
+      { type: "focus", rowId: keyId },
+      { type: "set-expanded", rowId: keyId, expanded: false },
+    ]);
+  });
+
   it("publishes persistent filter input and Escape clear while respecting IME", () => {
     const intents: NavigationIntent[] = [];
     render({ nav: nav({ query: "wor", projection: projection("wor") }), onIntent: (intent) => intents.push(intent) });

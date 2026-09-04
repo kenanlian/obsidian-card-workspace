@@ -346,7 +346,7 @@ describe("R5 line-count ratchet", () => {
     // and the active-filter count hand-off; the tree/projection logic itself is
     // host-owned and stays in navigation-* modules. Box mode adds the properties
     // disabled-in-box empty copy and pins the chooser header variant (WP-05).
-    "src/view/NavigationPane.svelte": 292,
+    "src/view/NavigationPane.svelte": 285,
     "src/view/FolderCardPanel.svelte": 827,
     "src/view/Toolbar.svelte": 751,
     "src/view/CardItem.svelte": 438,
