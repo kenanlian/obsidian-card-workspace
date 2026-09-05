@@ -1542,3 +1542,19 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ---------------------------------------------------------------------------
+ * Favorites manual drag reorder (favorites nav section only)
+ * ------------------------------------------------------------------------- */
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-favorite-dragging {
+  opacity: 0.45;
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-drop-before {
+  box-shadow: inset 0 2px 0 0 var(--fce-accent);
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--fce-accent);
+}

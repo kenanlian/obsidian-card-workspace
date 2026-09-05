@@ -1,5 +1,6 @@
 import { PLAIN_FOLDER_ICON } from "../icons";
 import { normalizeNavSectionOrder } from "../navigation-section-order";
+import { FAVORITE_KIND_ORDER } from "./favorites";
 import { normalizeScopePath } from "./scope";
 import { normalizeTagPath, type TagTreeNode } from "./tag-tree";
 import type { FavoriteKind, FolderTreeNode, NavSectionId } from "./types";
@@ -245,7 +246,13 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   const matchedCounts = new Map<NavSectionId, number>();
 
   const favoriteRows: NavigationFavoriteRow[] = [];
-  for (const favorite of input.favorites) {
+  // Display keeps kind grouping (folder/file/tag/box) while the order inside
+  // each group follows the favorites array — that array order is the user's
+  // manual drag order, so it must survive projection untouched.
+  const orderedFavoriteSources = FAVORITE_KIND_ORDER.flatMap((kind) =>
+    input.favorites.filter((favorite) => favorite.kind === kind),
+  );
+  for (const favorite of orderedFavoriteSources) {
     if (!validString(favorite?.ref, favorite?.kind === "folder") || !validString(favorite?.label)) continue;
     if (querying && !matches(normalizedQuery, favorite.label)) continue;
     const favoriteEntry = { kind: favorite.kind, ref: favorite.ref };

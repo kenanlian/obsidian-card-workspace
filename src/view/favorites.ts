@@ -49,6 +49,14 @@ export function isFavorite(
   return indexOfFavorite(favorites, kind, normalized) !== -1;
 }
 
+/**
+ * Add a favorite by appending it to the end of the array.
+ *
+ * The array order is the user's manual order: the projection layer groups rows
+ * by kind while keeping array order within each group, so an appended entry
+ * shows up last inside its kind group. No kind re-sort here — that would
+ * scramble a manually drag-ordered list.
+ */
 export function addFavorite(
   favorites: FavoriteEntry[],
   kind: FavoriteKind,
@@ -58,7 +66,7 @@ export function addFavorite(
   if (normalized === null || indexOfFavorite(favorites, kind, normalized) !== -1) {
     return favorites;
   }
-  return sortFavoritesByKind([...favorites, { kind, ref: normalized }]);
+  return [...favorites, { kind, ref: normalized }];
 }
 
 export function removeFavorite(
@@ -124,16 +132,60 @@ export function moveFavorite(
   return result;
 }
 
-export function sortFavoritesByKind(favorites: FavoriteEntry[]): FavoriteEntry[] {
-  return favorites
-    .map((entry, index) => ({ entry, index }))
-    .sort((left, right) => {
-      const kindDelta =
-        FAVORITE_KIND_ORDER.indexOf(left.entry.kind) -
-        FAVORITE_KIND_ORDER.indexOf(right.entry.kind);
-      return kindDelta !== 0 ? kindDelta : left.index - right.index;
-    })
-    .map(({ entry }) => entry);
+export type FavoriteReorderPosition = "before" | "after";
+
+function favoriteEntriesEqual(left: FavoriteEntry[], right: FavoriteEntry[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) => entry.kind === right[index].kind && entry.ref === right[index].ref);
+}
+
+/**
+ * Move `source` to sit immediately `before`/`after` `target` within their shared
+ * kind group, leaving every other entry (and other kinds' positions) untouched.
+ *
+ * Display groups favorites by kind with array order inside each group, so the
+ * visible reorder is exactly a reorder of the same-kind subsequence: the new
+ * order is written back into the flat slots that kind already occupies. Drops
+ * across kinds or onto unknown refs return the input unchanged.
+ */
+export function reorderFavorite(
+  favorites: FavoriteEntry[],
+  source: Pick<FavoriteEntry, "kind" | "ref">,
+  target: Pick<FavoriteEntry, "kind" | "ref">,
+  position: FavoriteReorderPosition,
+): FavoriteEntry[] {
+  if (source.kind !== target.kind) {
+    return favorites;
+  }
+
+  const slots: number[] = [];
+  favorites.forEach((entry, index) => {
+    if (entry.kind === source.kind) {
+      slots.push(index);
+    }
+  });
+
+  const sourcePosition = slots.findIndex((index) => favorites[index].ref === source.ref);
+  const targetPosition = slots.findIndex((index) => favorites[index].ref === target.ref);
+  if (sourcePosition === -1 || targetPosition === -1) {
+    return favorites;
+  }
+
+  const groupEntries = slots.map((index) => favorites[index]);
+  groupEntries.splice(sourcePosition, 1);
+  const insertAt = position === "before" ? targetPosition : targetPosition + 1;
+  groupEntries.splice(sourcePosition < insertAt ? insertAt - 1 : insertAt, 0, {
+    kind: source.kind,
+    ref: source.ref,
+  });
+
+  const result = [...favorites];
+  slots.forEach((flatIndex, groupIndex) => {
+    result[flatIndex] = groupEntries[groupIndex];
+  });
+  return favoriteEntriesEqual(result, favorites) ? favorites : result;
 }
 
 export function pruneFavoriteBoxes(

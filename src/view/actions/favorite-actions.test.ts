@@ -23,6 +23,34 @@ describe("FavoriteActions", () => {
     expect(calls).toEqual(["folder:", "tags:project"]);
   });
 
+  it("persists a manual drag reorder and skips the save for no-op drops", async () => {
+    const favorites = [
+      { kind: "tag" as const, ref: "work" },
+      { kind: "folder" as const, ref: "notes" },
+      { kind: "tag" as const, ref: "home" },
+    ];
+    const saveSettings = vi.fn(async () => undefined);
+    const actions = new FavoriteActions({
+      context: {
+        getSettings: () => ({ favorites }),
+        saveSettings,
+      },
+    } as never);
+
+    await actions.reorderFavoriteEntries({ kind: "tag", ref: "home" }, { kind: "tag", ref: "work" }, "before");
+    expect(saveSettings).toHaveBeenCalledWith({
+      favorites: [
+        { kind: "tag", ref: "home" },
+        { kind: "folder", ref: "notes" },
+        { kind: "tag", ref: "work" },
+      ],
+    });
+
+    saveSettings.mockClear();
+    await actions.reorderFavoriteEntries({ kind: "tag", ref: "work" }, { kind: "tag", ref: "work" }, "before");
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
   it("remaps only changed favorite selection flags and preserves row data identities", () => {
     const rows: FavoriteRowModel[] = [
       { kind: "folder", ref: "old", label: "Old", icon: "folder", count: 7, semanticState: "current-range", missing: false },

@@ -117,6 +117,29 @@ function ids(rows: readonly NavigationRow[]): string[] {
 }
 
 describe("projectNavigation", () => {
+  it("groups favorites by kind while keeping array order inside each group", () => {
+    // Interleaved on purpose: the persisted array is the user's manual order,
+    // and the display grouping must not reorder entries inside a kind.
+    const projection = projectNavigation(buildInput({
+      favorites: [
+        { kind: "tag", ref: "work/current", label: "work/current", icon: "tag", count: 3, missing: false },
+        { kind: "folder", ref: "Projects/Alpha", label: "Alpha", icon: "folder", count: 2, missing: false },
+        { kind: "tag", ref: "home", label: "home", icon: "tag", count: 1, missing: false },
+        { kind: "file", ref: "Projects/Alpha/Current.md", label: "Current", icon: "file", count: 0, missing: false },
+        { kind: "box", ref: "box-a", label: "Box Alpha", icon: "box", count: 4, missing: false },
+      ],
+    }));
+
+    const favoriteRows = projection.rows.filter((row) => row.kind === "favorite");
+    expect(favoriteRows.map((row) => row.id)).toEqual([
+      navigationFavoriteId("folder", "Projects/Alpha"),
+      navigationFavoriteId("file", "Projects/Alpha/Current.md"),
+      navigationFavoriteId("tag", "work/current"),
+      navigationFavoriteId("tag", "home"),
+      navigationFavoriteId("box", "box-a"),
+    ]);
+  });
+
   it("preserves section/source order and occupied empty section metadata for a blank query", () => {
     const projection = projectNavigation(buildInput({ favorites: [], boxes: [] }));
 

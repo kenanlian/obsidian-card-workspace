@@ -874,3 +874,125 @@ describe("NavigationPane projected ARIA tree", () => {
       .filter((child) => child.tabIndex === 0)).toEqual([]);
   });
 });
+
+describe("NavigationPane favorites manual drag reorder", () => {
+  const favorite = (kind: "folder" | "file" | "tag" | "box", ref: string, label: string) =>
+    ({ kind, ref, label, icon: kind === "tag" ? "tag" : "star", count: 0, missing: false });
+
+  function favoritesNav() {
+    return nav({
+      projection: projectNavigation({
+        query: "",
+        scope: { kind: "folder", path: "notes", includeSubfolders: true },
+        activeTags: ["work"], selectedPath: "notes/A.md",
+        favorites: [
+          favorite("tag", "work", "work"),
+          favorite("tag", "home", "home"),
+          favorite("tag", "garden", "garden"),
+          favorite("folder", "notes", "notes"),
+        ],
+        folders: [],
+        tags: [],
+        boxes: [], tagCounts: {},
+        includeSubfolders: true, tagsDisabled: false,
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+        sectionOrder: defaultNavSectionOrder(),
+        sectionLabels: {
+          favorites: { label: "Favorites", emptyLabel: null },
+          folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
+          properties: { label: "Properties", emptyLabel: null },
+          boxes: { label: "Boxes", emptyLabel: null },
+        },
+        rootFolderLabel: "Root /",
+        expansion: {
+          folders: { manual: [], reveal: [], query: [], suppressed: [] },
+          tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
+        },
+      }),
+    });
+  }
+
+  function dragEvent(type: string, clientY: number): Event {
+    return new MouseEvent(type, { bubbles: true, cancelable: true, clientY });
+  }
+
+  beforeEach(() => { document.body.innerHTML = ""; });
+  afterEach(async () => {
+    await Promise.all(components.splice(0).map((component) => unmount(component)));
+    document.body.innerHTML = "";
+    HTMLElement.prototype.getBoundingClientRect = originalRect;
+  });
+
+  it("drags a favorite onto the upper/lower half of a same-kind row and emits a reorder intent", async () => {
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      return { top: 200, height: 40, bottom: 240, left: 0, right: 240, width: 240, x: 0, y: 200, toJSON: () => ({}) } as DOMRect;
+    };
+    const intents: NavigationIntent[] = [];
+    render({ nav: favoritesNav(), onIntent: (intent) => intents.push(intent) });
+
+    const home = row("favorite:tag:home");
+    const work = row("favorite:tag:work");
+    const folderRow = row("favorite:folder:notes");
+    expect(home.getAttribute("draggable")).toBe("true");
+    expect(folderRow.getAttribute("draggable")).toBe("true");
+    expect(row("section:favorites").getAttribute("draggable")).toBeNull();
+
+    home.dispatchEvent(dragEvent("dragstart", 220));
+    await tick();
+    expect(home.classList.contains("is-favorite-dragging")).toBe(true);
+
+    const upperHalf = dragEvent("dragover", 210);
+    work.dispatchEvent(upperHalf);
+    expect(upperHalf.defaultPrevented).toBe(true);
+    await tick();
+    expect(work.classList.contains("is-drop-before")).toBe(true);
+
+    const lowerHalf = dragEvent("dragover", 230);
+    work.dispatchEvent(lowerHalf);
+    await tick();
+    expect(work.classList.contains("is-drop-after")).toBe(true);
+
+    const crossKind = dragEvent("dragover", 210);
+    folderRow.dispatchEvent(crossKind);
+    expect(crossKind.defaultPrevented).toBe(false);
+    expect(folderRow.classList.contains("is-drop-before")).toBe(false);
+
+    // The drop reuses the position from the latest dragover; re-hover the upper half first.
+    work.dispatchEvent(dragEvent("dragover", 210));
+    const drop = dragEvent("drop", 210);
+    work.dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(intents).toContainEqual({
+      type: "reorder-favorites",
+      source: { kind: "tag", ref: "home" },
+      target: { kind: "tag", ref: "work" },
+      position: "before",
+    });
+
+    home.dispatchEvent(dragEvent("dragend", 210));
+    await tick();
+    expect(home.classList.contains("is-favorite-dragging")).toBe(false);
+    expect(work.classList.contains("is-drop-before")).toBe(false);
+    expect(work.classList.contains("is-drop-after")).toBe(false);
+  });
+
+  it("ignores drops on rows of another kind without emitting intents", () => {
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      return { top: 200, height: 40, bottom: 240, left: 0, right: 240, width: 240, x: 0, y: 200, toJSON: () => ({}) } as DOMRect;
+    };
+    const intents: NavigationIntent[] = [];
+    render({ nav: favoritesNav(), onIntent: (intent) => intents.push(intent) });
+
+    const home = row("favorite:tag:home");
+    const folderRow = row("favorite:folder:notes");
+    home.dispatchEvent(dragEvent("dragstart", 220));
+
+    const drop = dragEvent("drop", 210);
+    folderRow.dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(false);
+    expect(intents.filter((intent) => intent.type === "reorder-favorites")).toEqual([]);
+
+    home.dispatchEvent(dragEvent("dragend", 220));
+    expect(home.classList.contains("is-favorite-dragging")).toBe(false);
+  });
+});

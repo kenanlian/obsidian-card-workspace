@@ -332,7 +332,7 @@ describe("R5 line-count ratchet", () => {
    * instead of growing the host file. Absent that, a cap must only fall.
   */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 741,
+    "src/view/FolderCardView.ts": 744,
     "src/main.ts": 667,
     // The extracted indexed-search lifecycle is one cohesive state machine.
     "src/services/SearchCoordinator.ts": 572,
@@ -341,12 +341,20 @@ describe("R5 line-count ratchet", () => {
     // Card boxes are one wide domain spanning scope, CRUD, membership, and menu actions.
     "src/view/actions/box-actions.ts": 573,
     "src/search/SearchIndexManager.ts": 1066,
-    "src/view/note-ops.ts": 877,
+    // Favorites order became user-owned manual order; tag/frontmatter mutation
+    // moved to src/view/note-tag-ops.ts, leaving file, clipboard, and merge ops.
+    "src/view/note-ops.ts": 480,
+    // Single-note and batch tag mutation (add/remove/rename) plus the shared
+    // frontmatter and inline-tag range helpers, extracted from note-ops.ts.
+    "src/view/note-tag-ops.ts": 580,
     // Properties added the section header action, value-row additive activation,
     // and the active-filter count hand-off; the tree/projection logic itself is
     // host-owned and stays in navigation-* modules. Box mode adds the properties
     // disabled-in-box empty copy and pins the chooser header variant (WP-05).
-    "src/view/NavigationPane.svelte": 285,
+    // Favorites manual drag reorder adds pane-local drag state plus thin drag
+    // handlers; the drop-position/drag-state decisions live in
+    // src/view/navigation-favorite-dnd.ts.
+    "src/view/NavigationPane.svelte": 343,
     "src/view/FolderCardPanel.svelte": 827,
     // Sort & group moved to the native Menu API; the item builder and section
     // decoration live in src/view/menus/sort-group-menu.ts.
@@ -355,10 +363,13 @@ describe("R5 line-count ratchet", () => {
     // Section-header menus gained a shared move-order dependency contract, with the
     // items themselves extracted to src/view/menus/nav-section-header-items.ts; the
     // Properties lane menus and shared item helpers live in src/view/menus/.
-    "src/view/nav-context-menu.ts": 516,
+    // Tag management added the rename/delete tag items plus tag danger labels.
+    "src/view/nav-context-menu.ts": 528,
     // Property fields joined the normalized flat view; the domain normalization
     // itself is extracted to src/property-filter-settings.ts.
-    "src/settings.ts": 560,
+    // Favorites normalization keeps the persisted array order verbatim (manual
+    // drag order) instead of re-sorting by kind; grouping moved to projection.
+    "src/settings.ts": 563,
     // The atomic flat-patch entry (updateFlat) and the property wire mappings are
     // persistence-owner concerns; layer reconciliation stays layer-specific.
     "src/services/SettingsStore.ts": 417,

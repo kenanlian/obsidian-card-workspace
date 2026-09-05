@@ -7,6 +7,12 @@
   import type { NavigationIntent, NavigationRow } from "./navigation-model";
   import { navigationSubtreeHover } from "./navigation-hover";
   import { resolveNavigationFocus, resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
+  import {
+    canAcceptFavoriteDrop,
+    favoriteRowDragState,
+    resolveFavoriteDropPosition,
+    type FavoriteDragState,
+  } from "./navigation-favorite-dnd";
   import NavigationTreeRow from "./NavigationTreeRow.svelte";
   import type { FolderActionPayload, NavContextMenuPayload } from "./types";
   interface Props {
@@ -48,6 +54,7 @@
   let scrollerEl: HTMLElement | null = $state(null);
   let filterEl: HTMLInputElement | null = $state(null);
   let hoveredRowIds = $state<ReadonlySet<string>>(new Set());
+  let favoriteDrag = $state<FavoriteDragState>({ source: null, target: null });
   let previousRowIds: string[] = [];
   let rowElements = new Map<string, HTMLElement>();
   let consumedRevealToken = 0;
@@ -125,6 +132,54 @@
   }
   function menuPayload(row: NavigationRow, trigger: NavContextMenuPayload["trigger"]): NavContextMenuPayload {
     return Object.freeze({ ...row.menuTarget, originId: row.id, trigger: Object.freeze(trigger) });
+  }
+
+  // -- Favorites manual drag reorder (favorites section only) ----------------
+
+  function clearFavoriteDrag(): void {
+    favoriteDrag = { source: null, target: null };
+  }
+
+  function onFavoriteDragStart(event: DragEvent, row: NavigationRow): void {
+    if (row.kind !== "favorite") return;
+    favoriteDrag = { source: { ...row.favorite }, target: null };
+    if (event.dataTransfer != null) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", row.id);
+    }
+  }
+
+  function onFavoriteDragOver(event: DragEvent, row: NavigationRow): void {
+    if (row.kind !== "favorite" || !canAcceptFavoriteDrop(favoriteDrag.source, row.favorite)) return;
+    event.preventDefault();
+    if (event.dataTransfer != null) event.dataTransfer.dropEffect = "move";
+    favoriteDrag = {
+      ...favoriteDrag,
+      target: {
+        rowId: row.id,
+        position: resolveFavoriteDropPosition(event.clientY, (event.currentTarget as HTMLElement).getBoundingClientRect()),
+      },
+    };
+  }
+
+  function onFavoriteDrop(event: DragEvent, row: NavigationRow): void {
+    if (row.kind !== "favorite" || !canAcceptFavoriteDrop(favoriteDrag.source, row.favorite)) {
+      clearFavoriteDrag();
+      return;
+    }
+    event.preventDefault();
+    const position = favoriteDrag.target?.rowId === row.id
+      ? favoriteDrag.target.position
+      : resolveFavoriteDropPosition(event.clientY, (event.currentTarget as HTMLElement).getBoundingClientRect());
+    const source = favoriteDrag.source;
+    if (source === null) return;
+    const target = { ...row.favorite };
+    clearFavoriteDrag();
+    emitIntent({ type: "reorder-favorites", source, target, position });
+  }
+
+  function onFavoriteDragEnd(): void {
+    clearFavoriteDrag();
   }
   function pointerMenu(event: MouseEvent, row: NavigationRow): void {
     event.preventDefault(); event.stopPropagation();
@@ -234,8 +289,11 @@
             subtreeHovered={hoveredRowIds.has(row.id)} {strings} {activeFilterTags}
             activePropertyFilterCount={nav.propertyFilterCount}
             showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}
+            dragState={favoriteRowDragState(row, favoriteDrag)}
             rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
-            onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}>
+            onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}
+            onRowDragStart={onFavoriteDragStart} onRowDragOver={onFavoriteDragOver}
+            onRowDrop={onFavoriteDrop} onRowDragEnd={onFavoriteDragEnd}>
             {#snippet actions()}
               {#if row.kind === "section" && row.section === "folders"}
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-create" aria-label={labels.createFolder}

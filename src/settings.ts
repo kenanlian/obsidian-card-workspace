@@ -8,7 +8,7 @@ import {
   type PropertyFilterClause,
 } from "./property-filter-settings";
 import { deriveRuleId } from "./view/box-rule-identity";
-import { isFavoriteKind, normalizeFavoriteRef, sortFavoritesByKind } from "./view/favorites";
+import { isFavoriteKind, normalizeFavoriteRef } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
 
 export type SortField = "mtime" | "ctime" | "name";
@@ -448,7 +448,10 @@ function normalizeFavorites(value: unknown): FavoriteEntry[] {
     seen.add(dedupeKey);
     result.push({ kind: entry.kind, ref });
   }
-  return sortFavoritesByKind(result);
+  // The array order is the user's manual order: new favorites append to the
+  // tail and drag reorders write straight into it, so persistence must never
+  // re-sort. Kind grouping for display happens in the navigation projection.
+  return result;
 }
 
 function normalizeActiveBoxId(value: unknown, boxes: CardBoxDefinition[]): string | null {

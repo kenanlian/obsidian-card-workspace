@@ -219,7 +219,8 @@ export type NavigationIntent =
   | { type: "toggle-section"; section: NavSectionId }
   | { type: "activate"; rowId: string; mode: NavigationActivationMode }
   | { type: "reveal-consumed"; token: number }
-  | { type: "focus-return-consumed"; token: number };
+  | { type: "focus-return-consumed"; token: number }
+  | { type: "reorder-favorites"; source: FavoriteEntry; target: FavoriteEntry; position: "before" | "after" };
 
 export const NAVIGATION_SECTION_ORDER: readonly NavSectionId[] = [
   "favorites",

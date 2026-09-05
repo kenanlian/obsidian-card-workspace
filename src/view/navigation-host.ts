@@ -180,6 +180,8 @@ export function routeNavigationIntent(input: {
    * the pre-WP-05 host caller keeps compiling; absent means a no-op.
    */
   selectPropertyValue?: (propertyKey: string, ref: PropertyScalarRef, additive: boolean) => void;
+  /** Manual favorites drag reorder; carries its own payload, no row lookup. */
+  reorderFavorites?: (source: FavoriteEntry, target: FavoriteEntry, position: "before" | "after") => void;
 }): void {
   const { intent, navLayout } = input;
   if (intent.type === "query-update") { navLayout.updateQuery(intent.query); return; }
@@ -187,6 +189,10 @@ export function routeNavigationIntent(input: {
   if (intent.type === "focus") { navLayout.setFocus(intent.rowId); return; }
   if (intent.type === "reveal-consumed") { navLayout.consumeReveal(intent.token); return; }
   if (intent.type === "focus-return-consumed") { navLayout.consumeFocusReturn(intent.token); return; }
+  if (intent.type === "reorder-favorites") {
+    input.reorderFavorites?.(intent.source, intent.target, intent.position);
+    return;
+  }
   if (intent.type === "toggle-section") {
     const section = navLayout.getProjection().rows.find(
       (row) => row.kind === "section" && row.section === intent.section,

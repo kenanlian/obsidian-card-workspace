@@ -65,7 +65,9 @@ export interface ViewStrings {
   tagInput: {
     addTitle: string;
     removeTitle: string;
+    renameTitle: string;
     tagLabel: string;
+    renameNewTagLabel: string;
     tagPlaceholder: string;
     invalidTag: string;
     cancel: string;
@@ -73,6 +75,8 @@ export interface ViewStrings {
     adding: string;
     remove: string;
     removing: string;
+    rename: string;
+    renaming: string;
   };
   singleTagActions: {
     added: (tag: string, basename: string) => string;
@@ -102,6 +106,37 @@ export interface ViewStrings {
     noop: (noop: number, tagCount: number) => string;
     failed: (failed: number, tagCount: number) => string;
     partial: (removed: number, noop: number, failed: number, tagCount: number) => string;
+  };
+  tagManage: {
+    tagNotFound: (tag: string) => string;
+    renameConfirmTitle: string;
+    renameConfirm: string;
+    renameConfirmBody: (info: {
+      from: string;
+      to: string;
+      noteCount: number;
+      descendantCount: number;
+      boxClauseCount: number;
+      favoriteCount: number;
+      filterCount: number;
+      merging: boolean;
+    }) => string;
+    deleteConfirmTitle: string;
+    deleteConfirm: string;
+    deleteConfirmBody: (info: {
+      tag: string;
+      noteCount: number;
+      descendantCount: number;
+      boxClauseCount: number;
+      favoriteCount: number;
+      filterCount: number;
+    }) => string;
+    renamed: (from: string, to: string, count: number) => string;
+    renamedPartial: (from: string, to: string, count: number, failed: number) => string;
+    renameFailed: (from: string, to: string, failed: number) => string;
+    removed: (tag: string, count: number) => string;
+    removedPartial: (tag: string, count: number, failed: number) => string;
+    removeFailed: (tag: string, failed: number) => string;
   };
   folderManagement: {
     createChildTitle: string;
@@ -170,6 +205,8 @@ export interface ViewStrings {
     collapseSubtags: string;
     newNoteWithTag: string;
     copyTag: string;
+    renameTag: string;
+    deleteTag: string;
     clearTagFilter: string;
     openThisBox: string;
     exitThisBox: string;

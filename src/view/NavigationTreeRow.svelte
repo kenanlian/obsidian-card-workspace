@@ -2,6 +2,7 @@
   import { setIcon, setTooltip } from "obsidian";
   import type { Snippet } from "svelte";
   import type { UiStrings } from "../i18n";
+  import type { NavigationRowDragState } from "./navigation-favorite-dnd";
   import type { NavigationRow } from "./navigation-model";
   import { resolveNavigationRowTooltip } from "./navigation-tooltip";
 
@@ -14,12 +15,17 @@
     showItemCounts?: boolean;
     tooltipSide?: "left" | "right";
     subtreeHovered?: boolean;
+    dragState?: NavigationRowDragState | null;
     rowRef?: (node: HTMLElement, rowId: string) => { destroy: () => void };
     onFocus?: (rowId: string) => void;
     onActivate?: (event: MouseEvent, row: NavigationRow) => void;
     onToggleExpansion?: (event: MouseEvent, row: NavigationRow) => void;
     onKeydown?: (event: KeyboardEvent, row: NavigationRow) => void;
     onContextMenu?: (event: MouseEvent, row: NavigationRow) => void;
+    onRowDragStart?: (event: DragEvent, row: NavigationRow) => void;
+    onRowDragOver?: (event: DragEvent, row: NavigationRow) => void;
+    onRowDrop?: (event: DragEvent, row: NavigationRow) => void;
+    onRowDragEnd?: (event: DragEvent, row: NavigationRow) => void;
     actions?: Snippet;
   }
 
@@ -32,12 +38,17 @@
     showItemCounts = false,
     tooltipSide = "right",
     subtreeHovered = false,
+    dragState = null,
     rowRef = () => ({ destroy: () => undefined }),
     onFocus,
     onActivate,
     onToggleExpansion,
     onKeydown,
     onContextMenu,
+    onRowDragStart,
+    onRowDragOver,
+    onRowDrop,
+    onRowDragEnd,
     actions,
   }: Props = $props();
 
@@ -73,12 +84,13 @@
 
 <!-- svelte-ignore a11y_role_has_required_aria_props -- tree semantics use current/checked, not selection -->
 <div
-  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''}"
+  class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''} {dragState?.dragging ? 'is-favorite-dragging' : ''} {dragState?.dropIndicator === 'before' ? 'is-drop-before' : ''} {dragState?.dropIndicator === 'after' ? 'is-drop-after' : ''}"
   data-nav-row-id={row.id}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
   role="treeitem"
   tabindex={tabIndex}
+  draggable={dragState?.draggable ? "true" : undefined}
   aria-level={row.level}
   aria-posinset={row.positionInSet}
   aria-setsize={row.setSize}
@@ -95,6 +107,10 @@
   onclick={(event) => onActivate?.(event, row)}
   onkeydown={(event) => onKeydown?.(event, row)}
   oncontextmenu={(event) => onContextMenu?.(event, row)}
+  ondragstart={(event) => onRowDragStart?.(event, row)}
+  ondragover={(event) => onRowDragOver?.(event, row)}
+  ondrop={(event) => onRowDrop?.(event, row)}
+  ondragend={(event) => onRowDragEnd?.(event, row)}
 >
   <div class="fce-popup-row-leading">
     {#if row.expandable}

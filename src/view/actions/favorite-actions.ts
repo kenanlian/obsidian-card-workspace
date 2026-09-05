@@ -4,7 +4,7 @@ import type { UiStrings } from "../../i18n";
 import { PLAIN_FOLDER_ICON } from "../../icons";
 import type { OpenDestination } from "../../settings";
 import { getSystemPath, showInSystemExplorer } from "../desktop-shell";
-import { isFavorite, isFavoriteKind, moveFavorite, toggleFavorite } from "../favorites";
+import { isFavorite, isFavoriteKind, moveFavorite, reorderFavorite, toggleFavorite, type FavoriteReorderPosition } from "../favorites";
 import { getCardFileIcon, resolveCardFileKindFromPath } from "../file-kind";
 import { copyPathToClipboard } from "../note-ops";
 import type { BoxSummary, FavoriteRowModel } from "../panel-model";
@@ -101,6 +101,20 @@ export class FavoriteActions {
   async moveFavoriteEntry(kind: FavoriteKind, ref: string, delta: -1 | 1): Promise<void> {
     const favorites = this.deps.context.getSettings().favorites ?? [];
     const next = moveFavorite(favorites, kind, ref, delta);
+    if (next === favorites) {
+      return;
+    }
+    await this.persistFavorites(next);
+  }
+
+  /** Manual drag reorder from the favorites section; persists the new array order. */
+  async reorderFavoriteEntries(
+    source: Pick<FavoriteEntry, "kind" | "ref">,
+    target: Pick<FavoriteEntry, "kind" | "ref">,
+    position: FavoriteReorderPosition,
+  ): Promise<void> {
+    const favorites = this.deps.context.getSettings().favorites ?? [];
+    const next = reorderFavorite(favorites, source, target, position);
     if (next === favorites) {
       return;
     }

@@ -8,6 +8,7 @@ import { FolderActions } from "./actions/folder-actions";
 import { MergeActions } from "./actions/merge-actions";
 import { createPropertyActions, type PropertyActions } from "./actions/property-actions";
 import { TagActions } from "./actions/tag-actions";
+import { TagManagementActions } from "./actions/tag-manage-actions";
 import { BulkController } from "./controllers/BulkController";
 import { GroupCollapseController } from "./controllers/GroupCollapseController";
 import { HydrationController } from "./controllers/HydrationController";
@@ -65,6 +66,7 @@ export interface ViewModules {
   folderActions: FolderActions;
   boxActions: BoxActions;
   tagActions: TagActions;
+  tagManageActions: TagManagementActions;
   favoriteActions: FavoriteActions;
   mergeActions: MergeActions;
   cardMenu: CardContextMenu;
@@ -265,6 +267,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getVaultTagCounts: () => projection.getVaultTagCounts(),
     applyTagFilter: (nextTags) => tagActions.applyTagFilter(nextTags),
   });
+  const tagManageActions: TagManagementActions = new TagManagementActions({
+    context,
+    requestDestructiveConfirmation: (options) => mergeActions.requestDestructiveConfirmation(options),
+  });
   const propertyActions: PropertyActions = createPropertyActions({
     getApp: () => context.getApp(),
     getSettings: () => context.getSettings(),
@@ -336,6 +342,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     folderActions,
     boxActions,
     tagActions,
+    tagManageActions,
     favoriteActions,
     mergeActions,
     cardMenu,

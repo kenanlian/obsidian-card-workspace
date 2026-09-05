@@ -1095,7 +1095,7 @@ describe("favorites settings normalization", () => {
     expect(result.favorites).toEqual([{ kind: "file", ref: "A.md" }]);
   });
 
-  it("dedupes on kind plus normalized ref", () => {
+  it("dedupes on kind plus normalized ref while keeping first-seen order", () => {
     const result = normalizeSettings({
       favorites: [
         { kind: "tag", ref: "#Work" },
@@ -1106,8 +1106,8 @@ describe("favorites settings normalization", () => {
     } as never);
 
     expect(result.favorites).toEqual([
-      { kind: "folder", ref: "Projects" },
       { kind: "tag", ref: "work" },
+      { kind: "folder", ref: "Projects" },
     ]);
   });
 
@@ -1116,7 +1116,7 @@ describe("favorites settings normalization", () => {
     expect(result.favorites).toEqual([{ kind: "folder", ref: "" }]);
   });
 
-  it("regroups a mixed input into folder, file, tag, box order", () => {
+  it("persists a mixed input's array order verbatim as the manual order", () => {
     const result = normalizeSettings({
       favorites: [
         { kind: "box", ref: "box-1" },
@@ -1126,11 +1126,13 @@ describe("favorites settings normalization", () => {
       ],
     } as never);
 
+    // No kind regrouping: the array order is the user's manual drag order and
+    // the navigation projection does the folder/file/tag/box grouping at display.
     expect(result.favorites).toEqual([
-      { kind: "folder", ref: "Projects" },
-      { kind: "file", ref: "Notes/A.md" },
-      { kind: "tag", ref: "work/ai" },
       { kind: "box", ref: "box-1" },
+      { kind: "tag", ref: "work/ai" },
+      { kind: "file", ref: "Notes/A.md" },
+      { kind: "folder", ref: "Projects" },
     ]);
   });
 });

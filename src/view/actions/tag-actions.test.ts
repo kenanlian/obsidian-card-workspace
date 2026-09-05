@@ -12,12 +12,14 @@ import {
   getLatestModalButton,
   buildNoteOpsMock,
   registerFolderCardView,
+  buildNoteTagOpsMock,
 } from "../../__mocks__/folder-card-view-harness";
 
 vi.mock("../note-ops", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../note-ops")>();
   return buildNoteOpsMock(actual);
 });
+vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
 
 import { TagActions } from "./tag-actions";
 import { FolderCardView } from "../FolderCardView";
@@ -26,7 +28,7 @@ import {
   batchAddTagToFiles,
   batchRemoveTagsFromFiles,
   removeTagFromFile,
-} from "../note-ops";
+} from "../note-tag-ops";
 
 registerFolderCardView(FolderCardView);
 

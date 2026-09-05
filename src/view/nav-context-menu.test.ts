@@ -133,6 +133,8 @@ function createActions(): NavMenuActions {
     createBase: vi.fn(),
     duplicateFolder: vi.fn(),
     moveFolder: vi.fn(),
+    renameTag: vi.fn(),
+    deleteTag: vi.fn(),
     renameFolder: vi.fn(),
     deleteFolder: vi.fn(),
     findInFolder: vi.fn(),
@@ -456,6 +458,9 @@ describe("tag row menu", () => {
       { title: "New note with this tag", icon: "square-pen" },
       { title: "Copy tag", icon: "clipboard-copy" },
       { title: "Add to favorites", icon: "star" },
+      "sep",
+      { title: "Rename tag…", icon: "pencil" },
+      { title: "Delete tag…", icon: "trash" },
     ]);
     expect(findItem(menu, "Add tag to filter")?.checked).toBe(false);
   });
@@ -490,7 +495,20 @@ describe("tag row menu", () => {
       { title: "New note with this tag", icon: "square-pen" },
       { title: "Copy tag", icon: "clipboard-copy" },
       { title: "Add to favorites", icon: "star" },
+      "sep",
+      { title: "Rename tag…", icon: "pencil" },
+      { title: "Delete tag…", icon: "trash" },
     ]);
+  });
+
+  it("routes rename and delete tag items to the tag management actions", () => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section: "tags", scope: "item", itemId: "work" }), deps);
+
+    findItem(menu, "Rename tag…")?.clickHandler?.();
+    expect(deps.actions.renameTag).toHaveBeenCalledWith("work");
+    findItem(menu, "Delete tag…")?.clickHandler?.();
+    expect(deps.actions.deleteTag).toHaveBeenCalledWith("work");
   });
 
   it("returns false in box mode", () => {
@@ -986,7 +1004,7 @@ describe("resolveNavMenuDangerLabel", () => {
     ).toBeNull();
   });
 
-  it("returns the box delete label for a box row and null for a tag row", () => {
+  it("returns the box delete label for a box row and the tag delete label for a tag row", () => {
     expect(
       resolveNavMenuDangerLabel(
         createPayload({ section: "boxes", scope: "item", itemId: "box-1" }),
@@ -998,7 +1016,7 @@ describe("resolveNavMenuDangerLabel", () => {
         createPayload({ section: "tags", scope: "item", itemId: "work" }),
         deps,
       ),
-    ).toBeNull();
+    ).toBe("Delete tag…");
   });
 
   it("resolves the kind-appropriate label for favorites rows", () => {
@@ -1006,7 +1024,7 @@ describe("resolveNavMenuDangerLabel", () => {
       [{ kind: "folder", ref: "Projects" }, "Delete folder"],
       [{ kind: "folder", ref: "" }, null],
       [{ kind: "file", ref: "Notes/A.md" }, "Delete"],
-      [{ kind: "tag", ref: "work" }, null],
+      [{ kind: "tag", ref: "work" }, "Delete tag…"],
       [{ kind: "box", ref: "box-1" }, "Delete"],
     ];
 

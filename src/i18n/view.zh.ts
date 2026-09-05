@@ -35,7 +35,9 @@ export const viewStringsZh: ViewStrings = {
     tagInput: {
       addTitle: "添加标签",
       removeTitle: "移除标签",
+      renameTitle: "重命名标签",
       tagLabel: "标签",
+      renameNewTagLabel: "新标签名",
       tagPlaceholder: "标签/子标签",
       invalidTag: "请输入有效标签。",
       cancel: "取消",
@@ -43,6 +45,8 @@ export const viewStringsZh: ViewStrings = {
       adding: "正在添加…",
       remove: "移除标签",
       removing: "正在移除…",
+      rename: "重命名",
+      renaming: "正在重命名…",
     },
     singleTagActions: {
       added: (tag: string, basename: string) => `已为“${basename}”添加 #${tag}。`,
@@ -73,6 +77,68 @@ export const viewStringsZh: ViewStrings = {
       failed: (failed: number, tagCount: number) => `从 ${failed} 篇笔记移除 ${tagCount} 个标签失败。`,
       partial: (removed: number, noop: number, failed: number, tagCount: number) =>
         `已从 ${removed} 篇笔记移除 ${tagCount} 个标签；${noop} 篇未更改；${failed} 篇失败。`,
+    },
+    tagManage: {
+      tagNotFound: (tag: string) =>
+        `#${tag} 未被任何笔记、收藏、筛选或卡片盒规则使用。`,
+      renameConfirmTitle: "重命名标签",
+      renameConfirm: "重命名",
+      renameConfirmBody: (info) => {
+        const parts = [`将 #${info.from} 重命名为 #${info.to}？`];
+        if (info.noteCount > 0) {
+          parts.push(`将改写 ${info.noteCount} 篇笔记。`);
+        }
+        if (info.descendantCount > 0) {
+          parts.push(`含 ${info.descendantCount} 个子标签。`);
+        }
+        if (info.merging) {
+          parts.push("目标标签在部分笔记中已存在，将合并。");
+        }
+        if (info.boxClauseCount > 0) {
+          parts.push(`将同步改写 ${info.boxClauseCount} 条卡片盒规则标签条款。`);
+        }
+        if (info.favoriteCount > 0) {
+          parts.push(`将更新 ${info.favoriteCount} 项收藏。`);
+        }
+        if (info.filterCount > 0) {
+          parts.push(`将更新 ${info.filterCount} 个生效的标签筛选。`);
+        }
+        return parts.join("");
+      },
+      deleteConfirmTitle: "删除标签",
+      deleteConfirm: "删除",
+      deleteConfirmBody: (info) => {
+        const parts = [`删除 #${info.tag}？`];
+        if (info.noteCount > 0) {
+          parts.push(`将从 ${info.noteCount} 篇笔记中移除该标签。`);
+        }
+        if (info.descendantCount > 0) {
+          parts.push(`含 ${info.descendantCount} 个子标签。`);
+        }
+        if (info.boxClauseCount > 0) {
+          parts.push(`将移除 ${info.boxClauseCount} 条卡片盒规则标签条款。`);
+        }
+        if (info.favoriteCount > 0) {
+          parts.push(`将移除 ${info.favoriteCount} 项收藏。`);
+        }
+        if (info.filterCount > 0) {
+          parts.push(`将清除 ${info.filterCount} 个生效的标签筛选。`);
+        }
+        parts.push("笔记本身不会被删除。");
+        return parts.join("");
+      },
+      renamed: (from: string, to: string, count: number) =>
+        `已在 ${count} 篇笔记中将 #${from} 重命名为 #${to}。`,
+      renamedPartial: (from: string, to: string, count: number, failed: number) =>
+        `已在 ${count} 篇笔记中将 #${from} 重命名为 #${to}；${failed} 篇失败。`,
+      renameFailed: (from: string, to: string, failed: number) =>
+        `在 ${failed} 篇笔记中将 #${from} 重命名为 #${to} 失败。`,
+      removed: (tag: string, count: number) =>
+        `已从 ${count} 篇笔记移除 #${tag}。`,
+      removedPartial: (tag: string, count: number, failed: number) =>
+        `已从 ${count} 篇笔记移除 #${tag}；${failed} 篇失败。`,
+      removeFailed: (tag: string, failed: number) =>
+        `从 ${failed} 篇笔记移除 #${tag} 失败。`,
     },
     merge: {
       title: "合并所选笔记",
@@ -169,6 +235,8 @@ export const viewStringsZh: ViewStrings = {
       collapseSubtags: "折叠子标签",
       newNoteWithTag: "新建带此标签的笔记",
       copyTag: "复制标签文本",
+      renameTag: "重命名标签…",
+      deleteTag: "删除标签…",
       clearTagFilter: "清除标签筛选",
       openThisBox: "打开此卡片盒",
       exitThisBox: "退出此卡片盒",

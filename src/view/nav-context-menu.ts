@@ -39,6 +39,8 @@ export interface NavMenuActions {
   clearTagFilter: () => void;
   createNoteWithTag: (tag: string) => void;
   copyTag: (tag: string) => void;
+  renameTag: (tag: string) => void;
+  deleteTag: (tag: string) => void;
   boxCommand: (command: string, boxId?: string) => void;
   appendAddScopeSubmenu: (menu: Menu) => void;
   restoreBoxExcluded: (boxId: string) => void;
@@ -270,6 +272,10 @@ function buildTagItemMenu(
   addItem(menu, navMenu.newNoteWithTag, "square-pen", () => deps.actions.createNoteWithTag(itemId));
   addItem(menu, navMenu.copyTag, "clipboard-copy", () => deps.actions.copyTag(itemId));
   appendFavoriteToggleItem(menu, deps, "tag", itemId);
+
+  menu.addSeparator();
+  addItem(menu, navMenu.renameTag, "pencil", () => deps.actions.renameTag(itemId));
+  addItem(menu, navMenu.deleteTag, "trash", () => deps.actions.deleteTag(itemId));
   return true;
 }
 
@@ -491,6 +497,10 @@ export function resolveNavMenuDangerLabel(
       : deps.strings.toolbar.folderMenu.deleteFolder;
   }
 
+  if (payload.section === "tags") {
+    return typeof payload.itemId === "string" ? deps.strings.view.navMenu.deleteTag : null;
+  }
+
   if (payload.section === "boxes") {
     return typeof payload.itemId === "string" ? deps.strings.box.delete : null;
   }
@@ -509,7 +519,9 @@ export function resolveNavMenuDangerLabel(
     if (favorite.kind === "box") {
       return deps.strings.box.delete;
     }
-    return null;
+    if (favorite.kind === "tag") {
+      return deps.strings.view.navMenu.deleteTag;
+    }
   }
 
   return null;

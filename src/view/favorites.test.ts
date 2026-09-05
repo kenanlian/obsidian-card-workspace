@@ -10,7 +10,7 @@ import {
   pruneFavoriteTags,
   reconcileFavoritesForVaultMutation,
   removeFavorite,
-  sortFavoritesByKind,
+  reorderFavorite,
   toggleFavorite,
 } from "./favorites";
 import type { FavoriteEntry, FavoriteKind } from "./types";
@@ -72,6 +72,15 @@ describe("addFavorite / removeFavorite / toggleFavorite", () => {
     expect(next).toEqual([makeFavorite("folder", "")]);
   });
 
+  it("appends at the array tail without re-sorting the manual order", () => {
+    const favorites = [makeFavorite("tag", "work"), makeFavorite("folder", "Projects")];
+    expect(addFavorite(favorites, "file", "A.md")).toEqual([
+      makeFavorite("tag", "work"),
+      makeFavorite("folder", "Projects"),
+      makeFavorite("file", "A.md"),
+    ]);
+  });
+
   it("returns the same reference for an invalid ref", () => {
     const favorites: FavoriteEntry[] = [];
     expect(addFavorite(favorites, "file", "   ")).toBe(favorites);
@@ -108,33 +117,65 @@ describe("addFavorite / removeFavorite / toggleFavorite", () => {
   });
 });
 
-describe("sortFavoritesByKind", () => {
-  it("groups by kind order and preserves insertion order inside a group", () => {
-    const favorites = [
-      makeFavorite("box", "box-1"),
-      makeFavorite("file", "A.md"),
+describe("reorderFavorite", () => {
+  const favorites = [
+    makeFavorite("folder", "A"),
+    makeFavorite("tag", "work"),
+    makeFavorite("folder", "B"),
+    makeFavorite("folder", "C"),
+    makeFavorite("file", "One.md"),
+    makeFavorite("tag", "home"),
+  ];
+
+  it("moves a same-kind entry before its target, keeping other kinds in place", () => {
+    expect(reorderFavorite(favorites, { kind: "folder", ref: "C" }, { kind: "folder", ref: "A" }, "before")).toEqual([
+      makeFavorite("folder", "C"),
       makeFavorite("tag", "work"),
-      makeFavorite("folder", "Projects"),
-      makeFavorite("file", "B.md"),
-      makeFavorite("folder", ""),
-    ];
-    expect(sortFavoritesByKind(favorites)).toEqual([
-      makeFavorite("folder", "Projects"),
-      makeFavorite("folder", ""),
-      makeFavorite("file", "A.md"),
-      makeFavorite("file", "B.md"),
-      makeFavorite("tag", "work"),
-      makeFavorite("box", "box-1"),
+      makeFavorite("folder", "A"),
+      makeFavorite("folder", "B"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("tag", "home"),
     ]);
   });
 
-  it("keeps a new entry grouped with its kind when added", () => {
-    const favorites = [makeFavorite("folder", "Projects"), makeFavorite("box", "box-1")];
-    expect(addFavorite(favorites, "file", "A.md")).toEqual([
-      makeFavorite("folder", "Projects"),
-      makeFavorite("file", "A.md"),
-      makeFavorite("box", "box-1"),
+  it("moves a same-kind entry after its target", () => {
+    expect(reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "folder", ref: "B" }, "after")).toEqual([
+      makeFavorite("folder", "B"),
+      makeFavorite("tag", "work"),
+      makeFavorite("folder", "A"),
+      makeFavorite("folder", "C"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("tag", "home"),
     ]);
+  });
+
+  it("reorders inside one kind without touching other kinds' slots", () => {
+    expect(reorderFavorite(favorites, { kind: "tag", ref: "home" }, { kind: "tag", ref: "work" }, "before")).toEqual([
+      makeFavorite("folder", "A"),
+      makeFavorite("tag", "home"),
+      makeFavorite("folder", "B"),
+      makeFavorite("folder", "C"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("tag", "work"),
+    ]);
+  });
+
+  it("returns the same reference for cross-kind drops", () => {
+    expect(
+      reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "file", ref: "One.md" }, "after"),
+    ).toBe(favorites);
+  });
+
+  it("returns the same reference for unknown refs or no-op moves", () => {
+    expect(
+      reorderFavorite(favorites, { kind: "folder", ref: "Missing" }, { kind: "folder", ref: "A" }, "before"),
+    ).toBe(favorites);
+    expect(
+      reorderFavorite(favorites, { kind: "folder", ref: "B" }, { kind: "folder", ref: "B" }, "before"),
+    ).toBe(favorites);
+    expect(
+      reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "folder", ref: "B" }, "before"),
+    ).toBe(favorites);
   });
 });
 

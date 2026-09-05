@@ -117,4 +117,32 @@ describe("navigation host intent routing", () => {
     });
     expect(selectPropertyValue).toHaveBeenLastCalledWith("status", { kind: "text", value: "open" }, true);
   });
+
+  it("routes favorites reorder intents straight to the reorder callback without a row lookup", () => {
+    const reorderFavorites = vi.fn();
+    const navLayout = { getProjection: () => projectionWith(tagRow()) } as never;
+
+    routeNavigationIntent({
+      navLayout,
+      scope: createFolderScope("", true),
+      activeTags: [],
+      selectFolder: vi.fn(),
+      switchBox: vi.fn(),
+      applyTagFilter: vi.fn(),
+      activateFavorite: vi.fn(),
+      reorderFavorites,
+      intent: {
+        type: "reorder-favorites",
+        source: { kind: "tag", ref: "home" },
+        target: { kind: "tag", ref: "work" },
+        position: "before",
+      },
+    });
+
+    expect(reorderFavorites).toHaveBeenCalledWith(
+      { kind: "tag", ref: "home" },
+      { kind: "tag", ref: "work" },
+      "before",
+    );
+  });
 });

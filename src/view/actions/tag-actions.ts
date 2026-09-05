@@ -8,10 +8,10 @@ import {
   addTagToFile,
   batchAddTagToFiles,
   batchRemoveTagsFromFiles,
-  copyPathToClipboard,
   normalizeTagForFrontmatter,
   removeTagFromFile,
-} from "../note-ops";
+} from "../note-tag-ops";
+import { copyPathToClipboard } from "../note-ops";
 import { normalizeTagPath } from "../tag-tree";
 import type { ViewContext } from "../view-context";
 

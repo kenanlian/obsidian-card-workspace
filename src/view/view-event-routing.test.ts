@@ -3117,3 +3117,46 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
     });
   });
 });
+
+describe("FolderCardView favorites manual reorder routing", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  it("persists a reorder-favorites intent through the view into settings", async () => {
+    const { view, plugin } = createViewWithFile("notes/primary.md");
+    plugin.getSettings = vi.fn(() => ({
+      includeSubfolders: true,
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: [], properties: [] },
+      favorites: [
+        { kind: "tag", ref: "work" },
+        { kind: "folder", ref: "notes" },
+        { kind: "tag", ref: "home" },
+      ],
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      defaultView: "cards",
+      lastFolderPath: null,
+      lastViewMode: "folder",
+      pinnedPaths: [],
+      previewLines: 5,
+    }));
+
+    view.handleNavigationIntent({
+      type: "reorder-favorites",
+      source: { kind: "tag", ref: "home" },
+      target: { kind: "tag", ref: "work" },
+      position: "before",
+    });
+    await flushAsyncWork();
+
+    expect(plugin.saveSettings).toHaveBeenCalledWith({
+      favorites: [
+        { kind: "tag", ref: "home" },
+        { kind: "folder", ref: "notes" },
+        { kind: "tag", ref: "work" },
+      ],
+    });
+  });
+});

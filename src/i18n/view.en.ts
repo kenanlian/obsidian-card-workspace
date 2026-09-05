@@ -35,7 +35,9 @@ export const viewStringsEn: ViewStrings = {
     tagInput: {
       addTitle: "Add tag",
       removeTitle: "Remove tag",
+      renameTitle: "Rename tag",
       tagLabel: "Tag",
+      renameNewTagLabel: "New tag name",
       tagPlaceholder: "tag/sub-tag",
       invalidTag: "Enter a valid tag.",
       cancel: "Cancel",
@@ -43,6 +45,8 @@ export const viewStringsEn: ViewStrings = {
       adding: "Adding…",
       remove: "Remove tag",
       removing: "Removing…",
+      rename: "Rename",
+      renaming: "Renaming…",
     },
     singleTagActions: {
       added: (tag: string, basename: string) => `Added #${tag} to "${basename}".`,
@@ -77,6 +81,68 @@ export const viewStringsEn: ViewStrings = {
         `Failed to remove ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${failed} note${failed === 1 ? "" : "s"}.`,
       partial: (removed: number, noop: number, failed: number, tagCount: number) =>
         `Removed ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${removed} note${removed === 1 ? "" : "s"}; ${noop} unchanged; ${failed} failed.`,
+    },
+    tagManage: {
+      tagNotFound: (tag: string) =>
+        `#${tag} is not used by any note, favorite, filter, or card box rule.`,
+      renameConfirmTitle: "Rename tag",
+      renameConfirm: "Rename",
+      renameConfirmBody: (info) => {
+        const parts = [`Rename #${info.from} to #${info.to}?`];
+        if (info.noteCount > 0) {
+          parts.push(`${info.noteCount} note${info.noteCount === 1 ? "" : "s"} will be rewritten.`);
+        }
+        if (info.descendantCount > 0) {
+          parts.push(`This includes ${info.descendantCount} subtag${info.descendantCount === 1 ? "" : "s"}.`);
+        }
+        if (info.merging) {
+          parts.push("The target tag already exists on some notes; tags will be merged.");
+        }
+        if (info.boxClauseCount > 0) {
+          parts.push(`${info.boxClauseCount} card box rule tag condition${info.boxClauseCount === 1 ? "" : "s"} will be updated.`);
+        }
+        if (info.favoriteCount > 0) {
+          parts.push(`${info.favoriteCount} favorite${info.favoriteCount === 1 ? "" : "s"} will be updated.`);
+        }
+        if (info.filterCount > 0) {
+          parts.push(`${info.filterCount} active tag filter${info.filterCount === 1 ? "" : "s"} will be updated.`);
+        }
+        return parts.join(" ");
+      },
+      deleteConfirmTitle: "Delete tag",
+      deleteConfirm: "Delete",
+      deleteConfirmBody: (info) => {
+        const parts = [`Delete #${info.tag}?`];
+        if (info.noteCount > 0) {
+          parts.push(`The tag will be removed from ${info.noteCount} note${info.noteCount === 1 ? "" : "s"}.`);
+        }
+        if (info.descendantCount > 0) {
+          parts.push(`This includes ${info.descendantCount} subtag${info.descendantCount === 1 ? "" : "s"}.`);
+        }
+        if (info.boxClauseCount > 0) {
+          parts.push(`${info.boxClauseCount} card box rule tag condition${info.boxClauseCount === 1 ? "" : "s"} will be removed.`);
+        }
+        if (info.favoriteCount > 0) {
+          parts.push(`${info.favoriteCount} favorite${info.favoriteCount === 1 ? "" : "s"} will be removed.`);
+        }
+        if (info.filterCount > 0) {
+          parts.push(`${info.filterCount} active tag filter${info.filterCount === 1 ? "" : "s"} will be cleared.`);
+        }
+        parts.push("Notes themselves are not deleted.");
+        return parts.join(" ");
+      },
+      renamed: (from: string, to: string, count: number) =>
+        `Renamed #${from} to #${to} in ${count} note${count === 1 ? "" : "s"}.`,
+      renamedPartial: (from: string, to: string, count: number, failed: number) =>
+        `Renamed #${from} to #${to} in ${count} note${count === 1 ? "" : "s"}; ${failed} failed.`,
+      renameFailed: (from: string, to: string, failed: number) =>
+        `Failed to rename #${from} to #${to} in ${failed} note${failed === 1 ? "" : "s"}.`,
+      removed: (tag: string, count: number) =>
+        `Removed #${tag} from ${count} note${count === 1 ? "" : "s"}.`,
+      removedPartial: (tag: string, count: number, failed: number) =>
+        `Removed #${tag} from ${count} note${count === 1 ? "" : "s"}; ${failed} failed.`,
+      removeFailed: (tag: string, failed: number) =>
+        `Failed to remove #${tag} from ${failed} note${failed === 1 ? "" : "s"}.`,
     },
     merge: {
       title: "Merge selected notes",
@@ -173,6 +239,8 @@ export const viewStringsEn: ViewStrings = {
       collapseSubtags: "Collapse subtags",
       newNoteWithTag: "New note with this tag",
       copyTag: "Copy tag",
+      renameTag: "Rename tag…",
+      deleteTag: "Delete tag…",
       clearTagFilter: "Clear tag filter",
       openThisBox: "Open card box",
       exitThisBox: "Exit card box",

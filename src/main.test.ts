@@ -2498,10 +2498,11 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.vaultCallbacks.delete?.(deleted);
 
     // "work" survives through its child tag; "archive" is gone for good.
+    // The persisted order is kept verbatim (manual order, no kind re-sort).
     await vi.waitFor(() => {
       expect(plugin.getSettings().favorites).toEqual([
-        { kind: "folder", ref: "notes" },
         { kind: "tag", ref: "work" },
+        { kind: "folder", ref: "notes" },
       ]);
     });
   });

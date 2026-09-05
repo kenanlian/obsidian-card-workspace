@@ -99,6 +99,12 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       copyTag: (tag) => {
         void deps.modules.tagActions.copyTag(tag);
       },
+      renameTag: (tag) => {
+        deps.modules.tagManageActions.openRenameTagModal(tag);
+      },
+      deleteTag: (tag) => {
+        void deps.modules.tagManageActions.requestDeleteTag(tag);
+      },
       boxCommand: (command, boxId) => {
         deps.modules.boxActions.handleBoxCommand({ command, boxId });
       },

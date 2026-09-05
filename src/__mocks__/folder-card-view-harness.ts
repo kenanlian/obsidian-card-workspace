@@ -748,11 +748,8 @@ export async function buildNoteOpsMock(
 ): Promise<Record<string, unknown>> {
   return {
     buildMergedNoteContent: actual.buildMergedNoteContent,
-    addTagToFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
-    batchAddTagToFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchDeleteFilesUsingObsidianPreference: vi.fn(async () => ({ succeeded: [], failed: [] })),
     batchMoveFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
-    batchRemoveTagsFromFiles: vi.fn(async () => ({ changed: [], noop: [], failed: [] })),
     batchTrashFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
     copyContentToClipboard: vi.fn(async () => true),
     copyTitleAndContentToClipboard: vi.fn(async () => true),
@@ -765,11 +762,27 @@ export async function buildNoteOpsMock(
       sourceCount: 2,
     })),
     moveFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
-    normalizeTagForFrontmatter: vi.fn((tag: string) => tag.trim().replace(/^#/, "").toLowerCase()),
-    removeTagFromFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
     trashAbstractFileUsingObsidianPreference: vi.fn(async (app: { fileManager: { trashFile: (file: unknown) => Promise<void> } }, file: unknown) => {
       await app.fileManager.trashFile(file);
     }),
+  };
+}
+
+/** Mock for the tag-mutation module; pair with `vi.mock("../note-tag-ops", ...)`. */
+export function buildNoteTagOpsMock(): Record<string, unknown> {
+  return {
+    addTagToFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    batchAddTagToFiles: vi.fn(async () => ({ succeeded: [], failed: [] })),
+    batchRemoveTagFromFiles: vi.fn(async () => ({ changed: [], noop: [], failed: [] })),
+    batchRemoveTagsFromFiles: vi.fn(async () => ({ changed: [], noop: [], failed: [] })),
+    batchRenameTagInFiles: vi.fn(async (_app: unknown, files: Array<unknown>) => ({
+      changed: files.map((file) => ({ ok: true, changed: true, file })),
+      noop: [],
+      failed: [],
+    })),
+    normalizeTagForFrontmatter: vi.fn((tag: string) => tag.trim().replace(/^#/, "").toLowerCase()),
+    removeTagFromFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, file })),
+    renameTagInFile: vi.fn(async (_app: unknown, file: unknown) => ({ ok: true, changed: true, file })),
   };
 }
 

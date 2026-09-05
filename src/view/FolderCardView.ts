@@ -399,6 +399,9 @@ export class FolderCardView extends ItemView {
       applyTagFilter: (tags) => { void this.modules.tagActions.applyTagFilter(tags); },
       activateFavorite: (favorite) => this.modules.favoriteActions.handleFavoriteActivate({ favorite }),
       selectPropertyValue: (key, ref, additive) => void this.modules.propertyActions.applyValueFilter(key, ref, additive),
+      reorderFavorites: (source, target, position) => {
+        void this.modules.favoriteActions.reorderFavoriteEntries(source, target, position);
+      },
     });
   }
 

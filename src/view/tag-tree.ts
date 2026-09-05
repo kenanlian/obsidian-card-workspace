@@ -231,3 +231,38 @@ export function tagPathMatchesFilter(fileTag: string, filterTag: string): boolea
 
   return normalizedFileTag === normalizedFilterTag || normalizedFileTag.startsWith(`${normalizedFilterTag}/`);
 }
+
+/**
+ * Rename mapping for a tag path: `from` (and every `from/*` descendant) becomes
+ * `to` (with the descendant suffix preserved). Returns `null` when `tagPath` is
+ * neither `from` nor under it, so callers can detect "unchanged".
+ */
+export function renameTagPathPrefix(tagPath: string, from: string, to: string): string | null {
+  const normalizedTagPath = normalizeTagPath(tagPath);
+  const normalizedFrom = normalizeTagPath(from);
+  const normalizedTo = normalizeTagPath(to);
+
+  if (normalizedTagPath.length === 0 || normalizedFrom.length === 0 || normalizedTo.length === 0) {
+    return null;
+  }
+  if (normalizedFrom === normalizedTo) {
+    return null;
+  }
+  if (normalizedTagPath === normalizedFrom) {
+    return normalizedTo;
+  }
+  if (normalizedTagPath.startsWith(`${normalizedFrom}/`)) {
+    return `${normalizedTo}${normalizedTagPath.slice(normalizedFrom.length)}`;
+  }
+  return null;
+}
+
+/** Whether `tagPath` is `root` itself or any `root/*` descendant (both normalized). */
+export function tagPathIsOrUnder(tagPath: string, root: string): boolean {
+  const normalizedTagPath = normalizeTagPath(tagPath);
+  const normalizedRoot = normalizeTagPath(root);
+  if (normalizedTagPath.length === 0 || normalizedRoot.length === 0) {
+    return false;
+  }
+  return normalizedTagPath === normalizedRoot || normalizedTagPath.startsWith(`${normalizedRoot}/`);
+}
