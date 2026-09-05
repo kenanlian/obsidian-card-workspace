@@ -867,44 +867,10 @@
   box-shadow: var(--shadow-s, 0 2px 8px rgba(0, 0, 0, 0.15));
 }
 
-.fce-sort-menu,
 .fce-box-picker-menu {
   min-width: 180px;
   padding: 6px;
   border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-}
-
-/*
- * Sort and group carries four choice sections plus two commands, which is tall
- * enough to run past a short window. The menu is fixed-positioned at the click
- * point, so a fraction of the viewport is not a sufficient bound: the toolbar
- * can sit low in a vertically stacked sidebar. Toolbar.svelte measures the space
- * actually left below the trigger and publishes it here, lifting the menu first
- * when that space would be unreadably small.
- */
-.fce-sort-menu {
-  max-height: min(var(--fce-sort-menu-available, 70vh), 560px);
-  overflow-y: auto;
-}
-
-.fce-sort-menu-section {
-  display: flex;
-  flex-direction: column;
-}
-
-.fce-sort-menu-separator {
-  height: 0;
-  margin: 4px 0;
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.fce-popup-row-selected-indicator {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
 }
 
 .fce-popup-row {
@@ -949,7 +915,6 @@
   border-radius: var(--radius-s, 4px);
 }
 
-.fce-sort-menu .fce-popup-row,
 .fce-box-picker-menu .fce-popup-row {
   justify-content: space-between;
   width: 100%;
@@ -967,31 +932,11 @@
   color: var(--fce-text-muted);
 }
 
-.fce-sort-menu-item-label,
 .fce-box-picker-item-label {
   min-width: 0;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* The hint is a flex sibling of the label, so the row can only give it its own
-   line by stacking the content wrapper it shares with that label. */
-.fce-popup-row-content:has(.fce-sort-menu-item-hint) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.fce-sort-menu-item-hint {
-  color: var(--fce-text-muted);
-  font-size: var(--font-ui-smaller, 12px);
-  line-height: 1.3;
-  white-space: normal;
-}
-
-.fce-sort-menu-item-check {
-  color: var(--text-normal);
 }
 
 /* === nav === */
@@ -1506,6 +1451,33 @@
 .menu.fce-card-context-menu .menu-item.fce-menu-item-danger .menu-item-title,
 .menu.fce-card-context-menu .menu-item.fce-menu-item-danger .menu-item-icon {
   color: var(--text-error, #c0392b);
+}
+
+/* === sort & group menu (native Menu) === */
+/* Native menus attach to the document body, so these rules must rely on core
+   Obsidian variables instead of the .folder-card-view-scoped --fce-* tokens. */
+.menu.fce-sort-group-menu {
+  min-width: 200px;
+}
+
+.menu.fce-sort-group-menu .menu-item.fce-menu-section-title,
+.menu.fce-sort-group-menu .menu-item.fce-menu-section-title .menu-item-title {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  opacity: 1;
+}
+
+.menu.fce-sort-group-menu .menu-item.fce-menu-section-title {
+  pointer-events: none;
+  cursor: default;
+}
+
+.menu.fce-sort-group-menu .menu-item .fce-menu-item-hint {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  line-height: 1.3;
+  white-space: normal;
 }
 
 /* === toolbar === */

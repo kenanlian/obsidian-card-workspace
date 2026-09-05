@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setIcon, setTooltip } from "obsidian";
+  import { Menu, setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../card-grouping-settings";
   import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
@@ -11,7 +11,7 @@
     PanelScopeState,
     PanelSearchState,
   } from "./panel-model";
-  import SortGroupPopover from "./SortGroupPopover.svelte";
+  import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
   import type { BulkRuntimePanelState, SearchStatus } from "./types";
 
   interface ToolbarActionPayload {
@@ -185,7 +185,6 @@
   const canBulkRemoveTagSelected = $derived(bulk.canBulkRemoveTagSelected);
   const canBulkDeleteSelected = $derived(bulk.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(bulk.canBulkMergeSelected);
-  const sortButtonId = "fce-sort-button";
   const boxPickerButtonId = "fce-box-picker-button";
 
   const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
@@ -196,22 +195,17 @@
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
   let activeToolbarAction = $state("");
-  let showSortGroupMenu = $state(false);
-  let sortMenuX = $state(0);
-  let sortMenuY = $state(0);
-  let sortMenuMaxHeight = $state(0);
   let showBoxPickerMenu = $state(false);
   let boxPickerMenuX = $state(0);
   let boxPickerMenuY = $state(0);
 
   let sortButtonEl: HTMLElement | null = null;
-  let sortMenuEl: HTMLElement | null = null;
   let boxPickerButtonEl: HTMLElement | null = null;
   let boxPickerMenuEl: HTMLElement | null = null;
 
   const isBoxMode = $derived(activeBoxId !== null);
   const hasBoxes = $derived(boxSummaries.length > 0);
-  const isSortGroupTriggerSelected = $derived(showSortGroupMenu || group.dimension !== "none");
+  const isSortGroupTriggerSelected = $derived(group.dimension !== "none");
 
   function formatScopeTag(tag: string): string {
     return tag.startsWith("#") ? tag : `#${tag}`;
@@ -253,7 +247,6 @@
     }
 
     searchExpanded = true;
-    closeSortGroupMenu();
     tick().then(() => {
       searchInputEl?.focus();
     });
@@ -314,44 +307,46 @@
   }
 
   /**
-   * The menu is `position: fixed` at the click point, so height alone cannot
-   * keep it on screen: a vertically stacked sidebar leaf can put the toolbar
-   * well down the window. Lift the top when the space below it is too small to
-   * read, then bound the height by whatever space actually remains.
+   * Sort & group opens a native Obsidian Menu anchored under the trigger
+   * button. The Menu owns closing, keyboard navigation, and viewport fitting,
+   * so the toolbar only builds the items and decorates the surface.
    */
-  const SORT_MENU_VIEWPORT_MARGIN = 12;
-  const SORT_MENU_MIN_HEIGHT = 220;
+  function openSortGroupMenu(event: MouseEvent): void {
+    closeBoxPickerMenu();
 
-  function viewportHeight(): number {
-    const height = typeof window === "undefined" ? 0 : window.innerHeight;
-    return Number.isFinite(height) && height > 0 ? height : SORT_MENU_MIN_HEIGHT;
-  }
+    const menu = new Menu();
+    buildSortGroupMenu(
+      menu,
+      { sortField, sortDirection, group, availableGroupDimensions, hasSegments },
+      {
+        strings: sortGroupStrings,
+        onSelectSort: (field) => applySort(field, sortDirection),
+        onSelectDirection: (direction) => applySort(sortField, direction),
+        onSelectDimension: (dimension) => applyGroupSpec({ ...group, dimension }),
+        onSelectOrderBy: (orderBy) => applyGroupSpec({ ...group, orderBy }),
+        onSelectOrderDirection: (orderDirection) => applyGroupSpec({ ...group, orderDirection }),
+        onCollapseAll: () => emitGroupCollapseCommand("collapse-all"),
+        onExpandAll: () => emitGroupCollapseCommand("expand-all"),
+      },
+    );
 
-  function clampSortMenuTop(clientY: number): number {
-    const available = viewportHeight() - clientY - SORT_MENU_VIEWPORT_MARGIN;
-    if (available >= SORT_MENU_MIN_HEIGHT) {
-      return clientY;
-    }
-    const lifted = viewportHeight() - SORT_MENU_MIN_HEIGHT - SORT_MENU_VIEWPORT_MARGIN;
-    return Math.max(SORT_MENU_VIEWPORT_MARGIN, lifted);
+    const triggerRect = sortButtonEl?.getBoundingClientRect();
+    menu.showAtPosition({
+      x: triggerRect?.left ?? event.clientX,
+      y: triggerRect?.bottom ?? event.clientY,
+      overlap: true,
+    });
+    decorateSortGroupMenu(menu, sortGroupStrings);
   }
 
   function selectToolbarAction(actionId: string, event: MouseEvent): void {
     closeBoxPickerMenu();
 
     if (actionId === "sort") {
-      if (showSortGroupMenu) {
-        closeSortGroupMenu();
-      } else {
-        sortMenuX = event.clientX;
-        sortMenuY = clampSortMenuTop(event.clientY);
-        sortMenuMaxHeight = viewportHeight() - sortMenuY - SORT_MENU_VIEWPORT_MARGIN;
-        showSortGroupMenu = true;
-      }
+      openSortGroupMenu(event);
       return;
     }
 
-    closeSortGroupMenu();
     if (!TRANSIENT_TOOLBAR_ACTION_IDS.has(actionId)) {
       activeToolbarAction = actionId;
     }
@@ -359,7 +354,6 @@
   }
 
   function applySort(field: SortField, direction: SortDirection): void {
-    closeSortGroupMenu();
     if (field === sortField && direction === sortDirection) {
       return;
     }
@@ -368,7 +362,6 @@
   }
 
   function applyGroupSpec(next: GroupSpec): void {
-    closeSortGroupMenu();
     const { dimension, orderBy, orderDirection } = next;
     if (dimension === group.dimension && orderBy === group.orderBy && orderDirection === group.orderDirection) {
       return;
@@ -378,7 +371,6 @@
   }
 
   function emitGroupCollapseCommand(command: string): void {
-    closeSortGroupMenu();
     onGroupCollapseCommand?.({ command });
   }
 
@@ -445,10 +437,6 @@
     boxPickerButtonEl = node;
   });
 
-  function closeSortGroupMenu(): void {
-    showSortGroupMenu = false;
-  }
-
   function closeBoxPickerMenu(): void {
     showBoxPickerMenu = false;
   }
@@ -463,7 +451,6 @@
       return;
     }
 
-    closeSortGroupMenu();
     boxPickerMenuX = event.clientX;
     boxPickerMenuY = event.clientY;
     showBoxPickerMenu = true;
@@ -473,15 +460,6 @@
     closeBoxPickerMenu();
     emitBoxCommand("add-scope-to-box", boxId);
   }
-
-  const sortMenuAction = createPopupPortalAction({
-    getButton: () => sortButtonEl,
-    setMenu: (node) => {
-      sortMenuEl = node;
-    },
-    close: closeSortGroupMenu,
-    closeOnEscape: true,
-  });
 
   const boxPickerMenuAction = createPopupPortalAction({
     getButton: () => boxPickerButtonEl,
@@ -512,7 +490,6 @@
   function toggleSearch(): void {
     searchExpanded = !searchExpanded;
       if (searchExpanded) {
-        closeSortGroupMenu();
         tick().then(() => {
           searchInputEl?.focus();
         });
@@ -542,10 +519,8 @@
         {#if isBoxMode}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button {isSortGroupTriggerSelected ? 'is-selected' : ''}"
-            id={sortButtonId}
+            class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
             aria-label={sortGroupStrings.title}
-            aria-expanded={showSortGroupMenu}
             onclick={(event) => selectToolbarAction("sort", event)}
             use:applyIcon={"arrow-up-narrow-wide"}
             use:captureSortButton
@@ -576,10 +551,8 @@
             {#if action.id === "sort"}
               <button
                 type="button"
-                class="clickable-icon fce-toolbar-button {isSortGroupTriggerSelected ? 'is-selected' : ''}"
-                id={sortButtonId}
+                class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
                 aria-label={sortGroupStrings.title}
-                aria-expanded={showSortGroupMenu}
                 onclick={(event) => selectToolbarAction(action.id, event)}
                 use:applyIcon={action.icon}
                 use:captureSortButton
@@ -704,27 +677,6 @@
   {/if}
 
 </header>
-
-{#if showSortGroupMenu}
-  <div
-    class="fce-popup-menu fce-sort-menu"
-    role="menu"
-    aria-labelledby={sortButtonId}
-    style="left: {sortMenuX}px; top: {sortMenuY}px; --fce-sort-menu-available: {sortMenuMaxHeight}px;"
-    use:sortMenuAction
-  >
-    <SortGroupPopover
-      strings={sortGroupStrings} {sortField} {sortDirection} {group} {availableGroupDimensions} {hasSegments}
-      onSelectSort={(field) => applySort(field, sortDirection)}
-      onSelectDirection={(direction) => applySort(sortField, direction)}
-      onSelectDimension={(dimension) => applyGroupSpec({ ...group, dimension })}
-      onSelectOrderBy={(orderBy) => applyGroupSpec({ ...group, orderBy })}
-      onSelectOrderDirection={(orderDirection) => applyGroupSpec({ ...group, orderDirection })}
-      onCollapseAll={() => emitGroupCollapseCommand("collapse-all")}
-      onExpandAll={() => emitGroupCollapseCommand("expand-all")}
-    />
-  </div>
-{/if}
 
 {#if showBoxPickerMenu}
   <div

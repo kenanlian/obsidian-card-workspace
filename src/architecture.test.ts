@@ -348,7 +348,9 @@ describe("R5 line-count ratchet", () => {
     // disabled-in-box empty copy and pins the chooser header variant (WP-05).
     "src/view/NavigationPane.svelte": 285,
     "src/view/FolderCardPanel.svelte": 827,
-    "src/view/Toolbar.svelte": 751,
+    // Sort & group moved to the native Menu API; the item builder and section
+    // decoration live in src/view/menus/sort-group-menu.ts.
+    "src/view/Toolbar.svelte": 703,
     "src/view/CardItem.svelte": 438,
     // Section-header menus gained a shared move-order dependency contract, with the
     // items themselves extracted to src/view/menus/nav-section-header-items.ts; the

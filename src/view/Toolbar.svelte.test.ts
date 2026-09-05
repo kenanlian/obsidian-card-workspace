@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount } from "svelte";
 import { tick } from "svelte";
 import Toolbar from "./Toolbar.svelte";
+import {
+  getObsidianMenuInstances,
+  resetObsidianMenuInstances,
+  type ObsidianMockMenu,
+  type ObsidianMockMenuItem,
+} from "../__mocks__/obsidian";
 import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
 import { getUiStrings } from "../i18n";
 
@@ -180,18 +186,61 @@ async function disposeMountedComponent(component: Record<string, unknown>): Prom
 }
 
 function getSortButton(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>("button#fce-sort-button");
+  // The static class is queryable immediately after mount; icon attributes
+  // arrive only after Svelte runs the deferred `use:` actions.
+  return document.querySelector<HTMLButtonElement>(".fce-toolbar-actions button.fce-sort-trigger");
 }
 
-function readPx(menu: HTMLElement, property: string): number {
-  return Number.parseFloat(menu.style.getPropertyValue(property).replace("px", ""));
-}
-
-async function openSortPopup(): Promise<void> {
+async function openSortMenu(): Promise<ObsidianMockMenu> {
   const sortButton = getSortButton();
   expect(sortButton).not.toBeNull();
+  // Flush mount effects (icon/capture actions) before clicking, matching a real
+  // user who can only click a fully rendered toolbar.
+  await tick();
   sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY: 12 }));
   await tick();
+  const menu = getObsidianMenuInstances().at(-1);
+  expect(menu).toBeDefined();
+  return menu!;
+}
+
+function itemTitle(item: ObsidianMockMenuItem): string {
+  if (typeof item.title === "string") {
+    return item.title;
+  }
+  // Hinted titles are fragments of [label, hint]; the label is the first node.
+  return item.title.firstElementChild?.textContent ?? item.title.textContent ?? "";
+}
+
+function itemHint(item: ObsidianMockMenuItem): string | null {
+  if (typeof item.title === "string") {
+    return null;
+  }
+  return item.title.querySelector(".fce-menu-item-hint")?.textContent ?? null;
+}
+
+function findMenuItem(menu: ObsidianMockMenu, title: string): ObsidianMockMenuItem | undefined {
+  return menu.items.find((item) => itemTitle(item) === title);
+}
+
+function clickMenuItem(menu: ObsidianMockMenu, title: string): void {
+  const item = findMenuItem(menu, title);
+  expect(item, `expected a "${title}" menu item`).toBeDefined();
+  item?.onClick?.(new MouseEvent("click"));
+}
+
+function expectMenuItemDisabled(menu: ObsidianMockMenu, title: string): void {
+  const item = findMenuItem(menu, title);
+  expect(item, `expected a "${title}" menu item`).toBeDefined();
+  expect(item?.disabled, `"${title}" should be disabled`).toBe(true);
+  expect(item?.onClick, `disabled "${title}" must not register a click handler`).toBeNull();
+}
+
+function expectMenuItemEnabled(menu: ObsidianMockMenu, title: string): void {
+  const item = findMenuItem(menu, title);
+  expect(item, `expected a "${title}" menu item`).toBeDefined();
+  expect(item?.disabled, `"${title}" should be enabled`).toBe(false);
+  expect(item?.onClick, `enabled "${title}" must register a click handler`).not.toBeNull();
 }
 
 function getBoxPickerButton(): HTMLButtonElement | null {
@@ -205,44 +254,18 @@ async function clickBoxPickerButton(): Promise<void> {
   await tick();
 }
 
-function getSelectedSortOption(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>(
-    ".fce-sort-menu button[role='menuitemradio'][aria-checked='true']",
-  );
-}
-
-function getPopoverRow(rowId: string): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>(`.fce-sort-menu [data-sort-group-row="${rowId}"]`);
-}
-
-function clickPopoverRow(rowId: string): void {
-  const row = getPopoverRow(rowId);
-  expect(row).not.toBeNull();
-  row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-}
-
-function isRowDisabled(rowId: string): boolean {
-  const row = getPopoverRow(rowId);
-  expect(row).not.toBeNull();
-  return row?.disabled === true && row?.getAttribute("aria-disabled") === "true";
-}
-
-function isRowEnabled(rowId: string): boolean {
-  const row = getPopoverRow(rowId);
-  expect(row).not.toBeNull();
-  return row?.disabled === false && row?.hasAttribute("aria-disabled") === false;
-}
-
 describe("Toolbar.svelte", () => {
   beforeEach(() => {
     mountedComponents = [];
     document.body.innerHTML = "";
+    resetObsidianMenuInstances();
   });
 
   afterEach(async () => {
     await Promise.all(mountedComponents.map((component) => unmount(component)));
     mountedComponents = [];
     document.body.innerHTML = "";
+    resetObsidianMenuInstances();
     vi.restoreAllMocks();
   });
 
@@ -365,7 +388,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("closes the box picker popup on an outside click and when the sort popup opens", async () => {
+  it("closes the box picker popup on an outside click and when the native sort menu opens", async () => {
     const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
 
     await clickBoxPickerButton();
@@ -374,10 +397,10 @@ describe("Toolbar.svelte", () => {
     expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
 
     await clickBoxPickerButton();
-    await openSortPopup();
+    await openSortMenu();
 
     expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
-    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+    expect(getObsidianMenuInstances()).toHaveLength(1);
 
     await disposeMountedComponent(component);
   });
@@ -405,33 +428,69 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("groups the popover into labelled sort, group, and command sections", async () => {
+  it("builds the native sort & group menu with four headed sections and trailing commands", async () => {
     const { component } = mountToolbar();
 
-    await openSortPopup();
+    const menu = await openSortMenu();
 
-    const sections = Array.from(
-      document.querySelectorAll<HTMLElement>(".fce-sort-menu [role='group']"),
-    );
-    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([
-      "Sort by",
-      "Order",
-      "Group by",
-      "Group order",
+    expect(menu.items.map(itemTitle)).toEqual([
+      "Sort by", "Edited time", "Created time", "Filename",
+      "Order", "Ascending", "Descending",
+      "Group by", "None", "Folder", "Tag", "Card box rule", "Task status",
+      "Group order", "Default", "Name", "Card count", "Ascending", "Descending",
+      "Collapse all", "Expand all",
     ]);
+    expect(menu.separators).toBe(5);
 
-    const fieldLabels = Array.from(
-      sections[0]?.querySelectorAll<HTMLElement>(".fce-sort-menu-item-label") ?? [],
-    ).map((element) => element.textContent?.trim());
-    expect(fieldLabels).toEqual(["Edited time", "Created time", "Filename"]);
+    await disposeMountedComponent(component);
+  });
 
-    const dimensionLabels = Array.from(
-      sections[2]?.querySelectorAll<HTMLElement>(".fce-sort-menu-item-label") ?? [],
-    ).map((element) => element.textContent?.trim());
-    expect(dimensionLabels).toEqual(["None", "Folder", "Tag", "Card box rule", "Task status"]);
+  it("decorates the native menu surface and marks the four section headings", async () => {
+    const { component } = mountToolbar();
 
-    expect(getPopoverRow("collapse-all")?.getAttribute("role")).toBe("menuitem");
-    expect(getPopoverRow("expand-all")?.getAttribute("role")).toBe("menuitem");
+    const menu = await openSortMenu();
+
+    expect(menu.classNames.has("fce-sort-group-menu")).toBe(true);
+    expect(
+      menu.items
+        .filter((item) => item.classNames.has("fce-menu-section-title"))
+        .map(itemTitle),
+    ).toEqual(["Sort by", "Order", "Group by", "Group order"]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("anchors the native menu under the sort trigger button", async () => {
+    const { component } = mountToolbar();
+
+    const sortButton = getSortButton();
+    expect(sortButton).not.toBeNull();
+    if (sortButton) {
+      sortButton.getBoundingClientRect = () => ({ left: 40, top: 96, bottom: 124 }) as DOMRect;
+    }
+
+    const menu = await openSortMenu();
+
+    expect(menu.positions).toEqual([{ x: 40, y: 124, overlap: true }]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("marks the current selections as checked", async () => {
+    const { component } = mountToolbar({
+      sortField: "mtime",
+      sortDirection: "desc",
+      group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+    });
+
+    const menu = await openSortMenu();
+
+    expect(
+      menu.items.filter((item) => item.checked).map(itemTitle),
+    ).toEqual(["Edited time", "Descending", "None", "Default", "Ascending"]);
+    expect(menu.items.filter((item) => !item.checked)).toHaveLength(
+      menu.items.length - 5,
+    );
 
     await disposeMountedComponent(component);
   });
@@ -440,20 +499,17 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     let { component } = mountToolbar({ sortField: "mtime", sortDirection: "desc" }, captured.callbacks);
 
-    await openSortPopup();
-    clickPopoverRow("field-name");
-    await tick();
+    let menu = await openSortMenu();
+    clickMenuItem(menu, "Filename");
 
     expect(captured.sortEvents).toEqual([{ field: "name", direction: "desc" }]);
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
 
     await disposeMountedComponent(component);
 
     ({ component } = mountToolbar({ sortField: "name", sortDirection: "desc" }, captured.callbacks));
 
-    await openSortPopup();
-    clickPopoverRow("direction-asc");
-    await tick();
+    menu = await openSortMenu();
+    clickMenuItem(menu, "Ascending");
 
     expect(captured.sortEvents).toEqual([
       { field: "name", direction: "desc" },
@@ -467,41 +523,30 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({ sortField: "mtime", sortDirection: "desc" }, captured.callbacks);
 
-    await openSortPopup();
-    clickPopoverRow("field-mtime");
-    await tick();
+    const menu = await openSortMenu();
+    clickMenuItem(menu, "Edited time");
+    clickMenuItem(menu, "Descending");
 
     expect(captured.sortEvents).toEqual([]);
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
-
-    await openSortPopup();
-    clickPopoverRow("direction-desc");
-    await tick();
-
-    expect(captured.sortEvents).toEqual([]);
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
 
     await disposeMountedComponent(component);
   });
 
-  it("disables an unavailable group dimension and keeps the popover open", async () => {
+  it("disables an unavailable group dimension with its hint and routes the available one", async () => {
     const captured = createCapturedCallbacks();
     let { component } = mountToolbar(
       { availableGroupDimensions: AVAILABLE_FOLDER_DIMENSIONS },
       captured.callbacks,
     );
 
-    await openSortPopup();
+    let menu = await openSortMenu();
 
-    expect(isRowDisabled("dimension-box-rule")).toBe(true);
-    expect(getPopoverRow("dimension-box-rule")?.textContent).toContain("Only available inside a card box");
-    expect(isRowEnabled("dimension-folder")).toBe(true);
-
-    clickPopoverRow("dimension-box-rule");
-    await tick();
-
-    expect(captured.groupChangeEvents).toEqual([]);
-    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+    const boxRule = findMenuItem(menu, "Card box rule");
+    expect(boxRule).toBeDefined();
+    expect(boxRule?.disabled).toBe(true);
+    expect(boxRule?.onClick).toBeNull();
+    expect(itemHint(boxRule!)).toBe("Only available inside a card box");
+    expectMenuItemEnabled(menu, "Folder");
 
     await disposeMountedComponent(component);
 
@@ -512,11 +557,11 @@ describe("Toolbar.svelte", () => {
       group: { dimension: "none", orderBy: "count", orderDirection: "desc" },
     }, captured.callbacks));
 
-    await openSortPopup();
+    menu = await openSortMenu();
 
-    expect(isRowEnabled("dimension-box-rule")).toBe(true);
-    clickPopoverRow("dimension-box-rule");
-    await tick();
+    expectMenuItemEnabled(menu, "Card box rule");
+    expect(itemHint(findMenuItem(menu, "Card box rule")!)).toBeNull();
+    clickMenuItem(menu, "Card box rule");
 
     expect(captured.groupChangeEvents).toEqual([
       { dimension: "box-rule", orderBy: "count", orderDirection: "desc" },
@@ -529,24 +574,18 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     let { component } = mountToolbar({ groupSegmentCount: 0 }, captured.callbacks);
 
-    await openSortPopup();
+    let menu = await openSortMenu();
 
-    for (const rowId of [
-      "order-by-default",
-      "order-by-name",
-      "order-by-count",
-      "order-direction-asc",
-      "order-direction-desc",
-      "collapse-all",
-      "expand-all",
-    ]) {
-      expect(isRowDisabled(rowId)).toBe(true);
+    for (const title of ["Default", "Name", "Card count", "Collapse all", "Expand all"]) {
+      expectMenuItemDisabled(menu, title);
     }
-
-    clickPopoverRow("collapse-all");
-    await tick();
-    expect(captured.groupCollapseEvents).toEqual([]);
-    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
+    // Group-order direction rows share titles with the sort-direction rows, so
+    // assert on their positions instead: they follow the order-by rows.
+    const orderDirectionItems = menu.items.filter(
+      (item) => itemTitle(item) === "Ascending" || itemTitle(item) === "Descending",
+    );
+    expect(orderDirectionItems).toHaveLength(4);
+    expect(orderDirectionItems.slice(2).every((item) => item.disabled && item.onClick === null)).toBe(true);
 
     await disposeMountedComponent(component);
 
@@ -555,29 +594,18 @@ describe("Toolbar.svelte", () => {
       groupSegmentCount: 3,
     }, captured.callbacks));
 
-    await openSortPopup();
+    menu = await openSortMenu();
 
-    for (const rowId of [
-      "order-by-default",
-      "order-by-name",
-      "order-by-count",
-      "order-direction-asc",
-      "order-direction-desc",
-      "collapse-all",
-      "expand-all",
-    ]) {
-      expect(isRowEnabled(rowId)).toBe(true);
+    for (const title of ["Default", "Name", "Card count", "Collapse all", "Expand all"]) {
+      expectMenuItemEnabled(menu, title);
     }
 
-    clickPopoverRow("collapse-all");
-    await tick();
+    clickMenuItem(menu, "Collapse all");
 
     expect(captured.groupCollapseEvents).toEqual([{ command: "collapse-all" }]);
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
 
-    await openSortPopup();
-    clickPopoverRow("order-by-count");
-    await tick();
+    menu = await openSortMenu();
+    clickMenuItem(menu, "Card count");
 
     expect(captured.groupChangeEvents).toEqual([
       { dimension: "folder", orderBy: "count", orderDirection: "asc" },
@@ -586,15 +614,14 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("reflects popover state and active grouping on the trigger button", async () => {
+  it("reflects active grouping on the sort trigger button without transient menu state", async () => {
     let { component } = mountToolbar();
 
-    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("false");
+    expect(getSortButton()?.hasAttribute("aria-expanded")).toBe(false);
     expect(getSortButton()?.classList.contains("is-selected")).toBe(false);
 
-    await openSortPopup();
-    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("true");
-    expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
+    await openSortMenu();
+    expect(getSortButton()?.hasAttribute("aria-expanded")).toBe(false);
 
     await disposeMountedComponent(component);
 
@@ -603,7 +630,7 @@ describe("Toolbar.svelte", () => {
     }));
     await tick();
 
-    expect(getSortButton()?.getAttribute("aria-expanded")).toBe("false");
+    expect(getSortButton()?.hasAttribute("aria-expanded")).toBe(false);
     expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
 
     await disposeMountedComponent(component);
@@ -612,54 +639,6 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(getSortButton()?.getAttribute("aria-label")).toBe("排序与分组");
-
-    await disposeMountedComponent(component);
-  });
-
-  it("renders the shared trailing selected indicator for the sort menu", async () => {
-    const { component } = mountToolbar();
-
-    await openSortPopup();
-
-    const selectedSortOption = getSelectedSortOption();
-    expect(selectedSortOption).not.toBeNull();
-    expect(selectedSortOption?.classList.contains("fce-popup-row")).toBe(true);
-    expect(selectedSortOption?.querySelector(".fce-popup-row-content .fce-sort-menu-item-label")).not.toBeNull();
-    expect(selectedSortOption?.querySelector(".fce-popup-row-trailing .fce-popup-row-selected-indicator")).not.toBeNull();
-    expect(selectedSortOption?.querySelector(".fce-sort-menu-item-check")).not.toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("closes the sort popup on escape and outside click", async () => {
-    const { component } = mountToolbar();
-
-    await openSortPopup();
-    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
-
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    await tick();
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
-
-    await openSortPopup();
-    expect(document.querySelector(".fce-sort-menu")).not.toBeNull();
-
-    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await tick();
-    expect(document.querySelector(".fce-sort-menu")).toBeNull();
-
-    await disposeMountedComponent(component);
-  });
-
-  it("exposes a menu-level accessible name for sort popup through its trigger button", async () => {
-    const { component } = mountToolbar();
-
-    await openSortPopup();
-
-    const sortMenu = document.querySelector<HTMLElement>(".fce-sort-menu");
-    expect(sortMenu).not.toBeNull();
-    expect(sortMenu?.getAttribute("aria-labelledby")).toBe("fce-sort-button");
-    expect(sortMenu?.hasAttribute("aria-label")).toBe(false);
 
     await disposeMountedComponent(component);
   });
@@ -914,62 +893,5 @@ describe("Toolbar.svelte", () => {
     expect(captured.toolbarActionEvents).toEqual([{ action: "bulk-remove-from-box" }]);
 
     await disposeMountedComponent(component);
-  });
-
-  it("cleans up the sort menu portal and listeners on unmount", async () => {
-    const addSpy = vi.spyOn(document, "addEventListener");
-    const removeSpy = vi.spyOn(document, "removeEventListener");
-
-    const { component } = mountToolbar();
-
-    await openSortPopup();
-    const sortMenu = document.body.querySelector<HTMLDivElement>(".fce-sort-menu");
-    expect(sortMenu).not.toBeNull();
-    expect(sortMenu?.parentElement).toBe(document.body);
-
-    await disposeMountedComponent(component);
-
-    expect(document.body.querySelector(".fce-sort-menu")).toBeNull();
-
-    const addClickCaptureCount = addSpy.mock.calls.filter((call) => call[0] === "click" && call[2] === true).length;
-    const removeClickCaptureCount = removeSpy.mock.calls.filter((call) => call[0] === "click" && call[2] === true).length;
-
-    expect(addClickCaptureCount).toBeGreaterThan(0);
-    expect(removeClickCaptureCount).toBe(addClickCaptureCount);
-  });
-
-  describe("popover viewport fitting", () => {
-    async function openSortPopupAt(clientY: number): Promise<HTMLElement> {
-      const sortButton = getSortButton();
-      expect(sortButton).not.toBeNull();
-      sortButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 44, clientY }));
-      await tick();
-      const menu = document.body.querySelector<HTMLElement>(".fce-sort-menu");
-      expect(menu).not.toBeNull();
-      return menu!;
-    }
-
-    it("bounds the menu by the space actually left below a high trigger", async () => {
-      mountToolbar();
-      const menu = await openSortPopupAt(12);
-
-      expect(readPx(menu, "top")).toBe(12);
-      // window.innerHeight is 768 in jsdom: 768 - 12 - 12.
-      expect(readPx(menu, "--fce-sort-menu-available")).toBe(744);
-    });
-
-    it("lifts the menu when a low trigger leaves too little room", async () => {
-      mountToolbar();
-      const menu = await openSortPopupAt(700);
-
-      // A stacked sidebar leaf can put the toolbar this low; leaving top at 700
-      // would render the collapse commands past the viewport edge, where
-      // internal scrolling cannot reach them.
-      const top = readPx(menu, "top");
-      const available = readPx(menu, "--fce-sort-menu-available");
-      expect(top).toBeLessThan(700);
-      expect(available).toBeGreaterThanOrEqual(220);
-      expect(top + available).toBeLessThanOrEqual(768);
-    });
   });
 });

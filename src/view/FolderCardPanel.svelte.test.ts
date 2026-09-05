@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
+import {
+  getObsidianMenuInstances,
+  resetObsidianMenuInstances,
+} from "../__mocks__/obsidian";
 import { defaultNavSectionOrder } from "../navigation-section-order";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
@@ -182,6 +186,7 @@ describe("FolderCardPanel.svelte", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     ResizeObserverStub.reset();
+    resetObsidianMenuInstances();
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
     (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
@@ -191,6 +196,7 @@ describe("FolderCardPanel.svelte", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = "";
+    resetObsidianMenuInstances();
   });
 
   it("renders empty state, populated list, and emits an identity-bearing viewport request", async () => {
@@ -1264,12 +1270,13 @@ describe("FolderCardPanel.svelte", () => {
 
   /**
    * The only case that drives the real Toolbar through the mounted panel. The
-   * popover is proven against a directly mounted Toolbar elsewhere and the
-   * pass-through against a stub in panel-toolbar-forwarding.svelte.test.ts;
-   * neither proves the two halves together. This file is deliberately
-   * `vi.mock`-free, which is what lets the real Toolbar render here.
+   * native sort & group menu is proven against a directly mounted Toolbar
+   * elsewhere and the pass-through against a stub in
+   * panel-toolbar-forwarding.svelte.test.ts; neither proves the two halves
+   * together. This file is deliberately `vi.mock`-free, which is what lets the
+   * real Toolbar render here with the shared obsidian mock's Menu.
    */
-  it("routes a sort and group popover collapse-all through to the host callback", async () => {
+  it("routes a native sort & group menu collapse-all through to the host callback", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);
 
@@ -1302,18 +1309,22 @@ describe("FolderCardPanel.svelte", () => {
     });
     await tick();
 
-    const trigger = document.querySelector<HTMLButtonElement>("button#fce-sort-button");
+    const trigger = document.querySelector<HTMLButtonElement>(".fce-toolbar-actions button.fce-sort-trigger");
     expect(trigger).not.toBeNull();
     trigger?.click();
     await tick();
 
-    // The popover mounts through a body portal, so query the document, not `target`.
-    const collapseAll = document.querySelector<HTMLElement>('[data-sort-group-row="collapse-all"]');
-    expect(collapseAll).not.toBeNull();
-    expect(collapseAll?.hasAttribute("disabled")).toBe(false);
+    // The native Menu is captured by the shared obsidian mock rather than
+    // mounted as DOM inside `target`.
+    const menu = getObsidianMenuInstances().at(-1);
+    expect(menu).toBeDefined();
+    const collapseAll = menu!.items.find(
+      (item) => (typeof item.title === "string" ? item.title : item.title.textContent) === "Collapse all",
+    );
+    expect(collapseAll).toBeDefined();
+    expect(collapseAll?.disabled).toBe(false);
 
-    collapseAll?.click();
-    await tick();
+    collapseAll?.onClick?.(new MouseEvent("click"));
 
     expect(received).toEqual([{ command: "collapse-all" }]);
 
