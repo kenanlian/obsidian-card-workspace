@@ -10,8 +10,6 @@ export const SORT_GROUP_MENU_CLASS = "fce-sort-group-menu";
 /** Class added to the four muted section heading rows after the menu is shown. */
 export const SORT_GROUP_MENU_SECTION_TITLE_CLASS = "fce-menu-section-title";
 
-const HINT_CLASS = "fce-menu-item-hint";
-
 export interface SortGroupMenuState {
   sortField: SortField;
   sortDirection: SortDirection;
@@ -33,31 +31,10 @@ export interface SortGroupMenuDeps {
 
 interface SortGroupOptionSpec {
   title: string;
+  icon: string;
   checked: boolean;
   disabled: boolean;
-  hint?: string;
   onSelect?: () => void;
-}
-
-/**
- * Native menu items have no two-line hint API, so the disabled box-rule row
- * carries its hint as a second muted line inside the title. The fragment keeps
- * the label and hint as separate styled nodes; environments without a DOM
- * (node unit tests) degrade to the plain label.
- */
-function buildTitledOption(title: string, hint: string | undefined): string | DocumentFragment {
-  if (hint === undefined || typeof document === "undefined") {
-    return title;
-  }
-
-  const fragment = document.createDocumentFragment();
-  const label = document.createElement("div");
-  label.textContent = title;
-  const hintEl = document.createElement("div");
-  hintEl.className = HINT_CLASS;
-  hintEl.textContent = hint;
-  fragment.append(label, hintEl);
-  return fragment;
 }
 
 function addHeadingItem(menu: Menu, title: string): void {
@@ -69,7 +46,8 @@ function addHeadingItem(menu: Menu, title: string): void {
 function addOptionItem(menu: Menu, spec: SortGroupOptionSpec): void {
   menu.addItem((item) => {
     item
-      .setTitle(buildTitledOption(spec.title, spec.hint))
+      .setTitle(spec.title)
+      .setIcon(spec.icon)
       .setChecked(spec.checked)
       .setDisabled(spec.disabled);
     if (!spec.disabled && spec.onSelect) {
@@ -89,18 +67,21 @@ export function buildSortGroupMenu(
   addHeadingItem(menu, strings.sortFieldHeading);
   addOptionItem(menu, {
     title: strings.fieldMtime,
+    icon: "file-clock",
     checked: state.sortField === "mtime",
     disabled: false,
     onSelect: () => deps.onSelectSort("mtime"),
   });
   addOptionItem(menu, {
     title: strings.fieldCtime,
+    icon: "file-plus-2",
     checked: state.sortField === "ctime",
     disabled: false,
     onSelect: () => deps.onSelectSort("ctime"),
   });
   addOptionItem(menu, {
     title: strings.fieldName,
+    icon: "file-text",
     checked: state.sortField === "name",
     disabled: false,
     onSelect: () => deps.onSelectSort("name"),
@@ -111,12 +92,14 @@ export function buildSortGroupMenu(
   addHeadingItem(menu, strings.sortDirectionHeading);
   addOptionItem(menu, {
     title: strings.directionAsc,
+    icon: "arrow-up",
     checked: state.sortDirection === "asc",
     disabled: false,
     onSelect: () => deps.onSelectDirection("asc"),
   });
   addOptionItem(menu, {
     title: strings.directionDesc,
+    icon: "arrow-down",
     checked: state.sortDirection === "desc",
     disabled: false,
     onSelect: () => deps.onSelectDirection("desc"),
@@ -125,20 +108,25 @@ export function buildSortGroupMenu(
   menu.addSeparator();
 
   addHeadingItem(menu, strings.groupHeading);
-  const dimensionOptions: Array<{ dimension: GroupDimension; title: string }> = [
-    { dimension: "none", title: strings.dimensionNone },
-    { dimension: "folder", title: strings.dimensionFolder },
-    { dimension: "tag", title: strings.dimensionTag },
-    { dimension: "box-rule", title: strings.dimensionBoxRule },
-    { dimension: "task", title: strings.dimensionTask },
+  const dimensionOptions: Array<{ dimension: GroupDimension; title: string; icon: string }> = [
+    { dimension: "none", title: strings.dimensionNone, icon: "list" },
+    { dimension: "folder", title: strings.dimensionFolder, icon: "folder" },
+    { dimension: "tag", title: strings.dimensionTag, icon: "tag" },
+    { dimension: "task", title: strings.dimensionTask, icon: "list-checks" },
   ];
-  for (const { dimension, title } of dimensionOptions) {
-    const unavailable = !state.availableGroupDimensions.includes(dimension);
+  if (state.availableGroupDimensions.includes("box-rule")) {
+    dimensionOptions.push({
+      dimension: "box-rule",
+      title: strings.dimensionBoxRule,
+      icon: "package-check",
+    });
+  }
+  for (const { dimension, title, icon } of dimensionOptions) {
     addOptionItem(menu, {
       title,
+      icon,
       checked: state.group.dimension === dimension,
-      disabled: unavailable,
-      hint: unavailable && dimension === "box-rule" ? strings.dimensionBoxRuleUnavailable : undefined,
+      disabled: !state.availableGroupDimensions.includes(dimension),
       onSelect: () => deps.onSelectDimension(dimension),
     });
   }
@@ -146,14 +134,15 @@ export function buildSortGroupMenu(
   menu.addSeparator();
 
   addHeadingItem(menu, strings.groupOrderHeading);
-  const orderByOptions: Array<{ orderBy: GroupOrderBy; title: string }> = [
-    { orderBy: "default", title: strings.orderDefault },
-    { orderBy: "name", title: strings.orderName },
-    { orderBy: "count", title: strings.orderCount },
+  const orderByOptions: Array<{ orderBy: GroupOrderBy; title: string; icon: string }> = [
+    { orderBy: "default", title: strings.orderDefault, icon: "list-restart" },
+    { orderBy: "name", title: strings.orderName, icon: "arrow-down-a-z" },
+    { orderBy: "count", title: strings.orderCount, icon: "hash" },
   ];
-  for (const { orderBy, title } of orderByOptions) {
+  for (const { orderBy, title, icon } of orderByOptions) {
     addOptionItem(menu, {
       title,
+      icon,
       checked: state.group.orderBy === orderBy,
       disabled: groupOrderDisabled,
       onSelect: () => deps.onSelectOrderBy(orderBy),
@@ -164,12 +153,14 @@ export function buildSortGroupMenu(
 
   addOptionItem(menu, {
     title: strings.directionAsc,
+    icon: "arrow-up",
     checked: state.group.orderDirection === "asc",
     disabled: groupOrderDisabled,
     onSelect: () => deps.onSelectOrderDirection("asc"),
   });
   addOptionItem(menu, {
     title: strings.directionDesc,
+    icon: "arrow-down",
     checked: state.group.orderDirection === "desc",
     disabled: groupOrderDisabled,
     onSelect: () => deps.onSelectOrderDirection("desc"),
@@ -179,12 +170,14 @@ export function buildSortGroupMenu(
 
   addOptionItem(menu, {
     title: strings.collapseAll,
+    icon: "chevrons-up",
     checked: false,
     disabled: !state.hasSegments,
     onSelect: () => deps.onCollapseAll(),
   });
   addOptionItem(menu, {
     title: strings.expandAll,
+    icon: "chevrons-down",
     checked: false,
     disabled: !state.hasSegments,
     onSelect: () => deps.onExpandAll(),

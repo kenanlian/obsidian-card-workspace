@@ -632,8 +632,8 @@ describe("FolderCardView host contract", () => {
       "none",
       "folder",
       "tag",
-      "box-rule",
       "task",
+      "box-rule",
     ]);
   });
 

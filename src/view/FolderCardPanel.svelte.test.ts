@@ -884,7 +884,10 @@ describe("FolderCardPanel.svelte", () => {
         ],
         generation: 1,
         sequenceRevision: 1,
-        groupSegments: [createSegment("folder:g1", "g1", 0, 2), createSegment("folder:g2", "g2", 2, 2)],
+        groupSegments: [
+          { ...createSegment("folder:g1", "g1", 0, 2), detail: "g1" },
+          createSegment("folder:g2", "g2", 2, 2),
+        ],
         groupRevision: 1,
       };
     });
@@ -895,6 +898,8 @@ describe("FolderCardPanel.svelte", () => {
     expect(headers.map((header) => header.getAttribute("aria-expanded"))).toEqual(["true", "true"]);
     expect(headers[0].textContent).toContain("g1");
     expect(headers[0].textContent).toContain("2");
+    expect(headers[0].querySelector(".fce-card-group-detail")).toBeNull();
+    expect(headers[0].querySelector(".fce-card-group-label")?.textContent).toBe("g1");
     expect(headers.map((header) => header.getAttribute("aria-label"))).toEqual([
       "g1, 2 cards",
       "g2, 2 cards",
@@ -903,12 +908,11 @@ describe("FolderCardPanel.svelte", () => {
     const cardRows = Array.from(target.querySelectorAll<HTMLElement>(".fce-wall-row"));
     expect(cardRows).toHaveLength(2);
     for (const [index, row] of cardRows.entries()) {
-      const header = headers[index];
       expect(row.getAttribute("role")).toBe("group");
-      expect(header.id).not.toBe("");
-      expect(row.getAttribute("aria-labelledby")).toBe(header.id);
-      expect(row.getAttribute("aria-label")).toBe(header.getAttribute("aria-label"));
-      expect(document.getElementById(row.getAttribute("aria-labelledby")!)).toBe(header);
+      expect(row.hasAttribute("aria-label")).toBe(false);
+      const rowLabel = document.getElementById(row.getAttribute("aria-labelledby")!);
+      expect(rowLabel?.classList.contains("fce-sr-only")).toBe(true);
+      expect(rowLabel?.textContent?.trim()).toBe(index === 0 ? "g1, 2 cards" : "g2, 2 cards");
     }
 
     panelModel.mutate((state) => {
@@ -926,7 +930,7 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
-  it("names a card row through aria-label once virtualization unmounts its header", async () => {
+  it("names a virtualized card row without putting a tooltip-producing aria-label on it", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);
     const panelModel = createPanelModel(createInitialPanelState());
@@ -954,8 +958,9 @@ describe("FolderCardPanel.svelte", () => {
 
     expect(target.querySelector(".fce-card-group-header")).toBeNull();
     const row = target.querySelector<HTMLElement>(".fce-wall-row")!;
-    expect(row.getAttribute("aria-label")).toBe("Big group, 40 cards");
-    expect(document.getElementById(row.getAttribute("aria-labelledby")!)).toBeNull();
+    expect(row.hasAttribute("aria-label")).toBe(false);
+    expect(document.getElementById(row.getAttribute("aria-labelledby")!)?.textContent?.trim())
+      .toBe("Big group, 40 cards");
 
     await unmount(component);
   });

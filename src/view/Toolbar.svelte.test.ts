@@ -50,7 +50,7 @@ const BOX_SUMMARIES = [
 ];
 
 const AVAILABLE_FOLDER_DIMENSIONS = ["none", "folder", "tag", "task"];
-const AVAILABLE_BOX_DIMENSIONS = ["none", "folder", "tag", "box-rule", "task"];
+const AVAILABLE_BOX_DIMENSIONS = ["none", "folder", "tag", "task", "box-rule"];
 
 interface ToolbarCallbacks {
   onSortChange?: (payload: SortChangePayload) => void;
@@ -217,13 +217,6 @@ function itemTitle(item: ObsidianMockMenuItem): string {
   }
   // Hinted titles are fragments of [label, hint]; the label is the first node.
   return item.title.firstElementChild?.textContent ?? item.title.textContent ?? "";
-}
-
-function itemHint(item: ObsidianMockMenuItem): string | null {
-  if (typeof item.title === "string") {
-    return null;
-  }
-  return item.title.querySelector(".fce-menu-item-hint")?.textContent ?? null;
 }
 
 function findMenuItem(menu: ObsidianMockMenu, title: string): ObsidianMockMenuItem | undefined {
@@ -443,7 +436,7 @@ describe("Toolbar.svelte", () => {
     expect(menu.items.map(itemTitle)).toEqual([
       "Sort by", "Edited time", "Created time", "Filename",
       "Order", "Ascending", "Descending",
-      "Group by", "None", "Folder", "Tag", "Card box rule", "Task status",
+      "Group by", "None", "Folder", "Tag", "Task status",
       "Group order", "Default", "Name", "Card count", "Ascending", "Descending",
       "Collapse all", "Expand all",
     ]);
@@ -539,7 +532,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("disables an unavailable group dimension with its hint and routes the available one", async () => {
+  it("omits box-rule grouping outside box scope and routes it as the last option inside box scope", async () => {
     const captured = createCapturedCallbacks();
     let { component } = mountToolbar(
       { availableGroupDimensions: AVAILABLE_FOLDER_DIMENSIONS },
@@ -548,11 +541,7 @@ describe("Toolbar.svelte", () => {
 
     let menu = await openSortMenu();
 
-    const boxRule = findMenuItem(menu, "Card box rule");
-    expect(boxRule).toBeDefined();
-    expect(boxRule?.disabled).toBe(true);
-    expect(boxRule?.onClick).toBeNull();
-    expect(itemHint(boxRule!)).toBe("Only available inside a card box");
+    expect(findMenuItem(menu, "Card box rule")).toBeUndefined();
     expectMenuItemEnabled(menu, "Folder");
 
     await disposeMountedComponent(component);
@@ -567,7 +556,10 @@ describe("Toolbar.svelte", () => {
     menu = await openSortMenu();
 
     expectMenuItemEnabled(menu, "Card box rule");
-    expect(itemHint(findMenuItem(menu, "Card box rule")!)).toBeNull();
+    const groupHeadingIndex = menu.items.findIndex((item) => itemTitle(item) === "Group by");
+    expect(menu.items.slice(groupHeadingIndex + 1, groupHeadingIndex + 6).map(itemTitle)).toEqual([
+      "None", "Folder", "Tag", "Task status", "Card box rule",
+    ]);
     clickMenuItem(menu, "Card box rule");
 
     expect(captured.groupChangeEvents).toEqual([

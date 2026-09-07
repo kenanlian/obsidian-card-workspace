@@ -120,7 +120,7 @@ describe("buildSortGroupMenu", () => {
     expect(titles(menu)).toEqual([
       "Sort by", "Edited time", "Created time", "Filename",
       "Order", "Ascending", "Descending",
-      "Group by", "None", "Folder", "Tag", "Card box rule", "Task status",
+      "Group by", "None", "Folder", "Tag", "Task status",
       "Group order", "Default", "Name", "Card count", "Ascending", "Descending",
       "Collapse all", "Expand all",
     ]);
@@ -138,7 +138,7 @@ describe("buildSortGroupMenu", () => {
     expect(titles(menu)).toEqual([
       "排序依据", "编辑时间", "创建时间", "文件名",
       "顺序", "升序", "降序",
-      "分组依据", "不分组", "文件夹", "标签", "卡片盒规则", "任务状态",
+      "分组依据", "不分组", "文件夹", "标签", "任务状态",
       "分组顺序", "默认", "名称", "卡片数量", "升序", "降序",
       "全部折叠", "全部展开",
     ]);
@@ -164,16 +164,12 @@ describe("buildSortGroupMenu", () => {
     }
   });
 
-  it("disables the unavailable box-rule dimension without a click handler", () => {
+  it("omits the box-rule dimension outside a card box", () => {
     const { menu, deps } = buildMenu(createState({
       availableGroupDimensions: ["none", "folder", "tag", "task"],
     }));
 
-    const boxRule = itemByTitle(menu, "Card box rule");
-    expect(boxRule?.disabled).toBe(true);
-    expect(boxRule?.clickHandler).toBeNull();
-    // The node environment has no DOM, so the hinted title degrades to the label.
-    expect(titleText(boxRule!)).toBe("Card box rule");
+    expect(itemByTitle(menu, "Card box rule")).toBeUndefined();
 
     for (const title of ["None", "Folder", "Tag", "Task status"]) {
       expect(itemByTitle(menu, title)?.disabled, `${title} must stay enabled`).toBe(false);
@@ -182,16 +178,45 @@ describe("buildSortGroupMenu", () => {
     expect(deps.onSelectDimension).not.toHaveBeenCalled();
   });
 
-  it("enables the box-rule dimension inside a card box", () => {
+  it("shows the box-rule dimension last inside a card box", () => {
     const { menu, deps } = buildMenu(createState({
-      availableGroupDimensions: ["none", "folder", "tag", "box-rule", "task"],
+      availableGroupDimensions: ["none", "folder", "tag", "task", "box-rule"],
     }));
 
     const boxRule = itemByTitle(menu, "Card box rule");
     expect(boxRule?.disabled).toBe(false);
+    expect(titles(menu).slice(8, 13)).toEqual([
+      "None", "Folder", "Tag", "Task status", "Card box rule",
+    ]);
     boxRule?.clickHandler?.();
 
     expect(deps.onSelectDimension).toHaveBeenCalledWith("box-rule");
+  });
+
+  it("adds a Lucide icon to every selectable row", () => {
+    const { menu } = buildMenu(createState({
+      availableGroupDimensions: ["none", "folder", "tag", "task", "box-rule"],
+    }));
+
+    const expectedIcons = new Map([
+      ["Edited time", "file-clock"],
+      ["Created time", "file-plus-2"],
+      ["Filename", "file-text"],
+      ["None", "list"],
+      ["Folder", "folder"],
+      ["Tag", "tag"],
+      ["Task status", "list-checks"],
+      ["Card box rule", "package-check"],
+      ["Default", "list-restart"],
+      ["Name", "arrow-down-a-z"],
+      ["Card count", "hash"],
+      ["Collapse all", "chevrons-up"],
+      ["Expand all", "chevrons-down"],
+    ]);
+    for (const [title, icon] of expectedIcons) {
+      expect(itemByTitle(menu, title)?.icon, `${title} should have its Lucide icon`).toBe(icon);
+    }
+    expect(menu.items.filter((item) => !item.disabled).every((item) => item.icon !== null)).toBe(true);
   });
 
   it("disables the whole group-order section while the dimension is none", () => {

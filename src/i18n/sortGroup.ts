@@ -16,7 +16,6 @@ export interface SortGroupStrings {
   dimensionTag: string;
   dimensionBoxRule: string;
   dimensionTask: string;
-  dimensionBoxRuleUnavailable: string;
   orderDefault: string;
   orderName: string;
   orderCount: string;
@@ -49,7 +48,6 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     dimensionTag: "Tag",
     dimensionBoxRule: "Card box rule",
     dimensionTask: "Task status",
-    dimensionBoxRuleUnavailable: "Only available inside a card box",
     orderDefault: "Default",
     orderName: "Name",
     orderCount: "Card count",
@@ -81,7 +79,6 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     dimensionTag: "标签",
     dimensionBoxRule: "卡片盒规则",
     dimensionTask: "任务状态",
-    dimensionBoxRuleUnavailable: "仅在卡片盒内可用",
     orderDefault: "默认",
     orderName: "名称",
     orderCount: "卡片数量",

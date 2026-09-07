@@ -32,8 +32,8 @@ export const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = [
   "none",
   "folder",
   "tag",
-  "box-rule",
   "task",
+  "box-rule",
 ];
 
 export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities {

@@ -799,9 +799,9 @@
           class={getRowClass(row.index)}
           use:measureRow={row}
           role={row.segmentIndex === -1 ? undefined : "group"}
-          aria-labelledby={row.segmentIndex === -1 ? undefined : getGroupHeaderId(row.segmentIndex)}
-          aria-label={row.segmentIndex === -1 ? undefined : getGroupAriaLabel(row.segmentIndex)}
+          aria-labelledby={row.segmentIndex === -1 ? undefined : `${panelInstanceId}-row-${row.index}-label`}
         >
+          {#if row.segmentIndex !== -1}<span class="fce-sr-only" id={`${panelInstanceId}-row-${row.index}-label`}>{getGroupAriaLabel(row.segmentIndex)}</span>{/if}
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
             {#each getRowCards(row) as card (card.path)}
               <CardItem

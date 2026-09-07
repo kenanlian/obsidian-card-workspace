@@ -42,7 +42,4 @@
   <span class="fce-card-group-chevron" use:applyIcon={chevronIcon}></span>
   <span class="fce-card-group-label">{segment.label}</span>
   <span class="fce-card-group-count">{groupStrings.groupCount(segment.count)}</span>
-  {#if segment.detail !== ""}
-    <span class="fce-card-group-detail">{segment.detail}</span>
-  {/if}
 </button>
