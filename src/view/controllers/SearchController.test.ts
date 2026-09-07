@@ -40,6 +40,7 @@ function createSnapshot(
     mode: "indexed",
     status: "ready",
     lastError: null,
+    contentRevision: 0,
     health: createHealth(),
     ...patch,
   };
@@ -225,5 +226,181 @@ describe("SearchController", () => {
     controller.resetForLoad();
     await controller.refreshProjection();
     expect(publishSearchProjection).not.toHaveBeenCalled();
+  });
+
+  it("silent refresh expands candidatePaths to the full new base cards without an intermediate publish", async () => {
+    const context = createContext();
+    const seenRequests: Array<{ candidatePaths: string[] }> = [];
+    const query = vi.fn(async (request: { candidatePaths: string[] }) => {
+      seenRequests.push(request);
+      return {
+        mode: "indexed" as const,
+        status: "ready" as const,
+        execution: "indexed-ready" as const,
+        orderedPaths: request.candidatePaths,
+        matchCountsByPath: { "notes/entered.md": 2 },
+      };
+    });
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+    context.store.replaceBaseCards([
+      { path: "notes/alpha.md" } as NoteCardRecord,
+      { path: "notes/entered.md" } as NoteCardRecord,
+    ]);
+    controller.onQueryChange({ query: "needle" });
+    publishSearchProjection.mockClear();
+
+    // A Box membership change installed a new base set; the silent refresh must
+    // send the full new candidate paths and update state without publishing.
+    await controller.refreshProjection({ publish: false });
+
+    expect(seenRequests.at(-1)?.candidatePaths).toEqual([
+      "notes/alpha.md",
+      "notes/entered.md",
+    ]);
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+    expect(controller.buildPipelineSearchInput().orderedPaths).toEqual([
+      "notes/alpha.md",
+      "notes/entered.md",
+    ]);
+    expect(controller.getMatchCountsByPath()).toEqual({ "notes/entered.md": 2 });
+    controller.dispose();
+  });
+
+  it("sends the exact candidate-only query payload after C7 scope removal", async () => {
+    const context = createContext();
+    const query = vi.fn(async () => ({
+      mode: "indexed" as const,
+      status: "ready" as const,
+      execution: "indexed-ready" as const,
+      orderedPaths: [],
+    }));
+    const controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection: () => undefined,
+    });
+    controller.initializeSnapshotState();
+    context.store.replaceBaseCards([
+      { path: "notes/a.md" } as NoteCardRecord,
+      { path: "notes/b.md" } as NoteCardRecord,
+    ]);
+    controller.onQueryChange({ query: "needle" });
+
+    await controller.refreshProjection();
+
+    // `candidatePaths` is the only scope boundary; the request carries no
+    // derived folder/box scope data (C7).
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith({
+      query: "needle",
+      candidatePaths: ["notes/a.md", "notes/b.md"],
+    });
+    controller.dispose();
+  });
+
+  it("silent refresh returns immediately for an empty query", async () => {
+    const context = createContext();
+    const query = vi.fn();
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+
+    await controller.refreshProjection({ publish: false });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("a stale silent request cannot overwrite the winning request's state", async () => {
+    const context = createContext();
+    let resolveSilent!: (value: { execution: "indexed-ready"; orderedPaths: string[] }) => void;
+    let firstCall = true;
+    const query = vi.fn((request: { query: string }) => {
+      if (request.query === "old" && firstCall) {
+        firstCall = false;
+        return new Promise<{ execution: "indexed-ready"; orderedPaths: string[] }>((resolve) => {
+          resolveSilent = resolve;
+        });
+      }
+      return Promise.resolve({
+        mode: "indexed" as const,
+        status: "ready" as const,
+        execution: "indexed-ready" as const,
+        orderedPaths: ["notes/winner.md"],
+      });
+    });
+    const staleWinnerService = {
+      query: (request: { query: string }) => query(request),
+    } as unknown as SearchService;
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => staleWinnerService,
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+    context.store.replaceBaseCards([{ path: "notes/winner.md" } as NoteCardRecord]);
+    controller.onQueryChange({ query: "old" });
+    const silent = controller.refreshProjection({ publish: false });
+
+    // The winning request arrives while the silent one is still pending: a
+    // contentRevision snapshot (or a new query) invalidates the silent request.
+    controller.onSearchSnapshot(createSnapshot({ contentRevision: 1 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveSilent({
+      execution: "indexed-ready",
+      orderedPaths: ["notes/stale.md"],
+    });
+    await silent;
+
+    // The snapshot-driven winner owns the publication and the final state.
+    expect(publishSearchProjection).toHaveBeenCalled();
+    expect(controller.buildPipelineSearchInput().orderedPaths).toEqual(["notes/winner.md"]);
+    controller.dispose();
+  });
+
+  it("silent fallback to a blocked state updates execution without publishing", async () => {
+    const context = createContext();
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => null,
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+    context.store.replaceBaseCards([{ path: "notes/a.md" } as NoteCardRecord]);
+    controller.onQueryChange({ query: "needle" });
+    publishSearchProjection.mockClear();
+
+    await controller.refreshProjection({ publish: false });
+
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+    expect(controller.buildPipelineSearchInput()).toMatchObject({
+      query: "needle",
+      execution: "indexed-unavailable",
+    });
+    controller.dispose();
   });
 });

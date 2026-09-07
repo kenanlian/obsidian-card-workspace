@@ -239,16 +239,17 @@ describe("ScopeController", () => {
     expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
   });
 
-  it("schedules an existing modified card for forced hydration", () => {
+  it("replaces a modified card with a fresh live-stat record and schedules forced hydration", () => {
     const { context, controller, scheduleHydrationPath } = createHarness();
     const liveFile = Object.assign(new TFile(), {
       path: "old/nested/existing.md",
       name: "existing.md",
       basename: "existing",
       extension: "md",
-      stat: { ctime: 1, mtime: 2 },
+      stat: { ctime: 11, mtime: 22 },
     });
-    context.store.replaceBaseCards([{
+    (context.getApp() as any).vault.getAbstractFileByPath = () => liveFile;
+    const published: NoteCardRecord = {
       file: liveFile,
       fileKind: "markdown",
       path: liveFile.path,
@@ -260,6 +261,56 @@ describe("ScopeController", () => {
       previewMode: "text",
       hydrated: true,
       taskSummary: null,
+    };
+    context.store.replaceBaseCards([published]);
+
+    const result = controller.handleVaultMutation({
+      eventType: "modify",
+      path: liveFile.path,
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    const installed = context.store.getBaseCard(liveFile.path);
+    expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
+    expect(installed).toBeDefined();
+    expect(installed).not.toBe(published);
+    expect(installed?.ctime).toBe(11);
+    expect(installed?.mtime).toBe(22);
+    expect(installed?.previewHtml).toBe("<p>old</p>");
+    expect(installed?.previewMode).toBe("text");
+    expect(installed?.hydrated).toBe(false);
+    // The previously published record object is never mutated.
+    expect(published.mtime).toBe(2);
+    expect(published.hydrated).toBe(true);
+    expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
+  });
+
+  it("skips hydration for a hidden modified card and keeps it for viewport demand", () => {
+    const { context, controller, projectVisibleCards, scheduleHydrationPath } = createHarness();
+    const liveFile = Object.assign(new TFile(), {
+      path: "old/nested/hidden.md",
+      basename: "hidden",
+      extension: "md",
+      stat: { ctime: 1, mtime: 5 },
+    });
+    (context.getApp() as any).vault.getAbstractFileByPath = () => liveFile;
+    projectVisibleCards.mockImplementation(() => {
+      context.store.replaceVisibleCards([]);
+    });
+    context.store.replaceBaseCards([{
+      file: liveFile,
+      fileKind: "markdown",
+      path: liveFile.path,
+      title: liveFile.basename,
+      ctime: 1,
+      mtime: 2,
+      excerpt: "",
+      previewHtml: "",
+      previewMode: "empty",
+      hydrated: false,
+      taskSummary: null,
     }]);
 
     const result = controller.handleVaultMutation({
@@ -270,8 +321,152 @@ describe("ScopeController", () => {
       fileKind: "markdown",
     });
 
-    expect(result.incrementalResult?.action).toBe("hydration_reset");
-    expect(scheduleHydrationPath).toHaveBeenCalledWith(liveFile.path);
+    expect(result.incrementalResult).toEqual({ handled: true, action: "hydration_reset" });
+    expect(context.store.getBaseCard(liveFile.path)?.mtime).toBe(5);
+    expect(context.store.getVisibleCards()).toEqual([]);
+    expect(scheduleHydrationPath).not.toHaveBeenCalled();
+  });
+
+  it("defers to an authoritative reload when a modified card has no live file", () => {
+    const { context, controller, scheduleHydrationPath } = createHarness();
+    (context.getApp() as any).vault.getAbstractFileByPath = () => null;
+    context.store.replaceBaseCards([{
+      file: Object.assign(new TFile(), { path: "old/nested/gone.md" }),
+      fileKind: "markdown",
+      path: "old/nested/gone.md",
+      title: "gone",
+      ctime: 1,
+      mtime: 2,
+      excerpt: "",
+      previewHtml: "",
+      previewMode: "empty",
+      hydrated: false,
+      taskSummary: null,
+    }]);
+
+    const result = controller.handleVaultMutation({
+      eventType: "modify",
+      path: "old/nested/gone.md",
+      oldPath: null,
+      isFolder: false,
+      fileKind: "markdown",
+    });
+
+    expect(result.shouldRefresh).toBe(true);
+    expect(result.queueAction).toBe("enqueued");
+    expect(result.incrementalResult).toBeNull();
+    expect((controller as any).refreshQueued).toBe(true);
+    expect(scheduleHydrationPath).not.toHaveBeenCalled();
+  });
+
+  it("schedules hydration for a renamed unhydrated card but not an already-hydrated one", () => {
+    const hydrateHarness = (published: NoteCardRecord, destinationPath: string) => {
+      const harness = createHarness();
+      const liveFile = Object.assign(new TFile(), {
+        path: destinationPath,
+        basename: destinationPath.slice(destinationPath.lastIndexOf("/") + 1).replace(/\.md$/, ""),
+        extension: "md",
+        stat: { ctime: 3, mtime: 4 },
+      });
+      (harness.context.getApp() as any).vault.getAbstractFileByPath = () => liveFile;
+      harness.context.store.replaceBaseCards([published]);
+      return { ...harness, liveFile };
+    };
+
+    const unhydrated = hydrateHarness({
+      file: Object.assign(new TFile(), { path: "old/nested/draft.md" }),
+      fileKind: "markdown",
+      path: "old/nested/draft.md",
+      title: "draft",
+      ctime: 1,
+      mtime: 1,
+      excerpt: "",
+      previewHtml: "",
+      previewMode: "empty",
+      hydrated: false,
+      taskSummary: null,
+    }, "old/nested/renamed.md");
+    const unhydratedResult = unhydrated.controller.handleVaultMutation({
+      eventType: "rename",
+      path: "old/nested/renamed.md",
+      oldPath: "old/nested/draft.md",
+      isFolder: false,
+      fileKind: "markdown",
+    });
+    expect(unhydratedResult.incrementalResult).toEqual({ handled: true, action: "updated" });
+    expect(unhydrated.context.store.getBaseCards().map((card) => card.path))
+      .toEqual(["old/nested/renamed.md"]);
+    expect(unhydrated.context.store.getBaseCard("old/nested/renamed.md")?.mtime).toBe(4);
+    expect(unhydrated.scheduleHydrationPath).toHaveBeenCalledWith("old/nested/renamed.md");
+
+    const hydrated = hydrateHarness({
+      file: Object.assign(new TFile(), { path: "old/nested/final.md" }),
+      fileKind: "markdown",
+      path: "old/nested/final.md",
+      title: "final",
+      ctime: 1,
+      mtime: 1,
+      excerpt: "kept",
+      previewHtml: "<p>kept</p>",
+      previewMode: "text",
+      hydrated: true,
+      taskSummary: null,
+    }, "old/nested/final-renamed.md");
+    const hydratedResult = hydrated.controller.handleVaultMutation({
+      eventType: "rename",
+      path: "old/nested/final-renamed.md",
+      oldPath: "old/nested/final.md",
+      isFolder: false,
+      fileKind: "markdown",
+    });
+    expect(hydratedResult.incrementalResult).toEqual({ handled: true, action: "updated" });
+    const merged = hydrated.context.store.getBaseCard("old/nested/final-renamed.md");
+    expect(merged?.previewHtml).toBe("<p>kept</p>");
+    expect(merged?.hydrated).toBe(true);
+    expect(hydrated.scheduleHydrationPath).not.toHaveBeenCalled();
+  });
+
+  it("prepares a kind-changing rename through the runtime cache before installation", () => {
+    const { context, controller, prepareRecordsFromCache, scheduleHydrationPath } = createHarness();
+    const liveCanvas = Object.assign(new TFile(), {
+      path: "old/nested/board.canvas",
+      basename: "board",
+      extension: "canvas",
+      stat: { ctime: 8, mtime: 9 },
+    });
+    (context.getApp() as any).vault.getAbstractFileByPath = () => liveCanvas;
+    context.store.replaceBaseCards([{
+      file: Object.assign(new TFile(), { path: "old/nested/note.md" }),
+      fileKind: "markdown",
+      path: "old/nested/note.md",
+      title: "note",
+      ctime: 1,
+      mtime: 1,
+      excerpt: "text",
+      previewHtml: "<p>text</p>",
+      previewMode: "text",
+      hydrated: true,
+      taskSummary: null,
+    }]);
+
+    const result = controller.handleVaultMutation({
+      eventType: "rename",
+      path: "old/nested/board.canvas",
+      oldPath: "old/nested/note.md",
+      isFolder: false,
+      fileKind: "canvas",
+    });
+
+    expect(result.incrementalResult).toEqual({ handled: true, action: "updated" });
+    expect(prepareRecordsFromCache).toHaveBeenCalledTimes(1);
+    expect(prepareRecordsFromCache.mock.calls[0]?.[0]).toHaveLength(1);
+    expect(prepareRecordsFromCache.mock.calls[0]?.[0]?.[0]?.fileKind).toBe("canvas");
+    const installed = context.store.getBaseCard("old/nested/board.canvas");
+    expect(installed?.fileKind).toBe("canvas");
+    expect(installed?.file).toBe(liveCanvas);
+    // The preparation mock does not hydrate, so the fresh record stays a
+    // hydration candidate and is scheduled because it is visible.
+    expect(scheduleHydrationPath).toHaveBeenCalledWith("old/nested/board.canvas");
   });
 
   it("clears cross-scope records before loading and commits one prepared projection", async () => {
@@ -362,10 +557,88 @@ describe("ScopeController", () => {
     context.store.setScope(createBoxScope("box-1"));
     context.store.replaceBaseCards([makeRecord(memberPath), makeRecord(siblingPath)]);
 
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("left");
     expect(context.store.getBaseCards().map((card) => card.path)).toEqual([siblingPath]);
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
-    expect(controller.reconcileMetadataMembershipForPath(siblingPath)).toBe(false);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("unchanged");
+    expect(controller.reconcileMetadataMembershipForPath(siblingPath)).toBe("unchanged");
+  });
+
+  it("enters an absent matching file through the factory and the active box sort", () => {
+    const enteringPath = "notes/entering.md";
+    const existingPath = "notes/existing.md";
+    const { context, controller, prepareRecordsFromCache, scheduleHydrationPath } = createHarness({
+      isPathInBox: (path) => path === enteringPath,
+    });
+    const app = context.getApp() as any;
+    const enteringFile = Object.assign(new TFile(), {
+      path: enteringPath,
+      basename: "entering",
+      stat: { ctime: 5, mtime: 50 },
+    });
+    const existingFile = Object.assign(new TFile(), {
+      path: existingPath,
+      basename: "existing",
+      stat: { ctime: 1, mtime: 10 },
+    });
+    app.vault.getAbstractFileByPath = (path: string) =>
+      path === enteringPath ? enteringFile : path === existingPath ? existingFile : null;
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([membershipRecord(existingPath)]);
+
+    expect(controller.reconcileMetadataMembershipForPath(enteringPath)).toBe("entered");
+    expect(prepareRecordsFromCache).toHaveBeenCalledTimes(1);
+    expect(prepareRecordsFromCache.mock.calls[0]?.[0]).toHaveLength(1);
+    // Descending mtime sort places the fresh record (mtime 50) first.
+    expect(context.store.getBaseCards().map((card) => card.path)).toEqual([
+      enteringPath,
+      existingPath,
+    ]);
+    const entered = context.store.getBaseCard(enteringPath);
+    expect(entered?.file).toBe(enteringFile);
+    expect(entered?.ctime).toBe(5);
+    expect(entered?.mtime).toBe(50);
+    expect(entered?.taskSummary).toBeNull();
+    // The controller owns reprojection/hydration, not the reconcile itself.
+    expect(scheduleHydrationPath).not.toHaveBeenCalled();
+    expect(controller.reconcileMetadataMembershipForPath(enteringPath)).toBe("unchanged");
+  });
+
+  it("treats a missing or unsupported live file as an unchanged no-op on entry", () => {
+    const missingPath = "notes/missing.md";
+    const unsupportedPath = "notes/board.sketch";
+    const { context, controller } = createHarness({
+      isPathInBox: () => true,
+    });
+    const app = context.getApp() as any;
+    app.vault.getAbstractFileByPath = (path: string) =>
+      path === unsupportedPath ? Object.assign(new TFile(), { path: unsupportedPath }) : null;
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([]);
+
+    expect(controller.reconcileMetadataMembershipForPath(missingPath)).toBe("unchanged");
+    expect(controller.reconcileMetadataMembershipForPath(unsupportedPath)).toBe("unchanged");
+    expect(context.store.getBaseCards()).toEqual([]);
+  });
+
+  it("keeps manual membership and exclusions at isBoxMember precedence", () => {
+    const manualPath = "notes/manual.md";
+    const excludedPath = "notes/excluded.md";
+    const box: CardBoxDefinition = {
+      ...propertyBox({ kind: "text", value: "open" }),
+      manualPaths: [manualPath],
+      excludedPaths: [excludedPath],
+    };
+    const { context, controller } = createHarness({
+      isPathInBox: (path) => isBoxMember(context.getApp(), path, box),
+    });
+    context.store.setScope(createBoxScope("box-1"));
+    context.store.replaceBaseCards([membershipRecord(manualPath), membershipRecord(excludedPath)]);
+
+    // Manual membership wins even though no rule matches.
+    expect(controller.reconcileMetadataMembershipForPath(manualPath)).toBe("unchanged");
+    // Exclusion wins even though the folder rule would match.
+    expect(controller.reconcileMetadataMembershipForPath(excludedPath)).toBe("left");
+    expect(context.store.getBaseCards().map((card) => card.path)).toEqual([manualPath]);
   });
 
   it("V-G2 reconciles a missing-clause member out once metadata arrives with a value", () => {
@@ -379,12 +652,12 @@ describe("ScopeController", () => {
     context.store.setScope(createBoxScope("box-1"));
     context.store.replaceBaseCards([membershipRecord(memberPath)]);
 
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("unchanged");
 
     (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
       frontmatter: { status: "done" },
     }));
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("left");
     expect(context.store.getBaseCards().map((card) => card.path)).toEqual([]);
   });
 
@@ -402,12 +675,12 @@ describe("ScopeController", () => {
       frontmatter: { status: "open" },
     }));
 
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(false);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("unchanged");
 
     (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
       frontmatter: { status: "done" },
     }));
-    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe(true);
+    expect(controller.reconcileMetadataMembershipForPath(memberPath)).toBe("left");
     expect(context.store.getBaseCards().map((card) => card.path)).toEqual([]);
   });
 

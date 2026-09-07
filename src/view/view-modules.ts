@@ -1,6 +1,7 @@
 import { normalizeGroupSpec, type GroupSpec } from "../card-grouping-settings";
 import type { SearchService, SearchServiceSnapshot } from "../search";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
+import { ArrangementActions } from "./actions/arrangement-actions";
 import { BoxActions } from "./actions/box-actions";
 import { FavoriteActions } from "./actions/favorite-actions";
 import { FileActions } from "./actions/file-actions";
@@ -12,14 +13,14 @@ import { TagManagementActions } from "./actions/tag-manage-actions";
 import { BulkController } from "./controllers/BulkController";
 import { GroupCollapseController } from "./controllers/GroupCollapseController";
 import { HydrationController } from "./controllers/HydrationController";
+import { MetadataImpactController, type MetadataImpactBatch } from "./controllers/MetadataImpactController";
 import { NavLayoutController } from "./controllers/NavLayoutController";
 import { ProjectionController } from "./controllers/ProjectionController";
 import { PropertyController } from "./controllers/PropertyController";
 import { ScopeController } from "./controllers/ScopeController";
 import { SearchController } from "./controllers/SearchController";
-import { TaskSummaryController } from "./controllers/TaskSummaryController";
 import { CardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
-import { isBoxScope } from "./scope";
+import { resolveSourceCapabilities } from "./source-capabilities";
 import { collectSupportedFiles, rewritePathAfterRename } from "./scope-files";
 import type { SelectionResult } from "./types";
 import type { ViewContext } from "./view-context";
@@ -44,6 +45,8 @@ export interface ViewModuleHost {
   publishLoadStart: (scopeChanged: boolean) => void;
   publishLoadCommit: () => void;
   publishGroups: ViewContext["publishGroups"];
+  /** One coherent metadata publication; nav derives from the exact fresh projection snapshot. */
+  publishImpactBatch: (batch: MetadataImpactBatch) => void;
   openNoteFromCard: (path: string, destination?: OpenDestination) => Promise<void>;
   createNoteInFolder: (folderPath: string, tags: string[]) => Promise<void>;
   getSearchService: () => SearchService | null;
@@ -55,7 +58,7 @@ export interface ViewModules {
   projection: ProjectionController;
   groupCollapse: GroupCollapseController;
   hydration: HydrationController;
-  taskSummary: TaskSummaryController;
+  metadataImpact: MetadataImpactController;
   search: SearchController;
   bulk: BulkController;
   navLayout: NavLayoutController;
@@ -70,6 +73,31 @@ export interface ViewModules {
   favoriteActions: FavoriteActions;
   mergeActions: MergeActions;
   cardMenu: CardContextMenu;
+  arrangementActions: ArrangementActions;
+}
+
+/**
+ * Construction-time smoke gate: a callback that closes over a module declared
+ * later throws if a constructor invokes it before assembly finishes (C8).
+ */
+export function createModuleConstructionGate(): {
+  guard<Args extends unknown[], Result>(name: string, fn: (...args: Args) => Result): (...args: Args) => Result;
+  markAssembled(): void;
+} {
+  let assembled = false;
+  return {
+    guard<Args extends unknown[], Result>(name: string, fn: (...args: Args) => Result): (...args: Args) => Result {
+      return (...args: Args) => {
+        if (!assembled) {
+          throw new Error(`Uninitialized module callback invoked during construction: ${name}`);
+        }
+        return fn(...args);
+      };
+    },
+    markAssembled() {
+      assembled = true;
+    },
+  };
 }
 
 /** Builds and cross-wires every controller and action module for one view. */
@@ -79,50 +107,26 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   // declaration order below does not have to match the call order at runtime.
   // Normalized rather than read straight through: settings supplied by older
   // persisted data (or by a partial test double) may carry no group spec.
+  const gate = createModuleConstructionGate();
   const resolveGroupSpec = (): GroupSpec =>
     normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
   const groupCollapse: GroupCollapseController = new GroupCollapseController();
   const property: PropertyController = new PropertyController({
     context,
-    getLoadKey: () => scopeController.getLoadKey(),
+    getLoadKey: gate.guard("scopeController.getLoadKey", () => scopeController.getLoadKey()),
   });
   const projection: ProjectionController = new ProjectionController({
     context,
-    getSearchInput: () => search.buildPipelineSearchInput(),
+    getSearchInput: gate.guard("search.buildPipelineSearchInput", () => search.buildPipelineSearchInput()),
     getEffectivePinnedPaths: () => host.effectiveSortAndPins().pinnedPaths,
-    getLoadKey: () => scopeController.getLoadKey(),
+    getLoadKey: gate.guard("scopeController.getLoadKey", () => scopeController.getLoadKey()),
     getGroupConfig: resolveGroupSpec,
     getCollapsedGroupKeys: () =>
       groupCollapse.getCollapsedKeys(context.store.getScope(), resolveGroupSpec().dimension),
   });
   const hydration: HydrationController = new HydrationController({
     context,
-    isLoading: () => scopeController.isLoading(),
-  });
-  const taskSummary: TaskSummaryController = new TaskSummaryController({
-    context,
-    getGroupDimension: () => resolveGroupSpec().dimension,
-    reprojectAndPublish: () => {
-      projection.reprojectCards();
-      bulk.reconcileToVisibleCards();
-      // Card-reprojecting metadata batches include nav (facet counts/rows move
-      // with the base/visible cards) and scope (property-empty versus
-      // source-empty copy), so one event lands as one coherent batch.
-      host.publishGroups("nav", "scope", "cards", "projection", "bulk");
-    },
-    reconcileMetadataMembershipForPath: (path) =>
-      scopeController.reconcileMetadataMembershipForPath(path),
-    refreshGroupBucketForPath: (path) => projection.refreshGroupBucketForPath(path),
-    classifyPropertyMetadataImpact: (path) => {
-      if (!property.invalidateMetadata([path])) {
-        return "none";
-      }
-      const settings = context.getSettings();
-      if (!isBoxScope(context.store.getScope()) && settings.filter.properties.length > 0) {
-        return "reproject";
-      }
-      return settings.visiblePropertyKeys.length > 0 ? "nav" : "none";
-    },
+    isLoading: gate.guard("scopeController.isLoading", () => scopeController.isLoading()),
   });
   const search: SearchController = new SearchController({
     context,
@@ -136,7 +140,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const bulk: BulkController = new BulkController({
     context,
     getOrderedVisiblePaths: () => projection.getOrderedVisiblePaths(),
-    resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
+    resolveLiveMarkdownFile: gate.guard(
+      "fileActions.resolveLiveMarkdownFile",
+      (path) => fileActions.resolveLiveMarkdownFile(path),
+    ),
     publishSelection: () => {
       host.publishSelection();
     },
@@ -146,17 +153,21 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const navLayout: NavLayoutController = new NavLayoutController({
     context,
-    onNavCountsInvalidated: () => {
+    onNavCountsInvalidated: gate.guard("boxActions.invalidateCache", () => {
       boxActions.invalidateCache();
       projection.invalidateVaultCaches();
       property.invalidateVault();
-    },
+    }),
     getTooltipSide: () => host.getTooltipSide(),
   });
   const scopeController: ScopeController = new ScopeController({
     context,
-    collectBoxFiles: (boxId) => boxActions.collectBoxFilesById(boxId),
-    isPathInBox: (path, boxId) => boxActions.isPathInBox(path, boxId),
+    collectBoxFiles: gate.guard("boxActions.collectBoxFilesById", (boxId) =>
+      boxActions.collectBoxFilesById(boxId),
+    ),
+    isPathInBox: gate.guard("boxActions.isPathInBox", (path, boxId) =>
+      boxActions.isPathInBox(path, boxId),
+    ),
     deriveVisibleCardsFrom: (cards) => projection.deriveVisibleCardsFrom(cards),
     projectVisibleCards: () => projection.reprojectCards(),
     getBulkSelection: () => ({
@@ -194,12 +205,13 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
 
   const fileActions: FileActions = new FileActions({
     context,
-    buildSiblingPath: (parentPath, fileName) =>
+    buildSiblingPath: gate.guard("folderActions.buildSiblingPath", (parentPath, fileName) =>
       folderActions.buildSiblingPath(parentPath, fileName),
+    ),
   });
   const folderActions: FolderActions = new FolderActions({
     context,
-    isBoxMode: () => boxActions.isBoxMode(),
+    getScope: () => context.store.getScope(),
     selectFolderFromNav: (path) => host.selectFolderFromNav(path),
     moveScopeToFolder: (path) => host.moveScopeToFolder(path),
     resetSearchQuery: () => {
@@ -212,8 +224,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       navLayout.refreshFolderTreeState();
     },
     rewritePathAfterRename,
-    requestDestructiveConfirmation: (options) =>
-      mergeActions.requestDestructiveConfirmation(options),
+    requestDestructiveConfirmation: gate.guard(
+      "mergeActions.requestDestructiveConfirmation",
+      (options) => mergeActions.requestDestructiveConfirmation(options),
+    ),
     createNoteInFolder: (folderPath, tags) => host.createNoteInFolder(folderPath, tags),
     openNoteFromCard: (path, destination) => host.openNoteFromCard(path, destination),
   });
@@ -244,7 +258,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       bulk.reconcileSelectionToOrderedPaths(paths);
     },
     deriveAvailableTags: () => projection.deriveAvailableTags(),
-    isBoxMode: () => boxActions.isBoxMode(),
+    browseTagFilterEnabled: () => resolveSourceCapabilities(context.store.getScope()).browseTagFilter,
     getDisplayFolderPath: () => host.getDisplayFolderPath(),
     createNoteIn: (folderUiPath, tags) => folderActions.createNoteIn(folderUiPath, tags),
     returnToCardsViewIfSinglePane: () => {
@@ -253,7 +267,6 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const favoriteActions: FavoriteActions = new FavoriteActions({
     context,
-    isBoxMode: () => boxActions.isBoxMode(),
     getActiveBoxId: () => boxActions.getActiveBox()?.id ?? null,
     handleBoxCommand: (detail) => {
       boxActions.handleBoxCommand(detail);
@@ -261,15 +274,20 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getFolderTreeCount: (path) => navLayout.getFolderTreeCount(path),
     resolveFolderFromUiPath: (folderPath) => folderActions.resolveFolderFromUiPath(folderPath),
     selectFolderFromNav: (path) => host.selectFolderFromNav(path),
-    requestDestructiveConfirmation: (options) =>
-      mergeActions.requestDestructiveConfirmation(options),
+    requestDestructiveConfirmation: gate.guard(
+      "mergeActions.requestDestructiveConfirmation",
+      (options) => mergeActions.requestDestructiveConfirmation(options),
+    ),
     openNoteFromCard: (path, destination) => host.openNoteFromCard(path, destination),
     getVaultTagCounts: () => projection.getVaultTagCounts(),
     applyTagFilter: (nextTags) => tagActions.applyTagFilter(nextTags),
   });
   const tagManageActions: TagManagementActions = new TagManagementActions({
     context,
-    requestDestructiveConfirmation: (options) => mergeActions.requestDestructiveConfirmation(options),
+    requestDestructiveConfirmation: gate.guard(
+      "mergeActions.requestDestructiveConfirmation",
+      (options) => mergeActions.requestDestructiveConfirmation(options),
+    ),
   });
   const propertyActions: PropertyActions = createPropertyActions({
     getApp: () => context.getApp(),
@@ -277,7 +295,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     saveSettings: (patch) => context.saveSettings(patch),
     collectPropertyInventory: () => property.collectPropertyInventory(),
     getStrings: () => context.getUiStrings(),
-    isBoxScope: () => boxActions.isBoxMode(),
+    browsePropertyFilterEnabled: () => resolveSourceCapabilities(context.store.getScope()).browsePropertyFilter,
   });
   const mergeActions: MergeActions = new MergeActions({
     context,
@@ -327,11 +345,69 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     },
   });
 
+  // Constructed after every module it calls into (projection, property, search,
+  // bulk, navLayout, scopeController, boxActions) so it adds no forward
+  // reference; its callbacks only run once the view is live.
+  const metadataImpact: MetadataImpactController = new MetadataImpactController({
+    context,
+    getGroupDimension: () => resolveGroupSpec().dimension,
+    isBrowseTagFilterActive: () =>
+      resolveSourceCapabilities(context.store.getScope()).browseTagFilter
+      && context.getSettings().filter.tags.length > 0,
+    isSearchActive: () => search.getQuery().trim().length > 0,
+    reconcileMetadataMembershipForPath: (path) =>
+      scopeController.reconcileMetadataMembershipForPath(path),
+    refreshMetadataGroupBuckets: () => projection.refreshMetadataGroupBuckets(),
+    refreshScopeTagData: () => projection.refreshScopeTagData(),
+    classifyPropertyMetadataImpact: (path) => {
+      if (!property.invalidateMetadata([path])) {
+        return "none";
+      }
+      const settings = context.getSettings();
+      if (resolveSourceCapabilities(context.store.getScope()).browsePropertyFilter
+        && settings.filter.properties.length > 0) {
+        return "reproject";
+      }
+      return settings.visiblePropertyKeys.length > 0 ? "nav" : "none";
+    },
+    invalidateMetadataDerivedCaches: () => {
+      boxActions.invalidateCache();
+      projection.invalidateMetadataDerivedCaches();
+      navLayout.scheduleNavCountRefresh();
+    },
+    refreshSearchCandidatesSilently: () => search.refreshProjection({ publish: false }),
+    reprojectCardsForMetadata: () => {
+      projection.reprojectCards();
+      bulk.reconcileToVisibleCards();
+    },
+    publishImpactBatch: (batch) => host.publishImpactBatch(batch),
+    scheduleVisibleHydrationCandidates: (paths) =>
+      scopeController.scheduleVisibleHydrationCandidates(paths),
+  });
+
+  // Constructed after BoxActions, ProjectionController, BulkController,
+  // GroupCollapseController, and ScopeController so it adds no forward reference.
+  const arrangementActions: ArrangementActions = new ArrangementActions({
+    context,
+    saveSettings: (patch) => context.saveSettings(patch),
+    getActiveBox: () => boxActions.getActiveBox(),
+    updateActiveBox: (mutate) => boxActions.updateActiveBox(mutate),
+    resolveCapabilities: () => resolveSourceCapabilities(context.store.getScope()),
+    publishGroups: (...groups) => host.publishGroups(...groups),
+    refreshLoadKeyForCurrentScope: () => scopeController.refreshLoadKeyForCurrentScope(),
+    reprojectCards: () => projection.reprojectCards(),
+    reconcileToVisibleCards: () => bulk.reconcileToVisibleCards(),
+    groupCollapse,
+    getGroupSegmentKeys: () => projection.getGroupSegments().map((segment) => segment.key),
+  });
+
+  gate.markAssembled();
+
   return {
     projection,
     groupCollapse,
     hydration,
-    taskSummary,
+    metadataImpact,
     search,
     bulk,
     navLayout,
@@ -346,5 +422,6 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     favoriteActions,
     mergeActions,
     cardMenu,
+    arrangementActions,
   };
 }

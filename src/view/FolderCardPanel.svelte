@@ -139,6 +139,11 @@
       activeBoxName: null,
       boxExcludedCount: 0,
       emptyStateMessage: "",
+      sourceIdentity: "folder::true",
+      browseTagFilterEnabled: true,
+      browsePropertyFilterEnabled: true,
+      supportsIncludeSubfolders: true,
+      supportsBoxRuleSeeding: true,
     },
     cards: {
       records: [],

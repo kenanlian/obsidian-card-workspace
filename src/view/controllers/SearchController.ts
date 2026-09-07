@@ -5,7 +5,7 @@ import type {
   SearchServiceSnapshot,
 } from "../../search";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
-import { isFolderScope, scopeDisplayPath, scopesEqual, type CardScope } from "../scope";
+import { scopesEqual, type CardScope } from "../scope";
 import type { PipelineSearchInput, SearchStatus } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 
@@ -19,6 +19,16 @@ export interface SearchControllerDeps {
     listener: (snapshot: SearchServiceSnapshot) => void,
   ) => () => void;
   publishSearchProjection: () => void;
+}
+
+/** Options for {@link SearchController.refreshProjection}. */
+export interface SearchRefreshOptions {
+  /**
+   * When false, suppresses the ordinary intermediate panel publication so a
+   * coordinating caller can publish one coherent final batch itself. Default
+   * true, preserving every existing caller's publishing behavior.
+   */
+  readonly publish?: boolean;
 }
 
 /** Owns one view's indexed-search runtime, including both stale-result guards. */
@@ -162,7 +172,19 @@ export class SearchController implements DisposableController {
     this.status = this.deriveStatus();
   }
 
-  async refreshProjection(): Promise<void> {
+  /**
+   * Re-runs the current query against the current base-card candidates.
+   *
+   * Empty queries return immediately. State updates stay behind the existing
+   * request/load/snapshot/query stale guards: a request that went stale (a
+   * newer query, load, or search snapshot won the race) is dropped and cannot
+   * overwrite the winning request, which owns its normal publication. With
+   * `publish: false` the intermediate `publishSearchProjection` calls are
+   * suppressed — including the failure fallback — so the caller can await the
+   * silent state update and publish one coherent batch afterwards.
+   */
+  async refreshProjection(options: SearchRefreshOptions = {}): Promise<void> {
+    const publish = options.publish !== false;
     const query = this.query.trim();
     if (query.length === 0) {
       return;
@@ -170,7 +192,7 @@ export class SearchController implements DisposableController {
 
     const service = this.deps.getSearchService();
     if (!service) {
-      this.fallBackToPendingExecution();
+      this.fallBackToPendingExecution(publish);
       return;
     }
 
@@ -180,13 +202,8 @@ export class SearchController implements DisposableController {
     const snapshotToken = this.snapshotEpoch.token();
 
     try {
-      const scope = this.context.store.getScope();
       const result = await service.query({
         query,
-        scope: {
-          folderPath: scopeDisplayPath(scope),
-          includeSubfolders: isFolderScope(scope) ? scope.includeSubfolders : true,
-        },
         candidatePaths: this.context.store.getBaseCards().map((card) => card.path),
       });
 
@@ -203,21 +220,25 @@ export class SearchController implements DisposableController {
         this.clearMatchCounts();
       }
       this.status = this.toRuntimeStatus(result);
-      this.deps.publishSearchProjection();
+      if (publish) {
+        this.deps.publishSearchProjection();
+      }
     } catch {
       if (!this.isRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query)) {
         return;
       }
-      this.fallBackToPendingExecution();
+      this.fallBackToPendingExecution(publish);
     }
   }
 
-  private fallBackToPendingExecution(): void {
+  private fallBackToPendingExecution(publish: boolean = true): void {
     this.execution = this.derivePendingExecution();
     this.orderedPaths = undefined;
     this.clearMatchCounts();
     this.status = this.deriveStatus();
-    this.deps.publishSearchProjection();
+    if (publish) {
+      this.deps.publishSearchProjection();
+    }
   }
 
   private isRequestCurrent(

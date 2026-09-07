@@ -5,7 +5,7 @@ import type { UiStrings } from "../../i18n";
 import type { OpenDestination } from "../../settings";
 import { CreateFolderModal } from "../modals/CreateFolderModal";
 import { resolveUniquePath, trashAbstractFileUsingObsidianPreference } from "../note-ops";
-import { normalizeScopePath, scopeDisplayPath } from "../scope";
+import { normalizeScopePath, scopeDisplayPath, type CardScope } from "../scope";
 import type { SelectionResult } from "../types";
 import type { ViewContext } from "../view-context";
 import {
@@ -22,7 +22,8 @@ const FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 /** Capabilities needed by moved methods that are not themselves moved methods. */
 export interface FolderActionsDeps {
   context: ViewContext;
-  isBoxMode: () => boolean;
+  /** Runtime scope of the invoking view; the source transition is exhaustive (C6). */
+  getScope: () => CardScope;
   selectFolderFromNav: (path: string) => Promise<void>;
   moveScopeToFolder: (path: string) => Promise<SelectionResult>;
   resetSearchQuery: () => void;
@@ -284,8 +285,19 @@ export class FolderActions {
     folderUiPath: string,
     kind: "note" | "folder" | "canvas" | "base",
   ): Promise<void> {
-    if (this.deps.isBoxMode()) {
-      await this.deps.selectFolderFromNav(folderUiPath);
+    const scope = this.deps.getScope();
+    switch (scope.kind) {
+      case "box":
+        // A box has no folder of its own: leave it first so the create lands
+        // in browse mode on the target folder.
+        await this.deps.selectFolderFromNav(folderUiPath);
+        break;
+      case "folder":
+        break;
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
     }
 
     if (kind === "note") {
@@ -341,17 +353,24 @@ export class FolderActions {
 
   private async refreshFolderScopeAfterFolderRename(previousPath: string, nextPath: string): Promise<void> {
     const scope = this.deps.context.store.getScope();
-    if (scope.kind !== "folder") {
-      return;
-    }
+    switch (scope.kind) {
+      case "folder": {
+        const currentFolderPath = scope.path;
+        const rewrittenPath = this.deps.rewritePathAfterRename(currentFolderPath, previousPath, nextPath);
+        if (rewrittenPath === null || rewrittenPath === currentFolderPath) {
+          return;
+        }
 
-    const currentFolderPath = scope.path;
-    const rewrittenPath = this.deps.rewritePathAfterRename(currentFolderPath, previousPath, nextPath);
-    if (rewrittenPath === null || rewrittenPath === currentFolderPath) {
-      return;
+        await this.deps.moveScopeToFolder(rewrittenPath);
+        return;
+      }
+      case "box":
+        return;
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
     }
-
-    await this.deps.moveScopeToFolder(rewrittenPath);
   }
 
   async createNoteIn(folderUiPath: string, tags: string[] = []): Promise<void> {

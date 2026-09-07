@@ -1,5 +1,5 @@
+import { stripMarkdownToText } from "../markdown-plain-text";
 import { extractMarkdownSearchText } from "./markdown-search-text";
-import { stripMarkdownToText } from "../view/markdown-utils";
 import type { SearchRenameClassification, SearchVaultMutation, SearchableDocument } from "./types";
 
 const EXCERPT_MAX_LENGTH = 260;

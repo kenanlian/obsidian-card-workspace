@@ -1,17 +1,26 @@
 import { ItemView, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
-import { normalizeGroupSpec, type GroupDimension, type GroupSpec } from "../card-grouping-settings";
+import { normalizeGroupSpec } from "../card-grouping-settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
-import type { OpenDestination, PartialPluginSettings, SortDirection, SortField } from "../settings";
+import type { OpenDestination, PartialPluginSettings } from "../settings";
 import type CardWorkspacePlugin from "../main";
-import { compareCards } from "./card-sort";
-import { createFolderScope, isBoxScope, isFolderScope, normalizeScopePath, scopeDisplayPath, type CardScope } from "./scope";
+import {
+  createFolderScope,
+  isBoxScope,
+  isCurrentFolderPath,
+  normalizeScopePath,
+  scopeDisplayPath,
+  scopeIdentity,
+  type CardScope,
+} from "./scope";
+import { resolveSourceCapabilities } from "./source-capabilities";
 import type { ViewUpdateIntent } from "./update-intent";
 import { resolveViewConfig } from "./view-config";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
 import type { ViewContext } from "./view-context";
 import { createViewModules, type ViewModules } from "./view-modules";
+import type { MetadataImpactBatch } from "./controllers/MetadataImpactController";
 import { resolveEmptyStateMessage } from "./empty-state";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
 import { rewritePathAfterRename } from "./scope-files";
@@ -38,23 +47,6 @@ import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSe
   NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
-
-/** `box-rule` needs a box's rule list; every other dimension resolves in both scopes. */
-const FOLDER_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "task"];
-const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "box-rule", "task"];
-
-/**
- * Unrecognized input falls back to the current value rather than the spec
- * default, so a malformed detail cannot silently reset the other two fields.
- */
-function coerceGroupField<K extends keyof GroupSpec>(
-  key: K,
-  value: unknown,
-  current: GroupSpec[K],
-): GroupSpec[K] {
-  const normalized = normalizeGroupSpec({ [key]: value })[key];
-  return value === normalized ? normalized : current;
-}
 
 export class FolderCardView extends ItemView {
   plugin: CardWorkspacePlugin;
@@ -102,6 +94,7 @@ export class FolderCardView extends ItemView {
       publishLoadStart: (scopeChanged) => publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged),
       publishLoadCommit: () => publishLoadCommit(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
+      publishImpactBatch: (batch) => this.publishImpactBatch(batch),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
       createNoteInFolder: (folderPath, tags) => this.plugin.createNoteInFolder(folderPath, tags),
       getSearchService: () => this.plugin.getSearchService(),
@@ -150,7 +143,10 @@ export class FolderCardView extends ItemView {
     return resolveEmptyStateMessage({
       strings: this.strings, query: this.modules.search.getQuery().trim(),
       activeTagCount: settings.filter.tags.length, baseCardCount: this.baseCards.length,
-      visibleCardCount: this.visibleCards.length, propertyClauseCount: isBoxScope(this.cardScope) ? 0 : settings.filter.properties.length,
+      visibleCardCount: this.visibleCards.length,
+      propertyClauseCount: resolveSourceCapabilities(this.cardScope).browsePropertyFilter
+        ? settings.filter.properties.length
+        : 0,
     });
   }
   private openCardWithDestination(path: string, destination: OpenDestination): void {
@@ -181,7 +177,9 @@ export class FolderCardView extends ItemView {
     });
     this.metadataEventUnsubscribe?.();
     this.metadataEventUnsubscribe = this.plugin.subscribeMetadataEvents((event) => {
-      this.modules.taskSummary.handleMetadataChange(event.path);
+      // The bus serializes and awaits this handler; returning the promise keeps
+      // one metadata event from overtaking a pending silent search refresh.
+      return this.modules.metadataImpact.handleMetadataChange(event.path);
     });
   }
 
@@ -200,7 +198,7 @@ export class FolderCardView extends ItemView {
     const action = detail.action;
 
     if (action === "new-note") {
-      void this.plugin.createNoteInCurrentFolder().catch((error: unknown) => {
+      void this.plugin.createNoteInFolder(this.resolveNewNoteFolderPath()).catch((error: unknown) => {
         new Notice(this.modules.folderActions.getFolderManagementStrings().createFileFailed(String(error)));
       });
       return;
@@ -302,7 +300,7 @@ export class FolderCardView extends ItemView {
         this.publishForIntent(intent);
         return;
       case "reproject":
-        this.sortAndReprojectCards();
+        this.modules.arrangementActions.sortAndReprojectCards();
         this.publishForIntent(intent);
         return;
       case "patch":
@@ -312,14 +310,10 @@ export class FolderCardView extends ItemView {
     }
   }
 
-  /** Re-sorts a copied card collection and republishes; never re-collects files. */
-  private sortAndReprojectCards(): void {
-    const projection = this.buildProjectionGroup();
-    this.baseCards = [...this.baseCards].sort((left, right) =>
-      compareCards(left, right, projection.sortField, projection.sortDirection),
-    );
-    this.modules.scopeController.refreshLoadKeyForCurrentScope();
-    this.projectVisibleCards();
+  /** Reprojects visible cards and reconciles bulk selection; never re-collects files. */
+  private projectVisibleCards(): void {
+    this.modules.projection.reprojectCards();
+    this.modules.bulk.reconcileToVisibleCards();
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
@@ -328,6 +322,39 @@ export class FolderCardView extends ItemView {
         rewritePathAfterRename(path, event.oldPath ?? "", event.path));
     }
     return this.modules.scopeController.handleVaultMutation(event);
+  }
+
+  /**
+   * The one coherent immediate publication for a metadata event.
+   *
+   * Navigation is derived from the exact fresh projection snapshot built for
+   * this batch — never from the previously published projection — so tag
+   * sources/counts, facets, and the card projection cannot disagree inside a
+   * single notification.
+   */
+  private publishImpactBatch(batch: MetadataImpactBatch): void {
+    const projectionGroup = this.buildProjectionGroup();
+    const boxSummaries = this.modules.boxActions.buildBoxSummaries();
+    const navGroup = this.projectNavGroup(
+      this.modules.navLayout.getFolderTree(),
+      this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries }),
+      boxSummaries,
+      projectionGroup,
+    );
+    this.panelModel.batch((state) => {
+      if (batch.kind === "reprojected") {
+        state.scope = this.buildScopeGroup();
+        state.cards = this.buildCardsGroup();
+        state.bulk = this.buildBulkGroup();
+        if (batch.includeSearch) {
+          state.search = this.buildSearchGroup();
+        }
+      } else if (batch.includeCards) {
+        state.cards = this.buildCardsGroup();
+      }
+      state.projection = projectionGroup;
+      state.nav = navGroup;
+    });
   }
 
   /** Re-push nav-derived state after the plugin reconciled boxes/favorites outside the view. */
@@ -345,7 +372,7 @@ export class FolderCardView extends ItemView {
     this.modules.bulk.dispose();
     const searchReport = this.modules.search.dispose();
     const hydrationReport = this.modules.hydration.dispose();
-    this.modules.taskSummary.dispose();
+    this.modules.metadataImpact.dispose();
     this.modules.groupCollapse.dispose();
     this.modules.property.dispose();
 
@@ -370,7 +397,34 @@ export class FolderCardView extends ItemView {
   }
 
   getCurrentFolderPath(): string | null {
-    return isFolderScope(this.cardScope) ? this.cardScope.path : null;
+    switch (this.cardScope.kind) {
+      case "folder":
+        return this.cardScope.path;
+      case "box":
+        return null;
+      default: {
+        const exhaustive: never = this.cardScope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
+    }
+  }
+
+  /**
+   * C5: toolbar new-note resolves its folder from this view's runtime scope.
+   * Folder uses `cardScope.path` (including `""` for Vault root). Box keeps the
+   * persisted `lastFolderPath` fallback and does not switch scope or auto-add.
+   */
+  private resolveNewNoteFolderPath(): string {
+    switch (this.cardScope.kind) {
+      case "folder":
+        return this.cardScope.path;
+      case "box":
+        return this.plugin.getSettings().lastFolderPath;
+      default: {
+        const exhaustive: never = this.cardScope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
+    }
   }
 
   openNavContextMenu(payload: NavContextMenuPayload): void {
@@ -405,115 +459,6 @@ export class FolderCardView extends ItemView {
     });
   }
 
-  async onSortChange(detail: {
-    field?: unknown;
-    direction?: unknown;
-  }): Promise<void> {
-    const nextField: SortField =
-      detail.field === "ctime" || detail.field === "name" ? detail.field : "mtime";
-    const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
-    const activeBox = this.modules.boxActions.getActiveBox();
-
-    if (activeBox) {
-      if (
-        activeBox.sort.field === nextField &&
-        activeBox.sort.direction === nextDirection
-      ) {
-        return;
-      }
-      await this.modules.boxActions.updateActiveBox((box) => ({
-        ...box,
-        sort: { field: nextField, direction: nextDirection },
-      }));
-      this.sortAndReprojectCards();
-      return;
-    }
-
-    const currentSettings = this.plugin.getSettings();
-
-    if (
-      currentSettings.sort.field === nextField &&
-      currentSettings.sort.direction === nextDirection
-    ) {
-      return;
-    }
-
-    await this.plugin.saveSettings({
-      sort: {
-        field: nextField,
-        direction: nextDirection,
-      },
-    });
-  }
-
-  private resolveGroupSpec(): GroupSpec {
-    return normalizeGroupSpec(resolveViewConfig(this.cardScope, this.plugin.getSettings()).group);
-  }
-
-  async onGroupChange(detail: {
-    dimension?: unknown;
-    orderBy?: unknown;
-    orderDirection?: unknown;
-  }): Promise<void> {
-    const current = this.resolveGroupSpec();
-    const group: GroupSpec = {
-      dimension: coerceGroupField("dimension", detail.dimension, current.dimension),
-      orderBy: coerceGroupField("orderBy", detail.orderBy, current.orderBy),
-      orderDirection: coerceGroupField("orderDirection", detail.orderDirection, current.orderDirection),
-    };
-
-    if (
-      group.dimension === current.dimension &&
-      group.orderBy === current.orderBy &&
-      group.orderDirection === current.orderDirection
-    ) {
-      return;
-    }
-
-    if (isBoxScope(this.cardScope)) {
-      await this.modules.boxActions.updateActiveBox((box) => ({ ...box, group }));
-      this.sortAndReprojectCards();
-      return;
-    }
-
-    await this.plugin.saveSettings({ group });
-  }
-
-  /** Collapse state is runtime-only: never persisted, never a settings write. */
-  onGroupCollapseCommand(detail: { command?: unknown; key?: unknown }): void {
-    const dimension = this.resolveGroupSpec().dimension;
-    const collapse = this.modules.groupCollapse;
-
-    switch (detail.command) {
-      case "toggle":
-        if (typeof detail.key !== "string" || detail.key.length === 0) {
-          return;
-        }
-        collapse.toggle(this.cardScope, dimension, detail.key);
-        break;
-      case "collapse-all":
-        collapse.collapseAll(
-          this.cardScope,
-          dimension,
-          this.modules.projection.getGroupSegments().map((segment) => segment.key),
-        );
-        break;
-      case "expand-all":
-        collapse.expandAll(this.cardScope, dimension);
-        break;
-      default:
-        return;
-    }
-
-    this.projectVisibleCards();
-    this.publishGroups("cards", "bulk");
-  }
-
-  private projectVisibleCards(): void {
-    this.modules.projection.reprojectCards();
-    this.modules.bulk.reconcileToVisibleCards();
-  }
-
   private getViewWindow(): Pick<Window, "setTimeout" | "clearTimeout"> {
     return this.hostEl?.ownerDocument?.defaultView
       ?? (typeof activeWindow !== "undefined" ? activeWindow : window);
@@ -526,6 +471,7 @@ export class FolderCardView extends ItemView {
   private buildScopeGroup(): PanelModelState["scope"] {
     const settings = this.plugin.getSettings();
     const box = this.modules.boxActions.getActiveBox();
+    const capabilities = resolveSourceCapabilities(this.cardScope);
 
     return {
       displayPath: this.getDisplayFolderPath(),
@@ -534,6 +480,11 @@ export class FolderCardView extends ItemView {
       activeBoxName: box?.name ?? null,
       boxExcludedCount: box?.excludedPaths.length ?? 0,
       emptyStateMessage: this.buildEmptyStateMessage(),
+      sourceIdentity: scopeIdentity(this.cardScope),
+      browseTagFilterEnabled: capabilities.browseTagFilter,
+      browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
+      supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
+      supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
     };
   }
 
@@ -572,7 +523,7 @@ export class FolderCardView extends ItemView {
       pinnedPaths,
       group: normalizeGroupSpec(group),
       availableGroupDimensions: [
-        ...(isBoxScope(this.cardScope) ? BOX_GROUP_DIMENSIONS : FOLDER_GROUP_DIMENSIONS),
+        ...resolveSourceCapabilities(this.store.getScope()).groupDimensions,
       ],
       groupSegmentCount: this.modules.projection.getGroupSegments().length,
     };
@@ -668,10 +619,9 @@ export class FolderCardView extends ItemView {
     this.modules.navLayout.returnToCardsViewIfSinglePane();
 
     const targetFolderPath = normalizeScopePath(path);
-    const inBoxMode = isBoxScope(this.cardScope);
     // Leaving a card box counts as a scope change: tag and property filters are
     // never applied inside a box, so browse mode should resume from a clean state.
-    const scopeChanged = inBoxMode || targetFolderPath !== scopeDisplayPath(this.cardScope);
+    const scopeChanged = !isCurrentFolderPath(this.cardScope, targetFolderPath);
     const { tags, properties } = this.plugin.getSettings().filter;
 
     const patch: PartialPluginSettings = {};
@@ -686,7 +636,7 @@ export class FolderCardView extends ItemView {
   }
 
   async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
-    if (isBoxScope(this.cardScope)) {
+    if (!resolveSourceCapabilities(this.cardScope).supportsIncludeSubfolders) {
       return;
     }
     this.modules.navLayout.returnToCardsViewIfSinglePane();
@@ -700,35 +650,6 @@ export class FolderCardView extends ItemView {
 
     await this.plugin.saveSettings({
       includeSubfolders: detail.value,
-    });
-  }
-
-  async onPinToggle(detail: { path?: unknown; pinned?: unknown }): Promise<void> {
-    const path = typeof detail.path === "string" ? detail.path : "";
-    if (path.length === 0) {
-      return;
-    }
-
-    const activeBox = this.modules.boxActions.getActiveBox();
-    const currentPinnedPaths = activeBox ? activeBox.pinnedPaths : this.plugin.getSettings().pinnedPaths;
-    const currentlyPinned = currentPinnedPaths.includes(path);
-    const shouldPin = typeof detail.pinned === "boolean" ? detail.pinned : !currentlyPinned;
-
-    if (shouldPin === currentlyPinned) {
-      return;
-    }
-
-    const nextPinnedPaths = shouldPin
-      ? [...currentPinnedPaths, path]
-      : currentPinnedPaths.filter((pinnedPath) => pinnedPath !== path);
-
-    if (activeBox) {
-      await this.modules.boxActions.updateActiveBox((box) => ({ ...box, pinnedPaths: nextPinnedPaths }));
-      return;
-    }
-
-    await this.plugin.saveSettings({
-      pinnedPaths: nextPinnedPaths,
     });
   }
 

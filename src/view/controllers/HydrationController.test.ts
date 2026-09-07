@@ -185,6 +185,44 @@ describe("HydrationController", () => {
     expect(read).toHaveBeenCalledTimes(3);
   });
 
+  it("keys the preview fingerprint on the record's live mtime", async () => {
+    const original = card("fingerprint.md");
+    const read = vi.fn(async () => "preview");
+    const { context, controller } = harness([original], read);
+    await controller.hydrateViewport(request(context, [original]));
+    expect(read).toHaveBeenCalledTimes(1);
+
+    // A modify-style replacement carries a live mtime; the new fingerprint must
+    // miss the old cache entry and trigger a fresh read.
+    const refreshed = { ...card("fingerprint.md"), mtime: 3 };
+    context.store.replaceBaseCards([refreshed]);
+    context.store.replaceVisibleCards([refreshed]);
+    await controller.hydrateViewport(request(context, [refreshed]));
+    expect(read).toHaveBeenCalledTimes(2);
+
+    // Same live mtime: the second read's fingerprint is cached and reused.
+    const cached = { ...card("fingerprint.md"), mtime: 3 };
+    context.store.replaceBaseCards([cached]);
+    context.store.replaceVisibleCards([cached]);
+    await controller.hydrateViewport(request(context, [cached]));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(context.store.getBaseCard("fingerprint.md")?.hydrated).toBe(true);
+  });
+
+  it("re-reads an already hydrated card when a forced path is scheduled", async () => {
+    const record = card("forced.md");
+    const read = vi.fn(async () => "preview");
+    const { context, controller } = harness([record], read);
+    await controller.hydrateViewport(request(context, [record]));
+    expect(context.store.getBaseCard(record.path)?.hydrated).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    controller.schedulePath(record.path);
+    await ticks(8);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(context.store.getBaseCard(record.path)?.hydrated).toBe(true);
+  });
+
   it("invalidates file and both boundary-safe folder rename prefixes", async () => {
     const paths = ["old/a.md", "new/b.md", "oldish/c.md"];
     const records = paths.map((path) => card(path));

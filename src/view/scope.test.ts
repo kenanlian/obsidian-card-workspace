@@ -161,3 +161,14 @@ describe("validateScope", () => {
     expect(validateScope(app, createBoxScope("box-2"), [createBox()])).toBe(false);
   });
 });
+
+describe("exhaustive scope dispatch guards", () => {
+  it("throws on an unknown scope kind instead of silently classifying it as folder", () => {
+    const futureScope = { kind: "links", path: "links" } as unknown as ReturnType<typeof createFolderScope>;
+    const app = createApp(new TFolder());
+
+    expect(() => serializeScopeKey(futureScope, { field: "mtime", direction: "desc" }))
+      .toThrow(/Unhandled card source/);
+    expect(() => validateScope(app, futureScope, [])).toThrow(/Unhandled card source/);
+  });
+});

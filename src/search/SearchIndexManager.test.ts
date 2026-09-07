@@ -1688,4 +1688,98 @@ describe("SearchIndexManager", () => {
       documentCount: 2,
     });
   });
+
+  it("increments contentRevision on a same-count modify and emits the snapshot", async () => {
+    const docs = [
+      createDocument("notes/a.md", "Roadmap"),
+      createDocument("notes/b.md", "Checklist"),
+    ];
+    const store = createStoreMock();
+    const { source, byPath } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    const seenRevisions: number[] = [];
+    manager.subscribe((snapshot) => {
+      seenRevisions.push(snapshot.contentRevision);
+    });
+    await manager.restore(createMetadata());
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+
+    byPath.set("notes/a.md", createDocument("notes/a.md", "Roadmap updated"));
+    const result = await manager.applyMutation(createMutation({ type: "modify", path: "notes/a.md" }));
+
+    expect(result).toEqual({ action: "applied", rebuildRequired: false });
+    // Same document count, new content: the revision still moves and the
+    // manager emits the snapshot after the applied mutation.
+    expect(manager.getSnapshot().contentRevision).toBe(1);
+    expect(seenRevisions.at(-1)).toBe(1);
+    expect(seenRevisions).toContain(1);
+
+    await manager.flushPendingPersist();
+    expect(manager.getSnapshot().contentRevision).toBe(1);
+  });
+
+  it("does not increment contentRevision for an ignored mutation", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+
+    // Folder modify events are classified "ignored": they cannot change any
+    // indexed document's content or path.
+    const result = await manager.applyMutation(
+      createMutation({ type: "modify", isFolder: true, path: "notes", isMarkdown: false }),
+    );
+
+    expect(result).toEqual({ action: "ignored", rebuildRequired: false });
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+  });
+
+  it("does not increment contentRevision for a rebuild-required mutation until the cutover", async () => {
+    // Both the old and the new subtree exist in the restored index, so the
+    // prefix rewrite collides and the manager must demand a full rebuild.
+    const docs = [
+      createDocument("notes/projects/a.md", "Roadmap"),
+      createDocument("notes/initiatives/a.md", "Existing"),
+    ];
+    const serialized = await createSerializedIndex(docs);
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndexJson: serialized,
+        documentCount: 2,
+        lastIndexedAt: 111,
+      },
+    });
+    const { source, byPath, readAllDocuments } = createDocumentSource([
+      createDocument("notes/initiatives/a.md", "Roadmap"),
+    ]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+
+    readAllDocuments.mockImplementation(async () => [...byPath.values()]);
+    const result = await manager.applyMutation(
+      createMutation({
+        type: "rename",
+        isFolder: true,
+        isMarkdown: false,
+        oldPath: "notes/projects",
+        path: "notes/initiatives",
+        renameClassification: "folder-safe-prefix-rewrite",
+      }),
+    );
+
+    expect(result).toEqual({ action: "rebuild-required", rebuildRequired: true });
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+
+    // The later replacement cutover lands the effect and moves the revision.
+    await manager.rebuildFromSource("folder rebuild");
+    expect(manager.getSnapshot().contentRevision).toBe(1);
+    expect(
+      await manager.search("roadmap", ["notes/initiatives/a.md"]),
+    ).toMatchObject({ orderedPaths: ["notes/initiatives/a.md"] });
+  });
 });

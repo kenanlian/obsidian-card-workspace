@@ -32,6 +32,7 @@ export interface AppStrings {
   searchIndexBlocked: string;
   searchIndexUnknown: string;
   searchIndexNone: string;
+  settingsSchemaUnsupportedNotice: string;
   failedToCopyFile: (reason: string) => string;
   fileNameCannotBeEmpty: string;
   failedToRenameFile: (reason: string) => string;
@@ -72,6 +73,8 @@ export const appStrings: Record<UiLanguage, AppStrings> = {
     searchIndexBlocked: "blocked",
     searchIndexUnknown: "unknown",
     searchIndexNone: "none",
+    settingsSchemaUnsupportedNotice:
+      "Card Workspace settings were saved by a newer version of the plugin. This version will not overwrite them. Please update the Card Workspace plugin to read them.",
     failedToCopyFile: (reason: string) => `Failed to copy file: ${reason}`,
     fileNameCannotBeEmpty: "File name cannot be empty",
     failedToRenameFile: (reason: string) => `Failed to rename file: ${reason}`,
@@ -110,6 +113,8 @@ export const appStrings: Record<UiLanguage, AppStrings> = {
     searchIndexBlocked: "已阻止",
     searchIndexUnknown: "未知",
     searchIndexNone: "无",
+    settingsSchemaUnsupportedNotice:
+      "Card Workspace 的设置文件由更新版本的插件创建。当前版本不会覆盖该文件，请更新 Card Workspace 插件后再使用。",
     failedToCopyFile: (reason: string) => `复制文件失败：${reason}`,
     fileNameCannotBeEmpty: "文件名不能为空",
     failedToRenameFile: (reason: string) => `重命名文件失败：${reason}`,

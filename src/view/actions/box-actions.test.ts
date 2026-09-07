@@ -453,6 +453,60 @@ describe("BoxActions", () => {
     expect(actions.countBoxCards({ ...box, rules: [ruleWith([doneClause])] })).toBe(1);
   });
 
+  it("invalidateCache forces a recount at an unchanged membership signature (metadata lane)", () => {
+    const openClause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
+    const rule = {
+      folder: "notes",
+      includeSubfolders: true,
+      tags: [],
+      properties: [openClause],
+      id: "r:notes|true|",
+      name: "",
+    };
+    const memberBox = { ...box, rules: [rule] };
+    const byPath = new Map<string, Record<string, unknown>>([
+      ["notes/a.md", { frontmatter: { status: "open" } }],
+      ["notes/b.md", { frontmatter: { status: "open" } }],
+    ]);
+    const actions = new BoxActions({
+      context: {
+        getApp: () => ({
+          metadataCache: {
+            getFileCache: (file: { path: string }) => {
+              const entry = byPath.get(file.path);
+              return entry ? { tags: [], frontmatter: entry.frontmatter } : null;
+            },
+          },
+          vault: {
+            getAbstractFileByPath: (path: string) =>
+              byPath.has(path) ? new mockState.MockTFile(path) : null,
+          },
+        }),
+        store: { getScope: () => createFolderScope("notes", true), getBaseCards: () => [] },
+        getSettings: () => createSettings({ boxes: [memberBox] }),
+        getUiStrings: () => getUiStrings("en"),
+        saveSettings: vi.fn(async () => undefined),
+      },
+      createProgrammaticSelectionRequest: vi.fn(),
+      handleScopeSelection: vi.fn(async () => ({ action: "started" })),
+      moveScopeToFolder: vi.fn(async () => ({ action: "started" })),
+      returnToCardsViewIfSinglePane: vi.fn(),
+      collectSupportedFiles: () =>
+        [...byPath.keys()].map((path) => new mockState.MockTFile(path)),
+    } as never);
+
+    expect(actions.countBoxCards(memberBox)).toBe(2);
+
+    // A metadata-only edit moves b.md out of the rule; the membership
+    // signature is unchanged, so the cached count survives until the
+    // metadata lane explicitly invalidates it.
+    byPath.set("notes/b.md", { frontmatter: { status: "done" } });
+    expect(actions.countBoxCards(memberBox)).toBe(2);
+
+    actions.invalidateCache();
+    expect(actions.countBoxCards(memberBox)).toBe(1);
+  });
+
   it("moves away from the runtime-active box before deleting despite stale activeBoxId", async () => {
     const order: string[] = [];
     const moveScopeToFolder = vi.fn(async () => {

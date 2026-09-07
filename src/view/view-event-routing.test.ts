@@ -419,10 +419,6 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           expect(plugin.saveSettings).not.toHaveBeenCalled();
           expect(querySpy).toHaveBeenCalledWith({
             query: "roadmap",
-            scope: {
-              folderPath: "notes",
-              includeSubfolders: true,
-            },
             candidatePaths: visibleCards.map((card) => card.path),
           });
           expect((view as any).visibleCards).toEqual([]);
@@ -557,6 +553,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
           emitSnapshot({
             initialized: true,
+            contentRevision: 0,
             disposed: false,
             mode: "indexed",
             status: "building",
@@ -1897,6 +1894,12 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
     it("rename updates card path when move stays visible in recursive root scope", () => {
       const { view, app, file } = createViewWithFile("notes/move-me.md");
       const movedFile = new mockState.MockTFile("archive/move-me.md");
+      // C1 copies live stats through createCardRecord; the harness MockTFile has
+      // no default stat, so the live replacement file carries one.
+      (movedFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+        ctime: 1,
+        mtime: 2,
+      };
       app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
         return requestedPath === movedFile.path ? movedFile : null;
       });
@@ -2663,6 +2666,12 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       const fileA = createMarkdownFile("notes/mutation-selected.md");
       const fileB = createMarkdownFile("notes/keep-or-delete.md");
       const renamedFile = createMarkdownFile("notes/renamed-selected.md");
+      for (const liveFile of [renamedFile]) {
+        (liveFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+          ctime: 1,
+          mtime: 1,
+        };
+      }
 
       app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
         if (requestedPath === renamedFile.path) {
@@ -2934,7 +2943,7 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       expect(next.appearance).toBe(initial.appearance);
     });
 
-    it("publishes nav only for an in-base change with visible keys but no active filter", async () => {
+    it("publishes one fresh projection+nav batch for an in-base change with visible keys but no active filter", async () => {
       const { view, plugin } = createPropertyHarness({
         settings: propertySettings({ visiblePropertyKeys: ["status"] }),
         frontmatter: { "notes/a.md": { status: "open" } },
@@ -2952,10 +2961,12 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
 
       expect(listener).toHaveBeenCalledTimes(1);
       const next = view.panelModel.getState();
+      // C2: a tags/facets-only event computes one fresh projection snapshot and
+      // drives navigation from that exact snapshot inside the same batch.
       expect(next.nav).not.toBe(initial.nav);
+      expect(next.projection).not.toBe(initial.projection);
       expect(next.cards).toBe(initial.cards);
       expect(next.scope).toBe(initial.scope);
-      expect(next.projection).toBe(initial.projection);
       expect(next.bulk).toBe(initial.bulk);
     });
 
@@ -2994,9 +3005,11 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       expect(listener).toHaveBeenCalledTimes(1);
       const next = view.panelModel.getState();
       expect(next.nav).not.toBe(initial.nav);
+      // The facets batch carries the fresh projection snapshot too; only the
+      // card/scope/bulk groups stay untouched on this non-reprojecting path.
+      expect(next.projection).not.toBe(initial.projection);
       expect(next.cards).toBe(initial.cards);
       expect(next.scope).toBe(initial.scope);
-      expect(next.projection).toBe(initial.projection);
       expect(next.bulk).toBe(initial.bulk);
     });
 
@@ -3021,6 +3034,98 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
 
       expect(listener).not.toHaveBeenCalled();
       expect(view.panelModel.getState()).toBe(initial);
+    });
+
+    it("enters a Box member on metadata with an active query in one coherent search/projection/nav batch", async () => {
+      const box = {
+        id: "box-1",
+        name: "Work",
+        rules: [{
+          id: "rule-work",
+          name: "Work",
+          folder: "notes",
+          includeSubfolders: true,
+          tags: ["work"],
+          properties: [],
+        }],
+        manualPaths: [],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "mtime" as const, direction: "desc" as const },
+        group: { dimension: "none" as const, orderBy: "default" as const, orderDirection: "asc" as const },
+      };
+      const { view, plugin, app } = createPropertyHarness({
+        settings: { ...propertySettings(), boxes: [box] },
+        frontmatter: {},
+        cards: [],
+      });
+      (view as any).cardScope = createBoxScope("box-1");
+      const enteringFile = createMarkdownFile("notes/entering.md");
+      (enteringFile as unknown as { stat: { ctime: number; mtime: number } }).stat = {
+        ctime: 1,
+        mtime: 9,
+      };
+      app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) =>
+        requestedPath === enteringFile.path ? enteringFile : null);
+      app.metadataCache.getFileCache = vi.fn(() => ({ tags: [{ tag: "#work" }] }));
+      // The already-indexed note matches the active query.
+      const query = vi.fn(async (_request: { candidatePaths: string[] }) => ({
+        mode: "indexed",
+        status: "ready",
+        execution: "indexed-ready",
+        orderedPaths: [enteringFile.path],
+        matchCountsByPath: { [enteringFile.path]: 2 },
+      }));
+      plugin.getSearchService = vi.fn(() => ({ query }));
+      plugin.getSearchSnapshot = vi.fn(() => ({
+        initialized: true,
+        disposed: false,
+        mode: "indexed",
+        status: "ready",
+        lastError: null,
+        contentRevision: 0,
+        health: createSearchHealth(),
+      }));
+
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+      const search = (view as any).modules.search;
+      const hydrateSpy = vi
+        .spyOn((view as any).modules.hydration, "schedulePath")
+        .mockImplementation(() => undefined);
+      search.initializeSnapshotState();
+      search.onQueryChange({ query: "roadmap" });
+      search.clearDebounce();
+      await search.refreshProjection();
+      expect(query).toHaveBeenCalledTimes(1);
+      query.mockClear();
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+
+      await emitMetadata({ path: enteringFile.path });
+
+      // One immediate batch whose search/projection/nav agree: the silent
+      // candidate refresh expanded candidatePaths to the entered note before
+      // reprojection, and the entered card is visible without a second event.
+      expect(listener).toHaveBeenCalledTimes(1);
+      const next = view.panelModel.getState();
+      expectGroupsReplaced(
+        initial as unknown as Record<string, unknown>,
+        next as unknown as Record<string, unknown>,
+        ["search", "scope", "cards", "projection", "bulk", "nav"],
+      );
+      expect(next.cards.records.map((card: { path: string }) => card.path)).toEqual([
+        enteringFile.path,
+      ]);
+      expect(next.cards.searchMatchCountsByPath).toEqual({ [enteringFile.path]: 2 });
+      // The candidate request carried the full new base-card paths.
+      const requests = query.mock.calls.map(([request]) => request);
+      expect(requests.at(-1)?.candidatePaths).toEqual([enteringFile.path]);
+      // The entered card became a hydration candidate only after the refreshed
+      // projection published it visible.
+      expect(hydrateSpy).toHaveBeenCalledWith(enteringFile.path);
     });
   });
 
@@ -3160,3 +3265,63 @@ describe("FolderCardView favorites manual reorder routing", () => {
     });
   });
 });
+
+describe("WP-07 arrangement routing and view-scoped note creation", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  it("routes panel arrangement callbacks to ArrangementActions", () => {
+    const { view } = createViewWithFile();
+    const arrangement = view.modules.arrangementActions;
+    const sortSpy = vi.spyOn(arrangement, "onSortChange");
+    const groupSpy = vi.spyOn(arrangement, "onGroupChange");
+    const collapseSpy = vi.spyOn(arrangement, "onGroupCollapseCommand");
+    const pinSpy = vi.spyOn(arrangement, "onPinToggle");
+    const props = buildPanelProps(view as never) as unknown as {
+      onSortChange: (detail: { field?: unknown; direction?: unknown }) => void;
+      onGroupChange: (detail: { dimension?: unknown }) => void;
+      onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => void;
+      onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => void;
+    };
+
+    props.onSortChange({ field: "name", direction: "asc" });
+    props.onGroupChange({ dimension: "folder" });
+    props.onGroupCollapseCommand({ command: "expand-all" });
+    props.onPinToggle({ path: "notes/a.md", pinned: true });
+
+    expect(sortSpy).toHaveBeenCalledWith({ field: "name", direction: "asc" });
+    expect(groupSpy).toHaveBeenCalledWith({ dimension: "folder" });
+    expect(collapseSpy).toHaveBeenCalledWith({ command: "expand-all" });
+    expect(pinSpy).toHaveBeenCalledWith({ path: "notes/a.md", pinned: true });
+  });
+
+  it("routes new-note through createNoteInFolder using the runtime folder path", () => {
+    const { view, plugin } = createViewWithFile();
+    (view as any).cardScope = createFolderScope("notes", true);
+
+    view.handleToolbarAction({ action: "new-note" });
+
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("notes");
+    expect(plugin.createNoteInCurrentFolder).toBeUndefined();
+  });
+
+  it("uses persisted lastFolderPath for Box new-note without adding to the Box", () => {
+    const { view, plugin } = createViewWithFile();
+    const previous = plugin.getSettings();
+    plugin.getSettings = vi.fn(() => ({
+      ...previous,
+      lastFolderPath: "inbox",
+      boxes: [],
+    }));
+    (view as any).cardScope = createBoxScope("box-1");
+    const addSpy = vi.spyOn(view.modules.boxActions, "addPathsToBox");
+
+    view.handleToolbarAction({ action: "new-note" });
+
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox");
+    expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
+    expect(addSpy).not.toHaveBeenCalled();
+  });
+});
+

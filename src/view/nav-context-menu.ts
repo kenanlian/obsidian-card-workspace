@@ -57,7 +57,14 @@ export interface NavMenuActions {
 
 export interface NavMenuDeps {
   strings: UiStrings;
-  isBoxMode: boolean;
+  /** Browse Tag filter capability; Tag menus filter only when enabled (C6). */
+  browseTagFilter: boolean;
+  /** Browse property filter capability; property menus filter only when enabled (C6). */
+  browsePropertyFilter: boolean;
+  /** Include-subfolders control capability (C6). */
+  supportsIncludeSubfolders: boolean;
+  /** Save/add-current-source Box-rule seeding capability (C6). */
+  supportsBoxRuleSeeding: boolean;
   includeSubfolders: boolean;
   activeFilterTags: string[];
   /** Total active property value refs; drives the clear item and summary swap. */
@@ -144,7 +151,7 @@ function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps
     () => deps.actions.toggleIncludeSubfolders(),
     (item) => {
       item.setChecked(deps.includeSubfolders);
-      item.setDisabled(deps.isBoxMode);
+      item.setDisabled(!deps.supportsIncludeSubfolders);
     },
   );
 
@@ -193,7 +200,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
 }
 
 function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: NavMenuDeps): boolean {
-  if (deps.isBoxMode) {
+  if (!deps.browseTagFilter) {
     appendNavSectionHeaderItems(menu, deps, "tags");
     return true;
   }
@@ -230,7 +237,7 @@ function buildTagItemMenu(
   deps: NavMenuDeps,
   itemId: string,
 ): boolean {
-  if (deps.isBoxMode) {
+  if (!deps.browseTagFilter) {
     return false;
   }
 
@@ -283,7 +290,7 @@ function buildBoxesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   const box = deps.strings.box;
   addItem(menu, box.createBox, "box", () => deps.actions.boxCommand("create"));
 
-  if (!deps.isBoxMode) {
+  if (deps.supportsBoxRuleSeeding) {
     addItem(menu, box.saveScopeAsBox, "package-plus", () =>
       deps.actions.boxCommand("save-scope-as-box"),
     );
@@ -312,7 +319,7 @@ function buildBoxItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boolea
   );
   addItem(menu, box.configure, "settings-2", () => deps.actions.boxCommand("configure", itemId));
 
-  if (!deps.isBoxMode) {
+  if (deps.supportsBoxRuleSeeding) {
     addItem(menu, box.addScopeToThisBox, "list-plus", () =>
       deps.actions.boxCommand("add-scope-to-box", itemId),
     );

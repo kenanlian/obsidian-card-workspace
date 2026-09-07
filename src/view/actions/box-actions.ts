@@ -22,7 +22,8 @@ import { pruneFavoriteBoxes } from "../favorites";
 import { BoxConfigModal } from "../modals/BoxConfigModal";
 import { BoxNameModal } from "../modals/BoxNameModal";
 import type { BoxSummary } from "../panel-model";
-import { createBoxScope, isBoxScope, scopeDisplayPath, type CardScope } from "../scope";
+import { createBoxScope, isBoxScope, scopeDisplayPath, resolveBrowseIncludeSubfolders, type CardScope } from "../scope";
+import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition, FolderSelectionRequest, Rule, SelectionResult } from "../types";
 import type { ViewContext } from "../view-context";
 import {
@@ -186,7 +187,7 @@ export class BoxActions {
     const settings = this.deps.context.getSettings();
     return {
       folder: scopeDisplayPath(scope),
-      includeSubfolders: scope.kind === "folder" ? scope.includeSubfolders : settings.includeSubfolders,
+      includeSubfolders: resolveBrowseIncludeSubfolders(scope, settings.includeSubfolders),
       tags: [...settings.filter.tags],
       properties: normalizePropertyFilterClauses(settings.filter.properties),
     };
@@ -342,7 +343,8 @@ export class BoxActions {
   }
 
   canAddScopeToBox(): boolean {
-    return !this.isBoxMode() && this.deps.context.getSettings().boxes.length > 0;
+    return resolveSourceCapabilities(this.deps.context.store.getScope()).supportsBoxRuleSeeding
+      && this.deps.context.getSettings().boxes.length > 0;
   }
 
   appendScopeTargetBoxItems(menu: Menu): void {

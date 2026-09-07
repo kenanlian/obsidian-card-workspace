@@ -1,7 +1,7 @@
 import { PLAIN_FOLDER_ICON } from "../icons";
 import { normalizeNavSectionOrder } from "../navigation-section-order";
 import { FAVORITE_KIND_ORDER } from "./favorites";
-import { normalizeScopePath } from "./scope";
+import { isCurrentBoxId, isCurrentFolderPath, normalizeScopePath } from "./scope";
 import { normalizeTagPath, type TagTreeNode } from "./tag-tree";
 import type { FavoriteKind, FolderTreeNode, NavSectionId } from "./types";
 import {
@@ -67,12 +67,10 @@ function favoriteSemanticState(
   activeTags: ReadonlySet<string>,
 ): NavigationSemanticState {
   if (kind === "folder") {
-    return input.scope.kind === "folder" && normalizeScopePath(ref) === input.scope.path
-      ? "current-range"
-      : "none";
+    return isCurrentFolderPath(input.scope, ref) ? "current-range" : "none";
   }
   if (kind === "box") {
-    return input.scope.kind === "box" && ref === input.scope.boxId ? "current-range" : "none";
+    return isCurrentBoxId(input.scope, ref) ? "current-range" : "none";
   }
   if (kind === "tag") {
     return activeTags.has(normalizeTagPath(ref)) ? "checked-filter" : "none";
@@ -151,10 +149,7 @@ function projectFolders(
         expandable,
         expanded,
         disabled: false,
-        semanticState:
-          input.scope.kind === "folder" && canonicalPath === input.scope.path
-            ? "current-range"
-            : "none",
+        semanticState: isCurrentFolderPath(input.scope, canonicalPath) ? "current-range" : "none",
         label: canonicalPath === "" ? input.rootFolderLabel : node.name || "/",
         fullPath: canonicalPath || "/",
         count: count(input.includeSubfolders ? node.recursiveCount : node.directCount),
@@ -299,8 +294,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
       expandable: false,
       expanded: false,
       disabled: false,
-      semanticState:
-        input.scope.kind === "box" && input.scope.boxId === box.id ? "current-range" : "none",
+      semanticState: isCurrentBoxId(input.scope, box.id) ? "current-range" : "none",
       label: box.name,
       fullPath: null,
       count: count(box.cardCount),

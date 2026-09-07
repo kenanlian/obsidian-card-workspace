@@ -1,3 +1,4 @@
+import { isPathAtOrBelow, rewritePathReference } from "../path-references";
 import { normalizeTagPath } from "./tag-tree";
 import type { FavoriteEntry, FavoriteKind } from "./types";
 
@@ -221,21 +222,6 @@ export interface FavoriteVaultMutation {
   isFolder: boolean;
 }
 
-function rewritePath(path: string, oldPath: string, newPath: string): string {
-  if (path === oldPath) {
-    return newPath;
-  }
-  const prefix = `${oldPath}/`;
-  if (path.startsWith(prefix)) {
-    return `${newPath}/${path.slice(prefix.length)}`;
-  }
-  return path;
-}
-
-function isUnderPath(path: string, scopePath: string): boolean {
-  return path === scopePath || path.startsWith(`${scopePath}/`);
-}
-
 /**
  * Keep path-based favorites consistent with a vault mutation.
  *
@@ -261,7 +247,7 @@ export function reconcileFavoritesForVaultMutation(
       }
 
       const nextRef = event.isFolder
-        ? rewritePath(entry.ref, oldPath, event.path)
+        ? rewritePathReference(entry.ref, oldPath, event.path)
         : entry.ref === oldPath
           ? event.path
           : entry.ref;
@@ -280,7 +266,7 @@ export function reconcileFavoritesForVaultMutation(
         if (entry.kind !== "folder" && entry.kind !== "file") {
           return true;
         }
-        return !isUnderPath(entry.ref, event.path);
+        return !isPathAtOrBelow(entry.ref, event.path);
       }
       if (entry.kind !== "file") {
         return true;

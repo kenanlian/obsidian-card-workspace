@@ -19,6 +19,11 @@ function buildState(): PanelModelState {
       activeBoxName: null,
       boxExcludedCount: 0,
       emptyStateMessage: "Empty",
+      sourceIdentity: "folder:Notes:false",
+      browseTagFilterEnabled: true,
+      browsePropertyFilterEnabled: true,
+      supportsIncludeSubfolders: true,
+      supportsBoxRuleSeeding: true,
     },
     cards: {
       records: [],

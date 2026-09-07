@@ -137,19 +137,14 @@ export interface SearchIndexHealthSnapshot {
   detail: string | null;
 }
 
-/** Narrow folder scope input owned by the view coordinator, not the service. */
-export interface SearchScope {
-  folderPath: string | null;
-  includeSubfolders: boolean;
-}
-
 /**
  * Query payload passed from runtime coordinator to SearchService.
  * The service receives projection inputs but does not own query/panel state.
+ * `candidatePaths` is the only authoritative scope boundary for indexed
+ * search; the former dead `scope` field was removed in C7.
  */
 export interface SearchQueryRequest {
   query: string;
-  scope: SearchScope;
   candidatePaths: string[];
 }
 
@@ -184,6 +179,20 @@ export interface SearchServiceSnapshot {
   status: SearchServiceStatus;
   lastError: string | null;
   health: SearchIndexHealthSnapshot;
+  /**
+   * Runtime-only, monotonic content revision of the in-memory index.
+   *
+   * Starts at 0 and increments once whenever the current in-memory index
+   * successfully applies a create/modify/delete/rename mutation that can
+   * change document content or path — even when the document count is
+   * unchanged — and once more when a rebuild/replacement cutover lands the
+   * effect of a mutation that could not be applied incrementally.
+   * Ignored/rebuild-required mutations do not increment until that later
+   * cutover. It is never persisted, is not an index compatibility input, and
+   * does not change search result shape; consumers use it only to notice that
+   * previously computed query results may be stale and refresh them.
+   */
+  contentRevision: number;
 }
 
 /** Lightweight local-only observability payload for command/debug surfaces. */

@@ -7,6 +7,7 @@ import {
   normalizeVisiblePropertyKeys,
   type PropertyFilterClause,
 } from "./property-filter-settings";
+import { assertSupportedSettingsSchema } from "./settings-schema";
 import { deriveRuleId } from "./view/box-rule-identity";
 import { isFavoriteKind, normalizeFavoriteRef } from "./view/favorites";
 import type { CardBoxDefinition, CardBoxSortSpec, FavoriteEntry, NavSectionId, Rule } from "./view/types";
@@ -184,7 +185,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   navSectionOrder: defaultNavSectionOrder(),
 };
 
-export const SETTINGS_SCHEMA_VERSION = 2;
+export { SETTINGS_SCHEMA_VERSION } from "./settings-schema";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -545,6 +546,8 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
 
 export function migrateSettings(raw: unknown): PluginSettings {
   const data = isRecord(raw) ? raw : {};
+  // Refuse a future schema before flattenV2 could reinterpret its layers.
+  assertSupportedSettingsSchema(data.schemaVersion);
   return normalizeFlatSettings(data.schemaVersion === 2 ? flattenV2(data) : data);
 }
 

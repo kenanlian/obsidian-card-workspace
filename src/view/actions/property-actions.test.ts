@@ -72,7 +72,7 @@ function createSettings(overrides: {
 function createHarness(
   initial: PluginSettings,
   inventory?: PropertyInventorySnapshot,
-  isBoxScope = false,
+  browsePropertyFilterEnabled = true,
 ) {
   let settings = initial;
   const saves: PartialPluginSettings[] = [];
@@ -86,7 +86,7 @@ function createHarness(
     },
     collectPropertyInventory: collect,
     getStrings: () => getUiStrings("en"),
-    isBoxScope: () => isBoxScope,
+    browsePropertyFilterEnabled: () => browsePropertyFilterEnabled,
   });
   return { actions, saves, collect, getSettings: () => settings };
 }
@@ -265,7 +265,7 @@ describe("createPropertyActions", () => {
     const { actions, saves, getSettings } = createHarness(createSettings({
       visiblePropertyKeys: ["alpha"],
       filterProperties: [clause("alpha", [textRef("x")])],
-    }), undefined, true);
+    }), undefined, false);
 
     await actions.clearPropertyFilters();
     await actions.applyValueFilter("alpha", textRef("y"), true);
@@ -279,7 +279,7 @@ describe("createPropertyActions", () => {
   it("keeps the chooser and hide working inside a box (C6/V-O)", async () => {
     const { actions, saves } = createHarness(createSettings({
       visiblePropertyKeys: ["alpha", "beta"],
-    }), undefined, true);
+    }), undefined, false);
 
     actions.chooseVisibleProperties();
     expect(mockState.opened).toHaveLength(1);

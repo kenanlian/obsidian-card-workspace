@@ -5,6 +5,7 @@ import {
   createViewWithFile,
   registerFolderCardView,
 } from "../../__mocks__/folder-card-view-harness";
+import { createBoxScope } from "../scope";
 import { FolderActions } from "./folder-actions";
 import { FolderCardView } from "../FolderCardView";
 
@@ -23,6 +24,30 @@ describe("FolderActions", () => {
 describe("note creation targets", () => {
   beforeEach(() => {
     resetFolderCardViewHarness();
+  });
+
+  it("proceeds directly from a folder scope without re-selecting the folder (C6)", async () => {
+    const { view, app, plugin } = createViewWithFile();
+    app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
+    const selectFolder = vi.spyOn(view, "selectFolderFromNav").mockResolvedValue(undefined);
+
+    await (view as any).modules.folderActions.createFromFolderTree("/", "note");
+
+    expect(selectFolder).not.toHaveBeenCalled();
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("/", []);
+  });
+
+  it("leaves a box scope first so folder-tree creates land in browse mode (C6)", async () => {
+    const { view, app, plugin } = createViewWithFile();
+    app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
+    (view as any).cardScope = createBoxScope("box-1");
+    const selectFolder = vi.spyOn(view, "selectFolderFromNav").mockResolvedValue(undefined);
+
+    await (view as any).modules.folderActions.createFromFolderTree("/", "note");
+
+    expect(selectFolder).toHaveBeenCalledTimes(1);
+    expect(selectFolder).toHaveBeenCalledWith("/");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("/", []);
   });
 
     it("routes the vault-root scope through the root folder returned by the vault", async () => {

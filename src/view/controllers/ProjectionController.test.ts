@@ -412,10 +412,10 @@ describe("ProjectionController group arrangement", () => {
     expect(state.group.dimension).toBe("box-rule");
   });
 
-  describe("refreshGroupBucketForPath", () => {
-    it("drops the cache and reports a move when a card's tags changed", () => {
+  describe("refreshMetadataGroupBuckets", () => {
+    it("retains a refreshed cache and reports a move when a card's tags changed", () => {
       let tag = "#work";
-      const { controller, store } = createHarness({
+      const { controller, getFileCache, store } = createHarness({
         group: { ...DEFAULT_GROUP_SPEC, dimension: "tag" },
         fileCache: () => ({ tags: [{ tag }] }),
       });
@@ -423,43 +423,53 @@ describe("ProjectionController group arrangement", () => {
 
       controller.reprojectCards();
       expect(controller.getGroupSegments()[0]?.key).toBe("tag:work");
+      const afterProject = getFileCache.mock.calls.length;
 
       // A metadata-only edit: no vault-content bump, so the cache key is
-      // unchanged and only this call can notice the move.
+      // unchanged and only this full-set rebuild can notice the move.
       tag = "#personal";
-      expect(controller.refreshGroupBucketForPath("notes/a.md")).toBe(true);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(true);
 
       controller.reprojectCards();
       expect(controller.getGroupSegments()[0]?.key).toBe("tag:personal");
+      // The retained refreshed cache serves the reprojection without a second
+      // metadata scan: only the refresh itself read the cache.
+      expect(getFileCache.mock.calls.length).toBe(afterProject + 1);
     });
 
-    it("reports no move when the bucket is unchanged", () => {
-      const { controller, store } = createHarness({
+    it("reports no move when the full signature is unchanged", () => {
+      const { controller, getFileCache, store } = createHarness({
         group: { ...DEFAULT_GROUP_SPEC, dimension: "tag" },
+        fileCache: () => ({ tags: [{ tag: "#work" }] }),
       });
       store.replaceBaseCards([createCard("notes/a.md")]);
       controller.reprojectCards();
+      const afterProject = getFileCache.mock.calls.length;
 
-      expect(controller.refreshGroupBucketForPath("notes/a.md")).toBe(false);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(false);
+      expect(getFileCache.mock.calls.length).toBe(afterProject + 1);
     });
 
-    it("does not mistake canonical tag casing for a move", () => {
-      // The cached label is canonical across the scope ("#Work"), while a
-      // single-card rebuild for the lower-cased note yields "#work". Comparing
-      // labels reported a move on every save; only the key is meaningful.
+    it("catches a canonical label-only change such as #Work to #work", () => {
+      // Bucket labels are canonicalized across the whole set, so the per-path
+      // key-only comparison this replaced could never see a casing change:
+      // when every holder of the tag re-spells it, the key stays `tag:work`
+      // while the canonical label — and therefore the rendered header — moves.
+      let tag = "#Work";
       const { controller, store } = createHarness({
         group: { ...DEFAULT_GROUP_SPEC, dimension: "tag" },
-        fileCache: (file?: unknown) => {
-          const path = (file as { path?: string } | undefined)?.path ?? "";
-          return { tags: [{ tag: path === "notes/lower.md" ? "#work" : "#Work" }] };
-        },
+        fileCache: () => ({ tags: [{ tag }] }),
       });
-      store.replaceBaseCards([createCard("notes/upper.md"), createCard("notes/lower.md")]);
+      store.replaceBaseCards([createCard("notes/holder.md")]);
       controller.reprojectCards();
       expect(controller.getGroupSegments()[0]?.label).toBe("#Work");
 
-      expect(controller.refreshGroupBucketForPath("notes/lower.md")).toBe(false);
-      expect(controller.refreshGroupBucketForPath("notes/upper.md")).toBe(false);
+      tag = "#work";
+      expect(controller.refreshMetadataGroupBuckets()).toBe(true);
+
+      controller.reprojectCards();
+      expect(controller.getGroupSegments()[0]?.label).toBe("#work");
+      expect(controller.getGroupSegments()[0]?.key).toBe("tag:work");
     });
 
     it("still refreshes when the cache was cleared under a rendered arrangement", () => {
@@ -474,7 +484,7 @@ describe("ProjectionController group arrangement", () => {
       // cold cache here means the rendered headers outlived their buckets.
       controller.invalidateVaultCaches();
 
-      expect(controller.refreshGroupBucketForPath("notes/a.md")).toBe(true);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(true);
     });
 
     it("skips the rebuild when nothing has been projected at all", () => {
@@ -485,19 +495,78 @@ describe("ProjectionController group arrangement", () => {
       const before = getFileCache.mock.calls.length;
 
       expect(controller.getGroupSegments()).toEqual([]);
-      expect(controller.refreshGroupBucketForPath("notes/a.md")).toBe(false);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(false);
       expect(getFileCache.mock.calls.length).toBe(before);
     });
 
-    it("ignores dimensions that do not read vault metadata, and unknown paths", () => {
-      const { controller, store } = createHarness({
+    it("ignores dimensions that do not read vault metadata", () => {
+      const { controller, getFileCache, store } = createHarness({
         group: { ...DEFAULT_GROUP_SPEC, dimension: "folder" },
       });
       store.replaceBaseCards([createCard("notes/a.md")]);
       controller.reprojectCards();
+      const before = getFileCache.mock.calls.length;
 
-      expect(controller.refreshGroupBucketForPath("notes/a.md")).toBe(false);
-      expect(controller.refreshGroupBucketForPath("notes/missing.md")).toBe(false);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(false);
+      expect(getFileCache.mock.calls.length).toBe(before);
+    });
+
+    it("reports a move when the base set itself changed between cache and refresh", () => {
+      const { controller, store } = createHarness({
+        group: { ...DEFAULT_GROUP_SPEC, dimension: "tag" },
+      });
+      store.replaceBaseCards([createCard("notes/a.md")]);
+      controller.reprojectCards();
+
+      // A membership change outside this controller (base-card replacement
+      // without a vault-content bump) leaves stale cached paths behind.
+      store.replaceBaseCards([createCard("notes/a.md"), createCard("notes/b.md")]);
+      expect(controller.refreshMetadataGroupBuckets()).toBe(true);
+    });
+  });
+
+  describe("metadata-lane cache split", () => {
+    it("invalidateMetadataDerivedCaches clears tag caches but keeps bucket comparison input", () => {
+      const { controller, getFileCache, store } = createHarness({
+        group: { ...DEFAULT_GROUP_SPEC, dimension: "tag" },
+        fileCache: () => ({ tags: [{ tag: "#work" }] }),
+      });
+      store.replaceBaseCards([createCard("notes/a.md")]);
+      controller.reprojectCards();
+      const afterProject = getFileCache.mock.calls.length;
+
+      controller.invalidateMetadataDerivedCaches();
+
+      // Scope tag data recomputes on next derive...
+      controller.deriveScopeTags();
+      expect(getFileCache.mock.calls.length).toBeGreaterThan(afterProject);
+      // ...while the group-bucket cache survives, so a later metadata refresh
+      // can still compare signatures against the pre-edit buckets.
+      expect(controller.refreshMetadataGroupBuckets()).toBe(false);
+    });
+
+    it("refreshScopeTagData reports value changes and reinstalls the refreshed cache", () => {
+      let tag: string | null = "#work";
+      const { controller, getFileCache, store } = createHarness({
+        fileCache: () => (tag === null ? null : { tags: [{ tag }] }),
+      });
+      store.replaceBaseCards([createCard("notes/a.md")]);
+
+      // Cold cache: no comparison possible, but the refreshed value installs.
+      expect(controller.refreshScopeTagData()).toBe(false);
+      expect(controller.deriveAvailableTags()).toEqual(["work"]);
+
+      tag = "#personal";
+      expect(controller.refreshScopeTagData()).toBe(true);
+      expect(controller.deriveTagCounts()).toEqual({ personal: 1 });
+
+      tag = "#personal";
+      expect(controller.refreshScopeTagData()).toBe(false);
+
+      tag = null;
+      expect(controller.refreshScopeTagData()).toBe(true);
+      expect(controller.deriveAvailableTags()).toEqual([]);
+      expect(getFileCache).toHaveBeenCalled();
     });
   });
 });

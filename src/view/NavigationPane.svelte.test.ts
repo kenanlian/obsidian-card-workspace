@@ -115,6 +115,15 @@ function nav(overrides: Partial<PanelNavState> = {}): PanelNavState {
 const scope: PanelScopeState = {
   displayPath: "notes", includeSubfolders: true, activeBoxId: null, activeBoxName: null,
   boxExcludedCount: 0, emptyStateMessage: "",
+  sourceIdentity: "folder:notes:true", browseTagFilterEnabled: true,
+  browsePropertyFilterEnabled: true, supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
+};
+
+const boxScopeState: PanelScopeState = {
+  ...scope,
+  activeBoxId: "box-1",
+  sourceIdentity: "box:box-1", browseTagFilterEnabled: false,
+  browsePropertyFilterEnabled: false, supportsIncludeSubfolders: false, supportsBoxRuleSeeding: false,
 };
 
 function render(options: {
@@ -351,7 +360,7 @@ describe("NavigationPane projected ARIA tree", () => {
     const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
     render({
       nav: nav({ projection: { ...base, rows: emptyRows } }),
-      scope: { ...scope, activeBoxId: "box-1" },
+      scope: boxScopeState,
       activeFilterTags: [],
     });
     expect(Array.from(document.querySelectorAll<HTMLElement>("[data-nav-empty-section]")).map((node) => [
@@ -503,7 +512,7 @@ describe("NavigationPane projected ARIA tree", () => {
   });
 
   it("keeps owned section actions out of the tab order and omits the persistent Include control", () => {
-    render({ scope: { ...scope, activeBoxId: "box-1" } });
+    render({ scope: boxScopeState });
     expect(document.querySelector(".fce-nav-section-include")).toBeNull();
     expect(document.querySelector(".fce-favorites-menu .fce-nav-section-create")).toBeNull();
     expect(document.querySelector(".fce-folder-menu .fce-nav-section-create")).not.toBeNull();
@@ -818,7 +827,7 @@ describe("NavigationPane projected ARIA tree", () => {
   it("renders the properties disabled-in-box copy and pins the chooser action in a box (V-S)", async () => {
     const base = projection();
     const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
-    const boxScope = { ...scope, activeBoxId: "box-1" };
+    const boxScope = boxScopeState;
     const commands: Array<{ command: "choose-visible" | "clear-filters" }> = [];
     render({
       nav: nav({ projection: { ...base, rows: emptyRows }, propertyFilterCount: 2 }),

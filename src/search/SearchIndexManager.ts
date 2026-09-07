@@ -75,6 +75,7 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
   mode: "indexed",
   status: "building",
   lastError: null,
+  contentRevision: 0,
   health: {
     outcome: "none",
     readiness: "initializing",
@@ -109,6 +110,8 @@ export class SearchIndexManager {
     ...INITIAL_SNAPSHOT,
     health: { ...INITIAL_SNAPSHOT.health },
   };
+  /** Monotonic in-memory content revision; surfaced through `getSnapshot()`. */
+  private contentRevision = 0;
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private readonly documentsByPath = new Map<string, SearchableDocument>();
   private expectedMetadata: IndexStoreNamespaceMetadata | null = null;
@@ -184,10 +187,21 @@ export class SearchIndexManager {
   getSnapshot(): SearchServiceSnapshot {
     return {
       ...this.snapshot,
+      contentRevision: this.contentRevision,
       health: {
         ...this.snapshot.health,
       },
     };
+  }
+
+  /**
+   * Notifies subscribers that the in-memory index content changed. Called once
+   * after every successfully applied mutation (even when the document count is
+   * unchanged) so consumers can invalidate stale query results.
+   */
+  private bumpContentRevision(): void {
+    this.contentRevision += 1;
+    this.emit();
   }
 
   subscribe(listener: (snapshot: SearchServiceSnapshot) => void): () => void {
@@ -535,6 +549,10 @@ export class SearchIndexManager {
 
   private publishReplacementSuccess(kind: "reconcile" | "rebuild", detail: string, at: number): void {
     if (this.disposed) return;
+    // A cutover replaces index content wholesale; a mutation that could not be
+    // applied incrementally (rebuild-required, or ignored while scanning) only
+    // lands its effect here, so the revision moves with the cutover.
+    this.contentRevision += 1;
     const documentCount = this.index.documentCount;
     const outcome = kind === "rebuild" ? "rebuilt" : "restored";
     this.snapshot = {
@@ -619,7 +637,13 @@ export class SearchIndexManager {
 
   private async applyMutationNow(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
     const result = await this.applyMutationToState(event, this.index, this.documentsByPath, true);
-    if (result.action === "applied") this.schedulePersistMutationState();
+    if (result.action === "applied") {
+      // Emit immediately with the bumped revision, before the debounced
+      // persist refreshes the document count, so a same-count modify still
+      // produces a snapshot consumers can notice.
+      this.bumpContentRevision();
+      this.schedulePersistMutationState();
+    }
     return result;
   }
 

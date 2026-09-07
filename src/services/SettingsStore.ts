@@ -8,6 +8,11 @@ import {
   type PartialPluginSettings,
   type PluginSettings,
 } from "../settings";
+import {
+  SETTINGS_LAYER_BY_KEY,
+  UnknownSettingsKeyError,
+  UnsupportedSettingsSchemaError,
+} from "../settings-schema";
 import type { PropertyFilterClause } from "../property-filter-settings";
 import { resolveSettingsUpdateIntent, type ViewUpdateIntent } from "../view/update-intent";
 
@@ -62,36 +67,28 @@ export interface SettingsStoreDeps {
   save: (data: unknown) => Promise<void>;
 }
 
-const PREFERENCE_KEYS = new Set<string>([
-  "sort",
-  "group",
-  "includeSubfolders",
-  "defaultView",
-  "defaultCardOpenBehavior",
-  "dragInsertAction",
-  "cardCornerRadius",
-  "newNoteTemplate",
-  "previewLines",
-  "showNavItemCounts",
-  "navSectionOrder",
-  "visiblePropertyKeys",
-]);
-
-const USER_DATA_KEYS = new Set<string>(["boxes", "favorites", "pinnedPaths"]);
-
-const WORKSPACE_FLAT_KEYS = new Set<string>([
-  "lastFolderPath",
-  "expandedFolderPaths",
-  "expandedTagPaths",
-  "expandedPropertyKeys",
-  "activeBoxId",
-  "navPaneWidth",
-  "navPaneCollapsed",
-  "sectionCollapsed",
-  "filter",
-]);
-
 const WORKSPACE_DEBOUNCE_MS = 300;
+
+/** Whether the persisted settings document can be read and written by this version. */
+export type SettingsCompatibilityStatus = "ready" | "unsupported-schema";
+
+/**
+ * Classification authority is the exhaustive `SETTINGS_LAYER_BY_KEY` manifest.
+ * A defined top-level key no layer owns is a caller bug: refuse it before any
+ * memory mutation or persistence instead of guessing a default layer.
+ * `undefined` values keep their "not present" semantics and are skipped.
+ */
+function assertKnownFlatPatch(patch: object): void {
+  const manifest = SETTINGS_LAYER_BY_KEY as Record<string, unknown>;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (manifest[key] === undefined) {
+      throw new UnknownSettingsKeyError(key);
+    }
+  }
+}
 
 type PersistWaiter = {
   revision: number;
@@ -120,6 +117,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   workspace: WorkspaceSettingsPatch;
   userData: Partial<UserDataSettings>;
 } {
+  assertKnownFlatPatch(patch);
   const preferences: Partial<PreferencesSettings> = {};
   const workspace: WorkspaceSettingsPatch = {};
   const userData: Partial<UserDataSettings> = {};
@@ -157,13 +155,6 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.boxes !== undefined) userData.boxes = patch.boxes;
   if (patch.favorites !== undefined) userData.favorites = patch.favorites;
   if (patch.pinnedPaths !== undefined) userData.pinnedPaths = patch.pinnedPaths;
-
-  for (const key of Object.keys(patch)) {
-    if (PREFERENCE_KEYS.has(key) || USER_DATA_KEYS.has(key) || WORKSPACE_FLAT_KEYS.has(key)) {
-      continue;
-    }
-    (preferences as Record<string, unknown>)[key] = (patch as Record<string, unknown>)[key];
-  }
 
   return { preferences, workspace, userData };
 }
@@ -248,6 +239,8 @@ export class SettingsStore {
   private dirty = false;
   private pending: Promise<void> | null = null;
   private persistWaiters: PersistWaiter[] = [];
+  private compatibility: SettingsCompatibilityStatus = "ready";
+  private unsupportedSchemaError: UnsupportedSettingsSchemaError | null = null;
   private readonly debouncedWorkspaceWrite: (() => void) & {
     cancel: () => void;
   };
@@ -264,12 +257,32 @@ export class SettingsStore {
     );
   }
 
-  async init(): Promise<void> {
+  async init(): Promise<SettingsCompatibilityStatus> {
     this.debouncedWorkspaceWrite.cancel();
-    this.memory = migrateSettings(await this.load());
+    const raw = await this.load();
+    try {
+      this.memory = migrateSettings(raw);
+      this.compatibility = "ready";
+      this.unsupportedSchemaError = null;
+    } catch (error) {
+      if (!(error instanceof UnsupportedSettingsSchemaError)) {
+        throw error;
+      }
+      // Future-schema document: keep a usable default read view, start no
+      // dirty revision, and never write the document back.
+      this.compatibility = "unsupported-schema";
+      this.unsupportedSchemaError = error;
+      this.memory = normalizeSettings(undefined);
+    }
     this.revision = 0;
     this.persistedRevision = 0;
     this.dirty = false;
+    return this.compatibility;
+  }
+
+  /** Compatibility state of the loaded document: writable, or read-only defaults. */
+  getCompatibility(): SettingsCompatibilityStatus {
+    return this.compatibility;
   }
 
   /** C7: collapse boxes to browse mode on launch without persisting. */
@@ -299,16 +312,28 @@ export class SettingsStore {
    * document is serialized. A patch carrying any preference/userData value
    * persists immediately; a workspace-only patch retains the 300 ms debounce.
    * A cross-layer chooser commit therefore never starts a partial first save.
+   * A patch naming an unknown top-level key rejects before any mutation, and a
+   * patch that normalizes to the current values is a semantic no-op that never
+   * revises, schedules, or writes.
    */
   updateFlat(patch: PartialPluginSettings): Promise<ViewUpdateIntent | null> {
-    const { preferences, userData } = splitFlatPatch(patch);
-    const persist = hasPatchValues(preferences) || hasPatchValues(userData)
-      ? "immediate"
-      : "workspace";
-    return this.commitPatch(patch, persist);
+    try {
+      const { preferences, userData } = splitFlatPatch(patch);
+      const persist = hasPatchValues(preferences) || hasPatchValues(userData)
+        ? "immediate"
+        : "workspace";
+      return this.commitPatch(patch, persist);
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   async flushPendingWrites(): Promise<void> {
+    if (this.compatibility === "unsupported-schema") {
+      // Never create or overwrite a future-schema document on flush.
+      this.debouncedWorkspaceWrite.cancel();
+      return;
+    }
     const target = this.revision;
     this.debouncedWorkspaceWrite.cancel();
     if (this.persistedRevision >= target) {
@@ -323,15 +348,35 @@ export class SettingsStore {
     flatPatch: PartialPluginSettings,
     persist: "immediate" | "workspace",
   ): Promise<ViewUpdateIntent | null> {
+    if (this.compatibility === "unsupported-schema") {
+      // Defensive fallback: the blocked state always carries the typed error.
+      return Promise.reject(
+        this.unsupportedSchemaError
+          ?? new UnsupportedSettingsSchemaError(SETTINGS_SCHEMA_VERSION + 1, SETTINGS_SCHEMA_VERSION),
+      );
+    }
+    try {
+      assertKnownFlatPatch(flatPatch);
+    } catch (error) {
+      return Promise.reject(error);
+    }
     if (!hasPatchValues(flatPatch)) {
       return Promise.resolve(null);
     }
 
+    // Normalize/merge once and compare semantically before touching state: a
+    // no-op patch must not change memory identity, revision, debounce state,
+    // waiters, or issue a write.
     const previous = this.getFlat();
-    this.memory = mergeSettings(this.memory, flatPatch);
+    const next = mergeSettings(this.memory, flatPatch);
+    const intent = resolveSettingsUpdateIntent(previous, next);
+    if (intent === null) {
+      return Promise.resolve(null);
+    }
+
+    this.memory = next;
     this.revision += 1;
     const myRevision = this.revision;
-    const intent = resolveSettingsUpdateIntent(previous, this.getFlat());
     const wait = this.waitForPersisted(myRevision);
     if (persist === "workspace") {
       this.debouncedWorkspaceWrite();

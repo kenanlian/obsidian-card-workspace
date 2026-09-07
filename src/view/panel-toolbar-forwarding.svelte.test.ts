@@ -38,6 +38,11 @@ function createPanelState(): PanelModelState {
       activeBoxName: null,
       boxExcludedCount: 0,
       emptyStateMessage: "No supported files found in this folder.",
+      sourceIdentity: "folder:notes:true",
+      browseTagFilterEnabled: true,
+      browsePropertyFilterEnabled: true,
+      supportsIncludeSubfolders: true,
+      supportsBoxRuleSeeding: true,
     },
     cards: {
       records: [],

@@ -8,8 +8,13 @@ import {
   type PartialPluginSettings,
   type PluginSettings,
 } from "./settings";
+import {
+  SETTINGS_LAYER_BY_KEY,
+  SETTINGS_SCHEMA_VERSION as SCHEMA_MODULE_VERSION,
+  UnsupportedSettingsSchemaError,
+} from "./settings-schema";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
-import { serializeSettings } from "./services/SettingsStore";
+import { serializeSettings, type PersistedSettingsV2 } from "./services/SettingsStore";
 
 // ---------------------------------------------------------------------------
 // normalizeSettings — pinnedPaths handling
@@ -1473,5 +1478,203 @@ describe("property settings normalization", () => {
     const propertiesOnly = mergeSettings(current, { filter: { properties: [] } });
     expect(propertiesOnly.filter.tags).toEqual(["work"]);
     expect(propertiesOnly.filter.properties).toEqual([]);
+  });
+});
+
+describe("settings layer manifest (C4)", () => {
+  const expectedManifest: Record<string, string> = {
+    sort: "preferences",
+    group: "preferences",
+    includeSubfolders: "preferences",
+    defaultView: "preferences",
+    defaultCardOpenBehavior: "preferences",
+    dragInsertAction: "preferences",
+    cardCornerRadius: "preferences",
+    newNoteTemplate: "preferences",
+    previewLines: "preferences",
+    showNavItemCounts: "preferences",
+    navSectionOrder: "preferences",
+    visiblePropertyKeys: "preferences",
+    lastFolderPath: "workspace",
+    expandedFolderPaths: "workspace",
+    expandedTagPaths: "workspace",
+    expandedPropertyKeys: "workspace",
+    activeBoxId: "workspace",
+    filter: "workspace",
+    navPaneWidth: "workspace",
+    navPaneCollapsed: "workspace",
+    sectionCollapsed: "workspace",
+    boxes: "userData",
+    favorites: "userData",
+    pinnedPaths: "userData",
+  };
+
+  it("declares exactly one layer for every top-level PluginSettings key", () => {
+    expect({ ...SETTINGS_LAYER_BY_KEY }).toEqual(expectedManifest);
+    // The manifest must stay in lockstep with the settings type's runtime keys.
+    expect(Object.keys(SETTINGS_LAYER_BY_KEY).sort()).toEqual(
+      Object.keys(DEFAULT_SETTINGS).sort(),
+    );
+  });
+
+  it("re-exports SETTINGS_SCHEMA_VERSION from the neutral schema module", () => {
+    expect(SETTINGS_SCHEMA_VERSION).toBe(SCHEMA_MODULE_VERSION);
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
+  });
+});
+
+describe("non-default v2 round trip per layer (C4)", () => {
+  const statusClause = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+  const inboxBox: PluginSettings["boxes"][number] = {
+    id: "box-1",
+    name: "Inbox",
+    rules: [],
+    manualPaths: ["Projects/A.md"],
+    excludedPaths: [],
+    pinnedPaths: [],
+    sort: { field: "mtime", direction: "desc" },
+    group: DEFAULT_GROUP_SPEC,
+  };
+
+  const nonDefault: PluginSettings = mergeSettings(DEFAULT_SETTINGS, {
+    sort: { field: "name", direction: "asc" },
+    group: { dimension: "tag", orderBy: "count", orderDirection: "desc" },
+    filter: { tags: ["work"], properties: [statusClause] },
+    pinnedPaths: ["Projects/a.md"],
+    includeSubfolders: false,
+    // "cards" is the only valid value; it still pins the preferences-layer claim.
+    defaultView: "cards",
+    defaultCardOpenBehavior: "new-tab",
+    dragInsertAction: "wiki",
+    cardCornerRadius: "compact",
+    newNoteTemplate: "blank",
+    previewLines: 8,
+    lastFolderPath: "Projects",
+    expandedFolderPaths: ["Projects"],
+    expandedTagPaths: ["work"],
+    visiblePropertyKeys: ["status"],
+    expandedPropertyKeys: ["status"],
+    boxes: [inboxBox],
+    favorites: [{ kind: "folder", ref: "Projects" }],
+    activeBoxId: "box-1",
+    navPaneWidth: 200,
+    navPaneCollapsed: true,
+    sectionCollapsed: { favorites: true, folders: true, tags: true, properties: true, boxes: true },
+    showNavItemCounts: true,
+    navSectionOrder: ["boxes", "tags", "folders", "favorites"],
+  });
+
+  const serialized: PersistedSettingsV2 = serializeSettings(nonDefault);
+
+  // Every manifest key, where its non-default value must appear in the v2
+  // document. `filter` maps to its two serialized workspace arms.
+  const expectations: Array<[label: string, getter: (doc: PersistedSettingsV2) => unknown, expected: unknown]> = [
+    ["sort", (d) => d.preferences.sort, { field: "name", direction: "asc" }],
+    ["group", (d) => d.preferences.group, { dimension: "tag", orderBy: "count", orderDirection: "desc" }],
+    ["includeSubfolders", (d) => d.preferences.includeSubfolders, false],
+    ["defaultView", (d) => d.preferences.defaultView, "cards"],
+    ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],
+    ["dragInsertAction", (d) => d.preferences.dragInsertAction, "wiki"],
+    ["cardCornerRadius", (d) => d.preferences.cardCornerRadius, "compact"],
+    ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
+    ["previewLines", (d) => d.preferences.previewLines, 8],
+    ["showNavItemCounts", (d) => d.preferences.showNavItemCounts, true],
+    ["navSectionOrder", (d) => d.preferences.navSectionOrder, ["properties", "boxes", "tags", "folders", "favorites"]],
+    ["visiblePropertyKeys", (d) => d.preferences.visiblePropertyKeys, ["status"]],
+    ["lastFolderPath", (d) => d.workspace.lastFolderPath, "Projects"],
+    ["expandedFolderPaths", (d) => d.workspace.expandedFolderPaths, ["Projects"]],
+    ["expandedTagPaths", (d) => d.workspace.expandedTagPaths, ["work"]],
+    ["expandedPropertyKeys", (d) => d.workspace.expandedPropertyKeys, ["status"]],
+    ["activeBoxId", (d) => d.workspace.activeBoxId, "box-1"],
+    ["filter.tags", (d) => d.workspace.filterTags, ["work"]],
+    ["filter.properties", (d) => d.workspace.filterProperties, [statusClause]],
+    ["navPaneWidth", (d) => d.workspace.navPaneWidth, 200],
+    ["navPaneCollapsed", (d) => d.workspace.navPaneCollapsed, true],
+    [
+      "sectionCollapsed",
+      (d) => d.workspace.sectionCollapsed,
+      { favorites: true, folders: true, tags: true, properties: true, boxes: true },
+    ],
+    ["boxes", (d) => d.userData.boxes, nonDefault.boxes],
+    ["favorites", (d) => d.userData.favorites, [{ kind: "folder", ref: "Projects" }]],
+    ["pinnedPaths", (d) => d.userData.pinnedPaths, ["Projects/a.md"]],
+  ];
+
+  it("serializes every manifest key's non-default value into its declared layer", () => {
+    // `filter` expands to its two serialized arms; every other key maps 1:1.
+    const coveredKeys = new Set(expectations.map(([label]) => label.split(".")[0]));
+    expect([...coveredKeys].sort()).toEqual(Object.keys(SETTINGS_LAYER_BY_KEY).sort());
+    for (const [label, getter, expected] of expectations) {
+      expect(getter(serialized), label).toEqual(expected);
+    }
+  });
+
+  it("keeps every manifest key out of the layers that do not own it", () => {
+    const layerDocuments: Record<string, object> = {
+      preferences: serialized.preferences,
+      workspace: serialized.workspace,
+      userData: serialized.userData,
+    };
+    for (const [key, owningLayer] of Object.entries(SETTINGS_LAYER_BY_KEY)) {
+      for (const [layer, document] of Object.entries(layerDocuments)) {
+        if (layer === owningLayer) {
+          continue;
+        }
+        expect(Object.keys(document), `${key} must not leak into ${layer}`).not.toContain(key);
+      }
+    }
+  });
+
+  it("round-trips the whole non-default document through serializeSettings -> migrateSettings", () => {
+    const restored = migrateSettings(JSON.parse(JSON.stringify(serialized)));
+    expect(restored).toEqual(nonDefault);
+    // Re-serialization is a fixed point: loading never rewrites the file.
+    expect(migrateSettings(serializeSettings(restored))).toEqual(restored);
+  });
+});
+
+describe("migrateSettings — future schema refusal (C4)", () => {
+  it("throws UnsupportedSettingsSchemaError for a finite integer schemaVersion above the supported one", () => {
+    let caught: unknown;
+    try {
+      migrateSettings({
+        schemaVersion: 3,
+        preferences: { futureOnly: { nested: [1] } },
+        workspace: { unknownWorkspace: true },
+        userData: { boxes: "opaque-future-shape" },
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(UnsupportedSettingsSchemaError);
+    const typed = caught as UnsupportedSettingsSchemaError;
+    expect(typed.foundVersion).toBe(3);
+    expect(typed.supportedVersion).toBe(SETTINGS_SCHEMA_VERSION);
+    expect(typeof typed.message).toBe("string");
+  });
+
+  it("keeps malformed, missing, zero, and legacy version values on the defensive legacy path", () => {
+    expect(() => migrateSettings({ schemaVersion: 0 })).not.toThrow();
+    expect(() => migrateSettings({ schemaVersion: 1 })).not.toThrow();
+    expect(() => migrateSettings({ schemaVersion: 2.5 })).not.toThrow();
+    expect(() => migrateSettings({ schemaVersion: "3" })).not.toThrow();
+    expect(() => migrateSettings({ schemaVersion: Number.POSITIVE_INFINITY })).not.toThrow();
+    expect(() => migrateSettings({})).not.toThrow();
+
+    // A string version is legacy data, not a future schema: normalize it.
+    expect(migrateSettings({ schemaVersion: "3", lastFolderPath: "Projects" }))
+      .toMatchObject({ lastFolderPath: "Projects" });
+  });
+
+  it("still accepts exact v2 documents", () => {
+    expect(() => migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { previewLines: 7 },
+    })).not.toThrow();
+    expect(migrateSettings({
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      preferences: { previewLines: 7 },
+    })).toEqual({ ...DEFAULT_SETTINGS, previewLines: 7 });
   });
 });

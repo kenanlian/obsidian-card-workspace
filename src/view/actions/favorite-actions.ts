@@ -9,7 +9,7 @@ import { getCardFileIcon, resolveCardFileKindFromPath } from "../file-kind";
 import { copyPathToClipboard } from "../note-ops";
 import type { BoxSummary, FavoriteRowModel } from "../panel-model";
 import type { NavigationSemanticState } from "../navigation-model";
-import { isBoxScope, scopeDisplayPath, type CardScope } from "../scope";
+import { isCurrentBoxId, isCurrentFolderPath, type CardScope } from "../scope";
 import { normalizeTagPath } from "../tag-tree";
 import type { FavoriteEntry, FavoriteKind } from "../types";
 import type { ViewContext } from "../view-context";
@@ -26,10 +26,9 @@ export function remapFavoriteSelection(
   let changed = false;
   const next = rows.map((row) => {
     const semanticState: NavigationSemanticState = row.kind === "folder"
-      ? !isBoxScope(scope) && row.ref === scope.path
-        ? "current-range" : "none"
+      ? isCurrentFolderPath(scope, row.ref) ? "current-range" : "none"
       : row.kind === "box"
-        ? isBoxScope(scope) && row.ref === scope.boxId ? "current-range" : "none"
+        ? isCurrentBoxId(scope, row.ref) ? "current-range" : "none"
         : row.kind === "tag"
           ? normalizedTags.has(normalizeTagPath(row.ref)) ? "checked-filter" : "none"
           : row.ref === selectedPath ? "active-file" : "none";
@@ -51,8 +50,7 @@ function stripCardFileExtension(fileName: string): string {
 
 export interface FavoriteActionsDeps {
   context: ViewContext;
-  /** Owned by `BoxActions`. */
-  isBoxMode: () => boolean;
+  /** Owned by `BoxActions`; the currently open Box, or null (Box identity, C6). */
   getActiveBoxId: () => string | null;
   handleBoxCommand: (detail: { command?: unknown; boxId?: unknown }) => void;
   /** Owned by `NavLayoutController`; already folds in path normalization. */
@@ -191,9 +189,7 @@ export class FavoriteActions {
     const showCounts = settings.showNavItemCounts;
     const hasTagFavorite = favorites.some((entry) => entry.kind === "tag");
     const boxSummaries = precomputed.boxSummaries;
-    const activeBoxId = this.deps.getActiveBoxId();
-    const isBoxMode = this.deps.isBoxMode();
-    const activeFolderPath = scopeDisplayPath(this.deps.context.store.getScope());
+    const scope = this.deps.context.store.getScope();
     const activeTags = new Set(settings.filter.tags.map((tag) => normalizeTagPath(tag)));
 
     return favorites.map((entry) => this.buildFavoriteRowModel(entry, {
@@ -202,9 +198,7 @@ export class FavoriteActions {
       vaultTagCounts: showCounts && hasTagFavorite ? this.deps.getVaultTagCounts() : {},
       includeSubfolders: settings.includeSubfolders,
       boxSummaries,
-      activeBoxId,
-      isBoxMode,
-      activeFolderPath,
+      scope,
       activeTags,
     }));
   }
@@ -216,9 +210,7 @@ export class FavoriteActions {
       vaultTagCounts: Record<string, number>;
       includeSubfolders: boolean;
       boxSummaries: BoxSummary[];
-      activeBoxId: string | null;
-      isBoxMode: boolean;
-      activeFolderPath: string;
+      scope: CardScope;
       activeTags: Set<string>;
     },
   ): FavoriteRowModel {
@@ -231,7 +223,7 @@ export class FavoriteActions {
         label: ref === "" ? this.strings.toolbar.folderMenu.rootFolder : ref.slice(ref.lastIndexOf("/") + 1),
         icon: ref === "" ? "house" : PLAIN_FOLDER_ICON,
         count: context.showCounts ? this.getFavoriteFolderCount(ref, context.includeSubfolders) : 0,
-        semanticState: !context.isBoxMode && ref === context.activeFolderPath ? "current-range" : "none",
+        semanticState: isCurrentFolderPath(context.scope, ref) ? "current-range" : "none",
         missing: this.deps.resolveFolderFromUiPath(ref) === null,
       };
     }
@@ -270,7 +262,7 @@ export class FavoriteActions {
       label: summary?.name ?? ref,
       icon: "box",
       count: context.showCounts ? (summary?.cardCount ?? 0) : 0,
-      semanticState: ref === context.activeBoxId ? "current-range" : "none",
+      semanticState: isCurrentBoxId(context.scope, ref) ? "current-range" : "none",
       missing: summary === null,
     };
   }

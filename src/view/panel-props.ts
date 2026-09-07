@@ -11,12 +11,8 @@ export interface PanelHost {
   plugin: {
     openNoteFromCard: (path: string, destination?: never) => Promise<void>;
   };
-  handleToolbarAction: (detail: { action?: unknown }) => void;
-  onSortChange: (detail: { field?: unknown; direction?: unknown }) => Promise<void>;
-  onGroupChange: (detail: { dimension?: unknown; orderBy?: unknown; orderDirection?: unknown }) => Promise<void>;
-  onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => void;
-  onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
-  onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => Promise<void>;
+    handleToolbarAction: (detail: { action?: unknown }) => void;
+    onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
   onCardHoverLink: (detail: CardHoverLinkPayload) => void;
   selectFolderFromNav: (path: string) => Promise<void>;
   handleFolderActionRequest: (detail: FolderActionPayload) => void;
@@ -77,13 +73,13 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
       view.handleToolbarAction(detail);
     },
     onSortChange: (detail: { field?: unknown; direction?: unknown }) => {
-      void view.onSortChange(detail);
+      void view.modules.arrangementActions.onSortChange(detail);
     },
     onGroupChange: (detail: { dimension?: unknown; orderBy?: unknown; orderDirection?: unknown }) => {
-      void view.onGroupChange(detail);
+      void view.modules.arrangementActions.onGroupChange(detail);
     },
     onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => {
-      view.onGroupCollapseCommand(detail);
+      view.modules.arrangementActions.onGroupCollapseCommand(detail);
     },
     onFilterChange: (detail: { tags?: unknown }) => {
       void view.modules.tagActions.onFilterChange(detail);
@@ -105,7 +101,7 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
       view.modules.search.resetQuery();
     },
     onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => {
-      void view.onPinToggle(detail);
+      void view.modules.arrangementActions.onPinToggle(detail);
     },
     onCardHoverLink: (detail: CardHoverLinkPayload) => {
       view.onCardHoverLink(detail);

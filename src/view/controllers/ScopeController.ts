@@ -1,14 +1,14 @@
 import { TFile } from "obsidian";
 
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
-import { compareCards } from "../card-sort";
+import { createCardRecord } from "../card-record";
+import { compareCards, findSortedInsertIndex } from "../card-sort";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
-import { createFolderScope, isBoxScope, isFolderScope, scopeDisplayPath, scopesEqual,
-  serializeScopeKey, validateScope, type CardScope } from "../scope";
+import { createFolderScope, scopeDisplayPath, scopesEqual,
+  serializeScopeKey, validateScope, type BoxScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
-import { deriveCardTaskSummary } from "../task-summary";
 import type {
   CardLoadKey,
   FolderSelectionRequest,
@@ -26,6 +26,23 @@ import {
 } from "./incremental-mutation";
 
 const VAULT_REFRESH_DEBOUNCE_MS = 250;
+
+/** Result of one metadata-path Box membership reconciliation. */
+export type MetadataMembershipOutcome = "unchanged" | "entered" | "left";
+
+/** Folder scopes remember their loaded include-subfolders state; others have none. */
+function resolveLoadedIncludeSubfolders(scope: CardScope): boolean | null {
+  switch (scope.kind) {
+    case "folder":
+      return scope.includeSubfolders;
+    case "box":
+      return null;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
 
 export interface ScopeControllerDeps {
   context: ViewContext;
@@ -86,15 +103,22 @@ export class ScopeController implements DisposableController {
   }
 
   serializeLoadKey(loadKey: CardLoadKey): string {
-    if (loadKey.scope.kind === "box") {
-      const box = findCardBox(this.context.getSettings().boxes ?? [], loadKey.scope.boxId);
-      return serializeScopeKey(
-        loadKey.scope,
-        loadKey.sort,
-        box ? getBoxMembershipSignature(box) : "",
-      );
+    switch (loadKey.scope.kind) {
+      case "box": {
+        const box = findCardBox(this.context.getSettings().boxes ?? [], loadKey.scope.boxId);
+        return serializeScopeKey(
+          loadKey.scope,
+          loadKey.sort,
+          box ? getBoxMembershipSignature(box) : "",
+        );
+      }
+      case "folder":
+        return serializeScopeKey(loadKey.scope, loadKey.sort);
+      default: {
+        const exhaustive: never = loadKey.scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
     }
-    return serializeScopeKey(loadKey.scope, loadKey.sort);
   }
 
   refreshLoadKeyForCurrentScope(): void {
@@ -186,9 +210,18 @@ export class ScopeController implements DisposableController {
       this.refreshQueued = false;
     }
     const current = this.context.store.getScope();
-    const scope = isFolderScope(current)
-      ? createFolderScope(current.path, this.context.getSettings().includeSubfolders)
-      : current;
+    let scope: CardScope = current;
+    switch (current.kind) {
+      case "folder":
+        scope = createFolderScope(current.path, this.context.getSettings().includeSubfolders);
+        break;
+      case "box":
+        break;
+      default: {
+        const exhaustive: never = current;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
+    }
     const result = await this.handleScopeSelection(
       this.createProgrammaticSelectionRequest(scope, request.forceRefresh ?? true),
     );
@@ -246,19 +279,7 @@ export class ScopeController implements DisposableController {
       const app = this.context.getApp();
       const records = this.collectScopeFiles(loadScope.scope).flatMap((file) => {
         const fileKind = resolveCardFileKind(file);
-        return fileKind === null ? [] : [{
-          file,
-          fileKind,
-          path: file.path,
-          title: file.basename,
-          ctime: file.stat.ctime,
-          mtime: file.stat.mtime,
-          excerpt: "",
-          previewHtml: "",
-          previewMode: "empty" as const,
-          hydrated: false,
-          taskSummary: deriveCardTaskSummary(app, file, fileKind),
-        }];
+        return fileKind === null ? [] : [createCardRecord(app, file, fileKind)];
       });
       if (!this.context.epochs.load.isCurrent(loadToken)) {
         return false;
@@ -268,9 +289,7 @@ export class ScopeController implements DisposableController {
         compareCards(left, right, loadScope.sort.field, loadScope.sort.direction));
       this.context.store.replaceBaseCards(records);
       this.loadKey = loadKey;
-      this.lastLoadedIncludeSubfolders = isFolderScope(loadScope.scope)
-        ? loadScope.scope.includeSubfolders
-        : null;
+      this.lastLoadedIncludeSubfolders = resolveLoadedIncludeSubfolders(loadScope.scope);
       const startupPaths = this.deps.deriveVisibleCardsFrom(records)
         .slice(0, this.deps.startupCardCount)
         .map((card) => card.path);
@@ -298,15 +317,22 @@ export class ScopeController implements DisposableController {
   private async persistScopeProjection(): Promise<void> {
     const scope = this.context.store.getScope();
     const settings = this.context.getSettings();
-    if (isFolderScope(scope)) {
-      if (settings.lastFolderPath === scope.path && settings.activeBoxId === null) {
+    switch (scope.kind) {
+      case "folder":
+        if (settings.lastFolderPath === scope.path && settings.activeBoxId === null) {
+          return;
+        }
+        await this.context.saveSettings({ lastFolderPath: scope.path, activeBoxId: null });
         return;
+      case "box":
+        if (settings.activeBoxId !== scope.boxId) {
+          await this.context.saveSettings({ activeBoxId: scope.boxId });
+        }
+        return;
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
       }
-      await this.context.saveSettings({ lastFolderPath: scope.path, activeBoxId: null });
-      return;
-    }
-    if (settings.activeBoxId !== scope.boxId) {
-      await this.context.saveSettings({ activeBoxId: scope.boxId });
     }
   }
 
@@ -333,27 +359,81 @@ export class ScopeController implements DisposableController {
 
   isPathInActiveScope(path: string): boolean {
     const scope = this.context.store.getScope();
-    return scope.kind === "box"
-      ? this.deps.isPathInBox(path, scope.boxId)
-      : isPathInFolderScope(path, scope.path, scope.includeSubfolders);
+    switch (scope.kind) {
+      case "box":
+        return this.deps.isPathInBox(path, scope.boxId);
+      case "folder":
+        return isPathInFolderScope(path, scope.path, scope.includeSubfolders);
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
+    }
   }
 
-  /** Removes a loaded Box card whose current metadata no longer grants membership. */
-  reconcileMetadataMembershipForPath(path: string): boolean {
+  /**
+   * Symmetric Box membership reconciliation for one metadata path.
+   *
+   * A loaded card that no longer matches is removed; an absent supported file
+   * that now matches is inserted through `createCardRecord`, prepared from the
+   * runtime preview cache / non-Markdown placeholder path, and reinserted under
+   * the active Box sort. Manual membership and exclusions keep their
+   * `isBoxMember` precedence through the injected `isPathInBox`. A missing or
+   * unsupported live file is a safe no-op ("unchanged"). Repeat-safe: an
+   * already-applied counterpart event reports "unchanged".
+   */
+  reconcileMetadataMembershipForPath(path: string): MetadataMembershipOutcome {
     const scope = this.context.store.getScope();
-    if (
-      !isBoxScope(scope)
-      || this.context.store.getBaseCard(path) === undefined
-      || this.deps.isPathInBox(path, scope.boxId)
-    ) {
-      return false;
+    switch (scope.kind) {
+      case "box":
+        return this.reconcileBoxMembershipForPath(scope, path);
+      case "folder":
+        return "unchanged";
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
+    }
+  }
+
+  private reconcileBoxMembershipForPath(scope: BoxScope, path: string): MetadataMembershipOutcome {
+    const cards = this.context.store.getBaseCards();
+    const index = cards.findIndex((card) => card.path === path);
+    const isMember = this.deps.isPathInBox(path, scope.boxId);
+
+    if (index !== -1) {
+      if (isMember) {
+        return "unchanged";
+      }
+      this.deps.deletePendingHydration(path);
+      this.context.store.replaceBaseCards(cards.filter((card) => card.path !== path));
+      return "left";
     }
 
-    this.deps.deletePendingHydration(path);
-    this.context.store.replaceBaseCards(
-      this.context.store.getBaseCards().filter((card) => card.path !== path),
+    if (!isMember) {
+      return "unchanged";
+    }
+
+    const file = this.context.getApp().vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      return "unchanged";
+    }
+    const fileKind = resolveCardFileKind(file);
+    if (fileKind === null) {
+      return "unchanged";
+    }
+
+    const record = createCardRecord(this.context.getApp(), file, fileKind);
+    this.deps.prepareRecordsFromCache([record]);
+    const sort = this.buildLoadKey(scope).sort;
+    const nextCards = [...cards];
+    nextCards.splice(
+      findSortedInsertIndex(nextCards, record, sort.field, sort.direction),
+      0,
+      record,
     );
-    return true;
+    this.context.store.replaceBaseCards(nextCards);
+    return "entered";
   }
 
   private shouldRefreshForVaultEvent(event: VaultMutationEvent): boolean {
@@ -368,17 +448,27 @@ export class ScopeController implements DisposableController {
   }
 
   applyScopeRename(event: VaultMutationEvent): string | null {
+    if (event.eventType !== "rename" || !event.isFolder || !event.oldPath) {
+      return null;
+    }
     const scope = this.context.store.getScope();
-    if (event.eventType !== "rename" || !event.isFolder || !event.oldPath || !isFolderScope(scope)) {
-      return null;
+    switch (scope.kind) {
+      case "folder": {
+        const renamedPath = rewritePathAfterRename(scope.path, event.oldPath, event.path);
+        if (renamedPath === scope.path) {
+          return null;
+        }
+        this.context.store.setScope(createFolderScope(renamedPath, scope.includeSubfolders));
+        this.refreshLoadKeyForCurrentScope();
+        return renamedPath;
+      }
+      case "box":
+        return null;
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
     }
-    const renamedPath = rewritePathAfterRename(scope.path, event.oldPath, event.path);
-    if (renamedPath === scope.path) {
-      return null;
-    }
-    this.context.store.setScope(createFolderScope(renamedPath, scope.includeSubfolders));
-    this.refreshLoadKeyForCurrentScope();
-    return renamedPath;
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
@@ -410,14 +500,15 @@ export class ScopeController implements DisposableController {
         },
         getBulkSelection: this.deps.getBulkSelection,
         setBulkSelection: this.deps.setBulkSelection,
+        prepareRecordsFromCache: this.deps.prepareRecordsFromCache,
         isPathInActiveScope: (path) => this.isPathInActiveScope(path),
       });
       if (outcome.result.handled) {
         if (outcome.nextCards !== null) {
           this.context.store.replaceBaseCards(outcome.nextCards);
         }
-        outcome.hydrationPaths.forEach((path) => this.deps.scheduleHydrationPath(path));
         this.deps.projectVisibleCards();
+        this.scheduleVisibleHydrationCandidates(outcome.hydrationPaths);
         this.context.publishGroups("cards", "projection", "bulk", "scope");
         return {
           shouldRefresh: false,
@@ -435,6 +526,22 @@ export class ScopeController implements DisposableController {
       selectedFolderPathAfterRename,
       incrementalResult: null,
     };
+  }
+
+  /**
+   * Schedules only hydration candidates still visible and unhydrated after
+   * reprojection; hidden cards wait for ordinary viewport demand. Public so
+   * the metadata coordinator can apply the same projection-first rule to a
+   * Box entry that became visible only after the refreshed projection.
+   */
+  scheduleVisibleHydrationCandidates(paths: readonly string[]): void {
+    const visiblePaths = new Set(this.context.store.getVisibleCards().map((card) => card.path));
+    for (const path of paths) {
+      const card = visiblePaths.has(path) ? this.context.store.getBaseCard(path) : undefined;
+      if (card && !card.hydrated) {
+        this.deps.scheduleHydrationPath(path);
+      }
+    }
   }
 
   scheduleVaultRefresh(): void {

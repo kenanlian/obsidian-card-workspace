@@ -6,7 +6,7 @@ import {
 } from "../settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { collectVaultTagIndex } from "../view/metadata-utils";
-import { rewritePathAfterRename } from "../view/scope-files";
+import { rewritePathReference } from "../path-references";
 import type { VaultMutationEvent } from "./vault-events";
 
 const TAG_RECONCILE_DEBOUNCE_MS = 1000;
@@ -37,7 +37,7 @@ export function rewriteExpandedFoldersAfterRename(
   newPath: string,
 ): string[] {
   return normalizeExpandedFolderPaths(
-    paths.map((path) => rewritePathAfterRename(path, oldPath, newPath)),
+    paths.map((path) => rewritePathReference(path, oldPath, newPath)),
   );
 }
 
@@ -93,7 +93,7 @@ export class NavigationWorkspaceReconciler {
     let persist: Promise<unknown> | null = null;
     if (event.isFolder && event.eventType === "rename" && event.oldPath !== null) {
       const settings = this.getSettings();
-      const lastFolderPath = rewritePathAfterRename(
+      const lastFolderPath = rewritePathReference(
         settings.lastFolderPath,
         event.oldPath,
         event.path,

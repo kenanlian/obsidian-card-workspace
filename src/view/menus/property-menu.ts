@@ -6,14 +6,15 @@ import { appendNavSectionHeaderItems } from "./nav-section-header-items";
 
 /**
  * Properties lane menus (C9). The header offers the chooser first, then the
- * filter clear (dropped inside a box), then the generic section move/collapse
- * items. Key rows can be hidden with the same coherent cleanup as the chooser;
- * value rows only filter, never edit frontmatter, and offer no menu in a box.
+ * filter clear (dropped when browse property filtering is disabled), then the
+ * generic section move/collapse items. Key rows can be hidden with the same
+ * coherent cleanup as the chooser; value rows only filter, never edit
+ * frontmatter, and offer no menu when browse property filtering is disabled.
  */
 export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   const property = deps.strings.property;
   addItem(menu, property.chooseVisible, "settings-2", () => deps.actions.chooseVisibleProperties());
-  if (!deps.isBoxMode) {
+  if (deps.browsePropertyFilter) {
     addItem(
       menu,
       property.clearFilters,
@@ -42,7 +43,7 @@ export function buildPropertyValueMenu(
   key: string,
   value: PropertyScalarRef,
 ): boolean {
-  if (deps.isBoxMode) {
+  if (!deps.browsePropertyFilter) {
     return false;
   }
   const property = deps.strings.property;

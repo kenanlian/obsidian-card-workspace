@@ -3,7 +3,7 @@ import { propertyFilterClausesEqual } from "../property-filter-settings";
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
 import { NAVIGATION_SECTION_ORDER } from "./navigation-model";
-import { isBoxScope, type CardScope } from "./scope";
+import type { CardScope } from "./scope";
 import type { CardBoxDefinition, FavoriteEntry, Rule } from "./types";
 
 /**
@@ -91,6 +91,30 @@ export function resolveBoxesUpdateIntent(
 }
 
 /**
+ * The box whose persistence drives this update's grade: the runtime scope's
+ * box when a view dispatches with its scope, otherwise the persisted session
+ * projection. Exhaustive so a future source must declare its box activity.
+ */
+function resolveActiveBoxIdForIntent(
+  scope: CardScope | undefined,
+  next: PluginSettings,
+): string | null {
+  if (scope === undefined) {
+    return next.activeBoxId;
+  }
+  switch (scope.kind) {
+    case "box":
+      return scope.boxId;
+    case "folder":
+      return null;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
  * Compares every PluginSettings key by semantic value. Keep this resolver and
  * its exhaustive test expectation table synchronized when adding a setting.
  */
@@ -152,8 +176,6 @@ export function resolveSettingsUpdateIntent(
 
   // SettingsStore callers have no view scope and retain the global/default
   // classification. View dispatch must always pass its runtime scope (C7).
-  const activeBoxId = scope === undefined
-    ? next.activeBoxId
-    : isBoxScope(scope) ? scope.boxId : null;
+  const activeBoxId = resolveActiveBoxIdForIntent(scope, next);
   return mergeIntent(intent, resolveBoxesUpdateIntent(previous.boxes, next.boxes, activeBoxId));
 }

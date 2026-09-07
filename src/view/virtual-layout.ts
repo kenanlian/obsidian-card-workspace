@@ -29,10 +29,13 @@ export function readFiniteNumber(value: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * Viewport identity input. The host precomputes `scopeIdentity(CardScope)`
+ * into `PanelScopeState.sourceIdentity` (C6); this seam only reads it, so the
+ * virtualized layout never re-derives Folder/Box identity from `activeBoxId`.
+ */
 export function resolvePanelScopeIdentity(scope: PanelScopeState): string {
-  return scope.activeBoxId !== null
-    ? `box:${scope.activeBoxId}`
-    : `folder:${scope.displayPath}:${scope.includeSubfolders}`;
+  return scope.sourceIdentity;
 }
 
 export function createViewportRequest(

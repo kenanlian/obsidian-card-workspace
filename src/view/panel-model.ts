@@ -47,6 +47,19 @@ export interface PanelScopeState {
   activeBoxName: string | null;
   boxExcludedCount: number;
   emptyStateMessage: string;
+  /**
+   * Precomputed `scopeIdentity(CardScope)`; the viewport identity input (C6).
+   * Svelte never re-derives identity from `activeBoxId`.
+   */
+  sourceIdentity: string;
+  /** Browse Tag filter availability for this source (C6 capability). */
+  browseTagFilterEnabled: boolean;
+  /** Browse property filter availability for this source (C6 capability). */
+  browsePropertyFilterEnabled: boolean;
+  /** Include-subfolders control availability for this source (C6 capability). */
+  supportsIncludeSubfolders: boolean;
+  /** Save/add-current-source Box-rule seeding availability (C6 capability). */
+  supportsBoxRuleSeeding: boolean;
 }
 
 export interface PanelCardsState {

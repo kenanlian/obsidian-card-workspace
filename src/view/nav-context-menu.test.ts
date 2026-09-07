@@ -164,10 +164,18 @@ function createActions(): NavMenuActions {
   };
 }
 
-function createDeps(overrides: Partial<NavMenuDeps> = {}): NavMenuDeps {
+function createDeps(
+  overrides: Partial<NavMenuDeps> & { boxMode?: boolean } = {},
+): NavMenuDeps {
+  const { boxMode = false, ...rest } = overrides;
   return {
     strings: getUiStrings("en"),
-    isBoxMode: false,
+    // C6 capability booleans: `boxMode` is the test's Box-scenario shorthand
+    // for the four disabled capabilities a box source carries.
+    browseTagFilter: !boxMode,
+    browsePropertyFilter: !boxMode,
+    supportsIncludeSubfolders: !boxMode,
+    supportsBoxRuleSeeding: !boxMode,
     includeSubfolders: true,
     activeFilterTags: [],
     propertyFilterCount: 0,
@@ -184,7 +192,7 @@ function createDeps(overrides: Partial<NavMenuDeps> = {}): NavMenuDeps {
     tagExpansion: () => ({ hasChildren: false, expanded: false }),
     expansionActions: { toggleAllFolders: vi.fn(), toggleAllTags: vi.fn(), toggleTag: vi.fn() },
     actions: createActions(),
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -250,7 +258,7 @@ describe("folders header menu", () => {
   });
 
   it("checks include-subfolders and disables it in box mode", () => {
-    const deps = createDeps({ includeSubfolders: false, isBoxMode: true });
+    const deps = createDeps({ includeSubfolders: false, boxMode: true });
     const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
 
     const item = findItem(menu, "Including subfolders");
@@ -259,7 +267,7 @@ describe("folders header menu", () => {
   });
 
   it("reflects enabled include-subfolders state and toggles it directly", () => {
-    const deps = createDeps({ includeSubfolders: true, isBoxMode: false });
+    const deps = createDeps({ includeSubfolders: true, boxMode: false });
     const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
 
     const item = findItem(menu, "Including subfolders");
@@ -430,7 +438,7 @@ describe("tags header menu", () => {
   });
 
   it("reduces to the section toggle and move items in box mode", () => {
-    const deps = createDeps({ isBoxMode: true, activeFilterTags: ["work"] });
+    const deps = createDeps({ boxMode: true, activeFilterTags: ["work"] });
     const { menu, result } = build(createPayload({ section: "tags", scope: "header" }), deps);
 
     expect(result).toBe(true);
@@ -512,7 +520,7 @@ describe("tag row menu", () => {
   });
 
   it("returns false in box mode", () => {
-    const deps = createDeps({ isBoxMode: true });
+    const deps = createDeps({ boxMode: true });
     const { menu, result } = build(
       createPayload({ section: "tags", scope: "item", itemId: "work" }),
       deps,
@@ -545,7 +553,7 @@ describe("boxes header menu", () => {
   });
 
   it("hides the scope items in box mode", () => {
-    const deps = createDeps({ isBoxMode: true, activeBoxId: "box-1" });
+    const deps = createDeps({ boxMode: true, activeBoxId: "box-1" });
     const { menu } = build(createPayload({ section: "boxes", scope: "header" }), deps);
 
     expect(getSignature(menu)).toEqual([
@@ -582,7 +590,7 @@ describe("box row menu", () => {
   });
 
   it("flips to exit for the active box and hides the scope item in box mode", () => {
-    const deps = createDeps({ isBoxMode: true, activeBoxId: "box-1" });
+    const deps = createDeps({ boxMode: true, activeBoxId: "box-1" });
     const { menu } = build(
       createPayload({ section: "boxes", scope: "item", itemId: "box-1" }),
       deps,
@@ -722,7 +730,7 @@ describe("favorites row menu", () => {
   });
 
   it("stops after the reordering block for a tag favorite in box mode", () => {
-    const deps = createDeps({ favorites, isBoxMode: true, activeBoxId: "box-1" });
+    const deps = createDeps({ favorites, boxMode: true, activeBoxId: "box-1" });
     const { menu } = build(
       createPayload({ section: "favorites", scope: "item", favorite: { kind: "tag", ref: "work" } }),
       deps,
@@ -822,7 +830,7 @@ describe("section header move items", () => {
   });
 
   it("keeps the chooser but drops the clear item in box mode (C6/V-O)", () => {
-    const deps = createDeps({ isBoxMode: true, propertyFilterCount: 2 });
+    const deps = createDeps({ boxMode: true, propertyFilterCount: 2 });
     const { menu, result } = build(createPayload({ section: "properties", scope: "header" }), deps);
 
     expect(result).toBe(true);
@@ -853,7 +861,7 @@ describe("section header move items", () => {
   });
 
   it("keeps the Hide-this-property key-row menu in box mode (C6/V-O)", () => {
-    const deps = createDeps({ isBoxMode: true });
+    const deps = createDeps({ boxMode: true });
     const { menu, result } = build(createPayload({
       section: "properties",
       scope: "item",
@@ -915,7 +923,7 @@ describe("section header move items", () => {
   });
 
   it("suppresses the property value-row menu entirely in box mode (C6/V-O)", () => {
-    const deps = createDeps({ isBoxMode: true, propertyFilterCount: 1, isPropertyValueActive: () => true });
+    const deps = createDeps({ boxMode: true, propertyFilterCount: 1, isPropertyValueActive: () => true });
     const { menu, result } = build(createPayload({
       section: "properties",
       scope: "item",

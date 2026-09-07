@@ -14,7 +14,8 @@ import type {
   PanelModelState,
   PanelProjectionState,
 } from "./panel-model";
-import { isBoxScope, type CardScope } from "./scope";
+import { isCurrentBoxId, type CardScope } from "./scope";
+import { resolveSourceCapabilities } from "./source-capabilities";
 import { buildTagTree, resolveTagSelection } from "./tag-tree";
 import type { FavoriteEntry, FolderTreeNode, NavContextMenuPayload } from "./types";
 import { getMenuDom } from "./menu-dom";
@@ -47,7 +48,7 @@ export function buildNavigationPanelState(input: {
     boxes: input.boxSummaries,
     tagCounts: input.cardProjection.tagCounts,
     includeSubfolders: settings.includeSubfolders,
-    tagsDisabled: isBoxScope(scope),
+    tagsDisabled: !resolveSourceCapabilities(scope).browseTagFilter,
     sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
     sectionLabels: {
@@ -207,7 +208,7 @@ export function routeNavigationIntent(input: {
   if (row.kind === "section") { void navLayout.setExpanded(row, !row.expanded); return; }
   if (row.kind === "folder") { input.selectFolder(row.folderPath); return; }
   if (row.kind === "box") {
-    if (input.scope.kind !== "box" || input.scope.boxId !== row.boxId) input.switchBox(row.boxId);
+    if (!isCurrentBoxId(input.scope, row.boxId)) input.switchBox(row.boxId);
     return;
   }
   if (row.kind === "tag") {

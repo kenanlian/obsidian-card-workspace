@@ -294,7 +294,6 @@ interface TestHarness {
     saveSettings: ReturnType<typeof vi.fn>;
     openNoteFromCard: ReturnType<typeof vi.fn>;
     selectAllNotes: ReturnType<typeof vi.fn>;
-    createNoteInCurrentFolder: ReturnType<typeof vi.fn>;
     createNoteInFolder: ReturnType<typeof vi.fn>;
     selectFolderByPath: ReturnType<typeof vi.fn>;
   };
@@ -421,9 +420,6 @@ function createHarness(): TestHarness {
     selectAllNotes: vi.fn(async () => {
       return;
     }),
-    createNoteInCurrentFolder: vi.fn(async () => {
-      return;
-    }),
     createNoteInFolder: vi.fn(async () => {
       return;
     }),
@@ -503,7 +499,7 @@ describe("FolderCardView host contract", () => {
     (view as any).cardScope = createFolderScope("notes", true);
     (view as any).baseCards = [zetaCard, alphaCard];
 
-    await (view as any).onSortChange({ field: "name", direction: "asc" });
+    await (view as any).modules.arrangementActions.onSortChange({ field: "name", direction: "asc" });
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       sort: {
@@ -526,7 +522,7 @@ describe("FolderCardView host contract", () => {
       createCard("archive/gamma.md", "Gamma"),
     ];
 
-    await view.onGroupChange({ dimension: "folder" });
+    await view.modules.arrangementActions.onGroupChange({ dimension: "folder" });
 
     const state = getPanelState(view);
     expect(state.projection.group.dimension).toBe("folder");
@@ -544,13 +540,13 @@ describe("FolderCardView host contract", () => {
       createCard("archive/gamma.md", "Gamma"),
     ];
 
-    await view.onGroupChange({ dimension: "folder" });
+    await view.modules.arrangementActions.onGroupChange({ dimension: "folder" });
 
     const grouped = getPanelState(view);
     const totalRecords = grouped.cards.records.length;
     const target = grouped.cards.groupSegments[0]!;
 
-    view.onGroupCollapseCommand({ command: "toggle", key: target.key });
+    view.modules.arrangementActions.onGroupCollapseCommand({ command: "toggle", key: target.key });
 
     const collapsed = getPanelState(view);
     const collapsedSegment = collapsed.cards.groupSegments.find((segment) => segment.key === target.key)!;
@@ -559,11 +555,63 @@ describe("FolderCardView host contract", () => {
     expect(collapsedSegment.visibleCount).toBe(0);
     expect(collapsed.cards.records).toHaveLength(totalRecords - target.count);
 
-    view.onGroupCollapseCommand({ command: "collapse-all" });
+    view.modules.arrangementActions.onGroupCollapseCommand({ command: "collapse-all" });
     expect(getPanelState(view).cards.records).toHaveLength(0);
 
-    view.onGroupCollapseCommand({ command: "expand-all" });
+    view.modules.arrangementActions.onGroupCollapseCommand({ command: "expand-all" });
     expect(getPanelState(view).cards.records).toHaveLength(totalRecords);
+  });
+
+  it("creates a new note in this view's folder scope, including vault root", () => {
+    const { view, plugin } = createHarness();
+    (view as any).cardScope = createFolderScope("projects", true);
+    view.handleToolbarAction({ action: "new-note" });
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("projects");
+
+    plugin.createNoteInFolder.mockClear();
+    (view as any).cardScope = createFolderScope("", true);
+    view.handleToolbarAction({ action: "new-note" });
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("");
+  });
+
+  it("creates notes in each open folder view's own path, not lastFolderPath", () => {
+    const harnessA = createHarness();
+    const harnessB = createHarness();
+    Object.assign(readSettingsObject(harnessA.plugin), { lastFolderPath: "other" });
+    Object.assign(readSettingsObject(harnessB.plugin), { lastFolderPath: "other" });
+    (harnessA.view as any).cardScope = createFolderScope("projects", true);
+    (harnessB.view as any).cardScope = createFolderScope("notes", true);
+
+    harnessA.view.handleToolbarAction({ action: "new-note" });
+    harnessB.view.handleToolbarAction({ action: "new-note" });
+
+    expect(harnessA.plugin.createNoteInFolder).toHaveBeenCalledWith("projects");
+    expect(harnessB.plugin.createNoteInFolder).toHaveBeenCalledWith("notes");
+    expect(harnessA.plugin.createNoteInFolder).not.toHaveBeenCalledWith("other");
+    expect(harnessB.plugin.createNoteInFolder).not.toHaveBeenCalledWith("other");
+  });
+
+  it("falls back to lastFolderPath for Box new-note without switching scope or auto-adding", () => {
+    const { view, plugin } = createHarness();
+    Object.assign(readSettingsObject(plugin), {
+      lastFolderPath: "inbox",
+      boxes: [createBox()],
+      activeBoxId: "box-1",
+    });
+    (view as any).cardScope = createBoxScope("box-1");
+    const addSpy = vi.spyOn((view as any).modules.boxActions, "addPathsToBox");
+
+    view.handleToolbarAction({ action: "new-note" });
+
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox");
+    expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
+    expect(addSpy).not.toHaveBeenCalled();
+    expect(plugin.selectFolderByPath).not.toHaveBeenCalled();
+  });
+
+  it("does not expose createNoteInCurrentFolder on the plugin mock", () => {
+    const { plugin } = createHarness();
+    expect("createNoteInCurrentFolder" in plugin).toBe(false);
   });
 
   it("offers box-rule grouping only in box scope", () => {
@@ -942,6 +990,7 @@ describe("FolderCardView host contract", () => {
 
       emitSnapshot({
         initialized: true,
+        contentRevision: 0,
         disposed: false,
         mode: "indexed",
         status: "ready",
@@ -1018,6 +1067,7 @@ describe("FolderCardView host contract", () => {
 
       emitSnapshot({
         initialized: true,
+        contentRevision: 0,
         disposed: false,
         mode: "indexed",
         status: "building",
@@ -1232,7 +1282,7 @@ describe("FolderCardView host contract", () => {
     expect(plugin.subscribeMetadataEvents).toHaveBeenCalledTimes(1);
     expect(metadataListener).toBeTypeOf("function");
 
-    const handleMetadataChange = vi.spyOn((view as any).modules.taskSummary, "handleMetadataChange");
+    const handleMetadataChange = vi.spyOn((view as any).modules.metadataImpact, "handleMetadataChange");
     const panelListener = vi.fn();
     view.panelModel.subscribe(panelListener);
     panelListener.mockClear();
@@ -1301,7 +1351,9 @@ describe("FolderCardView host contract", () => {
     ]);
 
     currentTags = [];
-    metadataListener!({ path: target.path });
+    // The handler is async (it awaits the silent candidate refresh before the
+    // coherent reprojection batch), so the listener returns its promise.
+    await metadataListener!({ path: target.path });
 
     expect((view as any).baseCards).toEqual([]);
     expect(getPanelState(view).cards.records).toEqual([]);
@@ -2274,6 +2326,11 @@ describe("FolderCardView host contract", () => {
 
     (view as any).cardScope = createFolderScope("/", true);
     (view as any).baseCards = [card];
+    // C1 resolves the live TFile for a modify; the harness vault defaults to
+    // null, so provide the live replacement file for this path.
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => (path === card.path ? new testState.TestTFile(card.path) : null),
+    );
 
     const result = (view as any).handleVaultMutation({
       eventType: "modify",
@@ -2389,9 +2446,11 @@ describe("FolderCardView graded update intents", () => {
       cardCornerRadius: "compact",
     });
     const appearanceBefore = getPanelState(view).appearance;
+    const seamSpy = vi.spyOn((view as any).modules.arrangementActions, "sortAndReprojectCards");
 
     await view.applyUpdateIntent("reproject", "settings-change");
 
+    expect(seamSpy).toHaveBeenCalledTimes(1);
     expect(getPanelState(view).cards.records.map((card) => card.title)).toEqual(["Alpha", "Zeta"]);
     expect(getPanelState(view).appearance).not.toBe(appearanceBefore);
     expect(getPanelState(view).appearance.cardCornerRadius).toBe("compact");
@@ -2517,7 +2576,7 @@ describe("FolderCardView card box mode", () => {
     settings.activeBoxId = "box-1";
     (view as any).cardScope = createBoxScope("box-1");
 
-    await (view as any).onPinToggle({ path: "notes/a.md", pinned: true });
+    await (view as any).modules.arrangementActions.onPinToggle({ path: "notes/a.md", pinned: true });
 
     expect(settings.boxes[0].pinnedPaths).toEqual(["notes/a.md"]);
     expect(settings.pinnedPaths).toEqual([]);
@@ -2530,7 +2589,7 @@ describe("FolderCardView card box mode", () => {
     settings.activeBoxId = "box-1";
     (view as any).cardScope = createBoxScope("box-1");
 
-    await (view as any).onSortChange({ field: "name", direction: "asc" });
+    await (view as any).modules.arrangementActions.onSortChange({ field: "name", direction: "asc" });
 
     expect(settings.boxes[0].sort).toEqual({ field: "name", direction: "asc" });
     expect(settings.sort).toEqual({ field: "mtime", direction: "desc" });

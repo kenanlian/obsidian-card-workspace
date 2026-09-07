@@ -106,16 +106,27 @@ export class NavLayoutController implements DisposableController {
     if (this.disposed) return;
     const previous = this.lastScope;
     this.lastScope = scope;
-    if (scope.kind !== "folder") { this.revealFoldersSection = false; return; }
-    if (previous?.kind === "folder" && previous.path === scope.path) return;
-    this.revealFolderPaths.clear();
-    this.suppressedFolderPaths.clear();
-    this.revealFoldersSection = true;
-    const segments = normalizeScopePath(scope.path).split("/").filter(Boolean);
-    for (let index = 1; index < segments.length; index += 1) {
-      this.revealFolderPaths.add(segments.slice(0, index).join("/"));
+    switch (scope.kind) {
+      case "folder": {
+        if (previous?.kind === "folder" && previous.path === scope.path) return;
+        this.revealFolderPaths.clear();
+        this.suppressedFolderPaths.clear();
+        this.revealFoldersSection = true;
+        const segments = normalizeScopePath(scope.path).split("/").filter(Boolean);
+        for (let index = 1; index < segments.length; index += 1) {
+          this.revealFolderPaths.add(segments.slice(0, index).join("/"));
+        }
+        this.requestReveal(navigationFolderId(scope.path));
+        return;
+      }
+      case "box":
+        this.revealFoldersSection = false;
+        return;
+      default: {
+        const exhaustive: never = scope;
+        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+      }
     }
-    this.requestReveal(navigationFolderId(scope.path));
   }
   /** Rename is identity continuity, not a distinct-scope reveal. */
   rewriteFolderIdentity(rewrite: (path: string) => string): void {

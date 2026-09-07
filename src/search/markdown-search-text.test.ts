@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stripMarkdownToText } from "../markdown-plain-text";
 import { extractMarkdownSearchText } from "./markdown-search-text";
 
 describe("extractMarkdownSearchText", () => {
@@ -65,5 +66,28 @@ describe("extractMarkdownSearchText", () => {
     expect(text).toContain("item one");
     expect(text).toContain("alias");
     expect(text).toContain("x+y");
+  });
+
+  it("keeps fenced code searchable in content while the neutral excerpt removes fenced blocks", () => {
+    // Same representative corpus samples locked in src/markdown-plain-text.test.ts:
+    // search content must retain fenced body text, while the neutral excerpt
+    // helper (moved from src/view/markdown-utils.ts) removes triple-backtick
+    // fences byte-for-byte as before.
+    const fencedCorpus = [
+      "before\n```js\nconst x = 1;\nflow report\n```\nmiddle\n~~~bash\n./report_summary\n~~~\nafter",
+      "```sh\nflow report\n```",
+      "~~~bash\n./report_summary\n~~~",
+    ];
+
+    for (const markdown of fencedCorpus) {
+      const content = extractMarkdownSearchText(markdown);
+      const excerpt = stripMarkdownToText(markdown);
+
+      expect(content).not.toBe(excerpt);
+    }
+
+    expect(extractMarkdownSearchText(fencedCorpus[0]!)).toContain("flow report");
+    expect(stripMarkdownToText(fencedCorpus[0]!)).not.toContain("flow report");
+    expect(stripMarkdownToText(fencedCorpus[0]!)).not.toContain("```");
   });
 });

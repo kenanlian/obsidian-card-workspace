@@ -29,6 +29,7 @@ function createSnapshot(overrides: Partial<SearchServiceSnapshot> = {}): SearchS
     mode: "indexed",
     status: "building",
     lastError: null,
+    contentRevision: 0,
     health: createHealth(),
     ...overrides,
   };
@@ -210,7 +211,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "meeting",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: [
         "notes/Meeting.md",
         "notes/Meeting Followup.md",
@@ -250,7 +250,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "meeting",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/Meeting.md", "notes/Meeting Followup.md"],
     });
 
@@ -278,7 +277,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "alpha beta",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md", "notes/b.md", "notes/c.md"],
     });
 
@@ -307,7 +305,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "alpha",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md", "notes/b.md", "notes/c.md"],
     });
 
@@ -325,7 +322,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "roadmap",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md", "notes/b.md"],
     });
 
@@ -343,7 +339,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "meeting",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["Notes/Meeting.md", "Notes/Plan.md"],
     });
 
@@ -376,7 +371,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "roadmap",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md"],
     });
 
@@ -408,7 +402,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "roadmap",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md"],
     });
 
@@ -426,7 +419,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "roadmap",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md"],
     });
 
@@ -444,7 +436,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "roadmap",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md"],
     });
 
@@ -462,7 +453,6 @@ describe("IndexedSearchService", () => {
 
     const result = await service.query({
       query: "meeting",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["Notes/Meeting.md", "Notes/Plan.md"],
     });
 
@@ -484,5 +474,23 @@ describe("IndexedSearchService", () => {
 
     expect(harness.handleVaultMutation).toHaveBeenCalledTimes(1);
     expect(harness.handleVaultMutation).toHaveBeenCalledWith(event);
+  });
+
+  it("carries the runtime contentRevision through cloned snapshots", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "building" }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+    const seenRevisions: number[] = [];
+
+    service.subscribe((snapshot) => {
+      seenRevisions.push(snapshot.contentRevision);
+    });
+    await service.initialize();
+
+    // A same-count applied mutation surfaces as a cloned snapshot whose only
+    // movement is the content revision; consumers refresh from it.
+    harness.emit(createSnapshot({ status: "ready", contentRevision: 3 }));
+
+    expect(service.getSnapshot().contentRevision).toBe(3);
+    expect(seenRevisions.at(-1)).toBe(3);
   });
 });

@@ -134,7 +134,12 @@
     icon: string;
   }
 
-  const DEFAULT_SCOPE: PanelScopeState = { displayPath: "", includeSubfolders: true, activeBoxId: null, activeBoxName: null, boxExcludedCount: 0, emptyStateMessage: "" };
+  const DEFAULT_SCOPE: PanelScopeState = {
+    displayPath: "", includeSubfolders: true, activeBoxId: null, activeBoxName: null,
+    boxExcludedCount: 0, emptyStateMessage: "",
+    sourceIdentity: "folder::true", browseTagFilterEnabled: true, browsePropertyFilterEnabled: true,
+    supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
+  };
   const DEFAULT_SEARCH: PanelSearchState = { query: "", status: "idle", focusToken: 0 };
   const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0 };
   const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
@@ -571,17 +576,19 @@
               </button>
             {/if}
           {/each}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button"
-            aria-label={boxStrings.saveScopeTitle}
-            onclick={() => emitBoxCommand("save-scope-as-box")}
-            use:applyIcon={"package-plus"}
-            use:applyTooltip={boxStrings.saveScopeTitle}
-          >
-            <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
-          </button>
-          {#if hasBoxes}
+          {#if scope.supportsBoxRuleSeeding}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button"
+              aria-label={boxStrings.saveScopeTitle}
+              onclick={() => emitBoxCommand("save-scope-as-box")}
+              use:applyIcon={"package-plus"}
+              use:applyTooltip={boxStrings.saveScopeTitle}
+            >
+              <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
+            </button>
+          {/if}
+          {#if scope.supportsBoxRuleSeeding && hasBoxes}
             <button
               type="button"
               class="clickable-icon fce-toolbar-button {showBoxPickerMenu ? 'is-selected' : ''}"

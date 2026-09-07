@@ -22,6 +22,7 @@ vi.mock("obsidian", () => {
 });
 
 import { TFile, TFolder } from "obsidian";
+import { rewritePathReference } from "../path-references";
 import {
   collectSupportedFiles,
   isPathInFolderScope,
@@ -128,5 +129,9 @@ describe("rewritePathAfterRename", () => {
     expect(rewritePathAfterRename("", "a", "renamed")).toBe("");
     expect(rewritePathAfterRename("ab/note.md", "a", "renamed")).toBe("ab/note.md");
     expect(rewritePathAfterRename("other/note.md", "a", "renamed")).toBe("other/note.md");
+  });
+
+  it("re-exports the shared path-reference primitive for existing consumers", () => {
+    expect(rewritePathAfterRename).toBe(rewritePathReference);
   });
 });

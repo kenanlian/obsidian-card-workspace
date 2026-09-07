@@ -136,6 +136,13 @@ function mountToolbar(
         activeBoxName: values.activeBoxName ?? null,
         boxExcludedCount: 0,
         emptyStateMessage: "",
+        sourceIdentity: values.activeBoxId
+          ? `box:${values.activeBoxId}`
+          : `folder:${values.folderPath ?? "notes"}:true`,
+        browseTagFilterEnabled: !values.activeBoxId,
+        browsePropertyFilterEnabled: !values.activeBoxId,
+        supportsIncludeSubfolders: !values.activeBoxId,
+        supportsBoxRuleSeeding: !values.activeBoxId,
       },
       search: {
         query: values.searchQuery ?? "",

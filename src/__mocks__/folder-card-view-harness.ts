@@ -901,7 +901,6 @@ export function createViewWithFile(
     subscribeMetadataEvents: vi.fn(() => () => undefined),
     openNoteFromCard: vi.fn(),
     selectAllNotes: vi.fn(),
-    createNoteInCurrentFolder: vi.fn(),
     createNoteInFolder: vi.fn(async () => undefined),
     selectFolderByPath: vi.fn(),
     saveSettings: vi.fn(async () => undefined),

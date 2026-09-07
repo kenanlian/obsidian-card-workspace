@@ -32,15 +32,16 @@ export function isBoxScope(scope: CardScope): scope is BoxScope {
 }
 
 export function scopesEqual(a: CardScope, b: CardScope): boolean {
-  if (a.kind === "folder" && b.kind === "folder") {
-    return a.path === b.path && a.includeSubfolders === b.includeSubfolders;
+  switch (a.kind) {
+    case "folder":
+      return b.kind === "folder" && a.path === b.path && a.includeSubfolders === b.includeSubfolders;
+    case "box":
+      return b.kind === "box" && a.boxId === b.boxId;
+    default: {
+      const exhaustive: never = a;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
   }
-
-  if (a.kind === "box" && b.kind === "box") {
-    return a.boxId === b.boxId;
-  }
-
-  return false;
 }
 
 /** Load key: scope plus sort, plus the box membership signature when relevant. */
@@ -49,11 +50,16 @@ export function serializeScopeKey(
   sort: CardBoxSortSpec,
   membershipSignature?: string,
 ): string {
-  if (scope.kind === "box") {
-    return `box::${scope.boxId}::${sort.field}::${sort.direction}::${membershipSignature ?? ""}`;
+  switch (scope.kind) {
+    case "box":
+      return `box::${scope.boxId}::${sort.field}::${sort.direction}::${membershipSignature ?? ""}`;
+    case "folder":
+      return `${scope.path}::${String(scope.includeSubfolders)}::${sort.field}::${sort.direction}`;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
   }
-
-  return `${scope.path}::${String(scope.includeSubfolders)}::${sort.field}::${sort.direction}`;
 }
 
 /**
@@ -63,16 +69,82 @@ export function serializeScopeKey(
  * keyed by it would reset on every sort change.
  */
 export function scopeIdentity(scope: CardScope): string {
-  if (scope.kind === "box") {
-    return `box:${scope.boxId}`;
+  switch (scope.kind) {
+    case "box":
+      return `box:${scope.boxId}`;
+    case "folder":
+      return `folder:${scope.path}:${String(scope.includeSubfolders)}`;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
   }
-
-  return `folder:${scope.path}:${String(scope.includeSubfolders)}`;
 }
 
 /** Folder path for display and path-scoped operations; boxes have none. */
 export function scopeDisplayPath(scope: CardScope): string {
-  return scope.kind === "folder" ? scope.path : "";
+  switch (scope.kind) {
+    case "folder":
+      return scope.path;
+    case "box":
+      return "";
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * Whether a folder reference (favorite row, nav row, browse target) is the
+ * folder the scope is currently showing. Box sources show no current folder;
+ * a later source must choose this explicitly rather than inheriting Folder.
+ */
+export function isCurrentFolderPath(scope: CardScope, folderPath: string): boolean {
+  switch (scope.kind) {
+    case "folder":
+      return normalizeScopePath(folderPath) === scope.path;
+    case "box":
+      return false;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * Whether a box reference is the box the scope is currently showing. Folder
+ * sources show no current box; a later source must choose explicitly.
+ */
+export function isCurrentBoxId(scope: CardScope, boxId: string): boolean {
+  switch (scope.kind) {
+    case "box":
+      return scope.boxId === boxId;
+    case "folder":
+      return false;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * Folder browse include-subfolders state, with the global setting as the
+ * fallback for sources that carry no folder of their own.
+ */
+export function resolveBrowseIncludeSubfolders(scope: CardScope, fallback: boolean): boolean {
+  switch (scope.kind) {
+    case "folder":
+      return scope.includeSubfolders;
+    case "box":
+      return fallback;
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }
 
 /** Whether the scope still points at a folder or box that exists. */
@@ -81,13 +153,19 @@ export function validateScope(
   scope: CardScope,
   boxes: readonly CardBoxDefinition[],
 ): boolean {
-  if (scope.kind === "box") {
-    return boxes.some((box) => box.id === scope.boxId);
-  }
+  switch (scope.kind) {
+    case "box":
+      return boxes.some((box) => box.id === scope.boxId);
+    case "folder": {
+      if (scope.path === "") {
+        return app.vault.getRoot() instanceof TFolder;
+      }
 
-  if (scope.path === "") {
-    return app.vault.getRoot() instanceof TFolder;
+      return app.vault.getAbstractFileByPath(scope.path) instanceof TFolder;
+    }
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
   }
-
-  return app.vault.getAbstractFileByPath(scope.path) instanceof TFolder;
 }

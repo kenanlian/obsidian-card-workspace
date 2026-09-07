@@ -16,6 +16,7 @@ import { EditorDropController } from "./services/EditorDropController";
 import { BoxReconciler } from "./services/BoxReconciler";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
+import { PinnedPathReconciler } from "./services/PinnedPathReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import { SettingsStore, hasPatchValues } from "./services/SettingsStore";
 import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
@@ -94,6 +95,10 @@ export default class CardWorkspacePlugin extends Plugin {
     getSettings: () => this.getSettings(),
     saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
+  });
+  private readonly pinnedPathReconciler = new PinnedPathReconciler({
+    getSettings: () => this.getSettings(),
+    saveSettings: (patch) => this.saveSettings(patch),
   });
 
   onload(): void {
@@ -197,10 +202,6 @@ export default class CardWorkspacePlugin extends Plugin {
   private runDetached(work: Promise<unknown>, detail: string): void {
     void work.catch((error: unknown) =>
       { if (!this.disposed) console.warn(`[Card Workspace] ${detail}`, error); });
-  }
-
-  async createNoteInCurrentFolder(): Promise<void> {
-    await this.createNoteInFolder(this.getSettings().lastFolderPath);
   }
 
   async createNoteInFolder(folderPath: string, tags: string[] = []): Promise<void> {
@@ -420,6 +421,9 @@ export default class CardWorkspacePlugin extends Plugin {
     if (!hasPatchValues(patch)) {
       return;
     }
+    if (this.settingsStore.getCompatibility() === "unsupported-schema") {
+      this.showUnsupportedSchemaNotice();
+    }
     const previous = this.getSettings();
     const write = this.settingsStore.updateFlat(patch);
 
@@ -565,9 +569,21 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    await this.settingsStore.init();
+    const status = await this.settingsStore.init();
+    if (status === "unsupported-schema") {
+      this.showUnsupportedSchemaNotice();
+    }
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
+  }
+
+  /** Degrade to defaults read-only mode without aborting plugin startup. */
+  private showUnsupportedSchemaNotice(): void {
+    try {
+      new Notice(this.getUiStrings().app.settingsSchemaUnsupportedNotice);
+    } catch (error) {
+      console.warn("[Card Workspace] Failed to show the unsupported settings schema notice.", error);
+    }
   }
 
   private async restoreLastSession(): Promise<void> {
@@ -647,9 +663,10 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.vaultEventListenersRegistered = true;
-    // Plugin order: navigation workspace → boxes → favorites/tag prune → search. Views subscribe later.
+    // Plugin order: navigation workspace → global pins → boxes → favorites/tag prune → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
+      this.subscribeVaultEvents((event) => this.pinnedPathReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.favoriteReconciler.handleVaultMutation(event)),
     ];

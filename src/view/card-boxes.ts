@@ -3,6 +3,11 @@ import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import {
   normalizePropertyFilterClauses, propertyFilterClausesEqual, type PropertyFilterClause,
 } from "../property-filter-settings";
+import {
+  prunePathList,
+  rewritePathListAfterRename,
+  rewritePathReference,
+} from "../path-references";
 import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "./types";
 import { matchesRule } from "./card-box-membership";
@@ -235,47 +240,6 @@ export interface BoxVaultMutation {
   isFolder: boolean;
 }
 
-function rewritePath(path: string, oldPath: string, newPath: string): string {
-  if (path === oldPath) {
-    return newPath;
-  }
-  const prefix = `${oldPath}/`;
-  if (path.startsWith(prefix)) {
-    return `${newPath}/${path.slice(prefix.length)}`;
-  }
-  return path;
-}
-
-function isUnderPath(path: string, scopePath: string): boolean {
-  return path === scopePath || path.startsWith(`${scopePath}/`);
-}
-
-function dedupe(paths: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const path of paths) {
-    if (seen.has(path)) continue;
-    seen.add(path);
-    result.push(path);
-  }
-  return result;
-}
-
-function mapPathList(paths: string[], mapper: (path: string) => string): string[] {
-  let changed = false;
-  const mapped = paths.map((path) => {
-    const next = mapper(path);
-    if (next !== path) changed = true;
-    return next;
-  });
-  return changed ? dedupe(mapped) : paths;
-}
-
-function filterPathList(paths: string[], keep: (path: string) => boolean): string[] {
-  const filtered = paths.filter(keep);
-  return filtered.length === paths.length ? paths : filtered;
-}
-
 /**
  * Keep a box consistent with a vault mutation.
  *
@@ -311,10 +275,9 @@ function migrateBoxForFileRename(
   oldPath: string,
   newPath: string,
 ): CardBoxDefinition {
-  const map = (path: string) => (path === oldPath ? newPath : path);
-  const manualPaths = mapPathList(box.manualPaths, map);
-  const excludedPaths = mapPathList(box.excludedPaths, map);
-  const pinnedPaths = mapPathList(box.pinnedPaths, map);
+  const manualPaths = rewritePathListAfterRename(box.manualPaths, oldPath, newPath, "exact");
+  const excludedPaths = rewritePathListAfterRename(box.excludedPaths, oldPath, newPath, "exact");
+  const pinnedPaths = rewritePathListAfterRename(box.pinnedPaths, oldPath, newPath, "exact");
   if (
     manualPaths === box.manualPaths &&
     excludedPaths === box.excludedPaths &&
@@ -330,17 +293,16 @@ function migrateBoxForFolderRename(
   oldPath: string,
   newPath: string,
 ): CardBoxDefinition {
-  const map = (path: string) => rewritePath(path, oldPath, newPath);
-  const manualPaths = mapPathList(box.manualPaths, map);
-  const excludedPaths = mapPathList(box.excludedPaths, map);
-  const pinnedPaths = mapPathList(box.pinnedPaths, map);
+  const manualPaths = rewritePathListAfterRename(box.manualPaths, oldPath, newPath, "at-or-below");
+  const excludedPaths = rewritePathListAfterRename(box.excludedPaths, oldPath, newPath, "at-or-below");
+  const pinnedPaths = rewritePathListAfterRename(box.pinnedPaths, oldPath, newPath, "at-or-below");
 
   let rulesChanged = false;
   const rules = box.rules.map((rule) => {
     if (rule.folder === "") {
       return rule;
     }
-    const nextFolder = rewritePath(rule.folder, oldPath, newPath);
+    const nextFolder = rewritePathReference(rule.folder, oldPath, newPath);
     if (nextFolder === rule.folder) {
       return rule;
     }
@@ -367,10 +329,9 @@ function migrateBoxForFolderRename(
 }
 
 function cleanupBoxForFileDelete(box: CardBoxDefinition, path: string): CardBoxDefinition {
-  const keep = (candidate: string) => candidate !== path;
-  const manualPaths = filterPathList(box.manualPaths, keep);
-  const excludedPaths = filterPathList(box.excludedPaths, keep);
-  const pinnedPaths = filterPathList(box.pinnedPaths, keep);
+  const manualPaths = prunePathList(box.manualPaths, path, "exact");
+  const excludedPaths = prunePathList(box.excludedPaths, path, "exact");
+  const pinnedPaths = prunePathList(box.pinnedPaths, path, "exact");
   if (
     manualPaths === box.manualPaths &&
     excludedPaths === box.excludedPaths &&
@@ -382,10 +343,9 @@ function cleanupBoxForFileDelete(box: CardBoxDefinition, path: string): CardBoxD
 }
 
 function cleanupBoxForFolderDelete(box: CardBoxDefinition, folderPath: string): CardBoxDefinition {
-  const keep = (candidate: string) => !isUnderPath(candidate, folderPath);
-  const manualPaths = filterPathList(box.manualPaths, keep);
-  const excludedPaths = filterPathList(box.excludedPaths, keep);
-  const pinnedPaths = filterPathList(box.pinnedPaths, keep);
+  const manualPaths = prunePathList(box.manualPaths, folderPath, "at-or-below");
+  const excludedPaths = prunePathList(box.excludedPaths, folderPath, "at-or-below");
+  const pinnedPaths = prunePathList(box.pinnedPaths, folderPath, "at-or-below");
   if (
     manualPaths === box.manualPaths &&
     excludedPaths === box.excludedPaths &&

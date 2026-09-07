@@ -2,9 +2,9 @@ import { TFile, type App } from "obsidian";
 
 import type { SortDirection, SortField } from "../../settings";
 import { migrateRenamedPath, pruneRemovedPath } from "../bulk-selection";
+import { createCardRecord } from "../card-record";
 import { findSortedInsertIndex } from "../card-sort";
-import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
-import { deriveCardTaskSummary } from "../task-summary";
+import { resolveCardFileKind, resolveCardFileKindFromPath, type CardFileKind } from "../file-kind";
 import type { IncrementalMutationResult, NoteCardRecord, VaultMutationEvent } from "../types";
 
 export interface BulkSelectionState {
@@ -19,6 +19,8 @@ export interface IncrementalMutationDeps {
     has: (path: string) => boolean;
     delete: (path: string) => boolean;
   };
+  /** Runtime preview-cache/non-Markdown placeholder preparation for fresh records. */
+  prepareRecordsFromCache: (records: NoteCardRecord[]) => void;
   getBulkSelection: () => BulkSelectionState;
   setBulkSelection: (state: BulkSelectionState) => void;
   isPathInActiveScope: (path: string) => boolean;
@@ -28,24 +30,32 @@ export interface IncrementalMutationOutcome {
   result: IncrementalMutationResult;
   /** `null` means no collection change; `[]` means the collection became empty. */
   nextCards: NoteCardRecord[] | null;
-  /** Paths the caller schedules only after installing `nextCards`. */
+  /**
+   * Hydration candidates the caller schedules only after installing
+   * `nextCards` and reprojecting: every path whose pending read was canceled
+   * plus a merged record that is still unhydrated. The caller schedules only
+   * candidates still visible and unhydrated; viewport demand covers hidden cards.
+   */
   hydrationPaths: readonly string[];
 }
 
-function createRecord(app: App, file: TFile, fileKind: NoteCardRecord["fileKind"]): NoteCardRecord {
-  return {
-    file,
-    fileKind,
-    path: file.path,
-    title: file.basename,
-    ctime: file.stat.ctime,
-    mtime: file.stat.mtime,
-    excerpt: "",
-    previewHtml: "",
-    previewMode: "empty",
-    hydrated: false,
-    taskSummary: deriveCardTaskSummary(app, file, fileKind),
-  };
+function unchanged(result: IncrementalMutationResult): IncrementalMutationOutcome {
+  return { result, nextCards: null, hydrationPaths: [] };
+}
+
+interface LiveSupportedFile {
+  file: TFile;
+  fileKind: CardFileKind;
+}
+
+/** Resolves the current live `TFile` for a path; `null` when missing/unsupported. */
+function resolveLiveSupportedFile(app: App, path: string): LiveSupportedFile | null {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) {
+    return null;
+  }
+  const fileKind = resolveCardFileKind(file);
+  return fileKind === null ? null : { file, fileKind };
 }
 
 export function applyIncrementalMutation(
@@ -53,19 +63,13 @@ export function applyIncrementalMutation(
   baseCards: readonly NoteCardRecord[],
   deps: IncrementalMutationDeps,
 ): IncrementalMutationOutcome {
-  const unchanged = (result: IncrementalMutationResult): IncrementalMutationOutcome => ({
-    result,
-    nextCards: null,
-    hydrationPaths: [],
-  });
-
   if (event.isFolder) {
     return unchanged({ handled: false, action: "skipped_folder_event" });
   }
 
   const oldPathKind = event.oldPath ? resolveCardFileKindFromPath(event.oldPath) : null;
   if (event.fileKind === null && oldPathKind === null) {
-    return unchanged({ handled: false, action: "skipped_folder_event" });
+    return unchanged({ handled: true, action: "skipped_folder_event" });
   }
 
   const cards = [...baseCards];
@@ -92,15 +96,11 @@ export function applyIncrementalMutation(
     if (!deps.isPathInActiveScope(event.path) || cards.some((card) => card.path === event.path)) {
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
-    const file = deps.app.vault.getAbstractFileByPath(event.path);
-    if (!(file instanceof TFile)) {
+    const live = resolveLiveSupportedFile(deps.app, event.path);
+    if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
-    const fileKind = resolveCardFileKind(file);
-    if (fileKind === null) {
-      return unchanged({ handled: true, action: "skipped_not_found" });
-    }
-    const card = createRecord(deps.app, file, fileKind);
+    const card = createCardRecord(deps.app, live.file, live.fileKind);
     insertSorted(card);
     return {
       result: { handled: true, action: "inserted" },
@@ -110,87 +110,120 @@ export function applyIncrementalMutation(
   }
 
   if (event.eventType === "modify") {
-    const card = cards.find((candidate) => candidate.path === event.path);
-    if (!card) {
+    const index = cards.findIndex((card) => card.path === event.path);
+    if (index === -1) {
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
-    deps.pendingHydration.delete(card.path);
+    const live = resolveLiveSupportedFile(deps.app, event.path);
+    if (!live) {
+      return unchanged({ handled: false, action: "deferred_full_reload" });
+    }
+    const existing = cards[index]!;
+    deps.pendingHydration.delete(event.path);
+    // Replace rather than mutate the published record: live identity and stats
+    // win while the display preview/task fields survive until forced hydration
+    // (or later viewport demand for hidden cards) refreshes them.
+    const replacement = createCardRecord(deps.app, live.file, live.fileKind);
+    replacement.excerpt = existing.excerpt;
+    replacement.previewHtml = existing.previewHtml;
+    replacement.previewMode = existing.previewMode;
+    replacement.taskSummary = existing.taskSummary;
+    cards.splice(index, 1);
+    insertSorted(replacement);
     return {
       result: { handled: true, action: "hydration_reset" },
-      nextCards: null,
-      hydrationPaths: [card.path],
+      nextCards: cards,
+      hydrationPaths: [replacement.path],
     };
   }
 
   if (event.eventType === "rename") {
-    const oldIndex = event.oldPath
-      ? cards.findIndex((card) => card.path === event.oldPath)
-      : -1;
-    const newInScope = deps.isPathInActiveScope(event.path);
-    const newKind = event.fileKind;
-
-    if (oldIndex !== -1) {
-      const oldCard = cards[oldIndex];
-      if (!newInScope || newKind === null) {
-        if (oldCard) {
-          deps.pendingHydration.delete(oldCard.path);
-        }
-        cards.splice(oldIndex, 1);
-        if (event.oldPath) {
-          setBulkAfterRemoval(event.oldPath);
-        }
-        return {
-          result: { handled: true, action: "removed" },
-          nextCards: cards,
-          hydrationPaths: [],
-        };
-      }
-
-      const file = deps.app.vault.getAbstractFileByPath(event.path);
-      if (!oldCard || !(file instanceof TFile)) {
-        return unchanged({ handled: false, action: "deferred_full_reload" });
-      }
-      const hadPending = deps.pendingHydration.has(oldCard.path);
-      deps.pendingHydration.delete(oldCard.path);
-      const previousKind = oldCard.fileKind;
-      oldCard.file = file;
-      oldCard.fileKind = newKind;
-      if (previousKind !== newKind) {
-        oldCard.taskSummary = deriveCardTaskSummary(deps.app, file, newKind);
-      }
-      oldCard.path = file.path;
-      oldCard.title = file.basename;
-      if (event.oldPath) {
-        deps.setBulkSelection(migrateRenamedPath(
-          deps.getBulkSelection(),
-          event.oldPath,
-          file.path,
-        ));
-      }
-      cards.splice(oldIndex, 1);
-      insertSorted(oldCard);
-      return {
-        result: { handled: true, action: "updated" },
-        nextCards: cards,
-        hydrationPaths: hadPending ? [file.path] : [],
-      };
-    }
-
-    if (newInScope && newKind !== null && !cards.some((card) => card.path === event.path)) {
-      const file = deps.app.vault.getAbstractFileByPath(event.path);
-      if (!(file instanceof TFile)) {
-        return unchanged({ handled: false, action: "deferred_full_reload" });
-      }
-      const card = createRecord(deps.app, file, newKind);
-      insertSorted(card);
-      return {
-        result: { handled: true, action: "inserted" },
-        nextCards: cards,
-        hydrationPaths: [card.path],
-      };
-    }
-    return unchanged({ handled: true, action: "skipped_not_found" });
+    return applyRenameMutation(event, cards, insertSorted, setBulkAfterRemoval, deps);
   }
 
   return unchanged({ handled: false, action: "deferred_full_reload" });
+}
+
+function applyRenameMutation(
+  event: VaultMutationEvent,
+  cards: NoteCardRecord[],
+  insertSorted: (card: NoteCardRecord) => void,
+  setBulkAfterRemoval: (path: string) => void,
+  deps: IncrementalMutationDeps,
+): IncrementalMutationOutcome {
+  const oldPath = event.oldPath;
+  const oldIndex = oldPath !== null ? cards.findIndex((card) => card.path === oldPath) : -1;
+
+  if (oldIndex !== -1 && (!deps.isPathInActiveScope(event.path) || event.fileKind === null)) {
+    if (oldPath !== null) {
+      deps.pendingHydration.delete(oldPath);
+      setBulkAfterRemoval(oldPath);
+    }
+    cards.splice(oldIndex, 1);
+    return { result: { handled: true, action: "removed" }, nextCards: cards, hydrationPaths: [] };
+  }
+
+  if (oldIndex !== -1) {
+    const live = resolveLiveSupportedFile(deps.app, event.path);
+    if (!live) {
+      return unchanged({ handled: false, action: "deferred_full_reload" });
+    }
+    const oldCard = cards[oldIndex]!;
+    const hadPendingRead = (oldPath !== null && deps.pendingHydration.has(oldPath))
+      || deps.pendingHydration.has(event.path);
+    if (oldPath !== null) {
+      deps.pendingHydration.delete(oldPath);
+    }
+    deps.pendingHydration.delete(event.path);
+    cards.splice(oldIndex, 1);
+    // A metadata-first event may already have inserted the rename destination
+    // while the old-path record still exists; remove it too so exactly one
+    // merged destination record remains (one-record-per-path postcondition).
+    const staleDestinationIndex = cards.findIndex((card) => card.path === event.path);
+    if (staleDestinationIndex !== -1) {
+      cards.splice(staleDestinationIndex, 1);
+    }
+    const merged = createCardRecord(deps.app, live.file, live.fileKind);
+    if (live.fileKind === oldCard.fileKind) {
+      // Same kind: content is unchanged, so the old-path preview state stays
+      // valid; identity/path/title/stats and the task summary move to live values.
+      merged.excerpt = oldCard.excerpt;
+      merged.previewHtml = oldCard.previewHtml;
+      merged.previewMode = oldCard.previewMode;
+      merged.hydrated = oldCard.hydrated;
+    } else {
+      // Kind change: never carry preview/task state across kinds. The fresh
+      // factory record runs through runtime-cache/non-Markdown placeholder
+      // preparation; hydration happens only if it is still required.
+      deps.prepareRecordsFromCache([merged]);
+    }
+    insertSorted(merged);
+    if (oldPath !== null) {
+      deps.setBulkSelection(migrateRenamedPath(deps.getBulkSelection(), oldPath, event.path));
+    }
+    return {
+      result: { handled: true, action: "updated" },
+      nextCards: cards,
+      hydrationPaths: hadPendingRead || !merged.hydrated ? [event.path] : [],
+    };
+  }
+
+  if (
+    deps.isPathInActiveScope(event.path) && event.fileKind !== null
+    && !cards.some((card) => card.path === event.path)
+  ) {
+    const live = resolveLiveSupportedFile(deps.app, event.path);
+    if (!live) {
+      return unchanged({ handled: false, action: "deferred_full_reload" });
+    }
+    const card = createCardRecord(deps.app, live.file, live.fileKind);
+    insertSorted(card);
+    return {
+      result: { handled: true, action: "inserted" },
+      nextCards: cards,
+      hydrationPaths: [card.path],
+    };
+  }
+
+  return unchanged({ handled: true, action: "skipped_not_found" });
 }

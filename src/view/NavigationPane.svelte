@@ -38,6 +38,8 @@
   const EMPTY_SCOPE: PanelScopeState = {
     displayPath: "", includeSubfolders: true, activeBoxId: null, activeBoxName: null,
     boxExcludedCount: 0, emptyStateMessage: "",
+    sourceIdentity: "folder::true", browseTagFilterEnabled: true, browsePropertyFilterEnabled: true,
+    supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
   let {
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
@@ -46,7 +48,9 @@
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
   const rows = $derived(nav.projection.rows);
-  const isBoxScope = $derived(scope.activeBoxId !== null);
+  // Browse-filter capability booleans (C6), never re-derived from `activeBoxId`.
+  const browseTagFilterEnabled = $derived(scope.browseTagFilterEnabled);
+  const browsePropertyFilterEnabled = $derived(scope.browsePropertyFilterEnabled);
   let dragWidth = $state<number | null>(null);
   let composing = $state(false);
   let treeHasFocus = $state(false);
@@ -303,7 +307,7 @@
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-clear" aria-label={labels.clearActiveTags}
                   onclick={(event) => actionClick(event, () => onFilterChange?.({ tags: [] }))} use:icon={"filter-x"}></button>
               {:else if row.kind === "section" && row.section === "properties"}
-                {@const clearing = !isBoxScope && nav.propertyFilterCount > 0}
+                {@const clearing = browsePropertyFilterEnabled && nav.propertyFilterCount > 0}
                 <button type="button" tabindex="-1" class="clickable-icon {clearing ? 'fce-nav-section-clear' : 'fce-nav-section-choose'}"
                   aria-label={clearing ? strings.property.clearFilters : strings.property.chooseVisible}
                   onclick={(event) => actionClick(event, () => onPropertyCommand?.({ command: clearing ? "clear-filters" : "choose-visible" }))}
@@ -321,10 +325,10 @@
             && (row.section === "tags" || nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel)
             && !rows.some((candidate) => candidate.kind !== "section" && candidate.section === row.section)}
             <div class="fce-tree-empty fce-nav-section-empty" data-nav-empty-section={row.section} role="none">
-              {row.section === "properties" && isBoxScope
+              {row.section === "properties" && !browsePropertyFilterEnabled
                 ? labels.propertiesDisabledInBox
                 : row.section === "tags"
-                  ? (isBoxScope ? labels.tagsDisabledInBox : strings.toolbar.filter.noTagsFound)
+                  ? (!browseTagFilterEnabled ? labels.tagsDisabledInBox : strings.toolbar.filter.noTagsFound)
                   : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
             </div>
           {/if}

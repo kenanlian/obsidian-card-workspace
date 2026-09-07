@@ -466,7 +466,10 @@ vi.mock("obsidian", () => {
 
 import { TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
+import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
+import { DEFAULT_SETTINGS } from "./settings";
+import { UnsupportedSettingsSchemaError } from "./settings-schema";
 import { FolderCardView } from "./view/FolderCardView";
 import { createBoxScope, createFolderScope } from "./view/scope";
 
@@ -1005,7 +1008,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     }
   });
 
-  it("V52 records C12 order scopePath → boxes → favorites → tagPrune → search → views", async () => {
+  it("V52 records C12 order scopePath → pinnedPaths → boxes → favorites → tagPrune → search → views", async () => {
     const { plugin } = createPluginHarness();
     const view = createMockView();
     attachViews(view);
@@ -1022,6 +1025,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
         }) => Promise<void>;
       };
       reconcileLastFolderPath: (event: unknown) => Promise<void>;
+      pinnedPathReconciler: { onStep?: (step: string) => void };
       boxReconciler: { onStep?: (step: string) => void };
       favoriteReconciler: { onStep?: (step: string) => void };
       searchCoordinator: { applyVaultMutation: (event: unknown) => void };
@@ -1034,6 +1038,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
       steps.push("scopePath");
       return originalScope(event);
     });
+    internals.pinnedPathReconciler.onStep = (step) => steps.push(step);
     internals.boxReconciler.onStep = (step) => steps.push(step);
     internals.favoriteReconciler.onStep = (step) => steps.push(step);
     const originalSearch = internals.searchCoordinator.applyVaultMutation.bind(internals.searchCoordinator);
@@ -1060,10 +1065,10 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
       fileKind: null,
     });
 
-    expect(steps).toEqual(["scopePath", "boxes", "favorites", "tagPrune", "search", "views"]);
+    expect(steps).toEqual(["scopePath", "pinnedPaths", "boxes", "favorites", "tagPrune", "search", "views"]);
   });
 
-  it("V52 isolates L-scopePath saveSettings rejection so the other five steps still run", async () => {
+  it("V52 isolates L-scopePath saveSettings rejection so the other six steps still run", async () => {
     const { plugin } = createPluginHarness();
     const view = createMockView();
     attachViews(view);
@@ -1085,6 +1090,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
         }) => Promise<void>;
       };
       reconcileLastFolderPath: (event: unknown) => Promise<void>;
+      pinnedPathReconciler: { onStep?: (step: string) => void };
       boxReconciler: { onStep?: (step: string) => void };
       favoriteReconciler: { onStep?: (step: string) => void };
       searchCoordinator: { applyVaultMutation: (event: unknown) => void };
@@ -1097,6 +1103,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
       steps.push("scopePath");
       return originalScope(event);
     });
+    internals.pinnedPathReconciler.onStep = (step) => steps.push(step);
     internals.boxReconciler.onStep = (step) => steps.push(step);
     internals.favoriteReconciler.onStep = (step) => steps.push(step);
     const originalSearch = internals.searchCoordinator.applyVaultMutation.bind(internals.searchCoordinator);
@@ -1129,7 +1136,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
         "[Card Workspace] Vault event listener failed.",
         expect.objectContaining({ message: "disk unavailable" }),
       );
-      expect(steps).toEqual(["scopePath", "boxes", "favorites", "tagPrune", "search", "views"]);
+      expect(steps).toEqual(["scopePath", "pinnedPaths", "boxes", "favorites", "tagPrune", "search", "views"]);
       expect(unhandled).not.toHaveBeenCalled();
     } finally {
       process.off("unhandledRejection", unhandled);
@@ -1183,6 +1190,111 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
 
     expect(observedManualPaths).toEqual(["Work/A.md"]);
     expect(observedFavorites).toEqual([{ kind: "folder", ref: "Work" }]);
+  });
+
+  it("reconciles global pinned paths through vault rename/delete and reprojects open views", async () => {
+    const { plugin } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      pinnedPaths: ["Projects/A.md", "Projects/pin.md", "Other.md"],
+    });
+    const folderView = createMockView();
+    const boxView = createMockView();
+    boxView.cardScope = createBoxScope("box-1");
+    attachViews(folderView, boxView);
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    expect(plugin.getSettings().pinnedPaths).toEqual(["Projects/A.md", "Projects/pin.md", "Other.md"]);
+
+    const workFolder = createFolder("Work");
+    obsidianMockState.vaultCallbacks.rename?.(workFolder, "Projects");
+
+    await vi.waitFor(() => {
+      expect(plugin.getSettings().pinnedPaths).toEqual(["Work/A.md", "Work/pin.md", "Other.md"]);
+    });
+    // Global pin changes reproject folder views; the box view harmlessly receives
+    // the same intent while continuing to use its Box-local pins.
+    expect(folderView.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+    expect(boxView.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+
+    folderView.applyUpdateIntent.mockClear();
+    boxView.applyUpdateIntent.mockClear();
+    obsidianMockState.vaultCallbacks.delete?.(workFolder);
+
+    await vi.waitFor(() => {
+      expect(plugin.getSettings().pinnedPaths).toEqual(["Other.md"]);
+    });
+    expect(folderView.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+    expect(boxView.applyUpdateIntent).toHaveBeenCalledWith("reproject", "settings-change");
+  });
+
+  it("leaves a pinned file untouched when only a prefix lookalike folder is renamed", async () => {
+    const { plugin } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      pinnedPaths: ["Projected/B.md", "Other.md"],
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockClear();
+    obsidianMockState.vaultCallbacks.rename?.(createFolder("Project2"), "Project");
+
+    // No pin lives at or under "Project", so nothing may be written or changed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(plugin.getSettings().pinnedPaths).toEqual(["Projected/B.md", "Other.md"]);
+    expect(saveData).not.toHaveBeenCalled();
+  });
+
+  it("isolates global-pin saveSettings rejection so later listeners still run", async () => {
+    const { plugin } = createPluginHarness();
+    mutateStoreMemory(plugin, { pinnedPaths: ["X/a.md"] });
+    vi.spyOn(plugin, "saveSettings").mockRejectedValue(new Error("disk unavailable"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    const internals = plugin as unknown as {
+      registerVaultEventListeners: () => void;
+      vaultEventBus: {
+        publish: (event: {
+          eventType: "rename";
+          path: string;
+          oldPath: string;
+          isFolder: true;
+          fileKind: null;
+        }) => Promise<void>;
+      };
+      pinnedPathReconciler: { onStep?: (step: string) => void };
+      boxReconciler: { onStep?: (step: string) => void };
+    };
+    internals.registerVaultEventListeners();
+
+    const steps: string[] = [];
+    internals.pinnedPathReconciler.onStep = (step) => steps.push(step);
+    internals.boxReconciler.onStep = (step) => steps.push(step);
+
+    try {
+      await expect(
+        internals.vaultEventBus.publish({
+          eventType: "rename",
+          path: "Y",
+          oldPath: "X",
+          isFolder: true,
+          fileKind: null,
+        }),
+      ).resolves.toBeUndefined();
+      expect(steps).toEqual(["pinnedPaths", "boxes"]);
+      expect(warn).toHaveBeenCalledWith(
+        "[Card Workspace] Vault event listener failed.",
+        expect.objectContaining({ message: "disk unavailable" }),
+      );
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      warn.mockRestore();
+    }
   });
 });
 
@@ -1753,47 +1865,39 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("opens newly created notes in new-tab explicitly", async () => {
     const { plugin, app } = createPluginHarness();
-    setLastFolderPath(plugin, "notes");
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
-    await plugin.createNoteInCurrentFolder();
+    await plugin.createNoteInFolder("notes");
 
     expect(openNoteFromCard).toHaveBeenCalledWith("notes/Untitled.md", "new-tab");
   });
 
   it("seeds new notes with a tags property by default", async () => {
     const { plugin, app } = createPluginHarness();
-    setLastFolderPath(plugin, "notes");
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
-    await plugin.createNoteInCurrentFolder();
+    await plugin.createNoteInFolder("notes");
 
     expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "---\ntags:\n---\n\n");
   });
 
   it("creates a completely blank note when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
-    setLastFolderPath(plugin, "notes");
     mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
-    await plugin.createNoteInCurrentFolder();
+    await plugin.createNoteInFolder("notes");
 
     expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "");
   });
 
-  it("targets the recent-folder projection from createNoteInCurrentFolder", async () => {
-    const { plugin, app } = createPluginHarness();
-    setLastFolderPath(plugin, "notes/sub");
-    app.vault.create.mockResolvedValue({ path: "notes/sub/Untitled.md" });
-    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
-
-    await plugin.createNoteInCurrentFolder();
-
-    expect(app.vault.create).toHaveBeenCalledWith("notes/sub/Untitled.md", expect.any(String));
+  it("does not expose createNoteInCurrentFolder", () => {
+    const { plugin } = createPluginHarness();
+    expect("createNoteInCurrentFolder" in plugin).toBe(false);
+    expect(typeof plugin.createNoteInFolder).toBe("function");
   });
 
   it("creates a note in an explicit folder", async () => {
@@ -2737,13 +2841,11 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     const indexedService = searchMockState.indexedServices[0] as {
       query: (request: {
         query: string;
-        scope: { folderPath: string; includeSubfolders: boolean };
         candidatePaths: string[];
       }) => Promise<unknown>;
     };
     const queryResult = await indexedService.query({
       query: "alpha",
-      scope: { folderPath: "notes", includeSubfolders: true },
       candidatePaths: ["notes/a.md"],
     });
     expect(queryResult).toEqual({
@@ -2872,5 +2974,110 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     }).metadataEventBus.publish({ path: "notes/a.md" });
 
     expect(received).toEqual([]);
+  });
+});
+
+describe("CardWorkspacePlugin unsupported settings schema (C4)", () => {
+  const futureDocument = {
+    schemaVersion: 3,
+    preferences: { futureOnly: { nested: [1] } },
+    workspace: { unknownWorkspace: true },
+    userData: { boxes: "opaque-future-shape" },
+  };
+
+  beforeEach(() => {
+    obsidianMockState.notices = [];
+    obsidianMockState.leavesByType = {};
+    // Isolate from search-lifecycle state left by earlier tests in this file.
+    searchMockState.restoreBarrier = null;
+    searchMockState.restoreResult = { status: "ready", outcome: "restored", detail: "restored" };
+    searchMockState.currentSnapshot = {
+      initialized: true,
+      disposed: false,
+      mode: "indexed",
+      status: "ready",
+      lastError: null,
+      health: createMockHealth(),
+    };
+  });
+
+  afterEach(() => {
+    obsidianMockState.leavesByType = {};
+  });
+
+  async function createBlockedPlugin(): Promise<{
+    plugin: CardWorkspacePlugin;
+    raw: typeof futureDocument;
+  }> {
+    const raw = structuredClone(futureDocument);
+    const { plugin } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue(raw);
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    return { plugin, raw };
+  }
+
+  it("degrades to a default read-only view with one localized startup notice and no write", async () => {
+    const { plugin, raw } = await createBlockedPlugin();
+    const rawJson = JSON.stringify(raw);
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+
+    expect(obsidianMockState.notices).toEqual([
+      getAppStrings("en").settingsSchemaUnsupportedNotice,
+    ]);
+    // Usable default read view: the plugin registered and browses from root.
+    expect(plugin.getSettings()).toEqual(DEFAULT_SETTINGS);
+    expect(saveData).not.toHaveBeenCalled();
+    expect(JSON.stringify(raw)).toBe(rawJson);
+  });
+
+  it("carries a distinct localized notice string for Chinese", () => {
+    expect(getAppStrings("zh").settingsSchemaUnsupportedNotice)
+      .not.toBe(getAppStrings("en").settingsSchemaUnsupportedNotice);
+    expect(getAppStrings("zh").settingsSchemaUnsupportedNotice.length).toBeGreaterThan(0);
+  });
+
+  it("shows the same notice and rejects explicit writes without view updates or disk writes", async () => {
+    const { plugin } = await createBlockedPlugin();
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockClear();
+    obsidianMockState.notices = [];
+
+    const ViewCtor = FolderCardView as unknown as {
+      new (): FolderCardView & { applyUpdateIntent: ReturnType<typeof vi.fn> };
+    };
+    const view = new ViewCtor();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
+
+    await expect(plugin.saveSettings({ previewLines: 7 }))
+      .rejects.toBeInstanceOf(UnsupportedSettingsSchemaError);
+
+    expect(obsidianMockState.notices).toEqual([
+      getAppStrings("en").settingsSchemaUnsupportedNotice,
+    ]);
+    expect(view.applyUpdateIntent).not.toHaveBeenCalled();
+    expect(saveData).not.toHaveBeenCalled();
+    expect(plugin.getSettings().previewLines).toBe(DEFAULT_SETTINGS.previewLines);
+
+    // An empty patch is not a write attempt: no notice, no rejection.
+    obsidianMockState.notices = [];
+    await expect(plugin.saveSettings({ previewLines: undefined })).resolves.toBeUndefined();
+    expect(obsidianMockState.notices).toEqual([]);
+  });
+
+  it("preserves the future document byte-for-byte across load, rejected writes, and unload", async () => {
+    const { plugin, raw } = await createBlockedPlugin();
+    const rawJson = JSON.stringify(raw);
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+
+    await expect(plugin.saveSettings({ previewLines: 7 }))
+      .rejects.toBeInstanceOf(UnsupportedSettingsSchemaError);
+    plugin.onunload();
+    // Let the detached settings flush settle; it must resolve without a write.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(saveData).not.toHaveBeenCalled();
+    expect(JSON.stringify(raw)).toBe(rawJson);
   });
 });

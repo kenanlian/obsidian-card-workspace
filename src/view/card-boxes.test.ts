@@ -351,4 +351,32 @@ describe("reconcileBoxForVaultMutation", () => {
     });
     expect(next).toBe(box);
   });
+
+  it("returns the same reference for an unrelated rename with duplicate entries", () => {
+    const box = makeBox({ manualPaths: ["Other/A.md", "Other/A.md"], pinnedPaths: ["Other/B.md"] });
+    const next = reconcileBoxForVaultMutation(box, {
+      eventType: "rename",
+      path: "Work",
+      oldPath: "Projects",
+      isFolder: true,
+    });
+    expect(next).toBe(box);
+    expect(next.manualPaths).toEqual(["Other/A.md", "Other/A.md"]);
+  });
+
+  it("keeps the first occurrence when a rename collides two entries", () => {
+    const folderCollision = reconcileBoxForVaultMutation(
+      makeBox({ manualPaths: ["Projects/A.md", "Work/A.md"], pinnedPaths: ["Projects/B.md", "Work/B.md"] }),
+      { eventType: "rename", path: "Work", oldPath: "Projects", isFolder: true },
+    );
+    expect(folderCollision.manualPaths).toEqual(["Work/A.md"]);
+    expect(folderCollision.pinnedPaths).toEqual(["Work/B.md"]);
+
+    const fileCollision = reconcileBoxForVaultMutation(
+      makeBox({ manualPaths: ["A.md", "B.md"], excludedPaths: ["A.md", "B.md"] }),
+      { eventType: "rename", path: "B.md", oldPath: "A.md", isFolder: false },
+    );
+    expect(fileCollision.manualPaths).toEqual(["B.md"]);
+    expect(fileCollision.excludedPaths).toEqual(["B.md"]);
+  });
 });

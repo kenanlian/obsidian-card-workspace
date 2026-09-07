@@ -1,6 +1,7 @@
 import type { NavMenuDeps } from "../nav-context-menu";
 import { propertyScalarRefsEqual } from "../../property-filter-settings";
 import { canResolveSystemPath } from "../desktop-shell";
+import { resolveSourceCapabilities } from "../source-capabilities";
 import type { ViewContext } from "../view-context";
 import type { ViewModules } from "../view-modules";
 
@@ -13,9 +14,13 @@ export interface NavMenuDepsHost {
 /** Binds the nav context menu's action table to the view's controllers and actions. */
 export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
   const settings = deps.context.getSettings();
+  const capabilities = resolveSourceCapabilities(deps.context.store.getScope());
   return {
     strings: deps.context.getUiStrings(),
-    isBoxMode: deps.modules.boxActions.isBoxMode(),
+    browseTagFilter: capabilities.browseTagFilter,
+    browsePropertyFilter: capabilities.browsePropertyFilter,
+    supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
+    supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
     includeSubfolders: settings.includeSubfolders,
     activeFilterTags: settings.filter.tags,
     propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),

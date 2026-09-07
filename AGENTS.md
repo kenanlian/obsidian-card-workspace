@@ -24,13 +24,13 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 ## Architecture Quick Reference
 
 - **Detailed source of truth**: `.dev/architecture.md`
-- **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`) plus default card open behavior
-- **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/`, `src/view/actions/`, and `src/view/menus/`
-- **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`
+- **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`, `MetadataEventBus`, `PinnedPathReconciler`) plus default card open behavior
+- **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/` (including `MetadataImpactController`), `src/view/actions/` (including `arrangement-actions.ts`), and `src/view/menus/`
+- **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`. Folder/Box policy is `resolveSourceCapabilities(scope)`.
 - **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. Folders: `tag filter -> property filter -> search filter -> pin reorder`. Boxes skip the browse tag and property filters — rule property clauses are digested at the membership layer; search and pins still apply
 - **UI boundary**: `src/view/panel-model.ts` bridges grouped host state into Svelte; `FolderCardPanel.svelte`, `NavigationPane.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
-- **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready
-- **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2
+- **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready; `src/search/` has no runtime dependency on `src/view/`
+- **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2. A future schema is degraded read-only operation (defaults in memory, no write), not a migration
 
 ## Current Project Status
 
@@ -47,6 +47,8 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
 - Startup restores **folder** scope only and forces `activeBoxId = null`.
 - Default card open behavior is owned by `main.ts`.
+- `MetadataEventBus` exists and is owned with `main.ts`; `MetadataImpactController` is the only per-view consumer. Global pins reconcile through `PinnedPathReconciler` after navigation-workspace and before Boxes.
+- Arrangement intents (sort / group / collapse / pin) live in `arrangement-actions.ts`, not the `ItemView` shell.
 
 ## Key Directories
 
@@ -54,11 +56,11 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 |-----------|---------|
 | `src/` | All source code |
 | `src/view/` | Obsidian view host, Svelte components, and view utilities |
-| `src/view/controllers/` | Per-view runtime: scope, projection, search, hydration, bulk, nav layout |
-| `src/view/actions/` | User commands: file, folder, box, tag, favorite, merge |
+| `src/view/controllers/` | Per-view runtime: scope, projection, search, hydration, bulk, nav layout, metadata impact |
+| `src/view/actions/` | User commands: file, folder, box, tag, favorite, merge, arrangement |
 | `src/view/menus/` | Card and navigation context-menu builders |
 | `src/view/modals/` | `FormModal` subclasses; host/actions route into them |
-| `src/services/` | Plugin-level assembly: settings, search coordinator, editor drop, vault bus, reconcilers |
+| `src/services/` | Plugin-level assembly: settings, search coordinator, editor drop, vault/metadata buses, reconcilers |
 | `src/search/` | Local search subsystem (MiniSearch + IndexedDB) |
 | `src/i18n/` | Domain-split UI strings; callers still import `../i18n` |
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |

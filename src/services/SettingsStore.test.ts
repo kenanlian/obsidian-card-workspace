@@ -1,7 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SettingsStore, serializeSettings, splitFlatPatch } from "./SettingsStore";
-import { SETTINGS_SCHEMA_VERSION, type PluginSettings } from "../settings";
+import {
+  SettingsStore,
+  serializeSettings,
+  splitFlatPatch,
+  type SettingsCompatibilityStatus,
+} from "./SettingsStore";
+import {
+  DEFAULT_SETTINGS,
+  migrateSettings,
+  SETTINGS_SCHEMA_VERSION,
+  type PartialPluginSettings,
+  type PluginSettings,
+} from "../settings";
+import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import {
+  SETTINGS_LAYER_BY_KEY,
+  UnknownSettingsKeyError,
+  UnsupportedSettingsSchemaError,
+} from "../settings-schema";
 
 interface SaveHarness {
   store: SettingsStore;
@@ -64,6 +81,14 @@ function createStore(options?: {
 
 function persistedRevision(store: SettingsStore): number {
   return (store as unknown as { persistedRevision: number }).persistedRevision;
+}
+
+function storeRevision(store: SettingsStore): number {
+  return (store as unknown as { revision: number }).revision;
+}
+
+function storeMemory(store: SettingsStore): PluginSettings {
+  return (store as unknown as { memory: PluginSettings }).memory;
 }
 
 describe("SettingsStore", () => {
@@ -524,7 +549,15 @@ describe("SettingsStore — property settings", () => {
   });
 
   it("keeps the workspace debounce for a workspace-only flat patch", async () => {
-    const { store, save } = createStore();
+    // The visible key comes from the loaded document so the expansion patch
+    // is a real workspace-only change (an expansion for a hidden key would be
+    // a normalized no-op and must not write at all).
+    const { store, save } = createStore({
+      load: async () => ({
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        preferences: { visiblePropertyKeys: ["status"] },
+      }),
+    });
     await store.init();
 
     const pending = store.updateFlat({ expandedPropertyKeys: ["status"] });
@@ -561,5 +594,377 @@ describe("SettingsStore — property settings", () => {
     expect(persisted.preferences.visiblePropertyKeys).toEqual(["status"]);
     expect(persisted.workspace.expandedPropertyKeys).toEqual(["status"]);
     expect(persisted.workspace.filterProperties).toEqual([openClause]);
+  });
+});
+
+describe("SettingsStore — layer manifest classification (C4)", () => {
+  const openClause = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+
+  // One patch per manifest key; each must land a defined value in its declared
+  // layer's split and nowhere else, so the typed mapping cannot drift from
+  // SETTINGS_LAYER_BY_KEY.
+  const classificationCases: Array<[key: keyof PluginSettings, patch: PartialPluginSettings]> = [
+    ["sort", { sort: { field: "name", direction: "asc" } }],
+    ["group", { group: { dimension: "tag", orderBy: "count", orderDirection: "desc" } }],
+    ["includeSubfolders", { includeSubfolders: false }],
+    ["defaultView", { defaultView: "cards" }],
+    ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],
+    ["dragInsertAction", { dragInsertAction: "wiki" }],
+    ["cardCornerRadius", { cardCornerRadius: "compact" }],
+    ["newNoteTemplate", { newNoteTemplate: "blank" }],
+    ["previewLines", { previewLines: 8 }],
+    ["showNavItemCounts", { showNavItemCounts: true }],
+    ["navSectionOrder", { navSectionOrder: ["boxes"] }],
+    ["visiblePropertyKeys", { visiblePropertyKeys: ["status"] }],
+    ["lastFolderPath", { lastFolderPath: "Projects" }],
+    ["expandedFolderPaths", { expandedFolderPaths: ["Projects"] }],
+    ["expandedTagPaths", { expandedTagPaths: ["work"] }],
+    ["expandedPropertyKeys", { expandedPropertyKeys: ["status"] }],
+    ["activeBoxId", { activeBoxId: "box-1" }],
+    ["filter", { filter: { tags: ["work"], properties: [openClause] } }],
+    ["navPaneWidth", { navPaneWidth: 200 }],
+    ["navPaneCollapsed", { navPaneCollapsed: true }],
+    ["sectionCollapsed", { sectionCollapsed: { folders: true } }],
+    ["boxes", { boxes: [{
+      id: "box-1",
+      name: "Inbox",
+      rules: [],
+      manualPaths: [],
+      excludedPaths: [],
+      pinnedPaths: [],
+      sort: { field: "mtime", direction: "desc" },
+      group: DEFAULT_GROUP_SPEC,
+    }] }],
+    ["favorites", { favorites: [{ kind: "folder", ref: "Projects" }] }],
+    ["pinnedPaths", { pinnedPaths: ["Projects/a.md"] }],
+  ];
+
+  it("routes every manifest key's patch value into its declared layer only", () => {
+    expect(classificationCases.map(([key]) => key).sort())
+      .toEqual(Object.keys(SETTINGS_LAYER_BY_KEY).sort());
+
+    for (const [key, patch] of classificationCases) {
+      const split = splitFlatPatch(patch);
+      const layer = SETTINGS_LAYER_BY_KEY[key];
+      const documents: Record<string, object> = {
+        preferences: split.preferences,
+        workspace: split.workspace,
+        userData: split.userData,
+      };
+      for (const [documentLayer, document] of Object.entries(documents)) {
+        if (documentLayer === layer) {
+          expect(Object.keys(document).length, `${key} should populate ${layer}`).toBeGreaterThan(0);
+          continue;
+        }
+        expect(Object.keys(document), `${key} must not leak into ${documentLayer}`).not.toContain(key);
+      }
+    }
+  });
+});
+
+describe("SettingsStore — semantic no-op suppression (C4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("suppresses an unchanged preferences patch without revising, writing, or touching memory identity", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const revisionBefore = storeRevision(store);
+    const memoryBefore = storeMemory(store);
+
+    const intent = await store.updatePreferences({ previewLines: DEFAULT_SETTINGS.previewLines });
+
+    expect(intent).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(revisionBefore);
+    expect(persistedRevision(store)).toBe(revisionBefore);
+    expect(storeMemory(store)).toBe(memoryBefore);
+  });
+
+  it("suppresses a preferences patch that only normalizes to the current value", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const seeded = store.updatePreferences({ previewLines: 3 });
+    await seeded;
+    save.mockClear();
+
+    // 2 clamps up to 3, so the normalized result equals the current value.
+    const intent = await store.updatePreferences({ previewLines: 2 });
+
+    expect(intent).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(store.getFlat().previewLines).toBe(3);
+  });
+
+  it("suppresses a workspace no-op without arming the 300ms debounce timer", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const revisionBefore = storeRevision(store);
+
+    const intent = await store.updateWorkspace({ lastFolderPath: DEFAULT_SETTINGS.lastFolderPath });
+
+    expect(intent).toBeNull();
+    // No timer armed at all: the debounce was never scheduled.
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(revisionBefore);
+  });
+
+  it("suppresses a userData no-op", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const revisionBefore = storeRevision(store);
+
+    const intent = await store.updateUserData({ pinnedPaths: [] });
+
+    expect(intent).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(revisionBefore);
+  });
+
+  it("suppresses a mixed nested workspace no-op through updateFlat with zero side effects", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const seeded = store.updateFlat({
+      filter: { tags: ["work"] },
+      sectionCollapsed: { folders: true },
+    });
+    await store.flushPendingWrites();
+    await seeded;
+    save.mockClear();
+    const revisionBefore = storeRevision(store);
+
+    const intent = await store.updateFlat({
+      filter: { tags: ["work"] },
+      sectionCollapsed: { folders: true },
+    });
+
+    expect(intent).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(revisionBefore);
+    expect(store.getFlat().filter.tags).toEqual(["work"]);
+    expect(store.getFlat().sectionCollapsed.folders).toBe(true);
+  });
+
+  it("does not disturb a pending real write when a no-op follows it", async () => {
+    const { store, save } = createStore();
+    await store.init();
+
+    const real = store.updatePreferences({ previewLines: 8 });
+    const noOp = await store.updatePreferences({ previewLines: 8 });
+    expect(noOp).toBeNull();
+
+    await real;
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SettingsStore — unknown runtime patch keys (C4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("rejects a defined unknown top-level key before memory mutation or persistence", async () => {
+    const { store, save } = createStore();
+    await store.init();
+    const revisionBefore = storeRevision(store);
+
+    await expect(store.updateFlat({ totallyUnknown: 5 } as never))
+      .rejects.toBeInstanceOf(UnknownSettingsKeyError);
+
+    expect(store.getFlat()).toEqual(DEFAULT_SETTINGS);
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(revisionBefore);
+  });
+
+  it("treats an undefined unknown key as not present", async () => {
+    const { store, save } = createStore();
+    await store.init();
+
+    const intent = await store.updateFlat({ totallyUnknown: undefined } as never);
+
+    expect(intent).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown keys through the typed entry points too", async () => {
+    const { store, save } = createStore();
+    await store.init();
+
+    await expect(store.updatePreferences({ nope: 1 } as never))
+      .rejects.toBeInstanceOf(UnknownSettingsKeyError);
+    await expect(store.updateUserData({ nope: 1 } as never))
+      .rejects.toBeInstanceOf(UnknownSettingsKeyError);
+    expect(store.getFlat()).toEqual(DEFAULT_SETTINGS);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("splitFlatPatch throws UnknownSettingsKeyError naming the offending key", () => {
+    expect(() => splitFlatPatch({ bogus: [] } as never)).toThrowError(UnknownSettingsKeyError);
+    try {
+      splitFlatPatch({ bogus: [] } as never);
+    } catch (error) {
+      expect((error as UnknownSettingsKeyError).key).toBe("bogus");
+    }
+  });
+});
+
+describe("SettingsStore — unsupported future schema (C4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const futureDocument = {
+    schemaVersion: 3,
+    preferences: { futureOnly: { nested: [1] } },
+    workspace: { unknownWorkspace: true },
+    userData: { boxes: "opaque-future-shape" },
+  };
+
+  function createBlockedStore() {
+    const raw = structuredClone(futureDocument);
+    const harness = createStore({ load: async () => raw });
+    return { ...harness, raw };
+  }
+
+  it("init reports ready for a supported document and exposes the status", async () => {
+    const { store, save } = createStore({
+      load: async () => ({
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        preferences: { previewLines: 7 },
+      }),
+    });
+
+    const status: SettingsCompatibilityStatus = await store.init();
+
+    expect(status).toBe("ready");
+    expect(store.getCompatibility()).toBe("ready");
+    expect(store.getFlat().previewLines).toBe(7);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("init reports unsupported-schema, keeps default memory, and never writes", async () => {
+    const { store, save, raw } = createBlockedStore();
+    const rawJson = JSON.stringify(raw);
+
+    const status = await store.init();
+
+    expect(status).toBe("unsupported-schema");
+    expect(store.getCompatibility()).toBe("unsupported-schema");
+    expect(store.getFlat()).toEqual(DEFAULT_SETTINGS);
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(0);
+    expect(persistedRevision(store)).toBe(0);
+    expect(JSON.stringify(raw)).toBe(rawJson);
+  });
+
+  it("rejects every update method with the typed error before mutation or write", async () => {
+    const { store, save } = createBlockedStore();
+    await store.init();
+
+    const attempts = [
+      store.updatePreferences({ previewLines: 7 }),
+      store.updateWorkspace({ lastFolderPath: "notes" }),
+      store.updateUserData({ pinnedPaths: ["a.md"] }),
+      store.updateFlat({ previewLines: 7 }),
+    ];
+    for (const attempt of attempts) {
+      const error = await attempt.then(
+        () => new Error("expected a rejection"),
+        (reason: unknown) => reason,
+      );
+      expect(error).toBeInstanceOf(UnsupportedSettingsSchemaError);
+      expect((error as UnsupportedSettingsSchemaError).foundVersion).toBe(3);
+      expect((error as UnsupportedSettingsSchemaError).supportedVersion).toBe(SETTINGS_SCHEMA_VERSION);
+    }
+
+    expect(store.getFlat()).toEqual(DEFAULT_SETTINGS);
+    expect(save).not.toHaveBeenCalled();
+    expect(storeRevision(store)).toBe(0);
+  });
+
+  it("flushPendingWrites resolves without creating a document while blocked", async () => {
+    const { store, save } = createBlockedStore();
+    await store.init();
+
+    await expect(store.updatePreferences({ previewLines: 7 }))
+      .rejects.toBeInstanceOf(UnsupportedSettingsSchemaError);
+    await store.flushPendingWrites();
+
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("still applies the launch override on the default read view without writing", async () => {
+    const { store, save } = createBlockedStore();
+    await store.init();
+
+    store.applyLaunchOverride();
+
+    expect(store.getFlat().activeBoxId).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsStore — non-default writes per layer (C4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("persists a non-default value through each layer's update path and round-trips it", async () => {
+    const { store, documents } = createStore();
+    await store.init();
+
+    await store.updatePreferences({ previewLines: 8, includeSubfolders: false });
+    expect(documents.at(-1)).toMatchObject({
+      preferences: { previewLines: 8, includeSubfolders: false },
+    });
+
+    const workspace = store.updateWorkspace({ lastFolderPath: "Projects", navPaneCollapsed: true });
+    await store.flushPendingWrites();
+    await workspace;
+    expect(documents.at(-1)).toMatchObject({
+      workspace: { lastFolderPath: "Projects", navPaneCollapsed: true },
+    });
+
+    await store.updateUserData({
+      pinnedPaths: ["Projects/a.md"],
+      favorites: [{ kind: "folder", ref: "Projects" }],
+    });
+    expect(documents.at(-1)).toMatchObject({
+      userData: {
+        pinnedPaths: ["Projects/a.md"],
+        favorites: [{ kind: "folder", ref: "Projects" }],
+      },
+    });
+
+    const restored = migrateSettings(documents.at(-1));
+    expect(restored).toMatchObject({
+      previewLines: 8,
+      includeSubfolders: false,
+      lastFolderPath: "Projects",
+      navPaneCollapsed: true,
+      pinnedPaths: ["Projects/a.md"],
+      favorites: [{ kind: "folder", ref: "Projects" }],
+    });
   });
 });

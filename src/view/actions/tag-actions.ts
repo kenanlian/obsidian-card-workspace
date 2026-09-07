@@ -28,7 +28,8 @@ export interface TagActionsDeps {
   reconcileSelectionToOrderedPaths: (pathsInOrder: string[]) => void;
   /** Scope tags for the current view, memoized by `ProjectionController`. */
   deriveAvailableTags: () => string[];
-  isBoxMode: () => boolean;
+  /** Browse Tag filter capability for the current source (C6); boxes disable it. */
+  browseTagFilterEnabled: () => boolean;
   getDisplayFolderPath: () => string;
   createNoteIn: (folderUiPath: string, tags?: string[]) => Promise<void>;
   returnToCardsViewIfSinglePane: () => void;
@@ -89,7 +90,7 @@ export class TagActions {
 
   async onFilterChange(detail: { tags?: unknown }): Promise<void> {
     this.deps.returnToCardsViewIfSinglePane();
-    if (this.deps.isBoxMode()) {
+    if (!this.deps.browseTagFilterEnabled()) {
       return;
     }
     const rawTags = Array.isArray(detail.tags) ? detail.tags : [];

@@ -17,7 +17,6 @@ export type {
   SearchQueryResult,
   SearchRenameClassification,
   SearchRestoreOutcome,
-  SearchScope,
   SearchService,
   SearchServiceSnapshot,
   SearchServiceStatus,

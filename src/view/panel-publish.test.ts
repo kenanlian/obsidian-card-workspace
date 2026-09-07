@@ -61,6 +61,11 @@ function buildState(): PanelModelState {
       activeBoxName: null,
       boxExcludedCount: 0,
       emptyStateMessage: "Empty",
+      sourceIdentity: "folder::true",
+      browseTagFilterEnabled: true,
+      browsePropertyFilterEnabled: true,
+      supportsIncludeSubfolders: true,
+      supportsBoxRuleSeeding: true,
     },
     cards: {
       records: [],
@@ -377,7 +382,7 @@ describe("FolderCardView grouped panel publishing", () => {
   it("routes a group collapse command through the cards and bulk groups only", () => {
     const { view, initial, listener } = createRuntimeRouteHarness();
 
-    view.onGroupCollapseCommand({ command: "toggle", key: "folder:notes" });
+    view.modules.arrangementActions.onGroupCollapseCommand({ command: "toggle", key: "folder:notes" });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expectOnlyGroupsChanged(initial, view.panelModel.getState(), ["cards", "bulk"]);
@@ -657,6 +662,51 @@ describe("FolderCardView nav-group property publication", () => {
 
     expect(nav.propertyFilterCount).toBe(0);
     expect(nav.projection.rows.some((row) => row.kind === "property")).toBe(false);
+
+    view.cleanupLifecycle();
+  });
+});
+
+describe("FolderCardView metadata impact publication seam", () => {
+  it.each([
+    ["reprojected without search", { kind: "reprojected", includeSearch: false } as const, ["scope", "cards", "projection", "bulk", "nav"]],
+    ["reprojected with search", { kind: "reprojected", includeSearch: true } as const, ["scope", "cards", "projection", "bulk", "nav", "search"]],
+    ["facets without cards", { kind: "facets", includeCards: false } as const, ["projection", "nav"]],
+    ["facets with cards", { kind: "facets", includeCards: true } as const, ["projection", "nav", "cards"]],
+  ] as const)("publishes the %s batch once with its exact group set", (_name, batch, groups) => {
+    const view = createGroupedRuntimeView();
+    const listener = vi.fn();
+    view.panelModel.subscribe(listener);
+    listener.mockClear();
+    const initial = view.panelModel.getState();
+
+    (view as unknown as { publishImpactBatch: (value: typeof batch) => void }).publishImpactBatch(batch);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const next = view.panelModel.getState();
+    expectOnlyGroupsChanged(initial, next, groups);
+
+    view.cleanupLifecycle();
+  });
+
+  it("derives nav from the exact fresh projection snapshot inside the batch", () => {
+    const view = createGroupedRuntimeView();
+    const listener = vi.fn();
+    view.panelModel.subscribe(listener);
+    listener.mockClear();
+    const initial = view.panelModel.getState();
+
+    (view as unknown as { publishImpactBatch: (value: { kind: "facets"; includeCards: boolean }) => void })
+      .publishImpactBatch({ kind: "facets", includeCards: false });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const next = view.panelModel.getState();
+    // Real projection: the batch's nav reads the same fresh tag sources the
+    // batch's own projection group published, not the pre-event snapshot.
+    expect(next.projection.availableTags).toEqual([]);
+    expect(next.nav.projection).toBeDefined();
+    expect(next.projection).not.toBe(initial.projection);
+    expect(next.nav).not.toBe(initial.nav);
 
     view.cleanupLifecycle();
   });

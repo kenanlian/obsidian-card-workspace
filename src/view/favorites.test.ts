@@ -401,4 +401,36 @@ describe("reconcileFavoritesForVaultMutation", () => {
       }),
     ).toBe(favorites);
   });
+
+  it("preserves duplicate entries through a rename without deduplicating", () => {
+    const favorites = [
+      makeFavorite("file", "Notes/A.md"),
+      makeFavorite("file", "Notes/A.md"),
+      makeFavorite("folder", "Notes"),
+      makeFavorite("folder", "Notes"),
+    ];
+    const renamed = reconcileFavoritesForVaultMutation(favorites, {
+      eventType: "rename",
+      path: "Journal",
+      oldPath: "Notes",
+      isFolder: true,
+    });
+    expect(renamed).toEqual([
+      makeFavorite("file", "Journal/A.md"),
+      makeFavorite("file", "Journal/A.md"),
+      makeFavorite("folder", "Journal"),
+      makeFavorite("folder", "Journal"),
+    ]);
+
+    const fileRenamed = reconcileFavoritesForVaultMutation(
+      [makeFavorite("file", "A.md"), makeFavorite("file", "A.md")],
+      {
+        eventType: "rename",
+        path: "B.md",
+        oldPath: "A.md",
+        isFolder: false,
+      },
+    );
+    expect(fileRenamed).toEqual([makeFavorite("file", "B.md"), makeFavorite("file", "B.md")]);
+  });
 });

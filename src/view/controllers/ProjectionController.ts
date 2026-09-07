@@ -10,7 +10,7 @@ import {
 import type { UiStrings } from "../../i18n";
 import { collectAllTags, collectTagCounts, collectVaultTagIndex } from "../metadata-utils";
 import { runPipeline, stepsForScope, type PipelineContext } from "../pipeline";
-import { isBoxScope } from "../scope";
+import { resolveSourceCapabilities } from "../source-capabilities";
 import type { NoteCardRecord, PipelineSearchInput, Rule } from "../types";
 import type { ViewContext } from "../view-context";
 
@@ -36,9 +36,64 @@ function segmentSignature(segments: readonly CardGroupSegment[]): string {
     .join("|");
 }
 
+/**
+ * Compares the stable `path + bucket key + label` signature of two full-set
+ * bucket maps over the current base cards. Cardinality, per-card key/label
+ * equality, and stale-path removal all count as movement.
+ */
+function bucketSignaturesDiffer(
+  old: ReadonlyMap<string, GroupBucket>,
+  fresh: ReadonlyMap<string, GroupBucket>,
+  cards: readonly NoteCardRecord[],
+): boolean {
+  if (old.size !== fresh.size) {
+    return true;
+  }
+  for (const card of cards) {
+    const oldBucket = old.get(card.path);
+    const freshBucket = fresh.get(card.path);
+    if (oldBucket === undefined || freshBucket === undefined) {
+      return true;
+    }
+    if (oldBucket.key !== freshBucket.key || oldBucket.label !== freshBucket.label) {
+      return true;
+    }
+  }
+  for (const path of old.keys()) {
+    if (!fresh.has(path)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Value equality for the scope tag snapshot; order-sensitive by construction. */
+function scopeTagDataEqual(
+  left: { availableTags: string[]; tagCounts: Record<string, number> },
+  right: { availableTags: string[]; tagCounts: Record<string, number> },
+): boolean {
+  if (left.availableTags.length !== right.availableTags.length
+    || left.availableTags.some((tag, index) => tag !== right.availableTags[index])) {
+    return false;
+  }
+  const leftKeys = Object.keys(left.tagCounts);
+  const rightKeys = Object.keys(right.tagCounts);
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key) => left.tagCounts[key] === right.tagCounts[key]);
+}
+
 /** Owns visible-card projection, group arrangement, and vault-derived caches. */
 export class ProjectionController {
   private scopeTagCache: {
+    key: string;
+    value: { availableTags: string[]; tagCounts: Record<string, number> };
+  } | null = null;
+  /**
+   * Pre-invalidation snapshot kept for exactly one comparison so the metadata
+   * lane can detect tag-data changes even though invalidation cleared the
+   * live cache first. Cleared by the next `refreshScopeTagData`.
+   */
+  private scopeTagStash: {
     key: string;
     value: { availableTags: string[]; tagCounts: Record<string, number> };
   } | null = null;
@@ -83,7 +138,9 @@ export class ProjectionController {
     const pipelineContext: PipelineContext = {
       app: this.context.getApp(),
       filterTags: settings.filter.tags,
-      propertyFilters: isBoxScope(this.context.store.getScope()) ? [] : settings.filter.properties,
+      propertyFilters: resolveSourceCapabilities(this.context.store.getScope()).browsePropertyFilter
+        ? settings.filter.properties
+        : [],
       search: this.deps.getSearchInput(),
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
       group: { spec, buckets: this.resolveGroupBuckets(spec, cards) },
@@ -134,7 +191,8 @@ export class ProjectionController {
    */
   private resolveGroupSpec(): GroupSpec {
     const spec = this.deps.getGroupConfig();
-    if (spec.dimension === "box-rule" && !isBoxScope(this.context.store.getScope())) {
+    const { groupDimensions } = resolveSourceCapabilities(this.context.store.getScope());
+    if (spec.dimension === "box-rule" && !groupDimensions.includes("box-rule")) {
       return { ...spec, dimension: "none" };
     }
     return spec;
@@ -153,63 +211,91 @@ export class ProjectionController {
   /**
    * A metadata-only edit never bumps `epochs.vaultContent`, so the cached
    * `tag` / `box-rule` buckets would keep serving the pre-edit header until an
-   * unrelated vault mutation. Recompute just this card's bucket and drop the
-   * cache only when it actually moved, so an ordinary note save does not pay
-   * for a full re-bucket of the scope.
+   * unrelated vault mutation. Recompute the buckets for the **full base-card
+   * set** and compare a stable `path + bucket key + label` signature before the
+   * old cache is discarded.
    *
-   * Returns whether the caller should reproject.
+   * Unlike the per-path refresh it replaced, the full-set rebuild can compare
+   * labels safely: the label is canonical across the whole scope, so this
+   * catches both bucket movement and canonical label-only changes such as
+   * `#Work` to `#work`, while a full no-op re-save still reports no move.
+   *
+   * The freshly built buckets are always retained as the refreshed cache, so
+   * the caller's reprojection serves them without a second rebuild. Returns
+   * whether the signature moved and the caller should reproject.
    */
-  refreshGroupBucketForPath(path: string): boolean {
+  refreshMetadataGroupBuckets(): boolean {
     const spec = this.resolveGroupSpec();
     if (!readsVaultMetadata(spec.dimension)) {
       return false;
     }
 
-    const cached = this.groupBucketCache?.buckets.get(path);
-    if (cached === undefined) {
-      // A cold cache is ambiguous. Either nothing has been projected yet, or a
-      // rendered arrangement outlived an `invalidateVaultCaches()` that did not
-      // reproject — the nav-count path does exactly that. Only the second case
-      // can be showing a stale header, and a live segment table is what tells
-      // them apart. This costs one reprojection per invalidation, after which
-      // the cache is warm and the key comparison below takes over again.
-      return this.groupSegments.length > 0;
-    }
-
-    const card = this.context.store.getBaseCard(path);
-    if (card === undefined) {
+    const cached = this.groupBucketCache?.buckets ?? null;
+    if (cached === null && this.groupSegments.length === 0) {
+      // Nothing has been projected and no cache is warm, so there is no
+      // rendered header that could be stale; skip the rebuild entirely.
       return false;
     }
 
+    const cards = this.context.store.getBaseCards();
     const strings = this.context.getUiStrings();
+    const labels = this.resolveGroupLabels(strings);
+    const rules = this.resolveGroupRules();
     const fresh = buildGroupBuckets(
       this.context.getApp(),
-      [card],
+      cards,
       spec,
-      this.resolveGroupRules(),
-      this.resolveGroupLabels(strings),
+      rules,
+      labels,
       strings,
-    ).get(path);
+    );
 
-    // Key only, deliberately. A metadata edit cannot change a `box-rule` label,
-    // which comes from rule identity and is already covered by the label
-    // signature; and a `tag` label is canonicalized across the whole scope, so
-    // a single-card rebuild cannot produce a comparable value. Comparing labels
-    // here reported a move on every save for a mixed-casing tag group.
-    if (fresh === undefined || fresh.key === cached.key) {
-      return false;
-    }
+    const moved = cached === null
+      ? true
+      : bucketSignaturesDiffer(cached, fresh, cards);
 
-    this.groupBucketCache = null;
-    return true;
+    this.groupBucketCache = {
+      key: this.groupBucketCacheKey(spec.dimension, labels, rules),
+      buckets: fresh,
+    };
+    return moved;
+  }
+
+  /**
+   * Recomputes the scope tag snapshot (available tags + counts) from current
+   * metadata and reinstalls it as the refreshed cache. Returns whether the
+   * values changed, so a metadata event that touched no tag data can stay on
+   * the minimal publication path. When invalidation just cleared the live
+   * cache, the one-shot stash installed by that invalidation serves as the
+   * baseline (key-matched); a genuinely cold cache with no stash reports no
+   * change and the next derive serves the refreshed value.
+   */
+  refreshScopeTagData(): boolean {
+    const key = this.scopeTagCacheKey();
+    const live = this.scopeTagCache;
+    const stashed = this.scopeTagStash;
+    const previous = live?.key === key
+      ? live.value
+      : stashed?.key === key
+        ? stashed.value
+        : null;
+    const app = this.context.getApp();
+    const files = this.context.store.getBaseCards().map((card) => card.file);
+    const value = {
+      availableTags: this.hasMetadataCache() ? collectAllTags(app, files) : [],
+      tagCounts: collectTagCounts(app, files),
+    };
+    this.scopeTagStash = null;
+    this.scopeTagCache = { key, value };
+    return previous !== null && !scopeTagDataEqual(previous, value);
   }
 
   private resolveGroupRules(): Rule[] {
-    const scope = this.context.store.getScope();
-    if (!isBoxScope(scope)) {
+    const { arrangementOwner } = resolveSourceCapabilities(this.context.store.getScope());
+    if (arrangementOwner.kind !== "box") {
       return [];
     }
-    return findCardBox(this.context.getSettings().boxes ?? [], scope.boxId)?.rules ?? [];
+    return findCardBox(this.context.getSettings().boxes ?? [], arrangementOwner.boxId)?.rules ?? [];
   }
 
   private resolveGroupBuckets(
@@ -319,5 +405,22 @@ export class ProjectionController {
     this.scopeTagCache = null;
     this.vaultTagCountsCache = null;
     this.groupBucketCache = null;
+  }
+
+  /**
+   * Metadata-lane invalidation: clears the scope/vault tag caches only, so a
+   * caller can still compare metadata-derived group-bucket signatures against
+   * the pre-edit cache before deciding to reproject. The cleared scope-tag
+   * snapshot is stashed (key-matched) for exactly one `refreshScopeTagData`
+   * comparison so tag-data change detection survives this invalidation.
+   * Box-rule/tag bucket staleness is owned by {@link refreshMetadataGroupBuckets},
+   * which reinstalls a refreshed cache under the current key.
+   */
+  invalidateMetadataDerivedCaches(): void {
+    if (this.scopeTagCache) {
+      this.scopeTagStash = this.scopeTagCache;
+    }
+    this.scopeTagCache = null;
+    this.vaultTagCountsCache = null;
   }
 }

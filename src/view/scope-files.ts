@@ -76,23 +76,4 @@ export function isPathInFolderScope(
 }
 
 /** Rewrites a path that points at or inside a renamed folder. */
-export function rewritePathAfterRename(
-  currentPath: string,
-  oldPath: string,
-  newPath: string,
-): string {
-  if (currentPath === "") {
-    return currentPath;
-  }
-
-  if (currentPath === oldPath) {
-    return newPath;
-  }
-
-  const prefix = `${oldPath}/`;
-  if (!currentPath.startsWith(prefix)) {
-    return currentPath;
-  }
-
-  return `${newPath}${currentPath.slice(oldPath.length)}`;
-}
+export { rewritePathReference as rewritePathAfterRename } from "../path-references";
