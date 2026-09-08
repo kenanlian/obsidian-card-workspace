@@ -266,15 +266,18 @@ describe("NavLayoutController", () => {
     expect(first.controller.getRevealRequest()).toBeNull();
   });
 
-  it("consumes reveal expansion on manual collapse and recovers focus after query loss", async () => {
-    const { controller, saveSettings } = createHarness();
+  it("publishes a reveal-only collapse and recovers focus after query loss", async () => {
+    const { controller, publishGroups, saveSettings } = createHarness();
     let projection = controller.project(projectionInput());
     const ancestor = projection.rows.find((row) => row.id === "folder:a");
     expect(ancestor?.expanded).toBe(true);
     if (!ancestor) throw new Error("missing ancestor fixture");
 
+    publishGroups.mockClear();
     await controller.setExpanded(ancestor, false);
-    expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: [] });
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(publishGroups).toHaveBeenCalledOnce();
+    expect(publishGroups).toHaveBeenCalledWith("nav");
     projection = controller.project(projectionInput());
     expect(projection.rows.find((row) => row.id === "folder:a")?.expanded).toBe(false);
 

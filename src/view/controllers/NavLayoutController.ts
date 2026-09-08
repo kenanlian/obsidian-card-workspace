@@ -1,7 +1,6 @@
 import { moveNavSection } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
-import { normalizeScopePath } from "../scope";
-import type { CardScope } from "../scope";
+import { normalizeScopePath, type CardScope } from "../scope";
 import {
   NAVIGATION_SECTION_ORDER,
   navigationFolderId,
@@ -12,8 +11,7 @@ import {
   type NavigationRow,
 } from "../navigation-model";
 import { projectNavigation, resolveNavigationFocus } from "../navigation-projection";
-import type { NavSectionId } from "../types";
-import type { FolderTreeNode } from "../types";
+import type { FolderTreeNode, NavSectionId } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 import { buildNavigationFolderTree, cacheNavigationFolderCounts } from "./nav-folder-tree";
 import { applyNavigationExpansionBatch, captureExpandableNavigationBranches,
@@ -223,7 +221,10 @@ export class NavLayoutController implements DisposableController {
     if (row.kind === "folder" && expanded) this.expansion.suppressedFolders.delete(identity);
     const settings = this.context.getSettings();
     const key = row.kind === "folder" ? "expandedFolderPaths" : "expandedTagPaths";
-    await this.context.saveSettings({ [key]: toggleExpandedKey(settings[key], identity, expanded) });
+    const nextValues = toggleExpandedKey(settings[key], identity, expanded);
+    const unchanged = nextValues.length === settings[key].length && nextValues.every((value, index) => value === settings[key][index]);
+    if (unchanged) this.pushNavLayoutState();
+    else await this.context.saveSettings({ [key]: nextValues });
   }
   project(input: Omit<NavigationProjectionInput, "query" | "expansion">): NavigationProjection {
     this.syncScope(input.scope);
@@ -382,7 +383,6 @@ export class NavLayoutController implements DisposableController {
     this.navCountRefreshHandle = null;
     return true;
   }
-
   refreshNavState(): void {
     this.invalidateNavCounts();
     this.context.publishGroups("nav", "scope");
