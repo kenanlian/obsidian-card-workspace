@@ -462,6 +462,78 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("resets scroll for every effective sort and group configuration change", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) =>
+          createCard(`notes/${index}.md`, `Card ${index}`),
+        ),
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    const arrangements: Array<{
+      sortField: PanelModelState["projection"]["sortField"];
+      sortDirection: PanelModelState["projection"]["sortDirection"];
+      group: PanelModelState["projection"]["group"];
+    }> = [
+      {
+        sortField: "mtime",
+        sortDirection: "asc",
+        group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+      },
+      {
+        sortField: "name",
+        sortDirection: "asc",
+        group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+      },
+      {
+        sortField: "name",
+        sortDirection: "asc",
+        group: { dimension: "folder", orderBy: "default", orderDirection: "asc" },
+      },
+      {
+        sortField: "name",
+        sortDirection: "asc",
+        group: { dimension: "folder", orderBy: "name", orderDirection: "asc" },
+      },
+      {
+        sortField: "name",
+        sortDirection: "asc",
+        group: { dimension: "folder", orderBy: "name", orderDirection: "desc" },
+      },
+    ];
+
+    for (const [index, arrangement] of arrangements.entries()) {
+      list.scrollTop = 900;
+      list.dispatchEvent(new Event("scroll"));
+      await tick();
+
+      panelModel.mutate((state) => {
+        state.projection = { ...state.projection, ...arrangement };
+        state.cards = {
+          ...state.cards,
+          records: [...state.cards.records.slice(1), state.cards.records[0]!],
+          sequenceRevision: index + 2,
+        };
+      });
+      await tick();
+
+      expect(list.scrollTop).toBe(0);
+    }
+
+    await unmount(component);
+  });
+
   it("emits stable viewport demand by generation, hydration revision, and ordered paths", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

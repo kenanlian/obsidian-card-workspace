@@ -396,16 +396,12 @@
   let scrollTop = $state(0);
   let columnCount = $state(1);
 
-  let lastRequestIdentity = $state<string | null>(null);
-  let lastScopeIdentity = $state<string | null>(null);
+  let lastRequestIdentity = $state<string | null>(null), lastScopeIdentity = $state<string | null>(null);
+  let lastArrangementIdentity = $state<string | null>(null);
 
   /**
-   * Whether a projected layout has no group headers. Read from the rows rather
-   * than from `groupSegments`, because at capture time `groupSegments` is the
-   * incoming publish while `projectedRows` is still the previous layout — on a
-   * grouped-to-flat transition those disagree, and the anchor must describe the
-   * layout it was captured from. `projectPanelRows` stamps `segmentIndex: -1`
-   * on every row of an ungrouped projection and a header at row 0 otherwise.
+   * Read the old projected rows rather than incoming `groupSegments`: anchor
+   * capture must describe the old layout during grouped-to-flat transitions.
    */
   function isFlatLayout(rows: readonly ProjectedRow[]): boolean {
     return rows[0]?.segmentIndex === -1;
@@ -569,9 +565,14 @@
   $effect(() => {
     const revision = cards.sequenceRevision;
     const groupRevision = cards.groupRevision;
+    const nextArrangementIdentity = [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.orderBy, projection.group.orderDirection].join("\u0000");
     const columns = columnCount;
     untrack(() => {
-      if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
+      const arrangementChanged = lastArrangementIdentity !== null && nextArrangementIdentity !== lastArrangementIdentity;
+      lastArrangementIdentity = nextArrangementIdentity;
+      if (arrangementChanged) {
+        pendingLayoutAnchor = null; applyScrollTop(0);
+      } else if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
         // Ungrouped reorders hold the viewport position, as they did before
         // groups existed; only a grouped layout needs the card/group ref.
         pendingLayoutAnchor = captureLayoutAnchor({
@@ -582,8 +583,7 @@
       projectedRows = projectPanelRows(cards.records.map((card) => ({ path: card.path })), groupSegments, columns);
       rebuildPositionsFrom(0);
     });
-    void revision;
-    void groupRevision;
+    void revision; void groupRevision; void nextArrangementIdentity;
   });
 
   $effect(() => {

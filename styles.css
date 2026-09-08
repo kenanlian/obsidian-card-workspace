@@ -1373,6 +1373,7 @@
   font-size: var(--fce-preview-font-size);
   line-height: var(--fce-preview-line-height);
   max-block-size: calc(var(--fce-preview-line-clamp) * 1em * var(--fce-preview-line-height));
+  border-radius: var(--radius-s);
   overflow: hidden;
 }
 
@@ -1452,7 +1453,8 @@
 }
 
 .menu.fce-sort-group-menu .menu-item.fce-menu-section-title,
-.menu.fce-sort-group-menu .menu-item.fce-menu-section-title .menu-item-title {
+.menu.fce-sort-group-menu .menu-item.fce-menu-section-title .menu-item-title,
+.menu.fce-sort-group-menu .menu-item.fce-menu-section-title .menu-item-icon {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller, 12px);
   opacity: 1;

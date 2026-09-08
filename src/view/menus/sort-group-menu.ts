@@ -37,9 +37,9 @@ interface SortGroupOptionSpec {
   onSelect?: () => void;
 }
 
-function addHeadingItem(menu: Menu, title: string): void {
+function addHeadingItem(menu: Menu, title: string, icon: string): void {
   menu.addItem((item) => {
-    item.setTitle(title).setIcon(null).setDisabled(true);
+    item.setTitle(title).setIcon(icon).setDisabled(true);
   });
 }
 
@@ -64,7 +64,7 @@ export function buildSortGroupMenu(
   const { strings } = deps;
   const groupOrderDisabled = state.group.dimension === "none";
 
-  addHeadingItem(menu, strings.sortFieldHeading);
+  addHeadingItem(menu, strings.sortFieldHeading, "arrow-up-narrow-wide");
   addOptionItem(menu, {
     title: strings.fieldMtime,
     icon: "file-clock",
@@ -89,7 +89,7 @@ export function buildSortGroupMenu(
 
   menu.addSeparator();
 
-  addHeadingItem(menu, strings.sortDirectionHeading);
+  addHeadingItem(menu, strings.sortDirectionHeading, "arrow-up-down");
   addOptionItem(menu, {
     title: strings.directionAsc,
     icon: "arrow-up",
@@ -107,7 +107,7 @@ export function buildSortGroupMenu(
 
   menu.addSeparator();
 
-  addHeadingItem(menu, strings.groupHeading);
+  addHeadingItem(menu, strings.groupHeading, "list-tree");
   const dimensionOptions: Array<{ dimension: GroupDimension; title: string; icon: string }> = [
     { dimension: "none", title: strings.dimensionNone, icon: "list" },
     { dimension: "folder", title: strings.dimensionFolder, icon: "folder" },
@@ -133,10 +133,10 @@ export function buildSortGroupMenu(
 
   menu.addSeparator();
 
-  addHeadingItem(menu, strings.groupOrderHeading);
+  addHeadingItem(menu, strings.groupOrderHeading, "list-ordered");
   const orderByOptions: Array<{ orderBy: GroupOrderBy; title: string; icon: string }> = [
     { orderBy: "default", title: strings.orderDefault, icon: "list-restart" },
-    { orderBy: "name", title: strings.orderName, icon: "arrow-down-a-z" },
+    { orderBy: "name", title: strings.orderName, icon: "flag" },
     { orderBy: "count", title: strings.orderCount, icon: "hash" },
   ];
   for (const { orderBy, title, icon } of orderByOptions) {
@@ -170,14 +170,14 @@ export function buildSortGroupMenu(
 
   addOptionItem(menu, {
     title: strings.collapseAll,
-    icon: "chevrons-up",
+    icon: "chevrons-down-up",
     checked: false,
     disabled: !state.hasSegments,
     onSelect: () => deps.onCollapseAll(),
   });
   addOptionItem(menu, {
     title: strings.expandAll,
-    icon: "chevrons-down",
+    icon: "chevrons-up-down",
     checked: false,
     disabled: !state.hasSegments,
     onSelect: () => deps.onExpandAll(),

@@ -199,24 +199,28 @@ describe("buildSortGroupMenu", () => {
     }));
 
     const expectedIcons = new Map([
+      ["Sort by", "arrow-up-narrow-wide"],
       ["Edited time", "file-clock"],
       ["Created time", "file-plus-2"],
       ["Filename", "file-text"],
+      ["Order", "arrow-up-down"],
+      ["Group by", "list-tree"],
       ["None", "list"],
       ["Folder", "folder"],
       ["Tag", "tag"],
       ["Task status", "list-checks"],
       ["Card box rule", "package-check"],
+      ["Group order", "list-ordered"],
       ["Default", "list-restart"],
-      ["Name", "arrow-down-a-z"],
+      ["Name", "flag"],
       ["Card count", "hash"],
-      ["Collapse all", "chevrons-up"],
-      ["Expand all", "chevrons-down"],
+      ["Collapse all", "chevrons-down-up"],
+      ["Expand all", "chevrons-up-down"],
     ]);
     for (const [title, icon] of expectedIcons) {
       expect(itemByTitle(menu, title)?.icon, `${title} should have its Lucide icon`).toBe(icon);
     }
-    expect(menu.items.filter((item) => !item.disabled).every((item) => item.icon !== null)).toBe(true);
+    expect(menu.items.every((item) => item.icon !== null)).toBe(true);
   });
 
   it("disables the whole group-order section while the dimension is none", () => {
