@@ -26,6 +26,13 @@ export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolea
     );
   }
   menu.addSeparator();
+  addItem(
+    menu,
+    deps.hasExpandedProperties ? property.collapseAll : property.expandAll,
+    deps.hasExpandedProperties ? "chevrons-down-up" : "chevrons-up-down",
+    () => deps.expansionActions.toggleAllProperties(),
+  );
+  menu.addSeparator();
   appendNavSectionHeaderItems(menu, deps, "properties");
   return true;
 }

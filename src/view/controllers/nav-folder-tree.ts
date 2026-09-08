@@ -54,3 +54,14 @@ export function cacheNavigationFolderCounts(
   tree.forEach(visit);
   return counts;
 }
+
+/** Collect every folder branch from the source tree, including currently hidden descendants. */
+export function collectExpandableFolderPaths(tree: readonly FolderTreeNode[]): string[] {
+  const paths: string[] = [];
+  const visit = (node: FolderTreeNode): void => {
+    if (node.children.length > 0) paths.push(normalizeScopePath(node.path));
+    node.children.forEach(visit);
+  };
+  tree.forEach(visit);
+  return paths;
+}

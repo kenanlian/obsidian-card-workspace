@@ -63,6 +63,16 @@ function validValueFacet(value: unknown): value is PropertyValueFacet {
   return normalizePropertyScalarRef(facet.ref) !== null && typeof facet.label === "string";
 }
 
+/** Collect expandable property keys independently of their current flat-row visibility. */
+export function collectExpandablePropertyKeys(facets: readonly PropertyFacet[]): string[] {
+  const keys: string[] = [];
+  for (const facet of Array.isArray(facets) ? facets : []) {
+    if (!isPropertyFacet(facet)) continue;
+    if (Array.isArray(facet.values) && facet.values.some(validValueFacet)) keys.push(facet.key);
+  }
+  return keys;
+}
+
 export function projectPropertyRows(
   facets: readonly PropertyFacet[],
   clauses: readonly PropertyFilterClause[],

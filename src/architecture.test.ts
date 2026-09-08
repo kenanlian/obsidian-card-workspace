@@ -1010,7 +1010,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/card-boxes.ts": 369,
     "src/view/view-modules.ts": 427,
     "src/view/actions/folder-actions.ts": 418,
-    "src/view/controllers/NavLayoutController.ts": 410,
+    "src/view/controllers/NavLayoutController.ts": 406,
     "src/view/controllers/ProjectionController.ts": 426,
   };
   const DEFAULT_LINE_LIMIT = 400;

@@ -17,7 +17,6 @@ import type {
   NavContextMenuPayload,
   NavSectionId,
 } from "./types";
-
 export interface NavMenuActions {
   createNote: (folderUiPath: string) => void;
   createFolder: (folderUiPath: string) => void;
@@ -54,7 +53,6 @@ export interface NavMenuActions {
   togglePropertyValue: (key: string, ref: PropertyScalarRef) => void;
   filterByOnlyPropertyValue: (key: string, ref: PropertyScalarRef) => void;
 }
-
 export interface NavMenuDeps {
   strings: UiStrings;
   /** Browse Tag filter capability; Tag menus filter only when enabled (C6). */
@@ -80,11 +78,13 @@ export interface NavMenuDeps {
   sectionOrder: readonly NavSectionId[];
   hasExpandedFolders: boolean;
   hasExpandedTags: boolean;
+  hasExpandedProperties: boolean;
   tagExpansion: (tag: string) => { hasChildren: boolean; expanded: boolean };
   actions: NavMenuActions;
   expansionActions: {
     toggleAllFolders: () => void;
     toggleAllTags: () => void;
+    toggleAllProperties: () => void;
     toggleTag: (tag: string) => void;
   };
 }

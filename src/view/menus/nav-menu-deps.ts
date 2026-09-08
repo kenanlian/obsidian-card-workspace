@@ -37,10 +37,12 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     sectionOrder: settings.navSectionOrder,
     hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
     hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
+    hasExpandedProperties: deps.modules.navLayout.hasExpandedRows("property"),
     tagExpansion: (tag) => deps.modules.navLayout.getTagExpansion(tag),
     expansionActions: {
       toggleAllFolders: () => { void deps.modules.navLayout.toggleAll("folder"); },
       toggleAllTags: () => { void deps.modules.navLayout.toggleAll("tag"); },
+      toggleAllProperties: () => { void deps.modules.navLayout.toggleAll("property"); },
       toggleTag: (tag) => { void deps.modules.navLayout.toggleById(`tag:${tag}`); },
     },
     actions: {

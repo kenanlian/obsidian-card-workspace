@@ -9,6 +9,8 @@ export interface PropertyStrings {
   chooseVisible: string;
   searchPlaceholder: string;
   clearFilters: string;
+  expandAll: string;
+  collapseAll: string;
   hideThisProperty: string;
   addToFilter: string;
   removeFromFilter: string;
@@ -33,6 +35,8 @@ export const propertyStrings: Record<UiLanguage, PropertyStrings> = {
     chooseVisible: "Choose visible properties",
     searchPlaceholder: "Search properties…",
     clearFilters: "Clear property filters",
+    expandAll: "Expand all properties",
+    collapseAll: "Collapse all properties",
     hideThisProperty: "Hide this property",
     addToFilter: "Add to filter",
     removeFromFilter: "Remove from filter",
@@ -56,6 +60,8 @@ export const propertyStrings: Record<UiLanguage, PropertyStrings> = {
     chooseVisible: "选择可见属性",
     searchPlaceholder: "搜索属性…",
     clearFilters: "清除属性筛选",
+    expandAll: "展开全部属性",
+    collapseAll: "折叠全部属性",
     hideThisProperty: "隐藏此属性",
     addToFilter: "加入筛选",
     removeFromFilter: "从筛选中移除",

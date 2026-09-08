@@ -155,10 +155,10 @@ export function buildTagTree(tags: string[]): TagTreeNode[] {
   return roots;
 }
 
-export function collectExpandableTagPaths(nodes: TagTreeNode[]): string[] {
+export function collectExpandableTagPaths(nodes: readonly TagTreeNode[]): string[] {
   const expandablePaths: string[] = [];
 
-  const walk = (items: TagTreeNode[]): void => {
+  const walk = (items: readonly TagTreeNode[]): void => {
     for (const node of items) {
       if (node.children.length > 0) {
         expandablePaths.push(node.tag);

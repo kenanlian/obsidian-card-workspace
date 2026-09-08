@@ -189,8 +189,11 @@ function createDeps(
     sectionOrder: defaultNavSectionOrder(),
     hasExpandedFolders: false,
     hasExpandedTags: false,
+    hasExpandedProperties: false,
     tagExpansion: () => ({ hasChildren: false, expanded: false }),
-    expansionActions: { toggleAllFolders: vi.fn(), toggleAllTags: vi.fn(), toggleTag: vi.fn() },
+    expansionActions: {
+      toggleAllFolders: vi.fn(), toggleAllTags: vi.fn(), toggleAllProperties: vi.fn(), toggleTag: vi.fn(),
+    },
     actions: createActions(),
     ...rest,
   };
@@ -805,18 +808,29 @@ describe("section header move items", () => {
     expect(moveFlags(favorites.menu)).toEqual({ up: false, down: true });
   });
 
-  it("gives the Properties header the chooser, clear, and generic section items, never the Boxes menu", () => {
+  it("gives the Properties header chooser, clear, expansion, and generic section items", () => {
     const deps = createDeps();
     const { menu } = build(createPayload({ section: "properties", scope: "header" }), deps);
 
     const titles = menu.items.map((item) => item.title);
     expect(titles[0]).toBe("Choose visible properties");
     expect(titles).toContain("Clear property filters");
+    expect(titles).toContain("Expand all properties");
     expect(titles).toContain("Collapse section");
     expect(titles).toContain("Move section up");
     expect(titles).toContain("Move section down");
     expect(titles).not.toContain("Create card box");
     expect(titles).not.toContain("Save scope as card box");
+
+    findItem(menu, "Expand all properties")?.clickHandler?.();
+    expect(deps.expansionActions.toggleAllProperties).toHaveBeenCalledOnce();
+  });
+
+  it("offers collapse-all when any property key is expanded", () => {
+    const deps = createDeps({ hasExpandedProperties: true });
+    const { menu } = build(createPayload({ section: "properties", scope: "header" }), deps);
+
+    expect(findItem(menu, "Collapse all properties")).toBeDefined();
   });
 
   it("disables Clear property filters when no property filter is active", () => {
@@ -837,6 +851,7 @@ describe("section header move items", () => {
     const titles = menu.items.map((item) => item.title);
     expect(titles[0]).toBe("Choose visible properties");
     expect(titles).not.toContain("Clear property filters");
+    expect(titles).toContain("Expand all properties");
     expect(titles).toContain("Collapse section");
     expect(titles).toContain("Move section up");
     expect(titles).toContain("Move section down");

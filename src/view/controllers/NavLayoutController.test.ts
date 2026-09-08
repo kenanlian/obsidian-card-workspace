@@ -445,6 +445,58 @@ describe("NavLayoutController", () => {
     expect(saveSettings).toHaveBeenCalledWith({ expandedPropertyKeys: ["status"] });
   });
 
+  it("expands complete folder, Tag, and property branches with one save per command", async () => {
+    const { controller, saveSettings } = createHarness();
+    const input = projectionInput(createFolderScope("", true));
+    input.tags = [{
+      tag: "work", displayTag: "work", label: "work", depth: 0, synthetic: false,
+      children: [{
+        tag: "work/ai", displayTag: "work/ai", label: "ai", depth: 1, synthetic: false,
+        children: [{ tag: "work/ai/ml", displayTag: "work/ai/ml", label: "ml", depth: 2, synthetic: false, children: [] }],
+      }],
+    }];
+    input.properties = [statusFacet, priorityFacet];
+    controller.project(input);
+
+    await controller.toggleAll("folder");
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(saveSettings).toHaveBeenLastCalledWith({ expandedFolderPaths: ["a", "a/b"] });
+
+    controller.project(input);
+    await controller.toggleAll("tag");
+    expect(saveSettings).toHaveBeenCalledTimes(2);
+    expect(saveSettings).toHaveBeenLastCalledWith({ expandedTagPaths: ["work", "work/ai"] });
+
+    controller.project(input);
+    await controller.toggleAll("property");
+    expect(saveSettings).toHaveBeenCalledTimes(3);
+    expect(saveSettings).toHaveBeenLastCalledWith({ expandedPropertyKeys: ["priority", "status"] });
+  });
+
+  it("collapses a complete branch set with one save and preserves unrelated expansion state", async () => {
+    const { controller, saveSettings, settings } = createHarness();
+    settings.expandedFolderPaths = ["a", "a/b", "outside-current-tree"];
+    controller.project(projectionInput(createFolderScope("", true)));
+
+    await controller.toggleAll("folder");
+
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: ["outside-current-tree"] });
+  });
+
+  it("updates query-time expansion in one publication without persisting", async () => {
+    const { controller, publishGroups, saveSettings } = createHarness();
+    controller.updateQuery("c");
+    controller.project(projectionInput(createFolderScope("", true)));
+    publishGroups.mockClear();
+
+    await controller.toggleAll("folder");
+
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(publishGroups).toHaveBeenCalledTimes(1);
+    expect(publishGroups).toHaveBeenCalledWith("nav");
+  });
+
   it("keeps property query expansion/suppression runtime-only", async () => {
     const { controller, saveSettings } = createHarness();
     controller.updateQuery("open");
