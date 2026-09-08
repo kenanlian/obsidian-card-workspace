@@ -7,9 +7,11 @@ import type { OpenDestination, PartialPluginSettings } from "../settings";
 import type CardWorkspacePlugin from "../main";
 import {
   createFolderScope,
-  isBoxScope,
+  isBoxScope, isLinksScope,
   isCurrentFolderPath,
   normalizeScopePath,
+  resolveNewNoteFolderPath as folderPathForNewNote,
+  resolveScopeFolderPath,
   scopeDisplayPath,
   scopeIdentity,
   type CardScope,
@@ -23,6 +25,7 @@ import { createViewModules, type ViewModules } from "./view-modules";
 import type { MetadataImpactBatch } from "./controllers/MetadataImpactController";
 import { resolveEmptyStateMessage } from "./empty-state";
 import { createViewStateStore, type ViewStateStore } from "./view-state-store";
+import { resolveLinksFollowScope } from "./links-sources";
 import { rewritePathAfterRename } from "./scope-files";
 import type { NavigationIntent } from "./navigation-model";
 import {
@@ -36,7 +39,7 @@ import {
 } from "./navigation-host";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
 import {
-  PANEL_GROUPS,
+  PANEL_GROUPS, buildLinksScopeGroupFields,
   createPanelModel,
   type PanelGroup,
   type PanelModel,
@@ -147,6 +150,7 @@ export class FolderCardView extends ItemView {
       propertyClauseCount: resolveSourceCapabilities(this.cardScope).browsePropertyFilter
         ? settings.filter.properties.length
         : 0,
+      emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks : undefined,
     });
   }
   private openCardWithDestination(path: string, destination: OpenDestination): void {
@@ -252,6 +256,8 @@ export class FolderCardView extends ItemView {
     if (action === "bulk-remove-from-box") {
       void this.modules.boxActions.bulkRemoveFromBox();
     }
+
+    if (typeof action === "string" && this.modules.linksActions.handleToolbarCommand(action)) return;
   }
 
   handleFolderActionRequest(detail: FolderActionPayload): void {
@@ -393,38 +399,26 @@ export class FolderCardView extends ItemView {
     }
 
     this.selectedPath = path;
+    const next = resolveLinksFollowScope(this.cardScope, path, this.store.getLinksPinned());
+    if (next) {
+      void this.modules.scopeController.handleScopeSelection(
+        this.modules.scopeController.createProgrammaticSelectionRequest(next, false),
+      );
+    }
     this.publishGroups("cards", "bulk", "nav");
   }
 
   getCurrentFolderPath(): string | null {
-    switch (this.cardScope.kind) {
-      case "folder":
-        return this.cardScope.path;
-      case "box":
-        return null;
-      default: {
-        const exhaustive: never = this.cardScope;
-        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
-      }
-    }
+    return resolveScopeFolderPath(this.cardScope);
   }
 
   /**
    * C5: toolbar new-note resolves its folder from this view's runtime scope.
-   * Folder uses `cardScope.path` (including `""` for Vault root). Box keeps the
-   * persisted `lastFolderPath` fallback and does not switch scope or auto-add.
+   * Folder uses `cardScope.path` (including `""` for Vault root). Box and links
+   * keep the persisted `lastFolderPath` fallback and do not switch scope or auto-add.
    */
   private resolveNewNoteFolderPath(): string {
-    switch (this.cardScope.kind) {
-      case "folder":
-        return this.cardScope.path;
-      case "box":
-        return this.plugin.getSettings().lastFolderPath;
-      default: {
-        const exhaustive: never = this.cardScope;
-        throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
-      }
-    }
+    return folderPathForNewNote(this.cardScope, this.plugin.getSettings().lastFolderPath);
   }
 
   openNavContextMenu(payload: NavContextMenuPayload): void {
@@ -485,6 +479,7 @@ export class FolderCardView extends ItemView {
       browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
       supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
       supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
+      ...buildLinksScopeGroupFields(this.cardScope, this.store, this.strings),
     };
   }
 

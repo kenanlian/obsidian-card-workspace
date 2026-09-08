@@ -72,6 +72,43 @@ export interface FavoriteActionsDeps {
   applyTagFilter: (nextTags: string[]) => Promise<void>;
 }
 
+/** View-modules construction offset: wraps collaborator modules into `FavoriteActionsDeps`. */
+export function createFavoriteActions(deps: {
+  context: ViewContext;
+  boxActions: {
+    getActiveBox(): { id: string } | null;
+    handleBoxCommand(detail: { command?: unknown; boxId?: unknown }): void;
+  };
+  navLayout: {
+    getFolderTreeCount(path: string): { direct: number; recursive: number } | undefined;
+  };
+  folderActions: {
+    resolveFolderFromUiPath(folderPath: string): TFolder | null;
+  };
+  host: {
+    selectFolderFromNav(path: string): Promise<void>;
+    openNoteFromCard(path: string, destination?: OpenDestination): Promise<void>;
+  };
+  requestDestructiveConfirmation: FavoriteActionsDeps["requestDestructiveConfirmation"];
+  projection: { getVaultTagCounts(): Record<string, number> };
+  tagActions: { applyTagFilter(nextTags: string[]): Promise<void> };
+}): FavoriteActions {
+  return new FavoriteActions({
+    context: deps.context,
+    getActiveBoxId: () => deps.boxActions.getActiveBox()?.id ?? null,
+    handleBoxCommand: (detail) => {
+      deps.boxActions.handleBoxCommand(detail);
+    },
+    getFolderTreeCount: (path) => deps.navLayout.getFolderTreeCount(path),
+    resolveFolderFromUiPath: (folderPath) => deps.folderActions.resolveFolderFromUiPath(folderPath),
+    selectFolderFromNav: (path) => deps.host.selectFolderFromNav(path),
+    requestDestructiveConfirmation: deps.requestDestructiveConfirmation,
+    openNoteFromCard: (path, destination) => deps.host.openNoteFromCard(path, destination),
+    getVaultTagCounts: () => deps.projection.getVaultTagCounts(),
+    applyTagFilter: (nextTags) => deps.tagActions.applyTagFilter(nextTags),
+  });
+}
+
 /**
  * Favorites CRUD, activation, row-model derivation, and menu wiring — moved
  * behind injected navigation, box, and tag seams.

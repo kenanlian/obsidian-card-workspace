@@ -27,6 +27,8 @@ export interface ViewStateStore {
   advanceHydrationRevision(): number;
   getSelectedPath(): string | null;
   setSelectedPath(path: string | null): void;
+  getLinksPinned(): boolean;
+  setLinksPinned(pinned: boolean): void;
 }
 
 export function createViewStateStore(initialScope: CardScope): ViewStateStore {
@@ -38,6 +40,7 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
   let visibleSequenceRevision = 0;
   let hydrationRevision = 0;
   let selectedPath: string | null = null;
+  let linksPinned = false;
 
   const buildIndex = (cards: readonly NoteCardRecord[]): Map<string, number> =>
     new Map(cards.map((card, index) => [card.path, index]));
@@ -119,6 +122,10 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
     getSelectedPath: () => selectedPath,
     setSelectedPath(path) {
       selectedPath = path;
+    },
+    getLinksPinned: () => linksPinned,
+    setLinksPinned(pinned) {
+      linksPinned = pinned;
     },
   };
 }

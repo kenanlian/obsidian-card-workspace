@@ -13,6 +13,7 @@ export function resolveEmptyStateMessage(input: {
   baseCardCount: number;
   visibleCardCount: number;
   propertyClauseCount: number;
+  emptyBaseMessage?: string;
 }): string {
   const { strings, query } = input;
   if (query.length === 0) {
@@ -22,7 +23,7 @@ export function resolveEmptyStateMessage(input: {
     ) {
       return strings.property.emptyPropertyFilter;
     }
-    return strings.view.emptyFolder;
+    return input.emptyBaseMessage ?? strings.view.emptyFolder;
   }
   return input.activeTagCount > 0
     ? strings.view.emptySearchCurrentFolderWithTags(query)

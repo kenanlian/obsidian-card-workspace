@@ -2,7 +2,7 @@ import type { GroupDimension } from "../card-grouping-settings";
 import type { CardScope } from "./scope";
 
 /**
- * The one exhaustive Folder/Box capability table (C6).
+ * The one exhaustive Folder/Box/Links capability table (C6).
  *
  * Every consumer that needs "does this source support X" policy — arrangement
  * ownership, browse filter availability, include-subfolders controls, Box rule
@@ -12,6 +12,10 @@ import type { CardScope } from "./scope";
  * stay their own exhaustive switches because they perform behavior, not
  * capability lookup. A later source kind must extend this switch together with
  * the semantic dispatchers; the `never` arm fails compilation otherwise.
+ *
+ * Links uses global arrangement ownership. Accepted side effect: card-pin
+ * toggles inside a Links scope write global `settings.pinnedPaths` and affect
+ * all folder views.
  */
 export interface SourceCapabilities {
   readonly arrangementOwner:
@@ -55,6 +59,15 @@ export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities 
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: BOX_GROUP_DIMENSIONS,
+      };
+    case "links":
+      return {
+        arrangementOwner: { kind: "global" },
+        browseTagFilter: false,
+        browsePropertyFilter: true,
+        supportsIncludeSubfolders: false,
+        supportsBoxRuleSeeding: false,
+        groupDimensions: FOLDER_GROUP_DIMENSIONS,
       };
     default: {
       const exhaustive: never = scope;

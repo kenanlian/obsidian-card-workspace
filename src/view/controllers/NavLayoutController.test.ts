@@ -23,7 +23,7 @@ vi.mock("obsidian", () => ({
 import { defaultNavSectionOrder } from "../../navigation-section-order";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import type { PropertyFacet } from "../property-facets";
-import { createFolderScope } from "../scope";
+import { createFolderScope, createLinksScope } from "../scope";
 import { navigationFolderId, navigationPropertyId, navigationPropertyValueId } from "../navigation-model";
 import type { NavigationProjectionInput } from "../navigation-model";
 import type { NavSectionId } from "../types";
@@ -216,6 +216,16 @@ describe("NavLayoutController", () => {
     expect(controller.getRevealRequest()).toBe(first);
     controller.syncScope(createFolderScope("a/c", true));
     expect(controller.getRevealRequest()).toEqual({ token: 2, rowId: navigationFolderId("a/c") });
+  });
+
+  it("does not force-reveal the Folders section for a links scope", () => {
+    const { controller, settings } = createHarness();
+    settings.sectionCollapsed.folders = true;
+    const base = projectionInput(createLinksScope("notes/A.md", "backlinks"));
+    const input = { ...base, sectionCollapsed: { ...base.sectionCollapsed, folders: true } };
+    const projection = controller.project(input);
+    expect(projection.sections.find((item) => item.section === "folders")?.expanded).toBe(false);
+    expect(controller.getRevealRequest()).toBeNull();
   });
 
   it("keeps initial focus unresolved while a restored current folder becomes visible", () => {

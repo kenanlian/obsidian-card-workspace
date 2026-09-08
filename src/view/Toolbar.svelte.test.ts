@@ -143,6 +143,11 @@ function mountToolbar(
         browsePropertyFilterEnabled: !values.activeBoxId,
         supportsIncludeSubfolders: !values.activeBoxId,
         supportsBoxRuleSeeding: !values.activeBoxId,
+        linksDirection: values.linksDirection ?? null,
+        linksNoteName: values.linksNoteName ?? null,
+        linksPinned: values.linksPinned ?? false,
+        linksLabel: values.linksLabel ?? null,
+        supportsLinksSnapshot: values.supportsLinksSnapshot ?? false,
       },
       search: {
         query: values.searchQuery ?? "",
@@ -309,6 +314,8 @@ describe("Toolbar.svelte", () => {
     const buttons = Array.from(buttonsRow?.querySelectorAll("button") || []);
     const expectedLabels = [
       "Expand navigation",
+      "Backlinks",
+      "Outgoing links",
       "Create note",
       "Sort & group",
       "Bulk actions",
@@ -333,6 +340,8 @@ describe("Toolbar.svelte", () => {
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-buttons button"));
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "Expand navigation",
+      "Backlinks",
+      "Outgoing links",
       "Create note",
       "Sort & group",
       "Bulk actions",
@@ -890,6 +899,114 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([{ action: "bulk-remove-from-box" }]);
+
+    await disposeMountedComponent(component);
+  });
+});
+
+function linksScopeProps(locale: "en" | "zh", extras: Record<string, unknown> = {}): Record<string, unknown> {
+  const strings = getUiStrings(locale);
+  return {
+    strings,
+    folderPath: "/",
+    linksDirection: "backlinks",
+    linksNoteName: "Note",
+    linksPinned: false,
+    linksLabel: `\u201cNote\u201d${strings.toolbar.scope.separator}${strings.links.directionBacklinks}`,
+    supportsLinksSnapshot: true,
+    ...extras,
+  };
+}
+
+describe("Toolbar.svelte links controls", () => {
+  beforeEach(() => {
+    mountedComponents = [];
+    document.body.innerHTML = "";
+    resetObsidianMenuInstances();
+  });
+
+  afterEach(async () => {
+    await Promise.all(mountedComponents.map((component) => unmount(component)));
+    mountedComponents = [];
+    document.body.innerHTML = "";
+    resetObsidianMenuInstances();
+    vi.restoreAllMocks();
+  });
+
+  it.each(["en", "zh"] as const)(
+    "renders entry buttons in folder scope and hides pin/snapshot (%s)",
+    async (locale) => {
+      const strings = getUiStrings(locale);
+      const { component } = mountToolbar({ strings });
+      await tick();
+
+      expect(document.querySelector(`button[aria-label="${strings.links.enterBacklinks}"]`)).not.toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.enterOutgoing}"]`)).not.toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.resumeFollow}"]`)).toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).toBeNull();
+      expect(document.querySelector(".fce-toolbar-scope")?.classList.contains("is-links")).toBe(false);
+
+      await disposeMountedComponent(component);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders direction, pin, snapshot, and composed label in links scope (%s)",
+    async (locale) => {
+      const strings = getUiStrings(locale);
+      const label = `\u201cNote\u201d${strings.toolbar.scope.separator}${strings.links.directionBacklinks}`;
+      const { component } = mountToolbar(linksScopeProps(locale));
+      await tick();
+
+      const backlinks = document.querySelector<HTMLButtonElement>(
+        `button[aria-label="${strings.links.enterBacklinks}"]`,
+      );
+      const outgoing = document.querySelector<HTMLButtonElement>(
+        `button[aria-label="${strings.links.enterOutgoing}"]`,
+      );
+      expect(backlinks?.classList.contains("is-selected")).toBe(true);
+      expect(outgoing?.classList.contains("is-selected")).toBe(false);
+      expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).not.toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).not.toBeNull();
+      expect(document.querySelector(".fce-toolbar-scope")?.classList.contains("is-links")).toBe(true);
+      expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe(label);
+
+      await disposeMountedComponent(component);
+    },
+  );
+
+  it.each(["en", "zh"] as const)("emits the four links command ids (%s)", async (locale) => {
+    const strings = getUiStrings(locale);
+    const captured = createCapturedCallbacks();
+    const { component } = mountToolbar(linksScopeProps(locale, { linksPinned: true }), captured.callbacks);
+    await tick();
+
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.enterBacklinks}"]`)
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.enterOutgoing}"]`)
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.resumeFollow}"]`)
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.saveSnapshot}"]`)
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(captured.toolbarActionEvents).toEqual([
+      { action: "links-backlinks" },
+      { action: "links-outgoing" },
+      { action: "links-pin-toggle" },
+      { action: "links-save-snapshot" },
+    ]);
+
+    await disposeMountedComponent(component);
+  });
+
+  it("hides the snapshot button outside links scope", async () => {
+    const { component } = mountToolbar();
+    await tick();
+
+    expect(document.querySelector(`button[aria-label="${getUiStrings("en").links.saveSnapshot}"]`)).toBeNull();
 
     await disposeMountedComponent(component);
   });

@@ -287,7 +287,7 @@ export class FolderActions {
   ): Promise<void> {
     const scope = this.deps.getScope();
     switch (scope.kind) {
-      case "box":
+      case "box": case "links":
         // A box has no folder of its own: leave it first so the create lands
         // in browse mode on the target folder.
         await this.deps.selectFolderFromNav(folderUiPath);
@@ -364,7 +364,7 @@ export class FolderActions {
         await this.deps.moveScopeToFolder(rewrittenPath);
         return;
       }
-      case "box":
+      case "box": case "links":
         return;
       default: {
         const exhaustive: never = scope;

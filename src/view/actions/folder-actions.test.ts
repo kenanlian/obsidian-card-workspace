@@ -5,7 +5,7 @@ import {
   createViewWithFile,
   registerFolderCardView,
 } from "../../__mocks__/folder-card-view-harness";
-import { createBoxScope } from "../scope";
+import { createBoxScope, createLinksScope } from "../scope";
 import { FolderActions } from "./folder-actions";
 import { FolderCardView } from "../FolderCardView";
 
@@ -18,6 +18,18 @@ describe("FolderActions", () => {
     expect(actions.buildSiblingPath("/", "Untitled.md")).toBe("Untitled.md");
     expect(actions.buildSiblingPath("", "Untitled.md")).toBe("Untitled.md");
     expect(actions.buildSiblingPath("notes", "Untitled.md")).toBe("notes/Untitled.md");
+  });
+
+  it("does not rewrite folder scope after a rename while a links source is active", async () => {
+    const moveScopeToFolder = vi.fn();
+    const actions = new FolderActions({
+      context: { store: { getScope: () => createLinksScope("notes/A.md", "outgoing") } },
+      moveScopeToFolder,
+    } as never);
+
+    await (actions as any).refreshFolderScopeAfterFolderRename("notes", "renamed");
+
+    expect(moveScopeToFolder).not.toHaveBeenCalled();
   });
 });
 
@@ -41,6 +53,19 @@ describe("note creation targets", () => {
     const { view, app, plugin } = createViewWithFile();
     app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
     (view as any).cardScope = createBoxScope("box-1");
+    const selectFolder = vi.spyOn(view, "selectFolderFromNav").mockResolvedValue(undefined);
+
+    await (view as any).modules.folderActions.createFromFolderTree("/", "note");
+
+    expect(selectFolder).toHaveBeenCalledTimes(1);
+    expect(selectFolder).toHaveBeenCalledWith("/");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("/", []);
+  });
+
+  it("leaves a links scope first so folder-tree creates land in browse mode", async () => {
+    const { view, app, plugin } = createViewWithFile();
+    app.vault.getRoot = vi.fn(() => new mockState.MockTFolder("/"));
+    (view as any).cardScope = createLinksScope("notes/A.md", "backlinks");
     const selectFolder = vi.spyOn(view, "selectFolderFromNav").mockResolvedValue(undefined);
 
     await (view as any).modules.folderActions.createFromFolderTree("/", "note");

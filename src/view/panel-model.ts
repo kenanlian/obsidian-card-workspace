@@ -1,6 +1,7 @@
 import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type { UiStrings } from "../i18n";
+import { isLinksScope, type CardScope } from "./scope";
 import type { CardGroupSegment } from "./card-grouping";
 import type {
   NavigationFocusRequest,
@@ -60,6 +61,59 @@ export interface PanelScopeState {
   supportsIncludeSubfolders: boolean;
   /** Save/add-current-source Box-rule seeding availability (C6 capability). */
   supportsBoxRuleSeeding: boolean;
+  /**
+   * Host-computed Links fields (C12). Optional so existing panel/nav defaults
+   * stay valid; Toolbar consumes with null/false fallbacks and never derives.
+   */
+  linksDirection?: "backlinks" | "outgoing" | null;
+  linksNoteName?: string | null;
+  linksPinned?: boolean;
+  linksLabel?: string | null;
+  supportsLinksSnapshot?: boolean;
+}
+
+export interface LinksScopeGroupFields {
+  linksDirection: "backlinks" | "outgoing" | null;
+  linksNoteName: string | null;
+  linksPinned: boolean;
+  linksLabel: string | null;
+  supportsLinksSnapshot: boolean;
+}
+
+function noteBasename(notePath: string): string {
+  const name = notePath.split("/").pop() ?? notePath;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
+/** Host-only composition of C12 Links scope-group fields; Svelte never re-derives them. */
+export function buildLinksScopeGroupFields(
+  scope: CardScope,
+  store: { getLinksPinned(): boolean },
+  strings: UiStrings,
+): LinksScopeGroupFields {
+  const linksPinned = store.getLinksPinned();
+  if (!isLinksScope(scope)) {
+    return {
+      linksDirection: null,
+      linksNoteName: null,
+      linksPinned,
+      linksLabel: null,
+      supportsLinksSnapshot: false,
+    };
+  }
+
+  const linksNoteName = noteBasename(scope.notePath);
+  const directionLabel = scope.direction === "backlinks"
+    ? strings.links.directionBacklinks
+    : strings.links.directionOutgoing;
+  return {
+    linksDirection: scope.direction,
+    linksNoteName,
+    linksPinned,
+    linksLabel: `\u201c${linksNoteName}\u201d${strings.toolbar.scope.separator}${directionLabel}`,
+    supportsLinksSnapshot: true,
+  };
 }
 
 export interface PanelCardsState {

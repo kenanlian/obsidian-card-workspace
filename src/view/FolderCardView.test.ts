@@ -276,7 +276,7 @@ vi.mock("./note-ops", async () => {
 import { FolderCardView } from "./FolderCardView";
 import { buildNavMenuDeps } from "./menus/nav-menu-deps";
 import type { SearchController } from "./controllers/SearchController";
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import type { SearchServiceSnapshot } from "../search";
 import type { CardFileKind } from "./file-kind";
 import type { PanelModelState } from "./panel-model";
@@ -2953,6 +2953,43 @@ describe("FolderCardView navigation scope activation", () => {
     view.handleVaultMutation({ ...createEvent, path: "notes/member.md" });
     expect(((view as any).baseCards as NoteCardRecord[]).map((card) => card.path)).toEqual([
       "notes/member.md",
+    ]);
+  });
+
+  it("re-selects the links scope from setSelectedFile while following, not when pinned", () => {
+    const { view } = createHarness();
+    (view as any).cardScope = createLinksScope("notes/A.md", "backlinks");
+    const select = vi.spyOn((view as any).modules.scopeController, "handleScopeSelection")
+      .mockResolvedValue({ action: "started" });
+    const request = vi.spyOn((view as any).modules.scopeController, "createProgrammaticSelectionRequest");
+
+    view.setSelectedFile("notes/B.md");
+    expect(request).toHaveBeenCalledWith(createLinksScope("notes/B.md", "backlinks"), false);
+    expect(select).toHaveBeenCalledTimes(1);
+
+    select.mockClear();
+    request.mockClear();
+    (view as any).store.setLinksPinned(true);
+    view.setSelectedFile("notes/C.md");
+    expect(request).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("routes the four links toolbar commands through linksActions", () => {
+    const { view } = createHarness();
+    const handled = vi.spyOn((view as any).modules.linksActions, "handleToolbarCommand")
+      .mockReturnValue(true);
+
+    view.handleToolbarAction({ action: "links-backlinks" });
+    view.handleToolbarAction({ action: "links-outgoing" });
+    view.handleToolbarAction({ action: "links-pin-toggle" });
+    view.handleToolbarAction({ action: "links-save-snapshot" });
+
+    expect(handled.mock.calls.map((call) => call[0])).toEqual([
+      "links-backlinks",
+      "links-outgoing",
+      "links-pin-toggle",
+      "links-save-snapshot",
     ]);
   });
 });

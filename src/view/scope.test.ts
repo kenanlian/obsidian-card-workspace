@@ -1,14 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TFolder } from "obsidian";
+vi.mock("obsidian", () => ({
+  TFile: class TFile {},
+  TFolder: class TFolder {},
+}));
+
+import { TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import type { CardBoxDefinition } from "./types";
 import {
   createBoxScope,
   createFolderScope,
+  createLinksScope,
   isBoxScope,
+  isCurrentBoxId,
+  isCurrentFolderPath,
   isFolderScope,
+  isLinksScope,
   normalizeScopePath,
+  resolveBrowseIncludeSubfolders,
   scopeDisplayPath,
   scopeIdentity,
   scopesEqual,
@@ -47,21 +57,35 @@ describe("scope construction and discrimination", () => {
     expect(createFolderScope("/", true)).toEqual(createFolderScope("", true));
   });
 
-  it("keeps real folder paths and creates box scopes unchanged", () => {
+  it("keeps real folder paths and creates box and links scopes unchanged", () => {
     expect(createFolderScope("notes/ideas", false)).toEqual({
       kind: "folder",
       path: "notes/ideas",
       includeSubfolders: false,
     });
     expect(createBoxScope("box-1")).toEqual({ kind: "box", boxId: "box-1" });
+    expect(createLinksScope("notes/a.md", "backlinks")).toEqual({
+      kind: "links",
+      notePath: "notes/a.md",
+      direction: "backlinks",
+    });
+    expect(createLinksScope("notes/a.md", "outgoing")).toEqual({
+      kind: "links",
+      notePath: "notes/a.md",
+      direction: "outgoing",
+    });
   });
 
-  it("exhaustively discriminates folder and box scopes", () => {
+  it("exhaustively discriminates folder, box, and links scopes", () => {
     const folder = createFolderScope("notes", true);
     const box = createBoxScope("box-1");
+    const backlinks = createLinksScope("notes/a.md", "backlinks");
+    const outgoing = createLinksScope("notes/a.md", "outgoing");
 
-    expect([isFolderScope(folder), isBoxScope(folder)]).toEqual([true, false]);
-    expect([isFolderScope(box), isBoxScope(box)]).toEqual([false, true]);
+    expect([isFolderScope(folder), isBoxScope(folder), isLinksScope(folder)]).toEqual([true, false, false]);
+    expect([isFolderScope(box), isBoxScope(box), isLinksScope(box)]).toEqual([false, true, false]);
+    expect([isFolderScope(backlinks), isBoxScope(backlinks), isLinksScope(backlinks)]).toEqual([false, false, true]);
+    expect([isFolderScope(outgoing), isBoxScope(outgoing), isLinksScope(outgoing)]).toEqual([false, false, true]);
   });
 });
 
@@ -77,6 +101,19 @@ describe("scopesEqual", () => {
     expect(scopesEqual(createBoxScope("box-1"), createBoxScope("box-2"))).toBe(false);
     expect(scopesEqual(createFolderScope("", true), createBoxScope("box-1"))).toBe(false);
     expect(scopesEqual(createBoxScope("box-1"), createFolderScope("", true))).toBe(false);
+  });
+
+  it("compares links notePath and direction; direction is part of identity", () => {
+    const backlinks = createLinksScope("notes/a.md", "backlinks");
+    const outgoing = createLinksScope("notes/a.md", "outgoing");
+
+    expect(scopesEqual(backlinks, createLinksScope("notes/a.md", "backlinks"))).toBe(true);
+    expect(scopesEqual(outgoing, createLinksScope("notes/a.md", "outgoing"))).toBe(true);
+    expect(scopesEqual(backlinks, outgoing)).toBe(false);
+    expect(scopesEqual(backlinks, createLinksScope("notes/b.md", "backlinks"))).toBe(false);
+    expect(scopesEqual(backlinks, createFolderScope("notes/a.md", true))).toBe(false);
+    expect(scopesEqual(backlinks, createBoxScope("box-1"))).toBe(false);
+    expect(scopesEqual(createFolderScope("", true), backlinks)).toBe(false);
   });
 });
 
@@ -107,6 +144,24 @@ describe("serializeScopeKey", () => {
       serializeScopeKey(createBoxScope("box"), SORT, ""),
     );
   });
+
+  it("uses the links shape and includes notePath, direction, and sort", () => {
+    const backlinks = createLinksScope("notes/a.md", "backlinks");
+    const outgoing = createLinksScope("notes/a.md", "outgoing");
+
+    expect(serializeScopeKey(backlinks, SORT)).toBe("links::notes/a.md::backlinks::mtime::desc");
+    expect(serializeScopeKey(outgoing, SORT)).toBe("links::notes/a.md::outgoing::mtime::desc");
+    expect(serializeScopeKey(backlinks, SORT)).not.toBe(serializeScopeKey(outgoing, SORT));
+    expect(serializeScopeKey(backlinks, SORT)).not.toBe(
+      serializeScopeKey(createLinksScope("notes/b.md", "backlinks"), SORT),
+    );
+    expect(serializeScopeKey(backlinks, SORT)).not.toBe(
+      serializeScopeKey(backlinks, { field: "name", direction: "asc" }),
+    );
+    expect(serializeScopeKey(backlinks, SORT, "ignored-sig")).toBe(
+      "links::notes/a.md::backlinks::mtime::desc",
+    );
+  });
 });
 
 describe("scopeIdentity", () => {
@@ -120,6 +175,14 @@ describe("scopeIdentity", () => {
     expect(scopeIdentity(createBoxScope("box-1"))).not.toBe(scopeIdentity(createBoxScope("box-2")));
     expect(scopeIdentity(createFolderScope("", true))).toBe("folder::true");
     expect(scopeIdentity(createBoxScope("box-1"))).toBe("box:box-1");
+    expect(scopeIdentity(createLinksScope("notes/a.md", "backlinks"))).toBe("links:notes/a.md:backlinks");
+    expect(scopeIdentity(createLinksScope("notes/a.md", "outgoing"))).toBe("links:notes/a.md:outgoing");
+    expect(scopeIdentity(createLinksScope("notes/a.md", "backlinks"))).not.toBe(
+      scopeIdentity(createLinksScope("notes/a.md", "outgoing")),
+    );
+    expect(scopeIdentity(createLinksScope("notes/a.md", "backlinks"))).not.toBe(
+      scopeIdentity(createLinksScope("notes/b.md", "backlinks")),
+    );
   });
 
   it("ignores sort, unlike serializeScopeKey", () => {
@@ -134,9 +197,25 @@ describe("scopeIdentity", () => {
 });
 
 describe("scopeDisplayPath", () => {
-  it("returns folder paths and an empty path for boxes", () => {
+  it("returns folder paths and an empty path for boxes and links", () => {
     expect(scopeDisplayPath(createFolderScope("notes", true))).toBe("notes");
     expect(scopeDisplayPath(createBoxScope("box-1"))).toBe("");
+    expect(scopeDisplayPath(createLinksScope("notes/a.md", "backlinks"))).toBe("");
+    expect(scopeDisplayPath(createLinksScope("notes/a.md", "outgoing"))).toBe("");
+  });
+});
+
+describe("current-folder, current-box, and browse-include-subfolders", () => {
+  it("treats links as having no current folder or box and using the browse fallback", () => {
+    const backlinks = createLinksScope("notes/a.md", "backlinks");
+    const outgoing = createLinksScope("notes/a.md", "outgoing");
+
+    expect(isCurrentFolderPath(backlinks, "notes")).toBe(false);
+    expect(isCurrentFolderPath(outgoing, "")).toBe(false);
+    expect(isCurrentBoxId(backlinks, "box-1")).toBe(false);
+    expect(isCurrentBoxId(outgoing, "box-1")).toBe(false);
+    expect(resolveBrowseIncludeSubfolders(backlinks, true)).toBe(true);
+    expect(resolveBrowseIncludeSubfolders(outgoing, false)).toBe(false);
   });
 });
 
@@ -160,11 +239,24 @@ describe("validateScope", () => {
     expect(validateScope(app, createBoxScope("box-1"), [createBox()])).toBe(true);
     expect(validateScope(app, createBoxScope("box-2"), [createBox()])).toBe(false);
   });
+
+  it("validates links scopes when notePath resolves to a TFile, in both directions", () => {
+    const note = new TFile();
+    const app = createApp(new TFolder(), {
+      "notes/a.md": note,
+      notes: new TFolder(),
+    });
+
+    expect(validateScope(app, createLinksScope("notes/a.md", "backlinks"), [])).toBe(true);
+    expect(validateScope(app, createLinksScope("notes/a.md", "outgoing"), [])).toBe(true);
+    expect(validateScope(app, createLinksScope("notes", "backlinks"), [])).toBe(false);
+    expect(validateScope(app, createLinksScope("missing.md", "outgoing"), [])).toBe(false);
+  });
 });
 
 describe("exhaustive scope dispatch guards", () => {
   it("throws on an unknown scope kind instead of silently classifying it as folder", () => {
-    const futureScope = { kind: "links", path: "links" } as unknown as ReturnType<typeof createFolderScope>;
+    const futureScope = { kind: "future", path: "links" } as unknown as ReturnType<typeof createFolderScope>;
     const app = createApp(new TFolder());
 
     expect(() => serializeScopeKey(futureScope, { field: "mtime", direction: "desc" }))

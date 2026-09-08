@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPipeline, applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder, stepsForScope } from "./pipeline";
-import { createBoxScope, createFolderScope, type CardScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "./scope";
 import type { PipelineContext } from "./pipeline";
 import type { GroupBucket } from "./card-grouping";
 import type { GroupSpec } from "../card-grouping-settings";
@@ -470,6 +470,25 @@ describe("applyPropertyFilter behavior", () => {
       applySearchFilter,
       applyPinReorder,
     ]);
+  });
+
+  it("applies the property filter in links scopes and skips the browse tag filter", () => {
+    const cards = [
+      createMockCard("prop-filtered.md"),
+      createMockCard("visible.md"),
+    ];
+    const context = createMockContext();
+    context.filterTags = ["folder-only-filter"];
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
+
+    vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
+      return file.path === "prop-filtered.md" ? { status: "done" } : { status: "open" };
+    });
+
+    const steps = stepsForScope(createLinksScope("notes/a.md", "backlinks"));
+    expect(runPipeline(cards, steps, context).cards.map((card) => card.path)).toEqual(["visible.md"]);
+    expect(metadataUtils.matchesTagFilter).not.toHaveBeenCalled();
   });
 
   it("keeps the full member set visible in box scopes despite non-empty workspace property clauses", () => {
@@ -967,6 +986,15 @@ describe("stepsForScope", () => {
     expect(steps[1]).toBe(applyPinReorder);
   });
 
+  it("contains exactly 3 steps in correct order for links scopes", () => {
+    const backlinks = stepsForScope(createLinksScope("notes/a.md", "backlinks"));
+    const outgoing = stepsForScope(createLinksScope("notes/a.md", "outgoing"));
+
+    expect(backlinks).toEqual([applyPropertyFilter, applySearchFilter, applyPinReorder]);
+    expect(outgoing).toEqual([applyPropertyFilter, applySearchFilter, applyPinReorder]);
+    expect(backlinks).not.toContain(applyTagFilter);
+  });
+
   it("still filters box scopes by indexed search results for a non-empty query", () => {
     const cards = [createMockCard("a.md", "query-hit"), createMockCard("b.md", "no-match")];
     const context = createMockContext();
@@ -997,7 +1025,7 @@ describe("stepsForScope", () => {
   });
 
   it("throws for an unhandled card source instead of inheriting folder steps", () => {
-    const unknownScope = { kind: "links", targetPath: "a.md" } as unknown as CardScope;
+    const unknownScope = { kind: "future", targetPath: "a.md" } as unknown as CardScope;
     expect(() => stepsForScope(unknownScope)).toThrow(/Unhandled card source/);
   });
 });

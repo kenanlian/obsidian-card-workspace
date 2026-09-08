@@ -4,7 +4,7 @@ import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, type DefaultViewMode, type PluginSettings } from "../settings";
 import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import {
   UPDATE_INTENT_RANK,
   maxIntent,
@@ -169,6 +169,8 @@ describe("resolveSettingsUpdateIntent", () => {
     expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-x"))).toBe("reload");
     expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-y"))).toBe("patch");
     expect(resolveSettingsUpdateIntent(previous, next, createFolderScope("", true))).toBe("patch");
+    expect(resolveSettingsUpdateIntent(previous, next, createLinksScope("notes/a.md", "backlinks"))).toBe("patch");
+    expect(resolveSettingsUpdateIntent(previous, next, createLinksScope("notes/a.md", "outgoing"))).toBe("patch");
   });
 
   it("resolves active-box sort and pins per runtime box", () => {

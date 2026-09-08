@@ -3,9 +3,10 @@ import type { SearchService, SearchServiceSnapshot } from "../search";
 import type { OpenDestination, SortDirection, SortField } from "../settings";
 import { ArrangementActions } from "./actions/arrangement-actions";
 import { BoxActions } from "./actions/box-actions";
-import { FavoriteActions } from "./actions/favorite-actions";
+import { createFavoriteActions, type FavoriteActions } from "./actions/favorite-actions";
 import { FileActions } from "./actions/file-actions";
 import { FolderActions } from "./actions/folder-actions";
+import { LinksActions } from "./actions/links-actions";
 import { MergeActions } from "./actions/merge-actions";
 import { createPropertyActions, type PropertyActions } from "./actions/property-actions";
 import { TagActions } from "./actions/tag-actions";
@@ -71,6 +72,7 @@ export interface ViewModules {
   tagActions: TagActions;
   tagManageActions: TagManagementActions;
   favoriteActions: FavoriteActions;
+  linksActions: LinksActions;
   mergeActions: MergeActions;
   cardMenu: CardContextMenu;
   arrangementActions: ArrangementActions;
@@ -265,23 +267,6 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       navLayout.returnToCardsViewIfSinglePane();
     },
   });
-  const favoriteActions: FavoriteActions = new FavoriteActions({
-    context,
-    getActiveBoxId: () => boxActions.getActiveBox()?.id ?? null,
-    handleBoxCommand: (detail) => {
-      boxActions.handleBoxCommand(detail);
-    },
-    getFolderTreeCount: (path) => navLayout.getFolderTreeCount(path),
-    resolveFolderFromUiPath: (folderPath) => folderActions.resolveFolderFromUiPath(folderPath),
-    selectFolderFromNav: (path) => host.selectFolderFromNav(path),
-    requestDestructiveConfirmation: gate.guard(
-      "mergeActions.requestDestructiveConfirmation",
-      (options) => mergeActions.requestDestructiveConfirmation(options),
-    ),
-    openNoteFromCard: (path, destination) => host.openNoteFromCard(path, destination),
-    getVaultTagCounts: () => projection.getVaultTagCounts(),
-    applyTagFilter: (nextTags) => tagActions.applyTagFilter(nextTags),
-  });
   const tagManageActions: TagManagementActions = new TagManagementActions({
     context,
     requestDestructiveConfirmation: gate.guard(
@@ -314,6 +299,17 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       bulk.reconcileSelectionToOrderedPaths(paths);
     },
     resolveSelectedLiveFilesInOrder: () => bulk.resolveSelectedLiveFilesInOrder(),
+  });
+  const favoriteActions = createFavoriteActions({
+    context, boxActions, navLayout, folderActions, host, projection, tagActions,
+    requestDestructiveConfirmation: (options) => mergeActions.requestDestructiveConfirmation(options),
+  });
+  const linksActions = new LinksActions({
+    context,
+    createProgrammaticSelectionRequest: (scope, forceRefresh) =>
+      scopeController.createProgrammaticSelectionRequest(scope, forceRefresh),
+    handleScopeSelection: (request) => scopeController.handleScopeSelection(request),
+    openCreateBoxModalWithPaths: (paths) => boxActions.openCreateBoxModalWithPaths(paths),
   });
   const cardMenu: CardContextMenu = new CardContextMenu({
     context,
@@ -420,6 +416,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     tagActions,
     tagManageActions,
     favoriteActions,
+    linksActions,
     mergeActions,
     cardMenu,
     arrangementActions,

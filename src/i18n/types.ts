@@ -4,6 +4,7 @@ import type { CardItemStrings } from "./cardItem";
 import type { DesktopShellStrings } from "./desktopShell";
 import type { FileKindStrings } from "./fileKind";
 import type { FolderPickerStrings } from "./folderPicker";
+import type { LinksStrings } from "./links";
 import type { NoteOpsStrings } from "./noteOps";
 import type { PanelStrings } from "./panel";
 import type { PropertyStrings } from "./property";
@@ -31,6 +32,7 @@ export interface UiStrings {
   noteOps: NoteOpsStrings;
   desktopShell: DesktopShellStrings;
   box: BoxStrings;
+  links: LinksStrings;
   view: ViewStrings;
   app: AppStrings;
 }

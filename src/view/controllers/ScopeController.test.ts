@@ -13,7 +13,7 @@ import type { EpochToken } from "../async-epoch";
 import { isBoxMember } from "../card-box-membership";
 import { getBoxMembershipSignature } from "../card-boxes";
 import type { CardBoxDefinition } from "../types";
-import { createBoxScope, createFolderScope } from "../scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -26,7 +26,10 @@ function createHarness(options: { isPathInBox?: (path: string, boxId: string) =>
     Object.assign(settings, patch);
   });
   const requestUpdate = vi.fn(async () => undefined);
-  const app = { vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() }, metadataCache: { getFileCache: vi.fn(() => null) } };
+  const app = {
+    vault: { getRoot: vi.fn(), getAbstractFileByPath: vi.fn() },
+    metadataCache: { getFileCache: vi.fn(() => null), resolvedLinks: {} as Record<string, Record<string, number>> },
+  };
   const context = {
     getApp: () => app,
     store: createViewStateStore(createFolderScope("old/nested", true)),
@@ -113,6 +116,31 @@ function propertyBox(statusValue: PropertyScalarRef): CardBoxDefinition {
     sort: { field: "mtime", direction: "desc" },
     group: { ...DEFAULT_GROUP_SPEC },
   };
+}
+
+function makeLiveFile(path: string, extras: { ctime?: number; mtime?: number } = {}): TFile {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return Object.assign(new TFile(), {
+    path,
+    name,
+    basename: dot === -1 ? name : name.slice(0, dot),
+    extension: dot === -1 ? "" : name.slice(dot + 1),
+    stat: { ctime: extras.ctime ?? 1, mtime: extras.mtime ?? 1 },
+  });
+}
+
+function installLinksVault(
+  context: ViewContext,
+  files: Record<string, TFile>,
+  resolvedLinks: Record<string, Record<string, number>>,
+): void {
+  const app = context.getApp() as unknown as {
+    vault: { getAbstractFileByPath: ReturnType<typeof vi.fn> };
+    metadataCache: { resolvedLinks: Record<string, Record<string, number>> };
+  };
+  app.vault.getAbstractFileByPath = vi.fn((path: string) => files[path] ?? null);
+  app.metadataCache.resolvedLinks = resolvedLinks;
 }
 
 describe("ScopeController", () => {
@@ -786,6 +814,324 @@ describe("ScopeController", () => {
 
       expect(serialized).toContain("name::asc");
       expect(serialized).toContain(getBoxMembershipSignature(settings.boxes[0]));
+    });
+
+    it("serializes a links load key from notePath, direction, and sort", () => {
+      const { controller } = configurePerBoxSort();
+      const scope = createLinksScope("notes/A.md", "backlinks");
+      const serialized = controller.serializeLoadKey(controller.buildLoadKey(scope));
+
+      expect(serialized).toBe("links::notes/A.md::backlinks::mtime::desc");
+    });
+  });
+
+  describe("links scope", () => {
+    const NOTE_A = "notes/A.md";
+    const NOTE_B = "notes/B.md";
+    const NOTE_C = "notes/C.md";
+
+    it("loads a backlinks scope into base cards and writes no session projection", async () => {
+      const { context, controller, saveSettings } = createHarness();
+      const files = { [NOTE_A]: makeLiveFile(NOTE_A), [NOTE_B]: makeLiveFile(NOTE_B), [NOTE_C]: makeLiveFile(NOTE_C) };
+      installLinksVault(context, files, {
+        [NOTE_A]: { [NOTE_B]: 1 },
+        [NOTE_B]: { [NOTE_A]: 1 },
+        [NOTE_C]: { [NOTE_B]: 1 },
+      });
+
+      const result = await controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createLinksScope(NOTE_A, "backlinks"), true),
+      );
+
+      expect(result.action).toBe("started");
+      expect(context.store.getScope()).toEqual(createLinksScope(NOTE_A, "backlinks"));
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+      expect(saveSettings).not.toHaveBeenCalled();
+    });
+
+    it("reconciles an out-of-base backlink in and out, then reports unchanged", () => {
+      const { context, controller } = createHarness();
+      const files = {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+        [NOTE_C]: makeLiveFile(NOTE_C, { mtime: 50 }),
+      };
+      installLinksVault(context, files, {
+        [NOTE_B]: { [NOTE_A]: 1 },
+        [NOTE_C]: { [NOTE_A]: 1 },
+      });
+      context.store.setScope(createLinksScope(NOTE_A, "backlinks"));
+      context.store.replaceBaseCards([membershipRecord(NOTE_B)]);
+
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_C)).toBe("entered");
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_C, NOTE_B]);
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_C)).toBe("unchanged");
+
+      (context.getApp() as { metadataCache: { resolvedLinks: Record<string, Record<string, number>> } })
+        .metadataCache.resolvedLinks = { [NOTE_B]: { [NOTE_A]: 1 } };
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_C)).toBe("left");
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_C)).toBe("unchanged");
+    });
+
+    it("schedules a vault refresh when outgoing source metadata changes", () => {
+      const { context, controller } = createHarness();
+      context.store.setScope(createLinksScope(NOTE_A, "outgoing"));
+      const scheduleSpy = vi.spyOn(controller, "scheduleVaultRefresh");
+
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_A)).toBe("unchanged");
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_B)).toBe("unchanged");
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("rewrites notePath and the load key on source rename, skipping incremental assembly", () => {
+      const { context, controller } = createHarness();
+      context.store.setScope(createLinksScope(NOTE_A, "backlinks"));
+      controller.refreshLoadKeyForCurrentScope();
+      const previousKey = controller.getLoadKey();
+      const scheduleSpy = vi.spyOn(controller, "scheduleVaultRefresh");
+
+      const result = controller.handleVaultMutation({
+        eventType: "rename",
+        path: "notes/A2.md",
+        oldPath: NOTE_A,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      expect(context.store.getScope()).toEqual(createLinksScope("notes/A2.md", "backlinks"));
+      expect(controller.getLoadKey()).toBe("links::notes/A2.md::backlinks::mtime::desc");
+      expect(controller.getLoadKey()).not.toBe(previousKey);
+      expect(result.shouldRefresh).toBe(false);
+      expect(result.queueAction).toBe("ignored");
+      expect(result.incrementalResult).toBeNull();
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("never lists the renamed source note after the debounced reload (DEFECT-P1 regression)", async () => {
+      vi.useFakeTimers();
+      const { context, controller, requestUpdate } = createHarness();
+      requestUpdate.mockImplementation(async (intent?: string, reason?: "vault-change") => {
+        if (intent === "reload" && reason) {
+          await controller.refresh({ reason, forceRefresh: true });
+        }
+        return undefined;
+      });
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+      }, { [NOTE_B]: { [NOTE_A]: 1 } });
+      await controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createLinksScope(NOTE_A, "backlinks"), true),
+      );
+      const beforePaths = context.store.getBaseCards().map((card) => card.path);
+      expect(beforePaths).toEqual([NOTE_B]);
+
+      // Post-rename vault state: A.md became A2.md and the graph follows.
+      installLinksVault(context, {
+        "notes/A2.md": makeLiveFile("notes/A2.md"),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+      }, { [NOTE_B]: { "notes/A2.md": 1 } });
+      controller.handleVaultMutation({
+        eventType: "rename",
+        path: "notes/A2.md",
+        oldPath: NOTE_A,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      // The incremental layer never runs: the renamed source is not merged in.
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual(beforePaths);
+
+      await vi.advanceTimersByTimeAsync(250);
+      expect(requestUpdate).toHaveBeenCalledWith("reload", "vault-change");
+      expect(context.store.getScope()).toEqual(createLinksScope("notes/A2.md", "backlinks"));
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+      expect(context.store.getBaseCard("notes/A2.md")).toBeUndefined();
+    });
+
+    it("never inserts an unrelated create under an outgoing links scope, even transiently (RP-01 regression)", async () => {
+      vi.useFakeTimers();
+      const { context, controller, requestUpdate } = createHarness();
+      requestUpdate.mockImplementation(async (intent?: string, reason?: "vault-change") => {
+        if (intent === "reload" && reason) {
+          await controller.refresh({ reason, forceRefresh: true });
+        }
+        return undefined;
+      });
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      await controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createLinksScope(NOTE_A, "outgoing"), true),
+      );
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+
+      // Vault create of an unlinked note; the graph is unchanged.
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+        [NOTE_C]: makeLiveFile(NOTE_C),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      const result = controller.handleVaultMutation({
+        eventType: "create",
+        path: NOTE_C,
+        oldPath: null,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      // No incremental insert: the event defers to the debounced full reload.
+      expect(result.shouldRefresh).toBe(true);
+      expect(result.queueAction).toBe("enqueued");
+      expect(result.incrementalResult).toBeNull();
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+
+      // FolderCardView wires shouldRefresh -> scheduleVaultRefresh.
+      controller.scheduleVaultRefresh();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(requestUpdate).toHaveBeenCalledWith("reload", "vault-change");
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+      expect(context.store.getBaseCard(NOTE_C)).toBeUndefined();
+    });
+
+    it("still admits a created file once the source note links it (C9 entry preserved)", async () => {
+      vi.useFakeTimers();
+      const { context, controller, requestUpdate } = createHarness();
+      requestUpdate.mockImplementation(async (intent?: string, reason?: "vault-change") => {
+        if (intent === "reload" && reason) {
+          await controller.refresh({ reason, forceRefresh: true });
+        }
+        return undefined;
+      });
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      await controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createLinksScope(NOTE_A, "outgoing"), true),
+      );
+
+      // C.md created unlinked: deferred and absent after the reload settles.
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+        [NOTE_C]: makeLiveFile(NOTE_C),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      const created = controller.handleVaultMutation({
+        eventType: "create",
+        path: NOTE_C,
+        oldPath: null,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+      if (created.shouldRefresh) {
+        controller.scheduleVaultRefresh();
+      }
+      await vi.advanceTimersByTimeAsync(250);
+      expect(context.store.getBaseCard(NOTE_C)).toBeUndefined();
+
+      // The source note's metadata change adds [[C]]: reconcile schedules a
+      // reload and the true links set picks the new member up.
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+        [NOTE_C]: makeLiveFile(NOTE_C),
+      }, { [NOTE_A]: { [NOTE_B]: 1, [NOTE_C]: 1 } });
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_A)).toBe("unchanged");
+      await vi.advanceTimersByTimeAsync(250);
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B, NOTE_C]);
+    });
+
+    it("does not insert an unrelated rename destination under a links scope", () => {
+      const { context, controller } = createHarness();
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        [NOTE_B]: makeLiveFile(NOTE_B),
+        "notes/D.md": makeLiveFile("notes/D.md"),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      context.store.setScope(createLinksScope(NOTE_A, "outgoing"));
+      context.store.replaceBaseCards([membershipRecord(NOTE_B)]);
+
+      const result = controller.handleVaultMutation({
+        eventType: "rename",
+        path: "notes/D.md",
+        oldPath: NOTE_C,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      expect(result.shouldRefresh).toBe(true);
+      expect(result.incrementalResult).toBeNull();
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual([NOTE_B]);
+      expect(context.store.getBaseCard("notes/D.md")).toBeUndefined();
+    });
+
+    it("keeps the incremental merge for a loaded member rename under a links scope", () => {
+      const { context, controller } = createHarness();
+      installLinksVault(context, {
+        [NOTE_A]: makeLiveFile(NOTE_A),
+        "notes/B2.md": makeLiveFile("notes/B2.md"),
+      }, { [NOTE_A]: { [NOTE_B]: 1 } });
+      context.store.setScope(createLinksScope(NOTE_A, "outgoing"));
+      context.store.replaceBaseCards([membershipRecord(NOTE_B)]);
+
+      const result = controller.handleVaultMutation({
+        eventType: "rename",
+        path: "notes/B2.md",
+        oldPath: NOTE_B,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      expect(result.shouldRefresh).toBe(false);
+      expect(result.incrementalResult).toEqual({ handled: true, action: "updated" });
+      expect(context.store.getBaseCards().map((card) => card.path)).toEqual(["notes/B2.md"]);
+    });
+
+    it("falls back to lastFolderPath when the source note is deleted", () => {
+      const { context, controller } = createHarness();
+      context.getSettings().lastFolderPath = "notes";
+      context.store.setScope(createLinksScope(NOTE_A, "outgoing"));
+      const moveSpy = vi.spyOn(controller, "moveScopeToFolder").mockResolvedValue({
+        action: "started",
+        scope: createFolderScope("notes", true),
+        generationChanged: true,
+        preserveUiState: false,
+      });
+
+      const result = controller.handleVaultMutation({
+        eventType: "delete",
+        path: NOTE_A,
+        oldPath: null,
+        isFolder: false,
+        fileKind: "markdown",
+      });
+
+      expect(moveSpy).toHaveBeenCalledWith("notes");
+      expect(result.shouldRefresh).toBe(false);
+      expect(result.queueAction).toBe("ignored");
+    });
+
+    it("treats a deleted-but-still-cached enter as an unchanged no-op", () => {
+      const { context, controller } = createHarness();
+      installLinksVault(context, { [NOTE_A]: makeLiveFile(NOTE_A) }, { [NOTE_C]: { [NOTE_A]: 1 } });
+      context.store.setScope(createLinksScope(NOTE_A, "backlinks"));
+      context.store.replaceBaseCards([]);
+
+      expect(controller.reconcileMetadataMembershipForPath(NOTE_C)).toBe("unchanged");
+      expect(context.store.getBaseCards()).toEqual([]);
+    });
+
+    it("treats the source note and any supported card path as in-scope", () => {
+      const { context, controller } = createHarness();
+      context.store.setScope(createLinksScope(NOTE_A, "backlinks"));
+
+      expect(controller.isPathInActiveScope(NOTE_A)).toBe(true);
+      expect(controller.isPathInActiveScope(NOTE_C)).toBe(true);
+      expect(controller.isPathInActiveScope("notes/image.png")).toBe(false);
     });
   });
 });

@@ -6,6 +6,7 @@ import { cardItemStrings, type CardItemStrings } from "./cardItem";
 import { desktopShellStrings } from "./desktopShell";
 import { fileKindStrings } from "./fileKind";
 import { folderPickerStrings } from "./folderPicker";
+import { linksStrings } from "./links";
 import { noteOpsStrings } from "./noteOps";
 import { panelStrings } from "./panel";
 import { propertyStrings } from "./property";
@@ -22,6 +23,7 @@ export type { CardItemStrings } from "./cardItem";
 export type { DesktopShellStrings } from "./desktopShell";
 export type { FileKindStrings } from "./fileKind";
 export type { FolderPickerStrings } from "./folderPicker";
+export type { LinksStrings } from "./links";
 export type { NoteOpsStrings } from "./noteOps";
 export type { PanelStrings } from "./panel";
 export type { PropertyStrings } from "./property";
@@ -55,6 +57,7 @@ const EN: UiStrings = {
   noteOps: noteOpsStrings.en,
   desktopShell: desktopShellStrings.en,
   box: boxStrings.en,
+  links: linksStrings.en,
   view: viewStrings.en,
   app: appStrings.en,
 };
@@ -71,6 +74,7 @@ const ZH: UiStrings = {
   noteOps: noteOpsStrings.zh,
   desktopShell: desktopShellStrings.zh,
   box: boxStrings.zh,
+  links: linksStrings.zh,
   view: viewStrings.zh,
   app: appStrings.zh,
 };

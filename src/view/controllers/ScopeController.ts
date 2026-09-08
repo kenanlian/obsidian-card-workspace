@@ -1,12 +1,13 @@
-import { TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { createCardRecord } from "../card-record";
-import { compareCards, findSortedInsertIndex } from "../card-sort";
+import { compareCards } from "../card-sort";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
+import { collectLinksFiles, isPathRelevantToLinksScope } from "../links-sources";
 import { createFolderScope, scopeDisplayPath, scopesEqual,
-  serializeScopeKey, validateScope, type BoxScope, type CardScope } from "../scope";
+  serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
 import type {
@@ -20,22 +21,26 @@ import type {
   VaultMutationResult,
 } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
+import { applyIncrementalMutation, type BulkSelectionState } from "./incremental-mutation";
 import {
-  applyIncrementalMutation,
-  type BulkSelectionState,
-} from "./incremental-mutation";
+  reconcileBoxMembershipForPath,
+  reconcileLinksMembershipForPath,
+  reconcileLinksScopeForVaultEvent,
+  shouldDeferLinksIncrementalMutation,
+  type MetadataMembershipOutcome,
+  type PathMembershipReconcileDeps,
+} from "./scope-membership";
+
+export type { MetadataMembershipOutcome };
 
 const VAULT_REFRESH_DEBOUNCE_MS = 250;
-
-/** Result of one metadata-path Box membership reconciliation. */
-export type MetadataMembershipOutcome = "unchanged" | "entered" | "left";
 
 /** Folder scopes remember their loaded include-subfolders state; others have none. */
 function resolveLoadedIncludeSubfolders(scope: CardScope): boolean | null {
   switch (scope.kind) {
     case "folder":
       return scope.includeSubfolders;
-    case "box":
+    case "box": case "links":
       return null;
     default: {
       const exhaustive: never = scope;
@@ -112,7 +117,7 @@ export class ScopeController implements DisposableController {
           box ? getBoxMembershipSignature(box) : "",
         );
       }
-      case "folder":
+      case "folder": case "links":
         return serializeScopeKey(loadKey.scope, loadKey.sort);
       default: {
         const exhaustive: never = loadKey.scope;
@@ -215,7 +220,7 @@ export class ScopeController implements DisposableController {
       case "folder":
         scope = createFolderScope(current.path, this.context.getSettings().includeSubfolders);
         break;
-      case "box":
+      case "box": case "links":
         break;
       default: {
         const exhaustive: never = current;
@@ -223,8 +228,7 @@ export class ScopeController implements DisposableController {
       }
     }
     const result = await this.handleScopeSelection(
-      this.createProgrammaticSelectionRequest(scope, request.forceRefresh ?? true),
-    );
+      this.createProgrammaticSelectionRequest(scope, request.forceRefresh ?? true));
     if (result.action === "rejected_invalid") {
       return { action: "skipped_invalid_folder", inFlightKey: this.inFlightKey };
     }
@@ -329,6 +333,8 @@ export class ScopeController implements DisposableController {
           await this.context.saveSettings({ activeBoxId: scope.boxId });
         }
         return;
+      case "links":
+        return;
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
@@ -342,6 +348,8 @@ export class ScopeController implements DisposableController {
         return collectSupportedFiles(this.context.getApp(), scope.path, scope.includeSubfolders);
       case "box":
         return this.deps.collectBoxFiles(scope.boxId);
+      case "links":
+        return collectLinksFiles(this.context.getApp(), scope);
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unhandled card scope: ${JSON.stringify(exhaustive)}`);
@@ -350,11 +358,7 @@ export class ScopeController implements DisposableController {
   }
 
   isPathInScope(path: string, includeSubfolders: boolean): boolean {
-    return isPathInFolderScope(
-      path,
-      scopeDisplayPath(this.context.store.getScope()),
-      includeSubfolders,
-    );
+    return isPathInFolderScope(path, scopeDisplayPath(this.context.store.getScope()), includeSubfolders);
   }
 
   isPathInActiveScope(path: string): boolean {
@@ -364,6 +368,8 @@ export class ScopeController implements DisposableController {
         return this.deps.isPathInBox(path, scope.boxId);
       case "folder":
         return isPathInFolderScope(path, scope.path, scope.includeSubfolders);
+      case "links":
+        return isPathRelevantToLinksScope(scope, path);
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
@@ -384,56 +390,30 @@ export class ScopeController implements DisposableController {
    */
   reconcileMetadataMembershipForPath(path: string): MetadataMembershipOutcome {
     const scope = this.context.store.getScope();
+    const deps: PathMembershipReconcileDeps = {
+      getBaseCards: () => this.context.store.getBaseCards(),
+      replaceBaseCards: (cards) => this.context.store.replaceBaseCards(cards),
+      prepareRecordsFromCache: this.deps.prepareRecordsFromCache,
+      deletePendingHydration: this.deps.deletePendingHydration,
+      getApp: () => this.context.getApp(),
+      resolveSort: () => this.buildLoadKey(scope).sort,
+    };
     switch (scope.kind) {
       case "box":
-        return this.reconcileBoxMembershipForPath(scope, path);
+        return reconcileBoxMembershipForPath(scope, path, {
+          ...deps, isPathInBox: this.deps.isPathInBox,
+        });
       case "folder":
         return "unchanged";
+      case "links":
+        return reconcileLinksMembershipForPath(
+          scope, path, deps, this.scheduleVaultRefresh.bind(this),
+        );
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
       }
     }
-  }
-
-  private reconcileBoxMembershipForPath(scope: BoxScope, path: string): MetadataMembershipOutcome {
-    const cards = this.context.store.getBaseCards();
-    const index = cards.findIndex((card) => card.path === path);
-    const isMember = this.deps.isPathInBox(path, scope.boxId);
-
-    if (index !== -1) {
-      if (isMember) {
-        return "unchanged";
-      }
-      this.deps.deletePendingHydration(path);
-      this.context.store.replaceBaseCards(cards.filter((card) => card.path !== path));
-      return "left";
-    }
-
-    if (!isMember) {
-      return "unchanged";
-    }
-
-    const file = this.context.getApp().vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) {
-      return "unchanged";
-    }
-    const fileKind = resolveCardFileKind(file);
-    if (fileKind === null) {
-      return "unchanged";
-    }
-
-    const record = createCardRecord(this.context.getApp(), file, fileKind);
-    this.deps.prepareRecordsFromCache([record]);
-    const sort = this.buildLoadKey(scope).sort;
-    const nextCards = [...cards];
-    nextCards.splice(
-      findSortedInsertIndex(nextCards, record, sort.field, sort.direction),
-      0,
-      record,
-    );
-    this.context.store.replaceBaseCards(nextCards);
-    return "entered";
   }
 
   private shouldRefreshForVaultEvent(event: VaultMutationEvent): boolean {
@@ -462,7 +442,7 @@ export class ScopeController implements DisposableController {
         this.refreshLoadKeyForCurrentScope();
         return renamedPath;
       }
-      case "box":
+      case "box": case "links":
         return null;
       default: {
         const exhaustive: never = scope;
@@ -480,8 +460,16 @@ export class ScopeController implements DisposableController {
     } else if (event.eventType !== "modify") {
       this.deps.scheduleFolderTreeRefresh();
     }
+    const linksHandled = reconcileLinksScopeForVaultEvent(
+      this.context.store.getScope(), event, {
+        setScope: (scope) => this.context.store.setScope(scope),
+        refreshLoadKey: () => this.refreshLoadKeyForCurrentScope(),
+        requestScopeReload: () => this.scheduleVaultRefresh(),
+        fallbackToFolder: (path) => { void this.moveScopeToFolder(path); },
+        lastFolderPath: this.context.getSettings().lastFolderPath,
+      });
     const selectedFolderPathAfterRename = this.applyScopeRename(event);
-    if (!this.shouldRefreshForVaultEvent(event)) {
+    if (linksHandled || !this.shouldRefreshForVaultEvent(event)) {
       return {
         shouldRefresh: false,
         queueAction: "ignored",
@@ -490,7 +478,10 @@ export class ScopeController implements DisposableController {
       };
     }
 
-    if (!this.inFlight && !this.loading) {
+    // Links scopes: C11 relevance is not membership — create/rename-into defer to the debounced reload.
+    const deferToLinksReload = shouldDeferLinksIncrementalMutation(this.context.store.getScope(),
+      event, event.oldPath !== null && this.context.store.getBaseCard(event.oldPath) !== undefined);
+    if (!deferToLinksReload && !this.inFlight && !this.loading) {
       const outcome = applyIncrementalMutation(event, this.context.store.getBaseCards(), {
         app: this.context.getApp(),
         sort: this.buildLoadKey(this.context.store.getScope()).sort,

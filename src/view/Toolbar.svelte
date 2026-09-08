@@ -13,6 +13,8 @@
   } from "./panel-model";
   import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
   import type { BulkRuntimePanelState, SearchStatus } from "./types";
+  import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
+  import ToolbarLinksControls from "./ToolbarLinksControls.svelte";
 
   interface ToolbarActionPayload {
     action: string;
@@ -82,13 +84,6 @@
   }
 
   type BulkToolbarOption = BulkActionOption | BulkActionSeparatorOption;
-
-  interface PopupLifecycleOptions {
-    getButton: () => HTMLElement | null;
-    setMenu: (node: HTMLElement | null) => void;
-    close: () => void;
-    closeOnEscape?: boolean;
-  }
 
   function getSearchStatusLabel(
     strings: ToolbarStrings["searchStatus"],
@@ -190,7 +185,6 @@
   const canBulkRemoveTagSelected = $derived(bulk.canBulkRemoveTagSelected);
   const canBulkDeleteSelected = $derived(bulk.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(bulk.canBulkMergeSelected);
-  const boxPickerButtonId = "fce-box-picker-button";
 
   const TOOLBAR_ACTIONS = $derived<ToolbarActionOption[]>([
     { id: "new-note", label: toolbarStrings.actions.newNote, title: toolbarStrings.actions.newNoteTitle, icon: "square-pen" },
@@ -200,15 +194,12 @@
   const TRANSIENT_TOOLBAR_ACTION_IDS = new Set(["new-note"]);
 
   let activeToolbarAction = $state("");
-  let showBoxPickerMenu = $state(false);
-  let boxPickerMenuX = $state(0);
-  let boxPickerMenuY = $state(0);
+  let boxPickerCloseNonce = $state(0);
 
   let sortButtonEl: HTMLElement | null = null;
-  let boxPickerButtonEl: HTMLElement | null = null;
-  let boxPickerMenuEl: HTMLElement | null = null;
 
   const isBoxMode = $derived(activeBoxId !== null);
+  const isLinksMode = $derived(scope.linksDirection != null);
   const hasBoxes = $derived(boxSummaries.length > 0);
   const isSortGroupTriggerSelected = $derived(group.dimension !== "none");
 
@@ -231,8 +222,12 @@
       : folderLabel;
   }
 
-  const scopeText = $derived(isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeName));
-  const scopeTooltip = $derived(isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeFullLabel));
+  const scopeText = $derived(
+    isLinksMode ? (scope.linksLabel ?? "") : isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeName),
+  );
+  const scopeTooltip = $derived(
+    isLinksMode ? (scope.linksLabel ?? "") : isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeFullLabel),
+  );
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
@@ -390,90 +385,17 @@
     };
   }
 
-  function createPopupPortalAction(options: PopupLifecycleOptions): (node: HTMLElement) => { destroy: () => void } {
-    return (node: HTMLElement) => {
-      const onClickOutside = (event: MouseEvent): void => {
-        const target = event.target;
-        if (target instanceof Node) {
-          const button = options.getButton();
-          if (button && button.contains(target)) {
-            return;
-          }
-          if (node.contains(target)) {
-            return;
-          }
-        }
-        options.close();
-      };
-
-      const onKeydown = (event: KeyboardEvent): void => {
-        if (event.key === "Escape") {
-          options.close();
-        }
-      };
-
-      options.setMenu(node);
-      document.body.appendChild(node);
-      document.addEventListener("click", onClickOutside, true);
-      if (options.closeOnEscape) {
-        document.addEventListener("keydown", onKeydown, true);
-      }
-
-      return {
-        destroy() {
-          document.removeEventListener("click", onClickOutside, true);
-          if (options.closeOnEscape) {
-            document.removeEventListener("keydown", onKeydown, true);
-          }
-          options.setMenu(null);
-          if (node.parentNode) {
-            node.parentNode.removeChild(node);
-          }
-        },
-      };
-    };
-  }
-
   const captureSortButton = createElementCapture((node) => {
     sortButtonEl = node;
   });
 
-  const captureBoxPickerButton = createElementCapture((node) => {
-    boxPickerButtonEl = node;
-  });
-
   function closeBoxPickerMenu(): void {
-    showBoxPickerMenu = false;
+    boxPickerCloseNonce += 1;
   }
 
   function emitBoxCommand(command: string, boxId?: string): void {
     onBoxCommand?.(boxId === undefined ? { command } : { command, boxId });
   }
-
-  function toggleBoxPickerMenu(event: MouseEvent): void {
-    if (showBoxPickerMenu) {
-      closeBoxPickerMenu();
-      return;
-    }
-
-    boxPickerMenuX = event.clientX;
-    boxPickerMenuY = event.clientY;
-    showBoxPickerMenu = true;
-  }
-
-  function addScopeToBox(boxId: string): void {
-    closeBoxPickerMenu();
-    emitBoxCommand("add-scope-to-box", boxId);
-  }
-
-  const boxPickerMenuAction = createPopupPortalAction({
-    getButton: () => boxPickerButtonEl,
-    setMenu: (node) => {
-      boxPickerMenuEl = node;
-    },
-    close: closeBoxPickerMenu,
-    closeOnEscape: true,
-  });
 
   function handleSearchInput(event: Event): void {
     const target = event.currentTarget;
@@ -516,11 +438,19 @@
       >
         <span class="fce-sr-only">{navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}</span>
       </button>
-      <div class="fce-toolbar-scope {isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
+      <div class="fce-toolbar-scope {isLinksMode ? 'is-links' : isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
         <span class="fce-sr-only">{toolbarStrings.scope.ariaLabel}</span>
         <span class="fce-toolbar-scope-text">{scopeText}</span>
       </div>
       <div class="fce-toolbar-actions">
+        <ToolbarLinksControls
+          linksDirection={scope.linksDirection ?? null}
+          linksPinned={scope.linksPinned ?? false}
+          supportsLinksSnapshot={scope.supportsLinksSnapshot ?? false}
+          strings={strings.links}
+          {tooltipSide}
+          {onToolbarAction}
+        />
         {#if isBoxMode}
           <button
             type="button"
@@ -589,18 +519,12 @@
             </button>
           {/if}
           {#if scope.supportsBoxRuleSeeding && hasBoxes}
-            <button
-              type="button"
-              class="clickable-icon fce-toolbar-button {showBoxPickerMenu ? 'is-selected' : ''}"
-              id={boxPickerButtonId}
-              aria-label={boxStrings.addScopeToBox}
-              aria-expanded={showBoxPickerMenu}
-              onclick={toggleBoxPickerMenu}
-              use:applyIcon={"package-check"}
-              use:captureBoxPickerButton
-            >
-              <span class="fce-sr-only">{boxStrings.addScopeToBox}</span>
-            </button>
+            <ToolbarBoxPicker
+              {boxSummaries}
+              addScopeLabel={boxStrings.addScopeToBox}
+              closeNonce={boxPickerCloseNonce}
+              onAddToBox={(boxId) => emitBoxCommand("add-scope-to-box", boxId)}
+            />
           {/if}
         {/if}
         <button
@@ -684,27 +608,3 @@
   {/if}
 
 </header>
-
-{#if showBoxPickerMenu}
-  <div
-    class="fce-popup-menu fce-box-picker-menu"
-    role="menu"
-    aria-labelledby={boxPickerButtonId}
-    style="left: {boxPickerMenuX}px; top: {boxPickerMenuY}px;"
-    use:boxPickerMenuAction
-  >
-    {#each boxSummaries as box (box.id)}
-      <button
-        type="button"
-        class="fce-popup-row fce-box-picker-item"
-        role="menuitem"
-        onclick={() => addScopeToBox(box.id)}
-      >
-        <span class="fce-popup-row-leading" aria-hidden="true" use:applyIcon={"box"}></span>
-        <span class="fce-popup-row-content">
-          <span class="fce-box-picker-item-label">{box.name}</span>
-        </span>
-      </button>
-    {/each}
-  </div>
-{/if}

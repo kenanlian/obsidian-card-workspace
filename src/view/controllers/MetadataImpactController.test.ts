@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GroupDimension } from "../../card-grouping-settings";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import type { PipelineSearchInput } from "../types";
-import { createBoxScope, createFolderScope } from "../scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -44,7 +44,7 @@ function harness(
   options: {
     getFileCache?: ReturnType<typeof vi.fn>;
     dimension?: GroupDimension;
-    scope?: ReturnType<typeof createFolderScope> | ReturnType<typeof createBoxScope>;
+    scope?: ReturnType<typeof createFolderScope> | ReturnType<typeof createBoxScope> | ReturnType<typeof createLinksScope>;
     membership?: MetadataMembershipOutcome;
     bucketsMoved?: boolean;
     tagsChanged?: boolean;
@@ -389,6 +389,20 @@ describe("MetadataImpactController property lane", () => {
     expect(deps.reprojectCardsForMetadata).not.toHaveBeenCalled();
     expect(deps.publishImpactBatch).not.toHaveBeenCalled();
     expect(context.publishGroups).not.toHaveBeenCalled();
+  });
+
+  it("evaluates membership for an out-of-base path before the in-base guard (C7)", async () => {
+    const target = card("notes/in-base.md");
+    const { deps, controller } = harness([target], {
+      scope: createLinksScope("notes/A.md", "backlinks"),
+      membership: "entered",
+    });
+
+    await controller.handleMetadataChange("notes/out-of-base.md");
+
+    expect(deps.reconcileMetadataMembershipForPath).toHaveBeenCalledWith("notes/out-of-base.md");
+    expect(deps.reprojectCardsForMetadata).toHaveBeenCalledTimes(1);
+    expect(deps.classifyPropertyMetadataImpact).not.toHaveBeenCalled();
   });
 });
 

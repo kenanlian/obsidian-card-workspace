@@ -118,7 +118,7 @@ export class NavLayoutController implements DisposableController {
         this.requestReveal(navigationFolderId(scope.path));
         return;
       }
-      case "box":
+      case "box": case "links":
         this.revealFoldersSection = false;
         return;
       default: {

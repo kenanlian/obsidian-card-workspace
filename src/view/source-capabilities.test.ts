@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import {
   BOX_GROUP_DIMENSIONS,
   FOLDER_GROUP_DIMENSIONS,
@@ -41,6 +41,22 @@ describe("resolveSourceCapabilities", () => {
     });
   });
 
+  it("returns the exact six-field capability table for links scope", () => {
+    const expected = {
+      arrangementOwner: { kind: "global" as const },
+      browseTagFilter: false,
+      browsePropertyFilter: true,
+      supportsIncludeSubfolders: false,
+      supportsBoxRuleSeeding: false,
+      groupDimensions: FOLDER_GROUP_DIMENSIONS,
+    };
+
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks"))).toEqual(expected);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "outgoing"))).toEqual(expected);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks")).groupDimensions)
+      .toBe(FOLDER_GROUP_DIMENSIONS);
+  });
+
   it("keys the box arrangement owner to the scope's box id, not persisted state", () => {
     const folderOwner = resolveSourceCapabilities(createFolderScope("notes", true)).arrangementOwner;
     const boxOwner = resolveSourceCapabilities(createBoxScope("box-7")).arrangementOwner;
@@ -70,6 +86,11 @@ describe("resolveSourceCapabilities", () => {
     const boxFirst = resolveSourceCapabilities(createBoxScope("x")).groupDimensions;
     const boxSecond = resolveSourceCapabilities(createBoxScope("y")).groupDimensions;
     expect(boxSecond).toBe(boxFirst);
+
+    const linksFirst = resolveSourceCapabilities(createLinksScope("a.md", "backlinks")).groupDimensions;
+    const linksSecond = resolveSourceCapabilities(createLinksScope("b.md", "outgoing")).groupDimensions;
+    expect(linksSecond).toBe(linksFirst);
+    expect(linksFirst).toBe(first);
   });
 
   it("is pure: resolving twice yields fresh owner objects with equal values", () => {

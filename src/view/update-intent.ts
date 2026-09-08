@@ -106,6 +106,7 @@ function resolveActiveBoxIdForIntent(
     case "box":
       return scope.boxId;
     case "folder":
+    case "links":
       return null;
     default: {
       const exhaustive: never = scope;
