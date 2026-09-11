@@ -16,9 +16,10 @@ import {
  * values per the installed `obsidian.d.ts` and resolve through
  * `vault.getAbstractFileByPath`; no `getFirstLinkpathDest` fallback.
  *
- * v1 limitation: this module never subscribes to metadataCache `"resolved"`
- * (R6). Graph freshness rides the `"changed"` reconcile path plus the
- * vault-event debounce (settled decision 8).
+ * This module never subscribes to metadataCache `"resolved"` (R6). The
+ * resolved trigger arrives via MetadataEventBus (`kind: "resolved"`) from
+ * `main.ts`; links-scope views consume it as a reload trigger. Graph
+ * freshness also still rides `"changed"` reconcile plus vault-event debounce.
  *
  * Pure functions only: no `.on`/`.off`, no Notice, no settings.
  */

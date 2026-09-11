@@ -2940,7 +2940,7 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     vi.clearAllMocks();
   });
 
-  it("registers exactly one metadataCache changed observer through registerEvent at layout-ready", async () => {
+  it("registers metadataCache changed then resolved observers through registerEvent at layout-ready", async () => {
     obsidianMockState.autoRunLayoutReady = false;
     const { plugin, app } = createPluginHarness();
     plugin.onload();
@@ -2951,11 +2951,14 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     obsidianMockState.layoutReadyCallback?.();
     await waitForPluginLoad(plugin);
 
-    expect(app.metadataCache.on).toHaveBeenCalledTimes(1);
-    expect(app.metadataCache.on).toHaveBeenCalledWith("changed", expect.any(Function));
-    const eventRef = app.metadataCache.on.mock.results[0]?.value;
-    expect((plugin as unknown as { registerEvent: ReturnType<typeof vi.fn> }).registerEvent)
-      .toHaveBeenCalledWith(eventRef);
+    expect(app.metadataCache.on).toHaveBeenCalledTimes(2);
+    expect(app.metadataCache.on).toHaveBeenNthCalledWith(1, "changed", expect.any(Function));
+    expect(app.metadataCache.on).toHaveBeenNthCalledWith(2, "resolved", expect.any(Function));
+    const changedRef = app.metadataCache.on.mock.results[0]?.value;
+    const resolvedRef = app.metadataCache.on.mock.results[1]?.value;
+    const registerEvent = (plugin as unknown as { registerEvent: ReturnType<typeof vi.fn> }).registerEvent;
+    expect(registerEvent).toHaveBeenCalledWith(changedRef);
+    expect(registerEvent).toHaveBeenCalledWith(resolvedRef);
   });
 
   it("disposeRuntime disposes the metadata event bus so later publish delivers nothing", async () => {
@@ -2969,9 +2972,9 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     });
 
     (plugin as unknown as { disposeRuntime: () => void }).disposeRuntime();
-    await (plugin as unknown as {
-      metadataEventBus: { publish: (event: { path: string }) => Promise<void> };
-    }).metadataEventBus.publish({ path: "notes/a.md" });
+    await     (plugin as unknown as {
+      metadataEventBus: { publish: (event: { kind: "changed" | "resolved"; path: string }) => Promise<void> };
+    }).metadataEventBus.publish({ kind: "changed", path: "notes/a.md" });
 
     expect(received).toEqual([]);
   });

@@ -1,4 +1,5 @@
 export interface MetadataChangeEvent {
+  readonly kind: "changed" | "resolved";
   readonly path: string;
 }
 

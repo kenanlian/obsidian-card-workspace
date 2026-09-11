@@ -60,7 +60,7 @@ vi.mock("./modals/PropertyPickerModal", () => ({
 }));
 
 import * as markdownUtils from "./markdown-utils";
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
 import type { SearchServiceSnapshot } from "../search";
 import {
@@ -129,14 +129,16 @@ function createPropertyHarness(options: {
 async function openWithMetadataListener(
   view: FolderCardView,
   plugin: { subscribeMetadataEvents: ReturnType<typeof vi.fn> },
-): Promise<(event: { path: string }) => void> {
-  let listener: ((event: { path: string }) => void) | null = null;
-  plugin.subscribeMetadataEvents = vi.fn((registered: (event: { path: string }) => void) => {
+): Promise<(event: { kind?: "changed" | "resolved"; path: string }) => void | Promise<void>> {
+  let listener: ((event: { kind: "changed" | "resolved"; path: string }) => void | Promise<void>) | null = null;
+  plugin.subscribeMetadataEvents = vi.fn((
+    registered: (event: { kind: "changed" | "resolved"; path: string }) => void | Promise<void>,
+  ) => {
     listener = registered;
     return () => undefined;
   });
   await (view as any).onOpen();
-  return (event) => listener!(event);
+  return (event) => listener!({ kind: "changed", ...event });
 }
 
 /** Panel-group identity helper mirroring the grouped-publish assertions. */
@@ -2913,6 +2915,36 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
   });
 
   describe("metadata coordination through the view", () => {
+    it("schedules vault refresh on resolved events only in a links scope", async () => {
+      const { view, plugin } = createViewWithFile("notes/A.md");
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+      const scheduleVaultRefresh = vi.spyOn(view.modules.scopeController, "scheduleVaultRefresh")
+        .mockImplementation(() => undefined);
+      const handleMetadataChange = vi.spyOn(view.modules.metadataImpact, "handleMetadataChange")
+        .mockResolvedValue(undefined);
+
+      (view as any).cardScope = createLinksScope("notes/A.md", "backlinks");
+      await emitMetadata({ kind: "resolved", path: "" });
+      expect(scheduleVaultRefresh).toHaveBeenCalledTimes(1);
+      expect(handleMetadataChange).not.toHaveBeenCalled();
+
+      scheduleVaultRefresh.mockClear();
+      (view as any).cardScope = createFolderScope("notes", true);
+      await emitMetadata({ kind: "resolved", path: "" });
+      expect(scheduleVaultRefresh).not.toHaveBeenCalled();
+      expect(handleMetadataChange).not.toHaveBeenCalled();
+
+      (view as any).cardScope = createBoxScope("box-1");
+      await emitMetadata({ kind: "resolved", path: "" });
+      expect(scheduleVaultRefresh).not.toHaveBeenCalled();
+      expect(handleMetadataChange).not.toHaveBeenCalled();
+
+      await emitMetadata({ kind: "changed", path: "notes/A.md" });
+      expect(handleMetadataChange).toHaveBeenCalledTimes(1);
+      expect(handleMetadataChange).toHaveBeenCalledWith("notes/A.md");
+      expect(scheduleVaultRefresh).not.toHaveBeenCalled();
+    });
+
     it("publishes one nav/scope/cards/projection/bulk batch for an in-base change with an active filter", async () => {
       const { view, plugin } = createPropertyHarness({
         settings: propertySettings({

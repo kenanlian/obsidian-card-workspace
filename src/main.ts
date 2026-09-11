@@ -529,12 +529,12 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.metadataObserversRegistered = true;
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file) => {
-        if (this.disposed) return;
-        this.runDetached(this.metadataEventBus.publish({ path: file.path }), "Metadata event publication failed.");
-      }),
-    );
+    const publish = (kind: "changed" | "resolved", path: string) => {
+      if (this.disposed) return;
+      this.runDetached(this.metadataEventBus.publish({ kind, path }), "Metadata event publication failed.");
+    };
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => publish("changed", file.path)));
+    this.registerEvent(this.app.metadataCache.on("resolved", (file?: TFile) => publish("resolved", file?.path ?? "")));
   }
 
   private registerVaultObservers(): void {

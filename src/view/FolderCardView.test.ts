@@ -1313,6 +1313,39 @@ describe("FolderCardView host contract", () => {
     expect(metadataUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it("schedules a vault refresh when resolved fires under a links scope (MS-10 live graph)", async () => {
+    const { view, plugin } = createHarness();
+    let metadataListener: ((event: { kind: "changed" | "resolved"; path: string }) => void | Promise<void>) | null = null;
+    plugin.subscribeMetadataEvents = vi.fn((
+      listener: (event: { kind: "changed" | "resolved"; path: string }) => void | Promise<void>,
+    ) => {
+      metadataListener = listener;
+      return () => undefined;
+    });
+
+    await view.onOpen();
+    const scheduleVaultRefresh = vi.spyOn((view as any).modules.scopeController, "scheduleVaultRefresh")
+      .mockImplementation(() => undefined);
+    const handleMetadataChange = vi.spyOn((view as any).modules.metadataImpact, "handleMetadataChange")
+      .mockResolvedValue(undefined);
+
+    (view as any).cardScope = createLinksScope("notes/A.md", "backlinks");
+    await metadataListener!({ kind: "resolved", path: "" });
+    expect(scheduleVaultRefresh).toHaveBeenCalledTimes(1);
+    expect(handleMetadataChange).not.toHaveBeenCalled();
+
+    scheduleVaultRefresh.mockClear();
+    (view as any).cardScope = createFolderScope("notes", true);
+    await metadataListener!({ kind: "resolved", path: "" });
+    expect(scheduleVaultRefresh).not.toHaveBeenCalled();
+    expect(handleMetadataChange).not.toHaveBeenCalled();
+
+    (view as any).cardScope = createBoxScope("box-1");
+    await metadataListener!({ kind: "resolved", path: "" });
+    expect(scheduleVaultRefresh).not.toHaveBeenCalled();
+    expect(handleMetadataChange).not.toHaveBeenCalled();
+  });
+
   it("reconciles a tag-departed rule member out of a Box during metadata refresh", async () => {
     const { view, plugin } = createHarness();
     let metadataListener: ((event: { path: string }) => void) | null = null;

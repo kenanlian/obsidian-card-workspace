@@ -119,15 +119,9 @@ export class FolderCardView extends ItemView {
   private get baseCards(): NoteCardRecord[] { return this.store.getBaseCards() as NoteCardRecord[]; } private set baseCards(cards: NoteCardRecord[]) { this.store.replaceBaseCards(cards); }
   private get visibleCards(): NoteCardRecord[] { return this.store.getVisibleCards() as NoteCardRecord[]; } private set visibleCards(cards: NoteCardRecord[]) { this.store.replaceVisibleCards(cards); }
   private get selectedPath(): string | null { return this.store.getSelectedPath(); } private set selectedPath(path: string | null) { this.store.setSelectedPath(path); }
-  getViewType(): string {
-    return FOLDER_CARD_VIEW;
-  }
-  getDisplayText(): string {
-    return this.strings.view.displayName;
-  }
-  getIcon(): string {
-    return CARD_WORKSPACE_ICON;
-  }
+  getViewType(): string { return FOLDER_CARD_VIEW; }
+  getDisplayText(): string { return this.strings.view.displayName; }
+  getIcon(): string { return CARD_WORKSPACE_ICON; }
   private get strings(): UiStrings {
     return this.plugin.getUiStrings();
   }
@@ -181,8 +175,10 @@ export class FolderCardView extends ItemView {
     });
     this.metadataEventUnsubscribe?.();
     this.metadataEventUnsubscribe = this.plugin.subscribeMetadataEvents((event) => {
-      // The bus serializes and awaits this handler; returning the promise keeps
-      // one metadata event from overtaking a pending silent search refresh.
+      if (event.kind === "resolved") {
+        if (isLinksScope(this.cardScope)) this.modules.scopeController.scheduleVaultRefresh();
+        return Promise.resolve();
+      }
       return this.modules.metadataImpact.handleMetadataChange(event.path);
     });
   }

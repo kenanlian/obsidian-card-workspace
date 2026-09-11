@@ -3,7 +3,7 @@ import { MetadataEventBus } from "./MetadataEventBus";
 import type { MetadataChangeEvent } from "./MetadataEventBus";
 
 function createEvent(overrides: Partial<MetadataChangeEvent> = {}): MetadataChangeEvent {
-  return { path: "notes/a.md", ...overrides };
+  return { kind: "changed", path: "notes/a.md", ...overrides };
 }
 
 describe("MetadataEventBus", () => {
