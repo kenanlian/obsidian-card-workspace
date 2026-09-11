@@ -590,7 +590,7 @@ describe("card box context menus", () => {
         lastFolderPath: "notes",
         pinnedPaths: [],
         previewLines: 5,
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         activeBoxId,
         boxes: [
           {

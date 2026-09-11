@@ -90,12 +90,17 @@ export interface NavigationProjectionInput {
   properties?: readonly PropertyFacet[];
   /** Active property filter clauses driving property-value checked state. */
   propertyClauses?: readonly PropertyFilterClause[];
+  /** Host-localized labels for the two fixed links leaves. The projection never owns strings. */
+  linksLeafLabels: { backlinks: string; outgoing: string };
+  /** Host-computed disabled flag for both links leaves. The projection never derives this. */
+  linksDisabled: boolean;
 }
 
 export type NavigationMenuTarget =
   | { section: NavSectionId; scope: "header" }
   | { section: "favorites"; scope: "item"; favorite: FavoriteEntry }
   | { section: "folders" | "tags" | "boxes"; scope: "item"; itemId: string }
+  | { section: "links"; scope: "item"; itemId: string }
   | { section: "properties"; scope: "item"; itemId: string; value?: PropertyScalarRef };
 
 interface NavigationRowBase {
@@ -166,6 +171,12 @@ export interface NavigationPropertyValueRow extends NavigationRowBase {
   value: PropertyScalarRef;
 }
 
+export interface NavigationLinksRow extends NavigationRowBase {
+  kind: "links";
+  section: "links";
+  direction: "backlinks" | "outgoing";
+}
+
 /**
  * Stable, non-DOM row seam. Future row variants can extend this union without
  * changing focus/filter ordering.
@@ -183,7 +194,8 @@ export type NavigationRow =
   | NavigationTagRow
   | NavigationPropertyRow
   | NavigationPropertyValueRow
-  | NavigationBoxRow;
+  | NavigationBoxRow
+  | NavigationLinksRow;
 
 export interface NavigationProjectedSection {
   id: `section:${NavSectionId}`;
@@ -228,6 +240,7 @@ export const NAVIGATION_SECTION_ORDER: readonly NavSectionId[] = [
   "tags",
   "properties",
   "boxes",
+  "links",
 ];
 
 export function navigationSectionId(section: NavSectionId): `section:${NavSectionId}` {
@@ -248,6 +261,10 @@ export function navigationTagId(path: string): string {
 
 export function navigationBoxId(id: string): string {
   return `box:${id}`;
+}
+
+export function navigationLinksId(direction: "backlinks" | "outgoing"): string {
+  return `links:${direction}`;
 }
 
 /**

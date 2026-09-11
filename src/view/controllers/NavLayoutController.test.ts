@@ -95,7 +95,7 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
     tagCounts: {},
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
@@ -103,8 +103,11 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
       tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
+      links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },
+    linksDisabled: true,
   };
 }
 
@@ -359,7 +362,7 @@ describe("NavLayoutController", () => {
     expect(controller.getQueryBaseline()).toEqual({
       expandedFolderPaths: ["a", "shared"],
       expandedTagPaths: ["work"],
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     });
     const a = projection.rows.find((row) => row.id === "folder:a");
     if (!a) throw new Error("missing query row fixture");
@@ -422,7 +425,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("folders", -1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes"],
+      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes", "links"],
     });
   });
 
@@ -430,7 +433,7 @@ describe("NavLayoutController", () => {
     const { controller, saveSettings } = createHarness();
 
     await controller.onMoveNavSection("favorites", -1);
-    await controller.onMoveNavSection("boxes", 1);
+    await controller.onMoveNavSection("links", 1);
     await controller.onMoveNavSection("mystery" as NavSectionId, 1);
 
     expect(saveSettings).not.toHaveBeenCalled();
@@ -443,7 +446,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("boxes", 1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["tags", "properties", "favorites", "boxes", "folders"],
+      navSectionOrder: ["tags", "properties", "favorites", "boxes", "folders", "links"],
     });
   });
 

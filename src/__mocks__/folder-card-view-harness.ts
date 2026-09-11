@@ -884,7 +884,7 @@ export function createViewWithFile(
       filter: { tags: [], properties: [] },
       visiblePropertyKeys: [],
       expandedPropertyKeys: [],
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
       navSectionOrder: ["favorites", "folders", "tags", "properties", "boxes"],
       defaultView: "cards",
       lastFolderPath: null,

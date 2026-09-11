@@ -14,7 +14,7 @@
   import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
   import type { BulkRuntimePanelState, SearchStatus } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
-  import ToolbarLinksControls from "./ToolbarLinksControls.svelte";
+  import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
 
   interface ToolbarActionPayload {
     action: string;
@@ -443,14 +443,31 @@
         <span class="fce-toolbar-scope-text">{scopeText}</span>
       </div>
       <div class="fce-toolbar-actions">
-        <ToolbarLinksControls
-          linksDirection={scope.linksDirection ?? null}
-          linksPinned={scope.linksPinned ?? false}
-          supportsLinksSnapshot={scope.supportsLinksSnapshot ?? false}
-          strings={strings.links}
-          {tooltipSide}
-          {onToolbarAction}
-        />
+        {#if isLinksMode}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button {scope.linksPinned ? 'is-selected' : ''}"
+            aria-label={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
+            aria-pressed={scope.linksPinned ?? false}
+            onclick={() => emitToolbarAction("links-pin-toggle")}
+            use:applyIcon={"pin"}
+            use:applyTooltip={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
+          >
+            <span class="fce-sr-only">{scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}</span>
+          </button>
+          {#if scope.supportsLinksSnapshot}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button"
+              aria-label={strings.links.saveSnapshot}
+              onclick={() => emitToolbarAction("links-save-snapshot")}
+              use:applyIcon={"package-plus"}
+              use:applyTooltip={strings.links.saveSnapshot}
+            >
+              <span class="fce-sr-only">{strings.links.saveSnapshot}</span>
+            </button>
+          {/if}
+        {/if}
         {#if isBoxMode}
           <button
             type="button"
@@ -580,31 +597,13 @@
   {/if}
 
   {#if bulkMode}
-    <div class="fce-toolbar-bulk-strip" role="group" aria-label={toolbarStrings.actions.bulkTitle}>
-      <div class="fce-toolbar-bulk-actions">
-        {#each bulkActions as action}
-          {#if "type" in action}
-            <div class="fce-toolbar-bulk-separator" role="separator" aria-hidden="true"></div>
-          {:else}
-            <button
-              type="button"
-              class="clickable-icon fce-toolbar-bulk-button {action.danger ? 'is-destructive' : ''}"
-              aria-label={action.label}
-              disabled={action.disabled}
-              onclick={() => emitToolbarAction(action.id)}
-              use:applyIcon={action.icon}
-              use:applyTooltip={action.label}
-            >
-              <span class="fce-sr-only">{action.label}</span>
-            </button>
-          {/if}
-        {/each}
-      </div>
-
-      <div class="fce-toolbar-bulk-summary">
-        <span>{bulkSelectionSummary}</span>
-      </div>
-    </div>
+    <ToolbarBulkStrip
+      {bulkActions}
+      {bulkSelectionSummary}
+      ariaLabel={toolbarStrings.actions.bulkTitle}
+      {tooltipSide}
+      {onToolbarAction}
+    />
   {/if}
 
 </header>

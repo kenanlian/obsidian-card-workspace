@@ -180,7 +180,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   activeBoxId: null,
   navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
   navPaneCollapsed: false,
-  sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+  sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
   showNavItemCounts: false,
   navSectionOrder: defaultNavSectionOrder(),
 };

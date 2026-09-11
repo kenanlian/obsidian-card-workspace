@@ -557,6 +557,10 @@
   opacity: 0;
 }
 
+.folder-card-view .fce-nav-projected-row[data-nav-section="links"]:not(.is-section) .fce-nav-row-more {
+  display: none;
+}
+
 .folder-card-view .fce-nav-tree .fce-tree-row-check {
   color: var(--text-accent, var(--interactive-accent, #7c3aed));
 }
@@ -643,13 +647,6 @@
 .folder-card-view .fce-toolbar-scope.is-box .fce-toolbar-scope-text,
 .folder-card-view .fce-toolbar-scope.is-links .fce-toolbar-scope-text {
   font-weight: var(--font-medium, 600);
-}
-
-.folder-card-view .fce-toolbar-links {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: 0 0 auto;
 }
 
 .folder-card-view .fce-toolbar-actions {

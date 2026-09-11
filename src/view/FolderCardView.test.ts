@@ -2975,19 +2975,15 @@ describe("FolderCardView navigation scope activation", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
-  it("routes the four links toolbar commands through linksActions", () => {
+  it("routes the retained links toolbar commands through linksActions", () => {
     const { view } = createHarness();
     const handled = vi.spyOn((view as any).modules.linksActions, "handleToolbarCommand")
       .mockReturnValue(true);
 
-    view.handleToolbarAction({ action: "links-backlinks" });
-    view.handleToolbarAction({ action: "links-outgoing" });
     view.handleToolbarAction({ action: "links-pin-toggle" });
     view.handleToolbarAction({ action: "links-save-snapshot" });
 
     expect(handled.mock.calls.map((call) => call[0])).toEqual([
-      "links-backlinks",
-      "links-outgoing",
       "links-pin-toggle",
       "links-save-snapshot",
     ]);

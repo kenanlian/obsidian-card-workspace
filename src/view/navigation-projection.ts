@@ -24,6 +24,7 @@ import {
   type NavigationTagRow,
 } from "./navigation-model";
 import { projectPropertyRows } from "./property-navigation-projection";
+import { projectLinksRows } from "./links-navigation-projection";
 
 interface MatchedTreeNode<T> {
   source: T;
@@ -312,6 +313,8 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER,
   );
   matchedCounts.set("properties", propertyProjection.matchedItemCount);
+  const linksProjection = projectLinksRows(input, normalizedQuery);
+  matchedCounts.set("links", linksProjection.matchedItemCount);
 
   const visibleSectionIds = normalizeNavSectionOrder(input.sectionOrder).filter((section) =>
     !querying || (matchedCounts.get(section) ?? 0) > 0,
@@ -350,6 +353,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     if (section === "tags") children = projectTags(input, normalizedQuery, expanded, activeTags);
     if (section === "properties") children = expanded ? assignSetMetadata(propertyProjection.rows) : [];
     if (section === "boxes") children = expanded ? assignSetMetadata(boxRows) : [];
+    if (section === "links") children = expanded ? assignSetMetadata(linksProjection.rows) : [];
     rows.push(...children);
     sections.push({
       id: navigationSectionId(section),

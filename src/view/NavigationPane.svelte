@@ -31,7 +31,7 @@
   }
   const EMPTY_NAV: PanelNavState = {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false }, showItemCounts: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false }, showItemCounts: false,
     tooltipSide: "right", propertyFilterCount: 0, projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
     query: "", focusId: null, focusRequest: null, revealRequest: null,
   };

@@ -383,10 +383,10 @@ describe("SettingsStore", () => {
     };
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: true, boxes: true,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true, links: false,
     });
     expect(store.getFlat().sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: true, boxes: true,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true, links: false,
     });
   });
 
@@ -396,7 +396,7 @@ describe("SettingsStore", () => {
 
     const order: PluginSettings["navSectionOrder"] = ["boxes", "favorites", "folders", "tags"];
     const normalizedOrder: PluginSettings["navSectionOrder"] = [
-      "properties", "boxes", "favorites", "folders", "tags",
+      "properties", "boxes", "favorites", "folders", "tags", "links",
     ];
     const split = splitFlatPatch({ navSectionOrder: order });
     expect(split.preferences.navSectionOrder).toEqual(order);
@@ -419,7 +419,7 @@ describe("SettingsStore", () => {
     expect(persisted).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: false, boxes: false,
+      favorites: true, folders: false, tags: true, properties: false, boxes: false, links: false,
     });
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
   });

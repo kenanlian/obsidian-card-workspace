@@ -14,7 +14,8 @@ import type {
   PanelModelState,
   PanelProjectionState,
 } from "./panel-model";
-import { isCurrentBoxId, type CardScope } from "./scope";
+import { resolveCardFileKindFromPath } from "./file-kind";
+import { isCurrentBoxId, isLinksScope, type CardScope } from "./scope";
 import { resolveSourceCapabilities } from "./source-capabilities";
 import { buildTagTree, resolveTagSelection } from "./tag-tree";
 import type { FavoriteEntry, FolderTreeNode, NavContextMenuPayload } from "./types";
@@ -57,8 +58,10 @@ export function buildNavigationPanelState(input: {
       tags: { label: strings.toolbar.navPane.tagsSection, emptyLabel: null },
       properties: { label: strings.property.sectionLabel, emptyLabel: strings.property.sectionEmpty },
       boxes: { label: strings.toolbar.navPane.boxesSection, emptyLabel: strings.toolbar.navPane.boxesEmpty },
+      links: { label: strings.links.sectionLabel, emptyLabel: null },
     },
     rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
+    linksLeafLabels: { backlinks: strings.links.directionBacklinks, outgoing: strings.links.directionOutgoing }, linksDisabled: !isLinksScope(scope) && (input.selectedPath === null || resolveCardFileKindFromPath(input.selectedPath) === null),
     properties: input.propertyFacets ?? [],
     propertyClauses: settings.filter.properties,
   });
@@ -181,6 +184,7 @@ export function routeNavigationIntent(input: {
    * the pre-WP-05 host caller keeps compiling; absent means a no-op.
    */
   selectPropertyValue?: (propertyKey: string, ref: PropertyScalarRef, additive: boolean) => void;
+  selectLinksDirection?: (direction: "backlinks" | "outgoing") => void;
   /** Manual favorites drag reorder; carries its own payload, no row lookup. */
   reorderFavorites?: (source: FavoriteEntry, target: FavoriteEntry, position: "before" | "after") => void;
 }): void {
@@ -220,6 +224,7 @@ export function routeNavigationIntent(input: {
     input.selectPropertyValue?.(row.propertyKey, row.value, intent.mode === "additive");
     return;
   }
+  if (row.kind === "links") { input.selectLinksDirection?.(row.direction); return; }
   if (row.kind === "favorite") {
     if (row.favorite.kind === "tag" && intent.mode === "additive") {
       input.applyTagFilter(resolveTagSelection([...input.activeTags], row.favorite.ref, true));

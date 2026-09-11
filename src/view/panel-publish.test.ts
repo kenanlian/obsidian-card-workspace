@@ -110,7 +110,7 @@ function buildState(): PanelModelState {
       paneWidth: 260,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
       showItemCounts: true,
       tooltipSide: "right",
       propertyFilterCount: 0,
@@ -662,6 +662,31 @@ describe("FolderCardView nav-group property publication", () => {
 
     expect(nav.propertyFilterCount).toBe(0);
     expect(nav.projection.rows.some((row) => row.kind === "property")).toBe(false);
+
+    view.cleanupLifecycle();
+  });
+});
+
+describe("FolderCardView nav-group links publication", () => {
+  it("projects two links leaves and disables them without a supported selected file", () => {
+    const view = createPropertyNavView({
+      visiblePropertyKeys: [],
+      filterProperties: [],
+      baseCards: [propertyCard("notes/a.md")],
+    });
+
+    const nav = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
+    const leaves = nav.projection.rows.filter((row) => row.kind === "links");
+    expect(leaves.map((row) => row.id)).toEqual(["links:outgoing", "links:backlinks"]);
+    expect(leaves.every((row) => row.disabled)).toBe(true);
+
+    view.setSelectedFile("notes/a.md");
+    const enabled = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
+    expect(enabled.projection.rows.filter((row) => row.kind === "links").every((row) => row.disabled)).toBe(false);
+
+    view.setSelectedFile("picture.png");
+    const unsupported = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
+    expect(unsupported.projection.rows.filter((row) => row.kind === "links").every((row) => row.disabled)).toBe(true);
 
     view.cleanupLifecycle();
   });

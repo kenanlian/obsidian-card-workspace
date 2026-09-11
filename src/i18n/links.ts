@@ -1,8 +1,7 @@
 import type { UiLanguage } from "./types";
 
 export interface LinksStrings {
-  enterBacklinks: string;
-  enterOutgoing: string;
+  sectionLabel: string;
   directionBacklinks: string;
   directionOutgoing: string;
   pinToNote: string;
@@ -15,8 +14,7 @@ export interface LinksStrings {
 
 export const linksStrings: Record<UiLanguage, LinksStrings> = {
   en: {
-    enterBacklinks: "Backlinks",
-    enterOutgoing: "Outgoing links",
+    sectionLabel: "Links",
     directionBacklinks: "Backlinks",
     directionOutgoing: "Outgoing links",
     pinToNote: "Pin to this note",
@@ -27,9 +25,8 @@ export const linksStrings: Record<UiLanguage, LinksStrings> = {
     emptySnapshotNotice: "There are no linked notes to save.",
   },
   zh: {
-    enterBacklinks: "双链",
-    enterOutgoing: "出链",
-    directionBacklinks: "双链",
+    sectionLabel: "双链",
+    directionBacklinks: "反链",
     directionOutgoing: "出链",
     pinToNote: "固定到当前笔记",
     resumeFollow: "恢复跟随当前笔记",

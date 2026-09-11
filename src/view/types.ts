@@ -260,7 +260,7 @@ export interface FolderActionPayload {
   path: string;
 }
 
-export type NavSectionId = "favorites" | "folders" | "tags" | "properties" | "boxes";
+export type NavSectionId = "favorites" | "folders" | "tags" | "properties" | "boxes" | "links";
 
 /**
  * Expansion and logical focus live in the host-owned navigation runtime.

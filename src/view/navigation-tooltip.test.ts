@@ -37,7 +37,7 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
     tagCounts: { work: 7, "work/now": 2 },
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
@@ -45,8 +45,11 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
       tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
+      links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },
+    linksDisabled: true,
     expansion: {
       folders: { manual: [], reveal: [], query: [], suppressed: [] },
       tags: { manual: ["work"], reveal: [], query: [], suppressed: [] },
@@ -77,5 +80,7 @@ describe("resolveNavigationRowTooltip", () => {
     expect(resolveNavigationRowTooltip(byId.get(navigationFavoriteId("file", "gone.md"))!, strings))
       .toBe("Gone (missing)");
     expect(resolveNavigationRowTooltip(byId.get(navigationSectionId("folders"))!, strings)).toBe("");
+    expect(resolveNavigationRowTooltip(byId.get("links:outgoing")!, strings)).toBe("");
+    expect(resolveNavigationRowTooltip(byId.get("links:backlinks")!, zh)).toBe("");
   });
 });

@@ -314,8 +314,6 @@ describe("Toolbar.svelte", () => {
     const buttons = Array.from(buttonsRow?.querySelectorAll("button") || []);
     const expectedLabels = [
       "Expand navigation",
-      "Backlinks",
-      "Outgoing links",
       "Create note",
       "Sort & group",
       "Bulk actions",
@@ -340,8 +338,6 @@ describe("Toolbar.svelte", () => {
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-buttons button"));
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "Expand navigation",
-      "Backlinks",
-      "Outgoing links",
       "Create note",
       "Sort & group",
       "Bulk actions",
@@ -918,6 +914,12 @@ function linksScopeProps(locale: "en" | "zh", extras: Record<string, unknown> = 
   };
 }
 
+function clickToolbarActionButtons(): void {
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-actions button"))) {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+}
+
 describe("Toolbar.svelte links controls", () => {
   beforeEach(() => {
     mountedComponents = [];
@@ -934,17 +936,17 @@ describe("Toolbar.svelte links controls", () => {
   });
 
   it.each(["en", "zh"] as const)(
-    "renders entry buttons in folder scope and hides pin/snapshot (%s)",
+    "renders no links buttons in folder scope (%s)",
     async (locale) => {
       const strings = getUiStrings(locale);
       const { component } = mountToolbar({ strings });
       await tick();
 
-      expect(document.querySelector(`button[aria-label="${strings.links.enterBacklinks}"]`)).not.toBeNull();
-      expect(document.querySelector(`button[aria-label="${strings.links.enterOutgoing}"]`)).not.toBeNull();
       expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).toBeNull();
       expect(document.querySelector(`button[aria-label="${strings.links.resumeFollow}"]`)).toBeNull();
       expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).toBeNull();
+      expect(document.querySelector('button[data-icon="pin"]')).toBeNull();
+      expect(document.querySelector(".fce-toolbar-links")).toBeNull();
       expect(document.querySelector(".fce-toolbar-scope")?.classList.contains("is-links")).toBe(false);
 
       await disposeMountedComponent(component);
@@ -952,23 +954,24 @@ describe("Toolbar.svelte links controls", () => {
   );
 
   it.each(["en", "zh"] as const)(
-    "renders direction, pin, snapshot, and composed label in links scope (%s)",
+    "renders pin and snapshot with pressed/selected state and composed label in links scope (%s)",
     async (locale) => {
       const strings = getUiStrings(locale);
       const label = `\u201cNote\u201d${strings.toolbar.scope.separator}${strings.links.directionBacklinks}`;
       const { component } = mountToolbar(linksScopeProps(locale));
       await tick();
 
-      const backlinks = document.querySelector<HTMLButtonElement>(
-        `button[aria-label="${strings.links.enterBacklinks}"]`,
+      const pin = document.querySelector<HTMLButtonElement>(
+        `button[aria-label="${strings.links.pinToNote}"]`,
       );
-      const outgoing = document.querySelector<HTMLButtonElement>(
-        `button[aria-label="${strings.links.enterOutgoing}"]`,
-      );
-      expect(backlinks?.classList.contains("is-selected")).toBe(true);
-      expect(outgoing?.classList.contains("is-selected")).toBe(false);
-      expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).not.toBeNull();
+      expect(pin).not.toBeNull();
+      expect(pin?.getAttribute("aria-pressed")).toBe("false");
+      expect(pin?.classList.contains("is-selected")).toBe(false);
+      expect(pin?.getAttribute("data-icon")).toBe("pin");
       expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).not.toBeNull();
+      expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)?.getAttribute("data-icon"))
+        .toBe("package-plus");
+      expect(document.querySelector(".fce-toolbar-links")).toBeNull();
       expect(document.querySelector(".fce-toolbar-scope")?.classList.contains("is-links")).toBe(true);
       expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe(label);
 
@@ -976,16 +979,31 @@ describe("Toolbar.svelte links controls", () => {
     },
   );
 
-  it.each(["en", "zh"] as const)("emits the four links command ids (%s)", async (locale) => {
+  it.each(["en", "zh"] as const)(
+    "marks the pin toggle pressed and selected when pinned (%s)",
+    async (locale) => {
+      const strings = getUiStrings(locale);
+      const { component } = mountToolbar(linksScopeProps(locale, { linksPinned: true }));
+      await tick();
+
+      const pin = document.querySelector<HTMLButtonElement>(
+        `button[aria-label="${strings.links.resumeFollow}"]`,
+      );
+      expect(pin).not.toBeNull();
+      expect(pin?.getAttribute("aria-pressed")).toBe("true");
+      expect(pin?.classList.contains("is-selected")).toBe(true);
+      expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).toBeNull();
+
+      await disposeMountedComponent(component);
+    },
+  );
+
+  it.each(["en", "zh"] as const)("emits pin-toggle and snapshot command ids (%s)", async (locale) => {
     const strings = getUiStrings(locale);
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar(linksScopeProps(locale, { linksPinned: true }), captured.callbacks);
     await tick();
 
-    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.enterBacklinks}"]`)
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.enterOutgoing}"]`)
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.resumeFollow}"]`)
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.links.saveSnapshot}"]`)
@@ -993,13 +1011,36 @@ describe("Toolbar.svelte links controls", () => {
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([
-      { action: "links-backlinks" },
-      { action: "links-outgoing" },
       { action: "links-pin-toggle" },
       { action: "links-save-snapshot" },
     ]);
+    expect(captured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-backlinks");
+    expect(captured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-outgoing");
 
     await disposeMountedComponent(component);
+  });
+
+  it("never emits links-backlinks or links-outgoing from toolbar buttons", async () => {
+    const folderCaptured = createCapturedCallbacks();
+    const folder = mountToolbar({}, folderCaptured.callbacks);
+    await tick();
+    clickToolbarActionButtons();
+    await tick();
+    expect(folderCaptured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-backlinks");
+    expect(folderCaptured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-outgoing");
+    await disposeMountedComponent(folder.component);
+
+    const linksCaptured = createCapturedCallbacks();
+    const links = mountToolbar(linksScopeProps("en"), linksCaptured.callbacks);
+    await tick();
+    clickToolbarActionButtons();
+    await tick();
+    expect(linksCaptured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-backlinks");
+    expect(linksCaptured.toolbarActionEvents.map((event) => event.action)).not.toContain("links-outgoing");
+    expect(linksCaptured.toolbarActionEvents).toContainEqual({ action: "links-pin-toggle" });
+    expect(linksCaptured.toolbarActionEvents).toContainEqual({ action: "links-save-snapshot" });
+
+    await disposeMountedComponent(links.component);
   });
 
   it("hides the snapshot button outside links scope", async () => {

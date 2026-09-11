@@ -87,7 +87,7 @@ function createPanelState(): PanelModelState {
       paneWidth: 240,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
       showItemCounts: false,
       tooltipSide: "right",
       propertyFilterCount: 0,

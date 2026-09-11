@@ -100,23 +100,23 @@ function createActions(options: {
 }
 
 describe("LinksActions", () => {
-  it("recognizes the four toolbar command ids and ignores others", () => {
+  it("recognizes only the two retained toolbar command ids and ignores others", () => {
     const { actions, handleScopeSelection, notify } = createActions({ activeFile: createFile(NOTE_A) });
 
-    expect(actions.handleToolbarCommand("links-backlinks")).toBe(true);
-    expect(actions.handleToolbarCommand("links-outgoing")).toBe(true);
+    expect(actions.handleToolbarCommand("links-backlinks")).toBe(false);
+    expect(actions.handleToolbarCommand("links-outgoing")).toBe(false);
     expect(actions.handleToolbarCommand("links-pin-toggle")).toBe(true);
     expect(actions.handleToolbarCommand("links-save-snapshot")).toBe(true);
     expect(actions.handleToolbarCommand("bulk")).toBe(false);
     expect(actions.handleToolbarCommand("new-note")).toBe(false);
 
-    expect(handleScopeSelection).toHaveBeenCalledTimes(2);
+    expect(handleScopeSelection).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
   it("enters links from the active file and notifies when none is open", () => {
     const missing = createActions();
-    expect(missing.actions.handleToolbarCommand("links-backlinks")).toBe(true);
+    missing.actions.enterOrSwitchLinks("backlinks");
     expect(missing.notify).toHaveBeenCalledWith(getUiStrings("en").links.noActiveFileNotice);
     expect(missing.handleScopeSelection).not.toHaveBeenCalled();
     expect(missing.store.getLinksPinned()).toBe(false);
@@ -127,7 +127,7 @@ describe("LinksActions", () => {
 
     const file = createFile(NOTE_A);
     const entered = createActions({ activeFile: file, linksPinned: true });
-    entered.actions.handleToolbarCommand("links-outgoing");
+    entered.actions.enterOrSwitchLinks("outgoing");
     expect(entered.store.getLinksPinned()).toBe(false);
     expect(entered.createProgrammaticSelectionRequest).toHaveBeenCalledWith(
       createLinksScope(NOTE_A, "outgoing"),
@@ -147,7 +147,7 @@ describe("LinksActions", () => {
     });
 
     const previousKey = serializeScopeKey(store.getScope(), SORT);
-    actions.handleToolbarCommand("links-outgoing");
+    actions.enterOrSwitchLinks("outgoing");
 
     const nextScope = createProgrammaticSelectionRequest.mock.calls[0]?.[0];
     expect(nextScope).toEqual(createLinksScope(NOTE_A, "outgoing"));

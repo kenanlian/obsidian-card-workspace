@@ -95,7 +95,7 @@ function propertySettings(overrides: {
     filter: { tags: [], properties: overrides.filterProperties ?? [] },
     visiblePropertyKeys: overrides.visiblePropertyKeys ?? [],
     expandedPropertyKeys: overrides.expandedPropertyKeys ?? [],
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     navSectionOrder: ["favorites", "folders", "tags", "properties", "boxes"],
     defaultView: "cards",
     lastFolderPath: null,
@@ -1141,7 +1141,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           boxes: [box],
           favorites: [],
           activeBoxId: box.id,
-          sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+          sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         }));
         (view as any).cardScope = createBoxScope(box.id);
 
@@ -3322,6 +3322,45 @@ describe("WP-07 arrangement routing and view-scoped note creation", () => {
     expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox");
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
     expect(addSpy).not.toHaveBeenCalled();
+  });
+});
+
+function linksLeaf(direction: "backlinks" | "outgoing", disabled = false) {
+  return {
+    id: `links:${direction}`, kind: "links" as const, section: "links" as const,
+    parentId: "section:links", level: 2, positionInSet: 1, setSize: 2,
+    expandable: false, expanded: false, disabled, semanticState: "none" as const,
+    label: direction, fullPath: null, count: 0, icon: "links",
+    menuTarget: { section: "links" as const, scope: "item" as const, itemId: direction },
+    direction,
+  };
+}
+
+describe("FolderCardView links leaf activation routing", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  it("routes a links leaf activation to LinksActions.enterOrSwitchLinks", () => {
+    const { view } = createViewWithFile();
+    const enter = vi.spyOn(view.modules.linksActions, "enterOrSwitchLinks").mockImplementation(() => undefined);
+    vi.spyOn(view.modules.navLayout, "getProjection").mockReturnValue({
+      normalizedQuery: "", querying: false, sections: [], rows: [linksLeaf("outgoing")], noResults: false,
+    });
+
+    view.handleNavigationIntent({ type: "activate", rowId: "links:outgoing", mode: "ordinary" });
+    expect(enter).toHaveBeenCalledWith("outgoing");
+  });
+
+  it("does not route a disabled links leaf", () => {
+    const { view } = createViewWithFile();
+    const enter = vi.spyOn(view.modules.linksActions, "enterOrSwitchLinks");
+    vi.spyOn(view.modules.navLayout, "getProjection").mockReturnValue({
+      normalizedQuery: "", querying: false, sections: [], rows: [linksLeaf("backlinks", true)], noResults: false,
+    });
+
+    view.handleNavigationIntent({ type: "activate", rowId: "links:backlinks", mode: "ordinary" });
+    expect(enter).not.toHaveBeenCalled();
   });
 });
 

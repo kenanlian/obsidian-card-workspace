@@ -11,6 +11,18 @@ const baseInput = {
   propertyClauseCount: 0,
 };
 
+describe("links i18n labels (WP-02)", () => {
+  it.each(["en", "zh"] as const)("exposes the links section label (%s)", (locale) => {
+    const strings = getUiStrings(locale);
+    expect(strings.links.sectionLabel).toBe(locale === "zh" ? "双链" : "Links");
+  });
+
+  it.each(["en", "zh"] as const)("exposes the backlinks direction label (%s)", (locale) => {
+    const strings = getUiStrings(locale);
+    expect(strings.links.directionBacklinks).toBe(locale === "zh" ? "反链" : "Backlinks");
+  });
+});
+
 describe("resolveEmptyStateMessage", () => {
   it.each(["en", "zh"] as const)("defaults to the folder empty copy (%s)", (locale) => {
     const strings = getUiStrings(locale);

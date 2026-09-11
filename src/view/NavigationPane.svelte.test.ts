@@ -20,7 +20,7 @@ const components: Array<Record<string, unknown>> = [];
 const originalRect = HTMLElement.prototype.getBoundingClientRect;
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
-function projection(query = "", sectionOrder = defaultNavSectionOrder()) {
+function projection(query = "", sectionOrder = defaultNavSectionOrder(), linksDisabled = true) {
   return projectNavigation({
     query,
     scope: { kind: "folder", path: "notes", includeSubfolders: true },
@@ -34,15 +34,17 @@ function projection(query = "", sectionOrder = defaultNavSectionOrder()) {
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true, tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder,
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
+      links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled,
     expansion: {
       folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
       tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
@@ -83,15 +85,17 @@ function propertyProjection(options: {
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true, tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
+      links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled: true,
     expansion: {
       folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
       tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
@@ -105,7 +109,7 @@ function propertyProjection(options: {
 function nav(overrides: Partial<PanelNavState> = {}): PanelNavState {
   return {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false }, showItemCounts: true,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false }, showItemCounts: true,
     tooltipSide: "right", propertyFilterCount: 0, projection: projection(), query: "", focusId: "section:favorites",
     focusRequest: null, revealRequest: null,
     ...overrides,
@@ -190,7 +194,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(command("ArrowDown", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowUp", "favorite:file:notes/A.md")).toEqual({ type: "focus", rowId: "section:favorites" });
     expect(command("Home", "box:box-1")).toEqual({ type: "focus", rowId: "section:favorites" });
-    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "box:box-1" });
+    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "links:backlinks" });
     expect(command("ArrowRight", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowRight", "folder:notes")).toEqual({ type: "focus", rowId: "folder:notes/child" });
     expect(command("ArrowLeft", "folder:notes/child")).toEqual({ type: "focus", rowId: "folder:notes" });
@@ -412,7 +416,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:properties");
     const sectionRows = Array.from(document.querySelectorAll<HTMLElement>('[data-nav-row-id^="section:"]'));
     expect(sectionRows.map((node) => node.dataset.navRowId)).toEqual([
-      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites",
+      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites", "section:links",
     ]);
     expect(sectionRows.every((node) => node.classList.contains("is-section"))).toBe(true);
     expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))
@@ -904,15 +908,17 @@ describe("NavigationPane favorites manual drag reorder", () => {
         tags: [],
         boxes: [], tagCounts: {},
         includeSubfolders: true, tagsDisabled: false,
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         sectionOrder: defaultNavSectionOrder(),
         sectionLabels: {
           favorites: { label: "Favorites", emptyLabel: null },
           folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
           properties: { label: "Properties", emptyLabel: null },
           boxes: { label: "Boxes", emptyLabel: null },
+          links: { label: "Links", emptyLabel: null },
         },
         rootFolderLabel: "Root /",
+        linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled: true,
         expansion: {
           folders: { manual: [], reveal: [], query: [], suppressed: [] },
           tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
@@ -1003,5 +1009,84 @@ describe("NavigationPane favorites manual drag reorder", () => {
 
     home.dispatchEvent(dragEvent("dragend", 220));
     expect(home.classList.contains("is-favorite-dragging")).toBe(false);
+  });
+});
+
+describe("NavigationPane links section", () => {
+  beforeEach(() => { document.body.innerHTML = ""; });
+  afterEach(async () => {
+    await Promise.all(components.splice(0).map((component) => unmount(component)));
+    document.body.innerHTML = "";
+  });
+
+  function linksNav(language: "en" | "zh", linksDisabled = false) {
+    const strings = getUiStrings(language);
+    return nav({
+      projection: projectNavigation({
+        query: "",
+        scope: { kind: "folder", path: "notes", includeSubfolders: true },
+        activeTags: ["work"], selectedPath: "notes/A.md",
+        favorites: [], folders: [], tags: [], boxes: [], tagCounts: {},
+        includeSubfolders: true, tagsDisabled: false,
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+        sectionOrder: defaultNavSectionOrder(),
+        sectionLabels: {
+          favorites: { label: "Favorites", emptyLabel: null },
+          folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
+          properties: { label: "Properties", emptyLabel: null },
+          boxes: { label: "Boxes", emptyLabel: null },
+          links: { label: strings.links.sectionLabel, emptyLabel: null },
+        },
+        rootFolderLabel: "Root /",
+        linksLeafLabels: { backlinks: strings.links.directionBacklinks, outgoing: strings.links.directionOutgoing },
+        linksDisabled,
+        expansion: {
+          folders: { manual: [], reveal: [], query: [], suppressed: [] },
+          tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
+        },
+      }),
+    });
+  }
+
+  it.each([
+    ["en", "Links", "Outgoing links", "Backlinks"],
+    ["zh", "双链", "出链", "反链"],
+  ] as const)("renders the links section header and two leaves in %s", async (language, section, outgoing, backlinks) => {
+    render({ strings: getUiStrings(language), nav: linksNav(language) });
+    await tick();
+    expect(findRow("section:links").querySelector(".fce-tree-label")?.textContent).toBe(section);
+    expect(findRow("links:outgoing").querySelector(".fce-tree-label")?.textContent).toBe(outgoing);
+    expect(findRow("links:backlinks").querySelector(".fce-tree-label")?.textContent).toBe(backlinks);
+  });
+
+  it("emits an activate intent with the leaf row id on click", async () => {
+    const intents: NavigationIntent[] = [];
+    render({
+      nav: nav({ projection: projection("", defaultNavSectionOrder(), false), focusId: "links:outgoing" }),
+      onIntent: (intent) => intents.push(intent),
+    });
+    await tick();
+    const outgoing = findRow("links:outgoing");
+    expect(outgoing.classList.contains("is-disabled")).toBe(false);
+    outgoing.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: "links:outgoing", mode: "ordinary" });
+    findRow("links:backlinks").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(intents).toContainEqual({ type: "activate", rowId: "links:backlinks", mode: "ordinary" });
+  });
+
+  it("renders disabled leaves as aria-disabled and does not emit activation", async () => {
+    const intents: NavigationIntent[] = [];
+    render({
+      nav: nav({ projection: projection(), focusId: "links:outgoing" }),
+      onIntent: (intent) => intents.push(intent),
+    });
+    await tick();
+    const outgoing = findRow("links:outgoing");
+    expect(outgoing.classList.contains("is-disabled")).toBe(true);
+    expect(outgoing.getAttribute("aria-disabled")).toBe("true");
+    expect(findRow("links:backlinks").getAttribute("aria-disabled")).toBe("true");
+    outgoing.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    findRow("links:backlinks").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(intents.filter((intent) => intent.type === "activate")).toEqual([]);
   });
 });

@@ -14,6 +14,7 @@ import {
   navigationFolderId,
   navigationPropertyId,
   navigationPropertyValueId,
+  navigationLinksId,
   navigationSectionId,
   navigationTagId,
 } from "./navigation-model";
@@ -25,6 +26,7 @@ const sectionLabels = {
   tags: { label: "Tags", emptyLabel: "No tags found" },
   properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
   boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
+  links: { label: "Links", emptyLabel: null },
 } as const;
 
 function folder(
@@ -94,10 +96,12 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     tagCounts: { work: 5, "work/current": 3, "work/历史": 2 },
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels,
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },
+    linksDisabled: true,
     expansion: {
       folders: {
         manual: ["Projects"],
@@ -146,7 +150,7 @@ describe("projectNavigation", () => {
     expect(projection.querying).toBe(false);
     expect(projection.noResults).toBe(false);
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes",
+      "favorites", "folders", "tags", "properties", "boxes", "links",
     ]);
     expect(projection.sections[0]?.emptyLabel).toBe("No favorites yet — right-click an item to add one");
     expect(projection.sections[3]?.emptyLabel).toBe("No properties selected — choose which properties to show");
@@ -340,7 +344,7 @@ describe("projectNavigation", () => {
   it("collapses the Properties section from sectionCollapsed and hides it during a query", () => {
     const collapsed = projectNavigation(buildInput({
       sectionCollapsed: {
-        favorites: false, folders: false, tags: false, properties: true, boxes: false,
+        favorites: false, folders: false, tags: false, properties: true, boxes: false, links: false,
       },
     }));
     expect(collapsed.sections.find((section) => section.section === "properties")?.expanded)
@@ -437,7 +441,7 @@ describe("projectNavigation", () => {
   it("projects sections, rows, and ARIA positions from the supplied section order", () => {
     const order = ["boxes", "tags", "folders", "favorites"] as const;
     // C2: Properties inserts immediately before Boxes in a stored old order.
-    const expected = ["properties", "boxes", "tags", "folders", "favorites"] as const;
+    const expected = ["properties", "boxes", "tags", "folders", "favorites", "links"] as const;
     const projection = projectNavigation(buildInput({ sectionOrder: order }));
     expect(projection.sections.map((section) => section.section)).toEqual([...expected]);
     expect(projection.rows[0]?.id).toBe(navigationSectionId("properties"));
@@ -445,7 +449,7 @@ describe("projectNavigation", () => {
     expect(sectionRows.map((row) => ({
       section: row.section, positionInSet: row.positionInSet, setSize: row.setSize,
     }))).toEqual(expected.map((section, index) => ({
-      section, positionInSet: index + 1, setSize: 5,
+      section, positionInSet: index + 1, setSize: 6,
     })));
   });
 
@@ -454,7 +458,7 @@ describe("projectNavigation", () => {
       sectionOrder: ["tags", "tags", "nope", 7] as unknown as NavigationProjectionInput["sectionOrder"],
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "tags", "favorites", "folders", "properties", "boxes",
+      "tags", "favorites", "folders", "properties", "boxes", "links",
     ]);
   });
 
@@ -546,7 +550,7 @@ describe("projectNavigation — properties", () => {
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes",
+      "favorites", "folders", "tags", "properties", "boxes", "links",
     ]);
     const statusIndex = projection.rows.findIndex((row) => row.id === navigationPropertyId("status"));
     const tagsIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("tags"));
@@ -701,5 +705,52 @@ describe("projectNavigation — properties", () => {
       navigationPropertyValueId("a", { kind: "number", value: 1 }));
     expect(navigationPropertyValueId("a", { kind: "text", value: "x" })).not.toBe(
       navigationPropertyValueId("a", { kind: "number", value: 0 }));
+  });
+});
+
+describe("projectNavigation — links", () => {
+  it("places the Links section last by default with two leaves", () => {
+    const projection = projectNavigation(buildInput({ linksDisabled: false }));
+    expect(projection.sections.map((section) => section.section).at(-1)).toBe("links");
+    const sectionIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("links"));
+    expect(projection.rows[sectionIndex]).toMatchObject({ kind: "section", section: "links" });
+    expect(projection.rows[sectionIndex + 1]).toMatchObject({
+      id: navigationLinksId("outgoing"), kind: "links", direction: "outgoing",
+    });
+    expect(projection.rows[sectionIndex + 2]).toMatchObject({
+      id: navigationLinksId("backlinks"), kind: "links", direction: "backlinks",
+    });
+  });
+
+  it("emits only the Links header when the section is collapsed", () => {
+    const projection = projectNavigation(buildInput({
+      sectionCollapsed: {
+        favorites: false, folders: false, tags: false, properties: false, boxes: false, links: true,
+      },
+    }));
+    const linksRows = projection.rows.filter((row) => row.section === "links");
+    expect(linksRows).toHaveLength(1);
+    expect(linksRows[0]).toMatchObject({ kind: "section", expanded: false });
+  });
+
+  it("honors a custom sectionOrder that moves Links off the default last slot", () => {
+    const projection = projectNavigation(buildInput({
+      sectionOrder: ["links", "favorites", "folders", "tags", "properties", "boxes"],
+    }));
+    expect(projection.sections.map((section) => section.section)).toEqual([
+      "links", "favorites", "folders", "tags", "properties", "boxes",
+    ]);
+    expect(projection.rows[0]?.id).toBe(navigationSectionId("links"));
+  });
+
+  it("hides the Links section when a query matches no leaf", () => {
+    const noLeaf = projectNavigation(buildInput({ query: "alpha" }));
+    expect(noLeaf.sections.some((section) => section.section === "links")).toBe(false);
+
+    const outgoing = projectNavigation(buildInput({ query: "outgoing" }));
+    expect(outgoing.sections.some((section) => section.section === "links")).toBe(true);
+    expect(outgoing.rows.filter((row) => row.kind === "links").map((row) => row.id)).toEqual([
+      navigationLinksId("outgoing"),
+    ]);
   });
 });

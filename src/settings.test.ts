@@ -305,7 +305,7 @@ describe("normalizeSettings — previewLines", () => {
 
 
 describe("normalizeSettings — navSectionOrder", () => {
-  const defaultOrder = ["favorites", "folders", "tags", "properties", "boxes"];
+  const defaultOrder = ["favorites", "folders", "tags", "properties", "boxes", "links"];
 
   it("defaults navSectionOrder when the value is missing", () => {
     const { navSectionOrder: _omitted, ...rest } = DEFAULT_SETTINGS;
@@ -327,7 +327,7 @@ describe("normalizeSettings — navSectionOrder", () => {
   });
 
   it("preserves a valid permutation", () => {
-    const permutation = ["boxes", "properties", "tags", "favorites", "folders"];
+    const permutation = ["boxes", "properties", "tags", "favorites", "folders", "links"];
     const raw = {
       ...DEFAULT_SETTINGS,
       navSectionOrder: permutation,
@@ -340,7 +340,7 @@ describe("normalizeSettings — navSectionOrder", () => {
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["folders", "folders", "tags", "folders"],
-    } as unknown).navSectionOrder).toEqual(["folders", "tags", "favorites", "properties", "boxes"]);
+    } as unknown).navSectionOrder).toEqual(["folders", "tags", "favorites", "properties", "boxes", "links"]);
 
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
@@ -350,7 +350,7 @@ describe("normalizeSettings — navSectionOrder", () => {
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["boxes"],
-    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
+    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags", "links"]);
   });
 
   it("inserts properties immediately before boxes for a stored old four-section order", () => {
@@ -362,7 +362,7 @@ describe("normalizeSettings — navSectionOrder", () => {
     expect(normalizeSettings({
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["boxes", "tags", "favorites", "folders"],
-    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "tags", "favorites", "folders"]);
+    } as unknown).navSectionOrder).toEqual(["properties", "boxes", "tags", "favorites", "folders", "links"]);
   });
 });
 
@@ -608,7 +608,7 @@ describe("mergeSettings — navSectionOrder", () => {
     const current: PluginSettings = {
       ...DEFAULT_SETTINGS,
       navSectionOrder: ["folders", "tags", "properties", "boxes", "favorites"],
-      sectionCollapsed: { favorites: true, folders: true, tags: false, properties: false, boxes: true },
+      sectionCollapsed: { favorites: true, folders: true, tags: false, properties: false, boxes: true, links: false },
       previewLines: 8,
       includeSubfolders: false,
     };
@@ -616,9 +616,9 @@ describe("mergeSettings — navSectionOrder", () => {
     const next: PluginSettings["navSectionOrder"] = ["boxes", "tags", "folders", "favorites"];
     const result = mergeSettings(current, { navSectionOrder: next });
 
-    expect(result.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites"]);
+    expect(result.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites", "links"]);
     expect(result.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, properties: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true, links: false,
     });
     expect(result.previewLines).toBe(8);
     expect(result.includeSubfolders).toBe(false);
@@ -626,11 +626,11 @@ describe("mergeSettings — navSectionOrder", () => {
 
   it("normalizes a partial or invalid navSectionOrder patch", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { navSectionOrder: ["boxes"] }).navSectionOrder)
-      .toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
+      .toEqual(["properties", "boxes", "favorites", "folders", "tags", "links"]);
 
     const patch = { navSectionOrder: null } as unknown;
     expect(mergeSettings(DEFAULT_SETTINGS, patch as never).navSectionOrder)
-      .toEqual(["favorites", "folders", "tags", "properties", "boxes"]);
+      .toEqual(["favorites", "folders", "tags", "properties", "boxes", "links"]);
   });
 });
 
@@ -1046,14 +1046,14 @@ describe("card grouping settings normalization", () => {
       preferences: {
         ...persisted.preferences,
         group: DEFAULT_GROUP_SPEC,
-        navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites"],
+        navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites", "links"],
         visiblePropertyKeys: [],
       },
       workspace: {
         ...persisted.workspace,
         expandedPropertyKeys: [],
         filterProperties: [],
-        sectionCollapsed: { ...persisted.workspace.sectionCollapsed, properties: false },
+        sectionCollapsed: { ...persisted.workspace.sectionCollapsed, properties: false, links: false },
       },
       userData: {
         ...persisted.userData,
@@ -1148,7 +1148,7 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(migrateSettings({ lastViewMode: "all-notes", lastFolderPath: 12 }).lastFolderPath).toBe("");
     expect("lastViewMode" in migrateSettings({ lastViewMode: "all-notes" })).toBe(false);
     expect(migrateSettings({ lastViewMode: "all-notes" }).navSectionOrder).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes",
+      "favorites", "folders", "tags", "properties", "boxes", "links",
     ]);
   });
 
@@ -1178,7 +1178,7 @@ describe("migrateSettings — V47 schema versions", () => {
     ]);
     expect(result.favorites).toEqual([{ kind: "folder", ref: "Projects" }]);
     expect("lastViewMode" in result).toBe(false);
-    expect(result.navSectionOrder).toEqual(["favorites", "folders", "tags", "properties", "boxes"]);
+    expect(result.navSectionOrder).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links"]);
   });
 
   it("is idempotent for v2 documents and round-trips through serializeSettings", () => {
@@ -1212,17 +1212,17 @@ describe("migrateSettings — V47 schema versions", () => {
     expect(migrateSettings(serializeSettings(once))).toEqual(once);
     expect(serializeSettings(once).schemaVersion).toBe(2);
     expect(serializeSettings(once).workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, properties: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true, links: false,
     });
     expect(serializeSettings(once).preferences.navSectionOrder).toEqual([
-      "properties", "boxes", "tags", "folders", "favorites",
+      "properties", "boxes", "tags", "folders", "favorites", "links",
     ]);
     expect(once.activeBoxId).toBe("box-1");
     expect(once.filter.tags).toEqual(["work"]);
     expect(once.sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: false, properties: false, boxes: true,
+      favorites: true, folders: true, tags: false, properties: false, boxes: true, links: false,
     });
-    expect(once.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites"]);
+    expect(once.navSectionOrder).toEqual(["properties", "boxes", "tags", "folders", "favorites", "links"]);
   });
 
   it("re-serializes a v2 payload to a byte-identical payload", () => {
@@ -1260,7 +1260,7 @@ describe("migrateSettings — V47 schema versions", () => {
     // toEqual, which ignores key order and would accept a silently reordered
     // payload that rewrites every synced vault's data.json on first load.
     expect(JSON.stringify(serializedOnce.workspace.sectionCollapsed)).toBe(
-      JSON.stringify({ favorites: true, folders: true, tags: false, properties: false, boxes: true }),
+      JSON.stringify({ favorites: true, folders: true, tags: false, properties: false, boxes: true, links: false }),
     );
   });
 
@@ -1290,7 +1290,7 @@ describe("migrateSettings — V47 schema versions", () => {
       schemaVersion: SETTINGS_SCHEMA_VERSION,
       preferences: { navSectionOrder: ["boxes", "boxes", "nope"] },
     });
-    expect(loaded.navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags"]);
+    expect(loaded.navSectionOrder).toEqual(["properties", "boxes", "favorites", "folders", "tags", "links"]);
     expect(serializeSettings(loaded).schemaVersion).toBe(2);
   });
 
@@ -1321,7 +1321,7 @@ describe("migrateSettings — V47 schema versions", () => {
       boxSectionCollapsed: true,
       favoritesSectionCollapsed: true,
     }).sectionCollapsed).toEqual({
-      favorites: true, folders: true, tags: true, properties: false, boxes: true,
+      favorites: true, folders: true, tags: true, properties: false, boxes: true, links: false,
     });
   });
 
@@ -1333,13 +1333,13 @@ describe("migrateSettings — V47 schema versions", () => {
       favoritesSectionCollapsed: true,
       sectionCollapsed: { folders: false, tags: false },
     } as never).sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: false, properties: false, boxes: true,
+      favorites: true, folders: false, tags: false, properties: false, boxes: true, links: false,
     });
   });
 
   it("defaults every section to expanded on a v0 payload", () => {
     expect(migrateSettings({ lastViewMode: "all-notes" }).sectionCollapsed).toEqual({
-      favorites: false, folders: false, tags: false, properties: false, boxes: false,
+      favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false,
     });
   });
 
@@ -1349,8 +1349,30 @@ describe("migrateSettings — V47 schema versions", () => {
     });
     const result = mergeSettings(current, { sectionCollapsed: { folders: false } });
     expect(result.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: false, boxes: true,
+      favorites: true, folders: false, tags: true, properties: false, boxes: true, links: false,
     });
+  });
+});
+
+describe("normalizeSettings — links section", () => {
+  it("defaults links to expanded and appends it last in navSectionOrder", () => {
+    const result = normalizeSettings({});
+    expect(result.sectionCollapsed.links).toBe(false);
+    expect(result.navSectionOrder.at(-1)).toBe("links");
+  });
+
+  it("backfills a persisted sectionCollapsed record that omits links", () => {
+    expect(normalizeSettings({
+      sectionCollapsed: { favorites: true, folders: true, tags: false, properties: false, boxes: true },
+    } as never).sectionCollapsed.links).toBe(false);
+  });
+
+  it("round-trips a collapsed links section", () => {
+    expect(normalizeSettings({
+      sectionCollapsed: {
+        favorites: false, folders: false, tags: false, properties: false, boxes: false, links: true,
+      },
+    }).sectionCollapsed.links).toBe(true);
   });
 });
 
@@ -1559,7 +1581,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     activeBoxId: "box-1",
     navPaneWidth: 200,
     navPaneCollapsed: true,
-    sectionCollapsed: { favorites: true, folders: true, tags: true, properties: true, boxes: true },
+    sectionCollapsed: { favorites: true, folders: true, tags: true, properties: true, boxes: true, links: true },
     showNavItemCounts: true,
     navSectionOrder: ["boxes", "tags", "folders", "favorites"],
   });
@@ -1579,7 +1601,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
     ["previewLines", (d) => d.preferences.previewLines, 8],
     ["showNavItemCounts", (d) => d.preferences.showNavItemCounts, true],
-    ["navSectionOrder", (d) => d.preferences.navSectionOrder, ["properties", "boxes", "tags", "folders", "favorites"]],
+    ["navSectionOrder", (d) => d.preferences.navSectionOrder, ["properties", "boxes", "tags", "folders", "favorites", "links"]],
     ["visiblePropertyKeys", (d) => d.preferences.visiblePropertyKeys, ["status"]],
     ["lastFolderPath", (d) => d.workspace.lastFolderPath, "Projects"],
     ["expandedFolderPaths", (d) => d.workspace.expandedFolderPaths, ["Projects"]],
@@ -1593,7 +1615,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     [
       "sectionCollapsed",
       (d) => d.workspace.sectionCollapsed,
-      { favorites: true, folders: true, tags: true, properties: true, boxes: true },
+      { favorites: true, folders: true, tags: true, properties: true, boxes: true, links: true },
     ],
     ["boxes", (d) => d.userData.boxes, nonDefault.boxes],
     ["favorites", (d) => d.userData.favorites, [{ kind: "folder", ref: "Projects" }]],

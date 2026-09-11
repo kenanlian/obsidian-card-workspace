@@ -78,6 +78,7 @@ function buildState(): PanelModelState {
         tags: false,
         properties: false,
         boxes: false,
+        links: false,
       },
       showItemCounts: true,
       tooltipSide: "right",

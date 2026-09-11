@@ -139,7 +139,7 @@ function createInitialPanelState(): PanelModelState {
       paneWidth: 240,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
       showItemCounts: false,
       tooltipSide: "right",
       propertyFilterCount: 0,
@@ -167,7 +167,7 @@ function propertiesNavProjection() {
     tagCounts: {},
     includeSubfolders: true,
     tagsDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet" },
@@ -175,8 +175,11 @@ function propertiesNavProjection() {
       tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet" },
+      links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
+    linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },
+    linksDisabled: true,
     expansion: {
       folders: { manual: [], reveal: [], query: [], suppressed: [] },
       tags: { manual: [], reveal: [], query: [], suppressed: [] },
@@ -1460,6 +1463,25 @@ describe("FolderCardPanel.svelte", () => {
     await tick();
 
     expect(commands).toEqual([{ command: "clear-filters" }]);
+    await unmount(component);
+  });
+
+  it("renders the links section header and two leaves from the projected nav group", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.nav = { ...state.nav, projection: propertiesNavProjection() };
+    });
+
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    expect(target.querySelector('[data-nav-row-id="section:links"]')?.textContent).toContain("Links");
+    expect(target.querySelector('[data-nav-row-id="links:outgoing"]')?.textContent).toContain("Outgoing links");
+    expect(target.querySelector('[data-nav-row-id="links:backlinks"]')?.textContent).toContain("Backlinks");
+
     await unmount(component);
   });
 

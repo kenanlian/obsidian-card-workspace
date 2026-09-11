@@ -16,7 +16,8 @@ export interface LinksActionsDeps {
 }
 
 /**
- * Follow/pin, direction entry, and snapshot commands for the Links source.
+ * Follow/pin and snapshot commands for the Links source.
+ * Direction entry is navigation-owned; `enterOrSwitchLinks` stays public for that route.
  * `linksPinned` is runtime-only (C4); snapshot uses the existing box modal (C6).
  */
 export class LinksActions {
@@ -27,14 +28,6 @@ export class LinksActions {
   }
 
   handleToolbarCommand(action: string): boolean {
-    if (action === "links-backlinks") {
-      this.enterOrSwitchLinks("backlinks");
-      return true;
-    }
-    if (action === "links-outgoing") {
-      this.enterOrSwitchLinks("outgoing");
-      return true;
-    }
     if (action === "links-pin-toggle") {
       this.togglePinned();
       return true;

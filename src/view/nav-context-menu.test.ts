@@ -185,7 +185,7 @@ function createDeps(
     boxes: [makeBox("box-1", "Alpha"), makeBox("box-2", "Beta")],
     activeBoxId: null,
     boxExcludedCount: () => 0,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     hasExpandedFolders: false,
     hasExpandedTags: false,
@@ -246,7 +246,7 @@ describe("folders header menu", () => {
 
   it("flips the expand-all title and the section toggle from current state", () => {
     const deps = createDeps({
-      sectionCollapsed: { favorites: false, folders: true, tags: false, properties: false, boxes: false },
+      sectionCollapsed: { favorites: false, folders: true, tags: false, properties: false, boxes: false, links: false },
       hasExpandedFolders: true,
     });
     const payload = createPayload({
@@ -768,6 +768,63 @@ describe("favorites row menu", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+describe("links header menu", () => {
+  it("renders collapse/expand and move up/down items", () => {
+    const deps = createDeps();
+    const { menu, result } = build(createPayload({ section: "links", scope: "header" }), deps);
+
+    expect(result).toBe(true);
+    expect(getSignature(menu)).toEqual([
+      { title: "Collapse section", icon: "chevron-down" },
+      { title: "Move section up", icon: "arrow-up" },
+      { title: "Move section down", icon: "arrow-down" },
+    ]);
+  });
+
+  it("flips to expand when the section is collapsed", () => {
+    const deps = createDeps({
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: true },
+    });
+    const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
+
+    expect(getTitles(menu)).toContain("Expand section");
+  });
+
+  it("disables move-down at the default last-section boundary", () => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
+
+    expect(findItem(menu, "Move section up")?.disabled).toBe(false);
+    expect(findItem(menu, "Move section down")?.disabled).toBe(true);
+  });
+
+  it("disables move-up when links is first in sectionOrder", () => {
+    const sectionOrder: NavSectionId[] = ["links", "favorites", "folders", "tags", "properties", "boxes"];
+    const deps = createDeps({ sectionOrder });
+    const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
+
+    expect(findItem(menu, "Move section up")?.disabled).toBe(true);
+    expect(findItem(menu, "Move section down")?.disabled).toBe(false);
+  });
+});
+
+describe("links row menu", () => {
+  it("returns false and shows no menu for item scope", () => {
+    const deps = createDeps();
+    const { menu, result } = build(
+      createPayload({ section: "links", scope: "item", itemId: "outgoing" }),
+      deps,
+    );
+
+    expect(result).toBe(false);
+    expect(menu.items).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Localization + danger labels
 // ---------------------------------------------------------------------------
 
@@ -789,7 +846,7 @@ describe("section header move items", () => {
     expect(moveFlags(favorites.menu)).toEqual({ up: true, down: false });
     expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
-    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: true });
+    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: false });
   });
 
   it("follows a reordered sectionOrder for the disabled ends", () => {
@@ -805,7 +862,7 @@ describe("section header move items", () => {
     expect(moveFlags(boxes.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
-    expect(moveFlags(favorites.menu)).toEqual({ up: false, down: true });
+    expect(moveFlags(favorites.menu)).toEqual({ up: false, down: false });
   });
 
   it("gives the Properties header chooser, clear, expansion, and generic section items", () => {
@@ -1085,7 +1142,7 @@ describe("nav context menu wiring", () => {
         visiblePropertyKeys: [],
         expandedPropertyKeys: [],
         navSectionOrder: defaultNavSectionOrder(),
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         ...settingsOverrides,
       }));
       const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;
