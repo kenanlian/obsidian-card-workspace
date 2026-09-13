@@ -53,9 +53,8 @@ export async function trashAbstractFileUsingObsidianPreference(
   file: TAbstractFile,
 ): Promise<void> {
   const fileManager = app.fileManager as unknown as FileManagerTrashLike;
-  const trashFile = fileManager["trashFile"];
-  if (typeof trashFile === "function") {
-    await trashFile(file);
+  if (typeof fileManager.trashFile === "function") {
+    await fileManager.trashFile(file);
     return;
   }
 

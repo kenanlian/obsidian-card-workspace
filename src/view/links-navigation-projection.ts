@@ -63,7 +63,7 @@ export function projectLinksRows(
       label,
       fullPath: null,
       count: 0,
-      icon: direction === "outgoing" ? "arrow-up-right" : "links",
+      icon: direction === "outgoing" ? "links-going-out" : "links-coming-in",
       menuTarget: { section: "links", scope: "item", itemId: direction },
       direction,
     });

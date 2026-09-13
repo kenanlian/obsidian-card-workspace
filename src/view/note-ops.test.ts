@@ -471,6 +471,30 @@ describe("deleteFileUsingObsidianPreference", () => {
     expect(vi.mocked(app.vault.delete)).not.toHaveBeenCalled();
   });
 
+  it("preserves the fileManager receiver when calling trashFile", async () => {
+    const file = createFile("notes/first.md");
+    const fileManager = {
+      trashedPaths: [] as string[],
+      async trashFile(target: TFile): Promise<void> {
+        this.trashedPaths.push(target.path);
+      },
+    };
+    const app = {
+      fileManager,
+      vault: {
+        delete: vi.fn(async (): Promise<void> => {
+          return;
+        }),
+      },
+    };
+
+    const result = await deleteFileUsingObsidianPreference(app as unknown as any, file);
+
+    expect(result).toEqual({ ok: true, file });
+    expect(fileManager.trashedPaths).toEqual([file.path]);
+    expect(app.vault.delete).not.toHaveBeenCalled();
+  });
+
   it("returns a failure result when fileManager.trashFile throws", async () => {
     const file = createFile("notes/first.md");
     const app: MockAppForPreferenceDelete = {

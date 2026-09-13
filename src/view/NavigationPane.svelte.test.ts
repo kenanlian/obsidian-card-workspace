@@ -1057,6 +1057,10 @@ describe("NavigationPane links section", () => {
     expect(findRow("section:links").querySelector(".fce-tree-label")?.textContent).toBe(section);
     expect(findRow("links:outgoing").querySelector(".fce-tree-label")?.textContent).toBe(outgoing);
     expect(findRow("links:backlinks").querySelector(".fce-tree-label")?.textContent).toBe(backlinks);
+    expect(findRow("links:outgoing").querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon)
+      .toBe("links-going-out");
+    expect(findRow("links:backlinks").querySelector<HTMLElement>(".fce-tree-item-identity")?.dataset.icon)
+      .toBe("links-coming-in");
   });
 
   it("emits an activate intent with the leaf row id on click", async () => {

@@ -996,7 +996,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/controllers/ScopeController.ts": 566,
     "src/view/actions/box-actions.ts": 575,
     "src/search/SearchIndexManager.ts": 1090,
-    "src/view/note-ops.ts": 480,
+    "src/view/note-ops.ts": 479,
     "src/view/note-tag-ops.ts": 580,
     "src/view/NavigationPane.svelte": 347,
     "src/view/FolderCardPanel.svelte": 832,
