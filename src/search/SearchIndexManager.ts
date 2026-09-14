@@ -100,7 +100,7 @@ export class SearchIndexManager {
    * per contained file, and serializing on each one blocks the main thread.
    */
   private static readonly MUTATION_PERSIST_DEBOUNCE_MS = 1000;
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistTimer: number | null = null;
   private persistScheduled = false;
   private persistInFlight: Promise<void> | null = null;
   private readonly store: Pick<IndexStore, "restore" | "write" | "clear">;
@@ -737,9 +737,9 @@ export class SearchIndexManager {
     this.refreshHealthDocumentCount();
     this.persistScheduled = true;
     if (this.persistTimer !== null) {
-      clearTimeout(this.persistTimer);
+      window.clearTimeout(this.persistTimer);
     }
-    this.persistTimer = setTimeout(() => {
+    this.persistTimer = window.setTimeout(() => {
       this.persistTimer = null;
       void this.mutationGate.run(() => this.flushPendingPersist());
     }, SearchIndexManager.MUTATION_PERSIST_DEBOUNCE_MS);
@@ -771,7 +771,7 @@ export class SearchIndexManager {
 
   private cancelPendingPersist(): void {
     if (this.persistTimer !== null) {
-      clearTimeout(this.persistTimer);
+      window.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
     this.persistScheduled = false;
@@ -780,7 +780,7 @@ export class SearchIndexManager {
   /** Write out debounced index state immediately. Tests and dispose use this instead of waiting on the timer. */
   async flushPendingPersist(): Promise<void> {
     if (this.persistTimer !== null) {
-      clearTimeout(this.persistTimer);
+      window.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
     if (this.persistInFlight) {

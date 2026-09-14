@@ -118,7 +118,7 @@ export function applyIncrementalMutation(
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
-    const existing = cards[index]!;
+    const existing = cards[index];
     deps.pendingHydration.delete(event.path);
     // Replace rather than mutate the published record: live identity and stats
     // win while the display preview/task fields survive until forced hydration
@@ -168,7 +168,7 @@ function applyRenameMutation(
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
-    const oldCard = cards[oldIndex]!;
+    const oldCard = cards[oldIndex];
     const hadPendingRead = (oldPath !== null && deps.pendingHydration.has(oldPath))
       || deps.pendingHydration.has(event.path);
     if (oldPath !== null) {

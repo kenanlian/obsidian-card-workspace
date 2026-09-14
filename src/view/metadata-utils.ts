@@ -178,17 +178,16 @@ export interface VaultTagIndex {
  * rather than "the vault has no tags".
  */
 export function collectVaultTagIndex(app: App): VaultTagIndex | null {
-  const metadataCache = app.metadataCache as { getFileCache?: unknown } | undefined;
-  if (typeof metadataCache?.getFileCache !== "function") {
+  if (typeof app.metadataCache?.getFileCache !== "function") {
     return null;
   }
 
-  const getMarkdownFiles = app.vault?.getMarkdownFiles as (() => TFile[]) | undefined;
-  if (typeof getMarkdownFiles !== "function") {
+  const vault = app.vault as { getMarkdownFiles?: () => TFile[] } | undefined;
+  if (typeof vault?.getMarkdownFiles !== "function") {
     return null;
   }
 
-  const files = getMarkdownFiles.call(app.vault);
+  const files = vault.getMarkdownFiles();
   if (files.length === 0) {
     return null;
   }
@@ -279,7 +278,7 @@ export function getFileFrontmatter(
     return null;
   }
 
-  return cache.frontmatter as Record<string, unknown>;
+  return cache.frontmatter;
 }
 
 /**

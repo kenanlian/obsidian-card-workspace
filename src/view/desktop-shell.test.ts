@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockState = vi.hoisted(() => {
   const openPath = vi.fn(async (_path: string) => "");
@@ -63,6 +63,7 @@ function createApp(): MockApp {
 
 describe("desktop-shell", () => {
   beforeEach(() => {
+    vi.stubGlobal("window", globalThis);
     mockState.isDesktopApp = true;
     mockState.setGetFullPath(vi.fn((path: string) => `/vault/${path}`));
     mockState.openPath.mockReset();
@@ -72,6 +73,10 @@ describe("desktop-shell", () => {
     mockState.remoteOpenPath.mockResolvedValue("");
     mockState.remoteShowItemInFolder.mockReset();
     Reflect.deleteProperty(globalThis, "electron");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("openInDefaultApp resolves the system path and calls shell.openPath", async () => {

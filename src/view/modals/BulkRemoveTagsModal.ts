@@ -59,7 +59,7 @@ export class BulkRemoveTagsModal extends FormModal {
           this.render();
         }
       });
-      optionEl.createEl("span", { cls: "fce-tag-checkbox-label", text: tagOption.label });
+      optionEl.createSpan({ cls: "fce-tag-checkbox-label", text: tagOption.label });
     }
   }
 

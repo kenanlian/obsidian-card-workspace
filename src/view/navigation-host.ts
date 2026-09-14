@@ -1,4 +1,4 @@
-import { Menu } from "obsidian";
+import { Menu, type TFolder } from "obsidian";
 import type { UiStrings } from "../i18n";
 import type { PluginSettings } from "../settings";
 import type { PropertyScalarRef } from "../property-filter-settings";
@@ -123,7 +123,7 @@ export function isCurrentNavigationMenuTarget(input: {
   payload: NavContextMenuPayload;
   settings: PluginSettings;
   navLayout: NavLayoutController;
-  resolveFolder: (path: string) => unknown | null;
+  resolveFolder: (path: string) => TFolder | null;
 }): boolean {
   const { payload, settings } = input;
   if (payload.scope === "header") return payload.originId === `section:${payload.section}`;

@@ -21,10 +21,10 @@ export function resolveNavigationKey(
   if (!row) return null;
 
   if (event.key === "ArrowUp") {
-    return index > 0 ? { type: "focus", rowId: rows[index - 1]!.id } : null;
+    return index > 0 ? { type: "focus", rowId: rows[index - 1].id } : null;
   }
   if (event.key === "ArrowDown") {
-    return index < rows.length - 1 ? { type: "focus", rowId: rows[index + 1]!.id } : null;
+    return index < rows.length - 1 ? { type: "focus", rowId: rows[index + 1].id } : null;
   }
   if (event.key === "Home") return rows[0] ? { type: "focus", rowId: rows[0].id } : null;
   if (event.key === "End") {
@@ -60,8 +60,8 @@ export function resolveNavigationFocus(
   const current = rows.find((row) => row.semanticState === "current-range");
   if (current) return current.id;
   const oldIndex = requestedId ? previousIds.indexOf(requestedId) : -1;
-  if (oldIndex >= 0) return rows[Math.min(oldIndex, rows.length - 1)]?.id ?? rows[0]!.id;
-  return rows[0]!.id;
+  if (oldIndex >= 0) return rows[Math.min(oldIndex, rows.length - 1)]?.id ?? rows[0].id;
+  return rows[0].id;
 }
 
 export function resolveSeparatorWidth(

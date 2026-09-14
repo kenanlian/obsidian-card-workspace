@@ -410,6 +410,8 @@ const mockState = vi.hoisted(() => {
       return new MockModalElement(this.__ownerModal, "div");
     }
 
+    createSpan(attrs?: { text?: string; cls?: string }): MockModalElement { return this.createEl("span", attrs); }
+
     addEventListener = vi.fn((_event: string, handler: () => void) => {
       this.changeHandler = handler;
     });

@@ -270,10 +270,15 @@ describe("EditorDropController", () => {
 
     const editor = createEditorMock();
     const event = createDropEvent(JSON.stringify({ path: "notes/Source.base", title: "Source.base" }));
-    controller.handleWorkspaceEditorDrop(event as unknown as DragEvent, editor as never, { editor } as never);
+    const handled = controller.handleWorkspaceEditorDrop(
+      event as unknown as DragEvent,
+      editor as never,
+      { editor } as never,
+    );
     await Promise.resolve();
 
-    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(handled).toBe(true);
+    expect(event.preventDefault).not.toHaveBeenCalled();
     expect(mockState.menus).toHaveLength(0);
     expect(editor.replaceRange).not.toHaveBeenCalled();
     expect(mockState.notices).toEqual(["This card type does not support that drag insertion action."]);
@@ -288,9 +293,14 @@ describe("EditorDropController", () => {
 
     const editor = createEditorMock();
     const event = createDropEvent(JSON.stringify({ path: "notes/Sketch.excalidraw", title: "Sketch.excalidraw" }));
-    controller.handleWorkspaceEditorDrop(event as unknown as DragEvent, editor as never, { editor } as never);
+    const handled = controller.handleWorkspaceEditorDrop(
+      event as unknown as DragEvent,
+      editor as never,
+      { editor } as never,
+    );
     await Promise.resolve();
 
+    expect(handled).toBe(true);
     expect(mockState.menus).toHaveLength(1);
     expect(mockState.menus[0]?.items.map((item) => item.title)).toEqual(["Insert wiki link"]);
   });
@@ -299,9 +309,14 @@ describe("EditorDropController", () => {
     const controller = createController(createAppMock());
     const editor = createEditorMock();
     const event = createDropEvent(null);
-    controller.handleWorkspaceEditorDrop(event as unknown as DragEvent, editor as never, { editor } as never);
+    const handled = controller.handleWorkspaceEditorDrop(
+      event as unknown as DragEvent,
+      editor as never,
+      { editor } as never,
+    );
     await Promise.resolve();
 
+    expect(handled).toBe(false);
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(mockState.menus).toHaveLength(0);
     expect(mockState.notices).toEqual([]);

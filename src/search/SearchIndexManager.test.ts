@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MiniSearch from "minisearch";
 import { SearchIndexManager, type SearchIndexDocumentSource } from "./SearchIndexManager";
 import { createMiniSearchOptions } from "./minisearch-options";
@@ -154,6 +154,11 @@ function createLargeCorpusDocuments(count: number): SearchableDocument[] {
 
 beforeEach(() => {
   vi.useRealTimers();
+  vi.stubGlobal("window", globalThis);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("SearchIndexManager", () => {

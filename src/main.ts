@@ -132,10 +132,10 @@ export default class CardWorkspacePlugin extends Plugin {
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
-        this.editorDropController.handleWorkspaceEditorDrop(event, editor, info);
+        if (event.defaultPrevented) return;
+        if (this.editorDropController.handleWorkspaceEditorDrop(event, editor, info)) event.preventDefault();
       }),
     );
-
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         this.syncSelection(file instanceof TFile ? file.path : null);

@@ -57,8 +57,8 @@ export class PreviewCache {
     this.entries.delete(fingerprint.path);
     this.entries.set(fingerprint.path, { ...fingerprint, preview });
     if (this.entries.size > PREVIEW_CACHE_CAPACITY) {
-      const oldest = this.entries.keys().next().value as string | undefined;
-      if (oldest !== undefined) this.entries.delete(oldest);
+      const oldest = this.entries.keys().next();
+      if (!oldest.done) this.entries.delete(oldest.value);
     }
   }
 

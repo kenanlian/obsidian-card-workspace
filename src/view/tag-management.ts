@@ -5,11 +5,11 @@ import type { CardBoxDefinition, FavoriteEntry, Rule } from "./types";
 
 /** Markdown files only: the metadata cache never reports tags for other card kinds. */
 function getVaultMarkdownFiles(app: App): TFile[] {
-  const getMarkdownFiles = app.vault?.getMarkdownFiles as (() => TFile[]) | undefined;
-  if (typeof getMarkdownFiles !== "function") {
+  const vault = app.vault as { getMarkdownFiles?: () => TFile[] } | undefined;
+  if (typeof vault?.getMarkdownFiles !== "function") {
     return [];
   }
-  return getMarkdownFiles.call(app.vault);
+  return vault.getMarkdownFiles();
 }
 
 export interface TagManagementScan {

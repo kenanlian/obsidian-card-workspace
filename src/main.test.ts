@@ -143,7 +143,7 @@ vi.mock("./services/EditorDropController", () => ({
   EditorDropController: class MockEditorDropController {
     handleDragOver = vi.fn(() => true);
     handleDomDrop = vi.fn(() => true);
-    handleWorkspaceEditorDrop = vi.fn();
+    handleWorkspaceEditorDrop = vi.fn(() => true);
 
     constructor() {
       editorDropMockState.instances.push(this);
@@ -1440,7 +1440,8 @@ describe("CardWorkspacePlugin editor drop registration", () => {
       drop?: (event: DragEvent, view: unknown) => boolean;
     }>;
     const handlers = extensions[1];
-    const dragEvent = { defaultPrevented: false } as DragEvent;
+    const preventDefault = vi.fn();
+    const dragEvent = { defaultPrevented: false, preventDefault } as unknown as DragEvent;
     const editorView = {};
 
     expect(handlers?.dragover?.(dragEvent)).toBe(true);
@@ -1452,6 +1453,48 @@ describe("CardWorkspacePlugin editor drop registration", () => {
     const info = { editor };
     getWorkspaceCallback<[DragEvent, typeof editor, typeof info]>("editor-drop")(dragEvent, editor, info);
     expect(controller.handleWorkspaceEditorDrop).toHaveBeenCalledWith(dragEvent, editor, info);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves an already-handled workspace editor drop alone", async () => {
+    const { plugin } = createPluginHarness();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const controller = editorDropMockState.instances.at(-1);
+    if (!controller) {
+      throw new Error("Missing editor drop controller instance");
+    }
+    const preventDefault = vi.fn();
+    const dragEvent = { defaultPrevented: true, preventDefault } as unknown as DragEvent;
+    const editor = {};
+    const info = { editor };
+
+    getWorkspaceCallback<[DragEvent, typeof editor, typeof info]>("editor-drop")(dragEvent, editor, info);
+
+    expect(controller.handleWorkspaceEditorDrop).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("does not claim a workspace editor drop the controller declines", async () => {
+    const { plugin } = createPluginHarness();
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    const controller = editorDropMockState.instances.at(-1);
+    if (!controller) {
+      throw new Error("Missing editor drop controller instance");
+    }
+    controller.handleWorkspaceEditorDrop.mockReturnValueOnce(false);
+    const preventDefault = vi.fn();
+    const dragEvent = { defaultPrevented: false, preventDefault } as unknown as DragEvent;
+    const editor = {};
+    const info = { editor };
+
+    getWorkspaceCallback<[DragEvent, typeof editor, typeof info]>("editor-drop")(dragEvent, editor, info);
+
+    expect(controller.handleWorkspaceEditorDrop).toHaveBeenCalledWith(dragEvent, editor, info);
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 });
 

@@ -93,16 +93,16 @@ export class EditorDropController {
     event: DragEvent,
     editor: Editor,
     info: MarkdownView | MarkdownFileInfo,
-  ): void {
+  ): boolean {
     if (event.defaultPrevented) {
-      return;
+      return false;
     }
     const payload = this.parseDragPayload(event.dataTransfer?.getData(CARD_WORKSPACE_DRAG_MIME) ?? "");
     if (!payload) {
-      return;
+      return false;
     }
-    event.preventDefault();
     void this.handlePreparedDrop(payload, event, editor, info);
+    return true;
   }
 
   // Currently called only by tests; retained as the equivalent editor-drop entry point.

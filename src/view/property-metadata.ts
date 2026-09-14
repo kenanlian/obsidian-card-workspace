@@ -244,28 +244,27 @@ export function resolvePropertyScalarLabels(
  *   `[]` uniquely means "no properties found").
  */
 export function collectPropertyInventory(app: App): PropertyInventorySnapshot {
-  const metadataCache = app.metadataCache as { getFileCache?: unknown } | undefined;
+  const metadataCache = app.metadataCache as {
+    getFileCache?: (file: TFile) => CachedMetadata | null;
+  } | undefined;
   if (typeof metadataCache?.getFileCache !== "function") {
     return { status: "unavailable", options: [] };
   }
-  const getMarkdownFiles = app.vault?.getMarkdownFiles as (() => TFile[]) | undefined;
-  if (typeof getMarkdownFiles !== "function") {
+  const vault = app.vault as { getMarkdownFiles?: () => TFile[] } | undefined;
+  if (typeof vault?.getMarkdownFiles !== "function") {
     return { status: "unavailable", options: [] };
   }
-  const getFileCache = metadataCache.getFileCache.bind(metadataCache) as (
-    file: TFile,
-  ) => CachedMetadata | null;
 
-  const files = getMarkdownFiles.call(app.vault);
+  const files = vault.getMarkdownFiles();
   let sawMissingCache = false;
   const labelByKey = new Map<string, string>();
   for (const file of files) {
-    const cache = getFileCache(file);
+    const cache = metadataCache.getFileCache(file);
     if (cache === null || cache === undefined) {
       sawMissingCache = true;
       continue;
     }
-    const frontmatter = cache.frontmatter as Record<string, unknown> | undefined;
+    const frontmatter = cache.frontmatter;
     if (frontmatter === undefined || frontmatter === null) {
       continue;
     }

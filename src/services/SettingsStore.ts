@@ -97,7 +97,7 @@ type PersistWaiter = {
 };
 
 export function hasPatchValues(patch: object): boolean {
-  for (const value of Object.values(patch)) {
+  for (const value of Object.values(patch) as unknown[]) {
     if (value === undefined) {
       continue;
     }
@@ -295,7 +295,7 @@ export class SettingsStore {
   }
 
   updatePreferences(patch: Partial<PreferencesSettings>): Promise<ViewUpdateIntent | null> {
-    return this.commitPatch(patch as PartialPluginSettings, "immediate");
+    return this.commitPatch(patch, "immediate");
   }
 
   updateWorkspace(patch: WorkspaceSettingsPatch): Promise<ViewUpdateIntent | null> {
@@ -303,7 +303,7 @@ export class SettingsStore {
   }
 
   updateUserData(patch: Partial<UserDataSettings>): Promise<ViewUpdateIntent | null> {
-    return this.commitPatch(patch as PartialPluginSettings, "immediate");
+    return this.commitPatch(patch, "immediate");
   }
 
   /**
@@ -324,7 +324,7 @@ export class SettingsStore {
         : "workspace";
       return this.commitPatch(patch, persist);
     } catch (error) {
-      return Promise.reject(error);
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -358,7 +358,7 @@ export class SettingsStore {
     try {
       assertKnownFlatPatch(flatPatch);
     } catch (error) {
-      return Promise.reject(error);
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
     if (!hasPatchValues(flatPatch)) {
       return Promise.resolve(null);

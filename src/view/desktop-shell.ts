@@ -72,7 +72,7 @@ function isDesktopShell(value: unknown): value is DesktopShell {
  * because background processes cannot steal foreground focus.
  */
 function getDesktopShell(): DesktopShell {
-  const bridge = (globalThis as typeof globalThis & { electron?: ElectronBridge }).electron;
+  const bridge = (window as Window & { electron?: ElectronBridge }).electron;
   if (isDesktopShell(bridge?.remote?.shell)) {
     return bridge.remote.shell;
   }
