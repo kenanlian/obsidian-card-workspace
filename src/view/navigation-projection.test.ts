@@ -150,11 +150,11 @@ describe("projectNavigation", () => {
     expect(projection.querying).toBe(false);
     expect(projection.noResults).toBe(false);
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes", "links",
+      "favorites", "folders", "links", "tags", "properties", "boxes",
     ]);
     expect(projection.sections[0]?.emptyLabel).toBe("No favorites yet — right-click an item to add one");
-    expect(projection.sections[3]?.emptyLabel).toBe("No properties selected — choose which properties to show");
-    expect(projection.sections[4]?.emptyLabel).toBe("No card boxes yet — right-click to create one");
+    expect(projection.sections[4]?.emptyLabel).toBe("No properties selected — choose which properties to show");
+    expect(projection.sections[5]?.emptyLabel).toBe("No card boxes yet — right-click to create one");
     expect(ids(projection.rows).slice(0, 5)).toEqual([
       navigationSectionId("favorites"),
       navigationSectionId("folders"),
@@ -441,7 +441,7 @@ describe("projectNavigation", () => {
   it("projects sections, rows, and ARIA positions from the supplied section order", () => {
     const order = ["boxes", "tags", "folders", "favorites"] as const;
     // C2: Properties inserts immediately before Boxes in a stored old order.
-    const expected = ["properties", "boxes", "tags", "folders", "favorites", "links"] as const;
+    const expected = ["properties", "boxes", "tags", "folders", "links", "favorites"] as const;
     const projection = projectNavigation(buildInput({ sectionOrder: order }));
     expect(projection.sections.map((section) => section.section)).toEqual([...expected]);
     expect(projection.rows[0]?.id).toBe(navigationSectionId("properties"));
@@ -458,7 +458,7 @@ describe("projectNavigation", () => {
       sectionOrder: ["tags", "tags", "nope", 7] as unknown as NavigationProjectionInput["sectionOrder"],
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "tags", "favorites", "folders", "properties", "boxes", "links",
+      "tags", "favorites", "folders", "links", "properties", "boxes",
     ]);
   });
 
@@ -550,7 +550,7 @@ describe("projectNavigation — properties", () => {
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes", "links",
+      "favorites", "folders", "links", "tags", "properties", "boxes",
     ]);
     const statusIndex = projection.rows.findIndex((row) => row.id === navigationPropertyId("status"));
     const tagsIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("tags"));
@@ -709,9 +709,11 @@ describe("projectNavigation — properties", () => {
 });
 
 describe("projectNavigation — links", () => {
-  it("places the Links section last by default with two leaves", () => {
+  it("places the Links section between Folders and Tags by default with two leaves", () => {
     const projection = projectNavigation(buildInput({ linksDisabled: false }));
-    expect(projection.sections.map((section) => section.section).at(-1)).toBe("links");
+    expect(projection.sections.map((section) => section.section)).toEqual([
+      "favorites", "folders", "links", "tags", "properties", "boxes",
+    ]);
     const sectionIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("links"));
     expect(projection.rows[sectionIndex]).toMatchObject({ kind: "section", section: "links" });
     expect(projection.rows[sectionIndex + 1]).toMatchObject({
@@ -733,7 +735,7 @@ describe("projectNavigation — links", () => {
     expect(linksRows[0]).toMatchObject({ kind: "section", expanded: false });
   });
 
-  it("honors a custom sectionOrder that moves Links off the default last slot", () => {
+  it("honors a custom sectionOrder that moves Links away from its default position", () => {
     const projection = projectNavigation(buildInput({
       sectionOrder: ["links", "favorites", "folders", "tags", "properties", "boxes"],
     }));

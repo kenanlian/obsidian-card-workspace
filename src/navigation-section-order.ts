@@ -23,6 +23,16 @@ export function normalizeNavSectionOrder(value: unknown): NavSectionId[] {
   }
   for (const id of NAVIGATION_SECTION_ORDER) {
     if (seen.has(id)) continue;
+    // A stored order that predates Links keeps every recognized section's
+    // relative order; Links adopts its default position immediately after
+    // Folders instead of falling through to the end of the saved layout.
+    if (id === "links") {
+      const foldersIndex = result.indexOf("folders");
+      if (foldersIndex >= 0) {
+        result.splice(foldersIndex + 1, 0, id);
+        continue;
+      }
+    }
     // C2: a stored order that predates Properties keeps every recognized
     // section's relative order; Properties lands immediately before Boxes so
     // migrated layouts keep filters adjacent instead of being rearranged.

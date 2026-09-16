@@ -237,10 +237,10 @@ export type NavigationIntent =
 export const NAVIGATION_SECTION_ORDER: readonly NavSectionId[] = [
   "favorites",
   "folders",
+  "links",
   "tags",
   "properties",
   "boxes",
-  "links",
 ];
 
 export function navigationSectionId(section: NavSectionId): `section:${NavSectionId}` {

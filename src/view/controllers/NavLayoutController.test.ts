@@ -425,7 +425,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("folders", -1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes", "links"],
+      navSectionOrder: ["folders", "favorites", "links", "tags", "properties", "boxes"],
     });
   });
 
@@ -433,7 +433,7 @@ describe("NavLayoutController", () => {
     const { controller, saveSettings } = createHarness();
 
     await controller.onMoveNavSection("favorites", -1);
-    await controller.onMoveNavSection("links", 1);
+    await controller.onMoveNavSection("boxes", 1);
     await controller.onMoveNavSection("mystery" as NavSectionId, 1);
 
     expect(saveSettings).not.toHaveBeenCalled();

@@ -194,7 +194,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(command("ArrowDown", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowUp", "favorite:file:notes/A.md")).toEqual({ type: "focus", rowId: "section:favorites" });
     expect(command("Home", "box:box-1")).toEqual({ type: "focus", rowId: "section:favorites" });
-    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "links:backlinks" });
+    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "box:box-1" });
     expect(command("ArrowRight", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowRight", "folder:notes")).toEqual({ type: "focus", rowId: "folder:notes/child" });
     expect(command("ArrowLeft", "folder:notes/child")).toEqual({ type: "focus", rowId: "folder:notes" });
@@ -416,7 +416,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:properties");
     const sectionRows = Array.from(document.querySelectorAll<HTMLElement>('[data-nav-row-id^="section:"]'));
     expect(sectionRows.map((node) => node.dataset.navRowId)).toEqual([
-      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites", "section:links",
+      "section:properties", "section:boxes", "section:tags", "section:folders", "section:links", "section:favorites",
     ]);
     expect(sectionRows.every((node) => node.classList.contains("is-section"))).toBe(true);
     expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))

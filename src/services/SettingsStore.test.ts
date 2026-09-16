@@ -396,7 +396,7 @@ describe("SettingsStore", () => {
 
     const order: PluginSettings["navSectionOrder"] = ["boxes", "favorites", "folders", "tags"];
     const normalizedOrder: PluginSettings["navSectionOrder"] = [
-      "properties", "boxes", "favorites", "folders", "tags", "links",
+      "properties", "boxes", "favorites", "folders", "links", "tags",
     ];
     const split = splitFlatPatch({ navSectionOrder: order });
     expect(split.preferences.navSectionOrder).toEqual(order);

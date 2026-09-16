@@ -793,12 +793,12 @@ describe("links header menu", () => {
     expect(getTitles(menu)).toContain("Expand section");
   });
 
-  it("disables move-down at the default last-section boundary", () => {
+  it("allows moving links in either direction from its default middle position", () => {
     const deps = createDeps();
     const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
 
     expect(findItem(menu, "Move section up")?.disabled).toBe(false);
-    expect(findItem(menu, "Move section down")?.disabled).toBe(true);
+    expect(findItem(menu, "Move section down")?.disabled).toBe(false);
   });
 
   it("disables move-up when links is first in sectionOrder", () => {
@@ -846,7 +846,7 @@ describe("section header move items", () => {
     expect(moveFlags(favorites.menu)).toEqual({ up: true, down: false });
     expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
-    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(boxes.menu)).toEqual({ up: false, down: true });
   });
 
   it("follows a reordered sectionOrder for the disabled ends", () => {
@@ -862,7 +862,7 @@ describe("section header move items", () => {
     expect(moveFlags(boxes.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(tags.menu)).toEqual({ up: false, down: false });
     expect(moveFlags(folders.menu)).toEqual({ up: false, down: false });
-    expect(moveFlags(favorites.menu)).toEqual({ up: false, down: false });
+    expect(moveFlags(favorites.menu)).toEqual({ up: false, down: true });
   });
 
   it("gives the Properties header chooser, clear, expansion, and generic section items", () => {
