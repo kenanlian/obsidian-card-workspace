@@ -90,6 +90,13 @@ describe("SearchController", () => {
 
     controller.initializeSnapshotState();
     controller.onQueryChange({ query: "alpha" });
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+    expect(context.publishGroups).toHaveBeenCalledWith("search");
+    expect(controller.getCommittedQuery()).toBe("");
+    expect(controller.buildPipelineSearchInput()).toEqual({
+      query: "",
+      execution: "indexed-unavailable",
+    });
     vi.advanceTimersByTime(119);
     await Promise.resolve();
     expect(query).not.toHaveBeenCalled();
@@ -103,6 +110,65 @@ describe("SearchController", () => {
       execution: "indexed-ready",
       orderedPaths: ["notes/alpha.md"],
     });
+    expect(controller.getCommittedQuery()).toBe("alpha");
+    expect(publishSearchProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the last committed cards visible while a ready-index query is debounced", async () => {
+    vi.useFakeTimers();
+    const context = createContext();
+    const alpha = { path: "notes/alpha.md", title: "Alpha" } as NoteCardRecord;
+    const beta = { path: "notes/beta.md", title: "Beta" } as NoteCardRecord;
+    context.store.replaceBaseCards([alpha, beta]);
+    context.store.replaceVisibleCards([alpha, beta]);
+
+    const query = vi.fn(async (request: { query: string }) => ({
+      mode: "indexed" as const,
+      status: "ready" as const,
+      execution: "indexed-ready" as const,
+      orderedPaths: request.query === "alpha" ? [alpha.path] : [beta.path],
+    }));
+    let controller!: SearchController;
+    const projection = new ProjectionController({
+      context,
+      getSearchInput: () => controller.buildPipelineSearchInput(),
+      getEffectivePinnedPaths: () => [],
+      getLoadKey: () => "notes",
+      getGroupConfig: () => DEFAULT_GROUP_SPEC,
+      getCollapsedGroupKeys: () => new Set(),
+    });
+    const publishSearchProjection = vi.fn(() => projection.reprojectCards());
+    controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+
+    controller.onQueryChange({ query: "alpha" });
+    await controller.refreshProjection();
+    controller.clearDebounce();
+    expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([alpha.path]);
+    expect(controller.getCommittedQuery()).toBe("alpha");
+
+    publishSearchProjection.mockClear();
+    controller.onQueryChange({ query: "beta" });
+
+    expect(controller.getQuery()).toBe("beta");
+    expect(controller.getCommittedQuery()).toBe("alpha");
+    expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([alpha.path]);
+    expect(publishSearchProjection).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(120);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(controller.getCommittedQuery()).toBe("beta");
+    expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([beta.path]);
+    expect(publishSearchProjection).toHaveBeenCalledTimes(1);
+    controller.dispose();
   });
 
   it("projects zero cards for a non-empty query while the index is non-ready", () => {

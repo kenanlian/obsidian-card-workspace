@@ -34,6 +34,8 @@ export interface SearchRefreshOptions {
 /** Owns one view's indexed-search runtime, including both stale-result guards. */
 export class SearchController implements DisposableController {
   private query = "";
+  /** Query represented by `execution` / `orderedPaths` and the visible-card projection. */
+  private committedQuery = "";
   private execution: SearchQueryExecutionState = "indexed-unavailable";
   private orderedPaths: string[] | undefined;
   private matchCountsByPath: Record<string, number> = {};
@@ -53,6 +55,10 @@ export class SearchController implements DisposableController {
 
   getQuery(): string {
     return this.query;
+  }
+
+  getCommittedQuery(): string {
+    return this.committedQuery;
   }
 
   getStatus(): SearchStatus {
@@ -78,11 +84,11 @@ export class SearchController implements DisposableController {
 
   buildPipelineSearchInput(): PipelineSearchInput {
     if (this.execution !== "indexed-ready") {
-      return { query: this.query, execution: this.execution };
+      return { query: this.committedQuery, execution: this.execution };
     }
 
     return {
-      query: this.query,
+      query: this.committedQuery,
       execution: this.execution,
       orderedPaths: this.orderedPaths ?? [],
     };
@@ -104,6 +110,7 @@ export class SearchController implements DisposableController {
     this.snapshot = snapshot;
     this.snapshotEpoch.bump();
     this.requestEpoch.bump();
+    this.committedQuery = this.query;
     this.clearMatchCounts();
     this.execution = this.derivePendingExecution();
     this.orderedPaths = undefined;
@@ -130,40 +137,41 @@ export class SearchController implements DisposableController {
     }
 
     this.query = nextQuery;
-    this.execution = this.derivePendingExecution();
-    this.orderedPaths = undefined;
-    this.clearMatchCounts();
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
-    this.deps.publishSearchProjection();
 
     if (this.query.trim().length > 0) {
+      if (this.isIndexReady()) {
+        // Keep the last committed cards and highlights mounted while the next
+        // ready-index query is inside the debounce window. Only the toolbar's
+        // draft text changes now; the projection swaps atomically on success.
+        this.context.publishGroups("search");
+      } else {
+        // A genuinely non-ready index must retain the indexed-only invariant:
+        // non-empty queries block immediately rather than exposing browse data.
+        this.commitPendingProjection();
+        this.deps.publishSearchProjection();
+      }
       this.scheduleDebouncedProjection();
       return;
     }
 
     this.clearDebounce();
+    this.commitPendingProjection();
+    this.deps.publishSearchProjection();
   }
 
   resetQuery(): void {
     this.clearDebounce();
     this.requestEpoch.bump();
-    this.clearMatchCounts();
-
-    if (this.query.length === 0 && this.orderedPaths === undefined) {
-      this.status = this.deriveStatus();
-      this.deps.publishSearchProjection();
-      return;
-    }
-
     this.query = "";
-    this.execution = this.derivePendingExecution();
-    this.orderedPaths = undefined;
     this.status = this.deriveStatus();
+    this.commitPendingProjection();
     this.deps.publishSearchProjection();
   }
 
   resetForLoad(): void {
+    this.committedQuery = this.query;
     this.execution = this.derivePendingExecution();
     this.orderedPaths = undefined;
     this.clearMatchCounts();
@@ -212,6 +220,7 @@ export class SearchController implements DisposableController {
       }
 
       this.execution = result.execution;
+      this.committedQuery = this.query;
       if (result.execution === "indexed-ready") {
         this.orderedPaths = result.orderedPaths ?? [];
         this.matchCountsByPath = { ...result.matchCountsByPath };
@@ -232,9 +241,7 @@ export class SearchController implements DisposableController {
   }
 
   private fallBackToPendingExecution(publish: boolean = true): void {
-    this.execution = this.derivePendingExecution();
-    this.orderedPaths = undefined;
-    this.clearMatchCounts();
+    this.commitPendingProjection();
     this.status = this.deriveStatus();
     if (publish) {
       this.deps.publishSearchProjection();
@@ -309,6 +316,20 @@ export class SearchController implements DisposableController {
     return "indexed-unavailable";
   }
 
+  private isIndexReady(): boolean {
+    return this.snapshot?.initialized === true
+      && !this.snapshot.disposed
+      && this.snapshot.mode === "indexed"
+      && this.snapshot.status === "ready";
+  }
+
+  private commitPendingProjection(): void {
+    this.committedQuery = this.query;
+    this.execution = this.derivePendingExecution();
+    this.orderedPaths = undefined;
+    this.clearMatchCounts();
+  }
+
   private isStorageUnavailable(snapshot: SearchServiceSnapshot): boolean {
     return snapshot.health.persistence === "storage-unavailable"
       || snapshot.health.rebuildReason === "storage-unavailable";
@@ -340,6 +361,7 @@ export class SearchController implements DisposableController {
     this.clearSnapshotSubscription();
     this.snapshot = null;
     this.query = "";
+    this.committedQuery = "";
     this.execution = "indexed-unavailable";
     this.orderedPaths = undefined;
     this.clearMatchCounts();

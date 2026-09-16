@@ -38,6 +38,7 @@ function buildState(): PanelModelState {
     },
     search: {
       query: "",
+      committedQuery: "",
       status: "idle",
       focusToken: 0,
     },

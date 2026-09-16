@@ -151,6 +151,7 @@ function mountToolbar(
       },
       search: {
         query: values.searchQuery ?? "",
+        committedQuery: values.searchQuery ?? "",
         status: values.searchStatus ?? "idle",
         readiness: values.searchIndexReadiness,
         persistence: values.searchIndexPersistence,

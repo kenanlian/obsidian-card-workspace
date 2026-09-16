@@ -134,7 +134,10 @@ export interface PanelCardsState {
 }
 
 export interface PanelSearchState {
+  /** Draft text currently shown in the toolbar input. */
   query: string;
+  /** Query represented by the currently published cards and highlights. */
+  committedQuery: string;
   status: SearchStatus;
   readiness?: SearchIndexReadinessState;
   persistence?: SearchIndexPersistenceHealth;

@@ -1513,6 +1513,8 @@
 .fce-property-picker__list {
   max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   margin-bottom: 8px;
 }
 

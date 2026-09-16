@@ -492,7 +492,7 @@ export class FolderCardView extends ItemView {
 
   private buildSearchGroup(): PanelModelState["search"] {
     return {
-      query: this.modules.search.getQuery(),
+      query: this.modules.search.getQuery(), committedQuery: this.modules.search.getCommittedQuery(),
       status: this.modules.search.getStatus(),
       readiness: this.modules.search.getSnapshot()?.health?.readiness,
       persistence: this.modules.search.getSnapshot()?.health?.persistence,

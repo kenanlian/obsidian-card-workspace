@@ -107,7 +107,7 @@ function createInitialPanelState(): PanelModelState {
       groupSegments: [],
       groupRevision: 0,
     },
-    search: { query: "", status: "idle", focusToken: 0 },
+    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",
@@ -764,7 +764,7 @@ describe("FolderCardPanel.svelte", () => {
 
     await tick();
     panelModel.mutate((state) => {
-      state.search = { ...state.search, query: "  query  " };
+      state.search = { ...state.search, query: "  query  ", committedQuery: "  query  " };
       state.projection = { ...state.projection, activeFilterTags: ["tag-a"] };
       state.cards = { ...state.cards, records: [], generation: 1 };
       state.scope = {
@@ -806,6 +806,7 @@ describe("FolderCardPanel.svelte", () => {
       state.search = {
         ...state.search,
         query: "blocked query",
+        committedQuery: "blocked query",
         status: "building",
         readiness: "restoring",
       };
@@ -858,7 +859,7 @@ describe("FolderCardPanel.svelte", () => {
         },
         generation: 1,
       };
-      state.search = { ...state.search, query: "test" };
+      state.search = { ...state.search, query: "test", committedQuery: "test" };
     });
     await tick();
 
@@ -881,10 +882,41 @@ describe("FolderCardPanel.svelte", () => {
     expect(missingCard?.querySelector(".fce-card-search-count")).toBeNull();
 
     panelModel.mutate((state) => {
-      state.search = { ...state.search, query: "   " };
+      state.search = { ...state.search, query: "   ", committedQuery: "   " };
     });
     await tick();
     expect(target.querySelectorAll(".fce-card-search-count").length).toBe(0);
+
+    await unmount(component);
+  });
+
+  it("keeps card highlighting on the committed query while the toolbar draft advances", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const panelModel = createPanelModel(createInitialPanelState());
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel },
+    });
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: [createCard("notes/alpha-beta.md", "Alpha Beta")],
+        sequenceRevision: 1,
+      };
+      state.search = {
+        ...state.search,
+        query: "beta",
+        committedQuery: "alpha",
+        status: "ready",
+      };
+    });
+    await tick();
+
+    expect(Array.from(target.querySelectorAll("h4 mark.fce-search-hit"), (mark) => mark.textContent))
+      .toEqual(["Alpha"]);
 
     await unmount(component);
   });
@@ -909,6 +941,7 @@ describe("FolderCardPanel.svelte", () => {
       state.search = {
         ...state.search,
         query: "alpha",
+        committedQuery: "alpha",
         status: "building",
         readiness: "restoring",
       };
@@ -929,7 +962,7 @@ describe("FolderCardPanel.svelte", () => {
     expect(target.querySelector(".fce-card-search-count")).toBeNull();
 
     panelModel.mutate((state) => {
-      state.search = { ...state.search, status: "ready", query: "   " };
+      state.search = { ...state.search, status: "ready", query: "   ", committedQuery: "   " };
       state.cards = {
         ...state.cards,
         searchMatchCountsByPath: { "notes/blocked.md": 6 },

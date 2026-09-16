@@ -153,7 +153,7 @@
       generation: 0, sequenceRevision: 0, hydrationRevision: 0,
       groupSegments: [], groupRevision: 0,
     },
-    search: { query: "", status: "idle", focusToken: 0 },
+    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",
@@ -809,7 +809,7 @@
                 {strings}
                 {appearance}
                 pinnedPaths={projection.pinnedPaths}
-                searchQuery={search.query}
+                searchQuery={search.committedQuery}
                 bulkMode={bulk.bulkMode}
                 searchMatchCount={showSearchMatchCounts ? (cards.searchMatchCountsByPath[card.path] ?? 0) : 0}
                 bulkSelected={bulk.bulkMode && bulk.selectedPaths.includes(card.path)}

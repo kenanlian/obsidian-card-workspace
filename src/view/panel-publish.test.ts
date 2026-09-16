@@ -78,7 +78,7 @@ function buildState(): PanelModelState {
       groupSegments: [],
       groupRevision: 0,
     },
-    search: { query: "", status: "idle", focusToken: 0 },
+    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",
