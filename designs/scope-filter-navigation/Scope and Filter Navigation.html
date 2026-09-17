@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="design_doc_mode" content="canvas" />
+  <title>Card Workspace — Scope 与筛选导航方案</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #17171a;
+      --surface: #202024;
+      --surface-2: #26262b;
+      --surface-3: #2d2d33;
+      --border: #38383f;
+      --border-strong: #4b4b55;
+      --text: #e7e7ea;
+      --muted: #9d9da7;
+      --faint: #73737d;
+      --accent: #9b87f5;
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --accent-line: #a996ff;
+      --filter: #76bfa3;
+      --filter-soft: color-mix(in srgb, var(--filter) 13%, transparent);
+      --danger: #ef9a9a;
+      --radius: 8px;
+      --sidebar-width: 296px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1120px;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 14% 0%, rgba(155, 135, 245, 0.08), transparent 32rem),
+        var(--canvas);
+      color: var(--text);
+    }
+
+    button { font: inherit; }
+    .page { width: min(1420px, calc(100% - 56px)); margin: 0 auto; padding: 34px 0 46px; }
+    .masthead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 40px; margin-bottom: 26px; }
+    .eyebrow { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: -0.03em; }
+    .lede { max-width: 760px; margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.75; }
+    .legend { display: flex; gap: 18px; padding: 11px 14px; border: 1px solid var(--border); border-radius: 9px; background: rgba(32,32,36,.82); }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .legend-mark { width: 14px; height: 14px; border-radius: 4px; }
+    .legend-mark.scope { border-left: 3px solid var(--accent-line); background: var(--accent-soft); }
+    .legend-mark.filter { display: grid; place-items: center; background: var(--filter-soft); color: var(--filter); font-size: 11px; font-weight: 800; }
+
+    .canvas { display: grid; grid-template-columns: repeat(3, minmax(340px, 1fr)); gap: 18px; align-items: start; }
+    .option { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: rgba(30,30,34,.78); overflow: hidden; box-shadow: 0 18px 46px rgba(0,0,0,.18); }
+    .option.recommended { border-color: color-mix(in srgb, var(--accent) 58%, var(--border)); }
+    .option-head { min-height: 118px; padding: 18px 18px 15px; border-bottom: 1px solid var(--border); }
+    .option-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .option h2 { margin: 0; font-size: 15px; }
+    .badge { padding: 3px 7px; border-radius: 999px; background: var(--accent-soft); color: #c8bbff; font-size: 10px; font-weight: 700; }
+    .option-copy { margin: 9px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .tradeoff { margin-top: 8px; color: var(--faint); font-size: 11px; }
+
+    .stage { min-height: 610px; display: grid; place-items: start center; padding: 22px; background: #1b1b1f; }
+    .sidebar { width: var(--sidebar-width); min-height: 560px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; box-shadow: 0 16px 38px rgba(0,0,0,.28); }
+    .sidebar-top { padding: 8px; border-bottom: 1px solid var(--border); }
+    .nav-search { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: #29292e; color: var(--faint); font-size: 12px; }
+    .nav-search span:last-child { color: var(--muted); }
+    .context { padding: 10px 11px 9px; border-bottom: 1px solid var(--border); }
+    .context-label { color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .context-main { display: flex; align-items: center; gap: 7px; margin-top: 5px; font-size: 13px; font-weight: 650; }
+    .context-sub { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--filter) 35%, var(--border)); border-radius: 999px; background: var(--filter-soft); color: #a9dec9; font-size: 10px; }
+    .chip-x { color: var(--muted); }
+
+    .tree { padding: 5px 4px 12px; }
+    .group-label { display: flex; align-items: center; justify-content: space-between; min-height: 27px; margin-top: 7px; padding: 0 8px; color: var(--faint); font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .group-label:first-child { margin-top: 1px; }
+    .group-label.filter-label { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); color: color-mix(in srgb, var(--filter) 74%, var(--muted)); }
+    .group-meta { letter-spacing: 0; text-transform: none; font-weight: 600; }
+    .section-row, .tree-row { position: relative; display: grid; grid-template-columns: 18px 18px minmax(0,1fr) auto; align-items: center; min-height: 28px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; width: 100%; cursor: pointer; }
+    .section-row:hover, .tree-row:hover { background: var(--surface-3); }
+    .section-row { color: #cfcfd5; font-size: 12px; font-weight: 650; }
+    .tree-row { padding-inline-start: 20px; color: #c5c5cc; font-size: 12px; font-weight: 450; }
+    .tree-row.deep { padding-inline-start: 34px; }
+    .chev { color: var(--faint); font-size: 10px; text-align: center; }
+    .ico { color: var(--muted); font-size: 12px; text-align: center; }
+    .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta { color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+    .scope-row.active { background: var(--accent-soft); color: #eeeaff; font-weight: 650; }
+    .scope-row.active::before { content: ""; position: absolute; inset-block: 5px; inset-inline-start: 0; width: 2px; border-radius: 2px; background: var(--accent-line); }
+    .scope-row.active .ico { color: #c8bbff; }
+    .filter-row.checked { background: var(--filter-soft); color: #d8f2e8; }
+    .filter-row.checked .ico { color: var(--filter); }
+    .check { color: var(--filter); font-size: 11px; font-weight: 800; }
+    .disabled { opacity: .42; cursor: not-allowed; }
+    .disabled:hover { background: transparent; }
+    .special-dot { width: 5px; height: 5px; border-radius: 50%; background: #d7aa64; justify-self: end; }
+
+    .mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 8px; padding: 3px; border-radius: 6px; background: #1b1b1e; }
+    .mode-tab { height: 27px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+    .mode-tab.active { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    .tab-panel[hidden] { display: none; }
+    .filter-summary { display: flex; align-items: center; justify-content: space-between; margin: 0 8px 8px; padding: 7px 8px; border: 1px solid color-mix(in srgb, var(--filter) 28%, var(--border)); border-radius: 6px; background: var(--filter-soft); color: #bfe5d7; font-size: 11px; }
+
+    .expression { padding: 10px 9px 4px; }
+    .clause { border: 1px solid var(--border); border-radius: 7px; background: #242429; overflow: hidden; }
+    .clause + .clause { margin-top: 7px; }
+    .clause-head { display: flex; align-items: center; justify-content: space-between; padding: 7px 9px 5px; color: var(--faint); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .clause-value { display: flex; align-items: center; gap: 8px; min-height: 33px; padding: 0 9px 8px; font-size: 12px; font-weight: 650; }
+    .clause.scope-clause { border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
+    .clause.filter-clause { border-color: color-mix(in srgb, var(--filter) 28%, var(--border)); }
+    .operator { margin: 4px 0 4px 12px; color: var(--faint); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+    .mini-action { border: 0; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+    .picker-label { padding: 12px 10px 5px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .scope-type { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #c2b6f5; font-size: 9px; font-weight: 700; }
+
+    .principles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+    .principle { padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: rgba(32,32,36,.65); }
+    .principle strong { display: block; margin-bottom: 5px; color: #d9d9df; font-size: 11px; }
+    .principle p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .footer-note { margin: 15px 2px 0; color: var(--faint); font-size: 10px; }
+  </style>
+</head>
+<body>
+  <main class="page" data-screen-label="Scope 与筛选导航方案">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Card Workspace · Information Architecture</p>
+        <h1>Scope 决定“从哪里取卡片”，Filter 决定“留下哪些卡片”</h1>
+        <p class="lede">假设：文件夹、双链与 Card Box 都会替换卡片流的数据源；标签和属性只作用于当前支持筛选的 Scope。下面三种方案均保留 Obsidian 的紧凑树形导航语言。</p>
+      </div>
+      <div class="legend" aria-label="状态图例">
+        <div class="legend-item"><span class="legend-mark scope"></span><span>当前 Scope：单选</span></div>
+        <div class="legend-item"><span class="legend-mark filter">✓</span><span>生效 Filter：多选</span></div>
+      </div>
+    </header>
+
+    <section class="canvas" aria-label="三个导航设计方案">
+      <article class="option recommended">
+        <div class="option-head">
+          <div class="option-title-row"><h2>A. 语义分组</h2><span class="badge">推荐 · 最小改动</span></div>
+          <p class="option-copy">在同一棵树中增加“范围 / 筛选”两层语义；Scope 共用唯一选中态，Filter 使用勾选态。</p>
+          <div class="tradeoff">优点：同时可见、迁移成本低。代价：导航较长。</div>
+        </div>
+        <div class="stage">
+          <div class="sidebar" data-variant="grouped">
+            <div class="sidebar-top"><div class="nav-search"><span>⌕</span><span>查找导航项</span></div></div>
+            <div class="context">
+              <div class="context-label">当前范围</div>
+              <div class="context-main"><span>▣</span><span data-context-name>Projects</span></div>
+              <div class="chips"><span class="chip">#research <span class="chip-x">×</span></span><span class="chip">状态 = 草稿 <span class="chip-x">×</span></span></div>
+            </div>
+            <div class="tree">
+              <div class="group-label"><span>快捷入口</span></div>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">☆</span><span class="name">收藏</span><span class="meta">4</span></button>
+
+              <div class="group-label"><span>范围</span><span class="group-meta">三选一</span></div>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">▣</span><span class="name">文件夹</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="Vault"><span></span><span class="ico">⌂</span><span class="name">Vault</span><span class="meta">162</span></button>
+              <button class="tree-row scope-row active" data-scope="Projects"><span></span><span class="ico">□</span><span class="name">Projects</span><span class="meta">38</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">⇄</span><span class="name">双链</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="“Design notes” · 出链"><span></span><span class="ico">↗</span><span class="name">出链</span><span class="meta">12</span></button>
+              <button class="tree-row scope-row" data-scope="“Design notes” · 反链"><span></span><span class="ico">↙</span><span class="name">反链</span><span class="meta">7</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">◇</span><span class="name">卡片盒</span><span class="special-dot" title="特殊 Scope"></span></button>
+              <button class="tree-row scope-row" data-scope="每周回顾"><span></span><span class="ico">◇</span><span class="name">每周回顾</span><span class="meta">24</span></button>
+
+              <div class="group-label filter-label"><span>筛选当前范围</span><span class="group-meta">已启用 2</span></div>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">#</span><span class="name">标签</span><span class="meta">1</span></button>
+              <button class="tree-row filter-row checked"><span></span><span class="ico">#</span><span class="name">research</span><span class="check">✓</span></button>
+              <button class="tree-row filter-row"><span></span><span class="ico">#</span><span class="name">idea</span><span class="meta">21</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">≡</span><span class="name">属性</span><span class="meta">1</span></button>
+              <button class="tree-row filter-row checked"><span></span><span class="ico">·</span><span class="name">状态 = 草稿</span><span class="check">✓</span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="option-head">
+          <div class="option-title-row"><h2>B. 范围 / 筛选切换</h2></div>
+          <p class="option-copy">用两个标签页强制分离两类操作；顶部始终显示当前 Scope 和正在生效的筛选。</p>
+          <div class="tradeoff">优点：概念最显式。代价：切换成本高，范围与筛选无法同时浏览。</div>
+        </div>
+        <div class="stage">
+          <div class="sidebar" data-variant="tabs">
+            <div class="sidebar-top"><div class="nav-search"><span>⌕</span><span>查找导航项</span></div></div>
+            <div class="context">
+              <div class="context-label">当前范围</div>
+              <div class="context-main"><span>⇄</span><span>“Design notes” · 反链</span></div>
+            </div>
+            <div class="mode-tabs" role="tablist">
+              <button class="mode-tab active" data-tab="scope">范围</button>
+              <button class="mode-tab" data-tab="filter">筛选 <span aria-label="2 个筛选">· 2</span></button>
+            </div>
+            <div class="filter-summary"><span>2 个筛选正在生效</span><span>管理</span></div>
+            <div class="tree tab-panel" data-panel="scope">
+              <div class="group-label"><span>选择一个范围</span></div>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">▣</span><span class="name">文件夹</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="Projects"><span></span><span class="ico">□</span><span class="name">Projects</span><span class="meta">38</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">⇄</span><span class="name">双链</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="“Design notes” · 出链"><span></span><span class="ico">↗</span><span class="name">出链</span><span class="meta">12</span></button>
+              <button class="tree-row scope-row active" data-scope="“Design notes” · 反链"><span></span><span class="ico">↙</span><span class="name">反链</span><span class="meta">7</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">◇</span><span class="name">卡片盒</span><span class="special-dot"></span></button>
+              <button class="tree-row scope-row" data-scope="每周回顾"><span></span><span class="ico">◇</span><span class="name">每周回顾</span><span class="meta">24</span></button>
+            </div>
+            <div class="tree tab-panel" data-panel="filter" hidden>
+              <div class="group-label filter-label"><span>作用于当前范围</span><span class="group-meta">2</span></div>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">#</span><span class="name">标签</span><span class="meta">1</span></button>
+              <button class="tree-row filter-row checked"><span></span><span class="ico">#</span><span class="name">research</span><span class="check">✓</span></button>
+              <button class="tree-row filter-row"><span></span><span class="ico">#</span><span class="name">idea</span><span class="meta">21</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">≡</span><span class="name">属性</span><span class="meta">1</span></button>
+              <button class="tree-row filter-row checked"><span></span><span class="ico">·</span><span class="name">状态 = 草稿</span><span class="check">✓</span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="option-head">
+          <div class="option-title-row"><h2>C. 查询表达式</h2></div>
+          <p class="option-copy">把当前视图直接表达成“一个 Scope + 零到多个 Filter”，下方树只负责替换对应子句。</p>
+          <div class="tradeoff">优点：规则最清楚、易扩展。代价：视觉较重，不像原生 Obsidian 导航。</div>
+        </div>
+        <div class="stage">
+          <div class="sidebar" data-variant="expression">
+            <div class="sidebar-top"><div class="nav-search"><span>⌕</span><span>查找范围或筛选项</span></div></div>
+            <div class="expression">
+              <div class="clause scope-clause">
+                <div class="clause-head"><span>范围 · 仅一个</span><button class="mini-action">更换</button></div>
+                <div class="clause-value"><span>◇</span><span data-context-name>每周回顾</span><span class="scope-type">CARD BOX</span></div>
+              </div>
+              <div class="operator">并且</div>
+              <div class="clause filter-clause">
+                <div class="clause-head"><span>筛选 · 可多个</span><button class="mini-action">清除</button></div>
+                <div class="chips" style="margin: 0 9px 9px;"><span class="chip">#research <span class="chip-x">×</span></span><span class="chip">状态 = 草稿 <span class="chip-x">×</span></span></div>
+              </div>
+            </div>
+            <div class="picker-label">替换范围</div>
+            <div class="tree" style="padding-top: 0;">
+              <button class="section-row"><span class="chev">▾</span><span class="ico">▣</span><span class="name">文件夹</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="Projects"><span></span><span class="ico">□</span><span class="name">Projects</span><span class="meta">38</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">⇄</span><span class="name">双链</span><span></span></button>
+              <button class="tree-row scope-row" data-scope="“Design notes” · 反链"><span></span><span class="ico">↙</span><span class="name">反链</span><span class="meta">7</span></button>
+              <button class="section-row"><span class="chev">▾</span><span class="ico">◇</span><span class="name">卡片盒</span><span class="special-dot"></span></button>
+              <button class="tree-row scope-row active" data-scope="每周回顾"><span></span><span class="ico">◇</span><span class="name">每周回顾</span><span class="meta">24</span></button>
+              <div class="group-label filter-label"><span>添加筛选</span></div>
+              <button class="section-row"><span class="chev">›</span><span class="ico">#</span><span class="name">标签</span><span></span></button>
+              <button class="section-row"><span class="chev">›</span><span class="ico">≡</span><span class="name">属性</span><span></span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="principles" aria-label="推荐方案原则">
+      <div class="principle"><strong>选中态不能共用</strong><p>Scope 用唯一左侧标记和底色；Filter 用勾选。用户一眼能看出“替换”与“叠加”。</p></div>
+      <div class="principle"><strong>Card Box 同属 Scope</strong><p>保持相同的 current-range 状态，只通过 box 图标和规则入口表达“特殊”。</p></div>
+      <div class="principle"><strong>标题只显示 Scope</strong><p>不要再把标签拼进 scopeText；筛选以 chips 或“2 个筛选”单独显示。</p></div>
+      <div class="principle"><strong>能力禁用要解释原因</strong><p>某 Scope 不支持标签或属性时，保留分组并禁用，说明是范围能力限制而非空数据。</p></div>
+    </section>
+    <p class="footer-note">交互提示：点击任意 Scope 行可观察单选状态；方案 B 的“范围 / 筛选”标签可切换。</p>
+  </main>
+
+  <script>
+    document.querySelectorAll("[data-variant]").forEach((sidebar) => {
+      sidebar.addEventListener("click", (event) => {
+        const scopeRow = event.target.closest(".scope-row");
+        if (!scopeRow || scopeRow.classList.contains("disabled")) return;
+        sidebar.querySelectorAll(".scope-row").forEach((row) => row.classList.remove("active"));
+        scopeRow.classList.add("active");
+        const target = sidebar.querySelector("[data-context-name]");
+        if (target && scopeRow.dataset.scope) target.textContent = scopeRow.dataset.scope;
+      });
+    });
+
+    document.querySelectorAll("[data-variant='tabs'] .mode-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const sidebar = tab.closest("[data-variant='tabs']");
+        sidebar.querySelectorAll(".mode-tab").forEach((item) => item.classList.toggle("active", item === tab));
+        sidebar.querySelectorAll(".tab-panel").forEach((panel) => {
+          panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+        });
+      });
+    });
+
+    document.querySelectorAll(".filter-row").forEach((row) => {
+      row.addEventListener("click", () => row.classList.toggle("checked"));
+    });
+  </script>
+</body>
+</html>
