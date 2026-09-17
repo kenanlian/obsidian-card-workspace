@@ -143,7 +143,7 @@ function mountToolbar(
         browsePropertyFilterEnabled: !values.activeBoxId,
         browseFiltersPaused: values.filtersPaused ?? false,
         supportsIncludeSubfolders: !values.activeBoxId,
-        supportsBoxRuleSeeding: !values.activeBoxId,
+        supportsBoxRuleSeeding: values.supportsBoxRuleSeeding ?? !values.activeBoxId,
         linksDirection: values.linksDirection ?? null,
         linksNoteName: values.linksNoteName ?? null,
         linksPinned: values.linksPinned ?? false,
@@ -938,6 +938,7 @@ function linksScopeProps(locale: "en" | "zh", extras: Record<string, unknown> = 
     linksPinned: false,
     linksLabel: `\u201cNote\u201d${strings.toolbar.scope.separator}${strings.links.directionBacklinks}`,
     supportsLinksSnapshot: true,
+    supportsBoxRuleSeeding: false,
     ...extras,
   };
 }
@@ -982,7 +983,7 @@ describe("Toolbar.svelte links controls", () => {
   );
 
   it.each(["en", "zh"] as const)(
-    "renders pin and snapshot with pressed/selected state and composed label in links scope (%s)",
+    "renders links controls in folder-consistent order with pressed/selected state and composed label (%s)",
     async (locale) => {
       const strings = getUiStrings(locale);
       const label = `\u201cNote\u201d${strings.toolbar.scope.separator}${strings.links.directionBacklinks}`;
@@ -999,6 +1000,15 @@ describe("Toolbar.svelte links controls", () => {
       expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).not.toBeNull();
       expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)?.getAttribute("data-icon"))
         .toBe("package-plus");
+      expect(Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-actions button"))
+        .map((button) => button.getAttribute("aria-label"))).toEqual([
+          strings.links.pinToNote,
+          strings.toolbar.actions.newNoteTitle,
+          strings.sortGroup.title,
+          strings.toolbar.actions.bulkTitle,
+          strings.links.saveSnapshot,
+          strings.toolbar.actions.toggleSearch,
+        ]);
       expect(document.querySelector(".fce-toolbar-links")).toBeNull();
       expect(document.querySelector(".fce-toolbar-scope")?.classList.contains("is-links")).toBe(true);
       expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe(label);

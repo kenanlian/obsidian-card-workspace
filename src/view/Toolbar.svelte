@@ -453,18 +453,6 @@
           >
             <span class="fce-sr-only">{scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}</span>
           </button>
-          {#if scope.supportsLinksSnapshot}
-            <button
-              type="button"
-              class="clickable-icon fce-toolbar-button"
-              aria-label={strings.links.saveSnapshot}
-              onclick={() => emitToolbarAction("links-save-snapshot")}
-              use:applyIcon={"package-plus"}
-              use:applyTooltip={strings.links.saveSnapshot}
-            >
-              <span class="fce-sr-only">{strings.links.saveSnapshot}</span>
-            </button>
-          {/if}
         {/if}
         {#if isBoxMode}
           <button
@@ -541,6 +529,18 @@
               onAddToBox={(boxId) => emitBoxCommand("add-scope-to-box", boxId)}
             />
           {/if}
+        {/if}
+        {#if isLinksMode && scope.supportsLinksSnapshot}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button"
+            aria-label={strings.links.saveSnapshot}
+            onclick={() => emitToolbarAction("links-save-snapshot")}
+            use:applyIcon={"package-plus"}
+            use:applyTooltip={strings.links.saveSnapshot}
+          >
+            <span class="fce-sr-only">{strings.links.saveSnapshot}</span>
+          </button>
         {/if}
         <button
           type="button"
