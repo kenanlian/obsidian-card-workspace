@@ -286,7 +286,9 @@
   const searchStatusLabel = $derived(
     getSearchStatusLabel(toolbarStrings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
-  const hasSummary = $derived(showSearchStatus);
+  // Host-derived paused state (scope.browseFiltersPaused): active workspace filters kept dormant by a non-folder scope.
+  const showFiltersPaused = $derived(scope.browseFiltersPaused ?? false);
+  const hasSummary = $derived(showSearchStatus || showFiltersPaused);
 
   function applyIcon(node: HTMLElement, iconName: string): { update: (nextIconName: string) => void } {
     setIcon(node, iconName);
@@ -416,12 +418,8 @@
 
   function toggleSearch(): void {
     searchExpanded = !searchExpanded;
-      if (searchExpanded) {
-        tick().then(() => {
-          searchInputEl?.focus();
-        });
-      }
-    }
+    if (searchExpanded) void tick().then(() => searchInputEl?.focus());
+  }
 </script>
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
@@ -592,6 +590,7 @@
         {#if showSearchStatus}
           <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
         {/if}
+        {#if showFiltersPaused}<span class="fce-toolbar-summary-segment fce-filters-paused">{toolbarStrings.filtersPaused}</span>{/if}
       </div>
     </div>
   {/if}

@@ -81,6 +81,8 @@ export interface NavigationProjectionInput {
   tagCounts: Readonly<Record<string, number>>;
   includeSubfolders: boolean;
   tagsDisabled: boolean;
+  /** Host-computed browse-property-filter capability flag; mirrors `tagsDisabled` (C6). */
+  propertiesDisabled: boolean;
   sectionCollapsed: Readonly<Record<NavSectionId, boolean>>;
   sectionOrder: readonly NavSectionId[];
   sectionLabels: Readonly<Record<NavSectionId, NavigationSectionLabels>>;

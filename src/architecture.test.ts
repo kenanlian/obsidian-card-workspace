@@ -1000,7 +1000,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/note-tag-ops.ts": 580,
     "src/view/NavigationPane.svelte": 347,
     "src/view/FolderCardPanel.svelte": 832,
-    "src/view/Toolbar.svelte": 609,
+    "src/view/Toolbar.svelte": 608,
     "src/view/CardItem.svelte": 438,
     "src/view/nav-context-menu.ts": 494,
     "src/settings.ts": 566,

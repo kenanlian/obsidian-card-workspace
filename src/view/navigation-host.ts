@@ -50,6 +50,7 @@ export function buildNavigationPanelState(input: {
     tagCounts: input.cardProjection.tagCounts,
     includeSubfolders: settings.includeSubfolders,
     tagsDisabled: !resolveSourceCapabilities(scope).browseTagFilter,
+    propertiesDisabled: !resolveSourceCapabilities(scope).browsePropertyFilter,
     sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
     sectionLabels: {

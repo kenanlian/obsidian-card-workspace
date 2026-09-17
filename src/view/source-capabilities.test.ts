@@ -45,7 +45,7 @@ describe("resolveSourceCapabilities", () => {
     const expected = {
       arrangementOwner: { kind: "global" as const },
       browseTagFilter: false,
-      browsePropertyFilter: true,
+      browsePropertyFilter: false,
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
       groupDimensions: FOLDER_GROUP_DIMENSIONS,

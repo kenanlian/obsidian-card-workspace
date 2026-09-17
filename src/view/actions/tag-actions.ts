@@ -28,7 +28,7 @@ export interface TagActionsDeps {
   reconcileSelectionToOrderedPaths: (pathsInOrder: string[]) => void;
   /** Scope tags for the current view, memoized by `ProjectionController`. */
   deriveAvailableTags: () => string[];
-  /** Browse Tag filter capability for the current source (C6); boxes disable it. */
+  /** Browse Tag filter capability for the current source (C6); boxes and links disable it. */
   browseTagFilterEnabled: () => boolean;
   getDisplayFolderPath: () => string;
   createNoteIn: (folderUiPath: string, tags?: string[]) => Promise<void>;
@@ -90,10 +90,12 @@ export class TagActions {
 
   async onFilterChange(detail: { tags?: unknown }): Promise<void> {
     this.deps.returnToCardsViewIfSinglePane();
-    if (!this.deps.browseTagFilterEnabled()) {
+    const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
+    // Non-filterable scopes only accept the clearing intent: dormant tag filters
+    // must stay escapable (section-header clear button) without becoming settable.
+    if (!this.deps.browseTagFilterEnabled() && rawTags.length > 0) {
       return;
     }
-    const rawTags = Array.isArray(detail.tags) ? detail.tags : [];
     const nextTags: string[] = [];
     for (const tag of rawTags) {
       if (typeof tag !== "string") {

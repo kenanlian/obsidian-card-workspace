@@ -36,7 +36,7 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 4 }],
     tagCounts: { work: 7, "work/now": 2 },
     includeSubfolders: true,
-    tagsDisabled: false,
+    tagsDisabled: false, propertiesDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {

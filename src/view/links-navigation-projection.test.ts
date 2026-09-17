@@ -22,7 +22,7 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     boxes: [],
     tagCounts: {},
     includeSubfolders: true,
-    tagsDisabled: false,
+    tagsDisabled: false, propertiesDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {

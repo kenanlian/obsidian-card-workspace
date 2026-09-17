@@ -2754,7 +2754,7 @@ describe("FolderCardView navigation scope activation", () => {
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("clears the workspace property clauses when leaving a box for a folder (C7/S10/V-P)", async () => {
+  it("resumes dormant property clauses instead of clearing them when leaving a box for a folder", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -2765,11 +2765,13 @@ describe("FolderCardView navigation scope activation", () => {
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    // Box scopes keep filters dormant; navigating back into a folder resumes them.
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter.properties).toHaveLength(1);
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("clears both tags and property clauses when a box is left with both active (C7/V-P)", async () => {
+  it("resumes both dormant tags and property clauses when a box is left with both active", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -2780,8 +2782,24 @@ describe("FolderCardView navigation scope activation", () => {
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter.tags).toEqual(["alpha"]);
+    expect(settings.filter.properties).toHaveLength(1);
+  });
+
+  it("resumes dormant filters when leaving a links scope for a folder", async () => {
+    const { view, plugin } = createHarness();
+    const settings = readSettings(plugin);
+    settings.filter = {
+      tags: ["alpha"],
+      properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
+    };
+    (view as any).cardScope = createLinksScope("notes/a.md", "backlinks");
+
+    await (view as any).selectFolderFromNav("other");
+
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
   it("keeps the tag filter when the activated folder is already the current scope", async () => {

@@ -30,7 +30,7 @@ import { DEFAULT_SETTINGS, normalizeSettings } from "../settings";
 import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 import { createPanelModel, PANEL_GROUPS, type PanelGroup, type PanelModelState } from "./panel-model";
 import { FolderCardView } from "./FolderCardView";
-import { createBoxScope, createFolderScope } from "./scope";
+import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "./scope";
 import { createViewEpochs } from "./view-epochs";
 import { createViewStateStore } from "./view-state-store";
 import type { NoteCardRecord } from "./types";
@@ -560,6 +560,54 @@ describe("FolderCardView grouped panel publishing", () => {
       activeBoxName: "Runtime box",
       boxExcludedCount: 1,
     });
+  });
+
+  it("derives the paused-filters hint flag from dormant workspace filters", () => {
+    const box = {
+      id: "paused-box",
+      name: "Paused box",
+      rules: [],
+      manualPaths: [],
+      excludedPaths: [],
+      pinnedPaths: [],
+      sort: { field: "mtime", direction: "desc" },
+      group: { ...DEFAULT_GROUP_SPEC },
+    };
+    const baseView = () => {
+      const view = Object.create(FolderCardView.prototype) as FolderCardView;
+      Object.assign(view as object, {
+        store: createViewStateStore(createFolderScope("notes", true)),
+        epochs: createViewEpochs(),
+        modules: {
+          search: { getQuery: () => "" },
+          boxActions: { getActiveBox: () => box },
+        },
+        plugin: {
+          getUiStrings: () => getUiStrings("en"),
+          getSettings: () => ({
+            filter: { tags: ["work"], properties: [] },
+            includeSubfolders: true,
+          }),
+        },
+      });
+      return view as unknown as {
+        cardScope: CardScope;
+        buildScopeGroup: () => PanelModelState["scope"];
+      };
+    };
+
+    const boxView = baseView();
+    boxView.cardScope = createBoxScope(box.id);
+    expect(boxView.buildScopeGroup().browseFiltersPaused).toBe(true);
+
+    const linksView = baseView();
+    linksView.cardScope = createLinksScope("notes/a.md", "backlinks");
+    expect(linksView.buildScopeGroup().browseFiltersPaused).toBe(true);
+
+    // A folder scope applies its filters, so nothing is paused there.
+    const folderView = baseView();
+    folderView.cardScope = createFolderScope("notes", true);
+    expect(folderView.buildScopeGroup().browseFiltersPaused).toBe(false);
   });
 });
 

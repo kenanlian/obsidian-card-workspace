@@ -141,6 +141,7 @@ function mountToolbar(
           : `folder:${values.folderPath ?? "notes"}:true`,
         browseTagFilterEnabled: !values.activeBoxId,
         browsePropertyFilterEnabled: !values.activeBoxId,
+        browseFiltersPaused: values.filtersPaused ?? false,
         supportsIncludeSubfolders: !values.activeBoxId,
         supportsBoxRuleSeeding: !values.activeBoxId,
         linksDirection: values.linksDirection ?? null,
@@ -708,6 +709,32 @@ describe("Toolbar.svelte", () => {
     expect(captured.searchQueryResetEvents).toEqual([{ source: "clear-button" }]);
     expect(captured.searchQueryChangeEvents).toEqual([]);
 
+    await disposeMountedComponent(component);
+  });
+
+  it("renders the paused-filters hint only when a non-folder scope keeps active filters dormant", async () => {
+    let { component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: undefined });
+    await tick();
+    expect(document.querySelector(".fce-filters-paused")).toBeNull();
+    expect(document.querySelector(".fce-toolbar-content-row")).toBeNull();
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: true }));
+    await tick();
+    const pausedEl = document.querySelector<HTMLElement>(".fce-toolbar-content-row .fce-filters-paused");
+    expect(pausedEl?.textContent).toBe("Tag/property filters are paused in this view");
+    await disposeMountedComponent(component);
+
+    ({ component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: true, strings: getUiStrings("zh") }));
+    await tick();
+    expect(document.querySelector(".fce-filters-paused")?.textContent)
+      .toBe("标签/属性筛选已在当前视图暂停");
+    await disposeMountedComponent(component);
+
+    // A folder scope applies its filters, so no paused hint renders even if the host flag is stale.
+    ({ component } = mountToolbar({ filtersPaused: false }));
+    await tick();
+    expect(document.querySelector(".fce-filters-paused")).toBeNull();
     await disposeMountedComponent(component);
   });
 

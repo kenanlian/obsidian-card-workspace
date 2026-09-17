@@ -1,6 +1,7 @@
 import type { UiLanguage } from "./types";
 
 export interface ToolbarStrings {
+  filtersPaused: string;
   searchStatus: {
     buildingRestoring: string;
     building: string;
@@ -89,8 +90,8 @@ export interface ToolbarStrings {
     newFolderAtRoot: string;
     collapseSection: string;
     expandSection: string;
-    tagsDisabledInBox: string;
-    propertiesDisabledInBox: string;
+    tagsFilterUnavailable: string;
+    propertiesFilterUnavailable: string;
     boxesEmpty: string;
     exitBox: string;
     folderCountsTooltip: (files: number, folders: number) => string;
@@ -119,6 +120,7 @@ export interface ToolbarStrings {
 
 export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
   en: {
+    filtersPaused: "Tag/property filters are paused in this view",
     searchStatus: {
       buildingRestoring: "Restoring index",
       building: "Building index",
@@ -207,8 +209,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       newFolderAtRoot: "New folder in vault root",
       collapseSection: "Collapse section",
       expandSection: "Expand section",
-      tagsDisabledInBox: "Tag filter is unavailable in a box",
-      propertiesDisabledInBox: "Property filter is unavailable in a box",
+      tagsFilterUnavailable: "Tag filter is unavailable in this view",
+      propertiesFilterUnavailable: "Property filter is unavailable in this view",
       boxesEmpty: "No card boxes yet — right-click to create one",
       exitBox: "Exit box",
       folderCountsTooltip: (files: number, folders: number) =>
@@ -237,6 +239,7 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
     },
   },
   zh: {
+    filtersPaused: "标签/属性筛选已在当前视图暂停",
     searchStatus: {
       buildingRestoring: "正在恢复索引",
       building: "正在构建索引",
@@ -325,8 +328,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       newFolderAtRoot: "在库根目录新建文件夹",
       collapseSection: "折叠此区",
       expandSection: "展开此区",
-      tagsDisabledInBox: "卡片盒模式下不可使用标签筛选",
-      propertiesDisabledInBox: "卡片盒模式下不可使用属性筛选",
+      tagsFilterUnavailable: "当前视图不可使用标签筛选",
+      propertiesFilterUnavailable: "当前视图不可使用属性筛选",
       boxesEmpty: "还没有卡片盒 — 右键新建",
       exitBox: "退出卡片盒",
       folderCountsTooltip: (files: number, folders: number) =>

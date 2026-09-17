@@ -23,6 +23,7 @@ vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
 
 import { TagActions } from "./tag-actions";
 import { FolderCardView } from "../FolderCardView";
+import { createBoxScope } from "../scope";
 import {
   addTagToFile,
   batchAddTagToFiles,
@@ -303,5 +304,35 @@ describe("TagActions single and bulk card workflows", () => {
         "No selected notes contained the 1 chosen tag (2 notes unchanged).",
       );
     });
+  });
+});
+
+describe("TagActions filter-change capability gating", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  it("clears dormant tag filters from a non-filterable scope but never sets tags there", async () => {
+    const { view, plugin } = createViewWithFile("notes/box-clear.md");
+    (view as any).cardScope = createBoxScope("box-1");
+    const settings = {
+      includeSubfolders: true,
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["dormant"], properties: [] },
+      visiblePropertyKeys: [],
+      expandedPropertyKeys: [],
+      pinnedPaths: [],
+      previewLines: 5,
+    };
+    plugin.getSettings = vi.fn(() => settings);
+    const tagActions = (view as any).modules.tagActions;
+
+    // Setting tags from a box scope stays blocked: dormant filters are not settable here.
+    await tagActions.onFilterChange({ tags: ["new-tag"] });
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+
+    // The section-header clear intent remains the explicit escape hatch.
+    await tagActions.onFilterChange({ tags: [] });
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [] } });
   });
 });

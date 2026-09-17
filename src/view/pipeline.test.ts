@@ -472,7 +472,7 @@ describe("applyPropertyFilter behavior", () => {
     ]);
   });
 
-  it("applies the property filter in links scopes and skips the browse tag filter", () => {
+  it("keeps links scopes on the box-aligned chain and dormant for both browse filters", () => {
     const cards = [
       createMockCard("prop-filtered.md"),
       createMockCard("visible.md"),
@@ -481,14 +481,26 @@ describe("applyPropertyFilter behavior", () => {
     context.filterTags = ["folder-only-filter"];
     context.propertyFilters = [{ key: "status", values: [text("open")] }];
 
+    // Both rejecting mocks prove neither browse filter step ran (every card
+    // stays visible): links is a non-filterable scope like box.
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
-    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) => {
-      return file.path === "prop-filtered.md" ? { status: "done" } : { status: "open" };
-    });
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation(() => ({ status: "done" }));
 
     const steps = stepsForScope(createLinksScope("notes/a.md", "backlinks"));
-    expect(runPipeline(cards, steps, context).cards.map((card) => card.path)).toEqual(["visible.md"]);
+    expect(runPipeline(cards, steps, context).cards).toEqual(cards);
     expect(metadataUtils.matchesTagFilter).not.toHaveBeenCalled();
+    expect(metadataUtils.getFileFrontmatter).not.toHaveBeenCalled();
+  });
+
+  it("keeps the full member set visible in links scopes despite non-empty workspace property clauses", () => {
+    const cards = [createMockCard("a.md"), createMockCard("b.md")];
+    const context = createMockContext();
+    context.propertyFilters = [{ key: "status", values: [text("open")] }];
+    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter");
+
+    expect(runPipeline(cards, stepsForScope(createLinksScope("notes/a.md", "outgoing")), context).cards)
+      .toEqual(cards);
+    expect(frontmatter).not.toHaveBeenCalled();
   });
 
   it("keeps the full member set visible in box scopes despite non-empty workspace property clauses", () => {
@@ -986,13 +998,14 @@ describe("stepsForScope", () => {
     expect(steps[1]).toBe(applyPinReorder);
   });
 
-  it("contains exactly 3 steps in correct order for links scopes", () => {
+  it("contains exactly 2 steps in correct order for links scopes", () => {
     const backlinks = stepsForScope(createLinksScope("notes/a.md", "backlinks"));
     const outgoing = stepsForScope(createLinksScope("notes/a.md", "outgoing"));
 
-    expect(backlinks).toEqual([applyPropertyFilter, applySearchFilter, applyPinReorder]);
-    expect(outgoing).toEqual([applyPropertyFilter, applySearchFilter, applyPinReorder]);
+    expect(backlinks).toEqual([applySearchFilter, applyPinReorder]);
+    expect(outgoing).toEqual([applySearchFilter, applyPinReorder]);
     expect(backlinks).not.toContain(applyTagFilter);
+    expect(backlinks).not.toContain(applyPropertyFilter);
   });
 
   it("still filters box scopes by indexed search results for a non-empty query", () => {

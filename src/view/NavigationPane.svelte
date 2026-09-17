@@ -326,9 +326,9 @@
             && !rows.some((candidate) => candidate.kind !== "section" && candidate.section === row.section)}
             <div class="fce-tree-empty fce-nav-section-empty" data-nav-empty-section={row.section} role="none">
               {row.section === "properties" && !browsePropertyFilterEnabled
-                ? labels.propertiesDisabledInBox
+                ? labels.propertiesFilterUnavailable
                 : row.section === "tags"
-                  ? (!browseTagFilterEnabled ? labels.tagsDisabledInBox : strings.toolbar.filter.noTagsFound)
+                  ? (!browseTagFilterEnabled ? labels.tagsFilterUnavailable : strings.toolbar.filter.noTagsFound)
                   : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
             </div>
           {/if}

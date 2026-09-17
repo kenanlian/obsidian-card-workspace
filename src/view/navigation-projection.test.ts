@@ -95,7 +95,7 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     ],
     tagCounts: { work: 5, "work/current": 3, "work/历史": 2 },
     includeSubfolders: true,
-    tagsDisabled: false,
+    tagsDisabled: false, propertiesDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels,
@@ -393,18 +393,37 @@ describe("projectNavigation", () => {
     const projection = projectNavigation(buildInput({
       scope: { kind: "box", boxId: "box-a" },
       tagsDisabled: true,
+      propertiesDisabled: true,
     }));
     const byId = new Map(projection.rows.map((row) => [row.id, row]));
 
     expect(byId.get(navigationFavoriteId("folder", "Projects/Alpha"))?.semanticState).toBe("none");
     expect(byId.get(navigationFavoriteId("box", "box-a"))?.semanticState).toBe("current-range");
+    // Tag favorites keep reflecting the dormant global filter; tag section
+    // child rows are simply not projected in a non-filterable scope.
     expect(byId.get(navigationFavoriteId("tag", "work/current"))?.semanticState).toBe("checked-filter");
     expect(byId.get(navigationFavoriteId("file", "Projects/Alpha/Current.md"))?.semanticState).toBe("active-file");
-    expect(byId.get(navigationTagId("work/current"))).toMatchObject({
-      semanticState: "checked-filter",
-      disabled: true,
-    });
+    expect(byId.get(navigationTagId("work/current"))).toBeUndefined();
     expect(byId.get(navigationBoxId("box-a"))?.semanticState).toBe("current-range");
+  });
+
+  it("keeps the tags section header but projects no child rows in non-filterable scopes", () => {
+    for (const scope of [
+      { kind: "box", boxId: "box-a" } as const,
+      { kind: "links", notePath: "notes/a.md", direction: "backlinks" } as const,
+    ]) {
+      const projection = projectNavigation(buildInput({
+        scope,
+        tagsDisabled: true,
+        propertiesDisabled: true,
+      }));
+      const tagRows = projection.rows.filter((row) => row.kind === "tag");
+      expect(tagRows).toEqual([]);
+      const tagsSection = projection.sections.find((section) => section.section === "tags");
+      expect(tagsSection?.visible).toBe(true);
+      expect(tagsSection?.matchedItemCount).toBe(0);
+      expect(projection.rows.some((row) => row.id === navigationSectionId("tags"))).toBe(true);
+    }
   });
 
   it("labels the vault root with the supplied localized copy", () => {
@@ -544,6 +563,21 @@ describe("projectNavigation — properties", () => {
       ...overrides,
     });
   }
+
+  it("keeps the properties section header but projects no child rows in non-filterable scopes", () => {
+    const projection = projectNavigation(withProperties({
+      scope: { kind: "links", notePath: "notes/a.md", direction: "outgoing" },
+      tagsDisabled: true,
+      propertiesDisabled: true,
+      expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
+    }));
+    expect(projection.rows.filter((row) => row.kind === "property" || row.kind === "property-value"))
+      .toEqual([]);
+    const propertiesSection = projection.sections.find((section) => section.section === "properties");
+    expect(propertiesSection?.visible).toBe(true);
+    expect(propertiesSection?.matchedItemCount).toBe(0);
+    expect(projection.rows.some((row) => row.id === navigationSectionId("properties"))).toBe(true);
+  });
 
   it("places property rows between Tags and Boxes in canonical order", () => {
     const projection = projectNavigation(withProperties({

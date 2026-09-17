@@ -13,7 +13,10 @@ import type { CardScope } from "./scope";
  * capability lookup. A later source kind must extend this switch together with
  * the semantic dispatchers; the `never` arm fails compilation otherwise.
  *
- * Links uses global arrangement ownership. Accepted side effect: card-pin
+ * Links uses global arrangement ownership. Browse tag and property filters
+ * are folder-only capabilities: box and links scopes keep the workspace filter
+ * clauses dormant (never applied to their card streams) and surface that state
+ * through the paused-filters hint instead. Accepted side effect: card-pin
  * toggles inside a Links scope write global `settings.pinnedPaths` and affect
  * all folder views.
  */
@@ -64,7 +67,7 @@ export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities 
       return {
         arrangementOwner: { kind: "global" },
         browseTagFilter: false,
-        browsePropertyFilter: true,
+        browsePropertyFilter: false,
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: FOLDER_GROUP_DIMENSIONS,

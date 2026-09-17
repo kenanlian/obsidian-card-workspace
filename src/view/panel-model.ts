@@ -2,6 +2,7 @@ import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
 import type { CardCornerRadius, SortDirection, SortField } from "../settings";
 import type { UiStrings } from "../i18n";
 import { isLinksScope, type CardScope } from "./scope";
+import { resolveSourceCapabilities } from "./source-capabilities";
 import type { CardGroupSegment } from "./card-grouping";
 import type {
   NavigationFocusRequest,
@@ -57,6 +58,12 @@ export interface PanelScopeState {
   browseTagFilterEnabled: boolean;
   /** Browse property filter availability for this source (C6 capability). */
   browsePropertyFilterEnabled: boolean;
+  /**
+   * Host-derived, never persisted: workspace tag/property filters are active
+   * but dormant in this non-folder scope. Optional so existing panel defaults
+   * stay valid; the Toolbar reads it with a false fallback and never derives.
+   */
+  browseFiltersPaused?: boolean;
   /** Include-subfolders control availability for this source (C6 capability). */
   supportsIncludeSubfolders: boolean;
   /** Save/add-current-source Box-rule seeding availability (C6 capability). */
@@ -114,6 +121,19 @@ export function buildLinksScopeGroupFields(
     linksLabel: `\u201c${linksNoteName}\u201d${strings.toolbar.scope.separator}${directionLabel}`,
     supportsLinksSnapshot: true,
   };
+}
+
+/**
+ * Host-derived, never persisted: workspace tag/property filters are active
+ * but dormant in this non-folder scope. Drives the toolbar's paused hint.
+ */
+export function resolveBrowseFiltersPaused(
+  scope: CardScope,
+  filter: { tags: readonly string[]; properties: readonly unknown[] },
+): boolean {
+  const { browseTagFilter, browsePropertyFilter } = resolveSourceCapabilities(scope);
+  return (!browseTagFilter || !browsePropertyFilter)
+    && (filter.tags.length > 0 || filter.properties.length > 0);
 }
 
 export interface PanelCardsState {

@@ -250,3 +250,56 @@ describe("buildNavigationPanelState linksDisabled (C5b)", () => {
     expect(captureLinksDisabled({ scope, selectedPath: "P.png" })).toBe(false);
   });
 });
+
+describe("buildNavigationPanelState browse-filter disabled flags (C6)", () => {
+  function captureDisabledFlags(scope: ReturnType<typeof createFolderScope>): {
+    tagsDisabled: boolean;
+    propertiesDisabled: boolean;
+  } {
+    let captured = { tagsDisabled: false, propertiesDisabled: false };
+    const navLayout = {
+      project: (input: { tagsDisabled: boolean; propertiesDisabled: boolean }) => {
+        captured = { tagsDisabled: input.tagsDisabled, propertiesDisabled: input.propertiesDisabled };
+        return { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false };
+      },
+      getLayoutMode: () => "dual" as const,
+      getNavVisible: () => true,
+      getQuery: () => "",
+      getFocusId: () => null,
+      getFocusRequest: () => null,
+      getRevealRequest: () => null,
+    };
+    buildNavigationPanelState({
+      settings: DEFAULT_SETTINGS,
+      strings: getUiStrings("en"),
+      scope,
+      selectedPath: null,
+      folderTree: [],
+      favorites: [],
+      boxSummaries: [],
+      cardProjection: {
+        sortField: "mtime",
+        sortDirection: "desc",
+        availableTags: [],
+        tagCounts: {},
+        activeFilterTags: [],
+        pinnedPaths: [],
+        group: DEFAULT_SETTINGS.group,
+        availableGroupDimensions: ["none"],
+        groupSegmentCount: 0,
+      },
+      navLayout: navLayout as never,
+      tooltipSide: "right",
+    });
+    return captured;
+  }
+
+  it("derives both disabled flags from resolveSourceCapabilities per scope kind", () => {
+    expect(captureDisabledFlags(createFolderScope("notes", true)))
+      .toEqual({ tagsDisabled: false, propertiesDisabled: false });
+    expect(captureDisabledFlags(createBoxScope("box-1")))
+      .toEqual({ tagsDisabled: true, propertiesDisabled: true });
+    expect(captureDisabledFlags(createLinksScope("notes/a.md", "backlinks")))
+      .toEqual({ tagsDisabled: true, propertiesDisabled: true });
+  });
+});

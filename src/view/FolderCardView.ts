@@ -8,7 +8,6 @@ import type CardWorkspacePlugin from "../main";
 import {
   createFolderScope,
   isBoxScope, isLinksScope,
-  isCurrentFolderPath,
   normalizeScopePath,
   resolveNewNoteFolderPath as folderPathForNewNote,
   resolveScopeFolderPath,
@@ -39,7 +38,7 @@ import {
 } from "./navigation-host";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
 import {
-  PANEL_GROUPS, buildLinksScopeGroupFields,
+  PANEL_GROUPS, buildLinksScopeGroupFields, resolveBrowseFiltersPaused,
   createPanelModel,
   type PanelGroup,
   type PanelModel,
@@ -137,13 +136,14 @@ export class FolderCardView extends ItemView {
   }
   private buildEmptyStateMessage(): string {
     const settings = this.plugin.getSettings();
+    const capabilities = resolveSourceCapabilities(this.cardScope);
     return resolveEmptyStateMessage({
       strings: this.strings, query: this.modules.search.getQuery().trim(),
-      activeTagCount: settings.filter.tags.length, baseCardCount: this.baseCards.length,
+      // Dormant filters never narrow a non-folder scope, so they must not shape its copy.
+      activeTagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
+      baseCardCount: this.baseCards.length,
       visibleCardCount: this.visibleCards.length,
-      propertyClauseCount: resolveSourceCapabilities(this.cardScope).browsePropertyFilter
-        ? settings.filter.properties.length
-        : 0,
+      propertyClauseCount: capabilities.browsePropertyFilter ? settings.filter.properties.length : 0,
       emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks : undefined,
     });
   }
@@ -461,7 +461,6 @@ export class FolderCardView extends ItemView {
     const settings = this.plugin.getSettings();
     const box = this.modules.boxActions.getActiveBox();
     const capabilities = resolveSourceCapabilities(this.cardScope);
-
     return {
       displayPath: this.getDisplayFolderPath(),
       includeSubfolders: settings.includeSubfolders,
@@ -472,6 +471,7 @@ export class FolderCardView extends ItemView {
       sourceIdentity: scopeIdentity(this.cardScope),
       browseTagFilterEnabled: capabilities.browseTagFilter,
       browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
+      browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter),
       supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
       supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
       ...buildLinksScopeGroupFields(this.cardScope, this.store, this.strings),
@@ -609,13 +609,13 @@ export class FolderCardView extends ItemView {
     this.modules.navLayout.returnToCardsViewIfSinglePane();
 
     const targetFolderPath = normalizeScopePath(path);
-    // Leaving a card box counts as a scope change: tag and property filters are
-    // never applied inside a box, so browse mode should resume from a clean state.
-    const scopeChanged = !isCurrentFolderPath(this.cardScope, targetFolderPath);
+    // Folder-to-folder moves reset filters; box/links kept them dormant, so entering a folder resumes them.
+    const currentFolderPath = resolveScopeFolderPath(this.cardScope);
+    const leavingFolderScope = currentFolderPath !== null && normalizeScopePath(currentFolderPath) !== targetFolderPath;
     const { tags, properties } = this.plugin.getSettings().filter;
 
     const patch: PartialPluginSettings = {};
-    if (scopeChanged && (tags.length > 0 || properties.length > 0)) {
+    if (leavingFolderScope && (tags.length > 0 || properties.length > 0)) {
       patch.filter = { tags: [], properties: [] };
     }
     if (Object.keys(patch).length > 0) {

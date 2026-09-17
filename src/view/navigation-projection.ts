@@ -19,6 +19,8 @@ import {
   type NavigationProjectedSection,
   type NavigationProjection,
   type NavigationProjectionInput,
+  type NavigationPropertyRow,
+  type NavigationPropertyValueRow,
   type NavigationRow,
   type NavigationSemanticState,
   type NavigationTagRow,
@@ -175,7 +177,7 @@ function projectTags(
   sectionExpanded: boolean,
   activeTags: ReadonlySet<string>,
 ): NavigationTagRow[] {
-  if (!sectionExpanded) return [];
+  if (!sectionExpanded || input.tagsDisabled) return [];
   const querying = needle.length > 0;
   const matched = querying
     ? filterTagTree(input.tags, needle)
@@ -277,7 +279,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
 
   const folderMatches = querying ? filterFolderTree(input.folders, normalizedQuery, input.rootFolderLabel).length : input.folders.length;
   matchedCounts.set("folders", folderMatches);
-  const tagMatches = querying ? filterTagTree(input.tags, normalizedQuery).length : input.tags.length;
+  const tagMatches = input.tagsDisabled ? 0 : (querying ? filterTagTree(input.tags, normalizedQuery).length : input.tags.length);
   matchedCounts.set("tags", tagMatches);
 
   const boxRows: NavigationBoxRow[] = [];
@@ -306,12 +308,11 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   }
   matchedCounts.set("boxes", boxRows.length);
 
-  const propertyProjection = projectPropertyRows(
-    input.properties ?? [],
-    input.propertyClauses ?? [],
-    normalizedQuery,
-    input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER,
-  );
+  // Same plan-A rule as tags: a non-filterable scope projects no property rows.
+  const propertyProjection = input.propertiesDisabled
+    ? { rows: [] as (NavigationPropertyRow | NavigationPropertyValueRow)[], matchedItemCount: 0 }
+    : projectPropertyRows(input.properties ?? [], input.propertyClauses ?? [], normalizedQuery,
+      input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER);
   matchedCounts.set("properties", propertyProjection.matchedItemCount);
   const linksProjection = projectLinksRows(input, normalizedQuery);
   matchedCounts.set("links", linksProjection.matchedItemCount);

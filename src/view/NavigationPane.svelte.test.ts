@@ -20,10 +20,17 @@ const components: Array<Record<string, unknown>> = [];
 const originalRect = HTMLElement.prototype.getBoundingClientRect;
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
-function projection(query = "", sectionOrder = defaultNavSectionOrder(), linksDisabled = true) {
+function projection(
+  query = "",
+  sectionOrder = defaultNavSectionOrder(),
+  linksDisabled = true,
+  browseFiltersDisabled = false,
+) {
   return projectNavigation({
     query,
-    scope: { kind: "folder", path: "notes", includeSubfolders: true },
+    scope: browseFiltersDisabled
+      ? { kind: "box", boxId: "box-1" }
+      : { kind: "folder", path: "notes", includeSubfolders: true },
     activeTags: ["work"], selectedPath: "notes/A.md",
     favorites: [{ kind: "file", ref: "notes/A.md", label: "A", icon: "file-text", count: 0, missing: false }],
     folders: [
@@ -33,7 +40,8 @@ function projection(query = "", sectionOrder = defaultNavSectionOrder(), linksDi
     ],
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
-    includeSubfolders: true, tagsDisabled: false,
+    includeSubfolders: true,
+    tagsDisabled: browseFiltersDisabled, propertiesDisabled: browseFiltersDisabled,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder,
     sectionLabels: {
@@ -84,7 +92,7 @@ function propertyProjection(options: {
     ],
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
-    includeSubfolders: true, tagsDisabled: false,
+    includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
@@ -371,8 +379,8 @@ describe("NavigationPane projected ARIA tree", () => {
       node.dataset.navEmptySection, node.textContent?.trim(),
     ])).toEqual([
       ["favorites", "No favorites yet — right-click an item to add one"],
-      ["tags", "Tag filter is unavailable in a box"],
-      ["properties", "Property filter is unavailable in a box"],
+      ["tags", "Tag filter is unavailable in this view"],
+      ["properties", "Property filter is unavailable in this view"],
       ["boxes", "No card boxes yet — right-click to create one"],
     ]);
     await unmount(components.pop()!);
@@ -383,6 +391,25 @@ describe("NavigationPane projected ARIA tree", () => {
     render({ nav: nav({ query: "does-not-exist", projection: noMatch }) });
     expect(document.querySelector(".fce-nav-no-results")?.textContent).toBe("No navigation items found");
     expect(document.querySelector("[data-nav-empty-section]")).toBeNull();
+  });
+
+  it("renders header-only tags and properties sections with disabled copy in a box scope", async () => {
+    render({
+      nav: nav({ projection: projection("", defaultNavSectionOrder(), true, true) }),
+      scope: boxScopeState,
+      activeFilterTags: ["work"],
+    });
+
+    expect(document.querySelector('[data-nav-row-id="tag:work"]')).toBeNull();
+    expect(document.querySelector("[data-nav-row-id^=\"property:\"]")).toBeNull();
+    expect(document.querySelector('[data-nav-empty-section="tags"]')?.textContent?.trim())
+      .toBe("Tag filter is unavailable in this view");
+    expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
+      .toBe("Property filter is unavailable in this view");
+    // Dormant tag filters keep the header clear button as the explicit escape hatch.
+    expect(document.querySelector(".fce-tag-menu .fce-nav-section-clear")).not.toBeNull();
+    expect(document.querySelector("[data-nav-row-id=\"section:tags\"]")).not.toBeNull();
+    expect(document.querySelector("[data-nav-row-id=\"section:properties\"]")).not.toBeNull();
   });
 
   it("keeps the first visible section as the tree's first child so filtered sections drop their separator", () => {
@@ -841,7 +868,7 @@ describe("NavigationPane projected ARIA tree", () => {
     });
     await tick();
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
-      .toBe("Property filter is unavailable in a box");
+      .toBe("Property filter is unavailable in this view");
     expect(row("section:properties").querySelector(".fce-nav-section-clear")).toBeNull();
     const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-choose");
     expect(choose).not.toBeNull();
@@ -857,7 +884,7 @@ describe("NavigationPane projected ARIA tree", () => {
       strings: getUiStrings("zh"),
     });
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
-      .toBe("卡片盒模式下不可使用属性筛选");
+      .toBe("当前视图不可使用属性筛选");
   });
 
   it("keeps property key/value action slots limited to the shared more button", async () => {
@@ -907,7 +934,7 @@ describe("NavigationPane favorites manual drag reorder", () => {
         folders: [],
         tags: [],
         boxes: [], tagCounts: {},
-        includeSubfolders: true, tagsDisabled: false,
+        includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
         sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         sectionOrder: defaultNavSectionOrder(),
         sectionLabels: {
@@ -1027,7 +1054,7 @@ describe("NavigationPane links section", () => {
         scope: { kind: "folder", path: "notes", includeSubfolders: true },
         activeTags: ["work"], selectedPath: "notes/A.md",
         favorites: [], folders: [], tags: [], boxes: [], tagCounts: {},
-        includeSubfolders: true, tagsDisabled: false,
+        includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
         sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
         sectionOrder: defaultNavSectionOrder(),
         sectionLabels: {
