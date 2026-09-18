@@ -39,6 +39,9 @@ Thumbs.db
 # Private development artifacts companion
 /.dev
 
+# Local design mockups / prototypes
+designs/
+
 # Local helper/debug leftovers
 run-test.js
 test-debug.ts
