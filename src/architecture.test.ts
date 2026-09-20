@@ -1002,7 +1002,7 @@ describe("R5 line-count ratchet", () => {
     "src/view/FolderCardPanel.svelte": 832,
     "src/view/Toolbar.svelte": 608,
     "src/view/CardItem.svelte": 438,
-    "src/view/nav-context-menu.ts": 494,
+    "src/view/nav-context-menu.ts": 491,
     "src/settings.ts": 566,
     "src/services/SettingsStore.ts": 462,
     "src/view/markdown-utils.ts": 432,

@@ -1,4 +1,4 @@
-import type { FavoriteEntry, FavoriteKind } from "./types";
+import type { FavoriteEntry } from "./types";
 
 /**
  * Presentation state for one favorites row during a manual drag reorder:
@@ -25,12 +25,16 @@ export function resolveFavoriteDropPosition(
   return clientY <= rect.top + rect.height / 2 ? "before" : "after";
 }
 
-/** Drops only land inside the favorites section and only within one kind group. */
+/**
+ * Drops land on any favorites row regardless of kind — the section is one flat
+ * manual order. The dragged row itself is rejected so it never draws an
+ * insertion edge against itself.
+ */
 export function canAcceptFavoriteDrop(
   source: FavoriteEntry | null,
-  target: { kind: FavoriteKind },
+  target: Pick<FavoriteEntry, "kind" | "ref">,
 ): boolean {
-  return source !== null && source.kind === target.kind;
+  return source !== null && !(source.kind === target.kind && source.ref === target.ref);
 }
 
 /**

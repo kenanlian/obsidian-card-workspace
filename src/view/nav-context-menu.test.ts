@@ -691,9 +691,10 @@ describe("favorites row menu", () => {
     expect(findItem(menu, "Move down")?.disabled).toBe(false);
   });
 
-  it("disables move-down for the last entry inside its kind group", () => {
+  it("disables move-down only for the last entry of the whole list", () => {
     const deps = createDeps({ favorites });
-    const { menu } = build(
+    // Last of its kind, but kinds no longer bound the move.
+    const { menu: lastFolder } = build(
       createPayload({
         section: "favorites",
         scope: "item",
@@ -701,9 +702,19 @@ describe("favorites row menu", () => {
       }),
       deps,
     );
+    const { menu: lastEntry } = build(
+      createPayload({
+        section: "favorites",
+        scope: "item",
+        favorite: { kind: "box", ref: "box-1" },
+      }),
+      deps,
+    );
 
-    expect(findItem(menu, "Move up")?.disabled).toBe(false);
-    expect(findItem(menu, "Move down")?.disabled).toBe(true);
+    expect(findItem(lastFolder, "Move up")?.disabled).toBe(false);
+    expect(findItem(lastFolder, "Move down")?.disabled).toBe(false);
+    expect(findItem(lastEntry, "Move up")?.disabled).toBe(false);
+    expect(findItem(lastEntry, "Move down")?.disabled).toBe(true);
   });
 
   it("appends the root-folder menu for the vault-root favorite", () => {

@@ -2,9 +2,6 @@ import { isPathAtOrBelow, rewritePathReference } from "../path-references";
 import { normalizeTagPath } from "./tag-tree";
 import type { FavoriteEntry, FavoriteKind } from "./types";
 
-/** Display grouping order for the Favorites section. */
-export const FAVORITE_KIND_ORDER: readonly FavoriteKind[] = ["folder", "file", "tag", "box"];
-
 export function isFavoriteKind(value: unknown): value is FavoriteKind {
   return (
     value === "folder" || value === "file" || value === "tag" || value === "box"
@@ -53,10 +50,9 @@ export function isFavorite(
 /**
  * Add a favorite by appending it to the end of the array.
  *
- * The array order is the user's manual order: the projection layer groups rows
- * by kind while keeping array order within each group, so an appended entry
- * shows up last inside its kind group. No kind re-sort here — that would
- * scramble a manually drag-ordered list.
+ * The array order is the user's manual order and the projection layer renders
+ * it verbatim, so an appended entry shows up last. No kind re-sort here — that
+ * would scramble a manually drag-ordered list.
  */
 export function addFavorite(
   favorites: FavoriteEntry[],
@@ -96,6 +92,7 @@ export function toggleFavorite(
     : addFavorite(favorites, kind, ref);
 }
 
+/** Swap with the neighbouring entry, whatever kind that neighbour happens to be. */
 export function moveFavorite(
   favorites: FavoriteEntry[],
   kind: FavoriteKind,
@@ -107,29 +104,19 @@ export function moveFavorite(
     return favorites;
   }
 
-  const indices: number[] = [];
-  favorites.forEach((entry, index) => {
-    if (entry.kind === kind) {
-      indices.push(index);
-    }
-  });
-
-  const position = indices.findIndex((index) => favorites[index].ref === normalized);
-  if (position === -1) {
+  const index = indexOfFavorite(favorites, kind, normalized);
+  if (index === -1) {
     return favorites;
   }
 
-  const nextPosition = position + delta;
-  if (nextPosition < 0 || nextPosition >= indices.length) {
+  const nextIndex = index + delta;
+  if (nextIndex < 0 || nextIndex >= favorites.length) {
     return favorites;
   }
 
   const result = [...favorites];
-  const from = indices[position];
-  const to = indices[nextPosition];
-  const swapped = result[from];
-  result[from] = result[to];
-  result[to] = swapped;
+  result[index] = favorites[nextIndex];
+  result[nextIndex] = favorites[index];
   return result;
 }
 
@@ -143,13 +130,11 @@ function favoriteEntriesEqual(left: FavoriteEntry[], right: FavoriteEntry[]): bo
 }
 
 /**
- * Move `source` to sit immediately `before`/`after` `target` within their shared
- * kind group, leaving every other entry (and other kinds' positions) untouched.
+ * Move `source` to sit immediately `before`/`after` `target` in the favorites
+ * array, which is also the display order — kinds may interleave freely.
  *
- * Display groups favorites by kind with array order inside each group, so the
- * visible reorder is exactly a reorder of the same-kind subsequence: the new
- * order is written back into the flat slots that kind already occupies. Drops
- * across kinds or onto unknown refs return the input unchanged.
+ * Drops onto an unknown ref, and drops that land the entry back where it
+ * started, return the input unchanged.
  */
 export function reorderFavorite(
   favorites: FavoriteEntry[],
@@ -157,35 +142,16 @@ export function reorderFavorite(
   target: Pick<FavoriteEntry, "kind" | "ref">,
   position: FavoriteReorderPosition,
 ): FavoriteEntry[] {
-  if (source.kind !== target.kind) {
+  const sourceIndex = indexOfFavorite(favorites, source.kind, source.ref);
+  const targetIndex = indexOfFavorite(favorites, target.kind, target.ref);
+  if (sourceIndex === -1 || targetIndex === -1) {
     return favorites;
   }
-
-  const slots: number[] = [];
-  favorites.forEach((entry, index) => {
-    if (entry.kind === source.kind) {
-      slots.push(index);
-    }
-  });
-
-  const sourcePosition = slots.findIndex((index) => favorites[index].ref === source.ref);
-  const targetPosition = slots.findIndex((index) => favorites[index].ref === target.ref);
-  if (sourcePosition === -1 || targetPosition === -1) {
-    return favorites;
-  }
-
-  const groupEntries = slots.map((index) => favorites[index]);
-  groupEntries.splice(sourcePosition, 1);
-  const insertAt = position === "before" ? targetPosition : targetPosition + 1;
-  groupEntries.splice(sourcePosition < insertAt ? insertAt - 1 : insertAt, 0, {
-    kind: source.kind,
-    ref: source.ref,
-  });
 
   const result = [...favorites];
-  slots.forEach((flatIndex, groupIndex) => {
-    result[flatIndex] = groupEntries[groupIndex];
-  });
+  const [moved] = result.splice(sourceIndex, 1);
+  const insertAt = position === "before" ? targetIndex : targetIndex + 1;
+  result.splice(sourceIndex < insertAt ? insertAt - 1 : insertAt, 0, moved);
   return favoriteEntriesEqual(result, favorites) ? favorites : result;
 }
 

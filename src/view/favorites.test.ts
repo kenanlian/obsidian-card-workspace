@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   addFavorite,
-  FAVORITE_KIND_ORDER,
   isFavorite,
   isFavoriteKind,
   moveFavorite,
@@ -21,7 +20,8 @@ function makeFavorite(kind: FavoriteKind, ref: string): FavoriteEntry {
 
 describe("isFavoriteKind", () => {
   it("accepts every declared kind", () => {
-    for (const kind of FAVORITE_KIND_ORDER) {
+    const kinds: FavoriteKind[] = ["folder", "file", "tag", "box"];
+    for (const kind of kinds) {
       expect(isFavoriteKind(kind)).toBe(true);
     }
   });
@@ -127,21 +127,21 @@ describe("reorderFavorite", () => {
     makeFavorite("tag", "home"),
   ];
 
-  it("moves a same-kind entry before its target, keeping other kinds in place", () => {
+  it("moves an entry before its target", () => {
     expect(reorderFavorite(favorites, { kind: "folder", ref: "C" }, { kind: "folder", ref: "A" }, "before")).toEqual([
       makeFavorite("folder", "C"),
-      makeFavorite("tag", "work"),
       makeFavorite("folder", "A"),
+      makeFavorite("tag", "work"),
       makeFavorite("folder", "B"),
       makeFavorite("file", "One.md"),
       makeFavorite("tag", "home"),
     ]);
   });
 
-  it("moves a same-kind entry after its target", () => {
+  it("moves an entry after its target", () => {
     expect(reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "folder", ref: "B" }, "after")).toEqual([
-      makeFavorite("folder", "B"),
       makeFavorite("tag", "work"),
+      makeFavorite("folder", "B"),
       makeFavorite("folder", "A"),
       makeFavorite("folder", "C"),
       makeFavorite("file", "One.md"),
@@ -149,21 +149,23 @@ describe("reorderFavorite", () => {
     ]);
   });
 
-  it("reorders inside one kind without touching other kinds' slots", () => {
-    expect(reorderFavorite(favorites, { kind: "tag", ref: "home" }, { kind: "tag", ref: "work" }, "before")).toEqual([
+  it("interleaves kinds on a cross-kind drop", () => {
+    expect(reorderFavorite(favorites, { kind: "tag", ref: "home" }, { kind: "folder", ref: "B" }, "before")).toEqual([
       makeFavorite("folder", "A"),
+      makeFavorite("tag", "work"),
       makeFavorite("tag", "home"),
       makeFavorite("folder", "B"),
       makeFavorite("folder", "C"),
       makeFavorite("file", "One.md"),
-      makeFavorite("tag", "work"),
     ]);
-  });
-
-  it("returns the same reference for cross-kind drops", () => {
-    expect(
-      reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "file", ref: "One.md" }, "after"),
-    ).toBe(favorites);
+    expect(reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "file", ref: "One.md" }, "after")).toEqual([
+      makeFavorite("tag", "work"),
+      makeFavorite("folder", "B"),
+      makeFavorite("folder", "C"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("folder", "A"),
+      makeFavorite("tag", "home"),
+    ]);
   });
 
   it("returns the same reference for unknown refs or no-op moves", () => {
@@ -171,10 +173,14 @@ describe("reorderFavorite", () => {
       reorderFavorite(favorites, { kind: "folder", ref: "Missing" }, { kind: "folder", ref: "A" }, "before"),
     ).toBe(favorites);
     expect(
-      reorderFavorite(favorites, { kind: "folder", ref: "B" }, { kind: "folder", ref: "B" }, "before"),
+      reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "tag", ref: "Missing" }, "before"),
     ).toBe(favorites);
     expect(
-      reorderFavorite(favorites, { kind: "folder", ref: "A" }, { kind: "folder", ref: "B" }, "before"),
+      reorderFavorite(favorites, { kind: "folder", ref: "B" }, { kind: "folder", ref: "B" }, "before"),
+    ).toBe(favorites);
+    // Already sits immediately before the target.
+    expect(
+      reorderFavorite(favorites, { kind: "tag", ref: "work" }, { kind: "folder", ref: "B" }, "before"),
     ).toBe(favorites);
   });
 });
@@ -187,7 +193,7 @@ describe("moveFavorite", () => {
     makeFavorite("file", "Two.md"),
   ];
 
-  it("swaps two entries inside the same kind group", () => {
+  it("swaps with the neighbouring entry", () => {
     expect(moveFavorite(favorites, "folder", "B", -1)).toEqual([
       makeFavorite("folder", "B"),
       makeFavorite("folder", "A"),
@@ -202,9 +208,24 @@ describe("moveFavorite", () => {
     ]);
   });
 
-  it("refuses to cross a group boundary", () => {
-    expect(moveFavorite(favorites, "file", "One.md", -1)).toBe(favorites);
-    expect(moveFavorite(favorites, "folder", "B", 1)).toBe(favorites);
+  it("swaps across a kind boundary", () => {
+    expect(moveFavorite(favorites, "file", "One.md", -1)).toEqual([
+      makeFavorite("folder", "A"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("folder", "B"),
+      makeFavorite("file", "Two.md"),
+    ]);
+    expect(moveFavorite(favorites, "folder", "B", 1)).toEqual([
+      makeFavorite("folder", "A"),
+      makeFavorite("file", "One.md"),
+      makeFavorite("folder", "B"),
+      makeFavorite("file", "Two.md"),
+    ]);
+  });
+
+  it("stops at the array boundaries", () => {
+    expect(moveFavorite(favorites, "folder", "A", -1)).toBe(favorites);
+    expect(moveFavorite(favorites, "file", "Two.md", 1)).toBe(favorites);
   });
 
   it("returns the same reference for a missing or invalid target", () => {

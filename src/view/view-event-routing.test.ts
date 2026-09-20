@@ -3260,7 +3260,7 @@ describe("FolderCardView favorites manual reorder routing", () => {
     resetFolderCardViewHarness();
   });
 
-  it("persists a reorder-favorites intent through the view into settings", async () => {
+  it("persists a cross-kind reorder-favorites intent through the view into settings", async () => {
     const { view, plugin } = createViewWithFile("notes/primary.md");
     plugin.getSettings = vi.fn(() => ({
       includeSubfolders: true,
@@ -3282,7 +3282,7 @@ describe("FolderCardView favorites manual reorder routing", () => {
 
     view.handleNavigationIntent({
       type: "reorder-favorites",
-      source: { kind: "tag", ref: "home" },
+      source: { kind: "folder", ref: "notes" },
       target: { kind: "tag", ref: "work" },
       position: "before",
     });
@@ -3290,9 +3290,9 @@ describe("FolderCardView favorites manual reorder routing", () => {
 
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       favorites: [
-        { kind: "tag", ref: "home" },
         { kind: "folder", ref: "notes" },
         { kind: "tag", ref: "work" },
+        { kind: "tag", ref: "home" },
       ],
     });
   });

@@ -23,7 +23,7 @@ describe("FavoriteActions", () => {
     expect(calls).toEqual(["folder:", "tags:project"]);
   });
 
-  it("persists a manual drag reorder and skips the save for no-op drops", async () => {
+  it("persists a manual drag reorder across kinds and skips the save for no-op drops", async () => {
     const favorites = [
       { kind: "tag" as const, ref: "work" },
       { kind: "folder" as const, ref: "notes" },
@@ -41,8 +41,18 @@ describe("FavoriteActions", () => {
     expect(saveSettings).toHaveBeenCalledWith({
       favorites: [
         { kind: "tag", ref: "home" },
+        { kind: "tag", ref: "work" },
+        { kind: "folder", ref: "notes" },
+      ],
+    });
+
+    saveSettings.mockClear();
+    await actions.reorderFavoriteEntries({ kind: "folder", ref: "notes" }, { kind: "tag", ref: "work" }, "before");
+    expect(saveSettings).toHaveBeenCalledWith({
+      favorites: [
         { kind: "folder", ref: "notes" },
         { kind: "tag", ref: "work" },
+        { kind: "tag", ref: "home" },
       ],
     });
 

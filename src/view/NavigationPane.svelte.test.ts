@@ -965,7 +965,7 @@ describe("NavigationPane favorites manual drag reorder", () => {
     HTMLElement.prototype.getBoundingClientRect = originalRect;
   });
 
-  it("drags a favorite onto the upper/lower half of a same-kind row and emits a reorder intent", async () => {
+  it("drags a favorite onto the upper/lower half of any row and emits a reorder intent", async () => {
     HTMLElement.prototype.getBoundingClientRect = function () {
       return { top: 200, height: 40, bottom: 240, left: 0, right: 240, width: 240, x: 0, y: 200, toJSON: () => ({}) } as DOMRect;
     };
@@ -996,8 +996,15 @@ describe("NavigationPane favorites manual drag reorder", () => {
 
     const crossKind = dragEvent("dragover", 210);
     folderRow.dispatchEvent(crossKind);
-    expect(crossKind.defaultPrevented).toBe(false);
-    expect(folderRow.classList.contains("is-drop-before")).toBe(false);
+    expect(crossKind.defaultPrevented).toBe(true);
+    await tick();
+    expect(folderRow.classList.contains("is-drop-before")).toBe(true);
+
+    const ontoSelf = dragEvent("dragover", 210);
+    home.dispatchEvent(ontoSelf);
+    expect(ontoSelf.defaultPrevented).toBe(false);
+    await tick();
+    expect(home.classList.contains("is-drop-before")).toBe(false);
 
     // The drop reuses the position from the latest dragover; re-hover the upper half first.
     work.dispatchEvent(dragEvent("dragover", 210));
@@ -1018,7 +1025,7 @@ describe("NavigationPane favorites manual drag reorder", () => {
     expect(work.classList.contains("is-drop-after")).toBe(false);
   });
 
-  it("ignores drops on rows of another kind without emitting intents", () => {
+  it("emits a cross-kind reorder but ignores a drop back onto the dragged row", () => {
     HTMLElement.prototype.getBoundingClientRect = function () {
       return { top: 200, height: 40, bottom: 240, left: 0, right: 240, width: 240, x: 0, y: 200, toJSON: () => ({}) } as DOMRect;
     };
@@ -1029,10 +1036,21 @@ describe("NavigationPane favorites manual drag reorder", () => {
     const folderRow = row("favorite:folder:notes");
     home.dispatchEvent(dragEvent("dragstart", 220));
 
-    const drop = dragEvent("drop", 210);
-    folderRow.dispatchEvent(drop);
-    expect(drop.defaultPrevented).toBe(false);
+    const selfDrop = dragEvent("drop", 210);
+    home.dispatchEvent(selfDrop);
+    expect(selfDrop.defaultPrevented).toBe(false);
     expect(intents.filter((intent) => intent.type === "reorder-favorites")).toEqual([]);
+
+    home.dispatchEvent(dragEvent("dragstart", 220));
+    const crossKindDrop = dragEvent("drop", 210);
+    folderRow.dispatchEvent(crossKindDrop);
+    expect(crossKindDrop.defaultPrevented).toBe(true);
+    expect(intents).toContainEqual({
+      type: "reorder-favorites",
+      source: { kind: "tag", ref: "home" },
+      target: { kind: "folder", ref: "notes" },
+      position: "before",
+    });
 
     home.dispatchEvent(dragEvent("dragend", 220));
     expect(home.classList.contains("is-favorite-dragging")).toBe(false);

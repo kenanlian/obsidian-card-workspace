@@ -50,7 +50,7 @@ Card Workspace is installed manually from GitHub releases.
 - **Left-sidebar folder browsing.** Open Card Workspace in the left sidebar and browse a folder as a card stream.
 - **Two-column navigation pane.** A resizable navigation column sits next to the card stream, so you can switch folders, tags, properties, card boxes, and favorites without leaving the panel.
 - **Card boxes.** Save a folder-and-tag scope as a reusable, rule-based collection with its own name and sort order, and add the current scope or view to a box in one step.
-- **Favorites.** Keep frequently used folders, files, tags, and boxes in a dedicated Favorites section, grouped by kind and reorderable.
+- **Favorites.** Keep frequently used folders, files, tags, and boxes in a dedicated Favorites section, freely reorderable by drag in any mix of kinds.
 - **Context menus everywhere.** Right-click in the navigation pane or on a card to create notes, folders, canvases, and bases, rename, duplicate, move, delete, copy vault or system paths, reveal in the system file explorer, and search within a folder.
 - **Drag to insert.** Drag a card into an open editor to insert a wikilink, an embed, the note's content, or its title plus content. The plugin can also ask which one to use on every drop.
 - **Card previews.** Each card shows the note title and a Markdown-stripped excerpt.

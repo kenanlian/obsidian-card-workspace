@@ -361,15 +361,12 @@ function buildFavoritesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolean {
   return true;
 }
 
-function getFavoriteGroupPosition(
+function getFavoritePosition(
   favorites: FavoriteEntry[],
   favorite: FavoriteEntry,
 ): { index: number; size: number } {
-  const group = favorites.filter((entry) => entry.kind === favorite.kind);
-  return {
-    index: group.findIndex((entry) => entry.ref === favorite.ref),
-    size: group.length,
-  };
+  const index = favorites.findIndex((entry) => entry.kind === favorite.kind && entry.ref === favorite.ref);
+  return { index, size: favorites.length };
 }
 
 function buildFavoriteItemMenu(
@@ -384,7 +381,7 @@ function buildFavoriteItemMenu(
 
   const navMenu = deps.strings.view.navMenu;
   const { kind, ref } = favorite;
-  const { index, size } = getFavoriteGroupPosition(deps.favorites, favorite);
+  const { index, size } = getFavoritePosition(deps.favorites, favorite);
 
   addItem(menu, navMenu.unfavorite, "star-off", () => deps.actions.toggleFavorite(kind, ref));
   addItem(

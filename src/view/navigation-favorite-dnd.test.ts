@@ -22,10 +22,15 @@ describe("resolveFavoriteDropPosition", () => {
 });
 
 describe("canAcceptFavoriteDrop", () => {
-  it("accepts same-kind targets and rejects cross-kind, foreign, or absent sources", () => {
-    expect(canAcceptFavoriteDrop({ kind: "tag", ref: "home" }, { kind: "tag" })).toBe(true);
-    expect(canAcceptFavoriteDrop({ kind: "tag", ref: "home" }, { kind: "folder" })).toBe(false);
-    expect(canAcceptFavoriteDrop(null, { kind: "tag" })).toBe(false);
+  it("accepts any favorites row regardless of kind", () => {
+    expect(canAcceptFavoriteDrop({ kind: "tag", ref: "home" }, { kind: "tag", ref: "work" })).toBe(true);
+    expect(canAcceptFavoriteDrop({ kind: "tag", ref: "home" }, { kind: "folder", ref: "notes" })).toBe(true);
+    expect(canAcceptFavoriteDrop({ kind: "box", ref: "box-1" }, { kind: "file", ref: "A.md" })).toBe(true);
+  });
+
+  it("rejects an absent source and the dragged row itself", () => {
+    expect(canAcceptFavoriteDrop(null, { kind: "tag", ref: "work" })).toBe(false);
+    expect(canAcceptFavoriteDrop({ kind: "tag", ref: "work" }, { kind: "tag", ref: "work" })).toBe(false);
   });
 });
 

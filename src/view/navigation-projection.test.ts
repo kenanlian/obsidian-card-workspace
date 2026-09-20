@@ -121,9 +121,9 @@ function ids(rows: readonly NavigationRow[]): string[] {
 }
 
 describe("projectNavigation", () => {
-  it("groups favorites by kind while keeping array order inside each group", () => {
-    // Interleaved on purpose: the persisted array is the user's manual order,
-    // and the display grouping must not reorder entries inside a kind.
+  it("projects favorites in array order without regrouping by kind", () => {
+    // Interleaved on purpose: the persisted array is the user's manual drag
+    // order, so mixed kinds must survive projection exactly as stored.
     const projection = projectNavigation(buildInput({
       favorites: [
         { kind: "tag", ref: "work/current", label: "work/current", icon: "tag", count: 3, missing: false },
@@ -136,10 +136,10 @@ describe("projectNavigation", () => {
 
     const favoriteRows = projection.rows.filter((row) => row.kind === "favorite");
     expect(favoriteRows.map((row) => row.id)).toEqual([
-      navigationFavoriteId("folder", "Projects/Alpha"),
-      navigationFavoriteId("file", "Projects/Alpha/Current.md"),
       navigationFavoriteId("tag", "work/current"),
+      navigationFavoriteId("folder", "Projects/Alpha"),
       navigationFavoriteId("tag", "home"),
+      navigationFavoriteId("file", "Projects/Alpha/Current.md"),
       navigationFavoriteId("box", "box-a"),
     ]);
   });
