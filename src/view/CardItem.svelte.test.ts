@@ -847,9 +847,9 @@ describe("CardItem.svelte", () => {
     expect(target.textContent).not.toContain("Created");
   });
 
-  it("renders an incomplete-task footer with a bare count", async () => {
+  it("renders an untouched-task footer with an empty circle and a zero completed count", async () => {
     const { target } = mountCardItem({
-      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 3 } }),
+      card: createCard("notes/tasks.md", { taskSummary: { total: 5, incomplete: 5 } }),
     });
 
     await tick();
@@ -858,12 +858,26 @@ describe("CardItem.svelte", () => {
     const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
     expect(footer).not.toBeNull();
     expect(footer?.classList.contains("is-complete")).toBe(false);
-    expect(icon?.getAttribute("data-icon")).toBe("list-todo");
-    expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("3");
-    expect(footer?.textContent?.trim()).toBe("3");
+    expect(icon?.getAttribute("data-icon")).toBe("circle");
+    expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("0/5");
   });
 
-  it("renders a de-emphasized complete-task footer without a count", async () => {
+  it("renders a partially complete footer with a dotted circle", async () => {
+    const { target } = mountCardItem({
+      card: createCard("notes/tasks.md", { taskSummary: { total: 10, incomplete: 8 } }),
+    });
+
+    await tick();
+
+    const footer = target.querySelector<HTMLElement>(".fce-card-task-footer");
+    const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
+    expect(footer).not.toBeNull();
+    expect(footer?.classList.contains("is-complete")).toBe(false);
+    expect(icon?.getAttribute("data-icon")).toBe("circle-dot");
+    expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("2/10");
+  });
+
+  it("renders a complete-task footer with a checked circle and a saturated count", async () => {
     const { target } = mountCardItem({
       card: createCard("notes/done.md", { taskSummary: { total: 5, incomplete: 0 } }),
     });
@@ -874,9 +888,8 @@ describe("CardItem.svelte", () => {
     const icon = footer?.querySelector<HTMLElement>(".fce-card-task-icon");
     expect(footer).not.toBeNull();
     expect(footer?.classList.contains("is-complete")).toBe(true);
-    expect(icon?.getAttribute("data-icon")).toBe("square-check-big");
-    expect(footer?.querySelector(".fce-card-task-count")).toBeNull();
-    expect(footer?.textContent).not.toMatch(/\d/);
+    expect(icon?.getAttribute("data-icon")).toBe("circle-check");
+    expect(footer?.querySelector(".fce-card-task-count")?.textContent).toBe("5/5");
   });
 
   it("does not render a task footer for a canvas card with a null summary", () => {
@@ -916,7 +929,7 @@ describe("CardItem.svelte", () => {
 
     const footer = target.querySelector<HTMLElement>(".fce-card-task-footer");
     expect(footer?.getAttribute("role")).toBe("img");
-    expect(footer?.getAttribute("aria-label")).toBe("3 incomplete tasks");
+    expect(footer?.getAttribute("aria-label")).toBe("2 of 5 tasks complete");
     expect(footer?.hasAttribute("tabindex")).toBe(false);
     expect(footer?.classList.contains("clickable-icon")).toBe(false);
     expect(footer?.querySelector("[role='button'], [tabindex], .clickable-icon")).toBeNull();
@@ -939,10 +952,10 @@ describe("CardItem.svelte", () => {
     await tick();
 
     expect(incomplete.target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(
-      "3 个未完成任务",
+      "5 个任务中已完成 2 个",
     );
     expect(complete.target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(
-      "任务已全部完成",
+      "5 个任务中已完成 5 个",
     );
   });
 });

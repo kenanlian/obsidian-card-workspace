@@ -1256,12 +1256,7 @@
   gap: 4px;
   font-size: 0.7rem;
   line-height: 1;
-  color: var(--fce-text-muted);
-}
-
-.folder-card-view .fce-card-task-footer.is-complete {
-  color: var(--text-faint, var(--fce-text-muted));
-  opacity: 0.75;
+  color: var(--text-accent, var(--fce-accent));
 }
 
 .folder-card-view .fce-card-task-icon {
@@ -1269,9 +1264,16 @@
   align-items: center;
 }
 
+/* Overrides Obsidian's `.svg-icon { stroke-width: var(--icon-stroke) }` so the
+   glyph reads as bold as the adjacent count at this small size. */
 .folder-card-view .fce-card-task-icon svg {
   width: 13px;
   height: 13px;
+  stroke-width: 2.5px;
+}
+
+.folder-card-view .fce-card-task-count {
+  font-weight: var(--font-semibold, 600);
 }
 
 .folder-card-view .fce-card-file-icon {

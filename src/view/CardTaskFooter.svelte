@@ -10,10 +10,10 @@
 
   let { summary, strings }: CardTaskFooterProps = $props();
 
-  const ariaLabel = $derived(
-    summary.incomplete === 0
-      ? strings.taskAllCompleteAria
-      : strings.taskIncompleteAria(summary.incomplete),
+  const completed = $derived(summary.total - summary.incomplete);
+  const ariaLabel = $derived(strings.taskProgressAria(completed, summary.total));
+  const iconName = $derived(
+    completed === 0 ? "circle" : completed === summary.total ? "circle-check" : "circle-dot",
   );
 
   function applyIcon(node: HTMLElement, iconName: string) {
@@ -27,6 +27,6 @@
 </script>
 
 <div class="fce-card-task-footer {summary.incomplete === 0 ? 'is-complete' : ''}" role="img" aria-label={ariaLabel}>
-  <span class="fce-card-task-icon" aria-hidden="true" use:applyIcon={summary.incomplete === 0 ? "square-check-big" : "list-todo"}></span>
-  {#if summary.incomplete > 0}<span class="fce-card-task-count">{summary.incomplete}</span>{/if}
+  <span class="fce-card-task-icon" aria-hidden="true" use:applyIcon={iconName}></span>
+  <span class="fce-card-task-count">{completed}/{summary.total}</span>
 </div>
