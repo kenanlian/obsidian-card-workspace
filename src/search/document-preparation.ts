@@ -3,6 +3,12 @@ import { extractMarkdownSearchText } from "./markdown-search-text";
 import type { SearchRenameClassification, SearchVaultMutation, SearchableDocument } from "./types";
 
 const EXCERPT_MAX_LENGTH = 260;
+/**
+ * Upper bound on the markdown a single note contributes to the index. Tokenizing
+ * an unbounded note blocks the main thread and inflates the index for negligible
+ * retrieval value, and one oversized file is enough to stall a whole build.
+ */
+const SEARCH_MARKDOWN_MAX_LENGTH = 512 * 1024;
 
 export interface SearchableDocumentInput {
   path: string;
@@ -28,7 +34,9 @@ export interface SearchMutationDecision {
 
 export function prepareSearchableDocument(input: SearchableDocumentInput): SearchableDocument {
   const title = input.title.trim();
-  const markdown = input.markdown;
+  const markdown = typeof input.markdown === "string"
+    ? input.markdown.slice(0, SEARCH_MARKDOWN_MAX_LENGTH)
+    : input.markdown;
   const content = typeof markdown === "string" ? extractMarkdownSearchText(markdown) : "";
   const excerpt = typeof markdown === "string" ? stripMarkdownToText(markdown, EXCERPT_MAX_LENGTH) : "";
 

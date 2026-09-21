@@ -1,4 +1,6 @@
 export { IndexStore } from "./IndexStore";
+export { IndexBuildGuard, MAX_CONSECUTIVE_INCOMPLETE_BUILDS } from "./IndexBuildGuard";
+export { scheduleIdleTask } from "./idle-task";
 export { SearchIndexManager } from "./SearchIndexManager";
 export { IndexedSearchService } from "./IndexedSearchService";
 export {
@@ -27,10 +29,12 @@ export type {
 export type {
   IndexStoreNamespaceMetadata,
   IndexStoreRestoreResult,
+  IndexStoreSerializedIndex,
   IndexStoreSerializedPayload,
   IndexStoreStorageAdapter,
   IndexStoreWriteResult,
 } from "./IndexStore";
+export type { IndexBuildGuardStore } from "./IndexBuildGuard";
 export type {
   SearchIndexManagerMutationResult,
   SearchIndexManagerRestoreResult,

@@ -51,6 +51,39 @@ describe("prepareSearchableDocument", () => {
     expect(document.excerpt).toBe("");
   });
 
+  it("caps how much of an oversized note reaches the index", () => {
+    const head = "findable-head ";
+    const tail = " findable-tail";
+    const markdown = `${head}${"filler ".repeat(120_000)}${tail}`;
+    expect(markdown.length).toBeGreaterThan(512 * 1024);
+
+    const document = documentPreparation.prepareSearchableDocument({
+      path: "notes/huge.md",
+      title: "Huge",
+      markdown,
+      mtime: 12,
+      ctime: 6,
+    });
+
+    expect(document.content).toContain("findable-head");
+    expect(document.content).not.toContain("findable-tail");
+    expect(document.content.length).toBeLessThan(markdown.length);
+  });
+
+  it("leaves a note under the cap untouched", () => {
+    const markdown = `head ${"filler ".repeat(1_000)} tail`;
+    const document = documentPreparation.prepareSearchableDocument({
+      path: "notes/normal.md",
+      title: "Normal",
+      markdown,
+      mtime: 12,
+      ctime: 6,
+    });
+
+    expect(document.content).toContain("head");
+    expect(document.content).toContain("tail");
+  });
+
   it("builds excerpts from the neutral helper byte-for-byte on the representative corpus", () => {
     // The excerpt lane must equal the neutral src/markdown-plain-text.ts helper
     // (moved from src/view/markdown-utils.ts) for the same corpus samples whose

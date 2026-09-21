@@ -510,7 +510,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "rebuild-folder-card-search-index",
       name: strings.rebuildSearchIndexCommand,
       callback: () => {
-        this.runDetached(this.searchCoordinator.rebuild("Manual rebuild command requested local search index rebuild."), "Search rebuild failed.");
+        this.runDetached(this.searchCoordinator.rebuildManually("Manual rebuild command requested local search index rebuild."), "Search rebuild failed.");
       },
     });
 

@@ -12,6 +12,7 @@ export interface AppStrings {
   clearResetSearchIndexCommand: string;
   openInNewWindowDesktopOnly: string;
   searchIndexRequiresRecovery: string;
+  searchIndexAutoBuildSuspended: string;
   searchIndexReady: string;
   searchIndexUnavailable: string;
   searchIndexResetFailed: string;
@@ -53,6 +54,8 @@ export const appStrings: Record<UiLanguage, AppStrings> = {
     clearResetSearchIndexCommand: "Clear and reset Card Workspace local search index state",
     openInNewWindowDesktopOnly: "Open in new window is available on desktop only.",
     searchIndexRequiresRecovery: "Card Workspace search index requires recovery.",
+    searchIndexAutoBuildSuspended:
+      "Card Workspace stopped rebuilding the search index automatically because the previous attempts did not finish. Cards and navigation still work; run \"Rebuild Card Workspace local search index from notes\" to try again.",
     searchIndexReady: "Card Workspace search index is ready.",
     searchIndexUnavailable: "Card Workspace local search index is unavailable.",
     searchIndexResetFailed: "Card Workspace local search index reset failed.",
@@ -93,6 +96,8 @@ export const appStrings: Record<UiLanguage, AppStrings> = {
     clearResetSearchIndexCommand: "清除并重置 Card Workspace 本地搜索索引状态",
     openInNewWindowDesktopOnly: "仅桌面版支持在新窗口打开。",
     searchIndexRequiresRecovery: "Card Workspace 搜索索引需要恢复。",
+    searchIndexAutoBuildSuspended:
+      "此前的搜索索引构建未能完成，Card Workspace 已停止自动重建。卡片与导航仍可正常使用；如需重试，请执行「从笔记重建 Card Workspace 本地搜索索引」命令。",
     searchIndexReady: "Card Workspace 搜索索引已就绪。",
     searchIndexUnavailable: "Card Workspace 本地搜索索引不可用。",
     searchIndexResetFailed: "Card Workspace 本地搜索索引重置失败。",

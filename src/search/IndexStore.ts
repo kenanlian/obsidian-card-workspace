@@ -1,5 +1,6 @@
 const INDEX_STORE_DATABASE_NAME = "card-workspace-search";
 const INDEX_STORE_OBJECT_STORE_NAME = "searchIndexes";
+const BUILD_ATTEMPT_KEY_SUFFIX = "::build-attempts";
 
 export interface IndexStoreNamespaceMetadata {
   vaultNamespace: string;
@@ -10,15 +11,22 @@ export interface IndexStoreNamespaceMetadata {
   lastIndexedAt: number;
 }
 
+/**
+ * MiniSearch `toJSON()` output. Persisted as a structured-clone value rather
+ * than a JSON string: stringifying a whole-vault index is a synchronous
+ * main-thread block and can exceed the engine's maximum string length.
+ */
+export type IndexStoreSerializedIndex = Record<string, unknown>;
+
 export interface IndexStoreSerializedPayload {
-  serializedIndexJson: string;
+  serializedIndex: IndexStoreSerializedIndex;
   documentCount: number;
   lastIndexedAt: number;
 }
 
 export interface IndexStoreRecord {
   metadata: IndexStoreNamespaceMetadata;
-  serializedIndexJson: string;
+  serializedIndex: IndexStoreSerializedIndex;
 }
 
 export type IndexStoreRestoreFailureReason =
@@ -51,7 +59,6 @@ export type IndexStoreRestoreRebuildRequiredResult = Extract<
 export type IndexStoreWriteResult =
   | {
       outcome: "written";
-      bytes: number;
     }
   | {
       outcome: "failed";
@@ -73,7 +80,7 @@ export type IndexStoreClearResult =
 
 export interface IndexStoreStorageAdapter {
   getRecord(key: string): Promise<unknown>;
-  setRecord(key: string, value: IndexStoreRecord): Promise<void>;
+  setRecord(key: string, value: unknown): Promise<void>;
   removeRecord(key: string): Promise<void>;
 }
 
@@ -104,7 +111,7 @@ class IndexedDbStorageAdapter implements IndexStoreStorageAdapter {
     return this.withStore("readonly", (store) => this.requestPromise(store.get(key)));
   }
 
-  async setRecord(key: string, value: IndexStoreRecord): Promise<void> {
+  async setRecord(key: string, value: unknown): Promise<void> {
     await this.withStore("readwrite", async (store, transaction) => {
       await this.requestPromise(store.put(value, key));
       await this.transactionPromise(transaction);
@@ -261,11 +268,59 @@ export class IndexStore {
       outcome: "restored",
       metadata: record.metadata,
       payload: {
-        serializedIndexJson: record.serializedIndexJson,
+        serializedIndex: record.serializedIndex,
         documentCount: record.metadata.documentCount,
         lastIndexedAt: record.metadata.lastIndexedAt,
       },
     };
+  }
+
+  /** Whether persistence is usable at all; lets callers skip serialization work up front. */
+  isAvailable(): boolean {
+    return this.available;
+  }
+
+  /**
+   * Count of full builds that started but never reported completion. A build
+   * that hard-freezes the renderer leaves this incremented, which is the only
+   * signal available on the next launch that auto-rebuilding is unsafe.
+   */
+  async readBuildAttempts(): Promise<number> {
+    if (!this.available) {
+      return 0;
+    }
+    try {
+      const record = await this.adapter.getRecord(this.buildAttemptKey());
+      return isRecord(record) && Number.isFinite(record.attempts) ? Number(record.attempts) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async writeBuildAttempts(attempts: number): Promise<void> {
+    if (!this.available) {
+      return;
+    }
+    try {
+      await this.adapter.setRecord(this.buildAttemptKey(), { attempts, updatedAt: Date.now() });
+    } catch {
+      // Best effort: a guard that cannot persist must not block the build itself.
+    }
+  }
+
+  async clearBuildAttempts(): Promise<void> {
+    if (!this.available) {
+      return;
+    }
+    try {
+      await this.adapter.removeRecord(this.buildAttemptKey());
+    } catch {
+      // Best effort.
+    }
+  }
+
+  private buildAttemptKey(): string {
+    return `${this.vaultNamespace}${BUILD_ATTEMPT_KEY_SUFFIX}`;
   }
 
   async write(metadata: IndexStoreNamespaceMetadata, payload: IndexStoreSerializedPayload): Promise<IndexStoreWriteResult> {
@@ -278,13 +333,11 @@ export class IndexStore {
     }
 
     const record = this.createRecord(metadata, payload);
-    const serializedRecord = JSON.stringify(record);
 
     try {
       await this.adapter.setRecord(this.vaultNamespace, record);
       return {
         outcome: "written",
-        bytes: serializedRecord.length,
       };
     } catch (error) {
       if (isQuotaError(error)) {
@@ -348,7 +401,7 @@ export class IndexStore {
 
     return {
       metadata: normalizedMetadata,
-      serializedIndexJson: payload.serializedIndexJson,
+      serializedIndex: payload.serializedIndex,
     };
   }
 }
@@ -377,7 +430,7 @@ function isValidRecord(value: unknown): value is IndexStoreRecord {
     return false;
   }
 
-  if (typeof value.serializedIndexJson !== "string") {
+  if (!isRecord(value.serializedIndex)) {
     return false;
   }
 

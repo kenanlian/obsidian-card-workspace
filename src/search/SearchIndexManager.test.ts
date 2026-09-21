@@ -6,6 +6,7 @@ import type {
   IndexStoreClearResult,
   IndexStoreNamespaceMetadata,
   IndexStoreRestoreResult,
+  IndexStoreSerializedIndex,
   IndexStoreSerializedPayload,
   IndexStoreWriteResult,
 } from "./IndexStore";
@@ -25,6 +26,7 @@ interface FakeStore {
   restore: ReturnType<typeof vi.fn<() => Promise<IndexStoreRestoreResult>>>;
   write: ReturnType<typeof vi.fn<() => Promise<IndexStoreWriteResult>>>;
   clear: ReturnType<typeof vi.fn<() => Promise<IndexStoreClearResult>>>;
+  isAvailable: ReturnType<typeof vi.fn<() => boolean>>;
 }
 
 function createMetadata(overrides: Partial<IndexStoreNamespaceMetadata> = {}): IndexStoreNamespaceMetadata {
@@ -80,8 +82,9 @@ function createStoreMock(
 ): FakeStore {
   return {
     restore: vi.fn(async () => result),
-    write: vi.fn(async () => ({ outcome: "written", bytes: 12 })),
+    write: vi.fn(async () => ({ outcome: "written" })),
     clear: vi.fn(async () => ({ outcome: "cleared" })),
+    isAvailable: vi.fn(() => true),
   };
 }
 
@@ -110,14 +113,14 @@ function createDocumentSource(initial: SearchableDocument[] = []): {
   };
 }
 
-async function createSerializedIndex(documents: SearchableDocument[]): Promise<string> {
+async function createSerializedIndex(documents: SearchableDocument[]): Promise<IndexStoreSerializedIndex> {
   const index = new MiniSearch<SearchableDocument>(createMiniSearchOptions());
 
   if (documents.length > 0) {
     await index.addAllAsync(documents);
   }
 
-  return JSON.stringify(index.toJSON());
+  return index.toJSON();
 }
 
 function createMutation(overrides: Partial<SearchVaultMutation> = {}): SearchVaultMutation {
@@ -169,7 +172,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 1,
         lastIndexedAt: 111,
       },
@@ -217,14 +220,14 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1 }),
-      payload: { serializedIndexJson: "deferred", documentCount: 1, lastIndexedAt: 1 },
+      payload: { serializedIndex: { deferred: true }, documentCount: 1, lastIndexedAt: 1 },
     });
     const manager = new SearchIndexManager({ store, documentSource: createDocumentSource().source });
     const initialIndex = (manager as unknown as { index: MiniSearch<SearchableDocument> }).index;
     const loadedIndex = new MiniSearch<SearchableDocument>(createMiniSearchOptions());
     loadedIndex.add(document);
     let resolveLoad!: (index: MiniSearch<SearchableDocument>) => void;
-    const loadSpy = vi.spyOn(MiniSearch, "loadJSONAsync").mockImplementationOnce(
+    const loadSpy = vi.spyOn(MiniSearch, "loadJSAsync").mockImplementationOnce(
       () => new Promise((resolve) => { resolveLoad = resolve; }) as never,
     );
     const snapshots: string[] = [];
@@ -245,11 +248,11 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1 }),
-      payload: { serializedIndexJson: "deferred failure", documentCount: 1, lastIndexedAt: 1 },
+      payload: { serializedIndex: { deferredFailure: true }, documentCount: 1, lastIndexedAt: 1 },
     });
     const manager = new SearchIndexManager({ store, documentSource: createDocumentSource().source });
     let rejectLoad!: (error: Error) => void;
-    const loadSpy = vi.spyOn(MiniSearch, "loadJSONAsync").mockImplementationOnce(
+    const loadSpy = vi.spyOn(MiniSearch, "loadJSAsync").mockImplementationOnce(
       () => new Promise((_resolve, reject) => { rejectLoad = reject; }) as never,
     );
     const restoring = manager.restore(createMetadata());
@@ -269,7 +272,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 1,
         lastIndexedAt: 111,
       },
@@ -305,7 +308,7 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 3, lastIndexedAt: 111 }),
-      payload: { serializedIndexJson: await createSerializedIndex(oldDocuments), documentCount: 3, lastIndexedAt: 111 },
+      payload: { serializedIndex: await createSerializedIndex(oldDocuments), documentCount: 3, lastIndexedAt: 111 },
     });
     const sourceState = createDocumentSource([
       createSearchableDocument("notes/modified.md", "Modified", "newterm"),
@@ -339,11 +342,11 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1 }),
-      payload: { serializedIndexJson: await createSerializedIndex([original]), documentCount: 1, lastIndexedAt: 1 },
+      payload: { serializedIndex: await createSerializedIndex([original]), documentCount: 1, lastIndexedAt: 1 },
     });
     let releaseWrite!: () => void;
     store.write.mockImplementationOnce(() => new Promise((resolve) => {
-      releaseWrite = () => resolve({ outcome: "written", bytes: 12 });
+      releaseWrite = () => resolve({ outcome: "written" });
     }));
     const sourceState = createDocumentSource([replacement]);
     let releaseScan!: () => void;
@@ -391,7 +394,7 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 2 }),
-      payload: { serializedIndexJson: await createSerializedIndex([oldDocument, blocker]), documentCount: 2, lastIndexedAt: 1 },
+      payload: { serializedIndex: await createSerializedIndex([oldDocument, blocker]), documentCount: 2, lastIndexedAt: 1 },
     });
     const sourceState = createDocumentSource([oldDocument, blocker]);
     let releaseScan!: () => void;
@@ -440,7 +443,7 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1 }),
-      payload: { serializedIndexJson: await createSerializedIndex([original]), documentCount: 1, lastIndexedAt: 1 },
+      payload: { serializedIndex: await createSerializedIndex([original]), documentCount: 1, lastIndexedAt: 1 },
     });
     let failWrite!: () => void;
     store.write.mockImplementationOnce(() => new Promise((resolve) => {
@@ -477,7 +480,7 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1 }),
-      payload: { serializedIndexJson: await createSerializedIndex([document]), documentCount: 1, lastIndexedAt: 1 },
+      payload: { serializedIndex: await createSerializedIndex([document]), documentCount: 1, lastIndexedAt: 1 },
     });
     const sourceState = createDocumentSource([document]);
     let active = 0;
@@ -512,7 +515,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 1,
         lastIndexedAt: 111,
       },
@@ -547,7 +550,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 1,
         lastIndexedAt: 111,
       },
@@ -590,7 +593,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 2,
         lastIndexedAt: 111,
       },
@@ -633,7 +636,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 2,
         lastIndexedAt: 111,
       },
@@ -681,7 +684,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 2,
         lastIndexedAt: 111,
       },
@@ -757,7 +760,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 12 }),
       payload: {
-        serializedIndexJson: "{not-json}",
+        serializedIndex: { notASerializedIndex: true },
         documentCount: 1,
         lastIndexedAt: 12,
       },
@@ -953,7 +956,7 @@ describe("SearchIndexManager", () => {
     const store = createStoreMock({
       outcome: "restored",
       metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
-      payload: { serializedIndexJson: serialized, documentCount: 1, lastIndexedAt: 111 },
+      payload: { serializedIndex: serialized, documentCount: 1, lastIndexedAt: 111 },
     });
     const { source, byPath } = createDocumentSource([original]);
     const manager = new SearchIndexManager({ store, documentSource: source });
@@ -1753,7 +1756,7 @@ describe("SearchIndexManager", () => {
       outcome: "restored",
       metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
       payload: {
-        serializedIndexJson: serialized,
+        serializedIndex: serialized,
         documentCount: 2,
         lastIndexedAt: 111,
       },

@@ -2,9 +2,11 @@ import { Notice, TFile, type App } from "obsidian";
 
 import type { UiStrings } from "../i18n";
 import {
+  IndexBuildGuard,
   IndexedSearchService,
   IndexStore,
   SearchIndexManager,
+  scheduleIdleTask,
 } from "../search";
 import type {
   IndexStoreNamespaceMetadata,
@@ -22,9 +24,15 @@ import {
   SearchDocumentSource,
 } from "./SearchDocumentSource";
 
-const SEARCH_SCHEMA_VERSION = "phase3-v1";
+/** v2 persists the MiniSearch snapshot as a structured-clone object, not a JSON string. */
+const SEARCH_SCHEMA_VERSION = "phase3-v2";
 export const SEARCH_TOKENIZER_VERSION = "search-text-v3-han-bigram";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
+/**
+ * Full-source scans are deferred past startup: cards and navigation do not
+ * depend on the index, so nothing user-visible should wait on it.
+ */
+const STARTUP_INDEX_WORK_IDLE_TIMEOUT_MS = 10_000;
 
 type SearchRecoveryBoundaryState = "healthy" | "degraded";
 
@@ -47,6 +55,8 @@ export class SearchCoordinator {
 
   private searchService: SearchService | null = null;
   private searchManager: SearchIndexManager | null = null;
+  private buildGuard: IndexBuildGuard | null = null;
+  private cancelStartupIdleTask: (() => void) | null = null;
   private searchServiceUnsubscribe: (() => void) | null = null;
   private vaultEventUnsubscribe: (() => void) | null = null;
   private searchSnapshot: SearchServiceSnapshot | null = null;
@@ -93,6 +103,7 @@ export class SearchCoordinator {
 
     const indexed = this.createIndexedSearchService();
     this.searchManager = indexed.manager;
+    this.buildGuard = new IndexBuildGuard(indexed.store);
     this.bindSearchService(indexed.service);
 
     try {
@@ -122,6 +133,8 @@ export class SearchCoordinator {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelStartupIdleTask?.();
+    this.cancelStartupIdleTask = null;
     this.vaultEventUnsubscribe?.();
     this.vaultEventUnsubscribe = null;
     this.bufferedMutations.splice(0);
@@ -135,12 +148,14 @@ export class SearchCoordinator {
     this.searchServiceUnsubscribe = null;
     if (!this.searchService) {
       this.searchManager = null;
+      this.buildGuard = null;
       this.searchSnapshot = null;
       return;
     }
     this.searchService.dispose();
     this.searchService = null;
     this.searchManager = null;
+    this.buildGuard = null;
     this.searchSnapshot = null;
     this.pendingSearchClearReset = null;
     this.pendingSearchRebuild = null;
@@ -211,7 +226,7 @@ export class SearchCoordinator {
     new Notice(this.formatSearchIndexStatus(snapshot));
   }
 
-  async rebuild(detail: string): Promise<void> {
+  async rebuild(detail: string, options: { resetGuard?: boolean } = {}): Promise<void> {
     if (this.disposed) return;
     if (this.pendingSearchRebuild) {
       return this.pendingSearchRebuild;
@@ -229,12 +244,40 @@ export class SearchCoordinator {
     }
 
     const manager = this.searchManager;
-    this.pendingSearchRebuild = manager.rebuildFromSource(detail).finally(() => {
+    this.pendingSearchRebuild = this.runGuardedRebuild(manager, detail, options).finally(() => {
       if (this.searchManager === manager) {
         this.pendingSearchRebuild = null;
       }
     });
     await this.pendingSearchRebuild;
+  }
+
+  /**
+   * Brackets the build with a persisted attempt marker. Only a build that
+   * reaches a ready snapshot clears it, so a run that takes the renderer down
+   * with it stays counted and the next launch can refuse to repeat it.
+   */
+  private async runGuardedRebuild(
+    manager: SearchIndexManager,
+    detail: string,
+    options: { resetGuard?: boolean },
+  ): Promise<void> {
+    const guard = this.buildGuard;
+    if (options.resetGuard) await guard?.reset();
+    await guard?.markBuildStarted();
+    await manager.rebuildFromSource(detail);
+    if (this.disposed || this.searchManager !== manager) return;
+    if (this.searchSnapshot?.status === "ready") {
+      await guard?.markBuildCompleted();
+    }
+  }
+
+  /**
+   * Entry point for the rebuild command: clears any suspension before building.
+   * Stays synchronous up to `rebuild` so the in-flight guard there still holds.
+   */
+  rebuildManually(detail: string): Promise<void> {
+    return this.rebuild(detail, { resetGuard: true });
   }
 
   async recover(rebuildDetail = "Recovery command requested full search rebuild."): Promise<void> {
@@ -261,21 +304,51 @@ export class SearchCoordinator {
     return this.pendingSearchClearReset;
   }
 
-  /** Called once the workspace layout is ready; runs work deferred during startup. */
+  /**
+   * Called once the workspace layout is ready. The work queued here reads every
+   * file in the vault, so it waits for an idle window instead of competing with
+   * the first paint of the card stream.
+   */
   flushDeferredStartupWork(): void {
     if (this.disposed) return;
     this.layoutReady = true;
+    if (!this.shouldRunStartupSearchRebuild && !this.shouldSyncRestoredSearchState) return;
 
+    this.cancelStartupIdleTask?.();
+    this.cancelStartupIdleTask = scheduleIdleTask(() => {
+      this.cancelStartupIdleTask = null;
+      if (this.disposed) return;
+      void this.runDeferredStartupWork();
+    }, STARTUP_INDEX_WORK_IDLE_TIMEOUT_MS);
+  }
+
+  private async runDeferredStartupWork(): Promise<void> {
     if (this.shouldRunStartupSearchRebuild) {
-      void this.rebuild(
-        this.consumeStartupSearchRebuildDetail("Startup restore required full search rebuild."),
-      ).catch((error) => { if (!this.disposed) console.warn("[Card Workspace] Startup search rebuild failed.", error); });
+      const detail = this.consumeStartupSearchRebuildDetail("Startup restore required full search rebuild.");
+      try {
+        await this.runStartupRebuildIfPermitted(detail);
+      } catch (error) {
+        if (!this.disposed) console.warn("[Card Workspace] Startup search rebuild failed.", error);
+      }
     }
 
+    if (this.disposed) return;
     if (this.shouldSyncRestoredSearchState) {
       this.shouldSyncRestoredSearchState = false;
-      void this.syncRestoredSearchState();
+      await this.syncRestoredSearchState();
     }
+  }
+
+  /** Unattended rebuilds yield to the guard; an explicit user command never does. */
+  private async runStartupRebuildIfPermitted(detail: string): Promise<void> {
+    const guard = this.buildGuard;
+    if (guard && !(await guard.canAutoBuild())) {
+      if (this.disposed) return;
+      new Notice(this.getUiStrings().app.searchIndexAutoBuildSuspended);
+      return;
+    }
+    if (this.disposed) return;
+    await this.rebuild(detail);
   }
 
   private toSearchVaultMutation(event: VaultMutationEvent): SearchVaultMutation {
@@ -459,6 +532,12 @@ export class SearchCoordinator {
 
   private async runClearAndResetSearchIndex(): Promise<void> {
     if (this.disposed) return;
+    // Let an in-flight rebuild finish first. Clearing underneath it would make
+    // the post-clear rebuild coalesce into the older run and leave the index empty.
+    if (this.pendingSearchRebuild) {
+      await this.pendingSearchRebuild;
+      if (this.disposed) return;
+    }
     if (!this.searchManager) {
       await this.initialize();
     }
@@ -478,7 +557,10 @@ export class SearchCoordinator {
     }
 
     new Notice(this.getUiStrings().app.searchIndexClearedAndRebuilding);
-    await this.rebuild("Manual clear/reset command requested full local search index rebuild.");
+    await this.rebuild(
+      "Manual clear/reset command requested full local search index rebuild.",
+      { resetGuard: true },
+    );
   }
 
   private async runRecoverSearchIndex(rebuildDetail: string): Promise<void> {
@@ -491,7 +573,7 @@ export class SearchCoordinator {
       }
 
       if (this.shouldRunStartupSearchRebuild) {
-        await this.rebuild(this.consumeStartupSearchRebuildDetail(rebuildDetail));
+        await this.rebuild(this.consumeStartupSearchRebuildDetail(rebuildDetail), { resetGuard: true });
         return;
       }
 
@@ -508,7 +590,7 @@ export class SearchCoordinator {
     );
     if (this.disposed) return;
     if (result.outcome === "rebuild-required") {
-      await this.rebuild(rebuildDetail);
+      await this.rebuild(rebuildDetail, { resetGuard: true });
       return;
     }
 

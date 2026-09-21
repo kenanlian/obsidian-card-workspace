@@ -110,6 +110,14 @@ const searchMockState = vi.hoisted(() => {
       markInitializationFailure: ReturnType<typeof vi.fn>;
     }>,
     stores: [] as Array<{ vaultNamespace: string }>,
+    buildGuards: [] as Array<{
+      canAutoBuild: ReturnType<typeof vi.fn>;
+      markBuildStarted: ReturnType<typeof vi.fn>;
+      markBuildCompleted: ReturnType<typeof vi.fn>;
+      reset: ReturnType<typeof vi.fn>;
+    }>,
+    /** Automatic builds are permitted unless a test suspends the guard. */
+    autoBuildAllowed: true,
   };
 });
 
@@ -267,10 +275,29 @@ vi.mock("./search", () => {
     }
   }
 
+  class MockIndexBuildGuard {
+    canAutoBuild = vi.fn(async () => searchMockState.autoBuildAllowed);
+    isSuspended = vi.fn(() => !searchMockState.autoBuildAllowed);
+    markBuildStarted = vi.fn(async () => undefined);
+    markBuildCompleted = vi.fn(async () => undefined);
+    reset = vi.fn(async () => undefined);
+
+    constructor() {
+      searchMockState.buildGuards.push(this);
+    }
+  }
+
   return {
     IndexStore: MockIndexStore,
     SearchIndexManager: MockSearchIndexManager,
     IndexedSearchService: MockIndexedSearchService,
+    IndexBuildGuard: MockIndexBuildGuard,
+    // Startup index work is idle-deferred in production; run it inline so these
+    // tests keep asserting what happens once the idle window arrives.
+    scheduleIdleTask: vi.fn((task: () => void) => {
+      task();
+      return () => undefined;
+    }),
     prepareSearchableDocument: vi.fn((input: { path: string; title: string; markdown?: string; mtime: number; ctime: number }) => ({
       path: input.path,
       title: input.title,
@@ -2004,6 +2031,8 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     searchMockState.indexedServices.length = 0;
     searchMockState.managers.length = 0;
     searchMockState.stores.length = 0;
+    searchMockState.buildGuards.length = 0;
+    searchMockState.autoBuildAllowed = true;
     obsidianMockState.layoutReadyCallback = null;
     obsidianMockState.autoRunLayoutReady = true;
     obsidianMockState.workspaceCallbacks = {};
@@ -2258,7 +2287,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledWith(expect.objectContaining({
       vaultNamespace: "path:/vault/base",
-      schemaVersion: "phase3-v1",
+      schemaVersion: "phase3-v2",
       tokenizerVersion: "search-text-v3-han-bigram",
       pluginVersion: expect.any(String),
     }));
@@ -2352,13 +2381,15 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     rebuild?.callback();
     reset?.callback();
 
-    await Promise.resolve();
-    await Promise.resolve();
+    // A guarded build persists its attempt marker before starting, so the
+    // rebuild lands a tick later than the command callback returns.
+    await vi.waitFor(() => {
+      expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(2);
+    });
 
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledTimes(2);
     expect(searchMockState.managers[0]?.clearAndReset).toHaveBeenCalledTimes(1);
     expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(2);
-    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(2);
     expect(searchMockState.managers[0]?.restore).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
@@ -2419,10 +2450,10 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(0);
 
     clearAndResetGate.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
 
-    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    });
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
       "Manual clear/reset command requested full local search index rebuild.",
     );

@@ -1,7 +1,7 @@
 import { TFile, type App } from "obsidian";
 
 import { prepareSearchableDocument, type SearchableDocument } from "../search";
-import { isMarkdownCardKind, resolveCardFileKind } from "../view/file-kind";
+import { isMarkdownCardKind, isSupportedCardFile, resolveCardFileKind } from "../view/file-kind";
 
 export const SEARCH_DOCUMENT_READ_CONCURRENCY = 8;
 
@@ -54,7 +54,11 @@ export class SearchDocumentSource {
       return [];
     }
 
-    const files = getFiles.call(this.app.vault).filter((file): file is TFile => file instanceof TFile);
+    // Queries are always intersected with card candidates, so an attachment
+    // could never surface as a result; indexing one only inflates the index.
+    const files = getFiles
+      .call(this.app.vault)
+      .filter((file): file is TFile => file instanceof TFile && isSupportedCardFile(file));
     const results: Array<SearchableDocument | null> = Array.from({ length: files.length }, () => null);
     let cursor = 0;
     const worker = async (): Promise<void> => {
@@ -88,6 +92,9 @@ export class SearchDocumentSource {
 
   async readDocument(path: string): Promise<SearchableDocument | null> {
     const target = this.app.vault.getAbstractFileByPath(path);
-    return target instanceof TFile ? this.prepare(target) : null;
+    if (!(target instanceof TFile) || !isSupportedCardFile(target)) {
+      return null;
+    }
+    return this.prepare(target);
   }
 }

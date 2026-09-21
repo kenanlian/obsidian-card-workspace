@@ -77,7 +77,7 @@ function createMetadata(overrides: Partial<IndexStoreNamespaceMetadata> = {}): I
 
 function createPayload(overrides: Partial<IndexStoreSerializedPayload> = {}): IndexStoreSerializedPayload {
   return {
-    serializedIndexJson: "{\"version\":1}",
+    serializedIndex: { serializationVersion: 2 },
     documentCount: 4,
     lastIndexedAt: 1_700_000_000_000,
     ...overrides,
@@ -100,15 +100,12 @@ describe("IndexStore", () => {
       vaultNamespace: "vault-a",
     });
     const metadata = createMetadata();
-    const payload = createPayload({ serializedIndexJson: "{\"documents\":42}" });
+    const payload = createPayload({ serializedIndex: { documents: 42 } });
 
     const write = await store.write(metadata, payload);
     const restore = await store.restore(metadata);
 
-    expect(write).toEqual({
-      outcome: "written",
-      bytes: expect.any(Number),
-    });
+    expect(write).toEqual({ outcome: "written" });
     expect(restore).toEqual({
       outcome: "restored",
       metadata: {
@@ -201,7 +198,7 @@ describe("IndexStore", () => {
     const adapter = new MemoryIndexStoreAdapter();
     adapter.setRawRecord("vault-a", {
       metadata: createMetadata(),
-      serializedIndexJson: 42,
+      serializedIndex: 42,
     });
     const store = new IndexStore({
       adapter,
@@ -298,6 +295,41 @@ describe("IndexStore", () => {
       reason: "unavailable",
       detail: "IndexedDB unavailable.",
     });
+  });
+
+  it("round-trips the build attempt counter used to suspend automatic rebuilds", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    expect(await store.readBuildAttempts()).toBe(0);
+    await store.writeBuildAttempts(2);
+    expect(await store.readBuildAttempts()).toBe(2);
+    await store.clearBuildAttempts();
+    expect(await store.readBuildAttempts()).toBe(0);
+  });
+
+  it("keeps the build attempt counter out of the index record slot", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    await store.write(createMetadata(), createPayload());
+    await store.writeBuildAttempts(1);
+
+    expect((await store.restore(createMetadata())).outcome).toBe("restored");
+  });
+
+  it("reports build attempts as zero when storage reads throw", async () => {
+    const store = new IndexStore({
+      adapter: new ThrowingIndexStoreAdapter({ getError: new Error("boom") }),
+      vaultNamespace: "vault-a",
+    });
+
+    expect(await store.readBuildAttempts()).toBe(0);
+  });
+
+  it("reports availability so callers can skip serializing for a dead destination", () => {
+    expect(new IndexStore({ adapter: new MemoryIndexStoreAdapter(), vaultNamespace: "v" }).isAvailable()).toBe(true);
+    expect(new IndexStore({ indexedDbFactory: null, vaultNamespace: "v" }).isAvailable()).toBe(false);
   });
 
   it("keeps restore outcome variants available for missing, drift, and corruption states", () => {

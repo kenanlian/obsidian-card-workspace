@@ -51,6 +51,42 @@ describe("SearchDocumentSource", () => {
     expect(result.map(({ path }) => path)).toEqual(files.map(({ path }) => path).filter((path) => path !== "5.md"));
   });
 
+  it("indexes only supported card files so attachments never enter the index", async () => {
+    const files = [
+      createFile("notes/a.md"),
+      createFile("assets/diagram.png"),
+      createFile("notes/board.canvas"),
+      createFile("assets/brief.pdf"),
+      createFile("notes/table.base"),
+      createFile("notes/sketch.excalidraw.md"),
+      createFile("assets/clip.mp4"),
+    ];
+    const prepare = vi.fn(async (file: TFile) => document(file.path));
+    const source = new SearchDocumentSource({ vault: { getFiles: () => files } } as never, prepare);
+
+    const result = await source.readAllDocuments();
+
+    expect(result.map(({ path }) => path)).toEqual([
+      "notes/a.md",
+      "notes/board.canvas",
+      "notes/table.base",
+      "notes/sketch.excalidraw.md",
+    ]);
+    expect(prepare).toHaveBeenCalledTimes(4);
+  });
+
+  it("returns null for a single unsupported path so a mutation discards it", async () => {
+    const prepare = vi.fn(async (file: TFile) => document(file.path));
+    const attachment = createFile("assets/diagram.png");
+    const source = new SearchDocumentSource(
+      { vault: { getAbstractFileByPath: () => attachment } } as never,
+      prepare,
+    );
+
+    expect(await source.readDocument("assets/diagram.png")).toBeNull();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it("stops dequeue and omits a read that completes after abort", async () => {
     const files = Array.from({ length: 16 }, (_, index) => createFile(`${index}.md`));
     const controller = new AbortController();

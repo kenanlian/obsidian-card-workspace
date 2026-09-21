@@ -42,7 +42,10 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
 - Per-view preview hydration uses a five-read scheduler and a runtime-only 512-entry LRU; viewport demand carries generation, hydration revision, and ordered paths.
 - Full-vault search reconciliation uses eight readers, is serialized/cancellable, and treats plugin version as diagnostic rather than an index compatibility gate.
-- Plugin surfaces register synchronously; restored card scope foreground work completes before search restore/reconciliation is released.
+- The persisted index is a structured-clone object, not a JSON string. Do not reintroduce `JSON.stringify` on a whole-vault index: it blocks the main thread and can exceed the engine's maximum string length.
+- Index documents are capped at 512KB of markdown each and cover only supported card kinds; attachments are never indexed.
+- A full build persists an attempt marker before it starts and clears it only on success. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
+- Plugin surfaces register synchronously; restored card scope foreground work completes before search restore/reconciliation is released, and full-vault scans then wait for an idle window.
 - Production builds are minified and automatically checked for externals and sourcemap policy.
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
 - Startup restores **folder** scope only and forces `activeBoxId = null`.
@@ -172,7 +175,8 @@ CI already runs this chain with lint first.
 | `src/i18n/` | i18n strings (`en` / `zh`), domain-split; callers still import `../i18n` |
 | `src/search/SearchIndexManager.ts` | Core search index manager — MiniSearch lifecycle, incremental mutations |
 | `src/search/IndexedSearchService.ts` | SearchService adapter — query bounding, blocked-state gating |
-| `src/search/IndexStore.ts` | IndexedDB persistence with schema-version checks |
+| `src/search/IndexStore.ts` | IndexedDB persistence with schema-version checks, plus the full-build attempt counter |
+| `src/search/IndexBuildGuard.ts` | Suspends automatic rebuilds after consecutive unfinished full builds |
 | `src/search/types.ts` | Search subsystem contracts (`PHASE3_MINISEARCH_CONTRACT`) |
 | `src/view/note-ops.ts` | File operations — move, delete, trash, duplicate, merge, batch variants |
 | `src/view/favorites.ts` | Favorites entries — normalize, toggle, reorder, prune, vault-mutation reconciliation |

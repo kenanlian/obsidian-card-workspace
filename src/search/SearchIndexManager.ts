@@ -1,5 +1,6 @@
-import MiniSearch from "minisearch";
+import MiniSearch, { type AsPlainObject } from "minisearch";
 import { getSearchDisplayTerms } from "../search-tokenization";
+import { scheduleIdleTask } from "./idle-task";
 import type {
   IndexStoreClearResult,
   IndexStore,
@@ -50,7 +51,7 @@ export interface SearchIndexDocumentSource {
 }
 
 interface SearchIndexManagerOptions {
-  store: Pick<IndexStore, "restore" | "write" | "clear">;
+  store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
   documentSource: SearchIndexDocumentSource;
 }
 
@@ -98,12 +99,17 @@ export class SearchIndexManager {
    * Incremental mutations keep the in-memory index current immediately, but the
    * full-index serialization is coalesced: deleting a folder fans out one event
    * per contained file, and serializing on each one blocks the main thread.
+   * A whole-vault snapshot is expensive enough that an editing session should
+   * pay for it once, not once per save, so the window is deliberately long and
+   * the write itself waits for an idle callback.
    */
-  private static readonly MUTATION_PERSIST_DEBOUNCE_MS = 1000;
+  private static readonly MUTATION_PERSIST_DEBOUNCE_MS = 30_000;
+  private static readonly MUTATION_PERSIST_IDLE_TIMEOUT_MS = 5_000;
   private persistTimer: number | null = null;
+  private cancelPersistIdleTask: (() => void) | null = null;
   private persistScheduled = false;
   private persistInFlight: Promise<void> | null = null;
-  private readonly store: Pick<IndexStore, "restore" | "write" | "clear">;
+  private readonly store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
   private readonly documentSource: SearchIndexDocumentSource;
   private index: MiniSearch<SearchableDocument>;
   private snapshot: SearchServiceSnapshot = {
@@ -255,8 +261,8 @@ export class SearchIndexManager {
     }
 
     try {
-      const restoredIndex = await MiniSearch.loadJSONAsync<SearchableDocument>(
-        restoreResult.payload.serializedIndexJson,
+      const restoredIndex = await MiniSearch.loadJSAsync<SearchableDocument>(
+        restoreResult.payload.serializedIndex as unknown as AsPlainObject,
         createMiniSearchOptions(),
       );
       if (!this.isCurrent(generation)) {
@@ -593,6 +599,17 @@ export class SearchIndexManager {
       return false;
     }
 
+    // Snapshotting the index is the most expensive step in the whole pipeline;
+    // never pay for it when the destination cannot accept the write anyway.
+    if (!this.store.isAvailable()) {
+      this.applyWriteFailure({
+        outcome: "failed",
+        reason: "unavailable",
+        detail: "IndexedDB unavailable.",
+      });
+      return false;
+    }
+
     const writeResult = await this.store.write(
       {
         ...this.expectedMetadata,
@@ -600,7 +617,7 @@ export class SearchIndexManager {
         lastIndexedAt,
       },
       {
-        serializedIndexJson: JSON.stringify(index.toJSON()),
+        serializedIndex: index.toJSON(),
         documentCount,
         lastIndexedAt,
       },
@@ -741,7 +758,11 @@ export class SearchIndexManager {
     }
     this.persistTimer = window.setTimeout(() => {
       this.persistTimer = null;
-      void this.mutationGate.run(() => this.flushPendingPersist());
+      this.cancelPersistIdleTask?.();
+      this.cancelPersistIdleTask = scheduleIdleTask(() => {
+        this.cancelPersistIdleTask = null;
+        void this.mutationGate.run(() => this.flushPendingPersist());
+      }, SearchIndexManager.MUTATION_PERSIST_IDLE_TIMEOUT_MS);
     }, SearchIndexManager.MUTATION_PERSIST_DEBOUNCE_MS);
   }
 
@@ -774,6 +795,8 @@ export class SearchIndexManager {
       window.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
+    this.cancelPersistIdleTask?.();
+    this.cancelPersistIdleTask = null;
     this.persistScheduled = false;
   }
 
@@ -783,6 +806,8 @@ export class SearchIndexManager {
       window.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
+    this.cancelPersistIdleTask?.();
+    this.cancelPersistIdleTask = null;
     if (this.persistInFlight) {
       await this.persistInFlight;
     }
