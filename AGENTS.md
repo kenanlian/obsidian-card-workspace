@@ -17,6 +17,7 @@
 - `.dev/architecture.md` — detailed architecture source of truth: module boundaries, runtime flows, state ownership, invariants
 - `.dev/state-and-runtime-patterns.md` — runtime ownership, async safety, projection rules, change checklist
 - `.dev/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
+- `.dev/search-benchmark.md` — deterministic search-index benchmark harness: profiles, report schema, metric meanings, isolation guarantees
 - `.dev/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
 
 Enumerable implementation details (settings keys, panel fields, module methods, file line counts) live in TypeScript types and `src/architecture.test.ts`, not in these docs.
@@ -42,6 +43,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
 - Per-view preview hydration uses a five-read scheduler and a runtime-only 512-entry LRU; viewport demand carries generation, hydration revision, and ordered paths.
 - Full-vault search reconciliation uses eight readers, is serialized/cancellable, and treats plugin version as diagnostic rather than an index compatibility gate.
+- A deterministic search benchmark harness exists (`npm run benchmark:search`, documented in `.dev/search-benchmark.md`). It reuses production preparation/tokenizer/MiniSearch options over seeded synthetic fixtures, writes a JSON diagnostic report to a caller-supplied path, never touches a real vault or IndexedDB, and enforces correctness assertions but no millisecond thresholds.
 - The persisted index is a structured-clone object, not a JSON string. Do not reintroduce `JSON.stringify` on a whole-vault index: it blocks the main thread and can exceed the engine's maximum string length.
 - Index documents are capped at 512KB of markdown each and cover only supported card kinds; attachments are never indexed.
 - A full build persists an attempt marker before it starts and clears it only on success. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
@@ -65,6 +67,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 | `src/view/modals/` | `FormModal` subclasses; host/actions route into them |
 | `src/services/` | Plugin-level assembly: settings, search coordinator, editor drop, vault/metadata buses, reconcilers |
 | `src/search/` | Local search subsystem (MiniSearch + IndexedDB) |
+| `src/benchmark/` | Deterministic search-index benchmark harness (bundled for Node by `scripts/run-search-benchmark.mjs`; not part of the plugin bundle) |
 | `src/i18n/` | Domain-split UI strings; callers still import `../i18n` |
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
@@ -80,6 +83,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 | `npm install` | Install dependencies |
 | `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
 | `npm run build` | Production build (`main.js`, no sourcemaps) |
+| `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full`, `--output <absolute path>`, optional `--seed <uint32>`); diagnostic baseline only, never part of the production build — see `.dev/search-benchmark.md` |
 | `npm run lint` | `oxlint --config .oxlintrc.json src` |
 | `npm run check` | TypeScript type check (`tsc --noEmit`) |
 | `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |

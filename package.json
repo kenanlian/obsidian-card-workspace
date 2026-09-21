@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs --production && node scripts/check-build.mjs",
+    "benchmark:search": "node scripts/run-search-benchmark.mjs",
     "check": "tsc --noEmit",
     "check:svelte": "svelte-check --tsconfig ./tsconfig.json",
     "lint": "oxlint --config .oxlintrc.json src",
