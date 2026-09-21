@@ -142,14 +142,45 @@ describe("buildGroupBuckets — folder dimension", () => {
 // V5 ------------------------------------------------------------------------
 
 describe("buildGroupBuckets — tag dimension", () => {
-  it("uses the first tag by normalized order", () => {
+  it("keys by the whole tag set in normalized order", () => {
     const cards = [createCard("note.md")];
     const app = createApp({ "note.md": ["#b", "#a", "#c"] });
     const result = arrange(app, cards, createSpec("tag"));
 
     expect(result.segments).toHaveLength(1);
-    expect(result.segments[0]).toMatchObject({ key: "tag:a", label: "#a", detail: "" });
+    expect(result.segments[0]).toMatchObject({
+      key: "tag:a\u001fb\u001fc",
+      label: "#a #b #c",
+      detail: "",
+    });
     expect(totalSegmentCount(result)).toBe(cards.length);
+  });
+
+  it("separates a card carrying an extra tag from one carrying the subset", () => {
+    const cards = [createCard("one.md"), createCard("two.md")];
+    const app = createApp({ "one.md": ["#a"], "two.md": ["#a", "#b"] });
+    const result = arrange(app, cards, createSpec("tag"));
+
+    expect(segmentKeys(result)).toEqual(["tag:a", "tag:a\u001fb"]);
+    expect(totalSegmentCount(result)).toBe(cards.length);
+  });
+
+  it("puts the same tag set written in a different order into one group", () => {
+    const cards = [createCard("one.md"), createCard("two.md")];
+    const app = createApp({ "one.md": ["#a", "#b"], "two.md": ["#b", "#a"] });
+    const result = arrange(app, cards, createSpec("tag"));
+
+    expect(segmentKeys(result)).toEqual(["tag:a\u001fb"]);
+    expect(result.segments[0].count).toBe(2);
+  });
+
+  it("collapses a tag repeated within one file instead of splitting the set", () => {
+    const cards = [createCard("one.md"), createCard("two.md")];
+    const app = createApp({ "one.md": ["#a", "#a", "#b"], "two.md": ["#a", "#b"] });
+    const result = arrange(app, cards, createSpec("tag"));
+
+    expect(segmentKeys(result)).toEqual(["tag:a\u001fb"]);
+    expect(result.segments[0].label).toBe("#a #b");
   });
 
   it("keys by the normalized tag while labelling with the display form", () => {
@@ -184,6 +215,15 @@ describe("buildGroupBuckets — tag dimension", () => {
 
     expect(segmentKeys(result)).toEqual(["tag:a/b", "tag:a/c"]);
     expect(totalSegmentCount(result)).toBe(cards.length);
+  });
+
+  it("does not roll a child tag up into its ancestor's group", () => {
+    const cards = [createCard("one.md"), createCard("two.md")];
+    const app = createApp({ "one.md": ["#c"], "two.md": ["#c/d"] });
+    const result = arrange(app, cards, createSpec("tag"));
+
+    expect(segmentKeys(result)).toEqual(["tag:c", "tag:c/d"]);
+    expect(result.segments.every((segment) => segment.count === 1)).toBe(true);
   });
 
   it("sends an untagged card to the missing bucket", () => {

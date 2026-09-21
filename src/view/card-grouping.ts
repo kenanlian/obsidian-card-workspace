@@ -50,6 +50,9 @@ export interface GroupArrangement {
 }
 
 const TAG_MISSING_BUCKET_KEY = "tag:__none__";
+/** Not a legal tag character, so distinct tag sets can never collide on a key. */
+const TAG_SET_KEY_SEPARATOR = "\u001f";
+const TAG_SET_TEXT_SEPARATOR = " ";
 const MANUAL_RULE_BUCKET_KEY = "rule:__manual__";
 const TASK_INCOMPLETE_BUCKET_KEY = "task:incomplete";
 const TASK_COMPLETE_BUCKET_KEY = "task:complete";
@@ -95,18 +98,19 @@ function resolveTagBucket(app: App, card: NoteCardRecord, labels: GroupLabels): 
     };
   }
 
-  let first = entries[0];
-  for (const entry of entries) {
-    if (entry.normalized.localeCompare(first.normalized) < 0) {
-      first = entry;
-    }
-  }
+  // The bucket is the whole tag set, not one representative tag: `#A` and
+  // `#A #B` are different groups. `getFileTagEntries` already deduplicates by
+  // normalized path, and sorting here makes the set order-independent, so
+  // `#A #B` and `#B #A` resolve to the same bucket. Paths stay literal — no
+  // ancestor roll-up — so `#C/D` never joins `#C`.
+  const sorted = [...entries].sort((left, right) => left.normalized.localeCompare(right.normalized));
+  const normalized = sorted.map((entry) => entry.normalized);
 
   return {
-    key: `tag:${first.normalized}`,
-    label: `#${first.display}`,
+    key: `tag:${normalized.join(TAG_SET_KEY_SEPARATOR)}`,
+    label: sorted.map((entry) => `#${entry.display}`).join(TAG_SET_TEXT_SEPARATOR),
     detail: "",
-    sortKey: first.normalized,
+    sortKey: normalized.join(TAG_SET_TEXT_SEPARATOR),
     isMissing: false,
   };
 }
