@@ -54,7 +54,8 @@ describe("production search persistence", () => {
     // never a JSON string of it.
     expect(managerSource).toMatch(/serializedIndex:\s*index\.toJSON\(\)/);
 
-    const storeSource = await readFile(join(searchDirectory, "IndexStore.ts"), "utf8");
-    expect(storeSource).toMatch(/IndexStoreSerializedIndex = Record<string, unknown>/);
+    // The record types moved to `index-record.ts`; `IndexStore.ts` re-exports them.
+    const recordSource = await readFile(join(searchDirectory, "index-record.ts"), "utf8");
+    expect(recordSource).toMatch(/IndexStoreSerializedIndex = Record<string, unknown>/);
   });
 });
