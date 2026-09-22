@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { DEFAULT_GROUP_SPEC, type GroupDimension, type GroupSpec } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, type DefaultViewMode, type PluginSettings } from "../settings";
 import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
 import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import {
   UPDATE_INTENT_RANK,
+  groupTransitionRequiresReload,
   maxIntent,
   resolveBoxesUpdateIntent,
   resolveSettingsUpdateIntent,
@@ -47,6 +48,11 @@ function createSettings(): PluginSettings {
   };
 }
 
+/**
+ * `group` is the one conditional entry: the table records its baseline
+ * (`none` -> `folder`), and the task-dimension escalation to `"reload"` is
+ * covered by its own case below.
+ */
 const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   sort: "reproject",
   group: "reproject",
@@ -173,6 +179,28 @@ describe("resolveSettingsUpdateIntent", () => {
     expect(resolveSettingsUpdateIntent(previous, next, createLinksScope("notes/a.md", "outgoing"))).toBe("patch");
   });
 
+  it("escalates a transition into the task dimension to reload, and out of it to reproject", () => {
+    const withDimension = (dimension: GroupDimension): PluginSettings => {
+      const settings = createSettings();
+      settings.group = { dimension, orderBy: "default", orderDirection: "asc" };
+      return settings;
+    };
+
+    for (const from of ["none", "folder", "tag", "box-rule"] as const) {
+      expect(resolveSettingsUpdateIntent(withDimension(from), withDimension("task")), from)
+        .toBe("reload");
+      expect(resolveSettingsUpdateIntent(withDimension("task"), withDimension(from)), from)
+        .toBe("reproject");
+    }
+
+    // Already in the task dimension: only the bucket ordering moved, and the
+    // loaded records already carry their summaries.
+    const previous = withDimension("task");
+    const next = withDimension("task");
+    next.group.orderBy = "count";
+    expect(resolveSettingsUpdateIntent(previous, next)).toBe("reproject");
+  });
+
   it("resolves active-box sort and pins per runtime box", () => {
     const previous = createSettings();
     previous.boxes = [createBox({ id: "box-x" }), createBox({ id: "box-y" })];
@@ -224,6 +252,26 @@ describe("resolveBoxesUpdateIntent", () => {
     });
     expect(resolveBoxesUpdateIntent([createBox()], [grouped], "box-1")).toBe("reproject");
     expect(resolveBoxesUpdateIntent([createBox()], [grouped], "other-box")).toBe("patch");
+  });
+
+  it("returns reload only when the active box moves into the task dimension", () => {
+    const boxWith = (dimension: GroupDimension): CardBoxDefinition =>
+      createBox({ group: { dimension, orderBy: "default", orderDirection: "asc" } });
+
+    expect(resolveBoxesUpdateIntent([boxWith("none")], [boxWith("task")], "box-1")).toBe("reload");
+    expect(resolveBoxesUpdateIntent([boxWith("tag")], [boxWith("task")], "box-1")).toBe("reload");
+    expect(resolveBoxesUpdateIntent([boxWith("task")], [boxWith("none")], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent([boxWith("none")], [boxWith("task")], "other-box")).toBe("patch");
+  });
+
+  it("exposes one shared task-transition predicate for the reload escalation", () => {
+    const spec = (dimension: GroupDimension): GroupSpec =>
+      ({ dimension, orderBy: "default", orderDirection: "asc" });
+
+    expect(groupTransitionRequiresReload(spec("none"), spec("task"))).toBe(true);
+    expect(groupTransitionRequiresReload(spec("task"), spec("task"))).toBe(false);
+    expect(groupTransitionRequiresReload(spec("task"), spec("folder"))).toBe(false);
+    expect(groupTransitionRequiresReload(spec("none"), spec("folder"))).toBe(false);
   });
 
   it("returns reproject, not reload, when only a rule's name or id changes", () => {

@@ -322,10 +322,15 @@ vi.mock("./view/FolderCardView", () => {
     FOLDER_CARD_VIEW: "folder-card-view",
     FolderCardView: class MockFolderCardView {
       cardScope: unknown = { kind: "folder", path: "", includeSubfolders: true };
+      /** Mirrors `ScopeController.getLoadKey() !== null`: false until a load is accepted. */
+      loadedScope = false;
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
       getCardScope(): unknown {
         return this.cardScope;
+      }
+      hasLoadedScope(): boolean {
+        return this.loadedScope;
       }
       cleanupLifecycle(): void {}
       handleScopeSelection = vi.fn(async (request: { scope: unknown }) => {
@@ -1448,6 +1453,148 @@ describe("CardWorkspacePlugin activateView", () => {
   });
 });
 
+describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load", () => {
+  type ScopeLoadingView = FolderCardView & {
+    loadedScope: boolean;
+    handleScopeSelection: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    obsidianMockState.layoutReadyCallback = null;
+    obsidianMockState.autoRunLayoutReady = true;
+    obsidianMockState.leavesByType = {};
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    obsidianMockState.leavesByType = {};
+  });
+
+  function createFolder(path: string): TFolder {
+    return new (TFolder as unknown as { new (folderPath: string): TFolder })(path);
+  }
+
+  /** A view whose accepted load flips `hasLoadedScope()`, as `ScopeController` does. */
+  function createScopeLoadingView(): ScopeLoadingView {
+    const view = new (FolderCardView as unknown as { new (): ScopeLoadingView })();
+    view.handleScopeSelection.mockImplementation(async (request: { scope: unknown }) => {
+      view.loadedScope = true;
+      return {
+        action: "started" as const,
+        scope: request.scope,
+        generationChanged: true as const,
+        preserveUiState: false as const,
+      };
+    });
+    return view;
+  }
+
+  function loadedScopes(view: ScopeLoadingView): unknown[] {
+    return view.handleScopeSelection.mock.calls.map(([request]) => (request as { scope: unknown }).scope);
+  }
+
+  function getRibbonCallback(plugin: CardWorkspacePlugin): () => void {
+    const addRibbonIcon = (plugin as unknown as { addRibbonIcon: ReturnType<typeof vi.fn> }).addRibbonIcon;
+    const callback = addRibbonIcon.mock.calls[0]?.[2] as (() => void) | undefined;
+    if (!callback) {
+      throw new Error("Missing ribbon callback");
+    }
+    return callback;
+  }
+
+  function latestHandledRequestId(plugin: CardWorkspacePlugin): number {
+    return (plugin as unknown as { latestHandledRequestId: number }).latestHandledRequestId;
+  }
+
+  it("V22 creates no leaf and dispatches no scope when startup finds no card view", async () => {
+    const { plugin, app } = createPluginHarness();
+    // A resolvable root proves suppression comes from the missing leaf, not a missing folder.
+    app.vault.getRoot.mockReturnValue(createFolder(""));
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+    expect(latestHandledRequestId(plugin)).toBe(0);
+  });
+
+  it("V23 loads the persisted folder scope once when the ribbon opens the first leaf", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createScopeLoadingView();
+    const leaf = {
+      view: null as unknown,
+      setViewState: vi.fn(async () => {
+        leaf.view = view;
+        obsidianMockState.leavesByType["folder-card-view"] = [leaf];
+      }),
+    };
+    app.workspace.getLeftLeaf.mockReturnValue(leaf);
+    app.vault.getAbstractFileByPath.mockReturnValue(createFolder("notes"));
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      lastFolderPath: "notes",
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    expect(view.handleScopeSelection).not.toHaveBeenCalled();
+
+    getRibbonCallback(plugin)();
+    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+
+    expect(app.workspace.getLeftLeaf).toHaveBeenCalledWith(false);
+    expect(leaf.setViewState).toHaveBeenCalledWith({ type: "folder-card-view", active: true });
+    expect(loadedScopes(view)).toEqual([
+      createFolderScope("notes", plugin.getSettings().includeSubfolders),
+    ]);
+    await expect(view.handleScopeSelection.mock.results[0]?.value).resolves.toMatchObject({
+      action: "started",
+      generationChanged: true,
+    });
+  });
+
+  it("V24 dispatches no further selection when the ribbon reopens a loaded view", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createScopeLoadingView();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
+    app.vault.getAbstractFileByPath.mockReturnValue(createFolder("notes"));
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      lastFolderPath: "notes",
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+    const handledAfterRestore = latestHandledRequestId(plugin);
+
+    getRibbonCallback(plugin)();
+    await vi.waitFor(() => expect(app.workspace.revealLeaf).toHaveBeenCalledTimes(2));
+
+    expect(view.handleScopeSelection).toHaveBeenCalledTimes(1);
+    expect(latestHandledRequestId(plugin)).toBe(handledAfterRestore);
+  });
+
+  it("V25 still restores the persisted folder scope into a pre-existing leaf", async () => {
+    const { plugin, app } = createPluginHarness();
+    const view = createScopeLoadingView();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
+    app.vault.getAbstractFileByPath.mockReturnValue(createFolder("notes"));
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
+      lastFolderPath: "notes",
+    });
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(loadedScopes(view)).toEqual([
+      createFolderScope("notes", plugin.getSettings().includeSubfolders),
+    ]);
+  });
+});
+
 describe("CardWorkspacePlugin editor drop registration", () => {
   it("forwards editor extension and workspace drop events to the controller", async () => {
     const { plugin } = createPluginHarness();
@@ -2288,7 +2435,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(searchMockState.managers[0]?.restore).toHaveBeenCalledWith(expect.objectContaining({
       vaultNamespace: "path:/vault/base",
       schemaVersion: "phase3-v2",
-      tokenizerVersion: "search-text-v3-han-bigram",
+      tokenizerVersion: "search-text-v4-han-bigram-capped",
       pluginVersion: expect.any(String),
     }));
     expect(searchMockState.managers[0]?.syncDocumentStateFromSource).toHaveBeenCalledTimes(1);

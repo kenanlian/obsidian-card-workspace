@@ -1,6 +1,7 @@
 import MiniSearch from "minisearch";
 import { describe, expect, it } from "vitest";
 import {
+  SEARCH_INDEX_MAX_TERMS_PER_FIELD,
   getSearchDisplayTerms,
   shouldUsePrefixSearch,
   tokenizeSearchIndexText,
@@ -29,12 +30,58 @@ describe("tokenizeSearchIndexText", () => {
   it("handles a Han run larger than V8's typical spread-argument limit", () => {
     const codePointCount = 200_000;
     const terms = tokenizeSearchIndexText("哈".repeat(codePointCount));
+    const indexedCodePoints = Math.min(
+      codePointCount,
+      Math.floor((SEARCH_INDEX_MAX_TERMS_PER_FIELD + 1) / 2),
+    );
 
-    expect(terms).toHaveLength(codePointCount * 2 - 1);
+    expect(SEARCH_INDEX_MAX_TERMS_PER_FIELD).toBe(50_000);
+    expect(terms).toHaveLength(indexedCodePoints * 2 - 1);
     expect(terms[0]).toBe("哈");
-    expect(terms[codePointCount - 1]).toBe("哈");
-    expect(terms[codePointCount]).toBe("哈哈");
+    expect(terms[indexedCodePoints - 1]).toBe("哈");
+    expect(terms[indexedCodePoints]).toBe("哈哈");
     expect(terms.at(-1)).toBe("哈哈");
+  });
+
+  it("pairs capped Han unigrams with bigrams on over-budget input", () => {
+    const terms = tokenizeSearchIndexText("𠀀".repeat(SEARCH_INDEX_MAX_TERMS_PER_FIELD + 1));
+    let unigrams = 0;
+    let bigrams = 0;
+
+    for (const term of terms) {
+      const codePointLength = Array.from(term).length;
+      if (codePointLength === 1) {
+        unigrams += 1;
+      } else if (codePointLength === 2) {
+        bigrams += 1;
+      }
+    }
+
+    expect(bigrams).toBe(unigrams - 1);
+    expect(unigrams + bigrams).toBeLessThanOrEqual(50_000);
+    expect(terms).toHaveLength(unigrams + bigrams);
+  });
+
+  it("emits nothing from a multi-code-point Han run when one term of budget remains", () => {
+    const nonHanTermCount = SEARCH_INDEX_MAX_TERMS_PER_FIELD - 2;
+    const filler = "a ".repeat(nonHanTermCount);
+    const text = `${filler}中文`;
+    const terms = tokenizeSearchIndexText(text);
+
+    expect(defaultTokenize(filler)).toHaveLength(SEARCH_INDEX_MAX_TERMS_PER_FIELD - 1);
+    expect(terms).toEqual(defaultTokenize(filler));
+    expect(terms).not.toContain("中");
+    expect(terms).not.toContain("文");
+    expect(terms).not.toContain("中文");
+  });
+
+  it("still emits a single-code-point Han run when one term of budget remains", () => {
+    const nonHanTermCount = SEARCH_INDEX_MAX_TERMS_PER_FIELD - 2;
+    const text = `${"a ".repeat(nonHanTermCount)}文`;
+    const terms = tokenizeSearchIndexText(text);
+
+    expect(terms).toHaveLength(SEARCH_INDEX_MAX_TERMS_PER_FIELD);
+    expect(terms.at(-1)).toBe("文");
   });
 
   it("iteratively appends a large mixed non-Han span for index and query paths", () => {
@@ -42,11 +89,10 @@ describe("tokenizeSearchIndexText", () => {
     const text = `中${"a ".repeat(nonHanTermCount)}`;
 
     const indexTerms = tokenizeSearchIndexText(text);
-    expect(indexTerms).toHaveLength(nonHanTermCount + 2);
+    expect(indexTerms).toHaveLength(SEARCH_INDEX_MAX_TERMS_PER_FIELD);
     expect(indexTerms[0]).toBe("中");
     expect(indexTerms[1]).toBe("a");
-    expect(indexTerms[nonHanTermCount]).toBe("a");
-    expect(indexTerms.at(-1)).toBe("");
+    expect(indexTerms.at(-1)).toBe("a");
 
     const queryTerms = tokenizeSearchQuery(text);
     expect(queryTerms).toHaveLength(nonHanTermCount + 1);

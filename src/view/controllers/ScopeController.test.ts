@@ -1,20 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 
 vi.mock("obsidian", () => ({
   TFile: class TFile {},
   TFolder: class TFolder {},
 }));
 
-import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
+import { DEFAULT_GROUP_SPEC, type GroupDimension, type GroupSpec } from "../../card-grouping-settings";
+import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import type { PropertyScalarRef } from "../../property-filter-settings";
 import { TFile, TFolder } from "obsidian";
 import type { EpochToken } from "../async-epoch";
 import { isBoxMember } from "../card-box-membership";
 import { getBoxMembershipSignature } from "../card-boxes";
+import { buildGroupBuckets } from "../card-grouping";
 import type { CardBoxDefinition } from "../types";
 import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
 import type { NoteCardRecord } from "../types";
+import { resolveBoxesUpdateIntent, resolveSettingsUpdateIntent } from "../update-intent";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
@@ -519,7 +522,8 @@ describe("ScopeController", () => {
     const loading = controller.handleScopeSelection(
       controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
     );
-    expect(projectVisibleCards).not.toHaveBeenCalled();
+    // Projection runs once before prewarm. The user-facing invariant is one commit.
+    expect(publishLoadCommit).not.toHaveBeenCalled();
     expect(prepareRecordsFromCache).toHaveBeenCalledTimes(1);
     release();
     await loading;
@@ -529,7 +533,7 @@ describe("ScopeController", () => {
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([nextFile.path]);
   });
 
-  it("keeps same-scope committed cards busy until one final projection", async () => {
+  it("keeps same-scope cards unpublished until one load commit", async () => {
     const { context, controller, projectVisibleCards, publishLoadStart,
       publishLoadCommit, hydrateStartupCardPaths } = createHarness();
     const oldFile = Object.assign(new TFile(), { path: "old/nested/a.md", basename: "a", stat: { ctime: 1, mtime: 1 } });
@@ -547,11 +551,88 @@ describe("ScopeController", () => {
     });
 
     const loading = controller.refresh({ reason: "manual", forceRefresh: true });
-    expect(projectVisibleCards).not.toHaveBeenCalled();
+    // Same re-scope: one commit after prewarm, not a projection that waits for it.
+    expect(publishLoadCommit).not.toHaveBeenCalled();
     release();
     await loading;
     expect(projectVisibleCards).toHaveBeenCalledTimes(1);
     expect(publishLoadCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("projects a scope load once and prewarms the projected visible order (V34)", async () => {
+    const { context, controller, projectVisibleCards, hydrateStartupCardPaths,
+      publishLoadCommit } = createHarness();
+    const files = ["a", "b", "c", "d", "e", "f", "g", "h"].map((name, index) =>
+      makeLiveFile(`next/${name}.md`, { mtime: index + 1 }),
+    );
+    const folder = Object.assign(new TFolder(), { path: "next", children: files });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === "next" ? folder : null;
+    const order: string[] = [];
+    projectVisibleCards.mockImplementation(() => {
+      order.push("project");
+      const base = context.store.getBaseCards();
+      const visible: NoteCardRecord[] = [];
+      for (let index = base.length - 1; index >= 0; index -= 1) {
+        const card = base[index];
+        if (card) visible.push(card);
+      }
+      context.store.replaceVisibleCards(visible);
+    });
+    hydrateStartupCardPaths.mockImplementation(async () => {
+      order.push("hydrate");
+    });
+    publishLoadCommit.mockImplementation(() => {
+      order.push("commit");
+    });
+
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+    );
+
+    expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+    expect(publishLoadCommit).toHaveBeenCalledTimes(1);
+    expect(hydrateStartupCardPaths).toHaveBeenCalledTimes(1);
+    expect(hydrateStartupCardPaths.mock.calls[0]?.[0]).toEqual([
+      "next/a.md", "next/b.md", "next/c.md", "next/d.md", "next/e.md", "next/f.md",
+    ]);
+    expect(order).toEqual(["project", "hydrate", "commit"]);
+  });
+
+  it("commits an empty scope load once with zero cards", async () => {
+    const { context, controller, projectVisibleCards, hydrateStartupCardPaths,
+      publishLoadCommit } = createHarness();
+    const folder = Object.assign(new TFolder(), { path: "next", children: [] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === "next" ? folder : null;
+
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+    );
+
+    expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+    expect(publishLoadCommit).toHaveBeenCalledTimes(1);
+    expect(hydrateStartupCardPaths.mock.calls[0]?.[0]).toEqual([]);
+    expect(context.store.getBaseCards()).toEqual([]);
+    expect(context.store.getVisibleCards()).toEqual([]);
+  });
+
+  it("skips the load commit when the token goes stale during prewarm", async () => {
+    const { context, controller, projectVisibleCards, hydrateStartupCardPaths,
+      publishLoadCommit } = createHarness();
+    const folder = Object.assign(new TFolder(), { path: "next", children: [] });
+    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
+      path === "next" ? folder : null;
+    hydrateStartupCardPaths.mockImplementationOnce(async () => {
+      context.epochs.load.bump();
+    });
+
+    await controller.handleScopeSelection(
+      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+    );
+
+    expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+    expect(publishLoadCommit).not.toHaveBeenCalled();
   });
 
   it("invalidates offscreen cache entries before rejecting a vault event", () => {
@@ -745,27 +826,146 @@ describe("ScopeController", () => {
     expect(context.store.getVisibleCards().every((card) => card.hydrated)).toBe(true);
   });
 
-  it("populates taskSummary from the metadata cache on folder load", async () => {
-    const { context, controller } = createHarness();
-    const nextFile = Object.assign(new TFile(), {
-      path: "next/a.md",
-      basename: "a",
-      extension: "md",
-      stat: { ctime: 2, mtime: 2 },
+  describe("task-summary eagerness (C14)", () => {
+    /** Two markdown cards under `next/`, each with its own list-item cache. */
+    function installTaskFolder(context: ViewContext): Mock {
+      const files = [
+        makeLiveFile("next/a.md", { mtime: 20 }),
+        makeLiveFile("next/b.md", { mtime: 10 }),
+      ];
+      const folder = Object.assign(new TFolder(), { path: "next", children: files });
+      const app = context.getApp() as any;
+      app.vault.getAbstractFileByPath = (path: string) => (path === "next" ? folder : null);
+      const listItemsByPath: Record<string, Array<{ task?: string }>> = {
+        "next/a.md": [{ task: " " }, { task: "x" }],
+        "next/b.md": [{ task: "x" }],
+      };
+      const getFileCache = vi.fn((file: TFile) => {
+        const listItems = listItemsByPath[file.path];
+        return listItems ? { listItems } : null;
+      });
+      app.metadataCache.getFileCache = getFileCache;
+      return getFileCache;
+    }
+
+    function setGroupDimension(context: ViewContext, dimension: GroupDimension): void {
+      (context.getSettings() as any).group = {
+        dimension, orderBy: "default", orderDirection: "asc",
+      };
+    }
+
+    function loadFolder(controller: ScopeController): Promise<unknown> {
+      return controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
+      );
+    }
+
+    /** Bucket key per card, in card order, exactly as ProjectionController resolves them. */
+    function taskBucketKeys(context: ViewContext, cards: readonly NoteCardRecord[]): string[] {
+      const strings = getUiStrings("en");
+      const buckets = buildGroupBuckets(
+        context.getApp(),
+        cards,
+        { dimension: "task", orderBy: "default", orderDirection: "asc" },
+        [],
+        {
+          vaultRoot: strings.sortGroup.bucketVaultRoot,
+          noTag: strings.sortGroup.bucketNoTag,
+          noTask: strings.sortGroup.bucketNoTask,
+          manual: strings.sortGroup.bucketManual,
+        },
+        strings,
+      );
+      return cards.map((card) => buckets.get(card.path)?.key ?? "unbucketed");
+    }
+
+    it("V28 performs no per-card metadata lookup on a non-task folder load", async () => {
+      const { context, controller } = createHarness();
+      const getFileCache = installTaskFolder(context);
+
+      await loadFolder(controller);
+
+      expect(context.store.getBaseCards().map((card) => card.path))
+        .toEqual(["next/a.md", "next/b.md"]);
+      expect(context.store.getBaseCards().map((card) => card.taskSummary)).toEqual([null, null]);
+      expect(getFileCache).not.toHaveBeenCalled();
     });
-    const folder = Object.assign(new TFolder(), { path: "next", children: [nextFile] });
-    (context.getApp() as any).vault.getAbstractFileByPath = (path: string) =>
-      path === "next" ? folder : null;
-    (context.getApp() as any).metadataCache.getFileCache = vi.fn(() => ({
-      listItems: [{ task: " " }, { task: "x" }],
-    }));
 
-    await controller.handleScopeSelection(
-      controller.createProgrammaticSelectionRequest(createFolderScope("next", true), true),
-    );
+    it("V28 derives summaries during collection when the load's dimension is task", async () => {
+      const { context, controller } = createHarness();
+      const getFileCache = installTaskFolder(context);
+      setGroupDimension(context, "task");
 
-    expect(context.store.getBaseCards()).toHaveLength(1);
-    expect(context.store.getBaseCards()[0]?.taskSummary).toEqual({ total: 2, incomplete: 1 });
+      await loadFolder(controller);
+
+      expect(context.store.getBaseCards().map((card) => card.taskSummary)).toEqual([
+        { total: 2, incomplete: 1 },
+        { total: 1, incomplete: 0 },
+      ]);
+      expect(getFileCache).toHaveBeenCalledTimes(2);
+    });
+
+    it("V28 stays lazy for every non-task dimension", async () => {
+      for (const dimension of ["none", "folder", "tag", "box-rule"] as const) {
+        const { context, controller } = createHarness();
+        const getFileCache = installTaskFolder(context);
+        setGroupDimension(context, dimension);
+
+        await loadFolder(controller);
+
+        expect(getFileCache, dimension).not.toHaveBeenCalled();
+      }
+    });
+
+    it("V29 global path: switching into task escalates to reload and rebuilds true buckets", async () => {
+      const { context, controller } = createHarness();
+      installTaskFolder(context);
+      setGroupDimension(context, "none");
+      await loadFolder(controller);
+      expect(taskBucketKeys(context, context.store.getBaseCards()))
+        .toEqual(["task:none", "task:none"]);
+
+      const previous = { ...context.getSettings(), group: { ...context.getSettings().group } };
+      setGroupDimension(context, "task");
+      const intent = resolveSettingsUpdateIntent(previous, context.getSettings(),
+        context.store.getScope());
+      expect(intent).toBe("reload");
+
+      await controller.refresh({ reason: "settings-change", forceRefresh: true });
+
+      expect(taskBucketKeys(context, context.store.getBaseCards()))
+        .toEqual(["task:incomplete", "task:complete"]);
+    });
+
+    it("V29 box path: switching the active box into task escalates to reload and rebuilds buckets", async () => {
+      const { context, controller } = createHarness();
+      const getFileCache = installTaskFolder(context);
+      const files = [makeLiveFile("next/a.md", { mtime: 20 }), makeLiveFile("next/b.md", { mtime: 10 })];
+      (controller as any).deps.collectBoxFiles = () => files;
+      const settings = context.getSettings() as any;
+      const box = (group: GroupSpec): CardBoxDefinition => ({
+        id: "box-1", name: "Box", rules: [], manualPaths: files.map((file) => file.path),
+        excludedPaths: [], pinnedPaths: [], sort: { field: "mtime", direction: "desc" }, group,
+      });
+      settings.boxes = [box({ dimension: "none", orderBy: "default", orderDirection: "asc" })];
+
+      await controller.handleScopeSelection(
+        controller.createProgrammaticSelectionRequest(createBoxScope("box-1"), true),
+      );
+      expect(getFileCache).not.toHaveBeenCalled();
+      expect(taskBucketKeys(context, context.store.getBaseCards()))
+        .toEqual(["task:none", "task:none"]);
+
+      const previousBoxes = settings.boxes as CardBoxDefinition[];
+      const nextBoxes = [box({ dimension: "task", orderBy: "default", orderDirection: "asc" })];
+      expect(resolveBoxesUpdateIntent(previousBoxes, nextBoxes, "box-1")).toBe("reload");
+      settings.boxes = nextBoxes;
+
+      await controller.refresh({ reason: "settings-change", forceRefresh: true });
+
+      expect(taskBucketKeys(context, context.store.getBaseCards()))
+        .toEqual(["task:incomplete", "task:complete"]);
+    });
   });
 
   describe("buildLoadKey", () => {

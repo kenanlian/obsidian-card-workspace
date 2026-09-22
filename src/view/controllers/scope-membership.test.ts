@@ -49,15 +49,17 @@ function createDeps(options: {
   cards?: NoteCardRecord[];
   files?: Record<string, TFile | null>;
   resolvedLinks?: Record<string, Record<string, number>>;
+  getFileCache?: () => unknown;
 } = {}) {
   let cards = options.cards ?? [];
   const prepareRecordsFromCache = vi.fn();
   const deletePendingHydration = vi.fn(() => true);
   const files = options.files ?? {};
+  const getFileCache = vi.fn(options.getFileCache ?? (() => null));
   const app = {
     vault: { getAbstractFileByPath: vi.fn((path: string) => files[path] ?? null) },
     metadataCache: {
-      getFileCache: vi.fn(() => null),
+      getFileCache,
       resolvedLinks: options.resolvedLinks ?? {},
     },
   };
@@ -69,7 +71,9 @@ function createDeps(options: {
     getApp: () => app as never,
     resolveSort: () => ({ field: "mtime", direction: "desc" }),
   };
-  return { deps, getCards: () => cards, prepareRecordsFromCache, deletePendingHydration, app };
+  return {
+    deps, getCards: () => cards, prepareRecordsFromCache, deletePendingHydration, getFileCache, app,
+  };
 }
 
 describe("reconcileSymmetricPathMembership", () => {
@@ -96,6 +100,18 @@ describe("reconcileSymmetricPathMembership", () => {
     expect(prepareRecordsFromCache).toHaveBeenCalledTimes(1);
     expect(getCards().map((card) => card.path)).toEqual([entering.path, "notes/existing.md"]);
     expect(reconcileSymmetricPathMembership(entering.path, true, deps)).toBe("unchanged");
+  });
+
+  it("C17 keeps the entering record's task summary eager: one lookup for one card", () => {
+    const entering = liveFile("notes/entering.md", { mtime: 50 });
+    const { deps, getCards, getFileCache } = createDeps({
+      files: { [entering.path]: entering },
+      getFileCache: () => ({ listItems: [{ task: " " }, { task: " " }, { task: "x" }] }),
+    });
+
+    expect(reconcileSymmetricPathMembership(entering.path, true, deps)).toBe("entered");
+    expect(getCards()[0]?.taskSummary).toEqual({ total: 3, incomplete: 2 });
+    expect(getFileCache).toHaveBeenCalledTimes(1);
   });
 
   it("no-ops when the live file is missing or unsupported", () => {

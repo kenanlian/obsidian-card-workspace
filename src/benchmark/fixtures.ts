@@ -5,7 +5,8 @@
  * arithmetic, so a given (profile, seed) pair always produces byte-identical
  * content. The generator covers the composition the benchmark must exercise:
  * many small English notes, Han (Chinese) content, mixed Chinese/English,
- * Markdown near and over the 512KB single-note cap, many tiny files, the
+ * Markdown near and over the 512KB single-note cap (Latin and near-pure Han),
+ * many tiny files, the
  * non-Markdown card kinds (canvas / base / excalidraw), and attachment types
  * that must never reach the index document source.
  *
@@ -22,6 +23,7 @@ import {
   buildHanMarkdown,
   buildHanNeedleMarkdown,
   buildMixedMarkdown,
+  buildOversizedHanMarkdown,
   buildOversizedMarkdown,
   buildTinyMarkdown,
   englishTitle,
@@ -33,10 +35,10 @@ import { createFnv1a32Hash, createDeterministicRandom } from "./prng";
 /** Single-note Markdown cap in UTF-16 code units, mirroring the production limit. */
 export const SEARCH_MARKDOWN_CAP_CHARS = 512 * 1024;
 
-export type BenchmarkProfileId = "micro" | "smoke" | "full";
+export type BenchmarkProfileId = "micro" | "smoke" | "full" | "xl";
 
 /** Profiles accepted by the CLI. `micro` exists for in-process tests only. */
-export type CliBenchmarkProfile = Extract<BenchmarkProfileId, "smoke" | "full">;
+export type CliBenchmarkProfile = Extract<BenchmarkProfileId, "smoke" | "full" | "xl">;
 
 export type FixtureBucket =
   | "english-small"
@@ -45,6 +47,8 @@ export type FixtureBucket =
   | "tiny"
   | "near-cap"
   | "over-cap"
+  | "near-cap-han"
+  | "over-cap-han"
   | "markers"
   | "canvas"
   | "base"
@@ -85,6 +89,8 @@ export const BENCHMARK_PROFILE_SPECS: Readonly<Record<BenchmarkProfileId, Fixtur
       tiny: 16,
       "near-cap": 1,
       "over-cap": 1,
+      "near-cap-han": 0,
+      "over-cap-han": 0,
       markers: 2,
       canvas: 2,
       base: 2,
@@ -102,6 +108,8 @@ export const BENCHMARK_PROFILE_SPECS: Readonly<Record<BenchmarkProfileId, Fixtur
       tiny: 180,
       "near-cap": 1,
       "over-cap": 1,
+      "near-cap-han": 0,
+      "over-cap-han": 0,
       markers: 2,
       canvas: 6,
       base: 6,
@@ -119,11 +127,32 @@ export const BENCHMARK_PROFILE_SPECS: Readonly<Record<BenchmarkProfileId, Fixtur
       tiny: 1200,
       "near-cap": 1,
       "over-cap": 2,
+      "near-cap-han": 0,
+      "over-cap-han": 0,
       markers: 2,
       canvas: 20,
       base: 20,
       excalidraw: 20,
       attachment: 120,
+    },
+  },
+  xl: {
+    id: "xl",
+    defaultSeed: 0x5eedc0de,
+    buckets: {
+      "english-small": 12000,
+      han: 12000,
+      mixed: 3000,
+      tiny: 800,
+      "near-cap": 6,
+      "over-cap": 3,
+      "near-cap-han": 6,
+      "over-cap-han": 3,
+      markers: 2,
+      canvas: 400,
+      base: 200,
+      excalidraw: 200,
+      attachment: 1800,
     },
   },
 };
@@ -139,9 +168,17 @@ export const NEAR_CAP_PATH = "bench/oversize/near-cap-note.md";
 export const OVER_CAP_HEAD_MARKER = "capmarker-head-4b19";
 export const OVER_CAP_TAIL_MARKER = "capmarker-tail-8e07";
 export const NEAR_CAP_TAIL_MARKER = "capmarker-near-tail-2c4f";
+export const NEAR_CAP_HAN_PATH = "bench/oversize/near-cap-han-note.md";
+export const OVER_CAP_HAN_PATH = "bench/oversize/over-cap-han-note.md";
+export const NEAR_CAP_HAN_HEAD_MARKER = "阙标近首";
+export const NEAR_CAP_HAN_TAIL_MARKER = "阙标近尾";
+export const OVER_CAP_HAN_HEAD_MARKER = "阙标远首";
+export const OVER_CAP_HAN_TAIL_MARKER = "阙标远尾";
 
 const NEAR_CAP_TARGET_CHARS = 500_000;
 const OVER_CAP_TARGET_CHARS = 620_000;
+const NEAR_CAP_HAN_TARGET_CHARS = 505_000;
+const OVER_CAP_HAN_TARGET_CHARS = 620_000;
 
 const ATTACHMENT_EXTENSIONS = [".png", ".pdf", ".webp", ".zip", ".txt", ".csv", ".docx", ".mp4"] as const;
 
@@ -205,10 +242,14 @@ export function generateSyntheticVault(
     push(path, `Tip ${index + 1}`, "tiny", buildTinyMarkdown(random));
   }
 
-  if (spec.buckets["near-cap"] > 0) {
+  for (let index = 0; index < spec.buckets["near-cap"]; index += 1) {
+    // Index 0 keeps the historical path and title so a count of 1 is unchanged.
+    const path = index === 0
+      ? NEAR_CAP_PATH
+      : `bench/oversize/near-cap-note-${index + 1}.md`;
     push(
-      NEAR_CAP_PATH,
-      "Oversized Near Cap Fixture",
+      path,
+      index === 0 ? "Oversized Near Cap Fixture" : `Oversized Near Cap Fixture ${index + 1}`,
       "near-cap",
       buildOversizedMarkdown(random, NEAR_CAP_TARGET_CHARS, "near cap fixture head", NEAR_CAP_TAIL_MARKER),
     );
@@ -225,6 +266,40 @@ export function generateSyntheticVault(
       `Oversized Over Cap Fixture ${index + 1}`,
       "over-cap",
       buildOversizedMarkdown(random, OVER_CAP_TARGET_CHARS, OVER_CAP_HEAD_MARKER, OVER_CAP_TAIL_MARKER),
+    );
+  }
+
+  for (let index = 0; index < spec.buckets["near-cap-han"]; index += 1) {
+    const path = index === 0
+      ? NEAR_CAP_HAN_PATH
+      : `bench/oversize/near-cap-han-note-${index + 1}.md`;
+    push(
+      path,
+      index === 0 ? "Oversized Near Cap Han Fixture" : `Oversized Near Cap Han Fixture ${index + 1}`,
+      "near-cap-han",
+      buildOversizedHanMarkdown(
+        random,
+        NEAR_CAP_HAN_TARGET_CHARS,
+        NEAR_CAP_HAN_HEAD_MARKER,
+        NEAR_CAP_HAN_TAIL_MARKER,
+      ),
+    );
+  }
+
+  for (let index = 0; index < spec.buckets["over-cap-han"]; index += 1) {
+    const path = index === 0
+      ? OVER_CAP_HAN_PATH
+      : `bench/oversize/over-cap-han-note-${index + 1}.md`;
+    push(
+      path,
+      `Oversized Over Cap Han Fixture ${index + 1}`,
+      "over-cap-han",
+      buildOversizedHanMarkdown(
+        random,
+        OVER_CAP_HAN_TARGET_CHARS,
+        OVER_CAP_HAN_HEAD_MARKER,
+        OVER_CAP_HAN_TAIL_MARKER,
+      ),
     );
   }
 

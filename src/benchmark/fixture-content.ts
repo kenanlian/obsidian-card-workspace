@@ -191,6 +191,15 @@ function buildEnglishFillerBlock(random: DeterministicRandom): string {
   return random() < 0.2 ? `## ${englishTitle(random)}\n\n${block}` : block;
 }
 
+function buildHanFillerBlock(random: DeterministicRandom): string {
+  const wordCount = nextInt(random, 80, 140);
+  let text = "";
+  for (let index = 0; index < wordCount; index += 1) {
+    text += pickFrom(random, HAN_WORDS);
+  }
+  return text;
+}
+
 /**
  * Assembles an oversized Markdown note that lands close to `targetChars`
  * (UTF-16 code units). The head marker sits on an early line so it survives
@@ -219,6 +228,33 @@ export function buildOversizedMarkdown(
   }
   parts.push("", tailMarker);
   return parts.join("\n");
+}
+
+/**
+ * Han counterpart of {@link buildOversizedMarkdown}. The body is concatenated
+ * Han vocabulary with no Latin scaffold, so a note near the 512KB cap prepares
+ * to about 1,000,000 uncapped index terms (unigrams plus adjacent bigrams).
+ * The head marker is an early line and the tail marker is the final line.
+ */
+export function buildOversizedHanMarkdown(
+  random: DeterministicRandom,
+  targetChars: number,
+  headMarker: string,
+  tailMarker: string,
+): string {
+  const blocks: string[] = [];
+  for (let index = 0; index < 48; index += 1) {
+    blocks.push(buildHanFillerBlock(random));
+  }
+
+  let text = ["# 超限汉字夹具", "", headMarker, ""].join("\n");
+  let guard = 0;
+  while (text.length < targetChars && guard < 200_000) {
+    guard += 1;
+    const block = pickFrom(random, blocks);
+    text = `${text}\n${block}\n`;
+  }
+  return `${text}\n${tailMarker}`;
 }
 
 export function buildEnglishNeedleMarkdown(random: DeterministicRandom, needle: string): string {

@@ -89,6 +89,7 @@ export interface SearchableDocument {
  * - stored fields: `path` + `title` + `excerpt`
  * - normalization: lowercase
  * - Han index/query tokenization and non-Han-only prefix search
+ * - index term cap: at most 50_000 terms per indexed field
  * - query options: fuzzy false, AND combination
  * - ranking: title has 3x boost over content
  */
@@ -98,6 +99,7 @@ export const PHASE3_MINISEARCH_CONTRACT = {
   normalize: "lowercase",
   tokenizer: {
     hanScope: "unicode-script-han",
+    maxTermsPerField: 50_000,
     indexStrategy: "unigram-and-overlapping-bigram",
     queryStrategy: "single-unigram-else-overlapping-bigram",
   },

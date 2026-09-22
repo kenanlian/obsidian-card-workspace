@@ -4,6 +4,7 @@ import { compareCards } from "../card-sort";
 import type { GroupCollapseController } from "../controllers/GroupCollapseController";
 import type { SourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition } from "../types";
+import { groupTransitionRequiresReload } from "../update-intent";
 import { resolveViewConfig } from "../view-config";
 import type { ViewContext } from "../view-context";
 
@@ -151,6 +152,12 @@ export class ArrangementActions {
 
     if (this.resolveArrangementOwner().kind === "box") {
       await this.deps.updateActiveBox((box) => ({ ...box, group }));
+      // Re-sorting the loaded records is not enough for the task dimension:
+      // their summaries are still unresolved, so the records must be rebuilt.
+      if (groupTransitionRequiresReload(current, group)) {
+        await this.deps.context.requestUpdate("reload", "settings-change");
+        return;
+      }
       this.sortAndReprojectCards();
       return;
     }

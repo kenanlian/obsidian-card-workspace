@@ -28,17 +28,26 @@ type ReadMock = Mock<(file: { path: string }) => Promise<string>>;
 function harness(
   records: NoteCardRecord[],
   read: ReadMock = vi.fn(async () => "preview"),
+  listItemsByPath: Record<string, Array<{ task?: string }>> = {},
 ) {
   const store = createViewStateStore(createFolderScope("", true));
   store.replaceBaseCards(records);
   store.replaceVisibleCards(records);
+  const getFileCache = vi.fn((file: { path: string }) => {
+    const listItems = listItemsByPath[file.path];
+    return listItems ? { listItems } : null;
+  });
   const context = {
-    getApp: () => ({ vault: { cachedRead: read } }), store, epochs: createViewEpochs(),
+    getApp: () => ({ vault: { cachedRead: read }, metadataCache: { getFileCache } }),
+    store, epochs: createViewEpochs(),
     getSettings: () => ({ ...DEFAULT_SETTINGS, previewLines: 5 }),
     getUiStrings: () => getUiStrings("en"), publishGroups: vi.fn(),
     getViewWindow: () => globalThis,
   } as unknown as ViewContext;
-  return { context, controller: new HydrationController({ context, isLoading: () => false }), read };
+  return {
+    context, controller: new HydrationController({ context, isLoading: () => false }),
+    read, getFileCache,
+  };
 }
 
 function request(context: ViewContext, records: NoteCardRecord[]) {
@@ -61,6 +70,55 @@ describe("HydrationController", () => {
     expect(HydrationController.startupCardCount).toBe(6);
     expect(records[0]).toMatchObject({ hydrated: true, previewMode: "placeholder" });
     expect(read).not.toHaveBeenCalled();
+  });
+
+  it("V30 attaches the task summary when a card hydrates and when the cache serves it", async () => {
+    const original = card("tasks.md");
+    const listItems = { "tasks.md": [{ task: " " }, { task: " " }, { task: "x" }] };
+    const { context, controller, getFileCache } = harness(
+      [original], vi.fn(async () => "- [ ] one"), listItems,
+    );
+
+    await controller.hydrateViewport(request(context, [original]));
+
+    expect(context.store.getBaseCard("tasks.md")?.taskSummary).toEqual({ total: 3, incomplete: 2 });
+    expect(getFileCache).toHaveBeenCalledTimes(1);
+
+    // Preview-cache hit: the record is rebuilt with a null summary by a lazy
+    // load, and the synchronous prepare path must still give it one back.
+    const rebuilt = card("tasks.md");
+    context.store.replaceBaseCards([rebuilt]);
+    context.store.replaceVisibleCards([rebuilt]);
+    controller.resetForLoad();
+    controller.prepareRecordsFromCache([rebuilt]);
+
+    expect(rebuilt.hydrated).toBe(true);
+    expect(rebuilt.taskSummary).toEqual({ total: 3, incomplete: 2 });
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
+  it("V30 attaches the task summary even when the preview read fails", async () => {
+    const record = card("unreadable.md");
+    const { context, controller } = harness(
+      [record], vi.fn(async () => { throw new Error("bad"); }), { "unreadable.md": [{ task: " " }] },
+    );
+
+    await controller.hydrateViewport(request(context, [record]));
+
+    expect(context.store.getBaseCard("unreadable.md")).toMatchObject({
+      hydrated: true, previewMode: "empty", taskSummary: { total: 1, incomplete: 1 },
+    });
+  });
+
+  it("V30 never consults metadata for a non-Markdown placeholder", () => {
+    const records = [card("diagram.canvas", "canvas")];
+    const { controller, getFileCache } = harness(records, vi.fn(async () => "preview"),
+      { "diagram.canvas": [{ task: " " }] });
+
+    controller.prepareRecordsFromCache(records);
+
+    expect(records[0]?.taskSummary).toBeNull();
+    expect(getFileCache).not.toHaveBeenCalled();
   });
 
   it("bounds all reads at five and deduplicates paths", async () => {

@@ -990,12 +990,12 @@ describe("R5 line-count ratchet", () => {
    * already needed an explicit cap.
    */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 655,
-    "src/main.ts": 684,
+    "src/view/FolderCardView.ts": 656,
+    "src/main.ts": 690,
     "src/services/SearchCoordinator.ts": 654,
-    "src/view/controllers/ScopeController.ts": 566,
+    "src/view/controllers/ScopeController.ts": 569,
     "src/view/actions/box-actions.ts": 575,
-    "src/search/SearchIndexManager.ts": 1069,
+    "src/search/SearchIndexManager.ts": 1071,
     "src/view/note-ops.ts": 479,
     "src/view/note-tag-ops.ts": 580,
     "src/view/NavigationPane.svelte": 347,

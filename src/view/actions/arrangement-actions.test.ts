@@ -90,6 +90,9 @@ function createHarness(options: {
   });
   const publishGroups = vi.fn();
   const getGroupSegmentKeys = vi.fn((): readonly string[] => ["folder:notes", "folder:archive"]);
+  const requestUpdate = vi.fn(async () => {
+    calls.push("reload");
+  });
 
   const deps: ArrangementActionsDeps = {
     context: {
@@ -100,7 +103,7 @@ function createHarness(options: {
       saveSettings,
       getUiStrings: () => ({}) as never,
       publishGroups,
-      requestUpdate: async () => undefined,
+      requestUpdate,
       notify: () => undefined,
       getViewWindow: () => ({ setTimeout, clearTimeout }),
     },
@@ -128,6 +131,7 @@ function createHarness(options: {
     reprojectCards,
     reconcileToVisibleCards,
     publishGroups,
+    requestUpdate,
     getGroupSegmentKeys,
     calls,
   };
@@ -195,6 +199,50 @@ describe("ArrangementActions", () => {
     expect(boxHarness.getBox()?.group.dimension).toBe("tag");
     expect(boxHarness.saveSettings).not.toHaveBeenCalled();
     expect(boxHarness.calls).toEqual(["base-sort", "load-key", "projection", "bulk"]);
+  });
+
+  it("V29 takes the reload route instead of the reproject seam when a Box moves into task", async () => {
+    const harness = createHarness({
+      scope: createBoxScope("box-1"),
+      box: makeBox({ id: "box-1", group: { dimension: "none", orderBy: "default", orderDirection: "asc" } }),
+    });
+
+    await harness.actions.onGroupChange({ dimension: "task" });
+
+    expect(harness.getBox()?.group.dimension).toBe("task");
+    expect(harness.requestUpdate).toHaveBeenCalledWith("reload", "settings-change");
+    expect(harness.reprojectCards).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual(["reload"]);
+  });
+
+  it("V29 keeps the reproject seam when a Box moves out of task or between other dimensions", async () => {
+    const leaving = createHarness({
+      scope: createBoxScope("box-1"),
+      box: makeBox({ id: "box-1", group: { dimension: "task", orderBy: "default", orderDirection: "asc" } }),
+    });
+    await leaving.actions.onGroupChange({ dimension: "folder" });
+    expect(leaving.requestUpdate).not.toHaveBeenCalled();
+    expect(leaving.calls).toEqual(["base-sort", "load-key", "projection", "bulk"]);
+
+    const reordering = createHarness({
+      scope: createBoxScope("box-1"),
+      box: makeBox({ id: "box-1", group: { dimension: "task", orderBy: "default", orderDirection: "asc" } }),
+    });
+    await reordering.actions.onGroupChange({ dimension: "task", orderBy: "count" });
+    expect(reordering.requestUpdate).not.toHaveBeenCalled();
+    expect(reordering.calls).toEqual(["base-sort", "load-key", "projection", "bulk"]);
+  });
+
+  it("V29 leaves the global task transition to the settings intent, not the seam", async () => {
+    const harness = createHarness();
+
+    await harness.actions.onGroupChange({ dimension: "task" });
+
+    expect(harness.saveSettings).toHaveBeenCalledWith({
+      group: { dimension: "task", orderBy: "default", orderDirection: "asc" },
+    });
+    expect(harness.requestUpdate).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual([]);
   });
 
   it("writes global pins and Box-local pins without auto-resorting Box pins", async () => {

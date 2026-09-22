@@ -701,6 +701,7 @@ describe("apply search filter behavior", () => {
     expect(PHASE3_MINISEARCH_CONTRACT.normalize).toBe("lowercase");
     expect(PHASE3_MINISEARCH_CONTRACT.tokenizer).toEqual({
       hanScope: "unicode-script-han",
+      maxTermsPerField: 50_000,
       indexStrategy: "unigram-and-overlapping-bigram",
       queryStrategy: "single-unigram-else-overlapping-bigram",
     });

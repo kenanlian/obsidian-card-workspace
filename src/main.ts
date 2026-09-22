@@ -107,7 +107,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.register(() => this.disposeRuntime());
     this.registerView(FOLDER_CARD_VIEW, (leaf) => new FolderCardView(leaf, this));
     this.addRibbonIcon(CARD_WORKSPACE_ICON, this.getUiStrings().app.ribbonTooltip, () => {
-      this.runDetached(this.activateView(), "View activation failed.");
+      this.runDetached(this.activateAndEnsureScope(true), "View activation failed.");
     });
     this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
     this.registerHoverLinkSource("card-workspace", {
@@ -119,7 +119,7 @@ export default class CardWorkspacePlugin extends Plugin {
       id: "open-view",
       name: this.getUiStrings().app.openCardWorkspaceViewCommand,
       callback: () => {
-        this.runDetached(this.activateView(), "View activation failed.");
+        this.runDetached(this.activateAndEnsureScope(true), "View activation failed.");
       },
     });
     this.registerSearchCommands();
@@ -156,7 +156,8 @@ export default class CardWorkspacePlugin extends Plugin {
     if (this.disposed) return;
     this.registerVaultObservers(); this.registerMetadataObservers();
     this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
-    await this.restoreLastSession();
+    // Session restore never creates a leaf: it only reloads a view the user left open.
+    await this.activateAndEnsureScope(false);
     if (this.disposed) return;
     this.runDetached(this.navigationWorkspaceReconciler.reconcileInitial(),
       "Initial navigation reconciliation failed.");
@@ -465,15 +466,37 @@ export default class CardWorkspacePlugin extends Plugin {
     return rootMarkdownLeaf ?? null;
   }
 
-  private async activateView(): Promise<FolderCardView | null> {
+  private async activateView(allowCreate = true): Promise<FolderCardView | null> {
     try {
       if (this.disposed) return null;
       return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
-        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed);
+        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate);
     } catch (error) {
       if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
       return null;
     }
+  }
+
+  /**
+   * Opening the view and loading its scope are one operation: a view that has
+   * never loaded a scope would otherwise render empty on the ribbon and command
+   * paths, which no longer piggyback on a startup restore.
+   */
+  private async activateAndEnsureScope(allowCreate: boolean): Promise<FolderCardView | null> {
+    await this.settingsReadyPromise;
+    if (this.disposed) return null;
+    const handledBeforeActivation = this.latestHandledRequestId;
+    const view = await this.activateView(allowCreate);
+    if (!view || this.disposed) return null;
+    // A selection created while we were activating is newer, so it owns the scope.
+    if (view.hasLoadedScope() || this.latestHandledRequestId !== handledBeforeActivation) return view;
+    const settings = this.getSettings();
+    const lastPath = normalizeFolderScopePath(settings.lastFolderPath);
+    const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
+    if (!(folder instanceof TFolder)) return view;
+    await this.dispatchSelectionRequest(this.createSelectionRequest(
+      createFolderScope(folder.path, settings.includeSubfolders), "programmatic"));
+    return view;
   }
 
   private withFolderViews(callback: (view: FolderCardView) => void): void {
@@ -584,23 +607,6 @@ export default class CardWorkspacePlugin extends Plugin {
     } catch (error) {
       console.warn("[Card Workspace] Failed to show the unsupported settings schema notice.", error);
     }
-  }
-
-  private async restoreLastSession(): Promise<void> {
-    const settings = this.getSettings();
-    const lastPath = normalizeFolderScopePath(settings.lastFolderPath);
-    const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
-    if (!(folder instanceof TFolder)) {
-      return;
-    }
-
-    const request = this.createSelectionRequest(createFolderScope(folder.path, settings.includeSubfolders), "programmatic");
-    const primaryView = await this.activateView();
-    if (!primaryView || this.disposed) return;
-    if (request.requestId !== this.latestHandledRequestId) {
-      return;
-    }
-    await this.dispatchSelectionRequest(request);
   }
 
   private createSelectionRequest(scope: CardScope, source: FolderSelectionSource, forceRefresh = false): FolderSelectionRequest {

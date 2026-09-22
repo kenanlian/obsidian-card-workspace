@@ -1,5 +1,7 @@
+import MiniSearch from "minisearch";
 import { describe, expect, it } from "vitest";
 
+import { prepareSearchableDocument } from "../search/document-preparation";
 import { resolveCardFileKindFromPath } from "../view/file-kind";
 import {
   BENCHMARK_PROFILE_SPECS,
@@ -7,8 +9,10 @@ import {
   ENGLISH_NEEDLE_QUERY,
   HAN_NEEDLE_PATH,
   HAN_NEEDLE_QUERY,
+  NEAR_CAP_HAN_PATH,
   NEAR_CAP_PATH,
   NEAR_CAP_TAIL_MARKER,
+  OVER_CAP_HAN_PATH,
   OVER_CAP_HEAD_MARKER,
   OVER_CAP_PATH,
   OVER_CAP_TAIL_MARKER,
@@ -17,6 +21,36 @@ import {
   generateSyntheticVault,
   type SyntheticFixtureFile,
 } from "./fixtures";
+
+/** Exact `xl` file count: the sum of every bucket in `BENCHMARK_PROFILE_SPECS.xl`. */
+const XL_DOCUMENT_COUNT = 30420;
+
+const defaultTokenize = MiniSearch.getDefault("tokenize") as (text: string) => string[];
+const HAN_RUN_PATTERN = /\p{Script=Han}+/gu;
+
+/**
+ * Term count of the pre-budget index tokenizer: each Han run of N code points
+ * contributes N unigrams and N-1 bigrams, and non-Han spans use MiniSearch's
+ * default tokenizer. No per-field term budget is applied.
+ */
+function countUncappedIndexTerms(text: string): number {
+  let terms = 0;
+  let offset = 0;
+  for (const match of text.matchAll(HAN_RUN_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > offset) {
+      terms += defaultTokenize(text.slice(offset, index)).length;
+    }
+    const run = match[0];
+    const runLength = Array.from(run).length;
+    terms += runLength === 0 ? 0 : runLength + (runLength - 1);
+    offset = index + run.length;
+  }
+  if (offset < text.length) {
+    terms += defaultTokenize(text.slice(offset)).length;
+  }
+  return terms;
+}
 
 const NEAR_CAP_MIN_CHARS = 450_000;
 
@@ -136,6 +170,42 @@ describe("synthetic benchmark fixtures", () => {
     expect(mixedMarkdown).toMatch(/\p{Script=Han}/u);
     expect(mixedMarkdown).toMatch(/[A-Za-z]/);
   });
+
+  it("keeps the baseline smoke and full fixture digests", () => {
+    expect(computeFixtureDigest(generateSyntheticVault("smoke"))).toBe("fnv1a32-e1df517b");
+    expect(computeFixtureDigest(generateSyntheticVault("full"))).toBe("fnv1a32-5072e3f4");
+  });
+
+  it("builds the xl profile at the exact corpus size with Han posting strength", () => {
+    const files = generateSyntheticVault("xl");
+    expect(files.length).toBe(XL_DOCUMENT_COUNT);
+
+    const spec = BENCHMARK_PROFILE_SPECS.xl;
+    const countBucket = (bucket: keyof typeof spec.buckets): number =>
+      files.filter((file) => file.bucket === bucket).length;
+    for (const [bucket, expected] of Object.entries(spec.buckets)) {
+      expect(countBucket(bucket as keyof typeof spec.buckets), bucket).toBe(expected);
+    }
+    expect(Object.values(spec.buckets).reduce((total, count) => total + count, 0)).toBe(XL_DOCUMENT_COUNT);
+
+    const nearCapHan = findFile(files, NEAR_CAP_HAN_PATH);
+    const nearCapHanMarkdown = nearCapHan.markdown ?? "";
+    expect(nearCapHanMarkdown.length).toBeGreaterThan(500_000);
+    expect(nearCapHanMarkdown.length).toBeLessThan(SEARCH_MARKDOWN_CAP_CHARS);
+    expect(findFile(files, OVER_CAP_HAN_PATH).markdown?.length ?? 0).toBeGreaterThan(SEARCH_MARKDOWN_CAP_CHARS);
+
+    const prepared = prepareSearchableDocument({
+      path: nearCapHan.path,
+      title: nearCapHan.title,
+      markdown: nearCapHanMarkdown,
+      mtime: nearCapHan.mtime,
+      ctime: nearCapHan.ctime,
+    });
+    const hanCharacters = prepared.content.match(/\p{Script=Han}/gu)?.length ?? 0;
+    expect(prepared.content.length).toBeGreaterThan(500_000);
+    expect(hanCharacters / prepared.content.length).toBeGreaterThan(0.95);
+    expect(countUncappedIndexTerms(prepared.content)).toBeGreaterThan(900_000);
+  }, 120_000);
 
   it("uses deterministic timestamps derived from the sequence, not the clock", () => {
     const files = generateSyntheticVault("micro");

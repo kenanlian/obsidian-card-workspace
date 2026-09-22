@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
 
+import { normalizeGroupSpec } from "../../card-grouping-settings";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { createCardRecord } from "../card-record";
 import { compareCards } from "../card-sort";
@@ -280,10 +281,12 @@ export class ScopeController implements DisposableController {
     this.deps.publishLoadStart(scopeChanged);
 
     try {
-      const app = this.context.getApp();
+      const app = this.context.getApp(); const settings = this.context.getSettings();
+      // C14: a per-card metadata lookup is only worth it when buckets read it.
+      const { dimension } = normalizeGroupSpec(resolveViewConfig(loadScope.scope, settings).group);
       const records = this.collectScopeFiles(loadScope.scope).flatMap((file) => {
         const fileKind = resolveCardFileKind(file);
-        return fileKind === null ? [] : [createCardRecord(app, file, fileKind)];
+        return fileKind === null ? [] : [createCardRecord(app, file, fileKind, dimension === "task")];
       });
       if (!this.context.epochs.load.isCurrent(loadToken)) {
         return false;
@@ -294,7 +297,8 @@ export class ScopeController implements DisposableController {
       this.context.store.replaceBaseCards(records);
       this.loadKey = loadKey;
       this.lastLoadedIncludeSubfolders = resolveLoadedIncludeSubfolders(loadScope.scope);
-      const startupPaths = this.deps.deriveVisibleCardsFrom(records)
+      this.deps.projectVisibleCards();
+      const startupPaths = this.context.store.getVisibleCards()
         .slice(0, this.deps.startupCardCount)
         .map((card) => card.path);
       await this.deps.hydrateStartupCardPaths(startupPaths, loadToken);
@@ -302,7 +306,6 @@ export class ScopeController implements DisposableController {
     } finally {
       if (this.context.epochs.load.isCurrent(loadToken)) {
         this.loading = false;
-        this.deps.projectVisibleCards();
         this.deps.publishLoadCommit();
         this.deps.refreshSearchProjection();
       }

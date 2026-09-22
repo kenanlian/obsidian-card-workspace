@@ -9,6 +9,7 @@ import type {
 } from "./IndexStore";
 import { SearchDocumentCatalog } from "./document-catalog";
 import { classifySearchMutation } from "./document-preparation";
+import { addDocumentsWithYield } from "./index-ingest";
 import { buildMatchCountsByPath } from "./match-counts";
 import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "./minisearch-options";
 import {
@@ -550,9 +551,10 @@ export class SearchIndexManager {
       const replacementCatalog = new SearchDocumentCatalog();
       // Batched so peak memory is one read window rather than the whole vault;
       // consecutive windows keep the single-shot document order (C10).
+      let carryOverTerms = 0;
       for await (const batch of this.documentSource.streamDocuments(signal)) {
         if (!isCurrent()) return;
-        await replacement.addAllAsync(batch);
+        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal);
         for (const document of batch) {
           replacementDocuments.set(document.path, document);
           replacementCatalog.set(document.path, document.mtime);

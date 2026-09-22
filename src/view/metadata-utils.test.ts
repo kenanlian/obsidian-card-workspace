@@ -9,6 +9,7 @@ import { getAllTags } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import {
   collectAllTags,
+  collectScopeTagIndex,
   collectTagCounts,
   collectVaultTagIndex,
   getFileTagEntries,
@@ -235,6 +236,57 @@ describe("collectTagCounts", () => {
     getAllTagsMock.mockReturnValueOnce(null);
 
     expect(collectTagCounts(app, files)).toEqual({});
+  });
+});
+
+describe("collectScopeTagIndex", () => {
+  beforeEach(() => {
+    getAllTagsMock.mockReset();
+  });
+
+  it("matches collectAllTags and collectTagCounts for mixed tag fixtures", () => {
+    const duplicate = createMockFile("Duplicate");
+    const caseVariant = createMockFile("CaseVariant");
+    const nested = createMockFile("Nested");
+    const tagless = createMockFile("Tagless");
+    const cacheless = createMockFile("Cacheless");
+    const emptyTag = createMockFile("EmptyTag");
+    const files = [duplicate, caseVariant, nested, tagless, cacheless, emptyTag];
+    const duplicateCache: CachedMetadata = {};
+    const caseVariantCache: CachedMetadata = {};
+    const nestedCache: CachedMetadata = {};
+    const taglessCache: CachedMetadata = {};
+    const emptyTagCache: CachedMetadata = {};
+    const tagsByCache = new Map<CachedMetadata, string[] | null>([
+      [duplicateCache, ["#Work", "#work", "#Project"]],
+      [caseVariantCache, ["#WORK", "#personal"]],
+      [nestedCache, ["#Work/AI", "#work/ai/harness"]],
+      [taglessCache, []],
+      [emptyTagCache, ["#", "  "]],
+    ]);
+    const cacheByPath = new Map<string, CachedMetadata>([
+      [duplicate.path, duplicateCache],
+      [caseVariant.path, caseVariantCache],
+      [nested.path, nestedCache],
+      [tagless.path, taglessCache],
+      [emptyTag.path, emptyTagCache],
+    ]);
+    const app = {
+      metadataCache: {
+        getFileCache: (file: TFile) => cacheByPath.get(file.path) ?? null,
+      },
+    } as unknown as App;
+
+    getAllTagsMock.mockImplementation((cache: CachedMetadata) => tagsByCache.get(cache) ?? null);
+
+    expect(collectScopeTagIndex(app, files)).toEqual({
+      availableTags: collectAllTags(app, files),
+      tagCounts: collectTagCounts(app, files),
+    });
+    expect(collectScopeTagIndex(app, [])).toEqual({
+      availableTags: [],
+      tagCounts: {},
+    });
   });
 });
 

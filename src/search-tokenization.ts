@@ -1,5 +1,7 @@
 import MiniSearch from "minisearch";
 
+export const SEARCH_INDEX_MAX_TERMS_PER_FIELD = 50_000;
+
 const defaultTokenize = MiniSearch.getDefault("tokenize") as (text: string) => string[];
 const HAN_CODE_POINT_PATTERN = /\p{Script=Han}/u;
 const HAN_TERM_PATTERN = /^\p{Script=Han}+$/u;
@@ -31,13 +33,19 @@ function splitTextRuns(text: string): TextRun[] {
   return runs;
 }
 
-function appendHanIndexTerms(run: string, terms: string[]): void {
+function appendHanIndexTerms(run: string, terms: string[], budget: number): void {
   const codePoints = Array.from(run);
-  for (const codePoint of codePoints) {
-    terms.push(codePoint);
+  const runLength = codePoints.length;
+  let prefixLength = Math.min(runLength, Math.floor((budget + 1) / 2));
+  if (prefixLength < 2 && runLength >= 2) {
+    prefixLength = 0;
   }
 
-  for (let index = 0; index + 1 < codePoints.length; index += 1) {
+  for (let index = 0; index < prefixLength; index += 1) {
+    terms.push(codePoints[index]);
+  }
+
+  for (let index = 0; index + 1 < prefixLength; index += 1) {
     terms.push(codePoints[index] + codePoints[index + 1]);
   }
 }
@@ -56,17 +64,33 @@ function appendHanQueryTerms(run: string, terms: string[]): void {
 
 export function tokenizeSearchIndexText(text: string): string[] {
   if (!HAN_CODE_POINT_PATTERN.test(text)) {
-    return defaultTokenize(text);
+    const terms = defaultTokenize(text);
+    if (terms.length <= SEARCH_INDEX_MAX_TERMS_PER_FIELD) {
+      return terms;
+    }
+
+    return terms.slice(0, SEARCH_INDEX_MAX_TERMS_PER_FIELD);
   }
 
   const terms: string[] = [];
   for (const run of splitTextRuns(text)) {
+    const remaining = SEARCH_INDEX_MAX_TERMS_PER_FIELD - terms.length;
+    if (remaining <= 0) {
+      break;
+    }
+
     if (run.kind === "han") {
-      appendHanIndexTerms(run.text, terms);
-    } else {
-      for (const term of defaultTokenize(run.text)) {
-        terms.push(term);
-      }
+      appendHanIndexTerms(run.text, terms, remaining);
+      continue;
+    }
+
+    const tokenized = defaultTokenize(run.text);
+    const take = Math.min(tokenized.length, remaining);
+    for (let index = 0; index < take; index += 1) {
+      terms.push(tokenized[index]);
+    }
+    if (take < tokenized.length) {
+      break;
     }
   }
 

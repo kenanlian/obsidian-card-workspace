@@ -154,6 +154,58 @@ export function collectTagCounts(app: App, files: TFile[]): Record<string, numbe
   return counts;
 }
 
+/**
+ * One walk that returns the same pair `collectAllTags` and `collectTagCounts`
+ * would return separately. Each file's metadata cache is read once.
+ */
+export function collectScopeTagIndex(
+  app: App,
+  files: TFile[],
+): { availableTags: string[]; tagCounts: Record<string, number> } {
+  const displayTagsByNormalizedTag = new Map<string, string>();
+  const counts: Record<string, number> = {};
+
+  for (const file of files) {
+    const cache = app.metadataCache.getFileCache(file);
+    const rawTags = cache ? getAllTags(cache) : null;
+    if (!rawTags || rawTags.length === 0) {
+      continue;
+    }
+
+    const pathsForFile = new Set<string>();
+    for (const rawTag of rawTags) {
+      const normalizedTag = normalizeTagPath(rawTag);
+      if (normalizedTag.length === 0) {
+        continue;
+      }
+
+      const displayTag = getDisplayTag(rawTag);
+      if (displayTag.length > 0) {
+        const currentDisplayTag = displayTagsByNormalizedTag.get(normalizedTag);
+        if (!currentDisplayTag || shouldReplaceDisplayTag(currentDisplayTag, displayTag)) {
+          displayTagsByNormalizedTag.set(normalizedTag, displayTag);
+        }
+      }
+
+      const segments = normalizedTag.split("/");
+      for (let index = 0; index < segments.length; index += 1) {
+        pathsForFile.add(segments.slice(0, index + 1).join("/"));
+      }
+    }
+
+    for (const tagPath of pathsForFile) {
+      counts[tagPath] = (counts[tagPath] ?? 0) + 1;
+    }
+  }
+
+  return {
+    availableTags: Array.from(displayTagsByNormalizedTag.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, displayTag]) => displayTag),
+    tagCounts: counts,
+  };
+}
+
 export interface VaultTagIndex {
   /** Every tag path in the vault, expanded to include ancestors. */
   tagPaths: Set<string>;

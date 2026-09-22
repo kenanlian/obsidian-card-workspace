@@ -19,7 +19,7 @@ function createMetadata(): IndexStoreNamespaceMetadata {
   return {
     vaultNamespace: VAULT_NAMESPACE,
     schemaVersion: "phase3-v2",
-    tokenizerVersion: "search-text-v3-han-bigram",
+    tokenizerVersion: "search-text-v4-han-bigram-capped",
     pluginVersion: "1.2.5",
     documentCount: 0,
     lastIndexedAt: 0,

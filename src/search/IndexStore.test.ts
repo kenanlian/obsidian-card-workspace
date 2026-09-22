@@ -273,7 +273,7 @@ describe("IndexStore", () => {
     });
 
     await store.write(createMetadata({ tokenizerVersion: "search-text-v2" }), createPayload());
-    const restore = await store.restore(createMetadata({ tokenizerVersion: "search-text-v3-han-bigram" }));
+    const restore = await store.restore(createMetadata({ tokenizerVersion: "search-text-v4-han-bigram-capped" }));
 
     expect(restore).toEqual({
       outcome: "rebuild-required",
@@ -288,7 +288,7 @@ describe("IndexStore", () => {
     const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
 
     await store.write(createMetadata({ tokenizerVersion: "search-text-v2" }), createPayload());
-    const currentMetadata = createMetadata({ tokenizerVersion: "search-text-v3-han-bigram" });
+    const currentMetadata = createMetadata({ tokenizerVersion: "search-text-v4-han-bigram-capped" });
     const restore = await store.restore(currentMetadata);
     const retry = await store.restore(currentMetadata);
 

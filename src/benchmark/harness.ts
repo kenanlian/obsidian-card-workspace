@@ -2,12 +2,13 @@
  * Search performance benchmark harness.
  *
  * Measures the four stages a full-vault index build costs the renderer:
- * document read/prepare, MiniSearch `addAllAsync`, `toJSON()` serialization,
- * and persistence (structured clone). Every stage reuses the real production
- * code paths — `prepareSearchableDocument`, `createMiniSearchOptions`,
- * `tokenizeSearchIndexText` (through those options), and
- * `MINISEARCH_SEARCH_OPTIONS` — so the numbers reflect what the plugin
- * actually executes, never a detached fake tokenizer.
+ * document read/prepare, budgeted MiniSearch ingestion, `toJSON()`
+ * serialization, and persistence (structured clone). Every stage reuses the
+ * real production code paths — `prepareSearchableDocument`,
+ * `createMiniSearchOptions`, `tokenizeSearchIndexText` (through those
+ * options), `addDocumentsWithYield`, and `MINISEARCH_SEARCH_OPTIONS` — so the
+ * numbers reflect what the plugin actually executes, never a detached fake
+ * tokenizer and never a scheduling strategy production abandoned.
  *
  * The harness is diagnostic-only: it writes nothing, touches no vault, and
  * never opens IndexedDB. Persistence cost is simulated with `v8.serialize`
@@ -20,6 +21,7 @@ import MiniSearch from "minisearch";
 import { serialize as v8Serialize } from "node:v8";
 
 import { prepareSearchableDocument } from "../search/document-preparation";
+import { INGEST_YIELD_TERM_BUDGET, addDocumentsWithYield } from "../search/index-ingest";
 import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "../search/minisearch-options";
 import type { SearchableDocument } from "../search/types";
 import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../view/file-kind";
@@ -41,18 +43,22 @@ import {
 } from "./fixtures";
 import { BenchmarkRunTracker } from "./measurement";
 import {
+  MAX_SLICE_CHECK_ID,
   PERSIST_RECORD_METADATA,
-  PHASE_ADD_ALL_ASYNC,
+  PHASE_BUDGETED_INGEST,
   PHASE_JSON_STRINGIFY_DIAGNOSTIC,
   PHASE_PERSIST_CLONE,
   PHASE_READ_PREPARE,
   PHASE_SAMPLE_QUERIES,
   PHASE_TO_JSON,
   buildEnvironment,
+  describeBlockingThreshold,
+  evaluateBlockingThreshold,
   roundMs,
   summarizeFixtures,
   toReportPhases,
   SEARCH_BENCHMARK_REPORT_SCHEMA,
+  type SearchBenchmarkBlockingThreshold,
   type SearchBenchmarkCorrectnessCheck,
   type SearchBenchmarkReport,
 } from "./report";
@@ -75,6 +81,12 @@ interface BenchmarkSearchResult {
 export interface RunSearchBenchmarkOptions {
   profile: BenchmarkProfileId;
   seed?: number;
+  /**
+   * Opt-in blocking-slice threshold in milliseconds. Absent or null records no
+   * timing check, which is what keeps the CI `smoke` run free of a
+   * machine-dependent wall-clock assertion.
+   */
+  maxSliceMs?: number | null;
 }
 
 /**
@@ -156,12 +168,18 @@ export async function runSearchBenchmark(
   }
   tracker.endPhase();
 
-  // Phase 2: MiniSearch add. Production calls addAllAsync(documents) with the
-  // default chunk size (cooperative yield every 10 documents).
-  tracker.beginPhase(PHASE_ADD_ALL_ASYNC);
+  // Phase 2: the production full-build ingest path itself — addDocumentsWithYield,
+  // which adds in list order and yields on the accumulated term budget.
+  //
+  // Production threads its carry-over accumulator across 200-document read
+  // windows; one call over the whole ordered list yields at exactly the same
+  // boundaries, because the accumulator surviving a batch edge is the point of
+  // the carry-over parameter. The harness has no read windows to mirror
+  // anyway: read/prepare above consumes the corpus in one pass.
+  tracker.beginPhase(PHASE_BUDGETED_INGEST);
   const index = new MiniSearch<SearchableDocument>(createMiniSearchOptions());
   if (documents.length > 0) {
-    await index.addAllAsync(documents);
+    await addDocumentsWithYield(index, documents, 0, () => true);
   }
   tracker.endPhase();
 
@@ -204,6 +222,12 @@ export async function runSearchBenchmark(
 
   const englishOrdered = searchLikeManager(index, ENGLISH_NEEDLE_QUERY, allPaths);
   const hanOrdered = searchLikeManager(index, HAN_NEEDLE_QUERY, allPaths);
+
+  const reportPhases = toReportPhases(measurement);
+  const perPhaseMaxSliceMs: Record<string, number> = {};
+  for (const phase of reportPhases) {
+    perPhaseMaxSliceMs[phase.id] = phase.maxSliceMs;
+  }
 
   const checks: SearchBenchmarkCorrectnessCheck[] = [];
   const recordCheck = (id: string, passed: boolean, detail: string): void => {
@@ -261,10 +285,13 @@ export async function runSearchBenchmark(
     `index.documentCount=${index.documentCount}, prepared documents=${documents.length}`,
   );
 
-  const reportPhases = toReportPhases(measurement);
-  const perPhaseMaxSliceMs: Record<string, number> = {};
-  for (const phase of reportPhases) {
-    perPhaseMaxSliceMs[phase.id] = phase.maxSliceMs;
+  // Opt-in only: with no threshold supplied nothing is recorded, so the check
+  // count and the CI smoke run are byte-for-byte what they were before.
+  const thresholdMs = options.maxSliceMs ?? null;
+  let threshold: SearchBenchmarkBlockingThreshold | null = null;
+  if (thresholdMs !== null) {
+    threshold = evaluateBlockingThreshold(thresholdMs, perPhaseMaxSliceMs);
+    recordCheck(MAX_SLICE_CHECK_ID, threshold.passed, describeBlockingThreshold(threshold));
   }
 
   return {
@@ -279,7 +306,9 @@ export async function runSearchBenchmark(
       method: "setImmediate-heartbeat-gap",
       maxSliceMs: roundMs(measurement.overallMaxSliceMs),
       perPhaseMaxSliceMs,
-      note: "Largest observed gap between consecutive setImmediate heartbeats. While the event loop is blocked, heartbeats queue up, so the max gap approximates the longest run without a cooperative yield. Scheduler overhead gives unblocked gaps a small (>0) floor.",
+      ingestTermBudget: INGEST_YIELD_TERM_BUDGET,
+      note: "Largest observed gap between consecutive setImmediate heartbeats. While the event loop is blocked, heartbeats queue up, so the max gap approximates the longest run without a cooperative yield. Scheduler overhead gives unblocked gaps a small (>0) floor. This global maximum is REPORTED, NEVER GATED: it is dominated by read-prepare, a benchmark artifact. See blocking.threshold for the phases that are gated, the two ceilings applied to them, and the reason each remaining phase is held out.",
+      threshold,
     },
     memory: {
       method: "process.memoryUsage() sampled on heartbeat and phase boundaries; peak values are componentwise maxima",

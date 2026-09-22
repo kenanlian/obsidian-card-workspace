@@ -5,8 +5,10 @@ export async function activateDeferredView<T>(
   viewType: string,
   isExpectedView: (value: unknown) => value is T,
   isCurrent: () => boolean = () => true,
+  allowCreate = true,
 ): Promise<T | null> {
   const existing = workspace.getLeavesOfType(viewType);
+  if (existing.length === 0 && !allowCreate) return null;
   const leaf: WorkspaceLeaf | null = existing[0] ?? workspace.getLeftLeaf(false);
   if (!leaf) return null;
   if (existing.length === 0) {

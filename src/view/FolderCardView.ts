@@ -282,6 +282,7 @@ export class FolderCardView extends ItemView {
   }
 
   getCardScope(): CardScope { return this.cardScope; }
+  hasLoadedScope(): boolean { return this.modules.scopeController.getLoadKey() !== null; }
   /**
    * Applies the weakest update that still reflects a change. Only `"reload"`
    * re-collects files; the weaker tiers keep scroll position and loaded previews.

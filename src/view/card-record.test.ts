@@ -67,6 +67,25 @@ describe("createCardRecord", () => {
     expect(getFileCache).toHaveBeenCalledWith(file);
   });
 
+  it("skips the metadata lookup entirely when task derivation is opted out", () => {
+    const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }] }));
+    const record = createCardRecord(appWith(getFileCache), liveFile("scope/tasks.md"), "markdown", false);
+
+    expect(record.taskSummary).toBeNull();
+    expect(getFileCache).not.toHaveBeenCalled();
+  });
+
+  it("stays eager for the five single-card construction sites that pass no flag", () => {
+    const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }] }));
+    const app = appWith(getFileCache);
+
+    expect(createCardRecord(app, liveFile("scope/a.md"), "markdown").taskSummary)
+      .toEqual({ total: 1, incomplete: 1 });
+    expect(createCardRecord(app, liveFile("scope/b.md"), "markdown", true).taskSummary)
+      .toEqual({ total: 1, incomplete: 1 });
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the task summary null for non-markdown kinds without consulting metadata", () => {
     for (const kind of ["base", "canvas", "excalidraw"] as const) {
       const getFileCache = vi.fn(() => ({ listItems: [{ task: " " }] }));

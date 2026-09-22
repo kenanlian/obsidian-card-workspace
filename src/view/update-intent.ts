@@ -52,6 +52,18 @@ function groupsEqual(previous: GroupSpec, next: GroupSpec): boolean {
     && previous.orderDirection === next.orderDirection;
 }
 
+/**
+ * Task buckets read `card.taskSummary` straight off the record and are
+ * deliberately uncached, but a non-task scope load leaves that field `null` on
+ * every card it has not hydrated yet. A reprojection would therefore drop the
+ * unhydrated majority into the "no tasks" bucket, so switching *into* the task
+ * dimension has to rebuild the records. Switching *out of* it needs nothing:
+ * stale-but-correct summaries are harmless because nothing reads them.
+ */
+export function groupTransitionRequiresReload(previous: GroupSpec, next: GroupSpec): boolean {
+  return next.dimension === "task" && previous.dimension !== "task";
+}
+
 /** Membership lives in the box signature; identity only changes header labels. */
 function ruleIdentitiesEqual(previous: readonly Rule[], next: readonly Rule[]): boolean {
   return previous.length === next.length && previous.every(
@@ -77,6 +89,9 @@ export function resolveBoxesUpdateIntent(
     return "patch";
   }
   if (getBoxMembershipSignature(previousBox) !== getBoxMembershipSignature(nextBox)) {
+    return "reload";
+  }
+  if (groupTransitionRequiresReload(previousBox.group, nextBox.group)) {
     return "reload";
   }
 
@@ -143,7 +158,10 @@ export function resolveSettingsUpdateIntent(
     intent = mergeIntent(intent, "reproject");
   }
   if (!groupsEqual(previous.group, next.group)) {
-    intent = mergeIntent(intent, "reproject");
+    intent = mergeIntent(
+      intent,
+      groupTransitionRequiresReload(previous.group, next.group) ? "reload" : "reproject",
+    );
   }
 
   if (previous.previewLines !== next.previewLines) {

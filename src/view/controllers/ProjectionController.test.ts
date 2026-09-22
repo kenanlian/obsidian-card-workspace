@@ -209,12 +209,25 @@ describe("ProjectionController", () => {
     const first = controller.deriveScopeTags();
     const cached = controller.deriveScopeTags();
     expect(cached).toBe(first);
-    expect(getFileCache).toHaveBeenCalledTimes(2);
+    expect(getFileCache).toHaveBeenCalledTimes(1);
 
     controller.invalidateVaultCaches();
     const refreshed = controller.deriveScopeTags();
     expect(refreshed).not.toBe(first);
-    expect(getFileCache).toHaveBeenCalledTimes(4);
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads each base card cache once from both scope-tag entry points", () => {
+    const cards = [createCard("a.md"), createCard("b.md"), createCard("c.md")];
+    const { controller, getFileCache, store } = createHarness();
+    store.replaceBaseCards(cards);
+
+    controller.deriveScopeTags();
+    expect(getFileCache).toHaveBeenCalledTimes(cards.length);
+
+    getFileCache.mockClear();
+    controller.refreshScopeTagData();
+    expect(getFileCache).toHaveBeenCalledTimes(cards.length);
   });
 });
 

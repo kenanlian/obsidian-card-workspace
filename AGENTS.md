@@ -28,7 +28,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`, `MetadataEventBus`, `PinnedPathReconciler`) plus default card open behavior
 - **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/` (including `MetadataImpactController`), `src/view/actions/` (including `arrangement-actions.ts`), and `src/view/menus/`
 - **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`. Folder/Box policy is `resolveSourceCapabilities(scope)`.
-- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. Folders: `tag filter -> property filter -> search filter -> pin reorder`. Boxes and links skip the browse tag and property filters and run `search -> pin` (box rule property clauses are digested at the membership layer). Browse tag/property filtering is a folder-only capability: filters set before entering a box/links scope stay dormant (with a "filters paused" toolbar hint) and resume when returning to a folder
+- **Projection rule**: `src/view/pipeline.ts` is the only visible-card projection path. A committed scope load runs that path once, before startup prewarm, and publishes one load commit; startup paths are the projected visible order. Folders: `tag filter -> property filter -> search filter -> pin reorder`. Boxes and links skip the browse tag and property filters and run `search -> pin` (box rule property clauses are digested at the membership layer). Browse tag/property filtering is a folder-only capability: filters set before entering a box/links scope stay dormant (with a "filters paused" toolbar hint) and resume when returning to a folder
 - **UI boundary**: `src/view/panel-model.ts` bridges grouped host state into Svelte; `FolderCardPanel.svelte`, `NavigationPane.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready; `src/search/` has no runtime dependency on `src/view/`
 - **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2. A future schema is degraded read-only operation (defaults in memory, no write), not a migration
@@ -36,28 +36,28 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 ## Current Project Status
 
 - Search architecture is **indexed-only**. Do not restore fallback search paths without an explicit architecture change.
-- `pipeline.ts` remains the only visible-card projection path. Property filters compose there for folder scopes only; in box scopes, rule property clauses are digested at the membership layer and the projection runs `search -> pin`.
+- `pipeline.ts` remains the only visible-card projection path, and a committed scope load runs it once before startup prewarm. Property filters compose there for folder scopes only; in box scopes, rule property clauses are digested at the membership layer and the projection runs `search -> pin`.
 - Non-ready indexed states (`building`, `error`, `rebuild-required`) block non-empty queries.
 - Supported card file kinds are `markdown`, `base`, `canvas`, and `excalidraw`.
 - Markdown keeps full preview and full-text indexing; the other supported kinds remain title/placeholder-oriented.
 - Startup preview prewarm is limited to the first 6 visible candidates and a 120ms wait budget.
 - Per-view preview hydration uses a five-read scheduler and a runtime-only 512-entry LRU; viewport demand carries generation, hydration revision, and ordered paths.
 - Full-vault search reconciliation uses eight readers, is serialized/cancellable, and treats plugin version as diagnostic rather than an index compatibility gate.
-- A deterministic search benchmark harness exists (`npm run benchmark:search`, documented in `.dev/search-benchmark.md`). It reuses production preparation/tokenizer/MiniSearch options over seeded synthetic fixtures, writes a JSON diagnostic report to a caller-supplied path, never touches a real vault or IndexedDB, and enforces correctness assertions but no millisecond thresholds.
+- A deterministic search benchmark harness exists (`npm run benchmark:search`, documented in `.dev/search-benchmark.md`). It reuses production preparation, the capped index tokenizer, MiniSearch options, and production `addDocumentsWithYield` over seeded synthetic fixtures (`smoke`, `full`, and `xl`), writes a schema-v2 JSON diagnostic report to a caller-supplied path, and never touches a real vault or IndexedDB. It always enforces correctness assertions. Only when `--max-slice-ms` is passed does it also enforce two blocking-slice ceilings: the flag's value for the production budgeted-ingest phase (`minisearch-budgeted-ingest`) and a fixed 750 ms for `minisearch-to-json` and `persist-structured-clone`. The global max blocking slice is reported and stays outside that gate. Deliberate large-vault runs use `--profile xl --max-slice-ms 300`. The `xl` profile stays out of CI.
 - The persisted index is a structured-clone object, not a JSON string. Do not reintroduce `JSON.stringify` on a whole-vault index: it blocks the main thread and can exceed the engine's maximum string length.
-- Index documents are capped at 512KB of markdown each and cover only supported card kinds; attachments are never indexed.
+- Index documents are capped at 512KB of markdown each and, on the index tokenizer, at 50,000 terms per indexed field (`title` and `content`). They cover only supported card kinds; attachments are never indexed. Content past the term budget is not searchable. Query tokenization stays uncapped.
 - A full build persists an attempt marker before it starts and clears it only on success. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
 - Plugin surfaces register synchronously; restored card scope foreground work completes before search restore/reconciliation is released, and full-vault scans then wait for an idle window.
 - Production builds are minified and automatically checked for externals and sourcemap policy.
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
-- Startup restores **folder** scope only and forces `activeBoxId = null`.
+- Startup restores **folder** scope only when a card-view leaf already exists, and forces `activeBoxId = null`. Enabling the plugin does not create a leaf. The ribbon, the `open-view` command, and that restore each activate the view and, when it has never loaded a scope, dispatch the persisted folder scope (`lastFolderPath`, with `""` still meaning vault root).
 - Default card open behavior is owned by `main.ts`.
 - `MetadataEventBus` exists and is owned with `main.ts`; `MetadataImpactController` is the only per-view consumer. Global pins reconcile through `PinnedPathReconciler` after navigation-workspace and before Boxes.
 - Arrangement intents (sort / group / collapse / pin) live in `arrangement-actions.ts`, not the `ItemView` shell.
 - A startup whose vault is unchanged skips the index rebuild, `toJSON()`, and the IndexedDB write entirely, decided by comparing a persisted `{path: mtime}` document catalog against a synchronous, read-free vault snapshot.
 - The catalog is an optional top-level record field, not a schema bump: `schemaVersion` stays `phase3-v2`, a catalog-less record still restores (and is then healed), and a malformed catalog degrades to catalog-unavailable instead of marking the record corrupt.
 - The reconcile fast path still reads every file, because match-count badges are computed from `documentsByPath`, which a restore never populates. Skipping the read pass is deliberately deferred.
-- Full builds stream documents into the index in ordered batches of 200; `readAllDocuments` is a concatenation of that same generator so enumeration and order cannot diverge.
+- Full builds stream documents into the index in ordered batches of 200 and yield when an accumulated term estimate (`2 * (title.length + content.length)`) reaches 20,000; the accumulator carries across batch boundaries. `readAllDocuments` is a concatenation of that same generator so enumeration and order cannot diverge.
 - Serialization vacuums the index when `dirtCount >= 1000`, which is what bounds tombstones now that no per-startup rebuild clears them.
 
 ## Key Directories
@@ -88,7 +88,7 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 | `npm install` | Install dependencies |
 | `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
 | `npm run build` | Production build (`main.js`, no sourcemaps) |
-| `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full`, `--output <absolute path>`, optional `--seed <uint32>`); diagnostic baseline only, never part of the production build — see `.dev/search-benchmark.md` |
+| `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full\|xl`, `--output <absolute path>`, optional `--seed <uint32>`, optional `--max-slice-ms <ms>`). Diagnostic report; the dual slice gate runs only when `--max-slice-ms` is passed. Never part of the production build — see `.dev/search-benchmark.md` |
 | `npm run lint` | `oxlint --config .oxlintrc.json src` |
 | `npm run check` | TypeScript type check (`tsc --noEmit`) |
 | `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |

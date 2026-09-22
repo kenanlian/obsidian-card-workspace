@@ -26,7 +26,7 @@ import {
 
 /** v2 persists the MiniSearch snapshot as a structured-clone object, not a JSON string. */
 const SEARCH_SCHEMA_VERSION = "phase3-v2";
-export const SEARCH_TOKENIZER_VERSION = "search-text-v3-han-bigram";
+export const SEARCH_TOKENIZER_VERSION = "search-text-v4-han-bigram-capped";
 const SEARCH_MAX_CANDIDATE_PATHS = 10000;
 /**
  * Full-source scans are deferred past startup: cards and navigation do not

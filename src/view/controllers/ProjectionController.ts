@@ -8,7 +8,7 @@ import {
   type GroupLabels,
 } from "../card-grouping";
 import type { UiStrings } from "../../i18n";
-import { collectAllTags, collectTagCounts, collectVaultTagIndex } from "../metadata-utils";
+import { collectScopeTagIndex, collectVaultTagIndex } from "../metadata-utils";
 import { runPipeline, stepsForScope, type PipelineContext } from "../pipeline";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { NoteCardRecord, PipelineSearchInput, Rule } from "../types";
@@ -279,11 +279,11 @@ export class ProjectionController {
       : stashed?.key === key
         ? stashed.value
         : null;
-    const app = this.context.getApp();
     const files = this.context.store.getBaseCards().map((card) => card.file);
+    const index = collectScopeTagIndex(this.context.getApp(), files);
     const value = {
-      availableTags: this.hasMetadataCache() ? collectAllTags(app, files) : [],
-      tagCounts: collectTagCounts(app, files),
+      availableTags: this.hasMetadataCache() ? index.availableTags : [],
+      tagCounts: index.tagCounts,
     };
     this.scopeTagStash = null;
     this.scopeTagCache = { key, value };
@@ -360,11 +360,11 @@ export class ProjectionController {
       return cached.value;
     }
 
-    const app = this.context.getApp();
     const files = this.context.store.getBaseCards().map((card) => card.file);
+    const index = collectScopeTagIndex(this.context.getApp(), files);
     const value = {
-      availableTags: this.hasMetadataCache() ? collectAllTags(app, files) : [],
-      tagCounts: collectTagCounts(app, files),
+      availableTags: this.hasMetadataCache() ? index.availableTags : [],
+      tagCounts: index.tagCounts,
     };
     this.scopeTagCache = { key, value };
     return value;

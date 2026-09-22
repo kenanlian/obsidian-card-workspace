@@ -1,5 +1,5 @@
 import type { EpochToken } from "../async-epoch";
-import { getCardPlaceholderText, isMarkdownCardKind } from "../file-kind";
+import { isMarkdownCardKind } from "../file-kind";
 import type { HydrateViewportRequest } from "../hydration-request";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "../markdown-utils";
 import { createPreviewFingerprint, fingerprintsEqual, PreviewCache,
@@ -7,6 +7,8 @@ import { createPreviewFingerprint, fingerprintsEqual, PreviewCache,
 import type { NoteCardRecord, VaultMutationEvent } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 import type { CardPreviewFields, CardPreviewUpdate } from "../view-state-store";
+import { buildEmptyPreviewPatch, buildPlaceholderPatch, buildPreviewPatch,
+  type HydrationPreview } from "./hydration-patch";
 
 const MAX_ACTIVE_READS = 5;
 const STARTUP_PREVIEW_CARD_COUNT = 6;
@@ -104,7 +106,7 @@ export class HydrationController implements DisposableController {
         continue;
       }
       const preview = this.cache.get(this.fingerprintFor(record));
-      if (preview) Object.assign(record, this.previewPatch(preview));
+      if (preview) Object.assign(record, this.previewPatch(record, preview));
     }
   }
   schedulePath(path: string): void {
@@ -210,7 +212,9 @@ export class HydrationController implements DisposableController {
       if (card.hydrated) return Promise.resolve();
       const cached = this.cache.get(fingerprint);
       if (cached) {
-        return this.enqueuePatch(path, this.previewPatch(cached), fingerprint, owner.viewport === true);
+        return this.enqueuePatch(
+          path, this.previewPatch(card, cached), fingerprint, owner.viewport === true,
+        );
       }
     }
     let resolve!: () => void;
@@ -248,18 +252,18 @@ export class HydrationController implements DisposableController {
     }
   }
   private async runJob(job: HydrationJob): Promise<void> {
+    const card = this.context.store.getBaseCard(job.path);
+    if (!card) return;
     let patch: Partial<CardPreviewFields>;
     try {
-      const card = this.context.store.getBaseCard(job.path);
-      if (!card) return;
       const markdown = await this.context.getApp().vault.cachedRead(card.file);
       if (!this.currentFingerprint(job)) return;
       const preview = buildLightPreview(markdown, job.fingerprint.maxVisibleChars, job.fingerprint.previewLines);
       this.cache.set(job.fingerprint, preview);
-      patch = this.previewPatch(preview);
+      patch = this.previewPatch(card, preview);
     } catch {
       if (!this.currentFingerprint(job)) return;
-      patch = { excerpt: "", previewHtml: "", previewMode: "empty", hydrated: true };
+      patch = buildEmptyPreviewPatch(this.context.getApp(), card);
     }
     if (this.shouldPatch(job)) {
       await this.enqueuePatch(job.path, patch, job.fingerprint,
@@ -342,17 +346,11 @@ export class HydrationController implements DisposableController {
       DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
     );
   }
-  private previewPatch(preview: { html: string; mode: "text" | "code" | "empty" }): Partial<CardPreviewFields> {
-    return { previewHtml: preview.html, previewMode: preview.mode, hydrated: true };
+  private previewPatch(card: NoteCardRecord, preview: HydrationPreview): Partial<CardPreviewFields> {
+    return buildPreviewPatch(this.context.getApp(), card, preview);
   }
   private placeholderPatch(card: NoteCardRecord): Partial<CardPreviewFields> {
-    const text = getCardPlaceholderText(card.fileKind, this.context.getUiStrings().fileKind);
-    return {
-      excerpt: "",
-      previewHtml: `<p class="fce-preview-placeholder">${text}</p>`,
-      previewMode: "placeholder",
-      hydrated: true,
-    };
+    return buildPlaceholderPatch(card, this.context.getUiStrings().fileKind);
   }
   private sortQueue(): void {
     this.queue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
