@@ -1,25 +1,24 @@
 import MiniSearch, { type AsPlainObject } from "minisearch";
-import { getSearchDisplayTerms } from "../search-tokenization";
 import { scheduleIdleTask } from "./idle-task";
 import type {
   IndexStoreClearResult,
   IndexStore,
+  IndexStoreDocumentCatalog,
   IndexStoreNamespaceMetadata,
-  IndexStoreRestoreRebuildRequiredResult,
   IndexStoreWriteFailureResult,
 } from "./IndexStore";
+import { SearchDocumentCatalog } from "./document-catalog";
 import { classifySearchMutation } from "./document-preparation";
-import {
-  type SearchIndexHealthSnapshot,
-  type SearchIndexPersistenceHealth,
-  type SearchIndexRebuildReason,
-  type SearchServiceSnapshot,
-  type SearchVaultMutation,
-  type SearchableDocument,
-} from "./types";
+import { buildMatchCountsByPath } from "./match-counts";
 import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "./minisearch-options";
 import {
-  countNonOverlappingLiteralOccurrences,
+  applyMutationToWorkingSet,
+  isUnmergeableMutation,
+  type IndexWorkingSet,
+  type MutationApplicationHost,
+} from "./mutation-application";
+import { toRebuildDetail, toRestorePersistence, toRestoreRebuildReason } from "./restore-mapping";
+import {
   createSearchSuccessSnapshot,
   hasPathPrefix,
   rewriteFolderPath,
@@ -28,6 +27,12 @@ import {
   SearchMutationGate,
   SearchReconciliationRunner,
 } from "./SearchReconciliationRunner";
+import {
+  type SearchIndexHealthSnapshot,
+  type SearchServiceSnapshot,
+  type SearchVaultMutation,
+  type SearchableDocument,
+} from "./types";
 
 export interface SearchIndexManagerRestoreResult {
   status: "ready" | "building";
@@ -46,8 +51,10 @@ export interface SearchIndexManagerSearchResult {
 }
 
 export interface SearchIndexDocumentSource {
+  streamDocuments(signal?: AbortSignal): AsyncGenerator<SearchableDocument[]>;
   readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]>;
   readDocument(path: string): Promise<SearchableDocument | null>;
+  readCatalogSnapshot(): IndexStoreDocumentCatalog;
 }
 
 interface SearchIndexManagerOptions {
@@ -105,6 +112,14 @@ export class SearchIndexManager {
    */
   private static readonly MUTATION_PERSIST_DEBOUNCE_MS = 30_000;
   private static readonly MUTATION_PERSIST_IDLE_TIMEOUT_MS = 5_000;
+  /**
+   * MiniSearch's own auto-vacuum is driven by `dirtFactor`, which on a large
+   * vault effectively never reaches its 0.1 default: at ~27 800 documents that
+   * would take roughly 3 090 discards. Since the reconcile fast path no longer
+   * rebuilds the index each session, discarded terms would otherwise survive
+   * every restart, so an explicit count gate is what actually collects them.
+   */
+  private static readonly VACUUM_MIN_DIRT_COUNT = 1000;
   private persistTimer: number | null = null;
   private cancelPersistIdleTask: (() => void) | null = null;
   private persistScheduled = false;
@@ -120,6 +135,9 @@ export class SearchIndexManager {
   private contentRevision = 0;
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private readonly documentsByPath = new Map<string, SearchableDocument>();
+  private documentCatalog = new SearchDocumentCatalog();
+  /** Whether `documentCatalog` describes the currently persisted index. */
+  private catalogAvailable = false;
   private expectedMetadata: IndexStoreNamespaceMetadata | null = null;
   private readonly sourceRunner = new SearchReconciliationRunner();
   private readonly mutationGate = new SearchMutationGate();
@@ -129,6 +147,12 @@ export class SearchIndexManager {
   private queuedRebuildDetail: string | null = null;
   private disposed = false;
   private generation = 0;
+  private readonly mutationHost: MutationApplicationHost = {
+    discardIndexedPath: (path, set) => this.discardIndexedPath(path, set),
+    upsertDocument: (path, set) => this.upsertDocument(path, set),
+    rewriteFolderPrefix: (oldPrefix, newPrefix, set) => this.rewriteFolderPrefix(oldPrefix, newPrefix, set),
+    markFolderRebuildRequired: (detail) => this.markFolderRebuildRequired(detail),
+  };
 
   constructor(options: SearchIndexManagerOptions) {
     this.store = options.store;
@@ -230,9 +254,9 @@ export class SearchIndexManager {
       return { status: "building", outcome: "rebuild-required", detail: null };
     }
     if (restoreResult.outcome !== "restored") {
-      const detail = this.toRebuildDetail(restoreResult);
-      const persistence = this.toRestorePersistence(restoreResult.reason);
-      const rebuildReason = this.toRestoreRebuildReason(restoreResult.reason);
+      const detail = toRebuildDetail(restoreResult);
+      const persistence = toRestorePersistence(restoreResult.reason);
+      const rebuildReason = toRestoreRebuildReason(restoreResult.reason);
       this.snapshot = {
         ...this.snapshot,
         status: "building",
@@ -269,6 +293,14 @@ export class SearchIndexManager {
         return { status: "building", outcome: "rebuild-required", detail: null };
       }
       this.index = restoredIndex;
+      const restoredCatalog = restoreResult.payload.documentCatalog;
+      if (restoredCatalog) {
+        this.documentCatalog.loadFrom(restoredCatalog);
+        this.catalogAvailable = true;
+      } else {
+        this.documentCatalog.clear();
+        this.catalogAvailable = false;
+      }
       const success = createSearchSuccessSnapshot(
         "restored",
         restoreResult.payload.documentCount,
@@ -373,6 +405,8 @@ export class SearchIndexManager {
 
     this.index = this.createEmptyIndex();
     this.documentsByPath.clear();
+    this.documentCatalog.clear();
+    this.catalogAvailable = false;
     this.mutationJournal = null;
     this.snapshot = {
       ...this.snapshot,
@@ -426,7 +460,7 @@ export class SearchIndexManager {
 
     return {
       orderedPaths: ordered,
-      matchCountsByPath: this.buildMatchCountsByPath(trimmed, ordered),
+      matchCountsByPath: buildMatchCountsByPath(trimmed, ordered, this.documentsByPath),
     };
   }
 
@@ -507,15 +541,29 @@ export class SearchIndexManager {
       do {
         this.queuedRebuildDetail = null;
         await this.sourceRunner.run(async (signal, isCurrent) => {
+      if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) return;
       if (nextKind === "rebuild") this.setBuilding(nextDetail, "building");
       this.cancelPendingPersist();
       this.mutationJournal = [];
-      const documents = await this.documentSource.readAllDocuments(signal);
-      if (!isCurrent()) return;
       const replacement = this.createEmptyIndex();
-      if (documents.length > 0) await replacement.addAllAsync(documents);
+      const replacementDocuments = new Map<string, SearchableDocument>();
+      const replacementCatalog = new SearchDocumentCatalog();
+      // Batched so peak memory is one read window rather than the whole vault;
+      // consecutive windows keep the single-shot document order (C10).
+      for await (const batch of this.documentSource.streamDocuments(signal)) {
+        if (!isCurrent()) return;
+        await replacement.addAllAsync(batch);
+        for (const document of batch) {
+          replacementDocuments.set(document.path, document);
+          replacementCatalog.set(document.path, document.mtime);
+        }
+      }
       if (!isCurrent()) return;
-      const replacementDocuments = new Map(documents.map((document) => [document.path, document]));
+      const replacementSet: IndexWorkingSet = {
+        index: replacement,
+        documents: replacementDocuments,
+        catalog: replacementCatalog,
+      };
 
       const release = await this.mutationGate.acquire();
       let persisted = false;
@@ -524,15 +572,16 @@ export class SearchIndexManager {
         const journal = this.mutationJournal ?? [];
         this.mutationJournal = null;
         for (const event of journal) {
-          await this.applyMutationToState(event, replacement, replacementDocuments, false);
+          await applyMutationToWorkingSet(event, replacementSet, false, this.mutationHost);
           if (!isCurrent()) return;
         }
         const now = Date.now();
-        persisted = await this.persistIndex(replacement, replacement.documentCount, now);
+        persisted = await this.persistIndex(replacement, replacementCatalog, replacement.documentCount, now);
         if (persisted && isCurrent()) {
           this.index = replacement;
           this.documentsByPath.clear();
           for (const [path, document] of replacementDocuments) this.documentsByPath.set(path, document);
+          this.documentCatalog = replacementCatalog;
           this.publishReplacementSuccess(nextKind, nextDetail, now);
         }
       } finally {
@@ -550,6 +599,62 @@ export class SearchIndexManager {
       } while (this.queuedRebuildDetail && !this.disposed);
     } finally {
       this.sourceWorkPending = 0;
+    }
+  }
+
+  /**
+   * A reconcile over a vault whose `{path: mtime}` catalog still matches the
+   * persisted index has nothing to re-index, so it skips the replacement
+   * MiniSearch, the serialization, and the write. It still reads every document
+   * because match-count badges are computed from `documentsByPath`, which a
+   * restore never populates. Returns false when the catalog cannot prove the
+   * vault is unchanged, leaving the caller on the full replacement path.
+   */
+  private async tryHydrateUnchangedVault(signal: AbortSignal, isCurrent: () => boolean): Promise<boolean> {
+    const currentCatalog = this.documentSource.readCatalogSnapshot();
+    if (!this.catalogAvailable || !this.documentCatalog.matches(currentCatalog)) return false;
+
+    // Journalled before the read so a mutation landing mid-pass is visible
+    // below and cannot be clobbered by the staler document this pass holds.
+    this.mutationJournal = [];
+    const documents = await this.documentSource.readAllDocuments(signal);
+    if (!isCurrent()) return true;
+
+    const release = await this.mutationGate.acquire();
+    try {
+      const journal = this.mutationJournal ?? [];
+      this.mutationJournal = null;
+      if (!journal.some(isUnmergeableMutation)) this.mergeHydratedDocuments(documents, journal);
+    } finally {
+      this.mutationJournal = null;
+      release();
+    }
+
+    if (!this.documentCatalog.matches(this.documentSource.readCatalogSnapshot())) {
+      this.queuedRebuildDetail = "Vault changed during reconciliation; full rebuild required.";
+    }
+    return true;
+  }
+
+  /**
+   * Read documents win everywhere except the paths a live mutation already
+   * touched during the pass: those hold a newer value than the read (C6).
+   */
+  private mergeHydratedDocuments(documents: SearchableDocument[], journal: SearchVaultMutation[]): void {
+    const touched = new Set<string>();
+    for (const event of journal) {
+      touched.add(event.path);
+      if (event.oldPath) touched.add(event.oldPath);
+    }
+
+    const readPaths = new Set<string>();
+    for (const document of documents) {
+      readPaths.add(document.path);
+      if (!touched.has(document.path)) this.documentsByPath.set(document.path, document);
+    }
+
+    for (const path of this.documentsByPath.keys()) {
+      if (!readPaths.has(path) && !touched.has(path)) this.documentsByPath.delete(path);
     }
   }
 
@@ -587,11 +692,16 @@ export class SearchIndexManager {
   }
 
   private async persistCurrentIndex(documentCount: number, lastIndexedAt: number): Promise<boolean> {
-    return this.persistIndex(this.index, documentCount, lastIndexedAt);
+    return this.persistIndex(this.index, this.documentCatalog, documentCount, lastIndexedAt);
   }
 
+  /**
+   * The catalog is passed in rather than read from the field so a replacement
+   * persist serializes the catalog belonging to the index it is writing.
+   */
   private async persistIndex(
     index: MiniSearch<SearchableDocument>,
+    catalog: SearchDocumentCatalog,
     documentCount: number,
     lastIndexedAt: number,
   ): Promise<boolean> {
@@ -610,6 +720,17 @@ export class SearchIndexManager {
       return false;
     }
 
+    if (index.dirtCount >= SearchIndexManager.VACUUM_MIN_DIRT_COUNT) {
+      try {
+        await index.vacuum();
+      } catch (error) {
+        // A vacuum is an optimization; losing the snapshot over one would be
+        // strictly worse than persisting an index that still carries tombstones.
+        console.warn("Search index vacuum failed; serializing without it.", error);
+      }
+      if (this.disposed) return false;
+    }
+
     const writeResult = await this.store.write(
       {
         ...this.expectedMetadata,
@@ -620,6 +741,7 @@ export class SearchIndexManager {
         serializedIndex: index.toJSON(),
         documentCount,
         lastIndexedAt,
+        documentCatalog: catalog.toSerializable(),
       },
     );
 
@@ -629,6 +751,7 @@ export class SearchIndexManager {
       return false;
     }
 
+    this.catalogAvailable = true;
     return true;
   }
 
@@ -653,7 +776,7 @@ export class SearchIndexManager {
   }
 
   private async applyMutationNow(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
-    const result = await this.applyMutationToState(event, this.index, this.documentsByPath, true);
+    const result = await applyMutationToWorkingSet(event, this.liveSet, true, this.mutationHost);
     if (result.action === "applied") {
       // Emit immediately with the bumped revision, before the debounced
       // persist refreshes the document count, so a same-count modify still
@@ -662,92 +785,6 @@ export class SearchIndexManager {
       this.schedulePersistMutationState();
     }
     return result;
-  }
-
-  private async applyMutationToState(
-    event: SearchVaultMutation,
-    index: MiniSearch<SearchableDocument>,
-    documents: Map<string, SearchableDocument>,
-    live: boolean,
-  ): Promise<SearchIndexManagerMutationResult> {
-    const decision = classifySearchMutation(event);
-
-    if (decision.action === "ignored") {
-      return {
-        action: "ignored",
-        rebuildRequired: false,
-      };
-    }
-
-    if (decision.action === "rebuild-required") {
-      if (live) this.markFolderRebuildRequired("Folder rename cannot be safely rewritten; full rebuild required.");
-      return {
-        action: "rebuild-required",
-        rebuildRequired: true,
-      };
-    }
-
-    if (decision.action === "delete") {
-      this.discardIndexedPath(event.path, index, documents);
-      return {
-        action: "applied",
-        rebuildRequired: false,
-      };
-    }
-
-    if (decision.action === "create" || decision.action === "modify") {
-      await this.upsertDocument(event.path, index, documents);
-      return {
-        action: "applied",
-        rebuildRequired: false,
-      };
-    }
-
-    if (decision.action === "file-rename") {
-      const oldPath = event.oldPath;
-      if (!oldPath) {
-        return {
-          action: "rebuild-required",
-          rebuildRequired: true,
-        };
-      }
-
-      this.discardIndexedPath(oldPath, index, documents);
-      await this.upsertDocument(event.path, index, documents);
-      return {
-        action: "applied",
-        rebuildRequired: false,
-      };
-    }
-
-    if (decision.action === "folder-rename") {
-      const oldPrefix = event.oldPath;
-      if (!oldPrefix) {
-        return {
-          action: "rebuild-required",
-          rebuildRequired: true,
-        };
-      }
-
-      const didRewrite = this.rewriteFolderPrefix(oldPrefix, event.path, index, documents);
-      if (!didRewrite) {
-        if (live) this.markFolderRebuildRequired("Folder rename could not be safely rewritten from restored index metadata; full rebuild required.");
-        return {
-          action: "rebuild-required",
-          rebuildRequired: true,
-        };
-      }
-
-      return {
-        action: "applied",
-        rebuildRequired: false,
-      };
-    }
-
-    return {
-      action: "ignored",
-      rebuildRequired: false,
-    };
   }
 
   private schedulePersistMutationState(): void {
@@ -826,27 +863,25 @@ export class SearchIndexManager {
     }
   }
 
-  private rewriteFolderPrefix(
-    oldPrefix: string,
-    newPrefix: string,
-    index = this.index,
-    documents = this.documentsByPath,
-  ): boolean {
-    const affected = this.collectIndexedFolderRenames(oldPrefix, newPrefix, index);
+  private rewriteFolderPrefix(oldPrefix: string, newPrefix: string, set: IndexWorkingSet): boolean {
+    const affected = this.collectIndexedFolderRenames(oldPrefix, newPrefix, set.index);
     if (affected.length === 0) {
       return false;
     }
 
     for (const rename of affected) {
-      this.rewriteIndexedPath(rename.oldPath, rename.newPath, index);
+      this.rewriteIndexedPath(rename.oldPath, rename.newPath, set.index);
+      // Every indexed path moves, so the catalog moves with it whether or not
+      // the document itself was ever hydrated.
+      set.catalog.rename(rename.oldPath, rename.newPath);
 
-      const hydratedDocument = documents.get(rename.oldPath);
+      const hydratedDocument = set.documents.get(rename.oldPath);
       if (!hydratedDocument) {
         continue;
       }
 
-      documents.delete(rename.oldPath);
-      documents.set(rename.newPath, {
+      set.documents.delete(rename.oldPath);
+      set.documents.set(rename.newPath, {
         ...hydratedDocument,
         path: rename.newPath,
         folderPath: rewriteFolderPath(hydratedDocument.folderPath, oldPrefix, newPrefix),
@@ -856,23 +891,20 @@ export class SearchIndexManager {
     return true;
   }
 
-  private async upsertDocument(
-    path: string,
-    index = this.index,
-    documents = this.documentsByPath,
-  ): Promise<void> {
+  private async upsertDocument(path: string, set: IndexWorkingSet): Promise<void> {
     const document = await this.documentSource.readDocument(path);
     if (this.disposed) return;
     if (!document) {
-      this.discardIndexedPath(path, index, documents);
+      this.discardIndexedPath(path, set);
       return;
     }
 
-    if (index.has(path)) {
-      index.discard(path);
+    if (set.index.has(path)) {
+      set.index.discard(path);
     }
-    index.add(document);
-    documents.set(path, document);
+    set.index.add(document);
+    set.documents.set(path, document);
+    set.catalog.set(path, document.mtime);
   }
 
   private async persistMutationState(): Promise<void> {
@@ -934,15 +966,12 @@ export class SearchIndexManager {
     this.emit();
   }
 
-  private discardIndexedPath(
-    path: string,
-    index = this.index,
-    documents = this.documentsByPath,
-  ): void {
-    if (index.has(path)) {
-      index.discard(path);
+  private discardIndexedPath(path: string, set: IndexWorkingSet): void {
+    if (set.index.has(path)) {
+      set.index.discard(path);
     }
-    documents.delete(path);
+    set.documents.delete(path);
+    set.catalog.delete(path);
   }
 
   private collectIndexedFolderRenames(
@@ -997,39 +1026,6 @@ export class SearchIndexManager {
     }
   }
 
-  private buildMatchCountsByPath(query: string, orderedPaths: string[]): Record<string, number> | undefined {
-    const uniqueTokens = getSearchDisplayTerms(query);
-    if (uniqueTokens.length === 0) {
-      return undefined;
-    }
-
-    const matchCountsByPath: Record<string, number> = {};
-    for (const path of orderedPaths) {
-      const document = this.documentsByPath.get(path);
-      if (!document) {
-        continue;
-      }
-
-      const searchBasis = `${document.title} ${document.content}`.trim();
-      const count = this.countTokenMatches(searchBasis, uniqueTokens);
-      if (count > 0) {
-        matchCountsByPath[path] = count;
-      }
-    }
-
-    return Object.keys(matchCountsByPath).length > 0 ? matchCountsByPath : undefined;
-  }
-
-  private countTokenMatches(searchBasis: string, tokens: string[]): number {
-    const normalizedBasis = searchBasis.toLowerCase();
-    let total = 0;
-    for (const token of tokens) {
-      total += countNonOverlappingLiteralOccurrences(normalizedBasis, token);
-    }
-
-    return total;
-  }
-
   private getInternalIndexState(index = this.index): MiniSearchInternalState | null {
     const internalIndex = index as unknown as Record<string, unknown>;
     const storedFields = internalIndex["_storedFields"];
@@ -1054,51 +1050,9 @@ export class SearchIndexManager {
     return new MiniSearch<SearchableDocument>(createMiniSearchOptions());
   }
 
-  private toRebuildDetail(restoreResult: IndexStoreRestoreRebuildRequiredResult): string {
-    if (restoreResult.detail) {
-      return restoreResult.detail;
-    }
-
-    switch (restoreResult.reason) {
-      case "missing":
-        return "No persisted index found; full build required.";
-      case "version-drift":
-        return "Persisted index version drift; full build required.";
-      case "corrupt":
-        return "Persisted index is corrupt; full build required.";
-      case "unavailable":
-        return "Persistent index storage unavailable; rebuild cannot restore persisted index.";
-      case "read-failed":
-      default:
-        return "Persisted index read failed; full build required.";
-    }
-  }
-
-  private toRestorePersistence(reason: IndexStoreRestoreRebuildRequiredResult["reason"]): SearchIndexPersistenceHealth {
-    switch (reason) {
-      case "unavailable":
-        return "storage-unavailable";
-      case "read-failed":
-        return "read-failed";
-      case "missing":
-      case "version-drift":
-      case "corrupt":
-      default:
-        return "healthy";
-    }
-  }
-
-  private toRestoreRebuildReason(reason: IndexStoreRestoreRebuildRequiredResult["reason"]): SearchIndexRebuildReason {
-    switch (reason) {
-      case "missing":
-      case "version-drift":
-      case "corrupt":
-      case "read-failed":
-      case "unavailable":
-        return reason === "unavailable" ? "storage-unavailable" : reason;
-      default:
-        return "read-failed";
-    }
+  /** Resolved per call because a cutover swaps both the index and the catalog. */
+  private get liveSet(): IndexWorkingSet {
+    return { index: this.index, documents: this.documentsByPath, catalog: this.documentCatalog };
   }
 
   private isCurrent(generation: number): boolean {

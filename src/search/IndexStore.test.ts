@@ -7,6 +7,7 @@ import {
   type IndexStoreSerializedPayload,
   type IndexStoreStorageAdapter,
 } from "./IndexStore";
+import { isValidRecord } from "./index-record";
 
 class MemoryIndexStoreAdapter implements IndexStoreStorageAdapter {
   private records = new Map<string, unknown>();
@@ -25,6 +26,10 @@ class MemoryIndexStoreAdapter implements IndexStoreStorageAdapter {
 
   setRawRecord(key: string, value: unknown): void {
     this.records.set(key, value);
+  }
+
+  getRawRecord(key: string): unknown {
+    return this.records.get(key);
   }
 }
 
@@ -113,8 +118,110 @@ describe("IndexStore", () => {
         documentCount: payload.documentCount,
         lastIndexedAt: payload.lastIndexedAt,
       },
-      payload,
+      payload: {
+        ...payload,
+        documentCatalog: undefined,
+      },
     });
+  });
+
+  it("restores a legacy record without a catalog as documentCatalog undefined", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    adapter.setRawRecord("vault-a", {
+      metadata: createMetadata(),
+      serializedIndex: { serializationVersion: 2 },
+    });
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    const restore = await store.restore(createMetadata());
+
+    expect(restore.outcome).toBe("restored");
+    if (restore.outcome === "restored") {
+      expect(restore.payload.documentCatalog).toBeUndefined();
+    }
+    expect(adapter.getRawRecord("vault-a")).toEqual({
+      metadata: createMetadata(),
+      serializedIndex: { serializationVersion: 2 },
+    });
+  });
+
+  it("round-trips a valid documentCatalog through write then restore", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+    const metadata = createMetadata();
+    const documentCatalog = { "a.md": 1_700_000_000_000, "notes/b.md": 1_700_000_000_001 };
+    const payload = createPayload({ documentCatalog });
+
+    const write = await store.write(metadata, payload);
+    const restore = await store.restore(metadata);
+
+    expect(write).toEqual({ outcome: "written" });
+    expect(restore.outcome).toBe("restored");
+    if (restore.outcome === "restored") {
+      expect(restore.payload.documentCatalog).toEqual(documentCatalog);
+    }
+    expect(adapter.getRawRecord("vault-a")).toEqual({
+      metadata: {
+        ...metadata,
+        documentCount: payload.documentCount,
+        lastIndexedAt: payload.lastIndexedAt,
+      },
+      serializedIndex: payload.serializedIndex,
+      documentCatalog,
+    });
+  });
+
+  it("omits documentCatalog from a catalog-less write so the record stays two-key", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    await store.write(createMetadata(), createPayload());
+
+    expect(Object.keys(adapter.getRawRecord("vault-a") as object).sort()).toEqual(["metadata", "serializedIndex"]);
+  });
+
+  it.each([
+    ["garbage string", "garbage"],
+    ["array", []],
+    ["non-finite entry", { "a.md": "x" }],
+  ] as const)("degrades a malformed documentCatalog (%s) without clearing the record", async (_label, documentCatalog) => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const persisted = {
+      metadata: createMetadata(),
+      serializedIndex: { serializationVersion: 2 },
+      documentCatalog,
+    };
+    adapter.setRawRecord("vault-a", persisted);
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+
+    const restore = await store.restore(createMetadata());
+    const retry = await store.restore(createMetadata());
+
+    expect(restore.outcome).toBe("restored");
+    if (restore.outcome === "restored") {
+      expect(restore.payload.documentCatalog).toBeUndefined();
+    }
+    expect(retry.outcome).toBe("restored");
+    if (retry.outcome === "restored") {
+      expect(retry.payload.documentCatalog).toBeUndefined();
+    }
+    expect(adapter.getRawRecord("vault-a")).toBe(persisted);
+  });
+
+  it("accepts a catalog-bearing record as valid and still restores when pluginVersion differs", async () => {
+    const adapter = new MemoryIndexStoreAdapter();
+    const store = new IndexStore({ adapter, vaultNamespace: "vault-a" });
+    const documentCatalog = { "a.md": 42 };
+    await store.write(createMetadata({ pluginVersion: "plugin-old" }), createPayload({ documentCatalog }));
+
+    expect(isValidRecord(adapter.getRawRecord("vault-a"))).toBe(true);
+
+    const restore = await store.restore(createMetadata({ pluginVersion: "plugin-new" }));
+
+    expect(restore.outcome).toBe("restored");
+    if (restore.outcome === "restored") {
+      expect(restore.payload.documentCatalog).toEqual(documentCatalog);
+    }
   });
 
   it("returns rebuild-required missing when no record exists", async () => {

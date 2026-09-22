@@ -27,6 +27,7 @@ export type {
   SearchVaultMutationType,
 } from "./types";
 export type {
+  IndexStoreDocumentCatalog,
   IndexStoreNamespaceMetadata,
   IndexStoreRestoreResult,
   IndexStoreSerializedIndex,

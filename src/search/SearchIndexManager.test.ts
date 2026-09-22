@@ -4,6 +4,7 @@ import { SearchIndexManager, type SearchIndexDocumentSource } from "./SearchInde
 import { createMiniSearchOptions } from "./minisearch-options";
 import type {
   IndexStoreClearResult,
+  IndexStoreDocumentCatalog,
   IndexStoreNamespaceMetadata,
   IndexStoreRestoreResult,
   IndexStoreSerializedIndex,
@@ -88,11 +89,19 @@ function createStoreMock(
   };
 }
 
-function createDocumentSource(initial: SearchableDocument[] = []): {
+/** Mirrors `SEARCH_DOCUMENT_BATCH_SIZE` without importing the services layer into a search test. */
+const FAKE_STREAM_BATCH_SIZE = 200;
+
+function createDocumentSource(
+  initial: SearchableDocument[] = [],
+  batchSize: number = FAKE_STREAM_BATCH_SIZE,
+): {
   source: SearchIndexDocumentSource;
   byPath: Map<string, SearchableDocument>;
   readAllDocuments: ReturnType<typeof vi.fn<() => Promise<SearchableDocument[]>>>;
   readDocument: ReturnType<typeof vi.fn<(path: string) => Promise<SearchableDocument | null>>>;
+  readCatalogSnapshot: ReturnType<typeof vi.fn<() => IndexStoreDocumentCatalog>>;
+  streamedBatchSizes: number[];
 } {
   const byPath = new Map<string, SearchableDocument>();
   for (const document of initial) {
@@ -101,16 +110,88 @@ function createDocumentSource(initial: SearchableDocument[] = []): {
 
   const readAllDocuments = vi.fn(async () => [...byPath.values()]);
   const readDocument = vi.fn(async (path: string) => byPath.get(path) ?? null);
+  const readCatalogSnapshot = vi.fn(() => {
+    const catalog: IndexStoreDocumentCatalog = {};
+    for (const [path, document] of byPath) {
+      catalog[path] = document.mtime;
+    }
+    return catalog;
+  });
+
+  // The real source derives `readAllDocuments` from the stream; the fake inverts
+  // that so every existing `readAllDocuments` mock still drives the full build.
+  const streamedBatchSizes: number[] = [];
+  const streamDocuments = async function* (): AsyncGenerator<SearchableDocument[]> {
+    const documents = await readAllDocuments();
+    for (let start = 0; start < documents.length; start += batchSize) {
+      const batch = documents.slice(start, start + batchSize);
+      streamedBatchSizes.push(batch.length);
+      yield batch;
+    }
+  };
 
   return {
     source: {
+      streamDocuments,
       readAllDocuments,
       readDocument,
+      readCatalogSnapshot,
     },
     byPath,
     readAllDocuments,
     readDocument,
+    readCatalogSnapshot,
+    streamedBatchSizes,
   };
+}
+
+function indexOf(manager: SearchIndexManager): MiniSearch<SearchableDocument> {
+  return (manager as unknown as { index: MiniSearch<SearchableDocument> }).index;
+}
+
+function indexedPaths(manager: SearchIndexManager): string[] {
+  const idToShortId = (indexOf(manager) as unknown as { _idToShortId: Map<string, number> })._idToShortId;
+  return [...idToShortId.keys()].sort();
+}
+
+function persistedCatalog(store: FakeStore): IndexStoreDocumentCatalog | undefined {
+  const writes = store.write.mock.calls as unknown as Array<[IndexStoreNamespaceMetadata, IndexStoreSerializedPayload]>;
+  return writes.at(-1)?.[1].documentCatalog;
+}
+
+function isCatalogAvailable(manager: SearchIndexManager): boolean {
+  return (manager as unknown as { catalogAvailable: boolean }).catalogAvailable;
+}
+
+interface VacuumStubIndex {
+  dirtCount: number;
+  vacuum: ReturnType<typeof vi.fn<() => Promise<void>>>;
+  toJSON: ReturnType<typeof vi.fn<() => IndexStoreSerializedIndex>>;
+  calls: string[];
+}
+
+/** Stands in for the live MiniSearch so `dirtCount` and call ordering are controllable. */
+function createVacuumStubIndex(dirtCount: number, vacuumError?: Error): VacuumStubIndex {
+  const calls: string[] = [];
+  const stub: VacuumStubIndex = {
+    dirtCount,
+    vacuum: vi.fn(async () => {
+      calls.push("vacuum:start");
+      await Promise.resolve();
+      if (vacuumError) throw vacuumError;
+      calls.push("vacuum:end");
+    }),
+    toJSON: vi.fn(() => {
+      calls.push("toJSON");
+      return {} as IndexStoreSerializedIndex;
+    }),
+    calls,
+  };
+  return stub;
+}
+
+function replaceIndex(manager: SearchIndexManager, stub: VacuumStubIndex): void {
+  (manager as unknown as { index: unknown }).index = stub;
 }
 
 async function createSerializedIndex(documents: SearchableDocument[]): Promise<IndexStoreSerializedIndex> {
@@ -263,6 +344,48 @@ describe("SearchIndexManager", () => {
     expect(store.clear).not.toHaveBeenCalled();
     expect(manager.getSnapshot().disposed).toBe(true);
     loadSpy.mockRestore();
+  });
+
+  it("does not persist or install replacement content when rebuild is cancelled by dispose", async () => {
+    const original = createSearchableDocument("notes/original.md", "Original", "oldterm");
+    const replacements = [
+      createSearchableDocument("notes/replacement.md", "Replacement", "newterm"),
+      createSearchableDocument("notes/extra.md", "Extra", "extraterm"),
+    ];
+    const store = createStoreMock();
+    const sourceState = createDocumentSource([original]);
+    const manager = new SearchIndexManager({ store, documentSource: sourceState.source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+    expect(store.write).toHaveBeenCalledTimes(1);
+    const indexAfterFirstBuild = (manager as unknown as { index: MiniSearch<SearchableDocument> }).index;
+    const snapshotAfterFirstBuild = manager.getSnapshot();
+    expect(snapshotAfterFirstBuild.status).toBe("ready");
+    expect(snapshotAfterFirstBuild.health.documentCount).toBe(1);
+
+    sourceState.byPath.clear();
+    for (const document of replacements) {
+      sourceState.byPath.set(document.path, document);
+    }
+    let resolveScan!: (documents: SearchableDocument[]) => void;
+    sourceState.readAllDocuments.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveScan = resolve; }),
+    );
+
+    const rebuild = manager.rebuildFromSource("replacement rebuild");
+    await vi.waitFor(() => expect(sourceState.readAllDocuments).toHaveBeenCalledTimes(2));
+    manager.dispose();
+    resolveScan(replacements);
+    await rebuild;
+
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect((manager as unknown as { index: MiniSearch<SearchableDocument> }).index).toBe(indexAfterFirstBuild);
+    const snapshot = manager.getSnapshot();
+    expect(snapshot.disposed).toBe(true);
+    expect(snapshot.status).not.toBe("ready");
+    expect(snapshot.health.documentCount).toBe(snapshotAfterFirstBuild.health.documentCount);
+    expect(snapshot.health.lastIndexedAt).toBe(snapshotAfterFirstBuild.health.lastIndexedAt);
   });
 
   it("defers document-state reconciliation until explicit sync after healthy restore", async () => {
@@ -1046,6 +1169,61 @@ describe("SearchIndexManager", () => {
     }));
   });
 
+  it("builds an index through batched streaming that is indistinguishable from a single-shot build", async () => {
+    const docs = [
+      ...createLargeCorpusDocuments(640),
+      createSearchableDocument("vault/han/note-a.md", "中华人民共和国 Dossier", "中文搜索 release plan alpha"),
+      createSearchableDocument("vault/han/note-b.md", "中文 Roadmap", "这里记录中华人民共和国的资料 beta"),
+      createSearchableDocument("vault/han/note-c.md", "Distractor", "人民各自出现，随后共和 gamma"),
+    ];
+    const candidates = docs.map(({ path }) => path);
+
+    const streamed = createDocumentSource(docs);
+    const streamedManager = new SearchIndexManager({
+      store: createStoreMock(),
+      documentSource: streamed.source,
+    });
+    await streamedManager.restore(createMetadata());
+    await streamedManager.rebuildFromSource("Streamed build");
+
+    // A batch size past the corpus makes the same manager path do exactly one
+    // `addAllAsync` over the same ordered corpus, which is the pre-streaming shape.
+    const singleShot = createDocumentSource(docs, Number.POSITIVE_INFINITY);
+    const singleShotManager = new SearchIndexManager({
+      store: createStoreMock(),
+      documentSource: singleShot.source,
+    });
+    await singleShotManager.restore(createMetadata());
+    await singleShotManager.rebuildFromSource("Single-shot build");
+
+    expect(streamed.streamedBatchSizes).toEqual([200, 200, 200, 43]);
+    expect(streamed.streamedBatchSizes.length).toBeGreaterThan(1);
+    expect(singleShot.streamedBatchSizes).toEqual([docs.length]);
+
+    const streamedJson = indexOf(streamedManager).toJSON();
+    const singleShotJson = indexOf(singleShotManager).toJSON();
+    expect(streamedJson).toEqual(singleShotJson);
+    expect(streamedJson).toEqual(await createSerializedIndex(docs));
+    expect(streamedJson.documentCount).toBe(docs.length);
+    expect(streamedJson.nextId).toBe(singleShotJson.nextId);
+    expect(streamedJson.documentIds).toEqual(singleShotJson.documentIds);
+    expect(indexedPaths(streamedManager)).toEqual(indexedPaths(singleShotManager));
+
+    for (const query of [
+      "launch dossier vaultneedle420",
+      "cluster-token-7",
+      "status ready",
+      "人民共和",
+      "中文搜索",
+      "中文 road",
+      "中华人民共和国 dossier",
+    ]) {
+      const streamedResult = await streamedManager.search(query, candidates);
+      expect(streamedResult.orderedPaths.length).toBeGreaterThan(0);
+      expect(streamedResult).toEqual(await singleShotManager.search(query, candidates));
+    }
+  });
+
   it("recovers from a queued large-vault folder rename during first indexing", async () => {
     const docs = createLargeCorpusDocuments(640);
     const store = createStoreMock();
@@ -1789,5 +1967,428 @@ describe("SearchIndexManager", () => {
     expect(
       await manager.search("roadmap", ["notes/initiatives/a.md"]),
     ).toMatchObject({ orderedPaths: ["notes/initiatives/a.md"] });
+  });
+
+  it("persists a document catalog whose keys match the rebuilt index paths", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap"), createDocument("notes/b.md", "Checklist")];
+    const store = createStoreMock();
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    const catalog = persistedCatalog(store);
+    expect(catalog).toBeDefined();
+    expect(Object.keys(catalog!).sort()).toEqual(indexedPaths(manager));
+    expect(catalog).toEqual({ "notes/a.md": 10, "notes/b.md": 10 });
+    expect(isCatalogAvailable(manager)).toBe(true);
+  });
+
+  it("keeps the persisted catalog aligned with indexed paths across incremental mutations", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap"), createDocument("notes/b.md", "Checklist")];
+    const store = createStoreMock();
+    const { source, byPath } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("Initial build");
+
+    byPath.set("notes/created.md", { ...createDocument("notes/created.md", "Created"), mtime: 21 });
+    await manager.applyMutation(createMutation({ type: "create", path: "notes/created.md" }));
+    await manager.flushPendingPersist();
+    expect(Object.keys(persistedCatalog(store)!).sort()).toEqual(indexedPaths(manager));
+    expect(persistedCatalog(store)!["notes/created.md"]).toBe(21);
+
+    byPath.delete("notes/b.md");
+    await manager.applyMutation(createMutation({ type: "delete", path: "notes/b.md" }));
+    await manager.flushPendingPersist();
+    expect(Object.keys(persistedCatalog(store)!).sort()).toEqual(indexedPaths(manager));
+    expect(persistedCatalog(store)).not.toHaveProperty("notes/b.md");
+
+    byPath.delete("notes/a.md");
+    byPath.set("notes/renamed.md", { ...createDocument("notes/renamed.md", "Roadmap"), mtime: 33 });
+    await manager.applyMutation(createMutation({
+      type: "rename",
+      oldPath: "notes/a.md",
+      path: "notes/renamed.md",
+      isFolder: false,
+    }));
+    await manager.flushPendingPersist();
+    expect(Object.keys(persistedCatalog(store)!).sort()).toEqual(indexedPaths(manager));
+    expect(persistedCatalog(store)!["notes/renamed.md"]).toBe(33);
+    expect(persistedCatalog(store)).not.toHaveProperty("notes/a.md");
+  });
+
+  it("renames catalog entries for a safe folder rename even when no document is hydrated", async () => {
+    const docs = [
+      createDocument("notes/projects/a.md", "Roadmap"),
+      createDocument("notes/projects/sub/b.md", "Checklist"),
+    ];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 2,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/projects/a.md": 10, "notes/projects/sub/b.md": 10 },
+      },
+    });
+    const { source, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    // A restore never hydrates documentsByPath, so the catalog is the only
+    // path state the rename can carry forward.
+    expect((manager as unknown as { documentsByPath: Map<string, unknown> }).documentsByPath.size).toBe(0);
+
+    const result = await manager.applyMutation(createMutation({
+      type: "rename",
+      isFolder: true,
+      isMarkdown: false,
+      oldPath: "notes/projects",
+      path: "notes/initiatives",
+      renameClassification: "folder-safe-prefix-rewrite",
+    }));
+    await manager.flushPendingPersist();
+
+    expect(result).toEqual({ action: "applied", rebuildRequired: false });
+    expect(readAllDocuments).not.toHaveBeenCalled();
+    expect(Object.keys(persistedCatalog(store)!).sort()).toEqual(indexedPaths(manager));
+    expect(persistedCatalog(store)).toEqual({
+      "notes/initiatives/a.md": 10,
+      "notes/initiatives/sub/b.md": 10,
+    });
+  });
+
+  it("marks the catalog available on restore from a record that carries one", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 1,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10 },
+      },
+    });
+    const { source, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+
+    expect(isCatalogAvailable(manager)).toBe(true);
+    expect(readAllDocuments).not.toHaveBeenCalled();
+    expect(
+      (manager as unknown as { documentCatalog: { toSerializable(): IndexStoreDocumentCatalog } }).documentCatalog.toSerializable(),
+    ).toEqual({ "notes/a.md": 10 });
+  });
+
+  it("leaves the catalog unavailable when a legacy record carries none", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: { serializedIndex: await createSerializedIndex(docs), documentCount: 1, lastIndexedAt: 111 },
+    });
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+
+    expect(isCatalogAvailable(manager)).toBe(false);
+    expect(
+      (manager as unknown as { documentCatalog: { size: number } }).documentCatalog.size,
+    ).toBe(0);
+  });
+
+  it("does not mark the catalog available when the persisting write fails", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock();
+    store.write.mockResolvedValueOnce({ outcome: "failed", reason: "write-failed", detail: "disk full" });
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    await manager.rebuildFromSource("rebuild for failure path");
+
+    expect(isCatalogAvailable(manager)).toBe(false);
+    expect(manager.getSnapshot().health.persistence).toBe("write-failed");
+  });
+
+  it("skips the replacement index, serialization, and write when the catalog proves the vault unchanged", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap"), createDocument("notes/b.md", "Checklist")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 2,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10, "notes/b.md": 10 },
+      },
+    });
+    const { source, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    const indexBeforeReconcile = indexOf(manager);
+    await manager.syncDocumentStateFromSource();
+
+    // The read pass stays: match counts are computed from documentsByPath,
+    // which a restore never populates.
+    expect(readAllDocuments).toHaveBeenCalledTimes(1);
+    expect(store.write).not.toHaveBeenCalled();
+    expect(indexOf(manager)).toBe(indexBeforeReconcile);
+    expect(manager.getSnapshot().status).toBe("ready");
+    expect(manager.getSnapshot().health.lastIndexedAt).toBe(111);
+    expect(manager.getSnapshot().contentRevision).toBe(0);
+  });
+
+  it("returns the same match counts after a fast-path reconcile as after a full reconcile", async () => {
+    const docs = [
+      createSearchableDocument("notes/a.md", "Alpha", "alpha alpha beta"),
+      createSearchableDocument("notes/b.md", "Beta", "alpha gamma"),
+    ];
+    const paths = docs.map(({ path }) => path);
+    const fastStore = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 2,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10, "notes/b.md": 10 },
+      },
+    });
+    const fast = new SearchIndexManager({ store: fastStore, documentSource: createDocumentSource(docs).source });
+    // The same corpus restored without a catalog, so this one runs the full
+    // replacement and is the reference for the badge counts.
+    const fullStore = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: { serializedIndex: await createSerializedIndex(docs), documentCount: 2, lastIndexedAt: 111 },
+    });
+    const full = new SearchIndexManager({ store: fullStore, documentSource: createDocumentSource(docs).source });
+
+    await fast.restore(createMetadata());
+    await fast.syncDocumentStateFromSource();
+    await full.restore(createMetadata());
+    await full.syncDocumentStateFromSource();
+
+    expect(fastStore.write).not.toHaveBeenCalled();
+    expect(fullStore.write).toHaveBeenCalledTimes(1);
+    const fastResult = await fast.search("alpha", paths);
+    expect(fastResult).toEqual(await full.search("alpha", paths));
+    expect(fastResult.matchCountsByPath).toEqual({ "notes/a.md": 3, "notes/b.md": 1 });
+  });
+
+  it("takes the full path when a catalog entry carries a stale mtime", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 1,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 9 },
+      },
+    });
+    const { source } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    const indexBeforeReconcile = indexOf(manager);
+    await manager.syncDocumentStateFromSource();
+
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(indexOf(manager)).not.toBe(indexBeforeReconcile);
+    expect(persistedCatalog(store)).toEqual({ "notes/a.md": 10 });
+  });
+
+  it("takes the full path when the catalog path set differs from the vault in either direction", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap"), createDocument("notes/b.md", "Checklist")];
+    const serializedIndex = await createSerializedIndex(docs);
+    const restoredPayload = (documentCatalog: IndexStoreDocumentCatalog): IndexStoreRestoreResult => ({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: { serializedIndex, documentCount: 2, lastIndexedAt: 111, documentCatalog },
+    });
+
+    const missingStore = createStoreMock(restoredPayload({ "notes/a.md": 10 }));
+    const missing = new SearchIndexManager({ store: missingStore, documentSource: createDocumentSource(docs).source });
+    await missing.restore(createMetadata());
+    const indexBeforeMissing = indexOf(missing);
+    await missing.syncDocumentStateFromSource();
+
+    const extraStore = createStoreMock(
+      restoredPayload({ "notes/a.md": 10, "notes/b.md": 10, "notes/gone.md": 10 }),
+    );
+    const extra = new SearchIndexManager({ store: extraStore, documentSource: createDocumentSource(docs).source });
+    await extra.restore(createMetadata());
+    const indexBeforeExtra = indexOf(extra);
+    await extra.syncDocumentStateFromSource();
+
+    expect(missingStore.write).toHaveBeenCalledTimes(1);
+    expect(indexOf(missing)).not.toBe(indexBeforeMissing);
+    expect(extraStore.write).toHaveBeenCalledTimes(1);
+    expect(indexOf(extra)).not.toBe(indexBeforeExtra);
+    expect(persistedCatalog(extraStore)).toEqual({ "notes/a.md": 10, "notes/b.md": 10 });
+  });
+
+  it("takes the full path for a legacy record with no catalog and writes a catalog afterwards", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: { serializedIndex: await createSerializedIndex(docs), documentCount: 1, lastIndexedAt: 111 },
+    });
+    const { source, readAllDocuments } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+
+    await manager.restore(createMetadata());
+    const indexBeforeReconcile = indexOf(manager);
+    await manager.syncDocumentStateFromSource();
+
+    expect(readAllDocuments).toHaveBeenCalledTimes(1);
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(indexOf(manager)).not.toBe(indexBeforeReconcile);
+    expect(persistedCatalog(store)).toEqual({ "notes/a.md": 10 });
+    expect(isCatalogAvailable(manager)).toBe(true);
+  });
+
+  it("keeps a mid-pass modify instead of the staler document the fast-path read returned", async () => {
+    const stale = createSearchableDocument("notes/a.md", "Roadmap", "oldterm");
+    const other = createSearchableDocument("notes/b.md", "Checklist", "otherterm");
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 2, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex([stale, other]),
+        documentCount: 2,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10, "notes/b.md": 10 },
+      },
+    });
+    const sourceState = createDocumentSource([stale, other]);
+    let releaseScan!: () => void;
+    // Resolves with the pre-mutation documents, so the pass holds stale content
+    // for a path the live index has already moved past.
+    sourceState.readAllDocuments.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseScan = () => resolve([stale, other]);
+    }));
+    const manager = new SearchIndexManager({ store, documentSource: sourceState.source });
+    await manager.restore(createMetadata());
+
+    const reconciliation = manager.syncDocumentStateFromSource();
+    await vi.waitFor(() => expect(sourceState.readAllDocuments).toHaveBeenCalledTimes(1));
+    const fresh = { ...createSearchableDocument("notes/a.md", "Roadmap", "newterm"), mtime: 55 };
+    sourceState.byPath.set(fresh.path, fresh);
+    await manager.applyMutation(createMutation({ type: "modify", path: fresh.path }));
+    releaseScan();
+    await reconciliation;
+
+    expect(store.write).not.toHaveBeenCalled();
+    expect(await manager.search("newterm", ["notes/a.md", "notes/b.md"])).toEqual({
+      orderedPaths: ["notes/a.md"],
+      matchCountsByPath: { "notes/a.md": 1 },
+    });
+    expect(await manager.search("oldterm", ["notes/a.md"])).toMatchObject({ orderedPaths: [] });
+
+    // The fast path deliberately leaves the mutation's own debounced write
+    // pending: there is no replacement persist to supersede it.
+    await manager.flushPendingPersist();
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(persistedCatalog(store)).toEqual({ "notes/a.md": 55, "notes/b.md": 10 });
+  });
+
+  it("escalates to a queued rebuild when the vault changes during the fast-path read pass", async () => {
+    const docs = [createSearchableDocument("notes/a.md", "Roadmap", "oldterm")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 1,
+        lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10 },
+      },
+    });
+    const sourceState = createDocumentSource(docs);
+    let releaseScan!: () => void;
+    sourceState.readAllDocuments.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseScan = () => resolve([...docs]);
+    }));
+    const manager = new SearchIndexManager({ store, documentSource: sourceState.source });
+    await manager.restore(createMetadata());
+    const indexBeforeReconcile = indexOf(manager);
+
+    const reconciliation = manager.syncDocumentStateFromSource();
+    await vi.waitFor(() => expect(sourceState.readAllDocuments).toHaveBeenCalledTimes(1));
+    // A file appears without a mutation event, so the catalog premise is no
+    // longer true by the time the pass ends.
+    const appeared = createSearchableDocument("notes/appeared.md", "Appeared", "appearedterm");
+    sourceState.byPath.set(appeared.path, appeared);
+    releaseScan();
+    await reconciliation;
+
+    expect(sourceState.readAllDocuments).toHaveBeenCalledTimes(2);
+    expect(store.write).toHaveBeenCalledTimes(1);
+    expect(indexOf(manager)).not.toBe(indexBeforeReconcile);
+    expect(manager.getSnapshot().health.detail).toBe("Vault changed during reconciliation; full rebuild required.");
+    expect(await manager.search("appearedterm", [appeared.path])).toMatchObject({ orderedPaths: [appeared.path] });
+  });
+
+  it("does not vacuum before serializing when dirt is below the threshold", async () => {
+    const store = createStoreMock();
+    const { source } = createDocumentSource([createDocument("notes/a.md", "Roadmap")]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+
+    const stub = createVacuumStubIndex(999);
+    replaceIndex(manager, stub);
+    await manager.markRebuilt(1, 500);
+
+    expect(stub.vacuum).not.toHaveBeenCalled();
+    expect(stub.toJSON).toHaveBeenCalledTimes(1);
+    expect(store.write).toHaveBeenCalled();
+  });
+
+  it("awaits the vacuum before serializing once dirt reaches the threshold", async () => {
+    const store = createStoreMock();
+    const { source } = createDocumentSource([createDocument("notes/a.md", "Roadmap")]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+
+    const stub = createVacuumStubIndex(1000);
+    replaceIndex(manager, stub);
+    await manager.markRebuilt(1, 500);
+
+    expect(stub.vacuum).toHaveBeenCalledTimes(1);
+    // Ordering is the contract: serializing a still-dirty index would defeat
+    // the vacuum entirely.
+    expect(stub.calls).toEqual(["vacuum:start", "vacuum:end", "toJSON"]);
+    expect(store.write).toHaveBeenCalled();
+  });
+
+  it("still persists when the vacuum rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const store = createStoreMock();
+    const { source } = createDocumentSource([createDocument("notes/a.md", "Roadmap")]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+
+    const stub = createVacuumStubIndex(1000, new Error("vacuum exploded"));
+    replaceIndex(manager, stub);
+    await manager.markRebuilt(1, 500);
+
+    expect(stub.toJSON).toHaveBeenCalledTimes(1);
+    expect(store.write).toHaveBeenCalled();
+    expect(manager.getSnapshot().status).toBe("ready");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

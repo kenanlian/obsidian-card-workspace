@@ -1,33 +1,25 @@
+import {
+  createIndexRecord,
+  isRecord,
+  isValidRecord,
+  matchesExpectedMetadata,
+  readDocumentCatalog,
+  type IndexStoreNamespaceMetadata,
+  type IndexStoreRecord,
+  type IndexStoreSerializedPayload,
+} from "./index-record";
+
+export type {
+  IndexStoreDocumentCatalog,
+  IndexStoreNamespaceMetadata,
+  IndexStoreRecord,
+  IndexStoreSerializedIndex,
+  IndexStoreSerializedPayload,
+} from "./index-record";
+
 const INDEX_STORE_DATABASE_NAME = "card-workspace-search";
 const INDEX_STORE_OBJECT_STORE_NAME = "searchIndexes";
 const BUILD_ATTEMPT_KEY_SUFFIX = "::build-attempts";
-
-export interface IndexStoreNamespaceMetadata {
-  vaultNamespace: string;
-  schemaVersion: string;
-  tokenizerVersion: string;
-  pluginVersion: string;
-  documentCount: number;
-  lastIndexedAt: number;
-}
-
-/**
- * MiniSearch `toJSON()` output. Persisted as a structured-clone value rather
- * than a JSON string: stringifying a whole-vault index is a synchronous
- * main-thread block and can exceed the engine's maximum string length.
- */
-export type IndexStoreSerializedIndex = Record<string, unknown>;
-
-export interface IndexStoreSerializedPayload {
-  serializedIndex: IndexStoreSerializedIndex;
-  documentCount: number;
-  lastIndexedAt: number;
-}
-
-export interface IndexStoreRecord {
-  metadata: IndexStoreNamespaceMetadata;
-  serializedIndex: IndexStoreSerializedIndex;
-}
 
 export type IndexStoreRestoreFailureReason =
   | "missing"
@@ -271,6 +263,7 @@ export class IndexStore {
         serializedIndex: record.serializedIndex,
         documentCount: record.metadata.documentCount,
         lastIndexedAt: record.metadata.lastIndexedAt,
+        documentCatalog: readDocumentCatalog((record as { documentCatalog?: unknown }).documentCatalog) ?? undefined,
       },
     };
   }
@@ -332,7 +325,7 @@ export class IndexStore {
       };
     }
 
-    const record = this.createRecord(metadata, payload);
+    const record = createIndexRecord(this.vaultNamespace, metadata, payload);
 
     try {
       await this.adapter.setRecord(this.vaultNamespace, record);
@@ -390,20 +383,6 @@ export class IndexStore {
       };
     }
   }
-
-  private createRecord(metadata: IndexStoreNamespaceMetadata, payload: IndexStoreSerializedPayload): IndexStoreRecord {
-    const normalizedMetadata: IndexStoreNamespaceMetadata = {
-      ...metadata,
-      vaultNamespace: this.vaultNamespace,
-      documentCount: payload.documentCount,
-      lastIndexedAt: payload.lastIndexedAt,
-    };
-
-    return {
-      metadata: normalizedMetadata,
-      serializedIndex: payload.serializedIndex,
-    };
-  }
 }
 
 function createUnavailableAdapter(error: unknown): IndexStoreStorageAdapter {
@@ -419,38 +398,6 @@ function createUnavailableAdapter(error: unknown): IndexStoreStorageAdapter {
       throw unavailableError;
     },
   };
-}
-
-function isValidRecord(value: unknown): value is IndexStoreRecord {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (!isRecord(value.metadata)) {
-    return false;
-  }
-
-  if (!isRecord(value.serializedIndex)) {
-    return false;
-  }
-
-  const metadata = value.metadata;
-  return (
-    typeof metadata.vaultNamespace === "string" &&
-    typeof metadata.schemaVersion === "string" &&
-    typeof metadata.tokenizerVersion === "string" &&
-    typeof metadata.pluginVersion === "string" &&
-    Number.isFinite(metadata.documentCount) &&
-    Number.isFinite(metadata.lastIndexedAt)
-  );
-}
-
-function matchesExpectedMetadata(stored: IndexStoreNamespaceMetadata, expected: IndexStoreNamespaceMetadata): boolean {
-  return (
-    stored.vaultNamespace === expected.vaultNamespace &&
-    stored.schemaVersion === expected.schemaVersion &&
-    stored.tokenizerVersion === expected.tokenizerVersion
-  );
 }
 
 function isQuotaError(error: unknown): boolean {
@@ -471,10 +418,6 @@ function normalizeErrorMessage(error: unknown): string {
   }
 
   return "Unknown storage error.";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function normalizeUnknownError(error: unknown, fallbackMessage: string): Error {

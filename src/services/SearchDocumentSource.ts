@@ -1,9 +1,12 @@
 import { TFile, type App } from "obsidian";
 
-import { prepareSearchableDocument, type SearchableDocument } from "../search";
+import { prepareSearchableDocument, type IndexStoreDocumentCatalog, type SearchableDocument } from "../search";
 import { isMarkdownCardKind, isSupportedCardFile, resolveCardFileKind } from "../view/file-kind";
 
 export const SEARCH_DOCUMENT_READ_CONCURRENCY = 8;
+
+/** Files read per stream window, so a full build holds one window of prepared documents at a time. */
+export const SEARCH_DOCUMENT_BATCH_SIZE = 200;
 
 export async function prepareSearchDocument(app: App, file: TFile): Promise<SearchableDocument | null> {
   try {
@@ -48,46 +51,88 @@ export class SearchDocumentSource {
     private readonly prepare: SearchDocumentPreparer,
   ) {}
 
-  async readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]> {
+  /**
+   * Single source of enumeration for both the document read pass and the
+   * catalog snapshot: if the two ever filtered differently, a vault change
+   * would be silently mis-detected.
+   */
+  private listIndexableFiles(): TFile[] {
     const getFiles = (this.app.vault as { getFiles?: () => unknown[] }).getFiles;
-    if (typeof getFiles !== "function" || signal?.aborted) {
+    if (typeof getFiles !== "function") {
       return [];
     }
 
     // Queries are always intersected with card candidates, so an attachment
     // could never surface as a result; indexing one only inflates the index.
-    const files = getFiles
+    return getFiles
       .call(this.app.vault)
       .filter((file): file is TFile => file instanceof TFile && isSupportedCardFile(file));
-    const results: Array<SearchableDocument | null> = Array.from({ length: files.length }, () => null);
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (true) {
-        if (signal?.aborted) return;
-        const index = cursor;
-        if (index >= files.length) {
-          return;
-        }
-        cursor += 1;
-        try {
-          const document = await this.prepare(files[index]);
-          if (signal?.aborted) {
+  }
+
+  /** Synchronous path-to-mtime snapshot. Performs no file reads. */
+  readCatalogSnapshot(): IndexStoreDocumentCatalog {
+    const catalog: IndexStoreDocumentCatalog = {};
+    for (const file of this.listIndexableFiles()) {
+      catalog[file.path] = file.stat.mtime;
+    }
+    return catalog;
+  }
+
+  /**
+   * Yields consecutive windows of the same enumeration `readAllDocuments`
+   * walks, so global document order is identical to reading the whole vault at
+   * once while only one window of prepared documents is alive at a time.
+   */
+  async *streamDocuments(signal?: AbortSignal): AsyncGenerator<SearchableDocument[]> {
+    if (signal?.aborted) {
+      return;
+    }
+
+    const files = this.listIndexableFiles();
+    for (let start = 0; start < files.length; start += SEARCH_DOCUMENT_BATCH_SIZE) {
+      const window = files.slice(start, start + SEARCH_DOCUMENT_BATCH_SIZE);
+      const results: Array<SearchableDocument | null> = Array.from({ length: window.length }, () => null);
+      let cursor = 0;
+      const worker = async (): Promise<void> => {
+        while (true) {
+          if (signal?.aborted) return;
+          const index = cursor;
+          if (index >= window.length) {
             return;
           }
-          results[index] = document;
-        } catch {
-          results[index] = null;
+          cursor += 1;
+          try {
+            const document = await this.prepare(window[index]);
+            if (signal?.aborted) {
+              return;
+            }
+            results[index] = document;
+          } catch {
+            results[index] = null;
+          }
         }
-      }
-    };
+      };
 
-    await Promise.all(
-      Array.from({ length: Math.min(SEARCH_DOCUMENT_READ_CONCURRENCY, files.length) }, worker),
-    );
-    if (signal?.aborted) {
-      return [];
+      await Promise.all(
+        Array.from({ length: Math.min(SEARCH_DOCUMENT_READ_CONCURRENCY, window.length) }, worker),
+      );
+      if (signal?.aborted) {
+        return;
+      }
+      const batch = results.filter((document): document is SearchableDocument => document !== null);
+      if (batch.length > 0) {
+        yield batch;
+      }
     }
-    return results.filter((document): document is SearchableDocument => document !== null);
+  }
+
+  /** Concatenation of `streamDocuments`, so the two can never diverge in enumeration, filtering, or order. */
+  async readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]> {
+    const documents: SearchableDocument[] = [];
+    for await (const batch of this.streamDocuments(signal)) {
+      documents.push(...batch);
+    }
+    return signal?.aborted ? [] : documents;
   }
 
   async readDocument(path: string): Promise<SearchableDocument | null> {

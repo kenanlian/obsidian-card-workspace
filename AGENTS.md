@@ -54,6 +54,11 @@ Enumerable implementation details (settings keys, panel fields, module methods, 
 - Default card open behavior is owned by `main.ts`.
 - `MetadataEventBus` exists and is owned with `main.ts`; `MetadataImpactController` is the only per-view consumer. Global pins reconcile through `PinnedPathReconciler` after navigation-workspace and before Boxes.
 - Arrangement intents (sort / group / collapse / pin) live in `arrangement-actions.ts`, not the `ItemView` shell.
+- A startup whose vault is unchanged skips the index rebuild, `toJSON()`, and the IndexedDB write entirely, decided by comparing a persisted `{path: mtime}` document catalog against a synchronous, read-free vault snapshot.
+- The catalog is an optional top-level record field, not a schema bump: `schemaVersion` stays `phase3-v2`, a catalog-less record still restores (and is then healed), and a malformed catalog degrades to catalog-unavailable instead of marking the record corrupt.
+- The reconcile fast path still reads every file, because match-count badges are computed from `documentsByPath`, which a restore never populates. Skipping the read pass is deliberately deferred.
+- Full builds stream documents into the index in ordered batches of 200; `readAllDocuments` is a concatenation of that same generator so enumeration and order cannot diverge.
+- Serialization vacuums the index when `dirtCount >= 1000`, which is what bounds tombstones now that no per-startup rebuild clears them.
 
 ## Key Directories
 
