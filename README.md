@@ -4,13 +4,19 @@
 
 An Obsidian plugin that shows folder notes as beautiful card stream in the sidebar or main editor leaf. Open Card Workspace manually, browse notes by folder, filter notes by tags, search notes by builtin function, and click a card to open it.
 
-![Card Workspace demo](screenshots/2026_08_06_09_24_27.jpg)
+![Card Workspace demo](screenshots/2026_09_22_19_36_27.jpg)
 
-> ## What's new in 1.0.0
+> ## What's new in 1.2.x
 >
 > **Dual-pane sidebar layout.** Card Workspace now renders its own navigation column next to the card stream, so folders, tags, properties, card boxes, and favorites are one click away without borrowing Obsidian's File Explorer. Drag the divider to resize the navigation column, or use the toggle button in the header to hide it and give the cards the full width. When the sidebar gets too narrow for two columns, the layout automatically falls back to a single pane and the toggle button swaps between navigation and cards, so the panel stays usable at any width.
 >
 > **Card boxes.** A card box is a saved, topic-oriented collection that lives in the navigation pane's **Boxes** section. Right-click there to create one, or save your current folder-and-tag scope as a box in one step. Each box keeps its own membership rules (folder scope plus tags, combined with OR across rules), its own sort order, and its own pins, and you can add or exclude individual notes by hand. Use boxes to collect notes that belong together conceptually but live in different folders, without moving files or maintaining an index note.
+>
+> **Properties.** The navigation pane has a Properties section. Choose which vault properties to show, then filter the card stream by their frontmatter values. Each value row shows how many notes in the current source use it, and notes without that property land in Unassigned. These filters apply while you browse a folder; they pause in a card box or a links view and resume when you return to a folder. A card box rule can include property clauses as well.
+>
+> **Links.** The Links section turns the active note's outgoing links and backlinks into card sources. Open either entry to browse those notes as cards, pin the view to the current note or keep following whichever note is active, and save the current set as a card box.
+>
+> **Card grouping.** Sort and group the stream from the toolbar: sort by edited time, created time, or filename, and group by folder, tag, card box rule, or task status. Groups can be ordered by name or card count, and collapsed or expanded together. Cards with tasks also show progress as completed/total.
 
 ## Table of contents
 
