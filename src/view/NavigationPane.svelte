@@ -48,7 +48,6 @@
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
   const rows = $derived(nav.projection.rows);
-  // Browse-filter capability booleans (C6), never re-derived from `activeBoxId`.
   const browseTagFilterEnabled = $derived(scope.browseTagFilterEnabled);
   const browsePropertyFilterEnabled = $derived(scope.browsePropertyFilterEnabled);
   let dragWidth = $state<number | null>(null);
@@ -328,7 +327,7 @@
               {row.section === "properties" && !browsePropertyFilterEnabled
                 ? labels.propertiesFilterUnavailable
                 : row.section === "tags"
-                  ? (!browseTagFilterEnabled ? labels.tagsFilterUnavailable : strings.toolbar.filter.noTagsFound)
+                  ? (browseTagFilterEnabled ? strings.toolbar.filter.noTagsFound : labels.tagsFilterUnavailable)
                   : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
             </div>
           {/if}

@@ -136,7 +136,7 @@
     supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
   const DEFAULT_SEARCH: PanelSearchState = { query: "", committedQuery: "", status: "idle", focusToken: 0 };
-  const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0 };
+  const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0, metadataStatus: "ready" };
   const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
 
   let {

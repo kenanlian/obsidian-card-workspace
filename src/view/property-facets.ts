@@ -127,6 +127,11 @@ export function buildPropertyFacets(
   }
   keys.sort((left, right) => left.localeCompare(right));
 
+  // An empty normalized key list has nothing to aggregate. Skip the frontmatter walk.
+  if (keys.length === 0) {
+    return [];
+  }
+
   const aggregates = collectAggregates(cards, keys, getFrontmatter);
 
   return keys.map((key) => {

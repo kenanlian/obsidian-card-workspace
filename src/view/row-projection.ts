@@ -109,7 +109,7 @@ export function projectCardsToRows<T extends RowProjectionCard>(
       startIndex,
       endIndex: startIndex + rowCards.length,
       cards: rowCards,
-      key: `${safeColumnCount}:${rowCards.map((card) => card.path).join("\u001f")}`,
+      key: buildRowKey(cards, startIndex, startIndex + rowCards.length, safeColumnCount),
     });
   }
 
@@ -121,19 +121,13 @@ export function projectPanelRows<T extends RowProjectionCard>(
   segments: readonly RowSegment[],
   columnCount: number,
 ): PanelRow<T>[] {
-  if (segments.length === 0) {
-    return projectCardsToRows(cards, columnCount).map((row) => ({
-      kind: "cards" as const,
-      index: row.index,
-      startIndex: row.startIndex,
-      endIndex: row.endIndex,
-      cards: row.cards,
-      key: row.key,
-      segmentIndex: -1,
-    }));
-  }
-
+  const safeColumnCount = Math.max(1, Math.trunc(columnCount) || 1);
   const rows: PanelRow<T>[] = [];
+
+  if (segments.length === 0) {
+    appendPanelCardRows(rows, cards, 0, cards.length, safeColumnCount, -1);
+    return rows;
+  }
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
@@ -150,21 +144,46 @@ export function projectPanelRows<T extends RowProjectionCard>(
 
     const start = clampCardOffset(segment.startIndex, cards.length);
     const end = clampCardOffset(start + clampCardOffset(segment.visibleCount, cards.length), cards.length);
-
-    for (const row of projectCardsToRows(cards.slice(start, end), columnCount)) {
-      rows.push({
-        kind: "cards",
-        index: rows.length,
-        startIndex: start + row.startIndex,
-        endIndex: start + row.endIndex,
-        cards: row.cards,
-        key: row.key,
-        segmentIndex,
-      });
-    }
+    appendPanelCardRows(rows, cards, start, end, safeColumnCount, segmentIndex);
   }
 
   return rows;
+}
+
+function appendPanelCardRows<T extends RowProjectionCard>(
+  rows: PanelRow<T>[],
+  cards: readonly T[],
+  start: number,
+  end: number,
+  columnCount: number,
+  segmentIndex: number,
+): void {
+  for (let startIndex = start; startIndex < end; startIndex += columnCount) {
+    const endIndex = Math.min(end, startIndex + columnCount);
+    rows.push({
+      kind: "cards",
+      index: rows.length,
+      startIndex,
+      endIndex,
+      cards: cards.slice(startIndex, endIndex),
+      key: buildRowKey(cards, startIndex, endIndex, columnCount),
+      segmentIndex,
+    });
+  }
+}
+
+function buildRowKey<T extends RowProjectionCard>(
+  cards: readonly T[],
+  startIndex: number,
+  endIndex: number,
+  columnCount: number,
+): string {
+  let key = `${columnCount}:`;
+  for (let index = startIndex; index < endIndex; index += 1) {
+    if (index > startIndex) key += "\u001f";
+    key += cards[index]?.path ?? "";
+  }
+  return key;
 }
 
 function clampCardOffset(value: number, cardCount: number): number {

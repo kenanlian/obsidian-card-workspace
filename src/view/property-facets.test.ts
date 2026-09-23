@@ -59,6 +59,20 @@ describe("buildPropertyFacets", () => {
     expect(ghost.values.map((row) => row.ref)).toEqual([missing]);
   });
 
+  it("skips the frontmatter walk when the normalized enabled-key list is empty", () => {
+    const cards = [createCard("a.md"), createCard("b.md"), createCard("c.md")];
+    const emptyAccessor = vi.fn(() => ({ status: "open" }));
+
+    expect(buildPropertyFacets(cards, [], [], emptyAccessor, en)).toEqual([]);
+    expect(emptyAccessor).not.toHaveBeenCalled();
+
+    const enabledAccessor = vi.fn(() => ({ status: "open" }));
+    const facets = buildPropertyFacets(cards, ["status"], [], enabledAccessor, en);
+
+    expect(enabledAccessor).toHaveBeenCalledTimes(cards.length);
+    expect(facets.map((facet) => facet.key)).toEqual(["status"]);
+  });
+
   it("ignores enabled keys that fail normalization", () => {
     const facets = buildPropertyFacets(
       [createCard("a.md")],

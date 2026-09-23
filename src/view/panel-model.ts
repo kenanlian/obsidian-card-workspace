@@ -151,6 +151,8 @@ export interface PanelCardsState {
    * the equality signal, published alongside the segments it describes.
    */
   groupRevision: number;
+  /** Compatibility field; virtualization renders only the materialized records. */
+  extentCount: number;
 }
 
 export interface PanelSearchState {
@@ -180,6 +182,8 @@ export interface PanelProjectionState {
    * so cannot read `groupSegments` itself.
    */
   groupSegmentCount: number;
+  /** Compatibility field; metadata facets publish with the complete scope commit. */
+  metadataStatus: "pending" | "ready";
 }
 
 export interface PanelNavState {

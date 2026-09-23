@@ -169,6 +169,7 @@ function mountToolbar(
         group: values.group ?? { dimension: "none", orderBy: "default", orderDirection: "asc" },
         availableGroupDimensions: values.availableGroupDimensions ?? AVAILABLE_FOLDER_DIMENSIONS,
         groupSegmentCount: values.groupSegmentCount ?? 0,
+        metadataStatus: "ready",
       },
       bulk: {
         bulkMode: values.bulkMode ?? false,

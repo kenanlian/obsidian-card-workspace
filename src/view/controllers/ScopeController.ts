@@ -1,11 +1,9 @@
 import type { TFile } from "obsidian";
 
-import { normalizeGroupSpec } from "../../card-grouping-settings";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
-import { createCardRecord } from "../card-record";
-import { compareCards } from "../card-sort";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
-import { resolveCardFileKind, resolveCardFileKindFromPath } from "../file-kind";
+import { resolveCardFileKindFromPath } from "../file-kind";
+import { FolderScopeFileCache } from "../folder-scope-file-cache";
 import { collectLinksFiles, isPathRelevantToLinksScope } from "../links-sources";
 import { createFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
@@ -22,6 +20,7 @@ import type {
   VaultMutationResult,
 } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
+import { runScopeLoad } from "../scope-load-runner";
 import { applyIncrementalMutation, type BulkSelectionState } from "./incremental-mutation";
 import {
   reconcileBoxMembershipForPath,
@@ -35,20 +34,6 @@ import {
 export type { MetadataMembershipOutcome };
 
 const VAULT_REFRESH_DEBOUNCE_MS = 250;
-
-/** Folder scopes remember their loaded include-subfolders state; others have none. */
-function resolveLoadedIncludeSubfolders(scope: CardScope): boolean | null {
-  switch (scope.kind) {
-    case "folder":
-      return scope.includeSubfolders;
-    case "box": case "links":
-      return null;
-    default: {
-      const exhaustive: never = scope;
-      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
-    }
-  }
-}
 
 export interface ScopeControllerDeps {
   context: ViewContext;
@@ -69,7 +54,10 @@ export interface ScopeControllerDeps {
   scheduleNavCountRefresh: () => void;
   refreshFolderTreeState: () => void;
   scheduleFolderTreeRefresh: () => void;
-  publishLoadStart: (scopeChanged: boolean) => void; publishLoadCommit: () => void;
+  publishLoadStart: (scopeChanged: boolean) => void;
+  publishPreparedCards: () => void;
+  publishSettledScope: () => void;
+  getBrowseQuery?: () => string;
   startupCardCount: number;
 }
 
@@ -85,24 +73,26 @@ export class ScopeController implements DisposableController {
   private refreshQueued = false;
   private vaultRefreshTimer: ReturnType<Window["setTimeout"]> | null = null;
   private readonly selectionEpoch = new AsyncEpoch();
+  private scopeSettled = true;
+  private disposed = false;
+  private extentCount = 0;
+  private metadataStatus: "pending" | "ready" = "ready";
+  /** Invalidated on every vault event and discarded with this view. */
+  private readonly folderCandidateCache = new FolderScopeFileCache();
 
   constructor(private readonly deps: ScopeControllerDeps) {}
 
-  private get context(): ViewContext {
-    return this.deps.context;
-  }
+  private get context(): ViewContext { return this.deps.context; }
 
-  getLoadKey(): string | null {
-    return this.loadKey;
-  }
+  getLoadKey(): string | null { return this.loadKey; }
 
-  isLoading(): boolean {
-    return this.loading;
-  }
+  isLoading(): boolean { return this.loading; }
 
-  getLastLoadedIncludeSubfolders(): boolean | null {
-    return this.lastLoadedIncludeSubfolders;
-  }
+  isScopeSettled(): boolean { return this.scopeSettled; }
+  getExtentCount(): number { return this.extentCount; }
+  getMetadataStatus(): "pending" | "ready" { return this.metadataStatus; }
+
+  getLastLoadedIncludeSubfolders(): boolean | null { return this.lastLoadedIncludeSubfolders; }
 
   buildLoadKey(scope: CardScope): CardLoadKey {
     return { scope, sort: resolveViewConfig(scope, this.context.getSettings()).sort };
@@ -197,7 +187,7 @@ export class ScopeController implements DisposableController {
     }
 
     const scopeBeforeRequest = this.context.store.getScope();
-    const committed = await this.runLoad(nextLoadScope, nextKey);
+    const committed = await this.runLoad(nextLoadScope, nextKey, forceRefresh);
     await this.drainQueuedRequest();
     if (committed && !scopesEqual(scopeBeforeRequest, this.context.store.getScope())) {
       await this.persistScopeProjection();
@@ -252,8 +242,8 @@ export class ScopeController implements DisposableController {
     return !scopesEqual(current, nextLoadScope.scope);
   }
 
-  private async runLoad(loadScope: CardLoadKey, loadKey: string): Promise<boolean> {
-    const task = this.loadScope(loadScope, loadKey);
+  private async runLoad(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean): Promise<boolean> {
+    const task = this.loadScope(loadScope, loadKey, forceRefresh);
     this.inFlight = task;
     this.inFlightKey = loadKey;
     this.inFlightLoadScope = loadScope;
@@ -268,48 +258,41 @@ export class ScopeController implements DisposableController {
     }
   }
 
-  private async loadScope(loadScope: CardLoadKey, loadKey: string): Promise<boolean> {
-    const scopeChanged = !scopesEqual(this.context.store.getScope(), loadScope.scope);
-    this.context.store.setScope(loadScope.scope);
-    this.loading = true;
-    const loadToken = this.context.epochs.load.bump();
-    this.deps.resetHydrationForLoad();
-    this.deps.resetSearchForLoad();
-    if (scopeChanged) {
-      this.context.store.replaceBaseCards([]); this.context.store.replaceVisibleCards([]);
-    }
-    this.deps.publishLoadStart(scopeChanged);
+  private loadScope(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean): Promise<boolean> {
+    return runScopeLoad({
+      context: this.context, loadScope, loadKey, forceRefresh,
+      startupCardCount: this.deps.startupCardCount,
+      folderCandidateCache: this.folderCandidateCache,
+      collectScopeFiles: (scope) => this.collectScopeFiles(scope),
+      prepareRecordsFromCache: this.deps.prepareRecordsFromCache,
+      projectVisibleCards: this.deps.projectVisibleCards,
+      hydrateStartupCardPaths: this.deps.hydrateStartupCardPaths,
+      refreshSearchProjection: this.deps.refreshSearchProjection,
+      publishLoadStart: this.deps.publishLoadStart,
+      publishPreparedCards: this.deps.publishPreparedCards,
+      resetHydrationForLoad: this.deps.resetHydrationForLoad,
+      resetSearchForLoad: this.deps.resetSearchForLoad,
+      isDisposed: () => this.disposed,
+      setLoading: (loading) => { this.loading = loading; },
+      setExtentCount: (count) => { this.extentCount = count; },
+      setMetadataStatus: (status) => { this.metadataStatus = status; },
+      getLoadKey: () => this.loadKey,
+      setLoadKey: (key) => { this.loadKey = key; },
+      getLastLoadedIncludeSubfolders: () => this.lastLoadedIncludeSubfolders,
+      setLastLoadedIncludeSubfolders: (value) => { this.lastLoadedIncludeSubfolders = value; },
+      setScopeSettled: (settled) => { this.scopeSettled = settled; },
+      consumeQueuedRefresh: () => this.consumeQueuedRefresh(),
+    });
+  }
 
-    try {
-      const app = this.context.getApp(); const settings = this.context.getSettings();
-      // C14: a per-card metadata lookup is only worth it when buckets read it.
-      const { dimension } = normalizeGroupSpec(resolveViewConfig(loadScope.scope, settings).group);
-      const records = this.collectScopeFiles(loadScope.scope).flatMap((file) => {
-        const fileKind = resolveCardFileKind(file);
-        return fileKind === null ? [] : [createCardRecord(app, file, fileKind, dimension === "task")];
-      });
-      if (!this.context.epochs.load.isCurrent(loadToken)) {
-        return false;
-      }
-      this.deps.prepareRecordsFromCache(records);
-      records.sort((left, right) =>
-        compareCards(left, right, loadScope.sort.field, loadScope.sort.direction));
-      this.context.store.replaceBaseCards(records);
-      this.loadKey = loadKey;
-      this.lastLoadedIncludeSubfolders = resolveLoadedIncludeSubfolders(loadScope.scope);
-      this.deps.projectVisibleCards();
-      const startupPaths = this.context.store.getVisibleCards()
-        .slice(0, this.deps.startupCardCount)
-        .map((card) => card.path);
-      await this.deps.hydrateStartupCardPaths(startupPaths, loadToken);
-      return this.context.epochs.load.isCurrent(loadToken);
-    } finally {
-      if (this.context.epochs.load.isCurrent(loadToken)) {
-        this.loading = false;
-        this.deps.publishLoadCommit();
-        this.deps.refreshSearchProjection();
-      }
+  private consumeQueuedRefresh(): void {
+    if (!this.refreshQueued) return;
+    this.refreshQueued = false;
+    if (this.vaultRefreshTimer !== null) {
+      this.context.getViewWindow().clearTimeout(this.vaultRefreshTimer);
+      this.vaultRefreshTimer = null;
     }
+    if (this.queuedRequest === null) void this.context.requestUpdate("reload", "vault-change");
   }
 
   private async drainQueuedRequest(): Promise<void> {
@@ -360,12 +343,11 @@ export class ScopeController implements DisposableController {
     }
   }
 
-  isPathInScope(path: string, includeSubfolders: boolean): boolean {
-    return isPathInFolderScope(path, scopeDisplayPath(this.context.store.getScope()), includeSubfolders);
-  }
+  isPathInScope(path: string, includeSubfolders: boolean): boolean { return isPathInFolderScope(path, scopeDisplayPath(this.context.store.getScope()), includeSubfolders); }
 
-  isPathInActiveScope(path: string): boolean {
-    const scope = this.context.store.getScope();
+  isPathInActiveScope(path: string): boolean { return this.isPathRelevantToScope(this.context.store.getScope(), path); }
+
+  private isPathRelevantToScope(scope: CardScope, path: string): boolean {
     switch (scope.kind) {
       case "box":
         return this.deps.isPathInBox(path, scope.boxId);
@@ -426,8 +408,10 @@ export class ScopeController implements DisposableController {
         return false;
       }
     }
-    return this.isPathInActiveScope(event.path)
-      || (event.oldPath !== null && this.isPathInActiveScope(event.oldPath));
+    const relevantTo = (scope: CardScope): boolean => this.isPathRelevantToScope(scope, event.path)
+      || (event.oldPath !== null && this.isPathRelevantToScope(scope, event.oldPath));
+    return relevantTo(this.context.store.getScope())
+      || (this.inFlightLoadScope !== null && relevantTo(this.inFlightLoadScope.scope));
   }
 
   applyScopeRename(event: VaultMutationEvent): string | null {
@@ -455,6 +439,7 @@ export class ScopeController implements DisposableController {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    this.folderCandidateCache.clear();
     this.deps.invalidateForVaultMutation(event);
     this.context.epochs.vaultContent.bump();
     this.deps.scheduleNavCountRefresh();
@@ -484,7 +469,7 @@ export class ScopeController implements DisposableController {
     // Links scopes: C11 relevance is not membership — create/rename-into defer to the debounced reload.
     const deferToLinksReload = shouldDeferLinksIncrementalMutation(this.context.store.getScope(),
       event, event.oldPath !== null && this.context.store.getBaseCard(event.oldPath) !== undefined);
-    if (!deferToLinksReload && !this.inFlight && !this.loading) {
+    if (!deferToLinksReload && !this.inFlight && !this.loading && this.scopeSettled) {
       const outcome = applyIncrementalMutation(event, this.context.store.getBaseCards(), {
         app: this.context.getApp(),
         sort: this.buildLoadKey(this.context.store.getScope()).sort,
@@ -502,6 +487,7 @@ export class ScopeController implements DisposableController {
           this.context.store.replaceBaseCards(outcome.nextCards);
         }
         this.deps.projectVisibleCards();
+        this.extentCount = this.context.store.getVisibleCards().length;
         this.scheduleVisibleHydrationCandidates(outcome.hydrationPaths);
         this.context.publishGroups("cards", "projection", "bulk", "scope");
         return {
@@ -545,6 +531,10 @@ export class ScopeController implements DisposableController {
     }
     this.vaultRefreshTimer = viewWindow.setTimeout(() => {
       this.vaultRefreshTimer = null;
+      if (!this.scopeSettled) {
+        this.refreshQueued = true;
+        return;
+      }
       void this.context.requestUpdate("reload", "vault-change");
     }, VAULT_REFRESH_DEBOUNCE_MS);
   }
@@ -558,12 +548,15 @@ export class ScopeController implements DisposableController {
     this.vaultRefreshTimer = null;
     this.queuedRequest = null;
     this.refreshQueued = false;
+    this.folderCandidateCache.clear();
     this.inFlight = null;
     this.inFlightKey = null;
     this.inFlightLoadScope = null;
     this.loading = false;
+    this.disposed = true;
     this.selectionEpoch.bump();
     this.context.epochs.load.bump();
+    this.scopeSettled = true;
     return { clearedQueuedRequest, cancelledDebounce };
   }
 }

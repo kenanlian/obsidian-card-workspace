@@ -2,51 +2,46 @@ import { TFile, TFolder, type App } from "obsidian";
 
 import { isSupportedCardFile } from "./file-kind";
 
+/**
+ * Supported card files in folder-scope order. The caller controls whether the
+ * walk is consumed immediately or paused between files.
+ */
+export function* iterateSupportedFiles(
+  app: App,
+  folderPath: string,
+  includeSubfolders: boolean,
+): Generator<TFile> {
+  const root = folderPath === "" ? app.vault.getRoot() : app.vault.getAbstractFileByPath(folderPath);
+  if (!(root instanceof TFolder)) return;
+
+  if (!includeSubfolders) {
+    for (const child of root.children) {
+      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+    }
+    return;
+  }
+
+  const stack: TFolder[] = [root];
+  while (stack.length > 0) {
+    const folder = stack.pop();
+    if (!folder) continue;
+    for (const child of folder.children) {
+      if (child instanceof TFolder) {
+        stack.push(child);
+        continue;
+      }
+      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+    }
+  }
+}
+
 /** Every supported card file contained by a folder scope. */
 export function collectSupportedFiles(
   app: App,
   folderPath: string,
   includeSubfolders: boolean,
 ): TFile[] {
-  const root = folderPath === "" ? app.vault.getRoot() : app.vault.getAbstractFileByPath(folderPath);
-
-  if (!(root instanceof TFolder)) {
-    return [];
-  }
-
-  if (!includeSubfolders) {
-    const directFiles: TFile[] = [];
-    for (const child of root.children) {
-      if (child instanceof TFile && isSupportedCardFile(child)) {
-        directFiles.push(child);
-      }
-    }
-
-    return directFiles;
-  }
-
-  const result: TFile[] = [];
-  const stack: TFolder[] = [root];
-
-  while (stack.length > 0) {
-    const folder = stack.pop();
-    if (!folder) {
-      continue;
-    }
-
-    for (const child of folder.children) {
-      if (child instanceof TFolder) {
-        stack.push(child);
-        continue;
-      }
-
-      if (child instanceof TFile && isSupportedCardFile(child)) {
-        result.push(child);
-      }
-    }
-  }
-
-  return result;
+  return [...iterateSupportedFiles(app, folderPath, includeSubfolders)];
 }
 
 /** Whether `path` belongs to the folder scope rooted at `scopePath`. */

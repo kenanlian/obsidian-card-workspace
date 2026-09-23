@@ -1890,10 +1890,12 @@ describe("FolderCardView host contract", () => {
 
     await view.handleScopeSelection({ requestId: 8, scope: createFolderScope("notes", true),
       source: "programmatic", requestedAtMs: Date.now(), forceRefresh: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(readTagPaths()).toEqual(["notes-only"]);
 
     await view.handleScopeSelection({ requestId: 9, scope: createFolderScope("archive", true),
       source: "programmatic", requestedAtMs: Date.now(), forceRefresh: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(readTagPaths()).toEqual(["archive-only"]);
   });
 

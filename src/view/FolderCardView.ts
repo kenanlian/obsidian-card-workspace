@@ -1,6 +1,5 @@
 import { ItemView, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
-import { normalizeGroupSpec } from "../card-grouping-settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
 import type { OpenDestination, PartialPluginSettings } from "../settings";
@@ -31,11 +30,13 @@ import {
   buildNavigationPanelState,
   isCurrentNavigationMenuTarget,
   openNavigationContextMenu,
-  publishLoadCommit,
   publishLoadStart,
+  publishPreparedCards,
+  publishSettledScope,
   routeNavigationIntent,
   type LoadBoundaryHost,
 } from "./navigation-host";
+import { buildCardsPanelGroup, buildProjectionPanelGroup } from "./panel-group-state";
 import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
 import {
   PANEL_GROUPS, buildLinksScopeGroupFields, resolveBrowseFiltersPaused,
@@ -85,6 +86,7 @@ export class FolderCardView extends ItemView {
       bumpSearchFocusToken: () => this.modules.search.bumpFocusToken(),
       publishAll: () => this.publishGroups(...PANEL_GROUPS),
       publishSearch: () => {
+        if (!this.modules.scopeController.isScopeSettled()) return;
         this.modules.projection.reprojectCards();
         this.modules.bulk.reconcileToVisibleCards();
         // "projection" is in the set because pausing or resuming search moves
@@ -94,7 +96,8 @@ export class FolderCardView extends ItemView {
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
       publishLoadStart: (scopeChanged) => publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged),
-      publishLoadCommit: () => publishLoadCommit(this.buildLoadBoundaryHost()),
+      publishPreparedCards: () => publishPreparedCards(this.buildLoadBoundaryHost()),
+      publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
@@ -288,7 +291,8 @@ export class FolderCardView extends ItemView {
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
    */
   async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
-    switch (intent) {
+    const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
+    switch (effective) {
       case "reload":
         await this.refresh({ reason, forceRefresh: true });
         return;
@@ -480,15 +484,13 @@ export class FolderCardView extends ItemView {
   }
 
   private buildCardsGroup(): PanelModelState["cards"] {
-    return {
-      records: [...this.visibleCards],
-      searchMatchCountsByPath: { ...this.modules.search.getMatchCountsByPath() },
-      selectedPath: this.selectedPath,
-      loading: this.modules.scopeController.isLoading(),
-      generation: this.epochs.load.value, sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
-      groupSegments: [...this.modules.projection.getGroupSegments()],
-      groupRevision: this.modules.projection.getGroupRevision(),
-    };
+    const scope = this.modules.scopeController;
+    return buildCardsPanelGroup({
+      records: this.visibleCards, searchMatchCountsByPath: this.modules.search.getMatchCountsByPath(),
+      selectedPath: this.selectedPath, loading: scope.isLoading(), generation: this.epochs.load.value,
+      sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
+      groupSegments: this.modules.projection.getGroupSegments(), groupRevision: this.modules.projection.getGroupRevision(),
+    });
   }
 
   private buildSearchGroup(): PanelModelState["search"] {
@@ -503,21 +505,16 @@ export class FolderCardView extends ItemView {
   }
 
   private buildProjectionGroup(): PanelModelState["projection"] {
-    const settings = this.plugin.getSettings();
-    const { sort, pinnedPaths, group } = resolveViewConfig(this.store.getScope(), settings);
-    return {
-      sortField: sort.field,
-      sortDirection: sort.direction,
-      availableTags: this.modules.projection.deriveAvailableTags(),
-      tagCounts: this.modules.projection.deriveTagCounts(),
-      activeFilterTags: settings.filter.tags,
-      pinnedPaths,
-      group: normalizeGroupSpec(group),
-      availableGroupDimensions: [
-        ...resolveSourceCapabilities(this.store.getScope()).groupDimensions,
-      ],
-      groupSegmentCount: this.modules.projection.getGroupSegments().length,
-    };
+    const settings = this.plugin.getSettings(); const scope = this.store.getScope();
+    const { sort, pinnedPaths, group } = resolveViewConfig(scope, settings);
+    const projection = this.modules.projection;
+    return buildProjectionPanelGroup({
+      sortField: sort.field, sortDirection: sort.direction,
+      deriveAvailableTags: () => projection.deriveAvailableTags(), deriveTagCounts: () => projection.deriveTagCounts(),
+      activeFilterTags: settings.filter.tags, pinnedPaths, group,
+      availableGroupDimensions: [...resolveSourceCapabilities(scope).groupDimensions],
+      groupSegmentCount: projection.getGroupSegments().length,
+    });
   }
 
   private buildBulkGroup(): PanelModelState["bulk"] {

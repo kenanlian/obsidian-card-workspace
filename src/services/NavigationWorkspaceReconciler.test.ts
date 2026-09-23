@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
 
+import { collectVaultTagIndex } from "../view/metadata-utils";
 import { DEFAULT_SETTINGS, type PartialPluginSettings, type PluginSettings } from "../settings";
 import {
   NavigationWorkspaceReconciler,
@@ -8,6 +9,20 @@ import {
   rewriteExpandedFoldersAfterRename,
 } from "./NavigationWorkspaceReconciler";
 import type { VaultMutationEvent } from "./vault-events";
+
+vi.mock("../view/metadata-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../view/metadata-utils")>();
+  return {
+    ...actual,
+    collectVaultTagIndex: vi.fn(actual.collectVaultTagIndex),
+  };
+});
+
+type ScheduledIdle = {
+  task: () => void;
+  timeoutMs: number;
+  cancelled: boolean;
+};
 
 function folder(path: string): TFolder {
   const value = new TFolder();
@@ -44,16 +59,28 @@ function createHarness(options: {
   const saveSettings = vi.fn(async (patch: PartialPluginSettings) => {
     settings = { ...settings, ...patch } as PluginSettings;
   });
+  const scheduled: ScheduledIdle[] = [];
+  const scheduleIdle = vi.fn((task: () => void, timeoutMs: number) => {
+    const entry: ScheduledIdle = { task, timeoutMs, cancelled: false };
+    scheduled.push(entry);
+    return () => {
+      entry.cancelled = true;
+    };
+  });
   const reconciler = new NavigationWorkspaceReconciler({
     getSettings: () => settings,
     saveSettings,
     getApp: () => app,
+    scheduleIdle,
   });
-  return { app, reconciler, saveSettings, getSettings: () => settings };
+  return { app, reconciler, saveSettings, getSettings: () => settings, scheduleIdle, scheduled };
 }
 
 describe("NavigationWorkspaceReconciler", () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(collectVaultTagIndex).mockClear();
+  });
   afterEach(() => vi.useRealTimers());
 
   it("rewrites exact and descendant paths without root or prefix collisions", () => {
@@ -91,9 +118,9 @@ describe("NavigationWorkspaceReconciler", () => {
     expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: ["Live"] });
   });
 
-  it("initially reconciles folder case and trustworthy Tag ancestors in one patch", async () => {
+  it("reconciles expanded folders before the idle tag scan", async () => {
     const canonical = folder("Projects/Alpha");
-    const { reconciler, saveSettings } = createHarness({
+    const { reconciler, saveSettings, getSettings, scheduleIdle, scheduled } = createHarness({
       folders: { "projects/alpha": canonical },
       tags: ["#Work/AI"],
       settings: {
@@ -102,24 +129,64 @@ describe("NavigationWorkspaceReconciler", () => {
       },
     });
     await reconciler.reconcileInitial();
+    expect(collectVaultTagIndex).not.toHaveBeenCalled();
+    expect(scheduleIdle).toHaveBeenCalledOnce();
+    expect(scheduleIdle).toHaveBeenCalledWith(expect.any(Function), 10_000);
     expect(saveSettings).toHaveBeenCalledOnce();
-    expect(saveSettings).toHaveBeenCalledWith({
-      expandedFolderPaths: ["Projects/Alpha"],
-      expandedTagPaths: ["work", "work/ai"],
+    expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: ["Projects/Alpha"] });
+    expect(getSettings().expandedFolderPaths).toEqual(["Projects/Alpha"]);
+    expect(getSettings().expandedTagPaths).toEqual(["work", "work/ai", "stale"]);
+
+    scheduled[0]?.task();
+    await Promise.resolve();
+    expect(collectVaultTagIndex).toHaveBeenCalledOnce();
+    expect(saveSettings).toHaveBeenCalledTimes(2);
+    expect(saveSettings).toHaveBeenLastCalledWith({ expandedTagPaths: ["work", "work/ai"] });
+    expect(getSettings().expandedTagPaths).toEqual(["work", "work/ai"]);
+  });
+
+  it("does not save tags when disposed before the idle scan runs", async () => {
+    const canonical = folder("Projects/Alpha");
+    const { reconciler, saveSettings, getSettings, scheduled } = createHarness({
+      folders: { "projects/alpha": canonical },
+      tags: ["#Work/AI"],
+      settings: {
+        expandedFolderPaths: ["projects/alpha", "missing"],
+        expandedTagPaths: ["work", "work/ai", "stale"],
+      },
     });
+    await reconciler.reconcileInitial();
+    expect(getSettings().expandedFolderPaths).toEqual(["Projects/Alpha"]);
+    expect(collectVaultTagIndex).not.toHaveBeenCalled();
+    const idle = scheduled[0];
+    expect(idle).toBeDefined();
+    reconciler.dispose();
+    expect(idle?.cancelled).toBe(true);
+    idle?.task();
+    await Promise.resolve();
+    expect(collectVaultTagIndex).not.toHaveBeenCalled();
+    expect(saveSettings).toHaveBeenCalledOnce();
+    expect(saveSettings).toHaveBeenCalledWith({ expandedFolderPaths: ["Projects/Alpha"] });
+    expect(getSettings().expandedTagPaths).toEqual(["work", "work/ai", "stale"]);
   });
 
   it("retains Tags when collection is untrustworthy", async () => {
-    const { reconciler, saveSettings } = createHarness({
+    const { reconciler, saveSettings, getSettings, scheduled } = createHarness({
       tags: null,
       settings: { expandedTagPaths: ["keep"] },
     });
     await reconciler.reconcileInitial();
+    expect(collectVaultTagIndex).not.toHaveBeenCalled();
     expect(saveSettings).not.toHaveBeenCalled();
+    scheduled[0]?.task();
+    await Promise.resolve();
+    expect(collectVaultTagIndex).toHaveBeenCalledOnce();
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(getSettings().expandedTagPaths).toEqual(["keep"]);
   });
 
   it("cancels an initial reconciliation before collection or persistence after disposal", async () => {
-    const { app, reconciler, saveSettings } = createHarness({
+    const { app, reconciler, saveSettings, scheduleIdle } = createHarness({
       settings: { expandedFolderPaths: ["stale"] },
     });
     const pending = reconciler.reconcileInitial();
@@ -127,6 +194,8 @@ describe("NavigationWorkspaceReconciler", () => {
     await pending;
     expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
     expect(saveSettings).not.toHaveBeenCalled();
+    expect(scheduleIdle).not.toHaveBeenCalled();
+    expect(collectVaultTagIndex).not.toHaveBeenCalled();
   });
 
   it("skips create Tag checks, coalesces other events, and cancels on disposal", async () => {

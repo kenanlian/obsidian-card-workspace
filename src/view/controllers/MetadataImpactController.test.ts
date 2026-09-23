@@ -80,6 +80,7 @@ function harness(
       (): "reproject" | "nav" | "none" => options.propertyImpact ?? "none",
     ),
     invalidateMetadataDerivedCaches: vi.fn(),
+    invalidateRetainedFacetSnapshots: vi.fn(),
     refreshSearchCandidatesSilently:
       options.silentRefresh ?? vi.fn(async () => undefined),
     reprojectCardsForMetadata: vi.fn(),
@@ -385,6 +386,7 @@ describe("MetadataImpactController property lane", () => {
 
     await controller.handleMetadataChange("notes/missing.md");
 
+    expect(deps.invalidateRetainedFacetSnapshots).toHaveBeenCalledTimes(1);
     expect(deps.classifyPropertyMetadataImpact).not.toHaveBeenCalled();
     expect(deps.reprojectCardsForMetadata).not.toHaveBeenCalled();
     expect(deps.publishImpactBatch).not.toHaveBeenCalled();
@@ -578,6 +580,7 @@ describe("MetadataImpactController repeat-safety and disposal", () => {
     await expect(controller.handleMetadataChange(target.path)).resolves.toBeUndefined();
 
     expect(deps.reconcileMetadataMembershipForPath).not.toHaveBeenCalled();
+    expect(deps.invalidateRetainedFacetSnapshots).not.toHaveBeenCalled();
     expect(deps.refreshSearchCandidatesSilently).not.toHaveBeenCalled();
     expect(deps.publishImpactBatch).not.toHaveBeenCalled();
     expect(context.publishGroups).not.toHaveBeenCalled();

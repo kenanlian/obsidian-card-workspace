@@ -990,16 +990,16 @@ describe("R5 line-count ratchet", () => {
    * already needed an explicit cap.
    */
   const LINE_LIMITS: Record<string, number> = {
-    "src/view/FolderCardView.ts": 656,
+    "src/view/FolderCardView.ts": 653,
     "src/main.ts": 690,
     "src/services/SearchCoordinator.ts": 654,
-    "src/view/controllers/ScopeController.ts": 569,
+    "src/view/controllers/ScopeController.ts": 562,
     "src/view/actions/box-actions.ts": 575,
     "src/search/SearchIndexManager.ts": 1071,
     "src/view/note-ops.ts": 479,
     "src/view/note-tag-ops.ts": 580,
-    "src/view/NavigationPane.svelte": 347,
-    "src/view/FolderCardPanel.svelte": 832,
+    "src/view/NavigationPane.svelte": 346,
+    "src/view/FolderCardPanel.svelte": 824,
     "src/view/Toolbar.svelte": 608,
     "src/view/CardItem.svelte": 438,
     "src/view/nav-context-menu.ts": 491,
@@ -1008,10 +1008,10 @@ describe("R5 line-count ratchet", () => {
     "src/view/markdown-utils.ts": 432,
     "src/search/IndexStore.ts": 441,
     "src/view/card-boxes.ts": 369,
-    "src/view/view-modules.ts": 424,
+    "src/view/view-modules.ts": 423,
     "src/view/actions/folder-actions.ts": 418,
     "src/view/controllers/NavLayoutController.ts": 406,
-    "src/view/controllers/ProjectionController.ts": 426,
+    "src/view/controllers/ProjectionController.ts": 423,
   };
   const DEFAULT_LINE_LIMIT = 400;
 

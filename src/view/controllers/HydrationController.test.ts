@@ -328,6 +328,47 @@ describe("HydrationController", () => {
     expect(context.publishGroups).toHaveBeenCalledTimes(1);
   });
 
+  it("publishes and coalesces fast startup previews without viewport demand", async () => {
+    const records = [card("startup-a.md"), card("startup-b.md")];
+    const { context, controller } = harness(records);
+
+    await controller.hydrateStartupCardPaths(records.map((item) => item.path), context.epochs.load.token());
+
+    expect(context.store.getBaseCard("startup-a.md")?.hydrated).toBe(true);
+    expect(context.store.getBaseCard("startup-b.md")?.hydrated).toBe(true);
+    expect(context.publishGroups).toHaveBeenCalledTimes(1);
+    expect(context.publishGroups).toHaveBeenCalledWith("cards");
+  });
+
+  it("publishes startup-owned cache hits and non-Markdown placeholders", async () => {
+    const first = card("cached-startup.md");
+    const { context, controller } = harness([first]);
+    await controller.hydrateViewport(request(context, [first]));
+    const cached = card("cached-startup.md");
+    context.store.replaceBaseCards([cached]);
+    context.store.replaceVisibleCards([cached]);
+    controller.resetForLoad();
+    (context.publishGroups as ReturnType<typeof vi.fn>).mockClear();
+
+    await controller.hydrateStartupCardPaths([cached.path], context.epochs.load.token());
+
+    expect(context.store.getBaseCard(cached.path)?.hydrated).toBe(true);
+    expect(context.publishGroups).toHaveBeenCalledTimes(1);
+
+    const canvas = card("startup.canvas", "canvas");
+    context.store.replaceBaseCards([canvas]);
+    context.store.replaceVisibleCards([canvas]);
+    controller.resetForLoad();
+    (context.publishGroups as ReturnType<typeof vi.fn>).mockClear();
+
+    await controller.hydrateStartupCardPaths([canvas.path], context.epochs.load.token());
+
+    expect(context.store.getBaseCard(canvas.path)).toMatchObject({
+      hydrated: true, previewMode: "placeholder",
+    });
+    expect(context.publishGroups).toHaveBeenCalledTimes(1);
+  });
+
   it("returns at 120ms and publishes guarded late startup work", async () => {
     vi.useFakeTimers();
     try {
@@ -382,5 +423,21 @@ describe("HydrationController", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("drops startup results after the load generation changes", async () => {
+    const record = card("stale-startup.md");
+    const pending = deferred<string>();
+    const { context, controller } = harness([record], vi.fn(() => pending.promise));
+    const startup = controller.hydrateStartupCardPaths([record.path], context.epochs.load.token());
+    await ticks();
+    context.epochs.load.bump();
+    pending.resolve("stale startup");
+
+    await startup;
+    await ticks(8);
+
+    expect(context.store.getBaseCard(record.path)?.hydrated).toBe(false);
+    expect(context.publishGroups).not.toHaveBeenCalled();
   });
 });

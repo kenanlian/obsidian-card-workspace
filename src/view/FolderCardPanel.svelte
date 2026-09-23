@@ -150,7 +150,7 @@
       searchMatchCountsByPath: {},
       selectedPath: null,
       loading: false,
-      generation: 0, sequenceRevision: 0, hydrationRevision: 0,
+      generation: 0, sequenceRevision: 0, hydrationRevision: 0, extentCount: 0,
       groupSegments: [], groupRevision: 0,
     },
     search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
@@ -163,7 +163,7 @@
       pinnedPaths: [],
       group: DEFAULT_GROUP_SPEC,
       availableGroupDimensions: [],
-      groupSegmentCount: 0,
+      groupSegmentCount: 0, metadataStatus: "ready",
     },
     bulk: {
       bulkMode: false,
@@ -229,23 +229,15 @@
   let panelState = $state.raw<PanelModelState>(EMPTY_PANEL_STATE);
 
   $effect(() => {
-    if (
-      !panelModel ||
-      typeof panelModel.getState !== "function" ||
-      typeof panelModel.subscribe !== "function"
-    ) {
+    if (!panelModel || typeof panelModel.getState !== "function" || typeof panelModel.subscribe !== "function") {
       panelState = EMPTY_PANEL_STATE;
       return;
     }
-
     panelState = panelModel.getState();
     const unsubscribe = panelModel.subscribe((nextState) => {
       panelState = nextState;
     });
-
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   });
 
   const strings = $derived(panelState.strings);
@@ -387,7 +379,7 @@
   const USER_SCROLL_LOCK_MS = 180;
   const panelInstanceId = $props.id();
 
-  type ProjectedRow = PanelRow<{ path: string }>;
+  type ProjectedRow = PanelRow<NoteCardRecord>;
   type ProjectedCardRow = Extract<ProjectedRow, { kind: "cards" }>;
 
   let viewportEl = $state<HTMLDivElement | null>(null);
@@ -396,7 +388,7 @@
   let scrollTop = $state(0);
   let columnCount = $state(1);
 
-  let lastRequestIdentity = $state<string | null>(null), lastScopeIdentity = $state<string | null>(null);
+  let lastRequestIdentity = $state<string | null>(null), lastProjectedScopeIdentity = $state<string | null>(null);
   let lastArrangementIdentity = $state<string | null>(null);
 
   /**
@@ -409,8 +401,8 @@
 
   let pendingLayoutAnchor = $state<{ ref: RowAnchorRef; offset: number } | null>(null);
   let rowHeightMap = $state<Map<string, number>>(new Map());
-  let projectedRows = $state<ProjectedRow[]>([]);
-  let rowPositions = $state<number[]>([]);
+  let projectedRows = $state.raw<ProjectedRow[]>([]);
+  let rowPositions = $state.raw<number[]>([]);
   let totalHeight = $state(0);
   let isAdjustingScroll = $state(false);
   let userScrollLockUntilMs = $state(0);
@@ -543,19 +535,6 @@
   }
 
   $effect(() => {
-    if (scopeIdentity !== lastScopeIdentity) {
-      lastScopeIdentity = scopeIdentity;
-      lastRequestIdentity = null;
-      pendingLayoutAnchor = null;
-      rowHeightMap = new Map();
-      projectedRows = [];
-      rowPositions = [];
-      totalHeight = 0;
-      applyScrollTop(0);
-    }
-  });
-
-  $effect(() => {
     if (columnCount !== lastMeasuredColumnCount) {
       lastMeasuredColumnCount = columnCount;
       rowHeightMap = new Map();
@@ -563,14 +542,27 @@
   });
 
   $effect(() => {
+    const nextScopeIdentity = scopeIdentity;
     const revision = cards.sequenceRevision;
     const groupRevision = cards.groupRevision;
     const nextArrangementIdentity = [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.orderBy, projection.group.orderDirection].join("\u0000");
     const columns = columnCount;
     untrack(() => {
+      const scopeChanged = nextScopeIdentity !== lastProjectedScopeIdentity;
       const arrangementChanged = lastArrangementIdentity !== null && nextArrangementIdentity !== lastArrangementIdentity;
+      lastProjectedScopeIdentity = nextScopeIdentity;
       lastArrangementIdentity = nextArrangementIdentity;
-      if (arrangementChanged) {
+      if (scopeChanged) {
+        // Keep old rows mounted through load start. On the complete scope
+        // snapshot, reset scroll and project the replacement directly so no
+        // empty row frame can appear between the two scopes.
+        lastRequestIdentity = null;
+        pendingLayoutAnchor = null;
+        rowHeightMap = new Map();
+        rowPositions = [];
+        totalHeight = 0;
+        applyScrollTop(0);
+      } else if (arrangementChanged) {
         pendingLayoutAnchor = null; applyScrollTop(0);
       } else if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
         // Ungrouped reorders hold the viewport position, as they did before
@@ -580,15 +572,15 @@
           preferCardIndex: isFlatLayout(projectedRows),
         });
       }
-      projectedRows = projectPanelRows(cards.records.map((card) => ({ path: card.path })), groupSegments, columns);
+      projectedRows = projectPanelRows(cards.records, groupSegments, columns);
       rebuildPositionsFrom(0);
     });
-    void revision; void groupRevision; void nextArrangementIdentity;
+    void nextScopeIdentity; void revision; void groupRevision; void nextArrangementIdentity;
   });
 
   $effect(() => {
     if (!cards.loading && cardRecords.length > 0 && projectedRows.length === 0) {
-      projectedRows = projectPanelRows(cardRecords.map((card) => ({ path: card.path })), groupSegments, columnCount);
+      projectedRows = projectPanelRows(cardRecords, groupSegments, columnCount);
       rebuildPositionsFrom(0);
     }
   });

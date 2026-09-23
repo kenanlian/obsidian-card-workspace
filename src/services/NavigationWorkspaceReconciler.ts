@@ -7,15 +7,18 @@ import {
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { collectVaultTagIndex } from "../view/metadata-utils";
 import { rewritePathReference } from "../path-references";
+import { scheduleIdleTask } from "../search";
 import type { VaultMutationEvent } from "./vault-events";
 
 const TAG_RECONCILE_DEBOUNCE_MS = 1000;
+const INITIAL_TAG_RECONCILE_IDLE_TIMEOUT_MS = 10_000;
 
 export interface NavigationWorkspaceReconcilerDeps {
   getSettings: () => PluginSettings;
   saveSettings: (patch: PartialPluginSettings) => Promise<unknown>;
   getApp: () => App;
   onStep?: (step: string) => void;
+  scheduleIdle?: (task: () => void, timeoutMs: number) => () => void;
 }
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -46,8 +49,10 @@ export class NavigationWorkspaceReconciler {
   private readonly saveSettings: (patch: PartialPluginSettings) => Promise<unknown>;
   private readonly getApp: () => App;
   private readonly onStep?: (step: string) => void;
+  private readonly scheduleIdle: (task: () => void, timeoutMs: number) => () => void;
   private disposed = false;
   private generation = 0;
+  private cancelInitialTagIdle: (() => void) | null = null;
   private readonly debouncedTagReconcile: (() => void) & { cancel: () => void };
 
   constructor(deps: NavigationWorkspaceReconcilerDeps) {
@@ -55,6 +60,7 @@ export class NavigationWorkspaceReconciler {
     this.saveSettings = deps.saveSettings;
     this.getApp = deps.getApp;
     this.onStep = deps.onStep;
+    this.scheduleIdle = deps.scheduleIdle ?? scheduleIdleTask;
     this.debouncedTagReconcile = debounce(
       () => {
         void this.reconcileTags().catch((error: unknown) => {
@@ -73,18 +79,18 @@ export class NavigationWorkspaceReconciler {
     if (this.disposed || generation !== this.generation) return;
     const settings = this.getSettings();
     const folders = reconcileExpandedFolders(this.getApp(), settings.expandedFolderPaths);
-    const vaultTags = collectVaultTagIndex(this.getApp());
-    const tags = vaultTags === null
-      ? settings.expandedTagPaths
-      : normalizeExpandedTagPaths(
-        settings.expandedTagPaths.filter((path) => vaultTags.tagPaths.has(path)),
-      );
+    if (this.disposed || generation !== this.generation) return;
+    if (!arraysEqual(folders, settings.expandedFolderPaths)) {
+      await this.saveSettings({ expandedFolderPaths: folders });
+    }
     if (this.disposed || generation !== this.generation) return;
 
-    const patch: PartialPluginSettings = {};
-    if (!arraysEqual(folders, settings.expandedFolderPaths)) patch.expandedFolderPaths = folders;
-    if (!arraysEqual(tags, settings.expandedTagPaths)) patch.expandedTagPaths = tags;
-    if (Object.keys(patch).length > 0) await this.saveSettings(patch);
+    this.cancelInitialTagIdle?.();
+    this.cancelInitialTagIdle = this.scheduleIdle(() => {
+      void this.reconcileInitialTags(generation).catch((error: unknown) => {
+        if (!this.disposed) console.warn("[Card Workspace] Navigation Tag reconciliation failed.", error);
+      });
+    }, INITIAL_TAG_RECONCILE_IDLE_TIMEOUT_MS);
   }
 
   async handleVaultMutation(event: VaultMutationEvent): Promise<void> {
@@ -127,7 +133,23 @@ export class NavigationWorkspaceReconciler {
     if (this.disposed) return;
     this.disposed = true;
     this.generation += 1;
+    this.cancelInitialTagIdle?.();
+    this.cancelInitialTagIdle = null;
     this.debouncedTagReconcile.cancel();
+  }
+
+  private async reconcileInitialTags(generation: number): Promise<void> {
+    if (this.disposed || generation !== this.generation) return;
+    const settings = this.getSettings();
+    const vaultTags = collectVaultTagIndex(this.getApp());
+    if (vaultTags === null || this.disposed || generation !== this.generation) return;
+    const expandedTagPaths = normalizeExpandedTagPaths(
+      settings.expandedTagPaths.filter((path) => vaultTags.tagPaths.has(path)),
+    );
+    if (this.disposed || generation !== this.generation) return;
+    if (!arraysEqual(expandedTagPaths, settings.expandedTagPaths)) {
+      await this.saveSettings({ expandedTagPaths });
+    }
   }
 
   private async reconcileTags(): Promise<void> {

@@ -8,6 +8,7 @@ import { getFileFrontmatter } from "../metadata-utils";
 import { buildPropertyFacets, type PropertyFacet } from "../property-facets";
 import { collectPropertyInventory as scanPropertyInventory } from "../property-metadata";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
+import { FacetSnapshotCache, facetSourceKey } from "./facet-snapshot-cache";
 
 export interface PropertyControllerDeps {
   context: ViewContext;
@@ -26,7 +27,7 @@ interface PropertyStringsIdentity {
 /**
  * Per-view owner of property facets and the vault property-key inventory.
  *
- * Facet cache key: effective load identity, base-card count,
+ * Facet cache key: current scope and effective load identity, base-card count,
  * `epochs.vaultContent`, a controller-owned metadata revision (bumped only by
  * the explicit invalidation methods below), enabled keys, active filter
  * identity, and the display-label strings. Identical inputs reuse the cached
@@ -48,7 +49,7 @@ interface PropertyStringsIdentity {
 export class PropertyController implements DisposableController {
   private disposed = false;
   private metadataRevision = 0;
-  private facetCache: { key: string; facets: PropertyFacet[] } | null = null;
+  private readonly facetCache = new FacetSnapshotCache<PropertyFacet[]>(4);
 
   constructor(private readonly deps: PropertyControllerDeps) {}
 
@@ -69,9 +70,9 @@ export class PropertyController implements DisposableController {
       settings.filter.properties,
       strings,
     );
-    const cached = this.facetCache;
-    if (cached !== null && cached.key === key) {
-      return cached.facets;
+    const cached = this.facetCache.get(key);
+    if (cached) {
+      return cached;
     }
 
     const app = this.context.getApp();
@@ -82,7 +83,7 @@ export class PropertyController implements DisposableController {
       (file) => getFileFrontmatter(app, file),
       strings,
     );
-    this.facetCache = { key, facets };
+    this.facetCache.set(key, facets);
     return facets;
   }
 
@@ -110,6 +111,7 @@ export class PropertyController implements DisposableController {
         return card !== undefined && isMarkdownCardKind(card.fileKind);
       });
       if (!impacted) {
+        this.invalidateRetainedPropertyFacets();
         return false;
       }
     }
@@ -125,15 +127,29 @@ export class PropertyController implements DisposableController {
     this.bumpMetadataRevision();
   }
 
+  /** Drop prior-scope snapshots on any metadata event, keeping the current one. */
+  invalidateRetainedPropertyFacets(): void {
+    if (this.disposed) {
+      return;
+    }
+    const settings = this.context.getSettings();
+    const key = this.facetCacheKey(
+      settings.visiblePropertyKeys,
+      settings.filter.properties,
+      this.context.getUiStrings().property,
+    );
+    this.facetCache.retain(key);
+  }
+
   dispose(): DisposeReport {
     this.disposed = true;
-    this.facetCache = null;
+    this.facetCache.clear();
     return {};
   }
 
   private bumpMetadataRevision(): void {
     this.metadataRevision += 1;
-    this.facetCache = null;
+    this.facetCache.clear();
   }
 
   private facetCacheKey(
@@ -146,9 +162,12 @@ export class PropertyController implements DisposableController {
     // contain delimiter-like text, so delimiter joins could alias distinct
     // inputs onto one cache entry.
     return JSON.stringify([
-      this.deps.getLoadKey() ?? "",
-      this.context.store.getBaseCards().length,
-      this.context.epochs.vaultContent.value,
+      facetSourceKey(
+        this.context.store.getScope(),
+        this.deps.getLoadKey(),
+        this.context.store.getBaseCards().length,
+        this.context.epochs.vaultContent.value,
+      ),
       this.metadataRevision,
       visibleKeys,
       clauses.map((clause) => [clause.key, clause.values.map(serializePropertyScalarRef)]),

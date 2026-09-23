@@ -160,6 +160,33 @@ describe("PropertyController facet caching", () => {
     expect(next[0]?.key).toBe("status");
   });
 
+  it("reuses A's facets, including active filter rows, after A→B→A", () => {
+    const { controller, getFileCache, state, store } = createHarness({
+      cards: [createCard("notes/a.md")],
+      frontmatter: {
+        "notes/a.md": { status: "open" },
+        "archive/b.md": { status: "done" },
+      },
+      visiblePropertyKeys: ["status"],
+      filterProperties: [{ key: "status", values: [text("missing")] }],
+    });
+    const first = controller.derivePropertyFacets();
+    expect(first[0]?.values).toContainEqual({ ref: text("missing"), label: "missing", count: 0 });
+
+    store.setScope(createFolderScope("archive", true));
+    state.loadKey = "archive::recursive";
+    store.replaceBaseCards([createCard("archive/b.md")]);
+    expect(controller.derivePropertyFacets()[0]?.values).toContainEqual({
+      ref: text("done"), label: "done", count: 1,
+    });
+
+    store.setScope(createFolderScope("notes", true));
+    state.loadKey = "notes::recursive";
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    expect(controller.derivePropertyFacets()).toBe(first);
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
   it("recomputes when the base-card count changes", () => {
     const { controller, getFileCache, store } = createHarness({
       cards: [createCard("a.md")],
@@ -304,6 +331,32 @@ describe("PropertyController invalidation", () => {
     expect(controller.derivePropertyFacets()).toBe(first);
     expect(getFileCache.mock.calls.length).toBe(calls);
     expect(context.publishGroups).not.toHaveBeenCalled();
+  });
+
+  it("drops prior-scope facets for an out-of-base metadata event", () => {
+    const frontmatter = {
+      "notes/a.md": { status: "open" },
+      "archive/b.md": { status: "done" },
+    };
+    const { controller, getFileCache, state, store } = createHarness({
+      cards: [createCard("notes/a.md")], frontmatter, visiblePropertyKeys: ["status"],
+    });
+    controller.derivePropertyFacets();
+    store.setScope(createFolderScope("archive", true));
+    state.loadKey = "archive::recursive";
+    store.replaceBaseCards([createCard("archive/b.md")]);
+    const archive = controller.derivePropertyFacets();
+
+    frontmatter["notes/a.md"] = { status: "closed" };
+    expect(controller.invalidateMetadata(["notes/a.md"])).toBe(false);
+    expect(controller.derivePropertyFacets()).toBe(archive);
+    store.setScope(createFolderScope("notes", true));
+    state.loadKey = "notes::recursive";
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    expect(controller.derivePropertyFacets()[0]?.values).toEqual([
+      { ref: text("closed"), label: "closed", count: 1 },
+    ]);
+    expect(getFileCache).toHaveBeenCalledTimes(3);
   });
 });
 

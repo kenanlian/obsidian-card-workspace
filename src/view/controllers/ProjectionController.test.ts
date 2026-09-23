@@ -64,7 +64,7 @@ function createHarness(options: {
   group?: GroupSpec;
   collapsedGroupKeys?: ReadonlySet<string>;
   boxes?: CardBoxDefinition[];
-  fileCache?: () => unknown;
+  fileCache?: (file: { path: string }) => unknown;
 } = {}) {
   const scope = options.scope ?? createFolderScope("notes", true);
   const getFileCache = vi.fn(options.fileCache ?? (() => ({ tags: [{ tag: "#work" }] })));
@@ -78,6 +78,7 @@ function createHarness(options: {
     collapsedGroupKeys: options.collapsedGroupKeys ?? new Set<string>(),
     boxes: options.boxes ?? [],
     language: "en" as "en" | "zh",
+    loadKey: "notes::recursive",
   };
   const saveSettings = vi.fn();
   const context = {
@@ -106,7 +107,7 @@ function createHarness(options: {
       execution: "indexed-unavailable",
     },
     getEffectivePinnedPaths: () => options.pinnedPaths ?? [],
-    getLoadKey: () => "notes::recursive",
+    getLoadKey: () => state.loadKey,
     getGroupConfig: () => state.group,
     getCollapsedGroupKeys: () => state.collapsedGroupKeys,
   });
@@ -215,6 +216,50 @@ describe("ProjectionController", () => {
     const refreshed = controller.deriveScopeTags();
     expect(refreshed).not.toBe(first);
     expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses scope tags on an unchanged A→B→A visit", () => {
+    const { controller, getFileCache, state, store } = createHarness({
+      fileCache: (file) => ({ tags: [{ tag: file.path.startsWith("notes/") ? "#work" : "#old" }] }),
+    });
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    const first = controller.deriveScopeTags();
+
+    store.setScope(createFolderScope("archive", true));
+    state.loadKey = "archive::recursive";
+    store.replaceBaseCards([createCard("archive/b.md")]);
+    expect(controller.deriveScopeTags().tagCounts).toEqual({ old: 1 });
+
+    store.setScope(createFolderScope("notes", true));
+    state.loadKey = "notes::recursive";
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    expect(controller.deriveScopeTags()).toBe(first);
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops prior-scope tags after metadata or vault invalidation", () => {
+    let tag = "#work";
+    const { controller, getFileCache, state, store } = createHarness({
+      fileCache: (file) => ({ tags: [{ tag: file.path.startsWith("notes/") ? tag : "#old" }] }),
+    });
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    controller.deriveScopeTags();
+    store.setScope(createFolderScope("archive", true));
+    state.loadKey = "archive::recursive";
+    store.replaceBaseCards([createCard("archive/b.md")]);
+    const archive = controller.deriveScopeTags();
+
+    tag = "#new";
+    controller.invalidateRetainedScopeTags();
+    expect(controller.deriveScopeTags()).toBe(archive);
+    store.setScope(createFolderScope("notes", true));
+    state.loadKey = "notes::recursive";
+    store.replaceBaseCards([createCard("notes/a.md")]);
+    expect(controller.deriveScopeTags().tagCounts).toEqual({ new: 1 });
+
+    controller.invalidateVaultCaches();
+    controller.deriveScopeTags();
+    expect(getFileCache).toHaveBeenCalledTimes(4);
   });
 
   it("reads each base card cache once from both scope-tag entry points", () => {

@@ -34,6 +34,8 @@ export interface ArrangementActionsDeps {
   refreshLoadKeyForCurrentScope: () => void;
   reprojectCards: () => void;
   reconcileToVisibleCards: () => void;
+  /** When omitted, collapse and sort still reproject. */
+  isScopeSettled?: () => boolean;
   groupCollapse: GroupCollapseController;
   getGroupSegmentKeys: () => readonly string[];
 }
@@ -70,6 +72,7 @@ export class ArrangementActions {
    * base cards → replace base cards → refresh load key → reproject → reconcile bulk.
    */
   sortAndReprojectCards(): void {
+    if (this.deps.isScopeSettled?.() === false) return;
     const { context, refreshLoadKeyForCurrentScope, reprojectCards, reconcileToVisibleCards } =
       this.deps;
     const { sort } = resolveViewConfig(context.store.getScope(), context.getSettings());
@@ -188,6 +191,7 @@ export class ArrangementActions {
         return;
     }
 
+    if (this.deps.isScopeSettled?.() === false) return;
     this.deps.reprojectCards();
     this.deps.reconcileToVisibleCards();
     this.deps.publishGroups("cards", "bulk");

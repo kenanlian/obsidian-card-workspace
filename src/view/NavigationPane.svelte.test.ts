@@ -393,6 +393,20 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(document.querySelector("[data-nav-empty-section]")).toBeNull();
   });
 
+  it("keeps ordinary empty copy instead of a pending metadata presentation", async () => {
+    const strings = getUiStrings("en");
+    const base = projection();
+    const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
+    render({
+      nav: nav({ projection: { ...base, rows: emptyRows } }),
+      activeFilterTags: [],
+    });
+    expect(document.querySelector('[data-nav-empty-section="tags"]')?.textContent?.trim()).toBe("No tags found");
+    expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
+      .toBe(strings.property.sectionEmpty);
+    await unmount(components.pop()!);
+  });
+
   it("renders header-only tags and properties sections with disabled copy in a box scope", async () => {
     render({
       nav: nav({ projection: projection("", defaultNavSectionOrder(), true, true) }),

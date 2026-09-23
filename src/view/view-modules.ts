@@ -44,7 +44,9 @@ export interface ViewModuleHost {
   publishSelection: () => void;
   publishHydration: () => void;
   publishLoadStart: (scopeChanged: boolean) => void;
-  publishLoadCommit: () => void;
+  publishPreparedCards?: () => void;
+  publishSettledScope?: () => void;
+  publishLoadCommit?: () => void;
   publishGroups: ViewContext["publishGroups"];
   /** One coherent metadata publication; nav derives from the exact fresh projection snapshot. */
   publishImpactBatch: (batch: MetadataImpactBatch) => void;
@@ -135,9 +137,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getSearchService: () => host.getSearchService(),
     getSearchSnapshot: () => host.getSearchSnapshot(),
     subscribeSearchSnapshots: (listener) => host.subscribeSearchSnapshots(listener),
-    publishSearchProjection: () => {
-      host.publishSearch();
-    },
+    publishSearchProjection: () => host.publishSearch(),
+    isScopeSettled: gate.guard("scopeController.isScopeSettled", () => scopeController.isScopeSettled()),
   });
   const bulk: BulkController = new BulkController({
     context,
@@ -189,19 +190,15 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     hydrateStartupCardPaths: (paths, token) =>
       hydration.hydrateStartupCardPaths(paths, token),
     scheduleHydrationPath: (path) => hydration.schedulePath(path),
-    resetSearchForLoad: () => {
-      search.resetForLoad();
-    },
-    refreshSearchProjection: () => {
-      void search.refreshProjection();
-    },
+    resetSearchForLoad: () => { search.resetForLoad(); },
+    refreshSearchProjection: () => { void search.refreshProjection({ allowUnsettled: true }); },
+    getBrowseQuery: () => search.getQuery(),
     scheduleNavCountRefresh: () => navLayout.scheduleNavCountRefresh(),
-    refreshFolderTreeState: () => {
-      navLayout.refreshFolderTreeState();
-    },
+    refreshFolderTreeState: () => { navLayout.refreshFolderTreeState(); },
     scheduleFolderTreeRefresh: () => navLayout.scheduleFolderTreeRefresh(),
     publishLoadStart: (scopeChanged) => host.publishLoadStart(scopeChanged),
-    publishLoadCommit: () => host.publishLoadCommit(),
+    publishPreparedCards: () => (host.publishPreparedCards ?? host.publishLoadCommit)?.(),
+    publishSettledScope: () => (host.publishSettledScope ?? host.publishLoadCommit)?.(),
     startupCardCount: HydrationController.startupCardCount,
   });
 
@@ -347,12 +344,9 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const metadataImpact: MetadataImpactController = new MetadataImpactController({
     context,
     getGroupDimension: () => resolveGroupSpec().dimension,
-    isBrowseTagFilterActive: () =>
-      resolveSourceCapabilities(context.store.getScope()).browseTagFilter
-      && context.getSettings().filter.tags.length > 0,
+    isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope()).browseTagFilter && context.getSettings().filter.tags.length > 0,
     isSearchActive: () => search.getQuery().trim().length > 0,
-    reconcileMetadataMembershipForPath: (path) =>
-      scopeController.reconcileMetadataMembershipForPath(path),
+    reconcileMetadataMembershipForPath: (path) => scopeController.reconcileMetadataMembershipForPath(path),
     refreshMetadataGroupBuckets: () => projection.refreshMetadataGroupBuckets(),
     refreshScopeTagData: () => projection.refreshScopeTagData(),
     classifyPropertyMetadataImpact: (path) => {
@@ -371,14 +365,18 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       projection.invalidateMetadataDerivedCaches();
       navLayout.scheduleNavCountRefresh();
     },
+    invalidateRetainedFacetSnapshots: () => {
+      projection.invalidateRetainedScopeTags();
+      property.invalidateRetainedPropertyFacets();
+    },
     refreshSearchCandidatesSilently: () => search.refreshProjection({ publish: false }),
     reprojectCardsForMetadata: () => {
       projection.reprojectCards();
       bulk.reconcileToVisibleCards();
     },
+    isScopeSettled: () => scopeController.isScopeSettled(),
     publishImpactBatch: (batch) => host.publishImpactBatch(batch),
-    scheduleVisibleHydrationCandidates: (paths) =>
-      scopeController.scheduleVisibleHydrationCandidates(paths),
+    scheduleVisibleHydrationCandidates: (paths) => scopeController.scheduleVisibleHydrationCandidates(paths),
   });
 
   // Constructed after BoxActions, ProjectionController, BulkController,
@@ -393,6 +391,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     refreshLoadKeyForCurrentScope: () => scopeController.refreshLoadKeyForCurrentScope(),
     reprojectCards: () => projection.reprojectCards(),
     reconcileToVisibleCards: () => bulk.reconcileToVisibleCards(),
+    isScopeSettled: () => scopeController.isScopeSettled(),
     groupCollapse,
     getGroupSegmentKeys: () => projection.getGroupSegments().map((segment) => segment.key),
   });

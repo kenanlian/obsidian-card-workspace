@@ -19,6 +19,8 @@ export interface SearchControllerDeps {
     listener: (snapshot: SearchServiceSnapshot) => void,
   ) => () => void;
   publishSearchProjection: () => void;
+  /** When omitted, the scope is treated as settled. */
+  isScopeSettled?: () => boolean;
 }
 
 /** Options for {@link SearchController.refreshProjection}. */
@@ -29,6 +31,11 @@ export interface SearchRefreshOptions {
    * true, preserving every existing caller's publishing behavior.
    */
   readonly publish?: boolean;
+  /**
+   * Load orchestration refreshes a finished base while `isScopeSettled()` is
+   * still false. User-driven refreshes omit this and wait for the settled publish.
+   */
+  readonly allowUnsettled?: boolean;
 }
 
 /** Owns one view's indexed-search runtime, including both stale-result guards. */
@@ -51,6 +58,10 @@ export class SearchController implements DisposableController {
 
   private get context(): ViewContext {
     return this.deps.context;
+  }
+
+  private scopeSettled(): boolean {
+    return this.deps.isScopeSettled?.() !== false;
   }
 
   getQuery(): string {
@@ -139,6 +150,10 @@ export class SearchController implements DisposableController {
     this.query = nextQuery;
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
+    if (!this.scopeSettled()) {
+      this.context.publishGroups("search");
+      return;
+    }
 
     if (this.query.trim().length > 0) {
       if (this.isIndexReady()) {
@@ -166,6 +181,10 @@ export class SearchController implements DisposableController {
     this.requestEpoch.bump();
     this.query = "";
     this.status = this.deriveStatus();
+    if (!this.scopeSettled()) {
+      this.context.publishGroups("search");
+      return;
+    }
     this.commitPendingProjection();
     this.deps.publishSearchProjection();
   }
@@ -192,6 +211,7 @@ export class SearchController implements DisposableController {
    * silent state update and publish one coherent batch afterwards.
    */
   async refreshProjection(options: SearchRefreshOptions = {}): Promise<void> {
+    if (options.allowUnsettled !== true && !this.scopeSettled()) return;
     const publish = options.publish !== false;
     const query = this.query.trim();
     if (query.length === 0) {

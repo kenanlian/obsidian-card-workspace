@@ -3,7 +3,6 @@ import type { UiStrings } from "../i18n";
 import type { PluginSettings } from "../settings";
 import type { PropertyScalarRef } from "../property-filter-settings";
 import type { PropertyFacet } from "./property-facets";
-import { remapFavoriteSelection } from "./actions/favorite-actions";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
 import type { NavigationIntent } from "./navigation-model";
 import type {
@@ -101,23 +100,39 @@ function reprojectNavigation(
 
 export function publishLoadStart(host: LoadBoundaryHost, scopeChanged: boolean): void {
   host.panelModel.batch((state) => {
-    host.publishGroups("scope", "cards", "search", "projection", "bulk");
+    const hasPreviousCards = state.cards.records.length > 0;
+    const groups: PanelGroup[] = [];
+    if (!scopeChanged || !hasPreviousCards) groups.push("scope");
+    groups.push("cards");
+    // Search reset is internal load preparation. Keep the query represented by
+    // the currently visible cards until their replacement commits.
+    if (!hasPreviousCards) groups.push("search");
+    groups.push("bulk");
+    host.publishGroups(...groups);
     if (state.appearance.previewLines !== host.getSettings().previewLines) {
       host.publishGroups("appearance");
     }
-    if (!scopeChanged) return;
-    state.nav = reprojectNavigation(host, remapFavoriteSelection(
-      state.nav.favorites, host.getScope(), host.getSettings().filter.tags, host.getSelectedPath(),
-    ));
+    // Keep the last complete projection and nav rows mounted while the next
+    // scope is loading. The prepared commit replaces them together.
   });
 }
 
-/** Tag rows are derived from the card projection, so a committed load must reproject navigation too. */
-export function publishLoadCommit(host: LoadBoundaryHost): void {
+/** Publish the complete card scope and its dependent navigation in one batch. */
+function publishLoadCommit(host: LoadBoundaryHost): void {
   host.panelModel.batch((state) => {
-    host.publishGroups("cards", "search", "projection", "bulk");
+    host.publishGroups("scope", "cards", "search", "projection", "bulk");
     state.nav = reprojectNavigation(host, null);
   });
+}
+
+/** The prepared card list is complete and ready for one coherent panel publish. */
+export function publishPreparedCards(host: LoadBoundaryHost): void {
+  publishLoadCommit(host);
+}
+
+/** Compatibility callback; the current load path commits through publishPreparedCards. */
+export function publishSettledScope(host: LoadBoundaryHost): void {
+  publishLoadCommit(host);
 }
 
 export function isCurrentNavigationMenuTarget(input: {

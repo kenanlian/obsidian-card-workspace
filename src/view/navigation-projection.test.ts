@@ -18,7 +18,10 @@ import {
   navigationSectionId,
   navigationTagId,
 } from "./navigation-model";
-import { projectNavigation, resolveNavigationFocus } from "./navigation-projection";
+import {
+  projectNavigation,
+  resolveNavigationFocus,
+} from "./navigation-projection";
 
 const sectionLabels = {
   favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },

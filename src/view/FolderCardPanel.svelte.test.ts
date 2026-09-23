@@ -106,6 +106,7 @@ function createInitialPanelState(): PanelModelState {
       hydrationRevision: 0,
       groupSegments: [],
       groupRevision: 0,
+      extentCount: 0,
     },
     search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
@@ -118,6 +119,7 @@ function createInitialPanelState(): PanelModelState {
       group: { ...DEFAULT_GROUP_SPEC },
       availableGroupDimensions: ["none", "folder", "tag", "task"],
       groupSegmentCount: 0,
+      metadataStatus: "ready",
     },
     bulk: {
       bulkMode: false,
@@ -252,6 +254,118 @@ describe("FolderCardPanel.svelte", () => {
     expect(typeof event?.start).toBe("number");
     expect(typeof event?.end).toBe("number");
     expect(event?.paths).toEqual(["notes/runtime.md"]);
+
+    await unmount(component);
+  });
+
+  it("keeps the previous scope rows and scroll visible during a cross-folder load", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const oldCards = Array.from({ length: 20 }, (_, index) =>
+      createCard(`folder-a/${index}.md`, `Folder A card ${index}`),
+    );
+    panelModel.mutate((state) => {
+      state.scope = {
+        ...state.scope,
+        displayPath: "Folder A",
+        sourceIdentity: "folder:folder-a:true",
+      };
+      state.cards = {
+        ...state.cards,
+        records: oldCards,
+        generation: 1,
+        sequenceRevision: 1,
+      };
+      state.nav = {
+        ...state.nav,
+        query: "Folder A navigation",
+      };
+    });
+    const hydrateRequests: HydrateViewportRequest[] = [];
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onHydrateViewport: (request: HydrateViewportRequest) => hydrateRequests.push(request),
+      },
+    });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+    const oldRow = target.querySelector(".fce-wall-row");
+    const priorRequestCount = hydrateRequests.length;
+    expect(oldRow).not.toBeNull();
+    expect(list.scrollTop).toBe(900);
+    expect(target.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Folder A");
+
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, loading: true, generation: 2 };
+    });
+    await tick();
+
+    expect(list.getAttribute("aria-busy")).toBe("true");
+    expect(list.scrollTop).toBe(900);
+    expect(target.querySelector(".fce-wall-row")).toBe(oldRow);
+    expect(target.textContent).toContain("Folder A card");
+    expect(target.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Folder A");
+    expect(target.textContent).not.toContain("Folder B");
+    expect(target.textContent).not.toContain(getUiStrings("en").panel.loadingCards);
+    expect(hydrateRequests).toHaveLength(priorRequestCount);
+
+    const newCards = [
+      createCard("folder-b/first.md", "Folder B first"),
+      createCard("folder-b/second.md", "Folder B second"),
+    ];
+    panelModel.batch((state) => {
+      state.scope = {
+        ...state.scope,
+        displayPath: "Folder B",
+        sourceIdentity: "folder:folder-b:true",
+      };
+      state.cards = {
+        ...state.cards,
+        records: newCards,
+        loading: false,
+        generation: 3,
+        sequenceRevision: 2,
+      };
+      state.projection = {
+        ...state.projection,
+        availableTags: ["folder-b-tag"],
+      };
+      state.nav = {
+        ...state.nav,
+        query: "Folder B navigation",
+      };
+    });
+    await tick();
+
+    expect(list.scrollTop).toBe(0);
+    expect(target.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Folder B");
+    expect(target.textContent).toContain("Folder B first");
+    expect(target.textContent).not.toContain("Folder A card");
+    expect(hydrateRequests.filter((request) => request.generation === 3)).toHaveLength(1);
+
+    await unmount(component);
+  });
+
+  it("shows the normal loading state when the initial card snapshot is empty", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelState = createInitialPanelState();
+    panelState.cards = { ...panelState.cards, loading: true };
+    const component = mount(FolderCardPanel, {
+      target,
+      props: { panelModel: createPanelModel(panelState) },
+    });
+    await tick();
+
+    expect(target.textContent).toContain(getUiStrings("en").panel.loadingCards);
+    expect(target.querySelector(".fce-wall-row")).toBeNull();
 
     await unmount(component);
   });
@@ -1531,6 +1645,52 @@ describe("FolderCardPanel.svelte", () => {
     await tick();
 
     expect(target.textContent).toContain("No notes match the current property filters.");
+    await unmount(component);
+  });
+
+  it("limits virtual extent to materialized records even when a larger legacy extent is present", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    const paths = ["notes/a.md", "notes/b.md"];
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: paths.map((path, index) => createCard(path, `Card ${index}`)),
+        extentCount: 5,
+        loading: false,
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const hydratePaths: string[][] = [];
+    const component = mount(FolderCardPanel, {
+      target,
+      props: {
+        panelModel,
+        onHydrateViewport: (detail: HydrateViewportRequest) => {
+          hydratePaths.push([...detail.paths]);
+        },
+      },
+    });
+    await tick();
+
+    expect(target.querySelectorAll(".fce-wall-row").length).toBe(2);
+    const spacers = target.querySelectorAll<HTMLElement>(".fce-list .fce-virtual-spacer");
+    const initialSpacerHeights = Array.from(spacers, (spacer) => Number.parseFloat(spacer.style.height || "0"));
+    expect(initialSpacerHeights[0]).toBe(0);
+    expect(initialSpacerHeights[1]).toBe(0);
+    expect(hydratePaths.length).toBeGreaterThan(0);
+    for (const requested of hydratePaths) expect(requested).toEqual(paths);
+
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, extentCount: 1 };
+    });
+    await tick();
+    const afterExtentChange = target.querySelectorAll<HTMLElement>(".fce-list .fce-virtual-spacer");
+    expect(Array.from(afterExtentChange, (spacer) => Number.parseFloat(spacer.style.height || "0")))
+      .toEqual(initialSpacerHeights);
     await unmount(component);
   });
 });

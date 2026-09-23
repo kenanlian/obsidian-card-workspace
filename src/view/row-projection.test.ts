@@ -114,6 +114,48 @@ describe("projectPanelRows", () => {
     expect(rows.every((row) => row.segmentIndex === -1)).toBe(true);
   });
 
+  it("retains the original card records in flat and grouped rows", () => {
+    const cards = createCards(8).map((card) => ({ ...card, title: `Title ${card.path}` }));
+    const flatRows = projectPanelRows(cards, [], 3);
+    const groupedRows = projectPanelRows(
+      cards,
+      [createSegment("a", 0, 5), createSegment("b", 5, 3)],
+      3,
+    );
+
+    for (const row of [...flatRows, ...groupedRows]) {
+      if (row.kind !== "cards") continue;
+      for (let index = row.startIndex; index < row.endIndex; index += 1) {
+        expect(row.cards[index - row.startIndex]).toBe(cards[index]);
+      }
+    }
+  });
+
+  it("slices only per-row card windows instead of copying whole group segments", () => {
+    const source = createCards(8);
+    const slices: Array<[number | undefined, number | undefined]> = [];
+    const cards = new Proxy(source, {
+      get(target, property, receiver) {
+        if (property === "slice") {
+          return (start?: number, end?: number) => {
+            slices.push([start, end]);
+            return Array.prototype.slice.call(target, start, end);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const rows = projectPanelRows(
+      cards,
+      [createSegment("a", 0, 5), createSegment("b", 5, 3)],
+      3,
+    );
+
+    expect(slices).toEqual([[0, 3], [3, 5], [5, 8]]);
+    expect(rows.filter((row) => row.kind === "cards")).toHaveLength(slices.length);
+  });
+
   it("numbers mixed rows globally across segments and their partial tail rows", () => {
     const rows = projectPanelRows(
       createCards(8),

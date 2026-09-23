@@ -5,7 +5,7 @@
  * cannot live in a single action/menu module. They must stay in the node project:
  * `FolderCardView.test.ts` is jsdom-only and does not apply the panel mock alias.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockState,
   resetFolderCardViewHarness,
@@ -60,6 +60,8 @@ vi.mock("./modals/PropertyPickerModal", () => ({
 }));
 
 import * as markdownUtils from "./markdown-utils";
+import * as cardRecordModule from "./card-record";
+import * as metadataUtils from "./metadata-utils";
 import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import { FolderCardView } from "./FolderCardView";
 import type { SearchServiceSnapshot } from "../search";
@@ -74,6 +76,12 @@ import { getUiStrings } from "../i18n";
 import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 
 registerFolderCardView(FolderCardView);
+
+afterEach(async () => {
+  for (let step = 0; step < 6; step += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+});
 
 function propertyText(value: string): PropertyScalarRef {
   return { kind: "text", value };
@@ -1310,10 +1318,10 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect(firstStableSnapshot).toBeDefined();
         expect(firstStableSnapshot?.cards?.records).toHaveLength(13);
         expect(firstStableSnapshot?.cards?.records?.[0]?.path).toBe(pinnedFile.path);
-        expect(
-          firstStableSnapshot?.cards?.records?.slice(0, 6).every((card) => card.hydrated),
-        ).toBe(true);
-        expect(firstStableSnapshot?.cards?.records?.[6]?.hydrated).toBe(false);
+        await flushAsyncWork(20);
+        const visible = (view as any).visibleCards as Array<{ path: string; hydrated: boolean }>;
+        expect(visible.slice(0, 6).every((card) => card.hydrated)).toBe(true);
+        expect(visible[6]?.hydrated).toBe(false);
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
         expect(app.vault.cachedRead).not.toHaveBeenCalledWith(filteredOutFile);
       });
@@ -1347,6 +1355,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           requestedAtMs: Date.now(),
           forceRefresh: false,
         });
+        await flushAsyncWork(8);
 
         expect(app.vault.cachedRead).toHaveBeenCalledTimes(6);
 
@@ -1389,9 +1398,13 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
           await flushAsyncWork(1);
           expect((view as any).modules.scopeController.loading).toBe(true);
-          expect((view as any).modules.hydration.hasPending(file.path)).toBe(true);
 
-          vi.advanceTimersByTime(120);
+          await vi.advanceTimersByTimeAsync(0);
+          expect((view as any).modules.scopeController.loading).toBe(false);
+          expect((view as any).modules.hydration.hasPending(file.path)).toBe(true);
+          expect((view as any).baseCards[0]?.hydrated).toBe(false);
+
+          await vi.advanceTimersByTimeAsync(120);
           await loadPromise;
 
           const card = (view as any).baseCards[0];
@@ -1439,8 +1452,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           "notes|true|mtime|desc",
         );
 
-        await flushAsyncWork(1);
-
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect((view as any).modules.scopeController.loading).toBe(false);
         expect((view as any).modules.hydration.hasPending(file.path)).toBe(true);
 
         (view as any).epochs.load.bump();
@@ -1448,6 +1461,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
         staleRead.resolve("# stale\ncontent");
         await loadPromise;
+        await flushAsyncWork(8);
 
         const card = (view as any).baseCards[0];
         expect(card?.hydrated).toBe(false);
@@ -1484,6 +1498,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           requestedAtMs: Date.now(),
           forceRefresh: false,
         });
+        await flushAsyncWork(20);
 
         vi.mocked(app.vault.cachedRead).mockClear();
         for (const card of (view as any).baseCards) {
@@ -3396,3 +3411,176 @@ describe("FolderCardView links leaf activation routing", () => {
   });
 });
 
+describe("complete scope load publication", () => {
+  beforeEach(() => {
+    resetFolderCardViewHarness();
+  });
+
+  async function flushMacrotasks(count: number): Promise<void> {
+    for (let index = 0; index < count; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  function installMarkdownFolder(app: { vault: { getAbstractFileByPath: ReturnType<typeof vi.fn> } }, folderPath: string, count: number) {
+    const files = Array.from({ length: count }, (_, index) => {
+      const file = createMarkdownFile(`${folderPath}/n${index}.md`);
+      (file as unknown as { stat: { ctime: number; mtime: number } }).stat = { ctime: index + 1, mtime: index + 1 };
+      return file;
+    });
+    const folder = attachChildren(createFolder(folderPath), files);
+    const byPath = new Map(files.map((file) => [file.path, file] as const));
+    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => {
+      if (requestedPath === folderPath) return folder;
+      return byPath.get(requestedPath) ?? null;
+    });
+    return files;
+  }
+
+  it("publishes the complete sorted card list and scope facets once before preview reads finish", async () => {
+    const { view, app } = createViewWithFile("notes/seed.md");
+    const files = installMarkdownFolder(app, "notes", 300);
+    const read = createDeferred<string>();
+    app.vault.cachedRead = vi.fn(() => read.promise);
+    const created = vi.spyOn(cardRecordModule, "createCardRecord");
+    const tags = vi.spyOn(metadataUtils, "collectScopeTagIndex");
+    const facets = vi.spyOn(view.modules.property, "derivePropertyFacets");
+    created.mockClear();
+    tags.mockClear();
+    facets.mockClear();
+
+    await (view as any).handleScopeSelection({
+      requestId: 90, scope: createFolderScope("notes", true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+
+    const cards = view.panelModel.getState().cards;
+    expect(created).toHaveBeenCalledTimes(300);
+    expect(cards.loading).toBe(false);
+    expect(cards.records).toHaveLength(300);
+    expect(cards.records.map((card) => card.path)).toEqual(
+      files.map((_, index) => files[files.length - 1 - index]!.path),
+    );
+    expect(tags).toHaveBeenCalledTimes(1);
+    expect(facets).toHaveBeenCalledTimes(1);
+    expect(view.modules.hydration.hasPending(cards.records[0]?.path ?? "")).toBe(true);
+    read.resolve("A preview that finishes after the complete card publication.");
+    await flushMacrotasks(2);
+    expect(view.panelModel.getState().cards.records[0]?.hydrated).toBe(true);
+    expect(view.panelModel.getState().cards.records).toHaveLength(300);
+    created.mockRestore();
+    tags.mockRestore();
+    facets.mockRestore();
+  });
+
+  it("applies an active tag filter to the complete list before publishing", async () => {
+    const { view, app, plugin } = createViewWithFile("notes/seed.md");
+    installMarkdownFolder(app, "notes", 300);
+    plugin.getSettings = vi.fn(() => ({
+      includeSubfolders: true,
+      sort: { field: "mtime", direction: "desc" },
+      filter: { tags: ["focus"], properties: [] },
+      pinnedPaths: [],
+      visiblePropertyKeys: [],
+      previewLines: 5,
+    }));
+    app.metadataCache.getFileCache = vi.fn(() => ({ tags: [{ tag: "#focus" }] }));
+    const read = createDeferred<string>();
+    app.vault.cachedRead = vi.fn(() => read.promise);
+    const created = vi.spyOn(cardRecordModule, "createCardRecord");
+    created.mockClear();
+
+    await (view as any).handleScopeSelection({
+      requestId: 91, scope: createFolderScope("notes", true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+
+    const cards = view.panelModel.getState().cards;
+    expect(cards.loading).toBe(false);
+    expect(created).toHaveBeenCalledTimes(300);
+    expect(cards.records).toHaveLength(300);
+    expect(view.modules.hydration.hasPending(cards.records[0]?.path ?? "")).toBe(true);
+    created.mockRestore();
+    read.resolve("# focus\n");
+  });
+
+  it("keeps same-scope cards mounted until one complete replacement without waiting for prewarm", async () => {
+    const { view, app } = createViewWithFile("notes/seed.md");
+    const files = installMarkdownFolder(app, "notes", 100);
+    const records = files.map((file) => createCardRecord(file));
+    (view as any).cardScope = createFolderScope("notes", true);
+    (view as any).baseCards = records;
+    (view as any).visibleCards = [...records];
+    const read = createDeferred<string>();
+    app.vault.cachedRead = vi.fn(() => read.promise);
+    const lengths: number[] = [];
+    let skipInitial = true;
+    view.panelModel.subscribe(() => {
+      if (skipInitial) {
+        skipInitial = false;
+        return;
+      }
+      lengths.push(view.panelModel.getState().cards.records.length);
+    });
+
+    await (view as any).refresh({ reason: "manual", forceRefresh: true });
+
+    expect(lengths.every((length) => length >= 100)).toBe(true);
+    expect(view.panelModel.getState().cards.records).toHaveLength(100);
+    expect(view.panelModel.getState().cards.loading).toBe(false);
+    const preparedPath = view.panelModel.getState().cards.records[0]?.path ?? "";
+    expect(view.modules.hydration.hasPending(preparedPath)).toBe(true);
+    read.resolve("# note\n");
+  });
+
+  it("reprojects the complete list without collecting files again", async () => {
+    const { view, app } = createViewWithFile("notes/seed.md");
+    installMarkdownFolder(app, "notes", 300);
+    await (view as any).handleScopeSelection({
+      requestId: 92, scope: createFolderScope("notes", true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+    expect((view as any).baseCards).toHaveLength(300);
+    const sort = vi.spyOn(view.modules.arrangementActions, "sortAndReprojectCards");
+    const created = vi.spyOn(cardRecordModule, "createCardRecord");
+    created.mockClear();
+
+    await view.applyUpdateIntent("reproject", "settings-change");
+
+    expect(sort).toHaveBeenCalledTimes(1);
+    expect(created).not.toHaveBeenCalled();
+    expect((view as any).baseCards).toHaveLength(300);
+    created.mockRestore();
+  });
+
+  it("keeps the old populated card stream and navigation until the new scope commits", async () => {
+    const { view, app } = createViewWithFile("notes/seed.md");
+    installMarkdownFolder(app, "notes", 20);
+    await (view as any).handleScopeSelection({
+      requestId: 93, scope: createFolderScope("notes", true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+    const previousScope = view.panelModel.getState().scope;
+    const previousPaths = view.panelModel.getState().cards.records.map((card) => card.path);
+    const previousProjection = view.panelModel.getState().projection;
+    const previousNav = view.panelModel.getState().nav;
+    const publishedCardCounts: number[] = [];
+    view.panelModel.subscribe((state) => publishedCardCounts.push(state.cards.records.length));
+    installMarkdownFolder(app, "other", 30);
+    const switching = (view as any).handleScopeSelection({
+      requestId: 94, scope: createFolderScope("other", true), source: "programmatic",
+      requestedAtMs: Date.now(), forceRefresh: true,
+    });
+    expect(view.panelModel.getState().cards.loading).toBe(true);
+    expect(view.panelModel.getState().cards.records.map((card) => card.path)).toEqual(previousPaths);
+    expect(view.panelModel.getState().scope).toBe(previousScope);
+    expect(view.panelModel.getState().projection).toBe(previousProjection);
+    expect(view.panelModel.getState().nav).toBe(previousNav);
+    await switching;
+    expect(publishedCardCounts.every((count) => count > 0)).toBe(true);
+    expect(view.panelModel.getState().cards.records).toHaveLength(30);
+    expect(view.panelModel.getState().scope).not.toBe(previousScope);
+    expect(view.panelModel.getState().projection).not.toBe(previousProjection);
+    expect(view.panelModel.getState().nav).not.toBe(previousNav);
+  });
+});

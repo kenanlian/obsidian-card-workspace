@@ -189,7 +189,7 @@ export class HydrationController implements DisposableController {
       if (card.hydrated) return Promise.resolve();
       return this.enqueuePatch(
         path, this.placeholderPatch(card), this.fingerprintFor(card),
-        owner.viewport === true || owner.foreground === true,
+        owner.viewport === true || owner.foreground === true || owner.startup === true,
       );
     }
     const fingerprint = this.fingerprintFor(card);
@@ -213,7 +213,8 @@ export class HydrationController implements DisposableController {
       const cached = this.cache.get(fingerprint);
       if (cached) {
         return this.enqueuePatch(
-          path, this.previewPatch(card, cached), fingerprint, owner.viewport === true,
+          path, this.previewPatch(card, cached), fingerprint,
+          owner.viewport === true || owner.startup === true,
         );
       }
     }
@@ -267,7 +268,7 @@ export class HydrationController implements DisposableController {
     }
     if (this.shouldPatch(job)) {
       await this.enqueuePatch(job.path, patch, job.fingerprint,
-        job.viewport || job.foreground || job.startupLate);
+        job.viewport || job.foreground || job.startup || job.startupLate);
     }
   }
   private finishJob(job: HydrationJob): void {

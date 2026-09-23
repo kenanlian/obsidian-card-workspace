@@ -58,6 +58,10 @@ export interface MetadataImpactControllerDeps {
   reprojectCardsForMetadata: () => void;
   /** Publishes the one coherent panel batch for this event. */
   publishImpactBatch: (batch: MetadataImpactBatch) => void;
+  /** Drop cached snapshots of inactive scopes even when this path is out of base. */
+  invalidateRetainedFacetSnapshots?: () => void;
+  /** When omitted, metadata impact still reprojects. */
+  isScopeSettled?: () => boolean;
   /** Schedules forced hydration only for paths still visible and unhydrated. */
   scheduleVisibleHydrationCandidates: (paths: readonly string[]) => void;
 }
@@ -110,6 +114,10 @@ export class MetadataImpactController implements DisposableController {
       return;
     }
 
+    // A path outside this scope can still belong to a folder cached for a
+    // later return visit. Keep the current scope's hot snapshot intact here.
+    this.deps.invalidateRetainedFacetSnapshots?.();
+
     // Membership first, so a departed rule member cannot fall through to the
     // manual-only presentation bucket and an entering member is installed
     // before any projection reads the card set.
@@ -145,11 +153,7 @@ export class MetadataImpactController implements DisposableController {
     if (this.disposed || !this.context.epochs.load.isCurrent(loadToken)) {
       return;
     }
-    this.deps.reprojectCardsForMetadata();
-    this.deps.publishImpactBatch({
-      kind: "reprojected",
-      includeSearch: this.deps.isSearchActive(),
-    });
+    this.publishImpact({ kind: "reprojected", includeSearch: this.deps.isSearchActive() }, true);
     if (membership === "entered") {
       // Reproject first; a search-hidden entry stays unhydrated until ordinary
       // viewport demand finds it visible.
@@ -192,13 +196,12 @@ export class MetadataImpactController implements DisposableController {
       || bucketsMoved
       || propertyImpact === "reproject";
     if (needsReproject) {
-      this.deps.reprojectCardsForMetadata();
-      this.deps.publishImpactBatch({ kind: "reprojected", includeSearch: false });
+      this.publishImpact({ kind: "reprojected", includeSearch: false }, true);
       return;
     }
 
     if (propertyImpact === "nav" || tagsChanged) {
-      this.deps.publishImpactBatch({ kind: "facets", includeCards: summaryChanged });
+      this.publishImpact({ kind: "facets", includeCards: summaryChanged }, false);
       return;
     }
 
@@ -206,6 +209,12 @@ export class MetadataImpactController implements DisposableController {
     if (summaryChanged) {
       this.context.publishGroups("cards");
     }
+  }
+
+  private publishImpact(batch: MetadataImpactBatch, reproject: boolean): void {
+    if (this.deps.isScopeSettled?.() === false) return;
+    if (reproject) this.deps.reprojectCardsForMetadata();
+    this.deps.publishImpactBatch(batch);
   }
 
   dispose(): DisposeReport {

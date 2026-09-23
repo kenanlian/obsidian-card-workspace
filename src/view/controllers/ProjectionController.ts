@@ -13,6 +13,9 @@ import { runPipeline, stepsForScope, type PipelineContext } from "../pipeline";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { NoteCardRecord, PipelineSearchInput, Rule } from "../types";
 import type { ViewContext } from "../view-context";
+import {
+  FacetSnapshotCache, facetSourceKey, scopeTagDataEqual, type ScopeTagData,
+} from "./facet-snapshot-cache";
 
 export interface ProjectionControllerDeps {
   context: ViewContext;
@@ -67,27 +70,9 @@ function bucketSignaturesDiffer(
   return false;
 }
 
-/** Value equality for the scope tag snapshot; order-sensitive by construction. */
-function scopeTagDataEqual(
-  left: { availableTags: string[]; tagCounts: Record<string, number> },
-  right: { availableTags: string[]; tagCounts: Record<string, number> },
-): boolean {
-  if (left.availableTags.length !== right.availableTags.length
-    || left.availableTags.some((tag, index) => tag !== right.availableTags[index])) {
-    return false;
-  }
-  const leftKeys = Object.keys(left.tagCounts);
-  const rightKeys = Object.keys(right.tagCounts);
-  return leftKeys.length === rightKeys.length
-    && leftKeys.every((key) => left.tagCounts[key] === right.tagCounts[key]);
-}
-
 /** Owns visible-card projection, group arrangement, and vault-derived caches. */
 export class ProjectionController {
-  private scopeTagCache: {
-    key: string;
-    value: { availableTags: string[]; tagCounts: Record<string, number> };
-  } | null = null;
+  private readonly scopeTagCache = new FacetSnapshotCache<ScopeTagData>(4);
   /**
    * Pre-invalidation snapshot kept for exactly one comparison so the metadata
    * lane can detect tag-data changes even though invalidation cleared the
@@ -95,7 +80,7 @@ export class ProjectionController {
    */
   private scopeTagStash: {
     key: string;
-    value: { availableTags: string[]; tagCounts: Record<string, number> };
+    value: ScopeTagData;
   } | null = null;
   private vaultTagCountsCache: { seq: number; counts: Record<string, number> } | null = null;
   private groupBucketCache: { key: string; buckets: ReadonlyMap<string, GroupBucket> } | null = null;
@@ -272,13 +257,11 @@ export class ProjectionController {
    */
   refreshScopeTagData(): boolean {
     const key = this.scopeTagCacheKey();
-    const live = this.scopeTagCache;
     const stashed = this.scopeTagStash;
-    const previous = live?.key === key
-      ? live.value
-      : stashed?.key === key
+    const previous = this.scopeTagCache.get(key)
+      ?? (stashed?.key === key
         ? stashed.value
-        : null;
+        : null);
     const files = this.context.store.getBaseCards().map((card) => card.file);
     const index = collectScopeTagIndex(this.context.getApp(), files);
     const value = {
@@ -286,7 +269,7 @@ export class ProjectionController {
       tagCounts: index.tagCounts,
     };
     this.scopeTagStash = null;
-    this.scopeTagCache = { key, value };
+    this.scopeTagCache.set(key, value);
     return previous !== null && !scopeTagDataEqual(previous, value);
   }
 
@@ -349,15 +332,19 @@ export class ProjectionController {
   }
 
   private scopeTagCacheKey(): string {
-    const baseCards = this.context.store.getBaseCards();
-    return `${this.deps.getLoadKey()}::${baseCards.length}::${this.context.epochs.vaultContent.value}`;
+    return facetSourceKey(
+      this.context.store.getScope(),
+      this.deps.getLoadKey(),
+      this.context.store.getBaseCards().length,
+      this.context.epochs.vaultContent.value,
+    );
   }
 
   deriveScopeTags(): { availableTags: string[]; tagCounts: Record<string, number> } {
     const key = this.scopeTagCacheKey();
-    const cached = this.scopeTagCache;
-    if (cached && cached.key === key) {
-      return cached.value;
+    const cached = this.scopeTagCache.get(key);
+    if (cached) {
+      return cached;
     }
 
     const files = this.context.store.getBaseCards().map((card) => card.file);
@@ -366,7 +353,7 @@ export class ProjectionController {
       availableTags: this.hasMetadataCache() ? index.availableTags : [],
       tagCounts: index.tagCounts,
     };
-    this.scopeTagCache = { key, value };
+    this.scopeTagCache.set(key, value);
     return value;
   }
 
@@ -402,9 +389,19 @@ export class ProjectionController {
   }
 
   invalidateVaultCaches(): void {
-    this.scopeTagCache = null;
+    this.scopeTagCache.clear();
+    this.scopeTagStash = null;
     this.vaultTagCountsCache = null;
     this.groupBucketCache = null;
+  }
+
+  /** Drop snapshots from prior scopes when metadata changed outside this base set. */
+  invalidateRetainedScopeTags(): void {
+    const key = this.scopeTagCacheKey();
+    this.scopeTagCache.retain(key);
+    if (this.scopeTagStash?.key !== key) {
+      this.scopeTagStash = null;
+    }
   }
 
   /**
@@ -417,10 +414,10 @@ export class ProjectionController {
    * which reinstalls a refreshed cache under the current key.
    */
   invalidateMetadataDerivedCaches(): void {
-    if (this.scopeTagCache) {
-      this.scopeTagStash = this.scopeTagCache;
-    }
-    this.scopeTagCache = null;
+    const key = this.scopeTagCacheKey();
+    const current = this.scopeTagCache.get(key);
+    this.scopeTagStash = current ? { key, value: current } : null;
+    this.scopeTagCache.clear();
     this.vaultTagCountsCache = null;
   }
 }

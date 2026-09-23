@@ -35,6 +35,7 @@ function buildState(): PanelModelState {
       hydrationRevision: 0,
       groupSegments: [],
       groupRevision: 0,
+      extentCount: 0,
     },
     search: {
       query: "",
@@ -52,6 +53,7 @@ function buildState(): PanelModelState {
       group: { ...DEFAULT_GROUP_SPEC },
       availableGroupDimensions: ["none", "folder", "tag", "task"],
       groupSegmentCount: 0,
+      metadataStatus: "ready",
     },
     bulk: {
       bulkMode: false,
