@@ -1010,6 +1010,11 @@
   padding: var(--fce-wall-gap);
 }
 
+/* Themes often make the idle thumb transparent; reveal it for the whole list hover, not only the thumb hover. */
+body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-active-thumb-bg);
+}
+
 .folder-card-view .fce-list.is-bulk-mode {
   background: linear-gradient(180deg, var(--fce-bg) 0%, var(--fce-surface-alt) 100%);
 }
