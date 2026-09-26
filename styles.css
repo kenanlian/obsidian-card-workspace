@@ -175,7 +175,7 @@
   border-radius: var(--radius-s, 4px);
   background: color-mix(in srgb, var(--background-modifier-form-field, transparent) 55%, transparent);
   box-shadow: none;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .folder-card-view .fce-nav-filter:hover {
@@ -186,6 +186,7 @@
 .folder-card-view .fce-nav-filter:focus-within {
   border-color: var(--fce-nav-focus-ring);
   background: var(--background-modifier-form-field);
+  box-shadow: 0 0 0 1px var(--fce-nav-focus-ring);
 }
 
 .folder-card-view .fce-nav-filter-icon {
@@ -206,21 +207,20 @@
   min-height: 0;
   margin: 0;
   padding: 0;
-  border: 0;
   border-radius: 0;
-  outline: 0;
-  background: transparent;
-  box-shadow: none;
   color: var(--fce-text);
   font-size: var(--font-ui-small, 13px);
   appearance: none;
   -webkit-appearance: none;
 }
 
-.folder-card-view .fce-nav-filter input:focus {
-  border: 0;
-  outline: 0;
-  box-shadow: none;
+.folder-card-view .fce-nav-filter input[type="search"],
+.folder-card-view .fce-nav-filter input[type="search"]:is(:hover, :focus, :active) {
+  /* Keep theme input surfaces and focus rings inside the wrapper from showing through. */
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .folder-card-view .fce-nav-filter input::placeholder {
@@ -590,7 +590,7 @@
   color: var(--fce-nav-count-color);
   font-size: var(--font-ui-smaller, 12px);
   font-variant-numeric: tabular-nums;
-  text-align: center;
+  text-align: end;
 }
 
 /* Caption under a section: align with the header label, not the item icon+label column. */
