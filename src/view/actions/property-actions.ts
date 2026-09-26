@@ -66,10 +66,11 @@ export function buildPropertyVisibilityPatch(
  */
 export function createPropertyActions(deps: PropertyActionsDeps): PropertyActions {
   async function savePropertyClauses(next: PropertyFilterClause[]): Promise<void> {
-    if (propertyFilterClausesEqual(next, deps.getSettings().filter.properties)) {
+    const current = deps.getSettings().filter;
+    if (propertyFilterClausesEqual(next, current.properties) && (next.length === 0 || current.tags.length === 0)) {
       return;
     }
-    await deps.saveSettings({ filter: { properties: next } });
+    await deps.saveSettings({ filter: next.length > 0 ? { tags: [], properties: next } : { properties: next } });
   }
 
   return {

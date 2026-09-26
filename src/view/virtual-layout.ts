@@ -1,6 +1,22 @@
 import type { HydrateViewportRequest } from "./hydration-request";
 import type { PanelScopeState } from "./panel-model";
 
+export type BrowseFilterMode = "none" | "tags" | "properties";
+
+export function resolveBrowseFilterMode(
+  scope: PanelScopeState,
+  activeTagCount: number,
+  propertyFilterCount: number,
+): BrowseFilterMode {
+  if (!scope.browseTagFilterEnabled || !scope.browsePropertyFilterEnabled) return "none";
+  return activeTagCount > 0 ? "tags" : propertyFilterCount > 0 ? "properties" : "none";
+}
+
+export function isBrowseFilterSwitch(previous: BrowseFilterMode, next: BrowseFilterMode): boolean {
+  return (previous === "tags" && next === "properties")
+    || (previous === "properties" && next === "tags");
+}
+
 export interface LayoutRowIdentity {
   key: string;
 }

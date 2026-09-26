@@ -353,6 +353,63 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("starts at the top when switching between tag and property filters", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`tag/${index}.md`, `Tag ${index}`)),
+        sequenceRevision: 1,
+      };
+      state.projection = { ...state.projection, activeFilterTags: ["work"] };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`property/${index}.md`, `Property ${index}`)),
+        sequenceRevision: 2,
+      };
+      state.projection = { ...state.projection, activeFilterTags: [] };
+      state.nav = { ...state.nav, propertyFilterCount: 1 };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(0);
+    expect(target.textContent).toContain("Property 0");
+
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+    panelModel.mutate((state) => {
+      state.cards = { ...state.cards, sequenceRevision: 3 };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(900);
+
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`tag-again/${index}.md`, `Tag again ${index}`)),
+        sequenceRevision: 4,
+      };
+      state.projection = { ...state.projection, activeFilterTags: ["personal"] };
+      state.nav = { ...state.nav, propertyFilterCount: 0 };
+    });
+    await tick();
+    expect(list.scrollTop).toBe(0);
+
+    await unmount(component);
+  });
+
   it("shows the normal loading state when the initial card snapshot is empty", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

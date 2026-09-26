@@ -317,6 +317,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect(plugin.saveSettings).toHaveBeenCalledWith({
           filter: {
             tags: ["important", "archived"],
+            properties: [],
           },
         });
       });
@@ -332,6 +333,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
         expect(plugin.saveSettings).toHaveBeenCalledWith({
           filter: {
             tags: ["important", "work"],
+            properties: [],
           },
         });
       });
@@ -2000,6 +2002,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(1, {
         filter: {
           tags: ["work"],
+          properties: [],
         },
       });
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(2, {
@@ -2775,6 +2778,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(2, {
         filter: {
           tags: ["project"],
+          properties: [],
         },
       });
       expect(plugin.saveSettings).toHaveBeenNthCalledWith(3, {
@@ -2866,7 +2870,7 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       await flushAsyncWork();
 
       expect(plugin.saveSettings).toHaveBeenCalledWith({
-        filter: { properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] },
+        filter: { tags: [], properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] },
       });
     });
   });

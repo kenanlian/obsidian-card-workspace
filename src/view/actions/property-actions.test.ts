@@ -188,6 +188,7 @@ describe("createPropertyActions", () => {
 
   it("applies an ordinary value selection: sole value toggles off, otherwise replaces", async () => {
     const { actions, saves, getSettings } = createHarness(createSettings({
+      filterTags: [],
       filterProperties: [clause("alpha", [textRef("x")]), clause("beta", [textRef("y")])],
     }));
 
@@ -217,6 +218,7 @@ describe("createPropertyActions", () => {
 
   it("filters by only one value, replacing every clause without toggling off", async () => {
     const { actions, saves, getSettings } = createHarness(createSettings({
+      filterTags: [],
       visiblePropertyKeys: ["alpha", "beta"],
       filterProperties: [clause("alpha", [textRef("x")])],
     }));
@@ -230,6 +232,31 @@ describe("createPropertyActions", () => {
     await actions.filterByOnlyValue("alpha", textRef("x"));
     expect(getSettings().filter.properties).toEqual([clause("alpha", [textRef("x")])]);
     expect(saves).toHaveLength(2);
+  });
+
+  it("selecting a property clears active tags in the same settings update", async () => {
+    const selected = clause("status", [textRef("open")]);
+    const { actions, saves, getSettings } = createHarness(createSettings({
+      visiblePropertyKeys: ["status"],
+      filterTags: ["work"],
+    }));
+
+    await actions.applyValueFilter("status", textRef("open"), false);
+
+    expect(saves).toEqual([{ filter: { tags: [], properties: [selected] } }]);
+    expect(getSettings().filter).toEqual({ tags: [], properties: [selected] });
+  });
+
+  it("filtering by an already selected property still clears active tags", async () => {
+    const selected = clause("status", [textRef("open")]);
+    const { actions, saves } = createHarness(createSettings({
+      visiblePropertyKeys: ["status"],
+      filterTags: ["work"],
+      filterProperties: [selected],
+    }));
+
+    await actions.filterByOnlyValue("status", textRef("open"));
+    expect(saves).toEqual([{ filter: { tags: [], properties: [selected] } }]);
   });
 
   it("writes nothing for value commands with an invalid key", async () => {

@@ -49,15 +49,16 @@ export class TagActions {
   // -- Tag filter --------------------------------------------------------
 
   async applyTagFilter(nextTags: string[]): Promise<void> {
-    await this.deps.context.saveSettings({ filter: { tags: nextTags } });
+    await this.deps.context.saveSettings({ filter: nextTags.length > 0
+      ? { tags: nextTags, properties: [] } : { tags: nextTags } });
   }
 
   async addTagToFilter(tag: string): Promise<void> {
-    const current = this.deps.context.getSettings().filter.tags;
-    if (current.some((existing) => normalizeTagPath(existing) === tag)) {
-      return;
-    }
-    await this.applyTagFilter([...current, tag]);
+    const filter = this.deps.context.getSettings().filter;
+    const current = filter.tags;
+    const alreadySelected = current.some((existing) => normalizeTagPath(existing) === tag);
+    if (alreadySelected && filter.properties.length === 0) return;
+    await this.applyTagFilter(alreadySelected ? current : [...current, tag]);
   }
 
   async removeTagFromFilter(tag: string): Promise<void> {
@@ -106,14 +107,12 @@ export class TagActions {
         nextTags.push(normalized);
       }
     }
-    const currentTags = this.deps.context.getSettings().filter.tags;
-    if (
-      currentTags.length === nextTags.length &&
-      currentTags.every((tag, index) => tag === nextTags[index])
-    ) {
-      return;
-    }
-    await this.deps.context.saveSettings({ filter: { tags: nextTags } });
+    const currentFilter = this.deps.context.getSettings().filter;
+    const currentTags = currentFilter.tags;
+    if (currentTags.length === nextTags.length
+      && currentTags.every((tag, index) => tag === nextTags[index])
+      && (nextTags.length === 0 || currentFilter.properties.length === 0)) return;
+    await this.applyTagFilter(nextTags);
   }
 
   // -- Single-note tag edits ---------------------------------------------

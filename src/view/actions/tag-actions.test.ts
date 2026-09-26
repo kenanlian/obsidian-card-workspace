@@ -24,6 +24,7 @@ vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
 import { TagActions } from "./tag-actions";
 import { FolderCardView } from "../FolderCardView";
 import { createBoxScope } from "../scope";
+import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
 import {
   addTagToFile,
   batchAddTagToFiles,
@@ -44,6 +45,36 @@ describe("TagActions", () => {
       "status/open",
       "status/open",
     ])).toEqual(["project", "status/open"]);
+  });
+
+  it("selecting a tag clears active property clauses in the same settings update", async () => {
+    const selected = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+    let settings: PluginSettings = {
+      ...DEFAULT_SETTINGS,
+      visiblePropertyKeys: ["status"],
+      filter: { tags: ["work"], properties: [selected] },
+    };
+    const saves: PartialPluginSettings[] = [];
+    const actions = new TagActions({
+      context: {
+        getSettings: () => settings,
+        saveSettings: async (patch: PartialPluginSettings) => {
+          saves.push(patch);
+          settings = mergeSettings(settings, patch);
+        },
+      },
+      browseTagFilterEnabled: () => true,
+      returnToCardsViewIfSinglePane: () => {},
+    } as never);
+
+    await actions.onFilterChange({ tags: ["work"] });
+    expect(saves).toEqual([{ filter: { tags: ["work"], properties: [] } }]);
+    expect(settings.filter).toEqual({ tags: ["work"], properties: [] });
+
+    settings = mergeSettings(settings, { filter: { properties: [selected] } });
+    await actions.filterByOnlyTag("other");
+    expect(saves.at(-1)).toEqual({ filter: { tags: ["other"], properties: [] } });
+    expect(settings.filter).toEqual({ tags: ["other"], properties: [] });
   });
 });
 

@@ -754,6 +754,7 @@ describe("FolderCardView host contract", () => {
     expect(plugin.saveSettings).toHaveBeenCalledWith({
       filter: {
         tags: ["work/ai/harness"],
+        properties: [],
       },
     });
   });

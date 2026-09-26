@@ -30,8 +30,8 @@
     projectPanelRows,
     type PanelRow,
   } from "./row-projection";
-  import { buildRowPositions, createViewportRequest, getSpacerStyle,
-    readFiniteNumber, resolvePanelScopeIdentity } from "./virtual-layout";
+  import { buildRowPositions, createViewportRequest, getSpacerStyle, isBrowseFilterSwitch,
+    readFiniteNumber, resolveBrowseFilterMode, resolvePanelScopeIdentity, type BrowseFilterMode } from "./virtual-layout";
   import type {
     CardHoverLinkPayload,
     FavoriteEntry,
@@ -389,7 +389,7 @@
   let columnCount = $state(1);
 
   let lastRequestIdentity = $state<string | null>(null), lastProjectedScopeIdentity = $state<string | null>(null);
-  let lastArrangementIdentity = $state<string | null>(null);
+  let lastArrangementIdentity = $state<string | null>(null), lastBrowseFilterMode = $state<BrowseFilterMode>("none");
 
   /**
    * Read the old projected rows rather than incoming `groupSegments`: anchor
@@ -546,12 +546,12 @@
     const revision = cards.sequenceRevision;
     const groupRevision = cards.groupRevision;
     const nextArrangementIdentity = [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.orderBy, projection.group.orderDirection].join("\u0000");
-    const columns = columnCount;
+    const nextBrowseFilterMode = resolveBrowseFilterMode(scope, projection.activeFilterTags.length, nav.propertyFilterCount), columns = columnCount;
     untrack(() => {
       const scopeChanged = nextScopeIdentity !== lastProjectedScopeIdentity;
       const arrangementChanged = lastArrangementIdentity !== null && nextArrangementIdentity !== lastArrangementIdentity;
-      lastProjectedScopeIdentity = nextScopeIdentity;
-      lastArrangementIdentity = nextArrangementIdentity;
+      const browseFilterSwitched = isBrowseFilterSwitch(lastBrowseFilterMode, nextBrowseFilterMode); lastBrowseFilterMode = nextBrowseFilterMode;
+      lastProjectedScopeIdentity = nextScopeIdentity; lastArrangementIdentity = nextArrangementIdentity;
       if (scopeChanged) {
         // Keep old rows mounted through load start. On the complete scope
         // snapshot, reset scroll and project the replacement directly so no
@@ -562,7 +562,7 @@
         rowPositions = [];
         totalHeight = 0;
         applyScrollTop(0);
-      } else if (arrangementChanged) {
+      } else if (arrangementChanged || browseFilterSwitched) {
         pendingLayoutAnchor = null; applyScrollTop(0);
       } else if (projectedRows.length > 0 && pendingLayoutAnchor === null) {
         // Ungrouped reorders hold the viewport position, as they did before
@@ -575,7 +575,7 @@
       projectedRows = projectPanelRows(cards.records, groupSegments, columns);
       rebuildPositionsFrom(0);
     });
-    void nextScopeIdentity; void revision; void groupRevision; void nextArrangementIdentity;
+    void nextScopeIdentity; void revision; void groupRevision; void nextArrangementIdentity; void nextBrowseFilterMode;
   });
 
   $effect(() => {
