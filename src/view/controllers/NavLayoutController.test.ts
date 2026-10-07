@@ -159,7 +159,7 @@ describe("NavLayoutController", () => {
     const { controller, publishGroups, saveSettings, settings } = createHarness();
 
     expect(controller.getLayoutMode()).toBe("dual");
-    controller.onShellResize(settings.navPaneWidth + 303);
+    controller.onShellResize(settings.navPaneWidth + 159);
     expect(controller.getLayoutMode()).toBe("single");
     expect(controller.getNavVisible()).toBe(false);
 
@@ -168,7 +168,7 @@ describe("NavLayoutController", () => {
     controller.returnToCardsViewIfSinglePane();
     expect(controller.getNavVisible()).toBe(false);
 
-    controller.onShellResize(settings.navPaneWidth + 304);
+    controller.onShellResize(settings.navPaneWidth + 160);
     await controller.onToggleNavPane();
     expect(saveSettings).toHaveBeenCalledWith({ navPaneCollapsed: true });
     expect(publishGroups).toHaveBeenCalledWith("nav");

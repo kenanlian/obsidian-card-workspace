@@ -2260,7 +2260,7 @@ describe("FolderCardView host contract", () => {
   it("swaps the single-pane view without persisting navPaneCollapsed", async () => {
     const { view, plugin } = createHarness();
 
-    (view as any).modules.navLayout.onShellResize(400);
+    (view as any).modules.navLayout.onShellResize(319);
     expect(getPanelState(view).nav.layoutMode).toBe("single");
     expect(getPanelState(view).nav.visible).toBe(false);
 
@@ -2287,7 +2287,7 @@ describe("FolderCardView host contract", () => {
   it("returns to the cards view when a folder is selected in single-pane layout", async () => {
     const { view } = createHarness();
 
-    (view as any).modules.navLayout.onShellResize(400);
+    (view as any).modules.navLayout.onShellResize(319);
     await (view as any).modules.navLayout.onToggleNavPane();
 
     await (view as any).selectFolderFromNav("projects");
@@ -2295,13 +2295,23 @@ describe("FolderCardView host contract", () => {
     expect(getPanelState(view).nav.visible).toBe(false);
   });
 
-  it("falls back to the cards view when narrowing below the dual-layout threshold", () => {
-    const { view } = createHarness();
+  it.each([
+    [160, 320],
+    [240, 400],
+    [480, 640],
+  ])("switches at the dual-layout threshold for a %ipx navigation pane", (navPaneWidth, threshold) => {
+    const { view, plugin } = createHarness();
+    (plugin.getSettings as unknown as () => PluginSettings)().navPaneWidth = navPaneWidth;
 
-    (view as any).modules.navLayout.onShellResize(400);
+    (view as any).modules.navLayout.onShellResize(threshold - 1);
     void (view as any).modules.navLayout.onToggleNavPane();
-    (view as any).modules.navLayout.onShellResize(800);
-    (view as any).modules.navLayout.onShellResize(400);
+    expect(getPanelState(view).nav.visible).toBe(true);
+
+    (view as any).modules.navLayout.onShellResize(threshold);
+    expect(getPanelState(view).nav.layoutMode).toBe("dual");
+    expect(getPanelState(view).nav.visible).toBe(true);
+
+    (view as any).modules.navLayout.onShellResize(threshold - 1);
 
     expect(getPanelState(view).nav.layoutMode).toBe("single");
     expect(getPanelState(view).nav.visible).toBe(false);

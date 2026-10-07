@@ -583,7 +583,7 @@
         {/if}
       </div>
     {/if}
-    {#if !inlineReferences}
+    {#if !inlineReferences && (previewLines > 0 || searchPreview?.status === "hits")}
     <div
       class="fce-excerpt {searchPreview?.status === 'hits' ? 'is-search' : ''} {card.previewMode === 'code' && (!normalizedSearchQuery || searchPreview?.status === 'title-only') ? 'is-code' : ''} {card.hydrated && (!normalizedSearchQuery || searchPreview) ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated && !normalizedSearchQuery ? 'is-empty' : ''}"
       role="presentation"

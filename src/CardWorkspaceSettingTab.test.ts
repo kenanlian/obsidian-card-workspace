@@ -154,7 +154,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(controlOf(appearanceRows[1])).toEqual({
       type: "slider",
       key: "previewLines",
-      min: 3,
+      min: 0,
       max: 8,
       step: 1,
     });
@@ -182,7 +182,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(rows.every((row) => typeof row.desc === "string" && row.desc.length > 0)).toBe(true);
     expect(rowsOf(behavior)[1]?.desc).toContain("Remember Cursor Position");
     expect(rowsOf(appearance)[1]?.desc).toBe(
-      "Choose how many normalized summary lines each card preview can show (3-8).",
+      "Choose how many normalized summary lines each card preview can show (0-8).",
     );
   });
 
@@ -330,6 +330,8 @@ describe("CardWorkspaceSettingTab", () => {
     await tab.setControlValue("newNoteTemplate", "blank");
     await tab.setControlValue("newNoteTemplate", "daily-note");
     await tab.setControlValue("cardCornerRadius", "rounded");
+    for (const value of [0, 1, 2]) await tab.setControlValue("previewLines", value);
+    await tab.setControlValue("previewLines", -1);
     await tab.setControlValue("previewLines", 4);
     await tab.setControlValue("previewLines", 99);
     await tab.setControlValue("previewLines", 4.5);
@@ -347,6 +349,9 @@ describe("CardWorkspaceSettingTab", () => {
       [{ enableHeadingDragInsert: true }],
       [{ newNoteTemplate: "blank" }],
       [{ cardCornerRadius: "rounded" }],
+      [{ previewLines: 0 }],
+      [{ previewLines: 1 }],
+      [{ previewLines: 2 }],
       [{ previewLines: 4 }],
       [{ searchPreviewSnippetCount: 5 }],
       [{ showNavItemCounts: true }],

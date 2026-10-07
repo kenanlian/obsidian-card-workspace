@@ -313,8 +313,12 @@ describe("normalizeSettings — previewLines", () => {
     expect(result.previewLines).toBe(5);
   });
 
-  it("clamps previewLines within inclusive bounds for raw values 2, 3, 5, 8, 9", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 2 } as unknown).previewLines).toBe(3);
+  it("clamps previewLines within inclusive bounds from 0 to 8", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: -1 } as unknown).previewLines).toBe(0);
+    for (const previewLines of [0, 1, 2]) {
+      expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines }).previewLines).toBe(previewLines);
+      expect(migrateSettings({ schemaVersion: 2, preferences: { previewLines } }).previewLines).toBe(previewLines);
+    }
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 3 } as unknown).previewLines).toBe(3);
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 5 } as unknown).previewLines).toBe(5);
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, previewLines: 8 } as unknown).previewLines).toBe(8);
@@ -614,8 +618,11 @@ describe("mergeSettings — previewLines", () => {
     expect(result.lastFolderPath).toBe("");
   });
 
-  it("normalizes previewLines in patch for raw values 2, 3, 5, 8, 9", () => {
-    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 2 }).previewLines).toBe(3);
+  it("normalizes previewLines in patch within inclusive bounds from 0 to 8", () => {
+    expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: -1 }).previewLines).toBe(0);
+    for (const previewLines of [0, 1, 2]) {
+      expect(mergeSettings(DEFAULT_SETTINGS, { previewLines }).previewLines).toBe(previewLines);
+    }
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 3 }).previewLines).toBe(3);
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 5 }).previewLines).toBe(5);
     expect(mergeSettings(DEFAULT_SETTINGS, { previewLines: 8 }).previewLines).toBe(8);

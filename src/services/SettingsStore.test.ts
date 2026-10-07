@@ -729,16 +729,16 @@ describe("SettingsStore — semantic no-op suppression (C4)", () => {
   it("suppresses a preferences patch that only normalizes to the current value", async () => {
     const { store, save } = createStore();
     await store.init();
-    const seeded = store.updatePreferences({ previewLines: 3 });
+    const seeded = store.updatePreferences({ previewLines: 0 });
     await seeded;
     save.mockClear();
 
-    // 2 clamps up to 3, so the normalized result equals the current value.
-    const intent = await store.updatePreferences({ previewLines: 2 });
+    // -1 clamps up to 0, so the normalized result equals the current value.
+    const intent = await store.updatePreferences({ previewLines: -1 });
 
     expect(intent).toBeNull();
     expect(save).not.toHaveBeenCalled();
-    expect(store.getFlat().previewLines).toBe(3);
+    expect(store.getFlat().previewLines).toBe(0);
   });
 
   it("suppresses a workspace no-op without arming the 300ms debounce timer", async () => {

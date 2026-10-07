@@ -37,10 +37,11 @@ export function buildLightPreview(
   maxVisibleChars = DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
   previewLines = DEFAULT_PREVIEW_LINES,
 ): LightPreviewResult {
+  const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
+  if (normalizedPreviewLines === 0) return { html: "", mode: "empty" };
   const source = typeof markdown === "string" ? createStringPreviewTextSource(markdown) : markdown;
   const lines = collectPreviewSource(source).lines;
   const scanLimit = lines.length;
-  const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
 
   let index = 0;
   let remainingChars = maxVisibleChars;

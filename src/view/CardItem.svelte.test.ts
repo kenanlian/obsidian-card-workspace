@@ -194,6 +194,13 @@ describe("CardItem.svelte", () => {
     document.body.innerHTML = "";
   });
 
+  it.each([false, true])("hides ordinary previews at zero lines (hydrated: %s)", async (hydrated) => {
+    const { target } = mountCardItem({ previewLines: 0, card: { ...createCard(), hydrated } });
+    await tick();
+    expect(target.querySelector(".fce-excerpt")).toBeNull();
+    expect(target.querySelector("h4")).not.toBeNull();
+  });
+
   function referenceCard(direction: "backlinks" | "outgoing" = "backlinks", expanded = false): NoteCardRecord {
     return { ...createCard(), referenceCount: 5, linkPreview: {
       direction, expanded, status: "ready", sourcePath: "source.md", sourceMtime: 1, sourceRevision: 0, contextKey: "context",
@@ -716,8 +723,8 @@ describe("CardItem.svelte", () => {
   });
 
   it.each([1, 2, 3, 4, 5])("renders %i two-line snippets independently of ordinary preview lines", async (snippetLimit) => {
-    const card = await searchCard("needle", Array.from({ length: 10 }, (_, i) => `line ${i} needle`).join("\n\n"), {}, 3, snippetLimit);
-    const { target } = mountCardItem({ searchQuery: "needle", card, appearance: { cardCornerRadius: "compact", previewLines: 3, searchPreviewSnippetCount: snippetLimit } });
+    const card = await searchCard("needle", Array.from({ length: 10 }, (_, i) => `line ${i} needle`).join("\n\n"), {}, 0, snippetLimit);
+    const { target } = mountCardItem({ searchQuery: "needle", card, appearance: { cardCornerRadius: "compact", previewLines: 0, searchPreviewSnippetCount: snippetLimit } });
     expect(target.querySelectorAll(".fce-search-snippet")).toHaveLength(snippetLimit);
     expect(target.querySelector(".fce-excerpt")?.getAttribute("style")).toContain(`--fce-preview-line-clamp: ${snippetLimit * 2}`);
   });

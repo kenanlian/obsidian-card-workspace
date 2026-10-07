@@ -9,6 +9,19 @@ import type { PreviewTextSource } from "./preview-source-collector";
 // buildLightPreview
 // ---------------------------------------------------------------------------
 describe("buildLightPreview", () => {
+  it.each([0, 1, 2])("respects a %i-line budget for text and code previews", (previewLines) => {
+    for (const markdown of ["first\nsecond\nthird", "```\nfirst\nsecond\nthird\n```"]) {
+      const result = buildLightPreview(markdown, 500, previewLines);
+      if (previewLines === 0) {
+        expect(result).toEqual({ html: "", mode: "empty" });
+      } else {
+        expect(result.html).toContain("first");
+        expect(result.html.includes("second")).toBe(previewLines === 2);
+        expect(result.html).not.toContain("third");
+      }
+    }
+  });
+
   it("returns mode=empty for blank content", () => {
     const result = buildLightPreview("");
     expect(result.mode).toBe("empty");
