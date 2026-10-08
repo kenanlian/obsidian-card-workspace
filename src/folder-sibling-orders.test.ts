@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { normalizeFolderSiblingOrders, orderFolderSiblings, reorderFolderSiblings,
-  rewriteFolderSiblingOrders, pruneFolderSiblingOrders, folderSiblingOrdersEqual } from "./folder-sibling-orders";
+  rewriteFolderSiblingOrders, pruneFolderSiblingOrders, folderSiblingOrdersEqual,
+  normalizeFolderDescendingNameSorts, resolveFolderSortMode } from "./folder-sibling-orders";
 import { DEFAULT_SETTINGS, migrateSettings, mergeSettings } from "./settings";
 import { serializeSettings, SettingsStore } from "./services/SettingsStore";
 
 const candidates = ["/", "A", "B", "C"].map((path) => ({ path }));
 
 describe("folder sibling orders", () => {
+  it("normalizes mode markers and distinguishes chosen descending sorting from legacy manual orders", () => {
+    expect(normalizeFolderDescendingNameSorts(null)).toEqual([]);
+    expect(normalizeFolderDescendingNameSorts({ A: true })).toEqual([]);
+    expect(normalizeFolderDescendingNameSorts(["/", " A/child/ ", "A/child", " B ", 12, null]))
+      .toEqual(["", "A/child", "B"]);
+    const orders = { "": ["B", "A"], A: [] };
+    expect(resolveFolderSortMode(orders, "", [""])).toBe("desc");
+    expect(resolveFolderSortMode(orders, "")).toBe("manual");
+    expect(resolveFolderSortMode(orders, "A")).toBe("manual");
+    expect(resolveFolderSortMode(orders, "Missing", ["Missing"])).toBe("asc");
+  });
   it("defaults old documents and normalizes malformed records without losing empty manual groups", () => {
     expect(migrateSettings({}).folderSiblingOrders).toEqual({});
     expect(normalizeFolderSiblingOrders(null)).toEqual({});
@@ -42,14 +54,29 @@ describe("folder sibling orders", () => {
     expect(pruneFolderSiblingOrders(orders, "A" )).toEqual({ "": ["B", "C"] });
   });
   it("round trips in userData under schema 2 and replaces the whole map on reset", () => {
-    const settings = mergeSettings(DEFAULT_SETTINGS, { folderSiblingOrders: { "": ["B", "A"], A: [] } });
+    const settings = mergeSettings(DEFAULT_SETTINGS, { folderSiblingOrders: { "": ["B", "A"], A: [] }, folderDescendingNameSorts: [""] });
     const document = serializeSettings(settings);
     expect(document.schemaVersion).toBe(2);
     expect(document.userData.folderSiblingOrders).toEqual(settings.folderSiblingOrders);
+    expect(document.userData.folderDescendingNameSorts).toEqual([""]);
     expect(migrateSettings(document)).toEqual(settings);
     expect(mergeSettings(settings, { folderSiblingOrders: {} }).folderSiblingOrders).toEqual({});
     expect(folderSiblingOrdersEqual({ A: [], "": ["B"] }, { "": ["B"], A: [] })).toBe(true);
     expect(folderSiblingOrdersEqual({ A: [] }, {})).toBe(false);
+  });
+  it("persists a switch from descending to manual even when the displayed order stays identical", async () => {
+    const writes: unknown[] = [];
+    const store = new SettingsStore({
+      load: async () => ({ folderSiblingOrders: { "": ["B", "A"] }, folderDescendingNameSorts: [""] }),
+      save: async (data) => { writes.push(data); },
+    });
+    await store.init();
+    expect(await store.updateFlat({ folderDescendingNameSorts: [""] })).toBeNull();
+    expect(await store.updateFlat({ folderDescendingNameSorts: [] })).toBe("patch");
+    expect(writes).toHaveLength(1);
+    const restored = migrateSettings(writes[0]);
+    expect(restored.folderSiblingOrders).toEqual({ "": ["B", "A"] });
+    expect(resolveFolderSortMode(restored.folderSiblingOrders, "", restored.folderDescendingNameSorts)).toBe("manual");
   });
   it("persists a reset of the last manual group immediately and treats identical order as a no-op", async () => {
     const writes: unknown[] = [];

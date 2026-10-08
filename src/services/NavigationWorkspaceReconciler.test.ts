@@ -228,9 +228,11 @@ describe("NavigationWorkspaceReconciler", () => {
 describe("folder order reconciliation", () => {
   it("validates only saved references on startup and retains empty manual groups", async () => {
     const h = createHarness({ folders: { A: folder("A"), B: folder("B"), "A/x": folder("A/x") },
-      settings: { folderSiblingOrders: { "": ["B", "A", "A", "gone", "A/x"], A: ["A/x", "A/gone"], stale: [] } } });
+      settings: { folderSiblingOrders: { "": ["B", "A", "A", "gone", "A/x"], A: ["A/x", "A/gone"], stale: [] },
+        folderDescendingNameSorts: ["", "A", "Unrecorded", "stale"] } });
     await h.reconciler.reconcileInitial();
     expect(h.getSettings().folderSiblingOrders).toEqual({ "": ["B", "A"], A: ["A/x"] });
+    expect(h.getSettings().folderDescendingNameSorts).toEqual(["", "A"]);
     expect(h.app.vault.getMarkdownFiles).not.toHaveBeenCalled();
     expect(h.saveSettings).toHaveBeenCalledTimes(1);
     h.reconciler.dispose();
@@ -247,14 +249,17 @@ describe("folder order reconciliation", () => {
   it("keeps rename position, appends a cross-parent move, rewrites subtree records, and prunes deletes", async () => {
     const h = createHarness({ settings: { folderSiblingOrders: {
       "": ["B", "A"], A: ["A/z", "A/x"], B: [], "A/x": ["A/x/c"], "A/x/c": [],
-    } } });
+    }, folderDescendingNameSorts: ["", "A/x", "A/x/c"] } });
     await h.reconciler.handleVaultMutation(event({ isFolder: true, eventType: "rename", oldPath: "A/x", path: "A/y" }));
     expect(h.getSettings().folderSiblingOrders.A).toEqual(["A/z", "A/y"]);
+    expect(h.getSettings().folderDescendingNameSorts).toEqual(["", "A/y", "A/y/c"]);
     await h.reconciler.handleVaultMutation(event({ isFolder: true, eventType: "rename", oldPath: "A/y", path: "B/y" }));
     expect(h.getSettings().folderSiblingOrders).toEqual({ "": ["B", "A"], A: ["A/z"], B: ["B/y"],
       "B/y": ["B/y/c"], "B/y/c": [] });
+    expect(h.getSettings().folderDescendingNameSorts).toEqual(["", "B/y", "B/y/c"]);
     await h.reconciler.handleVaultMutation(event({ isFolder: true, eventType: "delete", path: "B/y" }));
     expect(h.getSettings().folderSiblingOrders).toEqual({ "": ["B", "A"], A: ["A/z"], B: [] });
+    expect(h.getSettings().folderDescendingNameSorts).toEqual([""]);
     h.reconciler.dispose();
   });
 });

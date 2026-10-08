@@ -1,4 +1,4 @@
-import { folderParentPath, folderSiblingOrdersEqual, hasFolderSiblingOrder, normalizeFolderSiblingOrders, orderFolderSiblings,
+import { folderParentPath, folderSiblingOrdersEqual, hasFolderSiblingOrder, normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, orderFolderSiblings,
   pruneFolderSiblingOrders, rewriteFolderSiblingOrders, type FolderSiblingOrders } from "../folder-sibling-orders";
 import { debounce, TFolder, type App } from "obsidian";
 
@@ -8,7 +8,7 @@ import {
 } from "../settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { collectVaultTagIndex } from "../view/metadata-utils";
-import { rewritePathReference } from "../path-references";
+import { isPathAtOrBelow, rewritePathReference } from "../path-references";
 import { scheduleIdleTask } from "../search";
 import type { VaultMutationEvent } from "./vault-events";
 
@@ -107,9 +107,12 @@ export class NavigationWorkspaceReconciler {
     const folders = reconcileExpandedFolders(this.getApp(), settings.expandedFolderPaths);
     if (this.disposed || generation !== this.generation) return;
     const folderSiblingOrders = reconcileFolderSiblingOrders(this.getApp(), settings.folderSiblingOrders);
+    const folderDescendingNameSorts = normalizeFolderDescendingNameSorts(settings.folderDescendingNameSorts)
+      .filter((parent) => hasFolderSiblingOrder(folderSiblingOrders, parent));
     const patch: PartialPluginSettings = {};
     if (!arraysEqual(folders, settings.expandedFolderPaths)) patch.expandedFolderPaths = folders;
     if (!folderSiblingOrdersEqual(folderSiblingOrders, settings.folderSiblingOrders)) patch.folderSiblingOrders = folderSiblingOrders;
+    if (!arraysEqual(folderDescendingNameSorts, settings.folderDescendingNameSorts)) patch.folderDescendingNameSorts = folderDescendingNameSorts;
     if (Object.keys(patch).length > 0) await this.saveSettings(patch);
     if (this.disposed || generation !== this.generation) return;
 
@@ -126,6 +129,7 @@ export class NavigationWorkspaceReconciler {
     this.onStep?.("navigation");
     let persist: Promise<unknown> | null = null;
     if (event.isFolder && event.eventType === "rename" && event.oldPath !== null) {
+      const oldPath = event.oldPath;
       const settings = this.getSettings();
       const lastFolderPath = rewritePathReference(
         settings.lastFolderPath,
@@ -145,6 +149,9 @@ export class NavigationWorkspaceReconciler {
       const previousOrders = captureUnrecordedRenameOrder(this.getApp(), settings.folderSiblingOrders, event.oldPath, event.path);
       const folderSiblingOrders = rewriteFolderSiblingOrders(previousOrders, event.oldPath, event.path);
       if (!folderSiblingOrdersEqual(folderSiblingOrders, settings.folderSiblingOrders)) patch.folderSiblingOrders = folderSiblingOrders;
+      const folderDescendingNameSorts = normalizeFolderDescendingNameSorts(settings.folderDescendingNameSorts
+        .map((parent) => rewritePathReference(parent, oldPath, event.path)));
+      if (!arraysEqual(folderDescendingNameSorts, settings.folderDescendingNameSorts)) patch.folderDescendingNameSorts = folderDescendingNameSorts;
       if (Object.keys(patch).length > 0) persist = this.saveSettings(patch);
     } else if (event.isFolder && event.eventType === "delete") {
       const settings = this.getSettings();
@@ -153,6 +160,8 @@ export class NavigationWorkspaceReconciler {
       if (!arraysEqual(expandedFolderPaths, settings.expandedFolderPaths)) patch.expandedFolderPaths = expandedFolderPaths;
       const folderSiblingOrders = pruneFolderSiblingOrders(settings.folderSiblingOrders, event.path);
       if (!folderSiblingOrdersEqual(folderSiblingOrders, settings.folderSiblingOrders)) patch.folderSiblingOrders = folderSiblingOrders;
+      const folderDescendingNameSorts = settings.folderDescendingNameSorts.filter((parent) => !isPathAtOrBelow(parent, event.path));
+      if (!arraysEqual(folderDescendingNameSorts, settings.folderDescendingNameSorts)) patch.folderDescendingNameSorts = folderDescendingNameSorts;
       if (Object.keys(patch).length > 0) persist = this.saveSettings(patch);
     } else if (event.isFolder && event.eventType === "create") {
       const orders = this.getSettings().folderSiblingOrders;

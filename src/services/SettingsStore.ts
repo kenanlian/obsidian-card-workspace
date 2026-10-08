@@ -65,6 +65,7 @@ export type WorkspaceSettingsPatch = Omit<Partial<WorkspaceSettings>, "sectionCo
 
 export interface UserDataSettings {
   folderSiblingOrders: PluginSettings["folderSiblingOrders"];
+  folderDescendingNameSorts: string[];
   boxes: PluginSettings["boxes"];
   favorites: PluginSettings["favorites"];
   pinnedPaths: string[];
@@ -171,6 +172,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
 
   if (patch.boxes !== undefined) userData.boxes = patch.boxes;
   if (patch.folderSiblingOrders !== undefined) userData.folderSiblingOrders = patch.folderSiblingOrders;
+  if (patch.folderDescendingNameSorts !== undefined) userData.folderDescendingNameSorts = patch.folderDescendingNameSorts;
   if (patch.favorites !== undefined) userData.favorites = patch.favorites;
   if (patch.pinnedPaths !== undefined) userData.pinnedPaths = patch.pinnedPaths;
 
@@ -225,6 +227,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
     },
     userData: {
       folderSiblingOrders: Object.fromEntries(Object.entries(settings.folderSiblingOrders).map(([parent, paths]) => [parent, [...paths]])),
+      folderDescendingNameSorts: [...settings.folderDescendingNameSorts],
       boxes: settings.boxes,
       favorites: settings.favorites,
       pinnedPaths: [...settings.pinnedPaths],

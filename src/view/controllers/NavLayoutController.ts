@@ -1,5 +1,5 @@
 import { TFolder } from "obsidian";
-import { folderParentPath, hasFolderSiblingOrder, orderFolderSiblings, reorderFolderSiblings } from "../../folder-sibling-orders";
+import { folderParentPath, folderSiblingOrdersEqual, normalizeFolderDescendingNameSorts, orderFolderSiblings, reorderFolderSiblings, type FolderSortMode } from "../../folder-sibling-orders";
 import { moveNavSection } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
 import { normalizeScopePath, type CardScope } from "../scope";
@@ -70,7 +70,7 @@ export class NavLayoutController implements DisposableController {
     if (!this.disposed) this.pushNavLayoutState();
   }
   async reorderFolders(sourcePath: string, targetPath: string, position: "before" | "after"): Promise<void> {
-    if (this.disposed || !sourcePath || !targetPath || folderParentPath(sourcePath) !== folderParentPath(targetPath)) return;
+    if (this.disposed || !sourcePath || !targetPath || sourcePath === targetPath || folderParentPath(sourcePath) !== folderParentPath(targetPath)) return;
     const vault = this.context.getApp().vault;
     const source = vault.getAbstractFileByPath(sourcePath), target = vault.getAbstractFileByPath(targetPath);
     if (!(source instanceof TFolder) || !(target instanceof TFolder)) return;
@@ -82,17 +82,45 @@ export class NavLayoutController implements DisposableController {
     const siblings = parentFolder.children.filter((child): child is TFolder => child instanceof TFolder)
       .sort((left, right) => left.name.localeCompare(right.name));
     const fullOrder = orderFolderSiblings(siblings, settings.folderSiblingOrders, parent).map((folder) => folder.path);
+    if (!fullOrder.includes(sourcePath) || !fullOrder.includes(targetPath)) return;
     const next = reorderFolderSiblings(fullOrder, sourcePath, targetPath, position);
-    if (next === null) return;
-    await this.context.saveSettings({ folderSiblingOrders: { ...settings.folderSiblingOrders, [parent]: next } });
+    const descendingNameSorts = settings.folderDescendingNameSorts ?? [];
+    if (next === null && !descendingNameSorts.includes(parent)) return;
+    await this.context.saveSettings({
+      folderSiblingOrders: { ...settings.folderSiblingOrders, [parent]: next ?? fullOrder },
+      folderDescendingNameSorts: descendingNameSorts.filter((path) => path !== parent),
+    });
   }
-  async restoreFolderNameOrder(parent: string): Promise<void> {
+  async sortFolderNameOrder(parent: string, direction: FolderSortMode): Promise<void> {
     if (this.disposed) return;
-    const orders = this.context.getSettings().folderSiblingOrders;
-    if (!hasFolderSiblingOrder(orders, parent)) return;
+    const vault = this.context.getApp().vault;
+    const parentFolder = parent === "" ? vault.getRoot() : vault.getAbstractFileByPath(parent);
+    if (!(parentFolder instanceof TFolder)) return;
+    const settings = this.context.getSettings();
+    const orders = settings.folderSiblingOrders;
+    const descendingNameSorts = settings.folderDescendingNameSorts ?? [];
     const next = { ...orders };
-    delete next[parent];
-    await this.context.saveSettings({ folderSiblingOrders: next });
+    let nextDescendingNameSorts = descendingNameSorts.filter((path) => path !== parent);
+    if (direction === "asc") {
+      // Clearing the manual order restores the navigation tree's default name order.
+      delete next[parent];
+    } else if (direction === "desc") {
+      // Sort every actual sibling, including folders hidden by the navigation query.
+      next[parent] = parentFolder.children
+        .filter((child): child is TFolder => child instanceof TFolder)
+        .sort((left, right) => right.name.localeCompare(left.name))
+        .map((folder) => folder.path);
+      nextDescendingNameSorts = normalizeFolderDescendingNameSorts([...nextDescendingNameSorts, parent]);
+    } else {
+      const siblings = parentFolder.children
+        .filter((child): child is TFolder => child instanceof TFolder)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      next[parent] = orderFolderSiblings(siblings, orders, parent).map((folder) => folder.path);
+    }
+    if (folderSiblingOrdersEqual(orders, next)
+      && descendingNameSorts.length === nextDescendingNameSorts.length
+      && descendingNameSorts.every((path, index) => path === nextDescendingNameSorts[index])) return;
+    await this.context.saveSettings({ folderSiblingOrders: next, folderDescendingNameSorts: nextDescendingNameSorts });
   }
   getFolderTree(): FolderTreeNode[] {
     return this.folderTree;

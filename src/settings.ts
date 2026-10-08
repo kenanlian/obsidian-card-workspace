@@ -1,4 +1,4 @@
-import { normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
+import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
@@ -158,6 +158,7 @@ export interface PluginSettings {
   cardImageFit: CardImageFit;
   lastFolderPath: string;
   folderSiblingOrders: FolderSiblingOrders;
+  folderDescendingNameSorts: string[];
   expandedFolderPaths: string[];
   expandedTagPaths: string[];
   visiblePropertyKeys: string[];
@@ -202,6 +203,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   cardImageFit: "cover",
   lastFolderPath: "",
   folderSiblingOrders: {},
+  folderDescendingNameSorts: [],
   expandedFolderPaths: [], expandedTagPaths: [],
   visiblePropertyKeys: [], expandedPropertyKeys: [],
   boxes: [],
@@ -516,6 +518,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     sectionCollapsed: workspace.sectionCollapsed,
     boxes: userData.boxes,
     folderSiblingOrders: userData.folderSiblingOrders,
+    folderDescendingNameSorts: userData.folderDescendingNameSorts,
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
   };
@@ -586,6 +589,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     expandedPropertyKeys: normalizeExpandedPropertyKeys(data.expandedPropertyKeys, visiblePropertyKeySet),
     boxes: boxes.map((box) => ({ ...box, group: normalizeVisibleGroupSpec(box.group, visiblePropertyKeySet) })),
     folderSiblingOrders: normalizeFolderSiblingOrders(data.folderSiblingOrders),
+    folderDescendingNameSorts: normalizeFolderDescendingNameSorts(data.folderDescendingNameSorts),
     favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
     navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),

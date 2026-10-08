@@ -1124,6 +1124,7 @@ describe("card grouping settings normalization", () => {
       },
       userData: {
         folderSiblingOrders: {},
+        folderDescendingNameSorts: [],
         ...persisted.userData,
         boxes: [{
           ...persisted.userData.boxes[0],
@@ -1603,6 +1604,7 @@ describe("settings layer manifest (C4)", () => {
     sectionCollapsed: "workspace",
     boxes: "userData",
     folderSiblingOrders: "userData",
+    folderDescendingNameSorts: "userData",
     favorites: "userData",
     pinnedPaths: "userData",
   };
@@ -1682,6 +1684,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     expandedPropertyKeys: ["status"],
     boxes: [inboxBox],
     folderSiblingOrders: { "": ["Projects"] },
+    folderDescendingNameSorts: [""],
     favorites: [{ kind: "folder", ref: "Projects" }],
     activeBoxId: "box-1",
     navPaneWidth: 200,
@@ -1731,6 +1734,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ],
     ["boxes", (d) => d.userData.boxes, nonDefault.boxes],
     ["folderSiblingOrders", (d) => d.userData.folderSiblingOrders, { "": ["Projects"] }],
+    ["folderDescendingNameSorts", (d) => d.userData.folderDescendingNameSorts, [""]],
     ["favorites", (d) => d.userData.favorites, [{ kind: "folder", ref: "Projects" }]],
     ["pinnedPaths", (d) => d.userData.pinnedPaths, ["Projects/a.md"]],
   ];

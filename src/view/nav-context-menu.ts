@@ -1,6 +1,6 @@
-import { folderParentPath } from "../folder-sibling-orders";
 import type { Menu } from "obsidian";
 import type { UiStrings } from "../i18n";
+import type { FolderSortMode } from "../folder-sibling-orders";
 import { findCardBox } from "./card-boxes";
 import { normalizeTagPath } from "./tag-tree";
 import { addItem, addSubmenuItem, appendFavoriteToggleItem } from "./menus/nav-menu-items";
@@ -26,7 +26,7 @@ export interface NavMenuActions {
   createCanvas: (folderUiPath: string) => void;
   createBase: (folderUiPath: string) => void;
   duplicateFolder: (folderUiPath: string) => void;
-  restoreFolderNameOrder?: (parentPath: string) => void;
+  sortFolderNameOrder: (parentPath: string, direction: FolderSortMode) => void;
   moveFolder: (folderUiPath: string) => void;
   renameFolder: (folderUiPath: string) => void;
   deleteFolder: (folderUiPath: string) => void;
@@ -80,7 +80,7 @@ export interface NavMenuDeps {
   boxExcludedCount: (boxId: string) => number;
   sectionCollapsed: Record<NavSectionId, boolean>;
   sectionOrder: readonly NavSectionId[];
-  hasFolderSiblingOrder?: (parentPath: string) => boolean;
+  folderSortMode: (parentPath: string) => FolderSortMode;
   hasExpandedFolders: boolean;
   hasExpandedTags: boolean;
   hasExpandedProperties: boolean;
@@ -136,16 +136,25 @@ function appendCopyPathItem(menu: Menu, deps: NavMenuDeps, ref: string): void {
   );
 }
 
-function appendRestoreFolderOrder(menu: Menu, deps: NavMenuDeps, parent: string): void {
-  addItem(menu, deps.strings.view.folderManagement.restoreSiblingNameOrder, "sort-asc",
-    () => deps.actions.restoreFolderNameOrder?.(parent),
-    (item) => item.setDisabled(!deps.hasFolderSiblingOrder?.(parent)));
+function appendFolderNameOrder(menu: Menu, deps: NavMenuDeps, parent: string): void {
+  const folderManagement = deps.strings.view.folderManagement;
+  const mode = deps.folderSortMode(parent);
+  menu.addSeparator();
+  addItem(menu, folderManagement.sortChildNameAsc, "sort-asc",
+    () => deps.actions.sortFolderNameOrder(parent, "asc"),
+    (item) => item.setChecked(mode === "asc"));
+  addItem(menu, folderManagement.sortChildNameDesc, "sort-desc",
+    () => deps.actions.sortFolderNameOrder(parent, "desc"),
+    (item) => item.setChecked(mode === "desc"));
+  addItem(menu, folderManagement.sortChildManual, "list-ordered",
+    () => deps.actions.sortFolderNameOrder(parent, "manual"),
+    (item) => item.setChecked(mode === "manual"));
 }
 
 function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: NavMenuDeps): boolean {
   const navMenu = deps.strings.view.navMenu;
   appendCreateItems(menu, deps, "/", true);
-  appendRestoreFolderOrder(menu, deps, "");
+  appendFolderNameOrder(menu, deps, "");
   menu.addSeparator();
 
   const expanded = deps.hasExpandedFolders;
@@ -175,6 +184,7 @@ function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps
 function buildRootFolderItemMenu(menu: Menu, deps: NavMenuDeps): boolean {
   const navMenu = deps.strings.view.navMenu;
   appendCreateItems(menu, deps, "/", false);
+  appendFolderNameOrder(menu, deps, "");
   menu.addSeparator();
   addItem(menu, navMenu.findInFolder, "search", () => deps.actions.findInFolder("/"));
   if (deps.canResolveSystemPath) {
@@ -190,7 +200,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
   const folderMenu = deps.strings.toolbar.folderMenu;
 
   appendCreateItems(menu, deps, itemId, false);
-  appendRestoreFolderOrder(menu, deps, folderParentPath(itemId));
+  appendFolderNameOrder(menu, deps, itemId);
   menu.addSeparator();
 
   addItem(menu, navMenu.duplicateFolder, "copy", () => deps.actions.duplicateFolder(itemId));

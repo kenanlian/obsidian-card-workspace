@@ -22,6 +22,7 @@ vi.mock("obsidian", () => ({
 
 import { defaultNavSectionOrder } from "../../navigation-section-order";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
+import { resolveFolderSortMode } from "../../folder-sibling-orders";
 import type { PropertyFacet } from "../property-facets";
 import { createFolderScope, createLinksScope } from "../scope";
 import { navigationFolderId, navigationPropertyId, navigationPropertyValueId } from "../navigation-model";
@@ -581,6 +582,60 @@ describe("NavLayoutController", () => {
 });
 
 describe("folder drag navigation state", () => {
+  it("keeps sorting choices exclusive, preserves the current order in manual mode, and switches to manual after a drag", async () => {
+    const a = folder("a"), b = folder("b"), c = folder("c"), root = folder("", [b, a, c]);
+    const h = createHarness(root);
+    vi.spyOn(h.context, "getApp").mockReturnValue({ vault: {
+      getRoot: () => root,
+      getAbstractFileByPath: (path: string) => [a, b, c].find((f) => f.path === path) ?? null,
+    } } as never);
+    h.settings.folderSiblingOrders = { a: [] };
+    h.settings.folderDescendingNameSorts = ["a"];
+    h.controller.updateQuery("b");
+    const mode = () => resolveFolderSortMode(h.settings.folderSiblingOrders, "", h.settings.folderDescendingNameSorts);
+    expect(mode()).toBe("asc");
+
+    await h.controller.sortFolderNameOrder("", "manual");
+    expect(mode()).toBe("manual");
+    expect(h.settings.folderSiblingOrders[""]).toEqual(["a", "b", "c"]);
+    await h.controller.sortFolderNameOrder("", "desc");
+    expect(mode()).toBe("desc");
+    expect(h.settings.folderSiblingOrders[""]).toEqual(["c", "b", "a"]);
+
+    await h.controller.sortFolderNameOrder("", "manual");
+    expect(mode()).toBe("manual");
+    expect(h.settings.folderSiblingOrders[""]).toEqual(["c", "b", "a"]);
+    expect(h.settings.folderDescendingNameSorts).toEqual(["a"]);
+    await h.controller.sortFolderNameOrder("", "desc");
+    expect(mode()).toBe("desc");
+
+    await h.controller.reorderFolders("b", "c", "before");
+    expect(mode()).toBe("manual");
+    expect(h.settings.folderSiblingOrders[""]).toEqual(["b", "c", "a"]);
+    expect(h.settings.folderDescendingNameSorts).toEqual(["a"]);
+    await h.controller.sortFolderNameOrder("", "asc");
+    expect(mode()).toBe("asc");
+    expect(h.settings.folderSiblingOrders).toEqual({ a: [] });
+    expect(h.settings.folderDescendingNameSorts).toEqual(["a"]);
+    expect(h.onNavCountsInvalidated).not.toHaveBeenCalled();
+    expect(h.context.requestUpdate).not.toHaveBeenCalled();
+  });
+  it("switches a valid original-position drop from descending to manual while rejecting self drops", async () => {
+    const a = folder("a"), b = folder("b"), root = folder("", [a, b]);
+    const h = createHarness(root);
+    vi.spyOn(h.context, "getApp").mockReturnValue({ vault: {
+      getRoot: () => root,
+      getAbstractFileByPath: (path: string) => [a, b].find((f) => f.path === path) ?? null,
+    } } as never);
+    await h.controller.sortFolderNameOrder("", "desc");
+    h.saveSettings.mockClear();
+    await h.controller.reorderFolders("b", "b", "before");
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    await h.controller.reorderFolders("b", "a", "before");
+    expect(h.settings.folderSiblingOrders[""]).toEqual(["b", "a"]);
+    expect(h.settings.folderDescendingNameSorts).toEqual([]);
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+  });
   it("uses all siblings under a query, ignores original-position drops, and resets only one group", async () => {
     const a = folder("a"), b = folder("b"), c = folder("c"), root = folder("", [a, b, c]);
     const h = createHarness(root);
@@ -599,10 +654,68 @@ describe("folder drag navigation state", () => {
     expect(h.saveSettings).toHaveBeenCalledTimes(1);
     expect(h.onNavCountsInvalidated).not.toHaveBeenCalled();
     expect(h.context.requestUpdate).not.toHaveBeenCalled();
-    await h.controller.restoreFolderNameOrder("");
+    await h.controller.sortFolderNameOrder("", "asc");
     expect(h.settings.folderSiblingOrders).toEqual({ a: [] });
-    await h.controller.restoreFolderNameOrder("");
+    await h.controller.sortFolderNameOrder("", "asc");
     expect(h.saveSettings).toHaveBeenCalledTimes(2);
+  });
+  it("sorts all sibling folders descending under a query, persists once, and restores ascending order", async () => {
+    const alpha = folder("Parent/Alpha"), bravo = folder("Parent/Bravo"), charlie = folder("Parent/Charlie");
+    const parent = folder("Parent", [bravo, file("Parent/Zulu.md"), alpha, charlie]);
+    const h = createHarness(folder("", [parent]));
+    vi.spyOn(h.context, "getApp").mockReturnValue({ vault: {
+      getRoot: () => folder("", [parent]),
+      getAbstractFileByPath: (path: string) => path === "Parent" ? parent : null,
+    } } as never);
+    h.settings.folderSiblingOrders = { "": ["Other", "Parent"], Parent: [bravo.path, charlie.path, alpha.path] };
+    h.controller.updateQuery("Bravo");
+
+    await h.controller.sortFolderNameOrder("Parent", "desc");
+    expect(h.settings.folderSiblingOrders).toEqual({
+      "": ["Other", "Parent"], Parent: [charlie.path, bravo.path, alpha.path],
+    });
+    await h.controller.sortFolderNameOrder("Parent", "desc");
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+
+    h.controller.refreshFolderTreeState();
+    h.controller.updateQuery("");
+    h.settings.expandedFolderPaths = ["Parent"];
+    const project = () => h.controller.project({ ...projectionInput(createFolderScope("", true)),
+      folders: h.controller.getFolderTree(), folderSiblingOrders: h.settings.folderSiblingOrders });
+    expect(project().rows.filter((row) => row.kind === "folder").map((row) => row.id))
+      .toEqual(["folder:", "folder:Parent", "folder:Parent/Charlie", "folder:Parent/Bravo", "folder:Parent/Alpha"]);
+
+    await h.controller.sortFolderNameOrder("Parent", "asc");
+    expect(h.settings.folderSiblingOrders).toEqual({ "": ["Other", "Parent"] });
+    expect(project().rows.filter((row) => row.kind === "folder").map((row) => row.id))
+      .toEqual(["folder:", "folder:Parent", "folder:Parent/Alpha", "folder:Parent/Bravo", "folder:Parent/Charlie"]);
+    expect(h.onNavCountsInvalidated).not.toHaveBeenCalled();
+    expect(h.context.requestUpdate).not.toHaveBeenCalled();
+  });
+  it("keeps root first when sorting top-level folders descending without a manual order", async () => {
+    const h = createHarness(folder("", [folder("Alpha"), folder("Bravo"), file("Zulu.md")]));
+    await h.controller.sortFolderNameOrder("", "desc");
+    expect(h.settings.folderSiblingOrders).toEqual({ "": ["Bravo", "Alpha"] });
+    h.controller.refreshFolderTreeState();
+    const projection = h.controller.project({ ...projectionInput(createFolderScope("", true)),
+      folders: h.controller.getFolderTree(), folderSiblingOrders: h.settings.folderSiblingOrders });
+    expect(projection.rows.filter((row) => row.kind === "folder").map((row) => row.id))
+      .toEqual(["folder:", "folder:Bravo", "folder:Alpha"]);
+  });
+  it("ignores name sorting for missing parents, file parents, and disposed views", async () => {
+    const h = createHarness();
+    vi.spyOn(h.context, "getApp").mockReturnValue({ vault: {
+      getRoot: () => folder(""),
+      getAbstractFileByPath: (path: string) => path === "note.md" ? file(path) : null,
+    } } as never);
+    h.settings.folderSiblingOrders = { Missing: ["Missing/Alpha"] };
+    for (const direction of ["asc", "desc", "manual"] as const) {
+      await h.controller.sortFolderNameOrder("Missing", direction);
+      await h.controller.sortFolderNameOrder("note.md", direction);
+    }
+    h.controller.dispose();
+    await h.controller.sortFolderNameOrder("", "desc");
+    expect(h.saveSettings).not.toHaveBeenCalled();
   });
   it("temporary expansion publishes only nav, ignores repeated requests, and clears without a write", () => {
     const h = createHarness();

@@ -1,6 +1,21 @@
 import { isPathAtOrBelow, rewritePathReference } from "./path-references";
 
 export type FolderSiblingOrders = Record<string, string[]>;
+export type FolderSortMode = "asc" | "desc" | "manual";
+
+/** Descending name sorts need a marker to distinguish them from authored manual orders. */
+export function normalizeFolderDescendingNameSorts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((path): path is string => typeof path === "string")
+    .map((path) => path.trim().split("/").filter(Boolean).join("/")))].sort();
+}
+
+export function resolveFolderSortMode(
+  orders: FolderSiblingOrders, parent: string, descendingNameSorts: readonly string[] = [],
+): FolderSortMode {
+  if (!hasFolderSiblingOrder(orders, parent)) return "asc";
+  return descendingNameSorts.includes(parent) ? "desc" : "manual";
+}
 
 export function folderParentPath(path: string): string {
   return path.slice(0, Math.max(0, path.lastIndexOf("/")));

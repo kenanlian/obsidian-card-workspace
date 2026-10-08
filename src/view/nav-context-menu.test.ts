@@ -132,7 +132,7 @@ function createActions(): NavMenuActions {
     createCanvas: vi.fn(),
     createBase: vi.fn(),
     duplicateFolder: vi.fn(),
-    restoreFolderNameOrder: vi.fn(),
+    sortFolderNameOrder: vi.fn(),
     moveFolder: vi.fn(),
     renameTag: vi.fn(),
     deleteTag: vi.fn(),
@@ -188,6 +188,7 @@ function createDeps(
     boxExcludedCount: () => 0,
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
+    folderSortMode: () => "asc",
     hasExpandedFolders: false,
     hasExpandedTags: false,
     hasExpandedProperties: false,
@@ -235,7 +236,10 @@ describe("folders header menu", () => {
       { title: "New folder in vault root", icon: "folder-plus" },
       { title: "New canvas in vault root", icon: "layout-dashboard" },
       { title: "New base in vault root", icon: "layout-list" },
-      { title: "Restore sibling folder name sorting", icon: "sort-asc" },
+      "sep",
+      { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
+      { title: "Sort child folders by name (Z → A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
       "sep",
       { title: "Expand all folders", icon: "chevrons-up-down" },
       { title: "Including subfolders", icon: "folder-tree" },
@@ -292,7 +296,7 @@ describe("folders header menu", () => {
 });
 
 describe("root folder row menu", () => {
-  it("offers only the four create items, search, and reveal", () => {
+  it("offers the four create items, name sorting, search, and reveal", () => {
     const deps = createDeps({ tagExpansion: () => ({ hasChildren: true, expanded: true }) });
     const { menu, result } = build(
       createPayload({ section: "folders", scope: "item", itemId: "/" }),
@@ -305,6 +309,10 @@ describe("root folder row menu", () => {
       { title: "New folder", icon: "folder-plus" },
       { title: "New canvas", icon: "layout-dashboard" },
       { title: "New base", icon: "layout-list" },
+      "sep",
+      { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
+      { title: "Sort child folders by name (Z → A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
       "sep",
       { title: "Search in folder", icon: "search" },
       { title: "Show in system explorer", icon: "folder-symlink" },
@@ -341,7 +349,10 @@ describe("folder row menu", () => {
       { title: "New folder", icon: "folder-plus" },
       { title: "New canvas", icon: "layout-dashboard" },
       { title: "New base", icon: "layout-list" },
-      { title: "Restore sibling folder name sorting", icon: "sort-asc" },
+      "sep",
+      { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
+      { title: "Sort child folders by name (Z → A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
       "sep",
       { title: "Make a copy", icon: "copy" },
       { title: "Move folder", icon: "folder-input" },
@@ -1042,7 +1053,9 @@ describe("localization", () => {
       "在库根目录新建文件夹",
       "在库根目录新建白板",
       "在库根目录新建数据库",
-      "恢复同级文件夹名称排序",
+      "子文件夹按名称排序（A → Z）",
+      "子文件夹按名称排序（Z → A）",
+      "手动排序",
       "展开全部文件夹",
       "包含子文件夹",
       "折叠此区",
@@ -1063,7 +1076,9 @@ describe("localization", () => {
       "新建文件夹",
       "新建白板",
       "新建数据库",
-      "恢复同级文件夹名称排序",
+      "子文件夹按名称排序（A → Z）",
+      "子文件夹按名称排序（Z → A）",
+      "手动排序",
       "创建副本",
       "移动文件夹",
       "在文件夹中查找",
@@ -1156,6 +1171,7 @@ describe("nav context menu wiring", () => {
         boxes: [],
         favorites: [],
         folderSiblingOrders: {},
+        folderDescendingNameSorts: [],
         visiblePropertyKeys: [],
         expandedPropertyKeys: [],
         navSectionOrder: defaultNavSectionOrder(),
@@ -1201,6 +1217,34 @@ describe("nav context menu wiring", () => {
       expect(menu.showAtMouseEvent).toHaveBeenCalledTimes(1);
       expect(menu.dom.classList.add).toHaveBeenCalledWith("fce-card-context-menu");
       expect(getDangerMenuTitles(menu)).toEqual([]);
+    });
+
+    it.each(["asc", "desc", "manual"] as const)("routes the %s name sort menu action to the navigation controller", (direction) => {
+      const { view } = createNavView();
+      const sort = vi.spyOn((view as any).modules.navLayout, "sortFolderNameOrder").mockResolvedValue(undefined);
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+
+      const strings = getUiStrings("en").view.folderManagement;
+      const title = direction === "asc" ? strings.sortChildNameAsc : direction === "desc" ? strings.sortChildNameDesc : strings.sortChildManual;
+      const item = mockState.menuInstances[0].items.find((item) => item.title === title);
+      expect(item).toBeDefined();
+      item?.clickHandler?.();
+      expect(sort).toHaveBeenCalledExactlyOnceWith("", direction);
+    });
+
+    it.each(["asc", "desc", "manual"] as const)("restores the %s menu check from persisted folder settings", (mode) => {
+      const { view } = createNavView({
+        folderSiblingOrders: mode === "asc" ? {} : { "": ["B", "A"] },
+        folderDescendingNameSorts: mode === "desc" ? [""] : [],
+      });
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+      const strings = getUiStrings("en").view.folderManagement;
+      for (const [title, expectedMode] of [
+        [strings.sortChildNameAsc, "asc"], [strings.sortChildNameDesc, "desc"], [strings.sortChildManual, "manual"],
+      ] as const) {
+        const item = mockState.menuInstances[0].items.find((item) => item.title === title);
+        expect(item?.checked).toBe(mode === expectedMode);
+      }
     });
 
     it("supports positioned triggers and returns focus when the menu hides", () => {
@@ -1300,25 +1344,37 @@ describe("nav context menu wiring", () => {
     });
 });
 
-describe("restore sibling folder name order menus", () => {
-  it.each(["en", "zh"] as const)("targets only the correct manual group (%s)", (language) => {
-    const deps = createDeps({ strings: getUiStrings(language), hasFolderSiblingOrder: (parent) => parent === "A" });
-    const title = deps.strings.view.folderManagement.restoreSiblingNameOrder;
-    const nested = build(createPayload({ section: "folders", scope: "item", itemId: "A/child" }), deps).menu;
-    expect(findItem(nested, title)?.disabled).toBe(false);
-    findItem(nested, title)?.clickHandler?.();
-    expect(deps.actions.restoreFolderNameOrder).toHaveBeenCalledExactlyOnceWith("A");
-    const header = build(createPayload({ section: "folders", scope: "header" }), deps).menu;
-    expect(findItem(header, title)?.disabled).toBe(true);
-    const root = build(createPayload({ section: "folders", scope: "item", itemId: "/" }), deps).menu;
-    expect(findItem(root, title)).toBeUndefined();
+describe("child folder name sorting menus", () => {
+  it.each(["asc", "desc", "manual"] as const)("checks only the active %s mode for the target folder", (mode) => {
+    const deps = createDeps({ folderSortMode: (parent) => parent === "A" ? mode : "asc" });
+    const { menu } = build(createPayload({ section: "folders", scope: "item", itemId: "A" }), deps);
+    const strings = deps.strings.view.folderManagement;
+    for (const [title, expectedMode] of [
+      [strings.sortChildNameAsc, "asc"], [strings.sortChildNameDesc, "desc"], [strings.sortChildManual, "manual"],
+    ] as const) {
+      expect(findItem(menu, title)?.checked).toBe(mode === expectedMode);
+    }
   });
-  it("enables the top-level reset in the section menu for a saved empty manual order", () => {
-    const deps = createDeps({ hasFolderSiblingOrder: (parent) => parent === "" });
-    const menu = build(createPayload({ section: "folders", scope: "header" }), deps).menu;
-    const reset = findItem(menu, deps.strings.view.folderManagement.restoreSiblingNameOrder);
-    expect(reset?.disabled).toBe(false);
-    reset?.clickHandler?.();
-    expect(deps.actions.restoreFolderNameOrder).toHaveBeenCalledExactlyOnceWith("");
+  it.each(["en", "zh"] as const)("routes all sorting modes to the clicked folder or vault root (%s)", (language) => {
+    const deps = createDeps({ strings: getUiStrings(language) });
+    const { sortChildNameAsc, sortChildNameDesc, sortChildManual } = deps.strings.view.folderManagement;
+    const targets = [
+      { payload: createPayload({ section: "folders", scope: "item", itemId: "A/child" }), parent: "A/child" },
+      { payload: createPayload({ section: "folders", scope: "item", itemId: "Top" }), parent: "Top" },
+      { payload: createPayload({ section: "folders", scope: "header" }), parent: "" },
+      { payload: createPayload({ section: "folders", scope: "item", itemId: "/" }), parent: "" },
+      { payload: createPayload({ section: "favorites", scope: "item", favorite: { kind: "folder", ref: "A/child" } }), parent: "A/child" },
+      { payload: createPayload({ section: "favorites", scope: "item", favorite: { kind: "folder", ref: "" } }), parent: "" },
+    ];
+    for (const { payload, parent } of targets) {
+      const { menu } = build(payload, deps);
+      for (const [title, direction] of [[sortChildNameAsc, "asc"], [sortChildNameDesc, "desc"], [sortChildManual, "manual"]] as const) {
+        const item = findItem(menu, title);
+        expect(item).toBeDefined();
+        expect(item?.disabled).toBe(false);
+        item?.clickHandler?.();
+        expect(deps.actions.sortFolderNameOrder).toHaveBeenLastCalledWith(parent, direction);
+      }
+    }
   });
 });

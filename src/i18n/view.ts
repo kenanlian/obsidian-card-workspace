@@ -152,7 +152,9 @@ export interface ViewStrings {
     createFailed: (reason: string) => string;
     sameTarget: string;
     moveConflict: string;
-    restoreSiblingNameOrder: string;
+    sortChildNameAsc: string;
+    sortChildNameDesc: string;
+    sortChildManual: string;
     invalidMoveTarget: string;
     moveFailed: (reason: string) => string;
     deleteFailed: (reason: string) => string;
