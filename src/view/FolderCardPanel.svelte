@@ -126,6 +126,7 @@
     onNavigationIntent?: (payload: import("./navigation-model").NavigationIntent) => void;
     onFavoriteActivate?: (payload: { favorite: FavoriteEntry }) => void;
     onImageViewport?: (payload: import("./image-request").ImageViewportRequest) => void;
+    onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
     resolveImagePlaceholder?: (path: string, generation: number) => CardImageState | undefined;
     onHydrateViewport?: (payload: ReturnType<typeof createViewportRequest>["request"]) => void;
     onNavPaneResize?: (width: number) => void;
@@ -227,6 +228,7 @@
     onFavoriteActivate,
     onHydrateViewport,
     onImageViewport,
+    onImageReveal,
     resolveImagePlaceholder,
     onNavPaneResize,
     onShellResize,
@@ -959,6 +961,7 @@
                 {strings}
                 {appearance}
                 image={getCardImage(card.path)}
+                {onImageReveal}
                 pinnedPaths={projection.pinnedPaths}
                 searchQuery={search.committedQuery}
                 bulkMode={bulk.bulkMode}

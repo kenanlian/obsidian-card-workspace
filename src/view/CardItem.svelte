@@ -51,6 +51,7 @@
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
+    onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
     previewHtmlSanitizer?: PreviewHtmlSanitizer;
   }
 
@@ -76,6 +77,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
+    onImageReveal,
     previewHtmlSanitizer = sanitizePreviewHtml,
   }: CardItemProps = $props();
 
@@ -88,6 +90,7 @@
   const showImage = $derived(imageMode !== "off" && image !== undefined);
   let failedUrl = $state<string | null>(null);
   let loadedUrl = $state<string | null>(null);
+  let revealUrl = $state<string | null>(null);
   const isPinned = $derived(pinnedPaths.includes(card.path));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
   const normalizedSearchQuery = $derived(searchQuery.trim());
@@ -174,15 +177,20 @@
   let activeDragGhost: HTMLElement | null = null;
 
   function revealImage(node: HTMLImageElement, url: string): { destroy: () => void } {
+    const path = card.path;
     let active = true;
     let decoding = false;
     loadedUrl = null;
+    revealUrl = null;
     async function reveal(): Promise<void> {
       if (!active || decoding) return;
       decoding = true;
       try {
         if (typeof node.decode === "function") await node.decode();
-        if (active) loadedUrl = url;
+        if (active) {
+          revealUrl = onImageReveal?.({ path, url }) !== false ? url : null;
+          loadedUrl = url;
+        }
       } catch {
         if (active) failedUrl = url;
       }
@@ -574,6 +582,7 @@
         {#if image?.status === "ready" && image.url !== failedUrl}
           {#key image.url}
             <img src={image.url} alt="" draggable="false" decoding="async" class:is-loaded={loadedUrl === image.url}
+              class:is-revealing={loadedUrl === image.url && revealUrl === image.url}
               use:revealImage={image.url} />
           {/key}
         {:else if image?.status === "loading"}

@@ -4,7 +4,7 @@ import { resolveFirstImage, type ImageSource } from "../../images/image-source";
 import { IMAGE_MAX_BYTES, THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
 import type { VaultMutationEvent } from "../../services/vault-events";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
-import type { ImageViewportRequest } from "../image-request";
+import type { CardImageRevealRequest, ImageViewportRequest } from "../image-request";
 interface Demand { source: ImageSource; abort: AbortController; fingerprint?: ImageFingerprint; state?: CardImageState }
 const LOADING_IMAGE_STATE = { status: "loading" } as const;
 export interface CardImageControllerDeps {
@@ -17,6 +17,8 @@ export class CardImageController implements DisposableController {
   private readonly urls = new Map<string, { url: string; count: number }>();
   private readonly layoutHints = new Map<string, { attachmentPath: string; state: CardImageState }>();
   private readonly demand = new Map<string, Demand>();
+  // Retain only fingerprints, never image data or URLs, across virtual unmounts.
+  private readonly revealedImages = new Map<string, string>();
   private paths: readonly string[] = [];
   private generation = -1;
   private requestVersion = 0;
@@ -125,6 +127,17 @@ export class CardImageController implements DisposableController {
     }).catch(() => { if (current() && item.state) { item.state = { status: "failed" }; this.rememberLayout(path, item); this.publish(); } });
   }
   notifyTextReady(): void { if (this.releaseService) this.deps.getService()?.service.pump(); }
+  /** Called after DOM decoding succeeds; only a version's first reveal animates. */
+  handleImageReveal({ path, url }: CardImageRevealRequest): boolean {
+    const item = this.demand.get(path);
+    if (this.disposed || this.context.getSettings().cardImageMode === "off"
+      || item?.state?.status !== "ready" || item.state.url !== url || !item.fingerprint
+      || item.abort.signal.aborted || this.generation !== this.context.epochs.load.value) return false;
+    const key = imageKey(item.fingerprint);
+    if (this.revealedImages.get(item.fingerprint.path) === key) return false;
+    this.revealedImages.set(item.fingerprint.path, key);
+    return true;
+  }
   onSettingsChanged(): void {
     if (this.context.getSettings().cardImageMode === "off") this.resetDemand();
     // Fit and right/inline switches keep identical thumbnails and demand.
@@ -167,9 +180,16 @@ export class CardImageController implements DisposableController {
     this.invalidate((notePath, item) => path === undefined ? item.source.status === "unknown" : notePath === path);
   }
   handleVaultMutation(event: VaultMutationEvent): void {
-    if (this.disposed || this.context.getSettings().cardImageMode === "off") return;
+    if (this.disposed) return;
     const matches = (path: string): boolean => [event.path, event.oldPath].some((root) => root !== null
       && (path === root || (event.isFolder && path.startsWith(`${root}/`))));
+    if (event.isFolder) {
+      for (const path of this.revealedImages.keys()) if (matches(path)) this.revealedImages.delete(path);
+    } else {
+      this.revealedImages.delete(event.path);
+      if (event.oldPath !== null) this.revealedImages.delete(event.oldPath);
+    }
+    if (this.context.getSettings().cardImageMode === "off") return;
     for (const [notePath, hint] of this.layoutHints) if (matches(notePath) || matches(hint.attachmentPath)) { this.layoutHints.delete(notePath); this.publish(); }
     this.invalidate((notePath, item) => matches(notePath)
       || (item.source.status === "found" && matches(item.source.file.path))
@@ -213,6 +233,7 @@ export class CardImageController implements DisposableController {
   dispose(): DisposeReport {
     this.disposed = true;
     this.resetDemand();
+    this.revealedImages.clear();
     if (this.frame !== null) this.cancelFrame(this.frame);
     this.frame = null;
     return {};

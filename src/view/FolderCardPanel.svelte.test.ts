@@ -330,6 +330,33 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("does not replay image fade after a card leaves and reenters the virtual window", async () => {
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState();
+    state.cards.records = Array.from({ length: 100 }, (_, i) => createCard(`notes/${i}.md`, `${i}`));
+    state.appearance = { ...state.appearance, cardImageMode: "right" };
+    state.images = { byPath: { "notes/0.md": { status: "ready", url: "blob:thumbnail" } }, requestVersion: 0 };
+    const onImageReveal = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const panelModel = createPanelModel(state);
+    const component = mount(FolderCardPanel, { target, props: { panelModel, onImageReveal } });
+    await tick();
+    const first = target.querySelector("img")!;
+    first.dispatchEvent(new Event("load")); await tick();
+    expect(first.classList.contains("is-revealing")).toBe(true);
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 5000; list.dispatchEvent(new Event("scroll")); await tick();
+    expect(first.isConnected).toBe(false);
+    list.scrollTop = 0; list.dispatchEvent(new Event("scroll")); await tick();
+    const second = target.querySelector("img")!;
+    expect(second).not.toBe(first);
+    second.dispatchEvent(new Event("load")); await tick();
+    expect(second.classList.contains("is-loaded")).toBe(true);
+    expect(second.classList.contains("is-revealing")).toBe(false);
+    expect(onImageReveal).toHaveBeenCalledTimes(2);
+    expect(onImageReveal).toHaveBeenLastCalledWith({ path: "notes/0.md", url: "blob:thumbnail" });
+    await unmount(component);
+  });
+
   it("clears image demand when the card pane is hidden without resetting its layout", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState(); state.cards.records = Array.from({ length: 30 }, (_, i) => createCard(`notes/${i}.md`, `${i}`));

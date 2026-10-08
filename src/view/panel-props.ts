@@ -97,6 +97,8 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     },
     resolveImagePlaceholder: (path: string, generation: number) =>
       view.modules.images.resolvePlaceholder(path, generation),
+    onImageReveal: (detail: import("./image-request").CardImageRevealRequest) =>
+      view.modules.images.handleImageReveal(detail),
     onToolbarAction: (detail: { action?: unknown }) => {
       view.handleToolbarAction(detail);
     },

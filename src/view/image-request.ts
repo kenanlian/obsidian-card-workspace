@@ -6,3 +6,8 @@ export interface ImageViewportRequest {
   end: number;
   paths: readonly string[];
 }
+
+export interface CardImageRevealRequest {
+  path: string;
+  url: string;
+}

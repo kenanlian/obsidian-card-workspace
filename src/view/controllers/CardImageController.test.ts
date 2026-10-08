@@ -88,6 +88,38 @@ describe("per-view images", () => {
     h.demand(); await settle(); expect(h.read).toHaveBeenCalledOnce();
     h.settings.cardImageMode = "off"; h.controller.onSettingsChanged(); expect(h.urls.revokeObjectURL).toHaveBeenCalledTimes(2); h.controller.dispose();
   });
+  it("animates a revealed fingerprint once across URL recreation and scope generations", async () => {
+    vi.useFakeTimers(); const h = harness();
+    h.urls.createObjectURL.mockReturnValueOnce("blob:first").mockReturnValueOnce("blob:second");
+    h.demand(); await settle();
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:stale" })).toBe(false);
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:first" })).toBe(true);
+    h.demand([]);
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:first" })).toBe(false);
+    h.epochs.load.bump(); h.demand(); await settle();
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:second" })).toBe(false);
+    expect(h.read).toHaveBeenCalledOnce(); expect(h.generate).toHaveBeenCalledOnce();
+    expect(h.urls.revokeObjectURL).toHaveBeenCalledWith("blob:first");
+    h.controller.dispose();
+  });
+  it("keeps first reveal available for thumbnails that were ready but never displayed", async () => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    h.demand([]); h.demand(); await settle();
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:thumbnail" })).toBe(true);
+    h.controller.dispose();
+  });
+  it("allows first reveal again for updated attachments, including changes while images are off", async () => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    const request = { path: h.card.path, url: "blob:thumbnail" };
+    expect(h.controller.handleImageReveal(request)).toBe(true);
+    h.image.stat.mtime++; h.demand([]); h.demand(); await settle();
+    expect(h.controller.handleImageReveal(request)).toBe(true);
+    h.settings.cardImageMode = "off"; h.controller.onSettingsChanged();
+    h.controller.handleVaultMutation({ eventType: "modify", path: h.image.path, oldPath: null, isFolder: false, fileKind: null });
+    h.settings.cardImageMode = "right"; h.demand(); await settle();
+    expect(h.controller.handleImageReveal(request)).toBe(true);
+    h.controller.dispose(); expect(h.controller.handleImageReveal(request)).toBe(false);
+  });
   it("retries delayed metadata and missing attachment creation via existing buses", async () => {
     vi.useFakeTimers(); const h = harness(); h.getFileCache.mockReturnValueOnce(null); h.demand(); await settle(); expect(h.read).not.toHaveBeenCalled();
     h.controller.handleMetadataChange(); h.demand(); await settle(); expect(h.read).toHaveBeenCalledOnce();

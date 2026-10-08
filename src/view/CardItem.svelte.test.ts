@@ -40,6 +40,7 @@ interface CardItemCallbacks {
   onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
   onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
   onToggleReferences?: (payload: { path: string }) => void;
+  onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
 }
 
 interface CapturedCallbacks {
@@ -344,15 +345,43 @@ describe("CardItem.svelte", () => {
     expect(target.querySelector(".fce-card-image-placeholder")?.getAttribute("aria-label")).toBe("Image unavailable");
   });
   it("reveals image pixels only after decoding finishes", async () => {
-    const { target } = mountCardItem({ cardImageMode: "inline", image: { status: "ready", url: "blob:thumbnail" } });
+    const onImageReveal = vi.fn(() => true);
+    const { target } = mountCardItem({ cardImageMode: "inline", image: { status: "ready", url: "blob:thumbnail" } }, { onImageReveal });
     await tick();
     const image = target.querySelector("img")!;
     let finishDecode!: () => void;
     image.decode = vi.fn(() => new Promise<void>((resolve) => { finishDecode = resolve; }));
     image.dispatchEvent(new Event("load")); await tick();
     expect(image.classList.contains("is-loaded")).toBe(false);
+    expect(onImageReveal).not.toHaveBeenCalled();
     finishDecode(); await tick();
     expect(image.classList.contains("is-loaded")).toBe(true);
+    expect(image.classList.contains("is-revealing")).toBe(true);
+    expect(onImageReveal).toHaveBeenCalledExactlyOnceWith({ path: "notes/a.md", url: "blob:thumbnail" });
+  });
+  it("shows a remounted image without animating when its fingerprint was already revealed", async () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(88);
+    const onImageReveal = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const first = mountCardItem({ cardImageMode: "right", image: { status: "ready", url: "blob:first" } }, { onImageReveal });
+    await tick(); expect(first.target.querySelector("img")?.classList.contains("is-revealing")).toBe(true);
+    await disposeMountedComponent(first.component);
+    const second = mountCardItem({ cardImageMode: "right", image: { status: "ready", url: "blob:second" } }, { onImageReveal });
+    await tick();
+    expect(second.target.querySelector("img")?.classList.contains("is-loaded")).toBe(true);
+    expect(second.target.querySelector("img")?.classList.contains("is-revealing")).toBe(false);
+    expect(onImageReveal).toHaveBeenLastCalledWith({ path: "notes/a.md", url: "blob:second" });
+  });
+  it("does not record a reveal when decoding finishes after virtual unmount", async () => {
+    const onImageReveal = vi.fn(() => true);
+    const { target, component } = mountCardItem({ cardImageMode: "inline", image: { status: "ready", url: "blob:thumbnail" } }, { onImageReveal });
+    await tick();
+    const image = target.querySelector("img")!;
+    let finishDecode!: () => void;
+    image.decode = vi.fn(() => new Promise<void>((resolve) => { finishDecode = resolve; }));
+    image.dispatchEvent(new Event("load"));
+    await disposeMountedComponent(component); finishDecode(); await tick();
+    expect(onImageReveal).not.toHaveBeenCalled();
   });
   it("reveals already cached images even when no load event follows mounting", async () => {
     vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
@@ -362,8 +391,9 @@ describe("CardItem.svelte", () => {
     expect(target.querySelector("img")?.classList.contains("is-loaded")).toBe(true);
   });
   it("shows a blank loading region and preserves it when decoding fails", async () => {
+    const onImageReveal = vi.fn(() => true);
     const loading = mountCardItem({ cardImageMode: "inline", image: { status: "loading" } });
-    const ready = mountCardItem({ cardImageMode: "inline", image: { status: "ready", url: "blob:broken" } });
+    const ready = mountCardItem({ cardImageMode: "inline", image: { status: "ready", url: "blob:broken" } }, { onImageReveal });
     await tick();
     expect(loading.target.querySelector(".fce-card-image-placeholder")?.children).toHaveLength(0);
     const region = ready.target.querySelector(".fce-card-image"), image = ready.target.querySelector("img")!;
@@ -371,6 +401,7 @@ describe("CardItem.svelte", () => {
     image.dispatchEvent(new Event("load")); await tick();
     expect(ready.target.querySelector(".fce-card-image")).toBe(region);
     expect(ready.target.querySelector(".fce-card-image-placeholder")?.getAttribute("aria-label")).toBe("Image unavailable");
+    expect(onImageReveal).not.toHaveBeenCalled();
   });
   it("omits the image region for off and no-image cards", async () => {
     const off = mountCardItem({ image: { status: "ready", url: "blob:thumbnail" } });
