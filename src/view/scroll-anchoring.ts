@@ -78,17 +78,19 @@ export function computeScrollAnchorDelta(input: ScrollAnchorInput): number {
  */
 export function captureLayoutAnchor(input: {
   scrollTop: number;
+  /** Row positions exclude the scrollport's top padding. */
+  listPaddingTop?: number;
   rowPositions: readonly number[];
   rows: readonly AnchorCandidateRow[];
   preferCardIndex?: boolean;
 }): RowAnchor | null {
-  const { scrollTop, rowPositions, rows, preferCardIndex = false } = input;
+  const { scrollTop, listPaddingTop = 0, rowPositions, rows, preferCardIndex = false } = input;
 
   if (rowPositions.length === 0 || rows.length === 0) {
     return null;
   }
 
-  const rowIndex = findRowIndexAtOffset(scrollTop, rowPositions);
+  const rowIndex = findRowIndexAtOffset(scrollTop - listPaddingTop, rowPositions);
   const row = rows[rowIndex];
   if (!row) {
     return null;
@@ -96,6 +98,8 @@ export function captureLayoutAnchor(input: {
 
   return {
     ref: buildRowAnchorRef(row, preferCardIndex),
+    // Retain the scrollport coordinate offset so resolution also preserves
+    // padding, including the initial scrollTop === 0 position.
     offset: Math.max(0, scrollTop - (rowPositions[rowIndex] ?? 0)),
   };
 }

@@ -479,7 +479,7 @@
     const mode = appearance.cardImageMode ?? "off";
     untrack(() => {
       if (previousImageMode !== null && mode !== previousImageMode && projectedRows.length) {
-        pendingLayoutAnchor = captureLayoutAnchor({ scrollTop, rowPositions, rows: projectedRows, preferCardIndex: false });
+        pendingLayoutAnchor = captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: false });
       }
       previousImageMode = mode;
     });
@@ -551,6 +551,7 @@
     if (nextColumnCount !== columnCount && projectedRows.length > 0) {
       pendingLayoutAnchor = captureLayoutAnchor({
         scrollTop,
+        listPaddingTop,
         rowPositions,
         rows: projectedRows,
         preferCardIndex: isFlatLayout(projectedRows),
@@ -633,7 +634,7 @@
         // Ungrouped reorders hold the viewport position, as they did before
         // groups existed; only a grouped layout needs the card/group ref.
         pendingLayoutAnchor = captureLayoutAnchor({
-          scrollTop, rowPositions, rows: projectedRows,
+          scrollTop, listPaddingTop, rowPositions, rows: projectedRows,
           preferCardIndex: isFlatLayout(projectedRows),
         });
       }
@@ -766,7 +767,7 @@
       }
     }
     let first = projectedRows.length;
-    const anchor = pendingLayoutAnchor ?? captureLayoutAnchor({ scrollTop, rowPositions, rows: projectedRows, preferCardIndex: false });
+    const anchor = pendingLayoutAnchor ?? captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: false });
     for (const [key, item] of pendingRowSizes) {
       const current = projectedRows[item.row.index];
       if (current?.key !== key || !rowNeedsMeasuredHeight(current)) continue;

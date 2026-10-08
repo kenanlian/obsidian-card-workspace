@@ -126,6 +126,24 @@ describe("row layout anchoring", () => {
     ).toEqual({ ref: { kind: "card", path: "notes/3.md" }, offset: 60 });
   });
 
+  it("keeps the partially visible row when padding puts the next row below the scrollport top", () => {
+    const rows = [cardRow("notes/0.md"), cardRow("notes/1.md"), cardRow("notes/2.md")];
+    const anchor = captureLayoutAnchor({
+      scrollTop: 205, listPaddingTop: 12, rowPositions: [0, 100, 200], rows,
+    });
+
+    expect(anchor).toEqual({ ref: { kind: "card", path: "notes/1.md" }, offset: 105 });
+    const nextScrollTop = resolveAnchoredScrollTop({ anchor: anchor!, rows, rowPositions: [0, 150, 350] });
+    // The same row stays at the same screen offset even when it grows itself.
+    expect(12 + 150 - nextScrollTop!).toBe(12 + 100 - 205);
+  });
+
+  it("preserves scroll zero inside the top padding", () => {
+    const rows = [cardRow("notes/0.md")];
+    const anchor = captureLayoutAnchor({ scrollTop: 0, listPaddingTop: 12, rowPositions: [0], rows });
+    expect(resolveAnchoredScrollTop({ anchor: anchor!, rows, rowPositions: [0] })).toBe(0);
+  });
+
   it("captures a group ref when the top visible row is a header", () => {
     expect(
       captureLayoutAnchor({ scrollTop: 460, rowPositions: mixedPositions, rows: mixedRows }),

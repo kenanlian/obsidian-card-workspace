@@ -252,6 +252,32 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it.each(["right", "inline"] as const)("preserves the leading row at a padded boundary when switching from %s images", async (mode) => {
+    const target = document.createElement("div"); document.body.appendChild(target);
+    target.innerHTML = "<style>.fce-list { padding-top: 12px; }</style>";
+    const state = createInitialPanelState();
+    state.cards.records = Array.from({ length: 100 }, (_, index) => createCard(`notes/${index}.md`, `${index}`));
+    state.appearance = { ...state.appearance, cardImageMode: mode };
+    const panelModel = createPanelModel(state);
+    let rowHeight = ESTIMATED_ROW_HEIGHT;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+      const height = this.classList.contains("fce-wall-row") ? rowHeight : 0;
+      return { height, width: 600, left: 0, right: 600, top: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick(); await new Promise((resolve) => setTimeout(resolve, 25)); await tick();
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    // Row 3 starts at 708px including padding, so row 2 still intersects the top.
+    list.scrollTop = 702; list.dispatchEvent(new Event("scroll")); await tick();
+    const delta = mode === "right" ? 100 : -100;
+    rowHeight += delta;
+    panelModel.mutate((draft) => { draft.appearance = { ...draft.appearance, cardImageMode: mode === "right" ? "inline" : "right" }; });
+    await tick(); ResizeObserverStub.trigger();
+    await new Promise((resolve) => setTimeout(resolve, 25)); await tick();
+    expect(list.scrollTop).toBe(702 + 2 * delta);
+    await unmount(component);
+  });
+
   it("limits image demand to visible rows plus one while text uses five rows", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState();
