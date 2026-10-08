@@ -1,9 +1,10 @@
 import { TFolder } from "obsidian";
 import { folderParentPath, folderSiblingOrdersEqual, normalizeFolderDescendingNameSorts, orderFolderSiblings, reorderFolderSiblings, type FolderSortMode } from "../../folder-sibling-orders";
 import { NAVIGATION_FILTER_FOCUS_ID } from "../navigation-model";
+import { isPathAtOrBelow } from "../../path-references";
 import { moveNavSection } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
-import { normalizeScopePath, type CardScope } from "../scope";
+import { normalizeScopePath, scopesEqual, type CardScope } from "../scope";
 import {
   NAVIGATION_SECTION_ORDER,
   navigationFolderId,
@@ -160,15 +161,48 @@ export class NavLayoutController implements DisposableController {
     const focused = this.projection.rows.find((row) => row.id === this.focusId);
     if (focused?.kind === "property-value") this.focusId = focused.parentId;
   }
-  private requestReveal(rowId: string): void {
+  private requestReveal(rowId: string, highlight = false): void {
     if (this.disposed) return;
-    this.requests.requestReveal(rowId);
+    this.requests.requestReveal(rowId, highlight);
   }
   consumeReveal(token: number): void {
     if (!this.disposed && this.requests.consumeReveal(token)) this.pushNavLayoutState();
   }
   consumeFocusReturn(token: number): void {
     if (!this.disposed && this.requests.consumeFocus(token)) this.pushNavLayoutState();
+  }
+  /** Reveal the active file's folder without selecting a new card source. */
+  revealActiveFileFolder(): string | null {
+    if (this.disposed) return null;
+    const folder = this.context.getApp().workspace.getActiveFile()?.parent;
+    if (!folder) return null;
+    const path = normalizeScopePath(folder.path);
+    const settings = this.context.getSettings();
+    if (settings.hiddenNavSections.includes("folders")
+      || settings.hiddenFolderPaths.some((hidden) => isPathAtOrBelow(path, hidden))) {
+      this.context.notify(this.context.getUiStrings().view.navMenu.activeFileFolderHidden);
+      return null;
+    }
+    this.clearQuery();
+    this.syncScope(this.context.store.getScope());
+    // Clearing a query normally reveals the current card source; this action has its own target.
+    this.revealCurrentRangeAfterProjection = false;
+    this.revealFolder(path, true);
+    const rowId = navigationFolderId(path);
+    this.focusEstablished = true;
+    this.focusId = rowId;
+    this.pushNavLayoutState();
+    return rowId;
+  }
+  private revealFolder(path: string, highlight = false): void {
+    this.revealFoldersSection = true;
+    const segments = normalizeScopePath(path).split("/").filter(Boolean);
+    for (let index = 1; index < segments.length; index += 1) {
+      const ancestor = segments.slice(0, index).join("/");
+      this.expansion.revealFolders.add(ancestor);
+      this.expansion.suppressedFolders.delete(ancestor);
+    }
+    this.requestReveal(navigationFolderId(path), highlight);
   }
   syncScope(scope: CardScope): void {
     if (this.disposed) return;
@@ -179,16 +213,11 @@ export class NavLayoutController implements DisposableController {
         if (previous?.kind === "folder" && previous.path === scope.path) return;
         this.expansion.revealFolders.clear();
         this.expansion.suppressedFolders.clear();
-        this.revealFoldersSection = true;
-        const segments = normalizeScopePath(scope.path).split("/").filter(Boolean);
-        for (let index = 1; index < segments.length; index += 1) {
-          this.expansion.revealFolders.add(segments.slice(0, index).join("/"));
-        }
-        this.requestReveal(navigationFolderId(scope.path));
+        this.revealFolder(scope.path);
         return;
       }
       case "box": case "links":
-        this.revealFoldersSection = false;
+        if (!previous || !scopesEqual(previous, scope)) this.revealFoldersSection = false;
         return;
       default: {
         const exhaustive: never = scope;

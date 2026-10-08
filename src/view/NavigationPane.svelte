@@ -72,6 +72,8 @@
   let rowElements = new Map<string, HTMLElement>();
   let consumedRevealToken = 0;
   let consumedFocusReturnToken = 0;
+  let highlightedRowId: string | null = $state(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   const paneLabelId = $props.id();
   const resizeHelpId = `${paneLabelId}-resize-help`;
@@ -92,16 +94,19 @@
   $effect(() => {
     const request = nav.revealRequest;
     if (request && request.token > consumedRevealToken && nav.visible) {
-      void consumeRevealAfterRender(request.token, request.rowId);
+      void consumeRevealAfterRender(request.token, request.rowId, request.highlight === true);
     }
   });
   $effect(() => { const request = nav.focusRequest; if (request && request.token > consumedFocusReturnToken && nav.visible)
     void consumeFocusReturnAfterRender(request.token, request.rowId); });
   $effect(() => {
+    if (highlightedRowId && (!nav.visible || !rowsById.has(highlightedRowId))) clearRevealHighlight();
+  });
+  $effect(() => {
     if (folderDrag.source !== null && (!nav.visible || !rowsById.has(`folder:${folderDrag.source}`))) clearFolderDrag();
     else if (folderDrag.target !== null && !rowsById.has(`folder:${folderDrag.target.path}`)) updateFolderTarget(null);
   });
-  $effect(() => () => { disposed = true; clearFolderDrag(); rowElements.clear(); });
+  $effect(() => () => { disposed = true; clearFolderDrag(); clearRevealHighlight(); rowElements.clear(); });
   function icon(node: HTMLElement, name: string): { update: (next: string) => void } {
     setIcon(node, name);
     return { update: (next) => setIcon(node, next) };
@@ -336,7 +341,17 @@
   function actionClick(event: MouseEvent, action: () => void): void {
     event.preventDefault(); event.stopPropagation(); if (performance.now() < suppressClickUntil) return; action();
   }
-  async function consumeRevealAfterRender(token: number, rowId: string): Promise<void> {
+  function clearRevealHighlight(): void {
+    if (highlightTimer !== null) clearTimeout(highlightTimer);
+    highlightTimer = null;
+    highlightedRowId = null;
+  }
+  function highlightRevealedRow(rowId: string): void {
+    clearRevealHighlight();
+    highlightedRowId = rowId;
+    highlightTimer = setTimeout(clearRevealHighlight, 2400);
+  }
+  async function consumeRevealAfterRender(token: number, rowId: string, highlight: boolean): Promise<void> {
     await tick();
     if (disposed || token <= consumedRevealToken || nav.revealRequest?.token !== token || !nav.visible) return;
     const target = rowElements.get(rowId);
@@ -345,7 +360,14 @@
     const scrollerRect = scrollerEl.getBoundingClientRect();
     const visible = targetRect.top >= scrollerRect.top && targetRect.bottom <= scrollerRect.bottom
       && targetRect.left >= scrollerRect.left && targetRect.right <= scrollerRect.right;
-    if (!visible) target.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    if (highlight) {
+      // Move only the navigation scroller; other panes keep their scroll position.
+      scrollerEl.scrollTop += targetRect.top - scrollerRect.top - (scrollerRect.height - targetRect.height) / 2;
+      highlightRevealedRow(rowId);
+    } else {
+      clearRevealHighlight();
+      if (!visible) target.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
     consumedRevealToken = token;
     emitIntent({ type: "reveal-consumed", token });
   }
@@ -420,6 +442,7 @@
         onfocusout={() => queueMicrotask(() => treeHasFocus = Boolean(treeEl?.contains(document.activeElement)))}>
         {#each rows as row (row.id)}
           <NavigationTreeRow {row} tabIndex={row.id === focusId ? 0 : -1}
+            revealed={highlightedRowId === row.id}
             subtreeHovered={hoveredRowIds.has(row.id)} {strings} {activeFilterTags}
             activePropertyFilterCount={nav.propertyFilterCount}
             showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}

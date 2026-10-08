@@ -180,8 +180,24 @@ export function openNavigationContextMenu(input: {
       && Number.isFinite(trigger.position?.x) && Number.isFinite(trigger.position?.y);
   if (input.disposed || !validTrigger || !input.targetCurrent) return;
   const menu = new Menu();
-  if (!buildNavContextMenu(menu, payload, deps)) return;
-  menu.onHide(() => input.restoreFocus(payload.originId));
+  let focusReturnId = payload.originId;
+  const menuDeps: NavMenuDeps = {
+    ...deps,
+    actions: {
+      ...deps.actions,
+      revealActiveFileFolder: () => {
+        const rowId = deps.actions.revealActiveFileFolder();
+        if (rowId !== null) {
+          focusReturnId = rowId;
+          // Hosts may hide the menu either before or after invoking its action.
+          input.restoreFocus(rowId);
+        }
+        return rowId;
+      },
+    },
+  };
+  if (!buildNavContextMenu(menu, payload, menuDeps)) return;
+  menu.onHide(() => input.restoreFocus(focusReturnId));
   if (trigger.kind === "pointer") menu.showAtMouseEvent(trigger.mouseEvent);
   else menu.showAtPosition(trigger.position);
   const menuDom = getMenuDom(menu);

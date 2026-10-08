@@ -1140,7 +1140,7 @@ export function createViewWithFile(
       cachedRead: vi.fn(async () => ""),
       process: vi.fn(async (_file: InstanceType<typeof mockState.MockTFile>, mutate: (content: string) => string) => mutate("")),
     },
-    workspace: {},
+    workspace: { getActiveFile: vi.fn(() => null) },
   };
   const leaf = { app, getRoot: vi.fn(() => ({})) };
   const plugin = {

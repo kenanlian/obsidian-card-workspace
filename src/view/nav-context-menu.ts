@@ -21,6 +21,7 @@ import type {
 export type { NavContextMenuPayload };
 export { resolveNavMenuDangerLabel } from "./menus/nav-menu-danger";
 export interface NavMenuActions {
+  revealActiveFileFolder: () => string | null;
   hideFolder: (path: string) => void;
   hideTag: (path: string) => void;
   hideSection: (section: NavSectionId) => void;
@@ -77,6 +78,7 @@ export interface NavMenuDeps {
   /** Checked state for one property value menu target (type-sensitive identity). */
   isPropertyValueActive: (key: string, ref: PropertyScalarRef) => boolean;
   canResolveSystemPath: boolean;
+  hasActiveFile: boolean;
   favorites: FavoriteEntry[];
   boxes: CardBoxDefinition[];
   activeBoxId: string | null;
@@ -157,6 +159,10 @@ function appendFolderNameOrder(menu: Menu, deps: NavMenuDeps, parent: string): v
 
 function buildFoldersHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: NavMenuDeps): boolean {
   const navMenu = deps.strings.view.navMenu;
+  addItem(menu, navMenu.revealActiveFileFolder, "locate-fixed",
+    () => { deps.actions.revealActiveFileFolder(); },
+    (item) => item.setDisabled(!deps.hasActiveFile));
+  menu.addSeparator();
   appendCreateItems(menu, deps, "/", true);
   appendFolderNameOrder(menu, deps, "");
   menu.addSeparator();

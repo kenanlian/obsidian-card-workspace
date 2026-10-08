@@ -20,6 +20,8 @@ export type NavigationActivationMode = "ordinary" | "additive";
 export interface NavigationRevealRequest {
   token: number;
   rowId: string;
+  /** Explicit user location actions also emphasize the target, even when already visible. */
+  highlight?: boolean;
 }
 
 export const NAVIGATION_FILTER_FOCUS_ID = "navigation-filter";

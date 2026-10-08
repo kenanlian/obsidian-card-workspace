@@ -31,6 +31,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
         (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
       ),
     canResolveSystemPath: canResolveSystemPath(deps.context.getApp()),
+    hasActiveFile: deps.context.getApp().workspace.getActiveFile() !== null,
     favorites: settings.favorites ?? [],
     boxes: settings.boxes ?? [],
     activeBoxId: deps.modules.boxActions.getActiveBox()?.id ?? null,
@@ -50,6 +51,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       toggleTag: (tag) => { void deps.modules.navLayout.toggleById(`tag:${tag}`); },
     },
     actions: {
+      revealActiveFileFolder: () => deps.modules.navLayout.revealActiveFileFolder(),
       hideFolder: (path) => { void hideNavigationEntry(deps.context, "hiddenFolderPaths", path); },
       hideTag: (path) => { void hideNavigationEntry(deps.context, "hiddenTagPaths", path); },
       hideSection: (section) => { void hideNavigationEntry(deps.context, "hiddenNavSections", section); },

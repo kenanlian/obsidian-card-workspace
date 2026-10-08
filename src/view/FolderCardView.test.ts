@@ -377,6 +377,7 @@ function createHarness(): TestHarness {
 
   const app = {
     workspace: {
+      getActiveFile: vi.fn(() => null),
       leftSplit: { id: "left-split" },
       trigger: vi.fn(),
     },

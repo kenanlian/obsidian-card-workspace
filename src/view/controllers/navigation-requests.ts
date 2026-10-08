@@ -13,8 +13,8 @@ export class NavigationRequests {
   getReveal(): NavigationRevealRequest | null { return this.reveal; }
   getFocus(): NavigationFocusRequest | null { return this.focus; }
 
-  requestReveal(rowId: string): void {
-    this.reveal = { token: ++this.revealToken, rowId };
+  requestReveal(rowId: string, highlight = false): void {
+    this.reveal = { token: ++this.revealToken, rowId, ...(highlight ? { highlight: true } : {}) };
   }
 
   requestFocus(rowId: string): void {

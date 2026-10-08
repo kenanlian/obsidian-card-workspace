@@ -185,6 +185,8 @@ export interface ViewStrings {
     delete: string;
   };
   navMenu: {
+    revealActiveFileFolder: string;
+    activeFileFolderHidden: string;
     newNote: string;
     newFolder: string;
     newCanvas: string;

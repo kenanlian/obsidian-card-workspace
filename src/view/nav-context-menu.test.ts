@@ -128,6 +128,7 @@ function makeBox(id: string, name: string): CardBoxDefinition {
 
 function createActions(): NavMenuActions {
   return {
+    revealActiveFileFolder: vi.fn(() => null),
     hideFolder: vi.fn(), hideTag: vi.fn(), hideSection: vi.fn(),
     createNote: vi.fn(),
     createFolder: vi.fn(),
@@ -184,6 +185,7 @@ function createDeps(
     propertyFilterCount: 0,
     isPropertyValueActive: () => false,
     canResolveSystemPath: true,
+    hasActiveFile: true,
     favorites: [],
     boxes: [makeBox("box-1", "Alpha"), makeBox("box-2", "Beta")],
     activeBoxId: null,
@@ -234,6 +236,8 @@ describe("folders header menu", () => {
 
     expect(result).toBe(true);
     expect(getSignature(menu)).toEqual([
+      { title: "Reveal active note's folder", icon: "locate-fixed" },
+      "sep",
       { title: "New note in vault root", icon: "square-pen" },
       { title: "New folder in vault root", icon: "folder-plus" },
       { title: "New canvas in vault root", icon: "layout-dashboard" },
@@ -276,6 +280,19 @@ describe("folders header menu", () => {
     const item = findItem(menu, "Including subfolders");
     expect(item?.checked).toBe(false);
     expect(item?.disabled).toBe(true);
+  });
+
+  it.each(["en", "zh"] as const)("offers the localized active-note folder action and disables it without a file (%s)", (language) => {
+    const deps = createDeps({ strings: getUiStrings(language), hasActiveFile: false });
+    const payload = createPayload({ section: "folders", scope: "header" });
+    const disabled = build(payload, deps).menu;
+    const title = deps.strings.view.navMenu.revealActiveFileFolder;
+    expect(findItem(disabled, title)?.disabled).toBe(true);
+    deps.hasActiveFile = true;
+    const enabled = build(payload, deps).menu;
+    expect(findItem(enabled, title)?.disabled).toBe(false);
+    findItem(enabled, title)?.clickHandler?.();
+    expect(deps.actions.revealActiveFileFolder).toHaveBeenCalledOnce();
   });
 
   it("reflects enabled include-subfolders state and toggles it directly", () => {
@@ -1061,6 +1078,7 @@ describe("localization", () => {
     const { menu } = build(createPayload({ section: "folders", scope: "header" }), deps);
 
     expect(getTitles(menu)).toEqual([
+      "定位当前笔记所在文件夹",
       "在库根目录新建笔记",
       "在库根目录新建文件夹",
       "在库根目录新建白板",
@@ -1300,6 +1318,32 @@ describe("nav context menu wiring", () => {
       expect(menu.showAtMouseEvent).not.toHaveBeenCalled();
       menu.hideHandler?.();
       expect(restoreFocus).toHaveBeenCalledWith("section:folders");
+    });
+
+    it.each(["before", "after"])("keeps focus on the revealed folder when the menu hides %s the action", (order) => {
+      const { view, plugin } = createNavView();
+      const nav = (view as any).modules.navLayout;
+      const restoreFocus = vi.spyOn(nav, "restoreFocus");
+      const active = new mockState.MockTFile("notes/nav-menu.md");
+      (view.app.workspace as any).getActiveFile.mockReturnValue(active);
+      nav.folderTree = [{ name: "notes", path: "notes", depth: 0, directCount: 1, recursiveCount: 1, recursiveFolderCount: 0, children: [] }];
+      nav.pushNavLayoutState();
+      const scope = view.getCardScope();
+      const panelBefore = (view as any).panelModel.getState();
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+      const menu = mockState.menuInstances[0];
+      const item = menu.items.find((candidate) => candidate.title === getUiStrings("en").view.navMenu.revealActiveFileFolder);
+      expect(item?.disabled).toBe(false);
+
+      if (order === "before") menu.hideHandler?.();
+      item?.clickHandler?.();
+      if (order === "after") menu.hideHandler?.();
+      expect(restoreFocus).toHaveBeenLastCalledWith("folder:notes");
+      expect(nav.getFocusRequest()?.rowId).toBe("folder:notes");
+      expect(nav.getRevealRequest()?.rowId).toBe("folder:notes");
+      expect(view.getCardScope()).toBe(scope);
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
+      expect((view as any).panelModel.getState().cards).toBe(panelBefore.cards);
     });
 
     it("builds identical capabilities for pointer and positioned triggers", () => {

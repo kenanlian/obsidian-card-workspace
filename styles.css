@@ -72,6 +72,8 @@
   --fce-nav-row-selected-marker: var(--interactive-accent, #7c3aed);
   --fce-nav-checked-bg: var(--fce-nav-row-active-bg);
   --fce-nav-focus-ring: var(--background-modifier-border-focus, var(--interactive-accent, #7c3aed));
+  --fce-nav-reveal-bg: color-mix(in srgb, var(--interactive-accent, #7c3aed) 22%, var(--fce-nav-bg));
+  --fce-nav-reveal-border: var(--interactive-accent, #7c3aed);
   /*
    * Derived from the text color instead of a theme hover token: the row is
    * already painted with `--fce-nav-row-hover`, which many themes alias to the
@@ -473,6 +475,11 @@
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-active-file .fce-tree-item-identity {
   color: var(--text-accent, var(--fce-nav-icon-color));
+}
+
+.folder-card-view .fce-nav-tree .fce-tree-row.is-revealed {
+  background: var(--fce-nav-reveal-bg);
+  box-shadow: inset 0 0 0 2px var(--fce-nav-reveal-border);
 }
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-synthetic .fce-tree-label {

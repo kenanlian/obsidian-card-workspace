@@ -21,10 +21,11 @@ vi.mock("obsidian", () => ({
 }));
 
 import { defaultNavSectionOrder } from "../../navigation-section-order";
+import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import { resolveFolderSortMode } from "../../folder-sibling-orders";
 import type { PropertyFacet } from "../property-facets";
-import { createFolderScope, createLinksScope } from "../scope";
+import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
 import { navigationFolderId, navigationPropertyId, navigationPropertyValueId } from "../navigation-model";
 import type { NavigationProjectionInput } from "../navigation-model";
 import type { NavSectionId } from "../types";
@@ -52,16 +53,17 @@ function file(path: string): TFile {
 function createHarness(root = folder("")) {
   const settings = normalizeSettings(DEFAULT_SETTINGS);
   const publishGroups = vi.fn();
+  const getActiveFile = vi.fn<() => TFile | null>(() => null);
   const saveSettings = vi.fn(async (patch: Partial<typeof settings>) => {
     Object.assign(settings, patch);
   });
   const context = {
-    getApp: () => ({ vault: { getRoot: () => root } }),
+    getApp: () => ({ vault: { getRoot: () => root }, workspace: { getActiveFile } }),
     store: createViewStateStore(createFolderScope("", true)),
     epochs: createViewEpochs(),
     getSettings: () => settings,
     saveSettings,
-    getUiStrings: vi.fn(),
+    getUiStrings: () => getUiStrings("en"),
     publishGroups,
     requestUpdate: vi.fn(),
     notify: vi.fn(),
@@ -73,7 +75,7 @@ function createHarness(root = folder("")) {
     onNavCountsInvalidated,
     getTooltipSide: () => "right",
   });
-  return { context, controller, onNavCountsInvalidated, publishGroups, saveSettings, settings };
+  return { context, controller, getActiveFile, onNavCountsInvalidated, publishGroups, saveSettings, settings };
 }
 
 function projectionInput(scope = createFolderScope("a/b", true)): Omit<NavigationProjectionInput, "query" | "expansion"> {
@@ -230,6 +232,100 @@ describe("NavLayoutController", () => {
     const projection = controller.project(input);
     expect(projection.sections.find((item) => item.section === "folders")?.expanded).toBe(false);
     expect(controller.getRevealRequest()).toBeNull();
+  });
+
+  it.each([
+    createFolderScope("a", true), createBoxScope("box-1"), createLinksScope("other.md", "backlinks"),
+  ])("reveals the active file's folder in $kind scope without changing the card source or settings", async (scope) => {
+    const h = createHarness();
+    h.context.store.setScope(scope);
+    h.settings.expandedFolderPaths = ["a", "a/b"];
+    const input = projectionInput(scope);
+    const initial = h.controller.project(input);
+    const ancestor = initial.rows.find((row) => row.id === "folder:a");
+    if (!ancestor) throw new Error("missing ancestor fixture");
+    await h.controller.setExpanded(ancestor, false);
+    input.sectionCollapsed = { ...input.sectionCollapsed, folders: true };
+    h.settings.sectionCollapsed.folders = true;
+    const settingsBefore = structuredClone(h.settings);
+    h.controller.updateQuery("no match");
+    h.controller.project(input);
+    const active = file("a/b/c/note.md");
+    active.parent = folder("a/b/c");
+    h.getActiveFile.mockReturnValue(active);
+    h.saveSettings.mockClear();
+    h.publishGroups.mockClear();
+
+    expect(h.controller.revealActiveFileFolder()).toBe("folder:a/b/c");
+    const revealed = h.controller.project(input);
+    expect(h.controller.getQuery()).toBe("");
+    expect(revealed.rows.find((row) => row.id === "section:folders")?.expanded).toBe(true);
+    expect(revealed.rows.find((row) => row.id === "folder:a")?.expanded).toBe(true);
+    expect(revealed.rows.find((row) => row.id === "folder:a/b")?.expanded).toBe(true);
+    expect(revealed.rows.some((row) => row.id === "folder:a/b/c")).toBe(true);
+    expect(h.controller.getFocusId()).toBe("folder:a/b/c");
+    expect(h.controller.getRevealRequest()).toEqual({ token: expect.any(Number), rowId: "folder:a/b/c", highlight: true });
+    expect(h.context.store.getScope()).toBe(scope);
+    expect(h.settings).toEqual(settingsBefore);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.publishGroups.mock.calls.every((groups) => groups.length === 1 && groups[0] === "nav")).toBe(true);
+
+    const token = h.controller.getRevealRequest()!.token;
+    h.controller.consumeReveal(token);
+    expect(h.controller.revealActiveFileFolder()).toBe("folder:a/b/c");
+    h.controller.project(input);
+    expect(h.controller.getRevealRequest()!.token).toBeGreaterThan(token);
+  });
+
+  it("reveals vault root for a root-level active note", () => {
+    const h = createHarness();
+    const scope = createFolderScope("a", true);
+    h.context.store.setScope(scope);
+    const input = projectionInput(scope);
+    input.folders = [{ name: "/", path: "/", depth: 0, directCount: 1, recursiveCount: 1, recursiveFolderCount: 0, children: [] }, ...input.folders];
+    h.controller.project(input);
+    const active = file("root.md");
+    active.parent = folder("");
+    h.getActiveFile.mockReturnValue(active);
+
+    expect(h.controller.revealActiveFileFolder()).toBe("folder:");
+    h.controller.project(input);
+    expect(h.controller.getFocusId()).toBe("folder:");
+    expect(h.controller.getRevealRequest()?.rowId).toBe("folder:");
+    expect(h.context.store.getScope()).toBe(scope);
+  });
+
+  it.each(["a", "a/b", "section"])("respects the %s hiding rule and preserves navigation query", (hidden) => {
+    const h = createHarness();
+    if (hidden === "section") h.settings.hiddenNavSections = ["folders"];
+    else h.settings.hiddenFolderPaths = [hidden];
+    const active = file("a/b/note.md");
+    active.parent = folder("a/b");
+    h.getActiveFile.mockReturnValue(active);
+    h.controller.updateQuery("work");
+    h.publishGroups.mockClear();
+
+    expect(h.controller.revealActiveFileFolder()).toBeNull();
+    expect(h.context.notify).toHaveBeenCalledWith(getUiStrings("en").view.navMenu.activeFileFolderHidden);
+    expect(h.controller.getQuery()).toBe("work");
+    expect(h.publishGroups).not.toHaveBeenCalled();
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("matches hidden folder boundaries and ignores callbacks without an active file or after disposal", () => {
+    const h = createHarness();
+    expect(h.controller.revealActiveFileFolder()).toBeNull();
+    expect(h.publishGroups).not.toHaveBeenCalled();
+    h.settings.hiddenFolderPaths = ["a/b"];
+    const active = file("a/bb/note.md");
+    active.parent = folder("a/bb");
+    h.getActiveFile.mockReturnValue(active);
+    expect(h.controller.revealActiveFileFolder()).toBe("folder:a/bb");
+    expect(h.context.notify).not.toHaveBeenCalled();
+    h.controller.dispose();
+    h.publishGroups.mockClear();
+    expect(h.controller.revealActiveFileFolder()).toBeNull();
+    expect(h.publishGroups).not.toHaveBeenCalled();
   });
 
   it("keeps initial focus unresolved while a restored current folder becomes visible", () => {

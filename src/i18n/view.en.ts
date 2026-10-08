@@ -219,6 +219,8 @@ export const viewStringsEn: ViewStrings = {
       delete: "Delete",
     },
     navMenu: {
+      revealActiveFileFolder: "Reveal active note's folder",
+      activeFileFolderHidden: "The active note's folder is hidden by navigation visibility rules. Unhide it in navigation visibility settings first.",
       newNote: "New note",
       newFolder: "New folder",
       newCanvas: "New canvas",

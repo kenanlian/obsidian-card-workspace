@@ -15,6 +15,7 @@
     showItemCounts?: boolean;
     tooltipSide?: "left" | "right";
     subtreeHovered?: boolean;
+    revealed?: boolean;
     dragState?: NavigationRowDragState | null;
     rowRef?: (node: HTMLElement, rowId: string) => { destroy: () => void };
     onFocus?: (rowId: string) => void;
@@ -38,6 +39,7 @@
     showItemCounts = false,
     tooltipSide = "right",
     subtreeHovered = false,
+    revealed = false,
     dragState = null,
     rowRef = () => ({ destroy: () => undefined }),
     onFocus,
@@ -86,6 +88,7 @@
 <div
   class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''} {dragState?.dragging ? (row.kind === 'folder' ? 'is-folder-dragging' : 'is-favorite-dragging') : ''} {dragState?.dropInside ? 'is-drop-inside' : ''} {dragState?.dropIndicator === 'before' ? 'is-drop-before' : ''} {dragState?.dropIndicator === 'after' ? 'is-drop-after' : ''}"
   data-nav-row-id={row.id}
+  class:is-revealed={revealed}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
   role="treeitem"

@@ -193,6 +193,7 @@ describe("NavigationPane projected ARIA tree", () => {
     HTMLElement.prototype.getBoundingClientRect = originalRect;
     if (originalScrollIntoView) HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+    vi.useRealTimers();
   });
 
   it("defines every tree key without handling Tab or unrelated host keys", () => {
@@ -713,6 +714,68 @@ describe("NavigationPane projected ARIA tree", () => {
     await tick(); await tick();
     expect(scroll).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
     expect(consumed).toContainEqual({ type: "reveal-consumed", token: 5 });
+    expect(document.querySelector(".is-revealed")).toBeNull();
+  });
+
+  it.each([true, false])("centers and highlights an explicit folder reveal even when already visible=%s", async (visible) => {
+    vi.useFakeTimers();
+    const top = visible ? 70 : 170;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.dataset.navRowId === "folder:notes/child") return { top, bottom: top + 20, height: 20, left: 0, right: 100 } as DOMRect;
+      if (this.classList.contains("fce-nav-pane-sections")) return { top: 0, bottom: 100, height: 100, left: 0, right: 100 } as DOMRect;
+      return originalRect.call(this);
+    };
+    const scroll = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scroll;
+    const cardScroller = document.createElement("div");
+    cardScroller.scrollTop = 88;
+    document.body.append(cardScroller);
+    const intents: NavigationIntent[] = [];
+    const component = renderHarness(nav({ focusId: "folder:notes/child",
+      focusRequest: { token: 1, rowId: "folder:notes/child" },
+      revealRequest: { token: 1, rowId: "folder:notes/child", highlight: true } }),
+      (intent) => intents.push(intent));
+    await tick(); await tick();
+    const target = row("folder:notes/child");
+    expect(target.classList.contains("is-revealed")).toBe(true);
+    expect(target.hasAttribute("aria-current")).toBe(false);
+    expect(row("folder:notes").getAttribute("aria-current")).toBe("page");
+    expect(document.activeElement).toBe(target);
+    expect(document.querySelector<HTMLElement>(".fce-nav-pane-sections")!.scrollTop).toBe(top - 40);
+    expect(cardScroller.scrollTop).toBe(88);
+    expect(scroll).not.toHaveBeenCalled();
+    expect(intents).toContainEqual({ type: "reveal-consumed", token: 1 });
+
+    component.setNav(nav({ focusId: "folder:notes/child" }));
+    await tick();
+    vi.advanceTimersByTime(2000);
+    await tick();
+    expect(target.classList.contains("is-revealed")).toBe(true);
+    component.setNav(nav({ focusId: "folder:notes/child",
+      revealRequest: { token: 2, rowId: "folder:notes/child", highlight: true } }));
+    await tick(); await tick();
+    vi.advanceTimersByTime(400);
+    await tick();
+    expect(target.classList.contains("is-revealed")).toBe(true);
+    vi.advanceTimersByTime(2000);
+    await tick();
+    expect(target.classList.contains("is-revealed")).toBe(false);
+  });
+
+  it("drops reveal emphasis and its timer when the target disappears or the pane unmounts", async () => {
+    vi.useFakeTimers();
+    const component = renderHarness(nav({ revealRequest: { token: 1, rowId: "folder:notes/child", highlight: true } }), () => undefined);
+    await tick(); await tick();
+    expect(row("folder:notes/child").classList.contains("is-revealed")).toBe(true);
+    component.setNav(nav({ projection: { ...projection(), rows: projection().rows.filter((candidate) => candidate.id !== "folder:notes/child") } }));
+    await tick(); await tick();
+    expect(document.querySelector(".is-revealed")).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    component.setNav(nav({ revealRequest: { token: 2, rowId: "folder:notes/child", highlight: true } }));
+    await tick(); await tick();
+    expect(row("folder:notes/child").classList.contains("is-revealed")).toBe(true);
+    await unmount(components.pop()!);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("defers hidden reveal requests, consumes them once when visible, and rejects stale tokens", async () => {
