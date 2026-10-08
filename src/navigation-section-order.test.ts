@@ -172,3 +172,13 @@ describe("canMoveNavSection", () => {
     }
   });
 });
+
+it("moves between visible sections while leaving hidden sections at their original indices", () => {
+  const hidden = ["folders", "tags"] as const;
+  const moved = moveNavSection(DEFAULT_ORDER, "favorites", 1, hidden);
+  expect(moved).toEqual(["properties", "folders", "tags", "favorites", "boxes", "links"]);
+  expect(moveNavSection(moved!, "favorites", -1, hidden)).toEqual(DEFAULT_ORDER);
+  expect(canMoveNavSection(DEFAULT_ORDER, "properties", -1, hidden)).toBe(true);
+  expect(moveNavSection(DEFAULT_ORDER, "folders", 1, hidden)).toBeNull();
+  expect(moveNavSection(DEFAULT_ORDER, "favorites", 1, DEFAULT_ORDER.filter((id) => id !== "favorites"))).toBeNull();
+});

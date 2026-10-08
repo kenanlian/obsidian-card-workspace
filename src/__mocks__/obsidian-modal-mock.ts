@@ -185,6 +185,9 @@ export class MockText {
 
 export class MockToggle {
   value = false;
+  disabled = false;
+
+  setDisabled(value: boolean): this { this.disabled = value; return this; }
   private handler: ((value: boolean) => unknown) | null = null;
 
   setValue(value: boolean): this {

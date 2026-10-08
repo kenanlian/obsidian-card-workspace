@@ -1,3 +1,5 @@
+import { rewriteHiddenTagsAfterRename } from "../../navigation-visibility";
+import { tagPathIsOrUnder } from "../tag-tree";
 import type { UiStrings } from "../../i18n";
 import type { PartialPluginSettings } from "../../settings";
 import { TagInputModal } from "../modals/TagInputModal";
@@ -63,7 +65,7 @@ export class TagManagementActions {
     }
 
     const scan = scanTagManagementTargets(this.deps.context.getApp(), from, this.readTagReferences());
-    if (!this.scanHasImpact(scan)) {
+    if (!this.scanHasImpact(scan) && !this.deps.context.getSettings().hiddenTagPaths.some((path) => tagPathIsOrUnder(path, from))) {
       this.deps.context.notify(strings.tagNotFound(from));
       return true;
     }
@@ -88,7 +90,11 @@ export class TagManagementActions {
     }
 
     const summary = await batchRenameTagInFiles(this.deps.context.getApp(), scan.files, from, to);
-    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForRename(refs, from, to));
+    const hidden = this.deps.context.getSettings().hiddenTagPaths;
+    const hiddenTagPaths = summary.failed.length > 0 && summary.changed.length === 0 ? hidden
+      : rewriteHiddenTagsAfterRename(hidden, from, to, summary.failed.length > 0);
+    const hiddenChanged = hiddenTagPaths.length !== hidden.length || hiddenTagPaths.some((path, index) => path !== hidden[index]);
+    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForRename(refs, from, to), hiddenChanged ? { hiddenTagPaths } : {});
     this.notifyTagMutationSummary(
       summary,
       (count) => strings.renamed(from, to, count),
@@ -153,9 +159,10 @@ export class TagManagementActions {
   /** Applies the favorites/filter/box-rule rewrite as one graded settings patch. */
   private async persistTagReferenceRewrite(
     rewrite: (refs: TagReferenceSnapshot) => TagReferenceRewrite,
+    extraPatch: PartialPluginSettings = {},
   ): Promise<void> {
     const result = rewrite(this.readTagReferences());
-    const patch: PartialPluginSettings = {};
+    const patch: PartialPluginSettings = { ...extraPatch };
     if (result.favoritesChanged) patch.favorites = result.favorites;
     if (result.filterChanged) patch.filter = { tags: result.filterTags };
     if (result.boxesChanged) patch.boxes = result.boxes;

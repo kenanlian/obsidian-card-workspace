@@ -811,3 +811,52 @@ describe("manual folder order projection", () => {
     expect(all.find((row) => row.folderPath === "A")?.directCount).toBe(folders[1].directCount);
   });
 });
+
+describe("hidden navigation projection", () => {
+  it("prunes subtrees before query and all expansion layers while keeping favorites and source counts", () => {
+    const input = buildInput({ hiddenFolderPaths: ["Projects/Alpha"], hiddenTagPaths: ["work"] });
+    const before = structuredClone(input);
+    const projected = projectNavigation(input);
+    expect(projected.rows.some((row) => row.kind === "folder" && row.folderPath.startsWith("Projects/Alpha"))).toBe(false);
+    expect(projected.rows.some((row) => row.kind === "tag")).toBe(false);
+    expect(projected.rows.filter((row) => row.kind === "favorite")).toHaveLength(4);
+    expect(projected.rows.find((row) => row.id === "folder:Projects")).toMatchObject({ count: 4 });
+    expect(input).toEqual(before);
+    for (const query of ["résumé", "current", "历史"]) {
+      const queried = projectNavigation({ ...input, query });
+      expect(queried.rows.some((row) => row.kind === "tag" || row.id === "folder:Projects/Alpha/Résumé")).toBe(false);
+    }
+  });
+
+  it("uses slash boundaries and visible children for expansion", () => {
+    const projected = projectNavigation(buildInput({
+      hiddenFolderPaths: ["work/child"], hiddenTagPaths: ["work"],
+      folders: [folder("work", "work", [folder("child", "work/child")]), folder("workspace", "workspace")],
+      tags: [tag("work", "Work", [tag("work/child", "Child")], true), tag("workspace", "Workspace")],
+    }));
+    expect(projected.rows.find((row) => row.id === "folder:work")).toMatchObject({ expandable: false, expanded: false });
+    expect(projected.rows.find((row) => row.id === "folder:workspace")).toBeDefined();
+    expect(projected.rows.find((row) => row.id === "tag:workspace")).toBeDefined();
+    expect(projected.rows.find((row) => row.id === "tag:work")).toBeUndefined();
+  });
+
+  it("hides every section including headers, preserves its layout on restore, and allows all hidden", () => {
+    const input = buildInput();
+    const original = projectNavigation(input);
+    for (const section of input.sectionOrder) {
+      const hidden = projectNavigation({ ...input, hiddenNavSections: [section] });
+      expect(hidden.rows.some((row) => row.section === section)).toBe(false);
+      expect(hidden.sections.some((row) => row.section === section)).toBe(false);
+      const headers = hidden.rows.filter((row) => row.kind === "section");
+      expect(headers.map((row) => row.positionInSet)).toEqual([1, 2, 3, 4, 5]);
+      expect(headers.every((row) => row.setSize === 5)).toBe(true);
+    }
+    for (const query of ["", "work"]) {
+      const hidden = projectNavigation({ ...input, query, hiddenNavSections: input.sectionOrder });
+      expect(hidden.rows).toEqual([]);
+      expect(hidden.allSectionsHidden).toBe(true);
+      expect(resolveNavigationFocus(original.rows, hidden.rows, "tag:work")).toBeNull();
+    }
+    expect(projectNavigation({ ...input, hiddenNavSections: [] })).toEqual(original);
+  });
+});

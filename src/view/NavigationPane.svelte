@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NAVIGATION_FILTER_FOCUS_ID } from "./navigation-model";
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
   import { getUiStrings, type UiStrings } from "../i18n";
@@ -350,7 +351,8 @@
   }
   async function consumeFocusReturnAfterRender(token: number, rowId: string): Promise<void> {
     await tick(); if (disposed || token <= consumedFocusReturnToken || nav.focusRequest?.token !== token || !nav.visible) return;
-    const target = rowElements.get(rowId); if (!target) return;
+    const target = rowId === NAVIGATION_FILTER_FOCUS_ID ? filterEl
+      : rowElements.get(rowId) ?? (nav.focusId ? rowElements.get(nav.focusId) : null) ?? filterEl; if (!target) return;
     target.focus(); consumedFocusReturnToken = token;
     emitIntent({ type: "focus-return-consumed", token });
   }
@@ -407,7 +409,9 @@
     </div>
   </div>
   <div class="fce-nav-pane-sections" bind:this={scrollerEl} use:folderDragSurface>
-    {#if nav.projection.noResults}
+    {#if nav.projection.allSectionsHidden}
+      <div class="fce-tree-empty">{strings.navigationVisibility.allHidden}</div>
+    {:else if nav.projection.noResults}
       <div class="fce-tree-empty fce-nav-no-results">{labels.noResults}</div>
     {:else}
       <div class="fce-nav-tree" role="tree" tabindex="-1" aria-labelledby={paneLabelId} bind:this={treeEl}

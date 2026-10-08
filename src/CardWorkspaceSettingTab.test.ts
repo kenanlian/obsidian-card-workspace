@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
-import { MockEl, groupsIn, settingsIn } from "./__mocks__/obsidian-modal-mock";
+import { MockEl, Setting, SettingGroup, groupsIn, settingsIn } from "./__mocks__/obsidian-modal-mock";
 
 const mockState = vi.hoisted(() => {
   class MockPluginSettingTab {
@@ -24,6 +24,7 @@ vi.mock("obsidian", async () => ({
   requireApiVersion: mockState.requireApiVersion,
 }));
 
+import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 
 interface PluginStub {
@@ -38,6 +39,7 @@ function createPlugin(
 ): PluginStub {
   return {
     getSettings: vi.fn(() => ({
+      hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [],
       cardCornerRadius: "medium",
       defaultCardOpenBehavior: "split-right",
       locateLinkCardOnOpen: false,
@@ -86,7 +88,7 @@ describe("CardWorkspaceSettingTab", () => {
     const definitions = tab.getSettingDefinitions();
 
     const [behavior, appearance] = groupsOf(definitions);
-    expect(definitions).toHaveLength(2);
+    expect(definitions).toHaveLength(3);
     expect(behavior?.type).toBe("group");
     expect(behavior?.heading).toBe("Behavior");
     expect(appearance?.heading).toBe("Appearance");
@@ -236,6 +238,49 @@ describe("CardWorkspaceSettingTab", () => {
     });
   });
 
+  it("binds all six visibility toggles to latest shared sections and preserves unrelated hidden rules", async () => {
+    const plugin = createPlugin({ hiddenNavSections: ["folders"], hiddenFolderPaths: ["keep"] });
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async (patch) => { Object.assign(settings, patch); });
+    const tab = createTab(plugin);
+    const navigation = tab.getSettingDefinitions()[2]!;
+    expect(navigation.heading).toBe("Navigation");
+    expect(navigation.items).toHaveLength(8);
+    for (const row of navigation.items.slice(0, 6)) {
+      const key = row.control!.key;
+      const section = key.slice("navSection:".length);
+      expect(tab.getControlValue(key)).toBe(section !== "folders");
+      await tab.setControlValue(key, false);
+      expect(tab.getControlValue(key)).toBe(false);
+    }
+    expect(settings.hiddenNavSections).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links"]);
+    await tab.setControlValue("navSection:folders", true);
+    expect(settings.hiddenNavSections).not.toContain("folders");
+    expect(settings.hiddenFolderPaths).toEqual(["keep"]);
+  });
+
+  it.each([false, true])("opens both management dialogs through the shared render callbacks (native: %s)", (native) => {
+    const opened = vi.spyOn(NavigationVisibilityModal.prototype, "open").mockImplementation(() => {});
+    const getRoot = vi.fn(() => ({ children: [] }));
+    const app = { vault: { getRoot, getMarkdownFiles: () => [] }, metadataCache: { getFileCache: vi.fn() } };
+    const tab = new CardWorkspaceSettingTab(app as never, createPlugin() as never);
+    if (native) {
+      const group = new SettingGroup(tab.containerEl as unknown as MockEl);
+      for (const row of tab.getSettingDefinitions()[2]!.items.slice(6)) {
+        const setting = new Setting(tab.containerEl as unknown as MockEl);
+        row.render!(setting as never, group as never);
+        setting.buttons[0]?.click();
+      }
+    } else {
+      tab.display();
+      groupsIn(tab.containerEl as unknown as MockEl)[2]!.settings.slice(6).forEach((row) => row.buttons[0]?.click());
+    }
+    expect(opened).toHaveBeenCalledTimes(2);
+    expect(getRoot).toHaveBeenCalledTimes(1);
+    opened.mockRestore();
+  });
+
   it.each(["en", "zh"])("renders identical legacy groups, order, controls and ranges in %s", (language) => {
     const tab = createTab(createPlugin({}, language));
     tab.display();
@@ -249,6 +294,7 @@ describe("CardWorkspaceSettingTab", () => {
       expect(settings.map((row) => row.desc)).toEqual(definition.items.map((row) => row.desc));
       definition.items.forEach((row, index) => {
         const setting = settings[index]!, control = row.control;
+        if (!control) { expect(setting.buttons[0]?.text).toBe(language === "zh" ? "管理" : "Manage"); return; }
         if (control.type === "dropdown") {
           expect(setting.dropdowns[0]?.options).toEqual(Object.entries(control.options).map(([value, label]) => ({ value, label })));
           expect(setting.dropdowns[0]?.value).toBe(tab.getControlValue(control.key));

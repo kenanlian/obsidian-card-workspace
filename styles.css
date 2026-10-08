@@ -1986,3 +1986,19 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   background: var(--background-modifier-hover);
   box-shadow: inset 0 0 0 2px var(--fce-accent);
 }
+
+/* Navigation visibility draft manager */
+.fce-navigation-visibility__search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-block: var(--size-4-2) var(--size-4-3);
+  background-color: var(--modal-background);
+}
+.fce-navigation-visibility__search .setting-item-info { display: none; }
+.fce-navigation-visibility__search .search-input-container { width: 100%; }
+.fce-navigation-visibility__list .setting-item-name { overflow-wrap: anywhere; }
+.fce-navigation-visibility__error { color: var(--text-error); }
+
+.fce-navigation-visibility__actions .setting-item-info { display: none; }
+.fce-navigation-visibility__actions .setting-item-control { flex-wrap: wrap; }

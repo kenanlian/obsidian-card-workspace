@@ -42,11 +42,14 @@ export function moveNavSection(
   order: readonly NavSectionId[],
   section: NavSectionId,
   delta: -1 | 1,
+  hidden: readonly NavSectionId[] = [],
 ): NavSectionId[] | null {
   const next = normalizeNavSectionOrder(order);
   const index = next.indexOf(section);
   if (index < 0) return null;
-  const target = index + delta;
+  if (hidden.includes(section)) return null;
+  let target = index + delta;
+  while (target >= 0 && target < next.length && hidden.includes(next[target])) target += delta;
   if (target < 0 || target >= next.length) return null;
   const swapped = next[index];
   next[index] = next[target];
@@ -58,6 +61,7 @@ export function canMoveNavSection(
   order: readonly NavSectionId[],
   section: NavSectionId,
   delta: -1 | 1,
+  hidden: readonly NavSectionId[] = [],
 ): boolean {
-  return moveNavSection(order, section, delta) !== null;
+  return moveNavSection(order, section, delta, hidden) !== null;
 }

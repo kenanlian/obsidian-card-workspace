@@ -598,6 +598,10 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.metadataEventBus.subscribe(listener);
   }
 
+  flushSettings(): Promise<void> {
+    return this.settingsStore.flushPendingWrites();
+  }
+
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
     if (!hasPatchValues(patch)) {
       return;

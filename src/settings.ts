@@ -1,6 +1,7 @@
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
+import { normalizeHiddenFolderPaths, normalizeHiddenTagPaths, normalizeHiddenNavSections } from "./navigation-visibility";
 import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
 import {
   normalizeExpandedPropertyKeys,
@@ -171,6 +172,9 @@ export interface PluginSettings {
   sectionCollapsed: Record<NavSectionId, boolean>;
   showNavItemCounts: boolean;
   navSectionOrder: NavSectionId[];
+  hiddenFolderPaths: string[];
+  hiddenTagPaths: string[];
+  hiddenNavSections: NavSectionId[];
 }
 
 export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter" | "sectionCollapsed"> & {
@@ -214,6 +218,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
   showNavItemCounts: false,
   navSectionOrder: defaultNavSectionOrder(),
+  hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
 };
 
 export { SETTINGS_SCHEMA_VERSION } from "./settings-schema";
@@ -521,6 +526,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     folderDescendingNameSorts: userData.folderDescendingNameSorts,
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
+    hiddenFolderPaths: userData.hiddenFolderPaths, hiddenTagPaths: userData.hiddenTagPaths,
   };
 }
 
@@ -597,6 +603,9 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     sectionCollapsed: normalizeSectionCollapsed(data),
     showNavItemCounts: normalizeBooleanSetting(data.showNavItemCounts, DEFAULT_SETTINGS.showNavItemCounts),
     navSectionOrder: normalizeNavSectionOrder(data.navSectionOrder),
+    hiddenFolderPaths: normalizeHiddenFolderPaths(data.hiddenFolderPaths),
+    hiddenTagPaths: normalizeHiddenTagPaths(data.hiddenTagPaths),
+    hiddenNavSections: normalizeHiddenNavSections(data.hiddenNavSections),
   };
 }
 

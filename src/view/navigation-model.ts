@@ -22,6 +22,8 @@ export interface NavigationRevealRequest {
   rowId: string;
 }
 
+export const NAVIGATION_FILTER_FOCUS_ID = "navigation-filter";
+
 export interface NavigationFocusRequest {
   token: number;
   rowId: string;
@@ -72,6 +74,9 @@ export interface NavigationBoxSource {
 }
 
 export interface NavigationProjectionInput {
+  hiddenFolderPaths?: readonly string[];
+  hiddenTagPaths?: readonly string[];
+  hiddenNavSections?: readonly NavSectionId[];
   query: string;
   scope: CardScope;
   activeTags: readonly string[];
@@ -218,6 +223,7 @@ export interface NavigationProjection {
   sections: readonly NavigationProjectedSection[];
   rows: readonly NavigationRow[];
   noResults: boolean;
+  allSectionsHidden?: boolean;
 }
 
 export const EMPTY_NAVIGATION_PROJECTION: NavigationProjection = {

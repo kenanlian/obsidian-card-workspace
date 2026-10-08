@@ -7,6 +7,7 @@ import {
   registerFolderCardView,
 } from "../__mocks__/folder-card-view-harness";
 import type { Menu } from "obsidian";
+import { DEFAULT_SETTINGS } from "../settings";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { getUiStrings } from "../i18n";
 import { defaultNavSectionOrder } from "../navigation-section-order";
@@ -127,6 +128,7 @@ function makeBox(id: string, name: string): CardBoxDefinition {
 
 function createActions(): NavMenuActions {
   return {
+    hideFolder: vi.fn(), hideTag: vi.fn(), hideSection: vi.fn(),
     createNote: vi.fn(),
     createFolder: vi.fn(),
     createCanvas: vi.fn(),
@@ -244,6 +246,7 @@ describe("folders header menu", () => {
       { title: "Expand all folders", icon: "chevrons-up-down" },
       { title: "Including subfolders", icon: "folder-tree" },
       "sep",
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -358,6 +361,7 @@ describe("folder row menu", () => {
       { title: "Move folder", icon: "folder-input" },
       { title: "Search in folder", icon: "search" },
       { title: "Add to favorites", icon: "star" },
+      { title: "Hide this folder", icon: "eye-off" },
       "sep",
       { title: "Copy path", icon: "clipboard-copy" },
       { title: "Show in system explorer", icon: "folder-symlink" },
@@ -440,6 +444,7 @@ describe("tags header menu", () => {
       "sep",
       { title: "Expand all tags", icon: "chevrons-up-down" },
       "sep",
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -460,6 +465,7 @@ describe("tags header menu", () => {
 
     expect(result).toBe(true);
     expect(getSignature(menu)).toEqual([
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -483,6 +489,7 @@ describe("tag row menu", () => {
       { title: "New note with this tag", icon: "square-pen" },
       { title: "Copy tag", icon: "clipboard-copy" },
       { title: "Add to favorites", icon: "star" },
+      { title: "Hide this tag", icon: "eye-off" },
       "sep",
       { title: "Rename tag…", icon: "pencil" },
       { title: "Delete tag…", icon: "trash" },
@@ -520,6 +527,7 @@ describe("tag row menu", () => {
       { title: "New note with this tag", icon: "square-pen" },
       { title: "Copy tag", icon: "clipboard-copy" },
       { title: "Add to favorites", icon: "star" },
+      { title: "Hide this tag", icon: "eye-off" },
       "sep",
       { title: "Rename tag…", icon: "pencil" },
       { title: "Delete tag…", icon: "trash" },
@@ -562,6 +570,7 @@ describe("boxes header menu", () => {
       { title: "New card box…", icon: "box" },
       { title: "Save current view as card box…", icon: "package-plus" },
       "sep",
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -576,6 +585,7 @@ describe("boxes header menu", () => {
     expect(getSignature(menu)).toEqual([
       { title: "New card box…", icon: "box" },
       "sep",
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -658,6 +668,7 @@ describe("favorites header menu", () => {
     expect(getSignature(menu)).toEqual([
       { title: "Clear favorites", icon: "star-off" },
       "sep",
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -803,6 +814,7 @@ describe("links header menu", () => {
 
     expect(result).toBe(true);
     expect(getSignature(menu)).toEqual([
+      { title: "Hide this section", icon: "eye-off" },
       { title: "Collapse section", icon: "chevron-down" },
       { title: "Move section up", icon: "arrow-up" },
       { title: "Move section down", icon: "arrow-down" },
@@ -1058,6 +1070,7 @@ describe("localization", () => {
       "手动排序",
       "展开全部文件夹",
       "包含子文件夹",
+      "隐藏此分区",
       "折叠此区",
       "分区上移",
       "分区下移",
@@ -1083,6 +1096,7 @@ describe("localization", () => {
       "移动文件夹",
       "在文件夹中查找",
       "收藏",
+      "隐藏此文件夹",
       "复制路径",
       "在系统资源管理器中显示",
       "重命名...",
@@ -1160,6 +1174,7 @@ describe("nav context menu wiring", () => {
     ): { view: FolderCardView; plugin: any } {
       const { view, plugin } = createViewWithFile("notes/nav-menu.md");
       plugin.getSettings = vi.fn(() => ({
+        ...DEFAULT_SETTINGS,
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
         filter: { tags: [], properties: [] },
@@ -1207,6 +1222,29 @@ describe("nav context menu wiring", () => {
         .filter((item: any) => item.kind !== "separator")
         .map((item: any) => item.title);
     }
+
+    it("persists navigation hiding through the host with latest rules and preserves the active filter", async () => {
+      const { view, plugin } = createNavView({ hiddenFolderPaths: ["other"], hiddenNavSections: ["links"], filter: { tags: ["work"], properties: [] } });
+      const folder = new mockState.MockTFolder("notes");
+      (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(folder);
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "item", itemId: "notes" }));
+      mockState.menuInstances[0].items.find((item) => item.title === "Hide this folder")?.clickHandler?.();
+      await vi.waitFor(() => expect(plugin.saveSettings).toHaveBeenCalledWith({ hiddenFolderPaths: ["notes", "other"] }));
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+      mockState.menuInstances.at(-1)?.items.find((item) => item.title === "Hide this section")?.clickHandler?.();
+      await vi.waitFor(() => expect(plugin.saveSettings).toHaveBeenCalledWith({ hiddenNavSections: ["folders", "links"] }));
+      expect(plugin.getSettings().filter.tags).toEqual(["work"]);
+    });
+
+    it("reports a menu save failure with a settings recovery message", async () => {
+      const { view, plugin } = createNavView();
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      plugin.saveSettings.mockRejectedValueOnce(new Error("disk failed"));
+      (view as any).openNavContextMenu(navPayload({ section: "folders", scope: "header" }));
+      mockState.menuInstances[0].items.find((item) => item.title === "Hide this section")?.clickHandler?.();
+      await vi.waitFor(() => expect(mockState.noticeMessages).toContain(getUiStrings("en").navigationVisibility.saveFailedNotice));
+      warning.mockRestore();
+    });
 
     it("shows the folders header menu at the mouse event without a danger row", () => {
       const { view } = createNavView();
@@ -1376,5 +1414,32 @@ describe("child folder name sorting menus", () => {
         expect(deps.actions.sortFolderNameOrder).toHaveBeenLastCalledWith(parent, direction);
       }
     }
+  });
+});
+
+
+describe("navigation visibility menu actions", () => {
+  it.each(["folders", "tags"] as const)("routes %s hiding to the host action", (section) => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section, scope: "item", itemId: "work" }), deps);
+    findItem(menu, section === "folders" ? "Hide this folder" : "Hide this tag")?.clickHandler?.();
+    expect(section === "folders" ? deps.actions.hideFolder : deps.actions.hideTag).toHaveBeenCalledWith("work");
+  });
+
+  it.each(["favorites", "folders", "tags", "properties", "boxes", "links"] as const)("offers section hiding for %s", (section) => {
+    const deps = createDeps();
+    const { menu } = build(createPayload({ section, scope: "header" }), deps);
+    findItem(menu, "Hide this section")?.clickHandler?.();
+    expect(deps.actions.hideSection).toHaveBeenCalledWith(section);
+  });
+
+  it.each(["/", ""])("keeps the vault root %s free of individual hiding", (itemId) => {
+    const { menu } = build(createPayload({ section: "folders", scope: "item", itemId }), createDeps());
+    expect(getTitles(menu)).not.toContain("Hide this folder");
+  });
+
+  it("disables movement when all the sections in that direction are hidden", () => {
+    const { menu } = build(createPayload({ section: "boxes", scope: "header" }), createDeps({ hiddenSections: ["links"] }));
+    expect(findItem(menu, "Move section down")?.disabled).toBe(true);
   });
 });

@@ -10,6 +10,7 @@ import {
   registerFolderCardView,
   setLatestModalTextInput,
 } from "../../__mocks__/folder-card-view-harness";
+import { DEFAULT_SETTINGS } from "../../settings";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { getUiStrings } from "../../i18n";
 import type { PropertyFilterClause } from "../../property-filter-settings";
@@ -581,6 +582,7 @@ describe("card box context menus", () => {
     } {
       const { view, plugin } = createViewWithFile("notes/box-menu.md");
       plugin.getSettings = vi.fn(() => ({
+        ...DEFAULT_SETTINGS,
         includeSubfolders: true,
         sort: { field: "mtime", direction: "desc" },
         visiblePropertyKeys: [],
@@ -665,6 +667,7 @@ describe("card box context menus", () => {
         "New card box…",
         "Save current view as card box…",
         "Add current view to card box",
+        "Hide this section",
         "Collapse section",
         "Move section up",
         "Move section down",
@@ -676,6 +679,7 @@ describe("card box context menus", () => {
       (boxModeView as any).openNavContextMenu(createNavPayload({ section: "boxes", scope: "header" }));
       expect(getMenuTitles()).toEqual([
         "New card box…",
+        "Hide this section",
         "Collapse section",
         "Move section up",
         "Move section down",
@@ -741,6 +745,7 @@ describe("card box context menus", () => {
       expect(getMenuTitles()).toEqual([
         "New card box…",
         "Save current view as card box…",
+        "Hide this section",
         "Collapse section",
         "Move section up",
         "Move section down",

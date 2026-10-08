@@ -1,11 +1,12 @@
 import {
-  PluginSettingTab, SettingGroup, requireApiVersion, type App,
+  PluginSettingTab, SettingGroup, requireApiVersion, type App, type Setting,
 } from "obsidian";
 import {
   getCardCornerRadiusOptions,
   getDefaultCardOpenBehaviorOptions,
   getDragInsertActionOptions,
   getNewNoteTemplateOptions,
+  getUiStrings,
   getSettingTabStrings,
 } from "./i18n";
 import {
@@ -21,6 +22,10 @@ import {
   isNewNoteTemplate,
   type PartialPluginSettings,
 } from "./settings";
+import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
+import { collectNavigationVisibilityPaths } from "./navigation-visibility-inventory";
+import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
+import { normalizeHiddenNavSections } from "./navigation-visibility";
 import type CardWorkspacePlugin from "./main";
 
 // These are plugin-owned data shared by both renderers, not newer host APIs.
@@ -33,8 +38,10 @@ type WorkspaceSettingDefinition = {
   name: string;
   desc?: string;
   visible?: boolean | (() => boolean);
-  control: WorkspaceSettingControl;
-};
+} & (
+  | { control: WorkspaceSettingControl; render?: never }
+  | { control?: never; render: (setting: Setting, group: SettingGroup) => void }
+);
 type WorkspaceSettingGroup = {
   type: "group";
   heading?: string;
@@ -110,6 +117,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
    */
   getControlValue(key: string): unknown {
     const settings = this.plugin.getSettings();
+    const section = this.resolveSectionControl(key);
+    if (section) return !settings.hiddenNavSections.includes(section);
     switch (key) {
       case "backlinkSnippetCount":
         return String(settings.backlinkSnippetCount);
@@ -171,6 +180,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             const visible = row.visible;
             this.legacyVisibility.set(setting.settingEl, () => typeof visible === "function" ? visible() : visible);
           }
+          if (row.render) { row.render(setting, group); return; }
           const control = row.control;
           const value = this.getControlValue(control.key);
           switch (control.type) {
@@ -209,6 +219,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const language = this.plugin.getUiLanguage();
     const strings = getSettingTabStrings(language);
 
+    const navigationStrings = getUiStrings(language).navigationVisibility;
     return [
       {
         type: "group",
@@ -323,11 +334,45 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           },
         ],
       },
+      {
+        type: "group",
+        heading: navigationStrings.heading,
+        items: [
+          ...NAVIGATION_SECTION_ORDER.map((section): WorkspaceSettingDefinition => ({
+            name: navigationStrings.sections[section],
+            desc: navigationStrings.description,
+            control: { type: "toggle", key: `navSection:${section}` },
+          })),
+          ...(["folders", "tags"] as const).map((kind): WorkspaceSettingDefinition => ({
+            name: kind === "folders" ? navigationStrings.manageFolders : navigationStrings.manageTags,
+            desc: navigationStrings.description,
+            render: (setting) => {
+              setting.addButton((button) => button.setButtonText(navigationStrings.manage).onClick(() => {
+                new NavigationVisibilityModal(this.app, {
+                  kind, strings: getUiStrings(language),
+                  collectPaths: () => collectNavigationVisibilityPaths(this.app, kind),
+                  getSettings: () => this.plugin.getSettings(),
+                  saveSettings: (patch) => this.plugin.saveSettings(patch),
+                  flushSettings: () => this.plugin.flushSettings(),
+                }).open();
+              }));
+            },
+          })),
+        ],
+      },
     ];
   }
 
+  private resolveSectionControl(key: string) {
+    return NAVIGATION_SECTION_ORDER.find((section) => key === `navSection:${section}`);
+  }
+
   private async saveDeclarativeSetting(key: string, value: unknown): Promise<void> {
-    const patch = declarativeSettingPatch(key, value);
+    const section = this.resolveSectionControl(key);
+    const patch = section && typeof value === "boolean"
+      ? { hiddenNavSections: value ? this.plugin.getSettings().hiddenNavSections.filter((id) => id !== section)
+        : normalizeHiddenNavSections([...this.plugin.getSettings().hiddenNavSections, section]) }
+      : declarativeSettingPatch(key, value);
     if (patch === null) {
       return;
     }

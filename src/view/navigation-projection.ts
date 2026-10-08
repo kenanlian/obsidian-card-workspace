@@ -1,4 +1,5 @@
 import { orderFolderSiblings, type FolderSiblingOrders } from "../folder-sibling-orders";
+import { pruneHiddenNavigationTree } from "../navigation-visibility";
 import { PLAIN_FOLDER_ICON } from "../icons";
 import { normalizeNavSectionOrder } from "../navigation-section-order";
 import { isCurrentBoxId, isCurrentFolderPath, normalizeScopePath } from "./scope";
@@ -241,6 +242,10 @@ function projectTags(
 }
 
 export function projectNavigation(input: NavigationProjectionInput): NavigationProjection {
+  input = { ...input,
+    folders: pruneHiddenNavigationTree(input.folders, input.hiddenFolderPaths ?? [], (node) => normalizeScopePath(node.path)),
+    tags: pruneHiddenNavigationTree(input.tags, input.hiddenTagPaths ?? [], (node) => normalizeTagPath(node.tag)),
+  };
   const normalizedQuery = normalizeQuery(input.query ?? "");
   const querying = normalizedQuery.length > 0;
   const activeTags = new Set(input.activeTags.map((tag) => normalizeTagPath(tag)).filter(Boolean));
@@ -318,7 +323,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   matchedCounts.set("links", linksProjection.matchedItemCount);
 
   const visibleSectionIds = normalizeNavSectionOrder(input.sectionOrder).filter((section) =>
-    !querying || (matchedCounts.get(section) ?? 0) > 0,
+    !input.hiddenNavSections?.includes(section) && (!querying || (matchedCounts.get(section) ?? 0) > 0),
   );
   const sections: NavigationProjectedSection[] = [];
   const rows: NavigationRow[] = [];
@@ -373,6 +378,8 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     sections,
     rows,
     noResults: querying && visibleSectionIds.length === 0,
+    ...(normalizeNavSectionOrder(input.sectionOrder).every((section) => input.hiddenNavSections?.includes(section))
+      ? { allSectionsHidden: true } : {}),
   };
 }
 

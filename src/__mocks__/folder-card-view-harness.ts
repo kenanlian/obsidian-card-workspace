@@ -986,6 +986,7 @@ vi.mock("obsidian", () => {
     },
     TFile: mockState.MockTFile,
     TFolder: mockState.MockTFolder,
+    normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, ""),
   };
 });
 
@@ -1150,6 +1151,7 @@ export function createViewWithFile(
       visiblePropertyKeys: [],
       expandedPropertyKeys: [],
       sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+      hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       navSectionOrder: ["favorites", "folders", "tags", "properties", "boxes"],
       defaultView: "cards",
       lastFolderPath: null,

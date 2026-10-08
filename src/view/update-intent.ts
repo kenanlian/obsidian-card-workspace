@@ -196,6 +196,9 @@ export function resolveSettingsUpdateIntent(
   // the reproject above then covers the card-facing effect of that removal.
   if (!stringArraysEqual(previous.visiblePropertyKeys, next.visiblePropertyKeys)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.expandedPropertyKeys, next.expandedPropertyKeys)) intent = mergeIntent(intent, "patch");
+  for (const key of ["hiddenFolderPaths", "hiddenTagPaths", "hiddenNavSections"] as const) {
+    if (!stringArraysEqual(previous[key], next[key])) intent = mergeIntent(intent, "patch");
+  }
   if (!stringArraysEqual(previous.navSectionOrder, next.navSectionOrder)) intent = mergeIntent(intent, "patch");
   if (!folderSiblingOrdersEqual(previous.folderSiblingOrders, next.folderSiblingOrders)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.folderDescendingNameSorts, next.folderDescendingNameSorts)) intent = mergeIntent(intent, "patch");

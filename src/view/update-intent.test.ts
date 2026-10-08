@@ -87,6 +87,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   sectionCollapsed: "patch",
   showNavItemCounts: "patch",
   navSectionOrder: "patch",
+  hiddenFolderPaths: "patch", hiddenTagPaths: "patch", hiddenNavSections: "patch",
 };
 
 function changeSetting(settings: PluginSettings, key: keyof PluginSettings): void {
@@ -130,6 +131,9 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
       };
       break;
     case "showNavItemCounts": settings.showNavItemCounts = !settings.showNavItemCounts; break;
+    case "hiddenFolderPaths": settings.hiddenFolderPaths = ["changed"]; break;
+    case "hiddenTagPaths": settings.hiddenTagPaths = ["changed"]; break;
+    case "hiddenNavSections": settings.hiddenNavSections = ["folders"]; break;
     case "navSectionOrder": settings.navSectionOrder = ["boxes", "favorites", "folders", "tags"]; break;
     default: {
       const exhaustive: never = key;

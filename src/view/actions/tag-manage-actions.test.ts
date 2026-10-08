@@ -25,6 +25,7 @@ function makeBox(id: string, ruleTags: string[]) {
     name: id,
     rules: [{
       folder: "",
+      hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       includeSubfolders: true,
       tags: ruleTags,
       properties: [],
@@ -64,6 +65,7 @@ describe("TagManagementActions rename flow", () => {
       "notes/three.md": ["unrelated"],
     });
     plugin.getSettings = vi.fn(() => ({
+      hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: ["a/b"], properties: [] },
@@ -158,6 +160,7 @@ describe("TagManagementActions delete flow", () => {
       "notes/two.md": ["a/b/child"],
     });
     plugin.getSettings = vi.fn(() => ({
+      hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: ["keep", "a/b/child"], properties: [] },
@@ -207,5 +210,35 @@ describe("TagManagementActions delete flow", () => {
     expect(mockState.modalInstances.length).toBe(0);
     expect(mockState.noticeMessages).toContain("#ghost is not used by any note, favorite, filter, or card box rule.");
     expect(batchRemoveTagsFromFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("tag rename hidden navigation rules", () => {
+  beforeEach(() => resetFolderCardViewHarness());
+
+  it.each(["success", "partial", "failed"])("reconciles rules for %s writes", async (outcome) => {
+    const { view, plugin, files } = setupVaultWithTaggedNotes({ "notes/one.md": ["a/b"], "notes/two.md": ["a/b/child"] });
+    const settings = { ...plugin.getSettings(), hiddenTagPaths: ["a/b", "a/b/child", "a/bc"], favorites: [], boxes: [] };
+    plugin.getSettings.mockImplementation(() => settings);
+    vi.mocked(batchRenameTagInFiles).mockResolvedValueOnce({
+      changed: outcome === "failed" ? [] : [{ file: files[0] }], noop: [],
+      failed: outcome === "success" ? [] : [{ file: files[1] }],
+    } as never);
+    const submitted = (view as any).modules.tagManageActions.submitTagRename("a/b", "x/y");
+    clickLatestModalButton("Rename");
+    await submitted;
+    if (outcome === "failed") expect(plugin.saveSettings).not.toHaveBeenCalled();
+    else expect(plugin.saveSettings).toHaveBeenCalledWith({ hiddenTagPaths: outcome === "partial"
+      ? ["a/b", "a/b/child", "a/bc", "x/y", "x/y/child"] : ["a/bc", "x/y", "x/y/child"] });
+  });
+
+  it("keeps hidden rules when deleting a tag", async () => {
+    const { view, plugin } = setupVaultWithTaggedNotes({ "notes/one.md": ["a/b"] });
+    plugin.getSettings.mockReturnValue({ ...plugin.getSettings(), hiddenTagPaths: ["a/b"], favorites: [], boxes: [] });
+    const submitted = (view as any).modules.tagManageActions.requestDeleteTag("a/b");
+    clickLatestModalButton("Delete");
+    await submitted;
+    expect(plugin.getSettings().hiddenTagPaths).toEqual(["a/b"]);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 });

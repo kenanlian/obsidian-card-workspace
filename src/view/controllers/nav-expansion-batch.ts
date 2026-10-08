@@ -1,3 +1,6 @@
+import { pruneHiddenNavigationTree } from "../../navigation-visibility";
+import { normalizeScopePath } from "../scope";
+import { normalizeTagPath } from "../tag-tree";
 import type { NavigationProjectionInput } from "../navigation-model";
 import { collectExpandablePropertyKeys } from "../property-navigation-projection";
 import { collectExpandableTagPaths } from "../tag-tree";
@@ -29,11 +32,11 @@ export function createNavigationExpansionState(): NavigationExpansionState {
 
 export function captureExpandableNavigationBranches(
   state: NavigationExpansionState,
-  input: Pick<NavigationProjectionInput, "folders" | "tags" | "properties">,
+  input: Pick<NavigationProjectionInput, "folders" | "tags" | "properties" | "hiddenFolderPaths" | "hiddenTagPaths">,
 ): void {
   state.expandable = {
-    folder: collectExpandableFolderPaths(input.folders),
-    tag: collectExpandableTagPaths(input.tags),
+    folder: collectExpandableFolderPaths(pruneHiddenNavigationTree(input.folders, input.hiddenFolderPaths ?? [], (node) => normalizeScopePath(node.path))),
+    tag: collectExpandableTagPaths(pruneHiddenNavigationTree(input.tags, input.hiddenTagPaths ?? [], (node) => normalizeTagPath(node.tag))),
     property: collectExpandablePropertyKeys(input.properties ?? []),
   };
 }

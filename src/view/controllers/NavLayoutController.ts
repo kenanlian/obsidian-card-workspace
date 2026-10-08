@@ -1,5 +1,6 @@
 import { TFolder } from "obsidian";
 import { folderParentPath, folderSiblingOrdersEqual, normalizeFolderDescendingNameSorts, orderFolderSiblings, reorderFolderSiblings, type FolderSortMode } from "../../folder-sibling-orders";
+import { NAVIGATION_FILTER_FOCUS_ID } from "../navigation-model";
 import { moveNavSection } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
 import { normalizeScopePath, type CardScope } from "../scope";
@@ -244,7 +245,7 @@ export class NavLayoutController implements DisposableController {
   restoreFocus(originId: string): void {
     if (this.disposed) return;
     this.focusEstablished = true; this.focusId = resolveNavigationFocus(this.projection.rows, this.projection.rows, originId);
-    if (this.focusId) this.requests.requestFocus(this.focusId);
+    this.requests.requestFocus(this.focusId ?? NAVIGATION_FILTER_FOCUS_ID);
     this.pushNavLayoutState();
   }
   async setExpanded(row: NavigationRow, expanded: boolean): Promise<void> {
@@ -388,8 +389,14 @@ export class NavLayoutController implements DisposableController {
     const collapsed = this.context.getSettings().sectionCollapsed;
     await this.context.saveSettings({ sectionCollapsed: { [id]: !collapsed[id] } });
   }
+  getHiddenSectionsForMove(): NavSectionId[] {
+    const hidden = this.context.getSettings().hiddenNavSections;
+    return NAVIGATION_SECTION_ORDER.filter((section) => hidden.includes(section)
+      || (this.query.trim().length > 0 && !this.projection.sections.some((row) => row.section === section)));
+  }
   async onMoveNavSection(section: NavSectionId, delta: -1 | 1): Promise<void> {
-    const next = moveNavSection(this.context.getSettings().navSectionOrder, section, delta);
+    const settings = this.context.getSettings();
+    const next = moveNavSection(settings.navSectionOrder, section, delta, this.getHiddenSectionsForMove());
     if (next === null) return;
     await this.context.saveSettings({ navSectionOrder: next });
   }

@@ -1114,6 +1114,7 @@ describe("card grouping settings normalization", () => {
         enableHeadingDragInsert: false,
         searchPreviewSnippetCount: 2,
         navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites", "links"],
+        hiddenNavSections: [],
         visiblePropertyKeys: [],
       },
       workspace: {
@@ -1123,6 +1124,7 @@ describe("card grouping settings normalization", () => {
         sectionCollapsed: { ...persisted.workspace.sectionCollapsed, properties: false, links: false },
       },
       userData: {
+        hiddenFolderPaths: [], hiddenTagPaths: [],
         folderSiblingOrders: {},
         folderDescendingNameSorts: [],
         ...persisted.userData,
@@ -1592,6 +1594,7 @@ describe("settings layer manifest (C4)", () => {
     cardImageFit: "preferences",
     showNavItemCounts: "preferences",
     navSectionOrder: "preferences",
+    hiddenNavSections: "preferences", hiddenFolderPaths: "userData", hiddenTagPaths: "userData",
     visiblePropertyKeys: "preferences",
     lastFolderPath: "workspace",
     expandedFolderPaths: "workspace",
@@ -1691,6 +1694,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     navPaneCollapsed: true,
     sectionCollapsed: { favorites: true, folders: true, tags: true, properties: true, boxes: true, links: true },
     showNavItemCounts: true,
+    hiddenFolderPaths: ["Projects/Hidden"], hiddenTagPaths: ["work/hidden"], hiddenNavSections: ["folders", "tags"],
     navSectionOrder: ["boxes", "tags", "folders", "favorites"],
   });
 
@@ -1716,6 +1720,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["previewLines", (d) => d.preferences.previewLines, 8],
     ["searchPreviewSnippetCount", (d) => d.preferences.searchPreviewSnippetCount, 5],
     ["showNavItemCounts", (d) => d.preferences.showNavItemCounts, true],
+    ["hiddenFolderPaths", (d) => d.userData.hiddenFolderPaths, ["Projects/Hidden"]],
+    ["hiddenTagPaths", (d) => d.userData.hiddenTagPaths, ["work/hidden"]],
+    ["hiddenNavSections", (d) => d.preferences.hiddenNavSections, ["folders", "tags"]],
     ["navSectionOrder", (d) => d.preferences.navSectionOrder, ["properties", "boxes", "tags", "folders", "favorites", "links"]],
     ["visiblePropertyKeys", (d) => d.preferences.visiblePropertyKeys, ["status"]],
     ["lastFolderPath", (d) => d.workspace.lastFolderPath, "Projects"],

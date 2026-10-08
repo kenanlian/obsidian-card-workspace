@@ -41,6 +41,9 @@ export const SETTINGS_LAYER_BY_KEY = {
   cardImageFit: "preferences",
   showNavItemCounts: "preferences",
   navSectionOrder: "preferences",
+  hiddenNavSections: "preferences",
+  hiddenFolderPaths: "userData",
+  hiddenTagPaths: "userData",
   visiblePropertyKeys: "preferences",
   // workspace layer
   lastFolderPath: "workspace",

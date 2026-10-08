@@ -8,7 +8,7 @@ import {
 } from "../settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { collectVaultTagIndex } from "../view/metadata-utils";
-import { isPathAtOrBelow, rewritePathReference } from "../path-references";
+import { isPathAtOrBelow, rewritePathReference, rewritePathListAfterRename } from "../path-references";
 import { scheduleIdleTask } from "../search";
 import type { VaultMutationEvent } from "./vault-events";
 
@@ -142,6 +142,8 @@ export class NavigationWorkspaceReconciler {
         event.path,
       );
       const patch: PartialPluginSettings = {};
+      const hiddenFolderPaths = rewritePathListAfterRename(settings.hiddenFolderPaths, oldPath, event.path, "at-or-below");
+      if (hiddenFolderPaths !== settings.hiddenFolderPaths) patch.hiddenFolderPaths = hiddenFolderPaths;
       if (lastFolderPath !== settings.lastFolderPath) patch.lastFolderPath = lastFolderPath;
       if (!arraysEqual(expandedFolderPaths, settings.expandedFolderPaths)) {
         patch.expandedFolderPaths = expandedFolderPaths;

@@ -21,6 +21,9 @@ import type {
 export type { NavContextMenuPayload };
 export { resolveNavMenuDangerLabel } from "./menus/nav-menu-danger";
 export interface NavMenuActions {
+  hideFolder: (path: string) => void;
+  hideTag: (path: string) => void;
+  hideSection: (section: NavSectionId) => void;
   createNote: (folderUiPath: string) => void;
   createFolder: (folderUiPath: string) => void;
   createCanvas: (folderUiPath: string) => void;
@@ -80,6 +83,7 @@ export interface NavMenuDeps {
   boxExcludedCount: (boxId: string) => number;
   sectionCollapsed: Record<NavSectionId, boolean>;
   sectionOrder: readonly NavSectionId[];
+  hiddenSections?: readonly NavSectionId[];
   folderSortMode: (parentPath: string) => FolderSortMode;
   hasExpandedFolders: boolean;
   hasExpandedTags: boolean;
@@ -207,6 +211,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
   addItem(menu, folderMenu.moveFolder, "folder-input", () => deps.actions.moveFolder(itemId));
   addItem(menu, navMenu.findInFolder, "search", () => deps.actions.findInFolder(itemId));
   appendFavoriteToggleItem(menu, deps, "folder", itemId);
+  addItem(menu, deps.strings.navigationVisibility.hideFolder, "eye-off", () => deps.actions.hideFolder(itemId));
 
   menu.addSeparator();
   appendCopyPathItem(menu, deps, itemId);
@@ -302,6 +307,7 @@ function buildTagItemMenu(
   addItem(menu, navMenu.newNoteWithTag, "square-pen", () => deps.actions.createNoteWithTag(itemId));
   addItem(menu, navMenu.copyTag, "clipboard-copy", () => deps.actions.copyTag(itemId));
   appendFavoriteToggleItem(menu, deps, "tag", itemId);
+  addItem(menu, deps.strings.navigationVisibility.hideTag, "eye-off", () => deps.actions.hideTag(itemId));
 
   menu.addSeparator();
   addItem(menu, navMenu.renameTag, "pencil", () => deps.actions.renameTag(itemId));
@@ -468,7 +474,7 @@ export function buildNavContextMenu(
     if (typeof payload.itemId !== "string") {
       return false;
     }
-    return payload.itemId === "/"
+    return payload.itemId === "/" || payload.itemId === ""
       ? buildRootFolderItemMenu(menu, deps)
       : buildFolderItemMenu(menu, deps, payload.itemId);
   }

@@ -276,3 +276,13 @@ describe("unrecorded folder rename", () => {
     h.reconciler.dispose();
   });
 });
+
+it("rewrites hidden folder descendants on rename but keeps missing rules after deletion and startup reconciliation", async () => {
+  const h = createHarness({ settings: { hiddenFolderPaths: ["A", "A/child", "AB", "ghost"] } });
+  await h.reconciler.handleVaultMutation(event({ eventType: "rename", path: "B", oldPath: "A", isFolder: true }));
+  expect(h.getSettings().hiddenFolderPaths).toEqual(["B", "B/child", "AB", "ghost"]);
+  await h.reconciler.handleVaultMutation(event({ eventType: "delete", path: "B", isFolder: true }));
+  await h.reconciler.reconcileInitial();
+  expect(h.getSettings().hiddenFolderPaths).toEqual(["B", "B/child", "AB", "ghost"]);
+  h.reconciler.dispose();
+});

@@ -420,6 +420,50 @@ describe("NavLayoutController", () => {
     expect(controller.getFocusRequest()).toBeNull();
   });
 
+  it("cannot reveal hidden current folders through a scope switch, query or temporary expansion", () => {
+    const h = createHarness();
+    const input = { ...projectionInput(), hiddenFolderPaths: ["a"], hiddenTagPaths: [] };
+    h.settings.hiddenFolderPaths = ["a"];
+    h.controller.expandFolderForDrag("a");
+    let projected = h.controller.project(input);
+    expect(projected.rows.some((row) => row.kind === "folder")).toBe(false);
+    h.controller.updateQuery("b");
+    projected = h.controller.project(input);
+    expect(projected.rows.some((row) => row.kind === "folder")).toBe(false);
+    h.controller.clearQuery();
+    projected = h.controller.project({ ...input, hiddenNavSections: [...defaultNavSectionOrder()] });
+    h.controller.restoreFocus("folder:a/b");
+    expect(projected.rows).toEqual([]);
+    expect(h.controller.getFocusRequest()?.rowId).toBe("navigation-filter");
+    h.controller.dispose();
+  });
+
+  it("preserves hidden branch expansion when expanding or collapsing all visible folders", async () => {
+    const h = createHarness();
+    h.settings.expandedFolderPaths = ["a", "a/b"];
+    const original = projectionInput();
+    const input = { ...original, hiddenFolderPaths: ["a"], folders: [...original.folders,
+      { name: "z", path: "z", depth: 0, directCount: 0, recursiveCount: 0, recursiveFolderCount: 1,
+        children: [{ name: "child", path: "z/child", depth: 1, directCount: 0, recursiveCount: 0, recursiveFolderCount: 0, children: [] }] }] };
+    h.controller.project(input);
+    await h.controller.toggleAll("folder");
+    expect(h.settings.expandedFolderPaths).toEqual(["a", "a/b", "z"]);
+    h.controller.project(input);
+    await h.controller.toggleAll("folder");
+    expect(h.settings.expandedFolderPaths).toEqual(["a", "a/b"]);
+    h.controller.dispose();
+  });
+
+  it("moves only between section headers visible under the navigation query", async () => {
+    const h = createHarness();
+    h.controller.updateQuery("a");
+    const projected = h.controller.project(projectionInput());
+    expect(projected.sections.map((section) => section.section)).toEqual(["folders", "links"]);
+    await h.controller.onMoveNavSection("folders", 1);
+    expect(h.settings.navSectionOrder).toEqual(["favorites", "links", "tags", "properties", "boxes", "folders"]);
+    h.controller.dispose();
+  });
+
   it("persists a swapped navSectionOrder through saveSettings", async () => {
     const { controller, saveSettings } = createHarness();
 

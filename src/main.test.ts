@@ -976,6 +976,27 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     }));
   });
 
+  it("shares navigation hiding across every open scope synchronously and flushes failed writes on retry", async () => {
+    const { plugin } = createPluginHarness();
+    const first = createMockView(), second = createMockView();
+    second.cardScope = createBoxScope("box-1");
+    attachViews(first, second);
+    const save = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    save.mockRejectedValueOnce(new Error("disk failed"));
+    const patch = { hiddenFolderPaths: ["A"], hiddenTagPaths: ["work"], hiddenNavSections: ["folders" as const] };
+    const pending = plugin.saveSettings(patch);
+    expect(first.applyUpdateIntent).toHaveBeenCalledExactlyOnceWith("patch", "settings-change");
+    expect(second.applyUpdateIntent).toHaveBeenCalledExactlyOnceWith("patch", "settings-change");
+    expect(plugin.getSettings()).toMatchObject(patch);
+    await expect(pending).rejects.toThrow("disk failed");
+    await plugin.saveSettings(patch);
+    const beforeFlush = save.mock.calls.length;
+    await plugin.flushSettings();
+    expect(save.mock.calls.length).toBe(beforeFlush + 1);
+    expect(first.applyUpdateIntent).toHaveBeenCalledTimes(1);
+    expect(second.applyUpdateIntent).toHaveBeenCalledTimes(1);
+  });
+
   it("fans saved folder orders out to every open view as a patch", async () => {
     const { plugin } = createPluginHarness();
     const first = createMockView(), second = createMockView();

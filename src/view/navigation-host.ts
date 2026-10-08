@@ -52,6 +52,7 @@ export function buildNavigationPanelState(input: {
     propertiesDisabled: !resolveSourceCapabilities(scope).browsePropertyFilter,
     sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
+    hiddenFolderPaths: settings.hiddenFolderPaths, hiddenTagPaths: settings.hiddenTagPaths, hiddenNavSections: settings.hiddenNavSections,
     sectionLabels: {
       favorites: { label: strings.toolbar.navPane.favoritesSection, emptyLabel: strings.toolbar.navPane.favoritesEmpty },
       folders: { label: strings.toolbar.navPane.foldersSection, emptyLabel: null },

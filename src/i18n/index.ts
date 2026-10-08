@@ -1,4 +1,5 @@
 import * as Obsidian from "obsidian";
+import { navigationVisibilityStrings } from "./navigationVisibility";
 
 import { appStrings, type AppStrings } from "./app";
 import { boxStrings } from "./box";
@@ -46,6 +47,7 @@ export function isChineseLanguage(language: string = safeGetLanguage()): boolean
 }
 
 const EN: UiStrings = {
+  navigationVisibility: navigationVisibilityStrings.en,
   settingTab: settingTabStrings.en,
   toolbar: toolbarStrings.en,
   sortGroup: sortGroupStrings.en,
@@ -63,6 +65,7 @@ const EN: UiStrings = {
 };
 
 const ZH: UiStrings = {
+  navigationVisibility: navigationVisibilityStrings.zh,
   settingTab: settingTabStrings.zh,
   toolbar: toolbarStrings.zh,
   sortGroup: sortGroupStrings.zh,

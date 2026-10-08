@@ -666,6 +666,27 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(intents).toContainEqual({ type: "reveal-consumed", token: 4 });
   });
 
+  it.each(["en", "zh"])("shows the all-hidden recovery hint and returns menu focus to search in %s", async (language) => {
+    const intents: NavigationIntent[] = [];
+    const strings = getUiStrings(language);
+    render({ strings, nav: nav({ focusId: null,
+      projection: { normalizedQuery: "work", querying: true, sections: [], rows: [], noResults: true, allSectionsHidden: true },
+      focusRequest: { token: 2, rowId: "navigation-filter" } }), onIntent: (intent) => intents.push(intent) });
+    await tick(); await tick();
+    expect(document.body.textContent).toContain(strings.navigationVisibility.allHidden);
+    expect(document.activeElement).toBe(document.querySelector(".fce-nav-filter input"));
+    expect(document.querySelector("[role=treeitem]")).toBeNull();
+    expect(intents).toContainEqual({ type: "focus-return-consumed", token: 2 });
+  });
+
+  it("recovers a pending menu focus request after its row was hidden", async () => {
+    render({ nav: nav({ focusId: "section:folders",
+      projection: { ...projection(), rows: projection().rows.filter((row) => row.id !== "folder:notes") },
+      focusRequest: { token: 3, rowId: "folder:notes" } }) });
+    await tick(); await tick();
+    expect(document.activeElement).toBe(row("section:folders"));
+  });
+
   it("restores real DOM focus after a menu closes even when the tree no longer owns focus", async () => {
     const intents: NavigationIntent[] = [];
     render({

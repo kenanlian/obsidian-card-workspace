@@ -35,6 +35,7 @@ export interface PreferencesSettings {
   cardImageFit: PluginSettings["cardImageFit"];
   showNavItemCounts: boolean;
   navSectionOrder: PluginSettings["navSectionOrder"];
+  hiddenNavSections: PluginSettings["hiddenNavSections"];
   visiblePropertyKeys: string[];
 }
 
@@ -64,6 +65,8 @@ export type WorkspaceSettingsPatch = Omit<Partial<WorkspaceSettings>, "sectionCo
 };
 
 export interface UserDataSettings {
+  hiddenFolderPaths: string[];
+  hiddenTagPaths: string[];
   folderSiblingOrders: PluginSettings["folderSiblingOrders"];
   folderDescendingNameSorts: string[];
   boxes: PluginSettings["boxes"];
@@ -153,6 +156,9 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
   if (patch.searchPreviewSnippetCount !== undefined) preferences.searchPreviewSnippetCount = patch.searchPreviewSnippetCount;
   if (patch.showNavItemCounts !== undefined) preferences.showNavItemCounts = patch.showNavItemCounts;
+  if (patch.hiddenNavSections !== undefined) preferences.hiddenNavSections = patch.hiddenNavSections;
+  if (patch.hiddenFolderPaths !== undefined) userData.hiddenFolderPaths = patch.hiddenFolderPaths;
+  if (patch.hiddenTagPaths !== undefined) userData.hiddenTagPaths = patch.hiddenTagPaths;
   if (patch.navSectionOrder !== undefined) preferences.navSectionOrder = patch.navSectionOrder;
   if (patch.visiblePropertyKeys !== undefined) preferences.visiblePropertyKeys = patch.visiblePropertyKeys;
 
@@ -208,6 +214,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       cardImageFit: settings.cardImageFit,
       showNavItemCounts: settings.showNavItemCounts,
       navSectionOrder: [...settings.navSectionOrder],
+      hiddenNavSections: [...settings.hiddenNavSections],
       visiblePropertyKeys: [...settings.visiblePropertyKeys],
     },
     workspace: {
@@ -226,6 +233,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       sectionCollapsed: { ...settings.sectionCollapsed },
     },
     userData: {
+      hiddenFolderPaths: [...settings.hiddenFolderPaths],
+      hiddenTagPaths: [...settings.hiddenTagPaths],
       folderSiblingOrders: Object.fromEntries(Object.entries(settings.folderSiblingOrders).map(([parent, paths]) => [parent, [...paths]])),
       folderDescendingNameSorts: [...settings.folderDescendingNameSorts],
       boxes: settings.boxes,

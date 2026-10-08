@@ -227,6 +227,7 @@ vi.mock("obsidian", () => {
     SettingGroup: class {},
     TFile: testState.TestTFile,
     TFolder: testState.TestTFolder,
+    normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, ""),
     setIcon: (el: Element, icon: string) => {
       el.setAttribute("data-icon", icon);
     },
@@ -2582,6 +2583,29 @@ describe("FolderCardView graded update intents", () => {
     ];
     publishAll(view);
   }
+
+  it("hides the current navigation entry without changing cards, search, filters or favorites", async () => {
+    const { view, plugin } = createHarness();
+    const notes = createFolder("notes", [createFolder("notes/child")]);
+    vi.mocked(view.app.vault.getRoot).mockReturnValue(createFolder("", [notes]) as never);
+    Object.assign(readSettingsObject(plugin), { filter: { tags: ["work"], properties: [] },
+      favorites: [{ kind: "folder", ref: "notes" }, { kind: "tag", ref: "work" }] });
+    (view as any).modules.navLayout.refreshFolderTreeState();
+    seedLoadedView(view);
+    const before = getPanelState(view);
+    const collect = vi.spyOn((view as any).modules.scopeController, "collectScopeFiles");
+    expect(before.nav.projection.rows.some((row) => row.id === "folder:notes")).toBe(true);
+    await savePartialSettings(plugin, { hiddenFolderPaths: ["notes"], hiddenTagPaths: ["work"] });
+    const after = getPanelState(view);
+    expect(after.cards).toBe(before.cards);
+    expect(after.search).toBe(before.search);
+    expect(after.projection).toBe(before.projection);
+    expect(after.scope.sourceIdentity).toBe(before.scope.sourceIdentity);
+    expect(after.nav.projection.rows.some((row) => row.id === "folder:notes")).toBe(false);
+    expect(after.nav.projection.rows.some((row) => row.id === "favorite:folder:notes")).toBe(true);
+    expect(readSettingsObject(plugin).filter.tags).toEqual(["work"]);
+    expect(collect).not.toHaveBeenCalled();
+  });
 
   it("patch republishes presentation without touching the card projection", async () => {
     const { view } = createHarness();

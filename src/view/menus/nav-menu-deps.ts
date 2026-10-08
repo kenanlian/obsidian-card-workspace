@@ -1,3 +1,4 @@
+import { hideNavigationEntry } from "../actions/navigation-visibility-actions";
 import type { NavMenuDeps } from "../nav-context-menu";
 import { resolveFolderSortMode } from "../../folder-sibling-orders";
 import { propertyScalarRefsEqual } from "../../property-filter-settings";
@@ -36,6 +37,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     boxExcludedCount: (boxId) => deps.modules.boxActions.getBoxExcludedCount(boxId),
     sectionCollapsed: settings.sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
+    hiddenSections: deps.modules.navLayout.getHiddenSectionsForMove(),
     folderSortMode: (parent) => resolveFolderSortMode(settings.folderSiblingOrders, parent, settings.folderDescendingNameSorts),
     hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
     hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
@@ -48,6 +50,9 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       toggleTag: (tag) => { void deps.modules.navLayout.toggleById(`tag:${tag}`); },
     },
     actions: {
+      hideFolder: (path) => { void hideNavigationEntry(deps.context, "hiddenFolderPaths", path); },
+      hideTag: (path) => { void hideNavigationEntry(deps.context, "hiddenTagPaths", path); },
+      hideSection: (section) => { void hideNavigationEntry(deps.context, "hiddenNavSections", section); },
       createNote: (folderUiPath) => {
         void deps.modules.folderActions.createFromFolderTree(folderUiPath, "note");
       },
