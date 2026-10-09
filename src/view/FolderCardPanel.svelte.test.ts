@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
+import { attachSearchHistorySuggest, type SearchHistorySuggestOptions } from "./search-history-suggest";
 import { recordSearchHistory, deleteSearchHistory } from "../search-history";
 import type { SearchHistoryCommand, SearchQueryResetSource } from "./types";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
@@ -230,6 +231,7 @@ describe("FolderCardPanel.svelte", () => {
     const resets: SearchQueryResetSource[] = [];
     const component = mount(FolderCardPanel, { target, props: {
       panelModel,
+      attachSearchHistorySuggest: (input: HTMLInputElement, options: SearchHistorySuggestOptions) => attachSearchHistorySuggest({} as never, input, options),
       onSearchQueryChange: ({ query }: { query: string }) => panelModel.mutate((draft) => {
         draft.search = { ...draft.search, query };
       }),
@@ -252,36 +254,38 @@ describe("FolderCardPanel.svelte", () => {
       input.dispatchEvent(new KeyboardEvent("keydown", { key, isComposing, bubbles: true, cancelable: true })); await tick();
     };
     const type = async (value: string) => { input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); await tick(); };
-    return { component, target, panelModel, commands, resets, input, key, type };
+    return { component, target, panelModel, commands, resets, input, key, type, popup: () => document.getElementById(`${input.id}-history`) };
   }
 
   it("navigates history without changing input, handles IME, selects with Enter and reopens after Esc", async () => {
     const h = await historyHarness(["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"]);
     try {
-      expect(h.target.querySelectorAll(".fce-search-suggestion")).toHaveLength(6);
-      expect(h.input.getAttribute("aria-activedescendant")).toBeNull();
+      expect(h.popup()!.querySelectorAll(".fce-search-suggestion")).toHaveLength(6);
+      expect(h.input.getAttribute("aria-activedescendant")).not.toBeNull();
       await h.key("ArrowDown", true); await h.key("Enter", true);
       expect(h.commands).toEqual([]);
       h.input.dispatchEvent(new Event("compositionstart", { bubbles: true }));
       await h.key("ArrowDown"); await h.key("Enter");
       expect(h.commands).toEqual([]);
       h.input.dispatchEvent(new Event("compositionend", { bubbles: true }));
-      await h.key("ArrowUp");
+      await h.key("End"); await h.key("ArrowUp");
       expect(h.input.value).toBe("");
       const active = document.getElementById(h.input.getAttribute("aria-activedescendant")!);
       expect(active?.textContent).toBe("zeta");
-      await h.key("ArrowDown"); await h.key("Enter");
+      await h.key("Home"); await h.key("Enter");
       expect(h.commands).toEqual([{ command: "select", query: "alpha" }]);
       expect(h.input.value).toBe("alpha");
       expect(document.activeElement).toBe(h.input);
-      expect(h.target.querySelector(".fce-search-history")).toBeNull();
+      expect(h.popup()).toBeNull();
       await h.type("bet");
-      expect(h.target.querySelector(".fce-search-suggestion")?.textContent).toBe("beta");
+      expect(h.popup()?.querySelector(".fce-search-suggestion")?.textContent).toBe("beta");
       await h.key("Escape");
       expect(h.input.value).toBe("bet");
-      expect(h.target.querySelector(".fce-search-history")).toBeNull();
+      expect(h.popup()).toBeNull();
       await h.type("beta");
       expect(h.input.getAttribute("aria-expanded")).toBe("true");
+      await h.key("Enter");
+      expect(h.commands.at(-1)).toEqual({ command: "select", query: "beta" });
       await h.key("Enter");
       expect(h.commands.at(-1)).toEqual({ command: "record", source: "enter" });
     } finally { await unmount(h.component); }
@@ -290,26 +294,26 @@ describe("FolderCardPanel.svelte", () => {
   it("keeps focus inside the search region for management and never saves a fragment on suggestion click", async () => {
     const h = await historyHarness(["alpha", "alphabet"], "alp");
     try {
-      const suggestion = h.target.querySelector<HTMLButtonElement>(".fce-search-suggestion")!;
+      const suggestion = h.popup()!.querySelector<HTMLElement>(".fce-search-suggestion")!;
       const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true }); suggestion.dispatchEvent(down);
       expect(down.defaultPrevented).toBe(true);
       suggestion.click(); await tick();
       expect(h.commands).toEqual([{ command: "select", query: "alpha" }]);
       expect(h.input.value).toBe("alpha");
       await h.type("alp"); await h.key("ArrowDown");
-      const remove = h.target.querySelector<HTMLButtonElement>(".fce-search-history-delete")!;
+      const remove = h.popup()!.querySelector<HTMLButtonElement>(".fce-search-history-delete")!;
       expect(remove.tabIndex).toBe(0); remove.focus();
       expect(h.commands).toHaveLength(1);
       remove.click(); await tick();
       expect(h.commands.at(-1)).toEqual({ command: "delete", query: "alpha" });
       expect(h.input.value).toBe("alp");
-      expect(h.input.getAttribute("aria-activedescendant")).toBeNull();
+      expect(h.input.getAttribute("aria-activedescendant")).not.toBeNull();
       expect(document.activeElement).toBe(h.input);
-      const clear = h.target.querySelector<HTMLButtonElement>(".fce-search-history-clear")!;
-      clear.focus(); clear.click(); await tick();
+      const clear = h.popup()!.querySelector<HTMLElement>(".fce-search-history-clear")!;
+      clear.click(); await tick();
       expect(h.commands.at(-1)).toEqual({ command: "clear" });
       expect(h.input.value).toBe("alp");
-      expect(h.target.querySelector(".fce-search-history")).toBeNull();
+      expect(h.popup()).toBeNull();
       const outside = document.createElement("button"); document.body.appendChild(outside); outside.focus();
       expect(h.commands.at(-1)).toEqual({ command: "record", source: "blur" });
     } finally { await unmount(h.component); }
@@ -318,14 +322,14 @@ describe("FolderCardPanel.svelte", () => {
   it.each(["en", "zh"] as const)("hides unmatched history, reopens matching suggestions and collapses through reset in %s", async (language) => {
     const h = await historyHarness(["alpha"], "missing", language);
     try {
-      expect(h.target.querySelector(".fce-search-history")).toBeNull();
+      expect(h.popup()).toBeNull();
       expect(h.input.getAttribute("aria-expanded")).toBe("false");
       expect(h.input.value).toBe("missing");
       await h.type("alp");
-      expect(h.target.querySelector(".fce-search-suggestion")?.textContent).toBe("alpha");
-      expect(h.target.querySelector(".fce-search-history-clear")?.textContent).toBe(language === "en" ? "Clear history" : "清空历史");
+      expect(h.popup()?.querySelector(".fce-search-suggestion")?.textContent).toBe("alpha");
+      expect(h.popup()?.querySelector(".fce-search-history-clear")?.textContent).toBe(language === "en" ? "Clear history" : "清空历史");
       await h.type("missing again");
-      expect(h.target.querySelector(".fce-search-history")).toBeNull();
+      expect(h.popup()).toBeNull();
       expect(h.input.getAttribute("aria-controls")).toBeNull();
       h.target.querySelector<HTMLButtonElement>(".fce-search-clear")!.click(); await tick();
       expect(h.resets).toEqual(["clear-button"]);
@@ -347,13 +351,76 @@ describe("FolderCardPanel.svelte", () => {
   it("hides an empty collection and uses independent ARIA IDs across view instances", async () => {
     const a = await historyHarness([]), b = await historyHarness(["alpha"], "a");
     try {
-      expect(a.target.querySelector(".fce-search-history")).toBeNull();
+      expect(a.popup()).toBeNull();
       expect(a.input.id).not.toBe(b.input.id);
-      expect(b.input.getAttribute("aria-controls")).toBe(b.target.querySelector('[role="grid"]')?.id);
+      expect(b.input.getAttribute("aria-controls")).toBe(b.popup()?.id);
       b.panelModel.mutate((draft) => { draft.search = { ...draft.search, history: ["another"] }; }); await tick();
-      expect(b.target.querySelector(".fce-search-suggestion")?.textContent).toBe("another");
+      expect(b.popup()?.querySelector(".fce-search-suggestion")?.textContent).toBe("another");
       expect(b.input.value).toBe("a"); expect(a.input.value).toBe("");
     } finally { await unmount(a.component); await unmount(b.component); }
+  });
+
+  it("supports keyboard deletion and clearing without selecting or recording the draft", async () => {
+    const h = await historyHarness(["alpha", "alphabet"], "alp");
+    try {
+      const remove = h.popup()!.querySelector<HTMLButtonElement>(".fce-search-history-delete")!;
+      remove.focus();
+      remove.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await tick();
+      expect(h.commands).toEqual([{ command: "delete", query: "alpha" }]);
+      expect(h.input.value).toBe("alp");
+      expect(document.activeElement).toBe(h.input);
+      await h.key("End"); await h.key("Enter");
+      expect(h.commands).toEqual([{ command: "delete", query: "alpha" }, { command: "clear" }]);
+      expect(h.input.value).toBe("alp");
+      expect(h.popup()).toBeNull();
+    } finally { await unmount(h.component); }
+  });
+
+  it("keeps native selection when a search-status publication copies unchanged history", async () => {
+    const h = await historyHarness(["alpha", "alphabet"], "alp");
+    try {
+      await h.key("ArrowDown");
+      const selected = h.input.getAttribute("aria-activedescendant");
+      h.panelModel.mutate((draft) => {
+        draft.search = { ...draft.search, status: "building", history: [...draft.search.history] };
+      });
+      await tick();
+      expect(h.input.getAttribute("aria-activedescendant")).toBe(selected);
+      await h.key("Enter");
+      expect(h.commands).toEqual([{ command: "select", query: "alphabet" }]);
+    } finally { await unmount(h.component); }
+  });
+
+  it("keeps dismissed history closed on shared updates and disposes the body popup on unmount", async () => {
+    const h = await historyHarness(["alpha"], "alp");
+    await h.key("Escape");
+    h.panelModel.mutate((draft) => { draft.search = { ...draft.search, history: ["alphabet"] }; });
+    await tick();
+    expect(h.popup()).toBeNull();
+    await h.type("alph");
+    const staleRow = h.popup()!.querySelector<HTMLElement>(".fce-search-suggestion")!;
+    await unmount(h.component);
+    expect(h.popup()).toBeNull();
+    staleRow.click();
+    h.input.dispatchEvent(new FocusEvent("focus"));
+    h.input.dispatchEvent(new Event("input"));
+    expect(h.commands).toEqual([]);
+    expect(h.popup()).toBeNull();
+  });
+
+  it("returns focus to the draft when Escape dismisses a focused history action", async () => {
+    const h = await historyHarness(["alpha"], "alp");
+    try {
+      const remove = h.popup()!.querySelector<HTMLButtonElement>(".fce-search-history-delete")!;
+      remove.focus();
+      remove.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      await tick();
+      expect(document.activeElement).toBe(h.input);
+      expect(h.input.value).toBe("alp");
+      expect(h.popup()).toBeNull();
+      expect(h.commands).toEqual([]);
+    } finally { await unmount(h.component); }
   });
 
   it("retains the viewport anchor when a reference list above it expands", async () => {

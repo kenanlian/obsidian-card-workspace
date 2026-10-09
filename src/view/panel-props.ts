@@ -4,9 +4,12 @@ import type { SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload
 import type { ViewModules } from "./view-modules";
 import type { NavigationIntent } from "./navigation-model";
 import type { CardOpenLocation } from "./link-card-location";
+import type { App } from "obsidian";
+import { attachSearchHistorySuggest, type SearchHistorySuggestOptions } from "./search-history-suggest";
 
 /** The slice of `FolderCardView` the panel callbacks route through. */
 export interface PanelHost {
+  app: App;
   panelModel: PanelModel;
   modules: ViewModules;
   plugin: {
@@ -29,6 +32,8 @@ type PanelCallbackProps = { panelModel: PanelModel } & Record<string, unknown>;
 export function buildPanelProps(view: PanelHost): PanelCallbackProps {
   return {
     panelModel: view.panelModel,
+    attachSearchHistorySuggest: (input: HTMLInputElement, options: SearchHistorySuggestOptions) =>
+      attachSearchHistorySuggest(view.app, input, options),
     onOpenNote: (detail: { path?: unknown; snippetId?: unknown; referenceId?: unknown; referenceTarget?: unknown }) => {
       if (view.modules.bulk.isBulkMode() || typeof detail.path !== "string") {
         return;

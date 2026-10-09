@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("obsidian", () => ({
+vi.mock("obsidian", async () => ({
+  ...await import("../__mocks__/obsidian-input-suggest"),
   ItemView: class {
     app: unknown;
     leaf: unknown;

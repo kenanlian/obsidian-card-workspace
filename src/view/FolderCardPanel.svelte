@@ -4,6 +4,7 @@
   import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
   import { getUiStrings } from "../i18n";
   import Toolbar from "./Toolbar.svelte";
+  import type { AttachSearchHistorySuggest } from "./search-history-suggest";
   import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
   import GroupHeaderRow from "./GroupHeaderRow.svelte";
@@ -104,6 +105,7 @@
 
   interface FolderCardPanelProps {
     panelModel: PanelModel;
+    attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     onOpenNote?: (payload: OpenNotePayload) => void;
     onToggleReferences?: (payload: { path: string }) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
@@ -206,6 +208,7 @@
 
   let {
     panelModel,
+    attachSearchHistorySuggest,
     onOpenNote,
     onToggleReferences,
     onBulkSelectCard,
@@ -885,6 +888,7 @@
   />
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
+    {attachSearchHistorySuggest}
     {strings}
     {scope}
     {search}

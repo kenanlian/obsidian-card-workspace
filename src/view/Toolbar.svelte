@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Menu, setIcon, setTooltip } from "obsidian";
-  import { tick } from "svelte";
-  import { suggestSearchHistory } from "../search-history";
+  import { tick, untrack } from "svelte";
+  import type { AttachSearchHistorySuggest, SearchHistorySuggestHandle } from "./search-history-suggest";
   import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../card-grouping-settings";
   import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
   import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
@@ -51,6 +51,7 @@
   const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
 
   interface ToolbarProps {
+    attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     strings?: UiStrings;
     scope?: PanelScopeState;
     search?: PanelSearchState;
@@ -140,6 +141,7 @@
   const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
 
   let {
+    attachSearchHistorySuggest,
     strings = getUiStrings("en"),
     scope = DEFAULT_SCOPE,
     search = DEFAULT_SEARCH,
@@ -235,45 +237,33 @@
   let searchExpanded = $state(false);
   let searchControlEl = $state<HTMLDivElement | null>(null);
   let searchToggleEl = $state<HTMLButtonElement | null>(null);
-  let suggestionsOpen = $state(false);
-  let highlightedQuery = $state<string | null>(null);
+  let historySuggest = $state.raw<SearchHistorySuggestHandle | null>(null);
   let composing = false;
   const searchId = $props.id();
   const inputId = `${searchId}-input`;
-  const historyId = `${searchId}-history`;
-  const suggestions = $derived(suggestSearchHistory(search.history, searchQuery));
-  const showSuggestions = $derived(searchExpanded && suggestionsOpen && suggestions.length > 0);
-  const highlightedIndex = $derived(highlightedQuery === null ? -1 : suggestions.indexOf(highlightedQuery));
+  function bindSearchHistory(input: HTMLInputElement) {
+    const handle = untrack(() => attachSearchHistorySuggest?.(input, {
+      history: search.history,
+      strings: toolbarStrings.search,
+      onCommand: (command) => onSearchHistoryCommand?.(command),
+    }));
+    historySuggest = handle ?? null;
+    return { destroy() { handle?.dispose(); historySuggest = null; } };
+  }
 
   $effect(() => {
-    if (highlightedQuery !== null && !suggestions.includes(highlightedQuery)) highlightedQuery = null;
+    historySuggest?.update({
+      history: search.history,
+      strings: toolbarStrings.search,
+      onCommand: (command) => onSearchHistoryCommand?.(command),
+    });
   });
-
-  function openSuggestions(): void {
-    suggestionsOpen = true;
-    highlightedQuery = null;
-  }
 
   function handleSearchFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Node | null;
-    if (next && (searchControlEl?.contains(next) || searchToggleEl?.contains(next))) return;
+    if (next && (searchControlEl?.contains(next) || searchToggleEl?.contains(next) || historySuggest?.contains(next))) return;
     onSearchHistoryCommand?.({ command: "record", source: "blur" });
-    suggestionsOpen = false;
-    highlightedQuery = null;
-  }
-
-  function selectHistory(query: string): void {
-    onSearchHistoryCommand?.({ command: "select", query });
-    searchInputEl?.focus();
-    suggestionsOpen = false;
-    highlightedQuery = null;
-  }
-
-  function manageHistory(command: SearchHistoryCommand): void {
-    onSearchHistoryCommand?.(command);
-    highlightedQuery = null;
-    // A deleted row (or the whole popup) can unmount the focused button.
-    searchInputEl?.focus();
+    historySuggest?.close();
   }
 
   function handleSearchKeydown(event: KeyboardEvent): void {
@@ -282,27 +272,13 @@
       event.preventDefault();
       event.stopPropagation();
       searchInputEl?.focus();
-      suggestionsOpen = false;
-      highlightedQuery = null;
+      historySuggest?.close();
       return;
     }
     if (event.target !== searchInputEl) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (!showSuggestions) return;
+    if (event.key === "Enter" && !historySuggest?.isOpen()) {
       event.preventDefault();
-      if (!suggestions.length) return;
-      const next = highlightedIndex < 0
-        ? (event.key === "ArrowDown" ? 0 : suggestions.length - 1)
-        : (highlightedIndex + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
-      highlightedQuery = suggestions[next];
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      if (showSuggestions && highlightedIndex >= 0) selectHistory(suggestions[highlightedIndex]);
-      else {
-        onSearchHistoryCommand?.({ command: "record", source: "enter" });
-        suggestionsOpen = false;
-        highlightedQuery = null;
-      }
+      onSearchHistoryCommand?.({ command: "record", source: "enter" });
     }
   }
 
@@ -480,14 +456,15 @@
       return;
     }
 
-    openSuggestions();
     onSearchQueryChange?.({ query: target.value });
   }
 
   function clearSearchQuery(): void {
     onSearchQueryReset?.({ source: "clear-button" });
-    highlightedQuery = null;
-    searchInputEl?.focus();
+    void tick().then(() => {
+      searchInputEl?.focus();
+      searchInputEl?.dispatchEvent(new FocusEvent("focus"));
+    });
   }
 
   function emitToolbarAction(actionId: string): void {
@@ -498,8 +475,7 @@
     if (searchExpanded) {
       onSearchQueryReset?.({ source: "collapse" });
       composing = false;
-      suggestionsOpen = false;
-      highlightedQuery = null;
+      historySuggest?.close();
       searchExpanded = false;
     } else {
       searchExpanded = true;
@@ -653,16 +629,15 @@
         <label class="fce-sr-only" for={inputId}>{toolbarStrings.search.inputLabel}</label>
         <input
           bind:this={searchInputEl}
+          use:bindSearchHistory
           id={inputId}
           class="fce-search-input"
           type="search"
           role="combobox"
+          aria-expanded="false"
+          aria-controls={`${searchId}-history`}
           aria-autocomplete="list"
           aria-haspopup="grid"
-          aria-expanded={showSuggestions}
-          aria-controls={showSuggestions ? historyId : undefined}
-          aria-activedescendant={showSuggestions && highlightedIndex >= 0 ? `${historyId}-${highlightedIndex}` : undefined}
-          onfocus={openSuggestions}
           onkeydown={handleSearchKeydown}
           oncompositionstart={() => { composing = true; }}
           oncompositionend={() => { composing = false; }}
@@ -682,29 +657,6 @@
           >
             <span class="fce-sr-only">{toolbarStrings.search.clear}</span>
           </button>
-        {/if}
-        {#if showSuggestions}
-          <div class="fce-search-history">
-            <div id={historyId} role="grid" aria-label={toolbarStrings.search.history}>
-              {#each suggestions as query, index (query)}
-                <div role="row" class="fce-search-history-row" class:is-highlighted={highlightedIndex === index}>
-                  <div role="gridcell" id={`${historyId}-${index}`}>
-                    <button type="button" class="fce-search-suggestion" tabindex="-1"
-                      onmousedown={(event) => event.preventDefault()} onclick={() => selectHistory(query)} title={query}>{query}</button>
-                  </div>
-                  <div role="gridcell">
-                    <button type="button" class="clickable-icon fce-search-history-delete"
-                      aria-label={toolbarStrings.search.deleteHistory(query)}
-                      onkeydown={handleSearchKeydown}
-                      onclick={() => manageHistory({ command: "delete", query })} use:applyIcon={"x"}></button>
-                  </div>
-                </div>
-              {/each}
-            </div>
-            <button type="button" class="fce-search-history-clear"
-              onkeydown={handleSearchKeydown}
-              onclick={() => manageHistory({ command: "clear" })}>{toolbarStrings.search.clearHistory}</button>
-          </div>
         {/if}
       </div>
     </div>

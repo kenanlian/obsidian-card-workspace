@@ -1,3 +1,5 @@
+export { AbstractInputSuggest, Scope } from "./obsidian-input-suggest";
+
 export function requireApiVersion(_version: string): boolean {
   return true;
 }

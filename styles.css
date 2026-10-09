@@ -803,70 +803,44 @@
   background: var(--background-modifier-hover);
 }
 
-/* History overlays the stream and stays within the available sidebar width. */
-.folder-card-view .fce-search-history {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  padding: 4px;
-  max-height: min(320px, 60vh);
-  overflow-y: auto;
-  background: var(--background-primary);
-  color: var(--fce-text);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  box-shadow: var(--shadow-s);
+/* Native suggestions attach to the document body, outside .folder-card-view.
+   Obsidian owns the surface and selected/hover states; match the panel's density. */
+.suggestion-container.fce-search-history-popover {
+  box-sizing: border-box;
+  width: var(--fce-search-history-width);
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  translate: var(--fce-search-history-offset-x, 0px) 0;
+  font-size: var(--font-ui-small, 13px);
 }
-
-.folder-card-view .fce-search-history-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  border-radius: var(--radius-s);
-}
-
-.folder-card-view .fce-search-history-row > [role="gridcell"] { min-width: 0; }
-
-.folder-card-view .fce-search-history-row:is(:hover, .is-highlighted) {
-  background: var(--background-modifier-hover);
-}
-
-.folder-card-view .fce-search-suggestion,
-.folder-card-view .fce-search-history-clear {
-  display: block;
-  width: 100%;
-  height: auto;
+.fce-search-history-popover .suggestion-item.fce-search-history-row {
+  box-sizing: border-box;
   min-height: 28px;
-  padding: 4px 6px;
-  margin: 0;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-  color: var(--fce-text);
-  text-align: left;
-  cursor: pointer;
+  padding: 2px 8px;
+  gap: 6px;
+  font-size: var(--font-ui-small, 13px);
+  line-height: 1.4;
 }
-
-.folder-card-view .fce-search-suggestion {
+.fce-search-history-popover .suggestion-title { font-size: inherit; }
+.suggestion-item.fce-search-history-row .suggestion-content { min-width: 0; }
+.suggestion-item.fce-search-history-row .fce-search-suggestion {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.folder-card-view .fce-search-history-delete {
-  width: 24px;
-  height: 24px;
-  padding: 4px;
-  color: var(--fce-text-muted);
+.suggestion-item.fce-search-history-row .fce-search-history-delete {
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  --icon-size: 14px;
+  color: var(--text-muted);
 }
-
-.folder-card-view .fce-search-history-clear {
+.suggestion-item.fce-search-history-clear {
   border-top: 1px solid var(--background-modifier-border);
-  color: var(--fce-text-muted);
-  white-space: normal;
-  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+.fce-search-history-popover .suggestion-item.fce-search-history-clear {
+  font-size: var(--font-ui-smaller, 12px);
 }
 
 .folder-card-view .fce-search-input { min-width: 0; }

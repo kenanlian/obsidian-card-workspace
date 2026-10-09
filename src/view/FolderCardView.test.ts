@@ -207,8 +207,11 @@ const testState = vi.hoisted(() => {
   };
 });
 
-vi.mock("obsidian", () => {
+vi.mock("obsidian", async () => {
+  const { AbstractInputSuggest, Scope } = await import("../__mocks__/obsidian-input-suggest");
   return {
+    AbstractInputSuggest,
+    Scope,
     Plugin: class {},
     PluginSettingTab: class {},
     MarkdownView: class {},
@@ -947,7 +950,7 @@ describe("FolderCardView host contract", () => {
       expect(getPanelState(view).search.committedQuery).toBe("");
       expect(input.value).toBe("");
       expect(document.activeElement).toBe(input);
-      expect(panelContainer.querySelector(".fce-search-suggestion")?.textContent).toBe("New Query");
+      expect(document.getElementById(`${input.id}-history`)?.querySelector(".fce-search-suggestion")?.textContent).toBe("New Query");
       panelContainer.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]')!.click(); await tick();
       expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
     } finally { await view.onClose(); }

@@ -966,8 +966,11 @@ const mockState = vi.hoisted(() => {
 
 export { mockState, getUiStrings };
 
-vi.mock("obsidian", () => {
+vi.mock("obsidian", async () => {
+  const { AbstractInputSuggest, Scope } = await import("./obsidian-input-suggest");
   return {
+    AbstractInputSuggest,
+    Scope,
     FuzzySuggestModal: mockState.MockSuggestModal,
     ItemView: mockState.MockItemView,
     Menu: mockState.MockMenu,
