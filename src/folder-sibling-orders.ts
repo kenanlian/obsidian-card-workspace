@@ -78,7 +78,7 @@ export function rewriteFolderSiblingOrders(
     rewritePathReference(parent, oldPath, newPath),
     paths.filter((path) => oldParent === newParent || path !== oldPath)
       .map((path) => rewritePathReference(path, oldPath, newPath)),
-  ])) as FolderSiblingOrders;
+  ]));
   if (oldParent !== newParent && hasFolderSiblingOrder(next, newParent) && !next[newParent].includes(newPath)) {
     next[newParent] = [...next[newParent], newPath];
   }

@@ -112,7 +112,8 @@ type PersistWaiter = {
 };
 
 export function hasPatchValues(patch: object): boolean {
-  for (const [key, value] of Object.entries(patch)) {
+  for (const [key, rawValue] of Object.entries(patch)) {
+    const value: unknown = rawValue;
     if (value === undefined) {
       continue;
     }

@@ -212,6 +212,7 @@ vi.mock("obsidian", () => {
     Plugin: class {},
     PluginSettingTab: class {},
     MarkdownView: class {},
+    View: class { leaf: unknown; },
     ConfirmationModal: testState.TestModal,
     requireApiVersion: () => true,
     ItemView: testState.TestItemView,
@@ -1595,7 +1596,7 @@ describe("FolderCardView host contract", () => {
       expect(store.getBaseCard(b.path)).toBeUndefined();
       expect(store.getBaseCards().map((entry: NoteCardRecord) => entry.path)).toEqual([c.path]);
     }) };
-    app.workspace.activeLeaf = leaf;
+    app.workspace.getActiveViewOfType = () => editing;
     app.workspace.getLeavesOfType = () => [{view}];
     host.resolveOpenDestinationLeaf = async () => leaf;
     // Same file-open subscriber as the plugin shell, using its real selection fanout.

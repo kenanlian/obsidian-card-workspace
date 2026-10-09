@@ -7,7 +7,7 @@ export interface CompatConfirmationButton {
   setCta(): this;
   setWarning(): this;
   setDisabled(disabled: boolean): this;
-  onClick(handler: (event: MouseEvent) => unknown | Promise<unknown>): this;
+  onClick(handler: (event: MouseEvent) => unknown): this;
 }
 
 export interface CompatConfirmationModal extends Modal {

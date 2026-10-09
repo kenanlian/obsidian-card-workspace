@@ -502,6 +502,7 @@ vi.mock("obsidian", () => {
         this.leaf = leaf;
       }
     },
+    View: class MockView { leaf: unknown; },
     TAbstractFile: MockTAbstractFile,
     TFile: MockTFile,
     TFolder: MockTFolder,
@@ -1786,7 +1787,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
     });
     const leaf = { view, openFile: vi.fn(async () => undefined) };
     app.workspace.getLeaf.mockReturnValue(leaf);
-    Object.assign(app.workspace, { activeLeaf: leaf });
+    app.workspace.getActiveViewOfType.mockReturnValue(view);
     const location = { line: 1, ch: 7, expectedText: "[[target]]", identity: "back:1" };
     return { plugin, app, target, view, leaf, location };
   }
@@ -1856,6 +1857,28 @@ describe("CardWorkspacePlugin open destination routing", () => {
     }))!;
     return { kind: "search-snippet" as const, snippet: snippet.location };
   }
+
+  it("does not position a card when another view is active, even if the target is the most recent editor", async () => {
+    const { plugin, app, target, view, leaf, location } = linkOpenHarness();
+    app.workspace.getMostRecentLeaf.mockReturnValue(leaf);
+    app.workspace.getActiveViewOfType.mockReturnValue({});
+    await plugin.openNoteFromCard(target.path, "new-tab", location);
+    expect(view.editor.setCursor).not.toHaveBeenCalled();
+    await plugin.openNoteFromCard(target.path, "new-tab", await snippetLocation());
+    expect(view.editor.setSelection).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the active view before the delayed correction", async () => {
+    vi.useFakeTimers();
+    try {
+      const { plugin, app, target, view, location } = linkOpenHarness();
+      await plugin.openNoteFromCard(target.path, "new-tab", location);
+      expect(view.editor.setCursor).toHaveBeenCalledOnce();
+      app.workspace.getActiveViewOfType.mockReturnValue({});
+      await vi.advanceTimersByTimeAsync(400);
+      expect(view.editor.setCursor).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
 
   it("always locates a search snippet, selects its source text, and preserves reading mode", async () => {
     vi.useFakeTimers();

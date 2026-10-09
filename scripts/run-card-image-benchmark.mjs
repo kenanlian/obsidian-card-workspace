@@ -36,8 +36,10 @@ try {
     const redirect = { name: "benchmark-source", setup(build) {
       build.onResolve({ filter: /\.\.\/\.\.\/src\// }, (args) => {
         // Image modules only exist in the candidate; baseline never activates them.
+        // Both lanes use the same Obsidian DOM helpers from the shared host stub.
         const relative = args.path.replace("../../src/", "src/");
-        const owner = relative.startsWith("src/images/") || relative.endsWith("CardImageController") ? project : root;
+        const owner = relative.startsWith("src/images/") || relative.endsWith("CardImageController")
+          || relative === "src/__mocks__/obsidian-dom" ? project : root;
         const suffix = args.path.endsWith(".svelte") ? "" : relative === "src/i18n" ? "/index.ts" : ".ts";
         return { path: path.join(owner, relative + suffix) };
       });

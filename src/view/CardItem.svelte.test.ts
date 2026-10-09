@@ -10,6 +10,7 @@ import {
 } from "./preview-html";
 import { buildLightPreview } from "./markdown-utils";
 import { createSearchPreviewMatcher, extractSearchPreviewSnippets } from "../search";
+import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 
 interface OpenNotePayload {
   path: string;
@@ -903,6 +904,27 @@ describe("CardItem.svelte", () => {
     expect(sanitized).toBe('<p><span class="fce-preview-link">Safe</span>plain</p>');
     expect(highlightSanitizedPreviewHtml(sanitized, "safe", document))
       .toContain('<span class="fce-preview-link"><mark class="fce-search-hit">Safe</mark></span>');
+  });
+
+  it("sanitizes and highlights through the supplied pop-out document", () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument!;
+    installObsidianDomHelpers(doc);
+    const creationDocuments: Document[] = [];
+    const nativeCreateElement = doc.createElement.bind(doc);
+    vi.spyOn(doc, "createElement").mockImplementation((tag: string) => {
+      const el = nativeCreateElement(tag);
+      creationDocuments.push(el.ownerDocument);
+      return el;
+    });
+    const sanitized = sanitizePreviewHtml('<p onclick="bad()">Safe <span class="fce-preview-link unwanted">alias</span></p>', doc);
+    expect(sanitized).toBe('<p>Safe <span class="fce-preview-link">alias</span></p>');
+    expect(highlightSanitizedPreviewHtml(sanitized, "safe", doc))
+      .toBe('<p><mark class="fce-search-hit">Safe</mark> <span class="fce-preview-link">alias</span></p>');
+    expect(creationDocuments.length).toBeGreaterThan(0);
+    expect(creationDocuments.every((owner) => owner === doc)).toBe(true);
+    expect(document.querySelector("p, mark")).toBeNull();
   });
 
   it("keeps a read-only task marker in the ordinary preview", () => {

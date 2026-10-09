@@ -40,7 +40,7 @@ export async function buildLinkReferenceSnippets(
   let deadline = performance.now() + 8;
   const checkpoint = async (): Promise<boolean> => {
     if (performance.now() >= deadline) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!isCurrent()) return false;
       deadline = performance.now() + 8;
     }
@@ -98,7 +98,7 @@ export async function buildOutgoingReferenceSnippets(
   let deadline = performance.now() + 8;
   for (const reference of references) {
     if (performance.now() >= deadline) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!isCurrent()) return null;
       deadline = performance.now() + 8;
     }
@@ -129,7 +129,7 @@ export async function buildOutgoingReferenceSnippets(
   }
   for (const group of targets.values()) {
     if (performance.now() >= deadline) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!isCurrent()) return null;
       deadline = performance.now() + 8;
     }

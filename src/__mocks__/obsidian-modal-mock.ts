@@ -268,6 +268,7 @@ export class MockSlider {
 
 export class Setting {
   readonly settingEl = new MockEl();
+  readonly controlEl = this.settingEl.createDiv();
   name = "";
   desc = "";
   readonly classes: string[] = [];

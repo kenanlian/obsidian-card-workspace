@@ -10,10 +10,10 @@ export interface SearchTaskDiagnostics {
 let activeTasks = 0;
 let sharedSliceStart = 0;
 let sharedPause: Promise<void> | null = null;
-let idleReset: ReturnType<typeof setTimeout> | null = null;
+let idleReset: number | null = null;
 
 function pauseTasks(): void {
-  sharedPause = new Promise<void>((resolve) => setTimeout(() => {
+  sharedPause = new Promise<void>((resolve) => window.setTimeout(() => {
     sharedPause = null;
     sharedSliceStart = performance.now();
     resolve();
@@ -29,7 +29,7 @@ export async function runSearchTask<T>(
   const start = performance.now();
   activeTasks += 1;
   if (sharedSliceStart === 0) sharedSliceStart = start;
-  if (idleReset !== null) { clearTimeout(idleReset); idleReset = null; }
+  if (idleReset !== null) { window.clearTimeout(idleReset); idleReset = null; }
   let sliceStart = start;
   let maxSliceMs = 0;
   let yields = 0;
@@ -55,7 +55,7 @@ export async function runSearchTask<T>(
   } finally {
     activeTasks -= 1;
     if (activeTasks === 0 && !sharedPause) {
-      idleReset = setTimeout(() => { idleReset = null; sharedSliceStart = 0; }, 0);
+      idleReset = window.setTimeout(() => { idleReset = null; sharedSliceStart = 0; }, 0);
     }
     task.return(undefined as T);
     onDiagnostics?.({ elapsedMs: performance.now() - start, maxSliceMs, yields });

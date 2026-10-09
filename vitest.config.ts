@@ -17,6 +17,7 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
+          setupFiles: ["src/__mocks__/node-window.ts"],
           include: ["src/**/*.test.ts"],
           exclude: ["src/**/*.svelte.test.ts", "src/view/FolderCardView.test.ts"],
         },
@@ -34,6 +35,7 @@ export default defineConfig({
         test: {
           name: "jsdom",
           environment: "jsdom",
+          setupFiles: ["src/__mocks__/jsdom-setup.ts"],
           include: ["src/**/*.svelte.test.ts", "src/view/FolderCardView.test.ts"],
         },
         resolve: {

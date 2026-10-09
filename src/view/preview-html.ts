@@ -79,7 +79,7 @@ function appendSanitizedPreviewNode(parent: Node, node: Node, doc: Document): vo
     return;
   }
 
-  const safeElement = doc.createElement(element.tagName.toLowerCase());
+  const safeElement = parent.createEl(element.tagName.toLowerCase() as keyof HTMLElementTagNameMap);
   const allowedClasses = ALLOWED_PREVIEW_CLASSES[element.tagName as keyof typeof ALLOWED_PREVIEW_CLASSES];
   const className = (element.getAttribute("class") ?? "")
     .split(/\s+/)
@@ -92,7 +92,6 @@ function appendSanitizedPreviewNode(parent: Node, node: Node, doc: Document): vo
   for (const child of Array.from(element.childNodes)) {
     appendSanitizedPreviewNode(safeElement, child, doc);
   }
-  parent.appendChild(safeElement);
 }
 
 function applyPreviewHighlights(root: ParentNode, query: string, doc: Document): void {
@@ -126,10 +125,7 @@ function createHighlightedFragment(value: string, pattern: RegExp, doc: Document
   for (const match of value.matchAll(pattern)) {
     const index = match.index ?? 0;
     fragment.appendChild(doc.createTextNode(value.slice(lastIndex, index)));
-    const mark = doc.createElement("mark");
-    mark.className = "fce-search-hit";
-    mark.textContent = match[0];
-    fragment.appendChild(mark);
+    fragment.createEl("mark", { cls: "fce-search-hit", text: match[0] });
     lastIndex = index + match[0].length;
     hasMatch = true;
   }

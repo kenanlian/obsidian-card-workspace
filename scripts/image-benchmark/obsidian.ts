@@ -1,3 +1,7 @@
+import { installObsidianDomHelpers } from "../../src/__mocks__/obsidian-dom";
+
+installObsidianDomHelpers(document);
+
 export class TFile { path = ""; basename = ""; stat = { mtime: 1, ctime: 1, size: 1 }; }
 export class TFolder {}
 export class Menu { addItem() { return this; } addSeparator() { return this; } showAtMouseEvent() {} }

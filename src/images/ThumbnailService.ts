@@ -16,14 +16,14 @@ export class ThumbnailService {
   private readonly jobs = new Map<string, Job>();
   private bytes = 0;
   private active = false;
-  private coldTurn: ReturnType<typeof setTimeout> | null = null;
+  private coldTurn: number | null = null;
   private disposed = false;
   private owners = 0;
   constructor(private readonly deps: ThumbnailServiceDeps) {}
   acquire(): () => void {
     this.owners++;
     let released = false;
-    return () => { if (released) return; released = true; if (--this.owners === 0) { if (this.coldTurn !== null) clearTimeout(this.coldTurn); this.coldTurn = null; this.deps.generator.dispose(); this.deps.storage.close(); } };
+    return () => { if (released) return; released = true; if (--this.owners === 0) { if (this.coldTurn !== null) window.clearTimeout(this.coldTurn); this.coldTurn = null; this.deps.generator.dispose(); this.deps.storage.close(); } };
   }
   request(fingerprint: ImageFingerprint, options: { signal: AbortSignal; canGenerate: () => boolean; onEligible: () => void }): Promise<ThumbnailResult> {
     if (this.disposed || options.signal.aborted || !this.deps.isCurrent(fingerprint)) return Promise.resolve({ status: "skipped" });
@@ -75,7 +75,7 @@ export class ThumbnailService {
     if (this.disposed || this.active || this.coldTurn !== null || ![...this.jobs.values()].some((job) => job.phase === "queued")) return;
     // Let the foreground card paint and its ResizeObserver demand settle first.
     // Cache hits bypass this cold-only turn entirely.
-    this.coldTurn = setTimeout(() => { this.coldTurn = null; this.runNext(); }, 32);
+    this.coldTurn = window.setTimeout(() => { this.coldTurn = null; this.runNext(); }, 32);
   }
   private runNext(): void {
     if (this.disposed || this.active) return;
@@ -129,7 +129,7 @@ export class ThumbnailService {
   }
   dispose(): void {
     this.disposed = true;
-    if (this.coldTurn !== null) clearTimeout(this.coldTurn);
+    if (this.coldTurn !== null) window.clearTimeout(this.coldTurn);
     this.coldTurn = null;
     for (const job of this.jobs.values()) this.finish(job, { status: "skipped" });
     this.memory.clear(); this.touched.clear(); this.outcomes.clear(); this.bytes = 0;

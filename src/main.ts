@@ -7,6 +7,7 @@ import {
   TFile,
   TFolder,
   WorkspaceLeaf,
+  View,
   debounce,
 } from "obsidian";
 import { isSupportedImagePath } from "./images/image-source";
@@ -335,12 +336,11 @@ export default class CardWorkspacePlugin extends Plugin {
           ? findSearchContextLocation(leaf.view.getViewData(), requestedJump.query)
           : null
         : requestedJump;
-      const activeLeaf = this.app.workspace.activeLeaf;
-      if (jump && (!activeLeaf || activeLeaf === leaf)) {
+      if (jump && this.isCardOpenLeafActive(leaf)) {
         const positioned = "kind" in jump && jump.kind === "search-snippet"
           ? await this.positionSearchSnippet(leaf, target, jump, openSeq)
           : "kind" in jump && jump.kind === "link-reference"
-            ? this.positionLinkReference(leaf, target, jump) : this.positionLinkCard(leaf, target, jump as LinkCardLocation);
+            ? this.positionLinkReference(leaf, target, jump) : this.positionLinkCard(leaf, target, jump);
         if (positioned && openSeq === this.cardOpenSeq && !this.disposed) {
           this.scheduleLinkCorrection(leaf, target, jump, openSeq);
         }
@@ -359,6 +359,11 @@ export default class CardWorkspacePlugin extends Plugin {
     if (view instanceof MarkdownView && location.ch !== undefined && location.expectedText
       && !view.getViewData().split(/\r?\n/)[location.line]?.startsWith(location.expectedText, location.ch)) return false;
     return this.positionLinkCard(leaf, file, location);
+  }
+
+  private isCardOpenLeafActive(leaf: WorkspaceLeaf): boolean {
+    const activeView = this.app.workspace.getActiveViewOfType(View);
+    return !activeView || activeView === leaf.view;
   }
 
   private positionLinkCard(leaf: WorkspaceLeaf, file: TFile, location: LinkCardLocation): boolean {
@@ -390,7 +395,7 @@ export default class CardWorkspacePlugin extends Plugin {
     const isCurrent = (): boolean => !this.disposed && !userInput && openSeq === this.cardOpenSeq
       && location.isCurrent?.() !== false && view.file?.path === file.path && leaf.view === view
       && this.app.vault.getAbstractFileByPath(file.path) === file
-      && (!this.app.workspace.activeLeaf || this.app.workspace.activeLeaf === leaf)
+      && this.isCardOpenLeafActive(leaf)
       && view.getViewData() === source;
     try {
       const resolved = await resolveSearchSnippetLocation(source, location.snippet, isCurrent);
@@ -419,18 +424,18 @@ export default class CardWorkspacePlugin extends Plugin {
     const leafChange = this.app.workspace.on("active-leaf-change", (active) => {
       if (active !== leaf) userInput = true;
     });
-    const timer = window.setTimeout(() => {
+    const timerWindow = target?.ownerDocument?.defaultView ?? window;
+    const timer = timerWindow.setTimeout(() => {
       cleanup();
-      const activeLeaf = this.app.workspace.activeLeaf;
       if (this.disposed || userInput || openSeq !== this.cardOpenSeq
         || (!("kind" in location) && !this.getSettings().locateLinkCardOnOpen)
-        || (activeLeaf && activeLeaf !== leaf)) return;
+        || !this.isCardOpenLeafActive(leaf)) return;
       if ("kind" in location && location.kind === "search-snippet") void this.positionSearchSnippet(leaf, file, location, openSeq);
       else if ("kind" in location && location.kind === "link-reference") this.positionLinkReference(leaf, file, location);
       else this.positionLinkCard(leaf, file, location);
     }, 400);
     const cleanup = (): void => {
-      window.clearTimeout(timer);
+      timerWindow.clearTimeout(timer);
       for (const event of inputEvents) target?.removeEventListener(event, markInput, { capture: true });
       this.app.workspace.offref?.(leafChange);
       if (this.cancelLinkCorrection === cleanup) this.cancelLinkCorrection = null;

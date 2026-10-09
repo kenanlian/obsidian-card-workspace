@@ -196,11 +196,16 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
               setting.addToggle((toggle) => toggle.setValue(Boolean(value)).onChange((next) => this.setControlValue(control.key, next)));
               break;
             case "slider":
-              setting.addSlider((slider) => slider
-                .setLimits(control.min, control.max, control.step)
-                .setValue(Number(value))
-                .setDynamicTooltip()
-                .onChange((next) => this.setControlValue(control.key, next)));
+              setting.addSlider((slider) => {
+                slider.setLimits(control.min, control.max, control.step).setValue(Number(value));
+                // 1.13+ displays the value natively; older hosts need an inline label.
+                const valueEl = requireApiVersion("1.13.0") ? null
+                  : setting.controlEl.createSpan({ cls: "fce-setting-slider-value", text: String(value) });
+                slider.onChange((next) => {
+                  valueEl?.setText(String(next));
+                  return this.setControlValue(control.key, next);
+                });
+              });
               break;
           }
         });

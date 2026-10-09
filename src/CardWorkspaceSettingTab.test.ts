@@ -299,7 +299,7 @@ describe("CardWorkspaceSettingTab", () => {
           expect(setting.dropdowns[0]?.options).toEqual(Object.entries(control.options).map(([value, label]) => ({ value, label })));
           expect(setting.dropdowns[0]?.value).toBe(tab.getControlValue(control.key));
         } else if (control.type === "slider") {
-          expect(setting.sliders[0]).toMatchObject({ min: control.min, max: control.max, step: control.step, value: tab.getControlValue(control.key), dynamicTooltip: true });
+          expect(setting.sliders[0]).toMatchObject({ min: control.min, max: control.max, step: control.step, value: tab.getControlValue(control.key), dynamicTooltip: false });
         } else {
           expect(setting.toggles[0]?.value).toBe(tab.getControlValue(control.key));
         }
@@ -336,6 +336,22 @@ describe("CardWorkspaceSettingTab", () => {
     reloaded.display();
     expect(settingsIn(reloaded.containerEl as unknown as MockEl)[10]?.dropdowns[0]?.value).toBe("cover");
     expect(settingsIn(reloaded.containerEl as unknown as MockEl)[6]?.sliders[0]?.value).toBe(8);
+  });
+
+  it.each([false, true])("keeps slider values visible without deprecated tooltips (1.13 API: %s)", async (supportsNativeApi) => {
+    mockState.requireApiVersion.mockReturnValue(supportsNativeApi);
+    const plugin = createPlugin();
+    const tab = createTab(plugin);
+    tab.display();
+    const row = settingsIn(tab.containerEl as unknown as MockEl).find((setting) => setting.name === "Preview lines")!;
+    const slider = row.sliders[0]!;
+    const labels = row.controlEl.nodes.filter((node): node is MockEl => node instanceof MockEl && node.classes.has("fce-setting-slider-value"));
+    expect(slider.dynamicTooltip).toBe(false);
+    expect(labels).toHaveLength(supportsNativeApi ? 0 : 1);
+    if (!supportsNativeApi) expect(labels[0]!.text).toBe("6");
+    await slider.slide(8);
+    if (!supportsNativeApi) expect(labels[0]!.text).toBe("8");
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ previewLines: 8 });
   });
 
   it("reads control values from the settings store only", () => {

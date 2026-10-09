@@ -19,9 +19,9 @@ export class ThumbnailWorker implements ThumbnailGenerator {
     if (!this.available()) return Promise.resolve({ status: "skipped" });
     return new Promise((resolve) => {
       let eligible = false;
-      const timer = setTimeout(() => { this.dispose(); }, 10_000);
+      const timer = window.setTimeout(() => { this.dispose(); }, 10_000);
       this.finish = (result) => {
-        clearTimeout(timer); this.finish = null;
+        window.clearTimeout(timer); this.finish = null;
         // A decoder may retain native buffers after bitmap.close(). A cold
         // task owns its Worker so those buffers cannot survive into UI work.
         this.worker?.terminate(); this.worker = null;
