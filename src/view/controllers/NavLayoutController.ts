@@ -1,4 +1,9 @@
 import { TFolder } from "obsidian";
+import { mergeNavigationOrder, navigationSortingEqual, orderNavigationItems, reorderNavigationItems,
+  resolveNavigationSort, updateNavigationSort, type NavigationSortMode, type NavigationSortTarget } from "../../navigation-sorting";
+import { serializePropertyScalarRef } from "../../property-filter-settings";
+import { canAcceptNavigationSortDrop, navigationSortEntry } from "../navigation-sort-dnd";
+import type { TagTreeNode } from "../tag-tree";
 import { folderParentPath, folderSiblingOrdersEqual, normalizeFolderDescendingNameSorts, orderFolderSiblings, reorderFolderSiblings, type FolderSortMode } from "../../folder-sibling-orders";
 import { NAVIGATION_FILTER_FOCUS_ID } from "../navigation-model";
 import { isPathAtOrBelow } from "../../path-references";
@@ -55,6 +60,7 @@ export class NavLayoutController implements DisposableController {
   private lastScope: CardScope | null = null;
   private readonly requests = new NavigationRequests();
   private disposed = false;
+  private sortingInput: Pick<NavigationProjectionInput, "tags" | "properties"> = { tags: [], properties: [] };
   constructor(private readonly deps: NavLayoutControllerDeps) {}
   private get context(): ViewContext {
     return this.deps.context;
@@ -123,6 +129,54 @@ export class NavLayoutController implements DisposableController {
       && descendingNameSorts.length === nextDescendingNameSorts.length
       && descendingNameSorts.every((path, index) => path === nextDescendingNameSorts[index])) return;
     await this.context.saveSettings({ folderSiblingOrders: next, folderDescendingNameSorts: nextDescendingNameSorts });
+  }
+  private getSortCandidates(target: NavigationSortTarget): { identity: string; label: string }[] | null {
+    if (target.kind === "tags") {
+      const findChildren = (nodes: readonly TagTreeNode[]): readonly TagTreeNode[] | null => {
+        for (const node of nodes) {
+          if (node.tag === target.parent) return node.children;
+          const found = findChildren(node.children);
+          if (found) return found;
+        }
+        return null;
+      };
+      const siblings = target.parent === "" ? this.sortingInput.tags : findChildren(this.sortingInput.tags);
+      return siblings?.map((node) => ({ identity: node.tag, label: node.tag })) ?? null;
+    }
+    const properties = this.sortingInput.properties ?? [];
+    if (target.kind === "property-keys") return properties.map((facet) => ({ identity: facet.key, label: facet.label }));
+    const facet = properties.find((facet) => facet.key === target.key);
+    return facet?.values.filter((value) => value.ref.kind !== "missing")
+      .map((value) => ({ identity: serializePropertyScalarRef(value.ref), label: value.label })) ?? null;
+  }
+  async sortNavigationItems(target: NavigationSortTarget, mode: NavigationSortMode): Promise<void> {
+    if (this.disposed) return;
+    const candidates = this.getSortCandidates(target);
+    if (candidates === null) return;
+    const sorting = this.context.getSettings().navigationSorting;
+    const previous = resolveNavigationSort(sorting, target);
+    const current = orderNavigationItems(candidates, previous, (item) => item.identity, (item) => item.label).map((item) => item.identity);
+    const next = updateNavigationSort(sorting, target, {
+      mode, order: mode === "manual" ? mergeNavigationOrder(previous.order, current) : previous.order,
+    });
+    if (!navigationSortingEqual(sorting, next)) await this.context.saveSettings({ navigationSorting: next });
+  }
+  async reorderNavigationItems(sourceId: string, targetId: string, position: "before" | "after"): Promise<void> {
+    if (this.disposed) return;
+    const source = this.projection.rows.find((row) => row.id === sourceId);
+    const targetRow = this.projection.rows.find((row) => row.id === targetId);
+    if (!targetRow || !canAcceptNavigationSortDrop(source, targetRow) || !source) return;
+    const entry = navigationSortEntry(source), destination = navigationSortEntry(targetRow);
+    if (!entry || !destination) return;
+    const candidates = this.getSortCandidates(entry.target);
+    if (candidates === null) return;
+    const sorting = this.context.getSettings().navigationSorting;
+    const previous = resolveNavigationSort(sorting, entry.target);
+    const current = orderNavigationItems(candidates, previous, (item) => item.identity, (item) => item.label).map((item) => item.identity);
+    const fullOrder = mergeNavigationOrder(previous.order, current);
+    const order = reorderNavigationItems(fullOrder, entry.identity, destination.identity, position);
+    if (order === null && previous.mode === "manual") return;
+    await this.context.saveSettings({ navigationSorting: updateNavigationSort(sorting, entry.target, { mode: "manual", order: order ?? fullOrder }) });
   }
   getFolderTree(): FolderTreeNode[] {
     return this.folderTree;
@@ -325,6 +379,7 @@ export class NavLayoutController implements DisposableController {
     else await this.context.saveSettings({ [key]: nextValues });
   }
   project(input: Omit<NavigationProjectionInput, "query" | "expansion">): NavigationProjection {
+    this.sortingInput = { tags: input.tags, properties: input.properties };
     this.syncScope(input.scope);
     captureExpandableNavigationBranches(this.expansion, input);
     const settings = this.context.getSettings();
@@ -343,6 +398,7 @@ export class NavLayoutController implements DisposableController {
       ...input,
       sectionCollapsed,
       folderSiblingOrders: settings.folderSiblingOrders,
+      navigationSorting: settings.navigationSorting,
       query: this.query,
       expansion: {
         folders: {
@@ -496,6 +552,7 @@ export class NavLayoutController implements DisposableController {
 
   dispose(): DisposeReport {
     this.disposed = true;
+    this.sortingInput = { tags: [], properties: [] };
     this.query = "";
     this.focusId = null; this.focusEstablished = false;
     this.projection = { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false };

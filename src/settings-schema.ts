@@ -59,6 +59,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   boxes: "userData",
   folderSiblingOrders: "userData",
   folderDescendingNameSorts: "userData",
+  navigationSorting: "userData",
   favorites: "userData",
   pinnedPaths: "userData",
   searchHistory: "userData",

@@ -1,3 +1,4 @@
+import { DEFAULT_SETTINGS } from "../../settings";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockState,
@@ -65,6 +66,7 @@ describe("TagManagementActions rename flow", () => {
       "notes/three.md": ["unrelated"],
     });
     plugin.getSettings = vi.fn(() => ({
+      ...DEFAULT_SETTINGS,
       hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
@@ -160,6 +162,7 @@ describe("TagManagementActions delete flow", () => {
       "notes/two.md": ["a/b/child"],
     });
     plugin.getSettings = vi.fn(() => ({
+      ...DEFAULT_SETTINGS,
       hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },

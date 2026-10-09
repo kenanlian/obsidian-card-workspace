@@ -1,3 +1,4 @@
+import { navigationSortingEqual } from "../navigation-sorting";
 import { folderSiblingOrdersEqual } from "../folder-sibling-orders";
 import type { GroupSpec } from "../card-grouping-settings";
 import { propertyFilterClausesEqual } from "../property-filter-settings";
@@ -202,6 +203,7 @@ export function resolveSettingsUpdateIntent(
   if (!stringArraysEqual(previous.navSectionOrder, next.navSectionOrder)) intent = mergeIntent(intent, "patch");
   if (!folderSiblingOrdersEqual(previous.folderSiblingOrders, next.folderSiblingOrders)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.folderDescendingNameSorts, next.folderDescendingNameSorts)) intent = mergeIntent(intent, "patch");
+  if (!navigationSortingEqual(previous.navigationSorting, next.navigationSorting)) intent = mergeIntent(intent, "patch");
   if (!stringArraysEqual(previous.searchHistory, next.searchHistory)) intent = mergeIntent(intent, "patch");
   if (!favoritesEqual(previous.favorites, next.favorites)) intent = mergeIntent(intent, "patch");
   if (previous.activeBoxId !== next.activeBoxId) intent = mergeIntent(intent, "patch");

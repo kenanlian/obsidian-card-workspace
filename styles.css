@@ -2026,7 +2026,8 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
  * ------------------------------------------------------------------------- */
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-folder-dragging,
-.folder-card-view .fce-nav-tree .fce-tree-row.is-favorite-dragging {
+.folder-card-view .fce-nav-tree .fce-tree-row.is-favorite-dragging,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-navigation-dragging {
   opacity: 0.45;
 }
 

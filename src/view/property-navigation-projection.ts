@@ -1,3 +1,4 @@
+import { normalizeNavigationSorting, orderNavigationItems, resolveNavigationSort, type NavigationSorting } from "../navigation-sorting";
 import {
   normalizePropertyScalarRef,
   serializePropertyScalarRef,
@@ -73,11 +74,24 @@ export function collectExpandablePropertyKeys(facets: readonly PropertyFacet[]):
   return keys;
 }
 
+/** Sorting is presentation-only; facet snapshots and filter identities stay untouched. */
+export function orderPropertyNavigation(facets: readonly PropertyFacet[], sorting: NavigationSorting): PropertyFacet[] {
+  return orderNavigationItems(facets, sorting.propertyKeys, (facet) => facet.key,
+    (facet) => typeof facet.label === "string" && facet.label.length > 0 ? facet.label : facet.key)
+    .map((facet) => ({ ...facet, values: [
+      ...orderNavigationItems(facet.values.filter((value) => value.ref.kind !== "missing"),
+        resolveNavigationSort(sorting, { kind: "property-values", key: facet.key }),
+        (value) => serializePropertyScalarRef(value.ref), (value) => value.label),
+      ...facet.values.filter((value) => value.ref.kind === "missing"),
+    ] }));
+}
+
 export function projectPropertyRows(
   facets: readonly PropertyFacet[],
   clauses: readonly PropertyFilterClause[],
   needle: string,
   expansion: NavigationExpansionLayer,
+  sorting?: NavigationSorting,
 ): PropertyProjectionResult {
   const querying = needle.length > 0;
 
@@ -97,8 +111,9 @@ export function projectPropertyRows(
   const expandedKeys = buildExpansionSet(expansion, querying);
   const rows: (NavigationPropertyRow | NavigationPropertyValueRow)[] = [];
 
-  for (const facet of Array.isArray(facets) ? facets : []) {
-    if (!isPropertyFacet(facet)) continue;
+  const validFacets = (Array.isArray(facets) ? facets : []).filter(isPropertyFacet)
+    .map((facet) => ({ ...facet, values: (Array.isArray(facet.values) ? facet.values : []).filter(validValueFacet) }));
+  for (const facet of orderPropertyNavigation(validFacets, sorting ?? normalizeNavigationSorting(undefined))) {
     const key = facet.key;
 
     // Query matches enabled key labels and projected value labels only.

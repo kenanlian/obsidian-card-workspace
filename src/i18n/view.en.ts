@@ -219,6 +219,10 @@ export const viewStringsEn: ViewStrings = {
       delete: "Delete",
     },
     navMenu: {
+      sortNameAsc: "Name (A to Z)",
+      sortNameDesc: "Name (Z to A)",
+      sortManual: "Manual sorting",
+
       revealActiveFileFolder: "Reveal active note's folder",
       activeFileFolderHidden: "The active note's folder is hidden by navigation visibility rules. Unhide it in navigation visibility settings first.",
       newNote: "New note",

@@ -1,3 +1,5 @@
+import type { NavigationSortMode, NavigationSortTarget } from "../navigation-sorting";
+import { appendNavigationSortItems } from "./menus/navigation-sort-items";
 import type { Menu } from "obsidian";
 import type { UiStrings } from "../i18n";
 import type { FolderSortMode } from "../folder-sibling-orders";
@@ -31,6 +33,7 @@ export interface NavMenuActions {
   createBase: (folderUiPath: string) => void;
   duplicateFolder: (folderUiPath: string) => void;
   sortFolderNameOrder: (parentPath: string, direction: FolderSortMode) => void;
+  sortNavigationItems: (target: NavigationSortTarget, mode: NavigationSortMode) => void;
   moveFolder: (folderUiPath: string) => void;
   renameFolder: (folderUiPath: string) => void;
   deleteFolder: (folderUiPath: string) => void;
@@ -87,6 +90,7 @@ export interface NavMenuDeps {
   sectionOrder: readonly NavSectionId[];
   hiddenSections?: readonly NavSectionId[];
   folderSortMode: (parentPath: string) => FolderSortMode;
+  navigationSortMode: (target: NavigationSortTarget) => NavigationSortMode;
   hasExpandedFolders: boolean;
   hasExpandedTags: boolean;
   hasExpandedProperties: boolean;
@@ -252,6 +256,8 @@ function buildTagsHeaderMenu(menu: Menu, payload: NavContextMenuPayload, deps: N
 
   menu.addSeparator();
 
+  appendNavigationSortItems(menu, deps, { kind: "tags", parent: "" });
+  menu.addSeparator();
   const expanded = deps.hasExpandedTags;
   addItem(
     menu,
@@ -300,6 +306,8 @@ function buildTagItemMenu(
 
   const expansion = deps.tagExpansion(itemId);
   if (expansion.hasChildren) {
+    menu.addSeparator();
+    appendNavigationSortItems(menu, deps, { kind: "tags", parent: itemId });
     menu.addSeparator();
     addItem(
       menu,

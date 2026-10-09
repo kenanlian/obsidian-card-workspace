@@ -1,3 +1,4 @@
+import { resolveNavigationSort } from "../../navigation-sorting";
 import { hideNavigationEntry } from "../actions/navigation-visibility-actions";
 import type { NavMenuDeps } from "../nav-context-menu";
 import { resolveFolderSortMode } from "../../folder-sibling-orders";
@@ -40,6 +41,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     sectionOrder: settings.navSectionOrder,
     hiddenSections: deps.modules.navLayout.getHiddenSectionsForMove(),
     folderSortMode: (parent) => resolveFolderSortMode(settings.folderSiblingOrders, parent, settings.folderDescendingNameSorts),
+    navigationSortMode: (target) => resolveNavigationSort(settings.navigationSorting, target).mode,
     hasExpandedFolders: deps.modules.navLayout.hasExpandedRows("folder"),
     hasExpandedTags: deps.modules.navLayout.hasExpandedRows("tag"),
     hasExpandedProperties: deps.modules.navLayout.hasExpandedRows("property"),
@@ -71,6 +73,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
         void deps.modules.folderActions.duplicateFolder(folderUiPath);
       },
       sortFolderNameOrder: (parent, direction) => { void deps.modules.navLayout.sortFolderNameOrder(parent, direction); },
+      sortNavigationItems: (target, mode) => { void deps.modules.navLayout.sortNavigationItems(target, mode); },
       moveFolder: (folderUiPath) => {
         deps.modules.folderActions.openMoveFolderPickerForFolder(folderUiPath);
       },

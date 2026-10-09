@@ -215,6 +215,10 @@ export const viewStringsZh: ViewStrings = {
       delete: "删除",
     },
     navMenu: {
+      sortNameAsc: "名称升序",
+      sortNameDesc: "名称降序",
+      sortManual: "手动排序",
+
       revealActiveFileFolder: "定位当前笔记所在文件夹",
       activeFileFolderHidden: "当前笔记所在文件夹已被导航隐藏规则隐藏，请先在导航可见性设置中取消隐藏。",
       newNote: "新建笔记",

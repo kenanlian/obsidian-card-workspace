@@ -9,6 +9,7 @@ import {
 import type { Menu } from "obsidian";
 import { DEFAULT_SETTINGS } from "../settings";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import type { NavigationSortTarget } from "../navigation-sorting";
 import { getUiStrings } from "../i18n";
 import { defaultNavSectionOrder } from "../navigation-section-order";
 import { createBoxScope } from "./scope";
@@ -136,6 +137,7 @@ function createActions(): NavMenuActions {
     createBase: vi.fn(),
     duplicateFolder: vi.fn(),
     sortFolderNameOrder: vi.fn(),
+    sortNavigationItems: vi.fn(),
     moveFolder: vi.fn(),
     renameTag: vi.fn(),
     deleteTag: vi.fn(),
@@ -193,6 +195,7 @@ function createDeps(
     sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     folderSortMode: () => "asc",
+    navigationSortMode: () => "asc",
     hasExpandedFolders: false,
     hasExpandedTags: false,
     hasExpandedProperties: false,
@@ -214,6 +217,28 @@ function createPayload(
     ...overrides,
   };
 }
+
+describe("tag and property sort menus", () => {
+  it.each(["en", "zh"] as const)("checks and routes all modes for the exact lane (%s)", (language) => {
+    const cases: [NavContextMenuPayload, NavigationSortTarget][] = [
+      [createPayload({ section: "tags", scope: "header" }), { kind: "tags", parent: "" }],
+      [createPayload({ section: "tags", scope: "item", itemId: "work" }), { kind: "tags", parent: "work" }],
+      [createPayload({ section: "properties", scope: "header" }), { kind: "property-keys" }],
+      [createPayload({ section: "properties", scope: "item", itemId: "status" }), { kind: "property-values", key: "status" }],
+    ];
+    for (const [payload, target] of cases) {
+      const deps = createDeps({ strings: getUiStrings(language), navigationSortMode: () => "desc",
+        tagExpansion: () => ({ hasChildren: true, expanded: false }) });
+      const { menu } = build(payload, deps);
+      const strings = deps.strings.view.navMenu;
+      for (const [title, mode] of [[strings.sortNameAsc, "asc"], [strings.sortNameDesc, "desc"], [strings.sortManual, "manual"]] as const) {
+        expect(findItem(menu, title)?.checked).toBe(mode === "desc");
+        findItem(menu, title)?.clickHandler?.();
+        expect(deps.actions.sortNavigationItems).toHaveBeenLastCalledWith(target, mode);
+      }
+    }
+  });
+});
 
 function build(
   payload: NavContextMenuPayload,
@@ -459,6 +484,11 @@ describe("tags header menu", () => {
     expect(getSignature(menu)).toEqual([
       { title: "Clear tag filter", icon: "filter-x" },
       "sep",
+      { title: "Name (A to Z)", icon: "sort-asc" },
+      { title: "Name (Z to A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
+      "sep",
+
       { title: "Expand all tags", icon: "chevrons-up-down" },
       "sep",
       { title: "Hide this section", icon: "eye-off" },
@@ -538,6 +568,10 @@ describe("tag row menu", () => {
     expect(getSignature(menu)).toEqual([
       { title: "Add tag to filter", icon: "tag" },
       { title: "Filter by this tag only", icon: "filter" },
+      "sep",
+      { title: "Name (A to Z)", icon: "sort-asc" },
+      { title: "Name (Z to A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
       "sep",
       { title: "Collapse subtags", icon: "chevron-down" },
       "sep",
@@ -981,7 +1015,12 @@ describe("section header move items", () => {
     }), deps);
 
     expect(result).toBe(true);
-    expect(getSignature(menu)).toEqual([{ title: "Hide this property", icon: "eye-off" }]);
+    expect(getSignature(menu)).toEqual([
+      { title: "Hide this property", icon: "eye-off" }, "sep",
+      { title: "Name (A to Z)", icon: "sort-asc" },
+      { title: "Name (Z to A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
+    ]);
     findItem(menu, "Hide this property")?.clickHandler?.();
     expect(deps.actions.hideProperty).toHaveBeenCalledWith("status");
   });
@@ -995,7 +1034,12 @@ describe("section header move items", () => {
     }), deps);
 
     expect(result).toBe(true);
-    expect(getSignature(menu)).toEqual([{ title: "Hide this property", icon: "eye-off" }]);
+    expect(getSignature(menu)).toEqual([
+      { title: "Hide this property", icon: "eye-off" }, "sep",
+      { title: "Name (A to Z)", icon: "sort-asc" },
+      { title: "Name (Z to A)", icon: "sort-desc" },
+      { title: "Manual sorting", icon: "list-ordered" },
+    ]);
     findItem(menu, "Hide this property")?.clickHandler?.();
     expect(deps.actions.hideProperty).toHaveBeenCalledWith("status");
   });
@@ -1286,6 +1330,21 @@ describe("nav context menu wiring", () => {
       expect(item).toBeDefined();
       item?.clickHandler?.();
       expect(sort).toHaveBeenCalledExactlyOnceWith("", direction);
+    });
+    it.each(["tags", "properties"] as const)("routes %s header sorting through the host action binding", (section) => {
+      const { view } = createNavView();
+      const sort = vi.spyOn((view as any).modules.navLayout, "sortNavigationItems").mockResolvedValue(undefined);
+      (view as any).openNavContextMenu(navPayload({ section, scope: "header" }));
+      const title = getUiStrings("en").view.navMenu.sortNameDesc;
+      mockState.menuInstances[0].items.find((item) => item.title === title)?.clickHandler?.();
+      expect(sort).toHaveBeenCalledExactlyOnceWith(section === "tags" ? { kind: "tags", parent: "" } : { kind: "property-keys" }, "desc");
+    });
+    it("routes a manual navigation drop into the controller without selecting a filter", () => {
+      const { view, plugin } = createNavView();
+      const reorder = vi.spyOn((view as any).modules.navLayout, "reorderNavigationItems").mockResolvedValue(undefined);
+      view.handleNavigationIntent({ type: "reorder-navigation-items", sourceId: "tag:work", targetId: "tag:home", position: "after" });
+      expect(reorder).toHaveBeenCalledExactlyOnceWith("tag:work", "tag:home", "after");
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
     it.each(["asc", "desc", "manual"] as const)("restores the %s menu check from persisted folder settings", (mode) => {

@@ -1,3 +1,4 @@
+import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
 import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
@@ -162,6 +163,7 @@ export interface PluginSettings {
   lastFolderPath: string;
   folderSiblingOrders: FolderSiblingOrders;
   folderDescendingNameSorts: string[];
+  navigationSorting: NavigationSorting;
   expandedFolderPaths: string[];
   expandedTagPaths: string[];
   visiblePropertyKeys: string[];
@@ -211,6 +213,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   lastFolderPath: "",
   folderSiblingOrders: {},
   folderDescendingNameSorts: [],
+  navigationSorting: normalizeNavigationSorting(undefined),
   expandedFolderPaths: [], expandedTagPaths: [],
   visiblePropertyKeys: [], expandedPropertyKeys: [],
   boxes: [],
@@ -527,6 +530,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     boxes: userData.boxes,
     folderSiblingOrders: userData.folderSiblingOrders,
     folderDescendingNameSorts: userData.folderDescendingNameSorts,
+    navigationSorting: userData.navigationSorting,
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
     searchHistory: userData.searchHistory,
@@ -601,6 +605,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     boxes: boxes.map((box) => ({ ...box, group: normalizeVisibleGroupSpec(box.group, visiblePropertyKeySet) })),
     folderSiblingOrders: normalizeFolderSiblingOrders(data.folderSiblingOrders),
     folderDescendingNameSorts: normalizeFolderDescendingNameSorts(data.folderDescendingNameSorts),
+    navigationSorting: normalizeNavigationSorting(data.navigationSorting),
     favorites: normalizeFavorites(data.favorites),
     activeBoxId: normalizeActiveBoxId(data.activeBoxId, boxes),
     navPaneWidth: normalizeNavPaneWidth(data.navPaneWidth),

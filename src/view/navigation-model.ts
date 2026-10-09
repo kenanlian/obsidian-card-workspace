@@ -1,3 +1,4 @@
+import type { NavigationSorting } from "../navigation-sorting";
 import type { FolderSiblingOrders } from "../folder-sibling-orders";
 import {
   serializePropertyScalarRef,
@@ -86,6 +87,7 @@ export interface NavigationProjectionInput {
   favorites: readonly NavigationFavoriteSource[];
   folders: readonly FolderTreeNode[];
   folderSiblingOrders?: FolderSiblingOrders;
+  navigationSorting?: NavigationSorting;
   tags: readonly TagTreeNode[];
   boxes: readonly NavigationBoxSource[];
   tagCounts: Readonly<Record<string, number>>;
@@ -238,6 +240,7 @@ export const EMPTY_NAVIGATION_PROJECTION: NavigationProjection = {
 
 export type NavigationIntent =
   | { type: "move-folder"; sourcePath: string; targetFolderPath: string }
+  | { type: "reorder-navigation-items"; sourceId: string; targetId: string; position: "before" | "after" }
   | { type: "reorder-folders"; sourcePath: string; targetPath: string; position: "before" | "after" }
   | { type: "drag-expand-folder"; path: string }
   | { type: "clear-folder-drag" }
