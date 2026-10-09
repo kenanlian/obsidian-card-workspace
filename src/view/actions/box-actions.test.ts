@@ -11,7 +11,7 @@ import {
   setLatestModalTextInput,
 } from "../../__mocks__/folder-card-view-harness";
 import { DEFAULT_SETTINGS } from "../../settings";
-import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
+import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../../card-grouping-settings";
 import { getUiStrings } from "../../i18n";
 import type { PropertyFilterClause } from "../../property-filter-settings";
 import { createBoxScope, createFolderScope } from "../scope";
@@ -42,6 +42,7 @@ describe("BoxActions", () => {
       boxes: [box],
       favorites: [],
       visiblePropertyKeys: [],
+      group: { ...DEFAULT_GROUP_SPEC },
       expandedPropertyKeys: [],
       filter: { tags: ["project"], properties: [] },
       includeSubfolders: true,
@@ -286,6 +287,33 @@ describe("BoxActions", () => {
     ]);
     expect(order).toEqual(["persist", `enter:${created.id}`]);
     expect(patch).not.toHaveProperty("activeBoxId");
+  });
+
+  it.each<GroupSpec>([
+    { dimension: "none", orderBy: "default", orderDirection: "asc" },
+    { dimension: "folder", orderBy: "name", orderDirection: "desc" },
+    { dimension: "tag", orderBy: "count", orderDirection: "desc" },
+    { dimension: "task", orderBy: "default", orderDirection: "asc" },
+    { dimension: "property", propertyKey: "status", orderBy: "count", orderDirection: "asc" },
+  ])("saves the $dimension grouping from the same snapshot as the rule", async (group) => {
+    const saveSettings = vi.fn(async (_patch: Record<string, any>) => undefined);
+    const settings = createSettings({ boxes: [], group, visiblePropertyKeys: ["status"] });
+    const actions = createModalActions({ settings, saveSettings });
+    vi.spyOn(actions, "enterBoxScope").mockImplementation(async () => undefined);
+
+    actions.openSaveScopeAsBoxModal();
+    const expected = { ...group };
+    group.orderDirection = group.orderDirection === "asc" ? "desc" : "asc";
+    settings.group = { ...DEFAULT_GROUP_SPEC };
+    clickLatestModalButton("Create");
+    await flushAsyncWork();
+
+    const patch = saveSettings.mock.calls[0]?.[0];
+    expect(patch.boxes[0].group).toEqual(expected);
+    expect(patch.boxes[0].group).not.toBe(group);
+    expect(patch).not.toHaveProperty("group");
+    expect(patch).not.toHaveProperty("filter");
+    expect(actions.enterBoxScope).toHaveBeenCalledWith(patch.boxes[0].id);
   });
 
   it("bakes active property clauses into the saved rule without touching the workspace filter", async () => {

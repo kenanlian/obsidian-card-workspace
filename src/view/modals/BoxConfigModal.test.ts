@@ -50,11 +50,12 @@ function contentOf(modal: InstanceType<typeof BoxConfigModal> = current): MockEl
   return modal.contentEl as unknown as MockEl;
 }
 
-function openModal(box: CardBoxDefinition = createBox()) {
+function openModal(box: CardBoxDefinition = createBox(), locale: "en" | "zh" = "en", visiblePropertyKeys: string[] = []) {
   const onConfirm = vi.fn(async (_confirmed: CardBoxDefinition) => {});
   const modal = new BoxConfigModal({} as never, {
     box,
-    strings,
+    visiblePropertyKeys,
+    strings: getUiStrings(locale),
     describeRule: (rule) => `${rule.folder} (${rule.tags.join(",")})`,
     isRuleFolderMissing: () => false,
     describeMemberPath: (path) => path,
@@ -178,6 +179,7 @@ describe("BoxConfigModal rule names", () => {
     ];
     const modal = new BoxConfigModal({} as never, {
       box,
+      visiblePropertyKeys: [],
       strings,
       describeRule: (rule) => describeBoxRule(strings, rule),
       isRuleFolderMissing: () => false,
@@ -211,6 +213,80 @@ describe("BoxConfigModal rule names", () => {
   });
 });
 
+describe("BoxConfigModal grouping", () => {
+  it.each(["en", "zh"] as const)("edits box grouping in %s without mutating the source or rebuilding the body", async (locale) => {
+    const { box, onConfirm } = openModal(createBox(), locale, ["status", "priority"]);
+    const ui = getUiStrings(locale);
+    const group = requireGroup(contentOf(), ui.box.groupHeading);
+    const [dimension, property, orderBy, orderDirection] = group.settings;
+
+    expect(dimension?.name).toBe(ui.sortGroup.groupHeading);
+    expect(dimension?.dropdowns[0]?.value).toBe("box-rule");
+    expect(dimension?.dropdowns[0]?.options.map((option) => option.label)).toEqual([
+      ui.sortGroup.dimensionNone, ui.sortGroup.dimensionFolder, ui.sortGroup.dimensionTag,
+      ui.sortGroup.dimensionTask, ui.sortGroup.dimensionProperty, ui.sortGroup.dimensionBoxRule,
+    ]);
+    expect(property?.settingEl.style.display).toBe("none");
+    expect(orderBy?.dropdowns[0]?.value).toBe("name");
+    expect(orderDirection?.dropdowns[0]?.value).toBe("desc");
+
+    dimension?.dropdowns[0]?.select("property");
+    expect(property?.settingEl.style.display).toBe("");
+    property?.dropdowns[0]?.select("priority");
+    orderBy?.dropdowns[0]?.select("count");
+    orderDirection?.dropdowns[0]?.select("asc");
+    dimension?.dropdowns[0]?.select("tag");
+    dimension?.dropdowns[0]?.select("property");
+    expect(property?.dropdowns[0]?.value).toBe("priority");
+    expect(requireGroup(contentOf(), ui.box.groupHeading)).toBe(group);
+    expect(box.group).toEqual({ dimension: "box-rule", orderBy: "name", orderDirection: "desc" });
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    await clickButton(ui.box.done);
+    await flush();
+    expect(onConfirm.mock.calls[0]?.[0].group).toEqual({
+      dimension: "property", propertyKey: "priority", orderBy: "count", orderDirection: "asc",
+    });
+  });
+
+  it("hides group ordering for an ungrouped box and clears the property key on a dimension change", async () => {
+    const box = createBox();
+    box.group = { dimension: "property", propertyKey: "priority", orderBy: "count", orderDirection: "desc" };
+    const { onConfirm } = openModal(box, "en", ["status", "priority"]);
+    const [dimension, property, orderBy, orderDirection] = requireGroup(contentOf(), strings.box.groupHeading).settings;
+
+    expect(property?.dropdowns[0]?.value).toBe("priority");
+    dimension?.dropdowns[0]?.select("none");
+    expect(property?.settingEl.style.display).toBe("none");
+    expect(orderBy?.settingEl.style.display).toBe("none");
+    expect(orderDirection?.settingEl.style.display).toBe("none");
+    dimension?.dropdowns[0]?.select("folder");
+    expect(orderBy?.settingEl.style.display).toBe("");
+    expect(orderDirection?.settingEl.style.display).toBe("");
+
+    await clickButton(strings.box.done);
+    await flush();
+    expect(onConfirm.mock.calls[0]?.[0].group).toEqual({ dimension: "folder", orderBy: "count", orderDirection: "desc" });
+  });
+
+  it("omits property grouping when no properties are enabled and explains how to enable it", () => {
+    openModal();
+    const row = requireGroup(contentOf(), strings.box.groupHeading).settings[0];
+    expect(row?.dropdowns[0]?.options.map((option) => option.value)).toEqual(["none", "folder", "tag", "task", "box-rule"]);
+    expect(row?.desc).toBe(strings.sortGroup.enablePropertyHint);
+  });
+
+  it("discards grouping edits on cancel", async () => {
+    const { box, onConfirm } = openModal();
+    const [dimension] = requireGroup(contentOf(), strings.box.groupHeading).settings;
+    dimension?.dropdowns[0]?.select("task");
+    await clickButton(strings.box.cancel);
+    await flush();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(box.group).toEqual({ dimension: "box-rule", orderBy: "name", orderDirection: "desc" });
+  });
+});
+
 describe("BoxConfigModal layout", () => {
   function createPopulatedBox(): CardBoxDefinition {
     return {
@@ -229,13 +305,14 @@ describe("BoxConfigModal layout", () => {
     expect(asMock(modal).title).toBe(strings.box.configTitle("Reading"));
   });
 
-  it("renders sort, rules, manual, and removed groups in order", () => {
+  it("renders sort, grouping, rules, manual, and removed groups in order", () => {
     openModal();
 
     const content = contentOf();
     const headings = content.nodes.map((node) => (node as { heading?: string }).heading);
     expect(headings).toEqual([
       "",
+      strings.box.groupHeading,
       strings.box.rulesHeading,
       strings.box.manualHeading,
       strings.box.excludedHeading,
@@ -285,6 +362,7 @@ describe("BoxConfigModal layout", () => {
   it("flags a rule whose folder is gone without changing its row structure", () => {
     const modal = new BoxConfigModal({} as never, {
       box: createBox(),
+      visiblePropertyKeys: [],
       strings,
       describeRule: (rule) => rule.folder,
       isRuleFolderMissing: (rule) => rule.id === "rule-2",
@@ -368,6 +446,7 @@ describe("BoxConfigModal layout", () => {
     }));
     const modal = new BoxConfigModal({} as never, {
       box: createBox(),
+      visiblePropertyKeys: [],
       strings,
       describeRule: (rule) => rule.folder,
       isRuleFolderMissing: () => false,

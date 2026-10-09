@@ -44,6 +44,10 @@ export interface BoxStrings {
   removeRule: string;
   noRules: string;
   sortHeading: string;
+  groupHeading: string;
+  groupPropertyLabel: string;
+  groupOrderByLabel: string;
+  groupOrderDirectionLabel: string;
   manualHeading: string;
   noManualMembers: string;
   removeManualMember: string;
@@ -105,6 +109,10 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     noRules:
       "No rules yet. Use “Add current view to card box” from the card box's right-click menu.",
     sortHeading: "Sort",
+    groupHeading: "Grouping",
+    groupPropertyLabel: "Group property",
+    groupOrderByLabel: "Order groups by",
+    groupOrderDirectionLabel: "Group order direction",
     manualHeading: "Manually added",
     noManualMembers: "No manually added notes.",
     removeManualMember: "Remove from card box",
@@ -160,6 +168,10 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     removeRule: "删除规则",
     noRules: "还没有规则。请在卡片盒右键菜单中使用「加入当前视图」。",
     sortHeading: "排序",
+    groupHeading: "分组",
+    groupPropertyLabel: "分组属性",
+    groupOrderByLabel: "分组排序依据",
+    groupOrderDirectionLabel: "分组排序方向",
     manualHeading: "手动加入",
     noManualMembers: "还没有手动加入的笔记。",
     removeManualMember: "移出卡片盒",

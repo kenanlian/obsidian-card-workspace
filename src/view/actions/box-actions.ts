@@ -1,6 +1,7 @@
 import { Menu, TFile, TFolder } from "obsidian";
 import { CompatConfirmationModal } from "../modals/compat-modal";
 import type { UiStrings } from "../../i18n";
+import { normalizeGroupSpec } from "../../card-grouping-settings";
 import { normalizePropertyFilterClauses } from "../../property-filter-settings";
 import {
   addManualPaths,
@@ -28,6 +29,7 @@ import { createBoxScope, isBoxScope, scopeDisplayPath, resolveBrowseIncludeSubfo
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition, FolderSelectionRequest, Rule, SelectionResult } from "../types";
 import type { ViewContext } from "../view-context";
+import { resolveViewConfig } from "../view-config";
 import {
   deriveDefaultBoxNameFromBrowseScope,
   describeBoxRule,
@@ -312,6 +314,9 @@ export class BoxActions {
   openSaveScopeAsBoxModal(): void {
     const strings = this.strings.box;
     const rule = translateBrowseScopeToRule(this.getBrowseScope());
+    const group = normalizeGroupSpec(resolveViewConfig(
+      this.deps.context.store.getScope(), this.deps.context.getSettings(),
+    ).group);
     const hitCount = this.countRuleQualifiedFiles(rule);
     new BoxNameModal(this.deps.context.getApp(), {
       strings: this.strings,
@@ -321,7 +326,7 @@ export class BoxActions {
       previewText: strings.hitCountPreview(hitCount),
       onSubmit: async (name) => {
         const settings = this.deps.context.getSettings();
-        const box = createCardBox(name, settings.boxes, { rules: [rule] });
+        const box = createCardBox(name, settings.boxes, { rules: [rule], group });
         await this.persistBoxes(upsertCardBox(settings.boxes, box));
         await this.enterBoxScope(box.id);
       },
@@ -405,6 +410,7 @@ export class BoxActions {
     }
     new BoxConfigModal(this.deps.context.getApp(), {
       box,
+      visiblePropertyKeys: settings.visiblePropertyKeys,
       strings: this.strings,
       describeRule: (rule) => this.describeRule(rule),
       isRuleFolderMissing: (rule) => this.deps.resolveFolderFromUiPath(rule.folder) === null,
