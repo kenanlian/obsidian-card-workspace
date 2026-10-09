@@ -1,14 +1,17 @@
-import type { App } from "obsidian";
+import type { App, Setting } from "obsidian";
+import { normalizeGroupSpec, type GroupDimension, type GroupOrderBy } from "../../card-grouping-settings";
 import type { UiStrings } from "../../i18n";
 import { normalizePropertyFilterClauses } from "../../property-filter-settings";
 import type { SortDirection, SortField } from "../../settings";
 import type { CardBoxDefinition, CardBoxSortSpec, Rule } from "../types";
 import { removeRuleFromBox, restoreExcludedPaths } from "../card-boxes";
+import { BOX_GROUP_DIMENSIONS } from "../source-capabilities";
 import { FormModal } from "./FormModal";
 import { addEmptyGroupRow, createModalGroup } from "./modal-layout";
 
 export interface BoxConfigModalOptions {
   box: CardBoxDefinition;
+  visiblePropertyKeys: readonly string[];
   strings: UiStrings;
   describeRule: (rule: Rule) => string;
   isRuleFolderMissing: (rule: Rule) => boolean;
@@ -79,6 +82,7 @@ export class BoxConfigModal extends FormModal {
     this.setTitle(strings.configTitle(this.draft.name));
 
     this.renderSortGroup();
+    this.renderGroupingGroup();
     this.renderRulesGroup();
     this.renderManualGroup();
     this.renderExcludedGroup();
@@ -102,6 +106,96 @@ export class BoxConfigModal extends FormModal {
         });
       });
     });
+  }
+
+  private renderGroupingGroup(): void {
+    const strings = this.options.strings;
+    const labels = strings.sortGroup;
+    const propertyKeys = this.options.visiblePropertyKeys;
+    let selectedPropertyKey = this.draft.group.propertyKey ?? propertyKeys[0];
+    const group = createModalGroup(this.contentEl, { heading: strings.box.groupHeading });
+    const dimensionLabels: Record<GroupDimension, string> = {
+      none: labels.dimensionNone,
+      folder: labels.dimensionFolder,
+      tag: labels.dimensionTag,
+      task: labels.dimensionTask,
+      property: labels.dimensionProperty,
+      "box-rule": labels.dimensionBoxRule,
+    };
+    const dimensions = BOX_GROUP_DIMENSIONS.filter((dimension) =>
+      dimension !== "property" || propertyKeys.length > 0,
+    );
+    let propertyRow: Setting;
+    let orderByRow: Setting;
+    let orderDirectionRow: Setting;
+    const refreshVisibility = (): void => {
+      propertyRow.settingEl.style.display = this.draft.group.dimension === "property" ? "" : "none";
+      const orderDisplay = this.draft.group.dimension === "none" ? "none" : "";
+      orderByRow.settingEl.style.display = orderDisplay;
+      orderDirectionRow.settingEl.style.display = orderDisplay;
+    };
+
+    group.addSetting((setting) => {
+      setting.setName(labels.groupHeading);
+      if (propertyKeys.length === 0) setting.setDesc(labels.enablePropertyHint);
+      setting.addDropdown((dropdown) => {
+        for (const dimension of dimensions) {
+          dropdown.addOption(dimension, dimensionLabels[dimension]);
+        }
+        dropdown.setValue(this.draft.group.dimension).onChange((value) => {
+          const dimension = dimensions.find((candidate) => candidate === value);
+          if (dimension === undefined) return;
+          this.draft = {
+            ...this.draft,
+            group: normalizeGroupSpec({
+              ...this.draft.group,
+              dimension,
+              propertyKey: selectedPropertyKey,
+            }),
+          };
+          refreshVisibility();
+        });
+      });
+    });
+    group.addSetting((setting) => {
+      propertyRow = setting;
+      setting.setName(strings.box.groupPropertyLabel).addDropdown((dropdown) => {
+        for (const key of propertyKeys) dropdown.addOption(key, key);
+        dropdown.setValue(selectedPropertyKey ?? "").onChange((key) => {
+          if (this.draft.group.dimension !== "property" || !propertyKeys.includes(key)) return;
+          selectedPropertyKey = key;
+          this.draft = { ...this.draft, group: { ...this.draft.group, propertyKey: key } };
+        });
+      });
+    });
+    const orderLabels: Record<GroupOrderBy, string> = {
+      default: labels.orderDefault,
+      name: labels.orderName,
+      count: labels.orderCount,
+    };
+    group.addSetting((setting) => {
+      orderByRow = setting;
+      setting.setName(strings.box.groupOrderByLabel).addDropdown((dropdown) => {
+        const choices: GroupOrderBy[] = ["default", "name", "count"];
+        for (const choice of choices) dropdown.addOption(choice, orderLabels[choice]);
+        dropdown.setValue(this.draft.group.orderBy).onChange((value) => {
+          const orderBy = choices.find((candidate) => candidate === value);
+          if (orderBy === undefined) return;
+          this.draft = { ...this.draft, group: { ...this.draft.group, orderBy } };
+        });
+      });
+    });
+    group.addSetting((setting) => {
+      orderDirectionRow = setting;
+      setting.setName(strings.box.groupOrderDirectionLabel).addDropdown((dropdown) => {
+        dropdown.addOption("asc", labels.directionAsc).addOption("desc", labels.directionDesc);
+        dropdown.setValue(this.draft.group.orderDirection).onChange((orderDirection) => {
+          if (orderDirection !== "asc" && orderDirection !== "desc") return;
+          this.draft = { ...this.draft, group: { ...this.draft.group, orderDirection } };
+        });
+      });
+    });
+    refreshVisibility();
   }
 
   private renderRulesGroup(): void {
