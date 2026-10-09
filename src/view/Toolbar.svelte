@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Menu, setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
+  import { suggestSearchHistory } from "../search-history";
   import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../card-grouping-settings";
   import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
   import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
@@ -12,7 +13,7 @@
     PanelSearchState,
   } from "./panel-model";
   import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
-  import type { BulkRuntimePanelState, SearchStatus } from "./types";
+  import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
   import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
   interface ToolbarActionPayload {
@@ -43,7 +44,7 @@
   }
 
   interface SearchQueryResetPayload {
-    source: "clear-button";
+    source: SearchQueryResetSource;
   }
 
   const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
@@ -66,6 +67,7 @@
     onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
+    onSearchHistoryCommand?: (payload: SearchHistoryCommand) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
   }
 
@@ -133,7 +135,7 @@
     sourceIdentity: "folder::true", browseTagFilterEnabled: true, browsePropertyFilterEnabled: true,
     supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
-  const DEFAULT_SEARCH: PanelSearchState = { query: "", committedQuery: "", status: "idle", focusToken: 0 };
+  const DEFAULT_SEARCH: PanelSearchState = { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 };
   const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0, metadataStatus: "ready" };
   const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
 
@@ -154,6 +156,7 @@
     onGroupCollapseCommand,
     onSearchQueryChange,
     onSearchQueryReset,
+    onSearchHistoryCommand,
     onBoxCommand,
   }: ToolbarProps = $props();
   const toolbarStrings = $derived(strings.toolbar);
@@ -230,6 +233,78 @@
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
+  let searchControlEl = $state<HTMLDivElement | null>(null);
+  let searchToggleEl = $state<HTMLButtonElement | null>(null);
+  let suggestionsOpen = $state(false);
+  let highlightedQuery = $state<string | null>(null);
+  let composing = false;
+  const searchId = $props.id();
+  const inputId = `${searchId}-input`;
+  const historyId = `${searchId}-history`;
+  const suggestions = $derived(suggestSearchHistory(search.history, searchQuery));
+  const showSuggestions = $derived(searchExpanded && suggestionsOpen && suggestions.length > 0);
+  const highlightedIndex = $derived(highlightedQuery === null ? -1 : suggestions.indexOf(highlightedQuery));
+
+  $effect(() => {
+    if (highlightedQuery !== null && !suggestions.includes(highlightedQuery)) highlightedQuery = null;
+  });
+
+  function openSuggestions(): void {
+    suggestionsOpen = true;
+    highlightedQuery = null;
+  }
+
+  function handleSearchFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget as Node | null;
+    if (next && (searchControlEl?.contains(next) || searchToggleEl?.contains(next))) return;
+    onSearchHistoryCommand?.({ command: "record", source: "blur" });
+    suggestionsOpen = false;
+    highlightedQuery = null;
+  }
+
+  function selectHistory(query: string): void {
+    onSearchHistoryCommand?.({ command: "select", query });
+    searchInputEl?.focus();
+    suggestionsOpen = false;
+    highlightedQuery = null;
+  }
+
+  function manageHistory(command: SearchHistoryCommand): void {
+    onSearchHistoryCommand?.(command);
+    highlightedQuery = null;
+    // A deleted row (or the whole popup) can unmount the focused button.
+    searchInputEl?.focus();
+  }
+
+  function handleSearchKeydown(event: KeyboardEvent): void {
+    if (event.isComposing || composing || event.keyCode === 229) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      searchInputEl?.focus();
+      suggestionsOpen = false;
+      highlightedQuery = null;
+      return;
+    }
+    if (event.target !== searchInputEl) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!showSuggestions) return;
+      event.preventDefault();
+      if (!suggestions.length) return;
+      const next = highlightedIndex < 0
+        ? (event.key === "ArrowDown" ? 0 : suggestions.length - 1)
+        : (highlightedIndex + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
+      highlightedQuery = suggestions[next];
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (showSuggestions && highlightedIndex >= 0) selectHistory(suggestions[highlightedIndex]);
+      else {
+        onSearchHistoryCommand?.({ command: "record", source: "enter" });
+        suggestionsOpen = false;
+        highlightedQuery = null;
+      }
+    }
+  }
 
   // Plain `let`, not `$state`: the effect writes it, and a reactive read would
   // re-run the effect for no reason.
@@ -405,11 +480,14 @@
       return;
     }
 
+    openSuggestions();
     onSearchQueryChange?.({ query: target.value });
   }
 
   function clearSearchQuery(): void {
     onSearchQueryReset?.({ source: "clear-button" });
+    highlightedQuery = null;
+    searchInputEl?.focus();
   }
 
   function emitToolbarAction(actionId: string): void {
@@ -417,8 +495,16 @@
   }
 
   function toggleSearch(): void {
-    searchExpanded = !searchExpanded;
-    if (searchExpanded) void tick().then(() => searchInputEl?.focus());
+    if (searchExpanded) {
+      onSearchQueryReset?.({ source: "collapse" });
+      composing = false;
+      suggestionsOpen = false;
+      highlightedQuery = null;
+      searchExpanded = false;
+    } else {
+      searchExpanded = true;
+      void tick().then(() => searchInputEl?.focus());
+    }
   }
 </script>
 
@@ -545,7 +631,12 @@
         <button
           type="button"
           class="clickable-icon fce-toolbar-button {(searchExpanded || hasSearchQuery) ? 'is-selected' : ''}"
+          bind:this={searchToggleEl}
+          aria-expanded={searchExpanded}
+          onfocusout={handleSearchFocusOut}
           aria-label={toolbarStrings.actions.toggleSearch}
+          aria-controls={inputId}
+          onmousedown={(event) => event.preventDefault()}
           onclick={toggleSearch}
           use:applyIcon={"search"}
         >
@@ -557,13 +648,24 @@
 
   {#if searchExpanded}
     <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}">
-      <div class="fce-toolbar-search" role="search">
-        <label class="fce-sr-only" for="fce-search-input">{toolbarStrings.search.inputLabel}</label>
+      <div class="fce-toolbar-search" role="search" bind:this={searchControlEl}
+        onfocusout={handleSearchFocusOut}>
+        <label class="fce-sr-only" for={inputId}>{toolbarStrings.search.inputLabel}</label>
         <input
           bind:this={searchInputEl}
-          id="fce-search-input"
+          id={inputId}
           class="fce-search-input"
           type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="grid"
+          aria-expanded={showSuggestions}
+          aria-controls={showSuggestions ? historyId : undefined}
+          aria-activedescendant={showSuggestions && highlightedIndex >= 0 ? `${historyId}-${highlightedIndex}` : undefined}
+          onfocus={openSuggestions}
+          onkeydown={handleSearchKeydown}
+          oncompositionstart={() => { composing = true; }}
+          oncompositionend={() => { composing = false; }}
           aria-label={toolbarStrings.search.inputLabel}
           placeholder={toolbarStrings.search.placeholder}
           value={searchQuery}
@@ -574,11 +676,35 @@
             type="button"
             class="clickable-icon fce-search-clear"
             aria-label={toolbarStrings.search.clear}
+            onkeydown={handleSearchKeydown}
             onclick={clearSearchQuery}
             use:applyIcon={"x"}
           >
             <span class="fce-sr-only">{toolbarStrings.search.clear}</span>
           </button>
+        {/if}
+        {#if showSuggestions}
+          <div class="fce-search-history">
+            <div id={historyId} role="grid" aria-label={toolbarStrings.search.history}>
+              {#each suggestions as query, index (query)}
+                <div role="row" class="fce-search-history-row" class:is-highlighted={highlightedIndex === index}>
+                  <div role="gridcell" id={`${historyId}-${index}`}>
+                    <button type="button" class="fce-search-suggestion" tabindex="-1"
+                      onmousedown={(event) => event.preventDefault()} onclick={() => selectHistory(query)} title={query}>{query}</button>
+                  </div>
+                  <div role="gridcell">
+                    <button type="button" class="clickable-icon fce-search-history-delete"
+                      aria-label={toolbarStrings.search.deleteHistory(query)}
+                      onkeydown={handleSearchKeydown}
+                      onclick={() => manageHistory({ command: "delete", query })} use:applyIcon={"x"}></button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+            <button type="button" class="fce-search-history-clear"
+              onkeydown={handleSearchKeydown}
+              onclick={() => manageHistory({ command: "clear" })}>{toolbarStrings.search.clearHistory}</button>
+          </div>
         {/if}
       </div>
     </div>

@@ -201,6 +201,12 @@ export interface SelectionResult {
   preserveUiState: boolean;
 }
 
+export type SearchQueryResetSource = "clear-button" | "collapse";
+export type SearchHistoryCommand =
+  | { command: "record"; source: "enter" | "blur" }
+  | { command: "select" | "delete"; query: string }
+  | { command: "clear" };
+
 export type RefreshReason = "vault-change" | "settings-change" | "manual";
 
 export interface RefreshRequest {

@@ -1157,6 +1157,7 @@ export function createViewWithFile(
       lastFolderPath: null,
       lastViewMode: "folder",
       pinnedPaths: [],
+      searchHistory: [],
       previewLines: 5,
     })),
     getUiLanguage: vi.fn(() => "en"),

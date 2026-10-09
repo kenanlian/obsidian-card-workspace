@@ -549,6 +549,7 @@ export class FolderCardView extends ItemView {
 
   private buildSearchGroup(): PanelModelState["search"] {
     return {
+      history: this.plugin.getSettings().searchHistory,
       query: this.modules.search.getQuery(), committedQuery: this.modules.search.getCommittedQuery(),
       status: this.modules.search.getStatus(),
       readiness: this.modules.search.getSnapshot()?.health?.readiness,
@@ -654,11 +655,11 @@ export class FolderCardView extends ItemView {
   private publishForIntent(intent: ViewUpdateIntent): void {
     switch (intent) {
       case "patch":
-        this.publishGroups("nav", "appearance", "strings", "scope");
+        this.publishGroups("nav", "appearance", "strings", "scope", "search");
         return;
       case "reproject":
       case "rehydrate":
-        this.publishGroups("nav", "appearance", "strings", "scope", "cards", "projection", "bulk");
+        this.publishGroups("nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk");
         return;
       case "reload":
         this.publishGroups(...PANEL_GROUPS);

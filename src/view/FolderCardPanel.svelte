@@ -97,7 +97,7 @@
   }
 
   interface SearchQueryResetPayload {
-    source: "clear-button";
+    source: import("./types").SearchQueryResetSource;
   }
 
   type SelectFolderPayload = Pick<FolderActionPayload, "path">;
@@ -119,6 +119,7 @@
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
+    onSearchHistoryCommand?: (payload: import("./types").SearchHistoryCommand) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
@@ -158,7 +159,7 @@
       generation: 0, sequenceRevision: 0, hydrationRevision: 0, extentCount: 0,
       groupSegments: [], groupRevision: 0,
     },
-    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
+    search: { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",
@@ -220,6 +221,7 @@
     onIncludeSubfoldersChange,
     onSearchQueryChange,
     onSearchQueryReset,
+    onSearchHistoryCommand,
     onSelectFolder,
     onFolderAction,
     onBoxCommand,
@@ -899,6 +901,7 @@
     onGroupCollapseCommand={handleGroupCollapseCommand}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
+    {onSearchHistoryCommand}
     onBoxCommand={handleBoxCommand}
   />
   <div class="fce-list-frame">

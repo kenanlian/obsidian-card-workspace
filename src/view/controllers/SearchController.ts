@@ -5,9 +5,10 @@ import type {
   SearchService,
   SearchServiceSnapshot,
 } from "../../search";
+import { deleteSearchHistory, recordSearchHistory } from "../../search-history";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { scopesEqual, type CardScope } from "../scope";
-import type { PipelineSearchInput, SearchStatus } from "../types";
+import type { PipelineSearchInput, SearchStatus, SearchHistoryCommand, SearchQueryResetSource } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 
 const SEARCH_DEBOUNCE_MS = 120;
@@ -42,6 +43,8 @@ export interface SearchRefreshOptions {
 /** Owns one view's indexed-search runtime, including both stale-result guards. */
 export class SearchController implements DisposableController {
   private query = "";
+  private inputRevision = 0;
+  private endedInputRevision = 0;
   /** Query represented by `execution` / `orderedPaths` and the visible-card projection. */
   private committedQuery = "";
   private execution: SearchQueryExecutionState = "indexed-unavailable";
@@ -175,6 +178,7 @@ export class SearchController implements DisposableController {
     }
 
     this.query = nextQuery;
+    this.inputRevision += 1;
     this.invalidateSearchPreviews();
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
@@ -204,17 +208,56 @@ export class SearchController implements DisposableController {
     this.deps.publishSearchProjection();
   }
 
-  resetQuery(): void {
+  /** Automatic endings record at most once per edited input; Enter is explicit. */
+  private recordQuery(explicit: boolean = false): void {
+    if (!explicit && this.endedInputRevision === this.inputRevision) return;
+    this.endedInputRevision = this.inputRevision;
+    if (!this.query.trim()) return;
+    this.persistHistory(recordSearchHistory(this.context.getSettings().searchHistory, this.query));
+  }
+
+  onHistoryCommand(detail: SearchHistoryCommand): void {
+    switch (detail.command) {
+      case "record":
+        this.recordQuery(detail.source === "enter");
+        return;
+      case "select":
+        this.onQueryChange({ query: detail.query });
+        this.recordQuery(true);
+        return;
+      case "delete":
+        this.endedInputRevision = this.inputRevision;
+        this.persistHistory(deleteSearchHistory(this.context.getSettings().searchHistory, detail.query));
+        return;
+      case "clear":
+        this.endedInputRevision = this.inputRevision;
+        this.persistHistory([]);
+        return;
+    }
+  }
+
+  private persistHistory(history: string[]): void {
+    // saveSettings installs memory synchronously before waiting for disk. Each
+    // operation above reads the latest shared snapshot, including other views.
+    void this.context.saveSettings({ searchHistory: history }).catch((error: unknown) => {
+      console.warn("[Card Workspace] Search history save failed.", error);
+    });
+  }
+
+  resetQuery(source?: SearchQueryResetSource): void {
+    if (source === "collapse" || source === "clear-button") this.recordQuery();
     if (this.query.trim() || this.committedQuery.trim()) this.invalidateSearchPreviews();
     this.clearDebounce();
     this.requestEpoch.bump();
     this.query = "";
+    this.inputRevision += 1;
+    this.endedInputRevision = this.inputRevision;
     this.status = this.deriveStatus();
+    this.commitPendingProjection();
     if (!this.scopeSettled()) {
-      this.context.publishGroups("search");
+      this.context.publishGroups("cards", "search");
       return;
     }
-    this.commitPendingProjection();
     this.deps.publishSearchProjection();
   }
 

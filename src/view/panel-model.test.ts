@@ -38,6 +38,7 @@ function buildState(): PanelModelState {
       extentCount: 0,
     },
     search: {
+      history: [],
       query: "",
       committedQuery: "",
       status: "idle",

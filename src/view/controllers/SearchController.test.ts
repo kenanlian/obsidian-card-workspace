@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import type { SearchIndexHealthSnapshot, SearchService, SearchServiceSnapshot } from "../../search";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
+import { DEFAULT_SETTINGS, normalizeSettings, mergeSettings } from "../../settings";
 import { ProjectionController } from "./ProjectionController";
 import { createFolderScope } from "../scope";
 import type { NoteCardRecord } from "../types";
@@ -52,7 +52,7 @@ function createContext(): ViewContext {
     store: createViewStateStore(createFolderScope("notes", true)),
     epochs: createViewEpochs(),
     getSettings: vi.fn(() => normalizeSettings(DEFAULT_SETTINGS)),
-    saveSettings: vi.fn(),
+    saveSettings: vi.fn(async () => undefined),
     getUiStrings: vi.fn(),
     publishGroups: vi.fn(),
     requestUpdate: vi.fn(),
@@ -469,6 +469,134 @@ describe("SearchController", () => {
       query: "needle",
       execution: "indexed-unavailable",
     });
+    controller.dispose();
+  });
+});
+
+
+describe("SearchController history and collapse", () => {
+  function harness(context = createContext(), query = vi.fn(), settled = () => true) {
+    const publish = vi.fn();
+    const controller = new SearchController({ context, getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(), subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection: publish, isScopeSettled: settled });
+    controller.initializeSnapshotState();
+    return { controller, publish, context, query };
+  }
+
+  it("records once per automatic ending, lets Enter record again, and suppresses resurrection after management", () => {
+    const context = createContext();
+    let settings = normalizeSettings({});
+    context.getSettings = () => settings;
+    context.saveSettings = vi.fn(async (patch) => { settings = mergeSettings(settings, patch); });
+    const { controller } = harness(context);
+    controller.onQueryChange({ query: " Alpha " });
+    controller.onHistoryCommand({ command: "record", source: "blur" });
+    controller.resetQuery("collapse");
+    expect(context.saveSettings).toHaveBeenCalledTimes(1);
+    expect(settings.searchHistory).toEqual(["Alpha"]);
+    controller.onQueryChange({ query: "Alpha" });
+    controller.onHistoryCommand({ command: "delete", query: "alpha" });
+    controller.onHistoryCommand({ command: "record", source: "blur" });
+    expect(settings.searchHistory).toEqual([]);
+    controller.onHistoryCommand({ command: "record", source: "enter" });
+    expect(settings.searchHistory).toEqual(["Alpha"]);
+    controller.onHistoryCommand({ command: "clear" });
+    controller.resetQuery("collapse");
+    expect(settings.searchHistory).toEqual([]);
+    controller.onQueryChange({ query: "new" });
+    controller.resetQuery();
+    controller.onHistoryCommand({ command: "record", source: "blur" });
+    expect(settings.searchHistory).toEqual([]);
+    controller.onQueryChange({ query: " visible " });
+    controller.resetQuery("clear-button");
+    expect(settings.searchHistory).toEqual(["visible"]);
+    const savesAfterClear = vi.mocked(context.saveSettings).mock.calls.length;
+    controller.onHistoryCommand({ command: "record", source: "blur" });
+    controller.resetQuery("collapse");
+    controller.resetQuery("clear-button");
+    expect(context.saveSettings).toHaveBeenCalledTimes(savesAfterClear);
+    controller.dispose();
+  });
+
+  it("uses the latest shared settings synchronously across two views while saves are pending", async () => {
+    const context = createContext();
+    let settings = normalizeSettings({});
+    let release!: () => void;
+    const write = new Promise<void>((resolve) => { release = resolve; });
+    context.getSettings = () => settings;
+    context.saveSettings = vi.fn((patch) => { settings = mergeSettings(settings, patch); return write; });
+    const a = harness(context), b = harness(context);
+    a.controller.onQueryChange({ query: "first" });
+    a.controller.onHistoryCommand({ command: "record", source: "enter" });
+    b.controller.onQueryChange({ query: "partial" });
+    b.controller.onHistoryCommand({ command: "select", query: "second" });
+    expect(settings.searchHistory).toEqual(["second", "first"]);
+    expect(a.controller.getQuery()).toBe("first");
+    expect(b.controller.getQuery()).toBe("second");
+    expect(a.query).not.toHaveBeenCalled();
+    expect(b.query).not.toHaveBeenCalled();
+    a.publish.mockClear(); b.publish.mockClear();
+    b.controller.onHistoryCommand({ command: "delete", query: "FIRST" });
+    expect(settings.searchHistory).toEqual(["second"]);
+    expect(a.publish).not.toHaveBeenCalled(); expect(b.publish).not.toHaveBeenCalled();
+    release(); await write;
+    a.controller.dispose(); b.controller.dispose();
+  });
+
+  it.each(["collapse", "clear-button"] as const)("records unavailable queries and resets immediately via %s despite a failed save", async (source) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const context = createContext();
+      context.saveSettings = vi.fn(async () => { throw new Error("disk full"); });
+      const { controller } = harness(context);
+      controller.onSearchSnapshot(createSnapshot({ status: "building" }));
+      controller.onQueryChange({ query: "missing" });
+      controller.resetQuery(source);
+      expect(controller.getQuery()).toBe("");
+      expect(controller.getCommittedQuery()).toBe("");
+      expect(context.saveSettings).toHaveBeenCalledWith({ searchHistory: ["missing"] });
+      await Promise.resolve();
+      expect(warn).toHaveBeenCalled();
+      controller.dispose();
+    } finally { warn.mockRestore(); }
+  });
+
+  it.each(["collapse", "clear-button"] as const)("cancels debounce on %s and rejects an already running late result", async (source) => {
+    vi.useFakeTimers();
+    let resolve!: (value: Awaited<ReturnType<SearchService["query"]>>) => void;
+    const query = vi.fn(() => new Promise<Awaited<ReturnType<SearchService["query"]>>>((r) => { resolve = r; }));
+    const { controller, publish } = harness(createContext(), query);
+    controller.onQueryChange({ query: "draft" });
+    controller.resetQuery(source);
+    vi.advanceTimersByTime(120);
+    expect(query).not.toHaveBeenCalled();
+    controller.onQueryChange({ query: "running" });
+    const pending = controller.refreshProjection();
+    controller.resetQuery(source);
+    publish.mockClear();
+    resolve({ mode: "indexed", status: "ready", execution: "indexed-ready", orderedPaths: ["notes/a.md"], matchCountsByPath: { "notes/a.md": 1 } });
+    await pending;
+    expect(controller.getQuery()).toBe("");
+    expect(controller.getCommittedQuery()).toBe("");
+    expect(controller.getMatchCountsByPath()).toEqual({});
+    expect(publish).not.toHaveBeenCalled();
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("clears the committed query during a scope load so an empty post-load refresh cannot retain highlights", async () => {
+    let settled = true;
+    const query = vi.fn(async () => ({ execution: "indexed-ready" as const, orderedPaths: [] }));
+    const { controller } = harness(createContext(), query, () => settled);
+    controller.onQueryChange({ query: "old" });
+    await controller.refreshProjection();
+    settled = false;
+    controller.resetForLoad();
+    controller.resetQuery("collapse");
+    await controller.refreshProjection({ allowUnsettled: true, publish: false });
+    expect(controller.getCommittedQuery()).toBe("");
+    expect(controller.buildPipelineSearchInput().query).toBe("");
     controller.dispose();
   });
 });

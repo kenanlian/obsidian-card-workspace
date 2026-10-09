@@ -681,6 +681,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["folderDescendingNameSorts", { folderDescendingNameSorts: [""] }],
     ["favorites", { favorites: [{ kind: "folder", ref: "Projects" }] }],
     ["pinnedPaths", { pinnedPaths: ["Projects/a.md"] }],
+    ["searchHistory", { searchHistory: ["recent"] }],
   ];
 
   it("routes every manifest key's patch value into its declared layer only", () => {

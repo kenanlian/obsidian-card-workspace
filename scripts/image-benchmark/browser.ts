@@ -103,7 +103,7 @@ async function open(options: { mode: string; columns: number; scenario: string; 
   hydration = new HydrationController({ context, isLoading: () => false, getCommittedQuery: () => query });
   model = createPanelModel({
     strings: getUiStrings("en"), scope: { displayPath: "notes", includeSubfolders: true, activeBoxId: null, activeBoxName: null, boxExcludedCount: 0, emptyStateMessage: "", sourceIdentity: "folder:notes:true", browseTagFilterEnabled: true, browsePropertyFilterEnabled: true, supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true },
-    cards: cardsGroup(), search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
+    cards: cardsGroup(), search: { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0, metadataStatus: "ready" },
     bulk: { bulkMode: false, selectedPaths: [], selectedCount: 0, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false },
     nav: { folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "single", visible: false, sectionCollapsed: {}, showItemCounts: false, tooltipSide: "right", propertyFilterCount: 0, projection: { rows: [], sections: [], normalizedQuery: "", querying: false, noResults: false }, query: "", focusId: null, focusRequest: null, revealRequest: null },

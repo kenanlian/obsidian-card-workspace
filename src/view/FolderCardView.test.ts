@@ -928,6 +928,30 @@ describe("FolderCardView host contract", () => {
     }
   });
 
+  it("records the current input when the clear-query button is clicked and keeps the empty input focused", async () => {
+    const { view, plugin, panelContainer } = createHarness();
+    await view.onOpen();
+    try {
+      panelContainer.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]')!.click();
+      await tick(); await tick();
+      const input = panelContainer.querySelector<HTMLInputElement>(".fce-search-input")!;
+      input.value = "  New Query  ";
+      input.dispatchEvent(new Event("input", { bubbles: true })); await tick();
+      plugin.saveSettings.mockClear();
+      panelContainer.querySelector<HTMLButtonElement>(".fce-search-clear")!.click(); await tick();
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+      expect(plugin.saveSettings).toHaveBeenCalledWith({ searchHistory: ["New Query"] });
+      expect(getPanelState(view).search.history).toEqual(["New Query"]);
+      expect(getPanelState(view).search.query).toBe("");
+      expect(getPanelState(view).search.committedQuery).toBe("");
+      expect(input.value).toBe("");
+      expect(document.activeElement).toBe(input);
+      expect(panelContainer.querySelector(".fce-search-suggestion")?.textContent).toBe("New Query");
+      panelContainer.querySelector<HTMLButtonElement>('button[aria-label="Toggle search"]')!.click(); await tick();
+      expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    } finally { await view.onClose(); }
+  });
+
   it("keeps typed query editable while blocked and auto-runs it once indexed search becomes ready", async () => {
     vi.useFakeTimers();
     try {
@@ -2599,13 +2623,50 @@ describe("FolderCardView graded update intents", () => {
     await savePartialSettings(plugin, { hiddenFolderPaths: ["notes"], hiddenTagPaths: ["work"] });
     const after = getPanelState(view);
     expect(after.cards).toBe(before.cards);
-    expect(after.search).toBe(before.search);
+    expect(after.search).toEqual(before.search);
     expect(after.projection).toBe(before.projection);
     expect(after.scope.sourceIdentity).toBe(before.scope.sourceIdentity);
     expect(after.nav.projection.rows.some((row) => row.id === "folder:notes")).toBe(false);
     expect(after.nav.projection.rows.some((row) => row.id === "favorite:folder:notes")).toBe(true);
     expect(readSettingsObject(plugin).filter.tags).toEqual(["work"]);
     expect(collect).not.toHaveBeenCalled();
+  });
+
+  it("shares history between open views without reloading, reprojecting, reading previews or changing their independent queries", async () => {
+    const a = createHarness(), b = createHarness();
+    let shared = normalizeSettings(DEFAULT_SETTINGS);
+    const write = vi.fn(async (patch: PartialPluginSettings) => {
+      const previous = shared;
+      shared = mergeSettings(shared, patch);
+      for (const { view } of [a, b]) {
+        const intent = resolveSettingsUpdateIntent(previous, shared, view.getCardScope());
+        if (intent) void view.applyUpdateIntent(intent, "settings-change");
+      }
+    });
+    for (const harness of [a, b]) {
+      harness.plugin.getSettings.mockImplementation(() => shared);
+      harness.plugin.saveSettings.mockImplementation(write);
+      seedLoadedView(harness.view);
+    }
+    getSearchController(a.view).onQueryChange({ query: "first" });
+    getSearchController(b.view).onQueryChange({ query: "second" });
+    const before = [getPanelState(a.view), getPanelState(b.view)];
+    const collects = [a, b].map(({ view }) => vi.spyOn((view as any).modules.scopeController, "collectScopeFiles"));
+    const projects = [a, b].map(({ view }) => vi.spyOn((view as any).modules.projection, "reprojectCards"));
+    const reads = [a, b].map(({ view }) => vi.mocked(view.app.vault.cachedRead)); reads.forEach((read) => read.mockClear());
+    getSearchController(a.view).onHistoryCommand({ command: "record", source: "enter" });
+    getSearchController(b.view).onHistoryCommand({ command: "record", source: "enter" });
+    for (const [index, { view }] of [a, b].entries()) {
+      const after = getPanelState(view);
+      expect(after.search.history).toEqual(["second", "first"]);
+      expect(after.search.query).toBe(index === 0 ? "first" : "second");
+      expect(after.cards).toBe(before[index].cards);
+      expect(after.projection).toBe(before[index].projection);
+      expect(collects[index]).not.toHaveBeenCalled();
+      expect(projects[index]).not.toHaveBeenCalled();
+      expect(reads[index]).not.toHaveBeenCalled();
+      getSearchController(view).dispose();
+    }
   });
 
   it("patch republishes presentation without touching the card projection", async () => {

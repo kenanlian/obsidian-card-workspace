@@ -60,6 +60,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   group: "reproject",
   filter: "reproject",
   pinnedPaths: "reproject",
+  searchHistory: "patch",
   includeSubfolders: "reload",
   defaultView: "patch",
   defaultCardOpenBehavior: "patch",
@@ -97,6 +98,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "sort": settings.sort = { field: "ctime", direction: "asc" }; break;
     case "group": settings.group = { dimension: "folder", orderBy: "name", orderDirection: "desc" }; break;
     case "filter": settings.filter = { tags: ["changed"], properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] }; break;
+    case "searchHistory": settings.searchHistory = ["changed"]; break;
     case "pinnedPaths": settings.pinnedPaths = ["notes/pinned.md"]; break;
     case "includeSubfolders": settings.includeSubfolders = !settings.includeSubfolders; break;
     // The current union has one member. An out-of-domain value still exercises

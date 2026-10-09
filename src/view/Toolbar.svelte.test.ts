@@ -33,7 +33,7 @@ interface SearchQueryChangePayload {
 }
 
 interface SearchQueryResetPayload {
-  source: "clear-button";
+  source: "clear-button" | "collapse";
 }
 
 interface ToolbarActionPayload {
@@ -152,6 +152,7 @@ function mountToolbar(
         supportsLinksSnapshot: values.supportsLinksSnapshot ?? false,
       },
       search: {
+        history: values.searchHistory ?? [],
         query: values.searchQuery ?? "",
         committedQuery: values.searchQuery ?? "",
         status: values.searchStatus ?? "idle",

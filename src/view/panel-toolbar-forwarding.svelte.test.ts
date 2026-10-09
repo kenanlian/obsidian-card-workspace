@@ -56,7 +56,7 @@ function createPanelState(): PanelModelState {
       groupRevision: 0,
       extentCount: 0,
     },
-    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
+    search: { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",

@@ -72,6 +72,7 @@ export interface UserDataSettings {
   boxes: PluginSettings["boxes"];
   favorites: PluginSettings["favorites"];
   pinnedPaths: string[];
+  searchHistory: string[];
 }
 
 export interface SettingsStoreDeps {
@@ -181,6 +182,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.folderDescendingNameSorts !== undefined) userData.folderDescendingNameSorts = patch.folderDescendingNameSorts;
   if (patch.favorites !== undefined) userData.favorites = patch.favorites;
   if (patch.pinnedPaths !== undefined) userData.pinnedPaths = patch.pinnedPaths;
+  if (patch.searchHistory !== undefined) userData.searchHistory = patch.searchHistory;
 
   return { preferences, workspace, userData };
 }
@@ -240,6 +242,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       boxes: settings.boxes,
       favorites: settings.favorites,
       pinnedPaths: [...settings.pinnedPaths],
+      searchHistory: [...settings.searchHistory],
     },
   };
 }

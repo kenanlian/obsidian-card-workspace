@@ -106,6 +106,9 @@ export interface ToolbarStrings {
     placeholder: string;
     inputLabel: string;
     clear: string;
+    history: string;
+    deleteHistory: (query: string) => string;
+    clearHistory: string;
   };
   filter: {
     title: string;
@@ -227,6 +230,9 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       placeholder: "Search notes",
       inputLabel: "Search notes",
       clear: "Clear search query",
+      history: "Search history",
+      deleteHistory: (query) => `Delete history: ${query}`,
+      clearHistory: "Clear history",
     },
     filter: {
       title: "Tag filter",
@@ -345,6 +351,9 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       placeholder: "搜索笔记",
       inputLabel: "搜索笔记",
       clear: "清除搜索内容",
+      history: "搜索历史",
+      deleteHistory: (query) => `删除历史：${query}`,
+      clearHistory: "清空历史",
     },
     filter: {
       title: "标签筛选",

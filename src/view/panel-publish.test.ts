@@ -82,7 +82,7 @@ function buildState(): PanelModelState {
       groupRevision: 0,
       extentCount: 0,
     },
-    search: { query: "", committedQuery: "", status: "idle", focusToken: 0 },
+    search: { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 },
     projection: {
       sortField: "mtime",
       sortDirection: "desc",
@@ -305,9 +305,9 @@ describe("FolderCardView grouped panel publishing", () => {
   });
 
   it.each([
-    ["patch", ["nav", "appearance", "strings", "scope"]],
-    ["reproject", ["nav", "appearance", "strings", "scope", "cards", "projection", "bulk"]],
-    ["rehydrate", ["nav", "appearance", "strings", "scope", "cards", "projection", "bulk"]],
+    ["patch", ["nav", "appearance", "strings", "scope", "search"]],
+    ["reproject", ["nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk"]],
+    ["rehydrate", ["nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk"]],
     ["reload", [...PANEL_GROUPS]],
   ] as const)("publishes the %s intent mapping once", (intent, groups) => {
     const { view, initial, listener } = createPublishHarness();
@@ -344,9 +344,9 @@ describe("FolderCardView grouped panel publishing", () => {
   });
 
   it.each([
-    ["patch", ["nav", "appearance", "strings", "scope"]],
-    ["reproject", ["nav", "appearance", "strings", "scope", "cards", "projection", "bulk"]],
-    ["rehydrate", ["nav", "appearance", "strings", "scope", "cards", "projection", "bulk"]],
+    ["patch", ["nav", "appearance", "strings", "scope", "search"]],
+    ["reproject", ["nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk"]],
+    ["rehydrate", ["nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk"]],
   ] as const)("routes applyUpdateIntent(%s) through the runtime publication mapping", async (intent, groups) => {
     const { view, initial, listener } = createRuntimeRouteHarness();
 

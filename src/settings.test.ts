@@ -1128,6 +1128,7 @@ describe("card grouping settings normalization", () => {
         folderSiblingOrders: {},
         folderDescendingNameSorts: [],
         ...persisted.userData,
+        searchHistory: [],
         boxes: [{
           ...persisted.userData.boxes[0],
           rules: [{
@@ -1610,6 +1611,7 @@ describe("settings layer manifest (C4)", () => {
     folderDescendingNameSorts: "userData",
     favorites: "userData",
     pinnedPaths: "userData",
+    searchHistory: "userData",
   };
 
   it("declares exactly one layer for every top-level PluginSettings key", () => {
@@ -1698,6 +1700,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     navSectionOrder: ["boxes", "tags", "folders", "favorites"],
   });
 
+  nonDefault.searchHistory = ["recent"];
   const serialized: PersistedSettingsV2 = serializeSettings(nonDefault);
 
   // Every manifest key, where its non-default value must appear in the v2
@@ -1744,6 +1747,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["folderDescendingNameSorts", (d) => d.userData.folderDescendingNameSorts, [""]],
     ["favorites", (d) => d.userData.favorites, [{ kind: "folder", ref: "Projects" }]],
     ["pinnedPaths", (d) => d.userData.pinnedPaths, ["Projects/a.md"]],
+    ["searchHistory", (d) => d.userData.searchHistory, ["recent"]],
   ];
 
   it("serializes every manifest key's non-default value into its declared layer", () => {

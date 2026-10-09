@@ -803,6 +803,75 @@
   background: var(--background-modifier-hover);
 }
 
+/* History overlays the stream and stays within the available sidebar width. */
+.folder-card-view .fce-search-history {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 4px;
+  max-height: min(320px, 60vh);
+  overflow-y: auto;
+  background: var(--background-primary);
+  color: var(--fce-text);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s);
+}
+
+.folder-card-view .fce-search-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  border-radius: var(--radius-s);
+}
+
+.folder-card-view .fce-search-history-row > [role="gridcell"] { min-width: 0; }
+
+.folder-card-view .fce-search-history-row:is(:hover, .is-highlighted) {
+  background: var(--background-modifier-hover);
+}
+
+.folder-card-view .fce-search-suggestion,
+.folder-card-view .fce-search-history-clear {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 28px;
+  padding: 4px 6px;
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--fce-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-card-view .fce-search-suggestion {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-search-history-delete {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  color: var(--fce-text-muted);
+}
+
+.folder-card-view .fce-search-history-clear {
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--fce-text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.folder-card-view .fce-search-input { min-width: 0; }
+.folder-card-view .fce-search-input::-webkit-search-cancel-button { display: none; }
+
 /* === bulk === */
 .folder-card-view .fce-toolbar-bulk-strip {
   display: flex;

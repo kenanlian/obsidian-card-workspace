@@ -161,6 +161,7 @@ export interface PanelCardsState {
 }
 
 export interface PanelSearchState {
+  history: string[];
   /** Draft text currently shown in the toolbar input. */
   query: string;
   /** Query represented by the currently published cards and highlights. */

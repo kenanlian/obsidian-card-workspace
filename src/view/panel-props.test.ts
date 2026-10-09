@@ -25,7 +25,7 @@ function createHost(): {
       hydration: { hydrateViewport: vi.fn() },
       tagActions: { onFilterChange: vi.fn() },
       propertyActions: { chooseVisibleProperties: vi.fn(), clearPropertyFilters: vi.fn() },
-      search: { onQueryChange: vi.fn(), resetQuery: vi.fn() },
+      search: { onQueryChange: vi.fn(), resetQuery: vi.fn(), onHistoryCommand: vi.fn() },
       boxActions: { handleBoxCommand: vi.fn() },
       favoriteActions: { handleFavoriteActivate: vi.fn() },
       navLayout: {
@@ -48,6 +48,18 @@ function createHost(): {
 }
 
 describe("buildPanelProps arrangement routing", () => {
+  it("routes collapse and history commands to the search controller", () => {
+    const { host } = createHost();
+    const props = buildPanelProps(host) as unknown as {
+      onSearchQueryReset: (detail: { source: "collapse" }) => void;
+      onSearchHistoryCommand: (detail: { command: "select"; query: string }) => void;
+    };
+    props.onSearchQueryReset({ source: "collapse" });
+    props.onSearchHistoryCommand({ command: "select", query: "alpha" });
+    expect(host.modules.search.resetQuery).toHaveBeenCalledWith("collapse");
+    expect(host.modules.search.onHistoryCommand).toHaveBeenCalledWith({ command: "select", query: "alpha" });
+  });
+
   it("routes only current snippet identifiers and rejects stale or malformed identifiers", () => {
     const { host } = createHost();
     const location = { kind: "search-snippet" as const, snippet: {} as never };

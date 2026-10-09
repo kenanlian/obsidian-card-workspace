@@ -489,7 +489,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           vi.advanceTimersByTime(200);
           await flushAsyncWork();
           expect(getSearchService).not.toHaveBeenCalled();
-          expect(plugin.saveSettings).not.toHaveBeenCalled();
+          expect(plugin.saveSettings).toHaveBeenCalledWith({ searchHistory: ["alpha"] });
         } finally {
           vi.useRealTimers();
         }

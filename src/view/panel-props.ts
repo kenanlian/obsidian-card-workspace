@@ -1,6 +1,6 @@
 import type { PanelModel } from "./panel-model";
 import type { HydrateViewportRequest } from "./hydration-request";
-import type { CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
+import type { SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
 import type { NavigationIntent } from "./navigation-model";
 import type { CardOpenLocation } from "./link-card-location";
@@ -127,8 +127,11 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onSearchQueryChange: (detail: { query?: unknown }) => {
       view.modules.search.onQueryChange(detail);
     },
-    onSearchQueryReset: () => {
-      view.modules.search.resetQuery();
+    onSearchQueryReset: (detail: { source: SearchQueryResetSource }) => {
+      view.modules.search.resetQuery(detail.source);
+    },
+    onSearchHistoryCommand: (detail: SearchHistoryCommand) => {
+      view.modules.search.onHistoryCommand(detail);
     },
     onPinToggle: (detail: { path?: unknown; pinned?: unknown }) => {
       void view.modules.arrangementActions.onPinToggle(detail);

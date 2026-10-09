@@ -1,3 +1,4 @@
+import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
@@ -145,6 +146,7 @@ export interface PluginSettings {
   group: GroupSpec;
   filter: { tags: string[]; properties: PropertyFilterClause[] };
   pinnedPaths: string[];
+  searchHistory: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
@@ -193,6 +195,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   group: { ...DEFAULT_GROUP_SPEC },
   filter: { tags: [], properties: [] },
   pinnedPaths: [],
+  searchHistory: [],
   includeSubfolders: true,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
@@ -526,6 +529,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     folderDescendingNameSorts: userData.folderDescendingNameSorts,
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
+    searchHistory: userData.searchHistory,
     hiddenFolderPaths: userData.hiddenFolderPaths, hiddenTagPaths: userData.hiddenTagPaths,
   };
 }
@@ -577,6 +581,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
       properties: normalizePropertyFilterClauses(filter.properties, visiblePropertyKeySet),
     },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
+    searchHistory: normalizeSearchHistory(data.searchHistory),
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),

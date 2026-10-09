@@ -61,6 +61,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   folderDescendingNameSorts: "userData",
   favorites: "userData",
   pinnedPaths: "userData",
+  searchHistory: "userData",
 } satisfies Record<keyof PluginSettings, SettingsLayer>;
 
 /**
