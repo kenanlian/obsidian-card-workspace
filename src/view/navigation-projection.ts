@@ -1,3 +1,4 @@
+import { normalizeNavigationSorting, orderNavigationItems, resolveNavigationSort, type NavigationSorting } from "../navigation-sorting";
 import { orderFolderSiblings, type FolderSiblingOrders } from "../folder-sibling-orders";
 import { pruneHiddenNavigationTree } from "../navigation-visibility";
 import { PLAIN_FOLDER_ICON } from "../icons";
@@ -241,10 +242,17 @@ function projectTags(
   return assignSetMetadata(rows);
 }
 
+/** Apply sibling orders before hiding/filtering, so query projections retain the same order. */
+function orderTagNavigation(nodes: readonly TagTreeNode[], sorting: NavigationSorting, parent = ""): TagTreeNode[] {
+  return orderNavigationItems(nodes.filter((node) => normalizeTagPath(node?.tag ?? "").length > 0 && validString(node?.label)), resolveNavigationSort(sorting, { kind: "tags", parent }),
+    (node) => node.tag, (node) => node.tag)
+    .map((node) => ({ ...node, children: orderTagNavigation(Array.isArray(node.children) ? node.children : [], sorting, node.tag) }));
+}
+
 export function projectNavigation(input: NavigationProjectionInput): NavigationProjection {
   input = { ...input,
     folders: pruneHiddenNavigationTree(input.folders, input.hiddenFolderPaths ?? [], (node) => normalizeScopePath(node.path)),
-    tags: pruneHiddenNavigationTree(input.tags, input.hiddenTagPaths ?? [], (node) => normalizeTagPath(node.tag)),
+    tags: pruneHiddenNavigationTree(orderTagNavigation(input.tags, input.navigationSorting ?? normalizeNavigationSorting(undefined)), input.hiddenTagPaths ?? [], (node) => normalizeTagPath(node.tag)),
   };
   const normalizedQuery = normalizeQuery(input.query ?? "");
   const querying = normalizedQuery.length > 0;
@@ -317,7 +325,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   const propertyProjection = input.propertiesDisabled
     ? { rows: [] as (NavigationPropertyRow | NavigationPropertyValueRow)[], matchedItemCount: 0 }
     : projectPropertyRows(input.properties ?? [], input.propertyClauses ?? [], normalizedQuery,
-      input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER);
+      input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER, input.navigationSorting);
   matchedCounts.set("properties", propertyProjection.matchedItemCount);
   const linksProjection = projectLinksRows(input, normalizedQuery);
   matchedCounts.set("links", linksProjection.matchedItemCount);

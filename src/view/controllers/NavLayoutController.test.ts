@@ -33,6 +33,8 @@ import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
 import { NavLayoutController } from "./NavLayoutController";
+import { buildTagTree } from "../tag-tree";
+import { serializePropertyScalarRef } from "../../property-filter-settings";
 
 function folder(path: string, children: Array<TFile | TFolder> = []): TFolder {
   const value = new TFolder();
@@ -137,6 +139,79 @@ const priorityFacet: PropertyFacet = {
 function propertyInput(properties: PropertyFacet[]): Omit<NavigationProjectionInput, "query" | "expansion"> {
   return { ...projectionInput(), properties };
 }
+
+describe("navigation tag/property sorting", () => {
+  it("sorts each tag level independently and includes hidden/query-filtered siblings in drag orders", async () => {
+    const h = createHarness();
+    h.settings.expandedTagPaths = ["work"];
+    const input = { ...projectionInput(), tags: buildTagTree(["work/alpha", "work/beta", "work/gamma", "home"]), hiddenTagPaths: ["work/beta"] };
+    h.controller.project(input);
+    await h.controller.sortNavigationItems({ kind: "tags", parent: "" }, "desc");
+    expect(h.controller.project(input).rows.filter((row) => row.kind === "tag" && row.level === 2).map((row) => row.label)).toEqual(["work", "home"]);
+    h.controller.updateQuery("work");
+    h.controller.project(input);
+    await h.controller.reorderNavigationItems("tag:work/gamma", "tag:work/alpha", "before");
+    expect(h.settings.navigationSorting.tags.work).toEqual({ mode: "manual", order: ["work/gamma", "work/alpha", "work/beta"] });
+    expect(h.settings.navigationSorting.tags[""].mode).toBe("desc");
+    const restored = h.controller.project({ ...input, hiddenTagPaths: [] });
+    expect(restored.rows.filter((row) => row.kind === "tag" && row.level === 3).map((row) => row.label)).toEqual(["gamma", "alpha", "beta"]);
+  });
+  it("uses dynamic descending names for new tags and preserves the displayed order when switching to manual", async () => {
+    const h = createHarness();
+    const input = { ...projectionInput(), tags: buildTagTree(["alpha", "beta"]) };
+    h.controller.project(input);
+    await h.controller.sortNavigationItems({ kind: "tags", parent: "" }, "desc");
+    const next = { ...input, tags: buildTagTree(["alpha", "beta", "gamma"]) };
+    expect(h.controller.project(next).rows.filter((row) => row.kind === "tag").map((row) => row.label)).toEqual(["gamma", "beta", "alpha"]);
+    await h.controller.sortNavigationItems({ kind: "tags", parent: "" }, "manual");
+    expect(h.settings.navigationSorting.tags[""].order).toEqual(["gamma", "beta", "alpha"]);
+    await h.controller.sortNavigationItems({ kind: "tags", parent: "" }, "asc");
+    expect(h.controller.project(next).rows.filter((row) => row.kind === "tag").map((row) => row.label)).toEqual(["alpha", "beta", "gamma"]);
+  });
+  it("reorders keys independently of values, keeps Unassigned last, and retains checked states", async () => {
+    const h = createHarness();
+    h.settings.expandedPropertyKeys = ["status", "priority"];
+    const input = { ...propertyInput([statusFacet, priorityFacet]), propertyClauses: [{ key: "status", values: [{ kind: "text" as const, value: "open" }] }] };
+    h.controller.project(input);
+    await h.controller.reorderNavigationItems(navigationPropertyId("status"), navigationPropertyId("priority"), "before");
+    expect(h.settings.navigationSorting.propertyKeys).toEqual({ mode: "manual", order: ["status", "priority"] });
+    h.controller.project(input);
+    await h.controller.sortNavigationItems({ kind: "property-values", key: "status" }, "desc");
+    const sorted = h.controller.project(input);
+    expect(sorted.rows.filter((row) => row.kind === "property-value" && row.propertyKey === "status").map((row) => row.label)).toEqual(["open", "closed", "Unassigned"]);
+    expect(sorted.rows.find((row) => row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))?.semanticState).toBe("checked-filter");
+    expect(h.context.store.getVisibleCards()).toEqual([]);
+  });
+  it("retains absent values across scopes and distinguishes numbers from matching text", async () => {
+    const h = createHarness();
+    h.settings.expandedPropertyKeys = ["status"];
+    const text = { kind: "text" as const, value: "1" }, number = { kind: "number" as const, value: 1 }, absent = { kind: "text" as const, value: "Absent" };
+    h.settings.navigationSorting.propertyValues.status = { mode: "manual", order: [serializePropertyScalarRef(text), serializePropertyScalarRef(absent), serializePropertyScalarRef(number)] };
+    const facet = { ...statusFacet, values: [
+      { ref: text, label: "1 (Text)", count: 1 }, { ref: number, label: "1 (Number)", count: 1 },
+    ] };
+    h.controller.project(propertyInput([facet]));
+    await h.controller.reorderNavigationItems(navigationPropertyValueId("status", number), navigationPropertyValueId("status", text), "before");
+    expect(h.settings.navigationSorting.propertyValues.status.order).toEqual([serializePropertyScalarRef(number), serializePropertyScalarRef(text), serializePropertyScalarRef(absent)]);
+    const nextFacet = { ...facet, values: [...facet.values, { ref: absent, label: "Absent", count: 1 }] };
+    expect(h.controller.project(propertyInput([nextFacet])).rows.filter((row) => row.kind === "property-value").map((row) => row.label)).toEqual(["1 (Number)", "1 (Text)", "Absent"]);
+  });
+  it("rejects cross-parent, cross-property, missing, stale and disposed drops without persisting", async () => {
+    const h = createHarness();
+    h.settings.expandedTagPaths = ["work", "home"];
+    h.settings.expandedPropertyKeys = ["status", "priority"];
+    h.controller.project({ ...propertyInput([statusFacet, priorityFacet]), tags: buildTagTree(["work/alpha", "home/beta"]) });
+    const open = navigationPropertyValueId("status", { kind: "text", value: "open" });
+    await h.controller.reorderNavigationItems("tag:work/alpha", "tag:home/beta", "before");
+    await h.controller.reorderNavigationItems(open, navigationPropertyValueId("priority", { kind: "number", value: 1 }), "before");
+    await h.controller.reorderNavigationItems(open, navigationPropertyValueId("status", { kind: "missing" }), "after");
+    await h.controller.reorderNavigationItems("tag:deleted", "tag:work", "before");
+    h.controller.dispose();
+    await h.controller.sortNavigationItems({ kind: "property-keys" }, "desc");
+    await h.controller.reorderNavigationItems(navigationPropertyId("status"), navigationPropertyId("priority"), "before");
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+});
 
 describe("NavLayoutController", () => {
   afterEach(() => {

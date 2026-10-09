@@ -1,3 +1,4 @@
+import { navigationSortingEqual, rewriteNavigationTagSorting } from "../../navigation-sorting";
 import { rewriteHiddenTagsAfterRename } from "../../navigation-visibility";
 import { tagPathIsOrUnder } from "../tag-tree";
 import type { UiStrings } from "../../i18n";
@@ -94,7 +95,13 @@ export class TagManagementActions {
     const hiddenTagPaths = summary.failed.length > 0 && summary.changed.length === 0 ? hidden
       : rewriteHiddenTagsAfterRename(hidden, from, to, summary.failed.length > 0);
     const hiddenChanged = hiddenTagPaths.length !== hidden.length || hiddenTagPaths.some((path, index) => path !== hidden[index]);
-    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForRename(refs, from, to), hiddenChanged ? { hiddenTagPaths } : {});
+    const sorting = this.deps.context.getSettings().navigationSorting;
+    const navigationSorting = summary.failed.length > 0 && summary.changed.length === 0 ? sorting
+      : rewriteNavigationTagSorting(sorting, from, to, summary.failed.length > 0);
+    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForRename(refs, from, to), {
+      ...(hiddenChanged ? { hiddenTagPaths } : {}),
+      ...(!navigationSortingEqual(sorting, navigationSorting) ? { navigationSorting } : {}),
+    });
     this.notifyTagMutationSummary(
       summary,
       (count) => strings.renamed(from, to, count),
@@ -131,7 +138,10 @@ export class TagManagementActions {
     }
 
     const summary = await batchRemoveTagsFromFiles(this.deps.context.getApp(), scan.files, [target]);
-    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForDelete(refs, target));
+    const sorting = this.deps.context.getSettings().navigationSorting;
+    const navigationSorting = summary.failed.length > 0 ? sorting : rewriteNavigationTagSorting(sorting, target, null);
+    await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForDelete(refs, target),
+      !navigationSortingEqual(sorting, navigationSorting) ? { navigationSorting } : {});
     this.notifyTagMutationSummary(
       summary,
       (count) => strings.removed(target, count),

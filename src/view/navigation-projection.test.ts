@@ -694,16 +694,16 @@ describe("projectNavigation — properties", () => {
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status", "priority"]) },
     }));
     expect(projection.rows.find((row) => row.id === navigationPropertyId("status"))).toMatchObject({
-      positionInSet: 1,
+      positionInSet: 2,
       setSize: 2,
     });
     expect(projection.rows.find((row) => row.id === navigationPropertyId("priority"))).toMatchObject({
-      positionInSet: 2,
+      positionInSet: 1,
       setSize: 2,
     });
     expect(projection.rows.find((row) =>
       row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))).toMatchObject({
-      positionInSet: 1,
+      positionInSet: 2,
       setSize: 3,
     });
     expect(projection.rows.find((row) =>
@@ -731,6 +731,13 @@ describe("projectNavigation — properties", () => {
     });
     expect(projection.rows.some((row) => row.kind === "property-value" && row.propertyKey === "bad"))
       .toBe(false);
+  });
+  it("falls back to the key for malformed property labels during name sorting", () => {
+    const projection = projectNavigation(withProperties({ properties: [
+      { ...statusFacet, label: undefined } as unknown as PropertyFacet,
+      { ...priorityFacet, label: null } as unknown as PropertyFacet,
+    ] }));
+    expect(projection.rows.filter((row) => row.kind === "property").map((row) => row.label)).toEqual(["priority", "status"]);
   });
 
   it("encodes property IDs collision-free for delimiter-like keys and type-distinct values", () => {

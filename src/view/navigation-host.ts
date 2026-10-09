@@ -225,6 +225,7 @@ export function routeNavigationIntent(input: {
   reorderFavorites?: (source: FavoriteEntry, target: FavoriteEntry, position: "before" | "after") => void;
 }): void {
   const { intent, navLayout } = input;
+  if (intent.type === "reorder-navigation-items") { void navLayout.reorderNavigationItems(intent.sourceId, intent.targetId, intent.position); return; }
   if (intent.type === "move-folder") { if (navLayout.isDisposed()) return; input.moveFolder?.(intent.sourcePath, intent.targetFolderPath); return; }
   if (intent.type === "reorder-folders") { void navLayout.reorderFolders(intent.sourcePath, intent.targetPath, intent.position); return; }
   if (intent.type === "drag-expand-folder") { navLayout.expandFolderForDrag(intent.path); return; }

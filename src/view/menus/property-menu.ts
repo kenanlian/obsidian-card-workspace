@@ -1,3 +1,4 @@
+import { appendNavigationSortItems } from "./navigation-sort-items";
 import type { Menu } from "obsidian";
 import type { PropertyScalarRef } from "../../property-filter-settings";
 import type { NavMenuDeps } from "../nav-context-menu";
@@ -26,6 +27,8 @@ export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolea
     );
   }
   menu.addSeparator();
+  appendNavigationSortItems(menu, deps, { kind: "property-keys" });
+  menu.addSeparator();
   addItem(
     menu,
     deps.hasExpandedProperties ? property.collapseAll : property.expandAll,
@@ -37,9 +40,11 @@ export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolea
   return true;
 }
 
-/** Property-key item menu: Hide this property. */
+/** Property-key item menu: visibility and sorting of this key's scalar values. */
 export function buildPropertyKeyMenu(menu: Menu, deps: NavMenuDeps, key: string): boolean {
   addItem(menu, deps.strings.property.hideThisProperty, "eye-off", () => deps.actions.hideProperty(key));
+  menu.addSeparator();
+  appendNavigationSortItems(menu, deps, { kind: "property-values", key });
   return true;
 }
 

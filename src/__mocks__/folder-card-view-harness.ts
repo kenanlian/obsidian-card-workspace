@@ -1,3 +1,4 @@
+import { normalizeNavigationSorting } from "../navigation-sorting";
 /**
  * Shared FolderCardView + mocked-panel harness for node-project tests.
  * Architecture tests skip `__mocks__/`; this is test infrastructure, not production.
@@ -1145,6 +1146,7 @@ export function createViewWithFile(
   const leaf = { app, getRoot: vi.fn(() => ({})) };
   const plugin = {
     getSettings: vi.fn(() => ({
+      navigationSorting: normalizeNavigationSorting(undefined),
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
       filter: { tags: [], properties: [] },

@@ -1127,6 +1127,7 @@ describe("card grouping settings normalization", () => {
         hiddenFolderPaths: [], hiddenTagPaths: [],
         folderSiblingOrders: {},
         folderDescendingNameSorts: [],
+        navigationSorting: DEFAULT_SETTINGS.navigationSorting,
         ...persisted.userData,
         searchHistory: [],
         boxes: [{
@@ -1609,6 +1610,7 @@ describe("settings layer manifest (C4)", () => {
     boxes: "userData",
     folderSiblingOrders: "userData",
     folderDescendingNameSorts: "userData",
+    navigationSorting: "userData",
     favorites: "userData",
     pinnedPaths: "userData",
     searchHistory: "userData",
@@ -1690,6 +1692,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     boxes: [inboxBox],
     folderSiblingOrders: { "": ["Projects"] },
     folderDescendingNameSorts: [""],
+    navigationSorting: { tags: { "": { mode: "manual", order: ["work"] } }, propertyKeys: { mode: "desc", order: [] }, propertyValues: {} },
     favorites: [{ kind: "folder", ref: "Projects" }],
     activeBoxId: "box-1",
     navPaneWidth: 200,
@@ -1701,6 +1704,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
   });
 
   nonDefault.searchHistory = ["recent"];
+
   const serialized: PersistedSettingsV2 = serializeSettings(nonDefault);
 
   // Every manifest key, where its non-default value must appear in the v2
@@ -1745,6 +1749,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["boxes", (d) => d.userData.boxes, nonDefault.boxes],
     ["folderSiblingOrders", (d) => d.userData.folderSiblingOrders, { "": ["Projects"] }],
     ["folderDescendingNameSorts", (d) => d.userData.folderDescendingNameSorts, [""]],
+    ["navigationSorting", (d) => d.userData.navigationSorting, nonDefault.navigationSorting],
     ["favorites", (d) => d.userData.favorites, [{ kind: "folder", ref: "Projects" }]],
     ["pinnedPaths", (d) => d.userData.pinnedPaths, ["Projects/a.md"]],
     ["searchHistory", (d) => d.userData.searchHistory, ["recent"]],

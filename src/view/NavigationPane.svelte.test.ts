@@ -107,7 +107,7 @@ function propertyProjection(options: {
     expansion: {
       folders: { manual: ["notes"], reveal: [], query: [], suppressed: [] },
       tags: { manual: [], reveal: [], query: [], suppressed: [] }, queryCollapsedSections: [],
-      properties: { manual: ["status"], reveal: [], query: [], suppressed: [] },
+      properties: { manual: ["status", "priority"], reveal: [], query: [], suppressed: [] },
     },
     properties: options.facets ?? [propertyFacet()],
     propertyClauses: options.clauses ?? [],
@@ -1387,5 +1387,111 @@ describe("NavigationPane folder drag and drop", () => {
     vi.advanceTimersByTime(1000);
     expect(intents).toEqual([{ type: "clear-folder-drag" }]);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("NavigationPane tag and property drag sorting", () => {
+  function drag(type: string, clientY = 210): MouseEvent {
+    return new MouseEvent(type, { bubbles: true, cancelable: true, clientY, clientX: 100 });
+  }
+  function sortingNav(): PanelNavState {
+    const projected = propertyProjection({ facets: [propertyFacet(), propertyFacet({ key: "priority", label: "Priority" })] });
+    const tag = projected.rows.find((item) => item.kind === "tag")!;
+    return nav({ projection: { ...projected, rows: [...projected.rows,
+      { ...tag, id: "tag:home", tagPath: "home", label: "home", semanticState: "none", menuTarget: { section: "tags", scope: "item", itemId: "home" } },
+      { ...tag, id: "tag:work/child", tagPath: "work/child", parentId: "tag:work", level: 3,
+        menuTarget: { section: "tags", scope: "item", itemId: "work/child" } },
+    ] } });
+  }
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const top = this.classList.contains("fce-nav-pane-sections") ? 100 : 200;
+      const height = this.classList.contains("fce-nav-pane-sections") ? 400 : 40;
+      return { top, height, bottom: top + height, left: 0, right: 240, width: 240, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    };
+  });
+  afterEach(async () => {
+    await Promise.all(components.splice(0).map((component) => unmount(component)));
+    HTMLElement.prototype.getBoundingClientRect = originalRect;
+    document.body.innerHTML = "";
+    vi.restoreAllMocks(); vi.useRealTimers();
+  });
+  it.each([
+    ["tag:work", "tag:home"],
+    [navigationPropertyId("status"), navigationPropertyId("priority")],
+    [navigationPropertyValueId("status", { kind: "text", value: "Open" }), navigationPropertyValueId("status", { kind: "text", value: "Closed" })],
+  ])("drags %s with insertion feedback and emits only its reorder on drop", async (sourceId, targetId) => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: sortingNav(), onIntent: (intent) => intents.push(intent) });
+    await tick();
+    const source = findRow(sourceId), target = findRow(targetId);
+    expect(source.getAttribute("draggable")).toBe("true");
+    source.dispatchEvent(drag("dragstart"));
+    target.dispatchEvent(drag("dragover")); await tick();
+    expect(source.classList.contains("is-navigation-dragging")).toBe(true);
+    expect(target.classList.contains("is-drop-before")).toBe(true);
+    target.dispatchEvent(drag("dragover", 230)); await tick();
+    expect(target.classList.contains("is-drop-after")).toBe(true);
+    expect(intents).toEqual([]);
+    target.dispatchEvent(drag("drop", 230)); await tick();
+    expect(intents).toEqual([{ type: "reorder-navigation-items", sourceId, targetId, position: "after" }]);
+    expect(source.classList.contains("is-navigation-dragging")).toBe(false);
+    source.click();
+    expect(intents.some((intent) => intent.type === "activate")).toBe(false);
+  });
+  it("rejects self, cross-parent, cross-property and Unassigned targets", async () => {
+    const intents: NavigationIntent[] = [];
+    render({ nav: sortingNav(), onIntent: (intent) => intents.push(intent) }); await tick();
+    const open = navigationPropertyValueId("status", { kind: "text", value: "Open" });
+    const missing = navigationPropertyValueId("status", { kind: "missing" });
+    expect(findRow(missing).getAttribute("draggable")).toBeNull();
+    for (const [sourceId, targetId] of [["tag:work", "tag:work"], ["tag:work", "tag:work/child"],
+      [open, navigationPropertyValueId("priority", { kind: "text", value: "Closed" })], [open, missing]]) {
+      findRow(sourceId).dispatchEvent(drag("dragstart"));
+      const over = drag("dragover"); findRow(targetId).dispatchEvent(over); await tick();
+      expect(over.defaultPrevented).toBe(false);
+      expect(findRow(targetId).classList.contains("is-drop-before")).toBe(false);
+      findRow(targetId).dispatchEvent(drag("drop")); await tick();
+    }
+    expect(intents).toEqual([]);
+  });
+  it("clears targets on outside drags/blur and cancels a stale source after projection changes", async () => {
+    const intents: NavigationIntent[] = [];
+    const initial = sortingNav();
+    const component = renderHarness(initial, (intent) => intents.push(intent)); await tick();
+    findRow("tag:work").dispatchEvent(drag("dragstart"));
+    findRow("tag:home").dispatchEvent(drag("dragover")); await tick();
+    document.body.dispatchEvent(drag("dragover")); await tick();
+    expect(findRow("tag:home").classList.contains("is-drop-before")).toBe(false);
+    window.dispatchEvent(new Event("blur")); await tick();
+    expect(findRow("tag:work").classList.contains("is-navigation-dragging")).toBe(false);
+    findRow("tag:work").dispatchEvent(drag("dragstart"));
+    component.setNav({ ...initial, projection: { ...initial.projection, rows: initial.projection.rows.filter((item) => item.id !== "tag:work") } });
+    await tick();
+    findRow("tag:home").dispatchEvent(drag("drop"));
+    expect(intents.some((intent) => intent.type === "reorder-navigation-items")).toBe(false);
+  });
+  it("scrolls tag drags once per frame, recalculates the insertion edge and cancels frames on unmount", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++nextFrame, callback); return nextFrame;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { frames.delete(id); });
+    render({ nav: sortingNav() }); await tick();
+    const scroller = document.querySelector<HTMLElement>(".fce-nav-pane-sections")!;
+    Object.defineProperty(scroller, "scrollHeight", { value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { value: 400 });
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => findRow("tag:home") });
+    findRow("tag:work").dispatchEvent(drag("dragstart"));
+    for (let index = 0; index < 20; index++) scroller.dispatchEvent(drag("dragover", 490));
+    expect(frames.size).toBe(1);
+    const [id, callback] = [...frames][0]; frames.delete(id); callback(100); await tick();
+    expect(scroller.scrollTop).toBeCloseTo(5.28);
+    expect(findRow("tag:home").classList.contains("is-drop-after")).toBe(true);
+    expect(frames.size).toBe(1);
+    await unmount(components.pop()!);
+    expect(frames.size).toBe(0);
   });
 });

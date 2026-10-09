@@ -225,6 +225,9 @@ export interface ViewStrings {
     moveFavoriteDown: string;
     moveSectionUp: string;
     moveSectionDown: string;
+    sortNameAsc: string;
+    sortNameDesc: string;
+    sortManual: string;
     clearFavorites: string;
     clearFavoritesConfirmTitle: string;
     clearFavoritesConfirmBody: (count: number) => string;
