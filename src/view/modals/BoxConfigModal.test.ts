@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   asMock,
   requireGroup,
-  settingsIn,
   type MockEl,
   type Setting,
 } from "../../__mocks__/obsidian-modal-mock";
@@ -305,24 +304,25 @@ describe("BoxConfigModal layout", () => {
     expect(asMock(modal).title).toBe(strings.box.configTitle("Reading"));
   });
 
-  it("renders sort, grouping, rules, manual, and removed groups in order", () => {
-    openModal();
+  it.each(["en", "zh"] as const)("renders rules, manual, removed, sort, and grouping headings in order in %s", (locale) => {
+    openModal(createBox(), locale);
+    const ui = getUiStrings(locale);
 
     const content = contentOf();
     const headings = content.nodes.map((node) => (node as { heading?: string }).heading);
     expect(headings).toEqual([
-      "",
-      strings.box.groupHeading,
-      strings.box.rulesHeading,
-      strings.box.manualHeading,
-      strings.box.excludedHeading,
+      ui.box.rulesHeading,
+      ui.box.manualHeading,
+      ui.box.excludedHeading,
+      ui.box.sortHeading,
+      ui.box.groupHeading,
     ]);
   });
 
   it("seeds the sort dropdown from the box and confirms a changed sort", async () => {
     const { onConfirm } = openModal();
 
-    const sortRow = settingsIn(contentOf())[0];
+    const sortRow = requireGroup(contentOf(), strings.box.sortHeading).settings[0];
     expect(sortRow?.name).toBe(strings.box.sortHeading);
     expect(sortRow?.dropdowns[0]?.value).toBe("mtime:desc");
     expect(sortRow?.dropdowns[0]?.options.map((option) => option.label)).toEqual([

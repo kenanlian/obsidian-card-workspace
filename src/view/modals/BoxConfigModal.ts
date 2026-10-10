@@ -81,16 +81,16 @@ export class BoxConfigModal extends FormModal {
     const strings = this.options.strings.box;
     this.setTitle(strings.configTitle(this.draft.name));
 
-    this.renderSortGroup();
-    this.renderGroupingGroup();
     this.renderRulesGroup();
     this.renderManualGroup();
     this.renderExcludedGroup();
+    this.renderSortGroup();
+    this.renderGroupingGroup();
   }
 
   private renderSortGroup(): void {
     const strings = this.options.strings;
-    createModalGroup(this.contentEl).addSetting((setting) => {
+    createModalGroup(this.contentEl, { heading: strings.box.sortHeading }).addSetting((setting) => {
       setting.setName(strings.box.sortHeading).addDropdown((dropdown) => {
         for (const choice of SORT_CHOICES) {
           dropdown.addOption(choice.value, strings.toolbar.sortOptions[choice.labelKey]);
