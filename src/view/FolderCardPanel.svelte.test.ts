@@ -534,6 +534,34 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it.each(["right", "inline"] as const)("keeps a decoded %s image mounted through note preview refreshes", async (mode) => {
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState();
+    state.cards.records = [createCard("notes/a.md", "A note")];
+    state.appearance = { ...state.appearance, cardImageMode: mode };
+    state.images = { byPath: { "notes/a.md": { status: "ready", url: "blob:thumbnail" } }, requestVersion: 0 };
+    const panelModel = createPanelModel(state), onImageReveal = vi.fn(() => true);
+    const component = mount(FolderCardPanel, { target, props: { panelModel, onImageReveal } });
+    await tick();
+    const image = target.querySelector("img")!;
+    image.dispatchEvent(new Event("load")); await tick();
+    expect(image.classList.contains("is-loaded")).toBe(true);
+    for (const hydrated of [false, true]) {
+      panelModel.mutate((draft) => {
+        draft.cards = { ...draft.cards, records: draft.cards.records.map((card) => ({
+          ...card, mtime: card.mtime + 1, hydrated, previewHtml: "<p>Edited text</p>",
+        })) };
+        draft.images = { ...draft.images, byPath: { ...draft.images.byPath } };
+      });
+      await tick();
+      expect(target.querySelector("img")).toBe(image);
+      expect(image.classList.contains("is-loaded")).toBe(true);
+    }
+    expect(target.querySelector(".fce-excerpt")?.textContent).toBe("Edited text");
+    expect(onImageReveal).toHaveBeenCalledOnce();
+    await unmount(component);
+  });
+
   it("does not replay image fade after a card leaves and reenters the virtual window", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState();

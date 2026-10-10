@@ -177,7 +177,8 @@ export class CardImageController implements DisposableController {
     if (path !== undefined) this.layoutHints.delete(path);
     // Mounted overscan cards may have only a metadata placeholder, no demand.
     if (path === undefined || this.context.store.getBaseCard(path)) this.publish();
-    this.invalidate((notePath, item) => path === undefined ? item.source.status === "unknown" : notePath === path);
+    this.invalidate((notePath, item) => path === undefined ? item.source.status === "unknown"
+      : notePath === path && !this.retainUnchangedImage(notePath, item));
   }
   handleVaultMutation(event: VaultMutationEvent): void {
     if (this.disposed) return;
@@ -190,10 +191,29 @@ export class CardImageController implements DisposableController {
       if (event.oldPath !== null) this.revealedImages.delete(event.oldPath);
     }
     if (this.context.getSettings().cardImageMode === "off") return;
-    for (const [notePath, hint] of this.layoutHints) if (matches(notePath) || matches(hint.attachmentPath)) { this.layoutHints.delete(notePath); this.publish(); }
-    this.invalidate((notePath, item) => matches(notePath)
-      || (item.source.status === "found" && matches(item.source.file.path))
-      || event.eventType === "create" || event.eventType === "rename");
+    for (const [notePath, hint] of this.layoutHints) if ((matches(notePath) && event.eventType !== "modify") || matches(hint.attachmentPath)) { this.layoutHints.delete(notePath); this.publish(); }
+    this.invalidate((notePath, item) => {
+      // Attachment events always invalidate, even when mtime/size did not change.
+      if (item.source.status === "found" && matches(item.source.file.path)) return true;
+      // Note text edits keep their URL and pending work until metadata confirms
+      // a different first image. Vault and metadata events may arrive in either order.
+      if (matches(notePath)) return event.eventType !== "modify" || !this.retainUnchangedImage(notePath, item);
+      return event.eventType === "create" || event.eventType === "rename";
+    });
+  }
+  private retainUnchangedImage(path: string, item: Demand): boolean {
+    const card = this.context.store.getBaseCard(path);
+    if (!card || card.fileKind !== "markdown" || !item.fingerprint) return false;
+    let source: ImageSource;
+    try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return false; }
+    // Missing metadata during an edit is not proof that the reference was removed.
+    // Still check the attachment's live stat rather than its mutable TFile snapshot.
+    const file = source.status === "unknown" ? this.context.getApp().vault.getAbstractFileByPath(item.fingerprint.path)
+      : source.status === "found" ? source.file : null;
+    if (!(file instanceof TFile) || file.path !== item.fingerprint.path
+      || file.stat.mtime !== item.fingerprint.mtime || file.stat.size !== item.fingerprint.size) return false;
+    if (source.status === "found") item.source = source;
+    return true;
   }
   private invalidate(matches: (path: string, item: Demand) => boolean): void {
     let changed = false;

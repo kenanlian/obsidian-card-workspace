@@ -128,6 +128,76 @@ describe("per-view images", () => {
     h.files.set(h.image.path, h.image); h.controller.handleVaultMutation({ eventType: "create", path: h.image.path, oldPath: null, isFolder: false, fileKind: null }); h.demand(); await settle();
     expect(h.controller.getPanelState().byPath[h.card.path]?.status).toBe("ready"); h.controller.dispose();
   });
+  it.each(["vault-first", "metadata-first"])("keeps the displayed URL through text edits (%s)", async (order) => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    const state = h.controller.getPanelState().byPath[h.card.path];
+    const requestVersion = h.controller.getPanelState().requestVersion;
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:thumbnail" })).toBe(true);
+    h.card.file.stat.mtime++;
+    h.metadata.embeds[0].position.start.offset++;
+    const modify = (): void => h.controller.handleVaultMutation({ eventType: "modify", path: h.card.path, oldPath: null, isFolder: false, fileKind: "markdown" });
+    const metadata = (): void => h.controller.handleMetadataChange(h.card.path);
+    for (const event of order === "vault-first" ? [modify, metadata] : [metadata, modify]) {
+      event();
+      expect(h.controller.getPanelState().byPath[h.card.path]).toBe(state);
+      h.demand(); await settle();
+    }
+    expect(h.controller.getPanelState().requestVersion).toBe(requestVersion);
+    expect(h.urls.revokeObjectURL).not.toHaveBeenCalled();
+    expect(h.urls.createObjectURL).toHaveBeenCalledOnce();
+    expect(h.read).toHaveBeenCalledOnce(); expect(h.generate).toHaveBeenCalledOnce();
+    expect(h.controller.handleImageReveal({ path: h.card.path, url: "blob:thumbnail" })).toBe(false);
+    h.controller.dispose(); expect(h.urls.revokeObjectURL).toHaveBeenCalledOnce();
+  });
+  it("keeps an unchanged in-flight thumbnail when note metadata updates", async () => {
+    vi.useFakeTimers(); const h = harness(); let finish!: (result: ThumbnailResult) => void;
+    h.generate.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    h.demand(); await vi.advanceTimersByTimeAsync(40);
+    const requestVersion = h.controller.getPanelState().requestVersion;
+    h.controller.handleVaultMutation({ eventType: "modify", path: h.card.path, oldPath: null, isFolder: false, fileKind: "markdown" });
+    h.controller.handleMetadataChange(h.card.path);
+    expect(h.controller.getPanelState().requestVersion).toBe(requestVersion);
+    h.demand();
+    finish({ status: "ready", blob: new Blob(["thumb"]) }); await settle();
+    expect(h.controller.getPanelState().byPath[h.card.path]?.status).toBe("ready");
+    expect(h.read).toHaveBeenCalledOnce(); expect(h.generate).toHaveBeenCalledOnce();
+    h.controller.dispose();
+  });
+  it("retains a live image while metadata is temporarily unavailable, then removes a deleted reference", async () => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    const state = h.controller.getPanelState().byPath[h.card.path];
+    h.getFileCache.mockReturnValue(null);
+    h.controller.handleVaultMutation({ eventType: "modify", path: h.card.path, oldPath: null, isFolder: false, fileKind: "markdown" });
+    h.controller.handleMetadataChange(h.card.path); h.demand(); await settle();
+    expect(h.controller.getPanelState().byPath[h.card.path]).toBe(state);
+    expect(h.urls.revokeObjectURL).not.toHaveBeenCalled();
+    h.getFileCache.mockReturnValue({ embeds: [] });
+    h.controller.handleMetadataChange(h.card.path);
+    expect(h.controller.getPanelState().byPath[h.card.path]).toBeUndefined();
+    expect(h.urls.revokeObjectURL).toHaveBeenCalledOnce();
+    h.demand(); await settle();
+    expect(h.controller.resolvePlaceholder(h.card.path, h.epochs.load.value)).toBeUndefined();
+    expect(h.read).toHaveBeenCalledOnce(); h.controller.dispose();
+  });
+  it("replaces the thumbnail when the first image reference changes", async () => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    const replacement = Object.assign(new TFile(), { path: "outside/new.png", stat: { mtime: 1, size: 100, ctime: 1 } });
+    h.files.set(replacement.path, replacement); h.resolve.mockReturnValue(replacement);
+    h.urls.createObjectURL.mockReturnValue("blob:new");
+    h.controller.handleMetadataChange(h.card.path);
+    expect(h.urls.revokeObjectURL).toHaveBeenCalledWith("blob:thumbnail");
+    h.demand(); await settle();
+    expect(h.controller.getPanelState().byPath[h.card.path]).toEqual({ status: "ready", url: "blob:new" });
+    expect(h.read).toHaveBeenCalledTimes(2); h.controller.dispose();
+  });
+  it("invalidates attachment changes even when attachment stats are unchanged", async () => {
+    vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
+    h.controller.handleVaultMutation({ eventType: "modify", path: h.image.path, oldPath: null, isFolder: false, fileKind: null });
+    expect(h.controller.getPanelState().byPath[h.card.path]).toBeUndefined();
+    expect(h.urls.revokeObjectURL).toHaveBeenCalledWith("blob:thumbnail");
+    h.demand(); await settle();
+    expect(h.urls.createObjectURL).toHaveBeenCalledTimes(2); h.controller.dispose();
+  });
   it("drops old scope results and invalidates out-of-scope attachment modifications and folder moves", async () => {
     vi.useFakeTimers(); const h = harness(); let finish!: (result: ThumbnailResult) => void;
     h.generate.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
