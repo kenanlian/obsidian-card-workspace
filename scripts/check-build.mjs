@@ -3,6 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import {
   createBuildOptions,
   createSvelteCompilerOptions,
+  PLUGIN_LICENSE_BANNER,
 } from "./build-options.mjs";
 
 const configOnly = process.argv.includes("--config-only");
@@ -41,6 +42,7 @@ function checkOptions() {
   assertContract(developmentSvelte.css === "injected", "development Svelte CSS mode must be injected");
 
   for (const [name, options] of [["production", production], ["development", development]]) {
+    assertContract(options.banner?.js === PLUGIN_LICENSE_BANNER, `${name} must include project and third-party license notices`);
     assertContract(options.entryPoints?.length === 1 && options.entryPoints[0] === "src/main.ts", `${name} entry point must be src/main.ts`);
     assertContract(options.bundle === true, `${name} bundle must be true`);
     assertContract(options.outfile === "main.js", `${name} output must be main.js`);
@@ -70,6 +72,7 @@ async function checkArtifact() {
   }
 
   assertContract(!/sourceMappingURL\s*=/.test(contents), "main.js must not contain a sourceMappingURL reference");
+  assertContract(contents.startsWith(PLUGIN_LICENSE_BANNER), "main.js must retain project and third-party license notices");
 
   try {
     await access("main.js.map", fsConstants.F_OK);

@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 kenanlian
+ * SPDX-License-Identifier: GPL-3.0-only
+ * See LICENSE for the GNU General Public License, version 3.
+ */
+
+/*
  * Section map: this file is organized into named sections marked with
  * `=== name ===` comments (tokens, layout, toolbar, nav, card, preview,
  * search, bulk, modal, utility). New styles must be inserted inside the

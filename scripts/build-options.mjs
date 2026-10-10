@@ -1,5 +1,19 @@
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 import sveltePlugin from "esbuild-svelte";
+
+export const PLUGIN_LICENSE_BANNER = `/*!
+Card Workspace
+Copyright (c) 2026 kenanlian
+SPDX-License-Identifier: GPL-3.0-only
+Licensed under the GNU General Public License, version 3 only.
+Distributed without any warranty; see LICENSE for the complete terms.
+License: https://www.gnu.org/licenses/gpl-3.0.html
+Source and build instructions: https://github.com/kenanlian/obsidian-card-workspace
+See the matching release for its corresponding source archive.
+
+${readFileSync(new URL("../THIRD_PARTY_NOTICES", import.meta.url), "utf8").trim()}
+*/`;
 
 export const HOST_EXTERNALS = Object.freeze([
   "obsidian",
@@ -40,6 +54,7 @@ export function createBuildOptions({ production }) {
     target: "es2018",
     minify: production,
     sourcemap: production ? false : "inline",
+    banner: { js: PLUGIN_LICENSE_BANNER },
     logLevel: "info",
     external: [...HOST_EXTERNALS],
     plugins: [

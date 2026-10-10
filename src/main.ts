@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 kenanlian
+ * SPDX-License-Identifier: GPL-3.0-only
+ * See LICENSE for the GNU General Public License, version 3.
+ */
+
 import {
   addIcon,
   MarkdownView,

@@ -52,9 +52,22 @@ jobs:
             main.js
             manifest.json
             styles.css
+            LICENSE
+            THIRD_PARTY_NOTICES
 
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes main.js manifest.json styles.css
+        run: |
+          cat > "$RUNNER_TEMP/release-license-notes.md" <<EOF
+          Licensed under GNU GPL version 3 only (GPL-3.0-only). See the attached LICENSE and THIRD_PARTY_NOTICES.
+
+          Corresponding source: [source archive](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.zip).
+          Build instructions: [README](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/README.md#development).
+
+          Previously published releases through 1.4.2 retain their original MIT License.
+          EOF
+          gh release create "$TAG" --title "$TAG" --generate-notes \
+            --notes-file "$RUNNER_TEMP/release-license-notes.md" \
+            main.js manifest.json styles.css LICENSE THIRD_PARTY_NOTICES

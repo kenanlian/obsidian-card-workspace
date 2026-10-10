@@ -114,7 +114,7 @@ npm test
 
 ## 发布
 
-此仓库通过 `.github/workflows/release.yml`，基于纯 semver 标签自动创建 GitHub Draft Release。
+此仓库通过 `.github/workflows/release.yml`，基于纯 semver 标签自动创建 GitHub Release。
 
 1. 从 `manifest.json` 中确定目标版本：
 
@@ -152,11 +152,17 @@ npm test
    git push origin "$TAG"
    ```
 
-5. 工作流会创建一个包含 `main.js`、`manifest.json` 和 `styles.css` 的 GitHub Draft Release。
-6. 在 GitHub 上补充发布说明，并发布该 Draft Release。
+5. 工作流会创建一个包含 `main.js`、`manifest.json`、`styles.css`、`LICENSE` 和 `THIRD_PARTY_NOTICES` 的 GitHub Release。发布说明会附上对应版本的源码归档和构建说明链接。
+6. 在 GitHub 上检查并补充发布说明。
 
 ## 支持与许可证
 
 如果你遇到问题，请前往 [GitHub Issues](https://github.com/kenanlian/obsidian-card-workspace/issues) 提交 issue。
 
-Card Workspace 采用 MIT License 发布。
+Copyright (c) 2026 kenanlian.
+
+除另有声明外，Card Workspace 本次修订及后续版本中由项目拥有版权的文件采用 **GNU General Public License 第 3 版，仅限该版本**（`GPL-3.0-only`）。完整条款见 [LICENSE](LICENSE)。你可以按该协议重新分发和修改软件；软件不提供任何担保，包括适销性或特定用途适用性的默示担保。
+
+此前已经发布的 **1.4.2 及更早版本**继续适用其发布时的 MIT License，参见 [1.4.2 的许可证](https://github.com/kenanlian/obsidian-card-workspace/blob/1.4.2/LICENSE)。本次变更不撤销此前授予的权限。
+
+打包的第三方库保留各自原有的许可证和版权声明，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES)。每个 Release 都提供对应版本的源码归档；构建说明见[开发](#开发)。

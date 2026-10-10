@@ -114,7 +114,7 @@ npm test
 
 ## Releasing
 
-This repo creates draft GitHub Releases from bare semver tags through `.github/workflows/release.yml`.
+This repo creates GitHub Releases from bare semver tags through `.github/workflows/release.yml`.
 
 1. Determine the target version from `manifest.json`:
 
@@ -152,11 +152,17 @@ This repo creates draft GitHub Releases from bare semver tags through `.github/w
    git push origin "$TAG"
    ```
 
-5. The workflow creates a draft GitHub Release containing `main.js`, `manifest.json`, and `styles.css`.
-6. Add release notes on GitHub and publish the draft release.
+5. The workflow creates a GitHub Release containing `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES`. The release notes include links to the matching source archive and build instructions.
+6. Review and complete the release notes on GitHub.
 
 ## Support and license
 
 If you run into issues, please open a ticket on [GitHub Issues](https://github.com/kenanlian/obsidian-card-workspace/issues).
 
-Card Workspace is released under the MIT License.
+Copyright (c) 2026 kenanlian.
+
+Except where otherwise noted, project-owned files in this revision and subsequent releases of Card Workspace are licensed under the **GNU General Public License, version 3 only** (`GPL-3.0-only`). See [LICENSE](LICENSE) for the complete terms. You may redistribute and modify the software under those terms; it is provided without any warranty, including the implied warranties of merchantability or fitness for a particular purpose.
+
+Previously published releases through **1.4.2** remain available under the MIT License under which they were originally released; see the [1.4.2 license](https://github.com/kenanlian/obsidian-card-workspace/blob/1.4.2/LICENSE). This change does not revoke those earlier permissions.
+
+Bundled third-party libraries retain their original licenses and copyright notices; see [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). Each release provides its matching source archive; build instructions are in [Development](#development).

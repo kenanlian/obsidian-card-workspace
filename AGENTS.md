@@ -6,7 +6,7 @@
 
 - **Plugin ID**: `card-workspace`
 - **Version**: `1.3.6` (source of truth: `manifest.json`)
-- **License**: MIT
+- **License**: GPL-3.0-only (previous releases through 1.4.2 retain MIT)
 - **Min Obsidian**: `1.11.4` (`SettingGroup` is available; confirmation dialogs and declarative settings use capability-checked 1.13+ APIs with legacy fallbacks; do not use APIs tagged `@since 1.13.1` or later)
 - **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
 - **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
@@ -294,4 +294,4 @@ Node integration that used to sit in a single card-context test file now lives n
 1. Tags are **bare semver** (`x.y.z`), not `vX.Y.Z`
 2. `npm run release:prepare -- "x.y.z" [minAppVersion]` syncs `package.json`, `package-lock.json`, `manifest.json`, and `versions.json`
 3. `npm run release:check -- "x.y.z"` validates consistency
-4. GitHub `release.yml` triggers on semver tag pushes, runs the full CI chain, creates a draft release with `main.js`, `manifest.json`, and `styles.css`
+4. GitHub `release.yml` triggers on semver tag pushes, runs the full CI chain, creates a release with `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `THIRD_PARTY_NOTICES`, and links to matching source and build instructions
