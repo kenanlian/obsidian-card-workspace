@@ -368,6 +368,10 @@
     onNavContextMenu?.(menuPayload(row, { kind: "position", position }));
   }
   function onFilterInput(event: Event): void { emitIntent({ type: "query-update", query: (event.currentTarget as HTMLInputElement).value }); }
+  function onFilterClick(event: MouseEvent): void {
+    if (event.defaultPrevented || !(event.target instanceof Element) || event.target.closest("input, button")) return;
+    filterEl?.focus();
+  }
   function clearFilter(origin: "input" | "tree" | "menu" = "input"): void {
     emitIntent({ type: "query-clear", origin }); if (origin === "input") void tick().then(() => filterEl?.focus());
   }
@@ -459,9 +463,11 @@
       <button type="button" class="clickable-icon fce-nav-header-button" aria-label={labels.backToCards}
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
-    <div class="fce-nav-filter">
+    <!-- The wrapper extends the input's pointer target; keyboard focus stays on the native controls. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="fce-nav-filter" onclick={onFilterClick}>
       <label class="fce-sr-only" for={`${paneLabelId}-filter`}>{labels.filterLabel}</label><span class="fce-nav-filter-icon" aria-hidden="true" use:icon={"search"}></span>
-      <input id={`${paneLabelId}-filter`} bind:this={filterEl} value={nav.query} type="search"
+      <input class="fce-nav-filter-input" id={`${paneLabelId}-filter`} bind:this={filterEl} value={nav.query} type="search"
         aria-label={labels.filterLabel} placeholder={labels.filterPlaceholder} oninput={onFilterInput} onkeydown={onFilterKeydown}
         oncompositionstart={() => composing = true} oncompositionend={() => composing = false} />
       {#if nav.query.length > 0}
