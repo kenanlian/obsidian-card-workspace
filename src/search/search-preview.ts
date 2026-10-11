@@ -1,7 +1,6 @@
-import { iterateSearchIndexTerms, shouldUsePrefixSearch, tokenizeSearchQuery } from "../search-tokenization";
+import { shouldUsePrefixSearch, tokenizeSearchQuery } from "../search-tokenization";
 import { runSearchTask, type SearchTaskDiagnostics } from "./cooperative-task";
-import { SEARCH_MARKDOWN_MAX_LENGTH } from "./document-preparation";
-import { mapMarkdownSearchText } from "./mapped-search-text";
+import { prepareSearchPreviewSource, type SearchPreviewSource } from "./search-preview-source";
 import { buildSearchSnippetPresentation, type SearchSnippetPresentation } from "./snippet-presentation";
 
 export interface SearchTextRange { start: number; end: number }
@@ -79,9 +78,10 @@ export interface SearchPreviewExtractionOptions {
   matcher: (term: string) => number;
   isCurrent?: () => boolean;
   onDiagnostics?: (diagnostics: SearchTaskDiagnostics) => void;
+  onPrepared?: (source: SearchPreviewSource) => void;
 }
 
-function findLine(starts: number[], offset: number): number {
+function findLine(starts: readonly number[], offset: number): number {
   let low = 0;
   let high = starts.length;
   while (low + 1 < high) {
@@ -104,48 +104,32 @@ function mergeRanges(ranges: SearchTextRange[]): SearchTextRange[] {
   return merged;
 }
 
-function* collectSnippets(markdown: string, options: SearchPreviewExtractionOptions, phases: Record<string, number>): Generator<unknown, SearchPreviewSnippet[]> {
+function* collectSnippets(input: string | SearchPreviewSource, options: SearchPreviewExtractionOptions, phases: Record<string, number>): Generator<unknown, SearchPreviewSnippet[]> {
   const startTime = performance.now();
-  const source = markdown.slice(0, SEARCH_MARKDOWN_MAX_LENGTH);
-  const mapped = yield* mapMarkdownSearchText(source);
-  const starts = [0];
-  for (let index = 0; index < source.length; index += 1) {
-    if (source[index] === "\n") starts.push(index + 1);
-    if (index % 1024 === 0) yield;
-  }
-  const preparedTime = performance.now();
-  phases.mappingMs = preparedTime - startTime;
   const limit = Math.max(0, Math.floor(options.limit));
   if (!limit) return [];
+  const prepared = typeof input === "string" ? yield* prepareSearchPreviewSource(input) : input;
+  if (typeof input === "string") options.onPrepared?.(prepared);
+  const { source, body, starts, matchOffsets, displayOffsets, reverse, lineRanges, terms, fencedRanges } = prepared;
+  const preparedTime = performance.now();
+  phases.mappingMs = preparedTime - startTime;
   const maxChars = Math.max(4, Math.min(200, options.maxChars ?? 200));
-  const body = mapped.readable?.text ?? mapped.text.slice(0, mapped.primaryLength ?? mapped.text.length);
-  const displayOffsets = mapped.readable?.offsets ?? mapped.offsets;
-  const primaryLength = body.length;
   // The expanded tail participates in the index term budget and matching,
   // but all display ranges point back into the readable primary body.
-  const reverse = new Int32Array(source.length).fill(-1);
-  const lineRanges = new Map<number, SearchTextRange>();
-  for (let index = 0; index < primaryLength; index += 1) {
-    const offset = displayOffsets[index];
-    if (offset >= 0) {
-      reverse[offset] = index;
-      const line = findLine(starts, offset);
-      const range = lineRanges.get(line);
-      if (range) range.end = index + 1;
-      else lineRanges.set(line, { start: index, end: index + 1 });
-    }
-    if (index % 1024 === 0) yield;
-  }
   const hits: SearchTextRange[] = [];
-  for (const term of iterateSearchIndexTerms(mapped.text)) {
+  for (const [term, positions] of terms) {
     yield;
-    if (!term) continue;
-    const length = options.matcher(term.text);
+    const length = options.matcher(term);
     if (!length) continue;
-    const from = mapped.offsets[term.start];
-    const to = mapped.offsets[term.start + length - 1];
-    if (from < 0 || to < from || reverse[from] < 0 || reverse[to] < 0) continue;
-    hits.push({ start: reverse[from], end: reverse[to] + 1 });
+    for (let index = 0; index < positions.length; index += 1) {
+      const start = positions[index];
+      const from = matchOffsets[start];
+      const to = matchOffsets[start + length - 1];
+      if (from >= 0 && to >= from && reverse[from] >= 0 && reverse[to] >= 0) {
+        hits.push({ start: reverse[from], end: reverse[to] + 1 });
+      }
+      if (index % 1024 === 0) yield;
+    }
   }
   const merged = mergeRanges(hits);
   const matchedTime = performance.now();
@@ -221,8 +205,8 @@ function* collectSnippets(markdown: string, options: SearchPreviewExtractionOpti
     while (lastOffsetIndex > start && displayOffsets[lastOffsetIndex] < 0) lastOffsetIndex -= 1;
     const sourceEnd = displayOffsets[lastOffsetIndex];
     const lastLine = findLine(starts, Math.max(offset, sourceEnd));
-    const contextOffsets = [-1, ...displayOffsets.slice(start, end), -1].slice(prefix ? 0 : 1, suffix ? undefined : -1);
-    const ranges = mapped.fencedRanges ?? [];
+    const contextOffsets = [-1, ...displayOffsets.subarray(start, end), -1].slice(prefix ? 0 : 1, suffix ? undefined : -1);
+    const ranges = fencedRanges;
     let low = 0, high = ranges.length;
     while (low < high) { const mid = (low + high) >>> 1; if (ranges[mid] <= offset) low = mid + 1; else high = mid; }
     const formatStart = performance.now();
@@ -238,7 +222,7 @@ function* collectSnippets(markdown: string, options: SearchPreviewExtractionOpti
   return snippets;
 }
 
-export function extractSearchPreviewSnippets(markdown: string, options: SearchPreviewExtractionOptions) {
+export function extractSearchPreviewSnippets(markdown: string | SearchPreviewSource, options: SearchPreviewExtractionOptions) {
   const phases: Record<string, number> = {};
   return runSearchTask(collectSnippets(markdown, options, phases), options.isCurrent,
     (diagnostics) => options.onDiagnostics?.({ ...diagnostics, phases }));

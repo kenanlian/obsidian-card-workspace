@@ -3,7 +3,7 @@ import { buildLinkReferenceSnippets, buildOutgoingReferenceSnippets, type LinkRe
 import { collectLinkReferenceLocations, type LinkReferenceCardLocation } from "../link-card-location";
 import { scopeIdentity, type LinksScope } from "../scope";
 import type { EpochToken } from "../async-epoch";
-import { createSearchPreviewMatcher, extractSearchPreviewSnippets, type SearchPreview, type SearchMatchField } from "../../search";
+import { createSearchPreviewMatcher, extractSearchPreviewSnippets, SearchPreviewSourceCache, type SearchPreview, type SearchMatchField } from "../../search";
 import { isMarkdownCardKind, resolveCardFileKind } from "../file-kind";
 import type { HydrateViewportRequest } from "../hydration-request";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "../markdown-utils";
@@ -59,6 +59,7 @@ export interface HydrationControllerDeps {
 /** Owns the per-view preview cache, demand queue, and incremental publication. */
 export class HydrationController implements DisposableController {
   private readonly cache = new PreviewCache();
+  private readonly searchSources = new SearchPreviewSourceCache();
   private readonly appliedFingerprints = new Map<string, PreviewFingerprint>();
   private readonly jobs = new Map<string, HydrationJob>();
   private readonly queue: HydrationJob[] = [];
@@ -141,6 +142,7 @@ export class HydrationController implements DisposableController {
     }
     this.context.store.patchCardPreviews(cards.map((card) => {
       this.cache.invalidateExact(card.path);
+      this.searchSources.invalidateExact(card.path);
       this.appliedFingerprints.delete(card.path);
       return { path: card.path, patch: { referenceCount: readLinkReferenceCount(this.context.getApp(), scope, card.path),
         linkPreview: this.emptyLinkPreview(card, scope), hydrated: false } };
@@ -240,6 +242,7 @@ export class HydrationController implements DisposableController {
   }
   clearPreviewCache(): void {
     this.cache.clear();
+    this.searchSources.clear();
     this.appliedFingerprints.clear();
     this.sourceRead = null;
   }
@@ -269,11 +272,13 @@ export class HydrationController implements DisposableController {
     const invalidate = (path: string): void => {
       if (event.isFolder) {
         this.cache.invalidatePrefix(path);
+        this.searchSources.invalidatePrefix(path);
         for (const key of this.appliedFingerprints.keys()) {
           if (key === path || key.startsWith(`${path}/`)) this.appliedFingerprints.delete(key);
         }
       } else {
         this.cache.invalidateExact(path);
+        this.searchSources.invalidateExact(path);
         this.appliedFingerprints.delete(path);
       }
     };
@@ -480,7 +485,11 @@ export class HydrationController implements DisposableController {
     }
     let patch: Partial<CardPreviewFields>;
     try {
-      const markdown = isMarkdownCardKind(card.fileKind) ? await this.context.getApp().vault.cachedRead(card.file) : "";
+      const sourceVersion = `${card.mtime}:${card.file.stat?.mtime ?? card.mtime}:${this.getFileRevision(card.file)}`;
+      const prepared = query && !titleOnly ? this.searchSources.get(card.path, sourceVersion) : undefined;
+      const markdown = prepared && ordinary && this.context.store.getScope().kind !== "links"
+        ? prepared.source
+        : isMarkdownCardKind(card.fileKind) ? await this.context.getApp().vault.cachedRead(card.file) : "";
       if (!this.currentFingerprint(job)) return;
       const scope = this.context.store.getScope();
       const location = !query && scope.kind === "links"
@@ -494,12 +503,15 @@ export class HydrationController implements DisposableController {
           this.matcherQuery = query;
           this.matcher = createSearchPreviewMatcher(query);
         }
-        const snippets = await extractSearchPreviewSnippets(markdown, {
+        const snippets = await extractSearchPreviewSnippets(prepared ?? markdown, {
           limit: this.context.getSettings().searchPreviewSnippetCount,
           maxChars: 200,
           idPrefix: `${job.generation}:${job.hydrationRevision}:${job.fingerprint.contextKey}`,
           matcher: this.matcher,
           isCurrent: () => this.currentFingerprint(job),
+          onPrepared: (source) => {
+            if (this.currentFingerprint(job)) this.searchSources.set(card.path, sourceVersion, source);
+          },
         });
         if (!snippets || !this.currentFingerprint(job)) return;
         preview = { ...leading, searchPreview: this.searchPreviewFor(card, snippets.length ? "hits" : "unavailable", snippets) };
@@ -681,6 +693,7 @@ export class HydrationController implements DisposableController {
     this.sourceRead = null;
     this.expandedReferences.clear();
     this.cache.clear();
+    this.searchSources.clear();
     this.appliedFingerprints.clear();
     this.latestViewport.clear();
     for (const job of this.jobs.values()) job.resolve();

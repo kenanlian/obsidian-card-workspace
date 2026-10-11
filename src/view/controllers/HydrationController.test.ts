@@ -98,7 +98,7 @@ describe("HydrationController", () => {
     controller.prepareRecordsFromCache([ordinary]);
     expect(ordinary.hydrated).toBe(true);
     expect(ordinary.searchPreview).toBeUndefined();
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(1);
     controller.dispose();
   });
 
@@ -273,8 +273,40 @@ describe("HydrationController", () => {
     query = "target";
     context.store.advanceHydrationRevision();
     await controller.hydrateViewport(request(context, records.slice(0, 1)));
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(1);
     expect(context.store.getBaseCard("0.md")?.searchPreview?.snippets[0].text).toContain("target");
+    query = "needle";
+    context.store.advanceHydrationRevision();
+    await controller.hydrateViewport(request(context, records.slice(0, 1)));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(context.store.getBaseCard("0.md")?.searchPreview?.snippets[0].location.from.line).toBe(1);
+    controller.dispose();
+  });
+
+  it("rebuilds prepared sources after same-mtime mutations, prefix invalidation, and cache clearing", async () => {
+    const record = card("folder/search.md");
+    let source = "opening\nneedle old";
+    let query = "needle";
+    const { context, controller, read } = harness([record], vi.fn(async () => source), {}, () => query);
+    await controller.hydrateViewport(request(context, [record]));
+    const opening = context.store.getBaseCard(record.path)!.previewHtml;
+    for (const isFolder of [false, true]) {
+      source = `new opening\n\nneedle changed ${isFolder}`;
+      controller.invalidateForVaultMutation({ eventType: "modify", path: record.path, oldPath: null, isFolder: false, fileKind: "markdown" });
+      if (isFolder) controller.invalidateForVaultMutation({ eventType: "rename", path: "renamed", oldPath: "folder", isFolder: true, fileKind: null });
+      await controller.hydrateViewport(request(context, [record]));
+      const snippet = context.store.getBaseCard(record.path)!.searchPreview!.snippets[0];
+      expect(snippet.text).toBe(`needle changed ${isFolder}`);
+      expect(snippet.location.from.line).toBe(2);
+    }
+    expect(read).toHaveBeenCalledTimes(3);
+    controller.clearPreviewCache();
+    query = "changed";
+    context.store.advanceHydrationRevision();
+    await controller.hydrateViewport(request(context, [record]));
+    expect(read).toHaveBeenCalledTimes(4);
+    expect(context.store.getBaseCard(record.path)!.previewHtml).not.toBe(opening);
+    controller.dispose();
   });
 
   it("prepares non-Markdown placeholders synchronously without reads", () => {

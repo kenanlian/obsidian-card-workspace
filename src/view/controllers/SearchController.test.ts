@@ -119,7 +119,7 @@ describe("SearchController", () => {
   it("keeps the last committed cards visible while a ready-index query is debounced", async () => {
     vi.useFakeTimers();
     const context = createContext();
-    const alpha = { path: "notes/alpha.md", title: "Alpha" } as NoteCardRecord;
+    const alpha = { path: "notes/alpha.md", title: "Alpha", previewHtml: "<p>Alpha</p>", previewMode: "text", hydrated: true } as NoteCardRecord;
     const beta = { path: "notes/beta.md", title: "Beta" } as NoteCardRecord;
     context.store.replaceBaseCards([alpha, beta]);
     context.store.replaceVisibleCards([alpha, beta]);
@@ -155,12 +155,20 @@ describe("SearchController", () => {
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([alpha.path]);
     expect(controller.getCommittedQuery()).toBe("alpha");
 
+    const preview = { query: "alpha", revision: controller.getContentRevision(), mtime: 2,
+      previewLines: 5, snippetLimit: 2, status: "hits" as const, snippets: [] };
+    context.store.patchCardPreviews([{ path: alpha.path, patch: { searchPreview: preview, hydrated: true } }]);
+    const revision = context.store.getHydrationRevision();
+
     publishSearchProjection.mockClear();
     controller.onQueryChange({ query: "beta" });
 
     expect(controller.getQuery()).toBe("beta");
     expect(controller.getCommittedQuery()).toBe("alpha");
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([alpha.path]);
+    expect(context.store.getBaseCard(alpha.path)?.searchPreview).toBe(preview);
+    expect(context.store.getHydrationRevision()).toBe(revision + 1);
+    expect(controller.isCommittedQueryCurrent()).toBe(false);
     expect(publishSearchProjection).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(120);
@@ -169,6 +177,7 @@ describe("SearchController", () => {
 
     expect(controller.getCommittedQuery()).toBe("beta");
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([beta.path]);
+    expect(context.store.getBaseCard(alpha.path)?.searchPreview).toBeUndefined();
     expect(publishSearchProjection).toHaveBeenCalledTimes(1);
     controller.dispose();
   });

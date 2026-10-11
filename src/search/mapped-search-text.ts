@@ -94,6 +94,9 @@ function* ruleMatches(text: string, rule: typeof MARKDOWN_SEARCH_REPLACEMENTS[nu
 }
 
 function* collapse(source: MappedSearchText): Generator<unknown, MappedSearchText> {
+  // Most joined prose is already collapsed. Preserve its offsets instead of
+  // allocating and copying another full character map for every single space.
+  if (!/^\s|\s$|[^\S ]| {2}/.test(source.text)) return source;
   const collapsed = yield* replace(source, /\s+/g, (match) => ({ text: " ", start: match.index ?? 0 }));
   const left = collapsed.text.startsWith(" ") ? 1 : 0;
   const end = collapsed.text.endsWith(" ") ? collapsed.text.length - 1 : collapsed.text.length;
@@ -106,6 +109,7 @@ function captureStart(match: RegExpMatchArray, group: number): number {
 }
 
 function* normalize(source: MappedSearchText): Generator<unknown, MappedSearchText> {
+  if (!/[[#$\\`*_~=>]|^\s*(?:[-+]\s|\d+\.\s)/.test(source.text)) return yield* collapse(source);
   for (const rule of MARKDOWN_SEARCH_REPLACEMENTS) {
     source = yield* replace(source, rule.pattern, (match) => {
       const text = searchReplacementText(rule, match);
@@ -133,6 +137,7 @@ function* readableLine(source: MappedSearchText): Generator<unknown, MappedSearc
 }
 
 function* expand(source: MappedSearchText): Generator<unknown, MappedSearchText> {
+  if (!/[._/\\-]/.test(source.text) || !/[A-Za-z0-9]/.test(source.text)) return { text: "", offsets: [] };
   const parts: MappedSearchText[] = [];
   for (const match of source.text.matchAll(/\S+/g)) {
     const token = match[0];

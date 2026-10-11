@@ -1479,7 +1479,7 @@ describe("FolderCardView host contract", () => {
     }
   });
 
-  it("renders body snippets and unchanged indexed count badges, then rejects stale locations", async () => {
+  it("retains body snippets during a draft query, preserves indexed count badges, and rejects stale activation", async () => {
     vi.useFakeTimers();
     try {
       const { view, plugin, panelContainer } = createHarness();
@@ -1535,6 +1535,12 @@ describe("FolderCardView host contract", () => {
       expect(plugin.openNoteFromCard).toHaveBeenCalledWith(deepHitCard.path, undefined, expect.objectContaining({ kind: "search-snippet" }));
       getSearchController(view).onQueryChange({ query: "other" });
       expect(view.resolveSearchSnippetLocation(deepHitCard.path, id)).toBeNull();
+      await tick();
+      expect(panelContainer.querySelectorAll(".fce-search-snippet")).toHaveLength(2);
+      expect(panelContainer.querySelector(".fce-excerpt")?.classList.contains("is-loading")).toBe(false);
+      cardEl?.querySelectorAll(".fce-search-snippet")[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(plugin.openNoteFromCard).toHaveBeenCalledTimes(1);
+      getSearchController(view).resetQuery();
       await tick();
       expect(panelContainer.querySelectorAll(".fce-search-snippet")).toHaveLength(0);
     } finally {

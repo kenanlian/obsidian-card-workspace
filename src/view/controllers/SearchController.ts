@@ -82,9 +82,10 @@ export class SearchController implements DisposableController {
   isCommittedQueryCurrent(): boolean { return this.query.trim() === this.committedQuery.trim(); }
   getMatchFields(path: string): readonly SearchMatchField[] | undefined { return this.matchFieldsByPath[path]; }
 
-  private invalidateSearchPreviews(): void {
+  private invalidateSearchPreviews(preserveDisplayed: boolean = false): void {
     this.contentRevision += 1;
     this.context.store.advanceHydrationRevision();
+    if (preserveDisplayed) return;
     this.context.store.patchCardPreviews(this.context.store.getBaseCards()
       .filter((card) => card.searchPreview !== undefined).map((card) => ({
         path: card.path, patch: {
@@ -179,7 +180,7 @@ export class SearchController implements DisposableController {
 
     this.query = nextQuery;
     this.inputRevision += 1;
-    this.invalidateSearchPreviews();
+    this.invalidateSearchPreviews(this.scopeSettled() && this.isIndexReady() && nextQuery.trim().length > 0);
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
     if (!this.scopeSettled()) {

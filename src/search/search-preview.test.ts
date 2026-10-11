@@ -63,6 +63,7 @@ describe("source-mapped search previews", () => {
       "## One\n1. Two\n$$x+y$$ $z$ \\(math\\) \\[math2\\] `code_text` `x+y`",
       "before\n````ts\n\nfoo_bar ./path-file [[literal|literal]]\r\n```\nend\n````\nafter",
       "~~~js\n中文代码 flow_report\n\nlast", "\r\n", "----odd--- text", "中文English中文.Example",
+      "plain ordinary prose\n1. numbered item\n  + list\n  - list\nstandalone + and - and !\nwith\ttabs\u00a0and  spaces\nplain/file-name",
     ];
     for (const source of samples) {
       const mapped = (await runSearchTask(mapMarkdownSearchText(source)))!;

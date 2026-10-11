@@ -58,12 +58,13 @@ export function setup(fixtures, limit) {
   const query = () => {const results = index.search('need', MINISEARCH_SEARCH_OPTIONS); const paths = results.map(r => r.path); return {paths, counts: buildMatchCountsByPath('need', paths, byPath)};};
   return {query, async hydrate() {
     let reads = 0, active = 0, peak = 0;
+    let committedQuery = 'need', contentRevision = 0;
     const store = createViewStateStore(createFolderScope('', true)), epochs = createViewEpochs();
     const records = documents.map(d => ({...d, file: {path: d.path, stat: {mtime: 2}}, fileKind: 'markdown', previewHtml: '', previewMode: 'empty', hydrated: false, taskSummary: null}));
     store.replaceBaseCards(records); store.replaceVisibleCards(records);
     const context = {store, epochs, getSettings: () => ({...DEFAULT_SETTINGS, searchPreviewSnippetCount: limit}), getUiStrings: () => getUiStrings('en'), getViewWindow: () => globalThis, publishGroups: () => {},
       getApp: () => ({vault: {cachedRead: async file => {reads++; active++; peak = Math.max(peak, active); await Promise.resolve(); active--; return sourceByPath.get(file.path);}}, metadataCache: {getFileCache: () => null}})};
-    const controller = new HydrationController({context, isLoading: () => false, getCommittedQuery: () => 'need'});
+    const controller = new HydrationController({context, isLoading: () => false, getCommittedQuery: () => committedQuery, getSearchContentRevision: () => contentRevision});
     const request = (start, end) => ({generation: epochs.load.value, hydrationRevision: store.getHydrationRevision(), start, end, paths: records.slice(start, end).map(c => c.path)});
     const time = async fn => {const start = performance.now(); await fn(); return performance.now() - start;};
     const firstScreenMs = await time(() => controller.hydrateViewport(request(0, 6)));
@@ -71,9 +72,20 @@ export function setup(fixtures, limit) {
     assert.equal(reads, 6);
     const scrollSupplementMs = await time(() => controller.hydrateViewport(request(6, 12)));
     assert.equal(reads, 12); assert(peak <= 5);
+    const readsBeforeSwitch = reads;
+    const querySwitchMs = await time(async () => {
+      for (const nextQuery of ['needle', 'need']) {
+        committedQuery = nextQuery; contentRevision++;
+        store.advanceHydrationRevision();
+        store.patchCardPreviews(records.slice(0, 6).map(card => ({path: card.path, patch: {searchPreview: undefined}})));
+        await controller.hydrateViewport(request(0, 6));
+      }
+    });
+    assert.equal(peak <= 5, true);
+    const querySwitchReads = reads - readsBeforeSwitch;
     const snippets = store.getBaseCard(records[0].path).searchPreview.snippets;
     controller.dispose(); await new Promise(resolve => setTimeout(resolve, 0));
-    return {firstScreenMs, cacheHitMs, scrollSupplementMs, reads, peak, snippets};
+    return {firstScreenMs, cacheHitMs, scrollSupplementMs, querySwitchMs, querySwitchReads, reads, peak, snippets};
   }};
 }` }, outfile: file, bundle: true, format: "esm", platform: "node", target: "node18", logLevel: "warning", alias: {obsidian: stub} });
     return import(pathToFileURL(file).href);
@@ -102,7 +114,7 @@ export function setup(fixtures, limit) {
     }
     assert.deepEqual(compatible(measurements[1].lastSnippets), compatible(measurements[0].lastSnippets));
     const summary = measurements.map(values => Object.fromEntries(Object.entries(values).filter(([key]) => key !== "lastSnippets").map(([key, values]) => [key, summarize(values)])));
-    for (const metric of ["firstScreenMs", "scrollSupplementMs", "cacheHitMs", "queryMs"]) {
+    for (const metric of ["firstScreenMs", "scrollSupplementMs", "querySwitchMs", "cacheHitMs", "queryMs"]) {
       const small = metric === "cacheHitMs" || metric === "queryMs";
       gates.push(timingGate(`${kind}/${limit}/${metric}`, summary[0][metric], summary[1][metric], small ? 0.05 : 0.1, small ? 0.25 : 5));
     }
