@@ -13,6 +13,10 @@ import {
 } from "../../__mocks__/folder-card-view-harness";
 
 vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
+vi.mock("../metadata-input-suggest", () => ({
+  attachMetadataInputSuggest: () => ({ isOpen: () => false, close: () => {}, dispose: () => {} }),
+  onPlainEnter: () => {},
+}));
 
 import { FolderCardView } from "../FolderCardView";
 import { batchRemoveTagsFromFiles, batchRenameTagInFiles } from "../note-tag-ops";

@@ -28,9 +28,7 @@ export abstract class FormModal extends CompatConfirmationModal {
         .setCta()
         .setButtonText(labels.submit)
         .onClick(() => {
-          void this.submit().catch((error) => {
-            console.warn("Card Workspace: form submission failed", error);
-          });
+          this.requestSubmit();
           // Truthy keeps the dialog open; `submit()` closes it once the work succeeds.
           return true;
         });
@@ -75,10 +73,14 @@ export abstract class FormModal extends CompatConfirmationModal {
     inputEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.isComposing) {
         event.preventDefault();
-        void this.submit().catch((error) => {
-          console.warn("Card Workspace: form submission failed", error);
-        });
+        this.requestSubmit();
       }
+    });
+  }
+
+  protected requestSubmit(): void {
+    void this.submit().catch((error) => {
+      console.warn("Card Workspace: form submission failed", error);
     });
   }
 

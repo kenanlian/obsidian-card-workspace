@@ -3,7 +3,8 @@ import { rewriteHiddenTagsAfterRename } from "../../navigation-visibility";
 import { tagPathIsOrUnder } from "../tag-tree";
 import type { UiStrings } from "../../i18n";
 import type { PartialPluginSettings } from "../../settings";
-import { TagInputModal } from "../modals/TagInputModal";
+import { buildVaultTagCandidates } from "../bulk-metadata";
+import { RenameTagModal } from "../modals/RenameTagModal";
 import {
   batchRemoveTagsFromFiles,
   batchRenameTagInFiles,
@@ -47,10 +48,12 @@ export class TagManagementActions {
 
   /** Entry point for the nav tag menu's "Rename tag…" item. */
   openRenameTagModal(tag: string): void {
-    const modal = new TagInputModal(
-      this.deps.context.getApp(),
-      { mode: "rename", strings: this.strings.view.tagInput, initialValue: normalizeTagForFrontmatter(tag) },
-      async (nextTag) => this.submitTagRename(normalizeTagForFrontmatter(tag), nextTag),
+    const app = this.deps.context.getApp();
+    const from = normalizeTagForFrontmatter(tag);
+    const modal = new RenameTagModal(
+      app,
+      { strings: this.strings.view.tagRename, from, candidates: buildVaultTagCandidates(app) },
+      async (nextTag) => this.submitTagRename(from, nextTag),
     );
     modal.open();
   }
@@ -58,7 +61,7 @@ export class TagManagementActions {
   async submitTagRename(from: string, to: string): Promise<boolean> {
     const strings = this.strings.view.tagManage;
     if (to.length === 0) {
-      this.deps.context.notify(this.strings.view.tagInput.invalidTag);
+      this.deps.context.notify(this.strings.view.tagRename.invalidTag);
       return false;
     }
     if (from === to) {

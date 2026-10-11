@@ -1,13 +1,23 @@
-import { SettingGroup, type App } from "obsidian";
+import { SettingGroup, setIcon, type App } from "obsidian";
 import type { BulkMetadataStrings } from "../../i18n";
 import type { BulkMetadataSnapshot, MetadataCandidate } from "../bulk-metadata";
-import { attachMetadataInputSuggest } from "../metadata-input-suggest";
+import { attachMetadataInputSuggest, onPlainEnter } from "../metadata-input-suggest";
 import { FormModal } from "./FormModal";
 
 export interface BulkMetadataModalOptions {
   strings: BulkMetadataStrings;
   snapshot: BulkMetadataSnapshot;
   targetCount: number;
+}
+
+export interface MetadataPickerOptions {
+  heading: string;
+  candidates: readonly MetadataCandidate[];
+  selected: string[];
+  normalize: (name: string) => string;
+  allowNew: boolean;
+  onChange: () => void;
+  tone?: "add" | "remove";
 }
 
 export abstract class BulkMetadataModal extends FormModal {
@@ -30,11 +40,17 @@ export abstract class BulkMetadataModal extends FormModal {
     this.locks.clear();
     super.render();
   }
-  protected renderIntro(): void {
-    this.targetEl = this.contentEl.createEl("p", { text: this.strings.targetCount(this.options.targetCount) });
-    if (this.snapshot.incomplete) this.contentEl.createEl("p", { cls: "mod-warning", text: this.strings.incomplete });
-    this.statusEl = this.contentEl.createEl("p", { attr: { role: "status" } });
-    this.validationEl = this.contentEl.createEl("p", { cls: "mod-warning", attr: { role: "status" } });
+  protected renderIntro(description?: string): void {
+    const intro = this.contentEl.createDiv({ cls: "fce-modal-intro" });
+    this.targetEl = intro.createDiv({ cls: "fce-modal-intro__summary", text: this.strings.targetCount(this.options.targetCount) });
+    if (description) intro.createDiv({ cls: "fce-modal-intro__description", text: description });
+    if (this.snapshot.incomplete) this.contentEl.createDiv({ cls: "fce-bulk-metadata-notice", text: this.strings.incomplete });
+  }
+  /** Validation and apply results sit next to the footer, where the user acts on them. */
+  protected renderFeedback(): void {
+    const feedback = this.contentEl.createDiv({ cls: "fce-bulk-metadata-feedback" });
+    this.validationEl = feedback.createDiv({ cls: "fce-bulk-metadata-validation", attr: { role: "status" } });
+    this.statusEl = feedback.createDiv({ cls: "fce-bulk-metadata-result", attr: { role: "status" } });
   }
   protected updateValidation(valid: boolean, hasDraft: boolean): void {
     this.validationEl?.setText(!valid && hasDraft ? this.strings.invalid : "");
@@ -42,6 +58,7 @@ export abstract class BulkMetadataModal extends FormModal {
   }
   showResult(text: string, remainingCount: number): void {
     this.statusEl?.setText(text);
+    this.statusEl?.toggleClass("is-error", remainingCount > 0);
     this.targetEl?.setText(this.strings.targetCount(remainingCount));
   }
   protected attachSuggest(input: HTMLInputElement, candidates: () => readonly MetadataCandidate[], onSelect: (name: string) => void) {
@@ -55,33 +72,31 @@ export abstract class BulkMetadataModal extends FormModal {
   }
   /** Enter confirms one draft item. Never submits the modal. */
   protected confirmOnEnter(input: HTMLInputElement, isOpen: () => boolean, confirm: () => void): void {
-    let composing = false;
-    input.addEventListener("compositionstart", () => { composing = true; });
-    input.addEventListener("compositionend", () => { composing = false; });
-    input.addEventListener("keydown", (event) => {
-      if (!composing && event.key === "Enter" && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented && !isOpen()) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!this.isSubmitting()) confirm();
-      }
+    onPlainEnter(input, isOpen, () => { if (!this.isSubmitting()) confirm(); });
+  }
+  protected createIconButton(parent: HTMLElement, icon: string, label: string, onClick: () => void): HTMLButtonElement {
+    const button = parent.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": label } });
+    setIcon(button, icon);
+    button.addEventListener("click", () => { if (!this.isSubmitting()) onClick(); });
+    return button;
+  }
+  protected paintChips<T extends string | number>(chips: HTMLElement, items: readonly T[], onRemove: (item: T, index: number) => void): void {
+    chips.empty();
+    items.forEach((item, index) => {
+      const chip = chips.createEl("button", { cls: "fce-metadata-chip", attr: { type: "button", "aria-label": `${this.strings.remove}: ${item}` } });
+      chip.createSpan({ cls: "fce-metadata-chip__label", text: String(item) });
+      setIcon(chip.createSpan({ cls: "fce-metadata-chip__remove" }), "x");
+      chip.addEventListener("click", () => { if (!this.isSubmitting()) onRemove(item, index); });
     });
   }
-  protected renderPicker(heading: string, candidates: readonly MetadataCandidate[], selected: string[], normalize: (name: string) => string, allowNew: boolean, onChange: () => void): void {
+  protected renderPicker({ heading, candidates, selected, normalize, allowNew, onChange, tone }: MetadataPickerOptions): void {
     const group = new SettingGroup(this.contentEl).setHeading(heading);
     group.addSetting((setting) => {
-      setting.setName(heading);
+      setting.setClass("fce-metadata-picker");
+      let input!: HTMLInputElement;
       const chips = setting.settingEl.createDiv({ cls: "fce-metadata-chips" });
-      let input: HTMLInputElement;
-      const paint = () => {
-        chips.empty();
-        for (const name of selected) {
-          const button = chips.createEl("button", { text: `${name} ×`, attr: { type: "button", "aria-label": `${this.strings.remove}: ${name}` } });
-          button.addEventListener("click", () => {
-            if (this.isSubmitting()) return;
-            selected.splice(selected.indexOf(name), 1); paint(); onChange();
-          });
-        }
-      };
+      if (tone) chips.addClass(`mod-${tone}`);
+      const paint = () => this.paintChips(chips, selected, (_name, index) => { selected.splice(index, 1); paint(); onChange(); });
       const commit = (raw: string) => {
         const candidate = candidates.find((item) => normalize(item.name) === normalize(raw));
         const name = candidate?.name ?? (allowNew ? raw.trim() : "");
@@ -92,9 +107,11 @@ export abstract class BulkMetadataModal extends FormModal {
       setting.addText((text) => {
         input = text.inputEl;
         input.setAttribute("aria-label", heading);
+        text.setPlaceholder(heading);
         const handle = this.attachSuggest(input, () => candidates.filter((item) => !selected.some((name) => normalize(name) === normalize(item.name))), commit);
         this.confirmOnEnter(input, handle.isOpen, () => commit(input.value));
-      }).addButton((button) => button.setButtonText(this.strings.add).onClick(() => { if (!this.isSubmitting()) commit(input.value); }));
+      });
+      this.createIconButton(setting.controlEl, "plus", this.strings.add, () => commit(input.value));
       paint();
     });
   }

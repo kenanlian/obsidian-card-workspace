@@ -1,7 +1,6 @@
 import type { UiLanguage } from "./types";
 
 export interface AppStrings {
-  appName: string;
   untitledNoteBaseName: string;
   hoverSourceDisplay: string;
   openCardWorkspaceViewCommand: string;
@@ -43,7 +42,6 @@ export interface AppStrings {
 
 export const appStrings: Record<UiLanguage, AppStrings> = {
   en: {
-    appName: "Card Workspace",
     untitledNoteBaseName: "Untitled",
     hoverSourceDisplay: "Card Workspace",
     openCardWorkspaceViewCommand: "Open Card Workspace view",
@@ -85,7 +83,6 @@ export const appStrings: Record<UiLanguage, AppStrings> = {
     failedToMoveFile: (reason: string) => `Failed to move file: ${reason}`,
   },
   zh: {
-    appName: "Card Workspace",
     untitledNoteBaseName: "未命名",
     hoverSourceDisplay: "Card Workspace",
     openCardWorkspaceViewCommand: "打开 Card Workspace 视图",

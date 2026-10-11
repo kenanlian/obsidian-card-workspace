@@ -1,6 +1,20 @@
 import { AbstractInputSuggest, Scope, type App } from "obsidian";
 import { filterMetadataCandidates, type MetadataCandidate } from "./bulk-metadata";
 
+/** Enter that is neither confirming an IME composition nor picking an open suggestion. */
+export function onPlainEnter(input: HTMLInputElement, isSuggestOpen: () => boolean, handler: () => void): void {
+  let composing = false;
+  input.addEventListener("compositionstart", () => { composing = true; });
+  input.addEventListener("compositionend", () => { composing = false; });
+  input.addEventListener("keydown", (event) => {
+    if (!composing && event.key === "Enter" && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented && !isSuggestOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+      handler();
+    }
+  });
+}
+
 /** Native positioning/keyboard navigation, with an IME guard and explicit lifetime. */
 export function attachMetadataInputSuggest(app: App, input: HTMLInputElement, candidates: () => readonly MetadataCandidate[], onSelect: (name: string) => void) {
   let disposed = false;

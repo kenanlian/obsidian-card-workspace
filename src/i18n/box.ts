@@ -56,7 +56,6 @@ export interface BoxStrings {
   restoreExcluded: string;
   restoreAllExcluded: string;
   done: string;
-  emptyBoxHint: string;
 }
 
 export const boxStrings: Record<UiLanguage, BoxStrings> = {
@@ -121,7 +120,6 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     restoreExcluded: "Restore",
     restoreAllExcluded: "Restore all",
     done: "Done",
-    emptyBoxHint: "This card box is empty. Add notes from the card list or add a rule.",
   },
   zh: {
     createBox: "新建卡片盒…",
@@ -180,6 +178,5 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     restoreExcluded: "恢复",
     restoreAllExcluded: "全部恢复",
     done: "完成",
-    emptyBoxHint: "此卡片盒为空。可从卡片列表加入笔记，或添加规则。",
   },
 };

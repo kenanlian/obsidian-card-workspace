@@ -265,6 +265,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const bulkPropertyActions = new BulkPropertyActions({
     context,
+    resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
     isBulkMode: () => bulk.isBulkMode(),
     resolveSelectedLiveMarkdownFilesInOrder: () => bulk.resolveSelectedLiveMarkdownFilesInOrder(),
     reconcileSelectionToOrderedPaths: (paths) => bulk.reconcileSelectionToOrderedPaths(paths),
@@ -353,8 +354,11 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       fileActions.renameCardFile(notePath);
     },
     deleteCardFile: (notePath) => fileActions.deleteCardFile(notePath),
-    openSingleTagModal: (notePath, mode) => {
-      tagActions.openSingleTagModal(notePath, mode);
+    openTagsEditor: (notePath) => {
+      tagActions.editTagsForNote(notePath);
+    },
+    openPropertiesEditor: (notePath) => {
+      bulkPropertyActions.editPropertiesForNote(notePath);
     },
     openCardWithDestination: (notePath, destination) => {
       host.openCardWithDestination(notePath, destination);

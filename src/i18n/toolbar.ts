@@ -25,21 +25,15 @@ export interface ToolbarStrings {
   };
   actions: {
     toolbarAriaLabel: string;
-    pickFolder: string;
-    pickFolderTitle: string;
-    selectFolder: string;
     newNote: string;
     newNoteTitle: string;
     sort: string;
     sortTitle: string;
-    filter: string;
-    filterTitle: string;
     bulk: string;
     bulkTitle: string;
     toggleSearch: string;
   };
   bulkSummary: (count: number) => string;
-  tagSummary: (count: number) => string;
   bulkActionLabels: {
     selectAll: string;
     clearSelection: string;
@@ -50,14 +44,10 @@ export interface ToolbarStrings {
     mergeSelected: string;
   };
   folderMenu: {
-    folderScope: string;
     rootFolder: string;
     includeSubfolders: string;
-    directFolderOnly: string;
-    subfoldersSrLabel: string;
     expand: string;
     collapse: string;
-    createChildFolder: string;
     moveFolder: string;
     deleteFolder: string;
   };
@@ -66,8 +56,6 @@ export interface ToolbarStrings {
     collapsePane: string;
     expandPane: string;
     backToCards: string;
-    expandAll: string;
-    collapseAll: string;
     resizeHandle: string;
     resizeValue: (width: number) => string;
     resizeKeyboardHelp: string;
@@ -87,13 +75,11 @@ export interface ToolbarStrings {
     favoritesSection: string;
     favoritesEmpty: string;
     favoriteMissing: string;
-    newFolderAtRoot: string;
     collapseSection: string;
     expandSection: string;
     tagsFilterUnavailable: string;
     propertiesFilterUnavailable: string;
     boxesEmpty: string;
-    exitBox: string;
     folderCountsTooltip: (files: number, folders: number) => string;
     tagCountsTooltip: (files: number, subtags: number) => string;
     boxCountsTooltip: (files: number) => string;
@@ -111,13 +97,7 @@ export interface ToolbarStrings {
     clearHistory: string;
   };
   filter: {
-    title: string;
     noTagsFound: string;
-    selectedTagSummary: (tag: string) => string;
-    selectedTagClearLabel: string;
-    clear: string;
-    cancel: string;
-    apply: string;
   };
 }
 
@@ -147,21 +127,15 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
     },
     actions: {
       toolbarAriaLabel: "Folder card actions",
-      pickFolder: "Pick folder",
-      pickFolderTitle: "Folder scope",
-      selectFolder: "Select folder",
       newNote: "New",
       newNoteTitle: "Create note",
       sort: "Sort",
       sortTitle: "Sort cards",
-      filter: "Tags",
-      filterTitle: "Tag filter",
       bulk: "Bulk",
       bulkTitle: "Bulk actions",
       toggleSearch: "Toggle search",
     },
     bulkSummary: (count: number) => (count === 1 ? "1 selected" : `${count} selected`),
-    tagSummary: (count: number) => (count === 1 ? "1 tag selected" : `${count} tags selected`),
     bulkActionLabels: {
       selectAll: "Select all",
       clearSelection: "Clear selection",
@@ -172,14 +146,10 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       mergeSelected: "Merge selected",
     },
     folderMenu: {
-      folderScope: "Folder scope",
       rootFolder: "Root /",
       includeSubfolders: "Including subfolders",
-      directFolderOnly: "Direct folder only",
-      subfoldersSrLabel: "Subfolders",
       expand: "Expand",
       collapse: "Collapse",
-      createChildFolder: "Create child folder",
       moveFolder: "Move folder",
       deleteFolder: "Delete folder",
     },
@@ -188,8 +158,6 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       collapsePane: "Collapse navigation",
       expandPane: "Expand navigation",
       backToCards: "Back to cards",
-      expandAll: "Expand all",
-      collapseAll: "Collapse all",
       resizeHandle: "Resize navigation",
       resizeValue: (width: number) => `Navigation width: ${width} pixels`,
       resizeKeyboardHelp: "Use arrow keys to resize navigation",
@@ -209,13 +177,11 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       favoritesSection: "Favorites",
       favoritesEmpty: "No favorites yet — right-click an item to add one",
       favoriteMissing: "(missing)",
-      newFolderAtRoot: "New folder in vault root",
       collapseSection: "Collapse section",
       expandSection: "Expand section",
       tagsFilterUnavailable: "Tag filter is unavailable in this view",
       propertiesFilterUnavailable: "Property filter is unavailable in this view",
       boxesEmpty: "No card boxes yet — right-click to create one",
-      exitBox: "Exit box",
       folderCountsTooltip: (files: number, folders: number) =>
         `${files} file${files === 1 ? "" : "s"}, ${folders} folder${folders === 1 ? "" : "s"}`,
       tagCountsTooltip: (files: number, subtags: number) =>
@@ -235,13 +201,7 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       clearHistory: "Clear history",
     },
     filter: {
-      title: "Tag filter",
       noTagsFound: "No tags found",
-      selectedTagSummary: (tag: string) => `${tag} tag selected`,
-      selectedTagClearLabel: "Clear selected tag",
-      clear: "Clear",
-      cancel: "Cancel",
-      apply: "Apply",
     },
   },
   zh: {
@@ -269,21 +229,15 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
     },
     actions: {
       toolbarAriaLabel: "卡片操作",
-      pickFolder: "选择文件夹",
-      pickFolderTitle: "文件夹范围",
-      selectFolder: "选择文件夹",
       newNote: "新建",
       newNoteTitle: "创建笔记",
       sort: "排序",
       sortTitle: "排序卡片",
-      filter: "标签",
-      filterTitle: "标签筛选",
       bulk: "批量",
       bulkTitle: "批量操作",
       toggleSearch: "切换搜索",
     },
     bulkSummary: (count: number) => (count === 1 ? "已选 1 项" : `已选 ${count} 项`),
-    tagSummary: (count: number) => (count === 1 ? "已选 1 个标签" : `已选 ${count} 个标签`),
     bulkActionLabels: {
       selectAll: "全选",
       clearSelection: "清除选择",
@@ -294,14 +248,10 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       mergeSelected: "合并所选",
     },
     folderMenu: {
-      folderScope: "文件夹范围",
       rootFolder: "根目录 /",
       includeSubfolders: "包含子文件夹",
-      directFolderOnly: "仅当前文件夹",
-      subfoldersSrLabel: "子文件夹",
       expand: "展开",
       collapse: "折叠",
-      createChildFolder: "新建子文件夹",
       moveFolder: "移动文件夹",
       deleteFolder: "删除文件夹",
     },
@@ -310,8 +260,6 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       collapsePane: "折叠导航栏",
       expandPane: "展开导航栏",
       backToCards: "返回卡片",
-      expandAll: "全部展开",
-      collapseAll: "全部折叠",
       resizeHandle: "调整导航栏宽度",
       resizeValue: (width: number) => `导航栏宽度：${width} 像素`,
       resizeKeyboardHelp: "使用方向键调整导航栏宽度",
@@ -331,13 +279,11 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       favoritesSection: "收藏",
       favoritesEmpty: "还没有收藏 — 右键任意条目即可添加",
       favoriteMissing: "（已失效）",
-      newFolderAtRoot: "在库根目录新建文件夹",
       collapseSection: "折叠此区",
       expandSection: "展开此区",
       tagsFilterUnavailable: "当前视图不可使用标签筛选",
       propertiesFilterUnavailable: "当前视图不可使用属性筛选",
       boxesEmpty: "还没有卡片盒 — 右键新建",
-      exitBox: "退出卡片盒",
       folderCountsTooltip: (files: number, folders: number) =>
         `${files} 个文件, ${folders} 个文件夹`,
       tagCountsTooltip: (files: number, subtags: number) => `${files} 个文件, ${subtags} 个子标签`,
@@ -356,13 +302,7 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       clearHistory: "清空历史",
     },
     filter: {
-      title: "标签筛选",
       noTagsFound: "未找到标签",
-      selectedTagSummary: (tag: string) => `已选标签：${tag}`,
-      selectedTagClearLabel: "清除所选标签",
-      clear: "清除",
-      cancel: "取消",
-      apply: "应用",
     },
   },
 };

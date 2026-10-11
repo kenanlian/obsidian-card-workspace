@@ -69,8 +69,8 @@ describe("card context menu contract", () => {
         "Copy content",
         "Copy title & content",
         "separator",
-        "Add tag...",
-        "Remove tag...",
+        "Add/remove tags...",
+        "Add/remove properties...",
         "separator",
         "Rename...",
         "Delete",
@@ -112,8 +112,8 @@ describe("card context menu contract", () => {
       { kind: "item", title: "Copy content", icon: "clipboard-list" },
       { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
       { kind: "separator" },
-      { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
-      { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
+      { kind: "item", title: "Add/remove tags...", icon: "tags" },
+      { kind: "item", title: "Add/remove properties...", icon: "list" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
@@ -149,7 +149,8 @@ describe("card context menu contract", () => {
     const makeCopySpy = vi.spyOn((view as any).modules.fileActions, "makeCardFileCopy").mockResolvedValue(undefined);
     const moveSpy = vi.spyOn((view as any).modules.fileActions, "moveCardNote");
     const renameSpy = vi.spyOn((view as any).modules.fileActions, "renameCardFile").mockImplementation(() => undefined);
-    const addTagSpy = vi.spyOn((view as any).modules.tagActions, "openSingleTagModal").mockImplementation(() => undefined);
+    const editTagsSpy = vi.spyOn((view as any).modules.tagActions, "editTagsForNote").mockImplementation(() => undefined);
+    const editPropertiesSpy = vi.spyOn((view as any).modules.bulkPropertyActions, "editPropertiesForNote").mockImplementation(() => undefined);
     const deleteSpy = vi.spyOn((view as any).modules.fileActions, "deleteCardFile").mockResolvedValue(undefined);
     const copyTitleSpy = vi.spyOn((view as any).modules.fileActions, "copyCardTitle").mockResolvedValue(undefined);
     const copyContentSpy = vi.spyOn((view as any).modules.fileActions, "copyCardContent").mockResolvedValue(undefined);
@@ -162,8 +163,8 @@ describe("card context menu contract", () => {
     await (view as any).modules.cardMenu.routeAction("make-copy", file.path);
     await (view as any).modules.cardMenu.routeAction("move", file.path);
     await (view as any).modules.cardMenu.routeAction("rename", file.path);
-    await (view as any).modules.cardMenu.routeAction("add-tag", file.path);
-    await (view as any).modules.cardMenu.routeAction("remove-tag", file.path);
+    await (view as any).modules.cardMenu.routeAction("edit-tags", file.path);
+    await (view as any).modules.cardMenu.routeAction("edit-properties", file.path);
     await (view as any).modules
       .cardMenu.routeAction("delete", file.path);
     await (view as any).modules.cardMenu.routeAction("copy-title", file.path);
@@ -181,8 +182,8 @@ describe("card context menu contract", () => {
     expect(moveSpy).toHaveBeenCalledWith(file.path);
     expect(renameSpy).toHaveBeenCalledTimes(1);
     expect(renameSpy).toHaveBeenCalledWith(file.path);
-    expect(addTagSpy).toHaveBeenNthCalledWith(1, file.path, "add");
-    expect(addTagSpy).toHaveBeenNthCalledWith(2, file.path, "remove");
+    expect(editTagsSpy).toHaveBeenCalledExactlyOnceWith(file.path);
+    expect(editPropertiesSpy).toHaveBeenCalledExactlyOnceWith(file.path);
     expect(deleteSpy).toHaveBeenCalledTimes(1);
     expect(deleteSpy).toHaveBeenCalledWith(file.path);
     expect(copyTitleSpy).toHaveBeenCalledTimes(1);
@@ -268,8 +269,8 @@ describe("card context menu contract", () => {
       { kind: "item", title: "Copy content", icon: "clipboard-list" },
       { kind: "item", title: "Copy title & content", icon: "clipboard-plus" },
       { kind: "separator" },
-      { kind: "item", title: "Add tag...", icon: "card-workspace-tag-plus" },
-      { kind: "item", title: "Remove tag...", icon: "card-workspace-tag-minus" },
+      { kind: "item", title: "Add/remove tags...", icon: "tags" },
+      { kind: "item", title: "Add/remove properties...", icon: "list" },
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },

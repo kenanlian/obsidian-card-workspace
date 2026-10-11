@@ -14,11 +14,12 @@ export class BulkTagsModal extends BulkMetadataModal {
   protected override isSubmitDisabled(): boolean { return !this.valid(); }
   protected renderBody(): void {
     this.setTitle(this.strings.tagsTitle);
-    this.renderIntro();
+    this.renderIntro(this.strings.descendants);
     const changed = () => this.updateValidation(this.valid(), this.draft.addTags.length + this.draft.removeTags.length > 0);
-    this.renderPicker(this.strings.addTags, this.snapshot.tags, this.draft.addTags, normalizeTagForFrontmatter, true, changed);
-    this.renderPicker(this.strings.removeTags, this.snapshot.removeTags, this.draft.removeTags, normalizeTagForFrontmatter, false, changed);
-    this.contentEl.createEl("p", { text: this.strings.descendants });
+    const normalize = normalizeTagForFrontmatter;
+    this.renderPicker({ heading: this.strings.addTags, candidates: this.snapshot.tags, selected: this.draft.addTags, normalize, allowNew: true, onChange: changed, tone: "add" });
+    this.renderPicker({ heading: this.strings.removeTags, candidates: this.snapshot.removeTags, selected: this.draft.removeTags, normalize, allowNew: false, onChange: changed, tone: "remove" });
+    this.renderFeedback();
     changed();
   }
   protected handleSubmit(): Promise<boolean> { return this.onSubmit({ addTags: [...this.draft.addTags], removeTags: [...this.draft.removeTags] }); }

@@ -79,6 +79,23 @@ describe("unified bulk toolbar routes", () => {
     expect(frontmatter.get(second)).toEqual({ Status: "new" });
     expect([...bulk.selectedPaths]).toEqual([]);
   });
+  it("card menu opens the same editors for one note and leaves the bulk selection alone", async () => {
+    const { view, app, first, second, canvas, bulk } = setup();
+    vi.mocked(editTagsInFile).mockResolvedValueOnce({ ok: false, path: first.path, error: "denied" });
+    await (view as any).modules.cardMenu.routeAction("edit-tags", first.path);
+    expect(modals.tags?.options.targetCount).toBe(1);
+    expect(await modals.tags!.submit({ addTags: ["new"], removeTags: [] })).toBe(false);
+    expect(editTagsInFile).toHaveBeenCalledExactlyOnceWith(app, first, { addTags: ["new"], removeTags: [] });
+    expect([...bulk.selectedPaths]).toEqual([first.path, second.path, canvas.path]);
+    const frontmatter = { Status: "old" };
+    app.fileManager.processFrontMatter = vi.fn(async (_file, mutate) => mutate(frontmatter));
+    await (view as any).modules.cardMenu.routeAction("edit-properties", second.path);
+    expect(modals.properties?.options.targetCount).toBe(1);
+    expect(await modals.properties!.submit({ setProperties: [{ name: "Status", type: "text", value: "new" }], removeKeys: [] })).toBe(true);
+    expect(app.fileManager.processFrontMatter).toHaveBeenCalledExactlyOnceWith(second, expect.any(Function));
+    expect(frontmatter).toEqual({ Status: "new" });
+    expect([...bulk.selectedPaths]).toEqual([first.path, second.path, canvas.path]);
+  });
   it("does not open an editor without Markdown targets or outside bulk mode", () => {
     const { view, bulk, canvas } = setup();
     bulk.selectedPaths = new Set([canvas.path]);

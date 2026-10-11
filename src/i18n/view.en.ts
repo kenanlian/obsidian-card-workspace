@@ -18,7 +18,6 @@ export const viewStringsEn: ViewStrings = {
       renaming: "Renaming…",
     },
     move: {
-      chooseFolder: "Choose…",
       noSelectedNotes: "No selected notes are available to move.",
       allAlreadyInTargetFolder: "All selected notes are already in the target folder.",
       moved: (count: number) => `Moved ${count} note${count === 1 ? "" : "s"}.`,
@@ -34,55 +33,16 @@ export const viewStringsEn: ViewStrings = {
       failureMessage: (count: number) => `Failed to delete ${count} note${count === 1 ? "" : "s"}.`,
       partialMessage: (success: number, failed: number) => `Deleted ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
     },
-    tagInput: {
-      addTitle: "Add tag",
-      removeTitle: "Remove tag",
-      renameTitle: "Rename tag",
-      tagLabel: "Tag",
-      renameNewTagLabel: "New tag name",
-      tagPlaceholder: "tag/sub-tag",
+    tagRename: {
+      title: "Rename tag",
+      summary: (tag: string) => `Rename #${tag} and its child tags across the vault`,
+      mergeHint: "Picking an existing tag merges the two. You'll confirm the impact before anything changes.",
+      newTagLabel: "New tag name",
+      placeholder: "tag/sub-tag",
       invalidTag: "Enter a valid tag.",
       cancel: "Cancel",
-      add: "Add tag",
-      adding: "Adding…",
-      remove: "Remove tag",
-      removing: "Removing…",
       rename: "Rename",
       renaming: "Renaming…",
-    },
-    singleTagActions: {
-      added: (tag: string, basename: string) => `Added #${tag} to "${basename}".`,
-      removed: (tag: string, basename: string) => `Removed #${tag} from "${basename}".`,
-      absent: (tag: string, basename: string) => `#${tag} was not present on "${basename}".`,
-      failedToAdd: (reason: string) => `Failed to add tag: ${reason}`,
-      failedToRemove: (reason: string) => `Failed to remove tag: ${reason}`,
-    },
-    singleRemoveTag: {
-      modalTitle: "Remove tag",
-      noRemovableTags: "This note does not contain any removable tags.",
-    },
-    bulkAddTag: {
-      noSelectedNotes: "No selected Markdown notes are available to tag.",
-      added: (count: number, tag: string) => `Added #${tag} to ${count} note${count === 1 ? "" : "s"}.`,
-      failed: (count: number, tag: string) => `Failed to add #${tag} to ${count} note${count === 1 ? "" : "s"}.`,
-      partial: (success: number, failed: number, tag: string) =>
-        `Added #${tag} to ${success} note${success === 1 ? "" : "s"}; ${failed} failed.`,
-    },
-    bulkRemoveTag: {
-      noSelectedNotes: "No selected Markdown notes are available to untag.",
-      noRemovableTags: "The selected Markdown notes do not contain any removable tags.",
-      modalTitle: "Remove tags",
-      removeSelectedTags: "Remove selected tags",
-      removingSelectedTags: "Removing selected tags…",
-      selectedTagCount: (count: number) => `Selected ${count} tag${count === 1 ? "" : "s"}.`,
-      removed: (removed: number, tagCount: number) =>
-        `Removed ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${removed} note${removed === 1 ? "" : "s"}.`,
-      noop: (noop: number, tagCount: number) =>
-        `No selected notes contained the ${tagCount} chosen tag${tagCount === 1 ? "" : "s"} (${noop} note${noop === 1 ? "" : "s"} unchanged).`,
-      failed: (failed: number, tagCount: number) =>
-        `Failed to remove ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${failed} note${failed === 1 ? "" : "s"}.`,
-      partial: (removed: number, noop: number, failed: number, tagCount: number) =>
-        `Removed ${tagCount} tag${tagCount === 1 ? "" : "s"} from ${removed} note${removed === 1 ? "" : "s"}; ${noop} unchanged; ${failed} failed.`,
     },
     tagManage: {
       tagNotFound: (tag: string) =>
@@ -212,8 +172,8 @@ export const viewStringsEn: ViewStrings = {
       openInNewWindow: "Open in new window",
       makeCopy: "Make a copy",
       moveFileTo: "Move file to...",
-      addTag: "Add tag...",
-      removeTag: "Remove tag...",
+      editTags: "Add/remove tags...",
+      editProperties: "Add/remove properties...",
       copyTitle: "Copy title",
       copyContent: "Copy content",
       copyTitleAndContent: "Copy title & content",

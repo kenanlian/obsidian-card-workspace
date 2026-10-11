@@ -2,11 +2,7 @@ import { Menu, type TFile } from "obsidian";
 
 import type { OpenDestination } from "../../settings";
 import { getMenuDom, type MenuDomLike } from "../menu-dom";
-import type { TagMutationMode } from "../modals/TagInputModal";
 import type { ViewContext } from "../view-context";
-
-const TAG_ADD_ICON = "card-workspace-tag-plus";
-const TAG_REMOVE_ICON = "card-workspace-tag-minus";
 
 export type CardMenuAction =
   | OpenDestination
@@ -14,8 +10,8 @@ export type CardMenuAction =
   | "move"
   | "rename"
   | "delete"
-  | "add-tag"
-  | "remove-tag"
+  | "edit-tags"
+  | "edit-properties"
   | "copy-title"
   | "copy-content"
   | "copy-title-and-content";
@@ -34,7 +30,8 @@ export interface CardContextMenuDeps {
   moveCardNote: (notePath: string) => void;
   renameCardFile: (notePath: string) => void;
   deleteCardFile: (notePath: string) => Promise<void>;
-  openSingleTagModal: (notePath: string, mode: TagMutationMode) => void;
+  openTagsEditor: (notePath: string) => void;
+  openPropertiesEditor: (notePath: string) => void;
   openCardWithDestination: (notePath: string, destination: OpenDestination) => void;
 }
 
@@ -176,8 +173,8 @@ export class CardContextMenu {
 
       menu.addSeparator();
 
-      addAction(strings.addTag, TAG_ADD_ICON, "add-tag");
-      addAction(strings.removeTag, TAG_REMOVE_ICON, "remove-tag");
+      addAction(strings.editTags, "tags", "edit-tags");
+      addAction(strings.editProperties, "list", "edit-properties");
     }
 
     menu.addSeparator();
@@ -206,11 +203,11 @@ export class CardContextMenu {
       case "rename":
         this.deps.renameCardFile(notePath);
         return;
-      case "add-tag":
-        this.deps.openSingleTagModal(notePath, "add");
+      case "edit-tags":
+        this.deps.openTagsEditor(notePath);
         return;
-      case "remove-tag":
-        this.deps.openSingleTagModal(notePath, "remove");
+      case "edit-properties":
+        this.deps.openPropertiesEditor(notePath);
         return;
       case "delete":
         await this.deps.deleteCardFile(notePath);

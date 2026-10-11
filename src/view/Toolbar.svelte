@@ -48,7 +48,7 @@
   }
 
   const BULK_EDIT_TAGS_ICON = "tags";
-  const BULK_EDIT_PROPERTIES_ICON = "list-filter";
+  const BULK_EDIT_PROPERTIES_ICON = "list";
 
   interface ToolbarProps {
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;

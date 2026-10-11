@@ -21,7 +21,6 @@ export interface ViewStrings {
     renaming: string;
   };
   move: {
-    chooseFolder: string;
     noSelectedNotes: string;
     allAlreadyInTargetFolder: string;
     moved: (count: number) => string;
@@ -67,50 +66,16 @@ export interface ViewStrings {
     failedToTrashSources: (count: number) => string;
     trashedSourcesPartial: (success: number, failed: number) => string;
   };
-  tagInput: {
-    addTitle: string;
-    removeTitle: string;
-    renameTitle: string;
-    tagLabel: string;
-    renameNewTagLabel: string;
-    tagPlaceholder: string;
+  tagRename: {
+    title: string;
+    summary: (tag: string) => string;
+    mergeHint: string;
+    newTagLabel: string;
+    placeholder: string;
     invalidTag: string;
     cancel: string;
-    add: string;
-    adding: string;
-    remove: string;
-    removing: string;
     rename: string;
     renaming: string;
-  };
-  singleTagActions: {
-    added: (tag: string, basename: string) => string;
-    removed: (tag: string, basename: string) => string;
-    absent: (tag: string, basename: string) => string;
-    failedToAdd: (reason: string) => string;
-    failedToRemove: (reason: string) => string;
-  };
-  singleRemoveTag: {
-    modalTitle: string;
-    noRemovableTags: string;
-  };
-  bulkAddTag: {
-    noSelectedNotes: string;
-    added: (count: number, tag: string) => string;
-    failed: (count: number, tag: string) => string;
-    partial: (success: number, failed: number, tag: string) => string;
-  };
-  bulkRemoveTag: {
-    noSelectedNotes: string;
-    noRemovableTags: string;
-    modalTitle: string;
-    removeSelectedTags: string;
-    removingSelectedTags: string;
-    selectedTagCount: (count: number) => string;
-    removed: (removed: number, tagCount: number) => string;
-    noop: (noop: number, tagCount: number) => string;
-    failed: (failed: number, tagCount: number) => string;
-    partial: (removed: number, noop: number, failed: number, tagCount: number) => string;
   };
   tagManage: {
     tagNotFound: (tag: string) => string;
@@ -179,8 +144,8 @@ export interface ViewStrings {
     openInNewWindow: string;
     makeCopy: string;
     moveFileTo: string;
-    addTag: string;
-    removeTag: string;
+    editTags: string;
+    editProperties: string;
     copyTitle: string;
     copyContent: string;
     copyTitleAndContent: string;

@@ -51,12 +51,6 @@ import { resolveSettingsUpdateIntent } from "./view/update-intent";
 import { activateDeferredView } from "./view/deferred-view-activation";
 import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
-const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
-const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
-const TABLER_ICON_SCALE = 4.1666666667;
-const BULK_ADD_TAG_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${TABLER_ICON_SCALE})"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M21.002 13c0 -.617 -.235 -1.233 -.706 -1.704l-7.71 -7.71c-.375 -.375 -.884 -.586 -1.414 -.586h-5.172c-1.657 0 -3 1.343 -3 3v5.172c0 .53 .211 1.039 .586 1.414l7.71 7.71c.471 .47 1.087 .706 1.704 .706" /><path d="M16 19h6" /><path d="M19 16v6" /></g>`;
-const BULK_REMOVE_TAG_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${TABLER_ICON_SCALE})"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M18.898 16.102l.699 -.699l.699 -.699c.941 -.941 .941 -2.467 0 -3.408l-7.71 -7.71c-.375 -.375 -.884 -.586 -1.414 -.586h-5.172c-1.657 0 -3 1.343 -3 3v5.172c0 .53 .211 1.039 .586 1.414l7.71 7.71c.471 .47 1.087 .706 1.704 .706" /><path d="M16 19h6" /></g>`;
-
 function normalizeFolderScopePath(path: string): string { return path === "/" ? "" : path; }
 const NEW_NOTE_TAGS_FRONTMATTER = "---\ntags:\n---\n\n";
 
@@ -223,8 +217,6 @@ export default class CardWorkspacePlugin extends Plugin {
 
   private registerCustomIcons(): void {
     addIcon(CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG);
-    addIcon(BULK_ADD_TAG_ICON, BULK_ADD_TAG_ICON_SVG);
-    addIcon(BULK_REMOVE_TAG_ICON, BULK_REMOVE_TAG_ICON_SVG);
     addIcon(PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG);
     addIcon(BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG);
     addIcon(BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG);

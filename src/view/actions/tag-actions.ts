@@ -1,16 +1,7 @@
 import type { TFile } from "obsidian";
 
 import type { UiStrings } from "../../i18n";
-import { collectAllTags, getFileTags } from "../metadata-utils";
-import { BulkRemoveTagsModal, type BulkRemovableTagOption } from "../modals/BulkRemoveTagsModal";
-import { TagInputModal, type TagMutationMode } from "../modals/TagInputModal";
-import {
-  addTagToFile,
-  editTagsInFile,
-  batchRemoveTagsFromFiles,
-  normalizeTagForFrontmatter,
-  removeTagFromFile,
-} from "../note-tag-ops";
+import { editTagsInFile, normalizeTagForFrontmatter } from "../note-tag-ops";
 import { copyPathToClipboard } from "../note-ops";
 import { normalizeTagPath } from "../tag-tree";
 import { buildBulkMetadataSnapshot } from "../bulk-metadata";
@@ -117,114 +108,28 @@ export class TagActions {
     await this.applyTagFilter(nextTags);
   }
 
-  // -- Single-note tag edits ---------------------------------------------
+  // -- Tag edits -----------------------------------------------------------
 
-  openSingleTagModal(notePath: string, mode: TagMutationMode): void {
+  /** Card menu entry: the bulk tag dialog scoped to one note. */
+  editTagsForNote(notePath: string): void {
     const file = this.deps.resolveLiveMarkdownFile(notePath);
-    if (!file) {
-      return;
-    }
-    if (mode === "add") {
-      const modal = new TagInputModal(
-        this.deps.context.getApp(),
-        { mode, strings: this.strings.view.tagInput },
-        async (tag) => this.submitSingleTagAction(notePath, mode, tag),
-      );
-      modal.open();
-      return;
-    }
-    const tagOptions = this.buildBulkRemovableTagOptions([file]);
-    if (tagOptions.length === 0) {
-      this.deps.context.notify(this.strings.view.singleRemoveTag.noRemovableTags);
-      return;
-    }
-    const modal = new BulkRemoveTagsModal(
-      this.deps.context.getApp(),
-      {
-        titleText: this.strings.view.bulkRemoveTag.modalTitle,
-        emptyMessage: this.strings.view.singleRemoveTag.noRemovableTags,
-        selectionSummary: (count) => this.strings.view.bulkRemoveTag.selectedTagCount(count),
-        cancelText: this.strings.view.tagInput.cancel,
-        submitText: this.strings.view.bulkRemoveTag.removeSelectedTags,
-        submittingText: this.strings.view.bulkRemoveTag.removingSelectedTags,
-        tagOptions,
-      },
-      async (tags) => this.executeSingleRemoveTags(notePath, tags),
-    );
-    modal.open();
+    if (file) this.openTagsEditor([file]);
   }
-
-  async submitSingleTagAction(notePath: string, mode: TagMutationMode, tag: string): Promise<boolean> {
-    const file = this.deps.resolveLiveMarkdownFile(notePath);
-    if (!file) {
-      return true;
-    }
-    const result = mode === "add"
-      ? await addTagToFile(this.deps.context.getApp(), file, tag)
-      : await removeTagFromFile(this.deps.context.getApp(), file, tag);
-    if (!result.ok) {
-      const message = mode === "add"
-        ? this.strings.view.singleTagActions.failedToAdd(result.error)
-        : this.strings.view.singleTagActions.failedToRemove(result.error);
-      this.deps.context.notify(message);
-      return false;
-    }
-    if (mode === "remove" && "changed" in result && !result.changed) {
-      this.deps.context.notify(this.strings.view.singleTagActions.absent(tag, file.basename));
-      return false;
-    }
-    if (mode === "remove" && "changed" in result && result.changed) {
-      await this.clearStaleTagFilterIfNeeded([tag]);
-    }
-    const message = mode === "add"
-      ? this.strings.view.singleTagActions.added(tag, file.basename)
-      : this.strings.view.singleTagActions.removed(tag, file.basename);
-    this.deps.context.notify(message);
-    return true;
-  }
-
-  async executeSingleRemoveTags(notePath: string, tags: string[]): Promise<boolean> {
-    const file = this.deps.resolveLiveMarkdownFile(notePath);
-    if (!file) {
-      return true;
-    }
-    const collapsedTags = this.collapseBulkRemovableTags(tags);
-    if (collapsedTags.length === 0) {
-      this.deps.context.notify(this.strings.view.singleRemoveTag.noRemovableTags);
-      return false;
-    }
-    if (collapsedTags.length === 1) {
-      return this.submitSingleTagAction(notePath, "remove", collapsedTags[0]);
-    }
-    const summary = await batchRemoveTagsFromFiles(this.deps.context.getApp(), [file], collapsedTags);
-    if (summary.changed.length > 0) {
-      await this.clearStaleTagFilterIfNeeded(collapsedTags);
-    }
-    const strings = this.strings.view.bulkRemoveTag;
-    if (summary.failed.length === 0 && summary.noop.length === 0) {
-      this.deps.context.notify(strings.removed(summary.changed.length, collapsedTags.length));
-      return true;
-    }
-    if (summary.changed.length === 0 && summary.failed.length === 0) {
-      this.deps.context.notify(strings.noop(summary.noop.length, collapsedTags.length));
-      return false;
-    }
-    this.deps.context.notify(strings.failed(summary.failed.length, collapsedTags.length));
-    return false;
-  }
-
-  // -- Bulk tag edits ------------------------------------------------------
 
   bulkEditTagsSelected(): void {
     if (!this.deps.isBulkMode()) return;
     const files = this.deps.resolveSelectedLiveMarkdownFilesInOrder().filesInOrder;
     if (!files.length) return;
+    this.openTagsEditor(files, (failedPaths) => this.deps.reconcileSelectionToOrderedPaths(failedPaths));
+  }
+
+  private openTagsEditor(files: TFile[], onApplied?: (failedPaths: string[]) => void): void {
     const app = this.deps.context.getApp();
     const strings = this.strings.view.bulkMetadata;
     const session = new BulkMetadataSession(files);
     const modal = new BulkTagsModal(app, { strings, snapshot: buildBulkMetadataSnapshot(app, files), targetCount: files.length }, async (draft) => {
       const result = await session.apply(app, (file) => editTagsInFile(app, file, draft));
-      this.deps.reconcileSelectionToOrderedPaths(result.failed.map((file) => file.path));
+      onApplied?.(result.failed.map((file) => file.path));
       if (result.changed > 0 && draft.removeTags.length) await this.clearStaleTagFilterIfNeeded(draft.removeTags);
       const message = strings.result(result.changed, result.noop, result.failed.length) + (result.failed.length ? ` ${strings.retry}\n${result.errors.join("\n")}` : "");
       modal.showResult(message, result.failed.length);
@@ -234,29 +139,7 @@ export class TagActions {
     modal.open();
   }
 
-  // -- Tag option helpers ---------------------------------------------------
-
-  buildBulkRemovableTagOptions(filesInOrder: TFile[]): BulkRemovableTagOption[] {
-    const app = this.deps.context.getApp();
-    const displayTags = collectAllTags(app, filesInOrder);
-    const displayByNormalizedTag = new Map<string, string>();
-    for (const displayTag of displayTags) {
-      displayByNormalizedTag.set(normalizeTagForFrontmatter(displayTag), displayTag);
-    }
-    const countsByNormalizedTag = new Map<string, number>();
-    for (const file of filesInOrder) {
-      const fileTags = new Set(getFileTags(app, file));
-      for (const tag of fileTags) {
-        countsByNormalizedTag.set(tag, (countsByNormalizedTag.get(tag) ?? 0) + 1);
-      }
-    }
-    return Array.from(countsByNormalizedTag.entries())
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([normalizedTag, selectedFileCount]) => ({
-        normalizedTag,
-        label: `${displayByNormalizedTag.get(normalizedTag) ?? normalizedTag} (${selectedFileCount})`,
-      }));
-  }
+  // -- Tag helpers ----------------------------------------------------------
 
   collapseBulkRemovableTags(tags: string[]): string[] {
     const normalizedTags = Array.from(new Set(

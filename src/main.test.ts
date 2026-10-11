@@ -2716,7 +2716,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
-    expect(addIcon).toHaveBeenCalledTimes(6);
+    expect(addIcon).toHaveBeenCalledTimes(4);
     expect(addIcon).toHaveBeenNthCalledWith(
       1,
       "card-workspace",
@@ -2724,26 +2724,16 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     );
     expect(addIcon).toHaveBeenNthCalledWith(
       2,
-      "card-workspace-tag-plus",
-      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
-    );
-    expect(addIcon).toHaveBeenNthCalledWith(
-      3,
-      "card-workspace-tag-minus",
-      expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
-    );
-    expect(addIcon).toHaveBeenNthCalledWith(
-      4,
       "card-workspace-folder",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      5,
+      3,
       "card-workspace-package-import",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );
     expect(addIcon).toHaveBeenNthCalledWith(
-      6,
+      4,
       "card-workspace-package-export",
       expect.stringContaining("fill=\"none\" stroke=\"currentColor\""),
     );

@@ -4,7 +4,6 @@ export interface LinksStrings {
   referenceCount: (count: number) => string;
   paragraphCount: (count: number) => string;
   remainingReferences: (count: number) => string;
-  sourceReferences: (count: number) => string;
   showReferences: string;
   collapseReferences: string;
   openTarget: string;
@@ -25,7 +24,6 @@ export const linksStrings: Record<UiLanguage, LinksStrings> = {
     referenceCount: (count) => `${count} ${count === 1 ? "reference" : "references"}`,
     paragraphCount: (count) => `${count} references in this paragraph`,
     remainingReferences: (count) => `Show ${count} more ${count === 1 ? "context" : "contexts"}`,
-    sourceReferences: (count) => `${count} references in the current note`,
     showReferences: "Show reference contexts",
     collapseReferences: "Collapse references",
     openTarget: "Open target location",
@@ -44,7 +42,6 @@ export const linksStrings: Record<UiLanguage, LinksStrings> = {
     referenceCount: (count) => `引用 ${count} 次`,
     paragraphCount: (count) => `本段 ${count} 次`,
     remainingReferences: (count) => `查看其余 ${count} 个引用片段`,
-    sourceReferences: (count) => `当前笔记中的 ${count} 处引用`,
     showReferences: "查看引用上下文",
     collapseReferences: "收起引用",
     openTarget: "打开目标位置",

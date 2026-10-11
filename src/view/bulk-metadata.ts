@@ -120,6 +120,19 @@ export function buildBulkMetadataSnapshot(app: App, targets: readonly TFile[]): 
   return { tags: [...tagMap.values()], properties: [...propertyMap.values()], removeTags: [...removeTagMap.values()], removeProperties: [...removePropertyMap.values()], values, incomplete };
 }
 
+/** Every vault tag with the number of notes carrying it; cache-only. */
+export function buildVaultTagCandidates(app: App): MetadataCandidate[] {
+  const tags = new Map<string, MetadataCandidate>();
+  for (const file of app.vault.getMarkdownFiles()) {
+    for (const tag of getTagEntriesFromCache(app.metadataCache.getFileCache(file))) {
+      const entry = tags.get(tag.normalized) ?? { name: tag.display, count: 0 };
+      entry.count = (entry.count ?? 0) + 1;
+      tags.set(tag.normalized, entry);
+    }
+  }
+  return [...tags.values()];
+}
+
 export function filterMetadataCandidates(candidates: readonly MetadataCandidate[], query: string): MetadataCandidate[] {
   const needle = query.trim().toLowerCase();
   return candidates.filter((item) => item.name.toLowerCase().includes(needle)).sort((a, b) =>

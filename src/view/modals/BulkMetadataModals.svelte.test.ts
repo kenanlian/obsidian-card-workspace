@@ -81,6 +81,16 @@ describe("combined tag modal", () => {
     button("Apply").click(); expect(submit).toHaveBeenCalledTimes(2); resolve(true);
     await vi.waitFor(() => expect(modal.contentEl.isConnected).toBe(false));
   });
+  it("explains removal order in the intro and reports results next to the footer", () => {
+    const modal = new BulkTagsModal({} as never, { strings: bulkMetadataStrings.en, snapshot, targetCount: 2 }, vi.fn(async () => true));
+    modal.open();
+    expect(modal.contentEl.firstElementChild?.querySelector(".fce-modal-intro__description")?.textContent).toBe(bulkMetadataStrings.en.descendants);
+    expect(modal.contentEl.lastElementChild?.classList.contains("fce-bulk-metadata-feedback")).toBe(true);
+    modal.showResult("1 failed\nnote.md: boom", 1);
+    expect(document.querySelector(".fce-bulk-metadata-result.is-error")?.textContent).toBe("1 failed\nnote.md: boom");
+    expect(document.querySelector(".fce-modal-intro__summary")?.textContent).toBe("Applies to 1 Markdown note");
+    modal.close();
+  });
 });
 
 describe("bulk property modal", () => {
@@ -130,5 +140,11 @@ describe("bulk property modal", () => {
     expect(button("Apply").disabled).toBe(false);
     button("Apply").click();
     await vi.waitFor(() => expect(submit).toHaveBeenCalledWith({ setProperties: [], removeKeys: ["Status"] }));
+  });
+  it("keeps the add-property row after every draft row", () => {
+    const { modal } = openProperties(); button("Add property").click();
+    const items = Array.from(document.querySelectorAll(".fce-property-edit-row, .fce-property-add-row"));
+    expect(items.map((el) => el.classList.contains("fce-property-add-row"))).toEqual([false, false, true]);
+    modal.close();
   });
 });
