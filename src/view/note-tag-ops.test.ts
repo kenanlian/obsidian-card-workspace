@@ -34,6 +34,7 @@ vi.mock("obsidian", () => {
 import { TFile } from "obsidian";
 import {
   addTagToFile,
+  editTagsInFile,
   batchAddTagToFiles,
   batchRemoveTagFromFiles,
   batchRenameTagInFiles,
@@ -514,7 +515,8 @@ describe("batch tag operations", () => {
     expect(frontmatterByPath.get(third.path)).toEqual({});
     expect(frontmatterByPath.get(fourth.path)).toEqual({ tags: ["keep"] });
     expect(contentByPath.get(first.path)).toBe("");
-    expect(contentByPath.get(second.path)).toBe("#project");
+    // Body removal can succeed before a frontmatter failure.
+    expect(contentByPath.get(second.path)).toBe("");
     expect(contentByPath.get(third.path)).toBe("");
     expect(contentByPath.get(fourth.path)).toBe("#keep");
   });
@@ -687,5 +689,37 @@ describe("batchRenameTagInFiles", () => {
     expect(summary.noop[0]?.file).toBe(second);
     expect(summary.failed).toHaveLength(1);
     expect(summary.failed[0]).toMatchObject({ ok: false, path: third.path });
+  });
+});
+
+describe("combined bulk tag drafts", () => {
+  it("removes body tags before changing frontmatter length, then adds new descendants", async () => {
+    const file = createFile("combined.md");
+    let content = "---\ntags: [project/old]\n---\nBody #project/old and #keep";
+    const cached = createTagCacheEntry(content, "#project/old");
+    const frontmatter: Record<string, unknown> = { tags: ["project/old", "keep"] };
+    const order: string[] = [];
+    const processFrontMatter = vi.fn(async (_file, mutate) => {
+      order.push("frontmatter"); mutate(frontmatter);
+      content = content.replace(/---[\s\S]*?---/, `---\ntags: ${JSON.stringify(frontmatter.tags)}\nextra: longer frontmatter\n---`);
+    });
+    const app = { fileManager: { processFrontMatter }, vault: { process: async (_file: TFile, mutate: (text: string) => string) => { order.push("body"); content = mutate(content); } }, metadataCache: { getFileCache: () => ({ tags: [cached] }) } };
+    expect(await editTagsInFile(app as never, file, { removeTags: ["project", "project/old"], addTags: ["#Project/new", "project/new"] })).toMatchObject({ ok: true, changed: true });
+    expect(order).toEqual(["body", "frontmatter"]);
+    expect(processFrontMatter).toHaveBeenCalledTimes(1);
+    expect(frontmatter.tags).toEqual(["keep", "project/new"]);
+    expect(content).toContain("Body  and #keep");
+  });
+  it("blocks exact add/remove conflicts and protects stale ranges now inside code", async () => {
+    const file = createFile("protected.md");
+    const text = "````\n```\n#work\n````\n    #work\n`` #work ` nested ``\n#work";
+    let content = text;
+    const tags = [0, 1, 2, 3].map((occurrence) => createTagCacheEntry(text, "#work", occurrence));
+    const processFrontMatter = vi.fn(async (_file, mutate) => mutate({}));
+    const app = { fileManager: { processFrontMatter }, vault: { process: async (_file: TFile, mutate: (text: string) => string) => { content = mutate(content); } }, metadataCache: { getFileCache: () => ({ tags }) } };
+    expect(await editTagsInFile(app as never, file, { addTags: ["WORK"], removeTags: ["work"] })).toMatchObject({ ok: false });
+    expect(processFrontMatter).not.toHaveBeenCalled();
+    expect(await editTagsInFile(app as never, file, { addTags: [], removeTags: ["work"] })).toMatchObject({ ok: true, changed: true });
+    expect(content).toBe(text.slice(0, -5));
   });
 });

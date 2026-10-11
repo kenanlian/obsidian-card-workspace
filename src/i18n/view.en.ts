@@ -1,6 +1,8 @@
+import { bulkMetadataStrings } from "./bulkMetadata";
 import type { ViewStrings } from "./view";
 
 export const viewStringsEn: ViewStrings = {
+    bulkMetadata: bulkMetadataStrings.en,
     displayName: "Card Workspace",
     emptyFolder: "No supported files found in this folder.",
     emptySearchCurrentFolder: (query: string) => `No results for “${query}” in current folder.`,

@@ -45,6 +45,8 @@ export abstract class FormModal extends CompatConfirmationModal {
     return this.submitting;
   }
 
+  protected onSubmittingChanged(_submitting: boolean): void {}
+
   protected isSubmitDisabled(): boolean {
     return false;
   }
@@ -99,6 +101,7 @@ export abstract class FormModal extends CompatConfirmationModal {
     }
 
     this.submitting = true;
+    this.onSubmittingChanged(true);
     const revision = this.lifecycleRevision;
     this.refreshFooter();
     try {
@@ -108,6 +111,7 @@ export abstract class FormModal extends CompatConfirmationModal {
     } finally {
       if (revision === this.lifecycleRevision) {
         this.submitting = false;
+        this.onSubmittingChanged(false);
         if (this.contentEl.isConnected) {
           this.refreshFooter();
         }

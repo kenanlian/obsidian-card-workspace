@@ -281,13 +281,13 @@ export class FolderCardView extends ItemView implements HoverParent {
       return;
     }
 
-    if (action === "bulk-add-tag-selected") {
-      this.modules.tagActions.bulkAddTagSelected();
+    if (action === "bulk-edit-tags-selected") {
+      this.modules.tagActions.bulkEditTagsSelected();
       return;
     }
 
-    if (action === "bulk-remove-tag-selected") {
-      this.modules.tagActions.bulkRemoveTagSelected();
+    if (action === "bulk-edit-properties-selected") {
+      this.modules.bulkPropertyActions.bulkEditPropertiesSelected();
       return;
     }
 

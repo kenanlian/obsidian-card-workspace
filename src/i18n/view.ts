@@ -2,7 +2,10 @@ import type { UiLanguage } from "./types";
 import { viewStringsEn } from "./view.en";
 import { viewStringsZh } from "./view.zh";
 
+import type { BulkMetadataStrings } from "./bulkMetadata";
+
 export interface ViewStrings {
+  bulkMetadata: BulkMetadataStrings;
   displayName: string;
   emptyFolder: string;
   emptySearchCurrentFolder: (query: string) => string;

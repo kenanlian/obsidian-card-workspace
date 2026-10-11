@@ -167,8 +167,8 @@ export class BulkController {
       canBulkSelectAll: this.deps.context.store.getVisibleCards().length > 0,
       canBulkClearSelection: hasSelection,
       canBulkMoveSelected: hasSelection,
-      canBulkAddTagSelected: selectedMarkdownCount > 0,
-      canBulkRemoveTagSelected: selectedMarkdownCount > 0,
+      canBulkEditTagsSelected: selectedMarkdownCount > 0,
+      canBulkEditPropertiesSelected: selectedMarkdownCount > 0,
       canBulkDeleteSelected: hasSelection,
       canBulkMergeSelected: selectedCount > 1 && selectedMarkdownCount === selectedCount,
     };

@@ -1,6 +1,8 @@
+import { bulkMetadataStrings } from "./bulkMetadata";
 import type { ViewStrings } from "./view";
 
 export const viewStringsZh: ViewStrings = {
+    bulkMetadata: bulkMetadataStrings.zh,
     displayName: "Card Workspace",
     emptyFolder: "此文件夹中没有找到受支持的文件。",
     emptySearchCurrentFolder: (query: string) => `在当前文件夹中没有找到“${query}”的结果。`,

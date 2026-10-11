@@ -47,8 +47,8 @@
     source: SearchQueryResetSource;
   }
 
-  const BULK_ADD_TAG_ICON = "card-workspace-tag-plus";
-  const BULK_REMOVE_TAG_ICON = "card-workspace-tag-minus";
+  const BULK_EDIT_TAGS_ICON = "tags";
+  const BULK_EDIT_PROPERTIES_ICON = "list-filter";
 
   interface ToolbarProps {
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
@@ -138,7 +138,7 @@
   };
   const DEFAULT_SEARCH: PanelSearchState = { history: [], query: "", committedQuery: "", status: "idle", focusToken: 0 };
   const DEFAULT_PROJECTION: PanelProjectionState = { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {}, activeFilterTags: [], pinnedPaths: [], group: DEFAULT_GROUP_SPEC, availableGroupDimensions: [], groupSegmentCount: 0, metadataStatus: "ready" };
-  const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkAddTagSelected: false, canBulkRemoveTagSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
+  const DEFAULT_BULK: BulkRuntimePanelState = { bulkMode: false, selectedPaths: [], selectedCount: 0, bulkAnchorPath: null, canBulkSelectAll: false, canBulkClearSelection: false, canBulkMoveSelected: false, canBulkEditTagsSelected: false, canBulkEditPropertiesSelected: false, canBulkDeleteSelected: false, canBulkMergeSelected: false };
 
   let {
     attachSearchHistorySuggest,
@@ -185,8 +185,8 @@
   const canBulkSelectAll = $derived(bulk.canBulkSelectAll);
   const canBulkClearSelection = $derived(bulk.canBulkClearSelection);
   const canBulkMoveSelected = $derived(bulk.canBulkMoveSelected);
-  const canBulkAddTagSelected = $derived(bulk.canBulkAddTagSelected);
-  const canBulkRemoveTagSelected = $derived(bulk.canBulkRemoveTagSelected);
+  const canBulkEditTagsSelected = $derived(bulk.canBulkEditTagsSelected);
+  const canBulkEditPropertiesSelected = $derived(bulk.canBulkEditPropertiesSelected);
   const canBulkDeleteSelected = $derived(bulk.canBulkDeleteSelected);
   const canBulkMergeSelected = $derived(bulk.canBulkMergeSelected);
 
@@ -307,8 +307,8 @@
     { id: "bulk-select-all", label: toolbarStrings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
     { id: "bulk-clear-selection", label: toolbarStrings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
     { type: "separator" },
-    { id: "bulk-add-tag-selected", label: toolbarStrings.bulkActionLabels.addTagSelected, icon: BULK_ADD_TAG_ICON, disabled: !canBulkAddTagSelected },
-    { id: "bulk-remove-tag-selected", label: toolbarStrings.bulkActionLabels.removeTagSelected, icon: BULK_REMOVE_TAG_ICON, disabled: !canBulkRemoveTagSelected },
+    { id: "bulk-edit-tags-selected", label: toolbarStrings.bulkActionLabels.editTagsSelected, icon: BULK_EDIT_TAGS_ICON, disabled: !canBulkEditTagsSelected },
+    { id: "bulk-edit-properties-selected", label: toolbarStrings.bulkActionLabels.editPropertiesSelected, icon: BULK_EDIT_PROPERTIES_ICON, disabled: !canBulkEditPropertiesSelected },
     { type: "separator" },
     { id: "bulk-move-selected", label: toolbarStrings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },
     { id: "bulk-add-to-box", label: boxStrings.bulkAddToBox, icon: BULK_ADD_TO_BOX_ICON, disabled: !canBulkClearSelection },

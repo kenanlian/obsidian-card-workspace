@@ -6,13 +6,16 @@ import { BulkRemoveTagsModal, type BulkRemovableTagOption } from "../modals/Bulk
 import { TagInputModal, type TagMutationMode } from "../modals/TagInputModal";
 import {
   addTagToFile,
-  batchAddTagToFiles,
+  editTagsInFile,
   batchRemoveTagsFromFiles,
   normalizeTagForFrontmatter,
   removeTagFromFile,
 } from "../note-tag-ops";
 import { copyPathToClipboard } from "../note-ops";
 import { normalizeTagPath } from "../tag-tree";
+import { buildBulkMetadataSnapshot } from "../bulk-metadata";
+import { BulkTagsModal } from "../modals/BulkTagsModal";
+import { BulkMetadataSession } from "./bulk-metadata-session";
 import type { ViewContext } from "../view-context";
 
 export interface TagActionsDeps {
@@ -36,8 +39,7 @@ export interface TagActionsDeps {
 }
 
 /**
- * Tag filter, single-note tag edits, and bulk tag add/remove — moved verbatim
- * behind injected controller and file-action seams.
+ * Tag filters and single/bulk tag edits behind injected view and file seams.
  */
 export class TagActions {
   constructor(private readonly deps: TagActionsDeps) {}
@@ -213,132 +215,23 @@ export class TagActions {
 
   // -- Bulk tag edits ------------------------------------------------------
 
-  bulkAddTagSelected(): void {
-    if (!this.deps.isBulkMode() || this.deps.getSelectedPaths().size === 0) {
-      return;
-    }
-    this.openBulkTagModal("add");
-  }
-
-  bulkRemoveTagSelected(): void {
-    if (!this.deps.isBulkMode() || this.deps.getSelectedPaths().size === 0) {
-      return;
-    }
-    this.openBulkTagModal("remove");
-  }
-
-  openBulkTagModal(mode: TagMutationMode): void {
-    if (mode === "add") {
-      const modal = new TagInputModal(
-        this.deps.context.getApp(),
-        { mode, strings: this.strings.view.tagInput },
-        async (tag) => this.executeBulkTagAction(tag),
-      );
-      modal.open();
-      return;
-    }
-    const { selectedPathsInOrder, filesInOrder } = this.deps.resolveSelectedLiveMarkdownFilesInOrder();
-    const livePathsInOrder = filesInOrder.map((file) => file.path);
-    if (filesInOrder.length === 0) {
-      this.deps.reconcileSelectionToOrderedPaths([]);
-      this.deps.context.notify(this.strings.view.bulkRemoveTag.noSelectedNotes);
-      return;
-    }
-    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
-      this.deps.reconcileSelectionToOrderedPaths(livePathsInOrder);
-    }
-    const tagOptions = this.buildBulkRemovableTagOptions(filesInOrder);
-    if (tagOptions.length === 0) {
-      this.deps.context.notify(this.strings.view.bulkRemoveTag.noRemovableTags);
-      return;
-    }
-    const modal = new BulkRemoveTagsModal(
-      this.deps.context.getApp(),
-      {
-        titleText: this.strings.view.bulkRemoveTag.modalTitle,
-        emptyMessage: this.strings.view.bulkRemoveTag.noRemovableTags,
-        selectionSummary: (count) => this.strings.view.bulkRemoveTag.selectedTagCount(count),
-        cancelText: this.strings.view.tagInput.cancel,
-        submitText: this.strings.view.bulkRemoveTag.removeSelectedTags,
-        submittingText: this.strings.view.bulkRemoveTag.removingSelectedTags,
-        tagOptions,
-      },
-      async (tags) => this.executeBulkRemoveTags(tags),
-    );
+  bulkEditTagsSelected(): void {
+    if (!this.deps.isBulkMode()) return;
+    const files = this.deps.resolveSelectedLiveMarkdownFilesInOrder().filesInOrder;
+    if (!files.length) return;
+    const app = this.deps.context.getApp();
+    const strings = this.strings.view.bulkMetadata;
+    const session = new BulkMetadataSession(files);
+    const modal = new BulkTagsModal(app, { strings, snapshot: buildBulkMetadataSnapshot(app, files), targetCount: files.length }, async (draft) => {
+      const result = await session.apply(app, (file) => editTagsInFile(app, file, draft));
+      this.deps.reconcileSelectionToOrderedPaths(result.failed.map((file) => file.path));
+      if (result.changed > 0 && draft.removeTags.length) await this.clearStaleTagFilterIfNeeded(draft.removeTags);
+      const message = strings.result(result.changed, result.noop, result.failed.length) + (result.failed.length ? ` ${strings.retry}\n${result.errors.join("\n")}` : "");
+      modal.showResult(message, result.failed.length);
+      this.deps.context.notify(message);
+      return !result.failed.length;
+    });
     modal.open();
-  }
-
-  async executeBulkTagAction(tag: string): Promise<boolean> {
-    const strings = this.strings.view.bulkAddTag;
-    const { selectedPathsInOrder, filesInOrder } = this.deps.resolveSelectedLiveMarkdownFilesInOrder();
-    const livePathsInOrder = filesInOrder.map((file) => file.path);
-    if (filesInOrder.length === 0) {
-      this.deps.reconcileSelectionToOrderedPaths([]);
-      this.deps.context.notify(strings.noSelectedNotes);
-      return true;
-    }
-    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
-      this.deps.reconcileSelectionToOrderedPaths(livePathsInOrder);
-    }
-    const summary = await batchAddTagToFiles(this.deps.context.getApp(), filesInOrder, tag);
-    const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
-    const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
-    this.deps.reconcileSelectionToOrderedPaths(failedPathsInOrder);
-    const succeededCount = summary.succeeded.length;
-    const failedCount = summary.failed.length;
-    if (failedCount === 0) {
-      this.deps.context.notify(strings.added(succeededCount, tag));
-      return true;
-    }
-    if (succeededCount === 0) {
-      this.deps.context.notify(strings.failed(failedCount, tag));
-      return false;
-    }
-    this.deps.context.notify(strings.partial(succeededCount, failedCount, tag));
-    return true;
-  }
-
-  async executeBulkRemoveTags(tags: string[]): Promise<boolean> {
-    const strings = this.strings.view.bulkRemoveTag;
-    const { selectedPathsInOrder, filesInOrder } = this.deps.resolveSelectedLiveMarkdownFilesInOrder();
-    const livePathsInOrder = filesInOrder.map((file) => file.path);
-    if (filesInOrder.length === 0) {
-      this.deps.reconcileSelectionToOrderedPaths([]);
-      this.deps.context.notify(strings.noSelectedNotes);
-      return true;
-    }
-    if (livePathsInOrder.length !== selectedPathsInOrder.length) {
-      this.deps.reconcileSelectionToOrderedPaths(livePathsInOrder);
-    }
-    const collapsedTags = this.collapseBulkRemovableTags(tags);
-    if (collapsedTags.length === 0) {
-      this.deps.context.notify(strings.noRemovableTags);
-      return false;
-    }
-    const summary = await batchRemoveTagsFromFiles(this.deps.context.getApp(), filesInOrder, collapsedTags);
-    const failedPathSet = new Set(summary.failed.map((failed) => failed.path));
-    const failedPathsInOrder = livePathsInOrder.filter((path) => failedPathSet.has(path));
-    this.deps.reconcileSelectionToOrderedPaths(failedPathsInOrder);
-    const removedCount = summary.changed.length;
-    const noopCount = summary.noop.length;
-    const failedCount = summary.failed.length;
-    if (removedCount > 0) {
-      await this.clearStaleTagFilterIfNeeded(collapsedTags);
-    }
-    if (failedCount === 0 && noopCount === 0) {
-      this.deps.context.notify(strings.removed(removedCount, collapsedTags.length));
-      return true;
-    }
-    if (removedCount === 0 && failedCount === 0) {
-      this.deps.context.notify(strings.noop(noopCount, collapsedTags.length));
-      return false;
-    }
-    if (removedCount === 0 && noopCount === 0) {
-      this.deps.context.notify(strings.failed(failedCount, collapsedTags.length));
-      return false;
-    }
-    this.deps.context.notify(strings.partial(removedCount, noopCount, failedCount, collapsedTags.length));
-    return true;
   }
 
   // -- Tag option helpers ---------------------------------------------------

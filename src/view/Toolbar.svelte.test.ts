@@ -182,8 +182,8 @@ function mountToolbar(
         canBulkSelectAll: values.canBulkSelectAll ?? false,
         canBulkClearSelection: values.canBulkClearSelection ?? false,
         canBulkMoveSelected: values.canBulkMoveSelected ?? false,
-        canBulkAddTagSelected: values.canBulkAddTagSelected ?? false,
-        canBulkRemoveTagSelected: values.canBulkRemoveTagSelected ?? false,
+        canBulkEditTagsSelected: values.canBulkEditTagsSelected ?? false,
+        canBulkEditPropertiesSelected: values.canBulkEditPropertiesSelected ?? false,
         canBulkDeleteSelected: values.canBulkDeleteSelected ?? false,
         canBulkMergeSelected: values.canBulkMergeSelected ?? false,
       },
@@ -879,8 +879,8 @@ describe("Toolbar.svelte", () => {
       canBulkSelectAll: true,
       canBulkClearSelection: true,
       canBulkMoveSelected: true,
-      canBulkAddTagSelected: true,
-      canBulkRemoveTagSelected: false,
+      canBulkEditTagsSelected: true,
+      canBulkEditPropertiesSelected: false,
       canBulkDeleteSelected: true,
       canBulkMergeSelected: true,
     }, captured.callbacks);
@@ -890,6 +890,14 @@ describe("Toolbar.svelte", () => {
     const bulkActions = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-actions");
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
     expect(bulkButtons).toHaveLength(8);
+    const tagsButton = bulkButtons.find((button) => button.getAttribute("data-tooltip") === "Bulk tag operations");
+    const propertiesButton = bulkButtons.find((button) => button.getAttribute("data-tooltip") === "Bulk property operations");
+    expect(tagsButton?.disabled).toBe(false);
+    expect(propertiesButton?.disabled).toBe(true);
+    tagsButton?.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "bulk-edit-tags-selected" }]);
+    captured.toolbarActionEvents.length = 0;
+
 
     const destructiveButtons = bulkButtons.filter((button) => button.classList.contains("is-destructive"));
     expect(destructiveButtons).toHaveLength(1);
@@ -917,8 +925,8 @@ describe("Toolbar.svelte", () => {
       canBulkSelectAll: true,
       canBulkClearSelection: true,
       canBulkMoveSelected: true,
-      canBulkAddTagSelected: true,
-      canBulkRemoveTagSelected: false,
+      canBulkEditTagsSelected: true,
+      canBulkEditPropertiesSelected: false,
       canBulkDeleteSelected: true,
       canBulkMergeSelected: true,
     }, captured.callbacks);

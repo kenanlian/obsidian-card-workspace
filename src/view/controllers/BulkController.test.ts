@@ -108,7 +108,7 @@ describe("BulkController", () => {
     expect(controller.buildPanelState()).toMatchObject({
       bulkMode: true,
       selectedCount: 3,
-      canBulkAddTagSelected: true,
+      canBulkEditTagsSelected: true,
       canBulkMergeSelected: false,
     });
   });

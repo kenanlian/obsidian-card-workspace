@@ -59,6 +59,10 @@ export interface FileTagEntry {
  */
 export function getFileTagEntries(app: App, file: TFile): FileTagEntry[] {
   const cache = app.metadataCache.getFileCache(file);
+  return getTagEntriesFromCache(cache);
+}
+
+export function getTagEntriesFromCache(cache: CachedMetadata | null): FileTagEntry[] {
   const rawTags = cache ? getAllTags(cache) : null;
   if (!rawTags || rawTags.length === 0) {
     return [];

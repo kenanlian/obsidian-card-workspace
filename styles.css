@@ -2080,3 +2080,21 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 
 .fce-navigation-visibility__actions .setting-item-info { display: none; }
 .fce-navigation-visibility__actions .setting-item-control { flex-wrap: wrap; }
+
+.fce-bulk-metadata-modal .fce-metadata-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 8px;
+}
+.fce-bulk-metadata-modal .fce-property-edit-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fce-bulk-metadata-modal .fce-property-value-editor {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.fce-bulk-metadata-modal .fce-property-value-editor .setting-item {
+  border: 0;
+}

@@ -3,13 +3,9 @@ import {
   mockState,
   resetFolderCardViewHarness,
   createViewWithFile,
-  createCardRecord,
-  createMarkdownFile,
-  createNonMarkdownFile,
   clickLatestModalButton,
   setLatestModalTextInput,
   setLatestModalCheckbox,
-  getLatestModalButton,
   buildNoteOpsMock,
   registerFolderCardView,
   buildNoteTagOpsMock,
@@ -27,7 +23,6 @@ import { createBoxScope } from "../scope";
 import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
 import {
   addTagToFile,
-  batchAddTagToFiles,
   batchRemoveTagsFromFiles,
   removeTagFromFile,
 } from "../note-tag-ops";
@@ -145,197 +140,7 @@ describe("TagActions single and bulk card workflows", () => {
     });
   });
 
-  it("bulk add tag reconciles selection to failed markdown paths only", async () => {
-    const { view, app } = createViewWithFile("notes/primary.md");
-    const first = createMarkdownFile("notes/first.md");
-    const second = createMarkdownFile("notes/second.md");
-    const third = createNonMarkdownFile("notes/third.canvas", "canvas");
-    const visibleCards = [
-      createCardRecord(first),
-      createCardRecord(second),
-      createCardRecord(third, "canvas"),
-    ];
-    const fileMap = new Map([
-      [first.path, first],
-      [second.path, second],
-      [third.path, third],
-    ]);
 
-    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
-    (view as any).visibleCards = visibleCards;
-    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).modules.bulk.bulkMode = true;
-    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path, third.path]);
-    (view as any).modules.bulk.anchorPath = first.path;
-
-    vi.mocked(batchAddTagToFiles).mockResolvedValueOnce({
-      succeeded: [{ ok: true, file: first }],
-      failed: [{ ok: false, error: "denied", path: second.path }],
-    } as any);
-
-    await (view as any).onOpen();
-
-    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-    toolbarActionHandler({ detail: { action: "bulk-add-tag-selected" } });
-    expect(mockState.modalInstances.at(-1)?.title).toBe("Add tag");
-    setLatestModalTextInput(0, "#Project");
-    clickLatestModalButton("Add tag");
-
-    await vi.waitFor(() => {
-      expect(batchAddTagToFiles).toHaveBeenCalledWith(app, [first, second], "project");
-    });
-
-    expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([second.path]);
-    expect((view as any).modules.bulk.anchorPath).toBe(second.path);
-    expect(mockState.noticeMessages).toContain("Added #project to 1 note; 1 failed.");
-  });
-
-  it("bulk remove opens a checkbox modal, collapses redundant tags, and clears a stale filter", async () => {
-    const { view, app, plugin } = createViewWithFile("notes/primary.md");
-    const first = createMarkdownFile("notes/first.md");
-    const second = createMarkdownFile("notes/second.md");
-    const third = createNonMarkdownFile("notes/third.canvas", "canvas");
-    const visibleCards = [
-      createCardRecord(first),
-      createCardRecord(second),
-      createCardRecord(third, "canvas"),
-    ];
-    const fileMap = new Map([
-      [first.path, first],
-      [second.path, second],
-      [third.path, third],
-    ]);
-    const tagsByPath = new Map<string, string[]>([
-      [first.path, ["#project/alpha", "#other"]],
-      [second.path, ["#project", "#project/alpha"]],
-      [third.path, ["#canvas-only"]],
-    ]);
-
-    plugin.getSettings = vi.fn(() => ({
-      includeSubfolders: true,
-      sort: { field: "mtime", direction: "desc" },
-      visiblePropertyKeys: [],
-      expandedPropertyKeys: [],
-      filter: { tags: ["project/alpha"], properties: [] },
-      defaultView: "cards",
-      lastFolderPath: null,
-      lastViewMode: "folder",
-      pinnedPaths: [],
-      previewLines: 5,
-    }));
-    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
-    app.metadataCache.getFileCache = vi.fn((targetFile: InstanceType<typeof mockState.MockTFile>) => {
-      const tags = tagsByPath.get(targetFile.path) ?? [];
-      return tags.length > 0 ? { tags: tags.map((tag) => ({ tag })) } : null;
-    });
-    (view as any).baseCards = visibleCards;
-    (view as any).visibleCards = visibleCards;
-    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).modules.bulk.bulkMode = true;
-    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path, third.path]);
-    (view as any).modules.bulk.anchorPath = first.path;
-
-    vi.mocked(batchRemoveTagsFromFiles).mockImplementationOnce(async () => {
-      tagsByPath.set(first.path, []);
-      tagsByPath.set(second.path, []);
-      return {
-        changed: [
-          { ok: true, changed: true, file: first },
-          { ok: true, changed: true, file: second },
-        ],
-        noop: [],
-        failed: [],
-      } as any;
-    });
-
-    await (view as any).onOpen();
-
-    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-    toolbarActionHandler({ detail: { action: "bulk-remove-tag-selected" } });
-
-    const modal = mockState.modalInstances.at(-1);
-    expect(modal?.title).toBe("Remove tags");
-    expect(modal?.textInputs).toEqual([]);
-    expect(modal?.checkboxes.map((checkbox) => checkbox.label)).toEqual([
-      "other (1)",
-      "project (1)",
-      "project/alpha (2)",
-    ]);
-    expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(true);
-
-    setLatestModalCheckbox("project (1)", true);
-    expect(getLatestModalButton("Remove selected tags")?.disabled).toBe(false);
-    setLatestModalCheckbox("project/alpha (2)", true);
-    setLatestModalCheckbox("other (1)", true);
-    clickLatestModalButton("Remove selected tags");
-
-    await vi.waitFor(() => {
-      expect(batchRemoveTagsFromFiles).toHaveBeenCalledWith(app, [first, second], ["other", "project"]);
-    });
-
-    expect(plugin.saveSettings).toHaveBeenCalledWith({
-      filter: {
-        tags: [],
-      },
-    });
-    expect(Array.from((view as any).modules.bulk.selectedPaths)).toEqual([]);
-    expect((view as any).modules.bulk.anchorPath).toBeNull();
-    await vi.waitFor(() => {
-      expect(mockState.noticeMessages).toContain("Removed 2 tags from 2 notes.");
-    });
-  });
-
-  it("bulk remove reports noop-only results without claiming success", async () => {
-    const { view, app, plugin } = createViewWithFile("notes/primary.md");
-    const first = createMarkdownFile("notes/first.md");
-    const second = createMarkdownFile("notes/second.md");
-    const visibleCards = [
-      createCardRecord(first),
-      createCardRecord(second),
-    ];
-    const fileMap = new Map([
-      [first.path, first],
-      [second.path, second],
-    ]);
-
-    app.vault.getAbstractFileByPath = vi.fn((requestedPath: string) => fileMap.get(requestedPath) ?? null);
-    app.metadataCache.getFileCache = vi.fn(() => ({
-      tags: [{ tag: "#project" }],
-    }));
-    (view as any).baseCards = visibleCards;
-    (view as any).visibleCards = visibleCards;
-    (view as any).modules.projection.deriveVisibleCards = vi.fn(() => visibleCards);
-    (view as any).modules.bulk.bulkMode = true;
-    (view as any).modules.bulk.selectedPaths = new Set([first.path, second.path]);
-    (view as any).modules.bulk.anchorPath = first.path;
-
-    vi.mocked(batchRemoveTagsFromFiles).mockResolvedValueOnce({
-      changed: [],
-      noop: [
-        { ok: true, changed: false, file: first },
-        { ok: true, changed: false, file: second },
-      ],
-      failed: [],
-    } as any);
-
-    await (view as any).onOpen();
-
-    const toolbarActionHandler = mockState.panelEventHandlers["toolbar-action"];
-    toolbarActionHandler({ detail: { action: "bulk-remove-tag-selected" } });
-    setLatestModalCheckbox("project (2)", true);
-    clickLatestModalButton("Remove selected tags");
-
-    await vi.waitFor(() => {
-      expect(batchRemoveTagsFromFiles).toHaveBeenCalledWith(app, [first, second], ["project"]);
-    });
-
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-    await vi.waitFor(() => {
-      expect(mockState.noticeMessages).toContain(
-        "No selected notes contained the 1 chosen tag (2 notes unchanged).",
-      );
-    });
-  });
 });
 
 describe("TagActions filter-change capability gating", () => {

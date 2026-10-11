@@ -9,6 +9,7 @@ import { FolderActions } from "./actions/folder-actions";
 import { LinksActions } from "./actions/links-actions";
 import { MergeActions } from "./actions/merge-actions";
 import { createPropertyActions, type PropertyActions } from "./actions/property-actions";
+import { BulkPropertyActions } from "./actions/bulk-property-actions";
 import { TagActions } from "./actions/tag-actions";
 import { TagManagementActions } from "./actions/tag-manage-actions";
 import { BulkController } from "./controllers/BulkController";
@@ -78,6 +79,7 @@ export interface ViewModules {
   folderActions: FolderActions;
   boxActions: BoxActions;
   tagActions: TagActions;
+  bulkPropertyActions: BulkPropertyActions;
   tagManageActions: TagManagementActions;
   favoriteActions: FavoriteActions;
   linksActions: LinksActions;
@@ -261,6 +263,12 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       navLayout.returnToCardsViewIfSinglePane();
     },
   });
+  const bulkPropertyActions = new BulkPropertyActions({
+    context,
+    isBulkMode: () => bulk.isBulkMode(),
+    resolveSelectedLiveMarkdownFilesInOrder: () => bulk.resolveSelectedLiveMarkdownFilesInOrder(),
+    reconcileSelectionToOrderedPaths: (paths) => bulk.reconcileSelectionToOrderedPaths(paths),
+  });
   const tagActions: TagActions = new TagActions({
     context,
     resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
@@ -433,6 +441,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     folderActions,
     boxActions,
     tagActions,
+    bulkPropertyActions,
     tagManageActions,
     favoriteActions,
     linksActions,

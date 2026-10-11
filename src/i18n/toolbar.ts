@@ -44,8 +44,8 @@ export interface ToolbarStrings {
     selectAll: string;
     clearSelection: string;
     moveSelected: string;
-    addTagSelected: string;
-    removeTagSelected: string;
+    editTagsSelected: string;
+    editPropertiesSelected: string;
     deleteSelected: string;
     mergeSelected: string;
   };
@@ -166,8 +166,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       selectAll: "Select all",
       clearSelection: "Clear selection",
       moveSelected: "Move selected",
-      addTagSelected: "Add tag to selected",
-      removeTagSelected: "Remove tag from selected",
+      editTagsSelected: "Bulk tag operations",
+      editPropertiesSelected: "Bulk property operations",
       deleteSelected: "Delete selected",
       mergeSelected: "Merge selected",
     },
@@ -288,8 +288,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       selectAll: "全选",
       clearSelection: "清除选择",
       moveSelected: "移动所选",
-      addTagSelected: "为所选添加标签",
-      removeTagSelected: "移除所选标签",
+      editTagsSelected: "批量标签操作",
+      editPropertiesSelected: "批量属性操作",
       deleteSelected: "删除所选",
       mergeSelected: "合并所选",
     },

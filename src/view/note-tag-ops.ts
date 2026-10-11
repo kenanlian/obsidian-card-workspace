@@ -1,4 +1,5 @@
 import type { App, TFile } from "obsidian";
+import type { BulkTagsDraft } from "./bulk-metadata";
 import { isMarkdownFile, type BatchOpSummary, type NoteOpFailure, type NoteOpResult } from "./note-ops";
 import { normalizeTagPath, renameTagPathPrefix } from "./tag-tree";
 
@@ -320,29 +321,28 @@ async function removeTagsFromFile(
   file: TFile,
   tags: string[],
 ): Promise<TagMutationResult> {
-  const normalizedTags = normalizeTagRemovalTargets(tags);
-  if (!isMarkdownFile(file) || normalizedTags.length === 0) {
-    return { ok: false, error: "Tag operations require a Markdown note and a non-empty tag.", path: file.path };
-  }
+  return editTagsInFile(app, file, { addTags: [], removeTags: tags });
+}
 
-  try {
-    let frontmatterChanged = false;
-    const fileManager = app.fileManager as unknown as FrontmatterProcessLike;
-    await fileManager.processFrontMatter(file, (frontmatter) => {
-      const currentTags = readNormalizedFrontmatterTags(frontmatter);
-      const nextTags = removeNormalizedFrontmatterTagsHierarchy(currentTags, normalizedTags);
-      frontmatterChanged = !areTagListsEqual(currentTags, nextTags);
-      writeNormalizedFrontmatterTags(frontmatter, nextTags);
-    });
-    const inlineChanged = await removeInlineTagRangesFromFile(app, file, normalizedTags);
-    return {
-      ok: true,
-      changed: frontmatterChanged || inlineChanged,
-      file,
-    };
-  } catch (err) {
-    return { ok: false, error: String(err), path: file.path };
+export async function editTagsInFile(app: App, file: TFile, draft: BulkTagsDraft): Promise<TagMutationResult> {
+  const addTags = Array.from(new Set(draft.addTags.map(normalizeTagForFrontmatter)));
+  const removeTags = normalizeTagRemovalTargets(draft.removeTags);
+  if (!isMarkdownFile(file) || addTags.some((tag) => !tag) || addTags.some((tag) => draft.removeTags.map(normalizeTagForFrontmatter).includes(tag)) || addTags.length + removeTags.length === 0) {
+    return { ok: false, path: file.path, error: "Invalid tag operation." };
   }
+  try {
+    // Cached body positions must be consumed before frontmatter changes its length.
+    const inlineChanged = await removeInlineTagRangesFromFile(app, file, removeTags);
+    let frontmatterChanged = false;
+    await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      const current = readNormalizedFrontmatterTags(frontmatter);
+      const next = removeNormalizedFrontmatterTagsHierarchy(current, removeTags);
+      for (const tag of addTags) if (!next.includes(tag)) next.push(tag);
+      frontmatterChanged = !areTagListsEqual(current, next);
+      if (frontmatterChanged) writeNormalizedFrontmatterTags(frontmatter, next);
+    });
+    return { ok: true, changed: inlineChanged || frontmatterChanged, file };
+  } catch (error) { return { ok: false, path: file.path, error: String(error) }; }
 }
 
 function writeNormalizedFrontmatterTags(frontmatter: Record<string, unknown>, normalizedTags: string[]): void {
@@ -361,37 +361,33 @@ function writeNormalizedFrontmatterTags(frontmatter: Record<string, unknown>, no
 
 function findFencedCodeBlockRanges(content: string): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = [];
-  const lines = content.split("\n");
-  let currentStart = -1;
-  let fenceMarker = "";
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const trimmed = line.trimStart();
-    if (currentStart === -1) {
-      if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
-        currentStart = lines.slice(0, index).join("\n").length + (index > 0 ? 1 : 0);
-        fenceMarker = trimmed.startsWith("```") ? "```" : "~~~";
-      }
-    } else {
-      if (trimmed.startsWith(fenceMarker)) {
-        const end = lines.slice(0, index + 1).join("\n").length;
-        ranges.push({ start: currentStart, end });
-        currentStart = -1;
-        fenceMarker = "";
-      }
-    }
+  let offset = 0;
+  let open: { start: number; marker: string; length: number } | null = null;
+  for (const line of content.split("\n")) {
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!open && fence) open = { start: offset, marker: fence[1][0], length: fence[1].length };
+    else if (open && fence && fence[1][0] === open.marker && fence[1].length >= open.length && !fence[2].trim()) {
+      ranges.push({ start: open.start, end: offset + line.length });
+      open = null;
+    } else if (!open && /^(?: {4}|\t)/.test(line)) ranges.push({ start: offset, end: offset + line.length });
+    offset += line.length + 1;
   }
-
+  if (open) ranges.push({ start: open.start, end: content.length });
   return ranges;
 }
 
 function findInlineCodeRanges(content: string): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = [];
-  const regex = /`[^`]+`/g;
+  const runs = /`+/g;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(content)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length });
+  while ((match = runs.exec(content)) !== null) {
+    const start = match.index;
+    const width = match[0].length;
+    let end: RegExpExecArray | null;
+    while ((end = runs.exec(content)) !== null) {
+      if (end[0].length === width) { ranges.push({ start, end: runs.lastIndex }); break; }
+    }
+    if (!end) runs.lastIndex = start + width;
   }
   return ranges;
 }
@@ -472,19 +468,22 @@ async function removeInlineTagRangesFromFile(app: App, file: TFile, normalizedTa
     return false;
   }
 
-  const content = await app.vault.cachedRead(file);
-  const exclusionRanges = computeExclusionRanges(content);
-  const safeRanges = ranges.filter((range) => !isRangeInExclusionRanges(range, exclusionRanges));
-  if (safeRanges.length === 0) {
-    return false;
-  }
-
   let changed = false;
   await app.vault.process(file, (content) => {
+    const exclusionRanges = computeExclusionRanges(content);
+    const frontmatterEnd = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?:\r?\n|$)/.exec(content)?.[0].length ?? 0;
+    const seen = new Set<string>();
+    const safeRanges = ranges.filter((range) => {
+      const identity = `${range.start}:${range.end}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return range.start >= frontmatterEnd && !isRangeInExclusionRanges(range, exclusionRanges);
+    });
     let nextContent = content;
     for (const range of safeRanges) {
       const currentSlice = nextContent.slice(range.start, range.end);
-      if (!matchesAnyTagRemovalTarget(currentSlice, normalizedTags)) {
+      if (!/^#[^\s#]+$/.test(currentSlice) || !matchesAnyTagRemovalTarget(currentSlice, normalizedTags)
+        || /[\p{L}\p{N}_/-]/u.test(nextContent[range.end] ?? "")) {
         continue;
       }
 

@@ -160,8 +160,8 @@ export interface BulkRuntimePanelState {
   canBulkSelectAll: boolean;
   canBulkClearSelection: boolean;
   canBulkMoveSelected: boolean;
-  canBulkAddTagSelected: boolean;
-  canBulkRemoveTagSelected: boolean;
+  canBulkEditTagsSelected: boolean;
+  canBulkEditPropertiesSelected: boolean;
   canBulkDeleteSelected: boolean;
   canBulkMergeSelected: boolean;
 }

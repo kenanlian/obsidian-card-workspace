@@ -18,6 +18,7 @@ import type { LocalizedOption, UiLanguage, UiStrings } from "./types";
 import { viewStrings } from "./view";
 
 export type { UiLanguage, LocalizedOption, UiStrings } from "./types";
+export type { BulkMetadataStrings } from "./bulkMetadata";
 export type { AppStrings } from "./app";
 export type { BoxStrings } from "./box";
 export type { CardItemStrings } from "./cardItem";
