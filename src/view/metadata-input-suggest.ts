@@ -7,7 +7,7 @@ export function onPlainEnter(input: HTMLInputElement, isSuggestOpen: () => boole
   input.addEventListener("compositionstart", () => { composing = true; });
   input.addEventListener("compositionend", () => { composing = false; });
   input.addEventListener("keydown", (event) => {
-    if (!composing && event.key === "Enter" && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented && !isSuggestOpen()) {
+    if (!composing && event.key === "Enter" && !event.isComposing && !event.defaultPrevented && !isSuggestOpen()) {
       event.preventDefault();
       event.stopPropagation();
       handler();
@@ -26,7 +26,7 @@ export function attachMetadataInputSuggest(app: App, input: HTMLInputElement, ca
       this.limit = 20;
       this.scope = new Scope(this.scope);
       this.scope.register(null, null, (event) => {
-        if (composing || event.isComposing || event.keyCode === 229) return true;
+        if (composing || event.isComposing || event.key === "Process") return true;
         return undefined;
       });
     }
@@ -37,7 +37,7 @@ export function attachMetadataInputSuggest(app: App, input: HTMLInputElement, ca
       el.setText(value.count === undefined ? value.name : `${value.name} (${value.count})`);
     }
     selectSuggestion(value: MetadataCandidate, event: MouseEvent | KeyboardEvent): void {
-      if (disposed || composing || input.disabled || (event instanceof KeyboardEvent && (event.isComposing || event.keyCode === 229))) return;
+      if (disposed || composing || input.disabled || ("key" in event && (event.isComposing || event.key === "Process"))) return;
       this.close();
       onSelect(value.name);
       if (input.isConnected) { input.focus(); this.close(); }

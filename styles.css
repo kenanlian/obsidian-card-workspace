@@ -810,15 +810,15 @@
 }
 
 /* Native page previews opened by cards are attached to the window body. */
-.popover.hover-popover.fce-card-hover-preview {
+body .popover.hover-popover.fce-card-hover-preview {
   --popover-width: min(var(--fce-hover-preview-width, 600px), max(0px, calc(100vw - 32px)));
   --popover-height: min(var(--fce-hover-preview-height, 400px), max(0px, calc(100vh - 32px)));
-  width: var(--popover-width) !important;
-  height: var(--popover-height) !important;
+  width: var(--popover-width);
+  height: var(--popover-height);
   min-width: 0;
   min-height: 0;
-  max-width: max(0px, calc(100vw - 32px)) !important;
-  max-height: max(0px, calc(100vh - 32px)) !important;
+  max-width: max(0px, calc(100vw - 32px));
+  max-height: max(0px, calc(100vh - 32px));
 }
 
 /* Native suggestions attach to the document body, outside .folder-card-view.
@@ -2216,7 +2216,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 
 .fce-metadata-chips.mod-remove .fce-metadata-chip__label {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   text-decoration-color: rgba(var(--color-red-rgb), 0.5);
 }
 

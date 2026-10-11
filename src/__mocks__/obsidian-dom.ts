@@ -5,11 +5,12 @@ export function installObsidianDomHelpers(doc: Document): void {
   Object.defineProperty(nodePrototype, "createEl", {
     configurable: true,
     value: function <K extends keyof HTMLElementTagNameMap>(
-      this: Node, tag: K, options: { cls?: string; text?: string } = {},
+      this: Node, tag: K, options: { cls?: string; text?: string; attr?: Record<string, string> } = {},
     ): HTMLElementTagNameMap[K] {
       const el = (this.ownerDocument ?? doc).createElement(tag);
       if (options.cls) el.className = options.cls;
       if (options.text !== undefined) el.textContent = options.text;
+      for (const [name, value] of Object.entries(options.attr ?? {})) el.setAttribute(name, value);
       this.appendChild(el);
       return el;
     },

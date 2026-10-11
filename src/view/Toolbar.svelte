@@ -267,7 +267,7 @@
   }
 
   function handleSearchKeydown(event: KeyboardEvent): void {
-    if (event.isComposing || composing || event.keyCode === 229) return;
+    if (event.isComposing || composing || event.key === "Process") return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();

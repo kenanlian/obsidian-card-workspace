@@ -280,7 +280,8 @@ export function buildEnvironment(): SearchBenchmarkEnvironment {
     cpuModel: cpuInfos[0]?.model ?? "unknown",
     cpuCount: cpuInfos.length,
     totalMemoryBytes: totalmem(),
-    exposeGc: typeof (globalThis as { gc?: unknown }).gc === "function",
+    // This harness runs in Node, outside Obsidian and its window globals.
+    exposeGc: typeof global.gc === "function",
   };
 }
 

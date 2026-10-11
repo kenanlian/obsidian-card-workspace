@@ -32,7 +32,8 @@ function normalizeValueIdentity(raw: string): string | null {
   try {
     const tuple: unknown = JSON.parse(raw);
     if (!Array.isArray(tuple) || tuple.length !== 2) return null;
-    const [kind, value] = tuple;
+    const items: unknown[] = tuple;
+    const [kind, value] = items;
     if ((kind === "t" && typeof value === "string")
       || (kind === "n" && typeof value === "number" && Number.isFinite(value))
       || (kind === "b" && typeof value === "boolean")) return JSON.stringify(tuple);

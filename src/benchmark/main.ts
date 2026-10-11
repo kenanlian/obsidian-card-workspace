@@ -16,10 +16,15 @@ function formatMebibytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
 }
 
+// CLI progress belongs on stdout; this entry is never bundled into the plugin.
+function writeLine(message: string): void {
+  process.stdout.write(`${message}\n`);
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(BENCHMARK_CLI_USAGE);
+    writeLine(BENCHMARK_CLI_USAGE);
     return 0;
   }
 
@@ -34,7 +39,7 @@ async function main(): Promise<number> {
     throw error;
   }
 
-  console.log(
+  writeLine(
     `[benchmark:search] profile=${options.profile} seed=${options.seed ?? "profile-default"} fixtures generating...`,
   );
   const report = await runSearchBenchmark({
@@ -52,28 +57,28 @@ async function main(): Promise<number> {
     .join(" | ");
   const failedChecks = report.correctness.checks.filter((check) => !check.passed);
 
-  console.log(`[benchmark:search] documents=${report.index.documentCount} excluded-attachments=${report.fixtures.excludedAttachments}`);
-  console.log(`[benchmark:search] stages: ${stageLine}`);
-  console.log(
+  writeLine(`[benchmark:search] documents=${report.index.documentCount} excluded-attachments=${report.fixtures.excludedAttachments}`);
+  writeLine(`[benchmark:search] stages: ${stageLine}`);
+  writeLine(
     `[benchmark:search] max blocking slice=${report.blocking.maxSliceMs}ms | peak heap=${formatMebibytes(report.memory.peak.heapUsedBytes)} | snapshot (structured clone)=${formatMebibytes(report.index.snapshotStructuredCloneBytes)}`,
   );
   const threshold = report.blocking.threshold;
   if (threshold !== null) {
-    console.log(
+    writeLine(
       `[benchmark:search] slice gate: ${threshold.passed ? "PASS" : "FAIL"} | ingest ceiling=${threshold.ingestThresholdMs}ms (--max-slice-ms) | other build phase ceiling=${threshold.otherBuildPhaseCeilingMs}ms`,
     );
     for (const verdict of [threshold.ingest, ...threshold.otherBuildPhases]) {
-      console.log(
+      writeLine(
         `[benchmark:search]   ${verdict.passed ? "pass" : "FAIL"} ${verdict.id}: observed=${verdict.maxSliceMs ?? "<did not run>"}ms expected<=${verdict.ceilingMs}ms`,
       );
     }
-    console.log(
+    writeLine(
       `[benchmark:search]   not gated: global max slice (${report.blocking.maxSliceMs}ms) and ${threshold.excludedPhases.map((phase) => phase.id).join(", ")}`,
     );
   }
   // Written before the verdict on purpose: a run that trips the gate must stay
   // diagnosable from its report.
-  console.log(`[benchmark:search] report written to ${outputPath}`);
+  writeLine(`[benchmark:search] report written to ${outputPath}`);
 
   if (failedChecks.length > 0) {
     console.error(`[benchmark:search] correctness checks FAILED (${failedChecks.length}):`);
@@ -82,7 +87,7 @@ async function main(): Promise<number> {
     }
     return 1;
   }
-  console.log(`[benchmark:search] correctness: ${report.correctness.checks.length}/${report.correctness.checks.length} checks passed`);
+  writeLine(`[benchmark:search] correctness: ${report.correctness.checks.length}/${report.correctness.checks.length} checks passed`);
   return 0;
 }
 

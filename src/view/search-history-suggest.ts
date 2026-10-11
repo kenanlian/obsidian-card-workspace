@@ -65,7 +65,7 @@ export function attachSearchHistorySuggest(
       // row actions. IME keys must reach the input without choosing a history.
       this.scope = new Scope(this.scope);
       this.scope.register(null, null, (event) => {
-        if (composing || event.isComposing || event.keyCode === 229) return true;
+        if (composing || event.isComposing || event.key === "Process") return true;
         const target = event.target;
         if (target instanceof HTMLElement && list?.contains(target) && target.tagName === "BUTTON") {
           if (event.key === "Escape") {
@@ -104,29 +104,18 @@ export function attachSearchHistorySuggest(
       el.id = `${historyId}-${el.parentElement?.children.length ?? 0}`;
       el.setAttribute("role", "row");
       el.classList.add("mod-complex", "fce-search-history-row");
-      const content = input.ownerDocument.createElement("div");
-      content.className = "suggestion-content";
-      content.setAttribute("role", "gridcell");
-      el.appendChild(content);
+      const content = el.createEl("div", { cls: "suggestion-content", attr: { role: "gridcell" } });
       if (value.kind === "clear") {
         el.classList.add("fce-search-history-clear");
         content.textContent = options.strings.clearHistory;
         return;
       }
-      const title = input.ownerDocument.createElement("div");
-      title.className = "suggestion-title fce-search-suggestion";
-      title.textContent = value.query;
-      title.title = value.query;
-      content.appendChild(title);
-      const aux = input.ownerDocument.createElement("div");
-      aux.className = "suggestion-aux";
-      aux.setAttribute("role", "gridcell");
-      el.appendChild(aux);
-      const remove = input.ownerDocument.createElement("button");
-      remove.className = "clickable-icon fce-search-history-delete";
-      remove.type = "button";
-      remove.setAttribute("aria-label", options.strings.deleteHistory(value.query));
-      aux.appendChild(remove);
+      content.createEl("div", { cls: "suggestion-title fce-search-suggestion", text: value.query, attr: { title: value.query } });
+      const aux = el.createEl("div", { cls: "suggestion-aux", attr: { role: "gridcell" } });
+      const remove = aux.createEl("button", {
+        cls: "clickable-icon fce-search-history-delete",
+        attr: { type: "button", "aria-label": options.strings.deleteHistory(value.query) },
+      });
       setIcon(remove, "x");
       remove.addEventListener("mousedown", (event) => event.preventDefault());
       remove.addEventListener("click", (event) => {
@@ -147,7 +136,7 @@ export function attachSearchHistorySuggest(
     }
 
     selectSuggestion(value: HistorySuggestion, event: MouseEvent | KeyboardEvent): void {
-      if (disposed || composing || (event instanceof KeyboardEvent && (event.isComposing || event.keyCode === 229))) return;
+      if (disposed || composing || ("key" in event && (event.isComposing || event.key === "Process"))) return;
       this.close();
       options.onCommand(value.kind === "query" ? { command: "select", query: value.query } : { command: "clear" });
       input.focus();

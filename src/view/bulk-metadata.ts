@@ -101,7 +101,7 @@ export function buildBulkMetadataSnapshot(app: App, targets: readonly TFile[]): 
       }
     }
     const seen = new Set<string>();
-    for (const [raw, value] of Object.entries(cache.frontmatter ?? {})) {
+    for (const [raw, value] of Object.entries<unknown>(cache.frontmatter ?? {})) {
       const key = editablePropertyKey(raw);
       if (!key) continue;
       if (!propertyMap.has(key)) propertyMap.set(key, { name: raw.trim() });
