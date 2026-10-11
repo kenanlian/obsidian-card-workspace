@@ -49,6 +49,8 @@ function createPlugin(
       previewLines: 6,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
+      hoverPreviewWidth: 600,
+      hoverPreviewHeight: 400,
       showNavItemCounts: false,
       cardImageMode: "off",
       cardImageFit: "contain",
@@ -108,6 +110,8 @@ describe("CardWorkspaceSettingTab", () => {
       "Card images",
       "Image fit",
       "Show item counts in navigation",
+      "Card hover preview width",
+      "Card hover preview height",
     ]);
   });
 
@@ -175,6 +179,8 @@ describe("CardWorkspaceSettingTab", () => {
       options: { contain: "Show whole image", cover: "Crop to fill" },
     });
     expect(controlOf(appearanceRows[6])).toEqual({ type: "toggle", key: "showNavItemCounts" });
+    expect(controlOf(appearanceRows[7])).toEqual({ type: "slider", key: "hoverPreviewWidth", min: 320, max: 1600, step: 10 });
+    expect(controlOf(appearanceRows[8])).toEqual({ type: "slider", key: "hoverPreviewHeight", min: 200, max: 1200, step: 10 });
   });
 
   it("keeps descriptions on every row, including the Remember Cursor Position caveat", () => {
@@ -222,6 +228,8 @@ describe("CardWorkspaceSettingTab", () => {
       "卡片图片",
       "图片显示方式",
       "在导航栏显示条目计数",
+      "卡片悬浮预览宽度",
+      "卡片悬浮预览高度",
     ]);
     expect(rowsOf(appearance)[3]?.desc).toBe("搜索时最多显示多少个正文命中片段，每个片段占两行。");
     expect(controlOf(rowsOf(behavior)[0])).toMatchObject({
@@ -378,6 +386,24 @@ describe("CardWorkspaceSettingTab", () => {
     for (const value of ["4", "0", "", 1, null]) await tab.setControlValue("backlinkSnippetCount", value);
     expect(plugin.saveSettings.mock.calls).toEqual([
       [{ backlinkSnippetCount: 1 }], [{ backlinkSnippetCount: 2 }], [{ backlinkSnippetCount: 3 }], [{ backlinkSnippetCount: "all" }],
+    ]);
+  });
+
+  it.each([false, true])("saves hover dimensions through shared controls (1.13 API: %s)", async (native) => {
+    mockState.requireApiVersion.mockReturnValue(native);
+    const plugin = createPlugin(), tab = createTab(plugin);
+    expect(tab.getControlValue("hoverPreviewWidth")).toBe(600);
+    expect(tab.getControlValue("hoverPreviewHeight")).toBe(400);
+    tab.display();
+    const rows = settingsIn(tab.containerEl as unknown as MockEl);
+    await rows.find((row) => row.name === "Card hover preview width")!.sliders[0]!.slide(800);
+    await rows.find((row) => row.name === "Card hover preview height")!.sliders[0]!.slide(600);
+    for (const value of ["600", NaN, Infinity, 0, 190, 1601, 600.5]) {
+      await tab.setControlValue("hoverPreviewWidth", value);
+      await tab.setControlValue("hoverPreviewHeight", value);
+    }
+    expect(plugin.saveSettings.mock.calls).toEqual([
+      [{ hoverPreviewWidth: 800 }], [{ hoverPreviewHeight: 600 }],
     ]);
   });
 

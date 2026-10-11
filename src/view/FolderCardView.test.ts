@@ -291,6 +291,7 @@ import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
 import type { SearchServiceSnapshot } from "../search";
 import type { CardFileKind } from "./file-kind";
 import type { PanelModelState } from "./panel-model";
+import type { HoverPopover } from "obsidian";
 import type { FolderTreeNode, NoteCardRecord } from "./types";
 
 interface TestHarness {
@@ -1773,6 +1774,54 @@ describe("FolderCardView host contract", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("sizes delayed native previews, applies settings changes, and closes them with the view", async () => {
+    const { view, plugin } = createHarness();
+    const settings = { ...(plugin.getSettings as () => Record<string, unknown>)(), hoverPreviewWidth: 800, hoverPreviewHeight: 600 };
+    plugin.getSettings.mockReturnValue(settings);
+    await view.onOpen();
+    const targetEl = document.createElement("div");
+    view.onCardHoverLink({ path: "notes/hover.md", targetEl, mouseEvent: new MouseEvent("mouseenter") });
+    const parent = (view.app.workspace.trigger as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1].hoverParent as FolderCardView;
+    expect(parent.hoverPopover).toBeNull();
+    const hoverEl = document.createElement("div"), unload = vi.fn();
+    const popover = { hoverEl, unload } as unknown as HoverPopover;
+    // Page preview can create this later when the user presses Ctrl/Cmd.
+    parent.hoverPopover = popover;
+    expect(hoverEl.classList.contains("fce-card-hover-preview")).toBe(true);
+    expect(hoverEl.style.getPropertyValue("--fce-hover-preview-width")).toBe("800px");
+    expect(hoverEl.style.getPropertyValue("--fce-hover-preview-height")).toBe("600px");
+    settings.hoverPreviewWidth = 1000;
+    await view.applyUpdateIntent("patch", "settings-change");
+    expect(hoverEl.style.getPropertyValue("--fce-hover-preview-width")).toBe("1000px");
+    await view.onClose();
+    expect(unload).toHaveBeenCalledOnce();
+    expect(parent.hoverPopover).toBeNull();
+  });
+
+  it("sizes previews assigned before their DOM exists and drops obsolete construction work", async () => {
+    const { view, plugin } = createHarness();
+    plugin.getSettings.mockReturnValue({ ...(plugin.getSettings as () => Record<string, unknown>)(), hoverPreviewWidth: 600, hoverPreviewHeight: 400 });
+    const first = { unload: vi.fn() } as unknown as HoverPopover;
+    view.hoverPopover = first;
+    first.hoverEl = document.createElement("div");
+    view.hoverPopover = null;
+    await Promise.resolve();
+    expect(first.hoverEl.className).toBe("");
+    const second = { unload: vi.fn() } as unknown as HoverPopover;
+    view.hoverPopover = second;
+    second.hoverEl = document.createElement("div");
+    await Promise.resolve();
+    expect(second.hoverEl.style.getPropertyValue("--fce-hover-preview-width")).toBe("600px");
+    expect(second.hoverEl.style.getPropertyValue("--fce-hover-preview-height")).toBe("400px");
+    view.cleanupLifecycle();
+    const late = { hoverEl: document.createElement("div"), unload: vi.fn() } as unknown as HoverPopover;
+    view.hoverPopover = late;
+    await Promise.resolve();
+    expect(late.unload).toHaveBeenCalledOnce();
+    expect(late.hoverEl.className).toBe("");
+    expect(view.hoverPopover).toBeNull();
   });
 
   it("forwards allowed card hover surfaces through to workspace hover-link trigger for markdown cards", async () => {

@@ -32,6 +32,8 @@ export interface PreferencesSettings {
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   previewLines: number;
   searchPreviewSnippetCount: number;
+  hoverPreviewWidth: number;
+  hoverPreviewHeight: number;
   cardImageMode: PluginSettings["cardImageMode"];
   cardImageFit: PluginSettings["cardImageFit"];
   showNavItemCounts: boolean;
@@ -159,6 +161,8 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.cardImageFit !== undefined) preferences.cardImageFit = patch.cardImageFit;
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
   if (patch.searchPreviewSnippetCount !== undefined) preferences.searchPreviewSnippetCount = patch.searchPreviewSnippetCount;
+  if (patch.hoverPreviewWidth !== undefined) preferences.hoverPreviewWidth = patch.hoverPreviewWidth;
+  if (patch.hoverPreviewHeight !== undefined) preferences.hoverPreviewHeight = patch.hoverPreviewHeight;
   if (patch.showNavItemCounts !== undefined) preferences.showNavItemCounts = patch.showNavItemCounts;
   if (patch.hiddenNavSections !== undefined) preferences.hiddenNavSections = patch.hiddenNavSections;
   if (patch.hiddenFolderPaths !== undefined) userData.hiddenFolderPaths = patch.hiddenFolderPaths;
@@ -216,6 +220,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       newNoteTemplate: settings.newNoteTemplate,
       previewLines: settings.previewLines,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
+      hoverPreviewWidth: settings.hoverPreviewWidth,
+      hoverPreviewHeight: settings.hoverPreviewHeight,
       cardImageMode: settings.cardImageMode,
       cardImageFit: settings.cardImageFit,
       showNavItemCounts: settings.showNavItemCounts,

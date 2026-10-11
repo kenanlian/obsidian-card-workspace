@@ -127,6 +127,19 @@ describe("SettingsStore", () => {
     expect(save).toHaveBeenCalledOnce();
   });
 
+  it("defaults and persists hover preview dimensions without reloading cards", async () => {
+    const { store, documents } = createStore({ load: async () => ({ previewLines: 3 }) });
+    await store.init();
+    expect(store.getFlat()).toMatchObject({ hoverPreviewWidth: 600, hoverPreviewHeight: 400 });
+    expect(await store.updateFlat({ hoverPreviewWidth: 800, hoverPreviewHeight: 600 })).toBe("patch");
+    expect(documents[0]).toMatchObject({
+      schemaVersion: 2, preferences: { hoverPreviewWidth: 800, hoverPreviewHeight: 600 },
+    });
+    const restored = createStore({ load: async () => documents[0] }).store;
+    await restored.init();
+    expect(restored.getFlat()).toMatchObject({ hoverPreviewWidth: 800, hoverPreviewHeight: 600 });
+  });
+
   it("persists section drag insertion immediately as a preference with patch intent", async () => {
     const { store, save, documents } = createStore({
       load: async () => ({ schemaVersion: 2, preferences: { dragInsertAction: "embed" } }),
@@ -650,6 +663,8 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["newNoteTemplate", { newNoteTemplate: "blank" }],
     ["previewLines", { previewLines: 8 }],
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],
+    ["hoverPreviewWidth", { hoverPreviewWidth: 800 }],
+    ["hoverPreviewHeight", { hoverPreviewHeight: 600 }],
     ["cardImageMode", { cardImageMode: "inline" }],
     ["cardImageFit", { cardImageFit: "cover" }],
     ["showNavItemCounts", { showNavItemCounts: true }],

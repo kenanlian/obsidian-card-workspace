@@ -14,6 +14,7 @@ import { TagManagementActions } from "./actions/tag-manage-actions";
 import { BulkController } from "./controllers/BulkController";
 import { GroupCollapseController } from "./controllers/GroupCollapseController";
 import { CardImageController } from "./controllers/CardImageController";
+import { CardHoverPreviewController } from "./controllers/CardHoverPreviewController";
 import type { ThumbnailService } from "../images/ThumbnailService";
 import { HydrationController } from "./controllers/HydrationController";
 import { MetadataImpactController, type MetadataImpactBatch } from "./controllers/MetadataImpactController";
@@ -65,6 +66,7 @@ export interface ViewModules {
   groupCollapse: GroupCollapseController;
   hydration: HydrationController;
   images: CardImageController;
+  hoverPreview: CardHoverPreviewController;
   metadataImpact: MetadataImpactController;
   search: SearchController;
   bulk: BulkController;
@@ -119,6 +121,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const resolveGroupSpec = (): GroupSpec =>
     normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
   const groupCollapse: GroupCollapseController = new GroupCollapseController();
+  const hoverPreview = new CardHoverPreviewController(() => context.getSettings());
   const property: PropertyController = new PropertyController({
     context,
     getLoadKey: gate.guard("scopeController.getLoadKey", () => scopeController.getLoadKey()),
@@ -418,6 +421,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     groupCollapse,
     hydration,
     images,
+    hoverPreview,
     metadataImpact,
     search,
     bulk,

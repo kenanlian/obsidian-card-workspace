@@ -14,6 +14,12 @@ import {
   PREVIEW_LINES_MIN,
   SEARCH_PREVIEW_SNIPPET_COUNT_MIN,
   SEARCH_PREVIEW_SNIPPET_COUNT_MAX,
+  HOVER_PREVIEW_WIDTH_MIN,
+  HOVER_PREVIEW_WIDTH_MAX,
+  DEFAULT_HOVER_PREVIEW_WIDTH,
+  HOVER_PREVIEW_HEIGHT_MIN,
+  HOVER_PREVIEW_HEIGHT_MAX,
+  DEFAULT_HOVER_PREVIEW_HEIGHT,
   isCardCornerRadius,
   isCardImageMode,
   isCardImageFit,
@@ -91,6 +97,14 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
     case "backlinkSnippetCount":
       return value === "all" || value === "1" || value === "2" || value === "3"
         ? { backlinkSnippetCount: value === "all" ? "all" : Number(value) as 1 | 2 | 3 } : null;
+    case "hoverPreviewWidth":
+      return typeof value === "number" && Number.isInteger(value)
+        && value >= HOVER_PREVIEW_WIDTH_MIN && value <= HOVER_PREVIEW_WIDTH_MAX
+        ? { hoverPreviewWidth: value } : null;
+    case "hoverPreviewHeight":
+      return typeof value === "number" && Number.isInteger(value)
+        && value >= HOVER_PREVIEW_HEIGHT_MIN && value <= HOVER_PREVIEW_HEIGHT_MAX
+        ? { hoverPreviewHeight: value } : null;
     case "showNavItemCounts":
       return typeof value === "boolean" ? { showNavItemCounts: value } : null;
     case "locateLinkCardOnOpen":
@@ -140,6 +154,10 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.previewLines;
       case "searchPreviewSnippetCount":
         return settings.searchPreviewSnippetCount;
+      case "hoverPreviewWidth":
+        return settings.hoverPreviewWidth;
+      case "hoverPreviewHeight":
+        return settings.hoverPreviewHeight;
       case "showNavItemCounts":
         return settings.showNavItemCounts;
       case "locateLinkCardOnOpen":
@@ -336,6 +354,16 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             name: strings.showNavItemCountsName,
             desc: strings.showNavItemCountsDesc,
             control: { type: "toggle", key: "showNavItemCounts" },
+          },
+          {
+            name: strings.hoverPreviewWidthName,
+            desc: strings.hoverPreviewDimensionDesc(HOVER_PREVIEW_WIDTH_MIN, HOVER_PREVIEW_WIDTH_MAX, DEFAULT_HOVER_PREVIEW_WIDTH),
+            control: { type: "slider", key: "hoverPreviewWidth", min: HOVER_PREVIEW_WIDTH_MIN, max: HOVER_PREVIEW_WIDTH_MAX, step: 10 },
+          },
+          {
+            name: strings.hoverPreviewHeightName,
+            desc: strings.hoverPreviewDimensionDesc(HOVER_PREVIEW_HEIGHT_MIN, HOVER_PREVIEW_HEIGHT_MAX, DEFAULT_HOVER_PREVIEW_HEIGHT),
+            control: { type: "slider", key: "hoverPreviewHeight", min: HOVER_PREVIEW_HEIGHT_MIN, max: HOVER_PREVIEW_HEIGHT_MAX, step: 10 },
           },
         ],
       },

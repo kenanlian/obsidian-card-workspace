@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFolder, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
@@ -52,7 +52,7 @@ import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSe
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
 
-export class FolderCardView extends ItemView {
+export class FolderCardView extends ItemView implements HoverParent {
   plugin: CardWorkspacePlugin;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
@@ -63,6 +63,9 @@ export class FolderCardView extends ItemView {
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
   private readonly epochs: ViewEpochs = createViewEpochs();
   private readonly context: ViewContext; readonly modules: ViewModules;
+
+  get hoverPopover(): HoverPopover | null { return this.modules.hoverPreview.hoverPopover; }
+  set hoverPopover(value: HoverPopover | null) { this.modules.hoverPreview.hoverPopover = value; }
 
   constructor(leaf: WorkspaceLeaf, plugin: CardWorkspacePlugin) {
     super(leaf);
@@ -203,6 +206,7 @@ export class FolderCardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.modules.hoverPreview.activate();
     const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
     this.modules.search.initializeSnapshotState();
     this.publishGroups(...PANEL_GROUPS);
@@ -341,6 +345,7 @@ export class FolderCardView extends ItemView {
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
    */
   async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
+    this.modules.hoverPreview.applySize();
     this.modules.images.onSettingsChanged();
     const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
     switch (effective) {
@@ -433,6 +438,7 @@ export class FolderCardView extends ItemView {
     const hydrationReport = this.modules.hydration.dispose();
     this.modules.metadataImpact.dispose();
     this.modules.images.dispose();
+    this.modules.hoverPreview.dispose();
     this.modules.groupCollapse.dispose();
     this.modules.property.dispose();
 

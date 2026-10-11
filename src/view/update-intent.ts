@@ -188,6 +188,8 @@ export function resolveSettingsUpdateIntent(
   if (previous.enableHeadingDragInsert !== next.enableHeadingDragInsert) intent = mergeIntent(intent, "patch");
   if (previous.cardImageMode !== next.cardImageMode) intent = mergeIntent(intent, "patch");
   if (previous.cardImageFit !== next.cardImageFit) intent = mergeIntent(intent, "patch");
+  if (previous.hoverPreviewWidth !== next.hoverPreviewWidth) intent = mergeIntent(intent, "patch");
+  if (previous.hoverPreviewHeight !== next.hoverPreviewHeight) intent = mergeIntent(intent, "patch");
   if (previous.cardCornerRadius !== next.cardCornerRadius) intent = mergeIntent(intent, "patch");
   if (previous.newNoteTemplate !== next.newNoteTemplate) intent = mergeIntent(intent, "patch");
   if (previous.lastFolderPath !== next.lastFolderPath) intent = mergeIntent(intent, "patch");

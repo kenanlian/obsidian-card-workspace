@@ -19,6 +19,22 @@ import { serializeSettings, type PersistedSettingsV2 } from "./services/Settings
 // ---------------------------------------------------------------------------
 // normalizeSettings — pinnedPaths handling
 // ---------------------------------------------------------------------------
+describe("hover preview dimensions", () => {
+  it.each([undefined, null, "800", NaN, Infinity, -Infinity])("defaults invalid dimensions (%s)", (value) => {
+    expect(normalizeSettings({ hoverPreviewWidth: value, hoverPreviewHeight: value }))
+      .toMatchObject({ hoverPreviewWidth: 600, hoverPreviewHeight: 400 });
+  });
+
+  it("bounds dimensions and rounds finite pixels", () => {
+    expect(normalizeSettings({ hoverPreviewWidth: -1, hoverPreviewHeight: 9000 }))
+      .toMatchObject({ hoverPreviewWidth: 320, hoverPreviewHeight: 1200 });
+    expect(normalizeSettings({ hoverPreviewWidth: 9000, hoverPreviewHeight: 0 }))
+      .toMatchObject({ hoverPreviewWidth: 1600, hoverPreviewHeight: 200 });
+    expect(normalizeSettings({ hoverPreviewWidth: 780.4, hoverPreviewHeight: 560.6 }))
+      .toMatchObject({ hoverPreviewWidth: 780, hoverPreviewHeight: 561 });
+  });
+});
+
 describe("normalizeSettings — pinnedPaths", () => {
   it("normalizes invalid pinnedPaths (non-array) to empty array", () => {
     const raw = {
@@ -1113,6 +1129,8 @@ describe("card grouping settings normalization", () => {
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
         searchPreviewSnippetCount: 2,
+        hoverPreviewWidth: 600,
+        hoverPreviewHeight: 400,
         navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites", "links"],
         hiddenNavSections: [],
         visiblePropertyKeys: [],
@@ -1592,6 +1610,8 @@ describe("settings layer manifest (C4)", () => {
     newNoteTemplate: "preferences",
     previewLines: "preferences",
     searchPreviewSnippetCount: "preferences",
+    hoverPreviewWidth: "preferences",
+    hoverPreviewHeight: "preferences",
     cardImageMode: "preferences",
     cardImageFit: "preferences",
     showNavItemCounts: "preferences",
@@ -1685,6 +1705,8 @@ describe("non-default v2 round trip per layer (C4)", () => {
     previewLines: 8,
     lastFolderPath: "Projects",
     searchPreviewSnippetCount: 5,
+    hoverPreviewWidth: 800,
+    hoverPreviewHeight: 600,
     expandedFolderPaths: ["Projects"],
     expandedTagPaths: ["work"],
     visiblePropertyKeys: ["status"],
@@ -1726,6 +1748,8 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["cardImageFit", (d) => d.preferences.cardImageFit, "contain"],
     ["previewLines", (d) => d.preferences.previewLines, 8],
     ["searchPreviewSnippetCount", (d) => d.preferences.searchPreviewSnippetCount, 5],
+    ["hoverPreviewWidth", (d) => d.preferences.hoverPreviewWidth, 800],
+    ["hoverPreviewHeight", (d) => d.preferences.hoverPreviewHeight, 600],
     ["showNavItemCounts", (d) => d.preferences.showNavItemCounts, true],
     ["hiddenFolderPaths", (d) => d.userData.hiddenFolderPaths, ["Projects/Hidden"]],
     ["hiddenTagPaths", (d) => d.userData.hiddenTagPaths, ["work/hidden"]],

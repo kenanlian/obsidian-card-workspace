@@ -71,6 +71,8 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   newNoteTemplate: "patch",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
+  hoverPreviewWidth: "patch",
+  hoverPreviewHeight: "patch",
   cardImageMode: "patch",
   cardImageFit: "patch",
   lastFolderPath: "patch",
@@ -115,6 +117,8 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "cardImageFit": settings.cardImageFit = "contain"; break;
     case "previewLines": settings.previewLines += 1; break;
     case "searchPreviewSnippetCount": settings.searchPreviewSnippetCount += 1; break;
+    case "hoverPreviewWidth": settings.hoverPreviewWidth += 10; break;
+    case "hoverPreviewHeight": settings.hoverPreviewHeight += 10; break;
     case "lastFolderPath": settings.lastFolderPath = "changed"; break;
     case "folderSiblingOrders": settings.folderSiblingOrders = { "": ["changed"] }; break;
     case "folderDescendingNameSorts": settings.folderDescendingNameSorts = [""]; break;

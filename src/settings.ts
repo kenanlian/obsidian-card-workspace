@@ -42,6 +42,12 @@ export const DEFAULT_PREVIEW_LINES = 5;
 export const SEARCH_PREVIEW_SNIPPET_COUNT_MIN = 1;
 export const SEARCH_PREVIEW_SNIPPET_COUNT_MAX = 5;
 export const DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT = 2;
+export const HOVER_PREVIEW_WIDTH_MIN = 320;
+export const HOVER_PREVIEW_WIDTH_MAX = 1600;
+export const DEFAULT_HOVER_PREVIEW_WIDTH = 600;
+export const HOVER_PREVIEW_HEIGHT_MIN = 200;
+export const HOVER_PREVIEW_HEIGHT_MAX = 1200;
+export const DEFAULT_HOVER_PREVIEW_HEIGHT = 400;
 export const NAV_PANE_WIDTH_MIN = 160;
 export const NAV_PANE_WIDTH_MAX = 480;
 export const DEFAULT_NAV_PANE_WIDTH = 240;
@@ -158,6 +164,8 @@ export interface PluginSettings {
   newNoteTemplate: NewNoteTemplate;
   previewLines: number;
   searchPreviewSnippetCount: number;
+  hoverPreviewWidth: number;
+  hoverPreviewHeight: number;
   cardImageMode: CardImageMode;
   cardImageFit: CardImageFit;
   lastFolderPath: string;
@@ -208,6 +216,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
   previewLines: DEFAULT_PREVIEW_LINES,
   searchPreviewSnippetCount: DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT,
+  hoverPreviewWidth: DEFAULT_HOVER_PREVIEW_WIDTH,
+  hoverPreviewHeight: DEFAULT_HOVER_PREVIEW_HEIGHT,
   cardImageMode: "right",
   cardImageFit: "cover",
   lastFolderPath: "",
@@ -334,6 +344,12 @@ function normalizeSearchPreviewSnippetCount(value: unknown): number {
   }
   return Math.min(SEARCH_PREVIEW_SNIPPET_COUNT_MAX,
     Math.max(SEARCH_PREVIEW_SNIPPET_COUNT_MIN, Math.round(value)));
+}
+
+function normalizeHoverPreviewDimension(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, Math.round(value)))
+    : fallback;
 }
 
 function normalizePreviewLines(value: unknown): number {
@@ -596,6 +612,10 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     previewLines: normalizePreviewLines(data.previewLines),
     searchPreviewSnippetCount: normalizeSearchPreviewSnippetCount(data.searchPreviewSnippetCount),
+    hoverPreviewWidth: normalizeHoverPreviewDimension(data.hoverPreviewWidth,
+      DEFAULT_HOVER_PREVIEW_WIDTH, HOVER_PREVIEW_WIDTH_MIN, HOVER_PREVIEW_WIDTH_MAX),
+    hoverPreviewHeight: normalizeHoverPreviewDimension(data.hoverPreviewHeight,
+      DEFAULT_HOVER_PREVIEW_HEIGHT, HOVER_PREVIEW_HEIGHT_MIN, HOVER_PREVIEW_HEIGHT_MAX),
     cardImageMode: isCardImageMode(data.cardImageMode) ? data.cardImageMode : DEFAULT_SETTINGS.cardImageMode,
     cardImageFit: isCardImageFit(data.cardImageFit) ? data.cardImageFit : DEFAULT_SETTINGS.cardImageFit,
     lastFolderPath: normalizeLastFolderPath(data.lastFolderPath, data.lastViewMode),

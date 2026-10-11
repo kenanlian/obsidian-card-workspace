@@ -37,6 +37,8 @@ export const SETTINGS_LAYER_BY_KEY = {
   newNoteTemplate: "preferences",
   previewLines: "preferences",
   searchPreviewSnippetCount: "preferences",
+  hoverPreviewWidth: "preferences",
+  hoverPreviewHeight: "preferences",
   cardImageMode: "preferences",
   cardImageFit: "preferences",
   showNavItemCounts: "preferences",

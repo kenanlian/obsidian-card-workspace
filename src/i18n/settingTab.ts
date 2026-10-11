@@ -31,6 +31,9 @@ export interface SettingTabStrings {
   allReferenceSnippets: string;
   searchPreviewSnippetCountName: string;
   searchPreviewSnippetCountDesc: string;
+  hoverPreviewWidthName: string;
+  hoverPreviewHeightName: string;
+  hoverPreviewDimensionDesc: (min: number, max: number, defaultValue: number) => string;
   showNavItemCountsName: string;
   showNavItemCountsDesc: string;
 }
@@ -65,6 +68,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     allReferenceSnippets: "All",
     searchPreviewSnippetCountName: "Maximum search hit snippets in each card preview",
     searchPreviewSnippetCountDesc: "Choose the maximum number of body hit snippets shown during search. Each snippet occupies two lines.",
+    hoverPreviewWidthName: "Card hover preview width",
+    hoverPreviewHeightName: "Card hover preview height",
+    hoverPreviewDimensionDesc: (min, max, defaultValue) =>
+      `Size in pixels (${min}–${max}; default ${defaultValue}). Applies to page previews opened from cards; shrinks to fit the window. Requires the Page preview core plugin.`,
     previewLinesDesc: (min: number, max: number) =>
       `Choose how many normalized summary lines each card preview can show (${min}-${max}).`,
     showNavItemCountsName: "Show item counts in navigation",
@@ -98,6 +105,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     allReferenceSnippets: "全部",
     searchPreviewSnippetCountName: "每张卡片预览最多显示的命中片段",
     searchPreviewSnippetCountDesc: "搜索时最多显示多少个正文命中片段，每个片段占两行。",
+    hoverPreviewWidthName: "卡片悬浮预览宽度",
+    hoverPreviewHeightName: "卡片悬浮预览高度",
+    hoverPreviewDimensionDesc: (min, max, defaultValue) =>
+      `尺寸单位为像素（${min}–${max}，默认 ${defaultValue}）。适用于从卡片打开的页面预览，会随窗口大小收缩。需启用核心插件“页面预览”。`,
     previewLinesDesc: (min: number, max: number) => `选择每张卡片预览可显示的规范化摘要行数（${min}-${max}）。`,
     showNavItemCountsName: "在导航栏显示条目计数",
     showNavItemCountsDesc:

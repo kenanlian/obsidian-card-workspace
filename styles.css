@@ -809,6 +809,18 @@
   background: var(--background-modifier-hover);
 }
 
+/* Native page previews opened by cards are attached to the window body. */
+.popover.hover-popover.fce-card-hover-preview {
+  --popover-width: min(var(--fce-hover-preview-width, 600px), max(0px, calc(100vw - 32px)));
+  --popover-height: min(var(--fce-hover-preview-height, 400px), max(0px, calc(100vh - 32px)));
+  width: var(--popover-width) !important;
+  height: var(--popover-height) !important;
+  min-width: 0;
+  min-height: 0;
+  max-width: max(0px, calc(100vw - 32px)) !important;
+  max-height: max(0px, calc(100vh - 32px)) !important;
+}
+
 /* Native suggestions attach to the document body, outside .folder-card-view.
    Obsidian owns the surface and selected/hover states; match the panel's density. */
 .suggestion-container.fce-search-history-popover {
