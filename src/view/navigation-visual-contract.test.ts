@@ -8,11 +8,10 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const styles = fs.readFileSync(path.resolve(testDir, "../../styles.css"), "utf8");
 
 describe("navigation visual contract", () => {
-  it("renders the persistent filter as a quiet fixed-slot navigation control", () => {
-    expect(styles).toMatch(/\.fce-nav-filter \{[\s\S]*?grid-template-columns: var\(--fce-nav-leading-slot\) minmax\(0, 1fr\) 22px;/);
-    expect(styles).toMatch(/\.fce-nav-filter \{[\s\S]*?height: 30px;[\s\S]*?border: 1px solid transparent;/);
-    expect(styles).toMatch(/\.fce-nav-filter:focus-within \{\s*border-color: var\(--fce-nav-focus-ring\);/);
-    expect(styles).toContain("color: var(--text-faint, var(--fce-text-muted));");
+  it("keeps the navigation search row from taking the pane's remaining height", () => {
+    expect(styles).toMatch(/\.folder-card-view \.fce-nav-filter-line \{\s*flex: 0 0 auto;\s*\}/);
+    expect(styles).not.toMatch(/\.fce-nav-filter \{/);
+    expect(styles).toMatch(/\.folder-card-view \.fce-toolbar-search \{[^}]*height: 30px;/);
   });
 
   it("keeps the accepted navigation density with conservatively tightened section rhythm", () => {

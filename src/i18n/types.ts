@@ -30,6 +30,7 @@ export interface UiStrings {
   panel: PanelStrings;
   property: PropertyStrings;
   fileKind: FileKindStrings;
+  noteInput: import("./noteInput").NoteInputStrings;
   noteOps: NoteOpsStrings;
   desktopShell: DesktopShellStrings;
   box: BoxStrings;

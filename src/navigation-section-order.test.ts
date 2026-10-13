@@ -9,7 +9,7 @@ import {
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import type { NavSectionId } from "./view/types";
 
-const DEFAULT_ORDER: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links"];
+const DEFAULT_ORDER: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links", "templates"];
 
 describe("defaultNavSectionOrder", () => {
   it("returns a distinct array instance on each call", () => {
@@ -20,10 +20,10 @@ describe("defaultNavSectionOrder", () => {
     expect(first).not.toBe(second);
   });
 
-  it("ends with links after the pre-links five sections", () => {
-    expect(NAVIGATION_SECTION_ORDER.at(-1)).toBe("links");
-    expect(defaultNavSectionOrder().at(-1)).toBe("links");
-    expect(DEFAULT_ORDER).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links"]);
+  it("places templates immediately after links by default", () => {
+    expect(NAVIGATION_SECTION_ORDER.slice(-2)).toEqual(["links", "templates"]);
+    expect(defaultNavSectionOrder().slice(-2)).toEqual(["links", "templates"]);
+    expect(DEFAULT_ORDER).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links", "templates"]);
   });
 });
 
@@ -38,7 +38,7 @@ describe("normalizeNavSectionOrder", () => {
   });
 
   it("preserves a full valid permutation exactly", () => {
-    const permutation: NavSectionId[] = ["boxes", "tags", "properties", "favorites", "folders", "links"];
+    const permutation: NavSectionId[] = ["boxes", "tags", "properties", "favorites", "folders", "templates", "links"];
     expect(normalizeNavSectionOrder(permutation)).toEqual(permutation);
   });
 
@@ -50,6 +50,7 @@ describe("normalizeNavSectionOrder", () => {
       "properties",
       "boxes",
       "links",
+      "templates",
     ]);
   });
 
@@ -66,6 +67,7 @@ describe("normalizeNavSectionOrder", () => {
       "folders",
       "tags",
       "links",
+      "templates",
     ]);
   });
 
@@ -78,6 +80,7 @@ describe("normalizeNavSectionOrder", () => {
       "properties",
       "boxes",
       "links",
+      "templates",
     ]);
   });
 
@@ -85,9 +88,9 @@ describe("normalizeNavSectionOrder", () => {
     expect(normalizeNavSectionOrder(["favorites", "folders", "tags", "boxes"]))
       .toEqual(DEFAULT_ORDER);
     expect(normalizeNavSectionOrder(["boxes", "tags", "favorites", "folders"]))
-      .toEqual(["properties", "boxes", "tags", "favorites", "folders", "links"]);
+      .toEqual(["properties", "boxes", "tags", "favorites", "folders", "links", "templates"]);
     expect(normalizeNavSectionOrder(["tags", "boxes", "favorites", "folders"]))
-      .toEqual(["tags", "properties", "boxes", "favorites", "folders", "links"]);
+      .toEqual(["tags", "properties", "boxes", "favorites", "folders", "links", "templates"]);
   });
 
   it("appends properties when an old order has no boxes entry", () => {
@@ -98,22 +101,28 @@ describe("normalizeNavSectionOrder", () => {
       "properties",
       "boxes",
       "links",
+      "templates",
     ]);
   });
 
-  it("appends links last onto a stored pre-links five-section order", () => {
+  it("appends links and templates onto a stored five-section order", () => {
     expect(normalizeNavSectionOrder(["favorites", "folders", "tags", "properties", "boxes"]))
-      .toEqual(["favorites", "folders", "tags", "properties", "boxes", "links"]);
+      .toEqual(["favorites", "folders", "tags", "properties", "boxes", "links", "templates"]);
   });
 
   it("keeps links in a stored mid-sequence position", () => {
+    expect(normalizeNavSectionOrder(["favorites", "links", "folders", "tags", "properties", "boxes", "templates"]))
+      .toEqual(["favorites", "links", "folders", "tags", "properties", "boxes", "templates"]);
+  });
+
+  it("inserts a missing templates section immediately after a customized links position", () => {
     expect(normalizeNavSectionOrder(["favorites", "links", "folders", "tags", "properties", "boxes"]))
-      .toEqual(["favorites", "links", "folders", "tags", "properties", "boxes"]);
+      .toEqual(["favorites", "links", "templates", "folders", "tags", "properties", "boxes"]);
   });
 });
 
 describe("moveNavSection", () => {
-  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links"];
+  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links", "templates"];
 
   it("swaps a middle section up and down", () => {
     expect(moveNavSection(order, "folders", -1)).toEqual([
@@ -123,6 +132,7 @@ describe("moveNavSection", () => {
       "properties",
       "boxes",
       "links",
+      "templates",
     ]);
     expect(moveNavSection(order, "folders", 1)).toEqual([
       "favorites",
@@ -131,17 +141,18 @@ describe("moveNavSection", () => {
       "properties",
       "boxes",
       "links",
+      "templates",
     ]);
   });
 
   it("returns null for a first-element move-up, a last-element move-down, and an unknown section", () => {
     expect(moveNavSection(order, "favorites", -1)).toBeNull();
-    expect(moveNavSection(order, "links", 1)).toBeNull();
+    expect(moveNavSection(order, "templates", 1)).toBeNull();
     expect(moveNavSection(order, "nope" as NavSectionId, 1)).toBeNull();
   });
 
   it("returns a new array and leaves the input untouched", () => {
-    const input: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links"];
+    const input: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links", "templates"];
     const snapshot = [...input];
     const result = moveNavSection(input, "tags", -1);
     expect(result).not.toBeNull();
@@ -151,7 +162,7 @@ describe("moveNavSection", () => {
 });
 
 describe("canMoveNavSection", () => {
-  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links"];
+  const order: NavSectionId[] = ["favorites", "folders", "tags", "properties", "boxes", "links", "templates"];
 
   it("agrees with moveNavSection at both boundaries", () => {
     const cases: Array<{ section: NavSectionId; delta: -1 | 1 }> = [
@@ -176,7 +187,7 @@ describe("canMoveNavSection", () => {
 it("moves between visible sections while leaving hidden sections at their original indices", () => {
   const hidden = ["folders", "tags"] as const;
   const moved = moveNavSection(DEFAULT_ORDER, "favorites", 1, hidden);
-  expect(moved).toEqual(["properties", "folders", "tags", "favorites", "boxes", "links"]);
+  expect(moved).toEqual(["properties", "folders", "tags", "favorites", "boxes", "links", "templates"]);
   expect(moveNavSection(moved!, "favorites", -1, hidden)).toEqual(DEFAULT_ORDER);
   expect(canMoveNavSection(DEFAULT_ORDER, "properties", -1, hidden)).toBe(true);
   expect(moveNavSection(DEFAULT_ORDER, "folders", 1, hidden)).toBeNull();

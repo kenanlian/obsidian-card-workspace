@@ -428,10 +428,10 @@ describe("SettingsStore", () => {
     };
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: true, boxes: true, links: false,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true, templates: false, links: false,
     });
     expect(store.getFlat().sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: true, boxes: true, links: false,
+      favorites: true, folders: false, tags: true, properties: true, boxes: true, templates: false, links: false,
     });
   });
 
@@ -441,7 +441,7 @@ describe("SettingsStore", () => {
 
     const order: PluginSettings["navSectionOrder"] = ["boxes", "favorites", "folders", "tags"];
     const normalizedOrder: PluginSettings["navSectionOrder"] = [
-      "properties", "boxes", "favorites", "folders", "tags", "links",
+      "properties", "boxes", "favorites", "folders", "tags", "links", "templates",
     ];
     const split = splitFlatPatch({ navSectionOrder: order });
     expect(split.preferences.navSectionOrder).toEqual(order);
@@ -464,7 +464,7 @@ describe("SettingsStore", () => {
     expect(persisted).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace).not.toHaveProperty("navSectionOrder");
     expect(persisted.workspace.sectionCollapsed).toEqual({
-      favorites: true, folders: false, tags: true, properties: false, boxes: false, links: false,
+      favorites: true, folders: false, tags: true, properties: false, boxes: false, templates: false, links: false,
     });
     expect(persisted.preferences).not.toHaveProperty("sectionCollapsed");
   });
@@ -661,6 +661,9 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["enableHeadingDragInsert", { enableHeadingDragInsert: true }],
     ["cardCornerRadius", { cardCornerRadius: "compact" }],
     ["newNoteTemplate", { newNoteTemplate: "blank" }],
+    ["templateStorageFolder", { templateStorageFolder: "Templates" }],
+    ["quickInput", { quickInput: DEFAULT_SETTINGS.quickInput }],
+    ["noteTemplates", { noteTemplates: [] }],
     ["previewLines", { previewLines: 8 }],
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],
     ["hoverPreviewWidth", { hoverPreviewWidth: 800 }],
@@ -1027,5 +1030,22 @@ describe("SettingsStore — non-default writes per layer (C4)", () => {
       pinnedPaths: ["Projects/a.md"],
       favorites: [{ kind: "folder", ref: "Projects" }],
     });
+  });
+});
+
+describe("SettingsStore — note input persistence", () => {
+  const template = { id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
+  it("commits template registration and quick input atomically into their additive v2 layers", async () => {
+    const { store, documents } = createStore();
+    await store.init();
+    const pending = store.updateFlat({ noteTemplates: [template], quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } });
+    expect(store.getFlat().noteTemplates).toEqual([template]);
+    expect(store.getFlat().quickInput.templateId).toBe("daily");
+    await expect(pending).resolves.toBe("reload");
+    expect(documents).toHaveLength(1);
+    expect(documents[0]).toMatchObject({ schemaVersion: 2, preferences: { quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } }, userData: { noteTemplates: [template] } });
+    expect(migrateSettings(documents[0])).toEqual(store.getFlat());
+    await expect(store.updateUserData({ noteTemplates: [{ ...template, targetFolderPath: "Inbox" }] })).resolves.toBe("patch");
+    await expect(store.updatePreferences({ quickInput: { templateId: null, folderPath: "Missing", insertPosition: "end" } })).resolves.toBe("patch");
   });
 });

@@ -30,6 +30,8 @@ export interface PreferencesSettings {
   enableHeadingDragInsert: boolean;
   cardCornerRadius: PluginSettings["cardCornerRadius"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
+  quickInput: PluginSettings["quickInput"];
+  templateStorageFolder: string;
   previewLines: number;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
@@ -48,6 +50,8 @@ export interface WorkspaceSectionCollapsed {
   tags: boolean;
   properties: boolean;
   boxes: boolean;
+  templates: boolean;
+  links: boolean;
 }
 
 export interface WorkspaceSettings {
@@ -74,6 +78,7 @@ export interface UserDataSettings {
   folderDescendingNameSorts: string[];
   navigationSorting: PluginSettings["navigationSorting"];
   boxes: PluginSettings["boxes"];
+  noteTemplates: PluginSettings["noteTemplates"];
   favorites: PluginSettings["favorites"];
   pinnedPaths: string[];
   searchHistory: string[];
@@ -157,6 +162,8 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.enableHeadingDragInsert !== undefined) preferences.enableHeadingDragInsert = patch.enableHeadingDragInsert;
   if (patch.cardCornerRadius !== undefined) preferences.cardCornerRadius = patch.cardCornerRadius;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
+  if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
+  if (patch.templateStorageFolder !== undefined) preferences.templateStorageFolder = patch.templateStorageFolder;
   if (patch.cardImageMode !== undefined) preferences.cardImageMode = patch.cardImageMode;
   if (patch.cardImageFit !== undefined) preferences.cardImageFit = patch.cardImageFit;
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
@@ -185,6 +192,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   }
 
   if (patch.boxes !== undefined) userData.boxes = patch.boxes;
+  if (patch.noteTemplates !== undefined) userData.noteTemplates = patch.noteTemplates;
   if (patch.folderSiblingOrders !== undefined) userData.folderSiblingOrders = patch.folderSiblingOrders;
   if (patch.folderDescendingNameSorts !== undefined) userData.folderDescendingNameSorts = patch.folderDescendingNameSorts;
   if (patch.navigationSorting !== undefined) userData.navigationSorting = patch.navigationSorting;
@@ -218,6 +226,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       enableHeadingDragInsert: settings.enableHeadingDragInsert,
       cardCornerRadius: settings.cardCornerRadius,
       newNoteTemplate: settings.newNoteTemplate,
+      quickInput: { ...settings.quickInput },
+      templateStorageFolder: settings.templateStorageFolder,
       previewLines: settings.previewLines,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
       hoverPreviewWidth: settings.hoverPreviewWidth,
@@ -251,6 +261,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       folderDescendingNameSorts: [...settings.folderDescendingNameSorts],
       navigationSorting: normalizeNavigationSorting(settings.navigationSorting),
       boxes: settings.boxes,
+      noteTemplates: settings.noteTemplates.map((template) => ({ ...template })),
       favorites: settings.favorites,
       pinnedPaths: [...settings.pinnedPaths],
       searchHistory: [...settings.searchHistory],

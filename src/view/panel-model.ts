@@ -193,6 +193,7 @@ export interface PanelProjectionState {
 }
 
 export interface PanelNavState {
+  filterVisible?: boolean;
   folderTree: FolderTreeNode[];
   favorites: FavoriteRowModel[];
   boxSummaries: BoxSummary[];

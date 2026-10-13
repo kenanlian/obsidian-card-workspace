@@ -341,6 +341,7 @@ vi.mock("./view/FolderCardView", () => {
       loadedScope = false;
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
+      invalidateTemplateCandidates = vi.fn();
       getCardScope(): unknown {
         return this.cardScope;
       }
@@ -512,10 +513,14 @@ vi.mock("obsidian", () => {
   };
 });
 
+vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn() }));
+import { focusTemplateEditor } from "./input/template-editor";
 import { MarkdownView, TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
+import { isExcludedTemplatePath } from "./template-exclusion";
+import { NoteCreationService } from "./services/NoteCreationService";
 import { DEFAULT_SETTINGS } from "./settings";
 import { UnsupportedSettingsSchemaError } from "./settings-schema";
 import { FolderCardView } from "./view/FolderCardView";
@@ -2403,6 +2408,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("opens newly created notes in new-tab explicitly", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -2413,6 +2420,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("seeds new notes with a tags property by default", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -2423,6 +2432,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("creates a completely blank note when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
@@ -2440,6 +2451,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("creates a note in an explicit folder", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
     const openNoteFromCard = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -2451,6 +2464,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("treats the vault-root folder path as an empty prefix", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     app.vault.create.mockResolvedValue({ path: "Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
@@ -2463,6 +2478,8 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
   it("writes explicit tags even when the blank template is configured", async () => {
     const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
     mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "Projects/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
@@ -3614,5 +3631,105 @@ describe("CardWorkspacePlugin unsupported settings schema (C4)", () => {
 
     expect(saveData).not.toHaveBeenCalled();
     expect(JSON.stringify(raw)).toBe(rawJson);
+  });
+});
+
+
+describe("template creation assembly", () => {
+  it("opens the service target while keeping linked card scopes and passes one time snapshot", async () => {
+    const { plugin, app } = createPluginHarness();
+    const template = { id: "t", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    mutateStoreMemory(plugin, { noteTemplates: [template] });
+    const target = Object.assign(new TFile(), { path: "generated.md" });
+    const create = vi.spyOn(NoteCreationService.prototype, "createTemplateNote").mockResolvedValueOnce({ file: target, created: false });
+    const view = new (FolderCardView as unknown as { new(): { setSelectedFile: ReturnType<typeof vi.fn> } })();
+    view.setSelectedFile = vi.fn();
+    obsidianMockState.leavesByType["folder-card-view"] = [{ view }] as never;
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+    try {
+      await plugin.createNoteFromTemplate("t");
+      expect(create).toHaveBeenCalledWith(template, expect.any(Date));
+      expect(view.setSelectedFile).toHaveBeenCalledWith("generated.md", true);
+    } finally { create.mockRestore(); }
+  });
+});
+
+
+describe("template reservation ownership", () => {
+  it("keeps a shared path reserved until every owner releases it", () => {
+    const { plugin } = createPluginHarness();
+    const reservations = (plugin as unknown as { reservedTemplatePaths: Set<string> }).reservedTemplatePaths;
+    const first = plugin.reserveTemplatePath("Templates/New.md");
+    const second = plugin.reserveTemplatePath("Templates/New.md");
+    first(); first(); expect(reservations.has("Templates/New.md")).toBe(true);
+    second(); expect(reservations.has("Templates/New.md")).toBe(false);
+  });
+});
+
+
+it("keeps rapid chained template renames excluded while bus reconciliation is pending", async () => {
+  const { plugin } = createPluginHarness();
+  mutateStoreMemory(plugin, { noteTemplates: [{ id: "t", filePath: "A.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }] });
+  const barrier = deferred();
+  const internals = plugin as unknown as { dispatchVaultMutation: (event: { eventType: "rename"; path: string; oldPath: string; isFolder: false; fileKind: "markdown" }) => void;
+    vaultEventBus: { publish: (event: unknown) => Promise<void> }; reservedTemplatePaths: Set<string> };
+  vi.spyOn(internals.vaultEventBus, "publish").mockReturnValue(barrier.promise);
+  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "A.md", path: "B.md", isFolder: false, fileKind: "markdown" });
+  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "B.md", path: "C.md", isFolder: false, fileKind: "markdown" });
+  expect(internals.reservedTemplatePaths.has("B.md")).toBe(true);
+  expect(internals.reservedTemplatePaths.has("C.md")).toBe(true);
+  barrier.resolve();
+  await vi.waitFor(() => expect(internals.reservedTemplatePaths.size).toBe(0));
+});
+
+
+it("checks template candidates without renormalizing settings per file", async () => {
+  const { plugin, app } = createPluginHarness();
+  plugin.onload(); await waitForPluginLoad(plugin);
+  await plugin.saveSettings({ noteTemplates: [{ id: "t", filePath: "Templates/T.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }] });
+  const reads = vi.spyOn(plugin, "getSettings"); reads.mockClear();
+  for (let index = 0; index < 100; index++) {
+    expect(isExcludedTemplatePath(app as never, "Templates/T.md")).toBe(true);
+    expect(isExcludedTemplatePath(app as never, `Notes/${index}.md`)).toBe(false);
+  }
+  expect(reads).not.toHaveBeenCalled();
+  plugin.onunload();
+});
+
+
+describe("template editor opening", () => {
+  beforeEach(() => { vi.mocked(focusTemplateEditor).mockClear(); });
+  it("waits for settings initialization before allowing template filesystem operations", async () => {
+    const { plugin } = createPluginHarness();
+    const barrier = deferred();
+    (plugin as unknown as { settingsReadyPromise: Promise<void> }).settingsReadyPromise = barrier.promise;
+    const work = vi.fn(async () => true);
+    const pending = plugin.runTemplateOperation(work);
+    await Promise.resolve(); await Promise.resolve();
+    expect(work).not.toHaveBeenCalled();
+    barrier.resolve(); await expect(pending).resolves.toBe(true);
+    expect(work).toHaveBeenCalledOnce();
+  });
+  it("switches a template to editing mode and requests title selection", async () => {
+    const { plugin, app } = createPluginHarness();
+    vi.spyOn(plugin, "openTemplateNoteFile").mockResolvedValueOnce(undefined);
+    const leaf = { getViewState: vi.fn(() => ({ type: "markdown", state: { file: "Template.md", mode: "preview" } })), setViewState: vi.fn(async () => undefined) };
+    const view = Object.assign(new MarkdownView(leaf as never), { file: { path: "Template.md" }, getState: () => ({ file: "Template.md", mode: "preview", source: false }) });
+    app.workspace.getActiveViewOfType.mockReturnValue(view);
+    await plugin.openTemplateEditor("Template.md", true);
+    expect(leaf.setViewState).toHaveBeenCalledWith({ type: "markdown", state: { file: "Template.md", mode: "source", source: false } });
+    expect(focusTemplateEditor).toHaveBeenCalledWith(view, true, expect.any(Function));
+  });
+  it("drops a pending focus request if the active editor changes during mode switching", async () => {
+    const { plugin, app } = createPluginHarness();
+    vi.spyOn(plugin, "openTemplateNoteFile").mockResolvedValueOnce(undefined);
+    const barrier = deferred();
+    const leaf = { getViewState: () => ({ type: "markdown" }), setViewState: vi.fn(() => barrier.promise) };
+    const view = Object.assign(new MarkdownView(leaf as never), { file: { path: "Template.md" }, getState: () => ({ file: "Template.md" }) });
+    app.workspace.getActiveViewOfType.mockReturnValue(view);
+    const pending = plugin.openTemplateEditor("Template.md", true);
+    await vi.waitFor(() => expect(leaf.setViewState).toHaveBeenCalled());
+    app.workspace.getActiveViewOfType.mockReturnValue(null); barrier.resolve(); await pending;
+    expect(focusTemplateEditor).not.toHaveBeenCalled();
   });
 });

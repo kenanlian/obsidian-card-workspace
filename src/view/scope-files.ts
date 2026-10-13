@@ -1,5 +1,7 @@
 import { TFile, TFolder, type App } from "obsidian";
 
+import { isExcludedTemplatePath } from "../template-exclusion";
+
 import { isSupportedCardFile } from "./file-kind";
 
 /**
@@ -16,7 +18,7 @@ export function* iterateSupportedFiles(
 
   if (!includeSubfolders) {
     for (const child of root.children) {
-      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+      if (child instanceof TFile && isSupportedCardFile(child) && !isExcludedTemplatePath(app, child.path)) yield child;
     }
     return;
   }
@@ -30,7 +32,7 @@ export function* iterateSupportedFiles(
         stack.push(child);
         continue;
       }
-      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+      if (child instanceof TFile && isSupportedCardFile(child) && !isExcludedTemplatePath(app, child.path)) yield child;
     }
   }
 }

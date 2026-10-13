@@ -3,7 +3,7 @@ import type { UiLanguage } from "./types";
 export interface NavigationVisibilityStrings {
   heading: string;
   description: string;
-  sections: { favorites: string; folders: string; tags: string; properties: string; boxes: string; links: string };
+  sections: { favorites: string; folders: string; tags: string; properties: string; boxes: string; templates: string; links: string };
   hideFolder: string;
   hideTag: string;
   hideSection: string;
@@ -26,7 +26,7 @@ export interface NavigationVisibilityStrings {
 export const navigationVisibilityStrings: Record<UiLanguage, NavigationVisibilityStrings> = {
   en: {
     heading: "Navigation", description: "Hide navigation entries only. Cards, search, filters, and existing favorites stay available.",
-    sections: { favorites: "Show Favorites", folders: "Show Folders", tags: "Show Tags", properties: "Show Properties", boxes: "Show Card boxes", links: "Show Links" },
+    sections: { favorites: "Show Favorites", folders: "Show Folders", tags: "Show Tags", properties: "Show Properties", boxes: "Show Card boxes", templates: "Show Templates", links: "Show Links" },
     hideFolder: "Hide this folder", hideTag: "Hide this tag", hideSection: "Hide this section",
     manageFolders: "Hidden folders", manageTags: "Hidden tags", manage: "Manage", search: "Search all vault entries…",
     hideMatches: "Hide matching entries", restoreMatches: "Restore matching entries", restoreAll: "Restore all",
@@ -37,7 +37,7 @@ export const navigationVisibilityStrings: Record<UiLanguage, NavigationVisibilit
   },
   zh: {
     heading: "导航", description: "仅隐藏导航条目；卡片、搜索、筛选和已有收藏仍可使用。",
-    sections: { favorites: "显示收藏", folders: "显示文件夹", tags: "显示标签", properties: "显示属性", boxes: "显示卡片盒", links: "显示链接" },
+    sections: { favorites: "显示收藏", folders: "显示文件夹", tags: "显示标签", properties: "显示属性", boxes: "显示卡片盒", templates: "显示模板", links: "显示链接" },
     hideFolder: "隐藏此文件夹", hideTag: "隐藏此标签", hideSection: "隐藏此分区",
     manageFolders: "隐藏的文件夹", manageTags: "隐藏的标签", manage: "管理", search: "搜索全库条目…",
     hideMatches: "隐藏匹配项", restoreMatches: "恢复匹配项", restoreAll: "全部恢复",

@@ -70,6 +70,13 @@ export interface NavigationFavoriteSource {
   missing: boolean;
 }
 
+export interface NavigationTemplateSource {
+  id: string;
+  filePath: string;
+  label: string;
+  unavailable: boolean;
+}
+
 export interface NavigationBoxSource {
   id: string;
   name: string;
@@ -90,6 +97,7 @@ export interface NavigationProjectionInput {
   navigationSorting?: NavigationSorting;
   tags: readonly TagTreeNode[];
   boxes: readonly NavigationBoxSource[];
+  templates?: readonly NavigationTemplateSource[];
   tagCounts: Readonly<Record<string, number>>;
   includeSubfolders: boolean;
   tagsDisabled: boolean;
@@ -97,7 +105,7 @@ export interface NavigationProjectionInput {
   propertiesDisabled: boolean;
   sectionCollapsed: Readonly<Record<NavSectionId, boolean>>;
   sectionOrder: readonly NavSectionId[];
-  sectionLabels: Readonly<Record<NavSectionId, NavigationSectionLabels>>;
+  sectionLabels: Readonly<Record<Exclude<NavSectionId, "templates">, NavigationSectionLabels> & { templates?: NavigationSectionLabels }>;
   rootFolderLabel: string;
   expansion: NavigationExpansionLayers;
   /** Property facet snapshot consumed by the Properties section (immutable; rows out). */
@@ -113,7 +121,7 @@ export interface NavigationProjectionInput {
 export type NavigationMenuTarget =
   | { section: NavSectionId; scope: "header" }
   | { section: "favorites"; scope: "item"; favorite: FavoriteEntry }
-  | { section: "folders" | "tags" | "boxes"; scope: "item"; itemId: string }
+  | { section: "folders" | "tags" | "boxes" | "templates"; scope: "item"; itemId: string }
   | { section: "links"; scope: "item"; itemId: string }
   | { section: "properties"; scope: "item"; itemId: string; value?: PropertyScalarRef };
 
@@ -166,6 +174,13 @@ export interface NavigationTagRow extends NavigationRowBase {
   descendantCount: number;
 }
 
+export interface NavigationTemplateRow extends NavigationRowBase {
+  kind: "template";
+  section: "templates";
+  templateId: string;
+  unavailable: boolean;
+}
+
 export interface NavigationBoxRow extends NavigationRowBase {
   kind: "box";
   section: "boxes";
@@ -209,6 +224,7 @@ export type NavigationRow =
   | NavigationPropertyRow
   | NavigationPropertyValueRow
   | NavigationBoxRow
+  | NavigationTemplateRow
   | NavigationLinksRow;
 
 export interface NavigationProjectedSection {
@@ -239,6 +255,10 @@ export const EMPTY_NAVIGATION_PROJECTION: NavigationProjection = {
 };
 
 export type NavigationIntent =
+  | { type: "quick-input"; win: Window }
+  | { type: "template-command"; command: "new" }
+  | { type: "filter-toggle" }
+  | { type: "filter-show" }
   | { type: "move-folder"; sourcePath: string; targetFolderPath: string }
   | { type: "reorder-navigation-items"; sourceId: string; targetId: string; position: "before" | "after" }
   | { type: "reorder-folders"; sourcePath: string; targetPath: string; position: "before" | "after" }
@@ -261,6 +281,7 @@ export const NAVIGATION_SECTION_ORDER: readonly NavSectionId[] = [
   "properties",
   "boxes",
   "links",
+  "templates",
 ];
 
 export function navigationSectionId(section: NavSectionId): `section:${NavSectionId}` {
@@ -281,6 +302,10 @@ export function navigationTagId(path: string): string {
 
 export function navigationBoxId(id: string): string {
   return `box:${id}`;
+}
+
+export function navigationTemplateId(id: string): string {
+  return `template:${id}`;
 }
 
 export function navigationLinksId(direction: "backlinks" | "outgoing"): string {

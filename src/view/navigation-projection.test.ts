@@ -29,6 +29,7 @@ const sectionLabels = {
   tags: { label: "Tags", emptyLabel: "No tags found" },
   properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
   boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
+  templates: { label: "Templates", emptyLabel: "No templates yet" },
   links: { label: "Links", emptyLabel: null },
 } as const;
 
@@ -99,7 +100,7 @@ function buildInput(overrides: Partial<NavigationProjectionInput> = {}): Navigat
     tagCounts: { work: 5, "work/current": 3, "work/历史": 2 },
     includeSubfolders: true,
     tagsDisabled: false, propertiesDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels,
     rootFolderLabel: "Root /",
@@ -153,7 +154,7 @@ describe("projectNavigation", () => {
     expect(projection.querying).toBe(false);
     expect(projection.noResults).toBe(false);
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes", "links",
+      "favorites", "folders", "tags", "properties", "boxes", "links", "templates",
     ]);
     expect(projection.sections[0]?.emptyLabel).toBe("No favorites yet — right-click an item to add one");
     expect(projection.sections[3]?.emptyLabel).toBe("No properties selected — choose which properties to show");
@@ -347,7 +348,7 @@ describe("projectNavigation", () => {
   it("collapses the Properties section from sectionCollapsed and hides it during a query", () => {
     const collapsed = projectNavigation(buildInput({
       sectionCollapsed: {
-        favorites: false, folders: false, tags: false, properties: true, boxes: false, links: false,
+        favorites: false, folders: false, tags: false, properties: true, boxes: false, templates: false, links: false,
       },
     }));
     expect(collapsed.sections.find((section) => section.section === "properties")?.expanded)
@@ -463,7 +464,7 @@ describe("projectNavigation", () => {
   it("projects sections, rows, and ARIA positions from the supplied section order", () => {
     const order = ["boxes", "tags", "folders", "favorites"] as const;
     // C2: Properties inserts immediately before Boxes in a stored old order.
-    const expected = ["properties", "boxes", "tags", "folders", "favorites", "links"] as const;
+    const expected = ["properties", "boxes", "tags", "folders", "favorites", "links", "templates"] as const;
     const projection = projectNavigation(buildInput({ sectionOrder: order }));
     expect(projection.sections.map((section) => section.section)).toEqual([...expected]);
     expect(projection.rows[0]?.id).toBe(navigationSectionId("properties"));
@@ -471,7 +472,7 @@ describe("projectNavigation", () => {
     expect(sectionRows.map((row) => ({
       section: row.section, positionInSet: row.positionInSet, setSize: row.setSize,
     }))).toEqual(expected.map((section, index) => ({
-      section, positionInSet: index + 1, setSize: 6,
+      section, positionInSet: index + 1, setSize: expected.length,
     })));
   });
 
@@ -480,7 +481,7 @@ describe("projectNavigation", () => {
       sectionOrder: ["tags", "tags", "nope", 7] as unknown as NavigationProjectionInput["sectionOrder"],
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "tags", "favorites", "folders", "properties", "boxes", "links",
+      "tags", "favorites", "folders", "properties", "boxes", "links", "templates",
     ]);
   });
 
@@ -587,7 +588,7 @@ describe("projectNavigation — properties", () => {
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "favorites", "folders", "tags", "properties", "boxes", "links",
+      "favorites", "folders", "tags", "properties", "boxes", "links", "templates",
     ]);
     const statusIndex = projection.rows.findIndex((row) => row.id === navigationPropertyId("status"));
     const tagsIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("tags"));
@@ -753,9 +754,9 @@ describe("projectNavigation — properties", () => {
 });
 
 describe("projectNavigation — links", () => {
-  it("places the Links section last by default with two leaves", () => {
+  it("places the Links section before Templates by default with two leaves", () => {
     const projection = projectNavigation(buildInput({ linksDisabled: false }));
-    expect(projection.sections.map((section) => section.section).at(-1)).toBe("links");
+    expect(projection.sections.map((section) => section.section).slice(-2)).toEqual(["links", "templates"]);
     const sectionIndex = projection.rows.findIndex((row) => row.id === navigationSectionId("links"));
     expect(projection.rows[sectionIndex]).toMatchObject({ kind: "section", section: "links" });
     expect(projection.rows[sectionIndex + 1]).toMatchObject({
@@ -769,7 +770,7 @@ describe("projectNavigation — links", () => {
   it("emits only the Links header when the section is collapsed", () => {
     const projection = projectNavigation(buildInput({
       sectionCollapsed: {
-        favorites: false, folders: false, tags: false, properties: false, boxes: false, links: true,
+        favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: true,
       },
     }));
     const linksRows = projection.rows.filter((row) => row.section === "links");
@@ -777,12 +778,12 @@ describe("projectNavigation — links", () => {
     expect(linksRows[0]).toMatchObject({ kind: "section", expanded: false });
   });
 
-  it("honors a custom sectionOrder that moves Links off the default last slot", () => {
+  it("keeps missing Templates beside Links in a custom sectionOrder", () => {
     const projection = projectNavigation(buildInput({
       sectionOrder: ["links", "favorites", "folders", "tags", "properties", "boxes"],
     }));
     expect(projection.sections.map((section) => section.section)).toEqual([
-      "links", "favorites", "folders", "tags", "properties", "boxes",
+      "links", "templates", "favorites", "folders", "tags", "properties", "boxes",
     ]);
     expect(projection.rows[0]?.id).toBe(navigationSectionId("links"));
   });
@@ -855,8 +856,8 @@ describe("hidden navigation projection", () => {
       expect(hidden.rows.some((row) => row.section === section)).toBe(false);
       expect(hidden.sections.some((row) => row.section === section)).toBe(false);
       const headers = hidden.rows.filter((row) => row.kind === "section");
-      expect(headers.map((row) => row.positionInSet)).toEqual([1, 2, 3, 4, 5]);
-      expect(headers.every((row) => row.setSize === 5)).toBe(true);
+      expect(headers.map((row) => row.positionInSet)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(headers.every((row) => row.setSize === 6)).toBe(true);
     }
     for (const query of ["", "work"]) {
       const hidden = projectNavigation({ ...input, query, hiddenNavSections: input.sectionOrder });
@@ -865,5 +866,25 @@ describe("hidden navigation projection", () => {
       expect(resolveNavigationFocus(original.rows, hidden.rows, "tag:work")).toBeNull();
     }
     expect(projectNavigation({ ...input, hiddenNavSections: [] })).toEqual(original);
+  });
+});
+
+describe("template navigation projection", () => {
+  const templates = [
+    { id: "daily", filePath: "Templates/Daily {{date}}.md", label: "Daily {{date}}.md", unavailable: false },
+    { id: "lost", filePath: "Missing/Archive.md", label: "Archive.md", unavailable: true },
+  ];
+  it("keeps registration order, stable menu targets, missing rows, and folder scope semantics", () => {
+    const rows = projectNavigation(buildInput({ templates })).rows.filter((row) => row.kind === "template");
+    expect(rows.map((row) => row.templateId)).toEqual(["daily", "lost"]);
+    expect(rows[1]).toMatchObject({ id: "template:lost", unavailable: true, disabled: false,
+      semanticState: "none", menuTarget: { section: "templates", scope: "item", itemId: "lost" },
+      parentId: "section:templates", positionInSet: 2, setSize: 2 });
+  });
+  it("matches filename and path, opens a collapsed section while querying, and respects section hiding", () => {
+    const input = buildInput({ templates, query: "MISSING/", sectionCollapsed: { ...buildInput().sectionCollapsed, templates: true } });
+    expect(projectNavigation(input).rows.map((row) => row.id)).toEqual(["section:templates", "template:lost"]);
+    expect(projectNavigation({ ...input, hiddenNavSections: ["templates"] }).rows).toEqual([]);
+    expect(projectNavigation({ ...input, query: "" }).rows.some((row) => row.kind === "template")).toBe(false);
   });
 });

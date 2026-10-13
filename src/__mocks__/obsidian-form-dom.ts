@@ -69,6 +69,7 @@ export class Setting {
   controlEl: HTMLElement;
   constructor(container: HTMLElement) { this.settingEl = container.createDiv({ cls: "setting-item" }); this.controlEl = this.settingEl.createDiv({ cls: "setting-item-control" }); }
   setName(name: string): this { this.settingEl.setAttribute("aria-label", name); return this; }
+  setDesc(desc: string): this { this.settingEl.createDiv({ cls: "setting-item-description", text: desc }); return this; }
   setClass(name: string): this { this.settingEl.classList.add(name); return this; }
   addText(configure: (text: TextComponent) => unknown): this { configure(new TextComponent(this.controlEl)); return this; }
   addDropdown(configure: (dropdown: DropdownComponent) => unknown): this { configure(new DropdownComponent(this.controlEl)); return this; }

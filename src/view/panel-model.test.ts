@@ -82,6 +82,7 @@ function buildState(): PanelModelState {
         tags: false,
         properties: false,
         boxes: false,
+        templates: false,
         links: false,
       },
       showItemCounts: true,

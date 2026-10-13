@@ -116,7 +116,7 @@ function buildState(): PanelModelState {
       paneWidth: 260,
       layoutMode: "dual",
       visible: true,
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
       showItemCounts: true,
       tooltipSide: "right",
       propertyFilterCount: 0,

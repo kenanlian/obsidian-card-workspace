@@ -3353,7 +3353,7 @@ describe("WP-07 arrangement routing and view-scoped note creation", () => {
 
     view.handleToolbarAction({ action: "new-note" });
 
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("notes");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("notes", [], {});
     expect(plugin.createNoteInCurrentFolder).toBeUndefined();
   });
 
@@ -3370,7 +3370,7 @@ describe("WP-07 arrangement routing and view-scoped note creation", () => {
 
     view.handleToolbarAction({ action: "new-note" });
 
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {});
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
     expect(addSpy).not.toHaveBeenCalled();
   });

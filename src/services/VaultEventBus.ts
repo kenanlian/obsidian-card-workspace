@@ -43,6 +43,8 @@ export class VaultEventBus {
     return completion;
   }
 
+  flushPendingEvents(): Promise<void> { return this.deliveryTail; }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

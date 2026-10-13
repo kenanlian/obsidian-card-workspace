@@ -1,5 +1,7 @@
 import { TFile, type App } from "obsidian";
 
+import { isExcludedTemplatePath } from "../template-exclusion";
+
 import { resolveCardFileKind, resolveCardFileKindFromPath } from "./file-kind";
 import {
   createLinksScope,
@@ -43,6 +45,7 @@ function readDestMap(resolvedLinks: ResolvedLinks, sourcePath: string): Record<s
 }
 
 function asSupportedCardFile(app: App, path: string): TFile | null {
+  if (isExcludedTemplatePath(app, path)) return null;
   const abstract = app.vault.getAbstractFileByPath(path);
   if (!(abstract instanceof TFile)) {
     return null;

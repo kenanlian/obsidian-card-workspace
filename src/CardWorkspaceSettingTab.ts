@@ -1,5 +1,5 @@
 import {
-  PluginSettingTab, SettingGroup, requireApiVersion, type App, type Setting,
+  PluginSettingTab, SettingGroup, Notice, requireApiVersion, type App, type Setting,
 } from "obsidian";
 import {
   getCardCornerRadiusOptions,
@@ -28,6 +28,11 @@ import {
   isNewNoteTemplate,
   type PartialPluginSettings,
 } from "./settings";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, normalizeQuickInput, resolveTemplateName } from "./note-input";
+import { attachFolderInputSuggest } from "./view/folder-input-suggest";
+import { onPlainEnter } from "./view/metadata-input-suggest";
+import { TemplateStorageError } from "./services/TemplateStorageService";
+import type { NoteInputStrings } from "./i18n/noteInput";
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { collectNavigationVisibilityPaths } from "./navigation-visibility-inventory";
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
@@ -119,6 +124,7 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
 export class CardWorkspaceSettingTab extends PluginSettingTab {
   private plugin: CardWorkspacePlugin;
   private readonly legacyVisibility = new Map<HTMLElement, () => boolean>();
+  private readonly folderSuggests = new Set<ReturnType<typeof attachFolderInputSuggest>>();
 
   constructor(app: App, plugin: CardWorkspacePlugin) {
     super(app, plugin);
@@ -134,6 +140,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const section = this.resolveSectionControl(key);
     if (section) return !settings.hiddenNavSections.includes(section);
     switch (key) {
+      case "quickInputTemplateId":
+        return normalizeQuickInput(settings.quickInput).templateId ?? "";
+      case "quickInputFolderPath":
+        return normalizeQuickInput(settings.quickInput).folderPath;
+      case "quickInputInsertPosition":
+        return normalizeQuickInput(settings.quickInput).insertPosition;
       case "backlinkSnippetCount":
         return String(settings.backlinkSnippetCount);
       case "defaultCardOpenBehavior":
@@ -169,7 +181,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     await this.saveDeclarativeSetting(key, value);
-    if (key === "cardImageMode") {
+    if (key === "cardImageMode" || (key === "quickInputTemplateId" && typeof value === "string")) {
       if (requireApiVersion("1.13.0")) {
         if (typeof this.refreshDomState === "function") {
           this.refreshDomState();
@@ -181,6 +193,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   /** Obsidian 1.13+ renders definitions directly and skips this legacy entry point. */
   display(): void {
+    this.disposeFolderSuggests();
     this.containerEl.empty();
     this.legacyVisibility.clear();
     for (const definition of this.getSettingDefinitions()) {
@@ -238,11 +251,66 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     }
   }
 
+  hide(): void { this.disposeFolderSuggests(); }
+  private disposeFolderSuggests(): void {
+    this.folderSuggests.forEach((suggest) => suggest.dispose()); this.folderSuggests.clear();
+  }
+
+  private renderTemplateFolderSetting(setting: Setting, strings: NoteInputStrings): void {
+    let draft = this.plugin.getSettings().templateStorageFolder ?? DEFAULT_TEMPLATE_STORAGE_FOLDER;
+    if (draft === "") draft = "/";
+    let pending = false;
+    setting.addText((text) => {
+      text.setValue(draft).setPlaceholder(DEFAULT_TEMPLATE_STORAGE_FOLDER).onChange((value) => { draft = value; });
+      const suggest = attachFolderInputSuggest(this.app, text.inputEl, (path) => { draft = path || "/"; text.setValue(draft); });
+      this.folderSuggests.add(suggest);
+      setting.addButton((button) => {
+        const apply = async () => {
+          if (pending) return;
+          pending = true; suggest.close(); text.inputEl.disabled = true;
+          button.setDisabled(true).setButtonText(strings.applying);
+          try {
+            await this.plugin.changeTemplateStorageFolder(draft);
+            draft = this.plugin.getSettings().templateStorageFolder || "/"; text.setValue(draft);
+          } catch (error) {
+            const reason = error instanceof TemplateStorageError
+              ? error.code === "invalid-folder" ? strings.invalidTemplateFolder
+                : error.code === "missing-template" ? `${strings.templateNotFound} ${error.path}`
+                  : `${strings.targetConflict} ${error.path}` : String(error);
+            new Notice(strings.saveTemplateFailed(reason));
+          } finally { pending = false; text.inputEl.disabled = false; button.setDisabled(false).setButtonText(strings.apply); }
+        };
+        const submit = () => { void apply(); };
+        button.setButtonText(strings.apply).onClick(submit);
+        onPlainEnter(text.inputEl, suggest.isOpen, submit);
+      });
+    });
+  }
+
   getSettingDefinitions(): WorkspaceSettingGroup[] {
     const language = this.plugin.getUiLanguage();
     const strings = getSettingTabStrings(language);
 
     const navigationStrings = getUiStrings(language).navigationVisibility;
+    const inputStrings = getUiStrings(language).noteInput;
+    const settings = this.plugin.getSettings();
+    const quickInput = normalizeQuickInput(settings.quickInput);
+    const templateOptions: Record<string, string> = Object.create(null) as Record<string, string>;
+    templateOptions[""] = inputStrings.noTemplate;
+    for (const template of settings.noteTemplates ?? []) {
+      templateOptions[template.id] = resolveTemplateName(template);
+    }
+    if (quickInput.templateId && !Object.prototype.hasOwnProperty.call(templateOptions, quickInput.templateId)) {
+      templateOptions[quickInput.templateId] = `${inputStrings.templateUnavailable} (${quickInput.templateId})`;
+    }
+    const folderOptions: Record<string, string> = Object.create(null) as Record<string, string>;
+    folderOptions[""] = inputStrings.rootFolder;
+    for (const file of this.app.vault?.getAllLoadedFiles?.() ?? []) {
+      if ("children" in file && file.path !== "") folderOptions[file.path] = file.path;
+    }
+    if (quickInput.folderPath && !Object.prototype.hasOwnProperty.call(folderOptions, quickInput.folderPath)) {
+      folderOptions[quickInput.folderPath] = `${quickInput.folderPath} (${inputStrings.targetFolderNotFound})`;
+    }
     return [
       {
         type: "group",
@@ -393,6 +461,24 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           })),
         ],
       },
+      {
+        type: "group",
+        heading: inputStrings.quickInputHeading,
+        items: [
+          { name: inputStrings.quickInputTemplateName, desc: inputStrings.quickInputTemplateDesc,
+            control: { type: "dropdown", key: "quickInputTemplateId", options: templateOptions } },
+          { name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
+            visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId === null,
+            control: { type: "dropdown", key: "quickInputFolderPath", options: folderOptions } },
+          { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,
+            control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertStart, end: inputStrings.insertEnd } } },
+        ],
+      },
+      {
+        type: "group", heading: inputStrings.templates,
+        items: [{ name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
+          render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
+      },
     ];
   }
 
@@ -401,6 +487,16 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   }
 
   private async saveDeclarativeSetting(key: string, value: unknown): Promise<void> {
+    if (key === "quickInputTemplateId" || key === "quickInputFolderPath" || key === "quickInputInsertPosition") {
+      if (typeof value !== "string") return;
+      if (key === "quickInputInsertPosition" && value !== "start" && value !== "end") return;
+      const config = normalizeQuickInput(this.plugin.getSettings().quickInput);
+      if (key === "quickInputTemplateId") config.templateId = value || null;
+      if (key === "quickInputFolderPath") config.folderPath = value;
+      if (key === "quickInputInsertPosition") config.insertPosition = value as "start" | "end";
+      await this.plugin.saveSettings({ quickInput: config });
+      return;
+    }
     const section = this.resolveSectionControl(key);
     const patch = section && typeof value === "boolean"
       ? { hiddenNavSections: value ? this.plugin.getSettings().hiddenNavSections.filter((id) => id !== section)

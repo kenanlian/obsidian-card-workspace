@@ -192,7 +192,7 @@ function createDeps(
     boxes: [makeBox("box-1", "Alpha"), makeBox("box-2", "Beta")],
     activeBoxId: null,
     boxExcludedCount: () => 0,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     folderSortMode: () => "asc",
     navigationSortMode: () => "asc",
@@ -284,7 +284,7 @@ describe("folders header menu", () => {
 
   it("flips the expand-all title and the section toggle from current state", () => {
     const deps = createDeps({
-      sectionCollapsed: { favorites: false, folders: true, tags: false, properties: false, boxes: false, links: false },
+      sectionCollapsed: { favorites: false, folders: true, tags: false, properties: false, boxes: false, templates: false, links: false },
       hasExpandedFolders: true,
     });
     const payload = createPayload({
@@ -874,19 +874,19 @@ describe("links header menu", () => {
 
   it("flips to expand when the section is collapsed", () => {
     const deps = createDeps({
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: true },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: true },
     });
     const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
 
     expect(getTitles(menu)).toContain("Expand section");
   });
 
-  it("disables move-down at the default last-section boundary", () => {
+  it("allows moving Links down into the default Templates slot", () => {
     const deps = createDeps();
     const { menu } = build(createPayload({ section: "links", scope: "header" }), deps);
 
     expect(findItem(menu, "Move section up")?.disabled).toBe(false);
-    expect(findItem(menu, "Move section down")?.disabled).toBe(true);
+    expect(findItem(menu, "Move section down")?.disabled).toBe(false);
   });
 
   it("disables move-up when links is first in sectionOrder", () => {
@@ -1252,7 +1252,7 @@ describe("nav context menu wiring", () => {
         visiblePropertyKeys: [],
         expandedPropertyKeys: [],
         navSectionOrder: defaultNavSectionOrder(),
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
         ...settingsOverrides,
       }));
       const activeBox = (plugin.getSettings() as { activeBoxId: string | null }).activeBoxId;
@@ -1529,7 +1529,7 @@ describe("navigation visibility menu actions", () => {
     expect(section === "folders" ? deps.actions.hideFolder : deps.actions.hideTag).toHaveBeenCalledWith("work");
   });
 
-  it.each(["favorites", "folders", "tags", "properties", "boxes", "links"] as const)("offers section hiding for %s", (section) => {
+  it.each(["favorites", "folders", "tags", "properties", "boxes", "templates", "links"] as const)("offers section hiding for %s", (section) => {
     const deps = createDeps();
     const { menu } = build(createPayload({ section, scope: "header" }), deps);
     findItem(menu, "Hide this section")?.clickHandler?.();
@@ -1542,7 +1542,7 @@ describe("navigation visibility menu actions", () => {
   });
 
   it("disables movement when all the sections in that direction are hidden", () => {
-    const { menu } = build(createPayload({ section: "boxes", scope: "header" }), createDeps({ hiddenSections: ["links"] }));
+    const { menu } = build(createPayload({ section: "boxes", scope: "header" }), createDeps({ hiddenSections: ["templates", "links"] }));
     expect(findItem(menu, "Move section down")?.disabled).toBe(true);
   });
 });

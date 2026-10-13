@@ -1,0 +1,253 @@
+import { TFile, TFolder, setIcon, type App } from "obsidian";
+import type { NoteInputStrings } from "../i18n/noteInput";
+import type { NoteInputResult, QuickInputRequest } from "../note-input";
+import type { PluginSettings } from "../settings";
+import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
+
+interface Geometry { x: number; y: number; width: number; height: number }
+interface Draft {
+  win: Window;
+  root: HTMLDivElement;
+  editor: NativeMarkdownEditor;
+  send: HTMLButtonElement;
+  sendLabel: HTMLSpanElement;
+  cancel: HTMLButtonElement;
+  geometry: Geometry;
+  composing: boolean;
+  pending: boolean;
+  request: QuickInputRequest | null;
+  cleanup: Array<() => void>;
+  gestureCleanup?: () => void;
+}
+interface Options {
+  app: App;
+  getSettings: () => PluginSettings;
+  getStrings: () => NoteInputStrings;
+  submit: (request: QuickInputRequest) => Promise<NoteInputResult>;
+  notify: (message: string) => void;
+}
+
+function boundGeometry(win: Window, geometry: Geometry): Geometry {
+  const availableWidth = Math.max(1, win.innerWidth);
+  const availableHeight = Math.max(1, win.innerHeight);
+  const width = Math.min(availableWidth, Math.max(Math.min(320, availableWidth), geometry.width));
+  const height = Math.min(availableHeight, Math.max(Math.min(200, availableHeight), geometry.height));
+  return { width, height, x: Math.max(0, Math.min(availableWidth - width, geometry.x)), y: Math.max(0, Math.min(availableHeight - height, geometry.y)) };
+}
+
+/** Owns runtime drafts and geometry only; never activates or opens a workspace leaf. */
+export class QuickInputWindowManager {
+  private readonly drafts = new Map<Window, Draft>();
+  private readonly geometry = new WeakMap<Window, Geometry>();
+  private disposed = false;
+  private sequence = 0;
+  private readonly submissionPrefix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  constructor(private readonly options: Options) {}
+
+  open(win: Window): void {
+    if (this.disposed || win.closed) return;
+    const existing = this.drafts.get(win);
+    if (existing) { this.refresh(existing); existing.editor.focus(); return; }
+    const document = win.document;
+    const strings = this.options.getStrings();
+    const root = document.createElement("div");
+    root.className = "fce-quick-input";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-label", strings.quickInput);
+    root.setAttribute("aria-modal", "false");
+    const top = document.createElement("div");
+    top.className = "fce-quick-input-grip";
+    top.setAttribute("aria-hidden", "true");
+    top.textContent = "•••";
+    const body = document.createElement("div");
+    body.className = "fce-quick-input-editor";
+    const footer = document.createElement("div");
+    footer.className = "fce-quick-input-footer";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = strings.cancel;
+    const send = document.createElement("button");
+    send.type = "button";
+    send.className = "mod-cta";
+    send.setAttribute("aria-label", strings.send);
+    const sendIcon = document.createElement("span");
+    sendIcon.className = "fce-quick-input-send-icon";
+    sendIcon.setAttribute("aria-hidden", "true");
+    setIcon(sendIcon, "send");
+    const sendLabel = document.createElement("span");
+    sendLabel.className = "fce-quick-input-send-label";
+    sendLabel.textContent = strings.send;
+    send.append(sendIcon, sendLabel);
+    footer.append(cancel, send);
+    root.append(top, body, footer);
+    document.body.append(root);
+    let draft: Draft | undefined;
+    try {
+      const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder,
+        onChange: () => { if (draft) this.refresh(draft); },
+        onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
+      });
+      draft = { win, root, editor, send, sendLabel, cancel, composing: false, pending: false, request: null, cleanup: [],
+        geometry: boundGeometry(win, this.geometry.get(win) ?? { x: (win.innerWidth - 520) / 2, y: (win.innerHeight - 320) / 2, width: 520, height: 320 }),
+      };
+      const current = draft;
+      this.drafts.set(win, current);
+      this.paint(current);
+      this.listen(current, cancel, "click", () => { if (!current.pending) this.close(current); });
+      this.listen(current, send, "click", () => { void this.send(current); });
+      this.listen(current, root, "compositionstart", () => { current.composing = true; this.refresh(current); });
+      this.listen(current, root, "compositionend", () => { current.composing = false; this.refresh(current); });
+      this.listen(current, root, "keydown", (event) => {
+        const key = event as KeyboardEvent;
+        if ((key.ctrlKey || key.metaKey) && !key.altKey && key.key === "Enter") this.handleModEnter(current, key);
+      }, true);
+      this.listen(current, root, "focusin", () => this.refresh(current));
+      this.listen(current, win, "focus", () => this.refresh(current));
+      this.listen(current, win, "resize", () => { current.geometry = boundGeometry(win, current.geometry); this.paint(current); });
+      this.listen(current, win, "unload", () => this.close(current));
+      this.listen(current, top, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, "move"));
+      for (const direction of ["n", "ne", "e", "se", "s", "sw", "w", "nw"]) {
+        const handle = document.createElement("div");
+        handle.className = `fce-quick-input-resize fce-quick-input-resize-${direction}`;
+        handle.dataset.direction = direction;
+        handle.setAttribute("aria-hidden", "true");
+        root.append(handle);
+        this.listen(current, handle, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, direction));
+      }
+      this.refresh(current);
+      editor.focus();
+    } catch (error) {
+      if (draft) this.close(draft); else root.remove();
+      console.warn("[card-workspace] Native quick input unavailable", error);
+      this.options.notify(strings.nativeEditorUnavailable);
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const draft of this.drafts.values()) this.close(draft);
+  }
+
+  private listen(draft: Draft, target: EventTarget, type: string, handler: EventListener, capture = false): void {
+    target.addEventListener(type, handler, capture);
+    draft.cleanup.push(() => target.removeEventListener(type, handler, capture));
+  }
+
+  private validConfig(request?: QuickInputRequest | null): boolean {
+    const settings = this.options.getSettings();
+    const config = request?.config ?? settings.quickInput;
+    const template = request?.template ?? (config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId) : null);
+    if (config.templateId && (!template || template.targetFolderPath === null)) return false;
+    const folderPath = template ? template.targetFolderPath : config.folderPath;
+    if (folderPath === null || folderPath === undefined) return false;
+    const folder = folderPath === "" ? this.options.app.vault.getRoot() : this.options.app.vault.getAbstractFileByPath(folderPath);
+    if (!(folder instanceof TFolder)) return false;
+    if (template) {
+      const file = this.options.app.vault.getAbstractFileByPath(template.filePath);
+      if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return false;
+    }
+    return config.insertPosition === "start" || config.insertPosition === "end";
+  }
+
+  private refresh(draft: Draft): void {
+    const strings = this.options.getStrings();
+    draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !this.validConfig(draft.request);
+    draft.cancel.disabled = draft.pending;
+    draft.cancel.textContent = strings.cancel;
+    draft.sendLabel.textContent = draft.pending ? strings.sending : strings.send;
+    draft.send.setAttribute("aria-label", draft.pending ? strings.sending : strings.send);
+    draft.send.title = this.validConfig(draft.request) ? (draft.pending ? strings.sending : strings.send) : strings.invalidQuickInputConfig;
+    draft.root.setAttribute("aria-busy", String(draft.pending));
+  }
+
+  private handleModEnter(draft: Draft, event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.isComposing && event.keyCode !== 229 && !draft.composing) void this.send(draft);
+  }
+
+  private async send(draft: Draft): Promise<void> {
+    if (this.drafts.get(draft.win) !== draft || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
+    const strings = this.options.getStrings();
+    if (!this.validConfig(draft.request)) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
+    if (!draft.request) {
+      const settings = this.options.getSettings();
+      const config = { ...settings.quickInput };
+      const template = config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId)! : null;
+      draft.request = { submissionId: `${this.submissionPrefix}-${++this.sequence}`, text: draft.editor.getValue(), config,
+        template: template ? { ...template } : null, now: new Date() };
+    }
+    draft.pending = true;
+    draft.editor.setReadOnly(true);
+    this.refresh(draft);
+    try {
+      const result = await this.options.submit(draft.request);
+      if (this.disposed || this.drafts.get(draft.win) !== draft) return;
+      this.close(draft);
+      this.options.notify(this.options.getStrings().sent(result.file.path));
+    } catch (error) {
+      if (this.disposed || this.drafts.get(draft.win) !== draft) return;
+      this.options.notify(this.options.getStrings().sendFailed(error instanceof Error ? error.message : String(error)));
+    } finally {
+      if (this.drafts.get(draft.win) === draft) { draft.pending = false; this.refresh(draft); }
+    }
+  }
+
+  private close(draft: Draft): void {
+    if (this.drafts.get(draft.win) !== draft) return;
+    this.drafts.delete(draft.win);
+    this.geometry.set(draft.win, draft.geometry);
+    for (const cleanup of draft.cleanup) cleanup();
+    try { draft.editor.dispose(); } finally { draft.root.remove(); }
+  }
+
+  private paint(draft: Draft): void {
+    const { x, y, width, height } = draft.geometry;
+    Object.assign(draft.root.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
+    this.geometry.set(draft.win, draft.geometry);
+  }
+
+  private startGesture(draft: Draft, event: PointerEvent, direction: string): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    draft.gestureCleanup?.();
+    const initial = { ...draft.geometry };
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const move = (next: Event) => {
+      const pointer = next as PointerEvent;
+      if (pointer.pointerId !== event.pointerId) return;
+      const dx = pointer.clientX - startX;
+      const dy = pointer.clientY - startY;
+      let geometry = { ...initial };
+      if (direction === "move") { geometry.x += dx; geometry.y += dy; }
+      else {
+        const minWidth = Math.min(320, draft.win.innerWidth);
+        const minHeight = Math.min(200, draft.win.innerHeight);
+        if (direction.includes("e")) geometry.width = Math.max(minWidth, Math.min(initial.width + dx, draft.win.innerWidth - initial.x));
+        if (direction.includes("s")) geometry.height = Math.max(minHeight, Math.min(initial.height + dy, draft.win.innerHeight - initial.y));
+        if (direction.includes("w")) { geometry.x = Math.max(0, Math.min(initial.x + dx, initial.x + initial.width - minWidth)); geometry.width = initial.x + initial.width - geometry.x; }
+        if (direction.includes("n")) { geometry.y = Math.max(0, Math.min(initial.y + dy, initial.y + initial.height - minHeight)); geometry.height = initial.y + initial.height - geometry.y; }
+      }
+      draft.geometry = boundGeometry(draft.win, geometry);
+      this.paint(draft);
+    };
+    const end = (next?: Event) => {
+      if (next && (next as PointerEvent).pointerId !== event.pointerId) return;
+      draft.win.removeEventListener("pointermove", move);
+      draft.win.removeEventListener("pointerup", end);
+      draft.win.removeEventListener("pointercancel", end);
+      const index = draft.cleanup.indexOf(end);
+      if (index >= 0) draft.cleanup.splice(index, 1);
+      if (draft.gestureCleanup === end) draft.gestureCleanup = undefined;
+    };
+    draft.win.addEventListener("pointermove", move);
+    draft.win.addEventListener("pointerup", end);
+    draft.win.addEventListener("pointercancel", end);
+    draft.cleanup.push(end);
+    draft.gestureCleanup = end;
+  }
+}

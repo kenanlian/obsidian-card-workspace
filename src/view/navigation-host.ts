@@ -4,7 +4,7 @@ import type { PluginSettings } from "../settings";
 import type { PropertyScalarRef } from "../property-filter-settings";
 import type { PropertyFacet } from "./property-facets";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
-import type { NavigationIntent } from "./navigation-model";
+import type { NavigationIntent, NavigationTemplateSource } from "./navigation-model";
 import type {
   BoxSummary,
   FavoriteRowModel,
@@ -35,6 +35,7 @@ export function buildNavigationPanelState(input: {
   tooltipSide: "left" | "right";
   /** Immutable facet snapshot (WP-05 obtains it from PropertyController). */
   propertyFacets?: readonly PropertyFacet[];
+  templates?: readonly NavigationTemplateSource[];
 }): PanelModelState["nav"] {
   const { settings, strings, scope, navLayout } = input;
   const sectionCollapsed = settings.sectionCollapsed;
@@ -46,6 +47,7 @@ export function buildNavigationPanelState(input: {
     folders: input.folderTree,
     tags: buildTagTree(input.cardProjection.availableTags),
     boxes: input.boxSummaries,
+    templates: input.templates ?? [],
     tagCounts: input.cardProjection.tagCounts,
     includeSubfolders: settings.includeSubfolders,
     tagsDisabled: !resolveSourceCapabilities(scope).browseTagFilter,
@@ -59,6 +61,7 @@ export function buildNavigationPanelState(input: {
       tags: { label: strings.toolbar.navPane.tagsSection, emptyLabel: null },
       properties: { label: strings.property.sectionLabel, emptyLabel: strings.property.sectionEmpty },
       boxes: { label: strings.toolbar.navPane.boxesSection, emptyLabel: strings.toolbar.navPane.boxesEmpty },
+      templates: { label: strings.noteInput.templates, emptyLabel: strings.noteInput.templatesEmpty },
       links: { label: strings.links.sectionLabel, emptyLabel: null },
     },
     rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
@@ -73,6 +76,7 @@ export function buildNavigationPanelState(input: {
     showItemCounts: settings.showNavItemCounts, tooltipSide: input.tooltipSide,
     propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),
     visibleGroupProperties: (input.propertyFacets ?? []).map(({ key, label }) => ({ key, label })),
+    filterVisible: navLayout.getFilterVisible?.() ?? false,
     projection, query: navLayout.getQuery(), focusId: navLayout.getFocusId(),
     focusRequest: navLayout.getFocusRequest(),
     revealRequest: navLayout.getRevealRequest(),
@@ -145,6 +149,9 @@ export function isCurrentNavigationMenuTarget(input: {
 }): boolean {
   const { payload, settings } = input;
   if (payload.scope === "header") return payload.originId === `section:${payload.section}`;
+  if (payload.section === "templates") {
+    return typeof payload.itemId === "string" && settings.noteTemplates.some((template) => template.id === payload.itemId);
+  }
   if (payload.section === "boxes") {
     return typeof payload.itemId === "string" && settings.boxes.some((box) => box.id === payload.itemId);
   }
@@ -218,6 +225,9 @@ export function routeNavigationIntent(input: {
    * the pre-WP-05 host caller keeps compiling; absent means a no-op.
    */
   selectPropertyValue?: (propertyKey: string, ref: PropertyScalarRef, additive: boolean) => void;
+  createFromTemplate?: (templateId: string) => void;
+  templateCommand?: (command: "new") => void;
+  openQuickInput?: (win: Window) => void;
   selectLinksDirection?: (direction: "backlinks" | "outgoing") => void;
   /** Shared menu/drop action re-resolves source and target after release. */
   moveFolder?: (sourcePath: string, targetFolderPath: string) => void;
@@ -225,6 +235,10 @@ export function routeNavigationIntent(input: {
   reorderFavorites?: (source: FavoriteEntry, target: FavoriteEntry, position: "before" | "after") => void;
 }): void {
   const { intent, navLayout } = input;
+  if (intent.type === "quick-input") { if (!navLayout.isDisposed()) input.openQuickInput?.(intent.win); return; }
+  if (intent.type === "template-command") { if (!navLayout.isDisposed()) input.templateCommand?.(intent.command); return; }
+  if (intent.type === "filter-toggle") { navLayout.toggleFilter(); return; }
+  if (intent.type === "filter-show") { navLayout.showFilter(); return; }
   if (intent.type === "reorder-navigation-items") { void navLayout.reorderNavigationItems(intent.sourceId, intent.targetId, intent.position); return; }
   if (intent.type === "move-folder") { if (navLayout.isDisposed()) return; input.moveFolder?.(intent.sourcePath, intent.targetFolderPath); return; }
   if (intent.type === "reorder-folders") { void navLayout.reorderFolders(intent.sourcePath, intent.targetPath, intent.position); return; }
@@ -252,6 +266,7 @@ export function routeNavigationIntent(input: {
   if (row.disabled) return;
   if (row.kind === "section") { void navLayout.setExpanded(row, !row.expanded); return; }
   if (row.kind === "folder") { input.selectFolder(row.folderPath); return; }
+  if (row.kind === "template") { input.createFromTemplate?.(row.templateId); return; }
   if (row.kind === "box") {
     if (!isCurrentBoxId(input.scope, row.boxId)) input.switchBox(row.boxId);
     return;

@@ -1,4 +1,5 @@
 import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT, normalizeNoteTemplates, normalizeQuickInput, type NoteTemplateDefinition, type QuickInputConfig } from "./note-input";
 import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
@@ -162,6 +163,9 @@ export interface PluginSettings {
   enableHeadingDragInsert: boolean;
   cardCornerRadius: CardCornerRadius;
   newNoteTemplate: NewNoteTemplate;
+  noteTemplates: NoteTemplateDefinition[];
+  templateStorageFolder: string;
+  quickInput: QuickInputConfig;
   previewLines: number;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
@@ -214,6 +218,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   enableHeadingDragInsert: false,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
+  noteTemplates: [],
+  templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
+  quickInput: { ...DEFAULT_QUICK_INPUT },
   previewLines: DEFAULT_PREVIEW_LINES,
   searchPreviewSnippetCount: DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT,
   hoverPreviewWidth: DEFAULT_HOVER_PREVIEW_WIDTH,
@@ -231,7 +238,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   activeBoxId: null,
   navPaneWidth: DEFAULT_NAV_PANE_WIDTH,
   navPaneCollapsed: false,
-  sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+  sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
   showNavItemCounts: false,
   navSectionOrder: defaultNavSectionOrder(),
   hiddenFolderPaths: [], hiddenTagPaths: [], hiddenNavSections: [],
@@ -544,6 +551,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     navPaneCollapsed: workspace.navPaneCollapsed,
     sectionCollapsed: workspace.sectionCollapsed,
     boxes: userData.boxes,
+    noteTemplates: userData.noteTemplates,
     folderSiblingOrders: userData.folderSiblingOrders,
     folderDescendingNameSorts: userData.folderDescendingNameSorts,
     navigationSorting: userData.navigationSorting,
@@ -610,6 +618,9 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     enableHeadingDragInsert: normalizeBooleanSetting(data.enableHeadingDragInsert, false),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
+    noteTemplates: normalizeNoteTemplates(data.noteTemplates),
+    templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
+    quickInput: normalizeQuickInput(data.quickInput),
     previewLines: normalizePreviewLines(data.previewLines),
     searchPreviewSnippetCount: normalizeSearchPreviewSnippetCount(data.searchPreviewSnippetCount),
     hoverPreviewWidth: normalizeHoverPreviewDimension(data.hoverPreviewWidth,

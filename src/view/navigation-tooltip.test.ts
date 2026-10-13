@@ -37,7 +37,7 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
     tagCounts: { work: 7, "work/now": 2 },
     includeSubfolders: true,
     tagsDisabled: false, propertiesDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
@@ -45,7 +45,8 @@ function input(overrides: Partial<NavigationProjectionInput> = {}): NavigationPr
       tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
-      links: { label: "Links", emptyLabel: null },
+      templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
     linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },

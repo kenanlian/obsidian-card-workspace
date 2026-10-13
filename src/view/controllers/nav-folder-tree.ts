@@ -1,5 +1,7 @@
 import { TFile, TFolder, type App } from "obsidian";
 
+import { isExcludedTemplatePath } from "../../template-exclusion";
+
 import { isSupportedCardFile } from "../file-kind";
 import { normalizeScopePath } from "../scope";
 import type { FolderTreeNode } from "../types";
@@ -9,7 +11,7 @@ export function buildNavigationFolderTree(app: App): FolderTreeNode[] {
   if (typeof vault.getRoot !== "function") return [];
 
   const countDirectFiles = (folder: TFolder): number => folder.children.reduce(
-    (total, child) => total + (child instanceof TFile && isSupportedCardFile(child) ? 1 : 0),
+    (total, child) => total + (child instanceof TFile && isSupportedCardFile(child) && !isExcludedTemplatePath(app, child.path) ? 1 : 0),
     0,
   );
   const buildNode = (folder: TFolder, depth: number): FolderTreeNode => {

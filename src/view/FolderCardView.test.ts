@@ -208,8 +208,10 @@ const testState = vi.hoisted(() => {
 });
 
 vi.mock("obsidian", async () => {
+  const { FuzzySuggestModal } = await import("../__mocks__/obsidian");
   const { AbstractInputSuggest, Scope } = await import("../__mocks__/obsidian-input-suggest");
   return {
+    FuzzySuggestModal,
     AbstractInputSuggest,
     Scope,
     Plugin: class {},
@@ -579,12 +581,12 @@ describe("FolderCardView host contract", () => {
     const { view, plugin } = createHarness();
     (view as any).cardScope = createFolderScope("projects", true);
     view.handleToolbarAction({ action: "new-note" });
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("projects");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("projects", [], {});
 
     plugin.createNoteInFolder.mockClear();
     (view as any).cardScope = createFolderScope("", true);
     view.handleToolbarAction({ action: "new-note" });
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("", [], {});
   });
 
   it("creates notes in each open folder view's own path, not lastFolderPath", () => {
@@ -598,8 +600,8 @@ describe("FolderCardView host contract", () => {
     harnessA.view.handleToolbarAction({ action: "new-note" });
     harnessB.view.handleToolbarAction({ action: "new-note" });
 
-    expect(harnessA.plugin.createNoteInFolder).toHaveBeenCalledWith("projects");
-    expect(harnessB.plugin.createNoteInFolder).toHaveBeenCalledWith("notes");
+    expect(harnessA.plugin.createNoteInFolder).toHaveBeenCalledWith("projects", [], {});
+    expect(harnessB.plugin.createNoteInFolder).toHaveBeenCalledWith("notes", [], {});
     expect(harnessA.plugin.createNoteInFolder).not.toHaveBeenCalledWith("other");
     expect(harnessB.plugin.createNoteInFolder).not.toHaveBeenCalledWith("other");
   });
@@ -616,7 +618,7 @@ describe("FolderCardView host contract", () => {
 
     view.handleToolbarAction({ action: "new-note" });
 
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox");
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {});
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
     expect(addSpy).not.toHaveBeenCalled();
     expect(plugin.selectFolderByPath).not.toHaveBeenCalled();

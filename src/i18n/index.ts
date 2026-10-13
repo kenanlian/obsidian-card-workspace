@@ -8,6 +8,7 @@ import { desktopShellStrings } from "./desktopShell";
 import { fileKindStrings } from "./fileKind";
 import { folderPickerStrings } from "./folderPicker";
 import { linksStrings } from "./links";
+import { noteInputStrings } from "./noteInput";
 import { noteOpsStrings } from "./noteOps";
 import { panelStrings } from "./panel";
 import { propertyStrings } from "./property";
@@ -26,6 +27,7 @@ export type { DesktopShellStrings } from "./desktopShell";
 export type { FileKindStrings } from "./fileKind";
 export type { FolderPickerStrings } from "./folderPicker";
 export type { LinksStrings } from "./links";
+export type { NoteInputStrings } from "./noteInput";
 export type { NoteOpsStrings } from "./noteOps";
 export type { PanelStrings } from "./panel";
 export type { PropertyStrings } from "./property";
@@ -57,6 +59,7 @@ const EN: UiStrings = {
   panel: panelStrings.en,
   property: propertyStrings.en,
   fileKind: fileKindStrings.en,
+  noteInput: noteInputStrings.en,
   noteOps: noteOpsStrings.en,
   desktopShell: desktopShellStrings.en,
   box: boxStrings.en,
@@ -75,6 +78,7 @@ const ZH: UiStrings = {
   panel: panelStrings.zh,
   property: propertyStrings.zh,
   fileKind: fileKindStrings.zh,
+  noteInput: noteInputStrings.zh,
   noteOps: noteOpsStrings.zh,
   desktopShell: desktopShellStrings.zh,
   box: boxStrings.zh,

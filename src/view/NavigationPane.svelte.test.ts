@@ -42,14 +42,15 @@ function projection(
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true,
     tagsDisabled: browseFiltersDisabled, propertiesDisabled: browseFiltersDisabled,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder,
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
-      links: { label: "Links", emptyLabel: null },
+      templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
     linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled,
@@ -93,14 +94,15 @@ function propertyProjection(options: {
     tags: [{ label: "work", displayTag: "Work", tag: "work", depth: 0, synthetic: false, children: [] }],
     boxes: [{ id: "box-1", name: "Inbox", cardCount: 2 }], tagCounts: { work: 2 },
     includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: "No favorites yet — right-click an item to add one" },
       folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: "No properties selected — choose which properties to show" },
       boxes: { label: "Boxes", emptyLabel: "No card boxes yet — right-click to create one" },
-      links: { label: "Links", emptyLabel: null },
+      templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
     linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled: true,
@@ -117,8 +119,8 @@ function propertyProjection(options: {
 function nav(overrides: Partial<PanelNavState> = {}): PanelNavState {
   return {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false }, showItemCounts: true,
-    tooltipSide: "right", propertyFilterCount: 0, projection: projection(), query: "", focusId: "section:favorites",
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false }, showItemCounts: true,
+    filterVisible: true, tooltipSide: "right", propertyFilterCount: 0, projection: projection(), query: "", focusId: "section:favorites",
     focusRequest: null, revealRequest: null,
     ...overrides,
   };
@@ -203,7 +205,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(command("ArrowDown", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowUp", "favorite:file:notes/A.md")).toEqual({ type: "focus", rowId: "section:favorites" });
     expect(command("Home", "box:box-1")).toEqual({ type: "focus", rowId: "section:favorites" });
-    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "links:backlinks" });
+    expect(command("End", "section:favorites")).toEqual({ type: "focus", rowId: "section:templates" });
     expect(command("ArrowRight", "section:favorites")).toEqual({ type: "focus", rowId: "favorite:file:notes/A.md" });
     expect(command("ArrowRight", "folder:notes")).toEqual({ type: "focus", rowId: "folder:notes/child" });
     expect(command("ArrowLeft", "folder:notes/child")).toEqual({ type: "focus", rowId: "folder:notes" });
@@ -253,19 +255,72 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(row("tag:work").getAttribute("data-tooltip")).toBe("2 files, 0 subtags");
   });
 
-  it("keeps the navigation search icon inside a stable icon-input-clear layout", async () => {
+  it("keeps the search and send header separate from the next-line input", async () => {
     render();
     await tick();
     const filter = document.querySelector<HTMLElement>(".fce-nav-filter")!;
-    expect(Array.from(filter.children).map((child) => child.tagName)).toEqual(["LABEL", "SPAN", "INPUT"]);
-    expect(filter.querySelector<HTMLElement>(".fce-nav-filter-icon")?.dataset.icon).toBe("search");
+    expect(Array.from(filter.children).map((child) => child.tagName)).toEqual(["LABEL", "INPUT"]);
+    expect(filter.classList.contains("fce-toolbar-search")).toBe(true);
+    expect(filter.parentElement?.classList.contains("fce-toolbar-search-row")).toBe(true);
+    expect(filter.querySelector("input")?.classList.contains("fce-search-input")).toBe(true);
+    expect(filter.querySelector("input")?.getAttribute("role")).not.toBe("combobox");
+    const actions = document.querySelector<HTMLElement>(".fce-nav-pane-header-group")!;
+    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["search", "send"]);
+    expect(document.querySelector<HTMLElement>(".fce-nav-search-toggle")?.dataset.icon).toBe("search");
     expect(filter.querySelector(".fce-nav-filter-clear")).toBeNull();
 
     render({ nav: nav({ query: "work", projection: projection("work") }) });
     await tick();
     const populatedFilter = document.querySelectorAll<HTMLElement>(".fce-nav-filter")[1]!;
-    expect(Array.from(populatedFilter.children).map((child) => child.tagName)).toEqual(["LABEL", "SPAN", "INPUT", "BUTTON"]);
+    expect(Array.from(populatedFilter.children).map((child) => child.tagName)).toEqual(["LABEL", "INPUT", "BUTTON"]);
     expect(populatedFilter.querySelector<HTMLButtonElement>(".fce-nav-filter-clear")?.getAttribute("aria-label")).toBe("Clear navigation filter");
+  });
+
+  it.each(["en", "zh"] as const)("only offers new template creation on the %s section header", (language) => {
+    const intents: NavigationIntent[] = [];
+    render({ strings: getUiStrings(language), onIntent: (intent) => intents.push(intent) });
+    const buttons = row("section:templates").querySelectorAll<HTMLButtonElement>(".fce-nav-section-create");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.getAttribute("aria-label")).toBe(getUiStrings(language).noteInput.newTemplate);
+    buttons[0]?.click();
+    expect(intents).toEqual([{ type: "template-command", command: "new" }]);
+  });
+
+  it("toggles the hidden filter, focuses it after host publication, and sends the owning window", async () => {
+    const intents: NavigationIntent[] = [];
+    let current = nav({ filterVisible: false });
+    const component = renderHarness(current, (intent) => {
+      intents.push(intent);
+      if (intent.type === "filter-toggle") {
+        current = { ...current, filterVisible: !current.filterVisible, query: "" };
+        component.setNav(current);
+      }
+    });
+    await tick();
+    expect(document.querySelector(".fce-nav-filter-input")).toBeNull();
+    document.querySelector<HTMLButtonElement>(".fce-nav-search-toggle")!.click();
+    await tick(); await tick();
+    expect(document.activeElement).toBe(document.querySelector(".fce-nav-filter-input"));
+    document.querySelector<HTMLButtonElement>(".fce-nav-search-toggle")!.click();
+    await tick();
+    expect(document.querySelector(".fce-nav-filter-input")).toBeNull();
+    const send = document.querySelector<HTMLButtonElement>(".fce-nav-quick-input")!;
+    send.click();
+    expect(intents).toContainEqual({ type: "quick-input", win: send.ownerDocument.defaultView });
+    expect(send.dataset.icon).toBe("send");
+  });
+
+  it("expands a hidden filter before acknowledging menu focus return", async () => {
+    const intents: NavigationIntent[] = [];
+    let current = nav({ filterVisible: false, focusRequest: { token: 10, rowId: "navigation-filter" } });
+    const component = renderHarness(current, (intent) => {
+      intents.push(intent);
+      if (intent.type === "filter-show") { current = { ...current, filterVisible: true }; component.setNav(current); }
+    });
+    await tick(); await tick(); await tick();
+    expect(document.activeElement).toBe(document.querySelector(".fce-nav-filter-input"));
+    expect(intents).toContainEqual({ type: "filter-show" });
+    expect(intents.filter((intent) => intent.type === "focus-return-consumed")).toEqual([{ type: "focus-return-consumed", token: 10 }]);
   });
 
   it("prefers a restored visible current range when the tree is entered for the first time", async () => {
@@ -383,6 +438,7 @@ describe("NavigationPane projected ARIA tree", () => {
       ["tags", "Tag filter is unavailable in this view"],
       ["properties", "Property filter is unavailable in this view"],
       ["boxes", "No card boxes yet — right-click to create one"],
+      ["templates", "No templates yet"],
     ]);
     await unmount(components.pop()!);
     render({ nav: nav({ projection: { ...base, rows: emptyRows } }), activeFilterTags: [] });
@@ -458,7 +514,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(tree.firstElementChild?.getAttribute("data-nav-row-id")).toBe("section:properties");
     const sectionRows = Array.from(document.querySelectorAll<HTMLElement>('[data-nav-row-id^="section:"]'));
     expect(sectionRows.map((node) => node.dataset.navRowId)).toEqual([
-      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites", "section:links",
+      "section:properties", "section:boxes", "section:tags", "section:folders", "section:favorites", "section:links", "section:templates",
     ]);
     expect(sectionRows.every((node) => node.classList.contains("is-section"))).toBe(true);
     expect(Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))
@@ -529,18 +585,24 @@ describe("NavigationPane projected ARIA tree", () => {
     ]);
   });
 
-  it("publishes persistent filter input and Escape clear while respecting IME", () => {
+  it("publishes filter input and keeps Escape focused without clearing, while respecting IME", async () => {
     const intents: NavigationIntent[] = [];
     render({ nav: nav({ query: "wor", projection: projection("wor") }), onIntent: (intent) => intents.push(intent) });
+    await tick();
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter navigation"]')!;
     input.value = "work";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
     input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    const composingEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    input.dispatchEvent(composingEscape);
+    expect(composingEscape.defaultPrevented).toBe(false);
     input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    input.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(input);
     expect(intents).toContainEqual({ type: "query-update", query: "work" });
-    expect(intents.filter((intent) => intent.type === "query-clear")).toEqual([{ type: "query-clear", origin: "input" }]);
+    expect(intents.filter((intent) => intent.type === "query-clear")).toEqual([]);
   });
 
   it("uses equivalent pointer and positioned menu targets", () => {
@@ -1033,14 +1095,15 @@ describe("NavigationPane favorites manual drag reorder", () => {
         tags: [],
         boxes: [], tagCounts: {},
         includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
         sectionOrder: defaultNavSectionOrder(),
         sectionLabels: {
           favorites: { label: "Favorites", emptyLabel: null },
           folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
           properties: { label: "Properties", emptyLabel: null },
           boxes: { label: "Boxes", emptyLabel: null },
-          links: { label: "Links", emptyLabel: null },
+          templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: "Links", emptyLabel: null },
         },
         rootFolderLabel: "Root /",
         linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" }, linksDisabled: true,
@@ -1171,14 +1234,15 @@ describe("NavigationPane links section", () => {
         activeTags: ["work"], selectedPath: "notes/A.md",
         favorites: [], folders: [], tags: [], boxes: [], tagCounts: {},
         includeSubfolders: true, tagsDisabled: false, propertiesDisabled: false,
-        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+        sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
         sectionOrder: defaultNavSectionOrder(),
         sectionLabels: {
           favorites: { label: "Favorites", emptyLabel: null },
           folders: { label: "Folders", emptyLabel: null }, tags: { label: "Tags", emptyLabel: null },
           properties: { label: "Properties", emptyLabel: null },
           boxes: { label: "Boxes", emptyLabel: null },
-          links: { label: strings.links.sectionLabel, emptyLabel: null },
+          templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: strings.links.sectionLabel, emptyLabel: null },
         },
         rootFolderLabel: "Root /",
         linksLeafLabels: { backlinks: strings.links.directionBacklinks, outgoing: strings.links.directionOutgoing },

@@ -35,6 +35,8 @@ export const SETTINGS_LAYER_BY_KEY = {
   enableHeadingDragInsert: "preferences",
   cardCornerRadius: "preferences",
   newNoteTemplate: "preferences",
+  quickInput: "preferences",
+  templateStorageFolder: "preferences",
   previewLines: "preferences",
   searchPreviewSnippetCount: "preferences",
   hoverPreviewWidth: "preferences",
@@ -59,6 +61,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   sectionCollapsed: "workspace",
   // userData layer
   boxes: "userData",
+  noteTemplates: "userData",
   folderSiblingOrders: "userData",
   folderDescendingNameSorts: "userData",
   navigationSorting: "userData",

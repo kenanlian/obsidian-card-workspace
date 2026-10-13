@@ -33,6 +33,10 @@ export function normalizeNavSectionOrder(value: unknown): NavSectionId[] {
         continue;
       }
     }
+    if (id === "templates") {
+      const linksIndex = result.indexOf("links");
+      if (linksIndex >= 0) { result.splice(linksIndex + 1, 0, id); continue; }
+    }
     result.push(id);
   }
   return result;
