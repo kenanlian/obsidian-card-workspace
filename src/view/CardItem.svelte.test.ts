@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, unmount, tick } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
+import type { CardImageState } from "../images/types";
 import CardItem from "./CardItem.svelte";
 import { getUiStrings } from "../i18n";
 import type { CardFileKind } from "./file-kind";
@@ -147,7 +149,7 @@ function mountCardItem(
   const target = document.createElement("div");
   document.body.appendChild(target);
   const values = props as Record<string, any>;
-  const defaultStrings = getUiStrings("en");
+  const defaultStrings = getUiStrings(values.language ?? "en");
   const component = mount(CardItem, {
     target,
     props: {
@@ -1288,6 +1290,15 @@ describe("CardItem.svelte", () => {
 });
 
 describe("diagram presentation", () => {
+  beforeEach(() => {
+    mountedComponents = [];
+    document.body.innerHTML = "";
+  });
+  afterEach(async () => {
+    await Promise.all(mountedComponents.map((component) => unmount(component)));
+    mountedComponents = [];
+    document.body.innerHTML = "";
+  });
   it.each(["off", "right", "inline"] as const)("always renders both diagram kinds inline with contain in %s mode", (cardImageMode) => {
     for (const fileKind of ["canvas", "excalidraw"] as const) {
       const card = createCard(`notes/a.${fileKind}`, { fileKind });
@@ -1295,15 +1306,55 @@ describe("diagram presentation", () => {
         image: { status: "ready", url: "blob:diagram", truncated: true } });
       const region = target.querySelector(".fce-card-image");
       expect(region?.classList.contains("is-inline")).toBe(true); expect(region?.classList.contains("is-cover")).toBe(false);
+      expect(region?.classList.contains("is-missing-export")).toBe(false);
       expect(target.querySelector(".has-right-image")).toBeNull(); expect(target.querySelector(".fce-excerpt")).toBeNull();
       expect(region?.querySelector("img")?.getAttribute("draggable")).toBe("false");
       expect(region?.querySelector("img")?.getAttribute("decoding")).toBe("async");
       expect(target.textContent).toContain(getUiStrings("en").fileKind.diagramTruncated);
     }
   });
-  it.each(["empty", "missing", "invalid", "oversized"] as const)("shows diagram %s state inside the reserved image region", (reason) => {
-    const { target } = mountCardItem({ card: createCard("a.excalidraw", { fileKind: "excalidraw" }), image: { status: "diagram", reason } });
-    expect(target.querySelector(".fce-card-image.is-inline .fce-diagram-message")?.textContent).not.toBe("");
-    expect(target.querySelector("img, svg script")).toBeNull();
+  it.each(["empty", "missing", "invalid", "oversized"] as const)("limits the missing-export modifier to Excalidraw's missing state (%s)", (reason) => {
+    for (const fileKind of ["canvas", "excalidraw", "markdown"] as const) {
+      const { target } = mountCardItem({ card: createCard(`a.${fileKind}`, { fileKind }), cardImageMode: "inline", image: { status: "diagram", reason } });
+      expect(target.querySelector(".is-missing-export") !== null).toBe(fileKind === "excalidraw" && reason === "missing");
+      if (fileKind !== "markdown") {
+        expect(target.querySelector(".fce-card-image.is-inline .fce-diagram-message")?.textContent).not.toBe("");
+      }
+      expect(target.querySelector("img, svg script")).toBeNull();
+    }
+  });
+  it.each(["en", "zh"] as const)("shows the complete %s missing-export message for both suffixes even at zero preview lines", (language) => {
+    for (const suffix of ["excalidraw", "excalidraw.md"]) {
+      for (const cardImageMode of ["off", "right", "inline"]) {
+        const { target } = mountCardItem({ language, card: createCard(`a.${suffix}`, { fileKind: "excalidraw" }),
+          cardImageMode, previewLines: 0, image: { status: "diagram", reason: "missing" } });
+        expect(target.querySelector(".fce-card-image.is-inline.is-missing-export .fce-diagram-message")?.textContent)
+          .toBe(getUiStrings(language).fileKind.diagramMissing);
+        expect(target.querySelector(".fce-excerpt, .has-right-image")).toBeNull();
+      }
+    }
+  });
+  it.each(["excalidraw", "excalidraw.md"])("updates the missing-export layout as %s props move through loading and ready", async (suffix) => {
+    const images = new SvelteMap<string, CardImageState>([["current", { status: "diagram", reason: "missing" }]]);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    mountedComponents.push(mount(CardItem, { target, props: {
+      card: createCard(`a.${suffix}`, { fileKind: "excalidraw" }),
+      get image() { return images.get("current"); },
+    } }));
+    const region = target.querySelector(".fce-card-image")!;
+    expect(region.classList.contains("is-missing-export")).toBe(true);
+    for (const image of [
+      { status: "loading" },
+      { status: "ready", url: "blob:diagram" },
+      { status: "diagram", reason: "missing" },
+    ] satisfies CardImageState[]) {
+      images.set("current", image);
+      await tick();
+      expect(target.querySelector(".fce-card-image")).toBe(region);
+      expect(region.classList.contains("is-missing-export")).toBe(image.status === "diagram");
+      expect(region.querySelector("img") !== null).toBe(image.status === "ready");
+      expect(region.querySelector(".fce-diagram-message") !== null).toBe(image.status === "diagram");
+    }
   });
 });

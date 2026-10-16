@@ -2045,6 +2045,17 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 .folder-card-view .fce-card-image.is-cover img { object-fit: cover; }
 .folder-card-view .fce-card-image-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .folder-card-view .fce-card-image-placeholder svg { width: 20px; height: 20px; }
+.folder-card-view .fce-card-image.is-missing-export { height: auto; background: none; }
+.folder-card-view .fce-card-image.is-missing-export .fce-diagram-message {
+  position: static;
+  display: block;
+  padding: 0;
+  color: var(--fce-text);
+  font-size: var(--fce-preview-font-size);
+  line-height: var(--fce-preview-line-height);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
 
 .folder-card-view .fce-nav-tree .fce-tree-row.is-drop-inside {
   background: var(--background-modifier-hover);

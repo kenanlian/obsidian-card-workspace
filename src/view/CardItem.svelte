@@ -89,6 +89,8 @@
   const diagram = $derived((card.fileKind === "canvas" || card.fileKind === "excalidraw") && !card.linkPreview);
   const imageMode = $derived(diagram ? "inline" : appearance.cardImageMode ?? "off");
   const showImage = $derived(diagram || (imageMode !== "off" && image !== undefined));
+  const missingExport = $derived(diagram && card.fileKind === "excalidraw"
+    && image?.status === "diagram" && image.reason === "missing");
   const diagramMessage = $derived(image?.status === "diagram"
     ? ({ empty: fileKindStrings.diagramEmpty, missing: fileKindStrings.diagramMissing,
       invalid: fileKindStrings.diagramInvalid, oversized: fileKindStrings.diagramOversized })[image.reason]
@@ -583,7 +585,7 @@
       </div>
     </div>
     {#if showImage}
-      <div class="fce-card-image" role="presentation" onmouseenter={diagram ? emitCardHoverLink : undefined} class:is-inline={imageMode === "inline"} class:is-cover={!diagram && appearance.cardImageFit === "cover"}>
+      <div class="fce-card-image" role="presentation" onmouseenter={diagram ? emitCardHoverLink : undefined} class:is-inline={imageMode === "inline"} class:is-missing-export={missingExport} class:is-cover={!diagram && appearance.cardImageFit === "cover"}>
         {#if image?.status === "ready" && image.url !== failedUrl}
           {#key image.url}
             <img src={image.url} alt="" draggable="false" decoding="async" class:is-loaded={loadedUrl === image.url}
