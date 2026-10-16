@@ -69,14 +69,20 @@ describe("bounded Canvas SVG", () => {
 
 describe("same-directory Excalidraw exports", () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
-  it.each(["文件 夹/图.excalidraw", "文件 夹/图.excalidraw.md"])("prefers the exact export convention for %s and never reads the scene", async (path) => {
-    const candidates = diagramDependencies(path), h = vaultFixture(candidates, svg);
+  it.each([
+    ["文件 夹/图.excalidraw", "文件 夹/图.svg", "文件 夹/图.excalidraw.svg"],
+    ["文件 夹/图.excalidraw.md", "文件 夹/图.excalidraw.svg", "文件 夹/图.svg"],
+    ["图 1.excalidraw.md", "图 1.excalidraw.svg", "图 1.svg"],
+    ["图.EXCALIDRAW.MD", "图.EXCALIDRAW.svg", "图.svg"],
+  ])("prefers the exact export convention for %s and never reads the scene", async (path, preferred, alternate) => {
+    expect(diagramDependencies(path)).toEqual([path, preferred, alternate]);
+    const h = vaultFixture([path, preferred, alternate], svg);
     expect(await readDiagramPreview(h.vault, path, () => true)).toMatchObject({ status: "ready" });
-    expect(h.cachedRead).toHaveBeenCalledExactlyOnceWith(h.files.get(candidates[1]));
-    h.files.delete(candidates[1]); h.cachedRead.mockClear();
+    expect(h.cachedRead).toHaveBeenCalledExactlyOnceWith(h.files.get(preferred));
+    h.files.delete(preferred); h.cachedRead.mockClear();
     expect(await readDiagramPreview(h.vault, path, () => true)).toMatchObject({ status: "ready" });
-    expect(h.cachedRead).toHaveBeenCalledExactlyOnceWith(h.files.get(candidates[2]));
-    h.files.delete(candidates[2]); h.cachedRead.mockClear();
+    expect(h.cachedRead).toHaveBeenCalledExactlyOnceWith(h.files.get(alternate));
+    h.files.delete(alternate); h.cachedRead.mockClear();
     expect(await readDiagramPreview(h.vault, path, () => true)).toEqual({ status: "missing" });
     expect(h.cachedRead).not.toHaveBeenCalled();
   });

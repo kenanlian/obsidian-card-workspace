@@ -60,6 +60,13 @@ describe("resolveCardFileKindFromPath", () => {
   it("prefers excalidraw over the plain markdown suffix", () => {
     expect(resolveCardFileKindFromPath("notes/sketch.excalidraw.md")).toBe("excalidraw");
   });
+
+  it.each([
+    "Untitled.excalidraw.md", "Untitled 1.excalidraw.md", "文件 夹/未命名 2.excalidraw.md",
+    "notes/Drawing 123456789.EXCALIDRAW.MD", "notes/Drawing.excalidraw", "notes/Drawing.EXCALIDRAW",
+  ])("recognizes new, numbered and legacy drawings: %s", (path) => {
+    expect(resolveCardFileKindFromPath(path)).toBe("excalidraw");
+  });
 });
 
 describe("resolveCardFileKind", () => {

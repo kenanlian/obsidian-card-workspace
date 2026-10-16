@@ -7,6 +7,7 @@ import {
 } from "../../__mocks__/folder-card-view-harness";
 import { createBoxScope, createLinksScope, createFolderScope, type CardScope } from "../scope";
 import { getUiStrings } from "../../i18n";
+import { resolveCardFileKindFromPath } from "../file-kind";
 import { FolderActions } from "./folder-actions";
 import { FolderCardView } from "../FolderCardView";
 
@@ -321,9 +322,8 @@ describe("Excalidraw creation", () => {
   function harness(language: "en" | "zh", scope: CardScope = createFolderScope("notes", true)) {
     const root = new mockState.MockTFolder("/"), folder = new mockState.MockTFolder("notes");
     const files = new Map<string, unknown>([["notes", folder]]);
-    const create = vi.fn(async (path: string, content: string) => {
+    const create = vi.fn(async (path: string, _content: string) => {
       const file = new mockState.MockTFile(path); files.set(path, file);
-      expect(JSON.parse(content)).toEqual({ type: "excalidraw", version: 2, elements: [], appState: {}, files: {} });
       return file;
     });
     const notify = vi.fn(), openNoteFromCard = vi.fn(), selectFolderFromNav = vi.fn(async () => undefined);
@@ -332,7 +332,25 @@ describe("Excalidraw creation", () => {
       getScope: () => scope, selectFolderFromNav, openNoteFromCard } as never);
     return { actions, create, notify, files, openNoteFromCard, selectFolderFromNav };
   }
-  it.each(["en", "zh"] as const)("creates valid localized scenes at root and nested folders with unique names (%s)", async (language) => {
+  it.each(["en", "zh"] as const)("creates a Markdown drawing with an uncompressed empty scene (%s)", async (language) => {
+    const h = harness(language);
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.create).toHaveBeenCalledTimes(1);
+    const [path, content] = h.create.mock.calls[0]!;
+    expect(path).toBe(`notes/${getUiStrings(language).app.untitledNoteBaseName}.excalidraw.md`);
+    expect(content).toMatch(/^---\nexcalidraw-plugin: parsed\ntags: \[excalidraw\]\n---\n/);
+    expect(content.split("\n")[4]).toBe("==⚠  Switch to EXCALIDRAW VIEW in the MORE OPTIONS menu of this document. ⚠== You can decompress Drawing data with the command palette: 'Decompress current Excalidraw file'. For more info check in plugin settings under 'Saving'");
+    expect(content).toContain("\n\n# Excalidraw Data\n\n## Text Elements\n%%\n## Drawing\n```json\n");
+    expect([...content.matchAll(/^%%$/gm)]).toHaveLength(2);
+    const blocks = [...content.matchAll(/^```([^\n]*)\n([\s\S]*?)^```$/gm)];
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]![1]).toBe("json");
+    expect(JSON.parse(blocks[0]![2]!)).toEqual({ type: "excalidraw", version: 2, elements: [], appState: {}, files: {} });
+    expect(content.endsWith("\n```\n%%\n")).toBe(true);
+    expect(content).not.toContain("\r");
+    expect(h.notify).not.toHaveBeenCalled();
+  });
+  it.each(["en", "zh"] as const)("creates localized Markdown drawings at root and nested folders with unique names (%s)", async (language) => {
     const h = harness(language), base = getUiStrings(language).app.untitledNoteBaseName;
     for (const target of ["/", "notes"]) {
       await h.actions.createFromFolderTree(target, "excalidraw");
@@ -340,11 +358,24 @@ describe("Excalidraw creation", () => {
       await h.actions.createFromFolderTree(target, "excalidraw");
       const prefix = target === "/" ? "" : "notes/";
       for (const suffix of ["", " 1", " 2"]) {
-        const path = `${prefix}${base}${suffix}.excalidraw`;
+        const path = `${prefix}${base}${suffix}.excalidraw.md`;
         expect(h.files.has(path)).toBe(true); expect(h.openNoteFromCard).toHaveBeenCalledWith(path, "new-tab");
+        expect(resolveCardFileKindFromPath(path)).toBe("excalidraw");
       }
     }
+    expect(h.create).toHaveBeenCalledTimes(6);
+    expect(new Set(h.create.mock.calls.map(([, content]) => content)).size).toBe(1);
     expect(h.notify).not.toHaveBeenCalled(); expect(h.selectFolderFromNav).not.toHaveBeenCalled();
+  });
+  it("supports an empty root path and preserves existing files when resolving collisions", async () => {
+    const h = harness("en"), base = getUiStrings("en").app.untitledNoteBaseName;
+    const occupied = new mockState.MockTFile(`${base}.excalidraw.md`);
+    h.files.set(occupied.path, occupied);
+    h.files.set(`${base} 1.excalidraw.md`, new mockState.MockTFolder(`${base} 1.excalidraw.md`));
+    await h.actions.createFromFolderTree("", "excalidraw");
+    expect(h.create).toHaveBeenCalledExactlyOnceWith(`${base} 2.excalidraw.md`, expect.any(String));
+    expect(h.files.get(occupied.path)).toBe(occupied);
+    expect(h.openNoteFromCard).toHaveBeenCalledExactlyOnceWith(`${base} 2.excalidraw.md`, "new-tab");
   });
   it.each([createBoxScope("box"), createLinksScope("a.md", "outgoing")])("switches %j to the target folder before creating", async (scope) => {
     const h = harness("en", scope); await h.actions.createFromFolderTree("notes", "excalidraw");

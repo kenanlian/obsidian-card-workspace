@@ -16,7 +16,26 @@ import {
 
 /** JSON Canvas requires the two top-level arrays; Obsidian rewrites the file on first save. */
 const NEW_CANVAS_CONTENT = '{"nodes":[],"edges":[]}';
-const NEW_EXCALIDRAW_CONTENT = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}';
+/** Obsidian Excalidraw drawings use a Markdown container around the scene JSON. */
+const NEW_EXCALIDRAW_CONTENT = [
+  "---",
+  "excalidraw-plugin: parsed",
+  "tags: [excalidraw]",
+  "---",
+  "==⚠  Switch to EXCALIDRAW VIEW in the MORE OPTIONS menu of this document. ⚠== You can decompress Drawing data with the command palette: 'Decompress current Excalidraw file'. For more info check in plugin settings under 'Saving'",
+  "",
+  "",
+  "# Excalidraw Data",
+  "",
+  "## Text Elements",
+  "%%",
+  "## Drawing",
+  "```json",
+  '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}',
+  "```",
+  "%%",
+  "",
+].join("\n");
 const NEW_BASE_CONTENT = "views:\n  - type: table\n    name: Table\n";
 const FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 
@@ -317,7 +336,7 @@ export class FolderActions {
       return;
     }
     if (kind === "excalidraw") {
-      await this.createSupportedFileIn(folderUiPath, "excalidraw", NEW_EXCALIDRAW_CONTENT);
+      await this.createSupportedFileIn(folderUiPath, "excalidraw.md", NEW_EXCALIDRAW_CONTENT);
       return;
     }
     if (kind === "base") {
@@ -407,7 +426,7 @@ export class FolderActions {
 
   private async createSupportedFileIn(
     folderUiPath: string,
-    extension: "canvas" | "base" | "excalidraw",
+    extension: "canvas" | "base" | "excalidraw.md",
     content: string,
   ): Promise<void> {
     const folder = this.resolveFolderFromUiPath(folderUiPath);

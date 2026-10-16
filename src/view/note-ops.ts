@@ -449,7 +449,7 @@ function normalizeMergedTitle(mergedTitle: string, defaultTitle: string): string
 
 /**
  * Generate a unique file path inside `folderPath`. If `fileName` already
- * exists, appends " 1", " 2", etc. before the extension.
+ * exists, appends " 1", " 2", etc. before the extension, preserving .excalidraw.md.
  */
 export function resolveUniquePath(app: App, fileName: string, folderPath: string): string {
   // `TFolder.path` is "/" for the vault root, which would produce a "//" prefix.
@@ -460,7 +460,9 @@ export function resolveUniquePath(app: App, fileName: string, folderPath: string
     return candidate;
   }
 
-  const dotIndex = fileName.lastIndexOf(".");
+  const dotIndex = /\.excalidraw\.md$/i.test(fileName)
+    ? fileName.length - ".excalidraw.md".length
+    : fileName.lastIndexOf(".");
   const stem = dotIndex !== -1 ? fileName.slice(0, dotIndex) : fileName;
   const ext = dotIndex !== -1 ? fileName.slice(dotIndex) : "";
 

@@ -150,6 +150,33 @@ describe("resolveUniquePath", () => {
     expect(resolveUniquePath(app as never, "Note.md", "/")).toBe("Note 1.md");
     expect(resolveUniquePath(app as never, "Other.md", "/")).toBe("Other.md");
   });
+
+  it.each([".excalidraw.md", ".EXCALIDRAW.MD"])("keeps the complete %s extension after numeric suffixes", (extension) => {
+    const app = createLookupApp([`Work/图${extension}`, `Work/图 1${extension}`]);
+    expect(resolveUniquePath(app as never, `图${extension}`, "Work")).toBe(`Work/图 2${extension}`);
+  });
+
+  it("keeps the compound extension in the timestamp fallback", () => {
+    const app = { vault: { getAbstractFileByPath: () => ({}) } };
+    const now = vi.spyOn(Date, "now").mockReturnValue(123456789);
+    try {
+      expect(resolveUniquePath(app as never, "图.EXCALIDRAW.MD", "/")).toBe("图 123456789.EXCALIDRAW.MD");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it.each([
+    ["Note.md", "Note 1.md"],
+    ["Board.canvas", "Board 1.canvas"],
+    ["Table.base", "Table 1.base"],
+    ["Drawing.excalidraw", "Drawing 1.excalidraw"],
+    ["Note.backup.md", "Note.backup 1.md"],
+    ["Folder", "Folder 1"],
+  ])("preserves collision naming for %s", (fileName, expected) => {
+    const app = createLookupApp([fileName]);
+    expect(resolveUniquePath(app as never, fileName, "")).toBe(expected);
+  });
 });
 
 describe("duplicateFile", () => {
