@@ -107,7 +107,7 @@ export function buildBulkMetadataSnapshot(app: App, targets: readonly TFile[]): 
       if (!propertyMap.has(key)) propertyMap.set(key, { name: raw.trim() });
       const existing = values.get(key) ?? [];
       // Copy list values: the inventory must not retain mutable metadata arrays.
-      existing.push(Array.isArray(value) ? [...value] : value);
+      existing.push(Array.isArray(value) ? Array.from<unknown>(value) : value);
       values.set(key, existing);
       if (selected.has(file) && !seen.has(key)) {
         seen.add(key);

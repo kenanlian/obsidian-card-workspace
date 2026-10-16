@@ -25,8 +25,12 @@ export function diagramSourceFingerprint(vault: Vault, path: string, revision: (
 }
 
 // XML 1.0 labels cannot contain control characters.
-// oxlint-disable-next-line no-control-regex
-const labelControls = /[\u0000-\u001f\u007f]/g;
+function replaceLabelControls(value: string): string {
+  return Array.from(value, (character) => {
+    const code = character.charCodeAt(0);
+    return code < 0x20 || code === 0x7f ? " " : character;
+  }).join("");
+}
 const escapeXml = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char]!);
 type CanvasNode = { id: string; type: string; x: number; y: number; width: number; height: number; label: string; fill: string };
 // Obsidian's dark Canvas palette: red, orange, yellow, green, cyan, purple.
@@ -47,7 +51,7 @@ function resolveCanvasFill(color: unknown, group: boolean): string {
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const coordinate = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1e9;
-const yieldTurn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const yieldTurn = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
 
 function resolveCanvasEndpoint(node: CanvasNode, side: unknown): [number, number] {
   switch (side) {
@@ -76,7 +80,7 @@ export async function buildCanvasPreview(source: string, isCurrent: () => boolea
     if (nodes.size === DIAGRAM_MAX_NODES) { truncated = true; break; }
     const rawLabel = node.type === "file" ? String(node.file ?? "").split("/").pop()!
       : node.type === "text" ? node.text : node.label ?? node.url;
-    const text = typeof rawLabel === "string" ? rawLabel.replace(labelControls, " ").trim() : "";
+    const text = typeof rawLabel === "string" ? replaceLabelControls(rawLabel).trim() : "";
     if (text.length > 80) truncated = true;
     nodes.set(node.id, { id: node.id, type: String(node.type), x: node.x, y: node.y,
       width: node.width, height: node.height, label: text.slice(0, 80), fill: resolveCanvasFill(node.color, node.type === "group") });
@@ -103,7 +107,7 @@ export async function buildCanvasPreview(source: string, isCurrent: () => boolea
     parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#475569" stroke-width="${stroke}"${edge.fromEnd === "arrow" ? ' marker-start="url(#arrow)"' : ""}${edge.toEnd !== "none" ? ' marker-end="url(#arrow)"' : ""}/>`);
     if (typeof edge.label === "string") {
       if (edge.label.length > 80) truncated = true;
-      parts.push(`<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2}" font-family="sans-serif" font-size="${font}" fill="#1e293b">${escapeXml(edge.label.replace(labelControls, " ").slice(0, 80))}</text>`);
+      parts.push(`<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2}" font-family="sans-serif" font-size="${font}" fill="#1e293b">${escapeXml(replaceLabelControls(edge.label).slice(0, 80))}</text>`);
     }
   }
   parts.push(...list.filter((node) => node.type !== "group").map(box), ...list.map(label));

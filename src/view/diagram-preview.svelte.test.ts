@@ -97,6 +97,19 @@ describe("bounded Canvas SVG", () => {
     expect(doc.querySelector("parsererror")).toBeNull(); expect(doc.querySelectorAll("line")).toHaveLength(2);
     expect(doc.querySelectorAll("image,script,a,foreignObject")).toHaveLength(0);
   });
+  it("replaces ASCII controls in node and edge labels while preserving Unicode and printable boundaries", async () => {
+    const controls = String.fromCharCode(...Array.from({ length: 32 }, (_, code) => code), 127);
+    const label = `中😀 ~${controls}\u0085完`;
+    const expected = `中😀 ~${" ".repeat(33)}\u0085完`;
+    const result = await buildCanvasPreview(JSON.stringify({
+      nodes: [node("a", "text", { text: label }), node("b")],
+      edges: [{ fromNode: "a", toNode: "b", label }],
+    }), () => true);
+    if (result?.status !== "ready") throw new Error("expected SVG");
+    const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+    expect(doc.querySelector("parsererror")).toBeNull();
+    expect(Array.from(doc.querySelectorAll("text"), (element) => element.textContent)).toEqual([expected, expected, "hello"]);
+  });
   it("escapes injection attempts in every Canvas label source and ignores arbitrary colors and edge attributes", async () => {
     const injection = '</text><script onload="alert(1)">x</script>';
     const nodes = [node("text", "text", { text: injection }), node("file", "file", { file: injection }),

@@ -71,7 +71,7 @@ export class BulkPropertiesModal extends BulkMetadataModal {
         valueEl.createSpan({ cls: "fce-property-value-label", text: this.strings.value });
         const toggle = new ToggleComponent(valueEl);
         toggle.setValue(row.checked).onChange((value) => { if (!this.isSubmitting()) { row.checked = value; this.changed(); } });
-        releaseValueLock = this.registerLock((locked) => toggle.setDisabled(locked));
+        releaseValueLock = this.registerLock((locked) => { toggle.setDisabled(locked); });
         return;
       }
       if (row.type === "list") {

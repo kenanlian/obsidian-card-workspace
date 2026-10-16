@@ -2227,8 +2227,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 
 .fce-metadata-chips.mod-remove .fce-metadata-chip__label {
-  text-decoration-line: line-through;
-  text-decoration-color: rgba(var(--color-red-rgb), 0.5);
+  text-decoration: line-through;
 }
 
 .fce-bulk-metadata-feedback > :empty {
