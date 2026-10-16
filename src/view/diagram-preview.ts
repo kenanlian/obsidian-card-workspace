@@ -1,4 +1,5 @@
 import { TFile, type Vault } from "obsidian";
+import { sanitizeSvg } from "./svg-sanitize";
 
 export const DIAGRAM_MAX_BYTES = 512 * 1024;
 export const DIAGRAM_MAX_NODES = 200;
@@ -126,9 +127,17 @@ export async function readDiagramPreview(vault: Vault, path: string, isCurrent: 
     if (new Blob([source]).size > DIAGRAM_MAX_BYTES) return { status: "oversized" };
     if (canvas) return await buildCanvasPreview(source, isCurrent);
     if (/<!DOCTYPE|<!ENTITY/i.test(source)) return { status: "invalid" };
-    const doc = new (Parser ?? DOMParser)().parseFromString(source, "image/svg+xml");
+    const parser = new (Parser ?? DOMParser)();
+    const doc = parser.parseFromString(source, "image/svg+xml");
     if (doc.getElementsByTagName("parsererror").length || doc.documentElement.localName !== "svg"
       || doc.documentElement.namespaceURI !== "http://www.w3.org/2000/svg") return { status: "invalid" };
-    return { status: "ready", blob: new Blob([source], { type: "image/svg+xml" }), truncated: false };
+    const sanitized = sanitizeSvg(doc);
+    if (!sanitized) return { status: "invalid" };
+    const blob = new Blob([sanitized], { type: "image/svg+xml" });
+    if (blob.size > DIAGRAM_MAX_BYTES) return { status: "oversized" };
+    const validated = parser.parseFromString(sanitized, "image/svg+xml");
+    if (validated.getElementsByTagName("parsererror").length || validated.documentElement.localName !== "svg"
+      || validated.documentElement.namespaceURI !== "http://www.w3.org/2000/svg") return { status: "invalid" };
+    return { status: "ready", blob, truncated: false };
   } catch { return isCurrent() ? { status: "invalid" } : undefined; }
 }

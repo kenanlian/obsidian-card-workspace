@@ -12,6 +12,13 @@ function vaultFixture(paths: string[], source: string) {
   const vault = { getAbstractFileByPath: (path: string) => files.get(path) ?? null, cachedRead } as unknown as Vault;
   return { vault, files, cachedRead };
 }
+const wrap = (content: string, attributes = "") => `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ${attributes}>${content}</svg>`;
+class InvalidSecondParse extends DOMParser {
+  private calls = 0;
+  override parseFromString(source: string, type: DOMParserSupportedType): Document {
+    return super.parseFromString(++this.calls === 1 ? source : "<broken>", type);
+  }
+}
 
 describe("bounded Canvas SVG", () => {
   describe.each(["text", "file", "link", "group"])("%s node colors", (type) => {
@@ -90,6 +97,19 @@ describe("bounded Canvas SVG", () => {
     expect(doc.querySelector("parsererror")).toBeNull(); expect(doc.querySelectorAll("line")).toHaveLength(2);
     expect(doc.querySelectorAll("image,script,a,foreignObject")).toHaveLength(0);
   });
+  it("escapes injection attempts in every Canvas label source and ignores arbitrary colors and edge attributes", async () => {
+    const injection = '</text><script onload="alert(1)">x</script>';
+    const nodes = [node("text", "text", { text: injection }), node("file", "file", { file: injection }),
+      node("link", "link", { url: injection }), node("group", "group", { label: injection, color: injection })];
+    const edges = [{ fromNode: "text", toNode: "file", label: injection, fromSide: injection, toEnd: injection }];
+    const result = await buildCanvasPreview(JSON.stringify({ nodes, edges }), () => true);
+    if (result?.status !== "ready") throw new Error("expected SVG");
+    const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+    expect(doc.querySelector("parsererror, script, [onload], foreignObject, a, image")).toBeNull();
+    expect(Array.from(doc.querySelectorAll("text"), (label) => label.textContent)).toEqual([
+      injection, injection, injection.split("/").pop(), injection, injection,
+    ]);
+  });
   it.each(["", "{", "null", "[]", '{"nodes":{}}', '{"nodes":[],"edges":null}'])("rejects malformed structure %s", async (source) => {
     expect(await buildCanvasPreview(source, () => true)).toEqual({ status: "invalid" });
   });
@@ -125,6 +145,128 @@ describe("bounded Canvas SVG", () => {
 
 describe("same-directory Excalidraw exports", () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+  async function exportedSvg(source: string): Promise<Document> {
+    const h = vaultFixture(["a.svg"], source);
+    const result = await readDiagramPreview(h.vault, "a.excalidraw", () => true);
+    expect(result).toMatchObject({ status: "ready", truncated: false });
+    if (result?.status !== "ready") throw new Error("expected sanitized SVG");
+    expect(result.blob.type).toBe("image/svg+xml");
+    const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+    expect(doc.querySelector("parsererror")).toBeNull();
+    return doc;
+  }
+
+  it.each(["script", "foreignObject", "animate", "animateTransform", "animateMotion", "set", "handler", "discard"])(
+    "removes %s and its whole subtree from the Blob", async (tag) => {
+      const doc = await exportedSvg(wrap(`<${tag}><g id="unsafe"/></${tag}><rect width="10" height="10"/>`));
+      expect(doc.getElementsByTagName(tag)).toHaveLength(0);
+      expect(doc.getElementById("unsafe")).toBeNull();
+      expect(doc.querySelectorAll("rect")).toHaveLength(1);
+    });
+
+  it("removes event attributes on the root and descendants, including namespaced and mixed-case handlers", async () => {
+    const doc = await exportedSvg(wrap('<rect width="10" onload="alert(1)" OnClick="alert(2)" xlink:onerror="alert(3)"/>',
+      'onload="alert(4)"'));
+    for (const element of [doc.documentElement, doc.querySelector("rect")!]) {
+      expect(Array.from(element.attributes).some((attribute) => /^on/i.test(attribute.localName))).toBe(false);
+    }
+    expect(doc.querySelector("rect")?.getAttribute("width")).toBe("10");
+  });
+
+  describe.each(["href", "xlink:href", "src"])("%s URL attributes", (attribute) => {
+    it.each(["javascript:alert(1)", "JaVaScRiPt:alert(1)", "java&#x9;script:alert(1)", "vbscript:msgbox(1)",
+      "data:text/html;base64,PHNjcmlwdC8+", "http://example.invalid/image.svg", "https://example.invalid/font.woff2",
+      "//example.invalid/image.svg", "../image.svg", "file:///tmp/image.svg", "blob:untrusted"])(
+      "removes unsafe URL %s", async (url) => {
+        const doc = await exportedSvg(wrap(`<image ${attribute}="${url}" width="10" height="10"/>`));
+        expect(doc.querySelector("image")?.hasAttribute(attribute)).toBe(false);
+      });
+
+    it.each(["data:image/png;base64,aGVsbG8=", "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'/%3E"])(
+      "preserves embedded image %s verbatim", async (url) => {
+        const doc = await exportedSvg(wrap(`<image ${attribute}="${url}" width="10" height="10"/>`));
+        expect(doc.querySelector("image")?.getAttribute(attribute)).toBe(url);
+      });
+  });
+
+  it.each([
+    'fill="url(https://example.invalid/paint.svg#paint)"',
+    'filter="url(//example.invalid/filter.svg#filter)"',
+    'clip-path="url(../clip.svg#clip)"',
+    'style="fill: url(&quot;https://example.invalid/paint.svg&quot;); stroke: red"',
+    'style="fill: u\\72l(https://example.invalid/paint.svg)"',
+    'style="fill: u/**/rl(https://example.invalid/paint.svg)"',
+    'style="background: image-set(&quot;https://example.invalid/image.png&quot; 1x)"',
+    'style="width: expression(alert(1))"',
+  ])("removes an unsafe presentation attribute without changing sibling attributes: %s", async (attribute) => {
+    const doc = await exportedSvg(wrap(`<rect ${attribute} width="10" height="10" opacity="0.5"/>`));
+    const rect = doc.querySelector("rect")!;
+    expect(new Set(rect.getAttributeNames())).toEqual(new Set(["height", "opacity", "width"]));
+    expect(rect.getAttribute("opacity")).toBe("0.5");
+  });
+
+  it.each([
+    '@import "https://example.invalid/style.css";',
+    '@\\69mport "https://example.invalid/style.css";',
+    '@font-face { font-family: Test; src: url(https://example.invalid/font.woff2) }',
+    'rect { fill: url("http://example.invalid/paint.svg#paint") }',
+    'rect { fill: url("javascript:alert(1)") }',
+    'rect { fill: url("data:text/html,unsafe") }',
+    'rect { fill: url("unterminated) }',
+  ])("removes unsafe style blocks: %s", async (css) => {
+    const doc = await exportedSvg(wrap(`<style><![CDATA[${css}]]></style><rect width="10" height="10"/>`));
+    expect(doc.querySelector("style")).toBeNull();
+    expect(doc.querySelector("rect")?.getAttribute("width")).toBe("10");
+  });
+
+  it("removes foreign namespaces, unknown attributes, XML base URLs and stylesheet processing instructions", async () => {
+    const doc = await exportedSvg('<?xml-stylesheet href="https://example.invalid/style.css"?>' + wrap(
+      '<?xml-stylesheet href="https://example.invalid/nested.css"?><html:script xmlns:html="http://www.w3.org/1999/xhtml">alert(1)</html:script>'
+      + '<rect xml:base="https://example.invalid/" unknown="unsafe" width="10"/><use href="#shape"/>',
+      'xml:base="https://example.invalid/"'));
+    expect(doc.getElementsByTagNameNS("http://www.w3.org/1999/xhtml", "*")).toHaveLength(0);
+    expect(doc.documentElement.hasAttribute("xml:base")).toBe(false);
+    expect(doc.querySelector("rect")?.getAttributeNames()).toEqual(["width"]);
+    expect(new XMLSerializer().serializeToString(doc)).not.toContain("xml-stylesheet");
+    expect(doc.querySelector("use")?.getAttribute("href")).toBe("#shape");
+  });
+
+  it("preserves ordinary Excalidraw geometry, text, embedded fonts/images and local references", async () => {
+    const source = wrap(`<defs><style><![CDATA[@font-face {font-family: Virgil; src: url(data:font/woff2;base64,d09GMg==)}
+      .label {font-family: Virgil; fill: #123456}]]></style>
+      <linearGradient id="paint"><stop offset="0" stop-color="#fff"/></linearGradient>
+      <clipPath id="clip"><rect width="100" height="100"/></clipPath></defs>
+      <g transform="translate(10 20)" stroke-linecap="round" clip-path="url(#clip)">
+        <path id="shape" d="M0 0L10 10" stroke="#000" fill="url(#paint)"/>
+        <text class="label" x="1" y="2" style="font-size: 20px; white-space: pre" xml:space="preserve">你好 &amp; &lt;world&gt;</text>
+        <use xlink:href="#shape"/><image href="data:image/png;base64,aGVsbG8=" width="10" height="10"/>
+      </g>`, 'viewBox="0 0 100 100" width="100" height="100"');
+    const doc = await exportedSvg(source);
+    const original = new DOMParser().parseFromString(source, "image/svg+xml");
+    const serializer = new XMLSerializer();
+    expect(serializer.serializeToString(doc)).toBe(serializer.serializeToString(original));
+    expect(serializer.serializeToString(await exportedSvg(svg))).toBe(svg);
+  });
+
+  it.each(["", "<script>alert(1)</script>", "<g><script>alert(1)</script></g>", "<defs><style>rect {fill: red}</style></defs>",
+    '<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">unsafe</div></foreignObject>'])(
+    "returns invalid when sanitization leaves no graphic elements: %s", async (content) => {
+      const h = vaultFixture(["a.svg"], wrap(content));
+      expect(await readDiagramPreview(h.vault, "a.excalidraw", () => true)).toEqual({ status: "invalid" });
+    });
+
+  it("rejects an oversized serialized SVG even when its source fits the byte budget", async () => {
+    // XMLSerializer escapes each literal '>' to '&gt;', expanding otherwise valid input.
+    const source = wrap(`<text>${">".repeat(DIAGRAM_MAX_BYTES / 3)}</text>`);
+    expect(new Blob([source]).size).toBeLessThan(DIAGRAM_MAX_BYTES);
+    const h = vaultFixture(["a.svg"], source);
+    expect(await readDiagramPreview(h.vault, "a.excalidraw", () => true)).toEqual({ status: "oversized" });
+  });
+
+  it("revalidates the serialized SVG and returns invalid if serialization fails validation", async () => {
+    const h = vaultFixture(["a.svg"], svg);
+    expect(await readDiagramPreview(h.vault, "a.excalidraw", () => true, InvalidSecondParse)).toEqual({ status: "invalid" });
+  });
   it.each([
     ["文件 夹/图.excalidraw", "文件 夹/图.svg", "文件 夹/图.excalidraw.svg"],
     ["文件 夹/图.excalidraw.md", "文件 夹/图.excalidraw.svg", "文件 夹/图.svg"],
@@ -142,7 +284,9 @@ describe("same-directory Excalidraw exports", () => {
     expect(await readDiagramPreview(h.vault, path, () => true)).toEqual({ status: "missing" });
     expect(h.cachedRead).not.toHaveBeenCalled();
   });
-  it.each(["<svg>", "{}", "<html/>", '<svg xmlns="wrong"/>', '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'])("rejects invalid exported SVG %s", async (source) => {
+  it.each(["<svg>", "{}", "<html/>", '<svg xmlns="wrong"/>', '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>',
+    '<!DOCTYPE svg [<!ENTITY x "unsafe">]><svg xmlns="http://www.w3.org/2000/svg"><text>&x;</text></svg>',
+    '<!ENTITY x "unsafe"><svg xmlns="http://www.w3.org/2000/svg"/>'])("rejects invalid exported SVG %s", async (source) => {
     const h = vaultFixture(["a.excalidraw", "a.svg"], source);
     expect(await readDiagramPreview(h.vault, "a.excalidraw", () => true)).toEqual({ status: "invalid" });
   });
