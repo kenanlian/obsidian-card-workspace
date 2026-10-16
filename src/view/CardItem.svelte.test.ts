@@ -1033,7 +1033,7 @@ describe("CardItem.svelte", () => {
     });
 
     expect(target.querySelector("h4")?.innerHTML).toContain('<mark class="fce-search-hit">canvas</mark>');
-    expect(target.querySelector(".fce-excerpt")?.querySelectorAll("mark.fce-search-hit")).toHaveLength(0);
+    expect(target.querySelectorAll(".fce-excerpt mark.fce-search-hit")).toHaveLength(0);
   });
 
   it("renders exact placeholder copy for non-markdown cards", () => {
@@ -1063,8 +1063,8 @@ describe("CardItem.svelte", () => {
     const third = mountCardItem({ card: cards[2] });
 
     expect(first.target.textContent).toContain("This is a base file.");
-    expect(second.target.textContent).toContain("This is a canvas file.");
-    expect(third.target.textContent).toContain("This is an excalidraw file.");
+    expect(second.target.querySelector(".fce-card-image.is-inline")).not.toBeNull();
+    expect(third.target.querySelector(".fce-card-image.is-inline")).not.toBeNull();
   });
 
   it("renders file-kind icon metadata in the card title group", async () => {
@@ -1284,5 +1284,26 @@ describe("CardItem.svelte", () => {
     expect(complete.target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(
       "5 个任务中已完成 5 个",
     );
+  });
+});
+
+describe("diagram presentation", () => {
+  it.each(["off", "right", "inline"] as const)("always renders both diagram kinds inline with contain in %s mode", (cardImageMode) => {
+    for (const fileKind of ["canvas", "excalidraw"] as const) {
+      const card = createCard(`notes/a.${fileKind}`, { fileKind });
+      const { target } = mountCardItem({ card, cardImageMode, cardImageFit: "cover", previewLines: 0,
+        image: { status: "ready", url: "blob:diagram", truncated: true } });
+      const region = target.querySelector(".fce-card-image");
+      expect(region?.classList.contains("is-inline")).toBe(true); expect(region?.classList.contains("is-cover")).toBe(false);
+      expect(target.querySelector(".has-right-image")).toBeNull(); expect(target.querySelector(".fce-excerpt")).toBeNull();
+      expect(region?.querySelector("img")?.getAttribute("draggable")).toBe("false");
+      expect(region?.querySelector("img")?.getAttribute("decoding")).toBe("async");
+      expect(target.textContent).toContain(getUiStrings("en").fileKind.diagramTruncated);
+    }
+  });
+  it.each(["empty", "missing", "invalid", "oversized"] as const)("shows diagram %s state inside the reserved image region", (reason) => {
+    const { target } = mountCardItem({ card: createCard("a.excalidraw", { fileKind: "excalidraw" }), image: { status: "diagram", reason } });
+    expect(target.querySelector(".fce-card-image.is-inline .fce-diagram-message")?.textContent).not.toBe("");
+    expect(target.querySelector("img, svg script")).toBeNull();
   });
 });

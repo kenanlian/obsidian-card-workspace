@@ -1,16 +1,19 @@
 import { TFile } from "obsidian";
+import { diagramDependencies, isDiagramKind, type DiagramPreviewResult } from "../diagram-preview";
 import type { ThumbnailService } from "../../images/ThumbnailService";
 import { resolveFirstImage, type ImageSource } from "../../images/image-source";
 import { IMAGE_MAX_BYTES, THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
 import type { VaultMutationEvent } from "../../services/vault-events";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 import type { CardImageRevealRequest, ImageViewportRequest } from "../image-request";
-interface Demand { source: ImageSource; abort: AbortController; fingerprint?: ImageFingerprint; state?: CardImageState }
+interface Demand { diagramFingerprint?: string; source: ImageSource; abort: AbortController; fingerprint?: ImageFingerprint; state?: CardImageState }
 const LOADING_IMAGE_STATE = { status: "loading" } as const;
 export interface CardImageControllerDeps {
   context: ViewContext;
   getService: () => { service: ThumbnailService; vault: string } | null;
   isLoading: () => boolean;
+  requestDiagramPreview?: (path: string) => Promise<DiagramPreviewResult | undefined>;
+  getDiagramFingerprint?: (path: string) => string;
 }
 /** Per-view demand, reference dependencies, stale guards and object-URL ownership. */
 export class CardImageController implements DisposableController {
@@ -36,10 +39,11 @@ export class CardImageController implements DisposableController {
   /** Render-time metadata lookup for mounted cards, including text overscan.
    * Reserves space before the first paint without starting any thumbnail IO. */
   resolvePlaceholder(path: string, generation: number): CardImageState | undefined {
-    if (this.disposed || this.context.getSettings().cardImageMode === "off"
+    if (this.disposed
       || generation !== this.context.epochs.load.value) return undefined;
     const card = this.context.store.getBaseCard(path);
-    if (!card || card.fileKind !== "markdown") return undefined;
+    if (card && this.isDiagram(card.fileKind)) return LOADING_IMAGE_STATE;
+    if (!card || card.fileKind !== "markdown" || this.context.getSettings().cardImageMode === "off") return undefined;
     let source: ImageSource;
     try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return undefined; }
     if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > IMAGE_MAX_BYTES) return undefined;
@@ -47,7 +51,7 @@ export class CardImageController implements DisposableController {
     return state?.status === "failed" ? state : LOADING_IMAGE_STATE;
   }
   requestViewport(request: ImageViewportRequest): void {
-    if (this.disposed || this.context.getSettings().cardImageMode === "off"
+    if (this.disposed
       || request.generation !== this.context.epochs.load.value
       || request.sequenceRevision !== this.context.store.getVisibleSequenceRevision()
       || request.requestVersion !== this.requestVersion) return;
@@ -67,7 +71,8 @@ export class CardImageController implements DisposableController {
         const card = this.context.store.getBaseCard(path);
         let source: ImageSource = { status: "unknown" };
         try { if (card?.fileKind === "markdown") source = resolveFirstImage(this.context.getApp(), card.file); } catch { /* no old image on an unresolved source */ }
-        if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
+        if (this.retainDiagram(path, item)) { /* Transfer the validated URL. */ }
+        else if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
           && source.file.path === item.fingerprint.path && source.file.stat.mtime === item.fingerprint.mtime && source.file.stat.size === item.fingerprint.size) {
           item.source = source;
         } else { this.drop(item); this.demand.delete(path); this.layoutHints.delete(path); }
@@ -86,7 +91,8 @@ export class CardImageController implements DisposableController {
   }
   private start(path: string): void {
     const card = this.context.store.getBaseCard(path);
-    if (!card || card.fileKind !== "markdown") return;
+    if (card && this.isDiagram(card.fileKind)) { this.startDiagram(path); return; }
+    if (!card || card.fileKind !== "markdown" || this.context.getSettings().cardImageMode === "off") return;
     let source: ImageSource;
     try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return; }
     const item: Demand = { source, abort: new AbortController() };
@@ -126,11 +132,45 @@ export class CardImageController implements DisposableController {
       this.publish();
     }).catch(() => { if (current() && item.state) { item.state = { status: "failed" }; this.rememberLayout(path, item); this.publish(); } });
   }
+  private isDiagram(kind: string): boolean {
+    return isDiagramKind(kind) && this.context.store.getScope().kind !== "links";
+  }
+  private retainDiagram(path: string, item: Demand): boolean {
+    const card = this.context.store.getBaseCard(path);
+    return !!card && this.isDiagram(card.fileKind) && item.diagramFingerprint !== undefined
+      && item.diagramFingerprint === this.deps.getDiagramFingerprint?.(path) && item.state?.status === "ready";
+  }
+  private startDiagram(path: string): void {
+    if (!this.deps.requestDiagramPreview || !this.deps.getDiagramFingerprint) return;
+    const key = this.deps.getDiagramFingerprint(path);
+    const item: Demand = { source: { status: "unknown" }, abort: new AbortController(),
+      diagramFingerprint: key, state: LOADING_IMAGE_STATE };
+    this.demand.set(path, item);
+    this.publish();
+    const generation = this.generation, revision = this.context.store.getHydrationRevision();
+    const current = (): boolean => !this.disposed && !item.abort.signal.aborted && this.demand.get(path) === item
+      && this.generation === generation && this.context.epochs.load.value === generation
+      && this.context.store.getHydrationRevision() === revision && key === this.deps.getDiagramFingerprint?.(path);
+    void this.deps.requestDiagramPreview(path).then((result) => {
+      if (!current() || !result) {
+        if (this.demand.get(path) === item && !this.disposed) {
+          this.drop(item); this.demand.delete(path); this.requestVersion++; this.publish();
+        }
+        return;
+      }
+      if (result.status === "ready") {
+        item.fingerprint = { vault: `diagram:${key}`, path, mtime: 0, size: result.blob.size, version: 1 };
+        try { item.state = { status: "ready", url: this.acquireUrl(item.fingerprint, result.blob), truncated: result.truncated }; }
+        catch { item.state = { status: "diagram", reason: "invalid" }; }
+      } else item.state = { status: "diagram", reason: result.status };
+      this.publish();
+    }).catch(() => { if (current()) { item.state = { status: "diagram", reason: "invalid" }; this.publish(); } });
+  }
   notifyTextReady(): void { if (this.releaseService) this.deps.getService()?.service.pump(); }
   /** Called after DOM decoding succeeds; only a version's first reveal animates. */
   handleImageReveal({ path, url }: CardImageRevealRequest): boolean {
     const item = this.demand.get(path);
-    if (this.disposed || this.context.getSettings().cardImageMode === "off"
+    if (this.disposed || (this.context.getSettings().cardImageMode === "off" && item?.diagramFingerprint === undefined)
       || item?.state?.status !== "ready" || item.state.url !== url || !item.fingerprint
       || item.abort.signal.aborted || this.generation !== this.context.epochs.load.value) return false;
     const key = imageKey(item.fingerprint);
@@ -139,7 +179,11 @@ export class CardImageController implements DisposableController {
     return true;
   }
   onSettingsChanged(): void {
-    if (this.context.getSettings().cardImageMode === "off") this.resetDemand();
+    if (this.context.getSettings().cardImageMode === "off") {
+      this.invalidate((_path, item) => item.diagramFingerprint === undefined);
+      if (this.layoutHints.size) { this.layoutHints.clear(); this.publish(); }
+      this.releaseService?.(); this.releaseService = null;
+    }
     // Fit and right/inline switches keep identical thumbnails and demand.
   }
   /** A load retains the committed stream's URLs. The next viewport validates
@@ -151,14 +195,15 @@ export class CardImageController implements DisposableController {
    * the next viewport frame would remove and recreate every image/row first. */
   prepareGeneration(): boolean {
     const generation = this.context.epochs.load.value;
-    if (this.disposed || this.context.getSettings().cardImageMode === "off" || this.deps.isLoading()
+    if (this.disposed || this.deps.isLoading()
       || this.generation === generation || this.demand.size === 0) return false;
     this.generation = generation;
     for (const [path, item] of this.demand) {
       const card = this.context.store.getBaseCard(path);
       let source: ImageSource = { status: "unknown" };
       try { if (card?.fileKind === "markdown") source = resolveFirstImage(this.context.getApp(), card.file); } catch { /* unknown sources cannot retain an old image */ }
-      if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
+      if (this.retainDiagram(path, item)) { /* Transfer the validated URL. */ }
+      else if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
         && source.file.path === item.fingerprint.path && source.file.stat.mtime === item.fingerprint.mtime && source.file.stat.size === item.fingerprint.size) item.source = source;
       else { this.drop(item); this.demand.delete(path); this.layoutHints.delete(path); }
     }
@@ -177,8 +222,8 @@ export class CardImageController implements DisposableController {
     if (path !== undefined) this.layoutHints.delete(path);
     // Mounted overscan cards may have only a metadata placeholder, no demand.
     if (path === undefined || this.context.store.getBaseCard(path)) this.publish();
-    this.invalidate((notePath, item) => path === undefined ? item.source.status === "unknown"
-      : notePath === path && !this.retainUnchangedImage(notePath, item));
+    this.invalidate((notePath, item) => item.diagramFingerprint === undefined && (path === undefined ? item.source.status === "unknown"
+      : notePath === path && !this.retainUnchangedImage(notePath, item)));
   }
   handleVaultMutation(event: VaultMutationEvent): void {
     if (this.disposed) return;
@@ -190,9 +235,9 @@ export class CardImageController implements DisposableController {
       this.revealedImages.delete(event.path);
       if (event.oldPath !== null) this.revealedImages.delete(event.oldPath);
     }
-    if (this.context.getSettings().cardImageMode === "off") return;
     for (const [notePath, hint] of this.layoutHints) if ((matches(notePath) && event.eventType !== "modify") || matches(hint.attachmentPath)) { this.layoutHints.delete(notePath); this.publish(); }
     this.invalidate((notePath, item) => {
+      if (item.diagramFingerprint !== undefined) return diagramDependencies(notePath).some(matches);
       // Attachment events always invalidate, even when mtime/size did not change.
       if (item.source.status === "found" && matches(item.source.file.path)) return true;
       // Note text edits keep their URL and pending work until metadata confirms

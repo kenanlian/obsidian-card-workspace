@@ -135,6 +135,7 @@ function createActions(): NavMenuActions {
     createFolder: vi.fn(),
     createCanvas: vi.fn(),
     createBase: vi.fn(),
+    createExcalidraw: vi.fn(),
     duplicateFolder: vi.fn(),
     sortFolderNameOrder: vi.fn(),
     sortNavigationItems: vi.fn(),
@@ -266,6 +267,7 @@ describe("folders header menu", () => {
       { title: "New note in vault root", icon: "square-pen" },
       { title: "New folder in vault root", icon: "folder-plus" },
       { title: "New canvas in vault root", icon: "layout-dashboard" },
+      { title: "New Excalidraw file in vault root", icon: "pen-tool" },
       { title: "New base in vault root", icon: "layout-list" },
       "sep",
       { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
@@ -341,7 +343,7 @@ describe("folders header menu", () => {
 });
 
 describe("root folder row menu", () => {
-  it("offers the four create items, name sorting, search, and reveal", () => {
+  it("offers the five create items, name sorting, search, and reveal", () => {
     const deps = createDeps({ tagExpansion: () => ({ hasChildren: true, expanded: true }) });
     const { menu, result } = build(
       createPayload({ section: "folders", scope: "item", itemId: "/" }),
@@ -353,6 +355,7 @@ describe("root folder row menu", () => {
       { title: "New note", icon: "square-pen" },
       { title: "New folder", icon: "folder-plus" },
       { title: "New canvas", icon: "layout-dashboard" },
+      { title: "New Excalidraw file", icon: "pen-tool" },
       { title: "New base", icon: "layout-list" },
       "sep",
       { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
@@ -393,6 +396,7 @@ describe("folder row menu", () => {
       { title: "New note", icon: "square-pen" },
       { title: "New folder", icon: "folder-plus" },
       { title: "New canvas", icon: "layout-dashboard" },
+      { title: "New Excalidraw file", icon: "pen-tool" },
       { title: "New base", icon: "layout-list" },
       "sep",
       { title: "Sort child folders by name (A → Z)", icon: "sort-asc" },
@@ -1126,6 +1130,7 @@ describe("localization", () => {
       "在库根目录新建笔记",
       "在库根目录新建文件夹",
       "在库根目录新建白板",
+      "在库根目录新建 Excalidraw 文件",
       "在库根目录新建数据库",
       "子文件夹按名称排序（A → Z）",
       "子文件夹按名称排序（Z → A）",
@@ -1150,6 +1155,7 @@ describe("localization", () => {
       "新建笔记",
       "新建文件夹",
       "新建白板",
+      "新建 Excalidraw 文件",
       "新建数据库",
       "子文件夹按名称排序（A → Z）",
       "子文件夹按名称排序（Z → A）",
@@ -1544,5 +1550,23 @@ describe("navigation visibility menu actions", () => {
   it("disables movement when all the sections in that direction are hidden", () => {
     const { menu } = build(createPayload({ section: "boxes", scope: "header" }), createDeps({ hiddenSections: ["links"] }));
     expect(findItem(menu, "Move section down")?.disabled).toBe(true);
+  });
+});
+
+describe("Excalidraw create menu", () => {
+  it.each(["en", "zh"] as const)("routes the shared create item from folders, root, header and favorites (%s)", (language) => {
+    const deps = createDeps({ strings: getUiStrings(language) });
+    const payloads = [
+      createPayload({ section: "folders", scope: "header" }),
+      createPayload({ section: "folders", scope: "item", itemId: "/" }),
+      createPayload({ section: "folders", scope: "item", itemId: "Projects" }),
+      createPayload({ section: "favorites", scope: "item", favorite: { kind: "folder", ref: "Projects" } }),
+    ];
+    for (const payload of payloads) {
+      const menu = build(payload, deps).menu;
+      const title = payload.scope === "header" ? deps.strings.view.navMenu.newExcalidrawAtRoot : deps.strings.view.navMenu.newExcalidraw;
+      const item = findItem(menu, title); expect(item?.icon).toBe("pen-tool"); item?.clickHandler?.();
+      expect(deps.actions.createExcalidraw).toHaveBeenLastCalledWith(payload.scope === "header" || payload.itemId === "/" ? "/" : "Projects");
+    }
   });
 });

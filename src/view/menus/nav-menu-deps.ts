@@ -66,6 +66,9 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       createCanvas: (folderUiPath) => {
         void deps.modules.folderActions.createFromFolderTree(folderUiPath, "canvas");
       },
+      createExcalidraw: (folderUiPath) => {
+        void deps.modules.folderActions.createFromFolderTree(folderUiPath, "excalidraw");
+      },
       createBase: (folderUiPath) => {
         void deps.modules.folderActions.createFromFolderTree(folderUiPath, "base");
       },

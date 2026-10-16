@@ -2248,3 +2248,6 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   background-color: rgba(var(--color-red-rgb), 0.1);
   color: var(--text-error);
 }
+
+.folder-card-view .fce-diagram-message { padding: 16px; text-align: center; color: var(--text-muted); }
+.folder-card-view .fce-diagram-truncated { position: absolute; bottom: 0; left: 0; right: 0; padding: 2px 6px; font-size: var(--font-smallest); color: var(--text-muted); background: var(--background-primary); text-align: center; }

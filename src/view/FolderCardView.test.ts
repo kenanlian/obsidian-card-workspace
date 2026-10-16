@@ -1883,7 +1883,7 @@ describe("FolderCardView host contract", () => {
     const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
 
     const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
-    const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
+    const excerpt = (view as any).containerEl.querySelector(".fce-card-image") as HTMLElement | null;
     const pinButton = (view as any).containerEl.querySelector(".fce-card-pin-btn") as HTMLButtonElement | null;
     const moreActionsButton = (view as any).containerEl.querySelector(".fce-more-actions-btn") as HTMLButtonElement | null;
 
@@ -3141,12 +3141,14 @@ describe("FolderCardView navigation scope activation", () => {
     actions.createNote("notes");
     actions.createFolder("notes");
     actions.createCanvas("notes");
+    actions.createExcalidraw("notes");
     actions.createBase("notes");
 
     expect(createSpy.mock.calls.map((call) => call[1])).toEqual([
       "note",
       "folder",
       "canvas",
+      "excalidraw",
       "base",
     ]);
 

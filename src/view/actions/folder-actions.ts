@@ -16,6 +16,7 @@ import {
 
 /** JSON Canvas requires the two top-level arrays; Obsidian rewrites the file on first save. */
 const NEW_CANVAS_CONTENT = '{"nodes":[],"edges":[]}';
+const NEW_EXCALIDRAW_CONTENT = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}';
 const NEW_BASE_CONTENT = "views:\n  - type: table\n    name: Table\n";
 const FOLDER_DUPLICATE_CONFIRM_THRESHOLD = 50;
 
@@ -290,7 +291,7 @@ export class FolderActions {
   /** Folder-tree create actions always land in browse mode on the target folder, never inside an open card box. */
   async createFromFolderTree(
     folderUiPath: string,
-    kind: "note" | "folder" | "canvas" | "base",
+    kind: "note" | "folder" | "canvas" | "base" | "excalidraw",
   ): Promise<void> {
     const scope = this.deps.getScope();
     switch (scope.kind) {
@@ -313,6 +314,10 @@ export class FolderActions {
     }
     if (kind === "canvas") {
       await this.createCanvasIn(folderUiPath);
+      return;
+    }
+    if (kind === "excalidraw") {
+      await this.createSupportedFileIn(folderUiPath, "excalidraw", NEW_EXCALIDRAW_CONTENT);
       return;
     }
     if (kind === "base") {
@@ -402,7 +407,7 @@ export class FolderActions {
 
   private async createSupportedFileIn(
     folderUiPath: string,
-    extension: "canvas" | "base",
+    extension: "canvas" | "base" | "excalidraw",
     content: string,
   ): Promise<void> {
     const folder = this.resolveFolderFromUiPath(folderUiPath);

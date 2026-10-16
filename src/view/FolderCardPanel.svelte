@@ -461,7 +461,6 @@
   const imagePaths = $derived(cardRecords.slice(imageBounds.start, imageBounds.end).map((card) => card.path));
   $effect(() => {
     const mode = appearance.cardImageMode ?? "off";
-    if (mode === "off") { lastImageRequestIdentity = null; return; }
     if (!viewportActive) {
       const identity = `hidden:${cards.generation}:${cards.sequenceRevision}:${images.requestVersion}`;
       if (identity !== lastImageRequestIdentity) {
@@ -474,7 +473,7 @@
     if (cards.loading || !viewportEl || viewportWidth === 0) { lastImageRequestIdentity = null; return; }
     const request = { generation: cards.generation, sequenceRevision: cards.sequenceRevision,
       requestVersion: images.requestVersion, start: imageBounds.start, end: imageBounds.end, paths: imagePaths };
-    const identity = JSON.stringify([request.generation, request.sequenceRevision, request.requestVersion, request.paths]);
+    const identity = JSON.stringify([mode, request.generation, request.sequenceRevision, request.requestVersion, request.paths]);
     if (identity === lastImageRequestIdentity) return;
     lastImageRequestIdentity = identity;
     onImageViewport?.(request);
@@ -704,7 +703,6 @@
   }
 
   function getCardImage(path: string): CardImageState | undefined {
-    if ((appearance.cardImageMode ?? "off") === "off") return undefined;
     const committed = cards.loading || images.generation === undefined || images.generation === cards.generation;
     return (committed ? images.byPath[path] : undefined)
       ?? (cards.loading ? undefined : resolveImagePlaceholder?.(path, cards.generation));

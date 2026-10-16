@@ -439,7 +439,7 @@ describe("FolderCardView grouped panel publishing", () => {
       path: "notes/board.canvas",
       title: "Board",
       fileKind: "canvas",
-      file: { path: "notes/board.canvas", basename: "board" },
+      file: { path: "notes/board.canvas", basename: "board", stat: { mtime: 1, size: 100, ctime: 1 } },
       ctime: 1,
       mtime: 1,
       excerpt: "",

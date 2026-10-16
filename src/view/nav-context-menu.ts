@@ -30,6 +30,7 @@ export interface NavMenuActions {
   createNote: (folderUiPath: string) => void;
   createFolder: (folderUiPath: string) => void;
   createCanvas: (folderUiPath: string) => void;
+  createExcalidraw: (folderUiPath: string) => void;
   createBase: (folderUiPath: string) => void;
   duplicateFolder: (folderUiPath: string) => void;
   sortFolderNameOrder: (parentPath: string, direction: FolderSortMode) => void;
@@ -114,6 +115,9 @@ function appendCreateItems(menu: Menu, deps: NavMenuDeps, folderUiPath: string, 
   );
   addItem(menu, atRoot ? navMenu.newCanvasAtRoot : navMenu.newCanvas, "layout-dashboard", () =>
     deps.actions.createCanvas(folderUiPath),
+  );
+  addItem(menu, atRoot ? navMenu.newExcalidrawAtRoot : navMenu.newExcalidraw, "pen-tool", () =>
+    deps.actions.createExcalidraw(folderUiPath),
   );
   addItem(menu, atRoot ? navMenu.newBaseAtRoot : navMenu.newBase, "layout-list", () =>
     deps.actions.createBase(folderUiPath),

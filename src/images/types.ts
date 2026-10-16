@@ -17,7 +17,7 @@ export function imageKey(fingerprint: ImageFingerprint): string {
   return JSON.stringify([fingerprint.vault, fingerprint.path, fingerprint.mtime, fingerprint.size, fingerprint.version]);
 }
 export type ThumbnailResult = { status: "ready"; blob: Blob } | { status: "failed" | "skipped" };
-export type CardImageState = { status: "loading" | "failed" } | { status: "ready"; url: string };
+export type CardImageState = { status: "loading" | "failed" } | { status: "ready"; url: string; truncated?: boolean } | { status: "diagram"; reason: "empty" | "missing" | "invalid" | "oversized" };
 export interface ThumbnailGenerator {
   available(): boolean;
   generate(buffer: ArrayBuffer, onEligible: () => void): Promise<ThumbnailResult>;

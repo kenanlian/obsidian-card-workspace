@@ -146,7 +146,9 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     isCommittedQueryCurrent: gate.guard("search.isCommittedQueryCurrent", () => search.isCommittedQueryCurrent()),
     getMatchFields: gate.guard("search.getMatchFields", (path) => search.getMatchFields(path)),
   });
-  const images = new CardImageController({ context, getService: () => host.getThumbnailService?.() ?? null,
+  const images = new CardImageController({ context,
+    requestDiagramPreview: (path) => hydration.requestDiagramPreview(path),
+    getDiagramFingerprint: (path) => hydration.getDiagramFingerprint(path), getService: () => host.getThumbnailService?.() ?? null,
     isLoading: gate.guard("scopeController.isLoading", () => scopeController.isLoading()) });
   const search: SearchController = new SearchController({
     context,

@@ -86,8 +86,13 @@
   const cardCornerRadius = $derived(appearance.cardCornerRadius);
   const previewLines = $derived(appearance.previewLines);
   const searchPreviewSnippetCount = $derived(appearance.searchPreviewSnippetCount);
-  const imageMode = $derived(appearance.cardImageMode ?? "off");
-  const showImage = $derived(imageMode !== "off" && image !== undefined);
+  const diagram = $derived((card.fileKind === "canvas" || card.fileKind === "excalidraw") && !card.linkPreview);
+  const imageMode = $derived(diagram ? "inline" : appearance.cardImageMode ?? "off");
+  const showImage = $derived(diagram || (imageMode !== "off" && image !== undefined));
+  const diagramMessage = $derived(image?.status === "diagram"
+    ? ({ empty: fileKindStrings.diagramEmpty, missing: fileKindStrings.diagramMissing,
+      invalid: fileKindStrings.diagramInvalid, oversized: fileKindStrings.diagramOversized })[image.reason]
+    : fileKindStrings.diagramInvalid);
   let failedUrl = $state<string | null>(null);
   let loadedUrl = $state<string | null>(null);
   let revealUrl = $state<string | null>(null);
@@ -578,21 +583,26 @@
       </div>
     </div>
     {#if showImage}
-      <div class="fce-card-image" class:is-inline={imageMode === "inline"} class:is-cover={appearance.cardImageFit === "cover"}>
+      <div class="fce-card-image" role="presentation" onmouseenter={diagram ? emitCardHoverLink : undefined} class:is-inline={imageMode === "inline"} class:is-cover={!diagram && appearance.cardImageFit === "cover"}>
         {#if image?.status === "ready" && image.url !== failedUrl}
           {#key image.url}
             <img src={image.url} alt="" draggable="false" decoding="async" class:is-loaded={loadedUrl === image.url}
               class:is-revealing={loadedUrl === image.url && revealUrl === image.url}
               use:revealImage={image.url} />
           {/key}
-        {:else if image?.status === "loading"}
+        {:else if image?.status === "loading" || (diagram && !image)}
           <span class="fce-card-image-placeholder" role="img" aria-label={cardStrings.imageLoading}></span>
+        {:else if diagram}
+          <span class="fce-card-image-placeholder fce-diagram-message">{diagramMessage}</span>
         {:else}
           <span class="fce-card-image-placeholder" role="img" aria-label={cardStrings.imageFailed} use:applyIcon={"image"}></span>
         {/if}
+        {#if diagram && image?.status === "ready" && image.truncated}
+          <span class="fce-diagram-truncated">{fileKindStrings.diagramTruncated}</span>
+        {/if}
       </div>
     {/if}
-    {#if !inlineReferences && (previewLines > 0 || searchPreview?.status === "hits")}
+    {#if !diagram && !inlineReferences && (previewLines > 0 || searchPreview?.status === "hits")}
     <div
       class="fce-excerpt {searchPreview?.status === 'hits' ? 'is-search' : ''} {card.previewMode === 'code' && (!normalizedSearchQuery || searchPreview?.status === 'title-only') ? 'is-code' : ''} {card.hydrated && (!normalizedSearchQuery || searchPreview) ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated && !normalizedSearchQuery ? 'is-empty' : ''}"
       role="presentation"

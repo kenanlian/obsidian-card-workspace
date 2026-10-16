@@ -159,10 +159,12 @@ export interface ViewStrings {
     newFolder: string;
     newCanvas: string;
     newBase: string;
+    newExcalidraw: string;
     newNoteAtRoot: string;
     newFolderAtRoot: string;
     newCanvasAtRoot: string;
     newBaseAtRoot: string;
+    newExcalidrawAtRoot: string;
     duplicateFolder: string;
     renameFolder: string;
     findInFolder: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPreviewFingerprint, PREVIEW_CACHE_CAPACITY, PreviewCache } from "./preview-cache";
+import { createPreviewFingerprint, DIAGRAM_CACHE_MAX_BYTES, PREVIEW_CACHE_CAPACITY, PreviewCache } from "./preview-cache";
 
 const fingerprint = (path: string, mtime = 1, lines = 5) =>
   createPreviewFingerprint(path, mtime, lines, 200);
@@ -54,5 +54,30 @@ describe("PreviewCache", () => {
     expect(cache.get(fingerprint("folderish/c.md"))?.html).toBe("folderish/c.md");
     cache.clear();
     expect(cache.size).toBe(0);
+  });
+});
+
+
+describe("diagram cache budgets", () => {
+  it("evicts by Blob bytes in LRU order and accounts for replacement/invalidation", () => {
+    const cache = new PreviewCache();
+    const key = (path: string) => createPreviewFingerprint(path, 1, 1, 0, "diagram:source");
+    const blob = new Blob([new Uint8Array(DIAGRAM_CACHE_MAX_BYTES / 2)]);
+    const preview = { html: "", mode: "empty" as const, diagramPreview: { status: "ready" as const, blob, truncated: false } };
+    cache.set(key("a.canvas"), preview); cache.set(key("b.canvas"), preview);
+    expect(cache.diagramBytes).toBe(DIAGRAM_CACHE_MAX_BYTES);
+    cache.get(key("a.canvas")); cache.set(key("c.canvas"), preview);
+    expect(cache.get(key("b.canvas"))).toBeUndefined(); expect(cache.get(key("a.canvas"))).toBeDefined();
+    cache.set(key("a.canvas"), { html: "", mode: "empty", diagramPreview: { status: "empty" } });
+    expect(cache.diagramBytes).toBe(blob.size);
+    cache.invalidateExact("c.canvas"); expect(cache.diagramBytes).toBe(0);
+    cache.set(key("folder/a.canvas"), preview); cache.invalidatePrefix("folder"); expect(cache.diagramBytes).toBe(0);
+    cache.set(key("a.canvas"), preview); cache.clear(); expect(cache.diagramBytes).toBe(0);
+  });
+  it("counts diagrams and Markdown against the same 512-entry bound", () => {
+    const cache = new PreviewCache();
+    for (let index = 0; index < 513; index++) cache.set(createPreviewFingerprint(`${index}.canvas`, 1, 1, 0, "diagram:source"),
+      { html: "", mode: "empty", diagramPreview: { status: "missing" } });
+    expect(cache.size).toBe(512); expect(cache.hasPath("0.canvas")).toBe(false);
   });
 });

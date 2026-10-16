@@ -1,4 +1,5 @@
 import { TFile } from "obsidian";
+import { diagramDependencies, diagramSourceFingerprint, isDiagramKind, readDiagramPreview, type DiagramPreviewResult } from "../diagram-preview";
 import { buildLinkReferenceSnippets, buildOutgoingReferenceSnippets, type LinkReferencePreview } from "../link-reference-preview";
 import { collectLinkReferenceLocations, type LinkReferenceCardLocation } from "../link-card-location";
 import { scopeIdentity, type LinksScope } from "../scope";
@@ -246,7 +247,41 @@ export class HydrationController implements DisposableController {
     this.appliedFingerprints.clear();
     this.sourceRead = null;
   }
+  getDiagramFingerprint(path: string): string {
+    return diagramSourceFingerprint(this.context.getApp().vault, path, (file) => this.getFileRevision(file));
+  }
+  private diagramFingerprintFor(card: NoteCardRecord): PreviewFingerprint {
+    return createPreviewFingerprint(card.path, card.file.stat.mtime, 1, 0, `diagram:${this.getDiagramFingerprint(card.path)}`);
+  }
+  async requestDiagramPreview(path: string): Promise<DiagramPreviewResult | undefined> {
+    const card = this.context.store.getBaseCard(path);
+    if (!card || !isDiagramKind(card.fileKind) || this.context.store.getScope().kind === "links" || this.disposed) return undefined;
+    const fingerprint = this.diagramFingerprintFor(card);
+    const generation = this.context.epochs.load.value, revision = this.context.store.getHydrationRevision();
+    const cached = this.cache.get(fingerprint)?.diagramPreview;
+    if (cached) return cached;
+    await this.requestPath(path, 0, { forced: true, foreground: true });
+    if (this.disposed || generation !== this.context.epochs.load.value || revision !== this.context.store.getHydrationRevision()
+      || !fingerprintsEqual(fingerprint, this.diagramFingerprintFor(card))) return undefined;
+    return this.cache.get(fingerprint)?.diagramPreview;
+  }
   invalidateForVaultMutation(event: VaultMutationEvent): void {
+    // Include inactive cache entries and both export candidates, before scope filtering.
+    const paths = new Set([...this.cache.paths(), ...this.jobs.keys(), ...this.context.store.getBaseCards().map((card) => card.path)]);
+    const diagramAffected = new Set([...paths].filter((path) => /\.(?:canvas|excalidraw(?:\.md)?)$/i.test(path)
+      && diagramDependencies(path).some((dependency) => [event.path, event.oldPath].some((root) => root !== null
+        && (dependency === root || (event.isFolder && dependency.startsWith(`${root}/`)))))));
+    if (diagramAffected.size) {
+      this.mutationRevision++;
+      for (const path of diagramAffected) {
+        this.cache.invalidateExact(path);
+        this.appliedFingerprints.delete(path);
+        const file = this.context.getApp().vault.getAbstractFileByPath(path);
+        if (file) this.fileRevisions.set(file, this.mutationRevision);
+        const job = this.jobs.get(path);
+        if (job) job.replacementRequested = true;
+      }
+    }
     if (event.eventType === "create" || (event.isFolder && event.eventType === "modify")) return;
     this.mutationRevision += 1;
     this.sourceRead = null;
@@ -390,13 +425,12 @@ export class HydrationController implements DisposableController {
   private requestPath(path: string, priority: number,
     owner: { viewport?: boolean; startup?: boolean; forced?: boolean; foreground?: boolean }): Promise<void> {
     if (this.disposed) return Promise.resolve();
-    if (this.deps.isCommittedQueryCurrent?.() === false) return Promise.resolve();
     const card = this.context.store.getBaseCard(path);
-    if (!card) return Promise.resolve();
+    if (!card || (this.deps.isCommittedQueryCurrent?.() === false && !this.wantsDiagram(card))) return Promise.resolve();
     const scope = this.context.store.getScope();
     const wantsReferences = scope.kind === "links"
       && (this.expandedReferences.has(path) || (scope.direction === "outgoing" && this.hasInlineLinkPreview(card)));
-    if (!isMarkdownCardKind(card.fileKind) && !wantsReferences) {
+    if (!isMarkdownCardKind(card.fileKind) && !wantsReferences && !this.wantsDiagram(card)) {
       if (card.hydrated && !this.deps.getCommittedQuery?.().trim()) return Promise.resolve();
       return this.enqueuePatch(
         path, this.placeholderPatch(card), this.fingerprintFor(card),
@@ -419,7 +453,7 @@ export class HydrationController implements DisposableController {
       this.sortQueue();
       return existing.settled;
     }
-    if (!owner.forced) {
+    if (!owner.forced && !(this.wantsDiagram(card) && !this.cache.get(this.diagramFingerprintFor(card))?.diagramPreview)) {
       const applied = this.appliedFingerprints.get(path);
       if (card.hydrated && applied && fingerprintsEqual(applied, fingerprint)
         && (!wantsReferences || (card.linkPreview !== undefined && card.linkPreview.status !== "loading"))) return Promise.resolve();
@@ -470,6 +504,16 @@ export class HydrationController implements DisposableController {
     if (!this.currentFingerprint(job)) return;
     const card = this.context.store.getBaseCard(job.path);
     if (!card) return;
+    if (this.wantsDiagram(card)) {
+      const fingerprint = this.diagramFingerprintFor(card);
+      const result = this.cache.get(fingerprint)?.diagramPreview ?? await readDiagramPreview(
+        this.context.getApp().vault, card.path, () => this.currentFingerprint(job),
+        (this.context.getViewWindow() as Window & { DOMParser?: typeof DOMParser }).DOMParser);
+      if (!result || !this.currentFingerprint(job)) return;
+      this.cache.set(fingerprint, { html: "", mode: "empty", diagramPreview: result });
+      if (this.shouldPatch(job)) await this.enqueuePatch(job.path, this.placeholderPatch(card), job.fingerprint, true);
+      return;
+    }
     const query = this.deps.getCommittedQuery?.().trim() ?? "";
     const fields = this.deps.getMatchFields?.(card.path);
     const titleOnly = !!query && fields?.includes("title") && !fields.includes("content");
@@ -570,7 +614,7 @@ export class HydrationController implements DisposableController {
   private currentFingerprint(job: HydrationJob): boolean {
     const card = this.context.store.getBaseCard(job.path);
     return !this.disposed
-      && this.deps.isCommittedQueryCurrent?.() !== false
+      && (this.deps.isCommittedQueryCurrent?.() !== false || (!!card && this.wantsDiagram(card)))
       && job.generation === this.context.epochs.load.value
       && job.hydrationRevision === this.context.store.getHydrationRevision()
       && card !== undefined
@@ -619,6 +663,9 @@ export class HydrationController implements DisposableController {
     }
     pending.forEach((item) => item.resolve());
   }
+  private wantsDiagram(card: NoteCardRecord): boolean {
+    return isDiagramKind(card.fileKind) && this.context.store.getScope().kind !== "links";
+  }
   private fingerprintFor(card: NoteCardRecord, scopeOverride?: CardScope): PreviewFingerprint {
     const query = this.deps.getCommittedQuery?.().trim() ?? "";
     const scope = scopeOverride ?? this.context.store.getScope();
@@ -630,7 +677,7 @@ export class HydrationController implements DisposableController {
       card.mtime,
       this.context.getSettings().previewLines,
       DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
-      `${query ? `search:${this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
+      `${isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
     );
   }
   private rememberAppliedFingerprint(path: string, fingerprint: PreviewFingerprint): void {

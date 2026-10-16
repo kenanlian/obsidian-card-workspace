@@ -316,3 +316,47 @@ describe("folder navigation intent wiring", () => {
     expect(select).not.toHaveBeenCalled();
   });
 });
+
+describe("Excalidraw creation", () => {
+  function harness(language: "en" | "zh", scope: CardScope = createFolderScope("notes", true)) {
+    const root = new mockState.MockTFolder("/"), folder = new mockState.MockTFolder("notes");
+    const files = new Map<string, unknown>([["notes", folder]]);
+    const create = vi.fn(async (path: string, content: string) => {
+      const file = new mockState.MockTFile(path); files.set(path, file);
+      expect(JSON.parse(content)).toEqual({ type: "excalidraw", version: 2, elements: [], appState: {}, files: {} });
+      return file;
+    });
+    const notify = vi.fn(), openNoteFromCard = vi.fn(), selectFolderFromNav = vi.fn(async () => undefined);
+    const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create } };
+    const actions = new FolderActions({ context: { getApp: () => app, getUiStrings: () => getUiStrings(language), notify },
+      getScope: () => scope, selectFolderFromNav, openNoteFromCard } as never);
+    return { actions, create, notify, files, openNoteFromCard, selectFolderFromNav };
+  }
+  it.each(["en", "zh"] as const)("creates valid localized scenes at root and nested folders with unique names (%s)", async (language) => {
+    const h = harness(language), base = getUiStrings(language).app.untitledNoteBaseName;
+    for (const target of ["/", "notes"]) {
+      await h.actions.createFromFolderTree(target, "excalidraw");
+      await h.actions.createFromFolderTree(target, "excalidraw");
+      await h.actions.createFromFolderTree(target, "excalidraw");
+      const prefix = target === "/" ? "" : "notes/";
+      for (const suffix of ["", " 1", " 2"]) {
+        const path = `${prefix}${base}${suffix}.excalidraw`;
+        expect(h.files.has(path)).toBe(true); expect(h.openNoteFromCard).toHaveBeenCalledWith(path, "new-tab");
+      }
+    }
+    expect(h.notify).not.toHaveBeenCalled(); expect(h.selectFolderFromNav).not.toHaveBeenCalled();
+  });
+  it.each([createBoxScope("box"), createLinksScope("a.md", "outgoing")])("switches %j to the target folder before creating", async (scope) => {
+    const h = harness("en", scope); await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.selectFolderFromNav).toHaveBeenCalledExactlyOnceWith("notes");
+    expect(h.selectFolderFromNav.mock.invocationCallOrder[0]).toBeLessThan(h.create.mock.invocationCallOrder[0]);
+  });
+  it("reports invalid targets and write failures without opening a tab", async () => {
+    const h = harness("en"); h.files.delete("notes");
+    await h.actions.createFromFolderTree("notes", "excalidraw"); expect(h.create).not.toHaveBeenCalled();
+    expect(h.notify).toHaveBeenCalledWith(getUiStrings("en").view.folderManagement.folderNotFound);
+    h.create.mockRejectedValueOnce(new Error("disk full"));
+    await h.actions.createFromFolderTree("/", "excalidraw");
+    expect(h.notify).toHaveBeenLastCalledWith(expect.stringContaining("disk full")); expect(h.openNoteFromCard).not.toHaveBeenCalled();
+  });
+});
