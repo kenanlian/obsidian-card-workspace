@@ -14,6 +14,62 @@ function vaultFixture(paths: string[], source: string) {
 }
 
 describe("bounded Canvas SVG", () => {
+  describe.each(["text", "file", "link", "group"])("%s node colors", (type) => {
+    it.each([
+      ["1", "#f9cdd0", "#e8c0c7"], ["2", "#f4e1cd", "#e4d4c4"],
+      ["3", "#f2f3d9", "#e2e6d0"], ["4", "#cbefd9", "#bbe2d0"],
+      ["5", "#cff3f4", "#bee6eb"], ["6", "#e4dcfd", "#d4cff4"],
+    ])("renders preset %s with the expected soft fill", async (color, fill, groupFill) => {
+      const result = await buildCanvasPreview(JSON.stringify({ nodes: [node("a", type, { color })], edges: [] }), () => true);
+      expect(result).toMatchObject({ status: "ready", truncated: false });
+      if (result?.status !== "ready") throw new Error("expected SVG");
+      const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+      expect(doc.querySelector("parsererror")).toBeNull();
+      expect(doc.querySelector("rect")?.getAttribute("fill")).toBe(type === "group" ? groupFill : fill);
+    });
+
+    it("keeps the default fill when color is absent", async () => {
+      const result = await buildCanvasPreview(JSON.stringify({ nodes: [node("a", type)], edges: [] }), () => true);
+      if (result?.status !== "ready") throw new Error("expected SVG");
+      const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+      expect(doc.querySelector("rect")?.getAttribute("fill")).toBe(type === "group" ? "#e2e8f0" : "#f8fafc");
+    });
+
+    it.each(["", "0", "7", "01", "1 ", 1, null, true, {}, [], ["1"], "#fb464c", "__proto__", "constructor", "toString"]
+      .map((color) => ({ color })))("keeps the node and default fill for invalid color $color", async ({ color }) => {
+      const result = await buildCanvasPreview(JSON.stringify({ nodes: [node("a", type, { color })], edges: [] }), () => true);
+      expect(result).toMatchObject({ status: "ready", truncated: false });
+      if (result?.status !== "ready") throw new Error("expected SVG");
+      const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+      expect(doc.querySelector("parsererror")).toBeNull();
+      expect(doc.querySelectorAll("rect")).toHaveLength(1);
+      expect(doc.querySelector("rect")?.getAttribute("fill")).toBe(type === "group" ? "#e2e8f0" : "#f8fafc");
+    });
+
+    it("excludes malicious color text from SVG", async () => {
+      const color = '#fff" onload="alert(1)"><script>malicious</script>';
+      const result = await buildCanvasPreview(JSON.stringify({ nodes: [node("a", type, { color })], edges: [] }), () => true);
+      if (result?.status !== "ready") throw new Error("expected SVG");
+      const svg = await text(result.blob), doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+      expect(svg).not.toContain(color);
+      expect(doc.querySelector("parsererror, script, [onload]")).toBeNull();
+      expect(doc.querySelector("rect")?.getAttribute("fill")).toBe(type === "group" ? "#e2e8f0" : "#f8fafc");
+    });
+  });
+
+  it("draws colored groups before edges and ordinary nodes while retaining text and stroke colors", async () => {
+    const source = JSON.stringify({ nodes: [node("a", "text", { color: "1" }),
+      node("b", "group", { color: "6", label: "Group" })], edges: [{ fromNode: "a", toNode: "b", label: "Edge" }] });
+    const result = await buildCanvasPreview(source, () => true);
+    if (result?.status !== "ready") throw new Error("expected SVG");
+    const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
+    const shapes = [...doc.querySelectorAll("rect, line")];
+    expect(shapes.map((shape) => shape.localName)).toEqual(["rect", "line", "rect"]);
+    expect(shapes.map((shape) => shape.getAttribute("fill"))).toEqual(["#d4cff4", null, "#f9cdd0"]);
+    expect(shapes.map((shape) => shape.getAttribute("stroke"))).toEqual(["#64748b", "#475569", "#64748b"]);
+    expect([...doc.querySelectorAll("text")].map((label) => label.getAttribute("fill"))).toEqual(["#1e293b", "#1e293b", "#1e293b"]);
+  });
+
   it("renders groups first, relative negative geometry, node labels, endpoints and arrows with XML escaping", async () => {
     const source = JSON.stringify({ nodes: [node("text", "text", { text: '<script>&"\'\nhello' }),
       node("file", "file", { x: 150, file: "private/文件.md" }), node("link", "link", { url: "https://example.invalid" }),

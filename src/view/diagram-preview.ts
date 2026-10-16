@@ -27,7 +27,23 @@ export function diagramSourceFingerprint(vault: Vault, path: string, revision: (
 // oxlint-disable-next-line no-control-regex
 const labelControls = /[\u0000-\u001f\u007f]/g;
 const escapeXml = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char]!);
-type CanvasNode = { id: string; type: string; x: number; y: number; width: number; height: number; label: string };
+type CanvasNode = { id: string; type: string; x: number; y: number; width: number; height: number; label: string; fill: string };
+// Obsidian's dark Canvas palette: red, orange, yellow, green, cyan, purple.
+const canvasColors = new Map([
+  ["1", "#fb464c"], ["2", "#e9973f"], ["3", "#e0de71"],
+  ["4", "#44cf6e"], ["5", "#53dfdd"], ["6", "#a882ff"],
+]);
+
+function resolveCanvasFill(color: unknown, group: boolean): string {
+  const base = group ? "#e2e8f0" : "#f8fafc";
+  const preset = typeof color === "string" ? canvasColors.get(color) : undefined;
+  if (!preset) return base;
+  // Keep the existing light surface, tinted with 25% of the official color.
+  return "#" + [1, 3, 5].map((offset) => Math.round(
+    parseInt(preset.slice(offset, offset + 2), 16) * 0.25 + parseInt(base.slice(offset, offset + 2), 16) * 0.75,
+  ).toString(16).padStart(2, "0")).join("");
+}
+
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const coordinate = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1e9;
 const yieldTurn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -62,7 +78,7 @@ export async function buildCanvasPreview(source: string, isCurrent: () => boolea
     const text = typeof rawLabel === "string" ? rawLabel.replace(labelControls, " ").trim() : "";
     if (text.length > 80) truncated = true;
     nodes.set(node.id, { id: node.id, type: String(node.type), x: node.x, y: node.y,
-      width: node.width, height: node.height, label: text.slice(0, 80) });
+      width: node.width, height: node.height, label: text.slice(0, 80), fill: resolveCanvasFill(node.color, node.type === "group") });
   }
   if (!nodes.size) return { status: "empty" };
   const list = [...nodes.values()];
@@ -71,7 +87,7 @@ export async function buildCanvasPreview(source: string, isCurrent: () => boolea
   const height = Math.max(...list.map((node) => node.y + node.height)) - minY;
   const unit = Math.max(width, height) / 100;
   const stroke = Math.max(unit * 0.2, 0.1), font = Math.max(unit * 2, 1);
-  const box = (node: CanvasNode): string => `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${unit}" fill="${node.type === "group" ? "#e2e8f0" : "#f8fafc"}" stroke="#64748b" stroke-width="${stroke}"/>`;
+  const box = (node: CanvasNode): string => `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${unit}" fill="${node.fill}" stroke="#64748b" stroke-width="${stroke}"/>`;
   const label = (node: CanvasNode): string => `<svg x="${node.x}" y="${node.y}" width="${node.width}" height="${Math.min(node.height, font * 2)}"><text x="${unit}" y="${font * 1.2}" font-family="sans-serif" font-size="${font}" fill="#1e293b">${escapeXml(node.label)}</text></svg>`;
   const parts = list.filter((node) => node.type === "group").map(box);
   let edgeCount = 0;
