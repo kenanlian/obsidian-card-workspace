@@ -63,11 +63,11 @@ describe("bounded Canvas SVG", () => {
     const result = await buildCanvasPreview(source, () => true);
     if (result?.status !== "ready") throw new Error("expected SVG");
     const doc = new DOMParser().parseFromString(await text(result.blob), "image/svg+xml");
-    const shapes = [...doc.querySelectorAll("rect, line")];
+    const shapes = Array.from(doc.querySelectorAll("rect, line"));
     expect(shapes.map((shape) => shape.localName)).toEqual(["rect", "line", "rect"]);
     expect(shapes.map((shape) => shape.getAttribute("fill"))).toEqual(["#d4cff4", null, "#f9cdd0"]);
     expect(shapes.map((shape) => shape.getAttribute("stroke"))).toEqual(["#64748b", "#475569", "#64748b"]);
-    expect([...doc.querySelectorAll("text")].map((label) => label.getAttribute("fill"))).toEqual(["#1e293b", "#1e293b", "#1e293b"]);
+    expect(Array.from(doc.querySelectorAll("text"), (label) => label.getAttribute("fill"))).toEqual(["#1e293b", "#1e293b", "#1e293b"]);
   });
 
   it("renders groups first, relative negative geometry, node labels, endpoints and arrows with XML escaping", async () => {
