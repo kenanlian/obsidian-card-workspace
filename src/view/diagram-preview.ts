@@ -117,6 +117,31 @@ export async function buildCanvasPreview(source: string, isCurrent: () => boolea
   return { status: "ready", blob: new Blob([svg], { type: "image/svg+xml" }), truncated };
 }
 
+/** Recognize the plain background rect emitted by Excalidraw's exportToSvg.
+ * Work only on the detached preview document; never change the exported file. */
+function removeExcalidrawBackground(doc: Document): boolean {
+  const root = doc.documentElement;
+  if (!Array.from(root.childNodes).some((child) => child.nodeType === 8
+    && child.textContent?.trim() === "svg-source:excalidraw")) return false;
+  const bounds = root.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  if (!bounds || bounds.length !== 4 || !bounds.every(Number.isFinite)
+    || bounds[0] !== 0 || bounds[1] !== 0 || bounds[2] <= 0 || bounds[3] <= 0) return false;
+  // Definitions and metadata precede the background in standard exports.
+  // Stop at the first rendered element rather than searching through the drawing.
+  const background = Array.from(root.children).find((child) => !["defs", "metadata", "title", "desc", "style"].includes(child.localName));
+  if (!background || background.namespaceURI !== root.namespaceURI || background.localName !== "rect"
+    || background.childNodes.length > 0 || background.attributes.length !== 5
+    || !["x", "y", "width", "height", "fill"].every((name) => background.hasAttribute(name))
+    || !background.getAttribute("fill")?.trim()) return false;
+  const coordinates = ["x", "y", "width", "height"].map((name) => {
+    const value = background.getAttribute(name)!.trim();
+    return value ? Number(value) : NaN;
+  });
+  if (!coordinates.every(Number.isFinite) || coordinates.some((value, index) => value !== bounds[index])) return false;
+  background.remove();
+  return true;
+}
+
 export async function readDiagramPreview(vault: Vault, path: string, isCurrent: () => boolean,
   Parser?: typeof DOMParser): Promise<DiagramPreviewResult | undefined> {
   const candidates = diagramDependencies(path);
@@ -135,8 +160,9 @@ export async function readDiagramPreview(vault: Vault, path: string, isCurrent: 
     const doc = parser.parseFromString(source, "image/svg+xml");
     if (doc.getElementsByTagName("parsererror").length || doc.documentElement.localName !== "svg"
       || doc.documentElement.namespaceURI !== "http://www.w3.org/2000/svg") return { status: "invalid" };
+    const backgroundRemoved = removeExcalidrawBackground(doc);
     const sanitized = sanitizeSvg(doc);
-    if (!sanitized) return { status: "invalid" };
+    if (!sanitized) return { status: backgroundRemoved ? "empty" : "invalid" };
     const blob = new Blob([sanitized], { type: "image/svg+xml" });
     if (blob.size > DIAGRAM_MAX_BYTES) return { status: "oversized" };
     const validated = parser.parseFromString(sanitized, "image/svg+xml");

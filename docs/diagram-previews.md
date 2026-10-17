@@ -11,6 +11,8 @@ Excalidraw cards use same-directory SVG exports in this order:
 
 The scene body is never read or decompressed. If neither export exists, install the Excalidraw plugin and enable SVG auto-export. Card Workspace does not install or configure it or trigger export. Export create/modify/delete/rename events refresh dependent previews, including changes that preserve file stats. SVG remains an attachment and does not enter card lists or the search index.
 
+Excalidraw previews remove the standard export's canvas background in memory so the preview surface shows through. Recognition requires the `svg-source:excalidraw` marker and a plain, full-viewBox background rectangle before the drawing content. Drawing fills and unrecognized background structures are preserved; the SVG file on disk is unchanged. An export containing only the recognized background shows the empty-diagram message.
+
 Both diagram types always occupy a 160px inline region beneath the title with `contain`, independently of Markdown card image mode, fit and text line settings. Links scopes retain their reference-list previews. Canvas, Excalidraw and Base search stays title-only.
 
 Canvas JSON and exported SVG each have a 512 KiB UTF-8 limit checked before and after reading. Canvas draws at most 200 valid nodes and 400 valid connections and reports shortened previews. Diagram reads share the five-task preview queue and first-six-card startup prewarm. The per-view 512-entry preview LRU has an additional 16 MiB diagram Blob budget; display URLs exist only for the image viewport and are released on unmount or closing the view. No diagram data is persisted.

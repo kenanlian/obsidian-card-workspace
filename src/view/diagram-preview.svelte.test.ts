@@ -169,6 +169,56 @@ describe("same-directory Excalidraw exports", () => {
     return doc;
   }
 
+  describe("transparent Excalidraw canvas", () => {
+    const marker = "<!-- svg-source:excalidraw -->";
+    const bounds = 'viewBox="0 0 100 300" width="200" height="600"';
+    const background = '<rect x="0" y="0" width="100" height="300" fill="#ffffff"/>';
+    const drawing = '<g><rect id="drawing" x="0" y="0" width="100" height="300" fill="#ffffff"/></g>';
+
+    it.each(["#ffffff", "#1e1e1e", "#fce7f3"])("removes only the exported %s background, including scaled exports", async (fill) => {
+      const source = wrap(`${marker}<metadata/><defs><clipPath id="clip"><rect width="100" height="300"/></clipPath></defs>`
+        + background.replace("#ffffff", fill) + drawing, bounds);
+      const doc = await exportedSvg(source);
+      expect(Array.from(doc.documentElement.children).map((element) => element.localName)).toEqual(["metadata", "defs", "g"]);
+      expect(doc.getElementById("drawing")?.getAttribute("fill")).toBe("#ffffff");
+      expect(doc.querySelector("clipPath rect")).not.toBeNull();
+      expect(doc.documentElement.getAttribute("viewBox")).toBe("0 0 100 300");
+      expect(doc.documentElement.getAttribute("width")).toBe("200");
+      const original = new DOMParser().parseFromString(source, "image/svg+xml");
+      expect(original.documentElement.querySelector(":scope > rect")).not.toBeNull();
+    });
+
+    it.each([
+      { name: "unmarked export", content: background + drawing, attributes: bounds },
+      { name: "partial rectangle", content: marker + background.replace('width="100"', 'width="50"') + drawing, attributes: bounds },
+      { name: "offset rectangle", content: marker + background.replace('x="0"', 'x="10"') + drawing, attributes: bounds },
+      { name: "transformed rectangle", content: marker + background.replace("<rect", '<rect transform="translate(0 0)"') + drawing, attributes: bounds },
+      { name: "referenced rectangle", content: marker + background.replace("<rect", '<rect id="shape"') + drawing, attributes: bounds },
+      { name: "later rectangle", content: marker + drawing + background, attributes: bounds },
+      { name: "nested rectangle", content: marker + `<g>${background}</g>` + drawing, attributes: bounds },
+      { name: "missing viewBox", content: marker + background + drawing, attributes: "" },
+    ])("preserves an ambiguous background: $name", async ({ content, attributes }) => {
+      const source = wrap(content, attributes);
+      const doc = await exportedSvg(source);
+      const original = new DOMParser().parseFromString(source, "image/svg+xml");
+      const serializer = new XMLSerializer();
+      expect(serializer.serializeToString(doc)).toBe(serializer.serializeToString(original));
+    });
+
+    it("shows an empty diagram when the export contains only its canvas background", async () => {
+      const h = vaultFixture(["a.svg"], wrap(marker + "<defs/>" + background, bounds));
+      expect(await readDiagramPreview(h.vault, "a.excalidraw", () => true)).toEqual({ status: "empty" });
+    });
+
+    it("still sanitizes drawing content after removing the background", async () => {
+      const doc = await exportedSvg(wrap(marker + background + '<script>alert(1)</script>'
+        + drawing.replace("<g>", '<g onclick="alert(1)">'), bounds));
+      expect(doc.querySelector("script")).toBeNull();
+      expect(doc.querySelector("g")?.hasAttribute("onclick")).toBe(false);
+      expect(doc.getElementById("drawing")).not.toBeNull();
+    });
+  });
+
   it.each(["script", "foreignObject", "animate", "animateTransform", "animateMotion", "set", "handler", "discard"])(
     "removes %s and its whole subtree from the Blob", async (tag) => {
       const doc = await exportedSvg(wrap(`<${tag}><g id="unsafe"/></${tag}><rect width="10" height="10"/>`));
