@@ -164,6 +164,8 @@ export const viewStringsEn: ViewStrings = {
       duplicateConfirm: "Copy",
       duplicateFailed: (reason: string) => `Failed to copy folder: ${reason}`,
       createFileFailed: (reason: string) => `Failed to create file: ${reason}`,
+      excalidrawUnavailable: "Please install and enable Excalidraw before creating a drawing.",
+      openExcalidrawFailed: (reason: string) => `Drawing created, but could not open Excalidraw: ${reason}`,
     },
     contextMenu: {
       openInCurrentWindow: "Open in current window",

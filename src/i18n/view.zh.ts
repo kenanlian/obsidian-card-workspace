@@ -164,6 +164,8 @@ export const viewStringsZh: ViewStrings = {
       duplicateConfirm: "复制",
       duplicateFailed: (reason: string) => `复制文件夹失败：${reason}`,
       createFileFailed: (reason: string) => `创建文件失败：${reason}`,
+      excalidrawUnavailable: "请先安装并启用 Excalidraw 插件，再新建绘图。",
+      openExcalidrawFailed: (reason: string) => `绘图已创建，但无法打开 Excalidraw：${reason}`,
     },
     contextMenu: {
       openInCurrentWindow: "在当前窗口打开",

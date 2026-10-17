@@ -136,6 +136,8 @@ export interface ViewStrings {
     duplicateConfirm: string;
     duplicateFailed: (reason: string) => string;
     createFileFailed: (reason: string) => string;
+    excalidrawUnavailable: string;
+    openExcalidrawFailed: (reason: string) => string;
   };
   contextMenu: {
     openInCurrentWindow: string;

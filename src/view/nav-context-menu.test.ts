@@ -1565,7 +1565,10 @@ describe("Excalidraw create menu", () => {
     for (const payload of payloads) {
       const menu = build(payload, deps).menu;
       const title = payload.scope === "header" ? deps.strings.view.navMenu.newExcalidrawAtRoot : deps.strings.view.navMenu.newExcalidraw;
-      const item = findItem(menu, title); expect(item?.icon).toBe("pen-tool"); item?.clickHandler?.();
+      const item = findItem(menu, title);
+      expect(item?.icon).toBe("pen-tool");
+      expect(item?.disabled).toBe(false);
+      item?.clickHandler?.();
       expect(deps.actions.createExcalidraw).toHaveBeenLastCalledWith(payload.scope === "header" || payload.itemId === "/" ? "/" : "Projects");
     }
   });

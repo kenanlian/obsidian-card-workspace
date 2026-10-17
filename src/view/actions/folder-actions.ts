@@ -1,8 +1,9 @@
-import { TFolder } from "obsidian";
+import { TFolder, type TFile } from "obsidian";
 
 import { FolderPickerModal } from "../../FolderPickerModal";
 import type { UiStrings } from "../../i18n";
 import type { OpenDestination } from "../../settings";
+import { isExcalidrawReady, openNewExcalidraw } from "../excalidraw";
 import { CreateFolderModal } from "../modals/CreateFolderModal";
 import { resolveUniquePath } from "../note-ops";
 import { normalizeScopePath, type CardScope } from "../scope";
@@ -312,6 +313,7 @@ export class FolderActions {
     folderUiPath: string,
     kind: "note" | "folder" | "canvas" | "base" | "excalidraw",
   ): Promise<void> {
+    if (kind === "excalidraw" && !this.checkExcalidrawReady()) return;
     const scope = this.deps.getScope();
     switch (scope.kind) {
       case "box": case "links":
@@ -336,7 +338,7 @@ export class FolderActions {
       return;
     }
     if (kind === "excalidraw") {
-      await this.createSupportedFileIn(folderUiPath, "excalidraw.md", NEW_EXCALIDRAW_CONTENT);
+      await this.createExcalidrawIn(folderUiPath);
       return;
     }
     if (kind === "base") {
@@ -424,9 +426,41 @@ export class FolderActions {
     await this.createSupportedFileIn(folderUiPath, "base", NEW_BASE_CONTENT);
   }
 
+  private checkExcalidrawReady(): boolean {
+    if (isExcalidrawReady(this.deps.context.getApp())) return true;
+    this.deps.context.notify(this.getFolderManagementStrings().excalidrawUnavailable);
+    return false;
+  }
+
+  private async createExcalidrawIn(folderUiPath: string): Promise<void> {
+    // A source selection may have awaited work since the initial availability check.
+    if (!this.checkExcalidrawReady()) return;
+    const folder = this.resolveFolderFromUiPath(folderUiPath);
+    const strings = this.getFolderManagementStrings();
+    if (!(folder instanceof TFolder)) {
+      this.deps.context.notify(strings.folderNotFound);
+      return;
+    }
+    const app = this.deps.context.getApp();
+    let created: TFile;
+    try {
+      const path = resolveUniquePath(app, `${this.strings.app.untitledNoteBaseName}.excalidraw.md`, folder.path);
+      created = await app.vault.create(path, NEW_EXCALIDRAW_CONTENT);
+    } catch (error) {
+      this.deps.context.notify(strings.createFileFailed(String(error)));
+      return;
+    }
+    try {
+      if (!isExcalidrawReady(app)) throw new Error(strings.excalidrawUnavailable);
+      await openNewExcalidraw(app, created);
+    } catch (error) {
+      this.deps.context.notify(strings.openExcalidrawFailed(String(error)));
+    }
+  }
+
   private async createSupportedFileIn(
     folderUiPath: string,
-    extension: "canvas" | "base" | "excalidraw.md",
+    extension: "canvas" | "base",
     content: string,
   ): Promise<void> {
     const folder = this.resolveFolderFromUiPath(folderUiPath);

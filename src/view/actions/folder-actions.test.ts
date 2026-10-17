@@ -326,12 +326,134 @@ describe("Excalidraw creation", () => {
       const file = new mockState.MockTFile(path); files.set(path, file);
       return file;
     });
-    const notify = vi.fn(), openNoteFromCard = vi.fn(), selectFolderFromNav = vi.fn(async () => undefined);
-    const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create } };
+    // A freshly created .md has no metadata yet: the ordinary opener stays Markdown.
+    let viewState: { type: string; state?: { file?: string }; active?: boolean } = { type: "empty" };
+    const leaf = {
+      setViewState: vi.fn(async (next: typeof viewState) => { viewState = next; }),
+      loadIfDeferred: vi.fn(async () => undefined),
+      getViewState: () => viewState,
+      detach: vi.fn(),
+    };
+    const plugin: { _loaded?: boolean; isReady?: boolean } = { _loaded: true, isReady: true };
+    const getPlugin = vi.fn((_id: string): unknown => plugin);
+    const getLeaf = vi.fn(() => leaf);
+    const notify = vi.fn(), selectFolderFromNav = vi.fn(async () => undefined);
+    const openNoteFromCard = vi.fn(async (path: string) => {
+      await leaf.setViewState({ type: "markdown", state: { file: path } });
+    });
+    const createNoteInFolder = vi.fn();
+    const app = {
+      vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create },
+      plugins: { getPlugin }, workspace: { getLeaf },
+      viewRegistry: { getViewCreatorByType: vi.fn((_type: string): unknown => () => leaf) },
+      metadataCache: { getCache: vi.fn(() => null) },
+    };
     const actions = new FolderActions({ context: { getApp: () => app, getUiStrings: () => getUiStrings(language), notify },
-      getScope: () => scope, selectFolderFromNav, openNoteFromCard } as never);
-    return { actions, create, notify, files, openNoteFromCard, selectFolderFromNav };
+      getScope: () => scope, selectFolderFromNav, openNoteFromCard, createNoteInFolder } as never);
+    return { actions, app, plugin, getPlugin, getLeaf, leaf, create, notify, files, openNoteFromCard,
+      selectFolderFromNav, createNoteInFolder };
   }
+  it("opens the first view as a drawing even before metadata recognizes the file", async () => {
+    const h = harness("en");
+    expect(h.app.metadataCache.getCache()).toBeNull();
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.leaf.setViewState.mock.calls.map(([state]) => state.type)).toEqual(["excalidraw"]);
+    expect(h.getPlugin).toHaveBeenCalledWith("obsidian-excalidraw-plugin");
+    expect(h.getLeaf).toHaveBeenCalledExactlyOnceWith("tab");
+    expect(h.leaf.getViewState()).toEqual({ type: "excalidraw", state: { file: "notes/Untitled.excalidraw.md" }, active: true });
+    expect(h.leaf.loadIfDeferred).toHaveBeenCalledTimes(1);
+    expect(h.openNoteFromCard).not.toHaveBeenCalled();
+    expect(h.notify).not.toHaveBeenCalled();
+  });
+  it.each(["en", "zh"] as const)("rejects missing, disabled, loading or incompatible plugins without writes or tabs (%s)", async (language) => {
+    for (const plugin of [null, undefined, {}, { _loaded: false, isReady: true }, { _loaded: true, isReady: false },
+      { _loaded: true }, { isReady: true }]) {
+      const h = harness(language, createBoxScope("box"));
+      h.getPlugin.mockReturnValue(plugin);
+      await h.actions.createFromFolderTree("notes", "excalidraw");
+      expect(h.notify).toHaveBeenCalledExactlyOnceWith(language === "en"
+        ? "Please install and enable Excalidraw before creating a drawing."
+        : "请先安装并启用 Excalidraw 插件，再新建绘图。");
+      expect(h.create).not.toHaveBeenCalled();
+      expect(h.getLeaf).not.toHaveBeenCalled();
+      expect(h.openNoteFromCard).not.toHaveBeenCalled();
+      expect(h.selectFolderFromNav).not.toHaveBeenCalled();
+    }
+    const h = harness(language);
+    Reflect.deleteProperty(h.app, "plugins");
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.notify).toHaveBeenCalledTimes(1);
+    expect(h.create).not.toHaveBeenCalled();
+  });
+  it("does not create a drawing when the plugin's view capability is unavailable", async () => {
+    const h = harness("en");
+    h.app.viewRegistry.getViewCreatorByType.mockReturnValue(undefined);
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.app.viewRegistry.getViewCreatorByType).toHaveBeenCalledWith("excalidraw");
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.getLeaf).not.toHaveBeenCalled();
+    expect(h.notify).toHaveBeenCalledTimes(1);
+    Reflect.deleteProperty(h.app, "viewRegistry");
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.create).not.toHaveBeenCalled();
+  });
+  it("keeps a valid drawing but opens no tab if the plugin unloads during the write", async () => {
+    const h = harness("en");
+    h.create.mockImplementationOnce(async (path: string) => {
+      const file = new mockState.MockTFile(path); h.files.set(path, file);
+      h.plugin._loaded = false; return file;
+    });
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.files.has("notes/Untitled.excalidraw.md")).toBe(true);
+    expect(h.getLeaf).not.toHaveBeenCalled();
+    expect(h.openNoteFromCard).not.toHaveBeenCalled();
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("Drawing created, but could not open Excalidraw"));
+  });
+  it("rechecks availability after selecting the target folder", async () => {
+    const h = harness("en", createLinksScope("a.md", "outgoing"));
+    h.selectFolderFromNav.mockImplementation(async () => { h.plugin._loaded = false; });
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.getLeaf).not.toHaveBeenCalled();
+    expect(h.notify).toHaveBeenCalledTimes(1);
+  });
+  it.each(["en", "zh"] as const)("reports view failures and preserves the drawing without a Markdown fallback (%s)", async (language) => {
+    const h = harness(language);
+    h.leaf.setViewState.mockRejectedValueOnce(new Error("view failed"));
+    await h.actions.createFromFolderTree("notes", "excalidraw");
+    expect(h.files.has(`notes/${getUiStrings(language).app.untitledNoteBaseName}.excalidraw.md`)).toBe(true);
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(language === "en"
+      ? "Drawing created, but could not open Excalidraw: Error: view failed"
+      : "绘图已创建，但无法打开 Excalidraw：Error: view failed");
+    expect(h.leaf.detach).toHaveBeenCalledTimes(1);
+    expect(h.openNoteFromCard).not.toHaveBeenCalled();
+  });
+  it("awaits view opening and reports a host that fails to enter the requested drawing view", async () => {
+    const h = harness("en");
+    let finish!: () => void;
+    h.leaf.setViewState.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    let settled = false;
+    const pending = h.actions.createFromFolderTree("notes", "excalidraw").then(() => { settled = true; });
+    await vi.waitFor(() => expect(h.leaf.setViewState).toHaveBeenCalledTimes(1));
+    expect(settled).toBe(false);
+    finish(); await pending;
+    expect(h.notify).toHaveBeenCalledTimes(1);
+    expect(h.leaf.detach).toHaveBeenCalledTimes(1);
+    expect(h.openNoteFromCard).not.toHaveBeenCalled();
+  });
+  it.each(["canvas", "base", "note"] as const)("keeps %s creation independent of Excalidraw", async (kind) => {
+    const h = harness("en"); h.getPlugin.mockReturnValue(null);
+    await h.actions.createFromFolderTree("notes", kind);
+    if (kind === "note") {
+      expect(h.createNoteInFolder).toHaveBeenCalledExactlyOnceWith("notes", []);
+      expect(h.create).not.toHaveBeenCalled();
+    } else {
+      expect(h.create).toHaveBeenCalledTimes(1);
+      expect(h.openNoteFromCard).toHaveBeenCalledExactlyOnceWith(`notes/Untitled.${kind}`, "new-tab");
+    }
+    expect(h.notify).not.toHaveBeenCalled();
+    expect(h.getPlugin).not.toHaveBeenCalled();
+  });
   it.each(["en", "zh"] as const)("creates a Markdown drawing with an uncompressed empty scene (%s)", async (language) => {
     const h = harness(language);
     await h.actions.createFromFolderTree("notes", "excalidraw");
@@ -359,7 +481,8 @@ describe("Excalidraw creation", () => {
       const prefix = target === "/" ? "" : "notes/";
       for (const suffix of ["", " 1", " 2"]) {
         const path = `${prefix}${base}${suffix}.excalidraw.md`;
-        expect(h.files.has(path)).toBe(true); expect(h.openNoteFromCard).toHaveBeenCalledWith(path, "new-tab");
+        expect(h.files.has(path)).toBe(true);
+        expect(h.leaf.setViewState).toHaveBeenCalledWith({ type: "excalidraw", state: { file: path }, active: true });
         expect(resolveCardFileKindFromPath(path)).toBe("excalidraw");
       }
     }
@@ -375,7 +498,9 @@ describe("Excalidraw creation", () => {
     await h.actions.createFromFolderTree("", "excalidraw");
     expect(h.create).toHaveBeenCalledExactlyOnceWith(`${base} 2.excalidraw.md`, expect.any(String));
     expect(h.files.get(occupied.path)).toBe(occupied);
-    expect(h.openNoteFromCard).toHaveBeenCalledExactlyOnceWith(`${base} 2.excalidraw.md`, "new-tab");
+    expect(h.leaf.setViewState).toHaveBeenCalledExactlyOnceWith({
+      type: "excalidraw", state: { file: `${base} 2.excalidraw.md` }, active: true,
+    });
   });
   it.each([createBoxScope("box"), createLinksScope("a.md", "outgoing")])("switches %j to the target folder before creating", async (scope) => {
     const h = harness("en", scope); await h.actions.createFromFolderTree("notes", "excalidraw");
