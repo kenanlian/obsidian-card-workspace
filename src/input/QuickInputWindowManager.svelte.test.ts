@@ -22,9 +22,9 @@ let submit: ReturnType<typeof vi.fn<(request: QuickInputRequest) => Promise<Note
 let files: Map<string, TFile | TFolder>;
 let language: "en" | "zh";
 const rootFolder = Object.assign(new TFolder(), { path: "" });
-const root = () => document.querySelector<HTMLDivElement>(".fce-quick-input")!;
-const send = () => root().querySelector<HTMLButtonElement>("button.mod-cta")!;
-const cancel = () => root().querySelector<HTMLButtonElement>("button:not(.mod-cta)")!;
+const root = (index = 0) => document.querySelectorAll<HTMLDivElement>(".fce-quick-input").item(index)!;
+const send = (index = 0) => root(index).querySelector<HTMLButtonElement>("button.mod-cta")!;
+const cancel = (index = 0) => root(index).querySelector<HTMLButtonElement>("button:not(.mod-cta)")!;
 const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
 function setText(text: string, index = 0) { state.editors[index].text = text; state.editors[index].change(); }
 function pointer(target: EventTarget, type: string, x: number, y: number) {
@@ -59,7 +59,7 @@ describe("modeless quick input", () => {
     expect(send().getAttribute("aria-label")).toBe(noteInputStrings[locale].sending);
     expect(send().querySelector('.fce-quick-input-send-icon[data-icon="send"]')).not.toBeNull();
   });
-  it("keeps the blank draft on blur, focuses repeated opens, and discards on cancel", () => {
+  it("opens independent blank drafts each time, keeps them on blur, and cancels only the chosen draft", () => {
     const underlying = document.createElement("div"); document.body.append(underlying);
     manager.open(window);
     expect(root().getAttribute("aria-modal")).toBe("false");
@@ -68,27 +68,136 @@ describe("modeless quick input", () => {
     setText("   \n"); expect(send().disabled).toBe(true);
     setText("draft");
     window.dispatchEvent(new Event("blur")); manager.open(window);
-    expect(state.editors).toHaveLength(1);
-    expect(state.editors[0].focus).toHaveBeenCalledTimes(2);
+    manager.open(window);
+    expect(state.editors).toHaveLength(3);
+    for (const editor of state.editors) expect(editor.focus).toHaveBeenCalledOnce();
     expect(state.editors[0].text).toBe("draft");
-    cancel().click(); expect(root()).toBeNull();
+    expect(state.editors[1].text).toBe(""); expect(state.editors[2].text).toBe("");
+    setText("second", 1);
+    cancel().click();
+    expect(document.querySelectorAll(".fce-quick-input")).toHaveLength(2);
+    expect(state.editors[1].text).toBe("second");
+    expect(state.editors[1].dispose).not.toHaveBeenCalled();
     expect(state.editors[0].dispose).toHaveBeenCalledOnce();
     expect(underlying.isConnected).toBe(true);
-    manager.open(window); expect(state.editors[1].text).toBe("");
+    cancel().click(); cancel().click();
+    expect(document.querySelector(".fce-quick-input-layer")).toBeNull();
+    manager.open(window); expect(state.editors[3].text).toBe("");
   });
 
   it("has independent drafts owned by separate window documents and cleans on unload", () => {
     const frame = document.createElement("iframe"); document.body.append(frame);
     const other = frame.contentWindow!;
-    manager.open(window); manager.open(other);
-    setText("main", 0); setText("other", 1);
+    manager.open(window); manager.open(window); manager.open(other); manager.open(other);
+    setText("main", 0); setText("other", 2);
+    expect(document.querySelectorAll(".fce-quick-input-layer")).toHaveLength(1);
+    expect(other.document.querySelectorAll(".fce-quick-input")).toHaveLength(2);
     expect(other.document.querySelector(".fce-quick-input")!.ownerDocument).toBe(other.document);
     other.dispatchEvent(new Event("unload"));
-    expect(state.editors[1].dispose).toHaveBeenCalledOnce();
+    expect(state.editors[2].dispose).toHaveBeenCalledOnce(); expect(state.editors[3].dispose).toHaveBeenCalledOnce();
+    expect(other.document.querySelector(".fce-quick-input-layer")).toBeNull();
     expect(root()).not.toBeNull(); expect(state.editors[0].text).toBe("main");
+    expect(state.editors[1].dispose).not.toHaveBeenCalled();
     manager.dispose(); manager.dispose();
     expect(state.editors[0].dispose).toHaveBeenCalledOnce();
-    expect(document.querySelector(".fce-quick-input")).toBeNull();
+    expect(state.editors[1].dispose).toHaveBeenCalledOnce();
+    expect(document.querySelector(".fce-quick-input-layer")).toBeNull();
+  });
+
+  it("cascades from the last activated draft and raises it without moving its DOM", () => {
+    manager.open(window); manager.open(window); manager.open(window);
+    const originalOrder = Array.from(document.querySelectorAll<HTMLDivElement>(".fce-quick-input"));
+    expect(originalOrder.map((node) => [node.style.left, node.style.top])).toEqual([
+      ["252px", "224px"], ["276px", "248px"], ["300px", "272px"],
+    ]);
+    expect(Number(root(2).style.zIndex)).toBeGreaterThan(Number(root().style.zIndex));
+    pointer(root(), "pointerdown", 260, 230);
+    expect(Number(root().style.zIndex)).toBeGreaterThan(Number(root(2).style.zIndex));
+    root(1).dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    expect(Number(root(1).style.zIndex)).toBeGreaterThan(Number(root().style.zIndex));
+    expect(Array.from(root().parentElement!.children)).toEqual(originalOrder);
+    manager.open(window);
+    expect(root(3).style.left).toBe("300px"); expect(root(3).style.top).toBe("272px");
+    expect(state.editors[1].dispose).not.toHaveBeenCalled();
+  });
+
+  it("moves and resizes one draft independently, wraps new placement, and clamps all drafts on resize", () => {
+    manager.open(window); manager.open(window);
+    const first = root().style.cssText;
+    pointer(root(1).querySelector(".fce-quick-input-grip")!, "pointerdown", 0, 0);
+    pointer(window, "pointermove", 1000, 1000); pointer(window, "pointerup", 1000, 1000);
+    expect(root(1).style.left).toBe("504px"); expect(root(1).style.top).toBe("448px");
+    pointer(root(1).querySelector('[data-direction="nw"]')!, "pointerdown", 0, 0);
+    pointer(window, "pointermove", 100, 100); pointer(window, "pointerup", 100, 100);
+    expect(root(1).style.width).toBe("420px"); expect(root(1).style.height).toBe("220px");
+    expect(root().style.cssText).toBe(first);
+    manager.open(window);
+    expect(root(2).style.left).toBe("0px"); expect(root(2).style.top).toBe("0px");
+    expect(root(2).style.width).toBe("420px"); expect(root(2).style.height).toBe("220px");
+    Object.defineProperty(window, "innerWidth", { value: 250, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 150, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+    for (let index = 0; index < 3; index++) {
+      expect(root(index).style.width).toBe("250px"); expect(root(index).style.height).toBe("150px");
+      expect(root(index).style.left).toBe("0px"); expect(root(index).style.top).toBe("0px");
+    }
+  });
+
+  it("keeps composition and shortcut submission local to each draft", () => {
+    submit.mockReturnValue(new Promise<NoteInputResult>(() => {}));
+    manager.open(window); manager.open(window); setText("first"); setText("second", 1);
+    root().dispatchEvent(new Event("compositionstart", { bubbles: true }));
+    expect(send().disabled).toBe(true); expect(send(1).disabled).toBe(false);
+    root(1).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    expect(submit).toHaveBeenCalledOnce(); expect(submit.mock.calls[0][0].text).toBe("second");
+    root().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    expect(submit).toHaveBeenCalledOnce();
+    root().dispatchEvent(new Event("compositionend", { bubbles: true }));
+    expect(send().disabled).toBe(false); expect(cancel().disabled).toBe(false);
+    expect(send(1).disabled).toBe(true); expect(cancel(1).disabled).toBe(true);
+    expect(state.editors[0].readOnly).not.toHaveBeenCalled();
+  });
+
+  it("isolates concurrent submissions, retries and completions from later drafts", async () => {
+    let resolve!: (result: NoteInputResult) => void;
+    submit.mockReturnValueOnce(new Promise((done) => { resolve = done; }))
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce({ file: Object.assign(new TFile(), { path: "second.md" }), created: false });
+    manager.open(window); manager.open(window); setText("first"); setText("second", 1);
+    const firstRoot = root(), secondRoot = root(1);
+    send().click(); send(1).click(); await tick();
+    const [first, second] = submit.mock.calls.map(([request]) => request);
+    expect(first.submissionId).not.toBe(second.submissionId);
+    expect(first.text).toBe("first"); expect(second.text).toBe("second");
+    expect(send().disabled).toBe(true); expect(send(1).disabled).toBe(false);
+    manager.open(window); setText("later", 2);
+    send(1).click(); await tick();
+    expect(submit.mock.calls[2][0]).toBe(second);
+    expect(secondRoot.isConnected).toBe(false); expect(firstRoot.isConnected).toBe(true);
+    resolve({ file: Object.assign(new TFile(), { path: "first.md" }), created: true }); await tick();
+    expect(firstRoot.isConnected).toBe(false);
+    expect(document.querySelectorAll(".fce-quick-input")).toHaveLength(1);
+    expect(state.editors[2].text).toBe("later"); expect(state.editors[2].dispose).not.toHaveBeenCalled();
+    expect(send().disabled).toBe(false);
+  });
+
+  it("drops completions from unloaded drafts and removes active gesture listeners", async () => {
+    let resolve!: (result: NoteInputResult) => void;
+    submit.mockReturnValue(new Promise((done) => { resolve = done; }));
+    manager.open(window); setText("draft"); send().click();
+    manager.open(window);
+    const closed = root(1);
+    pointer(closed.querySelector(".fce-quick-input-grip")!, "pointerdown", 0, 0);
+    window.dispatchEvent(new Event("unload"));
+    expect(document.querySelector(".fce-quick-input-layer")).toBeNull();
+    const geometry = closed.style.cssText;
+    pointer(window, "pointermove", 100, 100);
+    expect(closed.style.cssText).toBe(geometry);
+    manager.open(window); setText("new", 2);
+    resolve({ file: Object.assign(new TFile(), { path: "old.md" }), created: true }); await tick();
+    expect(notify).not.toHaveBeenCalled(); expect(root()).not.toBeNull();
+    expect(state.editors[2].text).toBe("new");
+    expect(state.editors[0].dispose).toHaveBeenCalledOnce(); expect(state.editors[1].dispose).toHaveBeenCalledOnce();
   });
 
   it("leaves Enter alone, blocks IME submissions, and uses ModEnter with single-flight protection", async () => {
@@ -135,7 +244,7 @@ describe("modeless quick input", () => {
     const captured = submit.mock.calls[0][0] as QuickInputRequest;
     settings.noteTemplates[0].dateFormat = "YYYY-MM";
     expect(captured.template!.dateFormat).toBe("YYYY");
-    files.delete("template.md"); manager.open(window); expect(send().disabled).toBe(true);
+    files.delete("template.md"); window.dispatchEvent(new Event("focus")); expect(send().disabled).toBe(true);
     expect(state.editors[0].text).toBe("draft");
   });
 
@@ -152,6 +261,17 @@ describe("modeless quick input", () => {
     manager.open(window); expect(root()).toBeNull();
     expect(notify).toHaveBeenCalledWith(noteInputStrings.en.nativeEditorUnavailable);
     expect(state.editors).toHaveLength(0);
+    expect(document.querySelector(".fce-quick-input-layer")).toBeNull();
+  });
+
+  it("keeps existing drafts and their layer when another native editor fails to initialize", () => {
+    manager.open(window); setText("keep");
+    vi.spyOn(console, "warn").mockImplementation(() => {}); state.unsupported = true;
+    manager.open(window);
+    expect(document.querySelectorAll(".fce-quick-input")).toHaveLength(1);
+    expect(state.editors[0].text).toBe("keep"); expect(state.editors[0].dispose).not.toHaveBeenCalled();
+    expect(document.querySelectorAll(".fce-quick-input-layer")).toHaveLength(1);
+    expect(send().disabled).toBe(false);
   });
 
   it("drags and resizes all boundaries within the window, remembers geometry, and clamps on window resize", () => {

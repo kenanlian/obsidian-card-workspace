@@ -46,8 +46,8 @@ function fixture(lazy = false) {
   const onChange = vi.fn();
   const onModEnter = vi.fn();
   const container = document.createElement("div"); document.body.append(container);
-  const open = () => {
-    const adapter = createNativeMarkdownEditor({ app, container, placeholder: "Write", onChange, onModEnter });
+  const open = (target = container, handleModEnter = onModEnter) => {
+    const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", onChange, onModEnter: handleModEnter });
     live.push(adapter); return adapter;
   };
   return { app, container, open, underlying, workspace, keymap, create, probeUnload, destroyed, onChange, onModEnter };
@@ -103,6 +103,46 @@ describe("native Markdown editor compatibility seam", () => {
     const content = f.container.querySelector<HTMLElement>(".cm-content")!;
     adapter.setReadOnly(true); expect(content.getAttribute("contenteditable")).toBe("false");
     adapter.setReadOnly(false); expect(content.getAttribute("contenteditable")).toBe("true");
+  });
+
+  it("hands editor ownership and shortcuts between two drafts without disposing the focused sibling", () => {
+    const f = fixture();
+    const activeScopes: typeof scopes.instances = [];
+    f.keymap.pushScope.mockImplementation((scope) => { activeScopes.push(scope); });
+    f.keymap.popScope.mockImplementation((scope) => { activeScopes.splice(activeScopes.indexOf(scope), 1); });
+    const first = f.open();
+    const otherContainer = document.createElement("div"); document.body.append(otherContainer);
+    const otherSend = vi.fn();
+    const second = f.open(otherContainer, otherSend);
+    const firstContent = f.container.querySelector<HTMLElement>(".cm-content")!;
+    const secondContent = otherContainer.querySelector<HTMLElement>(".cm-content")!;
+    const cm = EditorView.findFromDOM(firstContent)!;
+    cm.dispatch({ changes: { from: 0, insert: "first draft" } });
+    const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true });
+
+    first.focus();
+    expect(document.activeElement).toBe(firstContent);
+    expect(activeScopes).toHaveLength(1);
+    activeScopes[0].handler!(event);
+    expect(f.onModEnter).toHaveBeenCalledOnce(); expect(otherSend).not.toHaveBeenCalled();
+
+    second.focus();
+    expect(document.activeElement).toBe(secondContent);
+    expect(activeScopes).toHaveLength(1);
+    activeScopes[0].handler!(event);
+    expect(otherSend).toHaveBeenCalledOnce(); expect(f.onModEnter).toHaveBeenCalledOnce();
+    const owner = f.workspace.activeEditor;
+    expect(first.getValue()).toBe("first draft"); expect(second.getValue()).toBe("");
+
+    first.focus(); second.focus();
+    first.dispose();
+    expect(f.workspace.activeEditor).toBe(owner);
+    expect(document.activeElement).toBe(secondContent);
+    expect(activeScopes).toHaveLength(1);
+    second.dispose();
+    expect(f.workspace.activeEditor).toBe(f.underlying);
+    expect(activeScopes).toHaveLength(0);
+    expect(f.destroyed).toHaveBeenCalledTimes(2);
   });
 
   it("rejects missing host capabilities with a clear error instead of creating a fallback", () => {

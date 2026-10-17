@@ -2184,9 +2184,15 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
 /* Modeless quick input uses the owning document's native theme variables. */
+.fce-quick-input-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
 .fce-quick-input {
   position: fixed;
-  z-index: 100;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;

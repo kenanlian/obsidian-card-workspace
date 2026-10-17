@@ -35,9 +35,10 @@ function boundGeometry(win: Window, geometry: Geometry): Geometry {
   return { width, height, x: Math.max(0, Math.min(availableWidth - width, geometry.x)), y: Math.max(0, Math.min(availableHeight - height, geometry.y)) };
 }
 
-/** Owns runtime drafts and geometry only; never activates or opens a workspace leaf. */
+/** Owns this vault's runtime drafts; windows only host their DOM and geometry. */
 export class QuickInputWindowManager {
-  private readonly drafts = new Map<Window, Draft>();
+  private readonly drafts = new Set<Draft>();
+  private readonly layers = new WeakMap<Window, HTMLDivElement>();
   private readonly geometry = new WeakMap<Window, Geometry>();
   private disposed = false;
   private sequence = 0;
@@ -47,8 +48,16 @@ export class QuickInputWindowManager {
 
   open(win: Window): void {
     if (this.disposed || win.closed) return;
-    const existing = this.drafts.get(win);
-    if (existing) { this.refresh(existing); existing.editor.focus(); return; }
+    let previous: Draft | undefined;
+    for (const draft of this.drafts) if (draft.win === win) previous = draft;
+    let geometry = boundGeometry(win, previous?.geometry ?? this.geometry.get(win)
+      ?? { x: (win.innerWidth - 520) / 2, y: (win.innerHeight - 320) / 2, width: 520, height: 320 });
+    if (previous) {
+      geometry = { ...geometry,
+        x: geometry.x + 24 + geometry.width <= win.innerWidth ? geometry.x + 24 : 0,
+        y: geometry.y + 24 + geometry.height <= win.innerHeight ? geometry.y + 24 : 0,
+      };
+    }
     const document = win.document;
     const strings = this.options.getStrings();
     const root = document.createElement("div");
@@ -81,7 +90,14 @@ export class QuickInputWindowManager {
     send.append(sendIcon, sendLabel);
     footer.append(cancel, send);
     root.append(top, body, footer);
-    document.body.append(root);
+    let layer = this.layers.get(win);
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.className = "fce-quick-input-layer";
+      document.body.append(layer);
+      this.layers.set(win, layer);
+    }
+    layer.append(root);
     let draft: Draft | undefined;
     try {
       const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder,
@@ -89,10 +105,11 @@ export class QuickInputWindowManager {
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
       draft = { win, root, editor, send, sendLabel, cancel, composing: false, pending: false, request: null, cleanup: [],
-        geometry: boundGeometry(win, this.geometry.get(win) ?? { x: (win.innerWidth - 520) / 2, y: (win.innerHeight - 320) / 2, width: 520, height: 320 }),
+        geometry,
       };
       const current = draft;
-      this.drafts.set(win, current);
+      this.drafts.add(current);
+      this.bringToFront(current);
       this.paint(current);
       this.listen(current, cancel, "click", () => { if (!current.pending) this.close(current); });
       this.listen(current, send, "click", () => { void this.send(current); });
@@ -102,7 +119,8 @@ export class QuickInputWindowManager {
         const key = event as KeyboardEvent;
         if ((key.ctrlKey || key.metaKey) && !key.altKey && key.key === "Enter") this.handleModEnter(current, key);
       }, true);
-      this.listen(current, root, "focusin", () => this.refresh(current));
+      this.listen(current, root, "pointerdown", () => this.bringToFront(current), true);
+      this.listen(current, root, "focusin", () => { this.bringToFront(current); this.refresh(current); });
       this.listen(current, win, "focus", () => this.refresh(current));
       this.listen(current, win, "resize", () => { current.geometry = boundGeometry(win, current.geometry); this.paint(current); });
       this.listen(current, win, "unload", () => this.close(current));
@@ -118,7 +136,8 @@ export class QuickInputWindowManager {
       this.refresh(current);
       editor.focus();
     } catch (error) {
-      if (draft) this.close(draft); else root.remove();
+      if (draft) this.close(draft);
+      else { root.remove(); this.removeEmptyLayer(win); }
       console.warn("[card-workspace] Native quick input unavailable", error);
       this.options.notify(strings.nativeEditorUnavailable);
     }
@@ -127,7 +146,7 @@ export class QuickInputWindowManager {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const draft of this.drafts.values()) this.close(draft);
+    for (const draft of this.drafts) this.close(draft);
   }
 
   private listen(draft: Draft, target: EventTarget, type: string, handler: EventListener, capture = false): void {
@@ -170,7 +189,7 @@ export class QuickInputWindowManager {
   }
 
   private async send(draft: Draft): Promise<void> {
-    if (this.drafts.get(draft.win) !== draft || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
+    if (!this.drafts.has(draft) || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
     const strings = this.options.getStrings();
     if (!this.validConfig(draft.request)) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {
@@ -185,23 +204,37 @@ export class QuickInputWindowManager {
     this.refresh(draft);
     try {
       const result = await this.options.submit(draft.request);
-      if (this.disposed || this.drafts.get(draft.win) !== draft) return;
+      if (this.disposed || !this.drafts.has(draft)) return;
       this.close(draft);
       this.options.notify(this.options.getStrings().sent(result.file.path));
     } catch (error) {
-      if (this.disposed || this.drafts.get(draft.win) !== draft) return;
+      if (this.disposed || !this.drafts.has(draft)) return;
       this.options.notify(this.options.getStrings().sendFailed(error instanceof Error ? error.message : String(error)));
     } finally {
-      if (this.drafts.get(draft.win) === draft) { draft.pending = false; this.refresh(draft); }
+      if (this.drafts.has(draft)) { draft.pending = false; this.refresh(draft); }
     }
   }
 
   private close(draft: Draft): void {
-    if (this.drafts.get(draft.win) !== draft) return;
-    this.drafts.delete(draft.win);
+    if (!this.drafts.delete(draft)) return;
     this.geometry.set(draft.win, draft.geometry);
     for (const cleanup of draft.cleanup) cleanup();
-    try { draft.editor.dispose(); } finally { draft.root.remove(); }
+    try { draft.editor.dispose(); } finally { draft.root.remove(); this.removeEmptyLayer(draft.win); }
+  }
+
+  private removeEmptyLayer(win: Window): void {
+    const layer = this.layers.get(win);
+    if (layer && layer.childElementCount === 0) { layer.remove(); this.layers.delete(win); }
+  }
+
+  private bringToFront(draft: Draft): void {
+    if (this.disposed || !this.drafts.delete(draft)) return;
+    this.drafts.add(draft);
+    // Keep editor DOM mounted so raising a draft preserves selection and IME state.
+    let layer = 0;
+    for (const current of this.drafts) {
+      if (current.win === draft.win) current.root.style.zIndex = String(layer++);
+    }
   }
 
   private paint(draft: Draft): void {
