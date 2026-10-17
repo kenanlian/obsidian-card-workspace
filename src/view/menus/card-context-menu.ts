@@ -105,7 +105,7 @@ export class CardContextMenu {
       return;
     }
 
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     this.addItems(menu, detail.notePath);
 
     if (detail.trigger === "button") {

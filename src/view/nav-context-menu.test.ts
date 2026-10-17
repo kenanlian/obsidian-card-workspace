@@ -69,9 +69,15 @@ class MockMenuItem {
 }
 
 class MockMenu {
+  useNativeMenu = true;
   items: MockMenuItem[] = [];
 
   constructor(private readonly submenuSupported = true) {}
+
+  setUseNativeMenu(useNativeMenu: boolean): this {
+    this.useNativeMenu = useNativeMenu;
+    return this;
+  }
 
   addItem(configure: (item: MockMenuItem) => void): this {
     const item = new MockMenuItem(this.submenuSupported);

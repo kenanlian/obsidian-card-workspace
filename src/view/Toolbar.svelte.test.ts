@@ -399,7 +399,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("closes the box picker popup on an outside click and when the native sort menu opens", async () => {
+  it("closes the box picker popup on an outside click and when the DOM sort menu opens", async () => {
     const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
 
     await clickBoxPickerButton();
@@ -439,7 +439,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("builds the native sort & group menu with four headed sections and trailing commands", async () => {
+  it("builds the DOM sort & group menu with four headed sections and trailing commands", async () => {
     const { component } = mountToolbar();
 
     const menu = await openSortMenu();
@@ -456,7 +456,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("decorates the native menu surface and marks the four section headings", async () => {
+  it("decorates the DOM menu surface and marks the four section headings", async () => {
     const { component } = mountToolbar();
 
     const menu = await openSortMenu();
@@ -471,7 +471,7 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("anchors the native menu under the sort trigger button", async () => {
+  it("anchors the DOM menu under the sort trigger button", async () => {
     const { component } = mountToolbar();
 
     const sortButton = getSortButton();

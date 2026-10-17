@@ -197,6 +197,7 @@ class ObsidianMockMenuItemApi {
 
 /** Minimal Menu stand-in: records items, separators, and shown positions for assertions. */
 export class ObsidianMockMenu {
+  useNativeMenu = true;
   readonly items: ObsidianMockMenuItem[] = [];
   separators = 0;
   readonly positions: ObsidianMockMenuPosition[] = [];
@@ -227,6 +228,11 @@ export class ObsidianMockMenu {
         }));
       },
     };
+  }
+
+  setUseNativeMenu(useNativeMenu: boolean): this {
+    this.useNativeMenu = useNativeMenu;
+    return this;
   }
 
   addItem(configure: (item: ObsidianMockMenuItemApi) => unknown): this {

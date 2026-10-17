@@ -350,7 +350,7 @@ export class EditorDropController {
 
   private openDragInsertMenu(operation: DropOperation): void {
     const strings = this.getUiStrings().view.dragInsertMenu;
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     for (const action of this.getSupportedDragInsertActions(operation.file)) {
       const { icon, title } = this.getDragInsertMenuItemDetails(action, strings, operation.useHeadings);
       menu.addItem((item) => {
@@ -358,6 +358,7 @@ export class EditorDropController {
         if (operation.useHeadings) {
           const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
           if (submenu && typeof submenu.addItem === "function") {
+            submenu.setUseNativeMenu(false);
             this.appendHeadingItems(submenu, operation, action);
           } else {
             item.onClick(() => this.openHeadingMenu(operation, action));
@@ -372,7 +373,7 @@ export class EditorDropController {
 
   private openHeadingMenu(operation: DropOperation, action: SupportedDragInsertAction): void {
     if (!this.isDropCurrent(operation)) return;
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     this.appendHeadingItems(menu, operation, action);
     this.showMenu(menu, operation);
   }
@@ -390,14 +391,14 @@ export class EditorDropController {
         ? strings.headingsUnavailable : strings.noOtherSections).setDisabled(true));
       return;
     }
-    // Keep native icon/title columns aligned; the highest level in this note is depth zero.
+    // Keep menu icon/title columns aligned; the highest level in this note is depth zero.
     const baseLevel = operation.headings.reduce((level, heading) => Math.min(level, heading.level), 6);
     for (const heading of operation.headings) {
       menu.addItem((item) => {
         item.setTitle(heading.heading).setIcon(`heading-${heading.level}`).onClick(() => {
           void this.insertCardDragContent(operation, action, { kind: "heading", heading });
         });
-        // Native Menu attaches rows only when shown, so decorate the item's detached DOM.
+        // Menu attaches rows only when shown, so decorate the item's detached DOM.
         const row = (item as unknown as { dom?: HTMLElement }).dom;
         row?.style.setProperty("--fce-heading-depth", String(heading.level - baseLevel));
       });

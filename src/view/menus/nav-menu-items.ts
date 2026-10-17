@@ -37,6 +37,7 @@ export function addSubmenuItem(
     item.setTitle(title).setIcon(icon);
     const submenu = (item as unknown as SubmenuCapableItem).setSubmenu?.();
     if (submenu && typeof submenu.addItem === "function") {
+      submenu.setUseNativeMenu(false);
       build(submenu);
       return;
     }

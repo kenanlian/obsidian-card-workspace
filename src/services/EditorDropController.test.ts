@@ -31,17 +31,23 @@ vi.mock("obsidian", () => {
   }
 
   class MockMenu {
+    useNativeMenu = true;
     items: MenuEntry[] = [];
     positions: Array<{ x: number; y: number }> = [];
     dom = {
       classList: { add: vi.fn() },
-      // Native Menu items stay detached until the menu is sorted for display.
+      // Menu items stay detached until the menu is sorted for display.
       querySelectorAll: vi.fn((_selector: string) => [] as Element[]),
     };
     hideCallback: (() => void) | null = null;
 
     constructor() {
       mockState.menus.push(this);
+    }
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+      this.useNativeMenu = useNativeMenu;
+      return this;
     }
 
     addItem(configure: (item: {

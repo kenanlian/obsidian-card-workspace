@@ -5,7 +5,7 @@ import type { SortGroupStrings } from "../../i18n";
 import type { SortDirection, LinksSortField } from "../../settings";
 import { getMenuDom } from "../menu-dom";
 
-/** Class added to the native menu surface so styles.css can scope its rules. */
+/** Class added to the DOM menu surface so styles.css can scope its rules. */
 export const SORT_GROUP_MENU_CLASS = "fce-sort-group-menu";
 /** Class added to the four muted section heading rows after the menu is shown. */
 export const SORT_GROUP_MENU_SECTION_TITLE_CLASS = "fce-menu-section-title";
@@ -150,6 +150,7 @@ export function buildSortGroupMenu(
       if (properties.length === 0) return;
       const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
       if (submenu && typeof submenu.addItem === "function") {
+        submenu.setUseNativeMenu(false);
         for (const property of properties) {
           addOptionItem(submenu, { title: property.label, icon: "list",
             checked: state.group.dimension === "property" && state.group.propertyKey === property.key,
@@ -225,7 +226,7 @@ export function buildSortGroupMenu(
 }
 
 /**
- * Marks the native menu surface and the four section heading rows. Headings
+ * Marks the DOM menu surface and the four section heading rows. Headings
  * are matched by title text, the same DOM decoration approach the card context
  * menu uses for its danger row; option titles never collide with heading
  * titles. Call after `showAtPosition`, mirroring the card context menu flow.

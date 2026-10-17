@@ -96,6 +96,13 @@ const testState = vi.hoisted(() => {
   }
 
   class TestMenu {
+    useNativeMenu = true;
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+      this.useNativeMenu = useNativeMenu;
+      return this;
+    }
+
     dom = { classList: { add: vi.fn() } };
 
     addItem(_configure: (item: unknown) => void): this {

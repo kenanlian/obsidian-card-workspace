@@ -370,7 +370,7 @@ export class BoxActions {
       return;
     }
 
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     this.appendScopeTargetBoxItems(menu);
     menu.showAtMouseEvent(mouseEvent);
   }
@@ -384,6 +384,7 @@ export class BoxActions {
       item.setTitle(this.strings.box.addScopeToBox).setIcon("package-check");
       const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
       if (submenu && typeof submenu.addItem === "function") {
+        submenu.setUseNativeMenu(false);
         this.appendScopeTargetBoxItems(submenu);
         return;
       }
@@ -475,6 +476,7 @@ export class BoxActions {
       const boxes = settings.boxes ?? [];
       const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
       if (submenu && typeof submenu.addItem === "function") {
+        submenu.setUseNativeMenu(false);
         for (const summary of boxes) {
           submenu.addItem((sub) => {
             sub.setTitle(summary.name).setIcon("box").onClick(() => {

@@ -1823,8 +1823,8 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   color: var(--text-error, #c0392b);
 }
 
-/* === sort & group menu (native Menu) === */
-/* Native menus attach to the document body, so these rules must rely on core
+/* === sort & group menu (Obsidian DOM menu) === */
+/* DOM menus attach to the document body, so these rules must rely on core
    Obsidian variables instead of the .folder-card-view-scoped --fce-* tokens. */
 .menu.fce-sort-group-menu {
   min-width: 200px;

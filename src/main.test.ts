@@ -402,6 +402,13 @@ vi.mock("obsidian", () => {
   }
 
   class MockMenu {
+    useNativeMenu = true;
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+      this.useNativeMenu = useNativeMenu;
+      return this;
+    }
+
     items: Array<{ title: string; icon: string; onClick: (() => void) | null }> = [];
     positions: Array<{ x: number; y: number }> = [];
     dom = {

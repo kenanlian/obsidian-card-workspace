@@ -282,6 +282,7 @@ const mockState = vi.hoisted(() => {
     }
   }
   class MockMenu {
+    useNativeMenu = true;
     items: MockMenuItem[] = [];
     showAtMouseEvent = vi.fn();
     showAtPosition = vi.fn();
@@ -291,6 +292,11 @@ const mockState = vi.hoisted(() => {
     constructor() {
       this.dom = new MockMenuDom();
       menuInstances.push(this);
+    }
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+      this.useNativeMenu = useNativeMenu;
+      return this;
     }
 
     addItem(configure: (item: MockMenuItem) => void): this {

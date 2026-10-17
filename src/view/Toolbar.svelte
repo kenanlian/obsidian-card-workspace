@@ -359,14 +359,14 @@
   }
 
   /**
-   * Sort & group opens a native Obsidian Menu anchored under the trigger
+   * Sort & group opens an Obsidian DOM menu anchored under the trigger
    * button. The Menu owns closing, keyboard navigation, and viewport fitting,
    * so the toolbar only builds the items and decorates the surface.
    */
   function openSortGroupMenu(event: MouseEvent): void {
     closeBoxPickerMenu();
 
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     buildSortGroupMenu(
       menu,
       { sortField, sortDirection, group, availableGroupDimensions, visibleGroupProperties, hasSegments, supportsReferenceCount: isLinksMode },

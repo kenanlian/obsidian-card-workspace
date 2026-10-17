@@ -186,7 +186,7 @@ export function openNavigationContextMenu(input: {
     : trigger?.kind === "position"
       && Number.isFinite(trigger.position?.x) && Number.isFinite(trigger.position?.y);
   if (input.disposed || !validTrigger || !input.targetCurrent) return;
-  const menu = new Menu();
+  const menu = new Menu().setUseNativeMenu(false);
   let focusReturnId = payload.originId;
   const menuDeps: NavMenuDeps = {
     ...deps,
