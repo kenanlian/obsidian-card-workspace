@@ -1,6 +1,20 @@
-/** Install the host's Node.createEl seam in test/benchmark windows, including pop-outs. */
+/** Install the host's DOM helpers in test/benchmark windows, including pop-outs. */
 export function installObsidianDomHelpers(doc: Document): void {
-  const nodePrototype = doc.defaultView?.Node.prototype;
+  const host = doc.defaultView;
+  if (!host) return;
+  if (typeof host.createFragment !== "function") {
+    host.createFragment = (callback) => {
+      const fragment = doc.createDocumentFragment();
+      callback?.(fragment);
+      return fragment;
+    };
+  }
+  const nodePrototype = host.Node.prototype;
+  if (typeof nodePrototype.createDiv !== "function") {
+    nodePrototype.createDiv = function (options, callback) {
+      return this.createEl("div", options, callback);
+    };
+  }
   if (!nodePrototype || typeof nodePrototype.createEl === "function") return;
   Object.defineProperty(nodePrototype, "createEl", {
     configurable: true,

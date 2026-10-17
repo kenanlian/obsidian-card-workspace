@@ -105,12 +105,15 @@ For watch mode:
 npm run dev
 ```
 
-Run type checks and tests:
+Run the official Obsidian ESLint rules, type checks, and tests:
 
 ```bash
+npm run lint
 npm run check
 npm test
 ```
+
+The source scan uses the community scanner's public configuration. See [plugin scanning](docs/plugin-scanning.md) for scope, security rules, and JSON reports.
 
 ## Releasing
 

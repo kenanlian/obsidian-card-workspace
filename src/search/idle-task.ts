@@ -17,8 +17,8 @@ export function scheduleIdleTask(task: () => void, timeoutMs: number): () => voi
   const host: IdleCapableWindow = window;
   if (typeof host.requestIdleCallback === "function" && typeof host.cancelIdleCallback === "function") {
     const handle = host.requestIdleCallback(() => task(), { timeout: timeoutMs });
-    const cancel = host.cancelIdleCallback;
-    return () => cancel.call(host, handle);
+    const cancel = host.cancelIdleCallback.bind(host);
+    return () => cancel(handle);
   }
 
   const handle = window.setTimeout(task, timeoutMs);

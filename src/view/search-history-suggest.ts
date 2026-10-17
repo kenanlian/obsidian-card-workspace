@@ -104,14 +104,14 @@ export function attachSearchHistorySuggest(
       el.id = `${historyId}-${el.parentElement?.children.length ?? 0}`;
       el.setAttribute("role", "row");
       el.classList.add("mod-complex", "fce-search-history-row");
-      const content = el.createEl("div", { cls: "suggestion-content", attr: { role: "gridcell" } });
+      const content = el.createDiv({ cls: "suggestion-content", attr: { role: "gridcell" } });
       if (value.kind === "clear") {
         el.classList.add("fce-search-history-clear");
         content.textContent = options.strings.clearHistory;
         return;
       }
-      content.createEl("div", { cls: "suggestion-title fce-search-suggestion", text: value.query, attr: { title: value.query } });
-      const aux = el.createEl("div", { cls: "suggestion-aux", attr: { role: "gridcell" } });
+      content.createDiv({ cls: "suggestion-title fce-search-suggestion", text: value.query, attr: { title: value.query } });
+      const aux = el.createDiv({ cls: "suggestion-aux", attr: { role: "gridcell" } });
       const remove = aux.createEl("button", {
         cls: "clickable-icon fce-search-history-delete",
         attr: { type: "button", "aria-label": options.strings.deleteHistory(value.query) },

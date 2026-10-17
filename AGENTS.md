@@ -90,7 +90,7 @@ Enumerable implementation details (settings keys, panel fields, module methods) 
 | `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
 | `npm run build` | Production build (`main.js`, no sourcemaps) |
 | `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full\|xl`, `--output <absolute path>`, optional `--seed <uint32>`, optional `--max-slice-ms <ms>`). Diagnostic report; the dual slice gate runs only when `--max-slice-ms` is passed. Never part of the production build — see `.dev/search-benchmark.md` |
-| `npm run lint` | `oxlint --config .oxlintrc.json src` |
+| `npm run lint` | Official `eslint-plugin-obsidianmd` source scan (`eslint src package.json`); scanner-equivalent severities and exclusions in `eslint.config.mjs` |
 | `npm run check` | TypeScript type check (`tsc --noEmit`) |
 | `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |
 | `npm test` | Full Vitest suite (node + jsdom projects) |
@@ -107,7 +107,7 @@ For normal changes, run:
 npm run lint && npm run check && npm run check:svelte && npm run build && npm test
 ```
 
-CI already runs this chain with lint first.
+CI already runs this chain with lint first. The source scan follows the official community scanner's public configuration: six security rules remain errors and other enabled rules are warnings. Tests, mocks, scripts, locale modules, and generated bundles are excluded. CSS compatibility scanning remains separate; see `docs/plugin-scanning.md`.
 
 ## Code Conventions & Common Patterns
 
@@ -218,8 +218,8 @@ CI already runs this chain with lint first.
   - `@codemirror/state`
   - `@codemirror/view`
   - `@codemirror/language`
-- **No ESLint / No Prettier** — do not add unless explicitly requested
-- `oxlint` is wired via `npm run lint` and CI
+- **ESLint** with the official `eslint-plugin-obsidianmd` is wired via `npm run lint` and CI; keep the scanner-equivalent policy in `eslint.config.mjs`
+- **No Prettier** — do not add unless explicitly requested
 - `typescript-language-server` is a devDependency for editor LSP support
 
 ## Testing & QA

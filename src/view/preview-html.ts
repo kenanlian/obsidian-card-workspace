@@ -26,7 +26,7 @@ export const sanitizePreviewHtml: PreviewHtmlSanitizer = (previewHtml, doc) => {
   if (!parsedDocument) {
     return "";
   }
-  const sanitizedFragment = doc.createDocumentFragment();
+  const sanitizedFragment = doc.defaultView!.createFragment();
   for (const child of Array.from(parsedDocument.body.childNodes)) {
     appendSanitizedPreviewNode(sanitizedFragment, child, doc);
   }
@@ -119,7 +119,7 @@ function applyPreviewHighlights(root: ParentNode, query: string, doc: Document):
 }
 
 function createHighlightedFragment(value: string, pattern: RegExp, doc: Document): DocumentFragment | null {
-  const fragment = doc.createDocumentFragment();
+  const fragment = doc.defaultView!.createFragment();
   let lastIndex = 0;
   let hasMatch = false;
   for (const match of value.matchAll(pattern)) {
