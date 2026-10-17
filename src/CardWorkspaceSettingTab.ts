@@ -280,6 +280,19 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     this.folderSuggests.forEach((suggest) => suggest.dispose()); this.folderSuggests.clear();
   }
 
+  private renderQuickInputFolderSetting(setting: Setting): void {
+    setting.addText((text) => {
+      text.setValue(String(this.getControlValue("quickInputFolderPath")) || "/")
+        .setPlaceholder("/")
+        .onChange((value) => this.setControlValue("quickInputFolderPath", value === "/" ? "" : value));
+      const suggest = attachFolderInputSuggest(this.app, text.inputEl, (path) => {
+        text.setValue(path || "/");
+        void this.setControlValue("quickInputFolderPath", path);
+      });
+      this.folderSuggests.add(suggest);
+    });
+  }
+
   private renderTemplateFolderSetting(setting: Setting, strings: NoteInputStrings): void {
     let draft = this.plugin.getSettings().templateStorageFolder ?? DEFAULT_TEMPLATE_STORAGE_FOLDER;
     if (draft === "") draft = "/";
@@ -326,14 +339,6 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     }
     if (quickInput.templateId && !Object.prototype.hasOwnProperty.call(templateOptions, quickInput.templateId)) {
       templateOptions[quickInput.templateId] = `${inputStrings.templateUnavailable} (${quickInput.templateId})`;
-    }
-    const folderOptions: Record<string, string> = Object.create(null) as Record<string, string>;
-    folderOptions[""] = inputStrings.rootFolder;
-    for (const file of this.app.vault?.getAllLoadedFiles?.() ?? []) {
-      if ("children" in file && file.path !== "") folderOptions[file.path] = file.path;
-    }
-    if (quickInput.folderPath && !Object.prototype.hasOwnProperty.call(folderOptions, quickInput.folderPath)) {
-      folderOptions[quickInput.folderPath] = `${quickInput.folderPath} (${inputStrings.targetFolderNotFound})`;
     }
     return [
       {
@@ -493,7 +498,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             control: { type: "dropdown", key: "quickInputTemplateId", options: templateOptions } },
           { name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
             visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId === null,
-            control: { type: "dropdown", key: "quickInputFolderPath", options: folderOptions } },
+            render: (setting) => this.renderQuickInputFolderSetting(setting) },
           { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,
             control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertStart, end: inputStrings.insertEnd } } },
           { name: inputStrings.quickInputWidthName,

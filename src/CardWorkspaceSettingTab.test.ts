@@ -24,12 +24,13 @@ vi.mock("obsidian", async () => ({
   requireApiVersion: mockState.requireApiVersion,
 }));
 
-vi.mock("./view/folder-input-suggest", () => ({ attachFolderInputSuggest: () => ({ isOpen: () => false, close: vi.fn(), dispose: vi.fn() }) }));
+vi.mock("./view/folder-input-suggest", () => ({ attachFolderInputSuggest: vi.fn(() => ({ isOpen: () => false, close: vi.fn(), dispose: vi.fn() })) }));
 vi.mock("./view/metadata-input-suggest", () => ({ onPlainEnter: vi.fn() }));
 
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { getUiStrings } from "./i18n";
+import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 
 interface PluginStub {
   getSettings: ReturnType<typeof vi.fn<() => Record<string, unknown>>>;
@@ -310,7 +311,15 @@ describe("CardWorkspaceSettingTab", () => {
       expect(settings.map((row) => row.desc)).toEqual(definition.items.map((row) => row.desc));
       definition.items.forEach((row, index) => {
         const setting = settings[index]!, control = row.control;
-        if (!control) { expect(setting.buttons[0]?.text).toBe(definition.heading === (language === "zh" ? "模板" : "Templates") ? (language === "zh" ? "应用" : "Apply") : (language === "zh" ? "管理" : "Manage")); return; }
+        if (!control) {
+          if (row.name === getUiStrings(language).noteInput.quickInputFolderName) {
+            expect(setting.texts[0]?.value).toBe("/");
+            expect(setting.dropdowns).toHaveLength(0);
+          } else {
+            expect(setting.buttons[0]?.text).toBe(definition.heading === (language === "zh" ? "模板" : "Templates") ? (language === "zh" ? "应用" : "Apply") : (language === "zh" ? "管理" : "Manage"));
+          }
+          return;
+        }
         if (control.type === "dropdown") {
           expect(setting.dropdowns[0]?.options).toEqual(Object.entries(control.options).map(([value, label]) => ({ value, label })));
           expect(setting.dropdowns[0]?.value).toBe(tab.getControlValue(control.key));
@@ -490,7 +499,7 @@ describe("CardWorkspaceSettingTab", () => {
 });
 
 describe("quick input shared setting definitions", () => {
-  it("shows registered templates, retained missing choices and a root folder option", () => {
+  it("shows registered templates, retained missing choices and a custom folder input", () => {
     const tab = createTab(createPlugin({
       noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md" }],
       quickInput: { templateId: "missing", folderPath: "Missing", insertPosition: "start" },
@@ -498,10 +507,48 @@ describe("quick input shared setting definitions", () => {
     const definitions = tab.getSettingDefinitions()[3]!;
     expect(definitions.heading).toBe("Quick input");
     expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template", daily: "Daily.md", missing: "Template unavailable (missing)" } });
-    expect(definitions.items[1]?.control).toMatchObject({ type: "dropdown", key: "quickInputFolderPath", options: { "": "Vault root", Missing: "Missing (The destination folder is missing.)" } });
+    expect(definitions.items[1]?.control).toBeUndefined();
+    expect(definitions.items[1]?.render).toBeTypeOf("function");
     expect(tab.getControlValue("quickInputTemplateId")).toBe("missing");
     expect(tab.getControlValue("quickInputFolderPath")).toBe("Missing");
     expect(tab.getControlValue("quickInputInsertPosition")).toBe("start");
+  });
+
+  it.each([false, true])("saves typed and suggested folders through the shared renderer (native: %s)", async (native) => {
+    vi.mocked(attachFolderInputSuggest).mockClear();
+    const plugin = createPlugin({ quickInput: { templateId: null, folderPath: "Missing", insertPosition: "start" } });
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
+    const tab = createTab(plugin);
+    let row: Setting;
+    if (native) {
+      row = new Setting(tab.containerEl as unknown as MockEl);
+      tab.getSettingDefinitions()[3]!.items[1]!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
+    } else {
+      tab.display();
+      row = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[1]!;
+    }
+    const text = row.texts[0]!;
+    expect(text.value).toBe("Missing");
+    expect(row.dropdowns).toHaveLength(0);
+    const binding = vi.mocked(attachFolderInputSuggest).mock.calls.find((call) => call[1] === text.inputEl as unknown)!;
+    expect(binding).toBeDefined();
+    text.type("Notes/Inbox");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "Notes/Inbox", insertPosition: "start" } });
+    binding[2]("Projects");
+    expect(text.value).toBe("Projects");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "Projects", insertPosition: "start" } });
+    binding[2]("");
+    expect(text.value).toBe("/");
+    for (const value of ["", "/"]) {
+      text.type(value);
+      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "", insertPosition: "start" } });
+    }
+    tab.hide();
+    for (const result of vi.mocked(attachFolderInputSuggest).mock.results) {
+      expect(result.value.dispose).toHaveBeenCalledOnce();
+    }
   });
 
   it.each([false, true])("persists each quick input field against the latest config and updates folder visibility (native: %s)", async (native) => {
