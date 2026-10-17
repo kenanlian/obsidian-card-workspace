@@ -2194,18 +2194,30 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 .fce-quick-input {
   --fce-quick-input-tint: var(--interactive-accent);
   --fce-quick-input-frame: 5px;
+  --fce-quick-input-radius: max(24px, calc(var(--input-height, 32px) / 2), var(--radius-l, 12px));
+  --fce-quick-input-border: color-mix(in srgb, var(--fce-quick-input-tint) 28%, var(--background-modifier-border));
+  --fce-quick-input-send-background: var(--fce-quick-input-border);
+  --fce-quick-input-send-color: color-mix(in srgb, var(--fce-quick-input-tint) 8%, var(--text-normal));
+  --fce-quick-input-send-border: color-mix(in srgb, var(--fce-quick-input-tint) 55%, var(--background-modifier-border));
   position: fixed;
   pointer-events: auto;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   padding: 0 var(--fce-quick-input-frame);
-  border: 1px solid color-mix(in srgb, var(--fce-quick-input-tint) 28%, var(--background-modifier-border));
-  border-radius: var(--radius-l);
+  border: 1px solid var(--fce-quick-input-border);
+  border-radius: var(--fce-quick-input-radius);
   background: color-mix(in srgb, var(--fce-quick-input-tint) 12%, var(--background-secondary));
   color: var(--text-normal);
   box-shadow: var(--shadow-l);
   animation: fce-quick-input-in 120ms ease-out;
+}
+/* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
+@supports (color: color(from white srgb-linear round(up, r, 1) g b)) {
+  .fce-quick-input {
+    --fce-quick-input-send-contrast: round(up, max(0, calc(0.179 - (r * 0.2126 + g * 0.7152 + b * 0.0722))), 1);
+    --fce-quick-input-send-color: color(from var(--fce-quick-input-send-background) srgb-linear var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) / 1);
+  }
 }
 @keyframes fce-quick-input-in {
   from { opacity: 0; transform: scale(0.98); }
@@ -2233,7 +2245,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   min-height: 0;
   overflow: hidden;
   background: var(--background-primary);
-  border-radius: max(0px, calc(var(--radius-l) - var(--fce-quick-input-frame)));
+  border-radius: calc(var(--fce-quick-input-radius) - var(--fce-quick-input-frame));
 }
 .fce-quick-input-editor .markdown-source-view { height: 100%; --file-margins: 10px 12px; }
 .fce-quick-input-editor .cm-editor { height: 100%; }
@@ -2245,10 +2257,34 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   gap: 8px;
   box-sizing: border-box;
   min-height: 40px;
-  padding: 6px 2px 6px 4px;
+  padding: 6px 6px 6px 4px;
 }
-.fce-quick-input-footer button { margin: 0; flex: none; }
-.fce-quick-input-footer button.mod-cta { display: inline-flex; align-items: center; gap: 6px; }
+.fce-quick-input-footer button {
+  margin: 0;
+  flex: none;
+  border-radius: var(--fce-quick-input-radius);
+}
+/* Match the window's outer border so the primary action stands out from the frame. */
+.fce-quick-input-footer button.mod-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fce-quick-input-send-color);
+  background: var(--fce-quick-input-send-background);
+  border: 1px solid var(--fce-quick-input-send-border);
+}
+.fce-quick-input-footer button.mod-cta:hover:not(:disabled) {
+  color: var(--fce-quick-input-send-color);
+  background: var(--fce-quick-input-send-background);
+  border-color: var(--fce-quick-input-tint);
+}
+.fce-quick-input-footer button.mod-cta:disabled {
+  color: var(--fce-quick-input-send-color);
+  background: var(--fce-quick-input-send-background);
+  opacity: 0.65;
+}
+.fce-quick-input-footer button.mod-cta > span,
+.fce-quick-input-send-icon svg { color: inherit; }
 .fce-quick-input-send-icon { display: inline-flex; align-items: center; }
 .fce-quick-input-destination {
   flex: 1;
