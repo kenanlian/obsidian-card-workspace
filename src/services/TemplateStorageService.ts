@@ -83,7 +83,7 @@ export class TemplateStorageService {
           }
         } catch (error) {
           for (let index = moves.length - 1; index >= 0; index--) {
-            const move = moves[index]!;
+            const move = moves[index];
             if (move.file.path === move.original) continue;
             try {
               if (this.deps.app.vault.getAbstractFileByPath(move.original)) throw new TemplateStorageError("conflict", move.original);

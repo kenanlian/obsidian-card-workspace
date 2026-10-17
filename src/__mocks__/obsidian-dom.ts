@@ -10,6 +10,11 @@ export function installObsidianDomHelpers(doc: Document): void {
     };
   }
   const nodePrototype = host.Node.prototype;
+  if (typeof nodePrototype.createSpan !== "function") {
+    nodePrototype.createSpan = function (options, callback) {
+      return this.createEl("span", options, callback);
+    };
+  }
   if (typeof nodePrototype.createDiv !== "function") {
     nodePrototype.createDiv = function (options, callback) {
       return this.createEl("div", options, callback);

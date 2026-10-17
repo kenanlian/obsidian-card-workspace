@@ -81,7 +81,7 @@ export class NoteCreationService {
         submission = { request: snapshot, targetPath, pending: null, result: null, inserted: null, attempted: null, creation: null };
         this.submissions.set(snapshot.submissionId, submission);
       } catch (error) {
-        return Promise.reject(error);
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
     }
     if (submission.result) return Promise.resolve(submission.result);

@@ -4,6 +4,7 @@ import { noteInputStrings } from "../i18n/noteInput";
 import { DEFAULT_SETTINGS, type PluginSettings } from "../settings";
 import type { QuickInputRequest, NoteInputResult } from "../note-input";
 import { QuickInputWindowManager } from "./QuickInputWindowManager";
+import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 
 const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
 vi.mock("./native-markdown-editor", () => ({
@@ -88,6 +89,7 @@ describe("modeless quick input", () => {
   it("has independent drafts owned by separate window documents and cleans on unload", () => {
     const frame = document.createElement("iframe"); document.body.append(frame);
     const other = frame.contentWindow!;
+    installObsidianDomHelpers(other.document);
     manager.open(window); manager.open(window); manager.open(other); manager.open(other);
     setText("main", 0); setText("other", 2);
     expect(document.querySelectorAll(".fce-quick-input-layer")).toHaveLength(1);

@@ -46,7 +46,7 @@ function resolveConstructor(app: App, document: Document): EditorConstructor {
   }
   let probe: InternalEmbed | undefined;
   try {
-    probe = create({ app, containerEl: document.createElement("div") }, null, "");
+    probe = create({ app, containerEl: document.defaultView!.createFragment().createDiv() }, null, "");
     if (!probe || typeof probe.showEditor !== "function" || typeof probe.unload !== "function") throw new Error("Missing embed lifecycle");
     probe.editable = true;
     probe.showEditor();

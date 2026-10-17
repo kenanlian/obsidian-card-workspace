@@ -74,52 +74,32 @@ export class QuickInputWindowManager {
     }
     const document = win.document;
     const strings = this.options.getStrings();
-    const root = document.createElement("div");
-    root.className = "fce-quick-input";
+    const root = document.defaultView!.createFragment().createDiv({ cls: "fce-quick-input" });
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", strings.quickInput);
     root.setAttribute("aria-modal", "false");
     const tint = this.resolveTint(settings);
     root.dataset.color = tint.name;
     root.style.setProperty("--fce-quick-input-tint", tint.value);
-    const top = document.createElement("div");
-    top.className = "fce-quick-input-grip";
+    const top = root.createDiv({ cls: "fce-quick-input-grip" });
     top.setAttribute("aria-hidden", "true");
     setIcon(top, "ellipsis");
-    const body = document.createElement("div");
-    body.className = "fce-quick-input-editor";
-    const footer = document.createElement("div");
-    footer.className = "fce-quick-input-footer";
-    const destination = document.createElement("div");
-    destination.className = "fce-quick-input-destination";
-    const destinationIcon = document.createElement("span");
-    destinationIcon.className = "fce-quick-input-destination-icon";
+    const body = root.createDiv({ cls: "fce-quick-input-editor" });
+    const footer = root.createDiv({ cls: "fce-quick-input-footer" });
+    const destination = footer.createDiv({ cls: "fce-quick-input-destination" });
+    const destinationIcon = destination.createSpan({ cls: "fce-quick-input-destination-icon" });
     destinationIcon.setAttribute("aria-hidden", "true");
-    const destinationText = document.createElement("span");
-    destinationText.className = "fce-quick-input-destination-text";
-    destination.append(destinationIcon, destinationText);
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.textContent = strings.cancel;
-    const send = document.createElement("button");
-    send.type = "button";
-    send.className = "mod-cta";
+    const destinationText = destination.createSpan({ cls: "fce-quick-input-destination-text" });
+    const cancel = footer.createEl("button", { text: strings.cancel, attr: { type: "button" } });
+    const send = footer.createEl("button", { cls: "mod-cta", attr: { type: "button" } });
     send.setAttribute("aria-label", strings.send);
-    const sendIcon = document.createElement("span");
-    sendIcon.className = "fce-quick-input-send-icon";
+    const sendIcon = send.createSpan({ cls: "fce-quick-input-send-icon" });
     sendIcon.setAttribute("aria-hidden", "true");
     setIcon(sendIcon, "send");
-    const sendLabel = document.createElement("span");
-    sendLabel.className = "fce-quick-input-send-label";
-    sendLabel.textContent = strings.send;
-    send.append(sendIcon, sendLabel);
-    footer.append(destination, cancel, send);
-    root.append(top, body, footer);
+    const sendLabel = send.createSpan({ cls: "fce-quick-input-send-label", text: strings.send });
     let layer = this.layers.get(win);
     if (!layer) {
-      layer = document.createElement("div");
-      layer.className = "fce-quick-input-layer";
-      document.body.append(layer);
+      layer = document.body.createDiv({ cls: "fce-quick-input-layer" });
       this.layers.set(win, layer);
     }
     layer.append(root);
@@ -152,11 +132,9 @@ export class QuickInputWindowManager {
       this.listen(current, win, "unload", () => this.close(current));
       this.listen(current, top, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, "move"));
       for (const direction of ["n", "ne", "e", "se", "s", "sw", "w", "nw"]) {
-        const handle = document.createElement("div");
-        handle.className = `fce-quick-input-resize fce-quick-input-resize-${direction}`;
+        const handle = root.createDiv({ cls: `fce-quick-input-resize fce-quick-input-resize-${direction}` });
         handle.dataset.direction = direction;
         handle.setAttribute("aria-hidden", "true");
-        root.append(handle);
         this.listen(current, handle, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, direction));
       }
       this.refresh(current);
@@ -246,7 +224,7 @@ export class QuickInputWindowManager {
     if (event.defaultPrevented) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.isComposing && event.keyCode !== 229 && !draft.composing) void this.send(draft);
+    if (!event.isComposing && !draft.composing) void this.send(draft);
   }
 
   private async send(draft: Draft): Promise<void> {

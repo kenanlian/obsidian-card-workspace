@@ -424,6 +424,16 @@ describe("NoteCreationService quick input", () => {
     await expect(f.service.submitQuickInput(request({ template: null, config: { templateId: null, folderPath: "Missing", insertPosition: "end" } }))).rejects.toMatchObject({ code: "missing-folder" });
     expect(f.vault.create).not.toHaveBeenCalled();
   });
+  it("normalizes non-Error setup failures while preserving Error instances", async () => {
+    const f = templateFixture();
+    const getFile = vi.spyOn(f.app.vault, "getAbstractFileByPath");
+    getFile.mockImplementationOnce(() => { throw "vault unavailable"; });
+    await expect(f.service.submitQuickInput(request())).rejects.toThrow("vault unavailable");
+    const error = new Error("vault unavailable");
+    getFile.mockImplementationOnce(() => { throw error; });
+    await expect(f.service.submitQuickInput(request())).rejects.toBe(error);
+    expect(f.vault.create).not.toHaveBeenCalled();
+  });
 });
 
 
