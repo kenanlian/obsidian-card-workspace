@@ -506,7 +506,7 @@ describe("quick input shared setting definitions", () => {
     }));
     const definitions = tab.getSettingDefinitions()[3]!;
     expect(definitions.heading).toBe("Quick input");
-    expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template", daily: "Daily.md", missing: "Template unavailable (missing)" } });
+    expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template (new note each time)", daily: "Daily.md", missing: "Template unavailable (missing)" } });
     expect(definitions.items[1]?.control).toBeUndefined();
     expect(definitions.items[1]?.render).toBeTypeOf("function");
     expect(tab.getControlValue("quickInputTemplateId")).toBe("missing");
@@ -551,18 +551,27 @@ describe("quick input shared setting definitions", () => {
     }
   });
 
-  it.each([false, true])("persists each quick input field against the latest config and updates folder visibility (native: %s)", async (native) => {
+  it.each([false, true])("persists each quick input field against the latest config and updates folder and position visibility (native: %s)", async (native) => {
     mockState.requireApiVersion.mockReturnValue(native);
     const plugin = createPlugin({ quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "end" } });
     const settings = plugin.getSettings();
     plugin.getSettings.mockReturnValue(settings);
     plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
     const tab = createTab(plugin);
+    const definitions = tab.getSettingDefinitions()[3]!.items;
+    const isFolderVisible = definitions[1]!.visible as () => boolean;
+    const isPositionVisible = definitions[2]!.visible as () => boolean;
     tab.display();
     const rows = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings;
+    expect(isFolderVisible()).toBe(false);
+    expect(isPositionVisible()).toBe(true);
     expect(rows[1]?.settingEl.style.display).toBe("none");
+    expect(rows[2]?.settingEl.style.display).toBe("");
     await tab.setControlValue("quickInputTemplateId", "");
+    expect(isFolderVisible()).toBe(true);
+    expect(isPositionVisible()).toBe(false);
     expect(rows[1]?.settingEl.style.display).toBe("");
+    expect(rows[2]?.settingEl.style.display).toBe("none");
     await tab.setControlValue("quickInputFolderPath", "Other");
     await tab.setControlValue("quickInputInsertPosition", "start");
     expect(settings.quickInput).toEqual({ templateId: null, folderPath: "Other", insertPosition: "start" });

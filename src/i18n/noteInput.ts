@@ -53,6 +53,8 @@ export interface NoteInputStrings {
   colorRandom: string;
   colorAccent: string;
   colorNames: Record<"red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "pink", string>;
+  destinationLocation: string;
+  destinationTemplate: string;
   destinationUnavailable: string;
   insertStart: string;
   insertEnd: string;
@@ -94,9 +96,11 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateTargetConflict: "The target note cannot be the template itself.", invalidFilename: "Enter a valid Markdown filename.",
     create: "Create", cancel: "Cancel",
     quickInput: "Quick input", quickInputCommand: "Open quick input", quickInputHeading: "Quick input",
-    quickInputTemplateName: "Quick input template", quickInputTemplateDesc: "Use a registered template's fixed destination and filename. Missing templates must be selected again.",
-    noTemplate: "No template", quickInputFolderName: "Quick input folder", quickInputFolderDesc: "Used when no template is selected. Leave empty for the vault root.",
-    quickInputPositionName: "Insert position", quickInputPositionDesc: "Insert after frontmatter at the start, or append to the end of the note.",
+    quickInputTemplateName: "Quick input template",
+    quickInputTemplateDesc: "Without a template, each send creates a separate note, e.g. quick-note 2026-10-17 14-30-05.md. With a template, its destination folder and filename determine the target: create it if missing, or insert this input if it exists. For example, {{date}}.md with the YYYY-MM-DD date format collects a day's inputs in one note; including time in the filename can create separate notes.",
+    noTemplate: "No template (new note each time)", quickInputFolderName: "Quick input folder", quickInputFolderDesc: "Used when no template is selected. Leave empty for the vault root.",
+    quickInputPositionName: "Body insert position",
+    quickInputPositionDesc: "Insert at the start of the body (after properties) or at the end of the note. For a new note, this places your input before or after the template body; for an existing note, before or after its current body.",
     quickInputWidthName: "Quick input width", quickInputHeightName: "Quick input height",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `Size in pixels (${min}–${max}; default ${defaultValue}) for each new draft. Resizing a draft only affects that draft; it shrinks to fit the window.`,
@@ -104,7 +108,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     quickInputColorDesc: "Random picks a different theme color for each new draft.",
     colorRandom: "Random", colorAccent: "Accent color",
     colorNames: { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", cyan: "Cyan", blue: "Blue", purple: "Purple", pink: "Pink" },
-    destinationUnavailable: "Destination unavailable",
+    destinationLocation: "Location", destinationTemplate: "Template", destinationUnavailable: "Destination unavailable",
     insertStart: "Start of note", insertEnd: "End of note", rootFolder: "Vault root",
     inputPlaceholder: "Write a note…", send: "Send", sending: "Sending…",
     nativeEditorUnavailable: "The native Markdown editor is unavailable in this Obsidian version.",
@@ -135,9 +139,11 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     dateFormatUnavailable: "无法使用宿主日期格式化能力。", targetNoteMissing: "目标笔记不存在。",
     templateTargetConflict: "目标笔记不能是模板文件本身。", invalidFilename: "请输入有效的 Markdown 文件名。",
     create: "创建", cancel: "取消", quickInput: "快速输入", quickInputCommand: "打开快速输入",
-    quickInputHeading: "快速输入", quickInputTemplateName: "快速输入模板", quickInputTemplateDesc: "使用已注册模板的固定目标和文件名；模板丢失后需要重新选择。",
-    noTemplate: "不使用模板", quickInputFolderName: "快速输入文件夹", quickInputFolderDesc: "未选择模板时使用，留空表示仓库根目录。",
-    quickInputPositionName: "插入位置", quickInputPositionDesc: "在笔记开头的属性之后插入，或追加到笔记末尾。",
+    quickInputHeading: "快速输入", quickInputTemplateName: "快速输入模板",
+    quickInputTemplateDesc: "不使用模板时，每次发送都会新建一篇独立笔记，文件名如 quick-note 2026-10-17 14-30-05.md。使用模板时，保存文件夹和文件名由模板决定；目标笔记不存在则创建，已存在则插入本次输入。例如，{{date}}.md 配合 YYYY-MM-DD 日期格式可将同一天的输入汇集到一篇笔记；文件名包含时间可用于分别创建笔记。",
+    noTemplate: "不使用模板（每次新建笔记）", quickInputFolderName: "快速输入文件夹", quickInputFolderDesc: "未选择模板时使用，留空表示仓库根目录。",
+    quickInputPositionName: "正文插入位置",
+    quickInputPositionDesc: "将本次输入插入正文开头（属性之后）或笔记末尾。新建笔记时，相对于模板正文插入；笔记已存在时，相对于已有正文插入。",
     quickInputWidthName: "快速输入窗口宽度", quickInputHeightName: "快速输入窗口高度",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `每个新草稿的尺寸，单位为像素（${min}–${max}，默认 ${defaultValue}）。拖拽调整只影响当前草稿，会随窗口大小收缩。`,
@@ -145,7 +151,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     quickInputColorDesc: "选择“随机”时，每个新草稿使用一种与上次不同的主题颜色。",
     colorRandom: "随机", colorAccent: "强调色",
     colorNames: { red: "红色", orange: "橙色", yellow: "黄色", green: "绿色", cyan: "青色", blue: "蓝色", purple: "紫色", pink: "粉色" },
-    destinationUnavailable: "目标不可用",
+    destinationLocation: "位置", destinationTemplate: "模板", destinationUnavailable: "目标不可用",
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",
     nativeEditorUnavailable: "当前 Obsidian 版本无法使用原生 Markdown 编辑器。",
     invalidQuickInputConfig: "快速输入设置引用了不可用的模板或文件夹。", openQuickInputFailed: "无法打开快速输入。",

@@ -230,7 +230,8 @@ export class QuickInputWindowManager {
     const folderLabel = target.folderPath ? target.folderPath : strings.rootFolder;
     const icon = !target.valid ? "alert-triangle" : target.template ? "file-plus-2" : "folder";
     const text = !target.valid ? strings.destinationUnavailable
-      : `${target.template ? resolveTemplateName(target.template) : folderLabel} · ${target.insertPosition === "start" ? strings.insertStart : strings.insertEnd}`;
+      : target.template ? `${strings.destinationTemplate} · ${resolveTemplateName(target.template)}`
+      : `${strings.destinationLocation} · ${folderLabel}`;
     draft.destination.classList.toggle("is-invalid", !target.valid);
     draft.destination.title = target.valid ? folderLabel : strings.invalidQuickInputConfig;
     draft.destinationText.textContent = text;

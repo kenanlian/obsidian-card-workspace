@@ -334,18 +334,18 @@ describe("modeless quick input", () => {
     const icon = () => destination().querySelector(".fce-quick-input-destination-icon")!.getAttribute("data-icon");
     files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
     manager.open(window);
-    expect(destination().textContent).toBe(`${strings.rootFolder} · ${strings.insertEnd}`);
+    expect(destination().textContent).toBe(`${strings.destinationLocation} · ${strings.rootFolder}`);
     expect(icon()).toBe("folder");
     settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" };
     window.dispatchEvent(new Event("focus"));
-    expect(destination().textContent).toBe(`Inbox · ${strings.insertStart}`);
+    expect(destination().textContent).toBe(`${strings.destinationLocation} · Inbox`);
     expect(destination().title).toBe("Inbox"); expect(destination().classList.contains("is-invalid")).toBe(false);
     files.set("Journal", Object.assign(new TFolder(), { path: "Journal" }));
     files.set("Templates/daily.md", Object.assign(new TFile(), { path: "Templates/daily.md", extension: "md" }));
     settings.noteTemplates = [{ id: "daily", name: "Daily", filePath: "Templates/daily.md", targetFolderPath: "Journal", dateFormat: "YYYY", timeFormat: "HH" }];
     settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
     window.dispatchEvent(new Event("focus"));
-    expect(destination().textContent).toBe(`Daily · ${strings.insertEnd}`);
+    expect(destination().textContent).toBe(`${strings.destinationTemplate} · Daily`);
     expect(destination().title).toBe("Journal"); expect(icon()).toBe("file-plus-2");
     settings.quickInput = { templateId: "missing", folderPath: "", insertPosition: "end" };
     window.dispatchEvent(new Event("focus"));
@@ -365,7 +365,7 @@ describe("modeless quick input", () => {
     send().click(); await tick();
     settings.quickInput = { templateId: null, folderPath: "Other", insertPosition: "start" };
     window.dispatchEvent(new Event("focus"));
-    expect(root().querySelector(".fce-quick-input-destination")!.textContent).toBe(`Inbox · ${noteInputStrings.en.insertEnd}`);
+    expect(root().querySelector(".fce-quick-input-destination")!.textContent).toBe(`${noteInputStrings.en.destinationLocation} · Inbox`);
   });
 
   it("picks a random frame tint without repeating the previous draft and keeps it per draft", () => {

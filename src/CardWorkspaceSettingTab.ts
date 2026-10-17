@@ -500,6 +500,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId === null,
             render: (setting) => this.renderQuickInputFolderSetting(setting) },
           { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,
+            visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId !== null,
             control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertStart, end: inputStrings.insertEnd } } },
           { name: inputStrings.quickInputWidthName,
             desc: inputStrings.quickInputDimensionDesc(QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX, DEFAULT_QUICK_INPUT_WIDTH),
