@@ -36,7 +36,7 @@
   }
   const EMPTY_NAV: PanelNavState = {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false }, showItemCounts: false,
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false }, showItemCounts: false,
     tooltipSide: "right", propertyFilterCount: 0, projection: { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false },
     query: "", focusId: null, focusRequest: null, revealRequest: null,
   };
@@ -53,6 +53,8 @@
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
   const rows = $derived(nav.projection.rows);
+  const filterVisible = $derived(nav.filterVisible === true || nav.query.length > 0);
+  const hasFilterQuery = $derived(nav.query.trim().length > 0);
   const browseTagFilterEnabled = $derived(scope.browseTagFilterEnabled);
   const browsePropertyFilterEnabled = $derived(scope.browsePropertyFilterEnabled);
   let dragWidth = $state<number | null>(null);
@@ -61,6 +63,7 @@
   let treeEl: HTMLElement | null = $state(null);
   let scrollerEl: HTMLElement | null = $state(null);
   let filterEl: HTMLInputElement | null = $state(null);
+  let focusFilterOnOpen = false;
   let hoveredRowIds = $state<ReadonlySet<string>>(new Set());
   let favoriteDrag = $state<FavoriteDragState>({ source: null, target: null });
   let folderDrag = $state<FolderDragState>({ source: null, target: null });
@@ -82,6 +85,11 @@
   const resizeHelpId = `${paneLabelId}-resize-help`;
   const paneWidth = $derived(dragWidth ?? nav.paneWidth);
   const focusId = $derived(resolveNavigationFocus(rows, nav.focusId, previousRowIds));
+  $effect(() => {
+    if (filterVisible && focusFilterOnOpen) {
+      focusFilterOnOpen = false; void tick().then(() => filterEl?.focus());
+    }
+  });
   $effect(() => { if (dragWidth === nav.paneWidth) dragWidth = null; });
   $effect(() => {
     const ids = rows.map((row) => row.id);
@@ -367,6 +375,15 @@
     const position = Object.freeze({ x: rect.left, y: rect.bottom });
     onNavContextMenu?.(menuPayload(row, { kind: "position", position }));
   }
+  function toggleFilter(): void {
+    focusFilterOnOpen = !filterVisible;
+    composing = false;
+    emitIntent({ type: "filter-toggle" });
+  }
+  function openQuickInput(event: MouseEvent): void {
+    const win = (event.currentTarget as HTMLElement).ownerDocument.defaultView;
+    if (win) emitIntent({ type: "quick-input", win });
+  }
   function onFilterInput(event: Event): void { emitIntent({ type: "query-update", query: (event.currentTarget as HTMLInputElement).value }); }
   function onFilterClick(event: MouseEvent): void {
     if (event.defaultPrevented || !(event.target instanceof Element) || event.target.closest("input, button")) return;
@@ -376,11 +393,12 @@
     emitIntent({ type: "query-clear", origin }); if (origin === "input") void tick().then(() => filterEl?.focus());
   }
   function onFilterKeydown(event: KeyboardEvent): void {
+    if (event.isComposing || composing || event.key === "Process") return;
     if (event.key === "Tab" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && nav.visible && focusId && rowElements.has(focusId)) {
       event.preventDefault(); event.stopPropagation(); focusRow(focusId); return;
     }
-    if (event.key !== "Escape" || composing || nav.query.trim().length === 0) return;
-    event.preventDefault(); clearFilter("input");
+    if (event.key !== "Escape") return;
+    event.preventDefault(); event.stopPropagation(); filterEl?.focus();
   }
   function actionClick(event: MouseEvent, action: () => void): void {
     event.preventDefault(); event.stopPropagation(); if (performance.now() < suppressClickUntil) return; action();
@@ -416,9 +434,15 @@
     emitIntent({ type: "reveal-consumed", token });
   }
   async function consumeFocusReturnAfterRender(token: number, rowId: string): Promise<void> {
+    const focusFilter = rowId === NAVIGATION_FILTER_FOCUS_ID
+      || (!rowsById.has(rowId) && (!nav.focusId || !rowsById.has(nav.focusId)));
+    if (focusFilter && !filterVisible) {
+      emitIntent({ type: "filter-show" });
+      await tick();
+    }
     await tick(); if (disposed || token <= consumedFocusReturnToken || nav.focusRequest?.token !== token || !nav.visible) return;
-    const target = rowId === NAVIGATION_FILTER_FOCUS_ID ? filterEl
-      : rowElements.get(rowId) ?? (nav.focusId ? rowElements.get(nav.focusId) : null) ?? filterEl; if (!target) return;
+    const target = focusFilter ? filterEl
+      : rowElements.get(rowId) ?? (nav.focusId ? rowElements.get(nav.focusId) : null); if (!target) return;
     target.focus(); consumedFocusReturnToken = token;
     emitIntent({ type: "focus-return-consumed", token });
   }
@@ -463,19 +487,31 @@
       <button type="button" class="clickable-icon fce-nav-header-button" aria-label={labels.backToCards}
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
-    <!-- The wrapper extends the input's pointer target; keyboard focus stays on the native controls. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="fce-nav-filter" onclick={onFilterClick}>
-      <label class="fce-sr-only" for={`${paneLabelId}-filter`}>{labels.filterLabel}</label><span class="fce-nav-filter-icon" aria-hidden="true" use:icon={"search"}></span>
-      <input class="fce-nav-filter-input" id={`${paneLabelId}-filter`} bind:this={filterEl} value={nav.query} type="search"
-        aria-label={labels.filterLabel} placeholder={labels.filterPlaceholder} oninput={onFilterInput} onkeydown={onFilterKeydown}
-        oncompositionstart={() => composing = true} oncompositionend={() => composing = false} />
-      {#if nav.query.length > 0}
-        <button type="button" class="clickable-icon fce-nav-filter-clear" aria-label={labels.clearFilter}
-          onclick={() => clearFilter("input")} use:icon={"x"}></button>
-      {/if}
+    <div class="fce-nav-pane-header-group">
+      <button type="button" class="clickable-icon fce-nav-header-button fce-nav-search-toggle {filterVisible || hasFilterQuery ? 'is-active' : ''}"
+        aria-label={labels.filterLabel} aria-expanded={filterVisible} aria-controls={`${paneLabelId}-filter`}
+        onmousedown={(event) => event.preventDefault()}
+        onclick={toggleFilter} use:icon={"search"} use:tooltip={labels.filterLabel}></button>
+      <button type="button" class="clickable-icon fce-nav-header-button fce-nav-quick-input"
+        aria-label={strings.noteInput.quickInput} onclick={openQuickInput}
+        use:icon={"send"} use:tooltip={strings.noteInput.quickInput}></button>
     </div>
   </div>
+  {#if filterVisible}
+    <div class="fce-toolbar-search-row fce-nav-filter-line">
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <div class="fce-toolbar-search fce-nav-filter" role="search" onclick={onFilterClick}>
+        <label class="fce-sr-only" for={`${paneLabelId}-filter`}>{labels.filterLabel}</label>
+        <input class="fce-search-input fce-nav-filter-input" id={`${paneLabelId}-filter`} bind:this={filterEl} value={nav.query} type="search"
+          aria-label={labels.filterLabel} placeholder={labels.filterPlaceholder} oninput={onFilterInput} onkeydown={onFilterKeydown}
+          oncompositionstart={() => composing = true} oncompositionend={() => composing = false} />
+        {#if hasFilterQuery}
+          <button type="button" class="clickable-icon fce-search-clear fce-nav-filter-clear" aria-label={labels.clearFilter}
+            onkeydown={onFilterKeydown} onclick={() => clearFilter("input")} use:icon={"x"}></button>
+        {/if}
+      </div>
+    </div>
+  {/if}
   <div class="fce-nav-pane-sections" bind:this={scrollerEl} use:folderDragSurface>
     {#if nav.projection.allSectionsHidden}
       <div class="fce-tree-empty">{strings.navigationVisibility.allHidden}</div>
@@ -511,6 +547,10 @@
                   aria-label={clearing ? strings.property.clearFilters : strings.property.chooseVisible}
                   onclick={(event) => actionClick(event, () => onPropertyCommand?.({ command: clearing ? "clear-filters" : "choose-visible" }))}
                   use:icon={clearing ? "filter-x" : "settings-2"}></button>
+              {:else if row.kind === "section" && row.section === "templates"}
+                <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-create" aria-label={strings.noteInput.newTemplate}
+                  onclick={(event) => actionClick(event, () => emitIntent({ type: "template-command", command: "new" }))}
+                  use:icon={"plus"}></button>
               {:else if row.kind === "section" && row.section === "boxes"}
                 <button type="button" tabindex="-1" class="clickable-icon fce-nav-section-create" aria-label={labels.createBox}
                   onclick={(event) => actionClick(event, () => onBoxCommand?.({ command: "create" }))} use:icon={"plus"}></button>

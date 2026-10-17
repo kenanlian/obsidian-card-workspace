@@ -13,6 +13,9 @@ export function resolveNavigationRowTooltip(row: NavigationRow, strings: UiStrin
   if (row.kind === "box") {
     return nav.boxCountsTooltip(row.count);
   }
+  if (row.kind === "template") {
+    return row.unavailable ? `${row.fullPath} — ${strings.noteInput.templateUnavailable}` : row.fullPath ?? row.label;
+  }
   if (row.kind === "favorite") {
     return row.missing ? `${row.label} ${nav.favoriteMissing}` : row.label;
   }

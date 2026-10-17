@@ -1,5 +1,7 @@
 import { TFile, type App } from "obsidian";
 
+import { isExcludedTemplatePath } from "../../template-exclusion";
+
 import type { SortDirection, LinksSortField } from "../../settings";
 import { migrateRenamedPath, pruneRemovedPath } from "../bulk-selection";
 import { createCardRecord } from "../card-record";
@@ -51,6 +53,7 @@ interface LiveSupportedFile {
 
 /** Resolves the current live `TFile` for a path; `null` when missing/unsupported. */
 function resolveLiveSupportedFile(app: App, path: string): LiveSupportedFile | null {
+  if (isExcludedTemplatePath(app, path)) return null;
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) {
     return null;

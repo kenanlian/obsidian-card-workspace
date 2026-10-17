@@ -69,6 +69,12 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   enableHeadingDragInsert: "patch",
   cardCornerRadius: "patch",
   newNoteTemplate: "patch",
+  templateStorageFolder: "patch",
+  quickInput: "patch",
+  quickInputWidth: "patch",
+  quickInputHeight: "patch",
+  quickInputColor: "patch",
+  noteTemplates: "reload",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
   hoverPreviewWidth: "patch",
@@ -113,6 +119,12 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "enableHeadingDragInsert": settings.enableHeadingDragInsert = !settings.enableHeadingDragInsert; break;
     case "cardCornerRadius": settings.cardCornerRadius = "compact"; break;
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
+    case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
+    case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;
+    case "quickInputWidth": settings.quickInputWidth += 10; break;
+    case "quickInputHeight": settings.quickInputHeight += 10; break;
+    case "quickInputColor": settings.quickInputColor = "blue"; break;
+    case "noteTemplates": settings.noteTemplates = [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" }]; break;
     case "cardImageMode": settings.cardImageMode = "off"; break;
     case "cardImageFit": settings.cardImageFit = "contain"; break;
     case "previewLines": settings.previewLines += 1; break;
@@ -327,5 +339,23 @@ describe("resolveBoxesUpdateIntent", () => {
     });
     expect(resolveBoxesUpdateIntent([previous], [changed], "box-1")).toBe("reload");
     expect(resolveBoxesUpdateIntent([previous], [changed], "other-box")).toBe("patch");
+  });
+});
+
+describe("note input update grades", () => {
+  const template = { id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
+  it("reloads every scope when registration changes membership", () => {
+    const previous = { ...createSettings(), noteTemplates: [] };
+    const next = { ...previous, noteTemplates: [template] };
+    for (const scope of [createFolderScope("Notes", true), createBoxScope("box-1"), createLinksScope("Notes/A.md", "backlinks")]) {
+      expect(resolveSettingsUpdateIntent(previous, next, scope)).toBe("reload");
+      expect(resolveSettingsUpdateIntent(next, previous, scope)).toBe("reload");
+    }
+  });
+  it("patches destinations, formats, registration identity and ordering without card reload", () => {
+    const previous = { ...createSettings(), noteTemplates: [template, { ...template, id: "second", filePath: "Templates/Second.md" }] };
+    const next = { ...previous, noteTemplates: [previous.noteTemplates[1], { ...template, id: "renamed", targetFolderPath: "Inbox", dateFormat: "YYYYMMDD", timeFormat: "HH" }] };
+    expect(resolveSettingsUpdateIntent(previous, next)).toBe("patch");
+    expect(resolveSettingsUpdateIntent(previous, { ...previous, noteTemplates: previous.noteTemplates.map((entry) => ({ ...entry })) })).toBeNull();
   });
 });

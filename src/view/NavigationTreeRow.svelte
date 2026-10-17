@@ -89,6 +89,7 @@
   class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''} {dragState?.dragging ? (row.kind === 'folder' ? 'is-folder-dragging' : row.kind === 'favorite' ? 'is-favorite-dragging' : 'is-navigation-dragging') : ''} {dragState?.dropInside ? 'is-drop-inside' : ''} {dragState?.dropIndicator === 'before' ? 'is-drop-before' : ''} {dragState?.dropIndicator === 'after' ? 'is-drop-after' : ''}"
   data-nav-row-id={row.id}
   class:is-revealed={revealed}
+  class:is-unavailable={row.kind === "template" && row.unavailable}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
   role="treeitem"

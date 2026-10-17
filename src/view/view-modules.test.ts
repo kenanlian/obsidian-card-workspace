@@ -114,6 +114,8 @@ describe("createViewModules composition", () => {
     assembled = true;
 
     expect(modules.arrangementActions).toBeDefined();
+    expect(modules.scopeNoteActions).toBeDefined();
+    expect(modules.templateActions).toBeDefined();
     expect(modules.boxActions).toBeDefined();
     expect(modules.projection).toBeDefined();
     expect(modules.bulk).toBeDefined();

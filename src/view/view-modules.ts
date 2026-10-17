@@ -1,3 +1,5 @@
+import { TemplateActions } from "./actions/template-actions";
+import { ScopeNoteActions } from "./actions/scope-note-actions";
 import { normalizeGroupSpec, type GroupSpec } from "../card-grouping-settings";
 import type { SearchService, SearchServiceSnapshot } from "../search";
 import type { OpenDestination, SortDirection, LinksSortField } from "../settings";
@@ -36,6 +38,10 @@ import { resolveViewConfig } from "./view-config";
  * function so `createViewModules` can run before the view finishes constructing.
  */
 export interface ViewModuleHost {
+  flushSettings?: () => Promise<void>;
+  openTemplateNote?: (path: string, selectTitle?: boolean) => Promise<void>;
+  runTemplateOperation?: (work: () => Promise<boolean>) => Promise<boolean>;
+  reserveTemplatePath?: (path: string) => () => void;
   getThumbnailService?: () => { service: ThumbnailService; vault: string } | null;
   effectiveSortAndPins: () => { sortField: LinksSortField; sortDirection: SortDirection; pinnedPaths: string[] };
   getDisplayFolderPath: () => string;
@@ -56,7 +62,7 @@ export interface ViewModuleHost {
   /** One coherent metadata publication; nav derives from the exact fresh projection snapshot. */
   publishImpactBatch: (batch: MetadataImpactBatch) => void;
   openNoteFromCard: (path: string, destination?: OpenDestination) => Promise<void>;
-  createNoteInFolder: (folderPath: string, tags: string[]) => Promise<void>;
+  createNoteInFolder: (folderPath: string, tags: string[], properties?: Record<string, string | number | boolean>) => Promise<void>;
   getSearchService: () => SearchService | null;
   getSearchSnapshot: () => SearchServiceSnapshot | null;
   subscribeSearchSnapshots: (listener: (snapshot: SearchServiceSnapshot) => void) => () => void;
@@ -76,6 +82,8 @@ export interface ViewModules {
   propertyActions: PropertyActions;
   scopeController: ScopeController;
   fileActions: FileActions;
+  scopeNoteActions: ScopeNoteActions;
+  templateActions: TemplateActions;
   folderActions: FolderActions;
   boxActions: BoxActions;
   tagActions: TagActions;
@@ -220,6 +228,16 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     startupCardCount: HydrationController.startupCardCount,
   });
 
+  const templateActions = new TemplateActions({
+    app: context.getApp(), getSettings: () => context.getSettings(), saveSettings: async (patch) => {
+      await context.saveSettings(patch); await host.flushSettings?.();
+    },
+    openNote: (path, selectTitle) => host.openTemplateNote?.(path, selectTitle) ?? host.openNoteFromCard(path, "new-tab"), notify: (message) => context.notify(message),
+    runOperation: host.runTemplateOperation,
+    reserveTemplatePath: (path) => host.reserveTemplatePath?.(path) ?? (() => undefined),
+    getStrings: () => context.getUiStrings(),
+  });
+  const scopeNoteActions = new ScopeNoteActions({ context, createNote: host.createNoteInFolder });
   const fileActions: FileActions = new FileActions({
     context,
     buildSiblingPath: gate.guard("folderActions.buildSiblingPath", (parentPath, fileName) =>
@@ -444,6 +462,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     propertyActions,
     scopeController,
     fileActions,
+    scopeNoteActions,
+    templateActions,
     folderActions,
     boxActions,
     tagActions,

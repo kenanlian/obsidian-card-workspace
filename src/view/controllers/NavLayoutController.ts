@@ -49,6 +49,7 @@ export class NavLayoutController implements DisposableController {
   private navCountRefreshHandle: ReturnType<Window["setTimeout"]> | null = null;
   private readonly dragExpandedFolders = new Set<string>();
   private query = "";
+  private filterVisible = false;
   private focusId: string | null = null;
   private focusEstablished = false;
   private projection: NavigationProjection = { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false };
@@ -186,6 +187,17 @@ export class NavLayoutController implements DisposableController {
   }
   getTooltipSide(): "left" | "right" {
     return this.deps.getTooltipSide();
+  }
+  getFilterVisible(): boolean { return this.filterVisible || this.query.length > 0; }
+  showFilter(): void {
+    if (this.disposed || this.filterVisible) return;
+    this.filterVisible = true; this.pushNavLayoutState();
+  }
+  toggleFilter(): void {
+    if (this.disposed) return;
+    this.filterVisible = !this.getFilterVisible();
+    if (!this.filterVisible) this.clearQuery();
+    this.pushNavLayoutState();
   }
   getQuery(): string { return this.query; }
   getFocusId(): string | null { return this.focusId; }
@@ -328,6 +340,7 @@ export class NavLayoutController implements DisposableController {
   restoreFocus(originId: string): void {
     if (this.disposed) return;
     this.focusEstablished = true; this.focusId = resolveNavigationFocus(this.projection.rows, this.projection.rows, originId);
+    if (this.focusId === null) this.filterVisible = true;
     this.requests.requestFocus(this.focusId ?? NAVIGATION_FILTER_FOCUS_ID);
     this.pushNavLayoutState();
   }
@@ -554,6 +567,7 @@ export class NavLayoutController implements DisposableController {
     this.disposed = true;
     this.sortingInput = { tags: [], properties: [] };
     this.query = "";
+    this.filterVisible = false;
     this.focusId = null; this.focusEstablished = false;
     this.projection = { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false };
     this.dragExpandedFolders.clear();

@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
@@ -9,7 +9,6 @@ import {
   createFolderScope,
   isBoxScope, isLinksScope,
   normalizeScopePath,
-  resolveNewNoteFolderPath as folderPathForNewNote,
   resolveScopeFolderPath,
   scopeDisplayPath,
   scopeIdentity,
@@ -78,6 +77,10 @@ export class FolderCardView extends ItemView implements HoverParent {
       notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
     };
     this.modules = createViewModules(this.context, {
+      flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
+      openTemplateNote: (path, selectTitle) => this.plugin.openTemplateEditor(path, selectTitle),
+      runTemplateOperation: (work) => this.plugin.runTemplateOperation(work),
+      reserveTemplatePath: (path) => this.plugin.reserveTemplatePath?.(path) ?? (() => undefined),
       getThumbnailService: () => this.plugin.getThumbnailService?.() ?? null,
       effectiveSortAndPins: () => {
         const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), this.plugin.getSettings());
@@ -106,7 +109,8 @@ export class FolderCardView extends ItemView implements HoverParent {
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
-      createNoteInFolder: (folderPath, tags) => this.plugin.createNoteInFolder(folderPath, tags),
+      createNoteInFolder: (folderPath, tags, properties) => properties === undefined
+        ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
       getSearchService: () => this.plugin.getSearchService(),
       getSearchSnapshot: () => this.plugin.getSearchSnapshot(),
       subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
@@ -255,7 +259,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     const action = detail.action;
 
     if (action === "new-note") {
-      void this.plugin.createNoteInFolder(this.resolveNewNoteFolderPath()).catch((error: unknown) => {
+      void this.modules.scopeNoteActions.createNote().catch((error: unknown) => {
         new Notice(this.modules.folderActions.getFolderManagementStrings().createFileFailed(String(error)));
       });
       return;
@@ -344,6 +348,16 @@ export class FolderCardView extends ItemView implements HoverParent {
    * Applies the weakest update that still reflects a change. Only `"reload"`
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
    */
+  invalidateTemplateCandidates(): void {
+    this.epochs.vaultContent.bump();
+    this.epochs.navCount.bump();
+    this.modules.scopeController.invalidateCandidateCache();
+    this.modules.boxActions.invalidateCache();
+    this.modules.projection.invalidateVaultCaches();
+    this.modules.property.invalidateVault();
+    this.modules.navLayout.refreshFolderTreeState();
+  }
+
   async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
     this.modules.hoverPreview.applySize();
     this.modules.images.onSettingsChanged();
@@ -453,13 +467,13 @@ export class FolderCardView extends ItemView implements HoverParent {
     };
   }
 
-  setSelectedFile(path: string | null): void {
+  setSelectedFile(path: string | null, preserveScope = false): void {
     if (this.selectedPath === path) {
       return;
     }
 
     this.selectedPath = path;
-    const next = resolveLinksFollowScope(this.cardScope, path, this.store.getLinksPinned());
+    const next = preserveScope ? null : resolveLinksFollowScope(this.cardScope, path, this.store.getLinksPinned());
     if (next) {
       void this.modules.scopeController.handleScopeSelection(
         this.modules.scopeController.createProgrammaticSelectionRequest(next, false, "links-follow"),
@@ -470,15 +484,6 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   getCurrentFolderPath(): string | null {
     return resolveScopeFolderPath(this.cardScope);
-  }
-
-  /**
-   * C5: toolbar new-note resolves its folder from this view's runtime scope.
-   * Folder uses `cardScope.path` (including `""` for Vault root). Box and links
-   * keep the persisted `lastFolderPath` fallback and do not switch scope or auto-add.
-   */
-  private resolveNewNoteFolderPath(): string {
-    return folderPathForNewNote(this.cardScope, this.plugin.getSettings().lastFolderPath);
   }
 
   openNavContextMenu(payload: NavContextMenuPayload): void {
@@ -502,6 +507,9 @@ export class FolderCardView extends ItemView implements HoverParent {
     routeNavigationIntent({
       intent, navLayout: this.modules.navLayout, scope: this.cardScope,
       activeTags: this.plugin.getSettings().filter.tags,
+      createFromTemplate: (id) => { void this.plugin.createNoteFromTemplate(id); },
+      templateCommand: () => this.modules.templateActions.newTemplate(),
+      openQuickInput: (win) => { void this.plugin.openQuickInput(win); },
       selectFolder: (path) => { void this.selectFolderFromNav(path); },
       switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
       applyTagFilter: (tags) => { void this.modules.tagActions.applyTagFilter(tags); },
@@ -595,6 +603,14 @@ export class FolderCardView extends ItemView implements HoverParent {
       settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
       folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
       propertyFacets: this.modules.property.derivePropertyFacets(),
+      templates: (this.plugin.getSettings().noteTemplates ?? []).map((template) => {
+        const file = this.app.vault.getAbstractFileByPath(template.filePath);
+        const folder = template.targetFolderPath === "" ? this.app.vault.getRoot()
+          : template.targetFolderPath === null ? null : this.app.vault.getAbstractFileByPath(template.targetFolderPath);
+        return { id: template.id, filePath: template.filePath,
+          label: template.name?.trim() || template.filePath.split("/").pop() || template.filePath,
+          unavailable: !(file instanceof TFile) || file.extension.toLowerCase() !== "md" || !(folder instanceof TFolder) };
+      }),
     });
   }
   private buildImagesGroup(): PanelModelState["images"] { return this.modules.images.getPanelState(); }

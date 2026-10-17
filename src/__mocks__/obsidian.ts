@@ -133,6 +133,7 @@ export class Vault {
 
 export const Platform = {
   isDesktopApp: true,
+  isMacOS: false,
 };
 
 export function setIcon(el: Element, icon: string): void {

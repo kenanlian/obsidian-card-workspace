@@ -100,7 +100,7 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
     tagCounts: {},
     includeSubfolders: true,
     tagsDisabled: false, propertiesDisabled: false,
-    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+    sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     sectionOrder: defaultNavSectionOrder(),
     sectionLabels: {
       favorites: { label: "Favorites", emptyLabel: null },
@@ -108,7 +108,8 @@ function projectionInput(scope = createFolderScope("a/b", true)): Omit<Navigatio
       tags: { label: "Tags", emptyLabel: null },
       properties: { label: "Properties", emptyLabel: null },
       boxes: { label: "Boxes", emptyLabel: null },
-      links: { label: "Links", emptyLabel: null },
+      templates: { label: "Templates", emptyLabel: "No templates yet" },
+  links: { label: "Links", emptyLabel: null },
     },
     rootFolderLabel: "Root /",
     linksLeafLabels: { backlinks: "Backlinks", outgoing: "Outgoing links" },
@@ -534,7 +535,7 @@ describe("NavLayoutController", () => {
     expect(controller.getQueryBaseline()).toEqual({
       expandedFolderPaths: ["a", "shared"],
       expandedTagPaths: ["work"],
-      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, links: false },
+      sectionCollapsed: { favorites: false, folders: false, tags: false, properties: false, boxes: false, templates: false, links: false },
     });
     const a = projection.rows.find((row) => row.id === "folder:a");
     if (!a) throw new Error("missing query row fixture");
@@ -631,7 +632,7 @@ describe("NavLayoutController", () => {
     const projected = h.controller.project(projectionInput());
     expect(projected.sections.map((section) => section.section)).toEqual(["folders", "links"]);
     await h.controller.onMoveNavSection("folders", 1);
-    expect(h.settings.navSectionOrder).toEqual(["favorites", "links", "tags", "properties", "boxes", "folders"]);
+    expect(h.settings.navSectionOrder).toEqual(["favorites", "links", "tags", "properties", "boxes", "folders", "templates"]);
     h.controller.dispose();
   });
 
@@ -641,7 +642,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("folders", -1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes", "links"],
+      navSectionOrder: ["folders", "favorites", "tags", "properties", "boxes", "links", "templates"],
     });
   });
 
@@ -649,7 +650,7 @@ describe("NavLayoutController", () => {
     const { controller, saveSettings } = createHarness();
 
     await controller.onMoveNavSection("favorites", -1);
-    await controller.onMoveNavSection("links", 1);
+    await controller.onMoveNavSection("templates", 1);
     await controller.onMoveNavSection("mystery" as NavSectionId, 1);
 
     expect(saveSettings).not.toHaveBeenCalled();
@@ -662,7 +663,7 @@ describe("NavLayoutController", () => {
     await controller.onMoveNavSection("boxes", 1);
 
     expect(saveSettings).toHaveBeenCalledWith({
-      navSectionOrder: ["tags", "properties", "favorites", "boxes", "folders", "links"],
+      navSectionOrder: ["tags", "properties", "favorites", "boxes", "folders", "links", "templates"],
     });
   });
 
@@ -951,4 +952,15 @@ describe("folder drag navigation state", () => {
     h.controller.expandFolderForDrag("a");
     expect(h.publishGroups).not.toHaveBeenCalled();
   });
+  it("owns filter visibility per-view and clears only the navigation query when closing", () => {
+    const h = createHarness();
+    expect(h.controller.getFilterVisible()).toBe(false);
+    h.controller.toggleFilter(); expect(h.controller.getFilterVisible()).toBe(true);
+    h.controller.updateQuery("work"); h.controller.toggleFilter();
+    expect(h.controller.getQuery()).toBe(""); expect(h.controller.getFilterVisible()).toBe(false);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    h.controller.showFilter(); expect(h.controller.getFilterVisible()).toBe(true);
+    h.controller.dispose(); expect(h.controller.getFilterVisible()).toBe(false);
+  });
+
 });

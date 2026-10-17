@@ -53,6 +53,8 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       toggleTag: (tag) => { void deps.modules.navLayout.toggleById(`tag:${tag}`); },
     },
     actions: {
+      appendTemplateMenu: (menu, id) => deps.modules.templateActions.appendMenu(menu, id),
+      appendTemplateHeaderMenu: (menu) => deps.modules.templateActions.appendHeaderMenu(menu),
       revealActiveFileFolder: () => deps.modules.navLayout.revealActiveFileFolder(),
       hideFolder: (path) => { void hideNavigationEntry(deps.context, "hiddenFolderPaths", path); },
       hideTag: (path) => { void hideNavigationEntry(deps.context, "hiddenTagPaths", path); },

@@ -23,6 +23,8 @@ import type {
 export type { NavContextMenuPayload };
 export { resolveNavMenuDangerLabel } from "./menus/nav-menu-danger";
 export interface NavMenuActions {
+  appendTemplateMenu?: (menu: Menu, templateId: string) => void;
+  appendTemplateHeaderMenu?: (menu: Menu) => void;
   revealActiveFileFolder: () => string | null;
   hideFolder: (path: string) => void;
   hideTag: (path: string) => void;
@@ -524,6 +526,18 @@ export function buildNavContextMenu(
       return buildBoxesHeaderMenu(menu, deps);
     }
     return typeof payload.itemId === "string" ? buildBoxItemMenu(menu, deps, payload.itemId) : false;
+  }
+
+  if (payload.section === "templates") {
+    if (payload.scope === "header") {
+      deps.actions.appendTemplateHeaderMenu?.(menu);
+      menu.addSeparator();
+      appendNavSectionHeaderItems(menu, deps, "templates");
+      return true;
+    }
+    if (typeof payload.itemId !== "string" || !deps.actions.appendTemplateMenu) return false;
+    deps.actions.appendTemplateMenu(menu, payload.itemId);
+    return true;
   }
 
   if (payload.section === "links") {

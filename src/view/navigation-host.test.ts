@@ -66,6 +66,28 @@ function linksRow(direction: "backlinks" | "outgoing", disabled = false): Naviga
 }
 
 describe("navigation host intent routing", () => {
+  it("routes template and quick-input actions without touching card source or filters", () => {
+    const template: NavigationRow = {
+      id: "template:daily", kind: "template", section: "templates", parentId: "section:templates",
+      level: 2, positionInSet: 1, setSize: 1, expandable: false, expanded: false, disabled: false,
+      semanticState: "none", label: "Daily.md", fullPath: "Templates/Daily.md", count: 0, icon: "file-plus-2",
+      menuTarget: { section: "templates", scope: "item", itemId: "daily" }, templateId: "daily", unavailable: true,
+    };
+    const createFromTemplate = vi.fn(), openQuickInput = vi.fn(), templateCommand = vi.fn();
+    const selectFolder = vi.fn(), switchBox = vi.fn(), applyTagFilter = vi.fn();
+    const common = { navLayout: { getProjection: () => projectionWith(template), isDisposed: () => false } as never,
+      scope: createBoxScope("box-1"), activeTags: ["work"], selectFolder, switchBox, applyTagFilter,
+      activateFavorite: vi.fn(), createFromTemplate, openQuickInput, templateCommand };
+    const win = {} as Window;
+    routeNavigationIntent({ ...common, intent: { type: "activate", rowId: template.id, mode: "ordinary" } });
+    routeNavigationIntent({ ...common, intent: { type: "quick-input", win } });
+    routeNavigationIntent({ ...common, intent: { type: "template-command", command: "new" } });
+    expect(createFromTemplate).toHaveBeenCalledExactlyOnceWith("daily");
+    expect(openQuickInput).toHaveBeenCalledExactlyOnceWith(win);
+    expect(templateCommand).toHaveBeenCalledExactlyOnceWith("new");
+    expect(selectFolder).not.toHaveBeenCalled(); expect(switchBox).not.toHaveBeenCalled(); expect(applyTagFilter).not.toHaveBeenCalled();
+  });
+
   it("keeps ordinary and additive Tag activation distinct", () => {
     const applyTagFilter = vi.fn();
     const navLayout = { getProjection: () => projectionWith(tagRow()) } as never;

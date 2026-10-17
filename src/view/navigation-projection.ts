@@ -10,6 +10,8 @@ import {
   assignSetMetadata,
   EMPTY_NAVIGATION_EXPANSION_LAYER,
   navigationBoxId,
+  navigationTemplateId,
+  type NavigationTemplateRow,
   navigationFavoriteId,
   navigationFolderId,
   navigationSectionId,
@@ -321,6 +323,19 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
   }
   matchedCounts.set("boxes", boxRows.length);
 
+  const templateRows: NavigationTemplateRow[] = (input.templates ?? [])
+    .filter((template) => validString(template.id) && validString(template.filePath)
+      && (!querying || matches(normalizedQuery, template.label, template.filePath)))
+    .map((template) => ({
+      id: navigationTemplateId(template.id), kind: "template", section: "templates",
+      parentId: navigationSectionId("templates"), level: 2, positionInSet: 0, setSize: 0,
+      expandable: false, expanded: false, disabled: false, semanticState: "none",
+      label: template.label, fullPath: template.filePath, count: 0, icon: "file-plus-2",
+      menuTarget: { section: "templates", scope: "item", itemId: template.id },
+      templateId: template.id, unavailable: template.unavailable,
+    }));
+  matchedCounts.set("templates", templateRows.length);
+
   // Same plan-A rule as tags: a non-filterable scope projects no property rows.
   const propertyProjection = input.propertiesDisabled
     ? { rows: [] as (NavigationPropertyRow | NavigationPropertyValueRow)[], matchedItemCount: 0 }
@@ -353,7 +368,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
       expanded,
       disabled: false,
       semanticState: "none" as const,
-      label: input.sectionLabels[section].label,
+      label: (input.sectionLabels[section]?.label ?? ""),
       fullPath: null,
       count: 0,
       icon: null,
@@ -366,17 +381,18 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     if (section === "folders") children = projectFolders(input, normalizedQuery, expanded);
     if (section === "tags") children = projectTags(input, normalizedQuery, expanded, activeTags);
     if (section === "properties") children = expanded ? assignSetMetadata(propertyProjection.rows) : [];
+    if (section === "templates") children = expanded ? assignSetMetadata(templateRows) : [];
     if (section === "boxes") children = expanded ? assignSetMetadata(boxRows) : [];
     if (section === "links") children = expanded ? assignSetMetadata(linksProjection.rows) : [];
     rows.push(...children);
     sections.push({
       id: navigationSectionId(section),
       section,
-      label: input.sectionLabels[section].label,
+      label: (input.sectionLabels[section]?.label ?? ""),
       visible: true,
       expanded,
       matchedItemCount: matchedCounts.get(section) ?? 0,
-      emptyLabel: querying ? null : input.sectionLabels[section].emptyLabel,
+      emptyLabel: querying ? null : (input.sectionLabels[section]?.emptyLabel ?? null),
     });
   }
 
