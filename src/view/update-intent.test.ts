@@ -71,6 +71,9 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   newNoteTemplate: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
+  quickInputWidth: "patch",
+  quickInputHeight: "patch",
+  quickInputColor: "patch",
   noteTemplates: "reload",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
@@ -118,6 +121,9 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;
+    case "quickInputWidth": settings.quickInputWidth += 10; break;
+    case "quickInputHeight": settings.quickInputHeight += 10; break;
+    case "quickInputColor": settings.quickInputColor = "blue"; break;
     case "noteTemplates": settings.noteTemplates = [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" }]; break;
     case "cardImageMode": settings.cardImageMode = "off"; break;
     case "cardImageFit": settings.cardImageFit = "contain"; break;

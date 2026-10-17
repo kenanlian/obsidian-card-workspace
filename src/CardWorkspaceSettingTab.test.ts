@@ -29,6 +29,7 @@ vi.mock("./view/metadata-input-suggest", () => ({ onPlainEnter: vi.fn() }));
 
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
+import { getUiStrings } from "./i18n";
 
 interface PluginStub {
   getSettings: ReturnType<typeof vi.fn<() => Record<string, unknown>>>;
@@ -51,6 +52,7 @@ function createPlugin(
       enableHeadingDragInsert: false,
       newNoteTemplate: "blank",
       quickInput: { templateId: null, folderPath: "", insertPosition: "end" }, noteTemplates: [],
+      quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
       previewLines: 6,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
@@ -522,6 +524,37 @@ describe("quick input shared setting definitions", () => {
     await tab.setControlValue("quickInputTemplateId", null);
     expect(plugin.saveSettings).toHaveBeenCalledTimes(3);
     expect((tab as unknown as { refreshDomState: ReturnType<typeof vi.fn> }).refreshDomState).toHaveBeenCalledTimes(native ? 1 : 0);
+  });
+
+  it.each(["en", "zh"] as const)("declares %s window size sliders and a frame color dropdown", (language) => {
+    const strings = getUiStrings(language).noteInput;
+    const items = createTab(createPlugin({}, language)).getSettingDefinitions()[3]!.items;
+    expect(items[3]).toMatchObject({ name: strings.quickInputWidthName,
+      control: { type: "slider", key: "quickInputWidth", min: 320, max: 1200, step: 10 } });
+    expect(items[4]).toMatchObject({ name: strings.quickInputHeightName,
+      control: { type: "slider", key: "quickInputHeight", min: 200, max: 800, step: 10 } });
+    expect(items[5]).toMatchObject({ name: strings.quickInputColorName, control: { type: "dropdown", key: "quickInputColor" } });
+    expect(Object.keys((items[5]!.control as { options: Record<string, string> }).options)).toEqual(
+      ["random", "accent", "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"]);
+    expect((items[5]!.control as { options: Record<string, string> }).options.random).toBe(strings.colorRandom);
+  });
+
+  it("reads and saves quick input size and color, ignoring out-of-range values", async () => {
+    const plugin = createPlugin({ quickInputWidth: 600, quickInputHeight: 300, quickInputColor: "blue" }), tab = createTab(plugin);
+    expect(tab.getControlValue("quickInputWidth")).toBe(600);
+    expect(tab.getControlValue("quickInputHeight")).toBe(300);
+    expect(tab.getControlValue("quickInputColor")).toBe("blue");
+    await tab.setControlValue("quickInputWidth", 640);
+    await tab.setControlValue("quickInputHeight", 360);
+    await tab.setControlValue("quickInputColor", "accent");
+    for (const value of ["600", NaN, 100, 5000, 600.5]) {
+      await tab.setControlValue("quickInputWidth", value);
+      await tab.setControlValue("quickInputHeight", value);
+    }
+    await tab.setControlValue("quickInputColor", "teal");
+    expect(plugin.saveSettings.mock.calls).toEqual([
+      [{ quickInputWidth: 640 }], [{ quickInputHeight: 360 }], [{ quickInputColor: "accent" }],
+    ]);
   });
 });
 

@@ -35,6 +35,21 @@ describe("hover preview dimensions", () => {
   });
 });
 
+describe("quick input appearance", () => {
+  it("defaults to a 480x270 random-tint window", () => {
+    expect(normalizeSettings({})).toMatchObject({ quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random" });
+  });
+
+  it("bounds dimensions and rejects unknown colors", () => {
+    expect(normalizeSettings({ quickInputWidth: 100, quickInputHeight: 9000, quickInputColor: "teal" }))
+      .toMatchObject({ quickInputWidth: 320, quickInputHeight: 800, quickInputColor: "random" });
+    expect(normalizeSettings({ quickInputWidth: 5000, quickInputHeight: "300", quickInputColor: "accent" }))
+      .toMatchObject({ quickInputWidth: 1200, quickInputHeight: 270, quickInputColor: "accent" });
+    expect(normalizeSettings({ quickInputWidth: 500.6, quickInputHeight: 240.2, quickInputColor: "cyan" }))
+      .toMatchObject({ quickInputWidth: 501, quickInputHeight: 240, quickInputColor: "cyan" });
+  });
+});
+
 describe("normalizeSettings — pinnedPaths", () => {
   it("normalizes invalid pinnedPaths (non-array) to empty array", () => {
     const raw = {
@@ -1129,6 +1144,7 @@ describe("card grouping settings normalization", () => {
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
         quickInput: DEFAULT_SETTINGS.quickInput,
+        quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
         templateStorageFolder: DEFAULT_SETTINGS.templateStorageFolder,
         searchPreviewSnippetCount: 2,
         hoverPreviewWidth: 600,
@@ -1618,6 +1634,9 @@ describe("settings layer manifest (C4)", () => {
     searchPreviewSnippetCount: "preferences",
     hoverPreviewWidth: "preferences",
     hoverPreviewHeight: "preferences",
+    quickInputWidth: "preferences",
+    quickInputHeight: "preferences",
+    quickInputColor: "preferences",
     cardImageMode: "preferences",
     cardImageFit: "preferences",
     showNavItemCounts: "preferences",
@@ -1707,6 +1726,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     cardCornerRadius: "compact",
     newNoteTemplate: "blank",
     quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" },
+    quickInputWidth: 640,
+    quickInputHeight: 360,
+    quickInputColor: "purple",
     templateStorageFolder: "My Templates",
     noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYYMMDD", timeFormat: "HH-mm" }],
     cardImageMode: "off",
@@ -1755,6 +1777,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
     ["templateStorageFolder", (d) => d.preferences.templateStorageFolder, nonDefault.templateStorageFolder],
     ["quickInput", (d) => d.preferences.quickInput, nonDefault.quickInput],
+    ["quickInputWidth", (d) => d.preferences.quickInputWidth, 640],
+    ["quickInputHeight", (d) => d.preferences.quickInputHeight, 360],
+    ["quickInputColor", (d) => d.preferences.quickInputColor, "purple"],
     ["noteTemplates", (d) => d.userData.noteTemplates, nonDefault.noteTemplates],
     ["cardImageMode", (d) => d.preferences.cardImageMode, "off"],
     ["cardImageFit", (d) => d.preferences.cardImageFit, "contain"],

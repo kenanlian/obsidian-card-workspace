@@ -1,14 +1,23 @@
-import { TFile, TFolder, setIcon, type App } from "obsidian";
+import { Platform, TFile, TFolder, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
-import type { NoteInputResult, QuickInputRequest } from "../note-input";
-import type { PluginSettings } from "../settings";
+import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
+import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
 
 interface Geometry { x: number; y: number; width: number; height: number }
+interface QuickInputTarget {
+  template: NoteTemplateDefinition | null;
+  folderPath: string | null;
+  insertPosition: QuickInputConfig["insertPosition"];
+  valid: boolean;
+}
 interface Draft {
   win: Window;
   root: HTMLDivElement;
   editor: NativeMarkdownEditor;
+  destination: HTMLDivElement;
+  destinationIcon: HTMLSpanElement;
+  destinationText: HTMLSpanElement;
   send: HTMLButtonElement;
   sendLabel: HTMLSpanElement;
   cancel: HTMLButtonElement;
@@ -40,6 +49,7 @@ export class QuickInputWindowManager {
   private readonly drafts = new Set<Draft>();
   private readonly layers = new WeakMap<Window, HTMLDivElement>();
   private readonly geometry = new WeakMap<Window, Geometry>();
+  private lastTint: QuickInputTint | null = null;
   private disposed = false;
   private sequence = 0;
   private readonly submissionPrefix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -50,8 +60,12 @@ export class QuickInputWindowManager {
     if (this.disposed || win.closed) return;
     let previous: Draft | undefined;
     for (const draft of this.drafts) if (draft.win === win) previous = draft;
-    let geometry = boundGeometry(win, previous?.geometry ?? this.geometry.get(win)
-      ?? { x: (win.innerWidth - 520) / 2, y: (win.innerHeight - 320) / 2, width: 520, height: 320 });
+    const settings = this.options.getSettings();
+    const width = settings.quickInputWidth;
+    const height = settings.quickInputHeight;
+    const anchor = previous?.geometry ?? this.geometry.get(win);
+    let geometry = boundGeometry(win, anchor ? { x: anchor.x, y: anchor.y, width, height }
+      : { x: (win.innerWidth - width) / 2, y: (win.innerHeight - height) / 2, width, height });
     if (previous) {
       geometry = { ...geometry,
         x: geometry.x + 24 + geometry.width <= win.innerWidth ? geometry.x + 24 : 0,
@@ -65,14 +79,25 @@ export class QuickInputWindowManager {
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", strings.quickInput);
     root.setAttribute("aria-modal", "false");
+    const tint = this.resolveTint(settings);
+    root.dataset.color = tint.name;
+    root.style.setProperty("--fce-quick-input-tint", tint.value);
     const top = document.createElement("div");
     top.className = "fce-quick-input-grip";
     top.setAttribute("aria-hidden", "true");
-    top.textContent = "•••";
+    setIcon(top, "ellipsis");
     const body = document.createElement("div");
     body.className = "fce-quick-input-editor";
     const footer = document.createElement("div");
     footer.className = "fce-quick-input-footer";
+    const destination = document.createElement("div");
+    destination.className = "fce-quick-input-destination";
+    const destinationIcon = document.createElement("span");
+    destinationIcon.className = "fce-quick-input-destination-icon";
+    destinationIcon.setAttribute("aria-hidden", "true");
+    const destinationText = document.createElement("span");
+    destinationText.className = "fce-quick-input-destination-text";
+    destination.append(destinationIcon, destinationText);
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = strings.cancel;
@@ -88,7 +113,7 @@ export class QuickInputWindowManager {
     sendLabel.className = "fce-quick-input-send-label";
     sendLabel.textContent = strings.send;
     send.append(sendIcon, sendLabel);
-    footer.append(cancel, send);
+    footer.append(destination, cancel, send);
     root.append(top, body, footer);
     let layer = this.layers.get(win);
     if (!layer) {
@@ -104,7 +129,8 @@ export class QuickInputWindowManager {
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
-      draft = { win, root, editor, send, sendLabel, cancel, composing: false, pending: false, request: null, cleanup: [],
+      draft = { win, root, editor, destination, destinationIcon, destinationText, send, sendLabel, cancel,
+        composing: false, pending: false, request: null, cleanup: [],
         geometry,
       };
       const current = draft;
@@ -154,31 +180,65 @@ export class QuickInputWindowManager {
     draft.cleanup.push(() => target.removeEventListener(type, handler, capture));
   }
 
-  private validConfig(request?: QuickInputRequest | null): boolean {
+  /** A captured request keeps describing its own destination across later settings edits. */
+  private resolveTarget(request?: QuickInputRequest | null): QuickInputTarget {
     const settings = this.options.getSettings();
     const config = request?.config ?? settings.quickInput;
-    const template = request?.template ?? (config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId) : null);
-    if (config.templateId && (!template || template.targetFolderPath === null)) return false;
-    const folderPath = template ? template.targetFolderPath : config.folderPath;
-    if (folderPath === null || folderPath === undefined) return false;
+    const template = request?.template
+      ?? (config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId) ?? null : null);
+    const folderPath = config.templateId ? template?.targetFolderPath ?? null : config.folderPath;
+    const target = { template, folderPath, insertPosition: config.insertPosition, valid: false };
+    if (folderPath === null || folderPath === undefined) return target;
     const folder = folderPath === "" ? this.options.app.vault.getRoot() : this.options.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof TFolder)) return false;
+    if (!(folder instanceof TFolder)) return target;
     if (template) {
       const file = this.options.app.vault.getAbstractFileByPath(template.filePath);
-      if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return false;
+      if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return target;
     }
-    return config.insertPosition === "start" || config.insertPosition === "end";
+    return { ...target, valid: config.insertPosition === "start" || config.insertPosition === "end" };
+  }
+
+  private resolveTint(settings: PluginSettings): { name: string; value: string } {
+    const color = settings.quickInputColor;
+    if (color === "accent") return { name: "accent", value: "var(--interactive-accent)" };
+    let tint: QuickInputTint;
+    if (color === "random") {
+      const choices = QUICK_INPUT_TINTS.filter((candidate) => candidate !== this.lastTint);
+      tint = choices[Math.min(choices.length - 1, Math.floor(Math.random() * choices.length))];
+    } else {
+      tint = color;
+    }
+    this.lastTint = tint;
+    return { name: tint, value: `var(--color-${tint})` };
   }
 
   private refresh(draft: Draft): void {
     const strings = this.options.getStrings();
-    draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !this.validConfig(draft.request);
+    const target = this.resolveTarget(draft.request);
+    draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !target.valid;
     draft.cancel.disabled = draft.pending;
     draft.cancel.textContent = strings.cancel;
     draft.sendLabel.textContent = draft.pending ? strings.sending : strings.send;
     draft.send.setAttribute("aria-label", draft.pending ? strings.sending : strings.send);
-    draft.send.title = this.validConfig(draft.request) ? (draft.pending ? strings.sending : strings.send) : strings.invalidQuickInputConfig;
+    const shortcut = Platform.isMacOS ? "⌘+Enter" : "Ctrl+Enter";
+    draft.send.title = target.valid ? (draft.pending ? strings.sending : `${strings.send} (${shortcut})`) : strings.invalidQuickInputConfig;
     draft.root.setAttribute("aria-busy", String(draft.pending));
+    this.paintDestination(draft, target, strings);
+  }
+
+  private paintDestination(draft: Draft, target: QuickInputTarget, strings: NoteInputStrings): void {
+    const folderLabel = target.folderPath ? target.folderPath : strings.rootFolder;
+    const icon = !target.valid ? "alert-triangle" : target.template ? "file-plus-2" : "folder";
+    const text = !target.valid ? strings.destinationUnavailable
+      : `${target.template ? resolveTemplateName(target.template) : folderLabel} · ${target.insertPosition === "start" ? strings.insertStart : strings.insertEnd}`;
+    draft.destination.classList.toggle("is-invalid", !target.valid);
+    draft.destination.title = target.valid ? folderLabel : strings.invalidQuickInputConfig;
+    draft.destinationText.textContent = text;
+    if (draft.destinationIcon.dataset.icon !== icon) {
+      draft.destinationIcon.replaceChildren();
+      setIcon(draft.destinationIcon, icon);
+      draft.destinationIcon.dataset.icon = icon;
+    }
   }
 
   private handleModEnter(draft: Draft, event: KeyboardEvent): void {
@@ -191,7 +251,7 @@ export class QuickInputWindowManager {
   private async send(draft: Draft): Promise<void> {
     if (!this.drafts.has(draft) || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
     const strings = this.options.getStrings();
-    if (!this.validConfig(draft.request)) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
+    if (!this.resolveTarget(draft.request).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {
       const settings = this.options.getSettings();
       const config = { ...settings.quickInput };
@@ -248,6 +308,7 @@ export class QuickInputWindowManager {
     event.preventDefault();
     draft.gestureCleanup?.();
     const initial = { ...draft.geometry };
+    if (direction === "move") draft.root.classList.add("is-dragging");
     const startX = event.clientX;
     const startY = event.clientY;
     const move = (next: Event) => {
@@ -273,6 +334,7 @@ export class QuickInputWindowManager {
       draft.win.removeEventListener("pointermove", move);
       draft.win.removeEventListener("pointerup", end);
       draft.win.removeEventListener("pointercancel", end);
+      draft.root.classList.remove("is-dragging");
       const index = draft.cleanup.indexOf(end);
       if (index >= 0) draft.cleanup.splice(index, 1);
       if (draft.gestureCleanup === end) draft.gestureCleanup = undefined;

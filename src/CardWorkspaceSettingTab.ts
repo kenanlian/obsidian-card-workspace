@@ -20,6 +20,14 @@ import {
   HOVER_PREVIEW_HEIGHT_MIN,
   HOVER_PREVIEW_HEIGHT_MAX,
   DEFAULT_HOVER_PREVIEW_HEIGHT,
+  QUICK_INPUT_WIDTH_MIN,
+  QUICK_INPUT_WIDTH_MAX,
+  DEFAULT_QUICK_INPUT_WIDTH,
+  QUICK_INPUT_HEIGHT_MIN,
+  QUICK_INPUT_HEIGHT_MAX,
+  DEFAULT_QUICK_INPUT_HEIGHT,
+  QUICK_INPUT_TINTS,
+  isQuickInputColor,
   isCardCornerRadius,
   isCardImageMode,
   isCardImageFit,
@@ -110,6 +118,16 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "number" && Number.isInteger(value)
         && value >= HOVER_PREVIEW_HEIGHT_MIN && value <= HOVER_PREVIEW_HEIGHT_MAX
         ? { hoverPreviewHeight: value } : null;
+    case "quickInputWidth":
+      return typeof value === "number" && Number.isInteger(value)
+        && value >= QUICK_INPUT_WIDTH_MIN && value <= QUICK_INPUT_WIDTH_MAX
+        ? { quickInputWidth: value } : null;
+    case "quickInputHeight":
+      return typeof value === "number" && Number.isInteger(value)
+        && value >= QUICK_INPUT_HEIGHT_MIN && value <= QUICK_INPUT_HEIGHT_MAX
+        ? { quickInputHeight: value } : null;
+    case "quickInputColor":
+      return isQuickInputColor(value) ? { quickInputColor: value } : null;
     case "showNavItemCounts":
       return typeof value === "boolean" ? { showNavItemCounts: value } : null;
     case "locateLinkCardOnOpen":
@@ -146,6 +164,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return normalizeQuickInput(settings.quickInput).folderPath;
       case "quickInputInsertPosition":
         return normalizeQuickInput(settings.quickInput).insertPosition;
+      case "quickInputWidth":
+        return settings.quickInputWidth;
+      case "quickInputHeight":
+        return settings.quickInputHeight;
+      case "quickInputColor":
+        return settings.quickInputColor;
       case "backlinkSnippetCount":
         return String(settings.backlinkSnippetCount);
       case "defaultCardOpenBehavior":
@@ -472,6 +496,17 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             control: { type: "dropdown", key: "quickInputFolderPath", options: folderOptions } },
           { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,
             control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertStart, end: inputStrings.insertEnd } } },
+          { name: inputStrings.quickInputWidthName,
+            desc: inputStrings.quickInputDimensionDesc(QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX, DEFAULT_QUICK_INPUT_WIDTH),
+            control: { type: "slider", key: "quickInputWidth", min: QUICK_INPUT_WIDTH_MIN, max: QUICK_INPUT_WIDTH_MAX, step: 10 } },
+          { name: inputStrings.quickInputHeightName,
+            desc: inputStrings.quickInputDimensionDesc(QUICK_INPUT_HEIGHT_MIN, QUICK_INPUT_HEIGHT_MAX, DEFAULT_QUICK_INPUT_HEIGHT),
+            control: { type: "slider", key: "quickInputHeight", min: QUICK_INPUT_HEIGHT_MIN, max: QUICK_INPUT_HEIGHT_MAX, step: 10 } },
+          { name: inputStrings.quickInputColorName, desc: inputStrings.quickInputColorDesc,
+            control: { type: "dropdown", key: "quickInputColor", options: {
+              random: inputStrings.colorRandom, accent: inputStrings.colorAccent,
+              ...Object.fromEntries(QUICK_INPUT_TINTS.map((tint) => [tint, inputStrings.colorNames[tint]])),
+            } } },
         ],
       },
       {

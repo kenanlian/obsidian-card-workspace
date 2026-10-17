@@ -108,7 +108,7 @@ describe("modeless quick input", () => {
     manager.open(window); manager.open(window); manager.open(window);
     const originalOrder = Array.from(document.querySelectorAll<HTMLDivElement>(".fce-quick-input"));
     expect(originalOrder.map((node) => [node.style.left, node.style.top])).toEqual([
-      ["252px", "224px"], ["276px", "248px"], ["300px", "272px"],
+      ["272px", "249px"], ["296px", "273px"], ["320px", "297px"],
     ]);
     expect(Number(root(2).style.zIndex)).toBeGreaterThan(Number(root().style.zIndex));
     pointer(root(), "pointerdown", 260, 230);
@@ -117,7 +117,7 @@ describe("modeless quick input", () => {
     expect(Number(root(1).style.zIndex)).toBeGreaterThan(Number(root().style.zIndex));
     expect(Array.from(root().parentElement!.children)).toEqual(originalOrder);
     manager.open(window);
-    expect(root(3).style.left).toBe("300px"); expect(root(3).style.top).toBe("272px");
+    expect(root(3).style.left).toBe("320px"); expect(root(3).style.top).toBe("297px");
     expect(state.editors[1].dispose).not.toHaveBeenCalled();
   });
 
@@ -126,14 +126,14 @@ describe("modeless quick input", () => {
     const first = root().style.cssText;
     pointer(root(1).querySelector(".fce-quick-input-grip")!, "pointerdown", 0, 0);
     pointer(window, "pointermove", 1000, 1000); pointer(window, "pointerup", 1000, 1000);
-    expect(root(1).style.left).toBe("504px"); expect(root(1).style.top).toBe("448px");
+    expect(root(1).style.left).toBe("544px"); expect(root(1).style.top).toBe("498px");
     pointer(root(1).querySelector('[data-direction="nw"]')!, "pointerdown", 0, 0);
     pointer(window, "pointermove", 100, 100); pointer(window, "pointerup", 100, 100);
-    expect(root(1).style.width).toBe("420px"); expect(root(1).style.height).toBe("220px");
+    expect(root(1).style.width).toBe("380px"); expect(root(1).style.height).toBe("200px");
     expect(root().style.cssText).toBe(first);
     manager.open(window);
     expect(root(2).style.left).toBe("0px"); expect(root(2).style.top).toBe("0px");
-    expect(root(2).style.width).toBe("420px"); expect(root(2).style.height).toBe("220px");
+    expect(root(2).style.width).toBe("480px"); expect(root(2).style.height).toBe("270px");
     Object.defineProperty(window, "innerWidth", { value: 250, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 150, configurable: true });
     window.dispatchEvent(new Event("resize"));
@@ -274,20 +274,23 @@ describe("modeless quick input", () => {
     expect(send().disabled).toBe(false);
   });
 
-  it("drags and resizes all boundaries within the window, remembers geometry, and clamps on window resize", () => {
+  it("drags and resizes all boundaries within the window, remembers position, and clamps on window resize", () => {
     manager.open(window);
-    expect(root().style.width).toBe("520px"); expect(root().style.height).toBe("320px");
+    expect(root().style.width).toBe("480px"); expect(root().style.height).toBe("270px");
     expect(root().querySelectorAll(".fce-quick-input-resize")).toHaveLength(8);
     pointer(root().querySelector(".fce-quick-input-grip")!, "pointerdown", 300, 300);
     pointer(window, "pointermove", -1000, -1000); pointer(window, "pointerup", -1000, -1000);
     expect(root().style.left).toBe("0px"); expect(root().style.top).toBe("0px");
-    pointer(root().querySelector('[data-direction="se"]')!, "pointerdown", 520, 320);
+    pointer(root().querySelector('[data-direction="se"]')!, "pointerdown", 480, 270);
     pointer(window, "pointermove", 1500, 1500); pointer(window, "pointerup", 1500, 1500);
     expect(root().style.width).toBe("1024px"); expect(root().style.height).toBe("768px");
     pointer(root().querySelector('[data-direction="nw"]')!, "pointerdown", 0, 0);
     pointer(window, "pointermove", 1000, 1000); pointer(window, "pointerup", 1000, 1000);
     expect(root().style.width).toBe("320px"); expect(root().style.height).toBe("200px");
-    const saved = root().style.cssText; cancel().click(); manager.open(window); expect(root().style.cssText).toBe(saved);
+    expect(root().style.left).toBe("704px"); expect(root().style.top).toBe("568px");
+    cancel().click(); manager.open(window);
+    expect(root().style.width).toBe("480px"); expect(root().style.height).toBe("270px");
+    expect(root().style.left).toBe("544px"); expect(root().style.top).toBe("498px");
     Object.defineProperty(window, "innerWidth", { value: 250, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 150, configurable: true });
     window.dispatchEvent(new Event("resize"));
@@ -297,7 +300,7 @@ describe("modeless quick input", () => {
 
   it.each(["n", "ne", "e", "se", "s", "sw", "w", "nw"])("resizes the %s boundary while anchoring the opposite edge", (direction) => {
     manager.open(window);
-    const initial = { x: parseFloat(root().style.left), y: parseFloat(root().style.top), width: 520, height: 320 };
+    const initial = { x: parseFloat(root().style.left), y: parseFloat(root().style.top), width: 480, height: 270 };
     pointer(root().querySelector(`[data-direction="${direction}"]`)!, "pointerdown", 0, 0);
     pointer(window, "pointermove", 50, 50); pointer(window, "pointerup", 50, 50);
     expect(parseFloat(root().style.width)).toBe(initial.width + (direction.includes("e") ? 50 : direction.includes("w") ? -50 : 0));
@@ -307,5 +310,82 @@ describe("modeless quick input", () => {
     const saved = root().style.cssText;
     pointer(window, "pointermove", 100, 100);
     expect(root().style.cssText).toBe(saved);
+  });
+
+  it("opens each new draft at the configured size and renders a centered ellipsis grip", () => {
+    settings.quickInputWidth = 600; settings.quickInputHeight = 300;
+    manager.open(window);
+    expect(root().style.width).toBe("600px"); expect(root().style.height).toBe("300px");
+    expect(root().style.left).toBe("212px"); expect(root().style.top).toBe("234px");
+    expect(root().querySelector(".fce-quick-input-grip")!.getAttribute("data-icon")).toBe("ellipsis");
+    pointer(root().querySelector('[data-direction="se"]')!, "pointerdown", 0, 0);
+    pointer(window, "pointermove", 50, 50); pointer(window, "pointerup", 50, 50);
+    expect(root().style.width).toBe("650px");
+    settings.quickInputWidth = 400;
+    cancel().click(); manager.open(window);
+    expect(root().style.width).toBe("400px"); expect(root().style.height).toBe("300px");
+    expect(root().style.left).toBe("212px"); expect(root().style.top).toBe("234px");
+  });
+
+  it.each(["en", "zh"] as const)("shows the %s destination of folder, root, template and unavailable targets", (locale) => {
+    language = locale;
+    const strings = noteInputStrings[locale];
+    const destination = () => root().querySelector<HTMLDivElement>(".fce-quick-input-destination")!;
+    const icon = () => destination().querySelector(".fce-quick-input-destination-icon")!.getAttribute("data-icon");
+    files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+    manager.open(window);
+    expect(destination().textContent).toBe(`${strings.rootFolder} · ${strings.insertEnd}`);
+    expect(icon()).toBe("folder");
+    settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" };
+    window.dispatchEvent(new Event("focus"));
+    expect(destination().textContent).toBe(`Inbox · ${strings.insertStart}`);
+    expect(destination().title).toBe("Inbox"); expect(destination().classList.contains("is-invalid")).toBe(false);
+    files.set("Journal", Object.assign(new TFolder(), { path: "Journal" }));
+    files.set("Templates/daily.md", Object.assign(new TFile(), { path: "Templates/daily.md", extension: "md" }));
+    settings.noteTemplates = [{ id: "daily", name: "Daily", filePath: "Templates/daily.md", targetFolderPath: "Journal", dateFormat: "YYYY", timeFormat: "HH" }];
+    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
+    window.dispatchEvent(new Event("focus"));
+    expect(destination().textContent).toBe(`Daily · ${strings.insertEnd}`);
+    expect(destination().title).toBe("Journal"); expect(icon()).toBe("file-plus-2");
+    settings.quickInput = { templateId: "missing", folderPath: "", insertPosition: "end" };
+    window.dispatchEvent(new Event("focus"));
+    expect(destination().textContent).toBe(strings.destinationUnavailable);
+    expect(destination().title).toBe(strings.invalidQuickInputConfig);
+    expect(destination().classList.contains("is-invalid")).toBe(true); expect(icon()).toBe("alert-triangle");
+    expect(send().title).toBe(strings.invalidQuickInputConfig);
+  });
+
+  it("keeps describing the captured destination after a failed send and later settings edits", async () => {
+    files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+    files.set("Other", Object.assign(new TFolder(), { path: "Other" }));
+    settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "end" };
+    submit.mockRejectedValue(new Error("fail"));
+    manager.open(window); setText("draft");
+    expect(send().title).toBe(`${noteInputStrings.en.send} (Ctrl+Enter)`);
+    send().click(); await tick();
+    settings.quickInput = { templateId: null, folderPath: "Other", insertPosition: "start" };
+    window.dispatchEvent(new Event("focus"));
+    expect(root().querySelector(".fce-quick-input-destination")!.textContent).toBe(`Inbox · ${noteInputStrings.en.insertEnd}`);
+  });
+
+  it("picks a random frame tint without repeating the previous draft and keeps it per draft", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    manager.open(window); manager.open(window); manager.open(window);
+    expect([0, 1, 2].map((index) => root(index).dataset.color)).toEqual(["red", "orange", "red"]);
+    expect(root().style.getPropertyValue("--fce-quick-input-tint")).toBe("var(--color-red)");
+    root().dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    window.dispatchEvent(new Event("resize"));
+    expect(root().dataset.color).toBe("red");
+  });
+
+  it("uses a fixed theme color or the accent color when configured", () => {
+    settings.quickInputColor = "green";
+    manager.open(window); manager.open(window);
+    expect(root().dataset.color).toBe("green"); expect(root(1).dataset.color).toBe("green");
+    expect(root().style.getPropertyValue("--fce-quick-input-tint")).toBe("var(--color-green)");
+    settings.quickInputColor = "accent";
+    manager.open(window);
+    expect(root(2).dataset.color).toBe("accent");
+    expect(root(2).style.getPropertyValue("--fce-quick-input-tint")).toBe("var(--interactive-accent)");
   });
 });

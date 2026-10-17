@@ -31,6 +31,9 @@ export interface PreferencesSettings {
   cardCornerRadius: PluginSettings["cardCornerRadius"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   quickInput: PluginSettings["quickInput"];
+  quickInputWidth: number;
+  quickInputHeight: number;
+  quickInputColor: PluginSettings["quickInputColor"];
   templateStorageFolder: string;
   previewLines: number;
   searchPreviewSnippetCount: number;
@@ -163,6 +166,9 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.cardCornerRadius !== undefined) preferences.cardCornerRadius = patch.cardCornerRadius;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
+  if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
+  if (patch.quickInputHeight !== undefined) preferences.quickInputHeight = patch.quickInputHeight;
+  if (patch.quickInputColor !== undefined) preferences.quickInputColor = patch.quickInputColor;
   if (patch.templateStorageFolder !== undefined) preferences.templateStorageFolder = patch.templateStorageFolder;
   if (patch.cardImageMode !== undefined) preferences.cardImageMode = patch.cardImageMode;
   if (patch.cardImageFit !== undefined) preferences.cardImageFit = patch.cardImageFit;
@@ -227,6 +233,9 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       cardCornerRadius: settings.cardCornerRadius,
       newNoteTemplate: settings.newNoteTemplate,
       quickInput: { ...settings.quickInput },
+      quickInputWidth: settings.quickInputWidth,
+      quickInputHeight: settings.quickInputHeight,
+      quickInputColor: settings.quickInputColor,
       templateStorageFolder: settings.templateStorageFolder,
       previewLines: settings.previewLines,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,

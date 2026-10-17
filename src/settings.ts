@@ -49,6 +49,18 @@ export const DEFAULT_HOVER_PREVIEW_WIDTH = 600;
 export const HOVER_PREVIEW_HEIGHT_MIN = 200;
 export const HOVER_PREVIEW_HEIGHT_MAX = 1200;
 export const DEFAULT_HOVER_PREVIEW_HEIGHT = 400;
+export const QUICK_INPUT_WIDTH_MIN = 320;
+export const QUICK_INPUT_WIDTH_MAX = 1200;
+export const DEFAULT_QUICK_INPUT_WIDTH = 480;
+export const QUICK_INPUT_HEIGHT_MIN = 200;
+export const QUICK_INPUT_HEIGHT_MAX = 800;
+export const DEFAULT_QUICK_INPUT_HEIGHT = 270;
+export const QUICK_INPUT_TINTS = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"] as const;
+export type QuickInputTint = typeof QUICK_INPUT_TINTS[number];
+export type QuickInputColor = "random" | "accent" | QuickInputTint;
+export function isQuickInputColor(value: unknown): value is QuickInputColor {
+  return value === "random" || value === "accent" || (QUICK_INPUT_TINTS as readonly unknown[]).includes(value);
+}
 export const NAV_PANE_WIDTH_MIN = 160;
 export const NAV_PANE_WIDTH_MAX = 480;
 export const DEFAULT_NAV_PANE_WIDTH = 240;
@@ -166,6 +178,9 @@ export interface PluginSettings {
   noteTemplates: NoteTemplateDefinition[];
   templateStorageFolder: string;
   quickInput: QuickInputConfig;
+  quickInputWidth: number;
+  quickInputHeight: number;
+  quickInputColor: QuickInputColor;
   previewLines: number;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
@@ -221,6 +236,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   noteTemplates: [],
   templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
   quickInput: { ...DEFAULT_QUICK_INPUT },
+  quickInputWidth: DEFAULT_QUICK_INPUT_WIDTH,
+  quickInputHeight: DEFAULT_QUICK_INPUT_HEIGHT,
+  quickInputColor: "random",
   previewLines: DEFAULT_PREVIEW_LINES,
   searchPreviewSnippetCount: DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT,
   hoverPreviewWidth: DEFAULT_HOVER_PREVIEW_WIDTH,
@@ -621,6 +639,11 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     noteTemplates: normalizeNoteTemplates(data.noteTemplates),
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
     quickInput: normalizeQuickInput(data.quickInput),
+    quickInputWidth: normalizeHoverPreviewDimension(data.quickInputWidth,
+      DEFAULT_QUICK_INPUT_WIDTH, QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX),
+    quickInputHeight: normalizeHoverPreviewDimension(data.quickInputHeight,
+      DEFAULT_QUICK_INPUT_HEIGHT, QUICK_INPUT_HEIGHT_MIN, QUICK_INPUT_HEIGHT_MAX),
+    quickInputColor: isQuickInputColor(data.quickInputColor) ? data.quickInputColor : DEFAULT_SETTINGS.quickInputColor,
     previewLines: normalizePreviewLines(data.previewLines),
     searchPreviewSnippetCount: normalizeSearchPreviewSnippetCount(data.searchPreviewSnippetCount),
     hoverPreviewWidth: normalizeHoverPreviewDimension(data.hoverPreviewWidth,
