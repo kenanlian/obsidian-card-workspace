@@ -15,7 +15,7 @@ export interface FileKindStrings {
 export const fileKindStrings: Record<UiLanguage, FileKindStrings> = {
   en: {
     diagramEmpty: "This canvas is empty.",
-    diagramMissing: "Please install the Excalidraw plugin and enable SVG auto-export.",
+    diagramMissing: "SVG preview not found. Enable SVG auto-export in Excalidraw, then edit and save the drawing once, or export an SVG manually.",
     diagramInvalid: "Preview unavailable: invalid diagram or SVG.",
     diagramOversized: "Preview unavailable: file exceeds 512 KiB.",
     diagramTruncated: "Preview shortened to fit the diagram budget.",
@@ -26,7 +26,7 @@ export const fileKindStrings: Record<UiLanguage, FileKindStrings> = {
   },
   zh: {
     diagramEmpty: "画布为空。",
-    diagramMissing: "请安装 Excalidraw 插件并开启 SVG 自动导出。",
+    diagramMissing: "未找到 SVG 预览。请开启 Excalidraw 的 SVG 自动导出，并编辑保存一次绘图，或手动导出 SVG。",
     diagramInvalid: "无法预览：图形或 SVG 格式错误。",
     diagramOversized: "无法预览：文件超过 512 KiB。",
     diagramTruncated: "预览已按图形预算截略。",
