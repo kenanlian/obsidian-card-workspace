@@ -156,6 +156,22 @@ export type CardImageFit = "contain" | "cover";
 export function isCardImageMode(value: unknown): value is CardImageMode { return value === "off" || value === "right" || value === "inline"; }
 export function isCardImageFit(value: unknown): value is CardImageFit { return value === "contain" || value === "cover"; }
 
+export const UI_FONT_SIZES = ["small", "default", "large", "x-large"] as const;
+export type UiFontSize = typeof UI_FONT_SIZES[number];
+export function isUiFontSize(value: unknown): value is UiFontSize {
+  return (UI_FONT_SIZES as readonly unknown[]).includes(value);
+}
+export const UI_DENSITIES = ["compact", "default", "comfortable"] as const;
+export type UiDensity = typeof UI_DENSITIES[number];
+export function isUiDensity(value: unknown): value is UiDensity {
+  return (UI_DENSITIES as readonly unknown[]).includes(value);
+}
+export const CARD_STYLES = ["default", "outline", "list", "flat", "accent-bar"] as const;
+export type CardStyle = typeof CARD_STYLES[number];
+export function isCardStyle(value: unknown): value is CardStyle {
+  return (CARD_STYLES as readonly unknown[]).includes(value);
+}
+
 export interface PluginSettings {
   linksSort: { backlinks: LinksSortSpec; outgoing: LinksSortSpec };
   backlinkSnippetCount: BacklinkSnippetCount;
@@ -174,6 +190,9 @@ export interface PluginSettings {
   dragInsertAction: DragInsertAction;
   enableHeadingDragInsert: boolean;
   cardCornerRadius: CardCornerRadius;
+  uiFontSize: UiFontSize;
+  uiDensity: UiDensity;
+  cardStyle: CardStyle;
   newNoteTemplate: NewNoteTemplate;
   noteTemplates: NoteTemplateDefinition[];
   templateStorageFolder: string;
@@ -232,6 +251,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
   enableHeadingDragInsert: false,
   cardCornerRadius: DEFAULT_CARD_CORNER_RADIUS,
+  uiFontSize: "default",
+  uiDensity: "default",
+  cardStyle: "default",
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
   noteTemplates: [],
   templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
@@ -635,6 +657,9 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),
     enableHeadingDragInsert: normalizeBooleanSetting(data.enableHeadingDragInsert, false),
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
+    uiFontSize: isUiFontSize(data.uiFontSize) ? data.uiFontSize : DEFAULT_SETTINGS.uiFontSize,
+    uiDensity: isUiDensity(data.uiDensity) ? data.uiDensity : DEFAULT_SETTINGS.uiDensity,
+    cardStyle: isCardStyle(data.cardStyle) ? data.cardStyle : DEFAULT_SETTINGS.cardStyle,
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     noteTemplates: normalizeNoteTemplates(data.noteTemplates),
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,

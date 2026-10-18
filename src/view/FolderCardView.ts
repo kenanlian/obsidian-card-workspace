@@ -622,6 +622,9 @@ export class FolderCardView extends ItemView implements HoverParent {
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
       cardImageMode: settings.cardImageMode,
       cardImageFit: settings.cardImageFit,
+      uiFontSize: settings.uiFontSize,
+      uiDensity: settings.uiDensity,
+      cardStyle: settings.cardStyle,
     };
   }
 

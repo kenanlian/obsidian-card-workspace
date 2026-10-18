@@ -29,6 +29,9 @@ export interface PreferencesSettings {
   dragInsertAction: PluginSettings["dragInsertAction"];
   enableHeadingDragInsert: boolean;
   cardCornerRadius: PluginSettings["cardCornerRadius"];
+  uiFontSize: PluginSettings["uiFontSize"];
+  uiDensity: PluginSettings["uiDensity"];
+  cardStyle: PluginSettings["cardStyle"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   quickInput: PluginSettings["quickInput"];
   quickInputWidth: number;
@@ -164,6 +167,9 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.dragInsertAction !== undefined) preferences.dragInsertAction = patch.dragInsertAction;
   if (patch.enableHeadingDragInsert !== undefined) preferences.enableHeadingDragInsert = patch.enableHeadingDragInsert;
   if (patch.cardCornerRadius !== undefined) preferences.cardCornerRadius = patch.cardCornerRadius;
+  if (patch.uiFontSize !== undefined) preferences.uiFontSize = patch.uiFontSize;
+  if (patch.uiDensity !== undefined) preferences.uiDensity = patch.uiDensity;
+  if (patch.cardStyle !== undefined) preferences.cardStyle = patch.cardStyle;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
   if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
@@ -231,6 +237,9 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       dragInsertAction: settings.dragInsertAction,
       enableHeadingDragInsert: settings.enableHeadingDragInsert,
       cardCornerRadius: settings.cardCornerRadius,
+      uiFontSize: settings.uiFontSize,
+      uiDensity: settings.uiDensity,
+      cardStyle: settings.cardStyle,
       newNoteTemplate: settings.newNoteTemplate,
       quickInput: { ...settings.quickInput },
       quickInputWidth: settings.quickInputWidth,

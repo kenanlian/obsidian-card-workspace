@@ -156,3 +156,39 @@ export function getCardCornerRadiusOptions(
     { value: "rounded", label: zh ? "圆角" : "Rounded" },
   ];
 }
+
+export function getUiFontSizeOptions(
+  language: string = safeGetLanguage(),
+): LocalizedOption[] {
+  const zh = resolveUiLanguage(language) === "zh";
+  return [
+    { value: "small", label: zh ? "小" : "Small" },
+    { value: "default", label: zh ? "默认" : "Default" },
+    { value: "large", label: zh ? "大" : "Large" },
+    { value: "x-large", label: zh ? "特大" : "Extra large" },
+  ];
+}
+
+export function getUiDensityOptions(
+  language: string = safeGetLanguage(),
+): LocalizedOption[] {
+  const zh = resolveUiLanguage(language) === "zh";
+  return [
+    { value: "compact", label: zh ? "紧凑" : "Compact" },
+    { value: "default", label: zh ? "默认" : "Default" },
+    { value: "comfortable", label: zh ? "宽松" : "Comfortable" },
+  ];
+}
+
+export function getCardStyleOptions(
+  language: string = safeGetLanguage(),
+): LocalizedOption[] {
+  const zh = resolveUiLanguage(language) === "zh";
+  return [
+    { value: "default", label: zh ? "默认卡片" : "Default cards" },
+    { value: "outline", label: zh ? "极简边框" : "Minimal outline" },
+    { value: "list", label: zh ? "列表" : "List" },
+    { value: "flat", label: zh ? "扁平" : "Flat" },
+    { value: "accent-bar", label: zh ? "左侧强调条" : "Accent bar" },
+  ];
+}

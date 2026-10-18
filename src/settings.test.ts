@@ -5,6 +5,9 @@ import {
   migrateSettings,
   DEFAULT_SETTINGS,
   SETTINGS_SCHEMA_VERSION,
+  CARD_STYLES,
+  UI_DENSITIES,
+  UI_FONT_SIZES,
   type PartialPluginSettings,
   type PluginSettings,
 } from "./settings";
@@ -232,6 +235,14 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: undefined } as unknown).cardCornerRadius).toBe("rounded");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: "soft" } as unknown).cardCornerRadius).toBe("rounded");
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardCornerRadius: 2 } as unknown).cardCornerRadius).toBe("rounded");
+  });
+
+  it("defaults the presentation presets and preserves each supported value", () => {
+    const fallback = normalizeSettings({ ...DEFAULT_SETTINGS, uiFontSize: "huge", uiDensity: 2, cardStyle: undefined } as unknown);
+    expect([fallback.uiFontSize, fallback.uiDensity, fallback.cardStyle]).toEqual(["default", "default", "default"]);
+    for (const uiFontSize of UI_FONT_SIZES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, uiFontSize }).uiFontSize).toBe(uiFontSize);
+    for (const uiDensity of UI_DENSITIES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, uiDensity }).uiDensity).toBe(uiDensity);
+    for (const cardStyle of CARD_STYLES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, cardStyle }).cardStyle).toBe(cardStyle);
   });
 
   it("preserves each supported cardCornerRadius value", () => {
@@ -1140,6 +1151,7 @@ describe("card grouping settings normalization", () => {
         ...persisted.preferences,
         linksSort: DEFAULT_SETTINGS.linksSort, backlinkSnippetCount: 3,
         cardImageMode: "right", cardImageFit: "cover",
+        uiFontSize: "default", uiDensity: "default", cardStyle: "default",
         group: DEFAULT_GROUP_SPEC,
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
@@ -1626,6 +1638,9 @@ describe("settings layer manifest (C4)", () => {
     dragInsertAction: "preferences",
     enableHeadingDragInsert: "preferences",
     cardCornerRadius: "preferences",
+    uiFontSize: "preferences",
+    uiDensity: "preferences",
+    cardStyle: "preferences",
     newNoteTemplate: "preferences",
     quickInput: "preferences",
     templateStorageFolder: "preferences",
@@ -1724,6 +1739,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     enableHeadingDragInsert: true,
     dragInsertAction: "wiki",
     cardCornerRadius: "compact",
+    uiFontSize: "large",
+    uiDensity: "compact",
+    cardStyle: "list",
     newNoteTemplate: "blank",
     quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" },
     quickInputWidth: 640,
@@ -1774,6 +1792,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["dragInsertAction", (d) => d.preferences.dragInsertAction, "wiki"],
     ["enableHeadingDragInsert", (d) => d.preferences.enableHeadingDragInsert, true],
     ["cardCornerRadius", (d) => d.preferences.cardCornerRadius, "compact"],
+    ["uiFontSize", (d) => d.preferences.uiFontSize, "large"],
+    ["uiDensity", (d) => d.preferences.uiDensity, "compact"],
+    ["cardStyle", (d) => d.preferences.cardStyle, "list"],
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
     ["templateStorageFolder", (d) => d.preferences.templateStorageFolder, nonDefault.templateStorageFolder],
     ["quickInput", (d) => d.preferences.quickInput, nonDefault.quickInput],

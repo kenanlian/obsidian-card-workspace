@@ -15,6 +15,12 @@ export interface SettingTabStrings {
   newNoteTemplateDesc: string;
   cardCornerRadiusName: string;
   cardCornerRadiusDesc: string;
+  uiFontSizeName: string;
+  uiFontSizeDesc: string;
+  uiDensityName: string;
+  uiDensityDesc: string;
+  cardStyleName: string;
+  cardStyleDesc: string;
   cardImageModeName: string;
   cardImageModeDesc: string;
   cardImageFitName: string;
@@ -56,6 +62,12 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "Choose what the toolbar's create-note action writes into a new note: an empty tags property, or nothing at all.",
     cardCornerRadiusName: "Card corner radius",
     cardCornerRadiusDesc: "Adjust how square or rounded each card border feels in the panel.",
+    uiFontSizeName: "Font size",
+    uiFontSizeDesc: "Scale text in the cards, toolbar, and navigation pane relative to Obsidian's interface font size.",
+    uiDensityName: "Density",
+    uiDensityDesc: "Adjust spacing between and inside cards, and the height of navigation rows and the search box.",
+    cardStyleName: "Card style",
+    cardStyleDesc: "Choose how each card is framed: default cards, a minimal outline, list rows separated by lines, flat color blocks, or a left accent bar.",
     cardImageModeName: "Card images",
     cardImageModeDesc: "Show the first supported local image in the note body. Images load near the viewport and thumbnails are cached locally.",
     cardImageFitName: "Image fit",
@@ -93,6 +105,12 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     newNoteTemplateDesc: "选择工具栏“创建笔记”生成的笔记内容：带一个空的 tags 属性，或完全空白。",
     cardCornerRadiusName: "卡片圆角",
     cardCornerRadiusDesc: "调整面板中每张卡片边框的方正或圆润程度。",
+    uiFontSizeName: "字体大小",
+    uiFontSizeDesc: "以 Obsidian 界面字号为基准，缩放卡片、工具栏和导航栏中的文字。",
+    uiDensityName: "紧凑程度",
+    uiDensityDesc: "调整卡片之间与卡片内部的间距，以及导航行和搜索框的高度。",
+    cardStyleName: "卡片样式",
+    cardStyleDesc: "选择卡片的外框：默认卡片、极简边框、以分隔线区分的列表、扁平色块，或左侧强调条。",
     cardImageModeName: "卡片图片",
     cardImageModeDesc: "显示笔记正文中第一张受支持的本地图片。图片在浏览区域附近按需加载，缩略图在本地缓存。",
     cardImageFitName: "图片显示方式",

@@ -47,6 +47,7 @@ function createPlugin(
     getSettings: vi.fn(() => ({
       hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [],
       cardCornerRadius: "medium",
+      uiFontSize: "default", uiDensity: "default", cardStyle: "default",
       defaultCardOpenBehavior: "split-right",
       locateLinkCardOnOpen: false,
       dragInsertAction: "embed",
@@ -112,6 +113,9 @@ describe("CardWorkspaceSettingTab", () => {
       "New note content",
     ]);
     expect(rowsOf(appearance).map((row) => row.name)).toEqual([
+      "Font size",
+      "Density",
+      "Card style",
       "Card corner radius",
       "Preview lines",
       "Default backlink reference snippets",
@@ -127,7 +131,23 @@ describe("CardWorkspaceSettingTab", () => {
   it("binds each row to a persisted key with the expected option sets", () => {
     const [behavior, appearance] = groupsOf(createTab().getSettingDefinitions());
     const behaviorRows = rowsOf(behavior);
-    const appearanceRows = rowsOf(appearance);
+    const [fontSizeRow, densityRow, cardStyleRow, ...appearanceRows] = rowsOf(appearance);
+
+    expect(controlOf(fontSizeRow)).toEqual({
+      type: "dropdown",
+      key: "uiFontSize",
+      options: { small: "Small", default: "Default", large: "Large", "x-large": "Extra large" },
+    });
+    expect(controlOf(densityRow)).toEqual({
+      type: "dropdown",
+      key: "uiDensity",
+      options: { compact: "Compact", default: "Default", comfortable: "Comfortable" },
+    });
+    expect(controlOf(cardStyleRow)).toEqual({
+      type: "dropdown",
+      key: "cardStyle",
+      options: { default: "Default cards", outline: "Minimal outline", list: "List", flat: "Flat", "accent-bar": "Accent bar" },
+    });
 
     expect(controlOf(behaviorRows[0])).toEqual({
       type: "dropdown",
@@ -198,15 +218,28 @@ describe("CardWorkspaceSettingTab", () => {
 
     expect(rows.every((row) => typeof row.desc === "string" && row.desc.length > 0)).toBe(true);
     expect(rowsOf(behavior)[1]?.desc).toContain("Remember Cursor Position");
-    expect(rowsOf(appearance)[1]?.desc).toBe(
+    expect(rowsOf(appearance)[4]?.desc).toBe(
       "Choose how many normalized summary lines each card preview can show (0-8).",
     );
+  });
+
+  it("hides the corner radius row for the list card style", () => {
+    const plugin = createPlugin({ cardStyle: "list" });
+    const radius = rowsOf(groupsOf(createTab(plugin).getSettingDefinitions())[1])[3];
+    const isVisible = radius?.visible as () => boolean;
+
+    expect(radius?.control?.key).toBe("cardCornerRadius");
+    expect(isVisible()).toBe(false);
+    for (const cardStyle of ["default", "outline", "flat", "accent-bar"]) {
+      plugin.getSettings.mockReturnValue({ cardStyle });
+      expect(isVisible()).toBe(true);
+    }
   });
 
   it("only offers the image fit row while card images are enabled", () => {
     const plugin = createPlugin({ cardImageMode: "off" });
     const tab = createTab(plugin);
-    const fit = rowsOf(groupsOf(tab.getSettingDefinitions())[1])[5];
+    const fit = rowsOf(groupsOf(tab.getSettingDefinitions())[1])[8];
     const isVisible = fit?.visible as () => boolean;
 
     expect(isVisible()).toBe(false);
@@ -230,6 +263,9 @@ describe("CardWorkspaceSettingTab", () => {
       "新建笔记内容",
     ]);
     expect(rowsOf(appearance).map((row) => row.name)).toEqual([
+      "字体大小",
+      "紧凑程度",
+      "卡片样式",
       "卡片圆角",
       "预览行数",
       "反链默认显示的引用片段数",
@@ -240,7 +276,10 @@ describe("CardWorkspaceSettingTab", () => {
       "卡片悬浮预览宽度",
       "卡片悬浮预览高度",
     ]);
-    expect(rowsOf(appearance)[3]?.desc).toBe("搜索时最多显示多少个正文命中片段，每个片段占两行。");
+    expect(rowsOf(appearance)[6]?.desc).toBe("搜索时最多显示多少个正文命中片段，每个片段占两行。");
+    expect(controlOf(rowsOf(appearance)[2])).toMatchObject({
+      options: { default: "默认卡片", outline: "极简边框", list: "列表", flat: "扁平", "accent-bar": "左侧强调条" },
+    });
     expect(controlOf(rowsOf(behavior)[0])).toMatchObject({
       options: { smart: "当前窗格 / 当前标签页" },
     });
@@ -343,7 +382,7 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
     const container = tab.containerEl as unknown as MockEl;
     const rows = settingsIn(container);
-    const fit = rows[10]!, mode = rows[9]!;
+    const fit = rows[13]!, mode = rows[12]!;
     expect(fit.settingEl.style.display).toBe("none");
     mode.dropdowns[0]!.select("inline");
     await Promise.resolve();
@@ -354,13 +393,21 @@ describe("CardWorkspaceSettingTab", () => {
     await tab.setControlValue("cardImageMode", "off");
     expect(fit.settingEl.style.display).toBe("none");
     await tab.setControlValue("cardImageFit", "cover");
-    await rows[6]!.sliders[0]!.slide(8);
-    await rows[6]!.sliders[0]!.slide(999);
+    await rows[9]!.sliders[0]!.slide(8);
+    await rows[9]!.sliders[0]!.slide(999);
     expect(settings.previewLines).toBe(8);
+    const radius = rows[8]!, cardStyle = rows[7]!;
+    expect(radius.settingEl.style.display).toBe("");
+    cardStyle.dropdowns[0]!.select("list");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(radius.settingEl.style.display).toBe("none");
     const reloaded = createTab(plugin);
     reloaded.display();
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[10]?.dropdowns[0]?.value).toBe("cover");
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[6]?.sliders[0]?.value).toBe(8);
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[13]?.dropdowns[0]?.value).toBe("cover");
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[9]?.sliders[0]?.value).toBe(8);
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[7]?.dropdowns[0]?.value).toBe("list");
   });
 
   it.each([false, true])("keeps slider values visible without deprecated tooltips (1.13 API: %s)", async (supportsNativeApi) => {
@@ -387,6 +434,9 @@ describe("CardWorkspaceSettingTab", () => {
     expect(tab.getControlValue("enableHeadingDragInsert")).toBe(false);
     expect(tab.getControlValue("newNoteTemplate")).toBe("blank");
     expect(tab.getControlValue("cardCornerRadius")).toBe("medium");
+    expect(tab.getControlValue("uiFontSize")).toBe("default");
+    expect(tab.getControlValue("uiDensity")).toBe("default");
+    expect(tab.getControlValue("cardStyle")).toBe("default");
     expect(tab.getControlValue("previewLines")).toBe(6);
     expect(tab.getControlValue("backlinkSnippetCount")).toBe("3");
     expect(tab.getControlValue("searchPreviewSnippetCount")).toBe(2);
@@ -435,6 +485,12 @@ describe("CardWorkspaceSettingTab", () => {
     await tab.setControlValue("newNoteTemplate", "blank");
     await tab.setControlValue("newNoteTemplate", "daily-note");
     await tab.setControlValue("cardCornerRadius", "rounded");
+    await tab.setControlValue("uiFontSize", "x-large");
+    await tab.setControlValue("uiFontSize", "huge");
+    await tab.setControlValue("uiDensity", "compact");
+    await tab.setControlValue("uiDensity", "dense");
+    await tab.setControlValue("cardStyle", "accent-bar");
+    await tab.setControlValue("cardStyle", "glass");
     for (const value of [0, 1, 2]) await tab.setControlValue("previewLines", value);
     await tab.setControlValue("previewLines", -1);
     await tab.setControlValue("previewLines", 4);
@@ -454,6 +510,9 @@ describe("CardWorkspaceSettingTab", () => {
       [{ enableHeadingDragInsert: true }],
       [{ newNoteTemplate: "blank" }],
       [{ cardCornerRadius: "rounded" }],
+      [{ uiFontSize: "x-large" }],
+      [{ uiDensity: "compact" }],
+      [{ cardStyle: "accent-bar" }],
       [{ previewLines: 0 }],
       [{ previewLines: 1 }],
       [{ previewLines: 2 }],

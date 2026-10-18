@@ -68,6 +68,9 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   dragInsertAction: "patch",
   enableHeadingDragInsert: "patch",
   cardCornerRadius: "patch",
+  uiFontSize: "patch",
+  uiDensity: "patch",
+  cardStyle: "patch",
   newNoteTemplate: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
@@ -118,6 +121,9 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "dragInsertAction": settings.dragInsertAction = "wiki"; break;
     case "enableHeadingDragInsert": settings.enableHeadingDragInsert = !settings.enableHeadingDragInsert; break;
     case "cardCornerRadius": settings.cardCornerRadius = "compact"; break;
+    case "uiFontSize": settings.uiFontSize = "large"; break;
+    case "uiDensity": settings.uiDensity = "compact"; break;
+    case "cardStyle": settings.cardStyle = "list"; break;
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;

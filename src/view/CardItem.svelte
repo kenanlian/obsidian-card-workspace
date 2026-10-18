@@ -130,6 +130,11 @@
     });
   }
   const displayedSnippets = $derived(searchPreview?.status === "hits" ? searchPreview.snippets : []);
+  // A font size change alters glyph widths without resizing the snippet box, so ResizeObserver misses it.
+  $effect(() => {
+    void appearance.uiFontSize;
+    scheduleSnippetMeasures();
+  });
   function measureSnippet(node: HTMLButtonElement, id: string) {
     const content = node.querySelector<HTMLElement>(".fce-search-snippet-text")!;
     const measure = (): void => {

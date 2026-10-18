@@ -3,6 +3,9 @@ import {
 } from "obsidian";
 import {
   getCardCornerRadiusOptions,
+  getCardStyleOptions,
+  getUiDensityOptions,
+  getUiFontSizeOptions,
   getDefaultCardOpenBehaviorOptions,
   getDragInsertActionOptions,
   getNewNoteTemplateOptions,
@@ -29,6 +32,9 @@ import {
   QUICK_INPUT_TINTS,
   isQuickInputColor,
   isCardCornerRadius,
+  isCardStyle,
+  isUiDensity,
+  isUiFontSize,
   isCardImageMode,
   isCardImageFit,
   isDefaultCardOpenBehavior,
@@ -89,6 +95,12 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "string" && isCardCornerRadius(value)
         ? { cardCornerRadius: value }
         : null;
+    case "uiFontSize":
+      return isUiFontSize(value) ? { uiFontSize: value } : null;
+    case "uiDensity":
+      return isUiDensity(value) ? { uiDensity: value } : null;
+    case "cardStyle":
+      return isCardStyle(value) ? { cardStyle: value } : null;
     case "cardImageMode":
       return isCardImageMode(value) ? { cardImageMode: value } : null;
     case "cardImageFit":
@@ -182,6 +194,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.newNoteTemplate;
       case "cardCornerRadius":
         return settings.cardCornerRadius;
+      case "uiFontSize":
+        return settings.uiFontSize;
+      case "uiDensity":
+        return settings.uiDensity;
+      case "cardStyle":
+        return settings.cardStyle;
       case "cardImageMode":
         return settings.cardImageMode;
       case "cardImageFit":
@@ -205,7 +223,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     await this.saveDeclarativeSetting(key, value);
-    if (key === "cardImageMode" || (key === "quickInputTemplateId" && typeof value === "string")) {
+    if (key === "cardImageMode" || key === "cardStyle" || (key === "quickInputTemplateId" && typeof value === "string")) {
       if (requireApiVersion("1.13.0")) {
         if (typeof this.refreshDomState === "function") {
           this.refreshDomState();
@@ -389,8 +407,24 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         heading: strings.appearanceHeading,
         items: [
           {
+            name: strings.uiFontSizeName,
+            desc: strings.uiFontSizeDesc,
+            control: { type: "dropdown", key: "uiFontSize", options: optionRecord(getUiFontSizeOptions(language)) },
+          },
+          {
+            name: strings.uiDensityName,
+            desc: strings.uiDensityDesc,
+            control: { type: "dropdown", key: "uiDensity", options: optionRecord(getUiDensityOptions(language)) },
+          },
+          {
+            name: strings.cardStyleName,
+            desc: strings.cardStyleDesc,
+            control: { type: "dropdown", key: "cardStyle", options: optionRecord(getCardStyleOptions(language)) },
+          },
+          {
             name: strings.cardCornerRadiusName,
             desc: strings.cardCornerRadiusDesc,
+            visible: () => this.plugin.getSettings().cardStyle !== "list",
             control: {
               type: "dropdown",
               key: "cardCornerRadius",

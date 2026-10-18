@@ -11,7 +11,8 @@ describe("navigation visual contract", () => {
   it("keeps the navigation search row from taking the pane's remaining height", () => {
     expect(styles).toMatch(/\.folder-card-view \.fce-nav-filter-line \{\s*flex: 0 0 auto;\s*\}/);
     expect(styles).not.toMatch(/\.fce-nav-filter \{/);
-    expect(styles).toMatch(/\.folder-card-view \.fce-toolbar-search \{[^}]*height: 30px;/);
+    expect(styles).toMatch(/\.folder-card-view \.fce-toolbar-search \{[^}]*height: var\(--fce-search-height\);/);
+    expect(styles).toContain("--fce-search-height: 30px;");
   });
 
   it("keeps the accepted navigation density with conservatively tightened section rhythm", () => {

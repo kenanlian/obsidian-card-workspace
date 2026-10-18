@@ -1221,6 +1221,43 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it("publishes presentation presets on the shell and keeps the reading row when they change", async () => {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(createInitialPanelState());
+    panelModel.mutate((state) => {
+      state.cards = {
+        ...state.cards,
+        records: Array.from({ length: 20 }, (_, index) => createCard(`notes/${index}.md`, `Note ${index}`)),
+        generation: 1,
+        sequenceRevision: 1,
+      };
+    });
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    await tick();
+    const shell = target.querySelector<HTMLElement>(".fce-shell")!;
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    expect([shell.dataset.fceFontSize, shell.dataset.fceDensity, shell.dataset.fceCardStyle]).toEqual(["default", "default", "default"]);
+    expect(target.querySelector(".fce-wall-row")?.classList.contains("is-first")).toBe(true);
+
+    // Row 3 starts at 3 * 232; the viewport sits 204px into it.
+    list.scrollTop = 900;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+
+    panelModel.mutate((state) => { state.appearance = { ...state.appearance, uiFontSize: "large" }; });
+    await tick();
+    expect(shell.dataset.fceFontSize).toBe("large");
+    expect(list.scrollTop).toBe(3 * 255 + 204);
+
+    panelModel.mutate((state) => { state.appearance = { ...state.appearance, uiDensity: "compact", cardStyle: "list" }; });
+    await tick();
+    expect([shell.dataset.fceDensity, shell.dataset.fceCardStyle]).toEqual(["compact", "list"]);
+    expect(list.scrollTop).toBe(3 * 237 + 204);
+
+    await unmount(component);
+  });
+
   it("supports base canvas and excalidraw cards", async () => {
     const target = document.createElement("div");
     document.body.appendChild(target);

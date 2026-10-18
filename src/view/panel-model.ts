@@ -1,5 +1,5 @@
 import type { CardImageState } from "../images/types";
-import type { CardImageFit, CardImageMode } from "../settings";
+import type { CardImageFit, CardImageMode, CardStyle, UiDensity, UiFontSize } from "../settings";
 import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
 import type { CardCornerRadius, SortDirection, LinksSortField } from "../settings";
 import type { UiStrings } from "../i18n";
@@ -220,6 +220,9 @@ export interface PanelAppearanceState {
   searchPreviewSnippetCount: number;
   cardImageMode?: CardImageMode;
   cardImageFit?: CardImageFit;
+  uiFontSize?: UiFontSize;
+  uiDensity?: UiDensity;
+  cardStyle?: CardStyle;
 }
 
 export interface PanelModelState {

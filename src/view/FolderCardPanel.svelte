@@ -33,6 +33,7 @@
     type PanelRow,
   } from "./row-projection";
   import { pinnedHeaderAnchorOffset, resolveStickyGroupHeader } from "./sticky-group-header";
+  import { estimateRowHeight, resolveAppearanceLayoutIdentity } from "./appearance-layout";
   import { buildRowPositions, createViewportRequest, getSpacerStyle, isBrowseFilterSwitch,
     readFiniteNumber, resolveBrowseFilterMode, resolvePanelScopeIdentity, type BrowseFilterMode } from "./virtual-layout";
   import type {
@@ -202,7 +203,8 @@
       focusId: null, focusRequest: null,
       revealRequest: null,
     },
-    appearance: { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2, cardImageMode: "off", cardImageFit: "contain" },
+    appearance: { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2, cardImageMode: "off", cardImageFit: "contain",
+      uiFontSize: "default", uiDensity: "default", cardStyle: "default" },
     images: { byPath: {}, requestVersion: 0 },
   };
 
@@ -390,7 +392,7 @@
     onToggleNavSection?.(section);
   }
 
-  const ESTIMATED_ROW_HEIGHT = 232;
+  const estimatedRowHeight = $derived(estimateRowHeight(appearance));
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
   const panelInstanceId = $props.id();
@@ -509,7 +511,7 @@
   function rebuildPositionsFrom(fromIndex: number, heightDelta?: number): void {
     const start = Math.max(0, fromIndex);
     const layout = buildRowPositions(
-      projectedRows, rowHeightMap, ESTIMATED_ROW_HEIGHT, rowPositions, start,
+      projectedRows, rowHeightMap, estimatedRowHeight, rowPositions, start,
     );
     totalHeight = layout.totalHeight;
 
@@ -611,6 +613,30 @@
       lastMeasuredColumnCount = columnCount;
       rowHeightMap = new Map();
     }
+  });
+
+  // Presets change row heights and the gap/min-width metrics that are otherwise
+  // only read on viewport resize, while the viewport itself keeps its size.
+  let lastAppearanceLayoutIdentity: string | null = null;
+  $effect(() => {
+    const identity = resolveAppearanceLayoutIdentity(appearance);
+    untrack(() => {
+      const previous = lastAppearanceLayoutIdentity;
+      lastAppearanceLayoutIdentity = identity;
+      if (previous === null || previous === identity || !viewportEl) return;
+      const anchor = projectedRows.length > 0
+        ? captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: isFlatLayout(projectedRows) })
+        : null;
+      const previousColumnCount = columnCount;
+      syncViewportMetrics(viewportEl);
+      // A column change re-projects, re-anchors, and clears measurements itself.
+      if (columnCount !== previousColumnCount) return;
+      rowHeightMap = new Map();
+      rebuildPositionsFrom(0);
+      pendingLayoutAnchor = anchor;
+      forceRowMeasurement = true;
+      scheduleRowMeasurement();
+    });
   });
 
   $effect(() => {
@@ -776,12 +802,12 @@
     for (const [key, item] of pendingRowSizes) {
       const current = projectedRows[item.row.index];
       if (current?.key !== key || !rowNeedsMeasuredHeight(current)) continue;
-      const oldHeight = rowHeightMap.get(key) ?? ESTIMATED_ROW_HEIGHT;
+      const oldHeight = rowHeightMap.get(key) ?? estimatedRowHeight;
       if (oldHeight !== item.height) { rowHeightMap.set(key, item.height); first = Math.min(first, current.index); }
     }
     pendingRowSizes.clear();
     if (first === projectedRows.length) return;
-    const layout = buildRowPositions(projectedRows, rowHeightMap, ESTIMATED_ROW_HEIGHT, rowPositions, first);
+    const layout = buildRowPositions(projectedRows, rowHeightMap, estimatedRowHeight, rowPositions, first);
     rowPositions = layout.positions; totalHeight = layout.totalHeight;
     const resolved = anchor && resolveAnchoredScrollTop({ anchor, rows: projectedRows, rowPositions });
     if (viewportEl) applyScrollTop(clampLayoutScrollTop(resolved ?? scrollTop, totalHeight, viewportHeight));
@@ -812,7 +838,7 @@
   }
 
   function getRowClass(rowIndex: number): string {
-    return `fce-wall-row${isLastRow(rowIndex) ? " is-last" : ""}`;
+    return `fce-wall-row${rowIndex === 0 ? " is-first" : ""}${isLastRow(rowIndex) ? " is-last" : ""}`;
   }
 
   function getTopPaddingStyle(): string {
@@ -867,6 +893,9 @@
 
 <div
   class="fce-shell {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {nav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
+  data-fce-font-size={appearance.uiFontSize ?? "default"}
+  data-fce-density={appearance.uiDensity ?? "default"}
+  data-fce-card-style={appearance.cardStyle ?? "default"}
   use:bindShell
 >
   <NavigationPane
