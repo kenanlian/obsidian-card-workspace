@@ -45,6 +45,7 @@ import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityMod
 import { collectNavigationVisibilityPaths } from "./navigation-visibility-inventory";
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import { normalizeHiddenNavSections } from "./navigation-visibility";
+import { captureQuickInputAccelerator } from "./input/QuickInputShortcut";
 import type CardWorkspacePlugin from "./main";
 
 // These are plugin-owned data shared by both renderers, not newer host APIs.
@@ -277,8 +278,44 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   hide(): void { this.disposeFolderSuggests(); }
   private disposeFolderSuggests(): void {
+    this.shortcutCleanups.splice(0).forEach((cleanup) => cleanup());
     this.folderSuggests.forEach((suggest) => suggest.dispose()); this.folderSuggests.clear();
   }
+
+  private renderQuickInputShortcutSetting(setting: Setting, strings: NoteInputStrings): void {
+    let draft = this.plugin.getSettings().quickInputGlobalShortcut;
+    let input!: HTMLInputElement;
+    const capture = (event: KeyboardEvent) => {
+      const accelerator = captureQuickInputAccelerator(event);
+      if (!accelerator) return;
+      event.preventDefault(); event.stopPropagation(); draft = accelerator; input.value = draft;
+    };
+    setting.addText((text) => {
+      input = text.inputEl;
+      text.setValue(draft).setPlaceholder("Control+Shift+Q").onChange((value) => { draft = value; });
+      input.addEventListener("keydown", capture);
+    });
+    let disableApply!: (disabled: boolean) => void;
+    let disableClear!: (disabled: boolean) => void;
+    setting.addButton((apply) => {
+      disableApply = (disabled) => { apply.setDisabled(disabled); };
+      apply.setButtonText(strings.apply).onClick(() => { void this.plugin.quickInputShortcut.apply(draft); });
+    });
+    setting.addButton((clear) => {
+      disableClear = (disabled) => { clear.setDisabled(disabled); };
+      clear.setButtonText(strings.clearShortcut).onClick(() => { draft = ""; input.value = ""; void this.plugin.quickInputShortcut.apply(""); });
+    });
+    const status = setting.settingEl.createDiv({ cls: "fce-shortcut-status", attr: { role: "status", "aria-live": "polite" } });
+    const unsubscribe = this.plugin.quickInputShortcut.subscribe((state) => {
+      disableApply(state.pending); disableClear(state.pending); input.disabled = state.pending;
+      const errors = { invalid: strings.shortcutInvalid, conflict: strings.shortcutConflict,
+        unavailable: strings.desktopUnavailable, "save-failed": strings.shortcutSaveFailed };
+      status.textContent = [state.active.length ? strings.shortcutActive(state.active.join(", ")) : strings.shortcutInactive,
+        state.error ? errors[state.error] : ""].filter(Boolean).join(" · ");
+    });
+    this.shortcutCleanups.push(() => { unsubscribe(); input.removeEventListener("keydown", capture); });
+  }
+  private readonly shortcutCleanups: Array<() => void> = [];
 
   private renderQuickInputFolderSetting(setting: Setting): void {
     setting.addText((text) => {
@@ -513,6 +550,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
               random: inputStrings.colorRandom, accent: inputStrings.colorAccent,
               ...Object.fromEntries(QUICK_INPUT_TINTS.map((tint) => [tint, inputStrings.colorNames[tint]])),
             } } },
+          { name: inputStrings.globalShortcutName, desc: inputStrings.globalShortcutDesc,
+            render: (setting) => this.renderQuickInputShortcutSetting(setting, inputStrings) },
         ],
       },
       {

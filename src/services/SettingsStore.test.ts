@@ -668,6 +668,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],
     ["hoverPreviewWidth", { hoverPreviewWidth: 800 }],
     ["hoverPreviewHeight", { hoverPreviewHeight: 600 }],
+    ["quickInputGlobalShortcut", { quickInputGlobalShortcut: "Control+Shift+Q" }],
     ["quickInputWidth", { quickInputWidth: 640 }],
     ["quickInputHeight", { quickInputHeight: 360 }],
     ["quickInputColor", { quickInputColor: "purple" }],

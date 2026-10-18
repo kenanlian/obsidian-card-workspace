@@ -2199,14 +2199,63 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 /* Keep a new template's editable title visible even when the host hides inline titles. */
 .inline-title.fce-template-title-entry { display: block !important; }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
-/* Modeless quick input uses the owning document's native theme variables. */
-/* Stays below host popovers so link suggestions, menus and tooltips can cover it. */
-.fce-quick-input-layer {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--layer-popover) - 1);
-  pointer-events: none;
+/* Only documents exclusively hosting a quick-input session receive this class. */
+html.fce-quick-input-window .titlebar,
+html.fce-quick-input-window .workspace-tab-header-container,
+html.fce-quick-input-window .workspace-ribbon,
+html.fce-quick-input-window .workspace-split.mod-left-split,
+html.fce-quick-input-window .workspace-split.mod-right-split,
+html.fce-quick-input-window .view-header { display: none !important; }
+html.fce-quick-input-window body,
+html.fce-quick-input-window .app-container,
+html.fce-quick-input-window .horizontal-main-container,
+html.fce-quick-input-window .workspace,
+html.fce-quick-input-window .workspace-split,
+html.fce-quick-input-window .workspace-tabs,
+html.fce-quick-input-window .workspace-tab-container,
+html.fce-quick-input-window .workspace-leaf,
+html.fce-quick-input-window .workspace-leaf-content,
+html.fce-quick-input-window .view-content {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  gap: 0 !important;
 }
+html.fce-quick-input-window body {
+  --titlebar-height: 0px;
+  --header-height: 0px;
+  --frame-left-space: 0px;
+  --frame-right-space: 0px;
+  --tab-outline-width: 0px;
+}
+html.fce-quick-input-window .view-content { flex: 1; overflow: hidden; }
+/* A transparent native window paints only the card, so CSS owns the whole contour. */
+html.fce-quick-input-window.fce-quick-input-transparent,
+html.fce-quick-input-window.fce-quick-input-transparent :is(body, .app-container, .horizontal-main-container, .workspace, .workspace-split, .workspace-tabs, .workspace-tab-container, .workspace-leaf, .workspace-leaf-content, .view-content) {
+  background: transparent !important;
+}
+/* The host's initial empty tab stays invisible until the quick-input view replaces it. */
+html.fce-quick-input-window.fce-quick-input-transparent .workspace-leaf-content:not([data-type="card-workspace-quick-input"]) { visibility: hidden; }
+html.fce-quick-input-window.fce-quick-input-transparent .fce-quick-input {
+  border-radius: var(--fce-quick-input-radius);
+  box-shadow: inset 0 0 0 1px var(--fce-quick-input-border);
+}
+.fce-quick-input-resize { position: absolute; z-index: 1; -webkit-app-region: no-drag; }
+.fce-quick-input-resize[data-edge="n"], .fce-quick-input-resize[data-edge="s"] { left: 14px; right: 14px; height: 5px; cursor: ns-resize; }
+.fce-quick-input-resize[data-edge="e"], .fce-quick-input-resize[data-edge="w"] { top: 14px; bottom: 14px; width: 5px; cursor: ew-resize; }
+.fce-quick-input-resize[data-edge="n"] { top: 0; }
+.fce-quick-input-resize[data-edge="s"] { bottom: 0; }
+.fce-quick-input-resize[data-edge="e"] { right: 0; }
+.fce-quick-input-resize[data-edge="w"] { left: 0; }
+.fce-quick-input-resize:is([data-edge="ne"], [data-edge="nw"], [data-edge="se"], [data-edge="sw"]) { width: 14px; height: 14px; }
+.fce-quick-input-resize[data-edge="ne"] { top: 0; right: 0; cursor: nesw-resize; }
+.fce-quick-input-resize[data-edge="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+.fce-quick-input-resize[data-edge="se"] { bottom: 0; right: 0; cursor: nwse-resize; }
+.fce-quick-input-resize[data-edge="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
+.fce-shortcut-status { flex-basis: 100%; color: var(--text-muted); font-size: var(--font-ui-small); }
+.setting-item:has(.fce-shortcut-status) { flex-wrap: wrap; }
 .fce-quick-input {
   --fce-quick-input-tint: var(--interactive-accent);
   --fce-quick-input-frame: 5px;
@@ -2215,18 +2264,21 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   --fce-quick-input-send-background: var(--fce-quick-input-border);
   --fce-quick-input-send-color: color-mix(in srgb, var(--fce-quick-input-tint) 8%, var(--text-normal));
   --fce-quick-input-send-border: color-mix(in srgb, var(--fce-quick-input-tint) 55%, var(--background-modifier-border));
-  position: fixed;
+  width: 100%;
+  height: 100%;
   pointer-events: auto;
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   padding: 0 var(--fce-quick-input-frame);
-  border: 1px solid var(--fce-quick-input-border);
-  border-radius: var(--fce-quick-input-radius);
+  /* An opaque window's native region owns the outer contour. Fill its corners
+     instead of drawing a second rounded outline inside the document. */
+  border: 0;
+  border-radius: 0;
   background: color-mix(in srgb, var(--fce-quick-input-tint) 12%, var(--background-secondary));
   color: var(--text-normal);
-  box-shadow: var(--shadow-l);
-  animation: fce-quick-input-in 120ms ease-out;
+  box-shadow: none;
 }
 /* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
 @supports (color: color(from white srgb-linear round(up, r, 1) g b)) {
@@ -2235,27 +2287,22 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
     --fce-quick-input-send-color: color(from var(--fce-quick-input-send-background) srgb-linear var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) / 1);
   }
 }
-@keyframes fce-quick-input-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .fce-quick-input { animation: none; }
-}
 .fce-quick-input-grip {
-  flex: 0 0 18px;
+  flex: 0 0 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-faint);
-  cursor: grab;
+  position: relative;
+  -webkit-app-region: drag;
+  cursor: default;
   user-select: none;
   touch-action: none;
 }
 .fce-quick-input-grip svg { width: 16px; height: 16px; }
 .fce-quick-input-grip:hover { color: var(--text-muted); }
-.fce-quick-input.is-dragging,
-.fce-quick-input.is-dragging .fce-quick-input-grip { cursor: grabbing; }
+.fce-quick-input-grip-icon { position: absolute; left: calc(50% - 8px); display: flex; }
+.fce-quick-input-editor, .fce-quick-input-footer { -webkit-app-region: no-drag; }
 .fce-quick-input-editor {
   flex: 1;
   min-height: 0;
@@ -2280,7 +2327,16 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   flex: none;
   border-radius: var(--fce-quick-input-radius);
 }
-/* Match the window's outer border so the primary action stands out from the frame. */
+.fce-quick-input-footer .fce-quick-input-pin {
+  --icon-size: 16px;
+  padding: 4px;
+  height: auto;
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: none;
+}
+.fce-quick-input-pin[aria-pressed="true"] { color: var(--interactive-accent); }
+/* Tint the primary action more strongly than the surrounding frame. */
 .fce-quick-input-footer button.mod-cta {
   display: inline-flex;
   align-items: center;
@@ -2315,16 +2371,3 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 .fce-quick-input-destination-icon { display: inline-flex; flex: none; }
 .fce-quick-input-destination-icon svg { width: 14px; height: 14px; }
 .fce-quick-input-destination-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fce-quick-input-resize { position: absolute; touch-action: none; }
-.fce-quick-input-resize-n, .fce-quick-input-resize-s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
-.fce-quick-input-resize-n { top: -3px; }
-.fce-quick-input-resize-s { bottom: -3px; }
-/* Side handles sit on the frame so they never overlap editor text or its scrollbar. */
-.fce-quick-input-resize-e, .fce-quick-input-resize-w { top: 12px; bottom: 12px; width: calc(var(--fce-quick-input-frame) + 3px); cursor: ew-resize; }
-.fce-quick-input-resize-e { right: -3px; }
-.fce-quick-input-resize-w { left: -3px; }
-.fce-quick-input-resize-ne, .fce-quick-input-resize-se, .fce-quick-input-resize-sw, .fce-quick-input-resize-nw { width: 12px; height: 12px; }
-.fce-quick-input-resize-ne { top: -3px; right: -3px; cursor: nesw-resize; }
-.fce-quick-input-resize-se { bottom: -3px; right: -3px; cursor: nwse-resize; }
-.fce-quick-input-resize-sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
-.fce-quick-input-resize-nw { top: -3px; left: -3px; cursor: nwse-resize; }

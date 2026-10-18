@@ -1,10 +1,15 @@
-import { Platform, TFile, TFolder, setIcon, type App } from "obsidian";
+import { Platform, TFile, TFolder, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
 import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
 import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
+import type { QuickInputView } from "./QuickInputView";
+import { QUICK_INPUT_VIEW, QuickInputDesktopError, type QuickInputDesktop, type QuickInputWindowHandle } from "./quick-input-desktop";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
+import { installQuickInputResize } from "./quick-input-resize";
 
-interface Geometry { x: number; y: number; width: number; height: number }
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 200;
+interface Session { displayId?: number; id: string; leaf: WorkspaceLeaf | null; win: Window | null; handle: QuickInputWindowHandle | null; draft: Draft | null; closed: boolean; usesOpacity: boolean; transparent: boolean }
 interface QuickInputTarget {
   template: NoteTemplateDefinition | null;
   folderPath: string | null;
@@ -12,7 +17,6 @@ interface QuickInputTarget {
   valid: boolean;
 }
 interface Draft {
-  win: Window;
   root: HTMLDivElement;
   editor: NativeMarkdownEditor;
   destination: HTMLDivElement;
@@ -21,34 +25,25 @@ interface Draft {
   send: HTMLButtonElement;
   sendLabel: HTMLSpanElement;
   cancel: HTMLButtonElement;
-  geometry: Geometry;
+  session: Session;
   composing: boolean;
   pending: boolean;
   request: QuickInputRequest | null;
   cleanup: Array<() => void>;
-  gestureCleanup?: () => void;
 }
 interface Options {
   app: App;
+  desktop: QuickInputDesktop;
   getSettings: () => PluginSettings;
   getStrings: () => NoteInputStrings;
   submit: (request: QuickInputRequest) => Promise<NoteInputResult>;
   notify: (message: string) => void;
 }
 
-function boundGeometry(win: Window, geometry: Geometry): Geometry {
-  const availableWidth = Math.max(1, win.innerWidth);
-  const availableHeight = Math.max(1, win.innerHeight);
-  const width = Math.min(availableWidth, Math.max(Math.min(320, availableWidth), geometry.width));
-  const height = Math.min(availableHeight, Math.max(Math.min(200, availableHeight), geometry.height));
-  return { width, height, x: Math.max(0, Math.min(availableWidth - width, geometry.x)), y: Math.max(0, Math.min(availableHeight - height, geometry.y)) };
-}
-
 /** Owns this vault's runtime drafts; windows only host their DOM and geometry. */
 export class QuickInputWindowManager {
   private readonly drafts = new Set<Draft>();
-  private readonly layers = new WeakMap<Window, HTMLDivElement>();
-  private readonly geometry = new WeakMap<Window, Geometry>();
+  private readonly sessions = new Map<string, Session>();
   private lastTint: QuickInputTint | null = null;
   private disposed = false;
   private sequence = 0;
@@ -56,25 +51,87 @@ export class QuickInputWindowManager {
 
   constructor(private readonly options: Options) {}
 
-  open(win: Window): void {
-    if (this.disposed || win.closed) return;
-    let previous: Draft | undefined;
-    for (const draft of this.drafts) if (draft.win === win) previous = draft;
-    const settings = this.options.getSettings();
-    const width = settings.quickInputWidth;
-    const height = settings.quickInputHeight;
-    const anchor = previous?.geometry ?? this.geometry.get(win);
-    let geometry = boundGeometry(win, anchor ? { x: anchor.x, y: anchor.y, width, height }
-      : { x: (win.innerWidth - width) / 2, y: (win.innerHeight - height) / 2, width, height });
-    if (previous) {
-      geometry = { ...geometry,
-        x: geometry.x + 24 + geometry.width <= win.innerWidth ? geometry.x + 24 : 0,
-        y: geometry.y + 24 + geometry.height <= win.innerHeight ? geometry.y + 24 : 0,
-      };
+  open(source?: Window): void {
+    if (this.disposed || source?.closed) return;
+    let session: Session | undefined;
+    try {
+      this.options.desktop.check();
+      this.raiseExistingWindows();
+      const settings = this.options.getSettings();
+      const initial = this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, 0);
+      const ordinal = [...this.sessions.values()].filter((current) => current.displayId === initial.displayId).length;
+      const geometry = ordinal ? this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, ordinal) : initial;
+      const id = `${this.submissionPrefix}-window-${++this.sequence}`;
+      session = { id, displayId: geometry.displayId, leaf: null, win: null, handle: null, draft: null, closed: false, usesOpacity: false, transparent: false };
+      this.sessions.set(id, session);
+      const opened = this.options.desktop.openPopout(() => this.options.app.workspace.openPopoutLeaf({ x: geometry.x, y: geometry.y, size: { width: geometry.width, height: geometry.height } }));
+      const leaf = session.leaf = opened.value;
+      session.transparent = opened.transparent;
+      const win = session.win = leaf.getContainer().win;
+      const handle = session.handle = this.options.desktop.handle(win);
+      // Keep drawing while the entry window covers this draft, so raising it later
+      // does not wait for a frame from the renderer that is building the next draft.
+      handle.webContents?.setBackgroundThrottling?.(false);
+      // The host already showed this popout. A transparent window keeps its initial
+      // content invisible through CSS; otherwise conceal it without hiding the native
+      // window and reactivating the entry window underneath.
+      if (!session.transparent) {
+        session.usesOpacity = (Platform.isWin || Platform.isMacOS) && typeof handle.setOpacity === "function";
+        if (session.usesOpacity) handle.setOpacity!(0);
+        else handle.hide();
+      }
+      this.raiseExistingWindows();
+      // Obsidian replaces popout body.className when synchronizing host focus/theme.
+      win.document.documentElement.classList.add("fce-quick-input-window");
+      win.document.documentElement.classList.toggle("fce-quick-input-transparent", session.transparent);
+      handle.setParentWindow(null);
+      handle.setAlwaysOnTop(false);
+      handle.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+      handle.setContentSize(geometry.width, geometry.height);
+      const bounds = handle.getBounds();
+      const fitted = this.options.desktop.position(source, bounds.width, bounds.height, ordinal);
+      if (bounds.width > fitted.width || bounds.height > fitted.height) {
+        handle.setContentSize(Math.max(1, geometry.width - (bounds.width - fitted.width)), Math.max(1, geometry.height - (bounds.height - fitted.height)));
+      }
+      handle.setPosition(fitted.x, fitted.y);
+      if (Platform.isMacOS) {
+        if (!handle.setWindowButtonVisibility) throw new QuickInputDesktopError("unavailable");
+        handle.setWindowButtonVisibility(false);
+      }
+      const current = session;
+      void leaf.setViewState({ type: QUICK_INPUT_VIEW, state: { sessionId: id }, active: true }).then(() => {
+        if (current.closed || this.disposed || handle.isDestroyed()) return;
+        if (!current.draft) throw new QuickInputDesktopError("unavailable");
+        if (current.usesOpacity) { handle.moveTop(); handle.setOpacity!(1); }
+        else if (current.transparent) handle.moveTop();
+        else handle.show();
+        handle.focus(); current.draft.editor.focus();
+      }).catch((error: unknown) => this.fail(current, error));
+    } catch (error) { this.fail(session, error); }
+  }
+
+  /** Clicking an entry point raises the host first. Bring older drafts back above it
+   * without focusing them or changing their independent always-on-top settings. */
+  private raiseExistingWindows(): void {
+    for (const session of this.sessions.values()) {
+      if (session.closed || !session.draft || !session.handle
+        || !session.win?.document.documentElement.classList.contains("fce-quick-input-window")) continue;
+      try { if (!session.handle.isDestroyed()) session.handle.moveTop(); }
+      catch (error) { console.warn("[card-workspace] Quick input window raise failed", error); }
     }
-    const document = win.document;
+  }
+
+  attach(sessionId: string, view: QuickInputView): void {
+    const session = this.sessions.get(sessionId);
+    if (session?.draft && session.leaf === view.leaf) return;
+    if (!session || session.closed || session.leaf !== view.leaf || !session.win || session.draft) {
+      this.options.app.workspace.onLayoutReady(() => { if (!this.disposed) view.leaf.detach(); });
+      return;
+    }
+    const win = session.win;
+    const settings = this.options.getSettings();
     const strings = this.options.getStrings();
-    const root = document.defaultView!.createFragment().createDiv({ cls: "fce-quick-input" });
+    const root = view.contentEl.createDiv({ cls: "fce-quick-input" });
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", strings.quickInput);
     root.setAttribute("aria-modal", "false");
@@ -82,41 +139,44 @@ export class QuickInputWindowManager {
     root.dataset.color = tint.name;
     root.style.setProperty("--fce-quick-input-tint", tint.value);
     const top = root.createDiv({ cls: "fce-quick-input-grip" });
-    top.setAttribute("aria-hidden", "true");
-    setIcon(top, "ellipsis");
+    const grip = top.createSpan({ cls: "fce-quick-input-grip-icon", attr: { "aria-hidden": "true" } });
+    setIcon(grip, "ellipsis");
     const body = root.createDiv({ cls: "fce-quick-input-editor" });
     const footer = root.createDiv({ cls: "fce-quick-input-footer" });
+    const pin = footer.createEl("button", { cls: "clickable-icon fce-quick-input-pin", attr: { type: "button", "aria-label": strings.pinWindow, "aria-pressed": "false", title: strings.pinWindow } });
+    setIcon(pin, "pin");
     const destination = footer.createDiv({ cls: "fce-quick-input-destination" });
     const destinationIcon = destination.createSpan({ cls: "fce-quick-input-destination-icon" });
     destinationIcon.setAttribute("aria-hidden", "true");
     const destinationText = destination.createSpan({ cls: "fce-quick-input-destination-text" });
-    const cancel = footer.createEl("button", { text: strings.cancel, attr: { type: "button" } });
+    const cancel = footer.createEl("button", { cls: "fce-quick-input-cancel", text: strings.cancel, attr: { type: "button" } });
     const send = footer.createEl("button", { cls: "mod-cta", attr: { type: "button" } });
     send.setAttribute("aria-label", strings.send);
     const sendIcon = send.createSpan({ cls: "fce-quick-input-send-icon" });
     sendIcon.setAttribute("aria-hidden", "true");
     setIcon(sendIcon, "send");
     const sendLabel = send.createSpan({ cls: "fce-quick-input-send-label", text: strings.send });
-    let layer = this.layers.get(win);
-    if (!layer) {
-      layer = document.body.createDiv({ cls: "fce-quick-input-layer" });
-      this.layers.set(win, layer);
-    }
-    layer.append(root);
     let draft: Draft | undefined;
     try {
       const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder,
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
-      draft = { win, root, editor, destination, destinationIcon, destinationText, send, sendLabel, cancel,
+      draft = { root, editor, destination, destinationIcon, destinationText, send, sendLabel, cancel,
         composing: false, pending: false, request: null, cleanup: [],
-        geometry,
+        session,
       };
       const current = draft;
       this.drafts.add(current);
-      this.bringToFront(current);
-      this.paint(current);
+      session.draft = current;
+      let pinned = false;
+      this.listen(current, pin, "click", () => {
+        if (session.closed || session.handle?.isDestroyed()) return;
+        try {
+          session.handle?.setAlwaysOnTop(!pinned); pinned = !pinned;
+          pin.setAttribute("aria-pressed", String(pinned));
+        } catch (error) { console.warn("[card-workspace] Quick input pin failed", error); this.options.notify(this.options.getStrings().desktopUnavailable); }
+      });
       this.listen(current, cancel, "click", () => { if (!current.pending) this.close(current); });
       this.listen(current, send, "click", () => { void this.send(current); });
       this.listen(current, root, "compositionstart", () => { current.composing = true; this.refresh(current); });
@@ -125,37 +185,44 @@ export class QuickInputWindowManager {
         const key = event as KeyboardEvent;
         if ((key.ctrlKey || key.metaKey) && !key.altKey && key.key === "Enter") this.handleModEnter(current, key);
       }, true);
-      this.listen(current, root, "pointerdown", () => this.bringToFront(current), true);
-      this.listen(current, root, "focusin", () => { this.bringToFront(current); this.refresh(current); });
-      this.listen(current, win, "focus", () => this.refresh(current));
-      this.listen(current, win, "resize", () => { current.geometry = boundGeometry(win, current.geometry); this.paint(current); });
-      this.listen(current, win, "unload", () => this.close(current));
-      this.listen(current, top, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, "move"));
-      for (const direction of ["n", "ne", "e", "se", "s", "sw", "w", "nw"]) {
-        const handle = root.createDiv({ cls: `fce-quick-input-resize fce-quick-input-resize-${direction}` });
-        handle.dataset.direction = direction;
-        handle.setAttribute("aria-hidden", "true");
-        this.listen(current, handle, "pointerdown", (event) => this.startGesture(current, event as PointerEvent, direction));
+      this.listen(current, root, "focusin", () => this.refresh(current));
+      const updateCorners = () => {
+        try { this.updateCorners(current); }
+        catch (error) { console.warn("[card-workspace] Quick input window shape update failed", error); }
+      };
+      this.listen(current, win, "focus", () => { this.refresh(current); updateCorners(); });
+      this.listen(current, win, "resize", updateCorners);
+      this.listen(current, win, "unload", () => this.closeSession(session, false));
+      if (session.transparent && session.handle) {
+        current.cleanup.push(installQuickInputResize({ root, handle: session.handle, cursor: () => this.options.desktop.cursor(),
+          minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT }));
       }
+      this.updateCorners(current);
       this.refresh(current);
-      editor.focus();
     } catch (error) {
-      if (draft) this.close(draft);
-      else { root.remove(); this.removeEmptyLayer(win); }
+      root.remove();
+      this.closeSession(session);
       console.warn("[card-workspace] Native quick input unavailable", error);
-      this.options.notify(strings.nativeEditorUnavailable);
+      this.options.notify(error instanceof QuickInputDesktopError ? strings.desktopUnavailable : strings.nativeEditorUnavailable);
     }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const draft of this.drafts) this.close(draft);
+    for (const session of this.sessions.values()) this.closeSession(session);
   }
 
   private listen(draft: Draft, target: EventTarget, type: string, handler: EventListener, capture = false): void {
     target.addEventListener(type, handler, capture);
     draft.cleanup.push(() => target.removeEventListener(type, handler, capture));
+  }
+
+  private updateCorners(draft: Draft): void {
+    const { win, closed, transparent } = draft.session;
+    if (transparent || closed || this.disposed || !win?.document.documentElement.classList.contains("fce-quick-input-window")) return;
+    const radius = parseFloat(win.getComputedStyle(draft.send).borderTopLeftRadius);
+    this.options.desktop.setCornerRadius(win, Number.isFinite(radius) ? radius : 24);
   }
 
   /** A captured request keeps describing its own destination across later settings edits. */
@@ -191,6 +258,7 @@ export class QuickInputWindowManager {
   }
 
   private refresh(draft: Draft): void {
+    if (this.disposed || !this.drafts.has(draft)) return;
     const strings = this.options.getStrings();
     const target = this.resolveTarget(draft.request);
     draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !target.valid;
@@ -227,7 +295,7 @@ export class QuickInputWindowManager {
     if (!event.isComposing && !draft.composing) void this.send(draft);
   }
 
-  private async send(draft: Draft): Promise<void> {
+  private send(draft: Draft): void {
     if (!this.drafts.has(draft) || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
     const strings = this.options.getStrings();
     if (!this.resolveTarget(draft.request).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
@@ -241,87 +309,96 @@ export class QuickInputWindowManager {
     draft.pending = true;
     draft.editor.setReadOnly(true);
     this.refresh(draft);
+    void this.submitSession(draft.session, draft.request);
+  }
+
+  /** Pending writes retain only a session token and request, never the closed UI. */
+  private async submitSession(session: Session, request: QuickInputRequest): Promise<void> {
     try {
-      const result = await this.options.submit(draft.request);
-      if (this.disposed || !this.drafts.has(draft)) return;
-      this.close(draft);
+      const result = await this.options.submit(request);
+      if (this.disposed || session.closed || !session.draft) return;
+      this.close(session.draft);
       this.options.notify(this.options.getStrings().sent(result.file.path));
     } catch (error) {
-      if (this.disposed || !this.drafts.has(draft)) return;
+      if (this.disposed || session.closed || !session.draft) return;
       this.options.notify(this.options.getStrings().sendFailed(error instanceof Error ? error.message : String(error)));
     } finally {
-      if (this.drafts.has(draft)) { draft.pending = false; this.refresh(draft); }
+      const draft = session.draft;
+      if (draft && !session.closed) { draft.pending = false; this.refresh(draft); }
     }
   }
 
-  private close(draft: Draft): void {
-    if (!this.drafts.delete(draft)) return;
-    this.geometry.set(draft.win, draft.geometry);
-    for (const cleanup of draft.cleanup) cleanup();
-    try { draft.editor.dispose(); } finally { draft.root.remove(); this.removeEmptyLayer(draft.win); }
+  ownsLeaf(leaf: WorkspaceLeaf): boolean {
+    return [...this.sessions.values()].some((session) => session.leaf === leaf);
   }
 
-  private removeEmptyLayer(win: Window): void {
-    const layer = this.layers.get(win);
-    if (layer && layer.childElementCount === 0) { layer.remove(); this.layers.delete(win); }
+  handleWindowClosed(win: Window): void {
+    for (const session of this.sessions.values()) if (session.win === win) this.closeSession(session, false);
   }
 
-  private bringToFront(draft: Draft): void {
-    if (this.disposed || !this.drafts.delete(draft)) return;
-    this.drafts.add(draft);
-    // Keep editor DOM mounted so raising a draft preserves selection and IME state.
-    let layer = 0;
-    for (const current of this.drafts) {
-      if (current.win === draft.win) current.root.style.zIndex = String(layer++);
-    }
-  }
-
-  private paint(draft: Draft): void {
-    const { x, y, width, height } = draft.geometry;
-    Object.assign(draft.root.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
-    this.geometry.set(draft.win, draft.geometry);
-  }
-
-  private startGesture(draft: Draft, event: PointerEvent, direction: string): void {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    draft.gestureCleanup?.();
-    const initial = { ...draft.geometry };
-    if (direction === "move") draft.root.classList.add("is-dragging");
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const move = (next: Event) => {
-      const pointer = next as PointerEvent;
-      if (pointer.pointerId !== event.pointerId) return;
-      const dx = pointer.clientX - startX;
-      const dy = pointer.clientY - startY;
-      let geometry = { ...initial };
-      if (direction === "move") { geometry.x += dx; geometry.y += dy; }
-      else {
-        const minWidth = Math.min(320, draft.win.innerWidth);
-        const minHeight = Math.min(200, draft.win.innerHeight);
-        if (direction.includes("e")) geometry.width = Math.max(minWidth, Math.min(initial.width + dx, draft.win.innerWidth - initial.x));
-        if (direction.includes("s")) geometry.height = Math.max(minHeight, Math.min(initial.height + dy, draft.win.innerHeight - initial.y));
-        if (direction.includes("w")) { geometry.x = Math.max(0, Math.min(initial.x + dx, initial.x + initial.width - minWidth)); geometry.width = initial.x + initial.width - geometry.x; }
-        if (direction.includes("n")) { geometry.y = Math.max(0, Math.min(initial.y + dy, initial.y + initial.height - minHeight)); geometry.height = initial.y + initial.height - geometry.y; }
+  /** If another leaf joins, restore host chrome and never close its window. */
+  reconcileWindows(): void {
+    for (const session of this.sessions.values()) {
+      if (!session.leaf || !session.win || !session.handle || session.handle.isDestroyed()) continue;
+      if (session.leaf.getContainer().win !== session.win) { this.closeSession(session); continue; }
+      let exclusive = true;
+      this.options.app.workspace.iterateAllLeaves((leaf) => {
+        if (leaf !== session.leaf && leaf.getContainer().win === session.win) exclusive = false;
+      });
+      const classes = session.win.document.documentElement.classList;
+      if (classes.contains("fce-quick-input-window") !== exclusive) session.handle.webContents?.setBackgroundThrottling?.(!exclusive);
+      classes.toggle("fce-quick-input-window", exclusive);
+      if (exclusive && session.draft) this.updateCorners(session.draft);
+      else if (!exclusive) {
+        this.options.desktop.setCornerRadius(session.win, null);
+        if (session.usesOpacity) session.handle.setOpacity!(1);
       }
-      draft.geometry = boundGeometry(draft.win, geometry);
-      this.paint(draft);
-    };
-    const end = (next?: Event) => {
-      if (next && (next as PointerEvent).pointerId !== event.pointerId) return;
-      draft.win.removeEventListener("pointermove", move);
-      draft.win.removeEventListener("pointerup", end);
-      draft.win.removeEventListener("pointercancel", end);
-      draft.root.classList.remove("is-dragging");
-      const index = draft.cleanup.indexOf(end);
-      if (index >= 0) draft.cleanup.splice(index, 1);
-      if (draft.gestureCleanup === end) draft.gestureCleanup = undefined;
-    };
-    draft.win.addEventListener("pointermove", move);
-    draft.win.addEventListener("pointerup", end);
-    draft.win.addEventListener("pointercancel", end);
-    draft.cleanup.push(end);
-    draft.gestureCleanup = end;
+      if (Platform.isMacOS) session.handle.setWindowButtonVisibility?.(!exclusive);
+    }
+  }
+
+  closeView(view: QuickInputView): void {
+    for (const session of this.sessions.values()) {
+      if (session.leaf === view.leaf) this.closeSession(session, false);
+    }
+  }
+
+  private fail(session: Session | undefined, error: unknown): void {
+    if (session?.closed) return;
+    if (session) this.closeSession(session);
+    if (this.disposed) return;
+    console.warn("[card-workspace] Quick input window unavailable", error);
+    const strings = this.options.getStrings();
+    this.options.notify(error instanceof QuickInputDesktopError
+      ? error.code === "native-frame" ? strings.nativeFrameUnsupported : strings.desktopUnavailable
+      : strings.openQuickInputFailed);
+  }
+
+  private close(draft: Draft): void { this.closeSession(draft.session); }
+
+  private closeSession(session: Session, detach = true): void {
+    if (session.closed) return;
+    session.closed = true;
+    this.sessions.delete(session.id);
+    const draft = session.draft;
+    if (draft) {
+      this.drafts.delete(draft);
+      for (const cleanup of draft.cleanup) cleanup();
+      try { draft.editor.dispose(); } catch (error) { console.warn("[card-workspace] Quick input editor cleanup failed", error); }
+      draft.root.remove();
+    }
+    try {
+      session.win?.document.documentElement.classList.remove("fce-quick-input-window", "fce-quick-input-transparent");
+      if (session.handle && !session.handle.isDestroyed()) {
+        if (session.win) this.options.desktop.setCornerRadius(session.win, null);
+        session.handle.webContents?.setBackgroundThrottling?.(true);
+        session.handle.setAlwaysOnTop(false);
+        if (Platform.isMacOS) session.handle.setWindowButtonVisibility?.(true);
+      }
+    } catch (error) { console.warn("[card-workspace] Quick input window cleanup failed", error); }
+    // Detaching only our leaf lets Obsidian close an empty popout. Other leaves survive.
+    try { if (detach) session.leaf?.detach(); }
+    catch (error) { console.warn("[card-workspace] Quick input leaf cleanup failed", error); }
+    finally { session.draft = null; session.handle = null; session.win = null; session.leaf = null; }
   }
 }

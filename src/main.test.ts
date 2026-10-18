@@ -379,7 +379,14 @@ vi.mock("./view/FolderCardView", () => {
   };
 });
 
+vi.mock("./input/QuickInputView", () => ({ QUICK_INPUT_VIEW: "card-workspace-quick-input", QuickInputView: class {} }));
+
 vi.mock("obsidian", () => {
+  class MockComponent {
+    load = vi.fn();
+    unload = vi.fn();
+    registerDomEvent = vi.fn();
+  }
   class MockPlugin {
     app: unknown = null;
     registerView = vi.fn();
@@ -496,6 +503,7 @@ vi.mock("obsidian", () => {
 
   return {
     Plugin: MockPlugin,
+    Component: MockComponent,
     Notice: MockNotice,
     Menu: MockMenu,
     addIcon,
@@ -1675,12 +1683,15 @@ describe("CardWorkspacePlugin editor drop registration", () => {
 
     const testDocument = {};
     getWorkspaceCallback<[unknown, { document: typeof testDocument }]>("window-open")({}, { document: testDocument });
-    const domEvents = (plugin as unknown as { registerDomEvent: ReturnType<typeof vi.fn> }).registerDomEvent;
-    const registration = domEvents.mock.calls.find((call) => call[0] === testDocument);
+    const events = (plugin as unknown as { popoutEvents: Map<unknown, { registerDomEvent: ReturnType<typeof vi.fn>; unload: ReturnType<typeof vi.fn> }> }).popoutEvents;
+    const owned = [...events.values()][0]!;
+    const registration = owned.registerDomEvent.mock.calls.find((call) => call[0] === testDocument);
     expect(registration?.[1]).toBe("dragstart");
     const dragEvent = {};
     registration?.[2](dragEvent);
     expect(controller.handleDragStart).toHaveBeenCalledWith(dragEvent);
+    getWorkspaceCallback<[unknown, unknown]>("window-close")({}, [...events.keys()][0]);
+    expect(owned.unload).toHaveBeenCalledOnce(); expect(events.size).toBe(0);
 
     const event = { eventType: "modify", path: "Source.md", oldPath: null, isFolder: false, fileKind: "markdown" } as const;
     await (plugin as unknown as { vaultEventBus: { publish: (event: unknown) => Promise<void> } }).vaultEventBus.publish(event);
@@ -2551,7 +2562,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     };
     expect(coreListeners).toHaveBeenCalledTimes(1);
     expect(coreListeners.mock.invocationCallOrder[0]).toBeLessThan(host.registerView.mock.invocationCallOrder[0]!);
-    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.registerView).toHaveBeenCalledTimes(2);
     expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
     expect(host.addSettingTab).toHaveBeenCalledTimes(1);
     expect(host.addCommand).toHaveBeenCalled();
@@ -2656,7 +2667,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       registerView: ReturnType<typeof vi.fn>; addRibbonIcon: ReturnType<typeof vi.fn>;
       addCommand: ReturnType<typeof vi.fn>; registerEditorExtension: ReturnType<typeof vi.fn>;
     };
-    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.registerView).toHaveBeenCalledTimes(2);
     expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
     expect(host.addCommand).toHaveBeenCalled();
     expect(host.registerEditorExtension).toHaveBeenCalledTimes(1);
@@ -2736,7 +2747,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
       mockPlugin.registerEvent.mock.invocationCallOrder[0],
     );
-    expect(mockPlugin.registerDomEvent.mock.calls.every((call) => call[1] === "dragstart")).toBe(true);
+    expect(mockPlugin.registerDomEvent.mock.calls.every((call) => ["dragstart", "unload"].includes(call[1] as string))).toBe(true);
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
@@ -3738,5 +3749,42 @@ describe("template editor opening", () => {
     await vi.waitFor(() => expect(leaf.setViewState).toHaveBeenCalled());
     app.workspace.getActiveViewOfType.mockReturnValue(null); barrier.resolve(); await pending;
     expect(focusTemplateEditor).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("quick input startup and lifetime", () => {
+  beforeEach(() => { obsidianMockState.autoRunLayoutReady = true; obsidianMockState.leavesByType = {}; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); obsidianMockState.leavesByType = {}; });
+  it("registers a saved global shortcut after layout readiness and before search, without initializing quick input", async () => {
+    const { plugin } = createPluginHarness();
+    obsidianMockState.autoRunLayoutReady = false;
+    const shared = new Map<string, () => void>();
+    const register = vi.fn((key: string, callback: () => void) => { shared.set(key, callback); return true; });
+    const unregister = vi.fn((key: string) => { shared.delete(key); });
+    vi.stubGlobal("electron", { remote: { globalShortcut: { register, unregister, isRegistered: (key: string) => shared.has(key) } } });
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({ schemaVersion: 2, preferences: { quickInputGlobalShortcut: "Control+Shift+Q" } });
+    const initialization = vi.spyOn(plugin.quickInputShortcut, "start");
+    const searchInitialization = vi.spyOn((plugin as unknown as { searchCoordinator: { initialize(): Promise<void> } }).searchCoordinator, "initialize");
+    plugin.onload(); await Promise.resolve(); await Promise.resolve();
+    expect(register).not.toHaveBeenCalled();
+    obsidianMockState.layoutReadyCallback!(); await waitForPluginLoad(plugin);
+    expect(register).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q", expect.any(Function));
+    const internals = plugin as unknown as { quickInputManager: unknown; quickInputInitialization: unknown };
+    expect(internals.quickInputManager).toBeNull(); expect(internals.quickInputInitialization).toBeNull();
+    expect(initialization).toHaveBeenCalledOnce();
+    expect(register.mock.invocationCallOrder[0]).toBeLessThan(searchInitialization.mock.invocationCallOrder[0]!);
+    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue();
+    shared.get("Control+Shift+Q")!(); expect(open).toHaveBeenCalledExactlyOnceWith();
+    plugin.onunload(); expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q");
+  });
+
+  it("detaches invalid restored quick-input leaves while preserving ordinary leaves", async () => {
+    const { plugin } = createPluginHarness();
+    const stale = { detach: vi.fn() }, ordinary = { detach: vi.fn() };
+    obsidianMockState.leavesByType["card-workspace-quick-input"] = [stale];
+    obsidianMockState.leavesByType["markdown"] = [ordinary];
+    plugin.onload(); await waitForPluginLoad(plugin);
+    expect(stale.detach).toHaveBeenCalledOnce(); expect(ordinary.detach).not.toHaveBeenCalled();
   });
 });

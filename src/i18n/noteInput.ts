@@ -65,6 +65,17 @@ export interface NoteInputStrings {
   nativeEditorUnavailable: string;
   invalidQuickInputConfig: string;
   openQuickInputFailed: string;
+  nativeFrameUnsupported: string;
+  desktopUnavailable: string;
+  pinWindow: string;
+  globalShortcutName: string;
+  globalShortcutDesc: string;
+  clearShortcut: string;
+  shortcutInactive: string;
+  shortcutActive: (keys: string) => string;
+  shortcutInvalid: string;
+  shortcutConflict: string;
+  shortcutSaveFailed: string;
   createFailed: (reason: string) => string;
   sendFailed: (reason: string) => string;
   saveTemplateFailed: (reason: string) => string;
@@ -114,6 +125,16 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     nativeEditorUnavailable: "The native Markdown editor is unavailable in this Obsidian version.",
     invalidQuickInputConfig: "Quick input settings refer to an unavailable template or folder.",
     openQuickInputFailed: "Could not open quick input.",
+    nativeFrameUnsupported: "Quick input requires the Obsidian or hidden window frame. Change Settings → Appearance → Window frame style, then fully restart Obsidian.",
+    desktopUnavailable: "Quick input desktop capabilities are unavailable.",
+    pinWindow: "Keep this window on top",
+    globalShortcutName: "Global quick input shortcut",
+    globalShortcutDesc: "Unset by default. Press a combination or enter an Electron accelerator (e.g. Control+Shift+Q), then Apply. Opens a new window from any app without restoring the main window.",
+    clearShortcut: "Clear", shortcutInactive: "No shortcut registered",
+    shortcutActive: (keys) => `Registered: ${keys}`,
+    shortcutInvalid: "Invalid shortcut. Use a modifier and a supported key.",
+    shortcutConflict: "Shortcut unavailable or already in use. Previous binding retained.",
+    shortcutSaveFailed: "Could not save. Active bindings are shown above; Apply retries saving. The previous binding is released after a successful save.",
     createFailed: (reason) => `Could not create the note: ${reason}`,
     sendFailed: (reason) => `Could not send. Your draft is kept: ${reason}`,
     saveTemplateFailed: (reason) => `Could not save template settings: ${reason}`,
@@ -155,6 +176,16 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",
     nativeEditorUnavailable: "当前 Obsidian 版本无法使用原生 Markdown 编辑器。",
     invalidQuickInputConfig: "快速输入设置引用了不可用的模板或文件夹。", openQuickInputFailed: "无法打开快速输入。",
+    nativeFrameUnsupported: "快速输入需要 Obsidian 框架或隐藏框架。请在“设置 → 外观 → 窗口框架样式”中手动切换，然后完全重启 Obsidian。",
+    desktopUnavailable: "快速输入所需的桌面能力不可用。",
+    pinWindow: "此窗口置顶",
+    globalShortcutName: "快速输入全局快捷键",
+    globalShortcutDesc: "默认未设置。按下组合键或输入 Electron 快捷键格式（如 Control+Shift+Q），然后点击应用。可从任意软件打开新窗口，不主动恢复主窗口。",
+    clearShortcut: "清除", shortcutInactive: "未注册快捷键",
+    shortcutActive: (keys) => `已注册：${keys}`,
+    shortcutInvalid: "快捷键无效，请使用修饰键与受支持的按键。",
+    shortcutConflict: "快捷键不可用或已被占用，原有绑定保持不变。",
+    shortcutSaveFailed: "保存失败。上方显示当前生效的绑定；点击应用重试保存，成功后才释放原有绑定。",
     createFailed: (reason) => `无法创建笔记：${reason}`, sendFailed: (reason) => `无法发送，草稿已保留：${reason}`,
     saveTemplateFailed: (reason) => `无法保存模板设置：${reason}`, sent: (path) => `已发送到 ${path}`, noteCreated: (path) => `已创建 ${path}`, noteOpened: (path) => `已打开 ${path}`,
   },

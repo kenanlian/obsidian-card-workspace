@@ -28,6 +28,18 @@ describe("note input settings", () => {
     expect(migrateSettings(serializeSettings(settings)).noteTemplates).toEqual([renamed]);
   });
 
+  it("defaults old shortcuts to unset and round-trips preferences without a schema bump", () => {
+    expect(migrateSettings({}).quickInputGlobalShortcut).toBe("");
+    expect(migrateSettings({ schemaVersion: 2, preferences: { quickInputGlobalShortcut: 42 } }).quickInputGlobalShortcut).toBe("");
+    const settings = mergeSettings(DEFAULT_SETTINGS, { quickInputGlobalShortcut: " Control+Shift+Q " });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.preferences.quickInputGlobalShortcut).toBe("Control+Shift+Q");
+    expect(document.workspace).not.toHaveProperty("quickInputGlobalShortcut");
+    expect(document.userData).not.toHaveProperty("quickInputGlobalShortcut");
+    expect(migrateSettings(document)).toEqual(settings);
+  });
+
   it("normalizes quick input without clearing a missing template selection", () => {
     expect(normalizeQuickInput({ templateId: " missing ", folderPath: "/Inbox//Notes/", insertPosition: "start" }))
       .toEqual({ templateId: "missing", folderPath: "Inbox/Notes", insertPosition: "start" });

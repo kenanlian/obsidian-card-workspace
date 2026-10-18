@@ -986,6 +986,18 @@ describe("R6 MetadataCache subscription ownership", () => {
 
 
 describe("input creation ownership", () => {
+  it("registers the lightweight view without importing native editing or write-service runtime into it", () => {
+    for (const file of ["src/input/QuickInputView.ts", "src/input/QuickInputShortcut.ts", "src/input/quick-input-desktop.ts"]) {
+      const deps = runtimeDependencyGraph.get(file);
+      expect(deps?.local).not.toContain("src/input/native-markdown-editor.ts");
+      expect(deps?.local).not.toContain("src/input/QuickInputWindowManager.ts");
+      expect(deps?.local).not.toContain("src/services/NoteCreationService.ts");
+    }
+    const shell = fs.readFileSync(path.join(srcRoot, "main.ts"), "utf8");
+    expect(shell).toContain("this.registerView(QUICK_INPUT_VIEW");
+    expect(shell.indexOf("await this.quickInputShortcut.start")).toBeLessThan(shell.indexOf("await this.searchCoordinator.initialize"));
+  });
+
   it("keeps the native editor runtime behind a first-open boundary and the write service outside view state", () => {
     const service = dependencyGraph.get("src/services/NoteCreationService.ts");
     expect(service?.local.some((file) => isUnder(file, "src/view") || isUnder(file, "src/input"))).toBe(false);

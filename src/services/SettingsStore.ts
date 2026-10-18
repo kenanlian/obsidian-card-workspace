@@ -31,6 +31,7 @@ export interface PreferencesSettings {
   cardCornerRadius: PluginSettings["cardCornerRadius"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   quickInput: PluginSettings["quickInput"];
+  quickInputGlobalShortcut: string;
   quickInputWidth: number;
   quickInputHeight: number;
   quickInputColor: PluginSettings["quickInputColor"];
@@ -165,6 +166,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.enableHeadingDragInsert !== undefined) preferences.enableHeadingDragInsert = patch.enableHeadingDragInsert;
   if (patch.cardCornerRadius !== undefined) preferences.cardCornerRadius = patch.cardCornerRadius;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
+  if (patch.quickInputGlobalShortcut !== undefined) preferences.quickInputGlobalShortcut = patch.quickInputGlobalShortcut;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
   if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
   if (patch.quickInputHeight !== undefined) preferences.quickInputHeight = patch.quickInputHeight;
@@ -233,6 +235,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       cardCornerRadius: settings.cardCornerRadius,
       newNoteTemplate: settings.newNoteTemplate,
       quickInput: { ...settings.quickInput },
+      quickInputGlobalShortcut: settings.quickInputGlobalShortcut,
       quickInputWidth: settings.quickInputWidth,
       quickInputHeight: settings.quickInputHeight,
       quickInputColor: settings.quickInputColor,

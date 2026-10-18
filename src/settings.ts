@@ -181,6 +181,7 @@ export interface PluginSettings {
   quickInputWidth: number;
   quickInputHeight: number;
   quickInputColor: QuickInputColor;
+  quickInputGlobalShortcut: string;
   previewLines: number;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
@@ -239,6 +240,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   quickInputWidth: DEFAULT_QUICK_INPUT_WIDTH,
   quickInputHeight: DEFAULT_QUICK_INPUT_HEIGHT,
   quickInputColor: "random",
+  quickInputGlobalShortcut: "",
   previewLines: DEFAULT_PREVIEW_LINES,
   searchPreviewSnippetCount: DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT,
   hoverPreviewWidth: DEFAULT_HOVER_PREVIEW_WIDTH,
@@ -638,6 +640,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     noteTemplates: normalizeNoteTemplates(data.noteTemplates),
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
+    quickInputGlobalShortcut: typeof data.quickInputGlobalShortcut === "string" ? data.quickInputGlobalShortcut.trim() : "",
     quickInput: normalizeQuickInput(data.quickInput),
     quickInputWidth: normalizeHoverPreviewDimension(data.quickInputWidth,
       DEFAULT_QUICK_INPUT_WIDTH, QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX),
