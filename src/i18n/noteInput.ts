@@ -8,6 +8,8 @@ export interface NoteInputStrings {
   targetFolder: string;
   dateFormat: string;
   timeFormat: string;
+  templateInsertPosition: string;
+  insertBodyStart: string;
   unregisterTemplate: string;
   templateName: string;
   templateNameDesc: string;
@@ -89,6 +91,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templates: "Templates", templatesEmpty: "No templates registered", newTemplate: "New template",
     editTemplate: "Edit template", targetFolder: "New note folder",
     dateFormat: "Date format", timeFormat: "Time format", unregisterTemplate: "Remove from templates",
+    templateInsertPosition: "Insert position in an existing note", insertBodyStart: "Start of body (after properties)",
     templateName: "Template name", templateNameDesc: "Shown in navigation and template choices. This name is not used as the filename of created notes.",
     renameTemplate: "Rename template", invalidTemplateName: "Enter a template name.",
     targetFolderDesc: "Notes created with this template are saved in this folder. Leave empty for the vault root.",
@@ -143,6 +146,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   zh: {
     templates: "模板", templatesEmpty: "尚未注册模板", newTemplate: "新建模板",
     editTemplate: "编辑模板", targetFolder: "新建笔记文件夹", dateFormat: "日期格式", timeFormat: "时间格式", unregisterTemplate: "从模板中移除",
+    templateInsertPosition: "同名笔记插入位置", insertBodyStart: "正文开头（属性之后）",
     templateName: "模板名称", templateNameDesc: "用于在导航区和模板选择中显示，不作为使用模板创建的笔记文件名。",
     renameTemplate: "重命名模板", invalidTemplateName: "请输入模板名称。",
     targetFolderDesc: "使用此模板创建的笔记将保存在此文件夹中，留空表示仓库根目录。",

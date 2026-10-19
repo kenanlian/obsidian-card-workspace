@@ -6,7 +6,8 @@
 
 import { NoteCreationService, NoteInputError } from "./services/NoteCreationService";
 import { TemplateStorageService } from "./services/TemplateStorageService";
-import { focusTemplateEditor } from "./input/template-editor";
+import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
+import type { TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
 import { rewritePathReference } from "./path-references";
 import { installTemplateExclusion, isTemplatePath } from "./template-exclusion";
@@ -72,6 +73,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private readonly templateReservations = new Map<string, number>();
   private releaseTemplateExclusion: (() => void) | null = null;
   private noteCreationService: NoteCreationService | null = null;
+  private workspaceSettingTab: CardWorkspaceSettingTab | null = null;
   private readonly templateStorageService = new TemplateStorageService({
     app: this.app, getSettings: () => this.getSettings(), saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
     reservePath: (path) => this.reserveTemplatePath(path), flushVaultEvents: () => this.vaultEventBus.flushPendingEvents(),
@@ -101,6 +103,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private selectionRequestSeq = 0;
   private cardOpenSeq = 0;
   private templateOpenDepth = 0;
+  private templateNoteFocusAbort: AbortController | null = null;
   private cancelLinkCorrection: (() => void) | null = null;
   private latestHandledRequestId = 0;
   private vaultObserversRegistered = false;
@@ -182,7 +185,8 @@ export default class CardWorkspacePlugin extends Plugin {
     this.addRibbonIcon(CARD_WORKSPACE_ICON, this.getUiStrings().app.ribbonTooltip, () => {
       this.runDetached(this.activateAndEnsureScope(true), "View activation failed.");
     });
-    this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
+    this.workspaceSettingTab = new CardWorkspaceSettingTab(this.app, this);
+    this.addSettingTab(this.workspaceSettingTab);
     this.registerHoverLinkSource("card-workspace", {
       display: this.getUiStrings().app.hoverSourceDisplay,
       defaultMod: true,
@@ -297,6 +301,9 @@ export default class CardWorkspacePlugin extends Plugin {
     this.quickInputManager = null;
     this.quickInputInitialization = null;
     this.noteCreationService = null;
+    this.templateNoteFocusAbort?.abort();
+    this.templateNoteFocusAbort = null;
+    this.workspaceSettingTab = null;
     this.releaseTemplateExclusion?.();
     this.releaseTemplateExclusion = null;
     this.registeredTemplatePaths.clear();
@@ -375,15 +382,50 @@ export default class CardWorkspacePlugin extends Plugin {
   async createNoteFromTemplate(id: string): Promise<void> {
     const template = this.getSettings().noteTemplates.find((entry) => entry.id === id);
     if (!template) { new Notice(this.getUiStrings().noteInput.templateNotFound); return; }
+    this.templateNoteFocusAbort?.abort();
+    const controller = new AbortController();
+    this.templateNoteFocusAbort = controller;
+    const openSeq = this.cardOpenSeq;
+    const doc = this.app.workspace.getActiveViewOfType(View)?.containerEl?.ownerDocument ?? window.document;
+    const cancel = () => controller.abort();
+    const events = ["pointerdown", "keydown", "wheel", "touchstart", "input"] as const;
+    for (const event of events) doc?.addEventListener(event, cancel, true);
+    const leafChange = this.app.workspace.on("active-leaf-change", cancel);
+    let watchingLeaf = true;
+    const stopWatchingLeaf = () => {
+      if (watchingLeaf) this.app.workspace.offref?.(leafChange);
+      watchingLeaf = false;
+    };
+    const cleanup = () => {
+      stopWatchingLeaf();
+      for (const event of events) doc?.removeEventListener(event, cancel, true);
+    };
+    controller.signal.addEventListener("abort", cleanup, { once: true });
     try {
       const result = await this.getNoteCreationService().createTemplateNote({ ...template }, new Date());
-      await this.openTemplateNoteFile(result.file.path);
+      if (this.disposed || controller.signal.aborted || openSeq !== this.cardOpenSeq) return;
+      stopWatchingLeaf(); // Opening our own target is an intentional leaf change.
+      await this.openTemplateNoteFile(result.file.path, result.cursor, controller.signal);
     } catch (error) { new Notice(this.getUiStrings().noteInput.createFailed(this.describeNoteInputError(error))); }
+    finally {
+      controller.abort();
+      cleanup();
+      if (this.templateNoteFocusAbort === controller) this.templateNoteFocusAbort = null;
+    }
   }
 
-  async openTemplateNoteFile(path: string): Promise<void> {
+  async openTemplateNoteFile(path: string, cursor?: TemplateNoteCursor, signal?: AbortSignal): Promise<void> {
     this.templateOpenDepth += 1;
-    try { await this.openNoteFromCard(path, "new-tab"); }
+    try {
+      const opening = this.openNoteFromCard(path, "new-tab");
+      const openSeq = this.cardOpenSeq;
+      await opening;
+      if (!cursor || !signal || signal.aborted || this.disposed || openSeq !== this.cardOpenSeq) return;
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      const current = () => !this.disposed && openSeq === this.cardOpenSeq
+        && this.app.workspace.getActiveViewOfType(MarkdownView) === view && view?.file?.path === path;
+      if (view && current()) await focusTemplateNote(view, cursor, current, signal);
+    }
     finally { this.templateOpenDepth -= 1; }
   }
 
@@ -767,6 +809,9 @@ export default class CardWorkspacePlugin extends Plugin {
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
     this.refreshTemplateRegistry(next);
+    if (JSON.stringify(previous.noteTemplates) !== JSON.stringify(next.noteTemplates)) {
+      this.workspaceSettingTab?.refreshTemplateOptions();
+    }
     const templatePathsChanged = JSON.stringify(previous.noteTemplates.map((template) => template.filePath).sort())
       !== JSON.stringify(next.noteTemplates.map((template) => template.filePath).sort());
     this.withFolderViews((view) => {
@@ -942,6 +987,7 @@ export default class CardWorkspacePlugin extends Plugin {
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
     this.refreshTemplateRegistry(this.getSettings());
+    this.workspaceSettingTab?.refreshTemplateOptions();
   }
 
   /** Degrade to defaults read-only mode without aborting plugin startup. */

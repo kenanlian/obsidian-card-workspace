@@ -150,6 +150,15 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /** Native hosts cache definitions at registration, before settings finish loading. */
+  refreshTemplateOptions(): void {
+    if (requireApiVersion("1.13.0") && typeof this.update === "function") {
+      this.disposeFolderSuggests();
+      this.update();
+    }
+    // Legacy display() builds fresh options each time the tab is opened.
+  }
+
   /**
    * Settings live in SettingsStore, so the declarative control binding must not
    * read or write `plugin.settings` / `saveData`.

@@ -5,6 +5,8 @@ import {
   NOTE_TEMPLATE_DATE_FORMATS,
   NOTE_TEMPLATE_TIME_FORMATS,
   type NoteInputResult,
+  type TemplateNoteCursor,
+  type TemplateNoteResult,
   type NoteTemplateDefinition,
   type QuickInputRequest,
   type ScopeNoteRequest,
@@ -48,18 +50,43 @@ export class NoteCreationService {
     return this.createUniqueNote(folderPath, baseName, content);
   }
 
-  async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<NoteInputResult> {
+  async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<TemplateNoteResult> {
     const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
     return this.serialize(target.path, async () => {
       this.validateTemplateTarget(target);
-      const existing = this.existingTarget(target);
-      if (existing) return { file: existing, created: false };
       const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
       this.validateTemplateTarget(target);
-      const raced = this.existingTarget(target);
-      if (raced) return { file: raced, created: false };
-      return { file: await this.app.vault.create(target.path, content), created: true };
+      const existing = this.existingTarget(target);
+      if (existing) {
+        const body = content.slice(getFrontMatterInfo(content).contentStart);
+        const cursor = body.trim() ? await this.insertTemplateBody(existing, body, target.template.existingNoteInsertPosition ?? "end") : undefined;
+        return { file: existing, created: false, ...(cursor ? { cursor } : {}) };
+      }
+      return { file: await this.app.vault.create(target.path, content), created: true, cursor: { content, offset: content.length } };
     });
+  }
+
+  private async insertTemplateBody(file: TFile, body: string, position: "start" | "end"): Promise<TemplateNoteCursor> {
+    const path = file.path;
+    const view = this.findMarkdownView(file);
+    if (view) {
+      const latest = view.editor.getValue();
+      const insertion = buildInsertion(latest, body, position);
+      const cursor = { content: applyInsertion(latest, insertion), offset: insertion.cursorOffset };
+      view.editor.replaceRange(insertion.text, view.editor.offsetToPos(insertion.offset), undefined, "card-workspace-template");
+      await view.save();
+      return cursor;
+    }
+    let offset = 0;
+    const content = await this.app.vault.process(file, (content) => {
+      if (file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file) throw new NoteInputError("target-changed");
+      // An editor opened while process waited owns the latest unsaved content.
+      if (this.findMarkdownView(file)) throw new NoteInputError("target-changed");
+      const insertion = buildInsertion(content, body, position);
+      offset = insertion.cursorOffset;
+      return applyInsertion(content, insertion);
+    });
+    return { content, offset };
   }
 
   submitQuickInput(request: QuickInputRequest): Promise<NoteInputResult> {
@@ -340,7 +367,7 @@ function buildScopeContent(request: ScopeNoteRequest): string {
   return lines.length ? `---\n${lines.join("\n")}\n---\n\n` : "";
 }
 
-interface TextInsertion { offset: number; text: string }
+interface TextInsertion { offset: number; text: string; cursorOffset: number }
 
 function buildInsertion(content: string, text: string, position: "start" | "end"): TextInsertion {
   const newline = content.includes("\r\n") ? "\r\n" : "\n";
@@ -349,7 +376,7 @@ function buildInsertion(content: string, text: string, position: "start" | "end"
   const after = content.slice(offset);
   const leading = before.length ? Math.max(0, 2 - trailingNewlines(before)) : 0;
   const trailing = after.length ? Math.max(0, 2 - leadingNewlines(after)) : 0;
-  return { offset, text: `${newline.repeat(leading)}${text}${newline.repeat(trailing)}` };
+  return { offset, text: `${newline.repeat(leading)}${text}${newline.repeat(trailing)}`, cursorOffset: offset + leading * newline.length + text.length };
 }
 
 function trailingNewlines(text: string): number { return text.match(/(?:\r?\n)+$/)?.[0].match(/\n/g)?.length ?? 0; }

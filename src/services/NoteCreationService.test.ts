@@ -124,6 +124,7 @@ describe("NoteCreationService templates", () => {
     const result = await f.service.createTemplateNote(template(), now);
     expect(result).toMatchObject({ created: true, file: { path: "Notes/2026-10-12 14-05-09.md" } });
     expect(f.contents.get(result.file.path)).toBe("---\nwhen: 2026-10-12\n---\n14-05-09 2026-10-12 14-05-09 {{other}}");
+    expect(result.cursor).toEqual({ content: f.contents.get(result.file.path), offset: f.contents.get(result.file.path)!.length });
   });
   it("sanitizes slashes and forbidden filename characters without creating folders", async () => {
     const f = templateFixture();
@@ -139,10 +140,109 @@ describe("NoteCreationService templates", () => {
     const f = templateFixture(); const result = await f.service.createTemplateNote(template({ timeFormat: format }), now);
     expect(f.contents.get(result.file.path)).toBe(`template 2026-10-12 ${actualMoment(now).format(format)}`);
   });
-  it("reuses existing markdown unchanged without reading or inserting template content", async () => {
-    const f = templateFixture(); const target = f.file("Notes/2026-10-12 14-05-09.md", "keep me");
+  it("appends the latest template body to an existing note while preserving its properties and content", async () => {
+    const f = templateFixture("---\nstatus: template\n---\n## Updated {{date}}\n{{time}}");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "---\nstatus: existing\n---\nkeep me");
+    const result = await f.service.createTemplateNote(template(), now);
+    expect(result).toMatchObject({ file: target, created: false });
+    expect(f.contents.get(target.path)).toBe("---\nstatus: existing\n---\nkeep me\n\n## Updated 2026-10-12\n14-05-09");
+    expect(result.cursor).toEqual({ content: f.contents.get(target.path), offset: f.contents.get(target.path)!.length });
+    expect(f.vault.process).toHaveBeenCalledOnce();
+    expect(f.vault.create).not.toHaveBeenCalled();
+  });
+  it("reads edited template content again on each click for the same target", async () => {
+    const f = templateFixture("original");
+    const first = await f.service.createTemplateNote(template(), now);
+    f.contents.set(template().filePath, "updated {{date}}");
+    const second = await f.service.createTemplateNote(template(), now);
+    expect(second).toMatchObject({ file: first.file, created: false });
+    expect(f.contents.get(first.file.path)).toBe("original\n\nupdated 2026-10-12");
+  });
+  it.each([
+    { content: "old body", expected: "new body\n\nold body", open: false },
+    { content: "old body", expected: "new body\n\nold body", open: true },
+    { content: "---\nstatus: existing\n---\n\nold body", expected: "---\nstatus: existing\n---\n\nnew body\n\nold body", open: false },
+    { content: "---\nstatus: existing\n---\n\nold body", expected: "---\nstatus: existing\n---\n\nnew body\n\nold body", open: true },
+  ])("inserts at the start of the body after properties: %j", async ({ content, expected, open }) => {
+    const f = templateFixture("---\nstatus: template\n---\nnew body");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", content);
+    const editor = open ? f.open(target, content) : null;
+    const result = await f.service.createTemplateNote(template({ existingNoteInsertPosition: "start" }), now);
+    expect(f.contents.get(target.path)).toBe(expected);
+    expect(result.cursor).toEqual({ content: expected, offset: expected.indexOf("new body") + "new body".length });
+    if (editor) expect(editor.replaceRange).toHaveBeenCalledOnce();
+  });
+  it("keeps the full template when creating a new note regardless of existing-note insert position", async () => {
+    const content = "---\nstatus: template\n---\nnew body";
+    const f = templateFixture(content);
+    const result = await f.service.createTemplateNote(template({ existingNoteInsertPosition: "start" }), now);
+    expect(result.created).toBe(true);
+    expect(f.contents.get(result.file.path)).toBe(content);
+    expect(result.cursor).toEqual({ content, offset: content.length });
+  });
+  it("uses unsaved template and target content when appending through the editor", async () => {
+    const f = templateFixture("old template");
+    const templateEditor = f.open(f.entries.get(template().filePath) as TFile, "new {{date}}");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "old disk content");
+    const targetEditor = f.open(target, "latest unsaved content");
+    await f.service.createTemplateNote(template(), now);
+    expect(f.contents.get(target.path)).toBe("latest unsaved content\n\nnew 2026-10-12");
+    expect(targetEditor.replaceRange).toHaveBeenCalledOnce();
+    expect(targetEditor.view.save).toHaveBeenCalledOnce();
+    expect(templateEditor.getValue()).toBe("new {{date}}");
+    expect(f.vault.process).not.toHaveBeenCalled();
+    expect(f.vault.cachedRead).not.toHaveBeenCalled();
+  });
+  it.each(["", " \n", "---\nstatus: template\n---\n\n"])("opens an existing note without writing when the template has no body: %j", async (content) => {
+    const f = templateFixture(content);
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "keep me");
+    const editor = f.open(target, "unsaved content");
     expect(await f.service.createTemplateNote(template(), now)).toEqual({ file: target, created: false });
-    expect(f.contents.get(target.path)).toBe("keep me"); expect(f.vault.cachedRead).not.toHaveBeenCalled(); expect(f.vault.create).not.toHaveBeenCalled();
+    expect(editor.getValue()).toBe("unsaved content");
+    expect(editor.replaceRange).not.toHaveBeenCalled();
+    expect(editor.view.save).not.toHaveBeenCalled();
+    expect(f.vault.process).not.toHaveBeenCalled();
+  });
+  it("preserves CRLF when appending to an existing note", async () => {
+    const f = templateFixture("new body\r\nsecond line");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "old body\r\n");
+    await f.service.createTemplateNote(template(), now);
+    expect(f.contents.get(target.path)).toBe("old body\r\n\r\nnew body\r\nsecond line");
+  });
+  it("appends when the target appears while reading the template", async () => {
+    const f = templateFixture();
+    f.vault.cachedRead.mockImplementationOnce(async () => {
+      f.file("Notes/2026-10-12 14-05-09.md", "concurrent content");
+      return "new template";
+    });
+    const result = await f.service.createTemplateNote(template(), now);
+    expect(result.created).toBe(false);
+    expect(f.contents.get(result.file.path)).toBe("concurrent content\n\nnew template");
+    expect(f.vault.create).not.toHaveBeenCalled();
+  });
+  it("protects an editor opened while an append is waiting for vault.process", async () => {
+    const f = templateFixture("new body");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "disk");
+    let editor!: ReturnType<typeof f.open>;
+    f.vault.process.mockImplementationOnce(async (file, change) => {
+      editor = f.open(file, "unsaved changes");
+      const content = change(f.contents.get(file.path)!);
+      f.contents.set(file.path, content);
+      return content;
+    });
+    await expect(f.service.createTemplateNote(template(), now)).rejects.toMatchObject({ code: "target-changed" });
+    expect(f.contents.get(target.path)).toBe("disk");
+    expect(editor.getValue()).toBe("unsaved changes");
+    await f.service.createTemplateNote(template(), now);
+    expect(f.contents.get(target.path)).toBe("unsaved changes\n\nnew body");
+  });
+  it("propagates append failures without replacing the existing note", async () => {
+    const f = templateFixture("new body");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "keep me");
+    f.vault.process.mockRejectedValueOnce(new Error("disk full"));
+    await expect(f.service.createTemplateNote(template(), now)).rejects.toThrow("disk full");
+    expect(f.contents.get(target.path)).toBe("keep me");
+    expect(f.vault.create).not.toHaveBeenCalled();
   });
   it("uses unsaved template editor content", async () => {
     const f = templateFixture("old"); f.open(f.entries.get(template().filePath) as TFile, "new {{date}}");
@@ -161,10 +261,20 @@ describe("NoteCreationService templates", () => {
     f.file("Templates/a.canvas");
     await expect(f.service.createTemplateNote(template({ filePath: "Templates/a.canvas" }), now)).rejects.toMatchObject({ code: "invalid-template" });
   });
-  it("serializes creates of the same deterministic target", async () => {
+  it("serializes clicks on the same target and inserts each click's template once", async () => {
     const f = templateFixture();
     const results = await Promise.all([f.service.createTemplateNote(template(), now), f.service.createTemplateNote(template(), now)]);
     expect(results.map((result) => result.created)).toEqual([true, false]); expect(results[0].file).toBe(results[1].file); expect(f.vault.create).toHaveBeenCalledTimes(1);
+    expect(f.contents.get(results[0]!.file.path)).toBe("template 2026-10-12 14-05-09\n\ntemplate 2026-10-12 14-05-09");
+  });
+  it("serializes template clicks and quick input to preserve both insertions", async () => {
+    const f = templateFixture("new template");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "existing");
+    await Promise.all([
+      f.service.createTemplateNote(template(), now),
+      f.service.submitQuickInput(request({ text: "quick input" })),
+    ]);
+    expect(f.contents.get(target.path)).toBe("existing\n\nnew template\n\nquick input");
   });
   it("uses defaults for unsupported format settings and rejects invalid dates", async () => {
     const f = templateFixture(); const result = await f.service.createTemplateNote(template({ dateFormat: "bogus", timeFormat: "bogus" }), now);

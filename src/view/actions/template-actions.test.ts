@@ -34,7 +34,7 @@ vi.mock("../modals/NewTemplateModal", () => ({ NewTemplateModal: class {
 function file(path: string): TFile {
   return Object.assign(new TFile(), { path, name: path.split("/").at(-1), extension: "md" });
 }
-function harness(templates: NoteTemplateDefinition[] = []) {
+function harness(templates: NoteTemplateDefinition[] = [], language: "en" | "zh" = "en") {
   const files = new Map<string, TFile | TFolder>();
   const root = Object.assign(new TFolder(), { path: "" }); files.set("", root);
   const folder = Object.assign(new TFolder(), { path: "Templates" }); files.set(folder.path, folder);
@@ -48,7 +48,7 @@ function harness(templates: NoteTemplateDefinition[] = []) {
   const createFolder = vi.fn(async (path: string) => { files.set(path, Object.assign(new TFolder(), { path })); });
   const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create, createFolder } } as unknown as App;
   const actions = new TemplateActions({ app, getSettings: () => settings, saveSettings, openNote, notify,
-    reserveTemplatePath, getStrings: () => getUiStrings("en") });
+    reserveTemplatePath, getStrings: () => getUiStrings(language) });
   return { actions, settings, files, calls, create, createFolder, saveSettings, reserveTemplatePath, release, openNote, notify };
 }
 function template(path = "Templates/Daily.md"): NoteTemplateDefinition {
@@ -58,6 +58,26 @@ async function settle() { await Promise.resolve(); await Promise.resolve(); }
 beforeEach(() => { state.create = null; state.folderChoose = null; state.formatPickers = []; });
 
 describe("TemplateActions", () => {
+  it.each(["en", "zh"] as const)("configures existing-note insertion per template in %s and preserves newer settings", async (language) => {
+    const other = { ...template("Templates/Other.md"), id: "other" };
+    const h = harness([template(), other], language);
+    const strings = getUiStrings(language).noteInput;
+    const menu = new Menu(); h.actions.appendMenu(menu, "daily");
+    const items = (menu as unknown as { items: { title: string; disabled: boolean; checked: boolean; onClick?: () => void }[] }).items;
+    expect(items.find((item) => item.title === strings.templateInsertPosition)?.disabled).toBe(true);
+    expect(items.find((item) => item.title === strings.insertEnd)?.checked).toBe(true);
+    expect(items.find((item) => item.title === strings.insertBodyStart)?.checked).toBe(false);
+    h.settings.noteTemplates[0] = { ...h.settings.noteTemplates[0]!, dateFormat: "YYYY/MM/DD" };
+    items.find((item) => item.title === strings.insertBodyStart)?.onClick?.(); await settle();
+    expect(h.settings.noteTemplates).toEqual([{ ...template(), dateFormat: "YYYY/MM/DD", existingNoteInsertPosition: "start" }, other]);
+    const updatedMenu = new Menu(); h.actions.appendMenu(updatedMenu, "daily");
+    const updated = (updatedMenu as unknown as { items: { title: string; checked: boolean; onClick?: () => void }[] }).items;
+    expect(updated.find((item) => item.title === strings.insertBodyStart)?.checked).toBe(true);
+    expect(updated.find((item) => item.title === strings.insertEnd)?.checked).toBe(false);
+    updated.find((item) => item.title === strings.insertEnd)?.onClick?.(); await settle();
+    expect(h.settings.noteTemplates[0]?.existingNoteInsertPosition).toBe("end");
+  });
+
   it("offers only new template creation in the header menu", async () => {
     const h = harness(); const menu = new Menu(); h.actions.appendHeaderMenu(menu);
     const items = (menu as unknown as { items: { title: string; onClick?: () => void }[] }).items;

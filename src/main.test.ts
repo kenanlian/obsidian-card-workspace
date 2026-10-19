@@ -328,7 +328,9 @@ vi.mock("./search", async () => {
 
 vi.mock("./CardWorkspaceSettingTab", () => {
   return {
-    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {},
+    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {
+      refreshTemplateOptions = vi.fn();
+    },
   };
 });
 
@@ -528,8 +530,8 @@ vi.mock("obsidian", () => {
   };
 });
 
-vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn() }));
-import { focusTemplateEditor } from "./input/template-editor";
+vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn(), focusTemplateNote: vi.fn(async () => {}) }));
+import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
 import { MarkdownView, TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { getAppStrings } from "./i18n";
@@ -3654,6 +3656,95 @@ describe("CardWorkspacePlugin unsupported settings schema (C4)", () => {
 
 
 describe("template creation assembly", () => {
+  beforeEach(() => { vi.stubGlobal("document", new EventTarget()); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  function templateOpenHarness() {
+    const { plugin, app } = createPluginHarness();
+    const template = { id: "t", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    mutateStoreMemory(plugin, { noteTemplates: [template] });
+    const target = Object.assign(new TFile(), { path: "generated.md" });
+    const view = Object.assign(new MarkdownView({} as never), { file: target });
+    const cursor = { content: "new body\n\nold body", offset: 8 };
+    const create = vi.spyOn(NoteCreationService.prototype, "createTemplateNote").mockResolvedValue({ file: target, created: false, cursor });
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+    app.workspace.getActiveViewOfType.mockReturnValue(view);
+    vi.mocked(focusTemplateNote).mockClear();
+    return { plugin, app, target, view, cursor, create };
+  }
+
+  it("focuses the opened template note at the cursor snapshot returned by the write", async () => {
+    const h = templateOpenHarness();
+    await h.plugin.createNoteFromTemplate("t");
+    expect(focusTemplateNote).toHaveBeenCalledWith(h.view, h.cursor, expect.any(Function), expect.any(AbortSignal));
+  });
+
+  it.each(["input", "leaf-change", "newer-open", "unload"])("does not open a delayed template result after %s", async (reason) => {
+    const h = templateOpenHarness();
+    const gate = deferred<{ file: TFile; created: boolean; cursor: typeof h.cursor }>();
+    h.create.mockReturnValueOnce(gate.promise);
+    const open = vi.spyOn(h.plugin, "openTemplateNoteFile");
+    const pending = h.plugin.createNoteFromTemplate("t");
+    if (reason === "input") document.dispatchEvent(new Event("keydown"));
+    else if (reason === "leaf-change") getWorkspaceCallback("active-leaf-change")();
+    else if (reason === "newer-open") await h.plugin.openNoteFromCard(h.target.path, "new-tab");
+    else h.plugin.onunload();
+    gate.resolve({ file: h.target, created: false, cursor: h.cursor });
+    await pending;
+    expect(open).not.toHaveBeenCalled();
+    expect(focusTemplateNote).not.toHaveBeenCalled();
+  });
+
+  it("lets a newer template click supersede an earlier pending open", async () => {
+    const h = templateOpenHarness();
+    const gate = deferred<{ file: TFile; created: boolean; cursor: typeof h.cursor }>();
+    h.create.mockReturnValueOnce(gate.promise);
+    const open = vi.spyOn(h.plugin, "openTemplateNoteFile");
+    const older = h.plugin.createNoteFromTemplate("t");
+    await h.plugin.createNoteFromTemplate("t");
+    gate.resolve({ file: h.target, created: false, cursor: h.cursor });
+    await older;
+    expect(open).toHaveBeenCalledOnce();
+    expect(focusTemplateNote).toHaveBeenCalledOnce();
+  });
+
+  it("does not focus another editor if the active view changes while openFile is pending", async () => {
+    const h = templateOpenHarness();
+    const gate = deferred();
+    h.app.workspace.getLeaf.mockReturnValue({ openFile: vi.fn(() => gate.promise) });
+    const pending = h.plugin.createNoteFromTemplate("t");
+    await Promise.resolve(); await Promise.resolve();
+    h.app.workspace.getActiveViewOfType.mockReturnValue(new MarkdownView({} as never));
+    gate.resolve();
+    await pending;
+    expect(focusTemplateNote).not.toHaveBeenCalled();
+  });
+
+  it("refreshes settings definitions after delayed startup settings load and template changes", async () => {
+    const { plugin } = createPluginHarness();
+    const settings = deferred<unknown>();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
+    plugin.onload();
+    const tab = (plugin as unknown as { addSettingTab: ReturnType<typeof vi.fn> }).addSettingTab.mock.calls[0]![0] as { refreshTemplateOptions: ReturnType<typeof vi.fn> };
+    expect(tab.refreshTemplateOptions).not.toHaveBeenCalled();
+    const template = { id: "daily", name: "Daily input", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    settings.resolve({ noteTemplates: [template] });
+    await waitForPluginLoad(plugin);
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledOnce();
+    expect(plugin.getSettings().noteTemplates).toEqual([template]);
+
+    await plugin.saveSettings({ noteTemplates: [...plugin.getSettings().noteTemplates, { ...template, id: "new", filePath: "Templates/New.md" }] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(2);
+    await plugin.saveSettings({ noteTemplates: plugin.getSettings().noteTemplates.map((entry) => ({ ...entry, name: "Renamed" })) });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(3);
+    await plugin.saveSettings({ noteTemplates: [] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
+    await plugin.saveSettings({ previewLines: 7 });
+    await plugin.saveSettings({ noteTemplates: [] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
+    plugin.onunload();
+  });
+
   it("opens the service target while keeping linked card scopes and passes one time snapshot", async () => {
     const { plugin, app } = createPluginHarness();
     const template = { id: "t", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };

@@ -7,6 +7,10 @@ const mockState = vi.hoisted(() => {
     app: unknown;
     plugin: unknown;
     refreshDomState = vi.fn();
+    settingItems: unknown[] = [];
+    update = vi.fn(() => {
+      this.settingItems = (this as unknown as { getSettingDefinitions(): unknown[] }).getSettingDefinitions();
+    });
     containerEl = new MockEl();
 
     constructor(app: unknown, plugin: unknown) {
@@ -505,6 +509,42 @@ describe("CardWorkspaceSettingTab", () => {
 });
 
 describe("quick input shared setting definitions", () => {
+  it("refreshes cached native template choices after creation, rename and removal", () => {
+    mockState.requireApiVersion.mockReturnValue(true);
+    const plugin = createPlugin();
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    const tab = createTab(plugin);
+    tab.update(); // Native hosts cache definitions when registering the tab.
+    const options = () => (tab.settingItems[3] as { items: { control: { options: Record<string, string> } }[] }).items[0]!.control.options;
+    expect(Object.keys(options())).toEqual([""]);
+
+    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Daily input");
+    settings.noteTemplates = [{ id: "daily", name: "Renamed input", filePath: "Templates/Daily.md" }];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Renamed input");
+    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
+    settings.noteTemplates = [];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Template unavailable (daily)");
+  });
+
+  it("keeps legacy rendering usable when the native update API is unavailable", () => {
+    mockState.requireApiVersion.mockReturnValue(false);
+    const plugin = createPlugin();
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    const tab = createTab(plugin);
+    Object.defineProperty(tab, "update", { value: undefined });
+    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
+    expect(() => tab.refreshTemplateOptions()).not.toThrow();
+    tab.display();
+    expect(groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[0]!.dropdowns[0]!.options)
+      .toContainEqual({ value: "daily", label: "Daily input" });
+  });
+
   it("shows registered templates, retained missing choices and a custom folder input", () => {
     const tab = createTab(createPlugin({
       noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md" }],

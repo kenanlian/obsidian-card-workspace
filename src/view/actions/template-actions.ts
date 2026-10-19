@@ -36,7 +36,7 @@ export class TemplateActions {
     let id: string;
     do { id = `template-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; } while (taken.has(id));
     return { id, name, filePath, targetFolderPath,
-      dateFormat: DEFAULT_NOTE_TEMPLATE_DATE_FORMAT, timeFormat: DEFAULT_NOTE_TEMPLATE_TIME_FORMAT };
+      dateFormat: DEFAULT_NOTE_TEMPLATE_DATE_FORMAT, timeFormat: DEFAULT_NOTE_TEMPLATE_TIME_FORMAT, existingNoteInsertPosition: "end" };
   }
   private async register(file: TFile, name: string, targetFolderPath: string): Promise<void> {
     const templates = this.deps.getSettings().noteTemplates;
@@ -135,6 +135,14 @@ export class TemplateActions {
     };
     formats("dateFormat", this.strings.dateFormat, NOTE_TEMPLATE_DATE_FORMATS);
     formats("timeFormat", this.strings.timeFormat, NOTE_TEMPLATE_TIME_FORMATS);
+    menu.addSeparator();
+    addItem(menu, this.strings.templateInsertPosition, "arrow-down-up", () => {}, (item) => item.setDisabled(true));
+    for (const position of ["start", "end"] as const) {
+      addItem(menu, position === "start" ? this.strings.insertBodyStart : this.strings.insertEnd,
+        position === "start" ? "arrow-up-to-line" : "arrow-down-to-line", () => {
+        void this.patch(templateId, { existingNoteInsertPosition: position });
+      }, (item) => item.setChecked((template.existingNoteInsertPosition ?? "end") === position));
+    }
     menu.addSeparator();
     addItem(menu, this.strings.unregisterTemplate, "list-minus", () => {
       void this.deps.saveSettings({ noteTemplates: this.deps.getSettings().noteTemplates.filter((entry) => entry.id !== templateId) })

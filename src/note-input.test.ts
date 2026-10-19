@@ -7,6 +7,18 @@ import { getUiStrings } from "./i18n";
 const template = { id: "daily", filePath: "Templates/{{date}}.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
 
 describe("note input settings", () => {
+  it.each(["start", "end"] as const)("round-trips per-template existing-note insertion at %s without changing the schema", (position) => {
+    const definition = { ...template, existingNoteInsertPosition: position };
+    const settings = mergeSettings(DEFAULT_SETTINGS, { noteTemplates: [definition] });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.userData.noteTemplates).toEqual([definition]);
+    expect(migrateSettings(document).noteTemplates).toEqual([definition]);
+  });
+  it.each([undefined, null, "middle", 42])("keeps legacy end insertion for an absent or invalid template position: %j", (position) => {
+    expect(normalizeNoteTemplates([{ ...template, existingNoteInsertPosition: position }])).toEqual([template]);
+  });
+
   it("normalizes hostile template definitions while retaining missing references and authored order", () => {
     expect(normalizeNoteTemplates([
       null, {}, { ...template, id: "" }, { ...template, filePath: "../bad.md" }, { ...template, id: "renamed", filePath: "a.txt" },
