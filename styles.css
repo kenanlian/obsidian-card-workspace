@@ -1493,7 +1493,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 
 .folder-card-view .fce-card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
@@ -1597,7 +1597,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   justify-content: center;
   opacity: 0;
   transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
-  margin: -4px -4px 0 0;
+  margin: -4px -4px -4px 0;
 }
 
 .folder-card-view .fce-card-pin-btn:hover {
@@ -1628,7 +1628,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   justify-content: center;
   opacity: 0;
   transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
-  margin: -4px -4px 0 0;
+  margin: -4px -4px -4px 0;
 }
 
 .folder-card-view .fce-more-actions-btn:hover {
