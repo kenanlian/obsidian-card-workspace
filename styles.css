@@ -2307,7 +2307,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 .folder-card-view .fce-diagram-truncated { position: absolute; bottom: 0; left: 0; right: 0; padding: 2px 6px; font-size: var(--font-smallest); color: var(--text-muted); background: var(--background-primary); text-align: center; }
 
 /* Keep a new template's editable title visible even when the host hides inline titles. */
-.inline-title.fce-template-title-entry { display: block !important; }
+body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: block; }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
 /* Modeless quick input uses the owning document's native theme variables. */
 /* Stays below host popovers so link suggestions, menus and tooltips can cover it. */

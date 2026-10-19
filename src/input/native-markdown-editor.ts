@@ -50,8 +50,12 @@ function resolveConstructor(app: App, document: Document): EditorConstructor {
     if (!probe || typeof probe.showEditor !== "function" || typeof probe.unload !== "function") throw new Error("Missing embed lifecycle");
     probe.editable = true;
     probe.showEditor();
-    const prototype = probe.editMode && Object.getPrototypeOf(Object.getPrototypeOf(probe.editMode));
-    if (!prototype || !["set", "buildLocalExtensions", "unload", "destroy"].every((name) => typeof prototype[name] === "function")) {
+    const editModePrototype: unknown = probe.editMode && Object.getPrototypeOf(probe.editMode);
+    const prototype: unknown = typeof editModePrototype === "object" && editModePrototype !== null
+      ? Object.getPrototypeOf(editModePrototype) : null;
+    if (typeof prototype !== "object" || prototype === null
+      || !["set", "buildLocalExtensions", "unload", "destroy"].every((name) => typeof (prototype as Record<string, unknown>)[name] === "function")
+      || typeof prototype.constructor !== "function") {
       throw new Error("Missing native editor prototype");
     }
     const constructor = prototype.constructor as EditorConstructor;
