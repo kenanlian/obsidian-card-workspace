@@ -5,6 +5,7 @@ import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputDesktopWindow } from "./quick-input-desktop";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
 import { installQuickInputResize } from "./quick-input-resize";
+import { installQuickInputDrag } from "./quick-input-drag";
 
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 200;
@@ -154,6 +155,7 @@ export class QuickInputWindowManager {
       this.listen(current, root, "focusin", () => this.refresh(current));
       this.listen(current, win, "focus", () => this.refresh(current));
       this.listen(current, win, "unload", () => this.closeSession(session));
+      current.cleanup.push(installQuickInputDrag({ grip: top, handle: session.window!.handle, cursor: () => this.options.desktop.cursor() }));
       current.cleanup.push(installQuickInputResize({ root, handle: session.window!.handle, cursor: () => this.options.desktop.cursor(),
         minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT }));
       this.refresh(current);

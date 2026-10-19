@@ -10,6 +10,8 @@ The desktop adapter requests an initially hidden, transparent window with no sys
 
 Each document loads the installed host's local `enhance.js`, relays existing styles in cascade order, and incrementally synchronizes theme classes and font variables. CodeMirror owns its own generated styles. Host window-decoration classes are excluded. The existing native editor adapter still supplies Markdown editing and focus scopes; keyboard events reach the vault's keymap with cancellation reflected back to the originating document.
 
+The top grip uses `app-region: no-drag` and pointer capture so Chromium can display `grab` on hover and `grabbing` during movement. Native draggable regions suppress pointer events and do not honor that cursor styling. Movement applies screen-DIP deltas to the owning window's bounds without resizing it; pointer release, cancellation, capture loss, blur and disposal end the gesture. The eight edge resize handles remain separate.
+
 The manager mounts the complete card/editor, synchronously measures layout, then shows and focuses the new window. It deliberately does **not** wait for `requestAnimationFrame`: the isolated host demonstrated that an initially hidden Electron window can withhold frames even with background throttling disabled. Opening never raises, refocuses, conceals, repositions or changes the pin state of existing drafts. Their normal OS stacking still responds to user activation of the main window or other applications. An older request that finishes late is shown with `showInactive()` and does not raise or refocus any other draft.
 
 Abort signals close documents still initializing. Cancel, native window close, resource failure, the 10-second initialization deadline and plugin unload release the owned editor, event routing, observers and native-window references. Submission/retry ownership remains with the existing note creation service.
@@ -24,7 +26,7 @@ npm run lint && npm run check && npm run check:svelte && npm run build && npm te
 
 Tests cover independent drafts and pins, untouched existing windows during and after ordinary/global opens (pinned and unpinned), constructor-option verification, target-handle ownership, ignored options, source/mouse screen placement, negative work areas, unsupported frames, pending-resource cancellation/timeouts, late initialization without reordering other windows, close during initial layout, editor focus scopes, incremental theme/cascade changes, keyboard cancellation, native editor failure, frozen retries and submitted writes completing after their window closes.
 
-The full chain passes: **170 test files, 3,444 tests passed and 1 skipped**. Production externals and sourcemap checks pass. No settings schema/version migration is required.
+The full chain passes: **170 test files, 3,450 tests passed and 1 skipped**. Drag tests cover window isolation, negative screen coordinates, pointer identity, right-click exclusion, cancellation, blur, capture loss, cleanup and native movement failure. Production externals and sourcemap checks pass. No settings schema/version migration is required.
 
 ## Isolated real-host diagnostics
 
@@ -51,6 +53,7 @@ node scripts/run-quick-input-obsidian.mjs \
 Obsidian 1.14.4 also passed three consecutive complete runs. Both isolated application versions verify:
 
 - Native Markdown input (including inserted Chinese text), undo and redo; child Ctrl+Enter saves once and closes only its own window.
+- Top-grip hover and drag emit native Electron `cursor-changed` events for `grab` and `grabbing`. Real pointer capture moves the native window by the expected delta without resizing it. CDP does not move the physical screen cursor, so this check injects deterministic screen DIPs into the cursor source; physical dragging and mixed-DPI movement still require manual acceptance.
 - No workspace leaf/chrome in drafts; target native handles differ from the main handle; actual constructor options match the requested hidden, transparent, undecorated window.
 - A previous draft remains visible with its text, bounds and pin state intact while the next document is held pending and after it opens; it receives no native show, hide or focus event during that open.
 - Independent pin state, incremental light-theme/font changes and transparent document/body backgrounds.

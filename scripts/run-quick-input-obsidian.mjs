@@ -145,6 +145,42 @@ try {
   assert.equal((await windowSnapshot())[0].text, "# Native Markdown\n中文 [[Target]]");
   phase("native-editor-input-undo-redo");
 
+  // CDP pointer input does not move the OS screen cursor. Supply deterministic
+  // DIPs while exercising real pointer capture, native bounds and cursor events.
+  const dragBefore = (await windowSnapshot())[0].bounds;
+  await main.evaluate(() => {
+    const desktop = quickInputPlugin.quickInputDesktop;
+    const contents = [...quickInputPlugin.quickInputManager.sessions.values()][0].window.handle.webContents;
+    const test = window.quickInputDragTest = { originalCursor: desktop.cursor, point: desktop.cursor(), cursors: [], contents };
+    test.listener = (_event, type) => test.cursors.push(type);
+    contents.on("cursor-changed", test.listener);
+    desktop.cursor = () => test.point;
+  });
+  const grip = first.page.locator(".fce-quick-input-grip");
+  await grip.hover({ position: { x: 100, y: 10 } });
+  assert.equal(await grip.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region")), "no-drag");
+  assert.equal(await grip.evaluate((el) => getComputedStyle(el).cursor), "grab");
+  await main.waitForFunction(() => quickInputDragTest.cursors.includes("grab"));
+  await first.page.mouse.down();
+  assert.equal(await grip.evaluate((el) => el.classList.contains("is-dragging")), true);
+  assert.equal(await grip.evaluate((el) => getComputedStyle(el).cursor), "grabbing");
+  await main.evaluate(() => { quickInputDragTest.point = { x: quickInputDragTest.point.x + 40, y: quickInputDragTest.point.y + 25 }; });
+  await first.page.mouse.move(110, 12);
+  await main.waitForFunction(({ x, y }) => {
+    const bounds = [...quickInputPlugin.quickInputManager.sessions.values()][0].window.handle.getBounds();
+    return bounds.x === x && bounds.y === y;
+  }, { x: dragBefore.x + 40, y: dragBefore.y + 25 });
+  assert.deepEqual((await windowSnapshot())[0].bounds, { ...dragBefore, x: dragBefore.x + 40, y: dragBefore.y + 25 });
+  await main.waitForFunction(() => quickInputDragTest.cursors.includes("grabbing"));
+  await first.page.mouse.up();
+  assert.equal(await grip.evaluate((el) => el.classList.contains("is-dragging")), false);
+  const dragCursors = await main.evaluate(() => {
+    quickInputPlugin.quickInputDesktop.cursor = quickInputDragTest.originalCursor;
+    quickInputDragTest.contents.removeListener("cursor-changed", quickInputDragTest.listener);
+    return quickInputDragTest.cursors;
+  });
+  phase("grip-native-cursors-and-pointer-drag", { cursors: dragCursors, delta: { x: 40, y: 25 }, cursorSource: "injected screen DIPs" });
+
   const beforeDelayedOpen = (await windowSnapshot())[0];
   const eventOffset = await main.evaluate(() => quickInputDiagnostics.events.length);
   await beginDelayedOpen();

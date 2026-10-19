@@ -470,4 +470,78 @@ describe("modeless quick input", async () => {
     expect(windows[0].handle.setBounds).toHaveBeenLastCalledWith({ x: 260, y: 170, width: 320, height: 200 });
     expect(windows[0].handle.setShape).not.toHaveBeenCalled();
   });
+
+  function dragGrip(index = 0) {
+    const grip = root(index).querySelector<HTMLElement>(".fce-quick-input-grip")!;
+    let captured: number | null = null;
+    grip.setPointerCapture = vi.fn((id) => { captured = id; });
+    grip.hasPointerCapture = vi.fn((id) => captured === id);
+    grip.releasePointerCapture = vi.fn(() => { captured = null; });
+    return grip;
+  }
+  function dragPointer(type: string, pointerId = 1, button = 0) {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, button });
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+    return event;
+  }
+
+  it("drags only the chosen window using screen DIPs without changing its size or editor", async () => {
+    await manager.open(); await manager.open(); setText("keep draft");
+    const grip = dragGrip();
+    cursor = { x: -500, y: 300 };
+    const down = dragPointer("pointerdown"); grip.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    expect(grip.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(grip.classList.contains("is-dragging")).toBe(true);
+    cursor = { x: -650, y: 325 };
+    grip.dispatchEvent(dragPointer("pointermove", 2));
+    expect(windows[0].handle.setBounds).not.toHaveBeenCalled();
+    grip.dispatchEvent(dragPointer("pointermove"));
+    expect(windows[0].handle.setBounds).toHaveBeenLastCalledWith({ x: -50, y: 125, width: 480, height: 270 });
+    cursor = { x: -700, y: 350 }; grip.dispatchEvent(dragPointer("pointerup"));
+    expect(windows[0].handle.setBounds).toHaveBeenLastCalledWith({ x: -100, y: 150, width: 480, height: 270 });
+    expect(grip.classList.contains("is-dragging")).toBe(false);
+    expect(grip.releasePointerCapture).toHaveBeenCalledWith(1);
+    expect(windows[1].handle.setBounds).not.toHaveBeenCalled();
+    expect(state.editors[0].text).toBe("keep draft");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it.each(["pointercancel", "lostpointercapture", "blur"])("stops moving on %s", async (type) => {
+    await manager.open(); const grip = dragGrip();
+    grip.dispatchEvent(dragPointer("pointerdown"));
+    if (type === "blur") windows[0].win.dispatchEvent(new Event("blur"));
+    else grip.dispatchEvent(dragPointer(type));
+    cursor = { x: 900, y: 600 };
+    grip.dispatchEvent(dragPointer("pointermove")); grip.dispatchEvent(dragPointer("pointerup"));
+    expect(windows[0].handle.setBounds).not.toHaveBeenCalled();
+    expect(grip.classList.contains("is-dragging")).toBe(false);
+    expect(grip.releasePointerCapture).toHaveBeenCalledWith(1);
+  });
+
+  it("ignores right clicks and removes drag listeners and capture on close", async () => {
+    await manager.open(); const grip = dragGrip();
+    grip.dispatchEvent(dragPointer("pointerdown", 1, 2));
+    expect(grip.setPointerCapture).not.toHaveBeenCalled();
+    grip.dispatchEvent(dragPointer("pointerdown"));
+    cancel().click();
+    expect(grip.releasePointerCapture).toHaveBeenCalledWith(1);
+    grip.dispatchEvent(dragPointer("pointermove"));
+    grip.dispatchEvent(dragPointer("pointerdown"));
+    expect(grip.setPointerCapture).toHaveBeenCalledOnce();
+    expect(windows[0].handle.setBounds).not.toHaveBeenCalled();
+  });
+
+  it("releases drag capture after a native move fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await manager.open(); const grip = dragGrip();
+    vi.mocked(windows[0].handle.setBounds).mockImplementationOnce(() => { throw new Error("closed"); });
+    grip.dispatchEvent(dragPointer("pointerdown"));
+    grip.dispatchEvent(dragPointer("pointermove"));
+    expect(grip.classList.contains("is-dragging")).toBe(false);
+    expect(grip.releasePointerCapture).toHaveBeenCalledWith(1);
+    grip.dispatchEvent(dragPointer("pointermove"));
+    expect(windows[0].handle.setBounds).toHaveBeenCalledOnce();
+    expect(send().isConnected).toBe(true);
+  });
 });

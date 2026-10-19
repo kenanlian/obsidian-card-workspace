@@ -2266,13 +2266,14 @@ html.fce-quick-input-window body::after { display: none !important; }
   justify-content: center;
   color: var(--text-faint);
   position: relative;
-  -webkit-app-region: drag;
-  cursor: default;
+  -webkit-app-region: no-drag;
+  cursor: grab;
   user-select: none;
   touch-action: none;
 }
 .fce-quick-input-grip svg { width: 16px; height: 16px; }
 .fce-quick-input-grip:hover { color: var(--text-muted); }
+.fce-quick-input-grip.is-dragging { cursor: grabbing; }
 .fce-quick-input-grip-icon { position: absolute; left: calc(50% - 8px); display: flex; }
 .fce-quick-input-editor, .fce-quick-input-footer { -webkit-app-region: no-drag; }
 .fce-quick-input-editor {
