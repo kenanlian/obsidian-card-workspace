@@ -6,7 +6,7 @@
  */
 import { Scope, type App, type Editor } from "obsidian";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { EditorView, placeholder } from "@codemirror/view";
+import { drawSelection, EditorView, placeholder } from "@codemirror/view";
 
 export interface NativeMarkdownEditor {
   getValue(): string;
@@ -79,6 +79,9 @@ export function createNativeMarkdownEditor(options: {
     buildLocalExtensions(): Extension[] {
       return [...super.buildLocalExtensions(),
         placeholder(options.placeholder),
+        // Native Chromium carets use the full line height beside an empty
+        // placeholder. CodeMirror measures text bounds consistently instead.
+        drawSelection(),
         editable.of([EditorState.readOnly.of(false), EditorView.editable.of(true)]),
         EditorView.updateListener.of((update) => { if (update.docChanged) onChange(); }),
       ];
