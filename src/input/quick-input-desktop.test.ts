@@ -7,7 +7,7 @@ const runtime = vi.hoisted(() => ({ ready: Promise.resolve(), dispose: vi.fn() }
 vi.mock("./quick-input-document", () => ({ prepareQuickInputDocument: vi.fn(() => ({ ready: runtime.ready, dispose: runtime.dispose })) }));
 
 function handle() {
-  return { id: 2, isDestroyed: vi.fn(() => false), show: vi.fn(), showInactive: vi.fn(), focus: vi.fn(), moveTop: vi.fn(),
+  return { id: 2, isDestroyed: vi.fn(() => false), show: vi.fn(), showInactive: vi.fn(), focus: vi.fn(),
     setParentWindow: vi.fn(), setAlwaysOnTop: vi.fn(), setMinimumSize: vi.fn(), setContentSize: vi.fn(),
     getBounds: vi.fn(() => ({ x: 100, y: 100, width: 480, height: 270 })),
     getContentBounds: vi.fn(() => ({ x: 100, y: 100, width: 480, height: 270 })), setBounds: vi.fn(), setResizable: vi.fn(),

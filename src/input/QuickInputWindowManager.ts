@@ -57,7 +57,6 @@ export class QuickInputWindowManager {
     let mountingEditor = false;
     try {
       this.options.desktop.check();
-      this.raiseExistingWindows();
       const settings = this.options.getSettings();
       const initial = this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, 0);
       const ordinal = [...this.sessions.values()].filter((current) => current.displayId === initial.displayId).length;
@@ -83,9 +82,8 @@ export class QuickInputWindowManager {
         opened.handle.focus();
         session.draft?.editor.focus();
       } else {
-        // A slower earlier request must never take focus from a newer draft.
+        // Reveal only this late draft; do not refocus or reorder other windows.
         opened.handle.showInactive();
-        this.sessions.get(this.latestOpenId)?.window?.handle.moveTop();
       }
     } catch (error) { this.fail(session, error, mountingEditor); }
   }
@@ -93,15 +91,6 @@ export class QuickInputWindowManager {
   private waitForLayout(session: Session): Promise<void> {
     session.draft!.root.getBoundingClientRect();
     return Promise.resolve();
-  }
-
-  /** Raise existing drafts once, without hiding, refocusing or rebuilding them. */
-  private raiseExistingWindows(): void {
-    for (const session of this.sessions.values()) {
-      if (session.closed || !session.draft || !session.window) continue;
-      try { if (!session.window.handle.isDestroyed()) session.window.handle.moveTop(); }
-      catch (error) { console.warn("[card-workspace] Quick input window raise failed", error); }
-    }
   }
 
   private mount(session: Session, win: Window): void {

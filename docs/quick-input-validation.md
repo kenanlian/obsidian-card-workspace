@@ -10,7 +10,7 @@ The desktop adapter requests an initially hidden, transparent window with no sys
 
 Each document loads the installed host's local `enhance.js`, relays existing styles in cascade order, and incrementally synchronizes theme classes and font variables. CodeMirror owns its own generated styles. Host window-decoration classes are excluded. The existing native editor adapter still supplies Markdown editing and focus scopes; keyboard events reach the vault's keymap with cancellation reflected back to the originating document.
 
-The manager mounts the complete card/editor, synchronously measures layout, then shows and focuses the new window. It deliberately does **not** wait for `requestAnimationFrame`: the isolated host demonstrated that an initially hidden Electron window can withhold frames even with background throttling disabled. Existing drafts are raised without focus, concealment, opacity changes or DOM/editor replacement. An older request that finishes late is shown without stealing focus from the newest draft.
+The manager mounts the complete card/editor, synchronously measures layout, then shows and focuses the new window. It deliberately does **not** wait for `requestAnimationFrame`: the isolated host demonstrated that an initially hidden Electron window can withhold frames even with background throttling disabled. Opening never raises, refocuses, conceals, repositions or changes the pin state of existing drafts. Their normal OS stacking still responds to user activation of the main window or other applications. An older request that finishes late is shown with `showInactive()` and does not raise or refocus any other draft.
 
 Abort signals close documents still initializing. Cancel, native window close, resource failure, the 10-second initialization deadline and plugin unload release the owned editor, event routing, observers and native-window references. Submission/retry ownership remains with the existing note creation service.
 
@@ -22,9 +22,9 @@ Run the repository validation chain:
 npm run lint && npm run check && npm run check:svelte && npm run build && npm test
 ```
 
-Tests cover independent drafts and pins, constructor-option verification, target-handle ownership, ignored options, source/mouse screen placement, negative work areas, unsupported frames, pending-resource cancellation/timeouts, late initialization, close during initial layout, editor focus scopes, incremental theme/cascade changes, keyboard cancellation, native editor failure, frozen retries and submitted writes completing after their window closes.
+Tests cover independent drafts and pins, untouched existing windows during and after ordinary/global opens (pinned and unpinned), constructor-option verification, target-handle ownership, ignored options, source/mouse screen placement, negative work areas, unsupported frames, pending-resource cancellation/timeouts, late initialization without reordering other windows, close during initial layout, editor focus scopes, incremental theme/cascade changes, keyboard cancellation, native editor failure, frozen retries and submitted writes completing after their window closes.
 
-The full chain passes: **170 test files, 3,441 tests passed and 1 skipped**. Production externals and sourcemap checks pass. No settings schema/version migration is required.
+The full chain passes: **170 test files, 3,444 tests passed and 1 skipped**. Production externals and sourcemap checks pass. No settings schema/version migration is required.
 
 ## Isolated real-host diagnostics
 
@@ -52,7 +52,7 @@ Obsidian 1.14.4 also passed three consecutive complete runs. Both isolated appli
 
 - Native Markdown input (including inserted Chinese text), undo and redo; child Ctrl+Enter saves once and closes only its own window.
 - No workspace leaf/chrome in drafts; target native handles differ from the main handle; actual constructor options match the requested hidden, transparent, undecorated window.
-- A previous draft remains visible with its text intact while the next document is held pending; it receives no native hide event.
+- A previous draft remains visible with its text, bounds and pin state intact while the next document is held pending and after it opens; it receives no native show, hide or focus event during that open.
 - Independent pin state, incremental light-theme/font changes and transparent document/body backgrounds.
 - Opening a draft while the main window is hidden does not restore the main window.
 - Successful global-shortcut registration and release; ten independent visible draft windows.
@@ -68,7 +68,7 @@ Record OS/build, Obsidian application and installer versions, frame style, theme
 
 - Light/dark themes against light, dark and colored desktop backgrounds: no white corner areas or second outline, including while resizing.
 - 100%, 125%, 150% and 200% scaling; mixed-DPI displays, negative screen coordinates and display changes.
-- Ten successive opens through the navigation button, command and global shortcut: earlier drafts never blank or disappear during preparation; focus ends in the newest draft.
+- Ten successive opens through the navigation button, command and global shortcut: earlier drafts never blank or disappear during preparation; focus ends in the newest draft. Check earlier drafts both in front of and behind the main window/another application, with and without pinning: opening must not explicitly bring earlier drafts forward. User activation of the main window may still cover an unpinned draft.
 - Main window minimized, another application focused: physical global shortcut opens only the draft; Chinese IME, normal editor shortcuts, paste, undo/redo and sending continue to work.
 - Per-window pinning, drag grip, all eight resize handles, minimum size and configured sizes for new drafts.
 - Invalid destinations, failed send/retry, cancellation, system close during a send, plugin reload, vault close and application restart.

@@ -12,7 +12,6 @@ export interface QuickInputWindowHandle {
   show(): void;
   showInactive(): void;
   focus(): void;
-  moveTop(): void;
   setParentWindow(parent: null): void;
   setAlwaysOnTop(value: boolean): void;
   setMinimumSize(width: number, height: number): void;
@@ -66,7 +65,7 @@ function resolveWindowHandle(win: DesktopWindow): QuickInputWindowHandle {
   const electron = win.require?.("electron") as { remote?: { getCurrentWindow(): QuickInputWindowHandle } } | undefined;
   const remote = electron?.remote ?? win.require?.("@electron/remote") as { getCurrentWindow(): QuickInputWindowHandle } | undefined;
   const value = remote?.getCurrentWindow();
-  const methods = ["isDestroyed", "show", "showInactive", "focus", "moveTop", "setParentWindow", "setAlwaysOnTop", "setMinimumSize", "setContentSize", "getBounds", "getContentBounds", "setBounds", "setResizable"] as const;
+  const methods = ["isDestroyed", "show", "showInactive", "focus", "setParentWindow", "setAlwaysOnTop", "setMinimumSize", "setContentSize", "getBounds", "getContentBounds", "setBounds", "setResizable"] as const;
   if (!value || !Number.isInteger(value.id) || methods.some((name) => typeof value[name] !== "function") || value.isDestroyed()
     || !value.webContents?.getZoomFactor || !value.webContents.setZoomFactor || !value.webContents.setBackgroundThrottling) {
     throw new QuickInputDesktopError("unavailable");

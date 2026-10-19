@@ -145,14 +145,19 @@ try {
   assert.equal((await windowSnapshot())[0].text, "# Native Markdown\n中文 [[Target]]");
   phase("native-editor-input-undo-redo");
 
+  const beforeDelayedOpen = (await windowSnapshot())[0];
+  const eventOffset = await main.evaluate(() => quickInputDiagnostics.events.length);
   await beginDelayedOpen();
   assert.equal((await windowSnapshot())[0].visible, true);
   assert.equal((await windowSnapshot())[0].text, "# Native Markdown\n中文 [[Target]]");
-  const eventsDuringDelay = await main.evaluate((id) => quickInputDiagnostics.events.filter((event) => event.id === id), first.snapshot.nativeId);
-  assert.equal(eventsDuringDelay.filter((event) => event.name === "hide").length, 0);
   await finishDelayedOpen();
   assert.equal((await windowSnapshot()).length, 2);
-  phase("earlier-draft-stays-visible-during-delayed-open", { eventsDuringDelay });
+  const afterDelayedOpen = (await windowSnapshot())[0];
+  assert.deepEqual(afterDelayedOpen, beforeDelayedOpen);
+  const eventsDuringOpen = await main.evaluate(({ id, offset }) => quickInputDiagnostics.events.slice(offset).filter((event) => event.id === id),
+    { id: first.snapshot.nativeId, offset: eventOffset });
+  assert.deepEqual(eventsDuringOpen.filter((event) => ["show", "hide", "focus"].includes(event.name)), []);
+  phase("earlier-draft-untouched-during-delayed-open", { eventsDuringOpen });
 
   await first.page.locator(".fce-quick-input-pin").click();
   assert.equal((await windowSnapshot())[0].pinned, true);

@@ -24,7 +24,7 @@ let submit: ReturnType<typeof vi.fn<(request: QuickInputRequest) => Promise<Note
 let files: Map<string, TFile | TFolder>;
 let language: "en" | "zh";
 const rootFolder = Object.assign(new TFolder(), { path: "" });
-type TestHandle = QuickInputWindowHandle & { hide: ReturnType<typeof vi.fn>; setOpacity: ReturnType<typeof vi.fn>; setShape: ReturnType<typeof vi.fn> };
+type TestHandle = QuickInputWindowHandle & { moveTop: ReturnType<typeof vi.fn>; hide: ReturnType<typeof vi.fn>; setOpacity: ReturnType<typeof vi.fn>; setShape: ReturnType<typeof vi.fn> };
 interface DraftWindow { win: Window; frame: HTMLIFrameElement; handle: TestHandle; dispose: ReturnType<typeof vi.fn> }
 let windows: DraftWindow[];
 let desktop: QuickInputDesktop;
@@ -309,29 +309,42 @@ describe("modeless quick input", async () => {
     expect(root().querySelectorAll(".fce-quick-input-resize")).toHaveLength(8);
   });
 
-  it("keeps an earlier draft intact and raised while another document is preparing", async () => {
+  it.each([
+    { pinned: false, global: false }, { pinned: true, global: false },
+    { pinned: false, global: true }, { pinned: true, global: true },
+  ])("leaves an existing draft untouched during and after opening (pinned=$pinned, global=$global)", async ({ pinned, global }) => {
     await manager.open(window); setText("keep this draft");
     const first = windows[0], original = root();
+    if (pinned) root().querySelector<HTMLButtonElement>(".fce-quick-input-pin")!.click();
+    const expectUntouched = () => {
+      expect(first.handle.moveTop).not.toHaveBeenCalled();
+      expect(first.handle.show).toHaveBeenCalledOnce();
+      expect(first.handle.showInactive).not.toHaveBeenCalled();
+      expect(first.handle.focus).toHaveBeenCalledOnce();
+      expect(first.handle.hide).not.toHaveBeenCalled();
+      expect(first.handle.setOpacity).not.toHaveBeenCalled();
+      expect(first.handle.setBounds).not.toHaveBeenCalled();
+      expect(first.handle.setAlwaysOnTop).toHaveBeenCalledTimes(pinned ? 2 : 1);
+      expect(first.handle.setAlwaysOnTop).toHaveBeenLastCalledWith(pinned);
+      expect(first.dispose).not.toHaveBeenCalled();
+      expect(root()).toBe(original);
+      expect(state.editors[0].text).toBe("keep this draft");
+      expect(state.editors[0].focus).toHaveBeenCalledOnce();
+      expect(state.editors[0].dispose).not.toHaveBeenCalled();
+    };
     let finish!: () => void;
     documentReady = new Promise((resolve) => { finish = resolve; });
-    const pending = manager.open(window);
-    expect(first.handle.moveTop).toHaveBeenCalledOnce();
-    expect(first.handle.show).toHaveBeenCalledOnce();
-    expect(first.handle.focus).toHaveBeenCalledOnce();
-    expect(first.handle.hide).not.toHaveBeenCalled();
-    expect(first.handle.setOpacity).not.toHaveBeenCalled();
-    expect(first.dispose).not.toHaveBeenCalled();
+    const pending = manager.open(global ? undefined : window);
+    expectUntouched();
     expect(windows[1].handle.show).not.toHaveBeenCalled();
     expect(state.editors).toHaveLength(1);
     finish(); await pending;
-    expect(root()).toBe(original);
-    expect(state.editors[0].text).toBe("keep this draft");
-    expect(state.editors[0].dispose).not.toHaveBeenCalled();
+    expectUntouched();
     expect(windows[1].handle.show).toHaveBeenCalledOnce();
-    expect(first.handle.moveTop).toHaveBeenCalledOnce();
+    expect(windows[1].handle.focus).toHaveBeenCalledOnce();
   });
 
-  it("does not let a slow earlier request take focus from the newest draft", async () => {
+  it("reveals a slow earlier request without refocusing or raising the newest draft", async () => {
     let finish!: () => void;
     documentReady = new Promise((resolve) => { finish = resolve; });
     const earlier = manager.open();
@@ -341,8 +354,10 @@ describe("modeless quick input", async () => {
     expect(windows[0].handle.show).not.toHaveBeenCalled();
     expect(windows[0].handle.focus).not.toHaveBeenCalled();
     expect(windows[0].handle.showInactive).toHaveBeenCalledOnce();
+    expect(windows[0].handle.moveTop).not.toHaveBeenCalled();
+    expect(windows[1].handle.show).toHaveBeenCalledOnce();
     expect(windows[1].handle.focus).toHaveBeenCalledOnce();
-    expect(windows[1].handle.moveTop).toHaveBeenCalledOnce();
+    expect(windows[1].handle.moveTop).not.toHaveBeenCalled();
   });
 
   it("cancels an initializing document on disposal and never mounts or shows it later", async () => {
@@ -425,7 +440,7 @@ describe("modeless quick input", async () => {
     expect(notify).toHaveBeenCalledExactlyOnceWith(noteInputStrings.en.nativeFrameUnsupported);
   });
 
-  it("keeps earlier drafts usable when creating or raising another window fails", async () => {
+  it("keeps earlier drafts usable when creating another window fails", async () => {
     await manager.open(); setText("keep");
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(desktop.createWindow).mockRejectedValueOnce(new QuickInputDesktopError("unavailable"));
@@ -433,8 +448,10 @@ describe("modeless quick input", async () => {
     expect(notify).toHaveBeenCalledWith(noteInputStrings.en.desktopUnavailable);
     expect(state.editors[0].text).toBe("keep");
     expect(windows[0].dispose).not.toHaveBeenCalled();
-    vi.mocked(windows[0].handle.moveTop).mockImplementation(() => { throw new Error("closing"); });
     await manager.open();
+    expect(windows[0].handle.moveTop).not.toHaveBeenCalled();
+    expect(windows[0].handle.show).toHaveBeenCalledOnce();
+    expect(windows[0].handle.focus).toHaveBeenCalledOnce();
     expect(windows[1].handle.show).toHaveBeenCalledOnce();
   });
 
