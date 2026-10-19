@@ -120,6 +120,14 @@ export function createNativeMarkdownEditor(options: {
     native.owner.editor = native.editor;
     native.editor.cm.contentDOM.addEventListener("focusin", takeFocus);
     native.editor.cm.contentDOM.addEventListener("focusout", releaseFocus);
+    const win = container.ownerDocument.defaultView!;
+    const focusWindow = () => {
+      if (native?.editor.cm.contentDOM.contains(container.ownerDocument.activeElement)) takeFocus();
+    };
+    // A native window can lose activation while its contentDOM remains the
+    // document's activeElement. Release its scope before another draft takes it.
+    win.addEventListener("blur", releaseFocus);
+    win.addEventListener("focus", focusWindow);
     const editor = native;
     return {
       getValue: () => editor.editor.getValue(),
@@ -132,6 +140,8 @@ export function createNativeMarkdownEditor(options: {
         disposed = true;
         editor.editor.cm.contentDOM.removeEventListener("focusin", takeFocus);
         editor.editor.cm.contentDOM.removeEventListener("focusout", releaseFocus);
+        win.removeEventListener("blur", releaseFocus);
+        win.removeEventListener("focus", focusWindow);
         releaseFocus();
         try { editor.unload(); } finally { editor.destroy(); container.replaceChildren(); }
       },

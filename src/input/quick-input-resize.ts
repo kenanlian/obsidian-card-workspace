@@ -30,7 +30,7 @@ export function installQuickInputResize({ root, handle, cursor, minWidth, minHei
   const apply = () => {
     if (!drag || handle.isDestroyed()) return;
     const point = cursor();
-    handle.setBounds!(resizeQuickInputBounds(drag.start, drag.edge, point.x - drag.origin.x, point.y - drag.origin.y, minWidth, minHeight));
+    handle.setBounds(resizeQuickInputBounds(drag.start, drag.edge, point.x - drag.origin.x, point.y - drag.origin.y, minWidth, minHeight));
   };
   const guarded = (action: () => void) => {
     try { action(); }

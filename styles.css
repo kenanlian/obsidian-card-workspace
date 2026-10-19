@@ -2199,49 +2199,21 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 /* Keep a new template's editable title visible even when the host hides inline titles. */
 .inline-title.fce-template-title-entry { display: block !important; }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
-/* Only documents exclusively hosting a quick-input session receive this class. */
-html.fce-quick-input-window .titlebar,
-html.fce-quick-input-window .workspace-tab-header-container,
-html.fce-quick-input-window .workspace-ribbon,
-html.fce-quick-input-window .workspace-split.mod-left-split,
-html.fce-quick-input-window .workspace-split.mod-right-split,
-html.fce-quick-input-window .view-header { display: none !important; }
-html.fce-quick-input-window body,
-html.fce-quick-input-window .app-container,
-html.fce-quick-input-window .horizontal-main-container,
-html.fce-quick-input-window .workspace,
-html.fce-quick-input-window .workspace-split,
-html.fce-quick-input-window .workspace-tabs,
-html.fce-quick-input-window .workspace-tab-container,
-html.fce-quick-input-window .workspace-leaf,
-html.fce-quick-input-window .workspace-leaf-content,
-html.fce-quick-input-window .view-content {
-  padding: 0 !important;
+/* These documents contain only the plugin's card, never workspace chrome. */
+html.fce-quick-input-window,
+html.fce-quick-input-window body {
+  width: 100%;
+  height: 100%;
   margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  background: transparent !important;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  gap: 0 !important;
 }
-html.fce-quick-input-window body {
-  --titlebar-height: 0px;
-  --header-height: 0px;
-  --frame-left-space: 0px;
-  --frame-right-space: 0px;
-  --tab-outline-width: 0px;
-}
-html.fce-quick-input-window .view-content { flex: 1; overflow: hidden; }
-/* A transparent native window paints only the card, so CSS owns the whole contour. */
-html.fce-quick-input-window.fce-quick-input-transparent,
-html.fce-quick-input-window.fce-quick-input-transparent :is(body, .app-container, .horizontal-main-container, .workspace, .workspace-split, .workspace-tabs, .workspace-tab-container, .workspace-leaf, .workspace-leaf-content, .view-content) {
-  background: transparent !important;
-}
-/* The host's initial empty tab stays invisible until the quick-input view replaces it. */
-html.fce-quick-input-window.fce-quick-input-transparent .workspace-leaf-content:not([data-type="card-workspace-quick-input"]) { visibility: hidden; }
-html.fce-quick-input-window.fce-quick-input-transparent .fce-quick-input {
-  border-radius: var(--fce-quick-input-radius);
-  box-shadow: inset 0 0 0 1px var(--fce-quick-input-border);
-}
+html.fce-quick-input-window body::before,
+html.fce-quick-input-window body::after { display: none !important; }
 .fce-quick-input-resize { position: absolute; z-index: 1; -webkit-app-region: no-drag; }
 .fce-quick-input-resize[data-edge="n"], .fce-quick-input-resize[data-edge="s"] { left: 14px; right: 14px; height: 5px; cursor: ns-resize; }
 .fce-quick-input-resize[data-edge="e"], .fce-quick-input-resize[data-edge="w"] { top: 14px; bottom: 14px; width: 5px; cursor: ew-resize; }
@@ -2272,13 +2244,13 @@ html.fce-quick-input-window.fce-quick-input-transparent .fce-quick-input {
   flex-direction: column;
   box-sizing: border-box;
   padding: 0 var(--fce-quick-input-frame);
-  /* An opaque window's native region owns the outer contour. Fill its corners
-     instead of drawing a second rounded outline inside the document. */
+  /* CSS owns the sole contour; the native window is transparent and unframed. */
   border: 0;
-  border-radius: 0;
+  border-radius: var(--fce-quick-input-radius);
+  overflow: hidden;
   background: color-mix(in srgb, var(--fce-quick-input-tint) 12%, var(--background-secondary));
   color: var(--text-normal);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px var(--fce-quick-input-border);
 }
 /* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
 @supports (color: color(from white srgb-linear round(up, r, 1) g b)) {
@@ -2288,7 +2260,7 @@ html.fce-quick-input-window.fce-quick-input-transparent .fce-quick-input {
   }
 }
 .fce-quick-input-grip {
-  flex: 0 0 28px;
+  flex: 0 0 15px;
   display: flex;
   align-items: center;
   justify-content: center;

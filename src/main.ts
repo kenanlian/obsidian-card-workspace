@@ -197,18 +197,12 @@ export default class CardWorkspacePlugin extends Plugin {
     });
     this.registerView(QUICK_INPUT_VIEW, (leaf) => new QuickInputView(leaf, {
       getTitle: () => this.getUiStrings().noteInput.quickInput,
-      attach: (id, view) => {
-        if (this.quickInputManager) this.quickInputManager.attach(id, view);
-        else this.app.workspace.onLayoutReady(() => { view.leaf.detach(); });
-      },
-      close: (view) => this.quickInputManager?.closeView(view),
+      discard: (view) => this.app.workspace.onLayoutReady(() => { view.leaf.detach(); }),
     }));
     this.registerEvent(this.app.workspace.on("quit", () => this.disposeRuntime()));
     this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, win) => {
-      this.quickInputManager?.handleWindowClosed(win);
       this.popoutEvents.get(win)?.unload(); this.popoutEvents.delete(win);
     }));
-    this.registerEvent(this.app.workspace.on("layout-change", () => this.quickInputManager?.reconcileWindows()));
     this.registerDomEvent(window, "unload", () => this.disposeRuntime());
     this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
@@ -266,7 +260,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (this.disposed) return;
     // Includes deferred restored views: tokens are runtime-only, never revive drafts.
     for (const leaf of this.app.workspace.getLeavesOfType(QUICK_INPUT_VIEW)) {
-      if (!this.quickInputManager?.ownsLeaf(leaf)) leaf.detach();
+      leaf.detach();
     }
     await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
     if (this.disposed) return;
@@ -448,7 +442,7 @@ export default class CardWorkspacePlugin extends Plugin {
       });
     }
     const manager = await this.quickInputInitialization;
-    if (!this.disposed && !win?.closed) manager?.open(win);
+    if (!this.disposed && !win?.closed) await manager?.open(win);
   }
 
   async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void> {

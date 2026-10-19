@@ -105,6 +105,24 @@ describe("native Markdown editor compatibility seam", () => {
     adapter.setReadOnly(false); expect(content.getAttribute("contenteditable")).toBe("true");
   });
 
+  it("releases native window activation independently of the editor's DOM focus", () => {
+    const f = fixture(); const adapter = f.open();
+    adapter.focus();
+    const content = f.container.querySelector<HTMLElement>(".cm-content")!;
+    expect(document.activeElement).toBe(content);
+    expect(f.keymap.pushScope).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event("blur"));
+    expect(document.activeElement).toBe(content);
+    expect(f.workspace.activeEditor).toBe(f.underlying);
+    expect(f.keymap.popScope).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event("focus"));
+    expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+    adapter.dispose();
+    window.dispatchEvent(new Event("focus"));
+    expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+    expect(f.workspace.activeEditor).toBe(f.underlying);
+  });
+
   it("hands editor ownership and shortcuts between two drafts without disposing the focused sibling", () => {
     const f = fixture();
     const activeScopes: typeof scopes.instances = [];

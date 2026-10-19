@@ -1,15 +1,14 @@
-import { Platform, TFile, TFolder, setIcon, type App, type WorkspaceLeaf } from "obsidian";
+import { Platform, TFile, TFolder, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
 import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
 import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
-import type { QuickInputView } from "./QuickInputView";
-import { QUICK_INPUT_VIEW, QuickInputDesktopError, type QuickInputDesktop, type QuickInputWindowHandle } from "./quick-input-desktop";
+import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputDesktopWindow } from "./quick-input-desktop";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
 import { installQuickInputResize } from "./quick-input-resize";
 
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 200;
-interface Session { displayId?: number; id: string; leaf: WorkspaceLeaf | null; win: Window | null; handle: QuickInputWindowHandle | null; draft: Draft | null; closed: boolean; usesOpacity: boolean; transparent: boolean }
+interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
 interface QuickInputTarget {
   template: NoteTemplateDefinition | null;
   folderPath: string | null;
@@ -47,91 +46,69 @@ export class QuickInputWindowManager {
   private lastTint: QuickInputTint | null = null;
   private disposed = false;
   private sequence = 0;
+  private latestOpenId = "";
   private readonly submissionPrefix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   constructor(private readonly options: Options) {}
 
-  open(source?: Window): void {
+  async open(source?: Window): Promise<void> {
     if (this.disposed || source?.closed) return;
     let session: Session | undefined;
+    let mountingEditor = false;
     try {
       this.options.desktop.check();
       this.raiseExistingWindows();
       const settings = this.options.getSettings();
       const initial = this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, 0);
       const ordinal = [...this.sessions.values()].filter((current) => current.displayId === initial.displayId).length;
-      const geometry = ordinal ? this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, ordinal) : initial;
+      const placement = ordinal ? this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, ordinal) : initial;
       const id = `${this.submissionPrefix}-window-${++this.sequence}`;
-      session = { id, displayId: geometry.displayId, leaf: null, win: null, handle: null, draft: null, closed: false, usesOpacity: false, transparent: false };
+      this.latestOpenId = id;
+      session = { id, displayId: placement.displayId, abort: new AbortController(), window: null, draft: null, closed: false };
       this.sessions.set(id, session);
-      const opened = this.options.desktop.openPopout(() => this.options.app.workspace.openPopoutLeaf({ x: geometry.x, y: geometry.y, size: { width: geometry.width, height: geometry.height } }));
-      const leaf = session.leaf = opened.value;
-      session.transparent = opened.transparent;
-      const win = session.win = leaf.getContainer().win;
-      const handle = session.handle = this.options.desktop.handle(win);
-      // Keep drawing while the entry window covers this draft, so raising it later
-      // does not wait for a frame from the renderer that is building the next draft.
-      handle.webContents?.setBackgroundThrottling?.(false);
-      // The host already showed this popout. A transparent window keeps its initial
-      // content invisible through CSS; otherwise conceal it without hiding the native
-      // window and reactivating the entry window underneath.
-      if (!session.transparent) {
-        session.usesOpacity = (Platform.isWin || Platform.isMacOS) && typeof handle.setOpacity === "function";
-        if (session.usesOpacity) handle.setOpacity!(0);
-        else handle.hide();
+      const opened = await this.options.desktop.createWindow({ id, placement, signal: session.abort.signal });
+      if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
+        opened.dispose(); this.closeSession(session); return;
       }
-      this.raiseExistingWindows();
-      // Obsidian replaces popout body.className when synchronizing host focus/theme.
-      win.document.documentElement.classList.add("fce-quick-input-window");
-      win.document.documentElement.classList.toggle("fce-quick-input-transparent", session.transparent);
-      handle.setParentWindow(null);
-      handle.setAlwaysOnTop(false);
-      handle.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
-      handle.setContentSize(geometry.width, geometry.height);
-      const bounds = handle.getBounds();
-      const fitted = this.options.desktop.position(source, bounds.width, bounds.height, ordinal);
-      if (bounds.width > fitted.width || bounds.height > fitted.height) {
-        handle.setContentSize(Math.max(1, geometry.width - (bounds.width - fitted.width)), Math.max(1, geometry.height - (bounds.height - fitted.height)));
+      session.window = opened;
+      mountingEditor = true;
+      this.mount(session, opened.win);
+      mountingEditor = false;
+      // Force style/layout before the first reveal. A hidden native window may
+      // never deliver rAF, even with background throttling disabled.
+      await this.waitForLayout(session);
+      if (session.closed || this.disposed || opened.handle.isDestroyed()) return;
+      if (id === this.latestOpenId) {
+        opened.handle.show();
+        opened.handle.focus();
+        session.draft?.editor.focus();
+      } else {
+        // A slower earlier request must never take focus from a newer draft.
+        opened.handle.showInactive();
+        this.sessions.get(this.latestOpenId)?.window?.handle.moveTop();
       }
-      handle.setPosition(fitted.x, fitted.y);
-      if (Platform.isMacOS) {
-        if (!handle.setWindowButtonVisibility) throw new QuickInputDesktopError("unavailable");
-        handle.setWindowButtonVisibility(false);
-      }
-      const current = session;
-      void leaf.setViewState({ type: QUICK_INPUT_VIEW, state: { sessionId: id }, active: true }).then(() => {
-        if (current.closed || this.disposed || handle.isDestroyed()) return;
-        if (!current.draft) throw new QuickInputDesktopError("unavailable");
-        if (current.usesOpacity) { handle.moveTop(); handle.setOpacity!(1); }
-        else if (current.transparent) handle.moveTop();
-        else handle.show();
-        handle.focus(); current.draft.editor.focus();
-      }).catch((error: unknown) => this.fail(current, error));
-    } catch (error) { this.fail(session, error); }
+    } catch (error) { this.fail(session, error, mountingEditor); }
   }
 
-  /** Clicking an entry point raises the host first. Bring older drafts back above it
-   * without focusing them or changing their independent always-on-top settings. */
+  private waitForLayout(session: Session): Promise<void> {
+    session.draft!.root.getBoundingClientRect();
+    return Promise.resolve();
+  }
+
+  /** Raise existing drafts once, without hiding, refocusing or rebuilding them. */
   private raiseExistingWindows(): void {
     for (const session of this.sessions.values()) {
-      if (session.closed || !session.draft || !session.handle
-        || !session.win?.document.documentElement.classList.contains("fce-quick-input-window")) continue;
-      try { if (!session.handle.isDestroyed()) session.handle.moveTop(); }
+      if (session.closed || !session.draft || !session.window) continue;
+      try { if (!session.window.handle.isDestroyed()) session.window.handle.moveTop(); }
       catch (error) { console.warn("[card-workspace] Quick input window raise failed", error); }
     }
   }
 
-  attach(sessionId: string, view: QuickInputView): void {
-    const session = this.sessions.get(sessionId);
-    if (session?.draft && session.leaf === view.leaf) return;
-    if (!session || session.closed || session.leaf !== view.leaf || !session.win || session.draft) {
-      this.options.app.workspace.onLayoutReady(() => { if (!this.disposed) view.leaf.detach(); });
-      return;
-    }
-    const win = session.win;
+  private mount(session: Session, win: Window): void {
     const settings = this.options.getSettings();
     const strings = this.options.getStrings();
-    const root = view.contentEl.createDiv({ cls: "fce-quick-input" });
+    const root = win.document.body.createDiv({ cls: "fce-quick-input" });
+    win.document.title = strings.quickInput;
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", strings.quickInput);
     root.setAttribute("aria-modal", "false");
@@ -171,9 +148,9 @@ export class QuickInputWindowManager {
       session.draft = current;
       let pinned = false;
       this.listen(current, pin, "click", () => {
-        if (session.closed || session.handle?.isDestroyed()) return;
+        if (session.closed || session.window?.handle.isDestroyed()) return;
         try {
-          session.handle?.setAlwaysOnTop(!pinned); pinned = !pinned;
+          session.window?.handle.setAlwaysOnTop(!pinned); pinned = !pinned;
           pin.setAttribute("aria-pressed", String(pinned));
         } catch (error) { console.warn("[card-workspace] Quick input pin failed", error); this.options.notify(this.options.getStrings().desktopUnavailable); }
       });
@@ -186,24 +163,14 @@ export class QuickInputWindowManager {
         if ((key.ctrlKey || key.metaKey) && !key.altKey && key.key === "Enter") this.handleModEnter(current, key);
       }, true);
       this.listen(current, root, "focusin", () => this.refresh(current));
-      const updateCorners = () => {
-        try { this.updateCorners(current); }
-        catch (error) { console.warn("[card-workspace] Quick input window shape update failed", error); }
-      };
-      this.listen(current, win, "focus", () => { this.refresh(current); updateCorners(); });
-      this.listen(current, win, "resize", updateCorners);
-      this.listen(current, win, "unload", () => this.closeSession(session, false));
-      if (session.transparent && session.handle) {
-        current.cleanup.push(installQuickInputResize({ root, handle: session.handle, cursor: () => this.options.desktop.cursor(),
-          minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT }));
-      }
-      this.updateCorners(current);
+      this.listen(current, win, "focus", () => this.refresh(current));
+      this.listen(current, win, "unload", () => this.closeSession(session));
+      current.cleanup.push(installQuickInputResize({ root, handle: session.window!.handle, cursor: () => this.options.desktop.cursor(),
+        minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT }));
       this.refresh(current);
     } catch (error) {
       root.remove();
-      this.closeSession(session);
-      console.warn("[card-workspace] Native quick input unavailable", error);
-      this.options.notify(error instanceof QuickInputDesktopError ? strings.desktopUnavailable : strings.nativeEditorUnavailable);
+      throw error;
     }
   }
 
@@ -216,13 +183,6 @@ export class QuickInputWindowManager {
   private listen(draft: Draft, target: EventTarget, type: string, handler: EventListener, capture = false): void {
     target.addEventListener(type, handler, capture);
     draft.cleanup.push(() => target.removeEventListener(type, handler, capture));
-  }
-
-  private updateCorners(draft: Draft): void {
-    const { win, closed, transparent } = draft.session;
-    if (transparent || closed || this.disposed || !win?.document.documentElement.classList.contains("fce-quick-input-window")) return;
-    const radius = parseFloat(win.getComputedStyle(draft.send).borderTopLeftRadius);
-    this.options.desktop.setCornerRadius(win, Number.isFinite(radius) ? radius : 24);
   }
 
   /** A captured request keeps describing its own destination across later settings edits. */
@@ -328,42 +288,7 @@ export class QuickInputWindowManager {
     }
   }
 
-  ownsLeaf(leaf: WorkspaceLeaf): boolean {
-    return [...this.sessions.values()].some((session) => session.leaf === leaf);
-  }
-
-  handleWindowClosed(win: Window): void {
-    for (const session of this.sessions.values()) if (session.win === win) this.closeSession(session, false);
-  }
-
-  /** If another leaf joins, restore host chrome and never close its window. */
-  reconcileWindows(): void {
-    for (const session of this.sessions.values()) {
-      if (!session.leaf || !session.win || !session.handle || session.handle.isDestroyed()) continue;
-      if (session.leaf.getContainer().win !== session.win) { this.closeSession(session); continue; }
-      let exclusive = true;
-      this.options.app.workspace.iterateAllLeaves((leaf) => {
-        if (leaf !== session.leaf && leaf.getContainer().win === session.win) exclusive = false;
-      });
-      const classes = session.win.document.documentElement.classList;
-      if (classes.contains("fce-quick-input-window") !== exclusive) session.handle.webContents?.setBackgroundThrottling?.(!exclusive);
-      classes.toggle("fce-quick-input-window", exclusive);
-      if (exclusive && session.draft) this.updateCorners(session.draft);
-      else if (!exclusive) {
-        this.options.desktop.setCornerRadius(session.win, null);
-        if (session.usesOpacity) session.handle.setOpacity!(1);
-      }
-      if (Platform.isMacOS) session.handle.setWindowButtonVisibility?.(!exclusive);
-    }
-  }
-
-  closeView(view: QuickInputView): void {
-    for (const session of this.sessions.values()) {
-      if (session.leaf === view.leaf) this.closeSession(session, false);
-    }
-  }
-
-  private fail(session: Session | undefined, error: unknown): void {
+  private fail(session: Session | undefined, error: unknown, mountingEditor = false): void {
     if (session?.closed) return;
     if (session) this.closeSession(session);
     if (this.disposed) return;
@@ -371,12 +296,12 @@ export class QuickInputWindowManager {
     const strings = this.options.getStrings();
     this.options.notify(error instanceof QuickInputDesktopError
       ? error.code === "native-frame" ? strings.nativeFrameUnsupported : strings.desktopUnavailable
-      : strings.openQuickInputFailed);
+      : mountingEditor ? strings.nativeEditorUnavailable : strings.openQuickInputFailed);
   }
 
   private close(draft: Draft): void { this.closeSession(draft.session); }
 
-  private closeSession(session: Session, detach = true): void {
+  private closeSession(session: Session): void {
     if (session.closed) return;
     session.closed = true;
     this.sessions.delete(session.id);
@@ -387,18 +312,9 @@ export class QuickInputWindowManager {
       try { draft.editor.dispose(); } catch (error) { console.warn("[card-workspace] Quick input editor cleanup failed", error); }
       draft.root.remove();
     }
-    try {
-      session.win?.document.documentElement.classList.remove("fce-quick-input-window", "fce-quick-input-transparent");
-      if (session.handle && !session.handle.isDestroyed()) {
-        if (session.win) this.options.desktop.setCornerRadius(session.win, null);
-        session.handle.webContents?.setBackgroundThrottling?.(true);
-        session.handle.setAlwaysOnTop(false);
-        if (Platform.isMacOS) session.handle.setWindowButtonVisibility?.(true);
-      }
-    } catch (error) { console.warn("[card-workspace] Quick input window cleanup failed", error); }
-    // Detaching only our leaf lets Obsidian close an empty popout. Other leaves survive.
-    try { if (detach) session.leaf?.detach(); }
-    catch (error) { console.warn("[card-workspace] Quick input leaf cleanup failed", error); }
-    finally { session.draft = null; session.handle = null; session.win = null; session.leaf = null; }
+    session.draft = null;
+    try { session.window?.dispose(); }
+    catch (error) { console.warn("[card-workspace] Quick input window cleanup failed", error); }
+    finally { session.window = null; session.abort.abort(); }
   }
 }

@@ -4,20 +4,17 @@ import { QUICK_INPUT_VIEW } from "./quick-input-desktop";
 export { QUICK_INPUT_VIEW } from "./quick-input-desktop";
 export interface QuickInputViewHost {
   getTitle(): string;
-  attach(sessionId: string, view: QuickInputView): void;
-  close(view: QuickInputView): void;
+  discard(view: QuickInputView): void;
 }
-/** Layout contains only a transient token; a restored token never creates a draft. */
+/** Compatibility tombstone for layouts saved by the former popout implementation.
+ * New quick-input windows never construct or serialize a workspace view. */
 export class QuickInputView extends ItemView {
-  private sessionId = "";
   constructor(leaf: WorkspaceLeaf, private readonly host: QuickInputViewHost) { super(leaf); }
   getViewType(): string { return QUICK_INPUT_VIEW; }
   getDisplayText(): string { return this.host.getTitle(); }
   getIcon(): string { return "send"; }
-  getState(): Record<string, unknown> { return { sessionId: this.sessionId }; }
-  async setState(state: { sessionId?: unknown }, _result: ViewStateResult): Promise<void> {
-    this.sessionId = typeof state?.sessionId === "string" ? state.sessionId : "";
-    this.host.attach(this.sessionId, this);
+  getState(): Record<string, unknown> { return {}; }
+  async setState(_state: Record<string, unknown>, _result: ViewStateResult): Promise<void> {
+    this.host.discard(this);
   }
-  async onClose(): Promise<void> { this.host.close(this); }
 }
