@@ -2299,6 +2299,7 @@ html.fce-quick-input-window body::after { display: none !important; }
   margin: 0;
   flex: none;
   border-radius: var(--fce-quick-input-radius);
+  box-shadow: none;
 }
 .fce-quick-input-footer .fce-quick-input-pin {
   --icon-size: 16px;
