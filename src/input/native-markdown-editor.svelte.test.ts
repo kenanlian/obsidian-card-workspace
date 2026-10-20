@@ -46,14 +46,24 @@ function fixture(lazy = false) {
   const onChange = vi.fn();
   const onModEnter = vi.fn();
   const container = document.createElement("div"); document.body.append(container);
-  const open = (target = container, handleModEnter = onModEnter) => {
-    const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", onChange, onModEnter: handleModEnter });
+  const open = (target = container, handleModEnter = onModEnter, initialValue = "") => {
+    const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", initialValue, onChange, onModEnter: handleModEnter });
     live.push(adapter); return adapter;
   };
   return { app, container, open, underlying, workspace, keymap, create, probeUnload, destroyed, onChange, onModEnter };
 }
 
 describe("native Markdown editor compatibility seam", () => {
+  it("loads editable template properties and body with the cursor at the end", () => {
+    const f = fixture(true);
+    const text = "---\nstatus: draft\n---\n## Template body";
+    const adapter = f.open(f.container, f.onModEnter, text);
+    const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+    expect(adapter.getValue()).toBe(text);
+    expect(cm.state.selection.main.head).toBe(text.length);
+    cm.dispatch({ changes: { from: text.length, insert: "\nmy input" } });
+    expect(adapter.getValue()).toBe(`${text}\nmy input`);
+  });
   it("initializes hosts that defer the surface until set and observes native document transactions", () => {
     const f = fixture(true); const adapter = f.open();
     const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;

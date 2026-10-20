@@ -9,7 +9,7 @@ vi.mock("obsidian", async () => {
   return {
     TFile, TFolder, MarkdownView,
     moment: vi.fn(realMoment),
-    normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+|\/+$/g, ""),
+    normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "").normalize("NFC") || "/",
     getFrontMatterInfo: (content: string) => {
       const match = content.match(/^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?:\r?\n|$)/);
       return { exists: !!match, contentStart: match?.[0].length ?? 0 };
@@ -17,7 +17,7 @@ vi.mock("obsidian", async () => {
   };
 });
 
-import { MarkdownView, TFile, TFolder, moment, type App } from "obsidian";
+import { MarkdownView, TFile, TFolder, moment, normalizePath, type App } from "obsidian";
 import { NOTE_TEMPLATE_DATE_FORMATS, NOTE_TEMPLATE_TIME_FORMATS, type NoteTemplateDefinition, type QuickInputRequest } from "../note-input";
 import { NoteCreationService } from "./NoteCreationService";
 import { getUiStrings } from "../i18n";
@@ -26,6 +26,8 @@ function fixture() {
   const entries = new Map<string, TFile | TFolder>();
   const contents = new Map<string, string>();
   const root = new TFolder();
+  root.path = "/";
+  entries.set("/", root);
   const leaves: Array<{ view: MarkdownView }> = [];
   let active: MarkdownView | null = null;
   function folder(path: string) { const entry = new TFolder(); entry.path = path; entries.set(path, entry); return entry; }
@@ -39,8 +41,9 @@ function fixture() {
     getRoot: () => root,
     getAbstractFileByPath: (path: string) => entries.get(path) ?? null,
     create: vi.fn(async (path: string, content: string) => {
-      if (entries.has(path)) throw new Error("exists");
-      return file(path, content);
+      const normalized = normalizePath(path);
+      if (entries.has(normalized)) throw new Error("File already exists.");
+      return file(normalized, content);
     }),
     cachedRead: vi.fn(async (target: TFile) => contents.get(target.path) ?? ""),
     read: vi.fn(async (target: TFile) => contents.get(target.path) ?? ""),
@@ -318,10 +321,84 @@ describe("NoteCreationService templates", () => {
 });
 
 describe("NoteCreationService quick input", () => {
+  it.each(["", "/"])("inserts into an existing root note with the host root normalization (%j)", async (folderPath) => {
+    const f = templateFixture();
+    const target = f.file("2026-10-12 14-05-09.md", "---\nstatus: existing\n---\noriginal body");
+    const sent = request({ template: template({ targetFolderPath: folderPath }), text: "---\nstatus: draft\n---\nnew body" });
+    expect(await f.service.submitQuickInput(sent)).toEqual({ file: target, created: false });
+    expect(f.contents.get(target.path)).toBe("---\nstatus: existing\n---\noriginal body\n\nnew body");
+    expect(f.vault.create).not.toHaveBeenCalled();
+    expect(f.vault.process).toHaveBeenCalledOnce();
+  });
+
+  it("creates a template root note once and inserts later submissions into that same note", async () => {
+    const f = templateFixture();
+    const sent = request({ template: template({ targetFolderPath: "" }), text: "---\nstatus: draft\n---\nfirst body" });
+    const first = await f.service.submitQuickInput(sent);
+    const second = await f.service.submitQuickInput({ ...sent, submissionId: "second", text: "---\nstatus: ignored\n---\nsecond body" });
+    expect(first).toMatchObject({ created: true, file: { path: "2026-10-12 14-05-09.md" } });
+    expect(second).toEqual({ file: first.file, created: false });
+    expect(f.contents.get(first.file.path)).toBe("---\nstatus: draft\n---\nfirst body\n\nsecond body");
+    expect(f.vault.create).toHaveBeenCalledExactlyOnceWith(first.file.path, sent.text);
+  });
+
+  it("inserts into an unsaved root note through its editor instead of creating it again", async () => {
+    const f = templateFixture();
+    const target = f.file("2026-10-12 14-05-09.md", "disk content");
+    const editor = f.open(target, "---\nstatus: existing\n---\nunsaved body");
+    await f.service.submitQuickInput(request({ template: template({ targetFolderPath: "" }), text: "new body",
+      config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
+    expect(editor.getValue()).toBe("---\nstatus: existing\n---\n\nnew body\n\nunsaved body");
+    expect(f.vault.create).not.toHaveBeenCalled();
+    expect(editor.view.save).toHaveBeenCalledOnce();
+  });
+
+  it("prepares the same complete template as clicking it, including unsaved properties and body", async () => {
+    const f = templateFixture("stale disk content");
+    f.open(f.entries.get(template().filePath) as TFile, "---\nwhen: {{date}}\n---\n## {{time:HH:mm}}\nbody");
+    const content = await f.service.prepareQuickInputTemplate(template(), now);
+    expect(content).toBe("---\nwhen: 2026-10-12\n---\n## 14:05\nbody");
+    expect(f.vault.create).not.toHaveBeenCalled();
+    expect(f.vault.process).not.toHaveBeenCalled();
+    const result = await f.service.createTemplateNote(template(), now);
+    expect(f.contents.get(result.file.path)).toBe(content);
+  });
+
+  it.each(["start", "end"] as const)("inserts edited template body at %s while keeping existing properties, including unsaved targets", async (position) => {
+    const f = templateFixture("---\nstatus: template\n---\n## Template body");
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "disk content");
+    const editor = f.open(target, "---\nstatus: existing\n---\noriginal body");
+    const text = (await f.service.prepareQuickInputTemplate(template(), now)).replace("Template body", "Edited body") + "\nmy input {{date}}";
+    await f.service.submitQuickInput(request({ text, config: { templateId: "daily", folderPath: "", insertPosition: position } }));
+    const body = "## Edited body\nmy input {{date}}";
+    expect(editor.getValue()).toBe(position === "start"
+      ? `---\nstatus: existing\n---\n\n${body}\n\noriginal body`
+      : `---\nstatus: existing\n---\noriginal body\n\n${body}`);
+    expect(editor.replaceRange).toHaveBeenCalledOnce();
+  });
+
+  it.each(["start", "end"] as const)("strips draft properties before %s insertion through vault.process", async (position) => {
+    const f = templateFixture();
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "---\nstatus: existing\n---\noriginal body");
+    await f.service.submitQuickInput(request({ text: "---\nstatus: edited\n---\nnew body", config: { templateId: "daily", folderPath: "", insertPosition: position } }));
+    expect(f.contents.get(target.path)).toBe(position === "start"
+      ? "---\nstatus: existing\n---\n\nnew body\n\noriginal body"
+      : "---\nstatus: existing\n---\noriginal body\n\nnew body");
+  });
+
+  it("preserves an existing note when the edited draft contains only properties", async () => {
+    const f = templateFixture();
+    const target = f.file("Notes/2026-10-12 14-05-09.md", "keep existing content");
+    await f.service.submitQuickInput(request({ text: "---\nstatus: draft\n---\n\n" }));
+    expect(f.contents.get(target.path)).toBe("keep existing content");
+    expect(f.vault.process).not.toHaveBeenCalled();
+  });
+
   it("formats template overrides while preserving draft variables and captured content on retry", async () => {
     const f = templateFixture("{{date}} {{date:YYYY/MM/DD}} {{time:HH:mm}}");
     const text = "draft {{date:YYYY}} {{time:HH:mm}}";
-    const sent = request({ text, now: new Date(now.getTime()) });
+    const expanded = await f.service.prepareQuickInputTemplate(template(), now);
+    const sent = request({ text: `${expanded}\n\n${text}`, now: new Date(now.getTime()) });
     f.vault.create.mockRejectedValueOnce(new Error("disk full"));
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("disk full");
     sent.now.setFullYear(2040);
@@ -340,7 +417,7 @@ describe("NoteCreationService quick input", () => {
     const result = await f.service.submitQuickInput({ ...sent, text: "changed retry text", now: new Date(2040, 1, 1) });
     expect(result.created).toBe(true);
     expect(result.file.path).toBe(kind === "template" ? "Notes/2026-10-12 14-05-09.md" : "quick-note 2026-10-12 14-05-09 1.md");
-    expect(f.contents.get(result.file.path)).toBe(kind === "template" ? "template 2026-10-12 14-05-09\n\ninput" : "input");
+    expect(f.contents.get(result.file.path)).toBe("input");
     expect(f.vault.create).toHaveBeenCalledTimes(1);
     expect(f.vault.process).not.toHaveBeenCalled();
     expect(await f.service.submitQuickInput(sent)).toBe(result);
@@ -353,7 +430,7 @@ describe("NoteCreationService quick input", () => {
     f.contents.set(template().filePath, "edited template {{date}}");
     const result = await f.service.submitQuickInput({ ...sent, text: "changed retry text" });
     expect(result.created).toBe(true);
-    expect(f.contents.get(result.file.path)).toBe(kind === "template" ? "template 2026-10-12 14-05-09\n\ninput" : "input");
+    expect(f.contents.get(result.file.path)).toBe("input");
     expect(f.vault.create.mock.calls[1]).toEqual(f.vault.create.mock.calls[0]);
   });
   it.each(["template", "plain"] as const)("blocks divergent content after an uncertain %s creation", async (kind) => {
@@ -384,15 +461,16 @@ describe("NoteCreationService quick input", () => {
     expect(editor.view.save).toHaveBeenCalledTimes(2);
     expect(f.vault.create).toHaveBeenCalledTimes(1);
   });
-  it("creates template and input together once without replacing user variables", async () => {
+  it("saves the edited draft once without restoring deleted template content or replacing user variables", async () => {
     const f = templateFixture(); const sent = request();
     const pending = f.service.submitQuickInput(sent);
     expect(f.service.submitQuickInput(sent)).toBe(pending);
     const result = await pending;
-    expect(f.contents.get(result.file.path)).toBe("template 2026-10-12 14-05-09\n\nuser {{date}} {{time}}");
+    expect(f.contents.get(result.file.path)).toBe(sent.text);
+    expect(f.vault.cachedRead).not.toHaveBeenCalled();
     expect(await f.service.submitQuickInput(sent)).toBe(result); expect(f.vault.create).toHaveBeenCalledTimes(1);
   });
-  it("inserts only user text into an existing note with vault.process", async () => {
+  it("inserts the edited draft into an existing note with vault.process", async () => {
     const f = templateFixture(); f.file("Notes/2026-10-12 14-05-09.md", "existing");
     const result = await f.service.submitQuickInput(request());
     expect(result.created).toBe(false); expect(f.contents.get(result.file.path)).toBe("existing\n\nuser {{date}} {{time}}");
@@ -511,7 +589,7 @@ describe("NoteCreationService quick input", () => {
     expect(submissions.get(sent.submissionId)?.inserted).toBeNull();
     expect(submissions.get(sent.submissionId)?.creation).toBeNull();
     expect(await f.service.submitQuickInput({ ...sent, text: "retry" })).toBe(result);
-    expect(f.contents.get(result.file.path)).toBe(kind === "existing" ? `body\n\n${sent.text}` : kind === "template" ? `template 2026-10-12 14-05-09\n\n${sent.text}` : sent.text);
+    expect(f.contents.get(result.file.path)).toBe(kind === "existing" ? `body\n\n${sent.text}` : sent.text);
     expect(f.vault.process.mock.calls.length + f.vault.create.mock.calls.length).toBe(1);
   });
   it.each(["start", "end"] as const)("preserves YAML and existing body on %s insertion", async (position) => {
@@ -519,10 +597,11 @@ describe("NoteCreationService quick input", () => {
     const result = await f.service.submitQuickInput(request({ text: "input", config: { templateId: "daily", folderPath: "", insertPosition: position } }));
     expect(f.contents.get(result.file.path)).toBe(position === "start" ? "---\nstatus: true\n---\n\ninput\n\nbody\n" : "---\nstatus: true\n---\n\nbody\n\ninput");
   });
-  it("inserts at start after YAML when creating a new template target", async () => {
+  it("saves edited properties and body exactly when creating a new template target", async () => {
     const f = templateFixture("---\nwhen: {{date}}\n---\nbody");
-    const result = await f.service.submitQuickInput(request({ text: "first", config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
-    expect(f.contents.get(result.file.path)).toBe("---\nwhen: 2026-10-12\n---\n\nfirst\n\nbody");
+    const text = "---\nwhen: edited\n---\nfirst\n\nedited body";
+    const result = await f.service.submitQuickInput(request({ text, config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
+    expect(f.contents.get(result.file.path)).toBe(text);
   });
   it("preserves CRLF content and inserts at the front of body-only notes", async () => {
     const f = templateFixture(); const target = f.file("Notes/2026-10-12 14-05-09.md", "body\r\n");

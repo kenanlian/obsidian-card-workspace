@@ -50,6 +50,14 @@ export class NoteCreationService {
     return this.createUniqueNote(folderPath, baseName, content);
   }
 
+  /** Expand the complete template before editing; submission saves this edited snapshot. */
+  async prepareQuickInputTemplate(template: NoteTemplateDefinition, now: Date): Promise<string> {
+    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
+    const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
+    this.validateTemplateTarget(target);
+    return content;
+  }
+
   async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<TemplateNoteResult> {
     const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
     return this.serialize(target.path, async () => {
@@ -178,18 +186,14 @@ export class NoteCreationService {
     }
     const target = this.resolveTemplateTarget(request.template, request.now);
     this.validateTemplateTarget(target);
-    let file = this.existingTarget(target);
+    const file = this.existingTarget(target);
     if (!file) {
-      const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
-      this.validateTemplateTarget(target);
-      file = this.existingTarget(target);
-      if (!file) {
-        const insertion = buildInsertion(content, request.text, request.config.insertPosition);
-        const expected = applyInsertion(content, insertion);
-        submission.creation = { path: target.path, expected };
-        return { file: await this.app.vault.create(target.path, expected), created: true };
-      }
+      submission.creation = { path: target.path, expected: request.text };
+      return { file: await this.app.vault.create(target.path, request.text), created: true };
     }
+    // Existing notes retain their own properties, just like clicking a template.
+    const body = request.text.slice(getFrontMatterInfo(request.text).contentStart);
+    if (!body.trim()) return { file, created: false };
     const view = this.findMarkdownView(file);
     if (view) {
       const latest = view.editor.getValue();
@@ -198,7 +202,7 @@ export class NoteCreationService {
         throw new NoteInputError("target-changed");
       }
       if (!attempt || latest !== attempt.expected) {
-        const insertion = buildInsertion(latest, request.text, request.config.insertPosition);
+        const insertion = buildInsertion(latest, body, request.config.insertPosition);
         view.editor.replaceRange(insertion.text, view.editor.offsetToPos(insertion.offset), undefined, "card-workspace-quick-input");
       }
       // Saving may reject after the editor has changed; retries must only repeat the save.
@@ -215,7 +219,7 @@ export class NoteCreationService {
           if (content === attempt.expected) return content;
           if (content !== attempt.original) throw new NoteInputError("target-changed");
         }
-        const expected = applyInsertion(content, buildInsertion(content, request.text, request.config.insertPosition));
+        const expected = applyInsertion(content, buildInsertion(content, body, request.config.insertPosition));
         // A rejected process may already have reached disk. Preserve both states to
         // distinguish a completed write from a safe retry, without guessing after edits.
         submission.attempted = { file, original: content, expected };
@@ -260,7 +264,11 @@ export class NoteCreationService {
   }
 
   private requireFolder(path: string): string {
-    const normalized = normalizePath(path);
+    // Obsidian normalizes the vault root to "/"; note paths are vault-relative.
+    // Keeping it as a folder prefix would make lookups use "//note.md" while
+    // Vault.create normalizes that back to "note.md" and rejects existing notes.
+    const hostPath = normalizePath(path);
+    const normalized = hostPath === "/" ? "" : hostPath;
     if (normalized.split("/").some((part) => part === "." || part === "..") || [...normalized].some((character) => character.charCodeAt(0) < 32)) {
       throw new NoteInputError("invalid-folder");
     }

@@ -68,6 +68,7 @@ export function createNativeMarkdownEditor(options: {
   app: App;
   container: HTMLElement;
   placeholder: string;
+  initialValue?: string;
   onChange: () => void;
   onModEnter: (event: KeyboardEvent) => void;
 }): NativeMarkdownEditor {
@@ -115,10 +116,11 @@ export function createNativeMarkdownEditor(options: {
     const owner: Record<string, unknown> = { app, onMarkdownScroll: () => {}, getMode: () => "source" };
     native = new DraftEditor(app, container, owner);
     // Some host versions create their CodeMirror surface only on the first set.
-    native.set("");
+    native.set(options.initialValue ?? "");
     if (!native.editor?.getValue || !native.editor.focus || !native.editor.cm?.contentDOM || !native.editor.cm.dispatch) {
       throw new Error("Missing native editor instance capabilities");
     }
+    if (options.initialValue) native.editor.cm.dispatch({ selection: { anchor: native.editor.cm.state.doc.length }, scrollIntoView: true });
     native.owner.editMode = native;
     native.owner.editor = native.editor;
     native.editor.cm.contentDOM.addEventListener("focusin", takeFocus);

@@ -469,6 +469,10 @@ export default class CardWorkspacePlugin extends Plugin {
         if (this.disposed) return null;
         this.quickInputManager = new QuickInputWindowManager({
           app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
+          prepareTemplate: async (template, now) => {
+            try { return await this.getNoteCreationService().prepareQuickInputTemplate(template, now); }
+            catch (error) { throw new Error(this.describeNoteInputError(error)); }
+          },
           submit: async (request) => {
             try { return await this.getNoteCreationService().submitQuickInput(request); }
             catch (error) { throw new Error(this.describeNoteInputError(error)); }

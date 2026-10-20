@@ -34,6 +34,7 @@ export interface TemplateNoteResult extends NoteInputResult { cursor?: TemplateN
 
 export interface QuickInputRequest {
   submissionId: string;
+  /** Complete edited document; template variables were expanded when the draft opened. */
   text: string;
   config: QuickInputConfig;
   template: NoteTemplateDefinition | null;

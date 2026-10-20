@@ -10,6 +10,7 @@ import { installQuickInputDrag } from "./quick-input-drag";
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 200;
 interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
+type DraftContext = Pick<QuickInputRequest, "config" | "template" | "now">;
 interface QuickInputTarget {
   template: NoteTemplateDefinition | null;
   folderPath: string | null;
@@ -29,6 +30,8 @@ interface Draft {
   composing: boolean;
   pending: boolean;
   request: QuickInputRequest | null;
+  context: DraftContext;
+  templateReady: boolean;
   cleanup: Array<() => void>;
 }
 interface Options {
@@ -36,6 +39,7 @@ interface Options {
   desktop: QuickInputDesktop;
   getSettings: () => PluginSettings;
   getStrings: () => NoteInputStrings;
+  prepareTemplate: (template: NoteTemplateDefinition, now: Date) => Promise<string>;
   submit: (request: QuickInputRequest) => Promise<NoteInputResult>;
   notify: (message: string) => void;
 }
@@ -56,9 +60,13 @@ export class QuickInputWindowManager {
     if (this.disposed || source?.closed) return;
     let session: Session | undefined;
     let mountingEditor = false;
+    let preparingTemplate = false;
     try {
       this.options.desktop.check();
       const settings = this.options.getSettings();
+      const config = { ...settings.quickInput };
+      const selected = settings.noteTemplates.find((entry) => entry.id === config.templateId);
+      const context: DraftContext = { config, template: selected ? { ...selected } : null, now: new Date() };
       const initial = this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, 0);
       const ordinal = [...this.sessions.values()].filter((current) => current.displayId === initial.displayId).length;
       const placement = ordinal ? this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, ordinal) : initial;
@@ -71,8 +79,19 @@ export class QuickInputWindowManager {
         opened.dispose(); this.closeSession(session); return;
       }
       session.window = opened;
+      let initialValue = "";
+      let templateReady = !config.templateId;
+      if (context.template && this.resolveTarget(context).valid) {
+        preparingTemplate = true;
+        initialValue = await this.options.prepareTemplate(context.template, context.now);
+        templateReady = true;
+        preparingTemplate = false;
+        if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
+          this.closeSession(session); return;
+        }
+      }
       mountingEditor = true;
-      this.mount(session, opened.win);
+      this.mount(session, opened.win, context, initialValue, templateReady);
       mountingEditor = false;
       // Force style/layout before the first reveal. A hidden native window may
       // never deliver rAF, even with background throttling disabled.
@@ -86,7 +105,13 @@ export class QuickInputWindowManager {
         // Reveal only this late draft; do not refocus or reorder other windows.
         opened.handle.showInactive();
       }
-    } catch (error) { this.fail(session, error, mountingEditor); }
+    } catch (error) {
+      if (preparingTemplate) {
+        if (session?.closed || this.disposed) return;
+        if (session) this.closeSession(session);
+        this.options.notify(error instanceof Error ? error.message : String(error));
+      } else this.fail(session, error, mountingEditor);
+    }
   }
 
   private waitForLayout(session: Session): Promise<void> {
@@ -94,7 +119,7 @@ export class QuickInputWindowManager {
     return Promise.resolve();
   }
 
-  private mount(session: Session, win: Window): void {
+  private mount(session: Session, win: Window, context: DraftContext, initialValue: string, templateReady: boolean): void {
     const settings = this.options.getSettings();
     const strings = this.options.getStrings();
     const root = win.document.body.createDiv({ cls: "fce-quick-input" });
@@ -125,13 +150,13 @@ export class QuickInputWindowManager {
     const sendLabel = send.createSpan({ cls: "fce-quick-input-send-label", text: strings.send });
     let draft: Draft | undefined;
     try {
-      const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder,
+      const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder, initialValue,
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
       draft = { root, editor, destination, destinationIcon, destinationText, send, sendLabel, cancel,
         composing: false, pending: false, request: null, cleanup: [],
-        session,
+        session, context, templateReady,
       };
       const current = draft;
       this.drafts.add(current);
@@ -177,11 +202,8 @@ export class QuickInputWindowManager {
   }
 
   /** A captured request keeps describing its own destination across later settings edits. */
-  private resolveTarget(request?: QuickInputRequest | null): QuickInputTarget {
-    const settings = this.options.getSettings();
-    const config = request?.config ?? settings.quickInput;
-    const template = request?.template
-      ?? (config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId) ?? null : null);
+  private resolveTarget(context: DraftContext): QuickInputTarget {
+    const { config, template } = context;
     const folderPath = config.templateId ? template?.targetFolderPath ?? null : config.folderPath;
     const target = { template, folderPath, insertPosition: config.insertPosition, valid: false };
     if (folderPath === null || folderPath === undefined) return target;
@@ -211,7 +233,8 @@ export class QuickInputWindowManager {
   private refresh(draft: Draft): void {
     if (this.disposed || !this.drafts.has(draft)) return;
     const strings = this.options.getStrings();
-    const target = this.resolveTarget(draft.request);
+    const target = this.resolveTarget(draft.context);
+    target.valid = target.valid && draft.templateReady;
     draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !target.valid;
     draft.cancel.disabled = draft.pending;
     draft.cancel.textContent = strings.cancel;
@@ -249,13 +272,10 @@ export class QuickInputWindowManager {
   private send(draft: Draft): void {
     if (!this.drafts.has(draft) || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
     const strings = this.options.getStrings();
-    if (!this.resolveTarget(draft.request).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
+    if (!draft.templateReady || !this.resolveTarget(draft.context).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {
-      const settings = this.options.getSettings();
-      const config = { ...settings.quickInput };
-      const template = config.templateId ? settings.noteTemplates.find((entry) => entry.id === config.templateId)! : null;
-      draft.request = { submissionId: `${this.submissionPrefix}-${++this.sequence}`, text: draft.editor.getValue(), config,
-        template: template ? { ...template } : null, now: new Date() };
+      draft.request = { ...draft.context, now: draft.context.template ? draft.context.now : new Date(),
+        submissionId: `${this.submissionPrefix}-${++this.sequence}`, text: draft.editor.getValue() };
     }
     draft.pending = true;
     draft.editor.setReadOnly(true);
