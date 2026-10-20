@@ -46,15 +46,25 @@ function harness(templates: NoteTemplateDefinition[] = [], language: "en" | "zh"
   const release = vi.fn(() => { calls.push("release"); });
   const reserveTemplatePath = vi.fn((_path: string) => { calls.push("reserve"); return release; });
   const createFolder = vi.fn(async (path: string) => { files.set(path, Object.assign(new TFolder(), { path })); });
-  const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create, createFolder } } as unknown as App;
+  const promptForDeletion = vi.fn<(_file: TFile) => Promise<void | boolean>>(async (source) => { files.delete(source.path); });
+  const runOperation = vi.fn(async (work: () => Promise<boolean>) => work());
+  const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create, createFolder },
+    fileManager: { promptForDeletion } } as unknown as App;
   const actions = new TemplateActions({ app, getSettings: () => settings, saveSettings, openNote, notify,
-    reserveTemplatePath, getStrings: () => getUiStrings(language) });
-  return { actions, settings, files, calls, create, createFolder, saveSettings, reserveTemplatePath, release, openNote, notify };
+    reserveTemplatePath, runOperation, getStrings: () => getUiStrings(language) });
+  return { actions, settings, files, calls, create, createFolder, saveSettings, reserveTemplatePath, release, openNote, notify, promptForDeletion, runOperation };
 }
 function template(path = "Templates/Daily.md"): NoteTemplateDefinition {
   return { id: "daily", filePath: path, targetFolderPath: null, dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
 }
-async function settle() { await Promise.resolve(); await Promise.resolve(); }
+async function settle() { for (let i = 0; i < 10; i++) await Promise.resolve(); }
+function deleteFromMenu(h: ReturnType<typeof harness>, language: "en" | "zh" = "en") {
+  const menu = new Menu(); h.actions.appendMenu(menu, "daily");
+  const items = (menu as unknown as { items: { title: string; onClick?: () => void }[] }).items;
+  const item = items.find((entry) => entry.title === getUiStrings(language).noteInput.deleteTemplate);
+  expect(item).toBeDefined();
+  item?.onClick?.();
+}
 beforeEach(() => { state.create = null; state.folderChoose = null; state.formatPickers = []; });
 
 describe("TemplateActions", () => {
@@ -131,7 +141,7 @@ describe("TemplateActions", () => {
     expect(await state.create?.("Daily", "Templates")).toBe(false);
     expect(h.release).toHaveBeenCalledTimes(1); expect(h.saveSettings).not.toHaveBeenCalled();
   });
-  it("offers all live format examples, patches latest settings and unregisters without deleting", async () => {
+  it("offers all live format examples and patches latest settings", async () => {
     const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
     const menu = new Menu(); h.actions.appendMenu(menu, "daily");
     const items = (menu as unknown as { items: { title: string; disabled: boolean; onClick?: () => void }[] }).items;
@@ -144,14 +154,92 @@ describe("TemplateActions", () => {
     items.find((item) => item.title === getUiStrings("en").noteInput.targetFolder)?.onClick?.();
     state.folderChoose?.(h.files.get("")); await settle();
     expect(h.settings.noteTemplates[0]?.targetFolderPath).toBe("");
-    items.find((item) => item.title === getUiStrings("en").noteInput.unregisterTemplate)?.onClick?.(); await settle();
-    expect(h.settings.noteTemplates).toEqual([]); expect(h.files.get(source.path)).toBe(source);
   });
   it("disables missing template editing while keeping configuration and removal available", () => {
     const h = harness([template()]); const menu = new Menu(); h.actions.appendMenu(menu, "daily");
     const items = (menu as unknown as { items: { title: string; disabled: boolean }[] }).items;
     expect(items.find((item) => item.title === getUiStrings("en").noteInput.editTemplate)?.disabled).toBe(true);
-    expect(items.find((item) => item.title === getUiStrings("en").noteInput.unregisterTemplate)?.disabled).toBe(false);
+    expect(items.find((item) => item.title === getUiStrings("en").noteInput.deleteTemplate)?.disabled).toBe(false);
+  });
+});
+
+describe("template deletion", () => {
+  it.each([undefined, false, true])("removes registration after host deletion regardless of its %s result", async (result) => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    h.promptForDeletion.mockImplementationOnce(async (target) => { h.files.delete(target.path); return result; });
+    deleteFromMenu(h); await settle();
+    expect(h.promptForDeletion).toHaveBeenCalledExactlyOnceWith(source);
+    expect(h.files.has(source.path)).toBe(false);
+    expect(h.settings.noteTemplates).toEqual([]);
+    expect(h.runOperation).toHaveBeenCalledTimes(1);
+    expect(h.notify).not.toHaveBeenCalled();
+  });
+  it.each([undefined, false, true])("keeps registration when the file remains despite a %s host result", async (result) => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    h.promptForDeletion.mockResolvedValueOnce(result);
+    deleteFromMenu(h); await settle();
+    expect(h.files.get(source.path)).toBe(source);
+    expect(h.settings.noteTemplates).toEqual([template()]);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+  it.each(["en", "zh"] as const)("reports deletion failure in %s and allows retry", async (language) => {
+    const h = harness([template()], language); const source = file(template().filePath); h.files.set(source.path, source);
+    h.promptForDeletion.mockRejectedValueOnce(new Error("permission denied"));
+    deleteFromMenu(h, language); await settle();
+    expect(h.notify).toHaveBeenCalledWith(getUiStrings(language).app.failedToDeleteFile("Error: permission denied"));
+    expect(h.settings.noteTemplates).toEqual([template()]);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    deleteFromMenu(h, language); await settle();
+    expect(h.settings.noteTemplates).toEqual([]);
+  });
+  it("removes a missing template registration without prompting", async () => {
+    const h = harness([template()]);
+    deleteFromMenu(h); await settle();
+    expect(h.settings.noteTemplates).toEqual([]);
+    expect(h.promptForDeletion).not.toHaveBeenCalled();
+  });
+  it("ignores duplicate clicks and preserves settings changed while confirmation is pending", async () => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    let finish!: () => void;
+    h.promptForDeletion.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    deleteFromMenu(h); deleteFromMenu(h); await settle();
+    expect(h.promptForDeletion).toHaveBeenCalledTimes(1);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    const other = { ...template("Templates/Other.md"), id: "other" };
+    h.settings.noteTemplates.push(other);
+    h.files.delete(source.path); finish(); await settle();
+    expect(h.settings.noteTemplates).toEqual([other]);
+  });
+  it.each(["rename", "replacement", "reference-change"])("keeps registration after a concurrent %s", async (change) => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    h.promptForDeletion.mockImplementationOnce(async () => {
+      h.files.delete(source.path);
+      if (change === "rename") { source.path = "Templates/Renamed.md"; h.files.set(source.path, source); }
+      if (change === "replacement") h.files.set(source.path, file(source.path));
+      if (change === "reference-change") h.settings.noteTemplates[0] = template("Templates/Other.md");
+    });
+    deleteFromMenu(h); await settle();
+    expect(h.settings.noteTemplates).toHaveLength(1);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+  it("reports a failed settings write and retries without deleting twice", async () => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    h.saveSettings.mockRejectedValueOnce(new Error("disk failed"));
+    deleteFromMenu(h); await settle();
+    expect(h.notify).toHaveBeenCalledWith(getUiStrings("en").noteInput.saveTemplateFailed("Error: disk failed"));
+    expect(h.settings.noteTemplates).toEqual([template()]);
+    expect(h.files.has(source.path)).toBe(false);
+    deleteFromMenu(h); await settle();
+    expect(h.settings.noteTemplates).toEqual([]);
+    expect(h.promptForDeletion).toHaveBeenCalledTimes(1);
+  });
+  it("does not delete files when the serialized operation is rejected", async () => {
+    const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);
+    h.runOperation.mockRejectedValueOnce(new Error("read-only"));
+    deleteFromMenu(h); await settle();
+    expect(h.promptForDeletion).not.toHaveBeenCalled();
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.files.get(source.path)).toBe(source);
   });
 });
 

@@ -22,6 +22,7 @@ export interface TemplateActionsDeps {
 }
 
 export class TemplateActions {
+  private readonly pendingDeletions = new Set<string>();
   constructor(private readonly deps: TemplateActionsDeps) {}
   private get strings() { return this.deps.getStrings().noteInput; }
   private find(id: string): NoteTemplateDefinition | undefined {
@@ -95,6 +96,33 @@ export class TemplateActions {
       return true;
     } catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); return false; }
   }
+  private async deleteTemplate(id: string): Promise<void> {
+    if (this.pendingDeletions.has(id)) return;
+    this.pendingDeletions.add(id);
+    const work = async (): Promise<boolean> => {
+      const template = this.find(id);
+      if (!template) return false;
+      const path = template.filePath;
+      const file = this.file(template);
+      if (file) {
+        try {
+          // The host deletes the file; its return value varies between versions.
+          await this.deps.app.fileManager.promptForDeletion(file);
+        } catch (error) {
+          this.deps.notify(this.deps.getStrings().app.failedToDeleteFile(String(error)));
+          return false;
+        }
+        // Cancellation, a rename or a replacement must keep the registration.
+        if (file.path !== path || this.deps.app.vault.getAbstractFileByPath(path) !== null) return false;
+      }
+      if (this.find(id)?.filePath !== path) return false;
+      await this.deps.saveSettings({ noteTemplates: this.deps.getSettings().noteTemplates.filter((entry) => entry.id !== id) });
+      return true;
+    };
+    try { await (this.deps.runOperation ? this.deps.runOperation(work) : work()); }
+    catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); }
+    finally { this.pendingDeletions.delete(id); }
+  }
   private chooseFolder(id: string): void {
     new TemplateFieldModal(this.deps.app, this.strings, "folder", this.find(id)?.targetFolderPath ?? "", async (value) => {
       const path = normalizeTemplateFolderPath(value);
@@ -144,9 +172,6 @@ export class TemplateActions {
       }, (item) => item.setChecked((template.existingNoteInsertPosition ?? "end") === position));
     }
     menu.addSeparator();
-    addItem(menu, this.strings.unregisterTemplate, "list-minus", () => {
-      void this.deps.saveSettings({ noteTemplates: this.deps.getSettings().noteTemplates.filter((entry) => entry.id !== templateId) })
-        .catch((error) => this.deps.notify(this.strings.saveTemplateFailed(String(error))));
-    });
+    addItem(menu, this.strings.deleteTemplate, "trash-2", () => { void this.deleteTemplate(templateId); });
   }
 }
