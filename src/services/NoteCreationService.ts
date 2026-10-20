@@ -34,7 +34,7 @@ interface QuickSubmission {
   creation: { path: string; expected: string } | null;
 }
 
-interface TemplateTarget { template: NoteTemplateDefinition; file: TFile; path: string; date: string; time: string }
+interface TemplateTarget { template: NoteTemplateDefinition; file: TFile; path: string; now: Date; date: string; time: string }
 
 /** Plugin-owned write boundary. Vault events own every downstream card/index refresh. */
 export class NoteCreationService {
@@ -238,7 +238,7 @@ export class NoteCreationService {
       ? template.timeFormat : DEFAULT_NOTE_TEMPLATE_TIME_FORMAT;
     const date = this.format(now, dateFormat);
     const time = this.format(now, timeFormat);
-    const target = { template, file, path: "", date, time };
+    const target = { template, file, path: "", now, date, time };
     target.path = joinNotePath(folder, sanitizeNoteFilename(this.replaceTemplateVariables(file.basename, target)));
     if (target.path === file.path) throw new NoteInputError("target-conflict");
     return target;
@@ -298,8 +298,9 @@ export class NoteCreationService {
     return formatDate(now).format(format);
   }
 
-  private replaceTemplateVariables(text: string, target: Pick<TemplateTarget, "date" | "time">): string {
-    return text.replace(/\{\{date\}\}|\{\{time\}\}/g, (variable) => variable === "{{date}}" ? target.date : target.time);
+  private replaceTemplateVariables(text: string, target: Pick<TemplateTarget, "now" | "date" | "time">): string {
+    return text.replace(/\{\{(date|time)(?::([^{}\r\n]*))?\}\}/g,
+      (_match, variable: "date" | "time", format?: string) => format ? this.format(target.now, format) : target[variable]);
   }
 
   private findMarkdownView(file: TFile): MarkdownView | null {

@@ -132,6 +132,39 @@ describe("NoteCreationService templates", () => {
     expect(result.file.path).toBe("Notes/2026-10-12 14-05-09.md");
     expect(f.contents.get(result.file.path)).toBe("template 2026/10/12 14:05:09");
   });
+  it("overrides individual date/time formats in properties and body without changing template defaults", async () => {
+    const f = templateFixture('---\nwhen: "{{date:YYYY-MM-DD[T]HH:mm:ss}}"\n---\n{{date}} | {{date:YYYY-MMMM-DD}} | {{date:YYYY/MM/DD}}\n{{time}} | {{time:HH:mm}} | {{date:HH:mm:ss}} | {{time:YYYY-MM-DD}}\n{{date:YYYY-MMMM-DD}}');
+    const result = await f.service.createTemplateNote(template(), now);
+    const longDate = actualMoment(now).format("YYYY-MMMM-DD");
+    expect(result.file.path).toBe("Notes/2026-10-12 14-05-09.md");
+    expect(f.contents.get(result.file.path)).toBe(`---\nwhen: "2026-10-12T14:05:09"\n---\n2026-10-12 | ${longDate} | 2026/10/12\n14-05-09 | 14:05 | 14:05:09 | 2026-10-12\n${longDate}`);
+  });
+  it("keeps literal format text, uses defaults for empty formats and preserves unknown or incomplete variables", async () => {
+    const f = templateFixture("{{date:[Today is] YYYY-MM-DD}} | {{time:[At] HH:mm:ss}} | {{date:[cost $&]}}\n{{date:}} {{time:}} {{other:YYYY}} {{date:YYYY {{time:HH\nmm}}");
+    const result = await f.service.createTemplateNote(template(), now);
+    expect(f.contents.get(result.file.path)).toBe("Today is 2026-10-12 | At 14:05:09 | cost $&\n2026-10-12 14-05-09 {{other:YYYY}} {{date:YYYY {{time:HH\nmm}}");
+  });
+  it("uses the captured date for overrides even when the caller changes its date during the template read", async () => {
+    const f = templateFixture();
+    const captured = new Date(now.getTime());
+    f.vault.cachedRead.mockImplementationOnce(async () => {
+      captured.setFullYear(2040);
+      return "{{date:YYYY-MM-DD}} {{time:HH:mm:ss}}";
+    });
+    const result = await f.service.createTemplateNote(template(), captured);
+    expect(result.file.path).toBe("Notes/2026-10-12 14-05-09.md");
+    expect(f.contents.get(result.file.path)).toBe("2026-10-12 14:05:09");
+  });
+  it.each(["start", "end"] as const)("applies overrides when inserting a template at the %s of an existing note", async (position) => {
+    const f = templateFixture("---\nwhen: {{date:YYYY}}\n---\n{{date:YYYY/MM/DD}} {{time:HH:mm}}");
+    const properties = "---\nstatus: existing\n---\n";
+    const target = f.file("Notes/2026-10-12 14-05-09.md", `${properties}keep me`);
+    const result = await f.service.createTemplateNote(template({ existingNoteInsertPosition: position }), now);
+    expect(result).toMatchObject({ file: target, created: false });
+    expect(f.contents.get(target.path)).toBe(position === "start"
+      ? `${properties}\n2026/10/12 14:05\n\nkeep me`
+      : `${properties}keep me\n\n2026/10/12 14:05`);
+  });
   it.each(NOTE_TEMPLATE_DATE_FORMATS)("supports date format %s through Obsidian moment", async (format) => {
     const f = templateFixture(); const result = await f.service.createTemplateNote(template({ dateFormat: format }), now);
     expect(f.contents.get(result.file.path)).toBe(`template ${actualMoment(now).format(format)} 14-05-09`);
@@ -285,6 +318,18 @@ describe("NoteCreationService templates", () => {
 });
 
 describe("NoteCreationService quick input", () => {
+  it("formats template overrides while preserving draft variables and captured content on retry", async () => {
+    const f = templateFixture("{{date}} {{date:YYYY/MM/DD}} {{time:HH:mm}}");
+    const text = "draft {{date:YYYY}} {{time:HH:mm}}";
+    const sent = request({ text, now: new Date(now.getTime()) });
+    f.vault.create.mockRejectedValueOnce(new Error("disk full"));
+    await expect(f.service.submitQuickInput(sent)).rejects.toThrow("disk full");
+    sent.now.setFullYear(2040);
+    const result = await f.service.submitQuickInput(sent);
+    expect(result.file.path).toBe("Notes/2026-10-12 14-05-09.md");
+    expect(f.contents.get(result.file.path)).toBe(`2026-10-12 2026/10/12 14:05\n\n${text}`);
+    expect(f.vault.create.mock.calls[1]).toEqual(f.vault.create.mock.calls[0]);
+  });
   it.each(["template", "plain"] as const)("recognizes a %s create that persisted before rejection without duplicating input or notes", async (kind) => {
     const f = templateFixture();
     if (kind === "plain") f.file("quick-note 2026-10-12 14-05-09.md", "existing");
