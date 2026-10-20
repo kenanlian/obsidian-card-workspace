@@ -110,7 +110,7 @@ export class QuickInputWindowManager {
     setIcon(grip, "ellipsis");
     const body = root.createDiv({ cls: "fce-quick-input-editor" });
     const footer = root.createDiv({ cls: "fce-quick-input-footer" });
-    const pin = footer.createEl("button", { cls: "clickable-icon fce-quick-input-pin", attr: { type: "button", "aria-label": strings.pinWindow, "aria-pressed": "false", title: strings.pinWindow } });
+    const pin = footer.createEl("button", { cls: "clickable-icon fce-quick-input-pin", attr: { type: "button", "aria-label": strings.pinWindow, "aria-pressed": "true", title: strings.pinWindow } });
     setIcon(pin, "pin");
     const destination = footer.createDiv({ cls: "fce-quick-input-destination" });
     const destinationIcon = destination.createSpan({ cls: "fce-quick-input-destination-icon" });
@@ -136,7 +136,7 @@ export class QuickInputWindowManager {
       const current = draft;
       this.drafts.add(current);
       session.draft = current;
-      let pinned = false;
+      let pinned = true;
       this.listen(current, pin, "click", () => {
         if (session.closed || session.window?.handle.isDestroyed()) return;
         try {

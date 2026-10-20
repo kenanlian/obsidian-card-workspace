@@ -80,6 +80,7 @@ describe("quick input desktop adapter", () => {
     expect(f.native.setContentSize).toHaveBeenCalledExactlyOnceWith(480, 270);
     expect(f.native.setMinimumSize).toHaveBeenCalledExactlyOnceWith(320, 200);
     expect(f.native.setParentWindow).toHaveBeenCalledExactlyOnceWith(null);
+    expect(f.native.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(true);
     expect(f.native.setResizable).toHaveBeenCalledExactlyOnceWith(false);
     expect(f.native.webContents.setZoomFactor).toHaveBeenCalledExactlyOnceWith(1.25);
     expect(f.native.webContents.setBackgroundThrottling).toHaveBeenCalledExactlyOnceWith(false);

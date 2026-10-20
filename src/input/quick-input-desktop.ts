@@ -52,7 +52,7 @@ export interface QuickInputPlacement { x: number; y: number; width: number; heig
 export interface QuickInputDesktopWindow { win: Window; handle: QuickInputWindowHandle; dispose(): void }
 export interface QuickInputDesktop {
   check(): void;
-  /** Creates a hidden document, ready for its native editor to be mounted. */
+  /** Creates a hidden, always-on-top document, ready for its native editor to be mounted. */
   createWindow(options: { id: string; placement: QuickInputPlacement; signal: AbortSignal }): Promise<QuickInputDesktopWindow>;
   cursor(): { x: number; y: number };
   position(source: Window | undefined, width: number, height: number, ordinal: number): QuickInputPlacement;
@@ -146,7 +146,7 @@ export function createQuickInputDesktop(mainWindow: Window): QuickInputDesktop {
         if (resolved.id === host.electronWindow?.id) throw new QuickInputDesktopError("unavailable");
         handle = resolved;
         handle.setParentWindow(null);
-        handle.setAlwaysOnTop(false);
+        handle.setAlwaysOnTop(true);
         // Transparent windows have no native resize frame; setBounds remains
         // available to our eight handles even when native resizing is disabled.
         handle.setResizable(false);

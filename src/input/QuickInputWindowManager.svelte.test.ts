@@ -67,7 +67,7 @@ beforeEach(() => {
       });
       signal.addEventListener("abort", dispose, { once: true });
       windows.push({ frame, win, handle, dispose });
-      handle.setAlwaysOnTop(false);
+      handle.setAlwaysOnTop(true);
       if (documentReady) await documentReady;
       return { win, handle, dispose };
     }) };
@@ -315,7 +315,7 @@ describe("modeless quick input", async () => {
   ])("leaves an existing draft untouched during and after opening (pinned=$pinned, global=$global)", async ({ pinned, global }) => {
     await manager.open(window); setText("keep this draft");
     const first = windows[0], original = root();
-    if (pinned) root().querySelector<HTMLButtonElement>(".fce-quick-input-pin")!.click();
+    if (!pinned) root().querySelector<HTMLButtonElement>(".fce-quick-input-pin")!.click();
     const expectUntouched = () => {
       expect(first.handle.moveTop).not.toHaveBeenCalled();
       expect(first.handle.show).toHaveBeenCalledOnce();
@@ -324,7 +324,7 @@ describe("modeless quick input", async () => {
       expect(first.handle.hide).not.toHaveBeenCalled();
       expect(first.handle.setOpacity).not.toHaveBeenCalled();
       expect(first.handle.setBounds).not.toHaveBeenCalled();
-      expect(first.handle.setAlwaysOnTop).toHaveBeenCalledTimes(pinned ? 2 : 1);
+      expect(first.handle.setAlwaysOnTop).toHaveBeenCalledTimes(pinned ? 1 : 2);
       expect(first.handle.setAlwaysOnTop).toHaveBeenLastCalledWith(pinned);
       expect(first.dispose).not.toHaveBeenCalled();
       expect(root()).toBe(original);
@@ -399,13 +399,19 @@ describe("modeless quick input", async () => {
     expect(windows[1].handle.show).toHaveBeenCalledOnce();
   });
 
-  it("pins only the chosen window and cancels only its own editor", async () => {
+  it("defaults each window to pinned, toggles only the chosen window and cancels only its own editor", async () => {
     await manager.open(); await manager.open();
     const pin = root().querySelector<HTMLButtonElement>("[aria-pressed]")!;
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+    expect(root(1).querySelector("[aria-pressed]")!.getAttribute("aria-pressed")).toBe("true");
+    pin.click();
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    expect(windows[0].handle.setAlwaysOnTop).toHaveBeenLastCalledWith(false);
     pin.click();
     expect(pin.getAttribute("aria-pressed")).toBe("true");
     expect(windows[0].handle.setAlwaysOnTop).toHaveBeenLastCalledWith(true);
-    expect(windows[1].handle.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(false);
+    expect(windows[1].handle.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(true);
+    pin.click();
     expect(pin.parentElement?.className).toBe("fce-quick-input-footer");
     expect(pin.nextElementSibling?.className).toBe("fce-quick-input-destination");
     expect(root().querySelector(".fce-quick-input-grip button")).toBeNull();
@@ -414,7 +420,8 @@ describe("modeless quick input", async () => {
     expect(windows[1].dispose).not.toHaveBeenCalled();
     expect(state.editors[1].dispose).not.toHaveBeenCalled();
     await manager.open();
-    expect(windows[2].handle.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(false);
+    expect(windows[2].handle.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(true);
+    expect(root(1).querySelector("[aria-pressed]")!.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("continues an already submitted write after system close without touching a later draft", async () => {

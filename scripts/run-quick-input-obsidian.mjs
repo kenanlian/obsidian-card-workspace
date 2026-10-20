@@ -195,9 +195,11 @@ try {
   assert.deepEqual(eventsDuringOpen.filter((event) => ["show", "hide", "focus"].includes(event.name)), []);
   phase("earlier-draft-untouched-during-delayed-open", { eventsDuringOpen });
 
-  await first.page.locator(".fce-quick-input-pin").click();
   assert.equal((await windowSnapshot())[0].pinned, true);
-  assert.equal((await windowSnapshot())[1].pinned, false);
+  assert.equal((await windowSnapshot())[1].pinned, true);
+  await first.page.locator(".fce-quick-input-pin").click();
+  assert.equal((await windowSnapshot())[0].pinned, false);
+  assert.equal((await windowSnapshot())[1].pinned, true);
   await main.evaluate(() => {
     document.body.classList.remove("theme-dark"); document.body.classList.add("theme-light");
     document.body.style.setProperty("--font-text-override", "monospace");
