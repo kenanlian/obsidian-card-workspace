@@ -151,6 +151,7 @@ export class QuickInputWindowManager {
     let draft: Draft | undefined;
     try {
       const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder, initialValue,
+        propertiesLabels: { showSource: strings.editYamlProperties, showProperties: strings.showProperties },
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
@@ -270,7 +271,9 @@ export class QuickInputWindowManager {
   }
 
   private send(draft: Draft): void {
-    if (!this.drafts.has(draft) || draft.pending || draft.composing || !draft.editor.getValue().trim()) return;
+    if (!this.drafts.has(draft) || draft.pending || draft.composing) return;
+    if (!draft.request) draft.editor.flush();
+    if (!draft.editor.getValue().trim()) return;
     const strings = this.options.getStrings();
     if (!draft.templateReady || !this.resolveTarget(draft.context).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {

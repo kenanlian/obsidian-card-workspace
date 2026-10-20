@@ -84,10 +84,10 @@ describe("custom quick input document", () => {
     });
     window.addEventListener("keydown", received);
     cleanups.push(() => window.removeEventListener("keydown", received));
-    const event = new child.KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true });
+    const event = new child.KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true });
     editor.dispatchEvent(event);
     expect(received).toHaveBeenCalledOnce();
-    expect(received.mock.calls[0][0].key).toBe("Enter");
+    expect(received.mock.calls[0][0].key).toBe("z");
     expect(received.mock.calls[0][0].ctrlKey).toBe(true);
     expect(event.defaultPrevented).toBe(true);
     expect(window.activeWindow).toBe(child); expect(window.activeDocument).toBe(child.document);
@@ -96,6 +96,22 @@ describe("custom quick input document", () => {
     runtime.dispose(); expect(window.activeWindow).toBe(window);
     editor.dispatchEvent(new child.KeyboardEvent("keydown", { key: "x", bubbles: true }));
     expect(received).toHaveBeenCalledOnce();
+  });
+
+  it("keeps send shortcuts in the owning draft even while a host completion scope is active", async () => {
+    const runtime = prepare(); loadResources(); await runtime.ready;
+    const input = child.document.createElement("input"); child.document.body.append(input);
+    const host = vi.fn(); const local = vi.fn((event: KeyboardEvent) => event.preventDefault());
+    window.addEventListener("keydown", host);
+    child.document.body.addEventListener("keydown", local, true);
+    cleanups.push(() => window.removeEventListener("keydown", host));
+    for (const modifiers of [{ ctrlKey: true }, { metaKey: true }]) {
+      const event = new child.KeyboardEvent("keydown", { key: "Enter", ...modifiers, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(host).not.toHaveBeenCalled();
+    expect(local).toHaveBeenCalledTimes(2);
   });
 
   it("does not overwrite another focused window during cleanup", async () => {

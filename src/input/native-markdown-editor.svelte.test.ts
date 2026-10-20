@@ -28,7 +28,7 @@ function fixture(lazy = false) {
       const cm = new EditorView({ state: EditorState.create({ extensions: this.buildLocalExtensions() }), parent: this.container });
       this.editor = { cm, getValue: () => cm.state.doc.toString(), focus: () => cm.focus() };
     }
-    buildLocalExtensions(): Extension[] { return []; }
+    buildLocalExtensions(): Extension[] { return [EditorView.editable.of(true), EditorState.readOnly.of(false), EditorView.contentAttributes.of({ contenteditable: "true" })]; }
     set(value: string) {
       if (!this.editor) this.createSurface();
       this.editor.cm.dispatch({ changes: { from: 0, to: this.editor.cm.state.doc.length, insert: value } });
@@ -112,6 +112,7 @@ describe("native Markdown editor compatibility seam", () => {
     expect(f.onModEnter).toHaveBeenCalledWith(event);
     const content = f.container.querySelector<HTMLElement>(".cm-content")!;
     adapter.setReadOnly(true); expect(content.getAttribute("contenteditable")).toBe("false");
+    expect(EditorView.findFromDOM(content)!.state.readOnly).toBe(true);
     adapter.setReadOnly(false); expect(content.getAttribute("contenteditable")).toBe("true");
   });
 

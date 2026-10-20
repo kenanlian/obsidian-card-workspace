@@ -7,13 +7,13 @@ import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputWindowHa
 import { QuickInputWindowManager } from "./QuickInputWindowManager";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 
-const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
+const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; flush: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
 vi.mock("./native-markdown-editor", () => ({
   createNativeMarkdownEditor: (options: { container: HTMLElement; initialValue?: string; onChange: () => void }) => {
     if (state.unsupported) throw new Error("unsupported");
-    const editor = { container: options.container, text: options.initialValue ?? "", focus: vi.fn(), dispose: vi.fn(), readOnly: vi.fn(), change: options.onChange };
+    const editor = { container: options.container, text: options.initialValue ?? "", focus: vi.fn(), flush: vi.fn(), dispose: vi.fn(), readOnly: vi.fn(), change: options.onChange };
     state.editors.push(editor);
-    return { getValue: () => editor.text, focus: editor.focus, dispose: editor.dispose, setReadOnly: editor.readOnly };
+    return { getValue: () => editor.text, focus: editor.focus, flush: editor.flush, dispose: editor.dispose, setReadOnly: editor.readOnly };
   },
 }));
 
@@ -257,11 +257,23 @@ describe("modeless quick input", async () => {
     expect(first.now).toBeInstanceOf(Date); expect(first.submissionId).toBeTruthy();
     expect(first.text).toBe("{{date}} unchanged"); expect(root()).not.toBeNull();
     expect(state.editors[0].readOnly).toHaveBeenCalledWith(true);
+    expect(state.editors[0].flush).toHaveBeenCalledOnce();
     settings.quickInput = { templateId: "missing", folderPath: "missing", insertPosition: "start" };
     send().click(); await tick();
     expect(submit.mock.calls[1][0]).toBe(first);
+    expect(state.editors[0].flush).toHaveBeenCalledOnce();
     expect(first.config).toEqual({ templateId: null, folderPath: "", insertPosition: "end" });
     expect(root()).toBeUndefined();
+  });
+
+  it("commits the active property input before capturing and locking the submitted draft", async () => {
+    submit.mockReturnValue(new Promise<NoteInputResult>(() => {}));
+    await manager.open(window); setText("---\ndue: old\n---\nBody");
+    state.editors[0].flush.mockImplementation(() => { state.editors[0].text = "---\ndue: committed\n---\nBody"; });
+    root().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(submit.mock.calls[0][0].text).toBe("---\ndue: committed\n---\nBody");
+    expect(state.editors[0].flush.mock.invocationCallOrder[0]).toBeLessThan(state.editors[0].readOnly.mock.invocationCallOrder[0]);
+    expect(state.editors[0].readOnly).toHaveBeenCalledWith(true);
   });
 
   it("captures the selected template and stops unavailable configuration without losing draft", async () => {

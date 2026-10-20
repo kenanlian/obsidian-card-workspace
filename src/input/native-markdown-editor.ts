@@ -5,12 +5,15 @@
  * The adapter deliberately does not patch workspace methods.
  */
 import { Scope, type App, type Editor } from "obsidian";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, placeholder } from "@codemirror/view";
+import { noteInputStrings } from "../i18n/noteInput";
+import { createDraftPropertiesEditor, type DraftPropertiesEditor, type NativePropertiesConstructor } from "./native-properties-editor";
 
 export interface NativeMarkdownEditor {
   getValue(): string;
   focus(): void;
+  flush(): void;
   setReadOnly(value: boolean): void;
   dispose(): void;
 }
@@ -26,6 +29,7 @@ interface InternalEditor {
 interface InternalEmbed {
   editable: boolean;
   editMode?: object;
+  metadataEditor?: { constructor: unknown };
   showEditor(): void;
   unload(): void;
 }
@@ -36,8 +40,10 @@ type InternalApp = App & {
 
 export class NativeMarkdownEditorUnavailable extends Error {}
 
-const constructors = new WeakMap<App, EditorConstructor>();
-function resolveConstructor(app: App, document: Document): EditorConstructor {
+interface NativeEditorCapabilities { Editor: EditorConstructor; Properties?: NativePropertiesConstructor }
+const constructors = new WeakMap<App, NativeEditorCapabilities>();
+const focusedDrafts = new WeakMap<App, { baseline: App["workspace"]["activeEditor"]; owners: Map<InternalEditor, Scope> }>();
+function resolveConstructor(app: App, document: Document): NativeEditorCapabilities {
   const cached = constructors.get(app);
   if (cached) return cached;
   const create = (app as InternalApp).embedRegistry?.embedByExtension?.md;
@@ -54,9 +60,10 @@ function resolveConstructor(app: App, document: Document): EditorConstructor {
     if (!prototype || !["set", "buildLocalExtensions", "unload", "destroy"].every((name) => typeof prototype[name] === "function")) {
       throw new Error("Missing native editor prototype");
     }
-    const constructor = prototype.constructor as EditorConstructor;
-    constructors.set(app, constructor);
-    return constructor;
+    const capabilities: NativeEditorCapabilities = { Editor: prototype.constructor as EditorConstructor };
+    if (typeof probe.metadataEditor?.constructor === "function") capabilities.Properties = probe.metadataEditor.constructor as NativePropertiesConstructor;
+    constructors.set(app, capabilities);
+    return capabilities;
   } catch (error) {
     throw new NativeMarkdownEditorUnavailable(String(error));
   } finally {
@@ -69,12 +76,15 @@ export function createNativeMarkdownEditor(options: {
   container: HTMLElement;
   placeholder: string;
   initialValue?: string;
+  propertiesLabels?: { showSource: string; showProperties: string };
   onChange: () => void;
   onModEnter: (event: KeyboardEvent) => void;
 }): NativeMarkdownEditor {
   const { app, container, onChange, onModEnter } = options;
-  const Base = resolveConstructor(app, container.ownerDocument);
+  const capabilities = resolveConstructor(app, container.ownerDocument);
+  const Base = capabilities.Editor;
   const editable = new Compartment();
+  const propertiesExtension = new Compartment();
   class DraftEditor extends Base {
     private destroyed = false;
     buildLocalExtensions(): Extension[] {
@@ -83,7 +93,8 @@ export function createNativeMarkdownEditor(options: {
         // Native Chromium carets use the full line height beside an empty
         // placeholder. CodeMirror measures text bounds consistently instead.
         drawSelection(),
-        editable.of([EditorState.readOnly.of(false), EditorView.editable.of(true)]),
+        Prec.highest(editable.of([EditorState.readOnly.of(false), EditorView.editable.of(true), EditorView.contentAttributes.of({ contenteditable: "true" })])),
+        propertiesExtension.of([]),
         EditorView.updateListener.of((update) => { if (update.docChanged) onChange(); }),
       ];
     }
@@ -95,17 +106,36 @@ export function createNativeMarkdownEditor(options: {
   }
   let native: DraftEditor | undefined;
   let disposed = false;
+  let properties: DraftPropertiesEditor | null = null;
   let ownsScope = false;
-  let previousEditor: App["workspace"]["activeEditor"] = null;
   const scope = new Scope(app.scope);
   const releaseFocus = () => {
     if (ownsScope) { app.keymap.popScope(scope); ownsScope = false; }
-    if (native && app.workspace.activeEditor === (native.owner as unknown)) app.workspace.activeEditor = previousEditor;
-    previousEditor = null;
+    const group = focusedDrafts.get(app);
+    if (!group || !native) return;
+    group.owners.delete(native);
+    if (app.workspace.activeEditor === (native.owner as unknown)) {
+      const previous = [...group.owners.keys()].pop();
+      app.workspace.activeEditor = previous ? previous.owner as unknown as App["workspace"]["activeEditor"] : group.baseline;
+    }
+    if (!group.owners.size) focusedDrafts.delete(app);
   };
   const takeFocus = () => {
-    if (disposed || !native || ownsScope) return;
-    previousEditor = app.workspace.activeEditor;
+    if (disposed || !native) return;
+    // Modern host keymaps bind scopes to activeWindow at push time.
+    window.activeWindow = container.ownerDocument.defaultView!;
+    window.activeDocument = container.ownerDocument;
+    if (ownsScope && app.workspace.activeEditor === (native.owner as unknown)) return;
+    if (ownsScope) app.keymap.popScope(scope);
+    let group = focusedDrafts.get(app);
+    if (!group) {
+      group = { baseline: app.workspace.activeEditor, owners: new Map() };
+      focusedDrafts.set(app, group);
+    } else if (![...group.owners.keys()].some((entry) => entry.owner === (app.workspace.activeEditor as unknown))) {
+      group.baseline = app.workspace.activeEditor;
+    }
+    group.owners.delete(native);
+    group.owners.set(native, scope);
     app.workspace.activeEditor = native.owner as unknown as App["workspace"]["activeEditor"];
     app.keymap.pushScope(scope);
     ownsScope = true;
@@ -113,7 +143,8 @@ export function createNativeMarkdownEditor(options: {
   // Host hotkeys run before CodeMirror. Handle this shortcut in our own scope.
   scope.register(["Mod"], "Enter", (event) => { onModEnter(event); return false; });
   try {
-    const owner: Record<string, unknown> = { app, onMarkdownScroll: () => {}, getMode: () => "source" };
+    const owner: Record<string, unknown> = { app, onMarkdownScroll: () => {}, syncScroll: () => {}, getMode: () => "source",
+      get editor() { return native?.editor; }, get editMode() { return native; } };
     native = new DraftEditor(app, container, owner);
     // Some host versions create their CodeMirror surface only on the first set.
     native.set(options.initialValue ?? "");
@@ -121,13 +152,15 @@ export function createNativeMarkdownEditor(options: {
       throw new Error("Missing native editor instance capabilities");
     }
     if (options.initialValue) native.editor.cm.dispatch({ selection: { anchor: native.editor.cm.state.doc.length }, scrollIntoView: true });
-    native.owner.editMode = native;
-    native.owner.editor = native.editor;
-    native.editor.cm.contentDOM.addEventListener("focusin", takeFocus);
-    native.editor.cm.contentDOM.addEventListener("focusout", releaseFocus);
+    properties = createDraftPropertiesEditor({ app, container, editor: native.editor, Constructor: capabilities.Properties,
+      labels: options.propertiesLabels ?? { showSource: noteInputStrings.en.editYamlProperties, showProperties: noteInputStrings.en.showProperties } });
+    if (properties) native.editor.cm.dispatch({ effects: propertiesExtension.reconfigure(properties.extension) });
+    const focusOut = (event: FocusEvent) => { if (!container.contains(event.relatedTarget as Node | null)) releaseFocus(); };
+    container.addEventListener("focusin", takeFocus, true);
+    container.addEventListener("focusout", focusOut, true);
     const win = container.ownerDocument.defaultView!;
     const focusWindow = () => {
-      if (native?.editor.cm.contentDOM.contains(container.ownerDocument.activeElement)) takeFocus();
+      if (container.contains(container.ownerDocument.activeElement)) takeFocus();
     };
     // A native window can lose activation while its contentDOM remains the
     // document's activeElement. Release its scope before another draft takes it.
@@ -137,23 +170,32 @@ export function createNativeMarkdownEditor(options: {
     return {
       getValue: () => editor.editor.getValue(),
       focus: () => { if (!disposed) editor.editor.focus(); },
+      flush: () => properties?.flush(),
       setReadOnly: (value) => {
-        if (!disposed) editor.editor.cm.dispatch({ effects: editable.reconfigure([EditorState.readOnly.of(value), EditorView.editable.of(!value)]) });
+        if (!disposed) {
+          properties?.setReadOnly(value);
+          editor.editor.cm.dispatch({ effects: editable.reconfigure([EditorState.readOnly.of(value), EditorView.editable.of(!value),
+            EditorView.contentAttributes.of({ contenteditable: String(!value) })]) });
+        }
       },
       dispose: () => {
         if (disposed) return;
         disposed = true;
-        editor.editor.cm.contentDOM.removeEventListener("focusin", takeFocus);
-        editor.editor.cm.contentDOM.removeEventListener("focusout", releaseFocus);
+        container.removeEventListener("focusin", takeFocus, true);
+        container.removeEventListener("focusout", focusOut, true);
         win.removeEventListener("blur", releaseFocus);
         win.removeEventListener("focus", focusWindow);
         releaseFocus();
-        try { editor.unload(); } finally { editor.destroy(); container.replaceChildren(); }
+        try { properties?.dispose(); } finally {
+          try { editor.unload(); } finally { editor.destroy(); container.replaceChildren(); }
+        }
       },
     };
   } catch (error) {
     releaseFocus();
-    try { native?.unload(); } finally { native?.destroy(); container.replaceChildren(); }
+    try { properties?.dispose(); } finally {
+      try { native?.unload(); } finally { native?.destroy(); container.replaceChildren(); }
+    }
     throw new NativeMarkdownEditorUnavailable(String(error));
   }
 }

@@ -2,6 +2,8 @@
 
 Implementation validation record, 2026-10-19. User behavior and setup are described in [note-input.md](note-input.md).
 
+The separate [native properties validation record](quick-input-properties-validation.md) covers the production property editor in unsaved drafts, source fallback, focus/shortcut ownership and submission locks.
+
 ## Window and editor ownership
 
 New drafts use same-origin `about:blank` desktop windows. They do not call `workspace.openPopoutLeaf`, construct workspace leaves, or participate in layout persistence. The old quick-input view remains registered only to discard restored layout entries.

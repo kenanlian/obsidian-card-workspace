@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "platform": "linux",
+  "phases": [
+    {
+      "name": "enabled",
+      "obsidian": "1.14.4",
+      "electron": "39.8.3",
+      "frame": "hidden",
+      "mainId": 1,
+      "activeWindowClosed": false,
+      "activeDocumentMatches": false,
+      "existingNativeIds": [
+        2,
+        1
+      ]
+    },
+    {
+      "name": "native-properties-mounted-with-null-file",
+      "hasFile": false,
+      "adoptedIntoDraft": true,
+      "yamlHidden": true,
+      "widgets": [
+        {
+          "key": "status",
+          "type": "text"
+        },
+        {
+          "key": "count",
+          "type": "number"
+        },
+        {
+          "key": "done",
+          "type": "checkbox"
+        },
+        {
+          "key": "due",
+          "type": "date"
+        },
+        {
+          "key": "tags",
+          "type": "tags"
+        },
+        {
+          "key": "related",
+          "type": "multitext"
+        }
+      ]
+    },
+    {
+      "name": "native-property-collapse-and-resize"
+    },
+    {
+      "name": "real-ui-edits-preserve-property-types-and-body"
+    },
+    {
+      "name": "property-row-undo-redo-updates-yaml-and-panel"
+    },
+    {
+      "name": "rename-add-delete-properties"
+    },
+    {
+      "name": "yaml-source-toggle-and-native-panel-synchronization"
+    },
+    {
+      "name": "two-independent-drafts-and-no-vault-writes-before-send",
+      "vaultWritesBeforeSend": 0
+    },
+    {
+      "name": "send-from-property-input-flushes-pending-edit-and-preserves-sibling"
+    },
+    {
+      "name": "invalid-and-nested-yaml-source-fallback-and-recovery"
+    },
+    {
+      "name": "yaml-only-template-accepts-first-body-input-without-changing-untouched-draft"
+    },
+    {
+      "name": "unload-releases-native-properties-components"
+    }
+  ],
+  "errors": [],
+  "limitations": [
+    "Real application checks on Linux/Electron; Windows/macOS, physical IME and mixed-DPI behavior require manual acceptance.",
+    "Unsaved draft links have no file context and resolve from the vault root.",
+    "Xvfb/software rendering without a window manager does not validate desktop stacking or minimize animations."
+  ],
+  "runtime": {
+    "obsidian": "1.14.4",
+    "electron": "39.8.3",
+    "frame": "hidden",
+    "mainId": 1,
+    "activeWindowClosed": false,
+    "activeDocumentMatches": false,
+    "existingNativeIds": [
+      2,
+      1
+    ]
+  },
+  "mount": {
+    "hasFile": false,
+    "adoptedIntoDraft": true,
+    "yamlHidden": true,
+    "widgets": [
+      {
+        "key": "status",
+        "type": "text"
+      },
+      {
+        "key": "count",
+        "type": "number"
+      },
+      {
+        "key": "done",
+        "type": "checkbox"
+      },
+      {
+        "key": "due",
+        "type": "date"
+      },
+      {
+        "key": "tags",
+        "type": "tags"
+      },
+      {
+        "key": "related",
+        "type": "multitext"
+      }
+    ]
+  },
+  "tagCompletion": [
+    "alpha-choice"
+  ],
+  "preview": "/home/kenan/Secret-Projects/obsidian-card-workspace-quick-input-desktop-windows/diagnostics/quick-input-properties-production-1.14.4-20261020-preview.png",
+  "focus": {
+    "activeDraft": 0,
+    "owningDocument": true
+  },
+  "pendingEditor": {
+    "readOnly": true,
+    "editable": false,
+    "contentEditable": "false",
+    "dom": "<div spellcheck=\"true\" autocorrect=\"on\" autocapitalize=\"on\" writingsuggestions=\"false\" translate=\"no\" contenteditable=\"false\" style=\"tab-size: 4;\" class=\"cm-content cm-lineWrapping",
+    "editorCount": 1
+  },
+  "saved": {
+    "path": "Properties probe.md",
+    "text": "---\n# Keep this comment\nstate: 'from-yaml' # Keep status comment\ncount: 19\ndone: true\ndue: 2026-12-02\ntags:\n  - alpha\n  - beta\nrelated:\n  - '[[Target]]'\n  - second\n---\n# Draft body\nKeep this body unchanged.\n"
+  },
+  "cleanup": [
+    {
+      "closed": true,
+      "panelConnected": false,
+      "editorConnected": false
+    },
+    {
+      "closed": true,
+      "panelConnected": false,
+      "editorConnected": false
+    }
+  ],
+  "passed": true,
+  "remaining": {
+    "windows": [
+      {
+        "id": 2,
+        "visible": true
+      },
+      {
+        "id": 1,
+        "visible": true
+      }
+    ]
+  }
+}

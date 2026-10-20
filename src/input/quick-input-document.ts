@@ -145,6 +145,9 @@ export function prepareQuickInputDocument(hostWindow: Window, targetWindow: Wind
       listen(win, type, (event) => {
         focus();
         const original = event as KeyboardEvent;
+        // Send belongs to the draft even when a native property completion
+        // menu has its own host scope. Let the child root capture it directly.
+        if ((original.ctrlKey || original.metaKey) && !original.altKey && original.key === "Enter") return;
         // Construct in the source realm, just as the host's popout relay does.
         // Do not override native Event.target across DOM realms; the active
         // editor's Scope owns keyboard routing in the receiving window.

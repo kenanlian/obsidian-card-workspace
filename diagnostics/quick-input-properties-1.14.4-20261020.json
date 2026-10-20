@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux",
+  "phases": [
+    {
+      "name": "enabled",
+      "obsidian": "1.14.4",
+      "electron": "39.8.3",
+      "frame": "hidden",
+      "mainId": 1,
+      "activeWindowClosed": false,
+      "activeDocumentMatches": false,
+      "existingNativeIds": [
+        2,
+        1
+      ]
+    },
+    {
+      "name": "native-properties-mounted-with-null-file",
+      "hasFile": false,
+      "properties": {
+        "status": "draft",
+        "count": 3,
+        "done": false,
+        "due": "2026-10-20",
+        "tags": [
+          "alpha"
+        ],
+        "related": [
+          "[[Target]]"
+        ]
+      },
+      "adoptedIntoDraft": true,
+      "widgets": [
+        {
+          "key": "status",
+          "type": "text"
+        },
+        {
+          "key": "count",
+          "type": "number"
+        },
+        {
+          "key": "done",
+          "type": "checkbox"
+        },
+        {
+          "key": "due",
+          "type": "date"
+        },
+        {
+          "key": "tags",
+          "type": "tags"
+        },
+        {
+          "key": "related",
+          "type": "multitext"
+        }
+      ]
+    },
+    {
+      "name": "real-ui-edits-preserve-property-types-and-body"
+    },
+    {
+      "name": "property-row-undo-redo-updates-yaml-and-panel"
+    },
+    {
+      "name": "rename-add-delete-properties"
+    },
+    {
+      "name": "yaml-to-native-panel-synchronization"
+    },
+    {
+      "name": "two-independent-drafts-and-no-vault-writes-before-send",
+      "vaultWritesBeforeSend": 0
+    },
+    {
+      "name": "send-from-property-input-flushes-pending-edit-and-preserves-sibling"
+    },
+    {
+      "name": "unload-releases-native-properties-components"
+    }
+  ],
+  "errors": [],
+  "limitations": [
+    "Diagnostic prototype only; production plugin behavior is unchanged.",
+    "Private native metadata editor API; complete compatibility checks and fallback are still required.",
+    "YAML stays visible beside the panel to inspect synchronization; body-only presentation is not implemented.",
+    "Prototype stringifyYaml rewrites YAML formatting and comments; preservation is not implemented.",
+    "Invalid/nested YAML recovery, relative-link context, other-plugin interactions, physical IME and Windows/macOS behavior are not certified.",
+    "Xvfb/software rendering without a window manager does not validate desktop stacking or minimize animations."
+  ],
+  "diagnosticEditorShims": [
+    "Provide owner.syncScroll for long-draft scrolling",
+    "Publish owner.editor before the first non-empty set emits selection events"
+  ],
+  "runtime": {
+    "obsidian": "1.14.4",
+    "electron": "39.8.3",
+    "frame": "hidden",
+    "mainId": 1,
+    "activeWindowClosed": false,
+    "activeDocumentMatches": false,
+    "existingNativeIds": [
+      2,
+      1
+    ]
+  },
+  "mount": {
+    "hasFile": false,
+    "properties": {
+      "status": "draft",
+      "count": 3,
+      "done": false,
+      "due": "2026-10-20",
+      "tags": [
+        "alpha"
+      ],
+      "related": [
+        "[[Target]]"
+      ]
+    },
+    "adoptedIntoDraft": true,
+    "widgets": [
+      {
+        "key": "status",
+        "type": "text"
+      },
+      {
+        "key": "count",
+        "type": "number"
+      },
+      {
+        "key": "done",
+        "type": "checkbox"
+      },
+      {
+        "key": "due",
+        "type": "date"
+      },
+      {
+        "key": "tags",
+        "type": "tags"
+      },
+      {
+        "key": "related",
+        "type": "multitext"
+      }
+    ]
+  },
+  "tagCompletion": [
+    "alpha-choice"
+  ],
+  "preview": "/home/kenan/Secret-Projects/obsidian-card-workspace-quick-input-desktop-windows/diagnostics/quick-input-properties-1.14.4-20261020-preview.png",
+  "focus": {
+    "activeDraft": 0,
+    "scopeInOwningWindow": true
+  },
+  "saved": {
+    "path": "Properties probe.md",
+    "text": "---\nstate: from-yaml\ncount: 19\ndone: true\ndue: 2026-12-02\ntags:\n  - alpha\n  - beta\nrelated:\n  - \"[[Target]]\"\n  - second\n---\n# Draft body\nKeep this body unchanged.\n"
+  },
+  "cleanup": [
+    {
+      "disposed": true,
+      "loaded": false,
+      "connected": false
+    },
+    {
+      "disposed": true,
+      "loaded": false,
+      "connected": false
+    }
+  ],
+  "passed": true,
+  "remaining": {
+    "windows": [
+      {
+        "id": 2,
+        "visible": true
+      },
+      {
+        "id": 1,
+        "visible": true
+      }
+    ]
+  }
+}
