@@ -9,8 +9,6 @@ import { TemplateStorageService } from "./services/TemplateStorageService";
 import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
 import type { TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
-import { rewritePathReference } from "./path-references";
-import { installTemplateExclusion, isTemplatePath } from "./template-exclusion";
 import { QUICK_INPUT_VIEW, QuickInputView } from "./input/QuickInputView";
 import { createQuickInputDesktop } from "./input/quick-input-desktop";
 import { QuickInputShortcut } from "./input/QuickInputShortcut";
@@ -68,15 +66,11 @@ function normalizeFolderScopePath(path: string): string { return path === "/" ? 
 
 export default class CardWorkspacePlugin extends Plugin {
   private readonly popoutEvents = new Map<Window, Component>();
-  private readonly registeredTemplatePaths = new Set<string>();
-  private readonly reservedTemplatePaths = new Set<string>();
-  private readonly templateReservations = new Map<string, number>();
-  private releaseTemplateExclusion: (() => void) | null = null;
   private noteCreationService: NoteCreationService | null = null;
   private workspaceSettingTab: CardWorkspaceSettingTab | null = null;
   private readonly templateStorageService = new TemplateStorageService({
     app: this.app, getSettings: () => this.getSettings(), saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
-    reservePath: (path) => this.reserveTemplatePath(path), flushVaultEvents: () => this.vaultEventBus.flushPendingEvents(),
+    flushVaultEvents: () => this.vaultEventBus.flushPendingEvents(),
     assertWritable: async () => {
       await this.settingsReadyPromise;
       if (this.disposed) throw new Error("Plugin unloaded");
@@ -176,8 +170,6 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onload(): void {
-    this.releaseTemplateExclusion = installTemplateExclusion(this.app, (path) =>
-      isTemplatePath(path, this.registeredTemplatePaths, this.reservedTemplatePaths));
     this.registerVaultEventListeners();
     this.registerCustomIcons();
     this.register(() => this.disposeRuntime());
@@ -304,11 +296,6 @@ export default class CardWorkspacePlugin extends Plugin {
     this.templateNoteFocusAbort?.abort();
     this.templateNoteFocusAbort = null;
     this.workspaceSettingTab = null;
-    this.releaseTemplateExclusion?.();
-    this.releaseTemplateExclusion = null;
-    this.registeredTemplatePaths.clear();
-    this.reservedTemplatePaths.clear();
-    this.templateReservations.clear();
     this.editorDropController.dispose();
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
@@ -337,11 +324,6 @@ export default class CardWorkspacePlugin extends Plugin {
       { if (!this.disposed) console.warn(`[Card Workspace] ${detail}`, error); });
   }
 
-  private refreshTemplateRegistry(settings: PluginSettings): void {
-    this.registeredTemplatePaths.clear();
-    for (const template of settings.noteTemplates) this.registeredTemplatePaths.add(template.filePath);
-  }
-
   private getNoteCreationService(): NoteCreationService {
     return this.noteCreationService ??= new NoteCreationService(this.app);
   }
@@ -353,30 +335,6 @@ export default class CardWorkspacePlugin extends Plugin {
       emptyTags: this.getSettings().newNoteTemplate === "tags-frontmatter",
     });
     await this.openNoteFromCard(result.file.path, "new-tab");
-  }
-
-  reserveTemplatePath(path: string): () => void {
-    this.templateReservations.set(path, (this.templateReservations.get(path) ?? 0) + 1);
-    this.reservedTemplatePaths.add(path);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const remaining = (this.templateReservations.get(path) ?? 1) - 1;
-      if (remaining > 0) this.templateReservations.set(path, remaining);
-      else {
-        this.templateReservations.delete(path);
-        this.reservedTemplatePaths.delete(path);
-        // A canceled registration may leave a real ordinary file behind.
-        if (!this.disposed && !isTemplatePath(path, this.getSettings().noteTemplates)
-          && this.app.vault.getAbstractFileByPath(path) instanceof TFile) {
-          this.withFolderViews((view) => {
-            view.invalidateTemplateCandidates();
-            this.runDetached(view.applyUpdateIntent("reload", "settings-change"), "Template reservation refresh failed.");
-          });
-        }
-      }
-    };
   }
 
   async createNoteFromTemplate(id: string): Promise<void> {
@@ -812,14 +770,10 @@ export default class CardWorkspacePlugin extends Plugin {
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
-    this.refreshTemplateRegistry(next);
     if (JSON.stringify(previous.noteTemplates) !== JSON.stringify(next.noteTemplates)) {
       this.workspaceSettingTab?.refreshTemplateOptions();
     }
-    const templatePathsChanged = JSON.stringify(previous.noteTemplates.map((template) => template.filePath).sort())
-      !== JSON.stringify(next.noteTemplates.map((template) => template.filePath).sort());
     this.withFolderViews((view) => {
-      if (templatePathsChanged) view.invalidateTemplateCandidates();
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
         this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "Settings view update failed.");
@@ -990,7 +944,6 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
-    this.refreshTemplateRegistry(this.getSettings());
     this.workspaceSettingTab?.refreshTemplateOptions();
   }
 
@@ -1080,16 +1033,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (event.isFolder || isSupportedImagePath(event.path) || (event.oldPath !== null && isSupportedImagePath(event.oldPath))) {
       this.thumbnails?.service.invalidate([event.path, ...(event.oldPath === null ? [] : [event.oldPath])], event.isFolder);
     }
-    // Keep a renamed template excluded while earlier bus listeners await persistence.
-    const trackedPaths = new Set([...this.getSettings().noteTemplates.map((template) => template.filePath), ...this.reservedTemplatePaths]);
-    const releases = event.eventType === "rename" && event.oldPath !== null
-      ? [...trackedPaths].flatMap((path) => {
-        const nextPath = event.isFolder ? rewritePathReference(path, event.oldPath as string, event.path)
-          : path === event.oldPath ? event.path : path;
-        return nextPath === path ? [] : [this.reserveTemplatePath(nextPath)];
-      }) : [];
-    this.runDetached(this.vaultEventBus.publish(event).finally(() => { releases.forEach((release) => release()); }),
-      "Vault event publication failed.");
+    this.runDetached(this.vaultEventBus.publish(event), "Vault event publication failed.");
   }
 
   private reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {

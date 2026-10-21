@@ -80,7 +80,6 @@ export class FolderCardView extends ItemView implements HoverParent {
       flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
       openTemplateNote: (path, selectTitle) => this.plugin.openTemplateEditor(path, selectTitle),
       runTemplateOperation: (work) => this.plugin.runTemplateOperation(work),
-      reserveTemplatePath: (path) => this.plugin.reserveTemplatePath?.(path) ?? (() => undefined),
       getThumbnailService: () => this.plugin.getThumbnailService?.() ?? null,
       effectiveSortAndPins: () => {
         const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), this.plugin.getSettings());
@@ -348,16 +347,6 @@ export class FolderCardView extends ItemView implements HoverParent {
    * Applies the weakest update that still reflects a change. Only `"reload"`
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
    */
-  invalidateTemplateCandidates(): void {
-    this.epochs.vaultContent.bump();
-    this.epochs.navCount.bump();
-    this.modules.scopeController.invalidateCandidateCache();
-    this.modules.boxActions.invalidateCache();
-    this.modules.projection.invalidateVaultCaches();
-    this.modules.property.invalidateVault();
-    this.modules.navLayout.refreshFolderTreeState();
-  }
-
   async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
     this.modules.hoverPreview.applySize();
     this.modules.images.onSettingsChanged();

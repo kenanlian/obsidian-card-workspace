@@ -75,7 +75,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   quickInputWidth: "patch",
   quickInputHeight: "patch",
   quickInputColor: "patch",
-  noteTemplates: "reload",
+  noteTemplates: "patch",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
   hoverPreviewWidth: "patch",
@@ -346,12 +346,12 @@ describe("resolveBoxesUpdateIntent", () => {
 
 describe("note input update grades", () => {
   const template = { id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
-  it("reloads every scope when registration changes membership", () => {
+  it("patches every scope when templates are registered or unregistered", () => {
     const previous = { ...createSettings(), noteTemplates: [] };
     const next = { ...previous, noteTemplates: [template] };
     for (const scope of [createFolderScope("Notes", true), createBoxScope("box-1"), createLinksScope("Notes/A.md", "backlinks")]) {
-      expect(resolveSettingsUpdateIntent(previous, next, scope)).toBe("reload");
-      expect(resolveSettingsUpdateIntent(next, previous, scope)).toBe("reload");
+      expect(resolveSettingsUpdateIntent(previous, next, scope)).toBe("patch");
+      expect(resolveSettingsUpdateIntent(next, previous, scope)).toBe("patch");
     }
   });
   it("patches destinations, formats, registration identity and ordering without card reload", () => {

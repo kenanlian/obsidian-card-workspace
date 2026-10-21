@@ -8,8 +8,6 @@ import { collectLinksFiles, isPathRelevantToLinksScope, readLinkReferenceCount }
 import { createFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
-import { isExcludedTemplatePath } from "../../template-exclusion";
-
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
 import type {
   CardLoadKey,
@@ -354,7 +352,6 @@ export class ScopeController implements DisposableController {
   isPathInActiveScope(path: string): boolean { return this.isPathRelevantToScope(this.context.store.getScope(), path); }
 
   private isPathRelevantToScope(scope: CardScope, path: string): boolean {
-    if (isExcludedTemplatePath(this.context.getApp(), path)) return false;
     switch (scope.kind) {
       case "box":
         return this.deps.isPathInBox(path, scope.boxId);

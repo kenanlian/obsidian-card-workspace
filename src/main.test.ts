@@ -343,7 +343,6 @@ vi.mock("./view/FolderCardView", () => {
       loadedScope = false;
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
-      invalidateTemplateCandidates = vi.fn();
       getCardScope(): unknown {
         return this.cardScope;
       }
@@ -536,7 +535,6 @@ import { MarkdownView, TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
-import { isExcludedTemplatePath } from "./template-exclusion";
 import { NoteCreationService } from "./services/NoteCreationService";
 import { DEFAULT_SETTINGS } from "./settings";
 import { UnsupportedSettingsSchemaError } from "./settings-schema";
@@ -3761,48 +3759,6 @@ describe("template creation assembly", () => {
       expect(view.setSelectedFile).toHaveBeenCalledWith("generated.md", true);
     } finally { create.mockRestore(); }
   });
-});
-
-
-describe("template reservation ownership", () => {
-  it("keeps a shared path reserved until every owner releases it", () => {
-    const { plugin } = createPluginHarness();
-    const reservations = (plugin as unknown as { reservedTemplatePaths: Set<string> }).reservedTemplatePaths;
-    const first = plugin.reserveTemplatePath("Templates/New.md");
-    const second = plugin.reserveTemplatePath("Templates/New.md");
-    first(); first(); expect(reservations.has("Templates/New.md")).toBe(true);
-    second(); expect(reservations.has("Templates/New.md")).toBe(false);
-  });
-});
-
-
-it("keeps rapid chained template renames excluded while bus reconciliation is pending", async () => {
-  const { plugin } = createPluginHarness();
-  mutateStoreMemory(plugin, { noteTemplates: [{ id: "t", filePath: "A.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }] });
-  const barrier = deferred();
-  const internals = plugin as unknown as { dispatchVaultMutation: (event: { eventType: "rename"; path: string; oldPath: string; isFolder: false; fileKind: "markdown" }) => void;
-    vaultEventBus: { publish: (event: unknown) => Promise<void> }; reservedTemplatePaths: Set<string> };
-  vi.spyOn(internals.vaultEventBus, "publish").mockReturnValue(barrier.promise);
-  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "A.md", path: "B.md", isFolder: false, fileKind: "markdown" });
-  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "B.md", path: "C.md", isFolder: false, fileKind: "markdown" });
-  expect(internals.reservedTemplatePaths.has("B.md")).toBe(true);
-  expect(internals.reservedTemplatePaths.has("C.md")).toBe(true);
-  barrier.resolve();
-  await vi.waitFor(() => expect(internals.reservedTemplatePaths.size).toBe(0));
-});
-
-
-it("checks template candidates without renormalizing settings per file", async () => {
-  const { plugin, app } = createPluginHarness();
-  plugin.onload(); await waitForPluginLoad(plugin);
-  await plugin.saveSettings({ noteTemplates: [{ id: "t", filePath: "Templates/T.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }] });
-  const reads = vi.spyOn(plugin, "getSettings"); reads.mockClear();
-  for (let index = 0; index < 100; index++) {
-    expect(isExcludedTemplatePath(app as never, "Templates/T.md")).toBe(true);
-    expect(isExcludedTemplatePath(app as never, `Notes/${index}.md`)).toBe(false);
-  }
-  expect(reads).not.toHaveBeenCalled();
-  plugin.onunload();
 });
 
 

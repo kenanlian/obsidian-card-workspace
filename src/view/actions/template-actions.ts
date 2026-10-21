@@ -16,8 +16,6 @@ export interface TemplateActionsDeps {
   openNote: (path: string, selectTitle?: boolean) => Promise<void>;
   runOperation?: (work: () => Promise<boolean>) => Promise<boolean>;
   notify: (message: string) => void;
-  /** Returns a release function; reservations exclude vault-create events before registration commits. */
-  reserveTemplatePath: (path: string) => () => void;
   getStrings: () => UiStrings;
 }
 
@@ -46,12 +44,10 @@ export class TemplateActions {
     await this.deps.saveSettings({ noteTemplates: registered ? templates.map((template) => template.filePath === file.path ? { ...template, name, targetFolderPath } : template) : [...templates, this.definition(file.path, name, targetFolderPath)] });
   }
   newTemplate(): void {
-    // Keep the created file and reservation across a failed registration retry.
+    // Keep the created file across a failed registration retry.
     let created: TFile | null = null;
-    let release: (() => void) | null = null;
     let pending = false;
     let closed = false;
-    const releaseReservation = () => { release?.(); release = null; };
     const create = async (name: string, rawFolderPath: string): Promise<boolean> => {
       if (pending) return false;
       pending = true;
@@ -68,24 +64,21 @@ export class TemplateActions {
           const pathFor = (suffix: string) => `${storageFolder ? `${storageFolder}/` : ""}${basename}${suffix}.md`;
           let path = pathFor("");
           for (let suffix = 1; this.deps.app.vault.getAbstractFileByPath(path); suffix++) path = pathFor(` ${suffix}`);
-          release = this.deps.reserveTemplatePath(path);
-          try { created = await this.deps.app.vault.create(path, this.strings.initialTemplateBody + "\n"); }
-          catch (error) { release(); release = null; throw error; }
+          created = await this.deps.app.vault.create(path, this.strings.initialTemplateBody + "\n");
         }
         if (this.deps.app.vault.getAbstractFileByPath(created.path) !== created) {
           this.deps.notify(this.strings.templateNotFound); return false;
         }
         await this.register(created, displayName, folderPath!);
-        releaseReservation();
         if (!closed) await this.deps.openNote(created.path, true);
         return true;
       };
       try { return await (this.deps.runOperation ? this.deps.runOperation(work) : work()); }
       catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); return false; }
-      finally { pending = false; if (closed) releaseReservation(); }
+      finally { pending = false; }
     };
     new NewTemplateModal(this.deps.app, this.strings, create,
-      () => { closed = true; if (!pending) releaseReservation(); }).open();
+      () => { closed = true; }).open();
   }
 
   private async patch(id: string, patch: Partial<NoteTemplateDefinition>): Promise<boolean> {

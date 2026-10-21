@@ -43,16 +43,14 @@ function harness(templates: NoteTemplateDefinition[] = [], language: "en" | "zh"
   const notify = vi.fn(), openNote = vi.fn(async () => { calls.push("open"); });
   const create = vi.fn(async (path: string) => { calls.push("create"); const created = file(path); files.set(path, created); return created; });
   const saveSettings = vi.fn(async (patch: PartialPluginSettings) => { calls.push("register"); Object.assign(settings, patch); });
-  const release = vi.fn(() => { calls.push("release"); });
-  const reserveTemplatePath = vi.fn((_path: string) => { calls.push("reserve"); return release; });
   const createFolder = vi.fn(async (path: string) => { files.set(path, Object.assign(new TFolder(), { path })); });
   const promptForDeletion = vi.fn<(_file: TFile) => Promise<void | boolean>>(async (source) => { files.delete(source.path); });
   const runOperation = vi.fn(async (work: () => Promise<boolean>) => work());
   const app = { vault: { getRoot: () => root, getAbstractFileByPath: (path: string) => files.get(path) ?? null, create, createFolder },
     fileManager: { promptForDeletion } } as unknown as App;
   const actions = new TemplateActions({ app, getSettings: () => settings, saveSettings, openNote, notify,
-    reserveTemplatePath, runOperation, getStrings: () => getUiStrings(language) });
-  return { actions, settings, files, calls, create, createFolder, saveSettings, reserveTemplatePath, release, openNote, notify, promptForDeletion, runOperation };
+    runOperation, getStrings: () => getUiStrings(language) });
+  return { actions, settings, files, calls, create, createFolder, saveSettings, openNote, notify, promptForDeletion, runOperation };
 }
 function template(path = "Templates/Daily.md"): NoteTemplateDefinition {
   return { id: "daily", filePath: path, targetFolderPath: null, dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
@@ -97,22 +95,22 @@ describe("TemplateActions", () => {
     expect(h.settings.noteTemplates[0]).toMatchObject({ name: "Daily", filePath: `Templates/${getUiStrings("en").noteInput.initialTemplateTitle}.md`,
       targetFolderPath: "Templates", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" });
   });
-  it("reserves before create, registers the independent name and destination, then selects the initial title", async () => {
+  it("creates the file, registers the independent name and destination, then selects the initial title", async () => {
     const h = harness(); h.actions.newTemplate();
     expect(await state.create?.("Daily {{date}}.md", "Templates")).toBe(true);
-    expect(h.calls).toEqual(["reserve", "create", "register", "release", "open"]);
+    expect(h.calls).toEqual(["create", "register", "open"]);
     const strings = getUiStrings("en").noteInput;
     const path = `Templates/${strings.initialTemplateTitle}.md`;
     expect(h.create).toHaveBeenCalledWith(path, strings.initialTemplateBody + "\n");
     expect(h.settings.noteTemplates[0]).toMatchObject({ name: "Daily {{date}}.md", filePath: path, targetFolderPath: "Templates" });
     expect(h.openNote).toHaveBeenCalledWith(path, true);
   });
-  it("keeps a reservation and created file across failed registration, retrying without a second create", async () => {
+  it("keeps the created file across failed registration, retrying without a second create", async () => {
     const h = harness(); h.saveSettings.mockRejectedValueOnce(new Error("disk failed")); h.actions.newTemplate();
     expect(await state.create?.("Daily", "Templates")).toBe(false);
-    expect(h.release).not.toHaveBeenCalled(); expect(h.openNote).not.toHaveBeenCalled();
+    expect(h.openNote).not.toHaveBeenCalled();
     expect(await state.create?.("Daily", "Templates")).toBe(true);
-    expect(h.create).toHaveBeenCalledTimes(1); expect(h.release).toHaveBeenCalledTimes(1);
+    expect(h.create).toHaveBeenCalledTimes(1);
   });
   it("retries a failed disk write after registration has already updated memory", async () => {
     const h = harness();
@@ -124,22 +122,25 @@ describe("TemplateActions", () => {
     expect(h.saveSettings).toHaveBeenCalledTimes(2);
     expect(h.settings.noteTemplates).toHaveLength(1);
   });
-  it("releases an abandoned failed-registration reservation on cancel", async () => {
+  it("keeps the ordinary file when failed registration is cancelled", async () => {
     const h = harness(); h.saveSettings.mockRejectedValueOnce(new Error("disk failed")); h.actions.newTemplate();
     expect(await state.create?.("Daily", "Templates")).toBe(false);
-    state.close?.(); expect(h.release).toHaveBeenCalledTimes(1);
+    state.close?.();
+    expect(h.files.has(h.create.mock.calls[0]![0])).toBe(true);
+    expect(h.settings.noteTemplates).toEqual([]);
+    expect(h.openNote).not.toHaveBeenCalled();
   });
-  it("validates the display name and existing note destination before reserving", async () => {
+  it("validates the display name and existing note destination before creating", async () => {
     const h = harness();  h.actions.newTemplate();
     expect(await state.create?.(" ", "Templates")).toBe(false);
     expect(await state.create?.("Valid", "Missing")).toBe(false);
     expect(await state.create?.("Valid", "../Bad")).toBe(false);
-    expect(h.reserveTemplatePath).not.toHaveBeenCalled();
+    expect(h.create).not.toHaveBeenCalled();
   });
-  it("releases the reservation when vault creation fails", async () => {
+  it("does not register a template when vault creation fails", async () => {
     const h = harness(); h.create.mockRejectedValueOnce(new Error("cannot create")); h.actions.newTemplate();
     expect(await state.create?.("Daily", "Templates")).toBe(false);
-    expect(h.release).toHaveBeenCalledTimes(1); expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.saveSettings).not.toHaveBeenCalled();
   });
   it("offers all live format examples and patches latest settings", async () => {
     const h = harness([template()]); const source = file(template().filePath); h.files.set(source.path, source);

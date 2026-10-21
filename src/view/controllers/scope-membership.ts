@@ -1,7 +1,5 @@
 import { TFile, type App } from "obsidian";
 
-import { isExcludedTemplatePath } from "../../template-exclusion";
-
 import { createCardRecord } from "../card-record";
 import { findSortedInsertIndex } from "../card-sort";
 import { resolveCardFileKind } from "../file-kind";
@@ -38,7 +36,6 @@ export function reconcileSymmetricPathMembership(
   isMember: boolean,
   deps: PathMembershipReconcileDeps,
 ): MetadataMembershipOutcome {
-  isMember = isMember && !isExcludedTemplatePath(deps.getApp(), path);
   const cards = deps.getBaseCards();
   const index = cards.findIndex((card) => card.path === path);
 

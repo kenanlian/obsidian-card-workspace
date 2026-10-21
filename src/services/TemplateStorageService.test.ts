@@ -10,7 +10,6 @@ function fixture() {
   settings.templateStorageFolder = "Old";
   const files = new Map<string, TFile | TFolder>();
   const contents = new Map<TFile, string>();
-  const reservations = new Set<string>();
   const bus = new VaultEventBus();
   const folder = (path: string) => { const value = Object.assign(new TFolder(), { path }); files.set(path, value); return value; };
   const file = (path: string, content = "body {{date}}") => {
@@ -28,7 +27,6 @@ function fixture() {
   const createFolder = vi.fn(async (path: string) => { folder(path); });
   const rename = vi.fn(async (value: TFile, path: string) => {
     if (files.has(path)) throw new Error("occupied");
-    expect(reservations.has(value.path)).toBe(true); expect(reservations.has(path)).toBe(true);
     const oldPath = value.path;
     files.delete(oldPath); value.path = path; files.set(path, value);
     void bus.publish({ eventType: "rename", path, oldPath, isFolder: false, fileKind: "markdown" });
@@ -37,9 +35,8 @@ function fixture() {
     fileManager: { renameFile: rename } } as unknown as App;
   const assertWritable = vi.fn();
   const service = new TemplateStorageService({ app, getSettings: () => settings, saveSettings,
-    reservePath: (path) => { reservations.add(path); return () => { reservations.delete(path); }; },
     flushVaultEvents: () => bus.flushPendingEvents(), assertWritable });
-  return { service, settings: () => settings, files, contents, folder, file, first, second, rename, saveSettings, createFolder, reservations, assertWritable };
+  return { service, settings: () => settings, files, contents, folder, file, first, second, rename, saveSettings, createFolder, assertWritable };
 }
 
 describe("TemplateStorageService", () => {
@@ -53,7 +50,7 @@ describe("TemplateStorageService", () => {
       { id: "1", name: "Display 1", filePath: "New/Templates/Second.md", targetFolderPath: "Notes", dateFormat: "YYYY-MM-DD", timeFormat: "HH" },
     ]);
     expect(f.contents.get(f.first)).toBe("body {{date}}");
-    expect(f.settings().quickInput.templateId).toBe("0"); expect(f.reservations.size).toBe(0);
+    expect(f.settings().quickInput.templateId).toBe("0");
   });
   it("preflights every collision before moving any template or saving a new folder", async () => {
     const f = fixture(); f.folder("New"); const occupied = f.file("New/Second.md", "keep me");
@@ -74,7 +71,7 @@ describe("TemplateStorageService", () => {
     await expect(f.service.changeFolder("New")).rejects.toThrow("disk failed");
     expect(f.first.path).toBe("Old/{{date}}.md"); expect(f.second.path).toBe("Old/Second.md");
     expect(f.settings().noteTemplates.map((template) => template.filePath)).toEqual([f.first.path, f.second.path]);
-    expect(f.settings().templateStorageFolder).toBe("Old"); expect(f.reservations.size).toBe(0);
+    expect(f.settings().templateStorageFolder).toBe("Old");
   });
   it("keeps references to actual locations when a rollback also fails", async () => {
     const f = fixture(); const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -84,7 +81,7 @@ describe("TemplateStorageService", () => {
       await expect(f.service.changeFolder("New")).rejects.toThrow("move failed");
       expect(f.first.path).toBe("New/{{date}}.md");
       expect(f.settings().noteTemplates[0]!.filePath).toBe(f.first.path);
-      expect(f.settings().templateStorageFolder).toBe("Old"); expect(f.reservations.size).toBe(0);
+      expect(f.settings().templateStorageFolder).toBe("Old");
     } finally { warning.mockRestore(); }
   });
   it("retains completed moves and their memory references after a failed final settings write, then allows retry", async () => {

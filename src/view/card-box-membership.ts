@@ -1,4 +1,3 @@
-import { isExcludedTemplatePath } from "../template-exclusion";
 import type { App, TFile } from "obsidian";
 import { isMarkdownCardKind, resolveCardFileKind } from "./file-kind";
 import { matchesTagFilterFromCache } from "./metadata-utils";
@@ -81,7 +80,6 @@ export function matchesRule(app: App, path: string, rule: Rule): boolean {
  * Manual membership always wins over exclusion.
  */
 export function isBoxMember(app: App, path: string, box: CardBoxDefinition): boolean {
-  if (isExcludedTemplatePath(app, path)) return false;
   if (box.manualPaths.includes(path)) {
     return true;
   }

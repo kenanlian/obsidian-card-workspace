@@ -1045,7 +1045,7 @@ describe("SettingsStore — note input persistence", () => {
     const pending = store.updateFlat({ noteTemplates: [template], quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } });
     expect(store.getFlat().noteTemplates).toEqual([template]);
     expect(store.getFlat().quickInput.templateId).toBe("daily");
-    await expect(pending).resolves.toBe("reload");
+    await expect(pending).resolves.toBe("patch");
     expect(documents).toHaveLength(1);
     expect(documents[0]).toMatchObject({ schemaVersion: 2, preferences: { quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } }, userData: { noteTemplates: [template] } });
     expect(migrateSettings(documents[0])).toEqual(store.getFlat());

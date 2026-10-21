@@ -19,8 +19,6 @@ import {
   type BrowseScope,
 } from "../card-boxes";
 import { isBoxMember, matchesRule } from "../card-box-membership";
-import { isExcludedTemplatePath } from "../../template-exclusion";
-
 import { isSupportedCardFile } from "../file-kind";
 import { pruneFavoriteBoxes } from "../favorites";
 import { BoxConfigModal } from "../modals/BoxConfigModal";
@@ -139,7 +137,7 @@ export class BoxActions {
     const files: TFile[] = [];
     for (const path of candidatePaths) {
       const file = app.vault.getAbstractFileByPath(path);
-      if (file instanceof TFile && isSupportedCardFile(file) && !isExcludedTemplatePath(app, path) && isBoxMember(app, path, box)) {
+      if (file instanceof TFile && isSupportedCardFile(file) && isBoxMember(app, path, box)) {
         files.push(file);
       }
     }
