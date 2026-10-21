@@ -31,9 +31,8 @@ export function createDraftPropertiesEditor(options: {
   container: HTMLElement;
   editor: Editor & { cm: EditorView; undo?: () => void; redo?: () => void };
   Constructor?: NativePropertiesConstructor;
-  labels: { showSource: string; showProperties: string };
 }): DraftPropertiesEditor | null {
-  const { app, container, editor, Constructor, labels } = options;
+  const { app, container, editor, Constructor } = options;
   if (!Constructor || !["synchronize", "load", "unload"].every((name) => typeof (Constructor.prototype as unknown as Record<string, unknown>)?.[name] === "function")) return null;
   let metadata: NativePropertiesEditor | undefined;
   let resizeObserver: ResizeObserver | undefined;
@@ -41,15 +40,10 @@ export function createDraftPropertiesEditor(options: {
   let failed = false;
   let readOnly = false;
   let syncing = false;
-  let source = !readDraftFrontmatter(editor.getValue());
   let lastText = "";
   let cached: ReturnType<typeof readDraftFrontmatter> = null;
   let lastYaml: string | null = null;
   const refresh = StateEffect.define<void>();
-  const bar = container.createDiv({ cls: "fce-quick-input-properties-bar" });
-  container.prepend(bar);
-  const toggle = bar.createEl("button", { cls: "fce-quick-input-properties-toggle", attr: { type: "button" } });
-  bar.hidden = true;
   const snapshot = (text: string) => {
     if (text !== lastText) { lastText = text; cached = readDraftFrontmatter(text); }
     return cached;
@@ -57,7 +51,6 @@ export function createDraftPropertiesEditor(options: {
   const revealSource = (error: unknown) => {
     if (failed || disposed) return;
     failed = true;
-    bar.hidden = true;
     console.warn("[card-workspace] Draft properties unavailable; keeping YAML source", error);
     // Synchronization runs inside view updates; dispatching there is forbidden.
     queueMicrotask(() => { if (!disposed) editor.cm.dispatch({ effects: refresh.of() }); });
@@ -103,11 +96,6 @@ export function createDraftPropertiesEditor(options: {
     }
     const synchronize = () => {
       const current = snapshot(editor.getValue());
-      const visible = !!current && !source && !failed;
-      bar.hidden = !current || visible || failed;
-      toggle.textContent = visible ? labels.showSource : labels.showProperties;
-      if (visible) panel.headingEl.appendChild(toggle);
-      else bar.appendChild(toggle);
       if (!current || failed) return;
       const yaml = editor.getValue().slice(0, current.end);
       if (yaml === lastYaml) return;
@@ -118,7 +106,7 @@ export function createDraftPropertiesEditor(options: {
     };
     const decorations = (text: string): DecorationSet => {
       const current = snapshot(text);
-      return current && !source && !failed ? Decoration.set([
+      return current && !failed ? Decoration.set([
         // Keep a real editable line around a YAML-only document without a final
         // newline. The first body input supplies that separator below.
         Decoration.replace({ block: current.end < text.length || text.endsWith("\n"), widget: new PropertiesWidget(panel.containerEl) }).range(0, current.end),
@@ -130,18 +118,6 @@ export function createDraftPropertiesEditor(options: {
         ? decorations(transaction.state.doc.toString()) : value,
       provide: (state) => [Prec.highest(EditorView.decorations.from(state)), EditorView.atomicRanges.of((view) => view.state.field(state))],
     });
-    const click = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (readOnly || disposed) return;
-      flush();
-      source = !source;
-      synchronize();
-      const start = source ? 0 : snapshot(editor.getValue())?.end ?? 0;
-      editor.cm.dispatch({ effects: refresh.of(), selection: { anchor: start }, scrollIntoView: true });
-      editor.focus();
-    };
-    toggle.addEventListener("click", click);
     synchronize();
     return {
       extension: [field, EditorState.transactionFilter.of((transaction) => {
@@ -149,7 +125,7 @@ export function createDraftPropertiesEditor(options: {
         // as part of the first body input, preserving untouched drafts exactly.
         const text = transaction.startState.doc.toString();
         const current = snapshot(text);
-        if (!source && !failed && current?.end === text.length && !text.endsWith("\n") && transaction.isUserEvent("input")) {
+        if (!failed && current?.end === text.length && !text.endsWith("\n") && transaction.isUserEvent("input")) {
           let needsNewline = false;
           transaction.changes.iterChanges((from, to, _from, _to, inserted) => {
             if (from === text.length && to === from && inserted.length && !/^[\r\n]/.test(inserted.sliceString(0, 1))) needsNewline = true;
@@ -163,21 +139,16 @@ export function createDraftPropertiesEditor(options: {
         readOnly = value;
         panel.containerEl.inert = value;
         panel.containerEl.setAttribute("aria-disabled", String(value));
-        toggle.disabled = value;
       },
       dispose: () => {
         if (disposed) return;
         disposed = true;
-        toggle.removeEventListener("click", click);
-        toggle.remove();
-        bar.remove();
         resizeObserver?.disconnect();
         try { panel.unload(); } finally { panel.containerEl.remove(); }
       },
     };
   } catch (error) {
     disposed = true;
-    bar.remove();
     resizeObserver?.disconnect();
     try { metadata?.unload(); } catch { /* Retain the Markdown editor on older hosts. */ }
     metadata?.containerEl?.remove();

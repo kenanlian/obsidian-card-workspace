@@ -127,6 +127,19 @@ try {
   assert.equal(await first.page.locator(".metadata-property").count(), 6);
   phase("native-properties-mounted-with-null-file", report.mount);
 
+  assert.equal(await first.page.getByRole("button", { name: "Edit YAML", exact: true }).count(), 0);
+  assert.equal(await first.page.getByRole("button", { name: "Show properties", exact: true }).count(), 0);
+  report.headingAlignment = await first.page.locator(".metadata-container").evaluate((panel) => {
+    const title = panel.querySelector(".metadata-properties-title");
+    const range = panel.ownerDocument.createRange();
+    range.selectNodeContents(title);
+    const input = panel.querySelector(".metadata-property-key-input");
+    return { title: range.getBoundingClientRect().left,
+      property: input.getBoundingClientRect().left + parseFloat(getComputedStyle(input).paddingLeft) };
+  });
+  assert.ok(Math.abs(report.headingAlignment.title - report.headingAlignment.property) < 1, "Properties heading must align with property names");
+  phase("properties-heading-aligned-without-yaml-toggle", report.headingAlignment);
+
 
   const snapshot = async (id = first.snapshot.id) => main.evaluate((id) => {
     const bridge = propertiesProbe.bridges.find((entry) => entry.id === id);
@@ -209,25 +222,10 @@ try {
   assert.equal((await snapshot()).properties.extra, undefined);
   phase("rename-add-delete-properties");
 
-  // Switch to visible YAML, edit the actual native document, then return to properties.
-  await first.page.getByRole("button", { name: "Edit YAML", exact: true }).click();
-  assert.equal(await first.page.locator(".cm-content .metadata-container").count(), 0);
-  await main.evaluate(() => {
-    const bridge = propertiesProbe.bridges[0];
-    const text = bridge.draft.editor.getValue();
-    const from = text.indexOf("state: 'ready'");
-    if (from < 0) throw new Error("Expected original YAML scalar quote style");
-    bridge.cm.dispatch({ changes: { from, to: from + "state: 'ready'".length, insert: "state: 'from-yaml'" } });
-  });
-  await first.page.getByRole("button", { name: "Show properties", exact: true }).click();
-  assert.equal((await snapshot()).panel.state, "from-yaml");
-  assert.equal(await row("state").locator("[contenteditable=true]").innerText(), "from-yaml");
-  phase("yaml-source-toggle-and-native-panel-synchronization");
-
   const second = await open();
   await mountProperties(second.snapshot.id);
   assert.equal((await snapshot(second.snapshot.id)).properties.status, "draft");
-  assert.equal((await snapshot()).properties.state, "from-yaml");
+  assert.equal((await snapshot()).properties.state, "ready");
   assert.deepEqual((await snapshot()).writes, []);
   assert.equal(await main.evaluate(() => app.vault.getAbstractFileByPath("Properties probe.md") === null), true);
   phase("two-independent-drafts-and-no-vault-writes-before-send", { vaultWritesBeforeSend: (await snapshot()).writes.length });

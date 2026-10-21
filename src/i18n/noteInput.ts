@@ -65,8 +65,6 @@ export interface NoteInputStrings {
   send: string;
   sending: string;
   nativeEditorUnavailable: string;
-  editYamlProperties: string;
-  showProperties: string;
   invalidQuickInputConfig: string;
   openQuickInputFailed: string;
   nativeFrameUnsupported: string;
@@ -128,7 +126,6 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     insertStart: "Start of note", insertEnd: "End of note", rootFolder: "Vault root",
     inputPlaceholder: "Write a note…", send: "Send", sending: "Sending…",
     nativeEditorUnavailable: "The native Markdown editor is unavailable in this Obsidian version.",
-    editYamlProperties: "Edit YAML", showProperties: "Show properties",
     invalidQuickInputConfig: "Quick input settings refer to an unavailable template or folder.",
     openQuickInputFailed: "Could not open quick input.",
     nativeFrameUnsupported: "Quick input requires the Obsidian or hidden window frame. Change Settings → Appearance → Window frame style, then fully restart Obsidian.",
@@ -182,7 +179,6 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     destinationLocation: "位置", destinationTemplate: "模板", destinationUnavailable: "目标不可用",
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",
     nativeEditorUnavailable: "当前 Obsidian 版本无法使用原生 Markdown 编辑器。",
-    editYamlProperties: "编辑 YAML", showProperties: "显示属性",
     invalidQuickInputConfig: "快速输入设置引用了不可用的模板或文件夹。", openQuickInputFailed: "无法打开快速输入。",
     nativeFrameUnsupported: "快速输入需要 Obsidian 框架或隐藏框架。请在“设置 → 外观 → 窗口框架样式”中手动切换，然后完全重启 Obsidian。",
     desktopUnavailable: "快速输入所需的桌面能力不可用。",

@@ -7,7 +7,6 @@
 import { Scope, type App, type Editor } from "obsidian";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, placeholder } from "@codemirror/view";
-import { noteInputStrings } from "../i18n/noteInput";
 import { createDraftPropertiesEditor, type DraftPropertiesEditor, type NativePropertiesConstructor } from "./native-properties-editor";
 
 export interface NativeMarkdownEditor {
@@ -76,7 +75,6 @@ export function createNativeMarkdownEditor(options: {
   container: HTMLElement;
   placeholder: string;
   initialValue?: string;
-  propertiesLabels?: { showSource: string; showProperties: string };
   onChange: () => void;
   onModEnter: (event: KeyboardEvent) => void;
 }): NativeMarkdownEditor {
@@ -152,8 +150,7 @@ export function createNativeMarkdownEditor(options: {
       throw new Error("Missing native editor instance capabilities");
     }
     if (options.initialValue) native.editor.cm.dispatch({ selection: { anchor: native.editor.cm.state.doc.length }, scrollIntoView: true });
-    properties = createDraftPropertiesEditor({ app, container, editor: native.editor, Constructor: capabilities.Properties,
-      labels: options.propertiesLabels ?? { showSource: noteInputStrings.en.editYamlProperties, showProperties: noteInputStrings.en.showProperties } });
+    properties = createDraftPropertiesEditor({ app, container, editor: native.editor, Constructor: capabilities.Properties });
     if (properties) native.editor.cm.dispatch({ effects: propertiesExtension.reconfigure(properties.extension) });
     const focusOut = (event: FocusEvent) => { if (!container.contains(event.relatedTarget as Node | null)) releaseFocus(); };
     container.addEventListener("focusin", takeFocus, true);

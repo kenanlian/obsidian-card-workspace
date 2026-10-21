@@ -47,13 +47,11 @@ function fixture(text = "---\nstatus: draft\n---\nBody", failing = false, child 
     }
   }
   const editor = { cm, getValue: () => cm.state.doc.toString(), focus: () => cm.focus(), undo: vi.fn(), redo: vi.fn() } as unknown as Editor & { cm: EditorView };
-  const adapter = createDraftPropertiesEditor({ app: {} as App, container, editor, Constructor: Metadata as unknown as NativePropertiesConstructor,
-    labels: { showSource: "YAML", showProperties: "Properties" } });
+  const adapter = createDraftPropertiesEditor({ app: {} as App, container, editor, Constructor: Metadata as unknown as NativePropertiesConstructor });
   if (adapter) cm.dispatch({ effects: compartment.reconfigure(adapter.extension) });
   cleanups.push(() => { adapter?.dispose(); cm.destroy(); frame.remove(); });
   const input = () => container.querySelector<HTMLInputElement>('input[data-key="status"]')!;
-  const toggle = () => container.querySelector<HTMLButtonElement>(".fce-quick-input-properties-toggle")!;
-  return { adapter: adapter!, container, cm, input, toggle, owner, unloaded, setFailure: () => { fail = true; } };
+  return { adapter: adapter!, container, cm, input, owner, unloaded, setFailure: () => { fail = true; } };
 }
 
 describe("native draft properties", () => {
@@ -64,6 +62,7 @@ describe("native draft properties", () => {
     expect(f.cm.contentDOM.textContent).toContain("Body");
     expect(f.cm.state.doc.toString()).toBe("---\nstatus: draft\n---\nBody");
     expect(f.owner.current!.getFile()).toBeNull();
+    expect(f.container.querySelector("button")).toBeNull();
   });
 
   it("flushes a child-document property input before the draft snapshot is read", () => {
@@ -75,14 +74,10 @@ describe("native draft properties", () => {
     expect(f.cm.state.doc.toString()).toContain("---\nBody");
   });
 
-  it("switches to YAML and back without changing text, and reflects source edits", () => {
+  it("keeps properties synchronized with document changes while YAML stays hidden", () => {
     const f = fixture(); const original = f.cm.state.doc.toString();
-    f.toggle().click();
-    expect(f.cm.contentDOM.textContent).toContain("status: draft");
-    expect(f.cm.state.doc.toString()).toBe(original);
     const from = original.indexOf("draft");
     f.cm.dispatch({ changes: { from, to: from + 5, insert: "changed" } });
-    f.toggle().click();
     expect(f.cm.contentDOM.textContent).not.toContain("status: changed");
     expect(f.input().value).toBe("changed");
   });
@@ -101,14 +96,12 @@ describe("native draft properties", () => {
     const f = fixture(text);
     expect(f.container.querySelector(".cm-content .metadata-container")).toBeNull();
     expect(f.cm.state.doc.toString()).toBe(text);
-    expect(f.container.querySelector<HTMLElement>(".fce-quick-input-properties-bar")!.hidden).toBe(true);
   });
 
   it("locks native controls and ignores late commits while a request is frozen", () => {
     const f = fixture();
     f.adapter.setReadOnly(true);
     expect(f.container.querySelector<HTMLElement>(".metadata-container")!.inert).toBe(true);
-    expect(f.toggle().disabled).toBe(true);
     (f.owner.current!.saveFrontmatter as (properties: DraftProperties) => void)({ status: "late edit" });
     expect(f.cm.state.doc.toString()).toContain("status: draft");
     f.adapter.setReadOnly(false);

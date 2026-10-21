@@ -4,11 +4,11 @@ Implementation and validation record, 2026-10-20. User behavior is documented in
 
 ## Behavior and ownership
 
-Quick input shows Obsidian’s native Properties component for ordinary flat frontmatter. It edits the same complete CodeMirror document as the body; a direct state-field decoration displays the component in place of YAML. Properties and body share the native scroll area. **Edit YAML** reveals the complete source; **Show properties** restores the panel without changing text. Drafts have no note file or workspace leaf, and values stay in memory until the existing submission service runs.
+Quick input shows Obsidian’s native Properties component for ordinary flat frontmatter. It edits the same complete CodeMirror document as the body; a direct state-field decoration displays the component in place of YAML. Properties and body share the native scroll area. The heading aligns with the property names, and there is no manual YAML source toggle. Drafts have no note file or workspace leaf, and values stay in memory until the existing submission service runs.
 
 `src/input/draft-frontmatter.ts` validates supported values and updates a YAML document tree using the bundled ISC-licensed `yaml` library. Changes preserve comments, scalar styles, list-item comments, ordering and body text. Untouched drafts are not serialized. Changed YAML whitespace may be normalized. Nested values, non-text lists, duplicate/unsupported keys, anchors/aliases and malformed YAML stay in source form. Missing/incompatible native component capabilities also retain the Markdown editor and source.
 
-`src/input/native-properties-editor.ts` owns the optional native component, source toggle, display decorations, YAML synchronization and cleanup. A ResizeObserver requests native layout measurements when properties fold or change height. A YAML-only draft without a final newline retains an editable line; the first body input supplies the separator within that input transaction. Opening it alone does not modify its text.
+`src/input/native-properties-editor.ts` owns the optional native component, display decorations, YAML synchronization and cleanup. A ResizeObserver requests native layout measurements when properties fold or change height. A YAML-only draft without a final newline retains an editable line; the first body input supplies the separator within that input transaction. Opening it alone does not modify its text.
 
 `src/input/native-markdown-editor.ts` owns the editor and shared focus scope for the whole editor container. Modern host keymaps bind scopes to `activeWindow`, so activation establishes the owning document before pushing the scope. Per-app focus ownership avoids restoring a disposed sibling editor. The owner exposes its editor before initial non-empty `set()` emits selection events and supplies the native scroll callback.
 
@@ -34,17 +34,19 @@ The script copies the production `main.js` and styles into a generated temporary
 
 ## Real application coverage
 
-The production harness verifies:
+The current production harness covers:
 
 - Native properties mount in the owning child document with no file and no duplicate YAML display.
 - Native folding/resizing, text, number, checkbox, date, tag and list editing, and child-window tag completion.
 - Comment and quote retention, rename/add/delete, and property undo/redo independent of the preceding field edit.
-- Switching to YAML, editing the actual native document, and returning to synchronized properties.
+- Heading alignment with property names and absence of a manual YAML source toggle.
 - Two independent drafts and zero vault mutation events before Send.
 - Direct sibling-to-property focus, Ctrl+Enter with an uncommitted date, pending-request locks for properties and Markdown, exact saved text and an untouched sibling.
 - Malformed/nested YAML source fallback and recovery without text loss.
 - First body input into a YAML-only template without a trailing newline, while preserving untouched input.
 - Disposal of native components, editor DOM and plugin-owned windows without page errors.
+
+The following historical runs predate removal of the manual YAML source toggle and the heading alignment adjustment.
 
 | Application | Runtime | Result |
 | --- | --- | --- |
@@ -60,6 +62,6 @@ The existing independent-window acceptance harness also passes on 1.14.4, includ
 
 ## Automated checks and earlier evidence
 
-The repository validation chain passes: lint, TypeScript, Svelte, production build and **172 test files, 3,562 passed, 1 skipped**. Tests include supported YAML round-tripping and source fallback, source/display switching, cross-document property-input flushing, frozen request ownership and local shortcut routing.
+The 2026-10-20 repository validation chain passed: lint, TypeScript, Svelte, production build and **172 test files, 3,562 passed, 1 skipped**. Current tests include supported YAML round-tripping and source fallback, document-to-panel synchronization, cross-document property-input flushing, frozen request ownership and local shortcut routing.
 
 The earlier schema-v1 [1.11.4](../diagnostics/quick-input-properties-1.11.4-20261020.json) and [1.14.4](../diagnostics/quick-input-properties-1.14.4-20261020.json) reports record the feasibility prototype, which used diagnostic owner shims and displayed YAML beside the panel. They are retained as historical evidence; the schema-v2 production reports above use the actual implementation.

@@ -151,7 +151,6 @@ export class QuickInputWindowManager {
     let draft: Draft | undefined;
     try {
       const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder, initialValue,
-        propertiesLabels: { showSource: strings.editYamlProperties, showProperties: strings.showProperties },
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
