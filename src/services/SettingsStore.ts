@@ -34,6 +34,7 @@ export interface PreferencesSettings {
   cardStyle: PluginSettings["cardStyle"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   quickInput: PluginSettings["quickInput"];
+  quickInputGlobalShortcut: string;
   quickInputWidth: number;
   quickInputHeight: number;
   quickInputColor: PluginSettings["quickInputColor"];
@@ -171,6 +172,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.uiDensity !== undefined) preferences.uiDensity = patch.uiDensity;
   if (patch.cardStyle !== undefined) preferences.cardStyle = patch.cardStyle;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
+  if (patch.quickInputGlobalShortcut !== undefined) preferences.quickInputGlobalShortcut = patch.quickInputGlobalShortcut;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
   if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
   if (patch.quickInputHeight !== undefined) preferences.quickInputHeight = patch.quickInputHeight;
@@ -242,6 +244,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       cardStyle: settings.cardStyle,
       newNoteTemplate: settings.newNoteTemplate,
       quickInput: { ...settings.quickInput },
+      quickInputGlobalShortcut: settings.quickInputGlobalShortcut,
       quickInputWidth: settings.quickInputWidth,
       quickInputHeight: settings.quickInputHeight,
       quickInputColor: settings.quickInputColor,

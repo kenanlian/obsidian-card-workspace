@@ -2309,14 +2309,35 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 /* Keep a new template's editable title visible even when the host hides inline titles. */
 body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: block; }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
-/* Modeless quick input uses the owning document's native theme variables. */
-/* Stays below host popovers so link suggestions, menus and tooltips can cover it. */
-.fce-quick-input-layer {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--layer-popover) - 1);
-  pointer-events: none;
+/* These documents contain only the plugin's card, never workspace chrome. */
+html.fce-quick-input-window,
+html.fce-quick-input-window body {
+  width: 100%;
+  height: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
+html.fce-quick-input-window body::before,
+html.fce-quick-input-window body::after { display: none !important; }
+.fce-quick-input-resize { position: absolute; z-index: 1; -webkit-app-region: no-drag; }
+.fce-quick-input-resize[data-edge="n"], .fce-quick-input-resize[data-edge="s"] { left: 14px; right: 14px; height: 5px; cursor: ns-resize; }
+.fce-quick-input-resize[data-edge="e"], .fce-quick-input-resize[data-edge="w"] { top: 14px; bottom: 14px; width: 5px; cursor: ew-resize; }
+.fce-quick-input-resize[data-edge="n"] { top: 0; }
+.fce-quick-input-resize[data-edge="s"] { bottom: 0; }
+.fce-quick-input-resize[data-edge="e"] { right: 0; }
+.fce-quick-input-resize[data-edge="w"] { left: 0; }
+.fce-quick-input-resize:is([data-edge="ne"], [data-edge="nw"], [data-edge="se"], [data-edge="sw"]) { width: 14px; height: 14px; }
+.fce-quick-input-resize[data-edge="ne"] { top: 0; right: 0; cursor: nesw-resize; }
+.fce-quick-input-resize[data-edge="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+.fce-quick-input-resize[data-edge="se"] { bottom: 0; right: 0; cursor: nwse-resize; }
+.fce-quick-input-resize[data-edge="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
+.fce-shortcut-status { flex-basis: 100%; color: var(--text-muted); font-size: var(--font-ui-small); }
+.setting-item:has(.fce-shortcut-status) { flex-wrap: wrap; }
 .fce-quick-input {
   --fce-quick-input-tint: var(--interactive-accent);
   --fce-quick-input-frame: 5px;
@@ -2325,18 +2346,21 @@ body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: b
   --fce-quick-input-send-background: var(--fce-quick-input-border);
   --fce-quick-input-send-color: color-mix(in srgb, var(--fce-quick-input-tint) 8%, var(--text-normal));
   --fce-quick-input-send-border: color-mix(in srgb, var(--fce-quick-input-tint) 55%, var(--background-modifier-border));
-  position: fixed;
+  width: 100%;
+  height: 100%;
   pointer-events: auto;
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   padding: 0 var(--fce-quick-input-frame);
-  border: 1px solid var(--fce-quick-input-border);
+  /* CSS owns the sole contour; the native window is transparent and unframed. */
+  border: 0;
   border-radius: var(--fce-quick-input-radius);
+  overflow: hidden;
   background: color-mix(in srgb, var(--fce-quick-input-tint) 12%, var(--background-secondary));
   color: var(--text-normal);
-  box-shadow: var(--shadow-l);
-  animation: fce-quick-input-in 120ms ease-out;
+  box-shadow: inset 0 0 0 1px var(--fce-quick-input-border);
 }
 /* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
 @supports (color: color(from white srgb-linear round(up, r, 1) g b)) {
@@ -2345,35 +2369,56 @@ body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: b
     --fce-quick-input-send-color: color(from var(--fce-quick-input-send-background) srgb-linear var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) var(--fce-quick-input-send-contrast) / 1);
   }
 }
-@keyframes fce-quick-input-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .fce-quick-input { animation: none; }
-}
 .fce-quick-input-grip {
-  flex: 0 0 18px;
+  flex: 0 0 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-faint);
+  position: relative;
+  -webkit-app-region: no-drag;
   cursor: grab;
   user-select: none;
   touch-action: none;
 }
 .fce-quick-input-grip svg { width: 16px; height: 16px; }
 .fce-quick-input-grip:hover { color: var(--text-muted); }
-.fce-quick-input.is-dragging,
-.fce-quick-input.is-dragging .fce-quick-input-grip { cursor: grabbing; }
+.fce-quick-input-grip.is-dragging { cursor: grabbing; }
+.fce-quick-input-grip-icon { position: absolute; left: calc(50% - 8px); display: flex; }
+.fce-quick-input-editor, .fce-quick-input-footer { -webkit-app-region: no-drag; }
 .fce-quick-input-editor {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
   background: var(--background-primary);
   border-radius: calc(var(--fce-quick-input-radius) - var(--fce-quick-input-frame));
 }
-.fce-quick-input-editor .markdown-source-view { height: 100%; --file-margins: 10px 12px; }
+.fce-quick-input-editor .markdown-source-view { flex: 1; min-height: 0; height: 100%; --file-margins: 10px 12px; }
+.fce-quick-input-properties {
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-small);
+  /* Native widgets use paint containment; allow the property hover/focus rings. */
+  overflow-clip-margin: 2px;
+}
+.fce-quick-input-properties .metadata-properties-heading {
+  display: grid;
+  grid-template-columns: calc(var(--size-4-1) + var(--icon-size)) minmax(0, 1fr);
+  align-items: center;
+  padding: 0;
+}
+.fce-quick-input-properties .metadata-properties-heading::before { pointer-events: none; }
+.fce-quick-input-properties .metadata-properties-heading .collapse-indicator {
+  position: static;
+  opacity: 1;
+  justify-content: center;
+  padding: 0;
+  padding-inline-start: var(--size-4-1);
+  margin: 0;
+}
+.fce-quick-input-properties .metadata-properties-title { padding: var(--metadata-input-padding); }
+.fce-quick-input-properties[aria-disabled="true"] { opacity: 0.65; pointer-events: none; }
 .fce-quick-input-editor .cm-editor { height: 100%; }
 .fce-quick-input-editor .cm-scroller { overflow: auto; padding: 10px 12px; }
 .fce-quick-input-editor .cm-sizer { max-width: none; margin: 0; }
@@ -2389,8 +2434,18 @@ body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: b
   margin: 0;
   flex: none;
   border-radius: var(--fce-quick-input-radius);
+  box-shadow: none;
 }
-/* Match the window's outer border so the primary action stands out from the frame. */
+.fce-quick-input-footer .fce-quick-input-pin {
+  --icon-size: 16px;
+  padding: 4px;
+  height: auto;
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: none;
+}
+.fce-quick-input-pin[aria-pressed="true"] { color: var(--interactive-accent); }
+/* Tint the primary action more strongly than the surrounding frame. */
 .fce-quick-input-footer button.mod-cta {
   display: inline-flex;
   align-items: center;
@@ -2425,16 +2480,3 @@ body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: b
 .fce-quick-input-destination-icon { display: inline-flex; flex: none; }
 .fce-quick-input-destination-icon svg { width: 14px; height: 14px; }
 .fce-quick-input-destination-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fce-quick-input-resize { position: absolute; touch-action: none; }
-.fce-quick-input-resize-n, .fce-quick-input-resize-s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
-.fce-quick-input-resize-n { top: -3px; }
-.fce-quick-input-resize-s { bottom: -3px; }
-/* Side handles sit on the frame so they never overlap editor text or its scrollbar. */
-.fce-quick-input-resize-e, .fce-quick-input-resize-w { top: 12px; bottom: 12px; width: calc(var(--fce-quick-input-frame) + 3px); cursor: ew-resize; }
-.fce-quick-input-resize-e { right: -3px; }
-.fce-quick-input-resize-w { left: -3px; }
-.fce-quick-input-resize-ne, .fce-quick-input-resize-se, .fce-quick-input-resize-sw, .fce-quick-input-resize-nw { width: 12px; height: 12px; }
-.fce-quick-input-resize-ne { top: -3px; right: -3px; cursor: nesw-resize; }
-.fce-quick-input-resize-se { bottom: -3px; right: -3px; cursor: nwse-resize; }
-.fce-quick-input-resize-sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
-.fce-quick-input-resize-nw { top: -3px; left: -3px; cursor: nwse-resize; }

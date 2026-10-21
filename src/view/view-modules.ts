@@ -41,7 +41,6 @@ export interface ViewModuleHost {
   flushSettings?: () => Promise<void>;
   openTemplateNote?: (path: string, selectTitle?: boolean) => Promise<void>;
   runTemplateOperation?: (work: () => Promise<boolean>) => Promise<boolean>;
-  reserveTemplatePath?: (path: string) => () => void;
   getThumbnailService?: () => { service: ThumbnailService; vault: string } | null;
   effectiveSortAndPins: () => { sortField: LinksSortField; sortDirection: SortDirection; pinnedPaths: string[] };
   getDisplayFolderPath: () => string;
@@ -234,7 +233,6 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     },
     openNote: (path, selectTitle) => host.openTemplateNote?.(path, selectTitle) ?? host.openNoteFromCard(path, "new-tab"), notify: (message) => context.notify(message),
     runOperation: host.runTemplateOperation,
-    reserveTemplatePath: (path) => host.reserveTemplatePath?.(path) ?? (() => undefined),
     getStrings: () => context.getUiStrings(),
   });
   const scopeNoteActions = new ScopeNoteActions({ context, createNote: host.createNoteInFolder });

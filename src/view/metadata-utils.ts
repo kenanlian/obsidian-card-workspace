@@ -1,4 +1,3 @@
-import { isExcludedTemplatePath } from "../template-exclusion";
 import { App, TFile, getAllTags } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { normalizeTagPath, tagPathMatchesFilter } from "./tag-tree";
@@ -252,7 +251,6 @@ export function collectVaultTagIndex(app: App): VaultTagIndex | null {
   const tagPaths = new Set<string>();
   const counts: Record<string, number> = {};
   for (const file of files) {
-    if (isExcludedTemplatePath(app, file.path)) continue;
     const pathsForFile = new Set<string>();
     for (const tag of getFileTags(app, file)) {
       const segments = tag.split("/");

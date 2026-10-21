@@ -28,7 +28,7 @@ function fixture(lazy = false) {
       const cm = new EditorView({ state: EditorState.create({ extensions: this.buildLocalExtensions() }), parent: this.container });
       this.editor = { cm, getValue: () => cm.state.doc.toString(), focus: () => cm.focus() };
     }
-    buildLocalExtensions(): Extension[] { return []; }
+    buildLocalExtensions(): Extension[] { return [EditorView.editable.of(true), EditorState.readOnly.of(false), EditorView.contentAttributes.of({ contenteditable: "true" })]; }
     set(value: string) {
       if (!this.editor) this.createSurface();
       this.editor.cm.dispatch({ changes: { from: 0, to: this.editor.cm.state.doc.length, insert: value } });
@@ -46,14 +46,24 @@ function fixture(lazy = false) {
   const onChange = vi.fn();
   const onModEnter = vi.fn();
   const container = document.createElement("div"); document.body.append(container);
-  const open = (target = container, handleModEnter = onModEnter) => {
-    const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", onChange, onModEnter: handleModEnter });
+  const open = (target = container, handleModEnter = onModEnter, initialValue = "") => {
+    const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", initialValue, onChange, onModEnter: handleModEnter });
     live.push(adapter); return adapter;
   };
   return { app, container, open, underlying, workspace, keymap, create, probeUnload, destroyed, onChange, onModEnter };
 }
 
 describe("native Markdown editor compatibility seam", () => {
+  it("loads editable template properties and body with the cursor at the end", () => {
+    const f = fixture(true);
+    const text = "---\nstatus: draft\n---\n## Template body";
+    const adapter = f.open(f.container, f.onModEnter, text);
+    const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+    expect(adapter.getValue()).toBe(text);
+    expect(cm.state.selection.main.head).toBe(text.length);
+    cm.dispatch({ changes: { from: text.length, insert: "\nmy input" } });
+    expect(adapter.getValue()).toBe(`${text}\nmy input`);
+  });
   it("initializes hosts that defer the surface until set and observes native document transactions", () => {
     const f = fixture(true); const adapter = f.open();
     const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
@@ -102,7 +112,26 @@ describe("native Markdown editor compatibility seam", () => {
     expect(f.onModEnter).toHaveBeenCalledWith(event);
     const content = f.container.querySelector<HTMLElement>(".cm-content")!;
     adapter.setReadOnly(true); expect(content.getAttribute("contenteditable")).toBe("false");
+    expect(EditorView.findFromDOM(content)!.state.readOnly).toBe(true);
     adapter.setReadOnly(false); expect(content.getAttribute("contenteditable")).toBe("true");
+  });
+
+  it("releases native window activation independently of the editor's DOM focus", () => {
+    const f = fixture(); const adapter = f.open();
+    adapter.focus();
+    const content = f.container.querySelector<HTMLElement>(".cm-content")!;
+    expect(document.activeElement).toBe(content);
+    expect(f.keymap.pushScope).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event("blur"));
+    expect(document.activeElement).toBe(content);
+    expect(f.workspace.activeEditor).toBe(f.underlying);
+    expect(f.keymap.popScope).toHaveBeenCalledOnce();
+    window.dispatchEvent(new Event("focus"));
+    expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+    adapter.dispose();
+    window.dispatchEvent(new Event("focus"));
+    expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+    expect(f.workspace.activeEditor).toBe(f.underlying);
   });
 
   it("hands editor ownership and shortcuts between two drafts without disposing the focused sibling", () => {

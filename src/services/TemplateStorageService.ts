@@ -6,7 +6,6 @@ export interface TemplateStorageDeps {
   app: App;
   getSettings: () => PluginSettings;
   saveSettings: (patch: PartialPluginSettings) => Promise<void>;
-  reservePath: (path: string) => () => void;
   flushVaultEvents: () => Promise<void>;
   assertWritable: () => void | Promise<void>;
 }
@@ -65,39 +64,36 @@ export class TemplateStorageService {
       });
       // Inspect all paths before creating folders or moving any file.
       await ensureTemplateStorageFolder(this.deps.app, folder);
-      const releases = moves.flatMap((move) => [this.deps.reservePath(move.original), this.deps.reservePath(move.path)]);
       const syncReferences = async (templateStorageFolder: string) => {
         const actualPaths = new Map(moves.map((move) => [move.id, move.file.path]));
         await this.deps.saveSettings({ templateStorageFolder,
           noteTemplates: this.deps.getSettings().noteTemplates.map((template) => ({ ...template, filePath: actualPaths.get(template.id) ?? template.filePath })) });
       };
       try {
-        try {
-          for (const move of moves) {
-            if (move.file.path === move.path) continue;
-            // Recheck after awaits; an external writer may have occupied the path.
-            if (this.deps.app.vault.getAbstractFileByPath(move.path)) throw new TemplateStorageError("conflict", move.path);
-            await this.deps.app.fileManager.renameFile(move.file, move.path);
-            // Drain rename reconciliation before moving again or rolling back.
-            await this.deps.flushVaultEvents();
-          }
-        } catch (error) {
-          for (let index = moves.length - 1; index >= 0; index--) {
-            const move = moves[index];
-            if (move.file.path === move.original) continue;
-            try {
-              if (this.deps.app.vault.getAbstractFileByPath(move.original)) throw new TemplateStorageError("conflict", move.original);
-              await this.deps.app.fileManager.renameFile(move.file, move.original);
-              await this.deps.flushVaultEvents();
-            } catch (rollbackError) { console.warn("[Card Workspace] Template migration rollback failed.", rollbackError); }
-          }
-          // Even a failed rollback must retain references to the files' real locations.
-          await syncReferences(settings.templateStorageFolder);
-          throw error;
+        for (const move of moves) {
+          if (move.file.path === move.path) continue;
+          // Recheck after awaits; an external writer may have occupied the path.
+          if (this.deps.app.vault.getAbstractFileByPath(move.path)) throw new TemplateStorageError("conflict", move.path);
+          await this.deps.app.fileManager.renameFile(move.file, move.path);
+          // Drain rename reconciliation before moving again or rolling back.
+          await this.deps.flushVaultEvents();
         }
-        // Persistence failure keeps the completed moves and their synchronous memory references.
-        await syncReferences(folder);
-      } finally { releases.forEach((release) => release()); }
+      } catch (error) {
+        for (let index = moves.length - 1; index >= 0; index--) {
+          const move = moves[index];
+          if (move.file.path === move.original) continue;
+          try {
+            if (this.deps.app.vault.getAbstractFileByPath(move.original)) throw new TemplateStorageError("conflict", move.original);
+            await this.deps.app.fileManager.renameFile(move.file, move.original);
+            await this.deps.flushVaultEvents();
+          } catch (rollbackError) { console.warn("[Card Workspace] Template migration rollback failed.", rollbackError); }
+        }
+        // Even a failed rollback must retain references to the files' real locations.
+        await syncReferences(settings.templateStorageFolder);
+        throw error;
+      }
+      // Persistence failure keeps the completed moves and their synchronous memory references.
+      await syncReferences(folder);
     });
   }
 }

@@ -671,6 +671,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],
     ["hoverPreviewWidth", { hoverPreviewWidth: 800 }],
     ["hoverPreviewHeight", { hoverPreviewHeight: 600 }],
+    ["quickInputGlobalShortcut", { quickInputGlobalShortcut: "Control+Shift+Q" }],
     ["quickInputWidth", { quickInputWidth: 640 }],
     ["quickInputHeight", { quickInputHeight: 360 }],
     ["quickInputColor", { quickInputColor: "purple" }],
@@ -1047,7 +1048,7 @@ describe("SettingsStore — note input persistence", () => {
     const pending = store.updateFlat({ noteTemplates: [template], quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } });
     expect(store.getFlat().noteTemplates).toEqual([template]);
     expect(store.getFlat().quickInput.templateId).toBe("daily");
-    await expect(pending).resolves.toBe("reload");
+    await expect(pending).resolves.toBe("patch");
     expect(documents).toHaveLength(1);
     expect(documents[0]).toMatchObject({ schemaVersion: 2, preferences: { quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } }, userData: { noteTemplates: [template] } });
     expect(migrateSettings(documents[0])).toEqual(store.getFlat());

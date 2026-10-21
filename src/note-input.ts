@@ -8,6 +8,8 @@ export interface NoteTemplateDefinition {
   targetFolderPath: string | null;
   dateFormat: string;
   timeFormat: string;
+  /** Where clicking this template inserts its body into an existing note. Defaults to end. */
+  existingNoteInsertPosition?: "start" | "end";
 }
 
 export interface QuickInputConfig {
@@ -26,8 +28,13 @@ export interface ScopeNoteRequest {
 
 export interface NoteInputResult { file: TFile; created: boolean }
 
+/** Runtime snapshot used to avoid positioning into a note edited after the write. */
+export interface TemplateNoteCursor { content: string; offset: number }
+export interface TemplateNoteResult extends NoteInputResult { cursor?: TemplateNoteCursor }
+
 export interface QuickInputRequest {
   submissionId: string;
+  /** Complete edited document; template variables were expanded when the draft opened. */
   text: string;
   config: QuickInputConfig;
   template: NoteTemplateDefinition | null;
@@ -84,6 +91,8 @@ export function normalizeNoteTemplates(value: unknown): NoteTemplateDefinition[]
     result.push({
       id, filePath, targetFolderPath,
       ...(typeof raw.name === "string" && raw.name.trim() ? { name: raw.name.trim() } : {}),
+      ...(raw.existingNoteInsertPosition === "start" || raw.existingNoteInsertPosition === "end"
+        ? { existingNoteInsertPosition: raw.existingNoteInsertPosition } : {}),
       dateFormat: NOTE_TEMPLATE_DATE_FORMATS.includes(raw.dateFormat as typeof NOTE_TEMPLATE_DATE_FORMATS[number]) ? raw.dateFormat as string : DEFAULT_NOTE_TEMPLATE_DATE_FORMAT,
       timeFormat: NOTE_TEMPLATE_TIME_FORMATS.includes(raw.timeFormat as typeof NOTE_TEMPLATE_TIME_FORMATS[number]) ? raw.timeFormat as string : DEFAULT_NOTE_TEMPLATE_TIME_FORMAT,
     });

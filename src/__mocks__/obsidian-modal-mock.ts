@@ -69,6 +69,10 @@ export class MockEl {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
+  removeEventListener(type: string, listener: Listener): void {
+    this.listeners.set(type, (this.listeners.get(type) ?? []).filter((entry) => entry !== listener));
+  }
+
   dispatch(type: string, event: unknown): void {
     for (const listener of this.listeners.get(type) ?? []) {
       listener(event);

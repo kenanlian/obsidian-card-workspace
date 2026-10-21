@@ -5,6 +5,8 @@ import {
   NOTE_TEMPLATE_DATE_FORMATS,
   NOTE_TEMPLATE_TIME_FORMATS,
   type NoteInputResult,
+  type TemplateNoteCursor,
+  type TemplateNoteResult,
   type NoteTemplateDefinition,
   type QuickInputRequest,
   type ScopeNoteRequest,
@@ -32,7 +34,7 @@ interface QuickSubmission {
   creation: { path: string; expected: string } | null;
 }
 
-interface TemplateTarget { template: NoteTemplateDefinition; file: TFile; path: string; date: string; time: string }
+interface TemplateTarget { template: NoteTemplateDefinition; file: TFile; path: string; now: Date; date: string; time: string }
 
 /** Plugin-owned write boundary. Vault events own every downstream card/index refresh. */
 export class NoteCreationService {
@@ -48,18 +50,51 @@ export class NoteCreationService {
     return this.createUniqueNote(folderPath, baseName, content);
   }
 
-  async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<NoteInputResult> {
+  /** Expand the complete template before editing; submission saves this edited snapshot. */
+  async prepareQuickInputTemplate(template: NoteTemplateDefinition, now: Date): Promise<string> {
+    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
+    const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
+    this.validateTemplateTarget(target);
+    return content;
+  }
+
+  async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<TemplateNoteResult> {
     const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
     return this.serialize(target.path, async () => {
       this.validateTemplateTarget(target);
-      const existing = this.existingTarget(target);
-      if (existing) return { file: existing, created: false };
       const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
       this.validateTemplateTarget(target);
-      const raced = this.existingTarget(target);
-      if (raced) return { file: raced, created: false };
-      return { file: await this.app.vault.create(target.path, content), created: true };
+      const existing = this.existingTarget(target);
+      if (existing) {
+        const body = content.slice(getFrontMatterInfo(content).contentStart);
+        const cursor = body.trim() ? await this.insertTemplateBody(existing, body, target.template.existingNoteInsertPosition ?? "end") : undefined;
+        return { file: existing, created: false, ...(cursor ? { cursor } : {}) };
+      }
+      return { file: await this.app.vault.create(target.path, content), created: true, cursor: { content, offset: content.length } };
     });
+  }
+
+  private async insertTemplateBody(file: TFile, body: string, position: "start" | "end"): Promise<TemplateNoteCursor> {
+    const path = file.path;
+    const view = this.findMarkdownView(file);
+    if (view) {
+      const latest = view.editor.getValue();
+      const insertion = buildInsertion(latest, body, position);
+      const cursor = { content: applyInsertion(latest, insertion), offset: insertion.cursorOffset };
+      view.editor.replaceRange(insertion.text, view.editor.offsetToPos(insertion.offset), undefined, "card-workspace-template");
+      await view.save();
+      return cursor;
+    }
+    let offset = 0;
+    const content = await this.app.vault.process(file, (content) => {
+      if (file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file) throw new NoteInputError("target-changed");
+      // An editor opened while process waited owns the latest unsaved content.
+      if (this.findMarkdownView(file)) throw new NoteInputError("target-changed");
+      const insertion = buildInsertion(content, body, position);
+      offset = insertion.cursorOffset;
+      return applyInsertion(content, insertion);
+    });
+    return { content, offset };
   }
 
   submitQuickInput(request: QuickInputRequest): Promise<NoteInputResult> {
@@ -151,18 +186,14 @@ export class NoteCreationService {
     }
     const target = this.resolveTemplateTarget(request.template, request.now);
     this.validateTemplateTarget(target);
-    let file = this.existingTarget(target);
+    const file = this.existingTarget(target);
     if (!file) {
-      const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
-      this.validateTemplateTarget(target);
-      file = this.existingTarget(target);
-      if (!file) {
-        const insertion = buildInsertion(content, request.text, request.config.insertPosition);
-        const expected = applyInsertion(content, insertion);
-        submission.creation = { path: target.path, expected };
-        return { file: await this.app.vault.create(target.path, expected), created: true };
-      }
+      submission.creation = { path: target.path, expected: request.text };
+      return { file: await this.app.vault.create(target.path, request.text), created: true };
     }
+    // Existing notes retain their own properties, just like clicking a template.
+    const body = request.text.slice(getFrontMatterInfo(request.text).contentStart);
+    if (!body.trim()) return { file, created: false };
     const view = this.findMarkdownView(file);
     if (view) {
       const latest = view.editor.getValue();
@@ -171,7 +202,7 @@ export class NoteCreationService {
         throw new NoteInputError("target-changed");
       }
       if (!attempt || latest !== attempt.expected) {
-        const insertion = buildInsertion(latest, request.text, request.config.insertPosition);
+        const insertion = buildInsertion(latest, body, request.config.insertPosition);
         view.editor.replaceRange(insertion.text, view.editor.offsetToPos(insertion.offset), undefined, "card-workspace-quick-input");
       }
       // Saving may reject after the editor has changed; retries must only repeat the save.
@@ -188,7 +219,7 @@ export class NoteCreationService {
           if (content === attempt.expected) return content;
           if (content !== attempt.original) throw new NoteInputError("target-changed");
         }
-        const expected = applyInsertion(content, buildInsertion(content, request.text, request.config.insertPosition));
+        const expected = applyInsertion(content, buildInsertion(content, body, request.config.insertPosition));
         // A rejected process may already have reached disk. Preserve both states to
         // distinguish a completed write from a safe retry, without guessing after edits.
         submission.attempted = { file, original: content, expected };
@@ -211,7 +242,7 @@ export class NoteCreationService {
       ? template.timeFormat : DEFAULT_NOTE_TEMPLATE_TIME_FORMAT;
     const date = this.format(now, dateFormat);
     const time = this.format(now, timeFormat);
-    const target = { template, file, path: "", date, time };
+    const target = { template, file, path: "", now, date, time };
     target.path = joinNotePath(folder, sanitizeNoteFilename(this.replaceTemplateVariables(file.basename, target)));
     if (target.path === file.path) throw new NoteInputError("target-conflict");
     return target;
@@ -233,7 +264,11 @@ export class NoteCreationService {
   }
 
   private requireFolder(path: string): string {
-    const normalized = normalizePath(path);
+    // Obsidian normalizes the vault root to "/"; note paths are vault-relative.
+    // Keeping it as a folder prefix would make lookups use "//note.md" while
+    // Vault.create normalizes that back to "note.md" and rejects existing notes.
+    const hostPath = normalizePath(path);
+    const normalized = hostPath === "/" ? "" : hostPath;
     if (normalized.split("/").some((part) => part === "." || part === "..") || [...normalized].some((character) => character.charCodeAt(0) < 32)) {
       throw new NoteInputError("invalid-folder");
     }
@@ -271,8 +306,9 @@ export class NoteCreationService {
     return formatDate(now).format(format);
   }
 
-  private replaceTemplateVariables(text: string, target: Pick<TemplateTarget, "date" | "time">): string {
-    return text.replace(/\{\{date\}\}|\{\{time\}\}/g, (variable) => variable === "{{date}}" ? target.date : target.time);
+  private replaceTemplateVariables(text: string, target: Pick<TemplateTarget, "now" | "date" | "time">): string {
+    return text.replace(/\{\{(date|time)(?::([^{}\r\n]*))?\}\}/g,
+      (_match, variable: "date" | "time", format?: string) => format ? this.format(target.now, format) : target[variable]);
   }
 
   private findMarkdownView(file: TFile): MarkdownView | null {
@@ -340,7 +376,7 @@ function buildScopeContent(request: ScopeNoteRequest): string {
   return lines.length ? `---\n${lines.join("\n")}\n---\n\n` : "";
 }
 
-interface TextInsertion { offset: number; text: string }
+interface TextInsertion { offset: number; text: string; cursorOffset: number }
 
 function buildInsertion(content: string, text: string, position: "start" | "end"): TextInsertion {
   const newline = content.includes("\r\n") ? "\r\n" : "\n";
@@ -349,7 +385,7 @@ function buildInsertion(content: string, text: string, position: "start" | "end"
   const after = content.slice(offset);
   const leading = before.length ? Math.max(0, 2 - trailingNewlines(before)) : 0;
   const trailing = after.length ? Math.max(0, 2 - leadingNewlines(after)) : 0;
-  return { offset, text: `${newline.repeat(leading)}${text}${newline.repeat(trailing)}` };
+  return { offset, text: `${newline.repeat(leading)}${text}${newline.repeat(trailing)}`, cursorOffset: offset + leading * newline.length + text.length };
 }
 
 function trailingNewlines(text: string): number { return text.match(/(?:\r?\n)+$/)?.[0].match(/\n/g)?.length ?? 0; }

@@ -1,7 +1,5 @@
 import type { TFile } from "obsidian";
 
-import { isExcludedTemplatePath } from "../template-exclusion";
-
 import { normalizeGroupSpec } from "../card-grouping-settings";
 import type { EpochToken } from "./async-epoch";
 import { readLinkReferenceCount } from "./links-sources";
@@ -76,7 +74,6 @@ function materializeFiles(
   const app = runtime.context.getApp();
   const records: NoteCardRecord[] = [];
   for (const file of files) {
-    if (isExcludedTemplatePath(app, file.path)) continue;
     const fileKind = resolveCardFileKind(file);
     if (fileKind !== null) {
       const record = createCardRecord(app, file, fileKind, deriveTasks);

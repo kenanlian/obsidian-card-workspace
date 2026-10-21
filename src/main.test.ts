@@ -328,7 +328,9 @@ vi.mock("./search", async () => {
 
 vi.mock("./CardWorkspaceSettingTab", () => {
   return {
-    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {},
+    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {
+      refreshTemplateOptions = vi.fn();
+    },
   };
 });
 
@@ -341,7 +343,6 @@ vi.mock("./view/FolderCardView", () => {
       loadedScope = false;
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
-      invalidateTemplateCandidates = vi.fn();
       getCardScope(): unknown {
         return this.cardScope;
       }
@@ -379,7 +380,14 @@ vi.mock("./view/FolderCardView", () => {
   };
 });
 
+vi.mock("./input/QuickInputView", () => ({ QUICK_INPUT_VIEW: "card-workspace-quick-input", QuickInputView: class {} }));
+
 vi.mock("obsidian", () => {
+  class MockComponent {
+    load = vi.fn();
+    unload = vi.fn();
+    registerDomEvent = vi.fn();
+  }
   class MockPlugin {
     app: unknown = null;
     registerView = vi.fn();
@@ -496,6 +504,7 @@ vi.mock("obsidian", () => {
 
   return {
     Plugin: MockPlugin,
+    Component: MockComponent,
     Notice: MockNotice,
     Menu: MockMenu,
     addIcon,
@@ -520,13 +529,12 @@ vi.mock("obsidian", () => {
   };
 });
 
-vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn() }));
-import { focusTemplateEditor } from "./input/template-editor";
+vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn(), focusTemplateNote: vi.fn(async () => {}) }));
+import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
 import { MarkdownView, TFile, TFolder } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
-import { isExcludedTemplatePath } from "./template-exclusion";
 import { NoteCreationService } from "./services/NoteCreationService";
 import { DEFAULT_SETTINGS } from "./settings";
 import { UnsupportedSettingsSchemaError } from "./settings-schema";
@@ -1675,12 +1683,15 @@ describe("CardWorkspacePlugin editor drop registration", () => {
 
     const testDocument = {};
     getWorkspaceCallback<[unknown, { document: typeof testDocument }]>("window-open")({}, { document: testDocument });
-    const domEvents = (plugin as unknown as { registerDomEvent: ReturnType<typeof vi.fn> }).registerDomEvent;
-    const registration = domEvents.mock.calls.find((call) => call[0] === testDocument);
+    const events = (plugin as unknown as { popoutEvents: Map<unknown, { registerDomEvent: ReturnType<typeof vi.fn>; unload: ReturnType<typeof vi.fn> }> }).popoutEvents;
+    const owned = [...events.values()][0]!;
+    const registration = owned.registerDomEvent.mock.calls.find((call) => call[0] === testDocument);
     expect(registration?.[1]).toBe("dragstart");
     const dragEvent = {};
     registration?.[2](dragEvent);
     expect(controller.handleDragStart).toHaveBeenCalledWith(dragEvent);
+    getWorkspaceCallback<[unknown, unknown]>("window-close")({}, [...events.keys()][0]);
+    expect(owned.unload).toHaveBeenCalledOnce(); expect(events.size).toBe(0);
 
     const event = { eventType: "modify", path: "Source.md", oldPath: null, isFolder: false, fileKind: "markdown" } as const;
     await (plugin as unknown as { vaultEventBus: { publish: (event: unknown) => Promise<void> } }).vaultEventBus.publish(event);
@@ -2551,7 +2562,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     };
     expect(coreListeners).toHaveBeenCalledTimes(1);
     expect(coreListeners.mock.invocationCallOrder[0]).toBeLessThan(host.registerView.mock.invocationCallOrder[0]!);
-    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.registerView).toHaveBeenCalledTimes(2);
     expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
     expect(host.addSettingTab).toHaveBeenCalledTimes(1);
     expect(host.addCommand).toHaveBeenCalled();
@@ -2656,7 +2667,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       registerView: ReturnType<typeof vi.fn>; addRibbonIcon: ReturnType<typeof vi.fn>;
       addCommand: ReturnType<typeof vi.fn>; registerEditorExtension: ReturnType<typeof vi.fn>;
     };
-    expect(host.registerView).toHaveBeenCalledTimes(1);
+    expect(host.registerView).toHaveBeenCalledTimes(2);
     expect(host.addRibbonIcon).toHaveBeenCalledTimes(1);
     expect(host.addCommand).toHaveBeenCalled();
     expect(host.registerEditorExtension).toHaveBeenCalledTimes(1);
@@ -2736,7 +2747,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     expect(mockPlugin.registerHoverLinkSource.mock.invocationCallOrder[0]).toBeLessThan(
       mockPlugin.registerEvent.mock.invocationCallOrder[0],
     );
-    expect(mockPlugin.registerDomEvent.mock.calls.every((call) => call[1] === "dragstart")).toBe(true);
+    expect(mockPlugin.registerDomEvent.mock.calls.every((call) => ["dragstart", "unload"].includes(call[1] as string))).toBe(true);
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
@@ -3643,6 +3654,95 @@ describe("CardWorkspacePlugin unsupported settings schema (C4)", () => {
 
 
 describe("template creation assembly", () => {
+  beforeEach(() => { vi.stubGlobal("document", new EventTarget()); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  function templateOpenHarness() {
+    const { plugin, app } = createPluginHarness();
+    const template = { id: "t", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    mutateStoreMemory(plugin, { noteTemplates: [template] });
+    const target = Object.assign(new TFile(), { path: "generated.md" });
+    const view = Object.assign(new MarkdownView({} as never), { file: target });
+    const cursor = { content: "new body\n\nold body", offset: 8 };
+    const create = vi.spyOn(NoteCreationService.prototype, "createTemplateNote").mockResolvedValue({ file: target, created: false, cursor });
+    app.vault.getAbstractFileByPath.mockReturnValue(target);
+    app.workspace.getActiveViewOfType.mockReturnValue(view);
+    vi.mocked(focusTemplateNote).mockClear();
+    return { plugin, app, target, view, cursor, create };
+  }
+
+  it("focuses the opened template note at the cursor snapshot returned by the write", async () => {
+    const h = templateOpenHarness();
+    await h.plugin.createNoteFromTemplate("t");
+    expect(focusTemplateNote).toHaveBeenCalledWith(h.view, h.cursor, expect.any(Function), expect.any(AbortSignal));
+  });
+
+  it.each(["input", "leaf-change", "newer-open", "unload"])("does not open a delayed template result after %s", async (reason) => {
+    const h = templateOpenHarness();
+    const gate = deferred<{ file: TFile; created: boolean; cursor: typeof h.cursor }>();
+    h.create.mockReturnValueOnce(gate.promise);
+    const open = vi.spyOn(h.plugin, "openTemplateNoteFile");
+    const pending = h.plugin.createNoteFromTemplate("t");
+    if (reason === "input") document.dispatchEvent(new Event("keydown"));
+    else if (reason === "leaf-change") getWorkspaceCallback("active-leaf-change")();
+    else if (reason === "newer-open") await h.plugin.openNoteFromCard(h.target.path, "new-tab");
+    else h.plugin.onunload();
+    gate.resolve({ file: h.target, created: false, cursor: h.cursor });
+    await pending;
+    expect(open).not.toHaveBeenCalled();
+    expect(focusTemplateNote).not.toHaveBeenCalled();
+  });
+
+  it("lets a newer template click supersede an earlier pending open", async () => {
+    const h = templateOpenHarness();
+    const gate = deferred<{ file: TFile; created: boolean; cursor: typeof h.cursor }>();
+    h.create.mockReturnValueOnce(gate.promise);
+    const open = vi.spyOn(h.plugin, "openTemplateNoteFile");
+    const older = h.plugin.createNoteFromTemplate("t");
+    await h.plugin.createNoteFromTemplate("t");
+    gate.resolve({ file: h.target, created: false, cursor: h.cursor });
+    await older;
+    expect(open).toHaveBeenCalledOnce();
+    expect(focusTemplateNote).toHaveBeenCalledOnce();
+  });
+
+  it("does not focus another editor if the active view changes while openFile is pending", async () => {
+    const h = templateOpenHarness();
+    const gate = deferred();
+    h.app.workspace.getLeaf.mockReturnValue({ openFile: vi.fn(() => gate.promise) });
+    const pending = h.plugin.createNoteFromTemplate("t");
+    await Promise.resolve(); await Promise.resolve();
+    h.app.workspace.getActiveViewOfType.mockReturnValue(new MarkdownView({} as never));
+    gate.resolve();
+    await pending;
+    expect(focusTemplateNote).not.toHaveBeenCalled();
+  });
+
+  it("refreshes settings definitions after delayed startup settings load and template changes", async () => {
+    const { plugin } = createPluginHarness();
+    const settings = deferred<unknown>();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
+    plugin.onload();
+    const tab = (plugin as unknown as { addSettingTab: ReturnType<typeof vi.fn> }).addSettingTab.mock.calls[0]![0] as { refreshTemplateOptions: ReturnType<typeof vi.fn> };
+    expect(tab.refreshTemplateOptions).not.toHaveBeenCalled();
+    const template = { id: "daily", name: "Daily input", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    settings.resolve({ noteTemplates: [template] });
+    await waitForPluginLoad(plugin);
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledOnce();
+    expect(plugin.getSettings().noteTemplates).toEqual([template]);
+
+    await plugin.saveSettings({ noteTemplates: [...plugin.getSettings().noteTemplates, { ...template, id: "new", filePath: "Templates/New.md" }] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(2);
+    await plugin.saveSettings({ noteTemplates: plugin.getSettings().noteTemplates.map((entry) => ({ ...entry, name: "Renamed" })) });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(3);
+    await plugin.saveSettings({ noteTemplates: [] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
+    await plugin.saveSettings({ previewLines: 7 });
+    await plugin.saveSettings({ noteTemplates: [] });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
+    plugin.onunload();
+  });
+
   it("opens the service target while keeping linked card scopes and passes one time snapshot", async () => {
     const { plugin, app } = createPluginHarness();
     const template = { id: "t", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
@@ -3659,48 +3759,6 @@ describe("template creation assembly", () => {
       expect(view.setSelectedFile).toHaveBeenCalledWith("generated.md", true);
     } finally { create.mockRestore(); }
   });
-});
-
-
-describe("template reservation ownership", () => {
-  it("keeps a shared path reserved until every owner releases it", () => {
-    const { plugin } = createPluginHarness();
-    const reservations = (plugin as unknown as { reservedTemplatePaths: Set<string> }).reservedTemplatePaths;
-    const first = plugin.reserveTemplatePath("Templates/New.md");
-    const second = plugin.reserveTemplatePath("Templates/New.md");
-    first(); first(); expect(reservations.has("Templates/New.md")).toBe(true);
-    second(); expect(reservations.has("Templates/New.md")).toBe(false);
-  });
-});
-
-
-it("keeps rapid chained template renames excluded while bus reconciliation is pending", async () => {
-  const { plugin } = createPluginHarness();
-  mutateStoreMemory(plugin, { noteTemplates: [{ id: "t", filePath: "A.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }] });
-  const barrier = deferred();
-  const internals = plugin as unknown as { dispatchVaultMutation: (event: { eventType: "rename"; path: string; oldPath: string; isFolder: false; fileKind: "markdown" }) => void;
-    vaultEventBus: { publish: (event: unknown) => Promise<void> }; reservedTemplatePaths: Set<string> };
-  vi.spyOn(internals.vaultEventBus, "publish").mockReturnValue(barrier.promise);
-  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "A.md", path: "B.md", isFolder: false, fileKind: "markdown" });
-  internals.dispatchVaultMutation({ eventType: "rename", oldPath: "B.md", path: "C.md", isFolder: false, fileKind: "markdown" });
-  expect(internals.reservedTemplatePaths.has("B.md")).toBe(true);
-  expect(internals.reservedTemplatePaths.has("C.md")).toBe(true);
-  barrier.resolve();
-  await vi.waitFor(() => expect(internals.reservedTemplatePaths.size).toBe(0));
-});
-
-
-it("checks template candidates without renormalizing settings per file", async () => {
-  const { plugin, app } = createPluginHarness();
-  plugin.onload(); await waitForPluginLoad(plugin);
-  await plugin.saveSettings({ noteTemplates: [{ id: "t", filePath: "Templates/T.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }] });
-  const reads = vi.spyOn(plugin, "getSettings"); reads.mockClear();
-  for (let index = 0; index < 100; index++) {
-    expect(isExcludedTemplatePath(app as never, "Templates/T.md")).toBe(true);
-    expect(isExcludedTemplatePath(app as never, `Notes/${index}.md`)).toBe(false);
-  }
-  expect(reads).not.toHaveBeenCalled();
-  plugin.onunload();
 });
 
 
@@ -3738,5 +3796,42 @@ describe("template editor opening", () => {
     await vi.waitFor(() => expect(leaf.setViewState).toHaveBeenCalled());
     app.workspace.getActiveViewOfType.mockReturnValue(null); barrier.resolve(); await pending;
     expect(focusTemplateEditor).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("quick input startup and lifetime", () => {
+  beforeEach(() => { obsidianMockState.autoRunLayoutReady = true; obsidianMockState.leavesByType = {}; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); obsidianMockState.leavesByType = {}; });
+  it("registers a saved global shortcut after layout readiness and before search, without initializing quick input", async () => {
+    const { plugin } = createPluginHarness();
+    obsidianMockState.autoRunLayoutReady = false;
+    const shared = new Map<string, () => void>();
+    const register = vi.fn((key: string, callback: () => void) => { shared.set(key, callback); return true; });
+    const unregister = vi.fn((key: string) => { shared.delete(key); });
+    vi.stubGlobal("electron", { remote: { globalShortcut: { register, unregister, isRegistered: (key: string) => shared.has(key) } } });
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({ schemaVersion: 2, preferences: { quickInputGlobalShortcut: "Control+Shift+Q" } });
+    const initialization = vi.spyOn(plugin.quickInputShortcut, "start");
+    const searchInitialization = vi.spyOn((plugin as unknown as { searchCoordinator: { initialize(): Promise<void> } }).searchCoordinator, "initialize");
+    plugin.onload(); await Promise.resolve(); await Promise.resolve();
+    expect(register).not.toHaveBeenCalled();
+    obsidianMockState.layoutReadyCallback!(); await waitForPluginLoad(plugin);
+    expect(register).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q", expect.any(Function));
+    const internals = plugin as unknown as { quickInputManager: unknown; quickInputInitialization: unknown };
+    expect(internals.quickInputManager).toBeNull(); expect(internals.quickInputInitialization).toBeNull();
+    expect(initialization).toHaveBeenCalledOnce();
+    expect(register.mock.invocationCallOrder[0]).toBeLessThan(searchInitialization.mock.invocationCallOrder[0]!);
+    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue();
+    shared.get("Control+Shift+Q")!(); expect(open).toHaveBeenCalledExactlyOnceWith();
+    plugin.onunload(); expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q");
+  });
+
+  it("detaches invalid restored quick-input leaves while preserving ordinary leaves", async () => {
+    const { plugin } = createPluginHarness();
+    const stale = { detach: vi.fn() }, ordinary = { detach: vi.fn() };
+    obsidianMockState.leavesByType["card-workspace-quick-input"] = [stale];
+    obsidianMockState.leavesByType["markdown"] = [ordinary];
+    plugin.onload(); await waitForPluginLoad(plugin);
+    expect(stale.detach).toHaveBeenCalledOnce(); expect(ordinary.detach).not.toHaveBeenCalled();
   });
 });

@@ -986,6 +986,27 @@ describe("R6 MetadataCache subscription ownership", () => {
 
 
 describe("input creation ownership", () => {
+  it("hosts new drafts outside the workspace and leaves host window creation untouched", () => {
+    const manager = fs.readFileSync(path.join(srcRoot, "input/QuickInputWindowManager.ts"), "utf8");
+    const desktop = fs.readFileSync(path.join(srcRoot, "input/quick-input-desktop.ts"), "utf8");
+    expect(manager).not.toMatch(/openPopoutLeaf|setViewState|WorkspaceLeaf|setOpacity|setShape/);
+    expect(desktop).not.toMatch(/host\.open\s*=|setWindowOpenHandler/);
+    expect(manager).toContain("this.options.desktop.createWindow");
+    expect(manager).toContain("session.abort.abort()");
+  });
+
+  it("registers the lightweight view without importing native editing or write-service runtime into it", () => {
+    for (const file of ["src/input/QuickInputView.ts", "src/input/QuickInputShortcut.ts", "src/input/quick-input-desktop.ts"]) {
+      const deps = runtimeDependencyGraph.get(file);
+      expect(deps?.local).not.toContain("src/input/native-markdown-editor.ts");
+      expect(deps?.local).not.toContain("src/input/QuickInputWindowManager.ts");
+      expect(deps?.local).not.toContain("src/services/NoteCreationService.ts");
+    }
+    const shell = fs.readFileSync(path.join(srcRoot, "main.ts"), "utf8");
+    expect(shell).toContain("this.registerView(QUICK_INPUT_VIEW");
+    expect(shell.indexOf("await this.quickInputShortcut.start")).toBeLessThan(shell.indexOf("await this.searchCoordinator.initialize"));
+  });
+
   it("keeps the native editor runtime behind a first-open boundary and the write service outside view state", () => {
     const service = dependencyGraph.get("src/services/NoteCreationService.ts");
     expect(service?.local.some((file) => isUnder(file, "src/view") || isUnder(file, "src/input"))).toBe(false);

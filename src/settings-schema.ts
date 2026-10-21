@@ -42,6 +42,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   quickInputWidth: "preferences",
   quickInputHeight: "preferences",
   quickInputColor: "preferences",
+  quickInputGlobalShortcut: "preferences",
   templateStorageFolder: "preferences",
   previewLines: "preferences",
   searchPreviewSnippetCount: "preferences",

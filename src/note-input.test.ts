@@ -7,6 +7,18 @@ import { getUiStrings } from "./i18n";
 const template = { id: "daily", filePath: "Templates/{{date}}.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
 
 describe("note input settings", () => {
+  it.each(["start", "end"] as const)("round-trips per-template existing-note insertion at %s without changing the schema", (position) => {
+    const definition = { ...template, existingNoteInsertPosition: position };
+    const settings = mergeSettings(DEFAULT_SETTINGS, { noteTemplates: [definition] });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.userData.noteTemplates).toEqual([definition]);
+    expect(migrateSettings(document).noteTemplates).toEqual([definition]);
+  });
+  it.each([undefined, null, "middle", 42])("keeps legacy end insertion for an absent or invalid template position: %j", (position) => {
+    expect(normalizeNoteTemplates([{ ...template, existingNoteInsertPosition: position }])).toEqual([template]);
+  });
+
   it("normalizes hostile template definitions while retaining missing references and authored order", () => {
     expect(normalizeNoteTemplates([
       null, {}, { ...template, id: "" }, { ...template, filePath: "../bad.md" }, { ...template, id: "renamed", filePath: "a.txt" },
@@ -26,6 +38,18 @@ describe("note input settings", () => {
     const settings = mergeSettings(DEFAULT_SETTINGS, { noteTemplates: [renamed] });
     expect(settings.noteTemplates).toEqual([renamed]);
     expect(migrateSettings(serializeSettings(settings)).noteTemplates).toEqual([renamed]);
+  });
+
+  it("defaults old shortcuts to unset and round-trips preferences without a schema bump", () => {
+    expect(migrateSettings({}).quickInputGlobalShortcut).toBe("");
+    expect(migrateSettings({ schemaVersion: 2, preferences: { quickInputGlobalShortcut: 42 } }).quickInputGlobalShortcut).toBe("");
+    const settings = mergeSettings(DEFAULT_SETTINGS, { quickInputGlobalShortcut: " Control+Shift+Q " });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.preferences.quickInputGlobalShortcut).toBe("Control+Shift+Q");
+    expect(document.workspace).not.toHaveProperty("quickInputGlobalShortcut");
+    expect(document.userData).not.toHaveProperty("quickInputGlobalShortcut");
+    expect(migrateSettings(document)).toEqual(settings);
   });
 
   it("normalizes quick input without clearing a missing template selection", () => {

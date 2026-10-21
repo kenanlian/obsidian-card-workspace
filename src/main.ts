@@ -6,14 +6,17 @@
 
 import { NoteCreationService, NoteInputError } from "./services/NoteCreationService";
 import { TemplateStorageService } from "./services/TemplateStorageService";
-import { focusTemplateEditor } from "./input/template-editor";
+import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
+import type { TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
-import { rewritePathReference } from "./path-references";
-import { installTemplateExclusion, isTemplatePath } from "./template-exclusion";
+import { QUICK_INPUT_VIEW, QuickInputView } from "./input/QuickInputView";
+import { createQuickInputDesktop } from "./input/quick-input-desktop";
+import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import type { QuickInputWindowManager } from "./input/QuickInputWindowManager";
 
 import {
   addIcon,
+  Component,
   MarkdownView,
   Notice,
   Plugin,
@@ -62,19 +65,23 @@ import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_IC
 function normalizeFolderScopePath(path: string): string { return path === "/" ? "" : path; }
 
 export default class CardWorkspacePlugin extends Plugin {
-  private readonly registeredTemplatePaths = new Set<string>();
-  private readonly reservedTemplatePaths = new Set<string>();
-  private readonly templateReservations = new Map<string, number>();
-  private releaseTemplateExclusion: (() => void) | null = null;
+  private readonly popoutEvents = new Map<Window, Component>();
   private noteCreationService: NoteCreationService | null = null;
+  private workspaceSettingTab: CardWorkspaceSettingTab | null = null;
   private readonly templateStorageService = new TemplateStorageService({
     app: this.app, getSettings: () => this.getSettings(), saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
-    reservePath: (path) => this.reserveTemplatePath(path), flushVaultEvents: () => this.vaultEventBus.flushPendingEvents(),
+    flushVaultEvents: () => this.vaultEventBus.flushPendingEvents(),
     assertWritable: async () => {
       await this.settingsReadyPromise;
       if (this.disposed) throw new Error("Plugin unloaded");
       await this.settingsStore.updateFlat({});
     },
+  });
+  private readonly quickInputDesktop = createQuickInputDesktop(window);
+  readonly quickInputShortcut = new QuickInputShortcut({
+    bridge: () => this.quickInputDesktop.shortcuts(),
+    save: async (accelerator) => { await this.saveSettings({ quickInputGlobalShortcut: accelerator }); await this.flushSettings(); },
+    open: () => { void this.openQuickInput(); },
   });
   private quickInputManager: QuickInputWindowManager | null = null;
   private quickInputInitialization: Promise<QuickInputWindowManager | null> | null = null;
@@ -90,6 +97,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private selectionRequestSeq = 0;
   private cardOpenSeq = 0;
   private templateOpenDepth = 0;
+  private templateNoteFocusAbort: AbortController | null = null;
   private cancelLinkCorrection: (() => void) | null = null;
   private latestHandledRequestId = 0;
   private vaultObserversRegistered = false;
@@ -162,8 +170,6 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onload(): void {
-    this.releaseTemplateExclusion = installTemplateExclusion(this.app, (path) =>
-      isTemplatePath(path, this.registeredTemplatePaths, this.reservedTemplatePaths));
     this.registerVaultEventListeners();
     this.registerCustomIcons();
     this.register(() => this.disposeRuntime());
@@ -171,7 +177,8 @@ export default class CardWorkspacePlugin extends Plugin {
     this.addRibbonIcon(CARD_WORKSPACE_ICON, this.getUiStrings().app.ribbonTooltip, () => {
       this.runDetached(this.activateAndEnsureScope(true), "View activation failed.");
     });
-    this.addSettingTab(new CardWorkspaceSettingTab(this.app, this));
+    this.workspaceSettingTab = new CardWorkspaceSettingTab(this.app, this);
+    this.addSettingTab(this.workspaceSettingTab);
     this.registerHoverLinkSource("card-workspace", {
       display: this.getUiStrings().app.hoverSourceDisplay,
       defaultMod: true,
@@ -184,6 +191,15 @@ export default class CardWorkspacePlugin extends Plugin {
         this.runDetached(this.activateAndEnsureScope(true), "View activation failed.");
       },
     });
+    this.registerView(QUICK_INPUT_VIEW, (leaf) => new QuickInputView(leaf, {
+      getTitle: () => this.getUiStrings().noteInput.quickInput,
+      discard: (view) => this.app.workspace.onLayoutReady(() => { view.leaf.detach(); }),
+    }));
+    this.registerEvent(this.app.workspace.on("quit", () => this.disposeRuntime()));
+    this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, win) => {
+      this.popoutEvents.get(win)?.unload(); this.popoutEvents.delete(win);
+    }));
+    this.registerDomEvent(window, "unload", () => this.disposeRuntime());
     this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
     this.registerSearchCommands();
@@ -191,7 +207,10 @@ export default class CardWorkspacePlugin extends Plugin {
       this.registerDomEvent(document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
     }
     this.registerEvent(this.app.workspace.on("window-open", (_workspaceWindow, win) => {
-      this.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
+      this.popoutEvents.get(win)?.unload();
+      const events = new Component(); events.load();
+      events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
+      this.popoutEvents.set(win, events);
     }));
     this.registerEditorExtension([
       dropCursor(),
@@ -235,6 +254,12 @@ export default class CardWorkspacePlugin extends Plugin {
   private async runLayoutReadyStartup(): Promise<void> {
     await this.settingsReadyPromise;
     if (this.disposed) return;
+    // Includes deferred restored views: tokens are runtime-only, never revive drafts.
+    for (const leaf of this.app.workspace.getLeavesOfType(QUICK_INPUT_VIEW)) {
+      leaf.detach();
+    }
+    await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
+    if (this.disposed) return;
     this.registerVaultObservers(); this.registerMetadataObservers();
     this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
     // Session restore never creates a leaf: it only reloads a view the user left open.
@@ -261,15 +286,16 @@ export default class CardWorkspacePlugin extends Plugin {
   private disposeRuntime(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.popoutEvents.forEach((events) => events.unload()); this.popoutEvents.clear();
+    this.quickInputShortcut.dispose();
     this.quickInputManager?.dispose();
+    this.app.workspace.getLeavesOfType(QUICK_INPUT_VIEW).forEach((leaf) => leaf.detach());
     this.quickInputManager = null;
     this.quickInputInitialization = null;
     this.noteCreationService = null;
-    this.releaseTemplateExclusion?.();
-    this.releaseTemplateExclusion = null;
-    this.registeredTemplatePaths.clear();
-    this.reservedTemplatePaths.clear();
-    this.templateReservations.clear();
+    this.templateNoteFocusAbort?.abort();
+    this.templateNoteFocusAbort = null;
+    this.workspaceSettingTab = null;
     this.editorDropController.dispose();
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
@@ -298,11 +324,6 @@ export default class CardWorkspacePlugin extends Plugin {
       { if (!this.disposed) console.warn(`[Card Workspace] ${detail}`, error); });
   }
 
-  private refreshTemplateRegistry(settings: PluginSettings): void {
-    this.registeredTemplatePaths.clear();
-    for (const template of settings.noteTemplates) this.registeredTemplatePaths.add(template.filePath);
-  }
-
   private getNoteCreationService(): NoteCreationService {
     return this.noteCreationService ??= new NoteCreationService(this.app);
   }
@@ -316,42 +337,53 @@ export default class CardWorkspacePlugin extends Plugin {
     await this.openNoteFromCard(result.file.path, "new-tab");
   }
 
-  reserveTemplatePath(path: string): () => void {
-    this.templateReservations.set(path, (this.templateReservations.get(path) ?? 0) + 1);
-    this.reservedTemplatePaths.add(path);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      const remaining = (this.templateReservations.get(path) ?? 1) - 1;
-      if (remaining > 0) this.templateReservations.set(path, remaining);
-      else {
-        this.templateReservations.delete(path);
-        this.reservedTemplatePaths.delete(path);
-        // A canceled registration may leave a real ordinary file behind.
-        if (!this.disposed && !isTemplatePath(path, this.getSettings().noteTemplates)
-          && this.app.vault.getAbstractFileByPath(path) instanceof TFile) {
-          this.withFolderViews((view) => {
-            view.invalidateTemplateCandidates();
-            this.runDetached(view.applyUpdateIntent("reload", "settings-change"), "Template reservation refresh failed.");
-          });
-        }
-      }
-    };
-  }
-
   async createNoteFromTemplate(id: string): Promise<void> {
     const template = this.getSettings().noteTemplates.find((entry) => entry.id === id);
     if (!template) { new Notice(this.getUiStrings().noteInput.templateNotFound); return; }
+    this.templateNoteFocusAbort?.abort();
+    const controller = new AbortController();
+    this.templateNoteFocusAbort = controller;
+    const openSeq = this.cardOpenSeq;
+    const doc = this.app.workspace.getActiveViewOfType(View)?.containerEl?.ownerDocument ?? window.document;
+    const cancel = () => controller.abort();
+    const events = ["pointerdown", "keydown", "wheel", "touchstart", "input"] as const;
+    for (const event of events) doc?.addEventListener(event, cancel, true);
+    const leafChange = this.app.workspace.on("active-leaf-change", cancel);
+    let watchingLeaf = true;
+    const stopWatchingLeaf = () => {
+      if (watchingLeaf) this.app.workspace.offref?.(leafChange);
+      watchingLeaf = false;
+    };
+    const cleanup = () => {
+      stopWatchingLeaf();
+      for (const event of events) doc?.removeEventListener(event, cancel, true);
+    };
+    controller.signal.addEventListener("abort", cleanup, { once: true });
     try {
       const result = await this.getNoteCreationService().createTemplateNote({ ...template }, new Date());
-      await this.openTemplateNoteFile(result.file.path);
+      if (this.disposed || controller.signal.aborted || openSeq !== this.cardOpenSeq) return;
+      stopWatchingLeaf(); // Opening our own target is an intentional leaf change.
+      await this.openTemplateNoteFile(result.file.path, result.cursor, controller.signal);
     } catch (error) { new Notice(this.getUiStrings().noteInput.createFailed(this.describeNoteInputError(error))); }
+    finally {
+      controller.abort();
+      cleanup();
+      if (this.templateNoteFocusAbort === controller) this.templateNoteFocusAbort = null;
+    }
   }
 
-  async openTemplateNoteFile(path: string): Promise<void> {
+  async openTemplateNoteFile(path: string, cursor?: TemplateNoteCursor, signal?: AbortSignal): Promise<void> {
     this.templateOpenDepth += 1;
-    try { await this.openNoteFromCard(path, "new-tab"); }
+    try {
+      const opening = this.openNoteFromCard(path, "new-tab");
+      const openSeq = this.cardOpenSeq;
+      await opening;
+      if (!cursor || !signal || signal.aborted || this.disposed || openSeq !== this.cardOpenSeq) return;
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      const current = () => !this.disposed && openSeq === this.cardOpenSeq
+        && this.app.workspace.getActiveViewOfType(MarkdownView) === view && view?.file?.path === path;
+      if (view && current()) await focusTemplateNote(view, cursor, current, signal);
+    }
     finally { this.templateOpenDepth -= 1; }
   }
 
@@ -387,14 +419,18 @@ export default class CardWorkspacePlugin extends Plugin {
     return error instanceof Error ? error.message : String(error);
   }
 
-  async openQuickInput(win: Window): Promise<void> {
+  async openQuickInput(win?: Window): Promise<void> {
     await this.settingsReadyPromise;
-    if (this.disposed || win.closed) return;
+    if (this.disposed || win?.closed) return;
     if (!this.quickInputInitialization) {
       this.quickInputInitialization = import("./input/QuickInputWindowManager").then(({ QuickInputWindowManager }) => {
         if (this.disposed) return null;
         this.quickInputManager = new QuickInputWindowManager({
-          app: this.app, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
+          app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
+          prepareTemplate: async (template, now) => {
+            try { return await this.getNoteCreationService().prepareQuickInputTemplate(template, now); }
+            catch (error) { throw new Error(this.describeNoteInputError(error)); }
+          },
           submit: async (request) => {
             try { return await this.getNoteCreationService().submitQuickInput(request); }
             catch (error) { throw new Error(this.describeNoteInputError(error)); }
@@ -410,7 +446,7 @@ export default class CardWorkspacePlugin extends Plugin {
       });
     }
     const manager = await this.quickInputInitialization;
-    if (!this.disposed && !win.closed) manager?.open(win);
+    if (!this.disposed && !win?.closed) await manager?.open(win);
   }
 
   async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void> {
@@ -734,11 +770,10 @@ export default class CardWorkspacePlugin extends Plugin {
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
-    this.refreshTemplateRegistry(next);
-    const templatePathsChanged = JSON.stringify(previous.noteTemplates.map((template) => template.filePath).sort())
-      !== JSON.stringify(next.noteTemplates.map((template) => template.filePath).sort());
+    if (JSON.stringify(previous.noteTemplates) !== JSON.stringify(next.noteTemplates)) {
+      this.workspaceSettingTab?.refreshTemplateOptions();
+    }
     this.withFolderViews((view) => {
-      if (templatePathsChanged) view.invalidateTemplateCandidates();
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
         this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "Settings view update failed.");
@@ -909,7 +944,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
-    this.refreshTemplateRegistry(this.getSettings());
+    this.workspaceSettingTab?.refreshTemplateOptions();
   }
 
   /** Degrade to defaults read-only mode without aborting plugin startup. */
@@ -998,16 +1033,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (event.isFolder || isSupportedImagePath(event.path) || (event.oldPath !== null && isSupportedImagePath(event.oldPath))) {
       this.thumbnails?.service.invalidate([event.path, ...(event.oldPath === null ? [] : [event.oldPath])], event.isFolder);
     }
-    // Keep a renamed template excluded while earlier bus listeners await persistence.
-    const trackedPaths = new Set([...this.getSettings().noteTemplates.map((template) => template.filePath), ...this.reservedTemplatePaths]);
-    const releases = event.eventType === "rename" && event.oldPath !== null
-      ? [...trackedPaths].flatMap((path) => {
-        const nextPath = event.isFolder ? rewritePathReference(path, event.oldPath as string, event.path)
-          : path === event.oldPath ? event.path : path;
-        return nextPath === path ? [] : [this.reserveTemplatePath(nextPath)];
-      }) : [];
-    this.runDetached(this.vaultEventBus.publish(event).finally(() => { releases.forEach((release) => release()); }),
-      "Vault event publication failed.");
+    this.runDetached(this.vaultEventBus.publish(event), "Vault event publication failed.");
   }
 
   private reconcileLastFolderPath(event: VaultMutationEvent): Promise<void> {

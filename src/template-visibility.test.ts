@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
-import { installTemplateExclusion, isTemplatePath } from "./template-exclusion";
 import { collectSupportedFiles } from "./view/scope-files";
 import { collectLinksFiles, isLinksMember } from "./view/links-sources";
 import { isBoxMember } from "./view/card-box-membership";
@@ -9,7 +8,6 @@ import { collectVaultTagIndex } from "./view/metadata-utils";
 import { reconcileSymmetricPathMembership } from "./view/controllers/scope-membership";
 import { applyIncrementalMutation } from "./view/controllers/incremental-mutation";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
-const template = { id: "t", filePath: "template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
 function harness() {
   const root = new TFolder(); root.path = ""; root.name = "";
   const files = ["template.md", "note.md"].map((path) => {
@@ -21,35 +19,28 @@ function harness() {
     getFileCache: () => ({ tags: [{ tag: "#tag/nested" }] }) } } as unknown as App;
   const box = { id: "b", name: "B", rules: [], manualPaths: ["template.md", "note.md"], excludedPaths: [], pinnedPaths: [],
     sort: { field: "mtime" as const, direction: "desc" as const }, group: DEFAULT_GROUP_SPEC };
-  let templates = [template]; const reserved = new Set<string>();
-  const release = installTemplateExclusion(app, (path) => isTemplatePath(path, templates, reserved));
-  return { app, root, files, box, reserved, release, unregister: () => { templates = []; } };
+  return { app, root, files, box };
 }
-describe("unified template exclusion", () => {
-  it("excludes registered templates from folder, box, links and all card count badges", () => {
+describe("template file visibility", () => {
+  it("includes template files in folders, boxes, links and card count badges", () => {
     const h = harness();
-    expect(collectSupportedFiles(h.app, "", true).map((f) => f.path)).toEqual(["note.md"]);
-    expect(isBoxMember(h.app, "template.md", h.box)).toBe(false);
-    expect(collectLinksFiles(h.app, { kind: "links", notePath: "source.md", direction: "backlinks" }).map((f) => f.path)).toEqual(["note.md"]);
-    expect(isLinksMember(h.app, { kind: "links", notePath: "source.md", direction: "backlinks" }, "template.md")).toBe(false);
-    expect(buildNavigationFolderTree(h.app)[0].recursiveCount).toBe(1);
-    expect(collectVaultTagIndex(h.app)?.counts).toEqual({ tag: 1, "tag/nested": 1 });
-    h.release();
+    expect(collectSupportedFiles(h.app, "", true).map((f) => f.path)).toEqual(["template.md", "note.md"]);
+    expect(isBoxMember(h.app, "template.md", h.box)).toBe(true);
+    expect(collectLinksFiles(h.app, { kind: "links", notePath: "source.md", direction: "backlinks" }).map((f) => f.path)).toEqual(["template.md", "note.md"]);
+    expect(isLinksMember(h.app, { kind: "links", notePath: "source.md", direction: "backlinks" }, "template.md")).toBe(true);
+    expect(buildNavigationFolderTree(h.app)[0].recursiveCount).toBe(2);
+    expect(collectVaultTagIndex(h.app)?.counts).toEqual({ tag: 2, "tag/nested": 2 });
   });
-  it("restores ordinary note identity immediately after unregistration and covers create reservations", () => {
-    const h = harness(); h.unregister(); h.reserved.add("note.md");
-    expect(collectSupportedFiles(h.app, "", false).map((f) => f.path)).toEqual(["template.md"]);
-    h.reserved.clear(); expect(collectSupportedFiles(h.app, "", false)).toHaveLength(2); h.release();
-  });
-  it("blocks metadata/incremental insertion even when a stale membership predicate accepts", () => {
+  it("inserts template cards through metadata and vault-create paths", () => {
     const h = harness(); const replaceBaseCards = vi.fn();
     expect(reconcileSymmetricPathMembership("template.md", true, {
       getApp: () => h.app, getBaseCards: () => [], replaceBaseCards, prepareRecordsFromCache: vi.fn(),
       deletePendingHydration: () => false, resolveSort: () => h.box.sort,
-    })).toBe("unchanged"); expect(replaceBaseCards).not.toHaveBeenCalled();
+    })).toBe("entered");
+    expect(replaceBaseCards).toHaveBeenCalledWith([expect.objectContaining({ path: "template.md" })]);
     const result = applyIncrementalMutation({ eventType: "create", path: "template.md", oldPath: null, isFolder: false, fileKind: "markdown" }, [], {
       app: h.app, sort: h.box.sort, pendingHydration: { has: () => false, delete: () => false }, prepareRecordsFromCache: vi.fn(),
       getBulkSelection: () => ({ selectedPaths: new Set(), anchorPath: null }), setBulkSelection: vi.fn(), isPathInActiveScope: () => true,
-    }); expect(result.nextCards).toBeNull(); h.release();
+    }); expect(result.nextCards).toEqual([expect.objectContaining({ path: "template.md" })]);
   });
 });

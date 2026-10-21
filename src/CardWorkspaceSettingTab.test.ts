@@ -7,6 +7,10 @@ const mockState = vi.hoisted(() => {
     app: unknown;
     plugin: unknown;
     refreshDomState = vi.fn();
+    settingItems: unknown[] = [];
+    update = vi.fn(() => {
+      this.settingItems = (this as unknown as { getSettingDefinitions(): unknown[] }).getSettingDefinitions();
+    });
     containerEl = new MockEl();
 
     constructor(app: unknown, plugin: unknown) {
@@ -28,11 +32,13 @@ vi.mock("./view/folder-input-suggest", () => ({ attachFolderInputSuggest: vi.fn(
 vi.mock("./view/metadata-input-suggest", () => ({ onPlainEnter: vi.fn() }));
 
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
+import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { getUiStrings } from "./i18n";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 
 interface PluginStub {
+  quickInputShortcut: Pick<QuickInputShortcut, "apply" | "subscribe">;
   getSettings: ReturnType<typeof vi.fn<() => Record<string, unknown>>>;
   saveSettings: ReturnType<typeof vi.fn<(patch: Record<string, unknown>) => Promise<unknown>>>;
   getUiLanguage: ReturnType<typeof vi.fn<() => string>>;
@@ -44,6 +50,7 @@ function createPlugin(
   language = "en",
 ): PluginStub {
   return {
+    quickInputShortcut: { apply: vi.fn(async () => {}), subscribe: (listener) => { listener({ active: [], pending: false, error: null }); return () => {}; } },
     getSettings: vi.fn(() => ({
       hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [],
       cardCornerRadius: "medium",
@@ -54,7 +61,7 @@ function createPlugin(
       enableHeadingDragInsert: false,
       newNoteTemplate: "blank",
       quickInput: { templateId: null, folderPath: "", insertPosition: "end" }, noteTemplates: [],
-      quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
+      quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
       previewLines: 6,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
@@ -354,6 +361,9 @@ describe("CardWorkspaceSettingTab", () => {
           if (row.name === getUiStrings(language).noteInput.quickInputFolderName) {
             expect(setting.texts[0]?.value).toBe("/");
             expect(setting.dropdowns).toHaveLength(0);
+          } else if (row.name === getUiStrings(language).noteInput.globalShortcutName) {
+            expect(setting.texts).toHaveLength(1);
+            expect(setting.buttons.map((button) => button.text)).toEqual([getUiStrings(language).noteInput.apply, getUiStrings(language).noteInput.clearShortcut]);
           } else {
             expect(setting.buttons[0]?.text).toBe(definition.heading === (language === "zh" ? "模板" : "Templates") ? (language === "zh" ? "应用" : "Apply") : (language === "zh" ? "管理" : "Manage"));
           }
@@ -558,6 +568,42 @@ describe("CardWorkspaceSettingTab", () => {
 });
 
 describe("quick input shared setting definitions", () => {
+  it("refreshes cached native template choices after creation, rename and removal", () => {
+    mockState.requireApiVersion.mockReturnValue(true);
+    const plugin = createPlugin();
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    const tab = createTab(plugin);
+    tab.update(); // Native hosts cache definitions when registering the tab.
+    const options = () => (tab.settingItems[3] as { items: { control: { options: Record<string, string> } }[] }).items[0]!.control.options;
+    expect(Object.keys(options())).toEqual([""]);
+
+    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Daily input");
+    settings.noteTemplates = [{ id: "daily", name: "Renamed input", filePath: "Templates/Daily.md" }];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Renamed input");
+    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
+    settings.noteTemplates = [];
+    tab.refreshTemplateOptions();
+    expect(options().daily).toBe("Template unavailable (daily)");
+  });
+
+  it("keeps legacy rendering usable when the native update API is unavailable", () => {
+    mockState.requireApiVersion.mockReturnValue(false);
+    const plugin = createPlugin();
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    const tab = createTab(plugin);
+    Object.defineProperty(tab, "update", { value: undefined });
+    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
+    expect(() => tab.refreshTemplateOptions()).not.toThrow();
+    tab.display();
+    expect(groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[0]!.dropdowns[0]!.options)
+      .toContainEqual({ value: "daily", label: "Daily input" });
+  });
+
   it("shows registered templates, retained missing choices and a custom folder input", () => {
     const tab = createTab(createPlugin({
       noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md" }],
@@ -700,5 +746,32 @@ describe("template storage settings", () => {
   it("shows the independent template name in quick-input choices", () => {
     const tab = createTab(createPlugin({ noteTemplates: [{ id: "daily", name: "My daily template", filePath: "Templates/{{date}}.md" }] }));
     expect(tab.getSettingDefinitions()[3]!.items[0]!.control).toMatchObject({ options: { daily: "My daily template" } });
+  });
+});
+
+
+describe("explicit global shortcut configuration", () => {
+  it.each([false, true])("records without registration and shares Apply/Clear behavior (native: %s)", async (native) => {
+    const registered = new Set<string>();
+    const register = vi.fn((key: string) => { registered.add(key); return true; });
+    const unregister = vi.fn((key: string) => { registered.delete(key); });
+    const save = vi.fn(async (_key: string) => {});
+    const shortcut = new QuickInputShortcut({ bridge: () => ({ register, unregister, isRegistered: (key) => registered.has(key) }), save, open: vi.fn() });
+    const plugin = createPlugin(); plugin.quickInputShortcut = shortcut;
+    const tab = createTab(plugin);
+    const strings = getUiStrings("en").noteInput;
+    let row: Setting;
+    if (native) {
+      row = new Setting(tab.containerEl as unknown as MockEl);
+      tab.getSettingDefinitions()[3]!.items.find((item) => item.name === strings.globalShortcutName)!.render!(row as never, {} as never);
+    } else { tab.display(); row = settingsIn(tab.containerEl as unknown as MockEl).find((item) => item.name === strings.globalShortcutName)!; }
+    row.texts[0]!.type("Control+Shift+Q"); expect(register).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
+    row.buttons.find((button) => button.text === strings.apply)!.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q"));
+    expect(registered.has("Control+Shift+Q")).toBe(true);
+    row.buttons.find((button) => button.text === strings.clearShortcut)!.click();
+    await vi.waitFor(() => expect(save).toHaveBeenLastCalledWith(""));
+    expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q"); expect(registered.size).toBe(0);
+    tab.hide(); shortcut.dispose();
   });
 });

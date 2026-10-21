@@ -16,12 +16,11 @@ export interface TemplateActionsDeps {
   openNote: (path: string, selectTitle?: boolean) => Promise<void>;
   runOperation?: (work: () => Promise<boolean>) => Promise<boolean>;
   notify: (message: string) => void;
-  /** Returns a release function; reservations exclude vault-create events before registration commits. */
-  reserveTemplatePath: (path: string) => () => void;
   getStrings: () => UiStrings;
 }
 
 export class TemplateActions {
+  private readonly pendingDeletions = new Set<string>();
   constructor(private readonly deps: TemplateActionsDeps) {}
   private get strings() { return this.deps.getStrings().noteInput; }
   private find(id: string): NoteTemplateDefinition | undefined {
@@ -36,7 +35,7 @@ export class TemplateActions {
     let id: string;
     do { id = `template-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; } while (taken.has(id));
     return { id, name, filePath, targetFolderPath,
-      dateFormat: DEFAULT_NOTE_TEMPLATE_DATE_FORMAT, timeFormat: DEFAULT_NOTE_TEMPLATE_TIME_FORMAT };
+      dateFormat: DEFAULT_NOTE_TEMPLATE_DATE_FORMAT, timeFormat: DEFAULT_NOTE_TEMPLATE_TIME_FORMAT, existingNoteInsertPosition: "end" };
   }
   private async register(file: TFile, name: string, targetFolderPath: string): Promise<void> {
     const templates = this.deps.getSettings().noteTemplates;
@@ -45,12 +44,10 @@ export class TemplateActions {
     await this.deps.saveSettings({ noteTemplates: registered ? templates.map((template) => template.filePath === file.path ? { ...template, name, targetFolderPath } : template) : [...templates, this.definition(file.path, name, targetFolderPath)] });
   }
   newTemplate(): void {
-    // Keep the created file and reservation across a failed registration retry.
+    // Keep the created file across a failed registration retry.
     let created: TFile | null = null;
-    let release: (() => void) | null = null;
     let pending = false;
     let closed = false;
-    const releaseReservation = () => { release?.(); release = null; };
     const create = async (name: string, rawFolderPath: string): Promise<boolean> => {
       if (pending) return false;
       pending = true;
@@ -67,24 +64,21 @@ export class TemplateActions {
           const pathFor = (suffix: string) => `${storageFolder ? `${storageFolder}/` : ""}${basename}${suffix}.md`;
           let path = pathFor("");
           for (let suffix = 1; this.deps.app.vault.getAbstractFileByPath(path); suffix++) path = pathFor(` ${suffix}`);
-          release = this.deps.reserveTemplatePath(path);
-          try { created = await this.deps.app.vault.create(path, this.strings.initialTemplateBody + "\n"); }
-          catch (error) { release(); release = null; throw error; }
+          created = await this.deps.app.vault.create(path, this.strings.initialTemplateBody + "\n");
         }
         if (this.deps.app.vault.getAbstractFileByPath(created.path) !== created) {
           this.deps.notify(this.strings.templateNotFound); return false;
         }
         await this.register(created, displayName, folderPath!);
-        releaseReservation();
         if (!closed) await this.deps.openNote(created.path, true);
         return true;
       };
       try { return await (this.deps.runOperation ? this.deps.runOperation(work) : work()); }
       catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); return false; }
-      finally { pending = false; if (closed) releaseReservation(); }
+      finally { pending = false; }
     };
     new NewTemplateModal(this.deps.app, this.strings, create,
-      () => { closed = true; if (!pending) releaseReservation(); }).open();
+      () => { closed = true; }).open();
   }
 
   private async patch(id: string, patch: Partial<NoteTemplateDefinition>): Promise<boolean> {
@@ -94,6 +88,33 @@ export class TemplateActions {
         .map((template) => template.id === id ? { ...template, ...patch } : template) });
       return true;
     } catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); return false; }
+  }
+  private async deleteTemplate(id: string): Promise<void> {
+    if (this.pendingDeletions.has(id)) return;
+    this.pendingDeletions.add(id);
+    const work = async (): Promise<boolean> => {
+      const template = this.find(id);
+      if (!template) return false;
+      const path = template.filePath;
+      const file = this.file(template);
+      if (file) {
+        try {
+          // The host deletes the file; its return value varies between versions.
+          await this.deps.app.fileManager.promptForDeletion(file);
+        } catch (error) {
+          this.deps.notify(this.deps.getStrings().app.failedToDeleteFile(String(error)));
+          return false;
+        }
+        // Cancellation, a rename or a replacement must keep the registration.
+        if (file.path !== path || this.deps.app.vault.getAbstractFileByPath(path) !== null) return false;
+      }
+      if (this.find(id)?.filePath !== path) return false;
+      await this.deps.saveSettings({ noteTemplates: this.deps.getSettings().noteTemplates.filter((entry) => entry.id !== id) });
+      return true;
+    };
+    try { await (this.deps.runOperation ? this.deps.runOperation(work) : work()); }
+    catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); }
+    finally { this.pendingDeletions.delete(id); }
   }
   private chooseFolder(id: string): void {
     new TemplateFieldModal(this.deps.app, this.strings, "folder", this.find(id)?.targetFolderPath ?? "", async (value) => {
@@ -136,9 +157,14 @@ export class TemplateActions {
     formats("dateFormat", this.strings.dateFormat, NOTE_TEMPLATE_DATE_FORMATS);
     formats("timeFormat", this.strings.timeFormat, NOTE_TEMPLATE_TIME_FORMATS);
     menu.addSeparator();
-    addItem(menu, this.strings.unregisterTemplate, "list-minus", () => {
-      void this.deps.saveSettings({ noteTemplates: this.deps.getSettings().noteTemplates.filter((entry) => entry.id !== templateId) })
-        .catch((error) => this.deps.notify(this.strings.saveTemplateFailed(String(error))));
-    });
+    addItem(menu, this.strings.templateInsertPosition, "arrow-down-up", () => {}, (item) => item.setDisabled(true));
+    for (const position of ["start", "end"] as const) {
+      addItem(menu, position === "start" ? this.strings.insertBodyStart : this.strings.insertEnd,
+        position === "start" ? "arrow-up-to-line" : "arrow-down-to-line", () => {
+        void this.patch(templateId, { existingNoteInsertPosition: position });
+      }, (item) => item.setChecked((template.existingNoteInsertPosition ?? "end") === position));
+    }
+    menu.addSeparator();
+    addItem(menu, this.strings.deleteTemplate, "trash-2", () => { void this.deleteTemplate(templateId); });
   }
 }

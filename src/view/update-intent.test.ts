@@ -74,10 +74,11 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   newNoteTemplate: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
+  quickInputGlobalShortcut: "patch",
   quickInputWidth: "patch",
   quickInputHeight: "patch",
   quickInputColor: "patch",
-  noteTemplates: "reload",
+  noteTemplates: "patch",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
   hoverPreviewWidth: "patch",
@@ -127,6 +128,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;
+    case "quickInputGlobalShortcut": settings.quickInputGlobalShortcut = "Control+Shift+Q"; break;
     case "quickInputWidth": settings.quickInputWidth += 10; break;
     case "quickInputHeight": settings.quickInputHeight += 10; break;
     case "quickInputColor": settings.quickInputColor = "blue"; break;
@@ -350,12 +352,12 @@ describe("resolveBoxesUpdateIntent", () => {
 
 describe("note input update grades", () => {
   const template = { id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
-  it("reloads every scope when registration changes membership", () => {
+  it("patches every scope when templates are registered or unregistered", () => {
     const previous = { ...createSettings(), noteTemplates: [] };
     const next = { ...previous, noteTemplates: [template] };
     for (const scope of [createFolderScope("Notes", true), createBoxScope("box-1"), createLinksScope("Notes/A.md", "backlinks")]) {
-      expect(resolveSettingsUpdateIntent(previous, next, scope)).toBe("reload");
-      expect(resolveSettingsUpdateIntent(next, previous, scope)).toBe("reload");
+      expect(resolveSettingsUpdateIntent(previous, next, scope)).toBe("patch");
+      expect(resolveSettingsUpdateIntent(next, previous, scope)).toBe("patch");
     }
   });
   it("patches destinations, formats, registration identity and ordering without card reload", () => {

@@ -8,7 +8,9 @@ export interface NoteInputStrings {
   targetFolder: string;
   dateFormat: string;
   timeFormat: string;
-  unregisterTemplate: string;
+  templateInsertPosition: string;
+  insertBodyStart: string;
+  deleteTemplate: string;
   templateName: string;
   templateNameDesc: string;
   renameTemplate: string;
@@ -65,6 +67,17 @@ export interface NoteInputStrings {
   nativeEditorUnavailable: string;
   invalidQuickInputConfig: string;
   openQuickInputFailed: string;
+  nativeFrameUnsupported: string;
+  desktopUnavailable: string;
+  pinWindow: string;
+  globalShortcutName: string;
+  globalShortcutDesc: string;
+  clearShortcut: string;
+  shortcutInactive: string;
+  shortcutActive: (keys: string) => string;
+  shortcutInvalid: string;
+  shortcutConflict: string;
+  shortcutSaveFailed: string;
   createFailed: (reason: string) => string;
   sendFailed: (reason: string) => string;
   saveTemplateFailed: (reason: string) => string;
@@ -77,7 +90,8 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   en: {
     templates: "Templates", templatesEmpty: "No templates registered", newTemplate: "New template",
     editTemplate: "Edit template", targetFolder: "New note folder",
-    dateFormat: "Date format", timeFormat: "Time format", unregisterTemplate: "Remove from templates",
+    dateFormat: "Date format", timeFormat: "Time format", deleteTemplate: "Delete template",
+    templateInsertPosition: "Insert position in an existing note", insertBodyStart: "Start of body (after properties)",
     templateName: "Template name", templateNameDesc: "Shown in navigation and template choices. This name is not used as the filename of created notes.",
     renameTemplate: "Rename template", invalidTemplateName: "Enter a template name.",
     targetFolderDesc: "Notes created with this template are saved in this folder. Leave empty for the vault root.",
@@ -85,7 +99,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateStorageFolderDesc: "Stores all template files. Applying a different folder moves existing templates there, preserving their filenames and content. Conflicting files are never overwritten. A missing folder is created automatically.",
     invalidTemplateFolder: "Enter a valid, non-hidden vault folder path.",
     initialTemplateTitle: "Edit the template title here, use {{date}} and {{time}} for the current date and time",
-    initialTemplateBody: "> Edit the template body here, use {{date}} and {{time}} for the current date and time.",
+    initialTemplateBody: "> Edit the template body here. `{{date}}` and `{{time}}` show the current date and time using this template's format settings.\n> To use a different format at a specific position, write `{{date:YYYY-MMMM-DD}}` or `{{time:HH:mm}}`.",
     editTitleRequired: "Edit the template title before using this template.", apply: "Apply", applying: "Applying…",
     templateUnavailable: "Template unavailable", templateNotFound: "The registered Markdown template is missing.",
     targetFolderRequired: "Choose a fixed destination folder for this template first.",
@@ -114,6 +128,16 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     nativeEditorUnavailable: "The native Markdown editor is unavailable in this Obsidian version.",
     invalidQuickInputConfig: "Quick input settings refer to an unavailable template or folder.",
     openQuickInputFailed: "Could not open quick input.",
+    nativeFrameUnsupported: "Quick input requires the Obsidian or hidden window frame. Change Settings → Appearance → Window frame style, then fully restart Obsidian.",
+    desktopUnavailable: "Quick input desktop capabilities are unavailable.",
+    pinWindow: "Keep this window on top",
+    globalShortcutName: "Global quick input shortcut",
+    globalShortcutDesc: "Unset by default. Press a combination or enter an Electron accelerator (e.g. Control+Shift+Q), then Apply. Opens a new window from any app without restoring the main window.",
+    clearShortcut: "Clear", shortcutInactive: "No shortcut registered",
+    shortcutActive: (keys) => `Registered: ${keys}`,
+    shortcutInvalid: "Invalid shortcut. Use a modifier and a supported key.",
+    shortcutConflict: "Shortcut unavailable or already in use. Previous binding retained.",
+    shortcutSaveFailed: "Could not save. Active bindings are shown above; Apply retries saving. The previous binding is released after a successful save.",
     createFailed: (reason) => `Could not create the note: ${reason}`,
     sendFailed: (reason) => `Could not send. Your draft is kept: ${reason}`,
     saveTemplateFailed: (reason) => `Could not save template settings: ${reason}`,
@@ -121,7 +145,8 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   },
   zh: {
     templates: "模板", templatesEmpty: "尚未注册模板", newTemplate: "新建模板",
-    editTemplate: "编辑模板", targetFolder: "新建笔记文件夹", dateFormat: "日期格式", timeFormat: "时间格式", unregisterTemplate: "从模板中移除",
+    editTemplate: "编辑模板", targetFolder: "新建笔记文件夹", dateFormat: "日期格式", timeFormat: "时间格式", deleteTemplate: "删除模板",
+    templateInsertPosition: "同名笔记插入位置", insertBodyStart: "正文开头（属性之后）",
     templateName: "模板名称", templateNameDesc: "用于在导航区和模板选择中显示，不作为使用模板创建的笔记文件名。",
     renameTemplate: "重命名模板", invalidTemplateName: "请输入模板名称。",
     targetFolderDesc: "使用此模板创建的笔记将保存在此文件夹中，留空表示仓库根目录。",
@@ -129,7 +154,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateStorageFolderDesc: "所有模板文件保存在此文件夹中。应用新的文件夹后，现有模板会自动迁移过去，保留原文件名和正文，不覆盖同名文件。文件夹不存在时会自动创建。",
     invalidTemplateFolder: "请输入有效的非隐藏仓库文件夹路径。",
     initialTemplateTitle: "请在此处编辑模板标题，支持通过{{date}}和{{time}}来显示当前日期和时间",
-    initialTemplateBody: "> 请在此处编辑模板正文，支持通过{{date}}和{{time}}来显示当前日期和时间。",
+    initialTemplateBody: "> 请在此处编辑模板正文。`{{date}}` 和 `{{time}}` 显示当前日期和时间，格式沿用模板设置。\n> 如需在某个位置使用其他格式，可写 `{{date:YYYY-MMMM-DD}}` 或 `{{time:HH:mm}}`。",
     editTitleRequired: "请先编辑模板标题，再使用此模板。", apply: "应用", applying: "应用中…",
     templateUnavailable: "模板不可用",
     templateNotFound: "已注册的 Markdown 模板文件不存在。", targetFolderRequired: "请先为此模板选择固定目标文件夹。",
@@ -155,6 +180,16 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",
     nativeEditorUnavailable: "当前 Obsidian 版本无法使用原生 Markdown 编辑器。",
     invalidQuickInputConfig: "快速输入设置引用了不可用的模板或文件夹。", openQuickInputFailed: "无法打开快速输入。",
+    nativeFrameUnsupported: "快速输入需要 Obsidian 框架或隐藏框架。请在“设置 → 外观 → 窗口框架样式”中手动切换，然后完全重启 Obsidian。",
+    desktopUnavailable: "快速输入所需的桌面能力不可用。",
+    pinWindow: "此窗口置顶",
+    globalShortcutName: "快速输入全局快捷键",
+    globalShortcutDesc: "默认未设置。按下组合键或输入 Electron 快捷键格式（如 Control+Shift+Q），然后点击应用。可从任意软件打开新窗口，不主动恢复主窗口。",
+    clearShortcut: "清除", shortcutInactive: "未注册快捷键",
+    shortcutActive: (keys) => `已注册：${keys}`,
+    shortcutInvalid: "快捷键无效，请使用修饰键与受支持的按键。",
+    shortcutConflict: "快捷键不可用或已被占用，原有绑定保持不变。",
+    shortcutSaveFailed: "保存失败。上方显示当前生效的绑定；点击应用重试保存，成功后才释放原有绑定。",
     createFailed: (reason) => `无法创建笔记：${reason}`, sendFailed: (reason) => `无法发送，草稿已保留：${reason}`,
     saveTemplateFailed: (reason) => `无法保存模板设置：${reason}`, sent: (path) => `已发送到 ${path}`, noteCreated: (path) => `已创建 ${path}`, noteOpened: (path) => `已打开 ${path}`,
   },

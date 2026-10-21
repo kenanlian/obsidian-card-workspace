@@ -8,7 +8,7 @@
 - **Version**: `1.3.6` (source of truth: `manifest.json`)
 - **License**: GPL-3.0-only (previous releases through 1.4.2 retain MIT)
 - **Min Obsidian**: `1.11.4` (`SettingGroup` is available; confirmation dialogs and declarative settings use capability-checked 1.13+ APIs with legacy fallbacks; do not use APIs tagged `@since 1.13.1` or later)
-- **Runtime dependency**: `minisearch` ^7.2.0 (bundled)
+- **Runtime dependencies**: `minisearch` ^7.2.0 and `yaml` ^2.9.1 (bundled)
 - **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
 
 ## Documentation Map
@@ -35,6 +35,7 @@ Enumerable implementation details (settings keys, panel fields, module methods) 
 
 ## Current Project Status
 
+- Quick-input drafts use the native Properties component for supported flat frontmatter, backed by the same complete CodeMirror document as the body. `src/input/draft-frontmatter.ts` owns comment-preserving YAML updates; `native-properties-editor.ts` owns optional native component lifecycle and display-only decorations. Unsupported/invalid YAML or missing native capabilities retain source editing. Submission flushes the active property input before freezing the request; both properties and Markdown remain read-only during pending/frozen retries.
 - Search architecture is **indexed-only**. Do not restore fallback search paths without an explicit architecture change.
 - `pipeline.ts` remains the only visible-card projection path. A load commits the complete lightweight card list and scope tag/property facets together; card publication does not wait for startup preview work. Property filters compose there for folder scopes only; in box scopes, rule property clauses are digested at the membership layer and the projection runs `search -> pin`.
 - Non-ready indexed states (`building`, `error`, `rebuild-required`) block non-empty queries.
