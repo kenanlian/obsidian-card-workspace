@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildPanelProps, type PanelHost } from "./panel-props";
+import type { CardFileDragStarter } from "./types";
 
 function createHost(): {
   host: PanelHost;
@@ -35,7 +36,7 @@ function createHost(): {
         onToggleNavSection: vi.fn(),
       },
     },
-    plugin: { openNoteFromCard: vi.fn(async () => undefined) },
+    plugin: { openNoteFromCard: vi.fn(async () => undefined), startCardFileDrag: vi.fn(() => null) },
     handleToolbarAction: vi.fn(),
     onIncludeSubfoldersChange: vi.fn(async () => undefined),
     onCardHoverLink: vi.fn(),
@@ -48,6 +49,16 @@ function createHost(): {
 }
 
 describe("buildPanelProps arrangement routing", () => {
+  it("returns the host drag cleanup synchronously, including in bulk mode", () => {
+    const { host } = createHost();
+    const finish = vi.fn();
+    host.plugin.startCardFileDrag = vi.fn(() => finish);
+    host.modules.bulk.isBulkMode = () => true;
+    const props = buildPanelProps(host) as { onCardDragStart: CardFileDragStarter };
+    const detail = { path: "notes/a.md", event: {} as DragEvent };
+    expect(props.onCardDragStart(detail)).toBe(finish);
+    expect(host.plugin.startCardFileDrag).toHaveBeenCalledExactlyOnceWith(detail);
+  });
   it("routes collapse and history commands to the search controller", () => {
     const { host } = createHost();
     const props = buildPanelProps(host) as unknown as {

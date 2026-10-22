@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { CardImageState } from "../images/types";
   import { setIcon } from "obsidian";
   import { getUiStrings, type UiStrings } from "../i18n";
@@ -13,7 +14,7 @@
     sanitizePreviewHtml,
     type PreviewHtmlSanitizer,
   } from "./preview-html";
-  import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
+  import type { CardFileDragStarter, CardHoverLinkPayload, NoteCardRecord } from "./types";
   import CardTaskFooter from "./CardTaskFooter.svelte";
   import { buildSearchSnippetSegments, buildSearchSnippetHtml, type SearchSnippetSegment } from "./search-snippet-layout";
 
@@ -51,6 +52,7 @@
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
+    onCardDragStart?: CardFileDragStarter;
     onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
     previewHtmlSanitizer?: PreviewHtmlSanitizer;
   }
@@ -77,6 +79,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
+    onCardDragStart,
     onImageReveal,
     previewHtmlSanitizer = sanitizePreviewHtml,
   }: CardItemProps = $props();
@@ -187,6 +190,19 @@
     } };
   }
   let activeDragGhost: HTMLElement | null = null;
+  let finishNativeDrag: (() => void) | null = null;
+  let dragSource: { classList?: DOMTokenList } | null = null;
+
+  function finishCardDrag(): void {
+    const finish = finishNativeDrag;
+    finishNativeDrag = null;
+    finish?.();
+    dragSource?.classList?.remove("is-dragging");
+    dragSource = null;
+    removeDragGhost();
+  }
+
+  onDestroy(finishCardDrag);
 
   function revealImage(node: HTMLImageElement, url: string): { destroy: () => void } {
     const path = card.path;
@@ -417,7 +433,7 @@
     onCardContextMenu?.({ path: card.path, mouseEvent: event });
   }
 
-  function onCardDragStart(event: DragEvent): void {
+  function handleCardDragStart(event: DragEvent): void {
     if (event.dataTransfer == null) {
       return;
     }
@@ -428,10 +444,14 @@
       return;
     }
 
+    finishCardDrag();
+    finishNativeDrag = onCardDragStart?.({ path: card.path, event }) ?? null;
+    // Native initialization may write transfer data. Always retain our editor protocol afterwards.
     event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
-    event.dataTransfer.effectAllowed = "copy";
-
-    removeDragGhost();
+    event.dataTransfer.effectAllowed = finishNativeDrag ? "copyLink" : "copy";
+    dragSource = cardEl;
+    cardEl.classList?.add("is-dragging");
+    if (finishNativeDrag) return;
 
     const nativeDragImage = doc.createElement("div");
     nativeDragImage.className = "fce-card-native-drag-image";
@@ -443,18 +463,14 @@
     doc.body.appendChild(ghost);
     activeDragGhost = ghost;
     moveDragGhost(event);
-
-    cardEl.classList?.add("is-dragging");
   }
 
   function onCardDrag(event: DragEvent): void {
     moveDragGhost(event);
   }
 
-  function onCardDragEnd(event: DragEvent): void {
-    const cardEl = event.currentTarget as { classList?: DOMTokenList } | null;
-    cardEl?.classList?.remove("is-dragging");
-    removeDragGhost();
+  function onCardDragEnd(): void {
+    finishCardDrag();
   }
 
   function onBulkSelectClick(event: MouseEvent): void {
@@ -537,7 +553,7 @@
   onclick={onCardClick}
   onkeydown={onCardKeydown}
   oncontextmenu={onCardContextMenuAction}
-  ondragstart={onCardDragStart}
+  ondragstart={handleCardDragStart}
   ondrag={onCardDrag}
   ondragend={onCardDragEnd}
 >

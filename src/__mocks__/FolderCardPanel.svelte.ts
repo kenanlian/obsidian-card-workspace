@@ -11,6 +11,7 @@ interface PanelProps {
   onOpenNote?: (payload: unknown) => void;
   onBulkSelectCard?: (payload: unknown) => void;
   onCardContextMenu?: (payload: unknown) => void;
+  onCardDragStart?: import("../view/types").CardFileDragStarter;
   onPinToggle?: (payload: unknown) => void;
   onToolbarAction?: (payload: unknown) => void;
   onSortChange?: (payload: unknown) => void;
@@ -40,6 +41,7 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onOpenNote: "open-note",
   onBulkSelectCard: "bulk-select-card",
   onCardContextMenu: "card-context-menu",
+  onCardDragStart: "card-drag-start",
   onPinToggle: "pin-toggle",
   onToolbarAction: "toolbar-action",
   onSortChange: "sort-change",
@@ -79,7 +81,7 @@ function createMountedPanel(options: PanelMountOptions = {}): MockMountedPanel {
     }
 
     mockState.panelEventHandlers[eventName] = (event: any) => {
-      callback(event?.detail ?? event);
+      return callback(event?.detail ?? event);
     };
   }
 

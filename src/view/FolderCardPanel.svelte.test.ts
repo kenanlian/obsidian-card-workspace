@@ -222,6 +222,27 @@ describe("FolderCardPanel.svelte", () => {
     resetObsidianMenuInstances();
   });
 
+  it("passes a single card's native drag and cleanup through the panel in bulk mode", async () => {
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState();
+    state.cards.records = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
+    state.bulk = { ...state.bulk, bulkMode: true, selectedPaths: ["notes/a.md", "notes/b.md"], selectedCount: 2 };
+    const finish = vi.fn();
+    const onCardDragStart = vi.fn(() => finish);
+    const component = mount(FolderCardPanel, { target, props: { panelModel: createPanelModel(state), onCardDragStart } });
+    await tick();
+    const card = target.querySelector<HTMLElement>(".fce-card")!;
+    const event = new Event("dragstart", { bubbles: true });
+    const transfer = { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "none" };
+    Object.defineProperty(event, "dataTransfer", { value: transfer });
+    card.dispatchEvent(event);
+    expect(onCardDragStart).toHaveBeenCalledExactlyOnceWith({ path: "notes/a.md", event });
+    expect(transfer.effectAllowed).toBe("copyLink");
+    expect(document.body.querySelector(".fce-card-drag-ghost")).toBeNull();
+    await unmount(component);
+    expect(finish).toHaveBeenCalledOnce();
+  });
+
   async function historyHarness(history: string[], query = "", language: "en" | "zh" = "en") {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState(); state.strings = getUiStrings(language);

@@ -33,9 +33,12 @@ import { ThumbnailStore } from "./images/ThumbnailStore";
 import { ThumbnailWorker } from "./images/ThumbnailWorker";
 import { resolveSearchVaultNamespace } from "./services/SearchDocumentSource";
 import { EditorView, dropCursor } from "@codemirror/view";
+import { Prec } from "@codemirror/state";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
 import { EditorDropController } from "./services/EditorDropController";
+import { NativeFileDragController } from "./services/NativeFileDragController";
+import type { CardFileDragStartPayload } from "./view/types";
 import { BoxReconciler } from "./services/BoxReconciler";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
@@ -113,6 +116,7 @@ export default class CardWorkspacePlugin extends Plugin {
     getSettings: () => this.getSettings(),
     getUiStrings: () => this.getUiStrings(),
   });
+  private readonly nativeFileDragController = new NativeFileDragController(() => this.app);
   private readonly searchCoordinator = new SearchCoordinator({
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
@@ -147,6 +151,10 @@ export default class CardWorkspacePlugin extends Plugin {
     getSettings: () => this.getSettings(),
     saveSettings: (patch) => this.saveSettings(patch),
   });
+
+  startCardFileDrag({ event, path }: CardFileDragStartPayload): (() => void) | null {
+    return this.nativeFileDragController.start(event, path);
+  }
 
   getThumbnailService(): { service: ThumbnailService; vault: string } | null {
     if (this.disposed || this.getSettings().cardImageMode === "off") return null;
@@ -214,10 +222,10 @@ export default class CardWorkspacePlugin extends Plugin {
     }));
     this.registerEditorExtension([
       dropCursor(),
-      EditorView.domEventHandlers({
+      Prec.highest(EditorView.domEventHandlers({
         dragover: (event) => this.editorDropController.handleDragOver(event),
         drop: (event, view) => this.editorDropController.handleDomDrop(event, view),
-      }),
+      })),
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
@@ -297,6 +305,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.templateNoteFocusAbort = null;
     this.workspaceSettingTab = null;
     this.editorDropController.dispose();
+    this.nativeFileDragController.dispose();
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
     this.vaultEventBus.dispose();

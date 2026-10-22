@@ -5,7 +5,7 @@ import type { CardImageState } from "../images/types";
 import CardItem from "./CardItem.svelte";
 import { getUiStrings } from "../i18n";
 import type { CardFileKind } from "./file-kind";
-import type { CardHoverLinkPayload, NoteCardRecord } from "./types";
+import type { CardFileDragStarter, CardHoverLinkPayload, NoteCardRecord } from "./types";
 import {
   highlightSanitizedPreviewHtml,
   sanitizePreviewHtml,
@@ -42,6 +42,7 @@ interface CardItemCallbacks {
   onCardContextMenu?: (payload: CardContextMenuPayload) => void;
   onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
   onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
+  onCardDragStart?: CardFileDragStarter;
   onToggleReferences?: (payload: { path: string }) => void;
   onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
 }
@@ -458,6 +459,55 @@ describe("CardItem.svelte", () => {
       path: "notes/a.md",
       mouseEvent: contextEvent,
     });
+  });
+
+  it("uses native feedback while preserving editor data, and cleans up once on dragend", async () => {
+    const finish = vi.fn();
+    const data = new Map<string, string>();
+    const transfer = {
+      effectAllowed: "none",
+      setData: vi.fn((type: string, value: string) => data.set(type, value)),
+      setDragImage: vi.fn(),
+    };
+    const onCardDragStart = vi.fn(({ event }: { event: DragEvent }) => {
+      event.dataTransfer!.setData("text/uri-list", "obsidian://open?file=notes%2Fa.md");
+      event.dataTransfer!.setData("application/x-card-workspace-note", "native initialization");
+      return finish;
+    });
+    const { target, component } = mountCardItem({ bulkMode: true, bulkSelected: true }, { onCardDragStart });
+    const card = target.querySelector<HTMLElement>(".fce-card")!;
+    const event = new Event("dragstart", { bubbles: true });
+    Object.defineProperty(event, "dataTransfer", { value: transfer });
+    card.dispatchEvent(event);
+    expect(onCardDragStart).toHaveBeenCalledExactlyOnceWith({ path: "notes/a.md", event });
+    expect(data.get("application/x-card-workspace-note")).toBe(JSON.stringify({ path: "notes/a.md", title: "A note" }));
+    expect(data.get("text/uri-list")).toContain("obsidian://open");
+    expect(transfer.effectAllowed).toBe("copyLink");
+    expect(transfer.setDragImage).not.toHaveBeenCalled();
+    expect(document.body.querySelector(".fce-card-drag-ghost")).toBeNull();
+    expect(card.classList.contains("is-dragging")).toBe(true);
+    card.dispatchEvent(new Event("dragend", { bubbles: true }));
+    await disposeMountedComponent(component);
+    expect(finish).toHaveBeenCalledOnce();
+    expect(card.classList.contains("is-dragging")).toBe(false);
+  });
+
+  it.each([true, false])("cleans up a mid-drag component removal (native: %s)", async (native) => {
+    const finish = vi.fn();
+    const start = vi.fn(() => native ? finish : null);
+    const { target, component } = mountCardItem({}, { onCardDragStart: start });
+    await tick();
+    const card = target.querySelector<HTMLElement>(".fce-card")!;
+    const transfer = { setData: vi.fn(), setDragImage: vi.fn(), effectAllowed: "none" };
+    const event = new Event("dragstart", { bubbles: true });
+    Object.defineProperty(event, "dataTransfer", { value: transfer });
+    card.dispatchEvent(event);
+    expect(transfer.effectAllowed).toBe(native ? "copyLink" : "copy");
+    expect(document.body.querySelector(".fce-card-drag-ghost") !== null).toBe(!native);
+    await disposeMountedComponent(component);
+    expect(finish).toHaveBeenCalledTimes(native ? 1 : 0);
+    expect(card.classList.contains("is-dragging")).toBe(false);
+    expect(document.body.querySelector(".fce-card-drag-ghost")).toBeNull();
   });
 
   it("emits plugin-private drag data and drag visual state", () => {

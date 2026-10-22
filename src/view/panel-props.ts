@@ -1,6 +1,6 @@
 import type { PanelModel } from "./panel-model";
 import type { HydrateViewportRequest } from "./hydration-request";
-import type { SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
+import type { CardFileDragStarter, CardFileDragStartPayload, SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
 import type { NavigationIntent } from "./navigation-model";
 import type { CardOpenLocation } from "./link-card-location";
@@ -14,6 +14,7 @@ export interface PanelHost {
   modules: ViewModules;
   plugin: {
     openNoteFromCard: (path: string, destination?: never, location?: CardOpenLocation) => Promise<void>;
+    startCardFileDrag: CardFileDragStarter;
   };
   resolveCardLocation?: (path: string) => CardOpenLocation | null;
   resolveSearchSnippetLocation?: (path: string, snippetId: string) => CardOpenLocation | null;
@@ -26,12 +27,13 @@ export interface PanelHost {
   handleNavigationIntent: (intent: NavigationIntent) => void;
 }
 
-type PanelCallbackProps = { panelModel: PanelModel } & Record<string, unknown>;
+type PanelCallbackProps = { panelModel: PanelModel; onCardDragStart: CardFileDragStarter } & Record<string, unknown>;
 
 /** Builds the props the Svelte panel is mounted with. */
 export function buildPanelProps(view: PanelHost): PanelCallbackProps {
   return {
     panelModel: view.panelModel,
+    onCardDragStart: (detail: CardFileDragStartPayload) => view.plugin.startCardFileDrag(detail),
     attachSearchHistorySuggest: (input: HTMLInputElement, options: SearchHistorySuggestOptions) =>
       attachSearchHistorySuggest(view.app, input, options),
     onOpenNote: (detail: { path?: unknown; snippetId?: unknown; referenceId?: unknown; referenceTarget?: unknown }) => {

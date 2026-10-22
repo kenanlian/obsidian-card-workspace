@@ -37,6 +37,7 @@
   import { buildRowPositions, createViewportRequest, getSpacerStyle, isBrowseFilterSwitch,
     readFiniteNumber, resolveBrowseFilterMode, resolvePanelScopeIdentity, type BrowseFilterMode } from "./virtual-layout";
   import type {
+    CardFileDragStarter,
     CardHoverLinkPayload,
     FavoriteEntry,
     FolderActionPayload,
@@ -113,6 +114,7 @@
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
+    onCardDragStart?: CardFileDragStarter;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
     onGroupChange?: (payload: GroupChangePayload) => void;
@@ -217,6 +219,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
+    onCardDragStart,
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -1008,6 +1011,7 @@
                 onCardContextMenu={handleCardContextMenu}
                 onPinToggle={handleCardPinToggle}
                 onCardHoverLink={handleCardHoverLink}
+                {onCardDragStart}
               />
             {/each}
           </div>

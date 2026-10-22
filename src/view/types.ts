@@ -7,6 +7,14 @@ import type { CardFileKind } from "./file-kind";
 import type { CardScope } from "./scope";
 import type { CardTaskSummary } from "./task-summary";
 
+export interface CardFileDragStartPayload {
+  path: string;
+  event: DragEvent;
+}
+
+/** A cleanup function signals native feedback; null keeps the private fallback. */
+export type CardFileDragStarter = (payload: CardFileDragStartPayload) => (() => void) | null;
+
 export type {
   SearchIndexPersistenceHealth,
   SearchIndexReadinessState,

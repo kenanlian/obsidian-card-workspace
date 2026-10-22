@@ -1667,6 +1667,30 @@ describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load
 });
 
 describe("CardWorkspacePlugin editor drop registration", () => {
+  it("starts a native file drag through the plugin and retires it on unload", async () => {
+    const { plugin, app } = createPluginHarness();
+    const file = Object.assign(new TFile(), { path: "notes/a.md" });
+    const draggable = { type: "file", file };
+    const manager = {
+      draggable: null as unknown,
+      dragFile: vi.fn(() => draggable),
+      onDragStart: vi.fn((_event: DragEvent, value: unknown) => { manager.draggable = value; }),
+      onDragEnd: vi.fn(() => { manager.draggable = null; }),
+    };
+    Object.assign(app, { dragManager: manager });
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+    const event = { dataTransfer: {} } as DragEvent;
+    const finish = plugin.startCardFileDrag({ path: file.path, event });
+    expect(manager.dragFile).toHaveBeenCalledExactlyOnceWith(event, file);
+    expect(manager.onDragStart).toHaveBeenCalledExactlyOnceWith(event, draggable);
+    plugin.onunload();
+    finish!();
+    expect(manager.onDragEnd).toHaveBeenCalledOnce();
+    expect(plugin.startCardFileDrag({ path: file.path, event })).toBeNull();
+  });
+
   it("forwards editor, leaf, file, vault, drag-start and unload invalidation to the drop controller", async () => {
     const { plugin } = createPluginHarness();
     plugin.onload();
@@ -1714,11 +1738,11 @@ describe("CardWorkspacePlugin editor drop registration", () => {
     const registerEditorExtension = (plugin as unknown as {
       registerEditorExtension: ReturnType<typeof vi.fn>;
     }).registerEditorExtension;
-    const extensions = registerEditorExtension.mock.calls[0]?.[0] as Array<{
+    const extensions = registerEditorExtension.mock.calls[0]?.[0] as [unknown, { inner: {
       dragover?: (event: DragEvent) => boolean;
       drop?: (event: DragEvent, view: unknown) => boolean;
-    }>;
-    const handlers = extensions[1];
+    } }];
+    const handlers = extensions[1].inner;
     const preventDefault = vi.fn();
     const dragEvent = { defaultPrevented: false, preventDefault } as unknown as DragEvent;
     const editorView = {};
