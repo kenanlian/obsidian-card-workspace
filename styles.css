@@ -2069,7 +2069,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   box-shadow: inset 0 -2px 0 0 var(--fce-accent);
 }
 
-.folder-card-view .fce-card-body.has-right-image { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-content: start; gap: 0 10px; }
+.folder-card-view .fce-card-body.has-right-image { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-content: start; column-gap: 10px; }
 .folder-card-view .fce-card-body.has-right-image .fce-card-header { grid-column: 1 / -1; grid-row: 1; }
 .folder-card-view .fce-card-body.has-right-image .fce-excerpt { grid-column: 1; grid-row: 2; min-width: 0; }
 .folder-card-view .fce-card-body.has-right-image .fce-card-image { grid-column: 2; grid-row: 2; }
