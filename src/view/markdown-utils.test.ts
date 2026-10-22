@@ -79,7 +79,7 @@ describe("buildLightPreview", () => {
     const markdown = ["---", ...Array.from({ length: 399 }, (_, index) => `field-${index}`), "---", "tail sentinel"].join("\n");
     const result = buildLightPreview(markdown, 500, 5);
 
-    expect(result.html).toContain("---");
+    expect(result.html).not.toContain("---");
     expect(result.html).toContain("field-0");
     expect(result.html).not.toContain("tail sentinel");
   });
@@ -87,13 +87,13 @@ describe("buildLightPreview", () => {
   it("treats unclosed leading frontmatter as body", () => {
     const result = buildLightPreview("---\ntitle: Unclosed\nBody text");
 
-    expect(result.html).toContain("--- title: Unclosed Body text");
+    expect(result.html).toBe("<p>title: Unclosed Body text</p>");
   });
 
-  it("treats a non-leading delimiter as body", () => {
+  it("treats non-leading delimiters as Setext underlines rather than metadata", () => {
     const result = buildLightPreview("Before\n---\ntitle: Body\n---\nAfter", 500, 5);
 
-    expect(result.html).toContain("Before --- title: Body --- After");
+    expect(result.html).toBe('<p class="fce-preview-heading">Before</p><p class="fce-preview-heading">title: Body</p><p>After</p>');
   });
 
   it("never reads a guarded tail through normalization before collection", () => {

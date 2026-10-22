@@ -1,4 +1,5 @@
 import { parsePreviewListItem, readPreviewLink, type PreviewListItem } from "../markdown-preview-cues";
+import { normalizePreviewBlocks } from "./preview-blocks";
 import {
   DEFAULT_PREVIEW_LINES,
   PREVIEW_LINES_MAX,
@@ -40,7 +41,7 @@ export function buildLightPreview(
   const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
   if (normalizedPreviewLines === 0) return { html: "", mode: "empty" };
   const source = typeof markdown === "string" ? createStringPreviewTextSource(markdown) : markdown;
-  const lines = collectPreviewSource(source).lines;
+  const lines = normalizePreviewBlocks(collectPreviewSource(source).lines);
   const scanLimit = lines.length;
 
   let index = 0;
