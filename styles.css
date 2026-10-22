@@ -1304,6 +1304,25 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
 }
 
+/* Hit a draggable presentation container before Chromium handles Shift selection.
+ * Keep hover containers active and leave buttons and their contents untouched. */
+.folder-card-view .fce-card-body,
+.folder-card-view .fce-card-header,
+.folder-card-view .fce-card-title-group,
+.folder-card-view .fce-card-body > .fce-excerpt,
+.folder-card-view .fce-card-image,
+.folder-card-view .fce-card-task-footer {
+  -webkit-user-drag: element;
+}
+
+.folder-card-view .fce-card-title-group *,
+.folder-card-view .fce-card-body > .fce-excerpt > :not(button),
+.folder-card-view .fce-card-body > .fce-excerpt > :not(button) *,
+.folder-card-view .fce-card-image *,
+.folder-card-view .fce-card-task-footer * {
+  pointer-events: none;
+}
+
 .folder-card-view .fce-card.fce-card-radius-compact {
   border-radius: var(--clickable-icon-radius, var(--radius-s));
 }
