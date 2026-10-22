@@ -2310,20 +2310,20 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 body:not(.show-inline-title) .inline-title.fce-template-title-entry { display: block; }
 .fce-nav-projected-row.is-template.is-unavailable .fce-tree-label { opacity: 0.55; }
 /* These documents contain only the plugin's card, never workspace chrome. */
-html.fce-quick-input-window,
-html.fce-quick-input-window body {
+html.fce-quick-input-window:root,
+html.fce-quick-input-window:root > body {
   width: 100%;
   height: 100%;
-  margin: 0 !important;
-  padding: 0 !important;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
-  background: transparent !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
-html.fce-quick-input-window body::before,
-html.fce-quick-input-window body::after { display: none !important; }
+html.fce-quick-input-window:root > body::before,
+html.fce-quick-input-window:root > body::after { display: none; }
 .fce-quick-input-resize { position: absolute; z-index: 1; -webkit-app-region: no-drag; }
 .fce-quick-input-resize[data-edge="n"], .fce-quick-input-resize[data-edge="s"] { left: 14px; right: 14px; height: 5px; cursor: ns-resize; }
 .fce-quick-input-resize[data-edge="e"], .fce-quick-input-resize[data-edge="w"] { top: 14px; bottom: 14px; width: 5px; cursor: ew-resize; }
@@ -2337,7 +2337,7 @@ html.fce-quick-input-window body::after { display: none !important; }
 .fce-quick-input-resize[data-edge="se"] { bottom: 0; right: 0; cursor: nwse-resize; }
 .fce-quick-input-resize[data-edge="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
 .fce-shortcut-status { flex-basis: 100%; color: var(--text-muted); font-size: var(--font-ui-small); }
-.setting-item:has(.fce-shortcut-status) { flex-wrap: wrap; }
+.setting-item.fce-shortcut-setting { flex-wrap: wrap; }
 .fce-quick-input {
   --fce-quick-input-tint: var(--interactive-accent);
   --fce-quick-input-frame: 5px;

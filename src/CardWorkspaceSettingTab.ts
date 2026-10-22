@@ -310,6 +310,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   }
 
   private renderQuickInputShortcutSetting(setting: Setting, strings: NoteInputStrings): void {
+    setting.settingEl.addClass("fce-shortcut-setting");
     let draft = this.plugin.getSettings().quickInputGlobalShortcut;
     let input!: HTMLInputElement;
     const capture = (event: KeyboardEvent) => {
