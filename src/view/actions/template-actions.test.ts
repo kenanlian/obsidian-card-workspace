@@ -4,12 +4,14 @@ import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS, type PartialPluginSettings } from "../../settings";
 import { NOTE_TEMPLATE_DATE_FORMATS, NOTE_TEMPLATE_TIME_FORMATS, type NoteTemplateDefinition } from "../../note-input";
 import { TemplateActions } from "./template-actions";
+import type { NewTemplateModalOptions } from "../modals/NewTemplateModal";
 
 const state = vi.hoisted(() => ({ folderChoose: null as null | ((folder: unknown) => void),
   close: null as null | (() => void),
   create: null as null | ((name: string, folder: string) => Promise<boolean>),
   fieldSave: null as null | ((value: string) => Promise<boolean>),
   fieldKind: "",
+  options: {} as NewTemplateModalOptions,
   formatPickers: [] as Array<{ formats: string[]; example: (format: string) => string; choose: (format: string) => void }> }));
 vi.mock("obsidian", async (importOriginal) => ({ ...await importOriginal<object>(),
   moment: () => ({ format: (format: string) => `example:${format}` }) }));
@@ -27,12 +29,14 @@ vi.mock("../modals/TemplateFormatPickerModal", () => ({ TemplateFormatPickerModa
   open() {}
 } }));
 vi.mock("../modals/NewTemplateModal", () => ({ NewTemplateModal: class {
-  constructor(_app: unknown, _strings: unknown, create: (name: string, folder: string) => Promise<boolean>, close: () => void) { state.create = create; state.close = close; }
+  constructor(_app: unknown, _strings: unknown, create: (name: string, folder: string) => Promise<boolean>, close: () => void = () => {}, options: NewTemplateModalOptions = {}) {
+    state.create = create; state.close = close; state.options = options;
+  }
   open() {}
 } }));
 
 function file(path: string): TFile {
-  return Object.assign(new TFile(), { path, name: path.split("/").at(-1), extension: "md" });
+  return Object.assign(new TFile(), { path, name: path.split("/").at(-1), basename: path.split("/").at(-1)!.replace(/\.md$/, ""), extension: "md" });
 }
 function harness(templates: NoteTemplateDefinition[] = [], language: "en" | "zh" = "en") {
   const files = new Map<string, TFile | TFolder>();
@@ -63,7 +67,95 @@ function deleteFromMenu(h: ReturnType<typeof harness>, language: "en" | "zh" = "
   expect(item).toBeDefined();
   item?.onClick?.();
 }
-beforeEach(() => { state.create = null; state.folderChoose = null; state.formatPickers = []; });
+beforeEach(() => { state.create = null; state.close = null; state.options = {}; state.folderChoose = null; state.formatPickers = []; });
+
+describe("registering existing template files", () => {
+  it.each(["en", "zh"] as const)("opens the shared form from the file menu and registers the original file in %s", async (language) => {
+    const h = harness([], language), source = file("Templates/Daily.md"); h.files.set(source.path, source);
+    const menu = new Menu(); h.actions.appendFileMenu(menu, source);
+    const items = (menu as unknown as { items: { title: string; onClick?: () => void }[] }).items;
+    const strings = getUiStrings(language).noteInput;
+    expect(items.map((item) => item.title)).toEqual([strings.setAsTemplate]);
+    items[0]?.onClick?.();
+    expect(state.options).toEqual({ name: "Daily", title: strings.setAsTemplate, submitLabel: strings.apply });
+    expect(await state.create?.("  Daily input  ", "Templates")).toBe(true);
+    expect(h.settings.noteTemplates).toEqual([expect.objectContaining({ name: "Daily input", filePath: source.path,
+      targetFolderPath: "Templates", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss", existingNoteInsertPosition: "end" })]);
+    expect(h.runOperation).toHaveBeenCalledOnce();
+    expect(h.files.get(source.path)).toBe(source);
+    expect(h.create).not.toHaveBeenCalled(); expect(h.createFolder).not.toHaveBeenCalled(); expect(h.openNote).not.toHaveBeenCalled();
+    const registeredMenu = new Menu(); h.actions.appendFileMenu(registeredMenu, source);
+    expect((registeredMenu as unknown as { items: unknown[] }).items).toEqual([]);
+  });
+  it("limits the menu to live unregistered Markdown files within the configured folder", () => {
+    const h = harness([template()]);
+    for (const path of ["Templates/Daily.md", "Notes/Other.md", "Templates-copy/Other.md", "Templates/diagram.canvas"]) {
+      const source = file(path); if (path.endsWith("canvas")) source.extension = "canvas";
+      h.files.set(path, source); const menu = new Menu(); h.actions.appendFileMenu(menu, source);
+      expect((menu as unknown as { items: unknown[] }).items).toEqual([]);
+    }
+    const missing = file("Templates/Missing.md"), missingMenu = new Menu(); h.actions.appendFileMenu(missingMenu, missing);
+    expect((missingMenu as unknown as { items: unknown[] }).items).toEqual([]);
+    const nested = file("Templates/Nested/Other.md"); h.files.set(nested.path, nested);
+    const nestedMenu = new Menu(); h.actions.appendFileMenu(nestedMenu, nested);
+    expect((nestedMenu as unknown as { items: unknown[] }).items).toHaveLength(1);
+    h.settings.templateStorageFolder = "";
+    const rootFile = file("Root.md"); h.files.set(rootFile.path, rootFile);
+    const rootMenu = new Menu(); h.actions.appendFileMenu(rootMenu, rootFile);
+    expect((rootMenu as unknown as { items: unknown[] }).items).toHaveLength(1);
+  });
+  it("keeps cancellation and invalid form input free of registration writes", async () => {
+    const h = harness(), source = file("Templates/Daily.md"); h.files.set(source.path, source);
+    h.actions.setAsTemplate(source); state.close?.();
+    expect(h.saveSettings).not.toHaveBeenCalled(); expect(h.files.get(source.path)).toBe(source);
+    h.actions.setAsTemplate(source);
+    for (const [name, folder] of [[" ", ""], ["Daily", "Missing"], ["Daily", "../Bad"], ["Daily", source.path]]) {
+      expect(await state.create?.(name!, folder!)).toBe(false);
+    }
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(await state.create?.("Daily", "/")).toBe(true);
+    expect(h.settings.noteTemplates[0]?.targetFolderPath).toBe("");
+  });
+  it.each(["delete", "replace", "move-outside", "storage-change"])("rejects registration after a concurrent %s", async (change) => {
+    const h = harness(), source = file("Templates/Daily.md"); h.files.set(source.path, source); h.actions.setAsTemplate(source);
+    if (change === "delete") h.files.delete(source.path);
+    if (change === "replace") h.files.set(source.path, file(source.path));
+    if (change === "move-outside") { h.files.delete(source.path); source.path = "Notes/Daily.md"; h.files.set(source.path, source); }
+    if (change === "storage-change") h.settings.templateStorageFolder = "Other";
+    expect(await state.create?.("Daily", "")).toBe(false);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+  it("follows a rename within storage and keeps newer registrations", async () => {
+    const h = harness(), source = file("Templates/Daily.md"); h.files.set(source.path, source); h.actions.setAsTemplate(source);
+    h.files.delete(source.path); source.path = "Templates/Renamed.md"; h.files.set(source.path, source);
+    const other = { ...template("Templates/Other.md"), id: "other" }; h.settings.noteTemplates.push(other);
+    expect(await state.create?.("Daily", "")).toBe(true);
+    expect(h.settings.noteTemplates).toEqual([other, expect.objectContaining({ name: "Daily", filePath: source.path })]);
+  });
+  it("retries persistence after a memory update without duplicating or resetting template options", async () => {
+    const h = harness(), source = file("Templates/Daily.md"); h.files.set(source.path, source); h.actions.setAsTemplate(source);
+    h.saveSettings.mockImplementationOnce(async (patch) => { Object.assign(h.settings, patch); throw new Error("disk failed"); });
+    expect(await state.create?.("Daily", "")).toBe(false);
+    const id = h.settings.noteTemplates[0]!.id;
+    h.settings.noteTemplates[0] = { ...h.settings.noteTemplates[0]!, dateFormat: "YYYY/MM/DD", existingNoteInsertPosition: "start" };
+    expect(await state.create?.("Daily retry", "Templates")).toBe(true);
+    expect(h.settings.noteTemplates).toEqual([expect.objectContaining({ id, name: "Daily retry", targetFolderPath: "Templates",
+      dateFormat: "YYYY/MM/DD", existingNoteInsertPosition: "start" })]);
+    expect(h.saveSettings).toHaveBeenCalledTimes(2);
+  });
+  it("prevents duplicate submissions and respects rejected serialized operations", async () => {
+    const h = harness(), source = file("Templates/Daily.md"); h.files.set(source.path, source); h.actions.setAsTemplate(source);
+    let finish!: () => void;
+    h.runOperation.mockImplementationOnce(async (work) => { await new Promise<void>((resolve) => { finish = resolve; }); return work(); });
+    const pending = state.create!("Daily", "");
+    expect(await state.create?.("Daily", "")).toBe(false);
+    finish(); expect(await pending).toBe(true);
+    expect(h.saveSettings).toHaveBeenCalledOnce();
+    h.saveSettings.mockClear(); h.runOperation.mockRejectedValueOnce(new Error("read-only"));
+    expect(await state.create?.("Daily", "")).toBe(false);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+});
 
 describe("TemplateActions", () => {
   it.each(["en", "zh"] as const)("configures existing-note insertion per template in %s and preserves newer settings", async (language) => {

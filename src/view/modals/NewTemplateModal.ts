@@ -4,6 +4,12 @@ import { onPlainEnter } from "../metadata-input-suggest";
 import type { NoteInputStrings } from "../../i18n/noteInput";
 import { FormModal } from "./FormModal";
 
+export interface NewTemplateModalOptions {
+  name?: string;
+  title?: string;
+  submitLabel?: string;
+}
+
 export class NewTemplateModal extends FormModal {
   private name = "";
   private folderPath = "";
@@ -11,11 +17,14 @@ export class NewTemplateModal extends FormModal {
   private inputs: HTMLInputElement[] = [];
   constructor(app: App, private readonly strings: NoteInputStrings,
     private readonly create: (name: string, folderPath: string) => Promise<boolean>,
-    private readonly closed: () => void = () => undefined) {
-    super(app, { cancel: strings.cancel, submit: strings.create, submitting: strings.create });
+    private readonly closed: () => void = () => undefined,
+    private readonly options: NewTemplateModalOptions = {}) {
+    const submitLabel = options.submitLabel ?? strings.create;
+    super(app, { cancel: strings.cancel, submit: submitLabel, submitting: submitLabel });
+    this.name = options.name ?? "";
   }
   protected renderBody(): void {
-    this.setTitle(this.strings.newTemplate);
+    this.setTitle(this.options.title ?? this.strings.newTemplate);
     this.suggest?.dispose(); this.inputs = [];
     new Setting(this.contentEl).setName(this.strings.templateName).setDesc(this.strings.templateNameDesc).addText((text) => {
       this.inputs.push(text.inputEl);

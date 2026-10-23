@@ -360,6 +360,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     appendCardFavoriteMenuItem: (menu, notePath) => {
       favoriteActions.appendCardFavoriteMenuItem(menu, notePath);
     },
+    appendTemplateFileMenu: (menu, file) => templateActions.appendFileMenu(menu, file),
     removeMemberFromActiveBox: (notePath) => boxActions.removeMemberFromActiveBox(notePath),
     copyCardTitle: (notePath) => fileActions.copyCardTitle(notePath),
     copyCardContent: (notePath) => fileActions.copyCardContent(notePath),

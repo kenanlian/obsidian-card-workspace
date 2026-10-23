@@ -1,4 +1,5 @@
 import { normalizeNavigationSorting } from "../navigation-sorting";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, type NoteTemplateDefinition } from "../note-input";
 /**
  * Shared FolderCardView + mocked-panel harness for node-project tests.
  * Architecture tests skip `__mocks__/`; this is test infrastructure, not production.
@@ -1170,6 +1171,8 @@ export function createViewWithFile(
       pinnedPaths: [],
       searchHistory: [],
       previewLines: 5,
+      templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
+      noteTemplates: [] as NoteTemplateDefinition[],
     })),
     getUiLanguage: vi.fn(() => "en"),
     getUiStrings: vi.fn(() => getUiStrings("en")),

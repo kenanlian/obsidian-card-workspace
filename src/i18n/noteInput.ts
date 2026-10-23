@@ -4,6 +4,7 @@ export interface NoteInputStrings {
   templates: string;
   templatesEmpty: string;
   newTemplate: string;
+  setAsTemplate: string;
   editTemplate: string;
   targetFolder: string;
   dateFormat: string;
@@ -88,7 +89,7 @@ export interface NoteInputStrings {
 
 export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   en: {
-    templates: "Templates", templatesEmpty: "No templates registered", newTemplate: "New template",
+    templates: "Templates", templatesEmpty: "No templates registered", newTemplate: "New template", setAsTemplate: "Set as template",
     editTemplate: "Edit template", targetFolder: "New note folder",
     dateFormat: "Date format", timeFormat: "Time format", deleteTemplate: "Delete template",
     templateInsertPosition: "Insert position in an existing note", insertBodyStart: "Start of body (after properties)",
@@ -144,7 +145,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     sent: (path) => `Sent to ${path}`, noteCreated: (path) => `Created ${path}`, noteOpened: (path) => `Opened ${path}`,
   },
   zh: {
-    templates: "模板", templatesEmpty: "尚未注册模板", newTemplate: "新建模板",
+    templates: "模板", templatesEmpty: "尚未注册模板", newTemplate: "新建模板", setAsTemplate: "设置为模板",
     editTemplate: "编辑模板", targetFolder: "新建笔记文件夹", dateFormat: "日期格式", timeFormat: "时间格式", deleteTemplate: "删除模板",
     templateInsertPosition: "同名笔记插入位置", insertBodyStart: "正文开头（属性之后）",
     templateName: "模板名称", templateNameDesc: "用于在导航区和模板选择中显示，不作为使用模板创建的笔记文件名。",

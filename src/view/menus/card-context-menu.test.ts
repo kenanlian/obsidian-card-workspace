@@ -42,6 +42,25 @@ describe("card context menu contract", () => {
     resetFolderCardViewHarness();
   });
 
+  it("offers registration for an unregistered file in template storage and routes its click", () => {
+    const { view, file, plugin } = createViewWithFile("Templates/Synced.md");
+    plugin.getSettings.mockReturnValue({ ...plugin.getSettings(), templateStorageFolder: "Templates" });
+    const register = vi.spyOn(view.modules.templateActions, "setAsTemplate").mockImplementation(() => undefined);
+    view.modules.cardMenu.open({ notePath: file.path, trigger: "button", position: { x: 12, y: 18 } });
+    const item = mockState.menuInstances[0]?.items.find((entry) => entry.title === "Set as template");
+    expect(getMenuStructure(mockState.menuInstances[0]!)).toEqual([
+      "Open in current window", "Open in new tab", "Open to the right", "Open in new window",
+      "separator", "Make a copy", "Move file to...", "separator",
+      "Add to card box -> New card box…", "Add to favorites",
+      "Copy title", "Copy content", "Copy title & content", "separator",
+      "Add/remove tags...", "Add/remove properties...", "separator",
+      "Set as template", "separator", "Rename...", "Delete",
+    ]);
+    expect(item).toBeDefined(); item?.clickHandler?.();
+    expect(register).toHaveBeenCalledExactlyOnceWith(file);
+    register.mockRestore();
+  });
+
     it("openCardContextMenu shows the shared menu with destination items for contextmenu trigger", () => {
       const { view, file } = createViewWithFile();
       const mouseEvent = { clientX: 12, clientY: 24 } as MouseEvent;

@@ -381,6 +381,7 @@ vi.mock("./view/FolderCardView", () => {
 });
 
 vi.mock("./input/QuickInputView", () => ({ QUICK_INPUT_VIEW: "card-workspace-quick-input", QuickInputView: class {} }));
+vi.mock("./view/actions/template-actions", () => ({ TemplateActions: class { appendFileMenu() {} } }));
 
 vi.mock("obsidian", () => {
   class MockComponent {
@@ -531,7 +532,8 @@ vi.mock("obsidian", () => {
 
 vi.mock("./input/template-editor", () => ({ focusTemplateEditor: vi.fn(), focusTemplateNote: vi.fn(async () => {}) }));
 import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
-import { MarkdownView, TFile, TFolder } from "obsidian";
+import { MarkdownView, Menu, TFile, TFolder } from "obsidian";
+import { TemplateActions } from "./view/actions/template-actions";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
 import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
@@ -3788,6 +3790,21 @@ describe("template creation assembly", () => {
 
 describe("template editor opening", () => {
   beforeEach(() => { vi.mocked(focusTemplateEditor).mockClear(); });
+  it("registers the native file menu without requiring a card view", async () => {
+    const { plugin } = createPluginHarness();
+    const append = vi.spyOn(TemplateActions.prototype, "appendFileMenu");
+    plugin.onload(); await waitForPluginLoad(plugin);
+    const menu = new Menu(), file = Object.assign(new TFile(), { path: "Card Workspace Templates/Daily.md" });
+    obsidianMockState.workspaceCallbacks["file-menu"]!(menu, file, "file-explorer");
+    expect(append).toHaveBeenCalledExactlyOnceWith(menu, file);
+    obsidianMockState.workspaceCallbacks["file-menu"]!(menu, Object.assign(new TFolder(), { path: "Templates" }), "file-explorer");
+    expect(append).toHaveBeenCalledOnce();
+    expect((plugin as unknown as { registerEvent: ReturnType<typeof vi.fn> }).registerEvent).toHaveBeenCalledWith({ eventName: "file-menu" });
+    plugin.onunload();
+    obsidianMockState.workspaceCallbacks["file-menu"]!(menu, file, "file-explorer");
+    expect(append).toHaveBeenCalledOnce();
+    append.mockRestore();
+  });
   it("waits for settings initialization before allowing template filesystem operations", async () => {
     const { plugin } = createPluginHarness();
     const barrier = deferred();

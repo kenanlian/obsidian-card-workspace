@@ -43,6 +43,42 @@ export class TemplateActions {
     // Repeating the same patch lets the host flush a prior failed disk write.
     await this.deps.saveSettings({ noteTemplates: registered ? templates.map((template) => template.filePath === file.path ? { ...template, name, targetFolderPath } : template) : [...templates, this.definition(file.path, name, targetFolderPath)] });
   }
+  private isStorageFile(file: TFile): boolean {
+    const folder = normalizeTemplateFolderPath(this.deps.getSettings().templateStorageFolder);
+    return file.extension.toLowerCase() === "md"
+      && this.deps.app.vault.getAbstractFileByPath(file.path) === file
+      && folder !== null && (folder === "" || file.path.startsWith(`${folder}/`));
+  }
+  appendFileMenu(menu: Menu, file: TFile): boolean {
+    if (!this.isStorageFile(file) || this.deps.getSettings().noteTemplates.some((template) => template.filePath === file.path)) return false;
+    addItem(menu, this.strings.setAsTemplate, "file-plus-2", () => this.setAsTemplate(file));
+    return true;
+  }
+  setAsTemplate(file: TFile): void {
+    if (!this.isStorageFile(file)) return;
+    let pending = false;
+    const register = async (name: string, rawFolderPath: string): Promise<boolean> => {
+      if (pending) return false;
+      pending = true;
+      const work = async () => {
+        const displayName = name.trim();
+        if (!displayName) { this.deps.notify(this.strings.invalidTemplateName); return false; }
+        const folderPath = normalizeTemplateFolderPath(rawFolderPath);
+        const folder = folderPath === "" ? this.deps.app.vault.getRoot()
+          : folderPath === null ? null : this.deps.app.vault.getAbstractFileByPath(folderPath);
+        if (!(folder instanceof TFolder)) { this.deps.notify(this.strings.targetFolderNotFound); return false; }
+        if (!this.isStorageFile(file)) { this.deps.notify(this.strings.templateUnavailable); return false; }
+        await this.register(file, displayName, folderPath!);
+        return true;
+      };
+      try { return await (this.deps.runOperation ? this.deps.runOperation(work) : work()); }
+      catch (error) { this.deps.notify(this.strings.saveTemplateFailed(String(error))); return false; }
+      finally { pending = false; }
+    };
+    new NewTemplateModal(this.deps.app, this.strings, register, undefined, {
+      name: file.basename, title: this.strings.setAsTemplate, submitLabel: this.strings.apply,
+    }).open();
+  }
   newTemplate(): void {
     // Keep the created file across a failed registration retry.
     let created: TFile | null = null;

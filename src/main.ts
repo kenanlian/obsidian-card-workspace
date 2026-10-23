@@ -6,6 +6,7 @@
 
 import { NoteCreationService, NoteInputError } from "./services/NoteCreationService";
 import { TemplateStorageService } from "./services/TemplateStorageService";
+import { TemplateActions } from "./view/actions/template-actions";
 import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
 import type { TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
@@ -202,6 +203,16 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerView(QUICK_INPUT_VIEW, (leaf) => new QuickInputView(leaf, {
       getTitle: () => this.getUiStrings().noteInput.quickInput,
       discard: (view) => this.app.workspace.onLayoutReady(() => { view.leaf.detach(); }),
+    }));
+    const templateActions = new TemplateActions({
+      app: this.app, getSettings: () => this.getSettings(),
+      saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
+      openNote: (path, selectTitle) => this.openTemplateEditor(path, selectTitle),
+      runOperation: (work) => this.runTemplateOperation(work),
+      notify: (message) => { if (!this.disposed) new Notice(message); }, getStrings: () => this.getUiStrings(),
+    });
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      if (!this.disposed && file instanceof TFile) templateActions.appendFileMenu(menu, file);
     }));
     this.registerEvent(this.app.workspace.on("quit", () => this.disposeRuntime()));
     this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, win) => {

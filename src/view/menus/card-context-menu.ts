@@ -22,6 +22,7 @@ export interface CardContextMenuDeps {
   isBoxMode: () => boolean;
   appendAddToBoxMenu: (menu: Menu, paths: string[]) => void;
   appendCardFavoriteMenuItem: (menu: Menu, notePath: string) => void;
+  appendTemplateFileMenu: (menu: Menu, file: TFile) => boolean;
   removeMemberFromActiveBox: (notePath: string) => Promise<void>;
   copyCardTitle: (notePath: string) => Promise<void>;
   copyCardContent: (notePath: string) => Promise<void>;
@@ -178,6 +179,10 @@ export class CardContextMenu {
     }
 
     menu.addSeparator();
+
+    if (liveMarkdownFile && this.deps.appendTemplateFileMenu(menu, liveMarkdownFile)) {
+      menu.addSeparator();
+    }
 
     addAction(strings.rename, "pencil", "rename");
     addAction(strings.delete, "trash", "delete");
