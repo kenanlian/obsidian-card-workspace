@@ -611,7 +611,7 @@ describe("quick input shared setting definitions", () => {
     }));
     const definitions = tab.getSettingDefinitions()[3]!;
     expect(definitions.heading).toBe("Quick input");
-    expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template (new note each time)", daily: "Daily.md", missing: "Template unavailable (missing)" } });
+    expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template", daily: "Daily.md", missing: "Template unavailable (missing)" } });
     expect(definitions.items[1]?.control).toBeUndefined();
     expect(definitions.items[1]?.render).toBeTypeOf("function");
     expect(tab.getControlValue("quickInputTemplateId")).toBe("missing");
