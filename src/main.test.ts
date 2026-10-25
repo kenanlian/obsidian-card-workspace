@@ -3301,10 +3301,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       },
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1));
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
       "Unsafe vault mutation requires full search rebuild.",
     );

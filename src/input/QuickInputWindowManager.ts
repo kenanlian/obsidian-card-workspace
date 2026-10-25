@@ -1,3 +1,4 @@
+import type { RuntimeActionResult } from "../runtime/platform";
 import { Platform, TFile, TFolder, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
 import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
@@ -56,8 +57,9 @@ export class QuickInputWindowManager {
 
   constructor(private readonly options: Options) {}
 
-  async open(source?: Window): Promise<void> {
-    if (this.disposed || source?.closed) return;
+  async open(source?: Window): Promise<RuntimeActionResult> {
+    const unavailable = { outcome: "unavailable", reason: "host" } as const;
+    if (this.disposed || source?.closed) return unavailable;
     let session: Session | undefined;
     let mountingEditor = false;
     let preparingTemplate = false;
@@ -76,7 +78,7 @@ export class QuickInputWindowManager {
       this.sessions.set(id, session);
       const opened = await this.options.desktop.createWindow({ id, placement, signal: session.abort.signal });
       if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
-        opened.dispose(); this.closeSession(session); return;
+        opened.dispose(); this.closeSession(session); return unavailable;
       }
       session.window = opened;
       let initialValue = "";
@@ -87,7 +89,7 @@ export class QuickInputWindowManager {
         templateReady = true;
         preparingTemplate = false;
         if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
-          this.closeSession(session); return;
+          this.closeSession(session); return unavailable;
         }
       }
       mountingEditor = true;
@@ -96,7 +98,7 @@ export class QuickInputWindowManager {
       // Force style/layout before the first reveal. A hidden native window may
       // never deliver rAF, even with background throttling disabled.
       await this.waitForLayout(session);
-      if (session.closed || this.disposed || opened.handle.isDestroyed()) return;
+      if (session.closed || this.disposed || opened.handle.isDestroyed()) return unavailable;
       if (id === this.latestOpenId) {
         opened.handle.show();
         opened.handle.focus();
@@ -105,12 +107,14 @@ export class QuickInputWindowManager {
         // Reveal only this late draft; do not refocus or reorder other windows.
         opened.handle.showInactive();
       }
+      return { outcome: "ok", value: undefined };
     } catch (error) {
       if (preparingTemplate) {
-        if (session?.closed || this.disposed) return;
+        if (session?.closed || this.disposed) return unavailable;
         if (session) this.closeSession(session);
         this.options.notify(error instanceof Error ? error.message : String(error));
       } else this.fail(session, error, mountingEditor);
+      return unavailable;
     }
   }
 

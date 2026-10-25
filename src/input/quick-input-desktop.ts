@@ -1,7 +1,7 @@
 import { Platform } from "obsidian";
 import { prepareQuickInputDocument } from "./quick-input-document";
 
-export const QUICK_INPUT_VIEW = "card-workspace-quick-input";
+export { QUICK_INPUT_VIEW } from "./quick-input-contract";
 export interface QuickInputRectangle { x: number; y: number; width: number; height: number }
 /** Capability-checked host internals, verified against Obsidian 1.11.4.
  * Never resolve a target through the currently focused Electron window.

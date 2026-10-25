@@ -1021,3 +1021,43 @@ describe("input creation ownership", () => {
     expect(eagerWindowImports).toEqual([]);
   });
 });
+
+describe("runtime platform admission boundary", () => {
+  const adapters = ["src/view/desktop-shell.ts", "src/input/quick-input-desktop.ts", "src/services/NativeFileDragController.ts"];
+  const assemblers = ["src/main.ts", "src/runtime/platform-services.ts", "src/input/QuickInputWindowManager.ts"];
+
+  it("keeps shared consumers off desktop implementations", () => {
+    const violations: string[] = [];
+    for (const [file, dependencies] of runtimeDependencyGraph) {
+      if (assemblers.includes(file) || adapters.includes(file)) continue;
+      for (const dependency of dependencies.local) if (adapters.includes(dependency)) violations.push(`${file} -> ${dependency}`);
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("allows native resolution only inside guarded adapter functions, never native import()", () => {
+    const violations: string[] = [];
+    for (const [file, dependencies] of runtimeDependencyGraph) {
+      if (isUnder(file, "src/benchmark")) continue;
+      const native = (specifier: string) => specifier === "electron" || specifier === "@electron/remote"
+        || specifier.startsWith("node:") || ["fs", "path", "os", "buffer", "util", "module", "child_process", "crypto", "stream"].includes(specifier);
+      for (const specifier of dependencies.bare) if (native(specifier)) violations.push(`${file}: native import ${specifier}`);
+      const source = analyzedSource(file, fs.readFileSync(path.join(repoRoot, file), "utf8"));
+      const ast = parseTypeScript(source);
+      const visit = (node: ts.Node, inFunction: boolean): void => {
+        const nested = inFunction || ts.isFunctionLike(node);
+        if (ts.isCallExpression(node) && node.arguments.some(argument => ts.isStringLiteral(argument) && native(argument.text))) {
+          const loader = node.expression.kind === ts.SyntaxKind.ImportKeyword
+            || ts.isIdentifier(node.expression) && node.expression.text === "require"
+            || ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "require";
+          if (loader && (!adapters.includes(file) || !inFunction || node.expression.kind === ts.SyntaxKind.ImportKeyword || !source.includes("Platform.isDesktopApp"))) {
+            violations.push(`${file}: unguarded native resolution`);
+          }
+        }
+        ts.forEachChild(node, child => visit(child, nested));
+      };
+      visit(ast, false);
+    }
+    expect(violations).toEqual([]);
+  });
+});

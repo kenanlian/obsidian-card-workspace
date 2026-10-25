@@ -438,6 +438,8 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.modules.navLayout.refreshNavState();
   }
 
+  getRuntimeDiagnostics() { return { preview: this.modules.hydration.getDiagnostics(), images: this.modules.images.getDiagnostics() }; }
+
   cleanupLifecycle(): CleanupResult {
     this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
     this.viewEventUnsubscribe?.();

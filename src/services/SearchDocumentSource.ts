@@ -1,3 +1,4 @@
+import { RuntimePhaseTimings } from "../runtime/diagnostics";
 import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { TFile, type App } from "obsidian";
@@ -38,6 +39,10 @@ export interface SearchDocumentPreparer {
 
 /** Reads vault documents in stable enumeration order with a fixed-size worker pool. */
 export class SearchDocumentSource {
+  private readonly timings = new RuntimePhaseTimings();
+  private activeReaders = 0;
+  private queuedReads = 0;
+  getDiagnostics() { return { activeReaders: this.activeReaders, queuedReads: this.queuedReads, gate: this.workGate?.getDiagnostics(), phases: this.timings.snapshot() }; }
   constructor(
     private readonly app: App,
     private readonly prepare: SearchDocumentPreparer,
@@ -78,48 +83,53 @@ export class SearchDocumentSource {
    * once while only one window of prepared documents is alive at a time.
    */
   async *streamDocuments(signal?: AbortSignal): AsyncGenerator<SearchableDocument[]> {
-    if (signal?.aborted) {
+    if (signal?.aborted || this.workGate?.isClosed) {
       return;
     }
 
     const files = this.listIndexableFiles();
-    for (let start = 0; start < files.length; start += this.budget.batchSize) {
-      const window = files.slice(start, start + this.budget.batchSize);
-      const results: Array<SearchableDocument | null> = Array.from({ length: window.length }, () => null);
-      let cursor = 0;
-      const worker = async (): Promise<void> => {
-        while (true) {
-          if (signal?.aborted) return;
-          if (this.workGate && !(await this.workGate.wait(signal))) return;
-          if (signal?.aborted) return;
-          const index = cursor;
-          if (index >= window.length) {
-            return;
-          }
-          cursor += 1;
-          try {
-            const document = await this.prepare(window[index]);
-            if (signal?.aborted) {
+    const finishTiming = this.timings.start("read-source");
+    this.queuedReads = files.length;
+    try {
+      for (let start = 0; start < files.length; start += this.budget.batchSize) {
+        const window = files.slice(start, start + this.budget.batchSize);
+        const results: Array<SearchableDocument | null> = Array.from({ length: window.length }, () => null);
+        let cursor = 0;
+        const worker = async (): Promise<void> => {
+          while (true) {
+            if (signal?.aborted || this.workGate?.isClosed) return;
+            if (this.workGate && !(await this.workGate.wait(signal))) return;
+            if (signal?.aborted || this.workGate?.isClosed) return;
+            const index = cursor;
+            if (index >= window.length) {
               return;
             }
-            results[index] = document;
-          } catch {
-            results[index] = null;
+            cursor += 1;
+            this.queuedReads--; this.activeReaders++;
+            try {
+              const document = await this.prepare(window[index]);
+              if (signal?.aborted || this.workGate?.isClosed) {
+                return;
+              }
+              results[index] = document;
+            } catch {
+              results[index] = null;
+            } finally { this.activeReaders--; }
           }
-        }
-      };
+        };
 
-      await Promise.all(
-        Array.from({ length: Math.min(this.budget.readers, window.length) }, worker),
-      );
-      if (signal?.aborted) {
-        return;
+        await Promise.all(
+          Array.from({ length: Math.min(this.budget.readers, window.length) }, worker),
+        );
+        if (signal?.aborted || this.workGate?.isClosed) {
+          return;
+        }
+        const batch = results.filter((document): document is SearchableDocument => document !== null);
+        if (batch.length > 0) {
+          yield batch;
+        }
       }
-      const batch = results.filter((document): document is SearchableDocument => document !== null);
-      if (batch.length > 0) {
-        yield batch;
-      }
-    }
+    } finally { this.queuedReads = 0; finishTiming(); }
   }
 
   /** Concatenation of `streamDocuments`, so the two can never diverge in enumeration, filtering, or order. */
@@ -128,7 +138,7 @@ export class SearchDocumentSource {
     for await (const batch of this.streamDocuments(signal)) {
       documents.push(...batch);
     }
-    return signal?.aborted ? [] : documents;
+    return signal?.aborted || this.workGate?.isClosed ? [] : documents;
   }
 
   async readDocument(path: string): Promise<SearchableDocument | null> {

@@ -1,3 +1,4 @@
+import { RuntimePhaseTimings } from "../runtime/diagnostics";
 import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { imageKey,
@@ -14,6 +15,7 @@ export interface ThumbnailServiceDeps {
 }
 /** Plugin-wide single cold task, dedupe, bounded Blob LRU and demand-only persistence. */
 export class ThumbnailService {
+  private readonly timings = new RuntimePhaseTimings();
   private readonly memory = new Map<string, Blob>();
   private readonly touched = new Map<string, number>();
   private readonly outcomes = new Map<string, ThumbnailResult>();
@@ -91,7 +93,8 @@ export class ThumbnailService {
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); this.pump(); return; }
     if (!this.deps.generator.available()) { this.finish(job, { status: "skipped" }); this.pump(); return; }
     job.phase = "active"; this.active = true;
-    void this.generate(job).finally(() => { this.active = false; this.pump(); });
+    const finishTiming = this.timings.start("thumbnail");
+    void this.generate(job).finally(() => { finishTiming(); this.active = false; this.pump(); });
   }
   private async generate(job: Job): Promise<void> {
     let result: ThumbnailResult = { status: "skipped" };
@@ -132,8 +135,9 @@ export class ThumbnailService {
     this.memory.set(key, blob); this.touched.set(key, Date.now()); this.bytes += blob.size;
     while (this.memory.size > this.budget.thumbnails.memoryEntries || this.bytes > this.budget.thumbnails.memoryBytes) this.remove(this.memory.keys().next().value!);
   }
-  getDiagnostics(): { entries: number; bytes: number; jobs: number; active: number; owners: number } {
-    return { entries: this.memory.size, bytes: this.bytes, jobs: this.jobs.size, active: Number(this.active), owners: this.owners };
+  getDiagnostics() {
+    return { entries: this.memory.size, bytes: this.bytes, jobs: this.jobs.size, active: Number(this.active), owners: this.owners, queued: [...this.jobs.values()].filter(job => job.phase === "queued").length,
+      gate: this.deps.workGate?.getDiagnostics(), phases: this.timings.snapshot() };
   }
   dispose(): void {
     this.disposed = true;

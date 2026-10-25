@@ -271,6 +271,23 @@ describe("SearchCoordinator vault subscription", () => {
     coordinator.dispose(); gate.close();
   });
 
+  it("lets a scheduled rebuild satisfy the resume retry without a duplicate scan", async () => {
+    const { coordinator } = createHarness(""); const gate = new RuntimeWorkGate();
+    const guard = { canAutoBuild: async () => true, markBuildStarted: async () => 0,
+      markBuildCancelled: async () => {}, markBuildCompleted: vi.fn(async () => {}) };
+    const manager = { rebuildFromSource: vi.fn(async () => ({ outcome: "success" })) };
+    manager.rebuildFromSource.mockImplementationOnce(async () => { gate.setActive(false); return { outcome: "cancelled" }; });
+    const internals = coordinator as unknown as { deps: { workGate: RuntimeWorkGate }; buildGuard: typeof guard; searchManager: typeof manager;
+      searchSnapshot: { status: string }; layoutReady: boolean; pendingPausedRetry: Promise<void> };
+    internals.deps.workGate = gate; internals.buildGuard = guard; internals.searchManager = manager;
+    internals.searchSnapshot = { status: "ready" }; internals.layoutReady = true;
+    await coordinator.rebuild("cancelled");
+    const scheduled = coordinator.rebuild("folder mutation while hidden");
+    gate.setActive(true); await scheduled; await internals.pendingPausedRetry;
+    expect(manager.rebuildFromSource).toHaveBeenCalledTimes(2);
+    coordinator.dispose(); gate.close();
+  });
+
   it("clears the suspension and marks the attempt before the build starts", async () => {
     const { coordinator } = createHarness("");
     const order: string[] = [];

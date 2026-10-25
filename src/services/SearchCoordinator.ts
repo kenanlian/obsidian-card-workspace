@@ -81,6 +81,8 @@ export class SearchCoordinator {
   private pendingInitialization: Promise<void> | null = null;
   private readonly lifetime = new AbortController();
   private pausedRetryRequested = false;
+  private successfulRebuildRevision = 0;
+  private pausedRetryRevision = 0;
   private pendingPausedRetry: Promise<void> | null = null;
   private disposed = false;
 
@@ -171,6 +173,9 @@ export class SearchCoordinator {
     this.pendingSearchRecovery = null;
     this.pendingRestoredSearchStateSync = null;
   }
+
+  getResourceDiagnostics() { return { gate: this.deps.workGate?.getDiagnostics(), bufferedMutations: this.bufferedMutations.length,
+    retryPending: this.pausedRetryRequested || this.pendingPausedRetry !== null, manager: this.searchManager?.getDiagnostics() ?? null }; }
 
   getService(): SearchService | null {
     return this.searchService;
@@ -284,6 +289,7 @@ export class SearchCoordinator {
     if (this.disposed || this.searchManager !== manager) return;
     if (result?.outcome !== "failed" && this.searchSnapshot?.status === "ready") {
       await guard?.markBuildCompleted();
+      this.successfulRebuildRevision++;
     }
   }
 
@@ -537,7 +543,7 @@ export class SearchCoordinator {
     if (this.pendingMutationRecoveryRebuild) {
       return;
     }
-    this.pendingMutationRecoveryRebuild = this.rebuild(
+    this.pendingMutationRecoveryRebuild = this.runStartupRebuildIfPermitted(
       "Unsafe vault mutation requires full search rebuild.",
     )
       .catch((error) => {
@@ -665,17 +671,19 @@ export class SearchCoordinator {
   /** One retry after cleanup and resume; repeated hidden mutations never grow a journal. */
   private schedulePausedRetry(): void {
     if (this.disposed) return;
+    this.pausedRetryRevision = this.successfulRebuildRevision;
     this.pausedRetryRequested = true;
     if (this.pendingPausedRetry) return;
     const manager = this.searchManager;
     this.pendingPausedRetry = Promise.resolve().then(async () => {
       while (this.pausedRetryRequested && !this.disposed && this.searchManager === manager) {
         this.pausedRetryRequested = false;
+        const requiredAfter = this.pausedRetryRevision;
         if (this.deps.workGate && !(await this.deps.workGate.wait(this.lifetime.signal))) return;
         await this.pendingSearchRebuild;
         await this.pendingRestoredSearchStateSync;
         if (this.disposed || this.searchManager !== manager) return;
-        await this.runStartupRebuildIfPermitted("Vault changed during paused source work.");
+        if (this.successfulRebuildRevision <= requiredAfter) await this.runStartupRebuildIfPermitted("Vault changed during paused source work.");
       }
     }).catch((error: unknown) => {
       if (!this.disposed) console.warn("[Card Workspace] Resumed search rebuild failed.", error);

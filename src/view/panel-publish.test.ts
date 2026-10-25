@@ -1,3 +1,4 @@
+import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", async () => ({
@@ -57,6 +58,7 @@ function createCard(path: string): NoteCardRecord {
 
 function buildState(): PanelModelState {
   return {
+    capabilities: UNSUPPORTED_CAPABILITIES,
     strings: getUiStrings("en"),
     scope: {
       displayPath: "/",
@@ -272,7 +274,9 @@ function expectOnlyGroupsChanged(
 ): void {
   const changed = new Set(changedGroups);
   for (const group of PANEL_GROUPS) {
-    if (changed.has(group)) {
+    if (group === "capabilities") {
+      expect(next.capabilities).toBe(initial.capabilities);
+    } else if (changed.has(group)) {
       expect(next[group], `${group} should be replaced`).not.toBe(initial[group]);
     } else {
       expect(next[group], `${group} should retain its reference`).toBe(initial[group]);

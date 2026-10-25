@@ -39,7 +39,7 @@ interface AppLike {
 }
 
 function getPathAdapter(app: AppLike): FileSystemAdapterLike {
-  return app.vault.adapter as FileSystemAdapterLike;
+  return app.vault.adapter ?? {};
 }
 
 function getErrorMessage(error: unknown, strings: DesktopShellStrings): string {
@@ -78,6 +78,7 @@ function getDesktopShell(): DesktopShell {
   // window.require on desktop; the lexical CJS loader covers older hosts.
   if (!Platform.isDesktopApp) throw new Error("Desktop shell unavailable");
   const host = window as Window & { require?: (id: string) => unknown };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- guarded CJS adapter; native import() cannot resolve Electron in Obsidian.
   const module = (host.require ? host.require("electron") : typeof require === "function" ? require("electron") : null) as { shell?: unknown } | null;
   if (!isDesktopShell(module?.shell)) throw new Error("Desktop shell unavailable");
   return module.shell;

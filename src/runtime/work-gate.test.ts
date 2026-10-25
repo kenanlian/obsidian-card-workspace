@@ -53,6 +53,16 @@ describe("workspace visibility", () => {
     expect(activity.getDiagnostics()).toMatchObject({ documents: 0, regions: 0 });
   });
 
+  it("falls back to viewport bounds for translated or offscreen regions", () => {
+    const activity = new RuntimeActivity(), main = documentFixture();
+    Object.assign(main.doc.defaultView!, { innerWidth: 800, innerHeight: 600 });
+    const element = { ownerDocument: main.doc, isConnected: true, getBoundingClientRect: () => ({ width: 300, height: 500, top: 900, bottom: 1400, left: 0, right: 300 }) };
+    const gate = new RuntimeWorkGate(); activity.observeRegion(element as unknown as HTMLElement, gate);
+    expect(gate.isPaused).toBe(true);
+    element.getBoundingClientRect = () => ({ width: 300, height: 500, top: 0, bottom: 500, left: 0, right: 300 });
+    activity.refresh(); expect(gate.isActive).toBe(true); activity.dispose();
+  });
+
   it("uses intersection observations and ignores focus/blur", () => {
     const activity = new RuntimeActivity(), main = documentFixture();
     let changed!: IntersectionObserverCallback;

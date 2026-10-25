@@ -1,3 +1,4 @@
+import { RuntimePhaseTimings } from "../runtime/diagnostics";
 import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import MiniSearch, { type AsPlainObject } from "minisearch";
@@ -60,6 +61,7 @@ export interface SearchIndexDocumentSource {
   readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]>;
   readDocument(path: string): Promise<SearchableDocument | null>;
   readCatalogSnapshot(): IndexStoreDocumentCatalog;
+  getDiagnostics?(): unknown;
 }
 
 export type SearchBuildResult = { outcome: "success" | "cancelled" | "failed" };
@@ -112,6 +114,9 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
 };
 
 export class SearchIndexManager {
+  private readonly timings = new RuntimePhaseTimings();
+  getDiagnostics() { return { sourceWorkPending: this.sourceWorkPending, mutationJournal: this.mutationJournal?.length ?? 0,
+    retryPending: this.pausedInvalidated, gate: this.options.workGate?.getDiagnostics(), phases: this.timings.snapshot(), source: this.documentSource.getDiagnostics?.() }; }
   /**
    * Incremental mutations keep the in-memory index current immediately, but the
    * full-index serialization is coalesced: deleting a folder fans out one event
@@ -546,11 +551,13 @@ export class SearchIndexManager {
       return this.sourceWorkPromise;
     }
     if (this.disposed) return { outcome: "cancelled" };
+    const finishTiming = this.timings.start("replacement");
     const run = this.runReplacementLoop(kind, detail);
     this.sourceWorkPromise = run;
     try {
       return await run;
     } finally {
+      finishTiming();
       if (this.sourceWorkPromise === run) this.sourceWorkPromise = null;
     }
   }
@@ -581,7 +588,8 @@ export class SearchIndexManager {
       let carryOverTerms = 0;
       for await (const batch of this.documentSource.streamDocuments(signal)) {
         if (!isCurrent()) return;
-        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms, this.options.workGate);
+        const finishIngest = this.timings.start("ingest");
+        try { carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms, this.options.workGate); } finally { finishIngest(); }
         for (const document of batch) {
           replacementDocuments.set(document.path, document);
           replacementCatalog.set(document.path, document.mtime);
@@ -744,54 +752,57 @@ export class SearchIndexManager {
     documentCount: number,
     lastIndexedAt: number,
   ): Promise<boolean> {
-    if (!this.expectedMetadata) {
-      return false;
-    }
-
-    // Snapshotting the index is the most expensive step in the whole pipeline;
-    // never pay for it when the destination cannot accept the write anyway.
-    if (!this.store.isAvailable()) {
-      this.applyWriteFailure({
-        outcome: "failed",
-        reason: "unavailable",
-        detail: "IndexedDB unavailable.",
-      });
-      return false;
-    }
-
-    if (index.dirtCount >= SearchIndexManager.VACUUM_MIN_DIRT_COUNT) {
-      try {
-        await index.vacuum();
-      } catch (error) {
-        // A vacuum is an optimization; losing the snapshot over one would be
-        // strictly worse than persisting an index that still carries tombstones.
-        console.warn("Search index vacuum failed; serializing without it.", error);
+    const finishTiming = this.timings.start("persist");
+    try {
+      if (!this.expectedMetadata) {
+        return false;
       }
+
+      // Snapshotting the index is the most expensive step in the whole pipeline;
+      // never pay for it when the destination cannot accept the write anyway.
+      if (!this.store.isAvailable()) {
+        this.applyWriteFailure({
+          outcome: "failed",
+          reason: "unavailable",
+          detail: "IndexedDB unavailable.",
+        });
+        return false;
+      }
+
+      if (index.dirtCount >= SearchIndexManager.VACUUM_MIN_DIRT_COUNT) {
+        try {
+          await index.vacuum();
+        } catch (error) {
+          // A vacuum is an optimization; losing the snapshot over one would be
+          // strictly worse than persisting an index that still carries tombstones.
+          console.warn("Search index vacuum failed; serializing without it.", error);
+        }
+        if (this.disposed) return false;
+      }
+
+      const writeResult = await this.store.write(
+        {
+          ...this.expectedMetadata,
+          documentCount,
+          lastIndexedAt,
+        },
+        {
+          serializedIndex: index.toJSON(),
+          documentCount,
+          lastIndexedAt,
+          documentCatalog: catalog.toSerializable(),
+        },
+      );
+
       if (this.disposed) return false;
-    }
+      if (writeResult.outcome === "failed") {
+        this.applyWriteFailure(writeResult);
+        return false;
+      }
 
-    const writeResult = await this.store.write(
-      {
-        ...this.expectedMetadata,
-        documentCount,
-        lastIndexedAt,
-      },
-      {
-        serializedIndex: index.toJSON(),
-        documentCount,
-        lastIndexedAt,
-        documentCatalog: catalog.toSerializable(),
-      },
-    );
-
-    if (this.disposed) return false;
-    if (writeResult.outcome === "failed") {
-      this.applyWriteFailure(writeResult);
-      return false;
-    }
-
-    this.catalogAvailable = true;
-    return true;
+      this.catalogAvailable = true;
+      return true;
+    } finally { finishTiming(); }
   }
 
   private applyWriteFailure(writeResult: IndexStoreWriteFailureResult): void {

@@ -16,7 +16,8 @@ export class RuntimeActivity {
     if (!lease) {
       const changed = () => this.refresh();
       doc.addEventListener("visibilitychange", changed);
-      lease = { count: 0, stop: () => doc.removeEventListener("visibilitychange", changed) };
+      doc.defaultView?.addEventListener?.("resize", changed);
+      lease = { count: 0, stop: () => { doc.removeEventListener("visibilitychange", changed); doc.defaultView?.removeEventListener?.("resize", changed); } };
       this.documents.set(doc, lease);
     }
     lease.count++;
@@ -38,11 +39,14 @@ export class RuntimeActivity {
     let releaseDocument = this.trackDocument(doc);
     let intersection: boolean | null = null;
     let observer: IntersectionObserver | null = null;
+    let observerGeneration = 0;
     const observe = () => {
+      const generation = ++observerGeneration;
       observer?.disconnect();
       const Observer = (doc.defaultView as (Window & { IntersectionObserver?: typeof IntersectionObserver }) | null)?.IntersectionObserver;
       if (Observer) {
         observer = new Observer((entries) => {
+          if (generation !== observerGeneration || this.disposed) return;
           const entry = entries.find(item => item.target === element);
           if (entry) intersection = entry.isIntersecting;
           region.refresh();
@@ -59,12 +63,15 @@ export class RuntimeActivity {
         }
         const rect = element.getBoundingClientRect();
         const style = doc.defaultView?.getComputedStyle(element);
+        const win = doc.defaultView;
+        const overlapsViewport = !win || !(win.innerWidth > 0 && win.innerHeight > 0)
+          || (rect.bottom > 0 && rect.right > 0 && rect.top < win.innerHeight && rect.left < win.innerWidth);
         const visible = element.isConnected && doc.defaultView?.closed !== true && doc.visibilityState !== "hidden"
           && style?.display !== "none" && style?.visibility !== "hidden"
-          && rect.width > 0 && rect.height > 0 && intersection !== false;
+          && rect.width > 0 && rect.height > 0 && overlapsViewport && intersection !== false;
         gate.setActive(visible);
       },
-      stop: () => { observer?.disconnect(); releaseDocument(); gate.close(); },
+      stop: () => { observerGeneration++; observer?.disconnect(); releaseDocument(); gate.close(); },
     };
     this.regions.add(region); observe(); region.refresh();
     return () => { if (this.regions.delete(region)) region.stop(); };

@@ -173,6 +173,22 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.runtimePlatform.capabilities.nativeFileDrag ? this.nativeFileDragController.start(event, path) : null;
   }
 
+  /** Bounded on-demand evidence; per-view caches are additive, not process limits. */
+  getRuntimeDiagnostics() {
+    const views: ReturnType<FolderCardView["getRuntimeDiagnostics"]>[] = [];
+    let viewCount = 0, activePreviewReads = 0, previewCacheEntries = 0, diagramBytes = 0, searchSourceBytes = 0, objectUrls = 0;
+    this.withFolderViews((view) => {
+      const snapshot = view.getRuntimeDiagnostics(); viewCount++;
+      activePreviewReads += snapshot.preview.active; previewCacheEntries += snapshot.preview.cacheEntries;
+      diagramBytes += snapshot.preview.diagramBytes; searchSourceBytes += snapshot.preview.searchSources.estimatedBytes;
+      objectUrls += snapshot.images.objectUrls;
+      if (views.length < 16) views.push(snapshot);
+    });
+    return { resourceBudget: this.resourceBudget, activity: this.runtimeActivity.getDiagnostics(),
+      search: this.searchCoordinator.getResourceDiagnostics(), thumbnails: this.thumbnails?.service.getDiagnostics() ?? null,
+      totals: { viewCount, activePreviewReads, previewCacheEntries, diagramBytes, searchSourceBytes, objectUrls }, views, omittedViews: Math.max(0, viewCount - views.length) };
+  }
+
   getThumbnailService(): { service: ThumbnailService; vault: string } | null {
     if (this.disposed || this.getSettings().cardImageMode === "off") return null;
     if (!this.thumbnails) {
@@ -505,8 +521,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     const manager = await this.quickInputInitialization;
     if (!this.disposed && !win?.closed && manager) {
-      await manager.open(win);
-      return { outcome: "ok", value: undefined };
+      return await manager.open(win);
     }
     return { outcome: "unavailable", reason: "host" };
   }
@@ -523,6 +538,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
     const leaf = await this.resolveOpenDestinationLeaf(destination);
     if (!leaf || openSeq !== this.cardOpenSeq) {
+      if (!leaf && destination === "new-window") return { outcome: "unavailable", reason: "host" };
       return;
     }
 

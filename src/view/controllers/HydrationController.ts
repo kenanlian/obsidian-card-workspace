@@ -1,3 +1,4 @@
+import { RuntimePhaseTimings } from "../../runtime/diagnostics";
 import { DESKTOP_RESOURCE_BUDGET } from "../../runtime/resource-budget";
 import { TFile } from "obsidian";
 import { diagramDependencies, diagramSourceFingerprint, isDiagramKind, readDiagramPreview, type DiagramPreviewResult } from "../diagram-preview";
@@ -58,6 +59,7 @@ export interface HydrationControllerDeps {
 }
 /** Owns the per-view preview cache, demand queue, and incremental publication. */
 export class HydrationController implements DisposableController {
+  private readonly timings = new RuntimePhaseTimings();
   private readonly cache: PreviewCache;
   private readonly searchSources: SearchPreviewSourceCache;
   private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
@@ -229,7 +231,7 @@ export class HydrationController implements DisposableController {
   get startupCardCount(): number { return this.budget.preview.startupCards; }
   getDiagnostics() {
     return { gate: this.context.workGate?.getDiagnostics(), active: this.activeReads, queued: this.queue.length, cacheEntries: this.cache.size,
-      diagramBytes: this.cache.diagramBytes, searchSources: this.searchSources.getDiagnostics() };
+      diagramBytes: this.cache.diagramBytes, phases: this.timings.snapshot(), searchSources: this.searchSources.getDiagnostics() };
   }
   hasPending(path: string): boolean {
     return this.jobs.has(path);
@@ -515,7 +517,9 @@ export class HydrationController implements DisposableController {
       if (!job || this.jobs.get(job.path) !== job) continue;
       job.state = "active";
       this.activeReads += 1;
+      const finishTiming = this.timings.start("preview");
       void this.runJob(job).finally(() => {
+        finishTiming();
         this.activeReads -= 1;
         this.finishJob(job);
         this.pump();

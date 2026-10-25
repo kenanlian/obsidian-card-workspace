@@ -31,6 +31,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       settings.filter.properties.some(
         (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
       ),
+    canRevealInSystemExplorer: deps.context.runtimePlatform?.capabilities.systemFileManager ?? false,
     canResolveSystemPath: deps.context.runtimePlatform?.capabilities.systemPath ?? false,
     hasActiveFile: deps.context.getApp().workspace.getActiveFile() !== null,
     favorites: settings.favorites ?? [],
