@@ -1,13 +1,14 @@
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { readImageHeader, thumbnailDimensions } from "./image-header";
 import type { ThumbnailResult } from "./types";
-export async function generateThumbnail(buffer: ArrayBuffer, onEligible: () => void): Promise<ThumbnailResult> {
-  const header = readImageHeader(buffer);
+export async function generateThumbnail(buffer: ArrayBuffer, onEligible: () => void, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): Promise<ThumbnailResult> {
+  const header = readImageHeader(buffer, budget);
   if (!header) return { status: "skipped" };
   onEligible();
   let bitmap: ImageBitmap | null = null;
   let canvas: OffscreenCanvas | null = null;
   try {
-    const dimensions = thumbnailDimensions(header);
+    const dimensions = thumbnailDimensions(header, budget);
     bitmap = await createImageBitmap(new Blob([buffer], { type: header.mime }), {
       imageOrientation: "from-image", resizeWidth: dimensions.width, resizeHeight: dimensions.height,
       resizeQuality: "high",

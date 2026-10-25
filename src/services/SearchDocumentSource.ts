@@ -1,12 +1,13 @@
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { TFile, type App } from "obsidian";
 
 import { prepareSearchableDocument, type IndexStoreDocumentCatalog, type SearchableDocument } from "../search";
 import { isMarkdownCardKind, isSupportedCardFile, resolveCardFileKind } from "../view/file-kind";
 
-export const SEARCH_DOCUMENT_READ_CONCURRENCY = 8;
+export const SEARCH_DOCUMENT_READ_CONCURRENCY = DESKTOP_RESOURCE_BUDGET.search.readers;
 
 /** Files read per stream window, so a full build holds one window of prepared documents at a time. */
-export const SEARCH_DOCUMENT_BATCH_SIZE = 200;
+export const SEARCH_DOCUMENT_BATCH_SIZE = DESKTOP_RESOURCE_BUDGET.search.batchSize;
 
 export async function prepareSearchDocument(app: App, file: TFile): Promise<SearchableDocument | null> {
   try {
@@ -39,6 +40,7 @@ export class SearchDocumentSource {
   constructor(
     private readonly app: App,
     private readonly prepare: SearchDocumentPreparer,
+    private readonly budget: RuntimeResourceBudget["search"] = DESKTOP_RESOURCE_BUDGET.search,
   ) {}
 
   /**
@@ -79,8 +81,8 @@ export class SearchDocumentSource {
     }
 
     const files = this.listIndexableFiles();
-    for (let start = 0; start < files.length; start += SEARCH_DOCUMENT_BATCH_SIZE) {
-      const window = files.slice(start, start + SEARCH_DOCUMENT_BATCH_SIZE);
+    for (let start = 0; start < files.length; start += this.budget.batchSize) {
+      const window = files.slice(start, start + this.budget.batchSize);
       const results: Array<SearchableDocument | null> = Array.from({ length: window.length }, () => null);
       let cursor = 0;
       const worker = async (): Promise<void> => {
@@ -104,7 +106,7 @@ export class SearchDocumentSource {
       };
 
       await Promise.all(
-        Array.from({ length: Math.min(SEARCH_DOCUMENT_READ_CONCURRENCY, window.length) }, worker),
+        Array.from({ length: Math.min(this.budget.readers, window.length) }, worker),
       );
       if (signal?.aborted) {
         return;

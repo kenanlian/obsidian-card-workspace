@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { resolveVaultCacheNamespace } from "../runtime/vault-namespace";
 import { Notice, TFile, type App } from "obsidian";
 
@@ -39,6 +40,7 @@ type SearchRecoveryBoundaryState = "healthy" | "degraded";
 export type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
 export interface SearchCoordinatorDeps {
+  resourceBudget?: RuntimeResourceBudget;
   getVaultNamespace?: () => string;
   getApp: () => App;
   getUiStrings: () => UiStrings;
@@ -380,11 +382,12 @@ export class SearchCoordinator {
     const documentSource = new SearchDocumentSource(
       this.app,
       (file) => this.prepareSearchableDocumentFromFile(file),
+      this.deps.resourceBudget?.search ?? DESKTOP_RESOURCE_BUDGET.search,
     );
     const manager = new SearchIndexManager({
       store,
       documentSource,
-    });
+      resourceBudget: this.deps.resourceBudget?.search,    });
 
     const service = new IndexedSearchService(manager, {
       maxCandidatePaths: SEARCH_MAX_CANDIDATE_PATHS,

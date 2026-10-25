@@ -71,6 +71,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     super(leaf);
     this.plugin = plugin;
     this.context = {
+      resourceBudget: this.plugin.resourceBudget,
       runtimePlatform: this.plugin.runtimePlatform,
       getApp: () => this.app, store: this.store, epochs: this.epochs,
       getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.saveViewSettings(patch),

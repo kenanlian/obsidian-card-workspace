@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import { iterateSearchIndexTerms } from "../search-tokenization";
 import { SEARCH_MARKDOWN_MAX_LENGTH } from "./document-preparation";
 import { mapMarkdownSearchText } from "./mapped-search-text";
@@ -101,7 +102,9 @@ export class SearchPreviewSourceCache {
   private readonly entries = new Map<string, SearchPreviewSourceEntry>();
   private retainedBytes = 0;
 
-  constructor(private readonly maxBytes = 16 * 1024 * 1024, private readonly maxEntries = 64) {}
+  constructor(private readonly maxBytes = DESKTOP_RESOURCE_BUDGET.searchPreview.bytes, private readonly maxEntries = DESKTOP_RESOURCE_BUDGET.searchPreview.entries) {}
+
+  getDiagnostics(): { entries: number; estimatedBytes: number } { return { entries: this.entries.size, estimatedBytes: this.retainedBytes }; }
 
   get(path: string, version: string): SearchPreviewSource | undefined {
     const entry = this.entries.get(path);

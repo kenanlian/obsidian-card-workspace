@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET } from "./runtime/resource-budget";
 /*
  * Copyright (c) 2026 kenanlian
  * SPDX-License-Identifier: GPL-3.0-only
@@ -83,6 +84,7 @@ export default class CardWorkspacePlugin extends Plugin {
       await this.settingsStore.updateFlat({});
     },
   });
+  readonly resourceBudget = DESKTOP_RESOURCE_BUDGET;
   readonly runtimePlatform = createRuntimePlatformServices(() => this.app, window);
   private get vaultCacheNamespace(): string { return resolveVaultCacheNamespace(this.app); }
   readonly quickInputShortcut = new QuickInputShortcut({
@@ -126,6 +128,7 @@ export default class CardWorkspacePlugin extends Plugin {
   });
   private readonly nativeFileDragController = new NativeFileDragController(() => this.app);
   private readonly searchCoordinator = new SearchCoordinator({
+    resourceBudget: this.resourceBudget,
     getVaultNamespace: () => this.vaultCacheNamespace,
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
@@ -170,7 +173,9 @@ export default class CardWorkspacePlugin extends Plugin {
     if (!this.thumbnails) {
       const vault = this.vaultCacheNamespace;
       const service = new ThumbnailService({
-        storage: new ThumbnailStore(vault), generator: new ThumbnailWorker(),
+        resourceBudget: this.resourceBudget,
+        storage: new ThumbnailStore(vault, undefined, this.resourceBudget.thumbnails.diskEntries, this.resourceBudget.thumbnails.diskBytes),
+        generator: new ThumbnailWorker(this.resourceBudget.image),
         isCurrent: (fingerprint) => {
           const file = this.app.vault.getAbstractFileByPath(fingerprint.path);
           return file instanceof TFile && file.stat.mtime === fingerprint.mtime && file.stat.size === fingerprint.size;

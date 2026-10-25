@@ -1,8 +1,10 @@
-import { IMAGE_MAX_BYTES, MEMORY_MAX_BYTES, MEMORY_MAX_ENTRIES, imageKey,
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
+import { imageKey,
   type ImageFingerprint, type ThumbnailGenerator, type ThumbnailResult, type ThumbnailStorage } from "./types";
 interface Consumer { signal: AbortSignal; canGenerate: () => boolean; onEligible: () => void; resolve: (result: ThumbnailResult) => void; abort: () => void }
 interface Job { fingerprint: ImageFingerprint; key: string; consumers: Set<Consumer>; eligible: boolean; invalidated?: boolean; step?: string; phase: "cache" | "queued" | "active" }
 export interface ThumbnailServiceDeps {
+  resourceBudget?: RuntimeResourceBudget;
   storage: ThumbnailStorage;
   generator: ThumbnailGenerator;
   read: (fingerprint: ImageFingerprint) => Promise<ArrayBuffer>;
@@ -20,6 +22,7 @@ export class ThumbnailService {
   private disposed = false;
   private owners = 0;
   constructor(private readonly deps: ThumbnailServiceDeps) {}
+  private get budget() { return this.deps.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   acquire(): () => void {
     this.owners++;
     let released = false;
@@ -33,7 +36,7 @@ export class ThumbnailService {
       return Promise.resolve({ status: "ready", blob: cached }); }
     const outcome = this.outcomes.get(key);
     if (outcome) return Promise.resolve(outcome);
-    if (fingerprint.size <= 0 || fingerprint.size > IMAGE_MAX_BYTES) return Promise.resolve({ status: "skipped" });
+    if (fingerprint.size <= 0 || fingerprint.size > this.budget.image.maxBytes) return Promise.resolve({ status: "skipped" });
     return new Promise((resolve) => {
       let job = this.jobs.get(key);
       const fresh = !job;
@@ -91,7 +94,7 @@ export class ThumbnailService {
       if (this.deps.generator.available() && this.valid(job)) {
         job.step = "read";
         const buffer = await this.deps.read(job.fingerprint);
-        if (this.valid(job) && buffer.byteLength <= IMAGE_MAX_BYTES && job.consumers.size) {
+        if (this.valid(job) && buffer.byteLength <= this.budget.image.maxBytes && job.consumers.size) {
           job.step = "render";
           result = await this.deps.generator.generate(buffer, () => {
             if (!this.valid(job)) return;
@@ -109,7 +112,7 @@ export class ThumbnailService {
       job.step = "persist";
       try { await this.deps.storage.put(job.key, result.blob); } catch { /* bounded memory remains usable */ }
       if (!this.valid(job)) { this.remove(job.key); result = { status: "skipped" }; }
-    } else if (job.consumers.size > 0) { this.outcomes.set(job.key, result); if (this.outcomes.size > MEMORY_MAX_ENTRIES) this.outcomes.delete(this.outcomes.keys().next().value!); }
+    } else if (job.consumers.size > 0) { this.outcomes.set(job.key, result); if (this.outcomes.size > this.budget.thumbnails.memoryEntries) this.outcomes.delete(this.outcomes.keys().next().value!); }
     this.finish(job, result);
   }
   private finish(job: Job, result: ThumbnailResult): void {
@@ -120,9 +123,9 @@ export class ThumbnailService {
   private remove(key: string): void { const blob = this.memory.get(key); if (blob) this.bytes -= blob.size; this.memory.delete(key); this.touched.delete(key); }
   private remember(key: string, blob: Blob): void {
     this.remove(key);
-    if (blob.size > MEMORY_MAX_BYTES) return;
+    if (blob.size > this.budget.thumbnails.memoryBytes) return;
     this.memory.set(key, blob); this.touched.set(key, Date.now()); this.bytes += blob.size;
-    while (this.memory.size > MEMORY_MAX_ENTRIES || this.bytes > MEMORY_MAX_BYTES) this.remove(this.memory.keys().next().value!);
+    while (this.memory.size > this.budget.thumbnails.memoryEntries || this.bytes > this.budget.thumbnails.memoryBytes) this.remove(this.memory.keys().next().value!);
   }
   getDiagnostics(): { entries: number; bytes: number; jobs: number; active: number; owners: number } {
     return { entries: this.memory.size, bytes: this.bytes, jobs: this.jobs.size, active: Number(this.active), owners: this.owners };

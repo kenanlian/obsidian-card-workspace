@@ -1,11 +1,12 @@
-export const IMAGE_MAX_BYTES = 50_000_000;
-export const IMAGE_MAX_PIXELS = 50_000_000;
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
+export const IMAGE_MAX_BYTES = DESKTOP_RESOURCE_BUDGET.image.maxBytes;
+export const IMAGE_MAX_PIXELS = DESKTOP_RESOURCE_BUDGET.image.maxPixels;
 export const THUMBNAIL_VERSION = 1;
-export const THUMBNAIL_MAX_EDGE = 1024;
-export const MEMORY_MAX_ENTRIES = 64;
-export const MEMORY_MAX_BYTES = 16 * 1024 * 1024;
-export const DISK_MAX_ENTRIES = 2000;
-export const DISK_MAX_BYTES = 256 * 1024 * 1024;
+export const THUMBNAIL_MAX_EDGE = DESKTOP_RESOURCE_BUDGET.image.maxEdge;
+export const MEMORY_MAX_ENTRIES = DESKTOP_RESOURCE_BUDGET.thumbnails.memoryEntries;
+export const MEMORY_MAX_BYTES = DESKTOP_RESOURCE_BUDGET.thumbnails.memoryBytes;
+export const DISK_MAX_ENTRIES = DESKTOP_RESOURCE_BUDGET.thumbnails.diskEntries;
+export const DISK_MAX_BYTES = DESKTOP_RESOURCE_BUDGET.thumbnails.diskBytes;
 export interface ImageFingerprint {
   vault: string;
   path: string;

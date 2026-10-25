@@ -224,7 +224,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     publishLoadStart: (scopeChanged) => host.publishLoadStart(scopeChanged),
     publishPreparedCards: () => (host.publishPreparedCards ?? host.publishLoadCommit)?.(),
     publishSettledScope: () => (host.publishSettledScope ?? host.publishLoadCommit)?.(),
-    startupCardCount: HydrationController.startupCardCount,
+    startupCardCount: hydration.startupCardCount,
   });
 
   const templateActions = new TemplateActions({

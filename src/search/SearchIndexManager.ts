@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import MiniSearch, { type AsPlainObject } from "minisearch";
 import { scheduleIdleTask } from "./idle-task";
 import type {
@@ -61,6 +62,7 @@ export interface SearchIndexDocumentSource {
 }
 
 interface SearchIndexManagerOptions {
+  resourceBudget?: RuntimeResourceBudget["search"];
   store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
   documentSource: SearchIndexDocumentSource;
 }
@@ -158,7 +160,7 @@ export class SearchIndexManager {
     markFolderRebuildRequired: (detail) => this.markFolderRebuildRequired(detail),
   };
 
-  constructor(options: SearchIndexManagerOptions) {
+  constructor(private readonly options: SearchIndexManagerOptions) {
     this.store = options.store;
     this.documentSource = options.documentSource;
     this.index = this.createEmptyIndex();
@@ -561,7 +563,7 @@ export class SearchIndexManager {
       let carryOverTerms = 0;
       for await (const batch of this.documentSource.streamDocuments(signal)) {
         if (!isCurrent()) return;
-        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal);
+        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms);
         for (const document of batch) {
           replacementDocuments.set(document.path, document);
           replacementCatalog.set(document.path, document.mtime);

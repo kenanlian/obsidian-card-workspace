@@ -1,6 +1,8 @@
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import workerSource from "./thumbnail-worker-source";
 import type { ThumbnailGenerator, ThumbnailResult } from "./types";
 export class ThumbnailWorker implements ThumbnailGenerator {
+  constructor(private readonly imageBudget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image) {}
   private worker: Worker | null = null;
   private finish: ((result: ThumbnailResult) => void) | null = null;
   private disabled = false;
@@ -36,7 +38,7 @@ export class ThumbnailWorker implements ThumbnailGenerator {
         this.finish?.({ status: eligible ? "failed" : "skipped" });
         this.dispose();
       };
-      try { this.worker!.postMessage(buffer, [buffer]); }
+      try { this.worker!.postMessage({ buffer, budget: this.imageBudget }, [buffer]); }
       catch { this.dispose(); }
     });
   }

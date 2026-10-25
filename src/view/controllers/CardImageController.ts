@@ -1,8 +1,9 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../../runtime/resource-budget";
 import { TFile } from "obsidian";
 import { diagramDependencies, isDiagramKind, type DiagramPreviewResult } from "../diagram-preview";
 import type { ThumbnailService } from "../../images/ThumbnailService";
 import { resolveFirstImage, type ImageSource } from "../../images/image-source";
-import { IMAGE_MAX_BYTES, THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
+import { THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
 import type { VaultMutationEvent } from "../../services/vault-events";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 import type { CardImageRevealRequest, ImageViewportRequest } from "../image-request";
@@ -29,6 +30,7 @@ export class CardImageController implements DisposableController {
   private releaseService: (() => void) | null = null;
   private disposed = false;
   constructor(private readonly deps: CardImageControllerDeps) {}
+  private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   private get context(): ViewContext { return this.deps.context; }
   getPanelState(): { byPath: Record<string, CardImageState>; requestVersion: number; generation: number } {
     const byPath: Record<string, CardImageState> = Object.create(null) as Record<string, CardImageState>;
@@ -46,7 +48,7 @@ export class CardImageController implements DisposableController {
     if (!card || card.fileKind !== "markdown" || this.context.getSettings().cardImageMode === "off") return undefined;
     let source: ImageSource;
     try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return undefined; }
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > IMAGE_MAX_BYTES) return undefined;
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > this.budget.image.maxBytes) return undefined;
     const state = this.demand.get(path)?.state;
     return state?.status === "failed" ? state : LOADING_IMAGE_STATE;
   }
@@ -87,7 +89,7 @@ export class CardImageController implements DisposableController {
     if (!item.state || !item.fingerprint) return;
     this.layoutHints.delete(path);
     this.layoutHints.set(path, { attachmentPath: item.fingerprint.path, state: { status: item.state.status === "failed" ? "failed" : "loading" } });
-    if (this.layoutHints.size > 512) this.layoutHints.delete(this.layoutHints.keys().next().value!);
+    if (this.layoutHints.size > this.budget.preview.entries) this.layoutHints.delete(this.layoutHints.keys().next().value!);
   }
   private start(path: string): void {
     const card = this.context.store.getBaseCard(path);
@@ -97,7 +99,7 @@ export class CardImageController implements DisposableController {
     try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return; }
     const item: Demand = { source, abort: new AbortController() };
     this.demand.set(path, item);
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > IMAGE_MAX_BYTES) {
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > this.budget.image.maxBytes) {
       if (this.layoutHints.delete(path)) this.publish();
       return;
     }

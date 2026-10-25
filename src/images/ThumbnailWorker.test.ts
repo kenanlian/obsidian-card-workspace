@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThumbnailService } from "./ThumbnailService";
 import { ThumbnailWorker } from "./ThumbnailWorker";
@@ -33,7 +34,7 @@ describe("Worker lifecycle", () => {
     vi.stubGlobal("Worker", class { terminate = terminate; postMessage = postMessage; });
     const worker = new ThumbnailWorker(); expect(createObjectURL).not.toHaveBeenCalled();
     const buffer = new ArrayBuffer(100), pending = worker.generate(buffer, vi.fn());
-    expect(postMessage).toHaveBeenCalledWith(buffer, [buffer]); expect(revokeObjectURL).toHaveBeenCalledWith("blob:worker");
+    expect(postMessage).toHaveBeenCalledWith({ buffer, budget: DESKTOP_RESOURCE_BUDGET.image }, [buffer]); expect(revokeObjectURL).toHaveBeenCalledWith("blob:worker");
     await vi.advanceTimersByTimeAsync(10_000); expect(await pending).toEqual({ status: "skipped" }); expect(terminate).toHaveBeenCalledOnce();
     worker.dispose();
   });

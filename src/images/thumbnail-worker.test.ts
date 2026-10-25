@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThumbnailResult } from "./types";
 
@@ -8,7 +9,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); generate.mockReset()
 
 describe("thumbnail Worker message handling", () => {
   async function workerScope() {
-    const scope = { onmessage: (_event: MessageEvent<ArrayBuffer>): void => {}, postMessage: vi.fn() };
+    const scope = { onmessage: (_event: MessageEvent<{ buffer: ArrayBuffer; budget: typeof DESKTOP_RESOURCE_BUDGET.image }>): void => {}, postMessage: vi.fn() };
     vi.stubGlobal("self", scope);
     vi.stubGlobal("window", undefined);
     await import("./thumbnail-worker");
@@ -20,16 +21,16 @@ describe("thumbnail Worker message handling", () => {
     generate.mockImplementation(async (_buffer: ArrayBuffer, onEligible: () => void) => { onEligible(); return result; });
     const scope = await workerScope();
     const buffer = new ArrayBuffer(8);
-    expect(scope.onmessage({ data: buffer } as MessageEvent<ArrayBuffer>)).toBeUndefined();
+    expect(scope.onmessage({ data: { buffer, budget: DESKTOP_RESOURCE_BUDGET.image } } as MessageEvent<{ buffer: ArrayBuffer; budget: typeof DESKTOP_RESOURCE_BUDGET.image }>)).toBeUndefined();
     await vi.waitFor(() => expect(scope.postMessage).toHaveBeenCalledWith(result));
-    expect(generate).toHaveBeenCalledWith(buffer, expect.any(Function));
+    expect(generate).toHaveBeenCalledWith(buffer, expect.any(Function), DESKTOP_RESOURCE_BUDGET.image);
     expect(scope.postMessage).toHaveBeenNthCalledWith(1, { status: "eligible" });
   });
 
   it("reports an unexpected async failure to the owner", async () => {
     generate.mockRejectedValue(new Error("unexpected failure"));
     const scope = await workerScope();
-    scope.onmessage({ data: new ArrayBuffer(8) } as MessageEvent<ArrayBuffer>);
+    scope.onmessage({ data: { buffer: new ArrayBuffer(8), budget: DESKTOP_RESOURCE_BUDGET.image } } as MessageEvent<{ buffer: ArrayBuffer; budget: typeof DESKTOP_RESOURCE_BUDGET.image }>);
     await vi.waitFor(() => expect(scope.postMessage).toHaveBeenCalledExactlyOnceWith({ status: "failed" }));
   });
 });

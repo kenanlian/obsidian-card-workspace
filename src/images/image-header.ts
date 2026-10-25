@@ -1,8 +1,8 @@
-import { IMAGE_MAX_BYTES, IMAGE_MAX_PIXELS, THUMBNAIL_MAX_EDGE } from "./types";
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 export interface ImageHeader { width: number; height: number; orientation: number; mime: string; animated: boolean }
 /** Bounds checked container parsing. Never decode an unmeasurable image. Runs in the Worker. */
-export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
-  if (buffer.byteLength > IMAGE_MAX_BYTES || buffer.byteLength < 12) return null;
+export function readImageHeader(buffer: ArrayBuffer, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): ImageHeader | null {
+  if (buffer.byteLength > budget.maxBytes || buffer.byteLength < 12) return null;
   const v = new DataView(buffer);
   const text = (p: number, n: number): string => {
     if (p + n > v.byteLength) return "";
@@ -94,12 +94,12 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
       } else return null;
     } else return null;
   } catch { return null; }
-  if (width <= 0 || height <= 0 || width * height > IMAGE_MAX_PIXELS || animated) return null;
+  if (width <= 0 || height <= 0 || width * height > budget.maxPixels || animated) return null;
   return { width, height, orientation, mime, animated };
 }
-export function thumbnailDimensions(header: ImageHeader): { width: number; height: number } {
+export function thumbnailDimensions(header: ImageHeader, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): { width: number; height: number } {
   const swapped = header.orientation >= 5;
   const w = swapped ? header.height : header.width, h = swapped ? header.width : header.height;
-  const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(w, h));
+  const scale = Math.min(1, budget.maxEdge / Math.max(w, h));
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) };
 }

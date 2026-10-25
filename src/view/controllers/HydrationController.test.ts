@@ -1,3 +1,4 @@
+import { createRuntimeResourceBudget, type RuntimeResourceBudget } from "../../runtime/resource-budget";
 import { describe, expect, it, vi, type Mock } from "vitest";
 import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS } from "../../settings";
@@ -30,6 +31,7 @@ function harness(
   read: ReadMock = vi.fn(async () => "preview"),
   listItemsByPath: Record<string, Array<{ task?: string }>> = {},
   getCommittedQuery?: () => string,
+  resourceBudget?: RuntimeResourceBudget,
 ) {
   const store = createViewStateStore(createFolderScope("", true));
   store.replaceBaseCards(records);
@@ -39,6 +41,7 @@ function harness(
     return listItems ? { listItems } : null;
   });
   const context = {
+    resourceBudget,
     getApp: () => ({ vault: { cachedRead: read, getAbstractFileByPath: () => null }, metadataCache: { getFileCache } }),
     store, epochs: createViewEpochs(),
     getSettings: () => ({ ...DEFAULT_SETTINGS, previewLines: 5 }),
@@ -64,6 +67,21 @@ async function ticks(count = 4): Promise<void> {
 }
 
 describe("HydrationController", () => {
+  it("uses a small injected read pool, prewarm and preview cache", async () => {
+    const records = Array.from({ length: 5 }, (_, i) => card(`${i}.md`));
+    const pending = deferred<string>();
+    const { controller, context, read } = harness(records, vi.fn(() => pending.promise), {}, undefined,
+      createRuntimeResourceBudget({ preview: { concurrency: 1, startupCards: 2, entries: 2 } }));
+    const hydration = controller.hydrateViewport(request(context, records));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(controller.startupCardCount).toBe(2);
+    expect(controller.getDiagnostics()).toMatchObject({ active: 1, queued: 4 });
+    pending.resolve("preview"); await hydration;
+    expect(read).toHaveBeenCalledTimes(5);
+    expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0, cacheEntries: 2 });
+    controller.dispose();
+  });
+
   it.each([1, 2, 3, 4, 5])("hydrates %i independent snippets with a three-line ordinary preview", async (limit) => {
     const record = card("search.md");
     const source = Array.from({ length: 8 }, (_, index) => `section ${index} needle`).join("\n\n");

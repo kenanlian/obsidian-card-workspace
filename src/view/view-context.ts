@@ -9,6 +9,7 @@ import type { ViewStateStore } from "./view-state-store";
 
 /** The only host capabilities controllers and actions may access. */
 export interface ViewContext {
+  resourceBudget?: import("../runtime/resource-budget").RuntimeResourceBudget;
   runtimePlatform?: import("../runtime/platform").RuntimePlatformServices;
   getApp: () => App;
   store: ViewStateStore;
