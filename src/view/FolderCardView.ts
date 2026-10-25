@@ -1,3 +1,4 @@
+import { RuntimeWorkGate } from "../runtime/work-gate";
 import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
 import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
@@ -62,6 +63,8 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
   private readonly epochs: ViewEpochs = createViewEpochs();
+  private readonly workGate = new RuntimeWorkGate();
+  private stopActivity: (() => void) | null = null;
   private readonly context: ViewContext; readonly modules: ViewModules;
 
   get hoverPopover(): HoverPopover | null { return this.modules.hoverPreview.hoverPopover; }
@@ -71,6 +74,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     super(leaf);
     this.plugin = plugin;
     this.context = {
+      workGate: this.workGate,
       resourceBudget: this.plugin.resourceBudget,
       runtimePlatform: this.plugin.runtimePlatform,
       getApp: () => this.app, store: this.store, epochs: this.epochs,
@@ -227,6 +231,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       props: buildPanelProps(this),
     });
 
+    this.stopActivity = this.plugin.runtimeActivity?.observeRegion(this.hostEl.querySelector<HTMLElement>(".fce-list") ?? this.hostEl, this.workGate) ?? null;
     this.modules.navLayout.refreshFolderTreeState();
     this.modules.hydration.hydrateVisibleCardsOnOpen();
     this.viewEventUnsubscribe?.();
@@ -434,6 +439,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
 
   cleanupLifecycle(): CleanupResult {
+    this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
     this.viewEventUnsubscribe?.();
     this.viewEventUnsubscribe = null;
     this.metadataEventUnsubscribe?.();

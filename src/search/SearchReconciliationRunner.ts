@@ -59,6 +59,8 @@ export class SearchReconciliationRunner {
     return run;
   }
 
+  cancelCurrent(): void { this.activeController?.abort(); }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

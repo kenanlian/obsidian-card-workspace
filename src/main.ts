@@ -1,3 +1,4 @@
+import { RuntimeActivity } from "./runtime/activity";
 import { DESKTOP_RESOURCE_BUDGET } from "./runtime/resource-budget";
 /*
  * Copyright (c) 2026 kenanlian
@@ -84,6 +85,8 @@ export default class CardWorkspacePlugin extends Plugin {
       await this.settingsStore.updateFlat({});
     },
   });
+  readonly runtimeActivity = new RuntimeActivity();
+  private readonly activityWindows = new Map<Window, () => void>();
   readonly resourceBudget = DESKTOP_RESOURCE_BUDGET;
   readonly runtimePlatform = createRuntimePlatformServices(() => this.app, window);
   private get vaultCacheNamespace(): string { return resolveVaultCacheNamespace(this.app); }
@@ -128,6 +131,7 @@ export default class CardWorkspacePlugin extends Plugin {
   });
   private readonly nativeFileDragController = new NativeFileDragController(() => this.app);
   private readonly searchCoordinator = new SearchCoordinator({
+    workGate: this.runtimeActivity.background,
     resourceBudget: this.resourceBudget,
     getVaultNamespace: () => this.vaultCacheNamespace,
     getApp: () => this.app,
@@ -155,6 +159,7 @@ export default class CardWorkspacePlugin extends Plugin {
     getApp: () => this.app,
   });
   private readonly navigationWorkspaceReconciler = new NavigationWorkspaceReconciler({
+    workGate: this.runtimeActivity.background,
     getSettings: () => this.getSettings(),
     saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
@@ -173,6 +178,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (!this.thumbnails) {
       const vault = this.vaultCacheNamespace;
       const service = new ThumbnailService({
+        workGate: this.runtimeActivity.background,
         resourceBudget: this.resourceBudget,
         storage: new ThumbnailStore(vault, undefined, this.resourceBudget.thumbnails.diskEntries, this.resourceBudget.thumbnails.diskBytes),
         generator: new ThumbnailWorker(this.resourceBudget.image),
@@ -192,6 +198,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onload(): void {
+    if (typeof document !== "undefined" && typeof document.addEventListener === "function") this.trackActivityWindow(window);
     this.registerVaultEventListeners();
     this.registerCustomIcons();
     this.register(() => this.disposeRuntime());
@@ -230,15 +237,18 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("quit", () => this.disposeRuntime()));
     this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, win) => {
       this.popoutEvents.get(win)?.unload(); this.popoutEvents.delete(win);
+      this.activityWindows.get(win)?.(); this.activityWindows.delete(win);
     }));
     this.registerDomEvent(window, "unload", () => this.disposeRuntime());
     if (this.runtimePlatform.capabilities.quickInput) this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
     this.registerSearchCommands();
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.runtimeActivity.refresh()));
     if (this.runtimePlatform.capabilities.editorDrop && typeof document !== "undefined") {
       this.registerDomEvent(document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
     }
     this.registerEvent(this.app.workspace.on("window-open", (_workspaceWindow, win) => {
+      this.trackActivityWindow(win);
       this.popoutEvents.get(win)?.unload();
       const events = new Component(); events.load();
       if (this.runtimePlatform.capabilities.editorDrop) events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
@@ -292,6 +302,12 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     if (this.runtimePlatform.capabilities.globalShortcut) await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
     if (this.disposed) return;
+    this.app.workspace.iterateAllLeaves?.((leaf) => {
+      if (leaf.view.getViewType() !== QUICK_INPUT_VIEW) {
+        const win = leaf.view.containerEl?.ownerDocument?.defaultView;
+        if (win) this.trackActivityWindow(win);
+      }
+    });
     this.registerVaultObservers(); this.registerMetadataObservers();
     this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
     // Session restore never creates a leaf: it only reloads a view the user left open.
@@ -301,6 +317,12 @@ export default class CardWorkspacePlugin extends Plugin {
       "Initial navigation reconciliation failed.");
     await this.searchCoordinator.initialize(); if (this.disposed) return;
     this.searchCoordinator.flushDeferredStartupWork();
+  }
+
+  private trackActivityWindow(win: Window): void {
+    if (!this.activityWindows.has(win) && typeof win.document?.addEventListener === "function") {
+      this.activityWindows.set(win, this.runtimeActivity.trackDocument(win.document));
+    }
   }
 
   private registerCustomIcons(): void {
@@ -318,6 +340,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private disposeRuntime(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.runtimeActivity.dispose(); this.activityWindows.clear();
     this.popoutEvents.forEach((events) => events.unload()); this.popoutEvents.clear();
     this.quickInputShortcut.dispose();
     this.quickInputManager?.dispose();

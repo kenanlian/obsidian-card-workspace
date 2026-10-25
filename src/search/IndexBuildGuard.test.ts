@@ -50,6 +50,13 @@ describe("IndexBuildGuard", () => {
     expect(await guard.canAutoBuild()).toBe(false);
   });
 
+  it("restores the prior count after cooperative cancellation, preserving earlier unfinished attempts", async () => {
+    const store = createGuardStore(1), guard = new IndexBuildGuard(store);
+    const previous = await guard.markBuildStarted(); expect(store.attempts).toBe(2);
+    await guard.markBuildCancelled(previous); expect(store.attempts).toBe(1);
+    expect(await guard.canAutoBuild()).toBe(true);
+  });
+
   it("clears the attempt count once a build completes", async () => {
     const store = createGuardStore();
     const guard = new IndexBuildGuard(store);

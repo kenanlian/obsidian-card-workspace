@@ -1,3 +1,4 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import type MiniSearch from "minisearch";
 import type { SearchableDocument } from "./types";
@@ -44,8 +45,10 @@ export async function addDocumentsWithYield(
   isCurrent: () => boolean,
   signal?: AbortSignal,
   termBudget = INGEST_YIELD_TERM_BUDGET,
+  workGate?: RuntimeWorkGate,
 ): Promise<number> {
   let accumulated = carryOverTerms;
+  if (workGate && !(await workGate.wait(signal))) return accumulated;
   for (const document of documents) {
     if (signal?.aborted || !isCurrent()) return accumulated;
     index.add(document);
@@ -56,6 +59,7 @@ export async function addDocumentsWithYield(
     await new Promise<void>((resolve) => {
       window.setTimeout(resolve, 0);
     });
+    if (workGate && !(await workGate.wait(signal))) return accumulated;
   }
   return accumulated;
 }

@@ -40,9 +40,15 @@ export class IndexBuildGuard {
     return this.suspended;
   }
 
-  async markBuildStarted(): Promise<void> {
+  async markBuildStarted(): Promise<number> {
     const attempts = await this.store.readBuildAttempts();
     await this.store.writeBuildAttempts(attempts + 1);
+    return attempts;
+  }
+
+  /** Called only after cooperative cancellation has released replacement work. */
+  async markBuildCancelled(previousAttempts: number): Promise<void> {
+    await this.store.writeBuildAttempts(previousAttempts);
   }
 
   async markBuildCompleted(): Promise<void> {

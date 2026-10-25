@@ -1,9 +1,11 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { imageKey,
   type ImageFingerprint, type ThumbnailGenerator, type ThumbnailResult, type ThumbnailStorage } from "./types";
 interface Consumer { signal: AbortSignal; canGenerate: () => boolean; onEligible: () => void; resolve: (result: ThumbnailResult) => void; abort: () => void }
 interface Job { fingerprint: ImageFingerprint; key: string; consumers: Set<Consumer>; eligible: boolean; invalidated?: boolean; step?: string; phase: "cache" | "queued" | "active" }
 export interface ThumbnailServiceDeps {
+  workGate?: RuntimeWorkGate;
   resourceBudget?: RuntimeResourceBudget;
   storage: ThumbnailStorage;
   generator: ThumbnailGenerator;
@@ -21,7 +23,10 @@ export class ThumbnailService {
   private coldTurn: number | null = null;
   private disposed = false;
   private owners = 0;
-  constructor(private readonly deps: ThumbnailServiceDeps) {}
+  private readonly stopWorkGate: () => void;
+  constructor(private readonly deps: ThumbnailServiceDeps) {
+    this.stopWorkGate = deps.workGate?.subscribe(active => { if (active) this.pump(); }) ?? (() => {});
+  }
   private get budget() { return this.deps.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   acquire(): () => void {
     this.owners++;
@@ -69,22 +74,22 @@ export class ThumbnailService {
     if (this.jobs.get(job.key) !== job || this.disposed) return;
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); return; }
     if (blob) { this.remember(job.key, blob); this.finish(job, { status: "ready", blob }); return; }
-    if (!this.deps.generator.available()) { this.finish(job, { status: "skipped" }); return; }
     job.phase = "queued";
     this.pump();
   }
   /** Called after visible text hydration settles or demand changes. Cache lookup never waits. */
   pump(): void {
-    if (this.disposed || this.active || this.coldTurn !== null || ![...this.jobs.values()].some((job) => job.phase === "queued")) return;
+    if ((this.deps.workGate && !this.deps.workGate.isActive) || this.disposed || this.active || this.coldTurn !== null || ![...this.jobs.values()].some((job) => job.phase === "queued")) return;
     // Let the foreground card paint and its ResizeObserver demand settle first.
     // Cache hits bypass this cold-only turn entirely.
     this.coldTurn = window.setTimeout(() => { this.coldTurn = null; this.runNext(); }, 32);
   }
   private runNext(): void {
-    if (this.disposed || this.active) return;
+    if ((this.deps.workGate && !this.deps.workGate.isActive) || this.disposed || this.active) return;
     const job = [...this.jobs.values()].find((item) => item.phase === "queued" && [...item.consumers].some((owner) => !owner.signal.aborted && owner.canGenerate()));
     if (!job) return;
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); this.pump(); return; }
+    if (!this.deps.generator.available()) { this.finish(job, { status: "skipped" }); this.pump(); return; }
     job.phase = "active"; this.active = true;
     void this.generate(job).finally(() => { this.active = false; this.pump(); });
   }
@@ -132,6 +137,7 @@ export class ThumbnailService {
   }
   dispose(): void {
     this.disposed = true;
+    this.stopWorkGate();
     if (this.coldTurn !== null) window.clearTimeout(this.coldTurn);
     this.coldTurn = null;
     for (const job of this.jobs.values()) this.finish(job, { status: "skipped" });

@@ -1,8 +1,9 @@
+import { RuntimeWorkGate } from "../../runtime/work-gate";
 import { createRuntimeResourceBudget, type RuntimeResourceBudget } from "../../runtime/resource-budget";
 import { describe, expect, it, vi, type Mock } from "vitest";
 import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS } from "../../settings";
-import { createFolderScope } from "../scope";
+import { createFolderScope, createLinksScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
@@ -32,6 +33,7 @@ function harness(
   listItemsByPath: Record<string, Array<{ task?: string }>> = {},
   getCommittedQuery?: () => string,
   resourceBudget?: RuntimeResourceBudget,
+  workGate?: RuntimeWorkGate,
 ) {
   const store = createViewStateStore(createFolderScope("", true));
   store.replaceBaseCards(records);
@@ -41,7 +43,7 @@ function harness(
     return listItems ? { listItems } : null;
   });
   const context = {
-    resourceBudget,
+    resourceBudget, workGate,
     getApp: () => ({ vault: { cachedRead: read, getAbstractFileByPath: () => null }, metadataCache: { getFileCache } }),
     store, epochs: createViewEpochs(),
     getSettings: () => ({ ...DEFAULT_SETTINGS, previewLines: 5 }),
@@ -67,6 +69,29 @@ async function ticks(count = 4): Promise<void> {
 }
 
 describe("HydrationController", () => {
+  it("allows the explicit reference expansion to complete while automatic work is paused", async () => {
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const record = card("note.md"), { controller, context, read } = harness([record], undefined, {}, undefined, undefined, gate);
+    context.store.setScope(createLinksScope("source.md", "backlinks"));
+    await controller.toggleReferences(record.path);
+    expect(read).toHaveBeenCalledOnce(); controller.dispose(); gate.close();
+  });
+
+  it("starts no automatic preview while hidden and resumes only the latest viewport", async () => {
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const records = [card("old.md"), card("latest.md")];
+    const { controller, context, read } = harness(records, undefined, {}, undefined, undefined, gate);
+    const old = controller.hydrateViewport(request(context, [records[0]]));
+    const latest = controller.hydrateViewport({ ...request(context, records), start: 1, paths: [records[1].path] });
+    expect(read).not.toHaveBeenCalled(); gate.setActive(true);
+    await Promise.all([old, latest]);
+    expect(read.mock.calls.map(([file]) => file.path)).toEqual(["latest.md"]);
+    gate.setActive(false); context.store.advanceHydrationRevision();
+    const closing = controller.hydrateViewport(request(context, records));
+    controller.dispose(); await closing; gate.close();
+    expect(controller.getDiagnostics()).toMatchObject({ queued: 0, cacheEntries: 0 });
+  });
+
   it("uses a small injected read pool, prewarm and preview cache", async () => {
     const records = Array.from({ length: 5 }, (_, i) => card(`${i}.md`));
     const pending = deferred<string>();

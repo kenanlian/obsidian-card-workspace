@@ -1,3 +1,4 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import { TFile, type App } from "obsidian";
 
@@ -41,6 +42,7 @@ export class SearchDocumentSource {
     private readonly app: App,
     private readonly prepare: SearchDocumentPreparer,
     private readonly budget: RuntimeResourceBudget["search"] = DESKTOP_RESOURCE_BUDGET.search,
+    private readonly workGate?: RuntimeWorkGate,
   ) {}
 
   /**
@@ -87,6 +89,8 @@ export class SearchDocumentSource {
       let cursor = 0;
       const worker = async (): Promise<void> => {
         while (true) {
+          if (signal?.aborted) return;
+          if (this.workGate && !(await this.workGate.wait(signal))) return;
           if (signal?.aborted) return;
           const index = cursor;
           if (index >= window.length) {

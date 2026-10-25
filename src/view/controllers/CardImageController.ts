@@ -29,7 +29,20 @@ export class CardImageController implements DisposableController {
   private frame: number | null = null;
   private releaseService: (() => void) | null = null;
   private disposed = false;
-  constructor(private readonly deps: CardImageControllerDeps) {}
+  private latestViewport: ImageViewportRequest | null = null;
+  private readonly stopWorkGate: () => void;
+  constructor(private readonly deps: CardImageControllerDeps) {
+    this.stopWorkGate = this.context.workGate?.subscribe((active) => {
+      if (this.disposed) return;
+      if (!active) {
+        for (const [path, item] of this.demand) { this.rememberLayout(path, item); this.drop(item); }
+        this.demand.clear();
+      }
+      this.requestVersion++;
+      if (active && this.latestViewport) this.requestViewport({ ...this.latestViewport, requestVersion: this.requestVersion });
+      this.publish();
+    }) ?? (() => {});
+  }
   private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   private get context(): ViewContext { return this.deps.context; }
   getPanelState(): { byPath: Record<string, CardImageState>; requestVersion: number; generation: number } {
@@ -58,6 +71,8 @@ export class CardImageController implements DisposableController {
       || request.sequenceRevision !== this.context.store.getVisibleSequenceRevision()
       || request.requestVersion !== this.requestVersion) return;
     if (!Number.isInteger(request.start) || !Number.isInteger(request.end) || request.start < 0 || request.end < request.start) return;
+    this.latestViewport = { ...request, paths: [...request.paths] };
+    if (this.context.workGate && !this.context.workGate.isActive) return;
     if (request.paths.length === 0) { this.resetDemand(); return; }
     if (this.deps.isLoading()) return;
     const visible = this.context.store.getVisibleCards();
@@ -297,8 +312,10 @@ export class CardImageController implements DisposableController {
       if (!this.disposed) this.context.publishGroups("images");
     });
   }
+  getDiagnostics() { return { demand: this.demand.size, objectUrls: this.urls.size, layoutHints: this.layoutHints.size, gate: this.context.workGate?.getDiagnostics() }; }
   dispose(): DisposeReport {
     this.disposed = true;
+    this.stopWorkGate(); this.latestViewport = null;
     this.resetDemand();
     this.revealedImages.clear();
     if (this.frame !== null) this.cancelFrame(this.frame);

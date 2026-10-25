@@ -1,3 +1,4 @@
+import { RuntimeWorkGate } from "./work-gate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRuntimeResourceBudget, DESKTOP_RESOURCE_BUDGET } from "./resource-budget";
 import { PreviewCache, createPreviewFingerprint } from "../view/preview-cache";
@@ -56,6 +57,20 @@ describe("internal resource budgets", () => {
     await vi.runAllTimersAsync(); await Promise.all(requests);
     expect(peak).toBe(1); expect(service.getDiagnostics()).toMatchObject({ entries: 1, bytes: 3, jobs: 0 });
     service.dispose();
+  });
+
+  it("starts no cold thumbnail tasks while paused and releases pending demand on close", async () => {
+    vi.useFakeTimers(); const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const available = vi.fn(() => true), read = vi.fn(async () => new ArrayBuffer(1));
+    const service = new ThumbnailService({ workGate: gate, read, isCurrent: () => true,
+      storage: { get: async () => null, put: async () => {}, close: () => {} },
+      generator: { available, dispose: () => {}, generate: async () => ({ status: "ready", blob: new Blob(["x"]) }) },
+    });
+    const request = service.request({ vault: "v", path: "a", mtime: 1, size: 1, version: 1 },
+      { signal: new AbortController().signal, canGenerate: () => true, onEligible: () => {} });
+    await vi.runAllTimersAsync(); expect(available).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
+    gate.setActive(true); await vi.runAllTimersAsync(); expect((await request).status).toBe("ready");
+    expect(read).toHaveBeenCalledOnce(); service.dispose(); gate.close();
   });
 
   it("uses a low ingest budget across batch boundaries in original order", async () => {

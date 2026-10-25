@@ -1,3 +1,4 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import MiniSearch, { type AsPlainObject } from "minisearch";
 import { scheduleIdleTask } from "./idle-task";
@@ -61,7 +62,10 @@ export interface SearchIndexDocumentSource {
   readCatalogSnapshot(): IndexStoreDocumentCatalog;
 }
 
+export type SearchBuildResult = { outcome: "success" | "cancelled" | "failed" };
+
 interface SearchIndexManagerOptions {
+  workGate?: RuntimeWorkGate;
   resourceBudget?: RuntimeResourceBudget["search"];
   store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
   documentSource: SearchIndexDocumentSource;
@@ -149,7 +153,8 @@ export class SearchIndexManager {
   private readonly mutationGate = new SearchMutationGate();
   private mutationJournal: SearchVaultMutation[] | null = null;
   private sourceWorkPending = 0;
-  private sourceWorkPromise: Promise<void> | null = null;
+  private pausedInvalidated = false;
+  private sourceWorkPromise: Promise<SearchBuildResult> | null = null;
   private queuedRebuildDetail: string | null = null;
   private disposed = false;
   private generation = 0;
@@ -374,12 +379,12 @@ export class SearchIndexManager {
     }
   }
 
-  async syncDocumentStateFromSource(): Promise<void> {
-    await this.runReplacement("reconcile", "Search index reconciled with vault source.");
+  async syncDocumentStateFromSource(): Promise<SearchBuildResult> {
+    return this.runReplacement("reconcile", "Search index reconciled with vault source.");
   }
 
-  async rebuildFromSource(detail = "Manual rebuild requested."): Promise<void> {
-    await this.runReplacement("rebuild", detail);
+  async rebuildFromSource(detail = "Manual rebuild requested."): Promise<SearchBuildResult> {
+    return this.runReplacement("rebuild", detail);
   }
 
   async clearAndReset(detail = "Manual clear/reset requested."): Promise<IndexStoreClearResult> {
@@ -514,8 +519,14 @@ export class SearchIndexManager {
   async applyMutation(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
     if (this.disposed) return { action: "ignored", rebuildRequired: false };
     const scanning = this.sourceWorkPending > 0;
+    if (scanning && this.options.workGate?.isPaused) {
+      this.pausedInvalidated = true;
+      this.sourceRunner.cancelCurrent();
+      this.mutationJournal = null;
+      this.queuedRebuildDetail = null;
+    }
     const decision = classifySearchMutation(event);
-    if (scanning && decision.action === "rebuild-required") {
+    if (scanning && !this.pausedInvalidated && decision.action === "rebuild-required") {
       this.queuedRebuildDetail = "Rebuild requested after queued mutations.";
       return { action: "ignored", rebuildRequired: false };
     }
@@ -529,29 +540,36 @@ export class SearchIndexManager {
     return scanning ? { action: "ignored", rebuildRequired: false } : result;
   }
 
-  private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+  private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<SearchBuildResult> {
     if (this.sourceWorkPromise) {
       if (kind === "rebuild") this.queuedRebuildDetail = detail;
       return this.sourceWorkPromise;
     }
+    if (this.disposed) return { outcome: "cancelled" };
     const run = this.runReplacementLoop(kind, detail);
     this.sourceWorkPromise = run;
     try {
-      await run;
+      return await run;
     } finally {
       if (this.sourceWorkPromise === run) this.sourceWorkPromise = null;
     }
   }
 
-  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string): Promise<SearchBuildResult> {
     let nextKind = kind;
     let nextDetail = detail;
+    let completed = false;
     this.sourceWorkPending = 1;
+    this.pausedInvalidated = false;
     try {
       do {
         this.queuedRebuildDetail = null;
-        await this.sourceRunner.run(async (signal, isCurrent) => {
-      if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) return;
+        completed = false;
+        await this.sourceRunner.run(async (signal, runnerIsCurrent) => {
+      const isCurrent = () => runnerIsCurrent() && !this.options.workGate?.isClosed;
+      if (this.options.workGate && !(await this.options.workGate.wait(signal))) return;
+      if (!isCurrent()) return;
+      if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) { completed = isCurrent(); return; }
       if (nextKind === "rebuild") this.setBuilding(nextDetail, "building");
       this.cancelPendingPersist();
       this.mutationJournal = [];
@@ -563,7 +581,7 @@ export class SearchIndexManager {
       let carryOverTerms = 0;
       for await (const batch of this.documentSource.streamDocuments(signal)) {
         if (!isCurrent()) return;
-        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms);
+        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms, this.options.workGate);
         for (const document of batch) {
           replacementDocuments.set(document.path, document);
           replacementCatalog.set(document.path, document.mtime);
@@ -576,6 +594,8 @@ export class SearchIndexManager {
         catalog: replacementCatalog,
       };
 
+      if (this.options.workGate && !(await this.options.workGate.wait(signal))) return;
+      if (!isCurrent()) return;
       const release = await this.mutationGate.acquire();
       let persisted = false;
       try {
@@ -594,6 +614,7 @@ export class SearchIndexManager {
           for (const [path, document] of replacementDocuments) this.documentsByPath.set(path, document);
           this.documentCatalog = replacementCatalog;
           this.publishReplacementSuccess(nextKind, nextDetail, now);
+          completed = true;
         }
       } finally {
         this.mutationJournal = null;
@@ -607,8 +628,15 @@ export class SearchIndexManager {
           nextKind = "rebuild";
           nextDetail = this.queuedRebuildDetail;
         }
-      } while (this.queuedRebuildDetail && !this.disposed);
+      } while (this.queuedRebuildDetail && !this.disposed && !this.pausedInvalidated);
+      return { outcome: this.disposed || this.pausedInvalidated || this.options.workGate?.isClosed ? "cancelled"
+        : !completed || this.snapshot.status === "error" ? "failed" : "success" };
+    } catch (error) {
+      if (this.disposed || this.pausedInvalidated || this.options.workGate?.isClosed) return { outcome: "cancelled" };
+      this.markInitializationFailure(error);
+      return { outcome: "failed" };
     } finally {
+      this.mutationJournal = null;
       this.sourceWorkPending = 0;
     }
   }

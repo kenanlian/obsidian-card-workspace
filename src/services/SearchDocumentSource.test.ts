@@ -1,3 +1,4 @@
+import { RuntimeWorkGate } from "../runtime/work-gate";
 import { createRuntimeResourceBudget } from "../runtime/resource-budget";
 import { describe, expect, it, vi } from "vitest";
 
@@ -33,6 +34,19 @@ const MIXED_KIND_FILES = [
 ];
 
 describe("SearchDocumentSource", () => {
+  it("pauses only full-source reads and aborts paused readers without blocking mutations", async () => {
+    const file = createFile("note.md"), prepare = vi.fn(async () => document(file.path));
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const source = new SearchDocumentSource({ vault: { getFiles: () => [file], getAbstractFileByPath: () => file } } as never,
+      prepare, undefined, gate);
+    const abort = new AbortController(), paused = source.readAllDocuments(abort.signal);
+    await Promise.resolve(); expect(prepare).not.toHaveBeenCalled();
+    expect(await source.readDocument(file.path)).toEqual(document(file.path));
+    abort.abort(); expect(await paused).toEqual([]); expect(gate.getDiagnostics().waiters).toBe(0);
+    const resumed = source.readAllDocuments(); gate.setActive(true);
+    expect(await resumed).toEqual([document(file.path)]); gate.close();
+  });
+
   it("honors injected reader and batch budgets without changing vault order", async () => {
     const files = Array.from({ length: 8 }, (_, i) => createFile(`${i}.md`));
     let active = 0, peak = 0;
