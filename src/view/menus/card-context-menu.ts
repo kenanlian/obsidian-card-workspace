@@ -146,7 +146,7 @@ export class CardContextMenu {
     addAction(strings.openInCurrentWindow, "folder-open", "current-area");
     addAction(strings.openInNewTab, "file-plus", "new-tab");
     addAction(strings.openToTheRight, "separator-vertical", "split-right");
-    addAction(strings.openInNewWindow, "picture-in-picture-2", "new-window");
+    if (this.deps.context.runtimePlatform?.capabilities.newWindow) addAction(strings.openInNewWindow, "picture-in-picture-2", "new-window");
 
     menu.addSeparator();
 

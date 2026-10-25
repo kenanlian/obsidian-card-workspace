@@ -1,3 +1,4 @@
+import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
 import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { CARD_WORKSPACE_ICON } from "../icons";
@@ -70,6 +71,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     super(leaf);
     this.plugin = plugin;
     this.context = {
+      runtimePlatform: this.plugin.runtimePlatform,
       getApp: () => this.app, store: this.store, epochs: this.epochs,
       getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.saveViewSettings(patch),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
@@ -107,7 +109,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),
-      openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
+      openNoteFromCard: async (path, destination) => { await this.plugin.openNoteFromCard(path, destination); },
       createNoteInFolder: (folderPath, tags, properties) => properties === undefined
         ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
       getSearchService: () => this.plugin.getSearchService(),
@@ -115,6 +117,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
     });
     this.panelModel = createPanelModel({
+      capabilities: this.plugin.runtimePlatform?.capabilities,
       strings: this.strings,
       scope: this.buildScopeGroup(),
       cards: this.buildCardsGroup(),
@@ -625,6 +628,9 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.panelModel.batch((state) => {
       for (const group of uniqueGroups) {
         switch (group) {
+          case "capabilities":
+            state.capabilities = this.plugin.runtimePlatform?.capabilities ?? UNSUPPORTED_CAPABILITIES;
+            break;
           case "strings":
             state.strings = this.strings;
             break;

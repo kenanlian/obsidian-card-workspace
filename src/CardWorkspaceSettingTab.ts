@@ -1,3 +1,4 @@
+import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
 import {
   PluginSettingTab, SettingGroup, Notice, requireApiVersion, type App, type Setting,
 } from "obsidian";
@@ -195,7 +196,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       case "backlinkSnippetCount":
         return String(settings.backlinkSnippetCount);
       case "defaultCardOpenBehavior":
-        return settings.defaultCardOpenBehavior;
+        return this.plugin.runtimePlatform ? resolveRuntimeOpenBehavior(settings.defaultCardOpenBehavior, this.plugin.runtimePlatform.capabilities) : settings.defaultCardOpenBehavior;
       case "dragInsertAction":
         return settings.dragInsertAction;
       case "enableHeadingDragInsert":
@@ -405,7 +406,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     if (quickInput.templateId && !Object.prototype.hasOwnProperty.call(templateOptions, quickInput.templateId)) {
       templateOptions[quickInput.templateId] = `${inputStrings.templateUnavailable} (${quickInput.templateId})`;
     }
-    return [
+    const groups: WorkspaceSettingGroup[] = [
       {
         type: "group",
         heading: strings.behaviorHeading,
@@ -416,7 +417,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             control: {
               type: "dropdown",
               key: "defaultCardOpenBehavior",
-              options: optionRecord(getDefaultCardOpenBehaviorOptions(language)),
+              options: optionRecord(getDefaultCardOpenBehaviorOptions(language).filter((option) => option.value !== "new-window" || this.plugin.runtimePlatform?.capabilities.newWindow !== false)),
             },
           },
           {
@@ -604,6 +605,10 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
       },
     ];
+    return groups.filter((group) => group.heading !== inputStrings.quickInputHeading || this.plugin.runtimePlatform?.capabilities.quickInput !== false)
+      .map((group) => ({ ...group, items: group.items.filter((item) => !item.control
+        || !["dragInsertAction", "enableHeadingDragInsert"].includes(item.control.key)
+        || this.plugin.runtimePlatform?.capabilities.editorDrop !== false) }));
   }
 
   private resolveSectionControl(key: string) {

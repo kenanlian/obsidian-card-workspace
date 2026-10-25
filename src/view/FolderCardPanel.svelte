@@ -995,6 +995,8 @@
             {#each getRowCards(row) as card (card.path)}
               <CardItem
                 {card}
+                nativeFileDrag={panelState.capabilities?.nativeFileDrag ?? false}
+                editorDrop={panelState.capabilities?.editorDrop ?? false}
                 {strings}
                 {appearance}
                 image={getCardImage(card.path)}

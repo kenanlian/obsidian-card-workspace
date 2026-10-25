@@ -3,7 +3,7 @@ import { hideNavigationEntry } from "../actions/navigation-visibility-actions";
 import type { NavMenuDeps } from "../nav-context-menu";
 import { resolveFolderSortMode } from "../../folder-sibling-orders";
 import { propertyScalarRefsEqual } from "../../property-filter-settings";
-import { canResolveSystemPath } from "../desktop-shell";
+
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { ViewContext } from "../view-context";
 import type { ViewModules } from "../view-modules";
@@ -31,7 +31,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       settings.filter.properties.some(
         (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
       ),
-    canResolveSystemPath: canResolveSystemPath(deps.context.getApp()),
+    canResolveSystemPath: deps.context.runtimePlatform?.capabilities.systemPath ?? false,
     hasActiveFile: deps.context.getApp().workspace.getActiveFile() !== null,
     favorites: settings.favorites ?? [],
     boxes: settings.boxes ?? [],

@@ -1,3 +1,4 @@
+import { resolveVaultCacheNamespace } from "../runtime/vault-namespace";
 import { Notice, TFile, type App } from "obsidian";
 
 import type { UiStrings } from "../i18n";
@@ -20,7 +21,6 @@ import type { VaultMutationEvent } from "../view/types";
 import type { VaultEventBus } from "./VaultEventBus";
 import {
   prepareSearchDocument,
-  resolveSearchVaultNamespace,
   SearchDocumentSource,
 } from "./SearchDocumentSource";
 
@@ -39,6 +39,7 @@ type SearchRecoveryBoundaryState = "healthy" | "degraded";
 export type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 
 export interface SearchCoordinatorDeps {
+  getVaultNamespace?: () => string;
   getApp: () => App;
   getUiStrings: () => UiStrings;
   getPluginVersion: () => string;
@@ -76,7 +77,7 @@ export class SearchCoordinator {
   private pendingInitialization: Promise<void> | null = null;
   private disposed = false;
 
-  constructor(deps: SearchCoordinatorDeps) {
+  constructor(private readonly deps: SearchCoordinatorDeps) {
     this.getApp = deps.getApp;
     this.getUiStrings = deps.getUiStrings;
     this.getPluginVersion = deps.getPluginVersion;
@@ -372,7 +373,7 @@ export class SearchCoordinator {
     service: IndexedSearchService;
     store: IndexStore;
   } {
-    const vaultNamespace = resolveSearchVaultNamespace(this.app);
+    const vaultNamespace = this.deps.getVaultNamespace?.() ?? resolveVaultCacheNamespace(this.app);
     const store = new IndexStore({
       vaultNamespace,
     });
@@ -586,7 +587,7 @@ export class SearchCoordinator {
     }
 
     const result = await this.searchManager.restore(
-      this.createSearchMetadata(resolveSearchVaultNamespace(this.app)),
+      this.createSearchMetadata(this.deps.getVaultNamespace?.() ?? resolveVaultCacheNamespace(this.app)),
     );
     if (this.disposed) return;
     if (result.outcome === "rebuild-required") {

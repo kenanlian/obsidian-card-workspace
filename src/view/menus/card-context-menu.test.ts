@@ -277,7 +277,6 @@ describe("card context menu contract", () => {
       { kind: "item", title: "Open in current window", icon: "folder-open" },
       { kind: "item", title: "Open in new tab", icon: "file-plus" },
       { kind: "item", title: "Open to the right", icon: "separator-vertical" },
-      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },

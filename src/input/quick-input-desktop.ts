@@ -60,6 +60,7 @@ export interface QuickInputDesktop {
 }
 
 function resolveWindowHandle(win: DesktopWindow): QuickInputWindowHandle {
+  if (!Platform.isDesktopApp) throw new QuickInputDesktopError("unavailable");
   // Resolve inside the child Node environment. The vault's remote.getCurrentWindow
   // would target the main window even if the draft had focus.
   const electron = win.require?.("electron") as { remote?: { getCurrentWindow(): QuickInputWindowHandle } } | undefined;

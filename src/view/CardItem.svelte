@@ -37,6 +37,8 @@
 
   interface CardItemProps {
     card: NoteCardRecord;
+    nativeFileDrag?: boolean;
+    editorDrop?: boolean;
     strings?: UiStrings;
     appearance?: PanelAppearanceState;
     image?: CardImageState;
@@ -64,7 +66,8 @@
 
   let {
     card,
-    strings = getUiStrings("en"),
+    nativeFileDrag = true,
+    editorDrop = true,    strings = getUiStrings("en"),
     appearance = { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2 },
     image,
     selected = false,
@@ -434,7 +437,7 @@
   }
 
   function handleCardDragStart(event: DragEvent): void {
-    if (event.dataTransfer == null) {
+    if ((!nativeFileDrag && !editorDrop) || event.dataTransfer == null) {
       return;
     }
 
@@ -445,9 +448,9 @@
     }
 
     finishCardDrag();
-    finishNativeDrag = onCardDragStart?.({ path: card.path, event }) ?? null;
+    finishNativeDrag = nativeFileDrag ? onCardDragStart?.({ path: card.path, event }) ?? null : null;
     // Native initialization may write transfer data. Always retain our editor protocol afterwards.
-    event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
+    if (editorDrop) event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
     event.dataTransfer.effectAllowed = finishNativeDrag ? "copyLink" : "copy";
     dragSource = cardEl;
     cardEl.classList?.add("is-dragging");
@@ -549,7 +552,7 @@
   class="fce-card fce-card-radius-{cardCornerRadius} {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
   role="button"
   tabindex="0"
-  draggable="true"
+  draggable={nativeFileDrag || editorDrop}
   onclick={onCardClick}
   onkeydown={onCardKeydown}
   oncontextmenu={onCardContextMenuAction}

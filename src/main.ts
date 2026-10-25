@@ -11,7 +11,9 @@ import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor"
 import type { TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
 import { QUICK_INPUT_VIEW, QuickInputView } from "./input/QuickInputView";
-import { createQuickInputDesktop } from "./input/quick-input-desktop";
+import { createRuntimePlatformServices } from "./runtime/platform-services";
+import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
+import type { RuntimeActionResult, RuntimeUnavailable } from "./runtime/platform";
 import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import type { QuickInputWindowManager } from "./input/QuickInputWindowManager";
 
@@ -32,7 +34,7 @@ import { isSupportedImagePath } from "./images/image-source";
 import { ThumbnailService } from "./images/ThumbnailService";
 import { ThumbnailStore } from "./images/ThumbnailStore";
 import { ThumbnailWorker } from "./images/ThumbnailWorker";
-import { resolveSearchVaultNamespace } from "./services/SearchDocumentSource";
+import { resolveVaultCacheNamespace } from "./runtime/vault-namespace";
 import { EditorView, dropCursor } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
@@ -81,9 +83,14 @@ export default class CardWorkspacePlugin extends Plugin {
       await this.settingsStore.updateFlat({});
     },
   });
-  private readonly quickInputDesktop = createQuickInputDesktop(window);
+  readonly runtimePlatform = createRuntimePlatformServices(() => this.app, window);
+  private get vaultCacheNamespace(): string { return resolveVaultCacheNamespace(this.app); }
   readonly quickInputShortcut = new QuickInputShortcut({
-    bridge: () => this.quickInputDesktop.shortcuts(),
+    bridge: () => {
+      const result = this.runtimePlatform.quickInputDesktop();
+      if (result.outcome === "unavailable") throw new Error("Desktop shortcut unavailable");
+      return result.value.shortcuts();
+    },
     save: async (accelerator) => { await this.saveSettings({ quickInputGlobalShortcut: accelerator }); await this.flushSettings(); },
     open: () => { void this.openQuickInput(); },
   });
@@ -119,6 +126,7 @@ export default class CardWorkspacePlugin extends Plugin {
   });
   private readonly nativeFileDragController = new NativeFileDragController(() => this.app);
   private readonly searchCoordinator = new SearchCoordinator({
+    getVaultNamespace: () => this.vaultCacheNamespace,
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
     getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
@@ -154,13 +162,13 @@ export default class CardWorkspacePlugin extends Plugin {
   });
 
   startCardFileDrag({ event, path }: CardFileDragStartPayload): (() => void) | null {
-    return this.nativeFileDragController.start(event, path);
+    return this.runtimePlatform.capabilities.nativeFileDrag ? this.nativeFileDragController.start(event, path) : null;
   }
 
   getThumbnailService(): { service: ThumbnailService; vault: string } | null {
     if (this.disposed || this.getSettings().cardImageMode === "off") return null;
     if (!this.thumbnails) {
-      const vault = resolveSearchVaultNamespace(this.app);
+      const vault = this.vaultCacheNamespace;
       const service = new ThumbnailService({
         storage: new ThumbnailStore(vault), generator: new ThumbnailWorker(),
         isCurrent: (fingerprint) => {
@@ -219,19 +227,19 @@ export default class CardWorkspacePlugin extends Plugin {
       this.popoutEvents.get(win)?.unload(); this.popoutEvents.delete(win);
     }));
     this.registerDomEvent(window, "unload", () => this.disposeRuntime());
-    this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
+    if (this.runtimePlatform.capabilities.quickInput) this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
     this.registerSearchCommands();
-    if (typeof document !== "undefined") {
+    if (this.runtimePlatform.capabilities.editorDrop && typeof document !== "undefined") {
       this.registerDomEvent(document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
     }
     this.registerEvent(this.app.workspace.on("window-open", (_workspaceWindow, win) => {
       this.popoutEvents.get(win)?.unload();
       const events = new Component(); events.load();
-      events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
+      if (this.runtimePlatform.capabilities.editorDrop) events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
       this.popoutEvents.set(win, events);
     }));
-    this.registerEditorExtension([
+    if (this.runtimePlatform.capabilities.editorDrop) this.registerEditorExtension([
       dropCursor(),
       Prec.highest(EditorView.domEventHandlers({
         dragover: (event) => this.editorDropController.handleDragOver(event),
@@ -240,7 +248,7 @@ export default class CardWorkspacePlugin extends Plugin {
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
-        if (event.defaultPrevented) return;
+        if (!this.runtimePlatform.capabilities.editorDrop || event.defaultPrevented) return;
         if (this.editorDropController.handleWorkspaceEditorDrop(event, editor, info)) event.preventDefault();
       }),
     );
@@ -277,7 +285,7 @@ export default class CardWorkspacePlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(QUICK_INPUT_VIEW)) {
       leaf.detach();
     }
-    await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
+    if (this.runtimePlatform.capabilities.globalShortcut) await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
     if (this.disposed) return;
     this.registerVaultObservers(); this.registerMetadataObservers();
     this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
@@ -439,14 +447,16 @@ export default class CardWorkspacePlugin extends Plugin {
     return error instanceof Error ? error.message : String(error);
   }
 
-  async openQuickInput(win?: Window): Promise<void> {
+  async openQuickInput(win?: Window): Promise<RuntimeActionResult> {
+    const desktop = this.runtimePlatform.quickInputDesktop();
+    if (desktop.outcome === "unavailable") return desktop;
     await this.settingsReadyPromise;
-    if (this.disposed || win?.closed) return;
+    if (this.disposed || win?.closed) return { outcome: "unavailable", reason: "host" };
     if (!this.quickInputInitialization) {
       this.quickInputInitialization = import("./input/QuickInputWindowManager").then(({ QuickInputWindowManager }) => {
         if (this.disposed) return null;
         this.quickInputManager = new QuickInputWindowManager({
-          app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
+          app: this.app, desktop: desktop.value, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
           prepareTemplate: async (template, now) => {
             try { return await this.getNoteCreationService().prepareQuickInputTemplate(template, now); }
             catch (error) { throw new Error(this.describeNoteInputError(error)); }
@@ -466,10 +476,15 @@ export default class CardWorkspacePlugin extends Plugin {
       });
     }
     const manager = await this.quickInputInitialization;
-    if (!this.disposed && !win?.closed) await manager?.open(win);
+    if (!this.disposed && !win?.closed && manager) {
+      await manager.open(win);
+      return { outcome: "ok", value: undefined };
+    }
+    return { outcome: "unavailable", reason: "host" };
   }
 
-  async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void> {
+  async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void | RuntimeUnavailable> {
+    if (destination === "new-window" && !this.runtimePlatform.capabilities.newWindow) return { outcome: "unavailable", reason: "platform" };
     const openSeq = ++this.cardOpenSeq;
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
@@ -636,19 +651,16 @@ export default class CardWorkspacePlugin extends Plugin {
       return this.app.workspace.getLeaf(true);
     }
 
-    const workspaceWithPopout = this.app.workspace as unknown as {
-      openPopoutLeaf?: () => WorkspaceLeaf | Promise<WorkspaceLeaf>;
-    };
-    if (typeof workspaceWithPopout.openPopoutLeaf !== "function") {
+    const result = await this.runtimePlatform.openWindow();
+    if (result.outcome === "unavailable") {
       new Notice(this.getUiStrings().app.openInNewWindowDesktopOnly);
       return null;
     }
-
-    return await workspaceWithPopout.openPopoutLeaf();
+    return result.value;
   }
 
   private async resolveDefaultCardOpenLeaf(): Promise<WorkspaceLeaf | null> {
-    const defaultCardOpenBehavior = this.getSettings().defaultCardOpenBehavior;
+    const defaultCardOpenBehavior = resolveRuntimeOpenBehavior(this.getSettings().defaultCardOpenBehavior, this.runtimePlatform.capabilities);
     if (defaultCardOpenBehavior !== "smart") {
       return this.resolveOpenDestinationLeaf(defaultCardOpenBehavior);
     }

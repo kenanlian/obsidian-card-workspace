@@ -504,6 +504,7 @@ vi.mock("obsidian", () => {
   const addIcon = vi.fn();
 
   return {
+    Platform: { isDesktopApp: true, isMacOS: false },
     Plugin: MockPlugin,
     Component: MockComponent,
     Notice: MockNotice,
@@ -3862,7 +3863,7 @@ describe("quick input startup and lifetime", () => {
     expect(internals.quickInputManager).toBeNull(); expect(internals.quickInputInitialization).toBeNull();
     expect(initialization).toHaveBeenCalledOnce();
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(searchInitialization.mock.invocationCallOrder[0]!);
-    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue();
+    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue({ outcome: "ok", value: undefined });
     shared.get("Control+Shift+Q")!(); expect(open).toHaveBeenCalledExactlyOnceWith();
     plugin.onunload(); expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q");
   });

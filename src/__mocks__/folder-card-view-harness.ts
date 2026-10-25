@@ -1,3 +1,4 @@
+import { createRuntimePlatformServices } from "../runtime/platform-services";
 import { normalizeNavigationSorting } from "../navigation-sorting";
 import { DEFAULT_TEMPLATE_STORAGE_FOLDER, type NoteTemplateDefinition } from "../note-input";
 /**
@@ -1155,6 +1156,7 @@ export function createViewWithFile(
   };
   const leaf = { app, getRoot: vi.fn(() => ({})) };
   const plugin = {
+    runtimePlatform: createRuntimePlatformServices(() => app as never, globalThis as unknown as Window),
     getSettings: vi.fn(() => ({
       navigationSorting: normalizeNavigationSorting(undefined),
       includeSubfolders: true,

@@ -30,16 +30,6 @@ export async function prepareSearchDocument(app: App, file: TFile): Promise<Sear
   }
 }
 
-export function resolveSearchVaultNamespace(app: App): string {
-  const adapter = app.vault.adapter as { getBasePath?: () => string; basePath?: string };
-  const basePath = typeof adapter.getBasePath === "function"
-    ? adapter.getBasePath()
-    : typeof adapter.basePath === "string" ? adapter.basePath : "";
-  if (basePath.trim()) return `path:${basePath}`;
-  const getName = (app.vault as { getName?: () => string }).getName;
-  return `name:${typeof getName === "function" ? getName.call(app.vault) : "unknown-vault"}`;
-}
-
 export interface SearchDocumentPreparer {
   (file: TFile): Promise<SearchableDocument | null>;
 }

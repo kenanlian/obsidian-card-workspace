@@ -13,7 +13,7 @@ export interface PanelHost {
   panelModel: PanelModel;
   modules: ViewModules;
   plugin: {
-    openNoteFromCard: (path: string, destination?: never, location?: CardOpenLocation) => Promise<void>;
+    openNoteFromCard: (path: string, destination?: never, location?: CardOpenLocation) => Promise<unknown>;
     startCardFileDrag: CardFileDragStarter;
   };
   resolveCardLocation?: (path: string) => CardOpenLocation | null;

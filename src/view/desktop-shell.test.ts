@@ -64,6 +64,7 @@ function createApp(): MockApp {
 describe("desktop-shell", () => {
   beforeEach(() => {
     vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("require", (_id: string) => ({ shell: { openPath: mockState.openPath, showItemInFolder: mockState.showItemInFolder } }));
     mockState.isDesktopApp = true;
     mockState.setGetFullPath(vi.fn((path: string) => `/vault/${path}`));
     mockState.openPath.mockReset();
