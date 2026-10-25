@@ -7,7 +7,7 @@ import { SearchIndexManager } from "../search/SearchIndexManager";
 import { prepareSearchableDocument } from "../search/document-preparation";
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { resolve, promise }; }
-function harness() {
+function harness(beginReconcileBuild?: () => Promise<import("../search/SearchIndexManager").ReconcileBuildAttempt | null>) {
   const workGate = new RuntimeWorkGate(), budget = createRuntimeResourceBudget({ search: { readers: 1, batchSize: 1, ingestTerms: 1 } });
   const files = ["a.md", "b.md", "c.md"].map(path => Object.assign(new TFile(), { path, basename: path, stat: { mtime: 1, ctime: 1, size: 1 } }));
   const content = new Map(files.map(file => [file.path, "oldword"]));
@@ -16,12 +16,49 @@ function harness() {
     read, budget.search, workGate);
   const store = { restore: vi.fn(async () => ({ outcome: "rebuild-required", reason: "missing", cleared: false, detail: null } as const)),
     write: vi.fn(async () => ({ outcome: "written" } as const)), clear: vi.fn(async () => ({ outcome: "cleared" } as const)), isAvailable: () => true };
-  const manager = new SearchIndexManager({ store, documentSource: source, workGate, resourceBudget: budget.search });
+  const manager = new SearchIndexManager({ beginReconcileBuild, store, documentSource: source, workGate, resourceBudget: budget.search });
   const initialize = () => manager.restore({ vaultNamespace: "synthetic", schemaVersion: "phase3-v2", tokenizerVersion: "test", pluginVersion: "test", documentCount: 0, lastIndexedAt: 0 });
   return { workGate, files, content, read, manager, store, initialize };
 }
 
 describe("source work lifecycle", () => {
+  it("guards replacement reconciliation while leaving the unchanged read pass unmarked", async () => {
+    const finish = vi.fn(async () => {}), begin = vi.fn(async () => ({ finish }));
+    const h = harness(begin); await h.initialize();
+    expect(await h.manager.syncDocumentStateFromSource()).toEqual({ outcome: "success" });
+    expect(begin).toHaveBeenCalledOnce(); expect(finish).toHaveBeenCalledWith("success");
+    await h.manager.syncDocumentStateFromSource(); expect(begin).toHaveBeenCalledOnce();
+    h.manager.dispose(); h.workGate.close();
+    const denied = harness(async () => null); await denied.initialize();
+    expect(await denied.manager.syncDocumentStateFromSource()).toEqual({ outcome: "failed" });
+    expect(denied.read).not.toHaveBeenCalled(); expect(denied.store.write).not.toHaveBeenCalled();
+    expect(denied.manager.getSnapshot().health.readiness).toBe("rebuild-required");
+    denied.manager.dispose(); denied.workGate.close();
+  });
+
+  it("finishes a cancelled reconcile attempt only after active readers have cleaned up", async () => {
+    const finishAttempt = vi.fn(async () => {}), h = harness(async () => ({ finish: finishAttempt })); await h.initialize();
+    const started = deferred<void>(), read = deferred<ReturnType<typeof prepareSearchableDocument>>();
+    h.read.mockImplementationOnce(async () => { started.resolve(); return read.promise; });
+    const sync = h.manager.syncDocumentStateFromSource(); await started.promise; h.workGate.setActive(false);
+    await h.manager.applyMutation({ type: "modify", path: "b.md", oldPath: null, isMarkdown: true, isFolder: false });
+    expect(finishAttempt).not.toHaveBeenCalled();
+    read.resolve(prepareSearchableDocument({ path: "a.md", title: "a", markdown: "stale", mtime: 1, ctime: 1 }));
+    expect(await sync).toEqual({ outcome: "cancelled" });
+    expect(finishAttempt).toHaveBeenCalledExactlyOnceWith("cancelled");
+    expect(h.manager.getDiagnostics().mutationJournal).toBe(0); h.manager.dispose(); h.workGate.close();
+  });
+
+  it("waits for marker cleanup before admitting a following rebuild", async () => {
+    const marker = deferred<void>(), finish = vi.fn(() => marker.promise), h = harness(async () => ({ finish }));
+    await h.initialize(); const sync = h.manager.syncDocumentStateFromSource();
+    await vi.waitFor(() => expect(finish).toHaveBeenCalledOnce());
+    const rebuild = h.manager.rebuildFromSource(); await Promise.resolve();
+    expect(h.store.write).toHaveBeenCalledOnce();
+    marker.resolve(); await Promise.all([sync, rebuild]);
+    expect(h.store.write).toHaveBeenCalledTimes(2); h.manager.dispose(); h.workGate.close();
+  });
+
   it("pauses one build and resumes without duplicate reads or cutovers", async () => {
     const h = harness(); await h.initialize();
     const started = deferred<void>(), finish = deferred<ReturnType<typeof prepareSearchableDocument>>();

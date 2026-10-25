@@ -288,6 +288,22 @@ describe("SearchCoordinator vault subscription", () => {
     coordinator.dispose(); gate.close();
   });
 
+  it("finishes reconciliation marker cleanup before a manual reset and rebuild", async () => {
+    const { coordinator } = createHarness(""); const order: string[] = [];
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = () => { order.push("reconcile-finished"); resolve(); }; });
+    const guard = { reset: vi.fn(async () => { order.push("reset"); }),
+      markBuildStarted: vi.fn(async () => { order.push("start"); return 0; }), markBuildCompleted: async () => {} };
+    const manager = { rebuildFromSource: vi.fn(async () => { order.push("build"); return { outcome: "success" }; }) };
+    const internals = coordinator as unknown as { buildGuard: typeof guard; searchManager: typeof manager; pendingRestoredSearchStateSync: Promise<void>;
+      searchSnapshot: { status: string }; layoutReady: boolean };
+    internals.buildGuard = guard; internals.searchManager = manager; internals.pendingRestoredSearchStateSync = pending;
+    internals.searchSnapshot = { status: "ready" }; internals.layoutReady = true;
+    const rebuild = coordinator.rebuildManually("manual"); await Promise.resolve();
+    expect(guard.reset).not.toHaveBeenCalled(); release(); await rebuild;
+    expect(order).toEqual(["reconcile-finished", "reset", "start", "build"]); coordinator.dispose();
+  });
+
   it("clears the suspension and marks the attempt before the build starts", async () => {
     const { coordinator } = createHarness("");
     const order: string[] = [];

@@ -77,6 +77,17 @@ describe("HydrationController", () => {
     expect(read).toHaveBeenCalledOnce(); controller.dispose(); gate.close();
   });
 
+  it("drops paused startup prewarm that no longer belongs to the latest viewport", async () => {
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const records = [card("startup.md"), card("scrolled.md")];
+    const { controller, context, read } = harness(records, undefined, {}, undefined, undefined, gate);
+    const startup = controller.hydrateStartupCardPaths([records[0].path], context.epochs.load.token());
+    const viewport = controller.hydrateViewport({ ...request(context, records), start: 1, paths: [records[1].path] });
+    gate.setActive(true); await Promise.all([startup, viewport]);
+    expect(read.mock.calls.map(([file]) => file.path)).toEqual(["scrolled.md"]);
+    controller.dispose(); gate.close();
+  });
+
   it("starts no automatic preview while hidden and resumes only the latest viewport", async () => {
     const gate = new RuntimeWorkGate(); gate.setActive(false);
     const records = [card("old.md"), card("latest.md")];

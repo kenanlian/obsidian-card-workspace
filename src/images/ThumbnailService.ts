@@ -76,6 +76,11 @@ export class ThumbnailService {
     if (this.jobs.get(job.key) !== job || this.disposed) return;
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); return; }
     if (blob) { this.remember(job.key, blob); this.finish(job, { status: "ready", blob }); return; }
+    // Preserve visible desktop preflight timing; a paused cache miss must not
+    // allocate a decoder. Resume performs the same check in runNext.
+    if ((!this.deps.workGate || this.deps.workGate.isActive) && !this.deps.generator.available()) {
+      this.finish(job, { status: "skipped" }); return;
+    }
     job.phase = "queued";
     this.pump();
   }

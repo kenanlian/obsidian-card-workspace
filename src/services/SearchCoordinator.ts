@@ -276,6 +276,10 @@ export class SearchCoordinator {
     detail: string,
     options: { resetGuard?: boolean },
   ): Promise<void> {
+    // A reconcile may itself own an attempt. Finish that work and its marker
+    // before resetting or starting another guarded rebuild.
+    if (this.pendingRestoredSearchStateSync) await this.pendingRestoredSearchStateSync;
+    if (this.disposed || this.searchManager !== manager) return;
     if (this.deps.workGate && !(await this.deps.workGate.wait(this.lifetime.signal))) return;
     const guard = this.buildGuard;
     if (options.resetGuard) await guard?.reset();
@@ -406,6 +410,7 @@ export class SearchCoordinator {
     const manager = new SearchIndexManager({
       store,
       documentSource,
+      beginReconcileBuild: () => this.beginReconcileBuild(),
       resourceBudget: this.deps.resourceBudget?.search,
       workGate: this.deps.workGate,    });
 
@@ -418,6 +423,22 @@ export class SearchCoordinator {
       service,
       store,
     };
+  }
+
+  private async beginReconcileBuild(): Promise<import("../search/SearchIndexManager").ReconcileBuildAttempt | null> {
+    const guard = this.buildGuard;
+    if (!guard || this.disposed) return null;
+    if (!(await guard.canAutoBuild())) {
+      if (!this.disposed) new Notice(this.getUiStrings().app.searchIndexAutoBuildSuspended);
+      return null;
+    }
+    if (this.disposed) return null;
+    const previous = await guard.markBuildStarted();
+    // Capture this guard: disposal can clear the coordinator before cleanup ends.
+    return { finish: async (outcome) => {
+      if (outcome === "success") { await guard.markBuildCompleted(); this.successfulRebuildRevision++; }
+      else if (outcome === "cancelled") await guard.markBuildCancelled(previous);
+    } };
   }
 
   private async prepareSearchableDocumentFromFile(file: TFile) {

@@ -66,7 +66,12 @@ export interface SearchIndexDocumentSource {
 
 export type SearchBuildResult = { outcome: "success" | "cancelled" | "failed" };
 
+export interface ReconcileBuildAttempt {
+  finish(outcome: SearchBuildResult["outcome"]): Promise<void>;
+}
 interface SearchIndexManagerOptions {
+  /** Called lazily only when reconcile actually constructs a replacement. */
+  beginReconcileBuild?: () => Promise<ReconcileBuildAttempt | null>;
   workGate?: RuntimeWorkGate;
   resourceBudget?: RuntimeResourceBudget["search"];
   store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
@@ -160,6 +165,7 @@ export class SearchIndexManager {
   private sourceWorkPending = 0;
   private pausedInvalidated = false;
   private sourceWorkPromise: Promise<SearchBuildResult> | null = null;
+  private settlingSourceWork = false;
   private queuedRebuildDetail: string | null = null;
   private disposed = false;
   private generation = 0;
@@ -547,22 +553,31 @@ export class SearchIndexManager {
 
   private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<SearchBuildResult> {
     if (this.sourceWorkPromise) {
+      if (kind === "rebuild" && this.settlingSourceWork) {
+        await this.sourceWorkPromise;
+        return this.runReplacement(kind, detail);
+      }
       if (kind === "rebuild") this.queuedRebuildDetail = detail;
       return this.sourceWorkPromise;
     }
     if (this.disposed) return { outcome: "cancelled" };
     const finishTiming = this.timings.start("replacement");
-    const run = this.runReplacementLoop(kind, detail);
-    this.sourceWorkPromise = run;
-    try {
-      return await run;
-    } finally {
+    const attempt: { current?: ReconcileBuildAttempt } = {};
+    this.settlingSourceWork = false;
+    const completion = this.runReplacementLoop(kind, detail, attempt).then(async (result) => {
+      this.settlingSourceWork = true;
+      await attempt.current?.finish(result.outcome);
+      return result;
+    }).finally(() => {
       finishTiming();
-      if (this.sourceWorkPromise === run) this.sourceWorkPromise = null;
-    }
+      if (this.sourceWorkPromise === completion) { this.sourceWorkPromise = null; this.settlingSourceWork = false; }
+    });
+    this.sourceWorkPromise = completion;
+    return completion;
   }
 
-  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string): Promise<SearchBuildResult> {
+  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string,
+    attempt: { current?: ReconcileBuildAttempt }): Promise<SearchBuildResult> {
     let nextKind = kind;
     let nextDetail = detail;
     let completed = false;
@@ -577,6 +592,15 @@ export class SearchIndexManager {
       if (this.options.workGate && !(await this.options.workGate.wait(signal))) return;
       if (!isCurrent()) return;
       if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) { completed = isCurrent(); return; }
+      if (kind === "reconcile" && !attempt.current && this.options.beginReconcileBuild) {
+        const admitted = await this.options.beginReconcileBuild();
+        if (!admitted) {
+          if (isCurrent()) this.markFolderRebuildRequired("Automatic source replacement suspended after unfinished builds.");
+          return;
+        }
+        attempt.current = admitted;
+        if (!isCurrent()) return;
+      }
       if (nextKind === "rebuild") this.setBuilding(nextDetail, "building");
       this.cancelPendingPersist();
       this.mutationJournal = [];

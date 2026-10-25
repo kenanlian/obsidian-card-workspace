@@ -87,7 +87,9 @@ export class HydrationController implements DisposableController {
   constructor(private readonly deps: HydrationControllerDeps) {
     this.stopWorkGate = this.context.workGate?.subscribe((active) => {
       if (!active || this.disposed) return;
-      for (const job of this.queue.slice()) if (!this.currentFingerprint(job)) this.dropQueuedJob(job);
+      for (const job of this.queue.slice()) {
+        if (!this.currentFingerprint(job) || (!job.explicit && this.latestViewportRequest && !this.latestViewport.has(job.path))) this.dropQueuedJob(job);
+      }
       if (this.latestViewportRequest) void this.hydrateViewport(this.latestViewportRequest);
       this.pump();
     }) ?? (() => {});
