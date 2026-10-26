@@ -292,6 +292,9 @@ describe("card context menu contract", () => {
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
+      { kind: "separator" },
+      { kind: "item", title: "Select cards", icon: "list-checks" },
+      { kind: "item", title: "Pin note", icon: "pin" },
     ]);
     expect(nonDesktopMarkdownMenu?.showAtPosition).toHaveBeenCalledWith({ x: 12, y: 18 });
     expect(nonDesktopMarkdownMenu?.showAtMouseEvent).not.toHaveBeenCalled();

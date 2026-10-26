@@ -14,7 +14,9 @@ describe("runtime platform boundary", () => {
     const native = vi.fn(() => { throw new Error("Native modules forbidden"); });
     vi.stubGlobal("require", native);
     const services = createRuntimePlatformServices(getApp, globalThis as unknown as Window);
-    expect(Object.values(services.capabilities)).toEqual(Array(7).fill(false));
+    expect(services.capabilities).toEqual({ ...resolveRuntimeCapabilities(false), quickInput: true });
+    expect(services.device).toBe("phone");
+    expect(services.quickInputPresentation).toBe("modal");
     expect(services.systemPath("note.md")).toBeNull();
     expect(services.quickInputDesktop()).toEqual({ outcome: "unavailable", reason: "platform" });
     expect(await services.openWindow()).toEqual({ outcome: "unavailable", reason: "platform" });

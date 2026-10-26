@@ -3,7 +3,7 @@ export * from "../src/__mocks__/obsidian";
 import { TFile, TFolder } from "../src/__mocks__/obsidian";
 import { installObsidianDomHelpers } from "../src/__mocks__/obsidian-dom";
 
-export const Platform = { isDesktopApp: false, isMacOS: false, isWin: false };
+export const Platform = { isTablet: false, isDesktopApp: false, isMacOS: false, isWin: false };
 export const requireApiVersion = () => false;
 export const getLanguage = () => "en";
 export const notices: string[] = [];
@@ -31,9 +31,17 @@ export class Plugin extends Component {
   addRibbonIcon() { return document.createElement("button"); }
   addSettingTab(tab: unknown) { this.tabs.push(tab); }
   registerHoverLinkSource() {}
-  registerEditorExtension() { throw new Error("Editor drop registered without platform support"); }
+  registerEditorExtension() {}
   async loadData() { return null; }
   async saveData() { this.writes++; }
+}
+export class Modal {
+  contentEl = document.createElement("div"); modalEl = document.createElement("div");
+  constructor(readonly app: unknown) { this.modalEl.append(this.contentEl); }
+  setTitle(title: string) { this.modalEl.setAttribute("aria-label", title); return this; }
+  onOpen() {} onClose() {}
+  open() { document.body.append(this.modalEl); this.onOpen(); }
+  close() { this.onClose(); this.modalEl.remove(); }
 }
 export class PluginSettingTab { containerEl = document.createElement("div"); constructor(_app: unknown, _plugin: unknown) { document.body.append(this.containerEl); } }
 class Control {
@@ -86,7 +94,10 @@ export function createApp() {
   const file = Object.assign(new TFile(), { path: "note.md", basename: "note", extension: "md", name: "note.md", stat: { mtime: 1, ctime: 1, size: 14 } });
   const root = Object.assign(new TFolder(), { path: "", name: "/", children: [file] });
   const leaves: Array<Record<string, any>> = []; let ready = () => {}; let plugin: Plugin;
+  const local = new Map<string, unknown>();
   const app = {
+    loadLocalStorage: (key: string) => local.get(key) ?? null,
+    saveLocalStorage: (key: string, data: unknown) => { local.set(key, data); },
     vault: { adapter: {}, on, getRoot: () => root, getFiles: () => [file], getMarkdownFiles: () => [file], getName: () => "synthetic-bundle-vault",
       getAbstractFileByPath: (path: string) => path === "" ? root : path === file.path ? file : null,
       cachedRead: async () => "Core browsing preview", readBinary: async () => new ArrayBuffer(0) },
@@ -96,10 +107,16 @@ export function createApp() {
       getActiveFile: () => null, getLeavesOfType: (type: string) => leaves.filter(leaf => leaf.type === type),
       getActiveViewOfType: () => null, getMostRecentLeaf: () => null, iterateAllLeaves: (callback: (leaf: unknown) => void) => leaves.forEach(callback),
       revealLeaf: async () => {}, setActiveLeaf: () => {}, trigger: () => {},
-      getLeftLeaf: () => ({ app, getRoot: () => ({}), async setViewState({ type }: { type: string }) {
-        this.type = type; this.view = plugin.views.get(type)(this); leaves.push(this); await this.view.onOpen();
-      } }),
+      getLeftLeaf: () => createLeaf(), getLeaf: () => createLeaf(),
     },
   };
+  function createLeaf() {
+    return { app, type: "", view: null as any, getRoot: () => app.workspace.rootSplit,
+      async setViewState({ type, state }: { type: string; state?: unknown }) {
+        if (this.type !== type) { this.type = type; this.view = plugin.views.get(type)(this); leaves.push(this); await this.view.onOpen(); }
+        if (state) await this.view.setState(state, { history: false });
+      },
+    };
+  }
   return { app, file, leaves, layoutReady: () => ready(), bind: (value: Plugin) => { plugin = value; } };
 }

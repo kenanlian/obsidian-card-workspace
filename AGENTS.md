@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
+**Card Workspace** (also "Folder Card Explorer") is an Obsidian plugin for desktop, phones and tablets that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar** on desktop and the main workspace on mobile. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
 
 - **Plugin ID**: `card-workspace`
 - **Version**: `1.4.9` (source of truth: `manifest.json`)
 - **License**: GPL-3.0-only (previous releases through 1.4.2 retain MIT)
 - **Min Obsidian**: `1.11.4` (`SettingGroup` is available; confirmation dialogs and declarative settings use capability-checked 1.13+ APIs with legacy fallbacks; do not use APIs tagged `@since 1.13.1` or later)
 - **Runtime dependencies**: `minisearch` ^7.2.0 and `yaml` ^2.9.1 (bundled)
-- **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
+- **Platforms**: `manifest.json` declares `isDesktopOnly: false`; device policy is injected and frozen at plugin construction.
 
 ## Documentation Map
 
@@ -32,6 +32,22 @@ Enumerable implementation details (settings keys, panel fields, module methods) 
 - **UI boundary**: `src/view/panel-model.ts` bridges grouped host state into Svelte; `FolderCardPanel.svelte`, `NavigationPane.svelte`, `Toolbar.svelte`, and `CardItem.svelte` render/publish intent only
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready; `src/search/` has no runtime dependency on `src/view/`
 - **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2. A future schema is degraded read-only operation (defaults in memory, no write), not a migration
+
+## Mobile behavior
+
+See `docs/mobile.md` for device behavior, settings ownership and real-device acceptance.
+`src/runtime/platform-services.ts` selects desktop/phone/tablet once; `resource-budget.ts`
+freezes policy independent of viewport changes. Desktop uses path cache identity;
+mobile resolves a vault-local UUID once for search and thumbnails, disabling persistent
+caches when local storage is unavailable. `SettingsStore` merges vault-local device
+settings without writing merged device values into shared `data.json`.
+
+Mobile navigation moves the existing navigation DOM into a host Modal in single-pane
+mode. `ScopeController` signals committed user scope changes; the view implements host
+history state, and runtime reading anchors are retained per leaf. Quick input uses one
+host Modal per plugin, sharing target validation and frozen submission sessions with
+desktop windows; missing native editing falls back to full Markdown source. Touch menus
+publish ordinary host intents and share insertion text generation with desktop drops.
 
 ## Current Project Status
 
@@ -161,7 +177,7 @@ CI already runs this chain with lint first. The source scan follows the official
 - Prefer `app.vault`, `cachedRead()`, and FileManager/Vault APIs over lower-level adapter access
 - Keep `onload()` light; expensive vault/watcher work belongs behind `workspace.onLayoutReady()`
 - Register plugin-owned events and DOM listeners with Obsidian cleanup helpers
-- `manifest.json` is desktop-only; do not add mobile assumptions without updating that contract
+- Mobile surfaces use the injected platform device class and capability-checked host adapters. Desktop defaults and the minimum 1.11.4 contract remain unchanged.
 
 ### CSS
 

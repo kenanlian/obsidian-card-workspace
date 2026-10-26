@@ -1,3 +1,17 @@
+# Mobile adaptation
+
+The mobile adaptation builds on fixed baseline `6aeaf3d32c126876116d09d0028a48fa0a7c8d9d`.
+Its implementation and real-device procedure are documented in [Mobile usage and validation](../mobile.md).
+The manifest now enables mobile; version **1.4.9**, minimum host **1.11.4**, settings schema 2,
+search compatibility and tokenizer caps are unchanged.
+
+The historical readiness evidence below describes the earlier desktop-only baseline.
+It is retained verbatim as historical evidence, and is not evidence of the new candidate's
+performance or mobile compatibility. Candidate checks and raw reports are delivered with
+the task's exact commit and tree; loopback/browser diagnostics require separate permission.
+
+---
+
 # Mobile readiness execution evidence
 
 Work is isolated on `refactor/mobile-readiness`, based on

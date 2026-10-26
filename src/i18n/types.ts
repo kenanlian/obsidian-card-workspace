@@ -21,6 +21,7 @@ export interface LocalizedOption<TValue extends string = string> {
 }
 
 export interface UiStrings {
+  mobile: import("./mobile").MobileStrings;
   navigationVisibility: import("./navigationVisibility").NavigationVisibilityStrings;
   settingTab: SettingTabStrings;
   toolbar: ToolbarStrings;

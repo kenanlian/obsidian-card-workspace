@@ -43,6 +43,7 @@ export type SearchSnapshotListener = (snapshot: SearchServiceSnapshot) => void;
 export interface SearchCoordinatorDeps {
   workGate?: RuntimeWorkGate;
   resourceBudget?: RuntimeResourceBudget;
+  canPersist?: () => boolean;
   getVaultNamespace?: () => string;
   getApp: () => App;
   getUiStrings: () => UiStrings;
@@ -399,6 +400,7 @@ export class SearchCoordinator {
   } {
     const vaultNamespace = this.deps.getVaultNamespace?.() ?? resolveVaultCacheNamespace(this.app);
     const store = new IndexStore({
+      indexedDbFactory: this.deps.canPersist?.() === false ? null : undefined,
       vaultNamespace,
     });
     const documentSource = new SearchDocumentSource(

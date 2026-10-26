@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { installVisualViewport } from "../runtime/visual-viewport";
+  import { onDestroy, untrack, tick } from "svelte";
   import type { CardImageState } from "../images/types";
   import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
   import { getUiStrings } from "../i18n";
@@ -106,6 +107,10 @@
   type SelectFolderPayload = Pick<FolderActionPayload, "path">;
 
   interface FolderCardPanelProps {
+    onReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
+    onNavigateBack?: () => void;
+    mobileApp?: import("obsidian").App;
+    runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     onOpenNote?: (payload: OpenNotePayload) => void;
@@ -220,6 +225,7 @@
     onPinToggle,
     onCardHoverLink,
     onCardDragStart,
+    onReadingPosition, onNavigateBack, mobileApp, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -484,6 +490,21 @@
     onImageViewport?.(request);
   });
 
+  $effect(() => {
+    onReadingPosition?.({
+      capture: () => captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows }),
+      restore: (anchor, identity) => {
+        void tick().then(() => {
+          if (scopeIdentity !== identity || !viewportEl) return;
+          pendingLayoutAnchor = anchor;
+          const resolved = resolveAnchoredScrollTop({ anchor, rows: projectedRows, rowPositions });
+          if (resolved !== null) applyScrollTop(clampLayoutScrollTop(resolved, totalHeight, viewportHeight));
+          pendingLayoutAnchor = null;
+        });
+      },
+    });
+    return () => onReadingPosition?.(null);
+  });
   // Capture the reading position before a layout switch changes mounted card sizes.
   let previousImageMode: string | null = null;
   $effect.pre(() => {
@@ -550,7 +571,7 @@
     followingHeaderLead = readFiniteNumber(styles.getPropertyValue("--fce-wall-gap"), 0) * 0.5;
     listScrollbarWidth = Math.max(0, node.offsetWidth - node.clientWidth);
     const availableWidth = Math.max(0, node.clientWidth - horizontalPadding);
-    const nextColumnCount = computeColumnCount({
+    const nextColumnCount = runtimeDevice === "phone" ? 1 : computeColumnCount({
       availableWidth,
       minCardWidth: readFiniteNumber(
         styles.getPropertyValue("--fce-card-min-width"),
@@ -576,6 +597,7 @@
   }
 
   function bindShell(node: HTMLDivElement): { destroy: () => void } {
+    const stopViewport = runtimeDevice !== "desktop" ? installVisualViewport(node) : () => undefined;
     const report = (): void => {
       onShellResize?.(node.clientWidth);
     };
@@ -586,7 +608,7 @@
 
     return {
       destroy() {
-        resizeObserver.disconnect();
+        stopViewport(); resizeObserver.disconnect();
       },
     };
   }
@@ -895,6 +917,7 @@
 </script>
 
 <div
+  data-fce-device={runtimeDevice}
   class="fce-shell {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {nav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
   data-fce-font-size={appearance.uiFontSize ?? "default"}
   data-fce-density={appearance.uiDensity ?? "default"}
@@ -902,6 +925,7 @@
   use:bindShell
 >
   <NavigationPane
+    {mobileApp} mobile={runtimeDevice !== "desktop"}
     {strings}
     {nav}
     {scope}
@@ -917,6 +941,9 @@
     onToggleNavPane={handleToggleNavPane}
   />
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
+  {#if runtimeDevice !== "desktop"}
+    <button class="fce-mobile-back clickable-icon" type="button" aria-label={strings.mobile.back} onclick={() => onNavigateBack?.()}>{strings.mobile.back}</button>
+  {/if}
   <Toolbar
     {attachSearchHistorySuggest}
     {strings}

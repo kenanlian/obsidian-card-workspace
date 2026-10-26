@@ -68,6 +68,7 @@ export interface NavMenuActions {
   filterByOnlyPropertyValue: (key: string, ref: PropertyScalarRef) => void;
 }
 export interface NavMenuDeps {
+  appendTouchOrderMenu?: (menu: Menu, originId: string) => void;
   strings: UiStrings;
   /** Browse Tag filter capability; Tag menus filter only when enabled (C6). */
   browseTagFilter: boolean;

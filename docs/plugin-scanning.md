@@ -17,9 +17,9 @@ rules, and applies the scanner's severity policy:
 - Rules explicitly skipped by the scanner: disabled, including the noisy
   `@typescript-eslint/no-unsafe-*` checks listed in the public configuration.
 
-The recommended rules also receive the project's desktop-only manifest and
+The recommended rules also receive the project's mobile-enabled manifest and
 minimum Obsidian version. For example, the lookbehind rule remains enabled at
-error severity but accepts desktop-only code according to the official rule's
+error severity but checks guarded desktop adapters according to the official rule's
 own policy.
 
 The scan excludes tests, mocks, scripts, locale modules, build output, and other

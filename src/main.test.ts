@@ -592,7 +592,10 @@ function createPluginHarness(): {
     };
   };
 } {
+  const deviceStorage = new Map<string, unknown>();
   const app = {
+    loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
+    saveLocalStorage: (key: string, data: unknown) => { deviceStorage.set(key, data); },
     workspace: {
       on: vi.fn((eventName: string, callback: (...args: unknown[]) => unknown) => {
         obsidianMockState.workspaceCallbacks[eventName] = callback;
@@ -2638,13 +2641,11 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
   });
 
   it("isolates initial navigation persistence failure from search startup", async () => {
-    const { plugin } = createPluginHarness();
+    const { plugin, app } = createPluginHarness();
     (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
       expandedFolderPaths: ["missing"],
     });
-    (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData.mockRejectedValue(
-      new Error("disk unavailable"),
-    );
+    (app as unknown as { saveLocalStorage: () => void }).saveLocalStorage = () => { throw new Error("disk unavailable"); };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     plugin.onload();

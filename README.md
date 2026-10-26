@@ -85,7 +85,7 @@ Card Workspace restores the last **folder** you browsed. If it was the vault roo
 
 ## Compatibility and limitations
 
-- **Desktop only.** Card Workspace does not run on mobile.
+- **Desktop and mobile.** Phones use a main workspace page with modal navigation; tablets adapt to container width. See [mobile usage and validation](docs/mobile.md) for device settings and pending real-device acceptance.
 - **Left sidebar.** Open it from the ribbon icon or the command palette.
 - **Obsidian version.** Requires Obsidian 1.11.4 or later. Obsidian 1.13+ uses native confirmation dialogs and declarative settings with settings search; 1.11.4–1.12 use compatible dialogs and the same settings through the legacy renderer. Behavior and compatibility follow `manifest.json`. Earlier Obsidian versions keep receiving the last compatible release (1.3.4).
 - **Supported files.** Markdown (`.md`) cards receive full previews and full-text search. Bases (`.base`) use a title and placeholder. Canvas (`.canvas`) renders a small diagram of nodes, connections, and labels. Excalidraw (`.excalidraw` and `.excalidraw.md`) displays an SVG exported beside the scene; install the Excalidraw plugin and enable SVG auto-export. These three kinds are searched by title only. Diagram previews always appear inline with the whole image visible, independently of the card image settings. See [diagram preview limits and export names](docs/diagram-previews.md).

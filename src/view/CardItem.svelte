@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { touchMenu } from "./touch-menu";
   import { onDestroy } from "svelte";
   import type { CardImageState } from "../images/types";
   import { setIcon } from "obsidian";
@@ -555,6 +556,7 @@
   draggable={nativeFileDrag || editorDrop}
   onclick={onCardClick}
   onkeydown={onCardKeydown}
+  use:touchMenu={onCardContextMenuAction}
   oncontextmenu={onCardContextMenuAction}
   ondragstart={handleCardDragStart}
   ondrag={onCardDrag}

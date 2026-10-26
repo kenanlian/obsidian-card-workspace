@@ -139,7 +139,7 @@ export interface CardHoverLinkPayload {
   mouseEvent: MouseEvent;
 }
 
-export type FolderSelectionSource = "programmatic" | "panel-picker" | "links-follow";
+export type FolderSelectionSource = "programmatic" | "panel-picker" | "links-follow" | "history" | "restore";
 
 export interface FolderSelectionRequest {
   requestId: number;

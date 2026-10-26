@@ -606,9 +606,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       },
     ];
     return groups.filter((group) => group.heading !== inputStrings.quickInputHeading || this.plugin.runtimePlatform?.capabilities.quickInput !== false)
-      .map((group) => ({ ...group, items: group.items.filter((item) => !item.control
-        || !["dragInsertAction", "enableHeadingDragInsert"].includes(item.control.key)
-        || this.plugin.runtimePlatform?.capabilities.editorDrop !== false) }));
+      .map((group) => ({ ...group, items: group.items.filter((item) => ((this.plugin.runtimePlatform?.device ?? "desktop") === "desktop"
+        || (item.name !== inputStrings.globalShortcutName && (!item.control || !["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"].includes(item.control.key))))) }));
   }
 
   private resolveSectionControl(key: string) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mobileNavigation } from "./mobile-navigation";
   import { NAVIGATION_FILTER_FOCUS_ID } from "./navigation-model";
   import { setIcon, setTooltip } from "obsidian";
   import { tick } from "svelte";
@@ -21,6 +22,8 @@
     type NavigationSortDragState } from "./navigation-sort-dnd";
   import type { FolderActionPayload, NavContextMenuPayload } from "./types";
   interface Props {
+    mobileApp?: import("obsidian").App;
+    mobile?: boolean;
     strings?: UiStrings;
     nav?: PanelNavState;
     scope?: PanelScopeState;
@@ -47,6 +50,7 @@
     supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
   let {
+    mobileApp, mobile = false,
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
     onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
     onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane,
@@ -480,7 +484,7 @@
   The accessible name is a hidden element rather than `aria-label`, because
   Obsidian renders a hover tooltip for every element carrying `aria-label`.
 -->
-<nav class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
+<nav use:mobileNavigation={{ app: mobileApp, enabled: mobile && nav.layoutMode === "single", visible: nav.visible, onClose: onToggleNavPane }} class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
   <span class="fce-sr-only" id={paneLabelId}>{labels.ariaLabel}</span>
   <div class="fce-nav-pane-header">
     {#if nav.layoutMode === "single"}

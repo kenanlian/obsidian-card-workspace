@@ -10,9 +10,12 @@ import { attachSearchHistorySuggest, type SearchHistorySuggestOptions } from "./
 /** The slice of `FolderCardView` the panel callbacks route through. */
 export interface PanelHost {
   app: App;
+  registerReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
+  navigateBack?: () => void;
   panelModel: PanelModel;
   modules: ViewModules;
   plugin: {
+    runtimePlatform?: import("../runtime/platform").RuntimePlatformServices;
     openNoteFromCard: (path: string, destination?: never, location?: CardOpenLocation) => Promise<unknown>;
     startCardFileDrag: CardFileDragStarter;
   };
@@ -32,6 +35,9 @@ type PanelCallbackProps = { panelModel: PanelModel; onCardDragStart: CardFileDra
 /** Builds the props the Svelte panel is mounted with. */
 export function buildPanelProps(view: PanelHost): PanelCallbackProps {
   return {
+    onReadingPosition: (bridge: import("./scope-history").ReadingPositionBridge | null) => view.registerReadingPosition?.(bridge),
+    onNavigateBack: () => view.navigateBack?.(),
+    mobileApp: view.app, runtimeDevice: view.plugin.runtimePlatform?.device ?? "desktop",
     panelModel: view.panelModel,
     onCardDragStart: (detail: CardFileDragStartPayload) => view.plugin.startCardFileDrag(detail),
     attachSearchHistorySuggest: (input: HTMLInputElement, options: SearchHistorySuggestOptions) =>

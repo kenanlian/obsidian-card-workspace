@@ -1,7 +1,8 @@
+import { QuickInputDraftSession, resolveQuickInputTarget, type QuickInputDraftContext as DraftContext, type QuickInputTarget } from "./quick-input-session";
 import type { RuntimeActionResult } from "../runtime/platform";
-import { Platform, TFile, TFolder, setIcon, type App } from "obsidian";
+import { Platform, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
-import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
+import { resolveTemplateName, type NoteInputResult, type NoteTemplateDefinition, type QuickInputRequest } from "../note-input";
 import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputDesktopWindow } from "./quick-input-desktop";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
@@ -11,13 +12,6 @@ import { installQuickInputDrag } from "./quick-input-drag";
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 200;
 interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
-type DraftContext = Pick<QuickInputRequest, "config" | "template" | "now">;
-interface QuickInputTarget {
-  template: NoteTemplateDefinition | null;
-  folderPath: string | null;
-  insertPosition: QuickInputConfig["insertPosition"];
-  valid: boolean;
-}
 interface Draft {
   root: HTMLDivElement;
   editor: NativeMarkdownEditor;
@@ -28,11 +22,7 @@ interface Draft {
   sendLabel: HTMLSpanElement;
   cancel: HTMLButtonElement;
   session: Session;
-  composing: boolean;
-  pending: boolean;
-  request: QuickInputRequest | null;
-  context: DraftContext;
-  templateReady: boolean;
+  submission: QuickInputDraftSession;
   cleanup: Array<() => void>;
 }
 interface Options {
@@ -159,8 +149,8 @@ export class QuickInputWindowManager {
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
       draft = { root, editor, destination, destinationIcon, destinationText, send, sendLabel, cancel,
-        composing: false, pending: false, request: null, cleanup: [],
-        session, context, templateReady,
+        submission: new QuickInputDraftSession(context, templateReady), cleanup: [],
+        session,
       };
       const current = draft;
       this.drafts.add(current);
@@ -173,10 +163,10 @@ export class QuickInputWindowManager {
           pin.setAttribute("aria-pressed", String(pinned));
         } catch (error) { console.warn("[card-workspace] Quick input pin failed", error); this.options.notify(this.options.getStrings().desktopUnavailable); }
       });
-      this.listen(current, cancel, "click", () => { if (!current.pending) this.close(current); });
+      this.listen(current, cancel, "click", () => { if (!current.submission.pending) this.close(current); });
       this.listen(current, send, "click", () => { void this.send(current); });
-      this.listen(current, root, "compositionstart", () => { current.composing = true; this.refresh(current); });
-      this.listen(current, root, "compositionend", () => { current.composing = false; this.refresh(current); });
+      this.listen(current, root, "compositionstart", () => { current.submission.composing = true; this.refresh(current); });
+      this.listen(current, root, "compositionend", () => { current.submission.composing = false; this.refresh(current); });
       this.listen(current, root, "keydown", (event) => {
         const key = event as KeyboardEvent;
         if ((key.ctrlKey || key.metaKey) && !key.altKey && key.key === "Enter") this.handleModEnter(current, key);
@@ -207,17 +197,7 @@ export class QuickInputWindowManager {
 
   /** A captured request keeps describing its own destination across later settings edits. */
   private resolveTarget(context: DraftContext): QuickInputTarget {
-    const { config, template } = context;
-    const folderPath = config.templateId ? template?.targetFolderPath ?? null : config.folderPath;
-    const target = { template, folderPath, insertPosition: config.insertPosition, valid: false };
-    if (folderPath === null || folderPath === undefined) return target;
-    const folder = folderPath === "" ? this.options.app.vault.getRoot() : this.options.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof TFolder)) return target;
-    if (template) {
-      const file = this.options.app.vault.getAbstractFileByPath(template.filePath);
-      if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return target;
-    }
-    return { ...target, valid: config.insertPosition === "start" || config.insertPosition === "end" };
+    return resolveQuickInputTarget(this.options.app, context);
   }
 
   private resolveTint(settings: PluginSettings): { name: string; value: string } {
@@ -237,16 +217,16 @@ export class QuickInputWindowManager {
   private refresh(draft: Draft): void {
     if (this.disposed || !this.drafts.has(draft)) return;
     const strings = this.options.getStrings();
-    const target = this.resolveTarget(draft.context);
-    target.valid = target.valid && draft.templateReady;
-    draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !target.valid;
-    draft.cancel.disabled = draft.pending;
+    const target = this.resolveTarget(draft.submission.context);
+    target.valid = target.valid && draft.submission.templateReady;
+    draft.send.disabled = draft.submission.pending || draft.submission.composing || !draft.editor.getValue().trim() || !target.valid;
+    draft.cancel.disabled = draft.submission.pending;
     draft.cancel.textContent = strings.cancel;
-    draft.sendLabel.textContent = draft.pending ? strings.sending : strings.send;
-    draft.send.setAttribute("aria-label", draft.pending ? strings.sending : strings.send);
+    draft.sendLabel.textContent = draft.submission.pending ? strings.sending : strings.send;
+    draft.send.setAttribute("aria-label", draft.submission.pending ? strings.sending : strings.send);
     const shortcut = Platform.isMacOS ? "⌘+Enter" : "Ctrl+Enter";
-    draft.send.title = target.valid ? (draft.pending ? strings.sending : `${strings.send} (${shortcut})`) : strings.invalidQuickInputConfig;
-    draft.root.setAttribute("aria-busy", String(draft.pending));
+    draft.send.title = target.valid ? (draft.submission.pending ? strings.sending : `${strings.send} (${shortcut})`) : strings.invalidQuickInputConfig;
+    draft.root.setAttribute("aria-busy", String(draft.submission.pending));
     this.paintDestination(draft, target, strings);
   }
 
@@ -270,23 +250,17 @@ export class QuickInputWindowManager {
     if (event.defaultPrevented) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.isComposing && !draft.composing) void this.send(draft);
+    if (!event.isComposing && !draft.submission.composing) void this.send(draft);
   }
 
   private send(draft: Draft): void {
-    if (!this.drafts.has(draft) || draft.pending || draft.composing) return;
-    if (!draft.request) draft.editor.flush();
-    if (!draft.editor.getValue().trim()) return;
+    if (!this.drafts.has(draft) || draft.submission.pending || draft.submission.composing) return;
     const strings = this.options.getStrings();
-    if (!draft.templateReady || !this.resolveTarget(draft.context).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
-    if (!draft.request) {
-      draft.request = { ...draft.context, now: draft.context.template ? draft.context.now : new Date(),
-        submissionId: `${this.submissionPrefix}-${++this.sequence}`, text: draft.editor.getValue() };
-    }
-    draft.pending = true;
-    draft.editor.setReadOnly(true);
+    if (!draft.submission.templateReady || !this.resolveTarget(draft.submission.context).valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
+    const request = draft.submission.freeze(draft.editor, `${this.submissionPrefix}-${++this.sequence}`);
+    if (!request) return;
     this.refresh(draft);
-    void this.submitSession(draft.session, draft.request);
+    void this.submitSession(draft.session, request);
   }
 
   /** Pending writes retain only a session token and request, never the closed UI. */
@@ -301,7 +275,7 @@ export class QuickInputWindowManager {
       this.options.notify(this.options.getStrings().sendFailed(error instanceof Error ? error.message : String(error)));
     } finally {
       const draft = session.draft;
-      if (draft && !session.closed) { draft.pending = false; this.refresh(draft); }
+      if (draft && !session.closed) { draft.submission.pending = false; this.refresh(draft); }
     }
   }
 

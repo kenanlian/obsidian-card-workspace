@@ -1,5 +1,5 @@
 import { RuntimeActivity } from "./runtime/activity";
-import { DESKTOP_RESOURCE_BUDGET } from "./runtime/resource-budget";
+import { resolveRuntimeResourceBudget } from "./runtime/resource-budget";
 /*
  * Copyright (c) 2026 kenanlian
  * SPDX-License-Identifier: GPL-3.0-only
@@ -36,7 +36,7 @@ import { isSupportedImagePath } from "./images/image-source";
 import { ThumbnailService } from "./images/ThumbnailService";
 import { ThumbnailStore } from "./images/ThumbnailStore";
 import { ThumbnailWorker } from "./images/ThumbnailWorker";
-import { resolveVaultCacheNamespace } from "./runtime/vault-namespace";
+import { resolveVaultCacheIdentity } from "./runtime/vault-namespace";
 import { EditorView, dropCursor } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
@@ -87,9 +87,11 @@ export default class CardWorkspacePlugin extends Plugin {
   });
   readonly runtimeActivity = new RuntimeActivity();
   private readonly activityWindows = new Map<Window, () => void>();
-  readonly resourceBudget = DESKTOP_RESOURCE_BUDGET;
   readonly runtimePlatform = createRuntimePlatformServices(() => this.app, window);
-  private get vaultCacheNamespace(): string { return resolveVaultCacheNamespace(this.app); }
+  readonly resourceBudget = resolveRuntimeResourceBudget(this.runtimePlatform.device);
+  private resolvedCacheIdentity: ReturnType<typeof resolveVaultCacheIdentity> | null = null;
+  private get vaultCacheIdentity() { return this.resolvedCacheIdentity ??= resolveVaultCacheIdentity(this.app, this.runtimePlatform.device); }
+  private get vaultCacheNamespace(): string { return this.vaultCacheIdentity.namespace; }
   readonly quickInputShortcut = new QuickInputShortcut({
     bridge: () => {
       const result = this.runtimePlatform.quickInputDesktop();
@@ -99,6 +101,8 @@ export default class CardWorkspacePlugin extends Plugin {
     save: async (accelerator) => { await this.saveSettings({ quickInputGlobalShortcut: accelerator }); await this.flushSettings(); },
     open: () => { void this.openQuickInput(); },
   });
+  private mobileQuickInput: import("./input/MobileQuickInput").MobileQuickInput | null = null;
+  private mobileQuickInputOpening: Promise<RuntimeActionResult> | null = null;
   private quickInputManager: QuickInputWindowManager | null = null;
   private quickInputInitialization: Promise<QuickInputWindowManager | null> | null = null;
   private readonly templateReferenceReconciler = new TemplateReferenceReconciler({
@@ -108,8 +112,20 @@ export default class CardWorkspacePlugin extends Plugin {
   private readonly settingsStore = new SettingsStore({
     load: () => this.loadData(),
     save: (data) => this.saveData(data),
+    local: {
+      load: () => this.app.loadLocalStorage("card-workspace.device-settings.v1"),
+      save: (data) => this.app.saveLocalStorage("card-workspace.device-settings.v1", data),
+      onError: (error) => { console.warn("[Card Workspace] Device settings unavailable", error); new Notice(this.getUiStrings().mobile.localStorageUnavailable); },
+    },
   });
   private thumbnails: { service: ThumbnailService; vault: string } | null = null;
+  private readonly scopeHistoryAnchors = new WeakMap<WorkspaceLeaf, Map<string, import("./view/scroll-anchoring").RowAnchor>>();
+  getScopeHistoryAnchors(leaf: WorkspaceLeaf) {
+    let anchors = this.scopeHistoryAnchors.get(leaf);
+    if (!anchors) { anchors = new Map(); this.scopeHistoryAnchors.set(leaf, anchors); }
+    return anchors;
+  }
+  readonly navigationSessionId = `${Date.now()}-${Math.random()}`;
   private selectionRequestSeq = 0;
   private cardOpenSeq = 0;
   private templateOpenDepth = 0;
@@ -134,6 +150,7 @@ export default class CardWorkspacePlugin extends Plugin {
     workGate: this.runtimeActivity.background,
     resourceBudget: this.resourceBudget,
     getVaultNamespace: () => this.vaultCacheNamespace,
+    canPersist: () => this.vaultCacheIdentity.persistent,
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
     getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
@@ -184,7 +201,7 @@ export default class CardWorkspacePlugin extends Plugin {
       objectUrls += snapshot.images.objectUrls;
       if (views.length < 16) views.push(snapshot);
     });
-    return { resourceBudget: this.resourceBudget, activity: this.runtimeActivity.getDiagnostics(),
+    return { device: this.runtimePlatform.device, storage: this.vaultCacheIdentity, settingsStorage: this.settingsStore.getPersistenceDiagnostics(), resourceBudget: this.resourceBudget, activity: this.runtimeActivity.getDiagnostics(),
       search: this.searchCoordinator.getResourceDiagnostics(), thumbnails: this.thumbnails?.service.getDiagnostics() ?? null,
       totals: { viewCount, activePreviewReads, previewCacheEntries, diagramBytes, searchSourceBytes, objectUrls }, views, omittedViews: Math.max(0, viewCount - views.length) };
   }
@@ -196,7 +213,7 @@ export default class CardWorkspacePlugin extends Plugin {
       const service = new ThumbnailService({
         workGate: this.runtimeActivity.background,
         resourceBudget: this.resourceBudget,
-        storage: new ThumbnailStore(vault, undefined, this.resourceBudget.thumbnails.diskEntries, this.resourceBudget.thumbnails.diskBytes),
+        storage: new ThumbnailStore(vault, this.vaultCacheIdentity.persistent ? undefined : null, this.resourceBudget.thumbnails.diskEntries, this.resourceBudget.thumbnails.diskBytes),
         generator: new ThumbnailWorker(this.resourceBudget.image),
         isCurrent: (fingerprint) => {
           const file = this.app.vault.getAbstractFileByPath(fingerprint.path);
@@ -367,6 +384,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.templateNoteFocusAbort?.abort();
     this.templateNoteFocusAbort = null;
     this.workspaceSettingTab = null;
+    this.mobileQuickInput?.dispose(); this.mobileQuickInput = null;
     this.editorDropController.dispose();
     this.nativeFileDragController.dispose();
     this.cancelLinkCorrection?.();
@@ -491,7 +509,27 @@ export default class CardWorkspacePlugin extends Plugin {
     return error instanceof Error ? error.message : String(error);
   }
 
+  appendMobileInsertMenu(menu: import("obsidian").Menu, path: string): void {
+    if (this.runtimePlatform.device !== "desktop") this.editorDropController.appendMobileMenu(menu, path);
+  }
+
   async openQuickInput(win?: Window): Promise<RuntimeActionResult> {
+    if (this.runtimePlatform.quickInputPresentation === "modal") {
+      await this.settingsReadyPromise;
+      if (this.disposed) return { outcome: "unavailable", reason: "host" };
+      if (this.mobileQuickInput?.isOpen()) { this.mobileQuickInput.focusDraft(); return { outcome: "ok", value: undefined }; }
+      if (this.mobileQuickInputOpening) return this.mobileQuickInputOpening;
+      this.mobileQuickInputOpening = import("./input/MobileQuickInput").then(({ MobileQuickInput }) => {
+        if (this.disposed) return { outcome: "unavailable", reason: "host" } as const;
+        this.mobileQuickInput = new MobileQuickInput({ app: this.app, phone: this.runtimePlatform.device === "phone",
+          getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings(), notify: message => { new Notice(message); },
+          prepareTemplate: (template, now) => this.getNoteCreationService().prepareQuickInputTemplate(template, now),
+          submit: request => this.getNoteCreationService().submitQuickInput(request),
+        });
+        this.mobileQuickInput.open(); return { outcome: "ok", value: undefined } as const;
+      }).finally(() => { this.mobileQuickInputOpening = null; });
+      return this.mobileQuickInputOpening;
+    }
     const desktop = this.runtimePlatform.quickInputDesktop();
     if (desktop.outcome === "unavailable") return desktop;
     await this.settingsReadyPromise;
@@ -889,7 +927,7 @@ export default class CardWorkspacePlugin extends Plugin {
     try {
       if (this.disposed) return null;
       return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
-        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate);
+        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop");
     } catch (error) {
       if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
       return null;
@@ -914,7 +952,7 @@ export default class CardWorkspacePlugin extends Plugin {
     const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
     if (!(folder instanceof TFolder)) return view;
     await this.dispatchSelectionRequest(this.createSelectionRequest(
-      createFolderScope(folder.path, settings.includeSubfolders), "programmatic"));
+      createFolderScope(folder.path, settings.includeSubfolders), "restore"));
     return view;
   }
 
@@ -1015,6 +1053,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
   private async loadSettings(): Promise<void> {
     const status = await this.settingsStore.init();
+    if (!this.vaultCacheIdentity.persistent) new Notice(this.getUiStrings().mobile.cacheUnavailable);
     if (status === "unsupported-schema") {
       this.showUnsupportedSchemaNotice();
     }

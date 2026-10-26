@@ -30,3 +30,16 @@ export function createRuntimeResourceBudget(overrides: {
   }
   return Object.freeze(result);
 }
+
+/** Selected once at plugin construction, independent of viewport changes. */
+export function resolveRuntimeResourceBudget(device: import("./platform").RuntimeDevice): RuntimeResourceBudget {
+  if (device === "desktop") return DESKTOP_RESOURCE_BUDGET;
+  const phone = device === "phone", mib = 1024 * 1024;
+  return createRuntimeResourceBudget({
+    preview: { concurrency: phone ? 2 : 3, startupCards: phone ? 3 : 4, entries: phone ? 128 : 256, diagramBytes: (phone ? 4 : 8) * mib },
+    searchPreview: { entries: phone ? 24 : 32, bytes: (phone ? 4 : 8) * mib },
+    search: { readers: phone ? 2 : 4, batchSize: phone ? 100 : 150, ingestTerms: phone ? 10_000 : 15_000 },
+    thumbnails: { memoryEntries: phone ? 16 : 32, memoryBytes: (phone ? 4 : 8) * mib, diskEntries: phone ? 500 : 1000, diskBytes: (phone ? 64 : 128) * mib },
+    image: { maxBytes: phone ? 20_000_000 : 30_000_000, maxPixels: phone ? 16_000_000 : 24_000_000, maxEdge: phone ? 768 : 1024 },
+  });
+}

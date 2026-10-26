@@ -217,6 +217,16 @@ export class ArrangementActions {
     this.deps.publishGroups("cards", "bulk");
   }
 
+  async movePinnedCard(path: string, delta: -1 | 1): Promise<void> {
+    const owner = this.resolveArrangementOwner();
+    const pins = owner.kind === "box" ? owner.box.pinnedPaths : this.deps.context.getSettings().pinnedPaths;
+    const index = pins.indexOf(path), target = index + delta;
+    if (index < 0 || target < 0 || target >= pins.length) return;
+    const next = [...pins]; [next[index], next[target]] = [next[target], next[index]];
+    if (owner.kind === "box") await this.deps.updateActiveBox(box => ({ ...box, pinnedPaths: next }));
+    else await this.deps.saveSettings({ pinnedPaths: next });
+  }
+
   async onPinToggle(detail: { path?: unknown; pinned?: unknown }): Promise<void> {
     const path = typeof detail.path === "string" ? detail.path : "";
     if (path.length === 0) {

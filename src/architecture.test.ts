@@ -1010,8 +1010,8 @@ describe("input creation ownership", () => {
   it("keeps the native editor runtime behind a first-open boundary and the write service outside view state", () => {
     const service = dependencyGraph.get("src/services/NoteCreationService.ts");
     expect(service?.local.some((file) => isUnder(file, "src/view") || isUnder(file, "src/input"))).toBe(false);
-    const eagerNativeConsumers = [...dependencyGraph].filter(([file, deps]) =>
-      file !== "src/input/QuickInputWindowManager.ts" && deps.local.includes("src/input/native-markdown-editor.ts"));
+    const eagerNativeConsumers = [...runtimeDependencyGraph].filter(([file, deps]) =>
+      !["src/input/QuickInputWindowManager.ts", "src/input/mobile-editor.ts"].includes(file) && deps.local.includes("src/input/native-markdown-editor.ts"));
     expect(eagerNativeConsumers).toEqual([]);
     const shell = fs.readFileSync(path.join(srcRoot, "main.ts"), "utf8");
     const shellAst = parseTypeScript(shell);
@@ -1019,6 +1019,8 @@ describe("input creation ownership", () => {
       && !node.importClause?.isTypeOnly && ts.isStringLiteral(node.moduleSpecifier)
       && node.moduleSpecifier.text.includes("QuickInputWindowManager"));
     expect(eagerWindowImports).toEqual([]);
+    expect(shell).toContain('import("./input/MobileQuickInput")');
+    expect(runtimeDependencyGraph.get("src/input/mobile-editor.ts")?.local).toContain("src/input/native-markdown-editor.ts");
   });
 });
 

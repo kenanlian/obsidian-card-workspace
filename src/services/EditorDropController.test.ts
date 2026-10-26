@@ -18,6 +18,7 @@ interface MenuState {
 
 const mockState = vi.hoisted(() => ({
   notices: [] as string[],
+  copyFallbacks: [] as Array<{ value: string; readOnly: boolean; focus: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> }>,
   leavesByType: {} as Record<string, unknown[]>,
   menus: [] as MenuState[],
   submenuSupported: true,
@@ -120,6 +121,10 @@ vi.mock("obsidian", () => {
   }
 
   return {
+    Modal: class {
+      contentEl = { createEl: () => { const field = { value: "", readOnly: false, focus: vi.fn(), select: vi.fn() }; mockState.copyFallbacks.push(field); return field; } };
+      setTitle() {} open() {}
+    },
     Notice: MockNotice,
     Menu: MockMenu,
     TAbstractFile: MockTAbstractFile,
@@ -727,4 +732,63 @@ describe("EditorDropController", () => {
     expect(app.vault.cachedRead).not.toHaveBeenCalled();
     expect(editor.replaceRange).not.toHaveBeenCalled();
   });
+});
+
+describe("mobile editor target insertion", () => {
+  beforeEach(() => { mockState.notices = []; mockState.menus = []; mockState.leavesByType = {}; });
+  function setup() {
+    const app = createAppMock(), controller = createController(app);
+    const source = createFile("Source.md"), target = createFile("Target.md"), editor = createEditorMock({ line: 0, ch: 3 });
+    const view = Object.assign(new MarkdownView({} as never), { editor, file: target });
+    mockState.leavesByType.markdown = [{ view }];
+    app.vault.getAbstractFileByPath.mockImplementation(((path: string) => path === source.path ? source : path === target.path ? target : null) as never);
+    const enter = () => {
+      controller.handleActiveLeafChange({ view } as never);
+      controller.handleActiveLeafChange({ view: { getViewType: () => "folder-card-view" } } as never);
+    };
+    return { app, controller, source, target, editor, view, enter };
+  }
+  async function open(f: ReturnType<typeof setup>) {
+    const { Menu } = await import("obsidian"); const menu = new Menu();
+    f.controller.appendMobileMenu(menu, f.source.path); return mockState.menus.at(-1)!;
+  }
+  it("captures the primary cursor before entry and inserts once without replacing the selection", async () => {
+    const f = setup(); f.enter(); f.editor.getCursor.mockReturnValue({ line: 0, ch: 9 });
+    const menu = await open(f); expect(menu.items[0].title).toBe("Insert into Target.md");
+    const insert = menu.items.find(item => item.title === "Insert wiki link")!;
+    insert.onClick!(); insert.onClick!(); await Promise.resolve(); await Promise.resolve();
+    expect(f.editor.replaceRange).toHaveBeenCalledOnce(); expect(f.editor.replaceRange).toHaveBeenCalledWith("[[Source]]", { line: 0, ch: 3 }, undefined, "card-workspace-drag");
+    f.controller.dispose();
+  });
+  it.each(["edited", "closed", "renamed", "switched", "document"])("rejects a target %s while the content read is pending", async kind => {
+    const f = setup(), cm = new EditorView({} as never); Object.assign(f.editor, { cm }); f.enter();
+    let finish!: (value: string) => void; f.app.vault.cachedRead.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const menu = await open(f); menu.items.find(item => item.title === "Insert card content")!.onClick!();
+    if (kind === "edited") f.editor.getValue.mockReturnValue("changed");
+    if (kind === "closed") mockState.leavesByType.markdown = [];
+    if (kind === "renamed") f.target.path = "Renamed.md";
+    if (kind === "switched") f.controller.handleActiveLeafChange({ view: new MarkdownView({} as never) } as never);
+    if (kind === "document") Object.assign(cm.state, { doc: {} });
+    finish("body"); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(f.editor.replaceRange).not.toHaveBeenCalled(); f.controller.dispose();
+  });
+  it("offers copy without a target and preserves non-Markdown file restrictions", async () => {
+    const f = setup(); f.source.path = "Source.canvas"; f.source.extension = "canvas";
+    const menu = await open(f);
+    expect(menu.items[0].title).toBe("No valid Markdown editor target");
+    expect(menu.items.some(item => item.title === "Copy · Insert wiki link")).toBe(true);
+    expect(menu.items.some(item => item.title === "Copy · Insert embed link")).toBe(true);
+    expect(menu.items.some(item => item.title.includes("card content"))).toBe(false); f.controller.dispose();
+  });
+  it("opens selectable text when mobile clipboard access fails", async () => {
+    const f = setup(); mockState.copyFallbacks = [];
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(async () => { throw new Error("denied"); }) } });
+    try {
+      const menu = await open(f); menu.items.find(item => item.title === "Copy · Insert wiki link")!.onClick!();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(mockState.copyFallbacks[0]).toMatchObject({ value: "[[Source]]", readOnly: true });
+      expect(mockState.copyFallbacks[0].select).toHaveBeenCalledOnce();
+    } finally { vi.unstubAllGlobals(); f.controller.dispose(); }
+  });
+
 });
