@@ -36,6 +36,13 @@ describe("touch context intent", () => {
     await vi.advanceTimersByTimeAsync(600); expect(f.open).not.toHaveBeenCalled();
     f.node.click(); expect(f.click).toHaveBeenCalledOnce(); f.action.destroy();
   });
+  it("deduplicates native contextmenu events that beat the long-press timer", async () => {
+    const f = setup(); pointer(f.node, "pointerdown"); await vi.advanceTimersByTimeAsync(480);
+    f.node.dispatchEvent(new MouseEvent("contextmenu")); pointer(window, "pointerup");
+    await vi.advanceTimersByTimeAsync(40); f.node.click();
+    expect(f.context).toHaveBeenCalledOnce(); expect(f.open).not.toHaveBeenCalled(); expect(f.click).not.toHaveBeenCalled();
+    f.action.destroy();
+  });
   it("preserves interactive child buttons and desktop mouse context menus", async () => {
     const f = setup(), button = document.createElement("button"); f.node.append(button);
     pointer(button, "pointerdown"); await vi.advanceTimersByTimeAsync(600); expect(f.open).not.toHaveBeenCalled();

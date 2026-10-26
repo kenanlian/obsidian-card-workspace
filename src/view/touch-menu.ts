@@ -5,14 +5,18 @@ export function touchMenu(node: HTMLElement, open: (event: MouseEvent) => void) 
   let pointer: { id: number; x: number; y: number } | null = null;
   const pointers = new Set<number>();
   let suppressUntil = 0;
+  let touchInteraction = false;
   const cancel = () => { if (timer !== null) win.clearTimeout(timer); timer = null; pointer = null; };
   const trackPointer = (event: PointerEvent) => {
+    if (event.pointerType === "mouse") return;
     pointers.add(event.pointerId);
     if (pointer && event.pointerId !== pointer.id) cancel();
   };
   const down = (event: PointerEvent) => {
-    pointers.add(event.pointerId);
+    suppressUntil = 0; touchInteraction = event.pointerType !== "mouse";
     cancel();
+    if (!touchInteraction) return;
+    pointers.add(event.pointerId);
     if (pointers.size !== 1 || event.pointerType === "mouse" || (event.target as HTMLElement).closest("button,input,textarea,a")) return;
     suppressUntil = 0;
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -29,7 +33,11 @@ export function touchMenu(node: HTMLElement, open: (event: MouseEvent) => void) 
   const up = (event: PointerEvent) => { pointers.delete(event.pointerId); cancel(); };
   const suppress = (event: Event) => {
     if (Date.now() < suppressUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
-    else if (event.type === "contextmenu") cancel();
+    else if (event.type === "contextmenu") {
+      cancel();
+      // Some hosts deliver their native long-press menu before our 500ms timer.
+      if (touchInteraction) suppressUntil = Date.now() + 1200;
+    }
   };
   win.addEventListener("pointerdown", trackPointer, true);
   node.addEventListener("pointerdown", down);
