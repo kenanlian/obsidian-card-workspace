@@ -926,6 +926,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private async activateView(allowCreate = true): Promise<FolderCardView | null> {
     try {
       if (this.disposed) return null;
+      if (this.runtimePlatform.device !== "desktop") this.editorDropController.captureMenuTargetBeforeActivation();
       return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
         (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop");
     } catch (error) {

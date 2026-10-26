@@ -791,4 +791,16 @@ describe("mobile editor target insertion", () => {
     } finally { vi.unstubAllGlobals(); f.controller.dispose(); }
   });
 
+  it("captures the editor already active when the plugin was enabled", async () => {
+    const f = setup();
+    Object.assign(f.app.workspace, { getActiveViewOfType: () => f.view });
+    f.controller.captureMenuTargetBeforeActivation();
+    const menu = await open(f); expect(menu.items[0].title).toBe("Insert into Target.md"); f.controller.dispose();
+  });
+  it("invalidates a target renamed away and back before opening its menu", async () => {
+    const f = setup(); f.enter();
+    f.controller.handleVaultMutation({ type: "rename", path: "Renamed.md", oldPath: "Target.md", isMarkdown: true, isFolder: false } as never);
+    const menu = await open(f); expect(menu.items[0].title).toBe("No valid Markdown editor target"); f.controller.dispose();
+  });
+
 });

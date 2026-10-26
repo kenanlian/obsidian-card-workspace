@@ -112,13 +112,23 @@ export class EditorDropController {
     }
   }
 
+  captureMenuTargetBeforeActivation(): void {
+    const view = this.app.workspace.getActiveViewOfType?.(MarkdownView);
+    if (view?.file) this.captureMenuTarget(view);
+  }
+
+  private captureMenuTarget(view: MarkdownView): void {
+    if (!view.file) return;
+    this.menuTarget = { view, file: view.file, path: view.file.path, editor: view.editor,
+      document: this.getEditorDocument(view.editor), content: view.editor.getValue(), position: { ...view.editor.getCursor("head") } };
+  }
+
   handleActiveLeafChange(leaf: WorkspaceLeaf | null): void {
     if (leaf?.view instanceof MarkdownView) {
       this.lastMarkdown = leaf.view; this.menuTarget = null;
     } else if (leaf?.view?.getViewType?.() === "folder-card-view") {
       const view = this.lastMarkdown;
-      if (view?.file) this.menuTarget = { view, file: view.file, path: view.file.path, editor: view.editor,
-        document: this.getEditorDocument(view.editor), content: view.editor.getValue(), position: { ...view.editor.getCursor("head") } };
+      if (view?.file) this.captureMenuTarget(view);
       this.lastMarkdown = null;
     } else { this.lastMarkdown = null; this.menuTarget = null; }
     if (this.pendingDrop && (!(leaf?.view instanceof MarkdownView)
@@ -132,12 +142,12 @@ export class EditorDropController {
   }
 
   handleVaultMutation(event: VaultMutationEvent): void {
-    const operation = this.pendingDrop;
-    if (!operation) return;
     const affects = (path: string | null) => path !== null && [event.path, event.oldPath].some(
-      (changed) => changed !== null && (path === changed || (event.isFolder && path.startsWith(`${changed}/`))),
+      changed => changed !== null && (path === changed || (event.isFolder && path.startsWith(`${changed}/`))),
     );
-    if (affects(operation.sourcePath) || affects(operation.targetPath)) this.cancelPendingDrop();
+    if (this.menuTarget && affects(this.menuTarget.path)) this.menuTarget = null;
+    const operation = this.pendingDrop;
+    if (operation && (affects(operation.sourcePath) || affects(operation.targetPath))) this.cancelPendingDrop();
   }
 
   handleDragStart(event: DragEvent): void {
