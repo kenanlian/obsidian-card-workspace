@@ -2380,6 +2380,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
     it("supports base canvas and excalidraw cards without non-markdown cachedRead", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
+      const settings = { ...(view as any).plugin.getSettings(), fileVisibility: "documents" };
+      (view as any).plugin.getSettings.mockReturnValue(settings);
       const root = attachChildren(createFolder("projects/active"), [
         createMarkdownFile("projects/active/direct.md"),
         createNonMarkdownFile("projects/active/reference.base", "base"),
@@ -2402,6 +2404,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
     it("collectSupportedFiles recurses nested markdown files when includeSubfolders is true", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
+      const settings = { ...(view as any).plugin.getSettings(), fileVisibility: "documents" };
+      (view as any).plugin.getSettings.mockReturnValue(settings);
       const root = attachChildren(createFolder("projects/active"), [
         createMarkdownFile("projects/active/direct.md"),
         attachChildren(createFolder("projects/active/nested"), [
@@ -2419,6 +2423,8 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
 
     it("collectSupportedFiles recurses from root when includeSubfolders is true", () => {
       const { view, app } = createViewWithFile("projects/active/direct.md");
+      const settings = { ...(view as any).plugin.getSettings(), fileVisibility: "documents" };
+      (view as any).plugin.getSettings.mockReturnValue(settings);
       const root = attachChildren(createFolder(""), [
         createMarkdownFile("projects/active/direct.md"),
         attachChildren(createFolder("projects/active/nested"), [

@@ -27,11 +27,11 @@ function webp(animated = false): ArrayBuffer {
   return bytes.buffer;
 }
 describe("pre-decode image budgets", () => {
-  it("measures static PNG/WebP and rejects animation", () => {
+  it("measures PNG/WebP including animations for static first-frame thumbnails", () => {
     expect(readImageHeader(png())).toMatchObject({ width: 80, height: 40, mime: "image/png" });
     expect(readImageHeader(webp())).toMatchObject({ width: 100, height: 50, mime: "image/webp" });
-    expect(readImageHeader(png(80, 40, true))).toBeNull();
-    expect(readImageHeader(webp(true))).toBeNull();
+    expect(readImageHeader(png(80, 40, true))).toMatchObject({ width: 80, height: 40, animated: true });
+    expect(readImageHeader(webp(true))).toMatchObject({ width: 100, height: 50, animated: true });
   });
   it("enforces exact inclusive pixel and byte budgets before decoding", () => {
     expect(readImageHeader(png(10000, 5000))).not.toBeNull();
@@ -54,4 +54,34 @@ describe("pre-decode image budgets", () => {
     for (const buffer of [new ArrayBuffer(0), new ArrayBuffer(50), png().slice(0, 30), webp().slice(0, 20), jpeg(9)]) expect(readImageHeader(buffer)).toBeNull();
     const broken = png(); new DataView(broken).setUint32(8, 0xffffffff); expect(readImageHeader(broken)).toBeNull();
   });
+});
+
+function avif(width: number, height: number): ArrayBuffer {
+  const box = (name: string, data: Uint8Array): Uint8Array => {
+    const result = new Uint8Array(data.length + 8);
+    new DataView(result.buffer).setUint32(0, result.length);
+    result.set(new TextEncoder().encode(name), 4); result.set(data, 8); return result;
+  };
+  const spatial = new Uint8Array(12), view = new DataView(spatial.buffer);
+  view.setUint32(4, width); view.setUint32(8, height);
+  const properties = box("iprp", box("ipco", box("ispe", spatial)));
+  const meta = new Uint8Array(properties.length + 4); meta.set(properties, 4);
+  const brands = new Uint8Array(12); brands.set(new TextEncoder().encode("avif")); brands.set(new TextEncoder().encode("avif"), 8);
+  const type = box("ftyp", brands), metadata = box("meta", meta);
+  const result = new Uint8Array(type.length + metadata.length); result.set(type); result.set(metadata, type.length);
+  return result.buffer;
+}
+it("bounds GIF canvas and AVIF spatial properties before decode", () => {
+  const gif = Uint8Array.from(Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64"));
+  const view = new DataView(gif.buffer); view.setUint16(6, 100, true); view.setUint16(8, 50, true);
+  expect(readImageHeader(gif.buffer)).toMatchObject({ width: 100, height: 50, mime: "image/gif" });
+  view.setUint16(6, 65535, true); view.setUint16(8, 65535, true);
+  expect(readImageHeader(gif.buffer)).toBeNull();
+  expect(readImageHeader(avif(80, 40))).toMatchObject({ width: 80, height: 40, mime: "image/avif" });
+  expect(readImageHeader(avif(10000, 5000))).not.toBeNull();
+  expect(readImageHeader(avif(10000, 5001))).toBeNull();
+  const malformed = avif(80, 40); new DataView(malformed).setUint32(20, 0xffffffff);
+  expect(readImageHeader(malformed)).toBeNull();
+  const nonAvif = avif(80, 40); new Uint8Array(nonAvif).fill(0, 8, 20);
+  expect(readImageHeader(nonAvif)).toBeNull();
 });

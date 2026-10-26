@@ -1970,6 +1970,45 @@ describe("FolderCardView host contract", () => {
     ]);
   });
 
+  it("commits file visibility and navigation counts together while retaining authored references", async () => {
+    const { view, plugin } = createHarness();
+    const settings = (plugin.getSettings as unknown as () => PluginSettings)();
+    const root = new testState.TestTFolder("");
+    const notes = new testState.TestTFolder("notes");
+    const files = ["notes/n.md", "notes/p.png", "notes/data.custom", "notes/LICENSE"].map((path) => new testState.TestTFile(path));
+    notes.children = files; root.children = [notes];
+    const entries = new Map<string, unknown>([["", root], ["notes", notes], ...files.map((file) => [file.path, file] as [string, unknown])]);
+    (view.app.vault.getRoot as ReturnType<typeof vi.fn>).mockReturnValue(root);
+    (view.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation((path) => entries.get(path) ?? null);
+    settings.pinnedPaths = [files[1].path];
+    settings.favorites = [{ kind: "file", ref: files[1].path }];
+    settings.boxes = [{ id: "files", name: "Files", rules: [], manualPaths: files.map((file) => file.path),
+      excludedPaths: [], pinnedPaths: [files[1].path], sort: { field: "mtime", direction: "desc" }, group: { ...DEFAULT_GROUP_SPEC } }];
+    (view as any).cardScope = createFolderScope("notes", false);
+    const model = (view as any).panelModel;
+    const observed: { count: number; paths: string[] }[] = [];
+    const unsubscribe = model.subscribe((state: any) => {
+      if (state.cards.loading || !state.cards.records.length) return;
+      const node = state.nav.folderTree.find((item: any) => item.path === "notes");
+      if (node) observed.push({ count: node.directCount, paths: state.cards.records.map((card: any) => card.path) });
+    });
+    (view as any).modules.navLayout.refreshFolderTreeState();
+    try {
+      for (const [visibility, count] of [["supported", 2], ["documents", 1], ["all", 4], ["supported", 2]] as const) {
+        settings.fileVisibility = visibility;
+        await view.applyUpdateIntent("reload", "settings-change");
+        const snapshot = model.getState();
+        expect(snapshot.cards.records).toHaveLength(count);
+        expect(snapshot.nav.folderTree.find((node: any) => node.path === "notes").directCount).toBe(count);
+        expect((view as any).modules.boxActions.collectBoxFiles(settings.boxes[0])).toHaveLength(count);
+        expect(settings.pinnedPaths).toEqual([files[1].path]);
+        expect(settings.favorites).toEqual([{ kind: "file", ref: files[1].path }]);
+        expect(settings.boxes[0].manualPaths).toEqual(files.map((file) => file.path));
+      }
+      expect(observed.every((snapshot) => snapshot.count === snapshot.paths.length)).toBe(true);
+    } finally { unsubscribe(); await view.onClose(); }
+  });
+
   it("counts supported card files and descendant folders regardless of the inline count setting", () => {
     const { view } = createHarness();
     const settings = (view as any).plugin.getSettings() as Record<string, unknown>;
@@ -1994,22 +2033,22 @@ describe("FolderCardView host contract", () => {
     const [rootNode, projectsNode] = (view as any).modules.navLayout.buildFolderTree() as FolderTreeNode[];
 
     expect(rootNode.directCount).toBe(1);
-    expect(rootNode.recursiveCount).toBe(4);
+    expect(rootNode.recursiveCount).toBe(6);
     expect(rootNode.recursiveFolderCount).toBe(2);
-    expect(projectsNode.directCount).toBe(1);
-    expect(projectsNode.recursiveCount).toBe(3);
+    expect(projectsNode.directCount).toBe(2);
+    expect(projectsNode.recursiveCount).toBe(5);
     expect(projectsNode.recursiveFolderCount).toBe(1);
-    expect(projectsNode.children[0].directCount).toBe(2);
-    expect(projectsNode.children[0].recursiveCount).toBe(2);
+    expect(projectsNode.children[0].directCount).toBe(3);
+    expect(projectsNode.children[0].recursiveCount).toBe(3);
     expect(projectsNode.children[0].recursiveFolderCount).toBe(0);
 
     settings.showNavItemCounts = false;
 
     const [disabledRootNode, disabledProjectsNode] = (view as any).modules.navLayout.buildFolderTree() as FolderTreeNode[];
 
-    expect(disabledRootNode.recursiveCount).toBe(4);
+    expect(disabledRootNode.recursiveCount).toBe(6);
     expect(disabledRootNode.recursiveFolderCount).toBe(2);
-    expect(disabledProjectsNode.recursiveCount).toBe(3);
+    expect(disabledProjectsNode.recursiveCount).toBe(5);
   });
 
   it("normalizes slash root selection requests to the internal empty-string folder path", async () => {

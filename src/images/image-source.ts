@@ -1,6 +1,6 @@
 import { TFile, type App } from "obsidian";
 export type ImageSource = { status: "unknown" | "none" } | { status: "found"; file: TFile };
-export function isSupportedImagePath(path: string): boolean { return /\.(png|jpe?g|webp|bmp)$/i.test(path); }
+export function isSupportedImagePath(path: string): boolean { return /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(path); }
 /** Metadata is the sole body-reference source; never read Markdown for images. */
 export function resolveFirstImage(app: App, note: TFile): ImageSource {
   const cache = app.metadataCache.getFileCache(note);

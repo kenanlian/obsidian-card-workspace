@@ -53,6 +53,7 @@ import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import { normalizeHiddenNavSections } from "./navigation-visibility";
 import { captureQuickInputAccelerator } from "./input/QuickInputShortcut";
 import type CardWorkspacePlugin from "./main";
+import { isFileVisibility } from "./file-visibility";
 
 // These are plugin-owned data shared by both renderers, not newer host APIs.
 // The getSettingDefinitions override also checks compatibility with native types.
@@ -80,6 +81,8 @@ function optionRecord(options: readonly { value: string; label: string }[]): Rec
 
 function declarativeSettingPatch(key: string, value: unknown): PartialPluginSettings | null {
   switch (key) {
+    case "fileVisibility":
+      return isFileVisibility(value) ? { fileVisibility: value } : null;
     case "defaultCardOpenBehavior":
       return typeof value === "string" && isDefaultCardOpenBehavior(value)
         ? { defaultCardOpenBehavior: value }
@@ -180,6 +183,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const section = this.resolveSectionControl(key);
     if (section) return !settings.hiddenNavSections.includes(section);
     switch (key) {
+      case "fileVisibility":
+        return settings.fileVisibility;
       case "quickInputTemplateId":
         return normalizeQuickInput(settings.quickInput).templateId ?? "";
       case "quickInputFolderPath":
@@ -410,6 +415,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         type: "group",
         heading: strings.behaviorHeading,
         items: [
+          { name: strings.fileVisibilityName, desc: strings.fileVisibilityDesc,
+            control: { type: "dropdown", key: "fileVisibility", options: strings.fileVisibilityOptions } },
           {
             name: strings.defaultCardOpenBehaviorName,
             desc: strings.defaultCardOpenBehaviorDesc,

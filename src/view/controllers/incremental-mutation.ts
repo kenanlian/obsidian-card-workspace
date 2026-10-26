@@ -1,5 +1,6 @@
 import { TFile, type App } from "obsidian";
 
+import { createFileVisibilityPolicy, type FileVisibility } from "../../file-visibility";
 import type { SortDirection, LinksSortField } from "../../settings";
 import { migrateRenamedPath, pruneRemovedPath } from "../bulk-selection";
 import { createCardRecord } from "../card-record";
@@ -14,6 +15,7 @@ export interface BulkSelectionState {
 
 export interface IncrementalMutationDeps {
   app: App;
+  fileVisibility?: FileVisibility;
   sort: { field: LinksSortField; direction: SortDirection };
   prepareOrderMetadata?: (card: NoteCardRecord) => void;
   pendingHydration: {
@@ -50,9 +52,10 @@ interface LiveSupportedFile {
 }
 
 /** Resolves the current live `TFile` for a path; `null` when missing/unsupported. */
-function resolveLiveSupportedFile(app: App, path: string): LiveSupportedFile | null {
+function resolveLiveSupportedFile(app: App, path: string, visibility: FileVisibility = "supported"): LiveSupportedFile | null {
+  if (!createFileVisibilityPolicy(app, visibility).accepts({ path })) return null;
   const file = app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) {
+  if (!(file instanceof TFile) || file.path !== path) {
     return null;
   }
   const fileKind = resolveCardFileKind(file);
@@ -73,6 +76,7 @@ export function applyIncrementalMutation(
     return unchanged({ handled: true, action: "skipped_folder_event" });
   }
 
+  const policy = createFileVisibilityPolicy(deps.app, deps.fileVisibility);
   const cards = [...baseCards];
   const setBulkAfterRemoval = (path: string): void => {
     deps.setBulkSelection(pruneRemovedPath(deps.getBulkSelection(), path));
@@ -95,10 +99,10 @@ export function applyIncrementalMutation(
   }
 
   if (event.eventType === "create") {
-    if (!deps.isPathInActiveScope(event.path) || cards.some((card) => card.path === event.path)) {
+    if ((!deps.isPathInActiveScope(event.path) || !policy.accepts({ path: event.path })) || cards.some((card) => card.path === event.path)) {
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
-    const live = resolveLiveSupportedFile(deps.app, event.path);
+    const live = resolveLiveSupportedFile(deps.app, event.path, deps.fileVisibility);
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
@@ -116,7 +120,7 @@ export function applyIncrementalMutation(
     if (index === -1) {
       return unchanged({ handled: true, action: "skipped_not_found" });
     }
-    const live = resolveLiveSupportedFile(deps.app, event.path);
+    const live = resolveLiveSupportedFile(deps.app, event.path, deps.fileVisibility);
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
@@ -153,10 +157,11 @@ function applyRenameMutation(
   setBulkAfterRemoval: (path: string) => void,
   deps: IncrementalMutationDeps,
 ): IncrementalMutationOutcome {
+  const policy = createFileVisibilityPolicy(deps.app, deps.fileVisibility);
   const oldPath = event.oldPath;
   const oldIndex = oldPath !== null ? cards.findIndex((card) => card.path === oldPath) : -1;
 
-  if (oldIndex !== -1 && (!deps.isPathInActiveScope(event.path) || event.fileKind === null)) {
+  if (oldIndex !== -1 && ((!deps.isPathInActiveScope(event.path) || !policy.accepts({ path: event.path })) || event.fileKind === null)) {
     if (oldPath !== null) {
       deps.pendingHydration.delete(oldPath);
       setBulkAfterRemoval(oldPath);
@@ -166,7 +171,7 @@ function applyRenameMutation(
   }
 
   if (oldIndex !== -1) {
-    const live = resolveLiveSupportedFile(deps.app, event.path);
+    const live = resolveLiveSupportedFile(deps.app, event.path, deps.fileVisibility);
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }
@@ -214,7 +219,7 @@ function applyRenameMutation(
     deps.isPathInActiveScope(event.path) && event.fileKind !== null
     && !cards.some((card) => card.path === event.path)
   ) {
-    const live = resolveLiveSupportedFile(deps.app, event.path);
+    const live = resolveLiveSupportedFile(deps.app, event.path, deps.fileVisibility);
     if (!live) {
       return unchanged({ handled: false, action: "deferred_full_reload" });
     }

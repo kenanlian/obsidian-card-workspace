@@ -141,8 +141,8 @@ describe("search benchmark harness", () => {
     expect(report.memory.peak.heapUsedBytes).toBeGreaterThanOrEqual(report.memory.baseline.heapUsedBytes);
     expect(report.memory.sampleCount).toBeGreaterThan(0);
 
-    expect(report.fixtures.filesTotal).toBeGreaterThan(report.fixtures.indexedDocuments);
-    expect(report.fixtures.excludedAttachments).toBeGreaterThan(0);
+    expect(report.fixtures.filesTotal).toBe(report.fixtures.indexedDocuments);
+    expect(report.fixtures.excludedAttachments).toBe(0);
     expect(report.fixtures.digest).toMatch(/^fnv1a32-[0-9a-f]{8}$/);
     expect(report.index.documentCount).toBe(report.fixtures.indexedDocuments);
     expect(report.index.snapshotStructuredCloneBytes).toBeGreaterThan(0);
@@ -336,7 +336,7 @@ describe("search benchmark harness", () => {
     expect(document.content.length).toBeLessThan(overCapMarkdown.length);
   });
 
-  it("excludes unsupported attachments from the prepared document source", () => {
+  it("includes attachment titles without attachment bodies", () => {
     const files = generateSyntheticVault("micro");
     const documents = prepareFixtureDocuments(files);
     const documentPaths = new Set(documents.map((document) => document.path));
@@ -344,10 +344,11 @@ describe("search benchmark harness", () => {
     const attachments = files.filter((file) => file.bucket === "attachment");
     expect(attachments.length).toBeGreaterThan(0);
     for (const attachment of attachments) {
-      expect(resolveCardFileKindFromPath(attachment.path)).toBeNull();
-      expect(documentPaths.has(attachment.path)).toBe(false);
+      expect(resolveCardFileKindFromPath(attachment.path)).not.toBeNull();
+      expect(documentPaths.has(attachment.path)).toBe(true);
+      expect(documents.find((document) => document.path === attachment.path)?.content).toBe("");
     }
-    expect(documents.length).toBe(files.length - attachments.length);
+    expect(documents.length).toBe(files.length);
   });
 
   it("runs without touching a real vault or real IndexedDB", { timeout: 60_000 }, async () => {

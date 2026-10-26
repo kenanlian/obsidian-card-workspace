@@ -426,6 +426,20 @@ describe("EditorDropController", () => {
     expect(mockState.notices).toEqual(["This card type does not support that drag insertion action."]);
   });
 
+  it.each(["png", "pdf", "mp3", "webm", "zip", "custom"])("offers only supported attachment insertion actions for %s", async (extension) => {
+    const app = createAppMock();
+    const controller = createController(app, { dragInsertAction: "ask" });
+    const file = Object.assign(new TFile(), { path: `asset.${extension}`, basename: "asset" });
+    app.vault.getAbstractFileByPath.mockReturnValue(file as never);
+    const editor = createEditorMock();
+    await controller.handleCardEditorDrop(createDropEvent(JSON.stringify({ path: file.path, title: file.basename })) as unknown as DragEvent,
+      editor as never, { editor } as never);
+    expect(mockState.menus[0]?.items.map((item) => item.title)).toEqual(["zip", "custom"].includes(extension)
+      ? ["Insert wiki link"] : ["Insert wiki link", "Insert embed link"]);
+    expect(app.vault.cachedRead).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it("shows only wiki insert for excalidraw ask mode", async () => {
     const app = createAppMock();
     const controller = createController(app, { dragInsertAction: "ask" });

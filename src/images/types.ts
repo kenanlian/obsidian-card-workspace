@@ -1,6 +1,8 @@
 export const IMAGE_MAX_BYTES = 50_000_000;
+export const SVG_MAX_BYTES = 512 * 1024;
+export function maxImageBytes(path: string): number { return /\.svg$/i.test(path) ? SVG_MAX_BYTES : IMAGE_MAX_BYTES; }
 export const IMAGE_MAX_PIXELS = 50_000_000;
-export const THUMBNAIL_VERSION = 1;
+export const THUMBNAIL_VERSION = 2;
 export const THUMBNAIL_MAX_EDGE = 1024;
 export const MEMORY_MAX_ENTRIES = 64;
 export const MEMORY_MAX_BYTES = 16 * 1024 * 1024;

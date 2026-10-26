@@ -1,4 +1,5 @@
 import type { TFile } from "obsidian";
+import { createFileVisibilityPolicy, type FileVisibilityPolicy } from "../file-visibility";
 
 import { normalizeGroupSpec } from "../card-grouping-settings";
 import type { EpochToken } from "./async-epoch";
@@ -70,12 +71,13 @@ function materializeFiles(
   runtime: ScopeLoadRuntime,
   files: readonly TFile[],
   deriveTasks: boolean,
+  policy: FileVisibilityPolicy,
 ): NoteCardRecord[] {
   const app = runtime.context.getApp();
   const records: NoteCardRecord[] = [];
   for (const file of files) {
     const fileKind = resolveCardFileKind(file);
-    if (fileKind !== null) {
+    if (fileKind !== null && policy.accepts(file)) {
       const record = createCardRecord(app, file, fileKind, deriveTasks);
       if (runtime.loadScope.scope.kind === "links") record.referenceCount = readLinkReferenceCount(app, runtime.loadScope.scope, record.path);
       records.push(record);
@@ -87,10 +89,11 @@ function materializeFiles(
 function enumerateScopeFiles(
   runtime: ScopeLoadRuntime,
   token: EpochToken,
+  policy: FileVisibilityPolicy,
 ): TFile[] | null {
   const scope = runtime.loadScope.scope;
   const source = scope.kind === "folder"
-    ? iterateSupportedFiles(runtime.context.getApp(), scope.path, scope.includeSubfolders)
+    ? iterateSupportedFiles(runtime.context.getApp(), scope.path, scope.includeSubfolders, policy)
     : runtime.collectScopeFiles(scope);
   const accepted: TFile[] = [];
   const iterator = source[Symbol.iterator]();
@@ -135,6 +138,7 @@ function releasePrepared(runtime: ScopeLoadRuntime, token: EpochToken, onPublish
  */
 export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> {
   const { context, loadScope } = runtime;
+  const policy = createFileVisibilityPolicy(context.getApp(), context.getSettings().fileVisibility);
   const previousScope = context.store.getScope();
   const scopeChanged = !scopesEqual(previousScope, loadScope.scope);
   const previousBaseCards = context.store.getBaseCards();
@@ -173,7 +177,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     }
 
     const candidateVaultGeneration = context.epochs.vaultContent.value;
-    const files = cachedFiles ?? enumerateScopeFiles(runtime, loadToken);
+    const files = cachedFiles ?? enumerateScopeFiles(runtime, loadToken, policy);
     if (files === null || !isCurrent(runtime, loadToken)) return false;
     const linksScope = loadScope.scope.kind === "links" ? loadScope.scope : null;
     const referenceCounts = linksScope
@@ -184,7 +188,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     const settings = context.getSettings();
     const viewConfig = resolveViewConfig(loadScope.scope, settings);
     const dimension = normalizeGroupSpec(viewConfig.group).dimension;
-    const records = materializeFiles(runtime, orderedFiles, dimension === "task");
+    const records = materializeFiles(runtime, orderedFiles, dimension === "task", policy);
     if (!isCurrent(runtime, loadToken)) return false;
     runtime.prepareRecordsFromCache(records, loadScope.scope);
     if (!isCurrent(runtime, loadToken)) return false;

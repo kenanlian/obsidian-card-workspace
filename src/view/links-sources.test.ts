@@ -84,9 +84,9 @@ describe("collectLinksFiles backlinks", () => {
 });
 
 describe("collectLinksFiles outgoing", () => {
-  it("excludes self and unsupported targets (.png, unresolved)", () => {
+  it("includes linked attachments while excluding self and unresolved targets", () => {
     const app = createApp(files, graph);
-    expect(new Set(pathsOf(app, "outgoing"))).toEqual(new Set([NOTE_B, NOTE_C]));
+    expect(new Set(pathsOf(app, "outgoing"))).toEqual(new Set([NOTE_B, NOTE_C, IMAGE]));
   });
 
   it("yields an empty set when the source has no resolvedLinks entry", () => {
@@ -110,7 +110,7 @@ describe("isLinksMember", () => {
     expect(isLinksMember(app, scope, NOTE_D)).toBe(false);
   });
 
-  it("accepts an outgoing dest and rejects self, png, and unresolved targets", () => {
+  it("accepts outgoing notes and attachments but rejects self and unresolved targets", () => {
     const app = createApp(files, graph);
     const scope = createLinksScope(NOTE_A, "outgoing");
     if (!isLinksScope(scope)) {
@@ -120,7 +120,7 @@ describe("isLinksMember", () => {
     expect(isLinksMember(app, scope, NOTE_B)).toBe(true);
     expect(isLinksMember(app, scope, NOTE_C)).toBe(true);
     expect(isLinksMember(app, scope, NOTE_A)).toBe(false);
-    expect(isLinksMember(app, scope, IMAGE)).toBe(false);
+    expect(isLinksMember(app, scope, IMAGE)).toBe(true);
     expect(isLinksMember(app, scope, VANISHED)).toBe(false);
     expect(isLinksMember(app, scope, "notes/Ghost.md")).toBe(false);
   });
@@ -141,9 +141,9 @@ describe("isPathRelevantToLinksScope", () => {
     expect(isPathRelevantToLinksScope(scope, "board.canvas")).toBe(true);
   });
 
-  it("rejects an unsupported extension that is not the source note", () => {
-    expect(isPathRelevantToLinksScope(scope, IMAGE)).toBe(false);
-    expect(isPathRelevantToLinksScope(scope, "notes/doc.pdf")).toBe(false);
+  it("considers attachments relevant so their graph changes can refresh the scope", () => {
+    expect(isPathRelevantToLinksScope(scope, IMAGE)).toBe(true);
+    expect(isPathRelevantToLinksScope(scope, "notes/doc.pdf")).toBe(true);
   });
 });
 

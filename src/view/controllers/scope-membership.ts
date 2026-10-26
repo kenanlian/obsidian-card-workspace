@@ -1,5 +1,6 @@
 import { TFile, type App } from "obsidian";
 
+import { createFileVisibilityPolicy } from "../../file-visibility";
 import { createCardRecord } from "../card-record";
 import { findSortedInsertIndex } from "../card-sort";
 import { resolveCardFileKind } from "../file-kind";
@@ -13,6 +14,7 @@ export type MetadataMembershipOutcome = "unchanged" | "entered" | "left";
 
 /** Shared store/app/sort accessors for symmetric single-path membership reconcile. */
 export interface PathMembershipReconcileDeps {
+  isFileVisible?: (file: Pick<TFile, "path">) => boolean;
   getBaseCards: () => readonly NoteCardRecord[];
   replaceBaseCards: (cards: NoteCardRecord[]) => void;
   prepareRecordsFromCache: (records: NoteCardRecord[]) => void;
@@ -36,6 +38,8 @@ export function reconcileSymmetricPathMembership(
   isMember: boolean,
   deps: PathMembershipReconcileDeps,
 ): MetadataMembershipOutcome {
+  isMember = isMember && (deps.isFileVisible?.({ path })
+    ?? createFileVisibilityPolicy(deps.getApp()).accepts({ path }));
   const cards = deps.getBaseCards();
   const index = cards.findIndex((card) => card.path === path);
 

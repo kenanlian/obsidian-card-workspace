@@ -1,7 +1,9 @@
+import { generateSvgThumbnail, isSvgBuffer } from "./svg-thumbnail";
 import workerSource from "./thumbnail-worker-source";
 import type { ThumbnailGenerator, ThumbnailResult } from "./types";
 export class ThumbnailWorker implements ThumbnailGenerator {
   private worker: Worker | null = null;
+  private svgAbort: AbortController | null = null;
   private finish: ((result: ThumbnailResult) => void) | null = null;
   private disabled = false;
   available(): boolean {
@@ -16,6 +18,13 @@ export class ThumbnailWorker implements ThumbnailGenerator {
     } catch { this.disabled = true; return false; }
   }
   generate(buffer: ArrayBuffer, onEligible: () => void): Promise<ThumbnailResult> {
+    if (isSvgBuffer(buffer)) {
+      this.worker?.terminate(); this.worker = null;
+      const abort = new AbortController(); this.svgAbort = abort;
+      return generateSvgThumbnail(buffer, onEligible, abort.signal).finally(() => {
+        if (this.svgAbort === abort) this.svgAbort = null;
+      });
+    }
     if (!this.available()) return Promise.resolve({ status: "skipped" });
     return new Promise((resolve) => {
       let eligible = false;
@@ -40,5 +49,5 @@ export class ThumbnailWorker implements ThumbnailGenerator {
       catch { this.dispose(); }
     });
   }
-  dispose(): void { this.worker?.terminate(); this.worker = null; this.finish?.({ status: "failed" }); }
+  dispose(): void { this.svgAbort?.abort(); this.svgAbort = null; this.worker?.terminate(); this.worker = null; this.finish?.({ status: "failed" }); }
 }

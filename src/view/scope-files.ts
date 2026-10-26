@@ -1,6 +1,6 @@
 import { TFile, TFolder, type App } from "obsidian";
 
-import { isSupportedCardFile } from "./file-kind";
+import { createFileVisibilityPolicy, type FileVisibility, type FileVisibilityPolicy } from "../file-visibility";
 
 /**
  * Supported card files in folder-scope order. The caller controls whether the
@@ -10,13 +10,15 @@ export function* iterateSupportedFiles(
   app: App,
   folderPath: string,
   includeSubfolders: boolean,
+  visibility: FileVisibility | FileVisibilityPolicy = "supported",
 ): Generator<TFile> {
+  const policy = typeof visibility === "string" ? createFileVisibilityPolicy(app, visibility) : visibility;
   const root = folderPath === "" ? app.vault.getRoot() : app.vault.getAbstractFileByPath(folderPath);
   if (!(root instanceof TFolder)) return;
 
   if (!includeSubfolders) {
     for (const child of root.children) {
-      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+      if (child instanceof TFile && policy.accepts(child)) yield child;
     }
     return;
   }
@@ -30,7 +32,7 @@ export function* iterateSupportedFiles(
         stack.push(child);
         continue;
       }
-      if (child instanceof TFile && isSupportedCardFile(child)) yield child;
+      if (child instanceof TFile && policy.accepts(child)) yield child;
     }
   }
 }
@@ -40,8 +42,9 @@ export function collectSupportedFiles(
   app: App,
   folderPath: string,
   includeSubfolders: boolean,
+  visibility: FileVisibility = "supported",
 ): TFile[] {
-  return [...iterateSupportedFiles(app, folderPath, includeSubfolders)];
+  return [...iterateSupportedFiles(app, folderPath, includeSubfolders, visibility)];
 }
 
 /** Whether `path` belongs to the folder scope rooted at `scopePath`. */

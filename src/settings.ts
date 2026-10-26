@@ -1,3 +1,4 @@
+import { isFileVisibility, type FileVisibility } from "./file-visibility";
 import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
 import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT, normalizeNoteTemplates, normalizeQuickInput, type NoteTemplateDefinition, type QuickInputConfig } from "./note-input";
 import { normalizeSearchHistory } from "./search-history";
@@ -173,6 +174,7 @@ export function isCardStyle(value: unknown): value is CardStyle {
 }
 
 export interface PluginSettings {
+  fileVisibility: FileVisibility;
   linksSort: { backlinks: LinksSortSpec; outgoing: LinksSortSpec };
   backlinkSnippetCount: BacklinkSnippetCount;
   sort: {
@@ -245,6 +247,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   filter: { tags: [], properties: [] },
   pinnedPaths: [],
   searchHistory: [],
+  fileVisibility: "supported",
   includeSubfolders: true,
   defaultView: "cards",
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
@@ -652,6 +655,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     },
     pinnedPaths: normalizePinnedPaths(data.pinnedPaths),
     searchHistory: normalizeSearchHistory(data.searchHistory),
+    fileVisibility: isFileVisibility(data.fileVisibility) ? data.fileVisibility : DEFAULT_SETTINGS.fileVisibility,
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),

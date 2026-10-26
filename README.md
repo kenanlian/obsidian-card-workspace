@@ -53,6 +53,10 @@ Use this route when you need a version other than the current Community Plugins 
 4. Turn off Restricted mode if needed.
 5. Enable **Card Workspace** in the installed plugins list.
 
+## File types
+
+Choose **Documents only**, **Common formats** (default), or **All formats** in settings. Images can display cached thumbnails; non-Markdown files are searchable by title. See [File types / 文件类型](docs/file-types.md).
+
 ## Quick start
 
 1. Select the ribbon icon, or run **Open Card Workspace view** from the command palette. The panel opens in the **left sidebar**.

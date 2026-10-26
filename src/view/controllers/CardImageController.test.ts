@@ -237,3 +237,25 @@ describe("per-view images", () => {
     h.controller.dispose(); await settle(); expect(h.service.getDiagnostics().jobs).toBe(0); expect(h.urls.revokeObjectURL).toHaveBeenCalledOnce();
   });
 });
+
+it.each(["right", "inline", "off"] as const)("shares image-file and embedded-image jobs in %s mode", async (mode) => {
+  vi.useFakeTimers();
+  const h = harness(mode);
+  const imageCard: NoteCardRecord = { ...h.card, file: h.image, path: h.image.path, fileKind: "image", title: "image" };
+  h.store.replaceBaseCards([h.card, imageCard]); h.store.replaceVisibleCards([h.card, imageCard]);
+  h.demand([h.card.path, imageCard.path]); await settle();
+  if (mode === "off") {
+    expect(h.read).not.toHaveBeenCalled(); expect(h.generate).not.toHaveBeenCalled();
+  } else {
+    expect(h.read).toHaveBeenCalledOnce(); expect(h.generate).toHaveBeenCalledOnce();
+    expect(h.controller.getPanelState().byPath[imageCard.path]?.status).toBe("ready");
+    expect(h.controller.getPanelState().byPath[h.card.path]).toEqual(h.controller.getPanelState().byPath[imageCard.path]);
+    h.epochs.load.bump(); h.store.replaceVisibleCards([imageCard]); h.controller.prepareGeneration(); h.demand([imageCard.path]); await settle();
+    expect(h.read).toHaveBeenCalledOnce();
+    h.image.stat.mtime++;
+    h.controller.handleVaultMutation({ eventType: "modify", path: h.image.path, oldPath: null, isFolder: false, fileKind: "image" });
+    h.demand([imageCard.path]); await settle();
+    expect(h.read).toHaveBeenCalledTimes(2);
+  }
+  h.controller.dispose(); h.service.dispose();
+});

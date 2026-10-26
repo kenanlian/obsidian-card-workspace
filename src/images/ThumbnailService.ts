@@ -1,4 +1,4 @@
-import { IMAGE_MAX_BYTES, MEMORY_MAX_BYTES, MEMORY_MAX_ENTRIES, imageKey,
+import { IMAGE_MAX_BYTES, maxImageBytes, MEMORY_MAX_BYTES, MEMORY_MAX_ENTRIES, imageKey,
   type ImageFingerprint, type ThumbnailGenerator, type ThumbnailResult, type ThumbnailStorage } from "./types";
 interface Consumer { signal: AbortSignal; canGenerate: () => boolean; onEligible: () => void; resolve: (result: ThumbnailResult) => void; abort: () => void }
 interface Job { fingerprint: ImageFingerprint; key: string; consumers: Set<Consumer>; eligible: boolean; invalidated?: boolean; step?: string; phase: "cache" | "queued" | "active" }
@@ -33,7 +33,7 @@ export class ThumbnailService {
       return Promise.resolve({ status: "ready", blob: cached }); }
     const outcome = this.outcomes.get(key);
     if (outcome) return Promise.resolve(outcome);
-    if (fingerprint.size <= 0 || fingerprint.size > IMAGE_MAX_BYTES) return Promise.resolve({ status: "skipped" });
+    if (fingerprint.size <= 0 || fingerprint.size > maxImageBytes(fingerprint.path)) return Promise.resolve({ status: "skipped" });
     return new Promise((resolve) => {
       let job = this.jobs.get(key);
       const fresh = !job;

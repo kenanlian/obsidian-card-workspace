@@ -653,6 +653,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["backlinkSnippetCount", { backlinkSnippetCount: "all" }],
     ["sort", { sort: { field: "name", direction: "asc" } }],
     ["group", { group: { dimension: "tag", orderBy: "count", orderDirection: "desc" } }],
+    ["fileVisibility", { fileVisibility: "all" }],
     ["includeSubfolders", { includeSubfolders: false }],
     ["defaultView", { defaultView: "cards" }],
     ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],

@@ -54,7 +54,7 @@ export interface ViewModuleHost {
   publishSelection: () => void;
   publishHydration: () => void;
   publishLoadStart: (scopeChanged: boolean) => void;
-  publishPreparedCards?: () => void;
+  publishPreparedCards?: (fileTypesChanged?: boolean) => void;
   publishSettledScope?: () => void;
   publishLoadCommit?: () => void;
   publishGroups: ViewContext["publishGroups"];
@@ -222,7 +222,12 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     refreshFolderTreeState: () => { navLayout.refreshFolderTreeState(); },
     scheduleFolderTreeRefresh: () => navLayout.scheduleFolderTreeRefresh(),
     publishLoadStart: (scopeChanged) => host.publishLoadStart(scopeChanged),
-    publishPreparedCards: () => (host.publishPreparedCards ?? host.publishLoadCommit)?.(),
+    publishPreparedCards: () => {
+      const fileTypesChanged = navLayout.prepareFileVisibility();
+      bulk.reconcileToVisibleCards();
+      if (host.publishPreparedCards) host.publishPreparedCards(fileTypesChanged);
+      else host.publishLoadCommit?.();
+    },
     publishSettledScope: () => (host.publishSettledScope ?? host.publishLoadCommit)?.(),
     startupCardCount: HydrationController.startupCardCount,
   });
@@ -272,7 +277,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     isMouseEventLike,
     resolveFolderFromUiPath: (folderPath) => folderActions.resolveFolderFromUiPath(folderPath),
     collectSupportedFiles: (folderPath, includeSubfolders) =>
-      collectSupportedFiles(context.getApp(), folderPath, includeSubfolders),
+      collectSupportedFiles(context.getApp(), folderPath, includeSubfolders, context.getSettings().fileVisibility),
     createProgrammaticSelectionRequest: (scope, forceRefresh) =>
       scopeController.createProgrammaticSelectionRequest(scope, forceRefresh),
     handleScopeSelection: (request) => scopeController.handleScopeSelection(request),

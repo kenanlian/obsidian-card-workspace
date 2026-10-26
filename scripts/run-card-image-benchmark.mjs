@@ -137,6 +137,7 @@ try {
   await page.locator("#fixtures").setInputFiles(Object.keys(stats).map((name) => path.join(publicDir, "fixtures", name)));
   await page.evaluate(() => window.imageBenchmark.setFixtureFiles([...document.querySelector("#fixtures").files]));
   report.formats = await page.evaluate(() => window.imageBenchmark.formatChecks());
+  report.imageFiles = await page.evaluate(() => window.imageBenchmark.imageFileChecks());
   const cacheResults = [];
   for (const columns of scenarios.includes("repeat") ? columnsList : []) {
     for (const cache of ["cold", "memory", "persistent"]) {

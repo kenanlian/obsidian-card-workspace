@@ -1184,7 +1184,7 @@ describe("ScopeController", () => {
       const scope = createLinksScope("notes/A.md", "backlinks");
       const serialized = controller.serializeLoadKey(controller.buildLoadKey(scope));
 
-      expect(serialized).toBe("links::notes/A.md::backlinks::reference-count::desc");
+      expect(serialized).toContain(":links::notes/A.md::backlinks::reference-count::desc");
     });
   });
 
@@ -1271,7 +1271,7 @@ describe("ScopeController", () => {
       });
 
       expect(context.store.getScope()).toEqual(createLinksScope("notes/A2.md", "backlinks"));
-      expect(controller.getLoadKey()).toBe("links::notes/A2.md::backlinks::reference-count::desc");
+      expect(controller.getLoadKey()).toContain(":links::notes/A2.md::backlinks::reference-count::desc");
       expect(controller.getLoadKey()).not.toBe(previousKey);
       expect(result.shouldRefresh).toBe(false);
       expect(result.queueAction).toBe("ignored");
@@ -1511,7 +1511,7 @@ describe("ScopeController", () => {
 
       expect(controller.isPathInActiveScope(NOTE_A)).toBe(true);
       expect(controller.isPathInActiveScope(NOTE_C)).toBe(true);
-      expect(controller.isPathInActiveScope("notes/image.png")).toBe(false);
+      expect(controller.isPathInActiveScope("notes/image.png")).toBe(true);
     });
   });
 });

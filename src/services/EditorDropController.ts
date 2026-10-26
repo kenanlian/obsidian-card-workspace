@@ -337,7 +337,8 @@ export class EditorDropController {
     if (fileKind === "markdown") {
       return ["wiki", "embed", "content", "title-content"];
     }
-    if (fileKind === "base" || fileKind === "canvas") {
+    if (fileKind === "base" || fileKind === "canvas" || fileKind === "image"
+      || fileKind === "pdf" || fileKind === "audio" || fileKind === "video") {
       return ["wiki", "embed"];
     }
 

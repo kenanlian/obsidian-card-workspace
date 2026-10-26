@@ -1,15 +1,16 @@
 import { TFile, TFolder, type App } from "obsidian";
 
-import { isSupportedCardFile } from "../file-kind";
+import { createFileVisibilityPolicy, type FileVisibility } from "../../file-visibility";
 import { normalizeScopePath } from "../scope";
 import type { FolderTreeNode } from "../types";
 
-export function buildNavigationFolderTree(app: App): FolderTreeNode[] {
+export function buildNavigationFolderTree(app: App, visibility: FileVisibility = "supported"): FolderTreeNode[] {
+  const policy = createFileVisibilityPolicy(app, visibility);
   const vault = app.vault as unknown as { getRoot?: unknown };
   if (typeof vault.getRoot !== "function") return [];
 
   const countDirectFiles = (folder: TFolder): number => folder.children.reduce(
-    (total, child) => total + (child instanceof TFile && isSupportedCardFile(child) ? 1 : 0),
+    (total, child) => total + (child instanceof TFile && policy.accepts(child) ? 1 : 0),
     0,
   );
   const buildNode = (folder: TFolder, depth: number): FolderTreeNode => {

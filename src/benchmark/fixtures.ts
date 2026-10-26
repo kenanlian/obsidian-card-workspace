@@ -8,11 +8,11 @@
  * Markdown near and over the 512KB single-note cap (Latin and near-pure Han),
  * many tiny files, the
  * non-Markdown card kinds (canvas / base / excalidraw), and attachment types
- * that must never reach the index document source.
+ * that contribute titles without reading or indexing their binary contents.
  *
- * Supported-kind classification reuses the production path-based resolver
- * (`resolveCardFileKindFromPath`) — the same logic `SearchDocumentSource`
- * applies when filtering vault files. Markdown bodies come from
+ * Classification reuses the production path resolver; binary and unknown kinds
+ * share the attachment fixture bucket. All buckets enter the document source.
+ * Markdown bodies come from
  * `./fixture-content`.
  */
 
@@ -186,7 +186,7 @@ const BASE_MTIME = 1_700_000_000_000;
 
 function classifyFixtureKind(path: string): SyntheticFixtureKind {
   const kind = resolveCardFileKindFromPath(path);
-  return kind ?? "attachment";
+  return kind === "file" || kind === "image" || kind === "pdf" || kind === "audio" || kind === "video" ? "attachment" : kind ?? "attachment";
 }
 
 /**

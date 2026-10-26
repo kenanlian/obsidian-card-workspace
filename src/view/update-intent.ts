@@ -143,6 +143,7 @@ export function resolveSettingsUpdateIntent(
   scope?: CardScope,
 ): ViewUpdateIntent | null {
   let intent: ViewUpdateIntent | null = null;
+  if (previous.fileVisibility !== next.fileVisibility) intent = "reload";
 
   if (previous.backlinkSnippetCount !== next.backlinkSnippetCount) {
     intent = mergeIntent(intent, scope && scope.kind !== "links" ? "patch" : "rehydrate");

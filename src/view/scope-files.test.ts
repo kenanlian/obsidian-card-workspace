@@ -81,12 +81,12 @@ describe("collectSupportedFiles", () => {
     ]);
     const app = createApp(folder(""), { notes });
 
-    expect(collectSupportedFiles(app, "notes", true).map((entry) => entry.path)).toEqual([
+    expect(collectSupportedFiles(app, "notes", true, "documents").map((entry) => entry.path)).toEqual([
       "notes/direct.md",
       "notes/deep/board.canvas",
       "notes/deep/table.base",
     ]);
-    expect(collectSupportedFiles(app, "notes", false).map((entry) => entry.path)).toEqual([
+    expect(collectSupportedFiles(app, "notes", false, "documents").map((entry) => entry.path)).toEqual([
       "notes/direct.md",
     ]);
   });
@@ -133,5 +133,17 @@ describe("rewritePathAfterRename", () => {
 
   it("re-exports the shared path-reference primitive for existing consumers", () => {
     expect(rewritePathAfterRename).toBe(rewritePathReference);
+  });
+});
+
+describe("file visibility across folder scopes", () => {
+  it("collects each tier including registered and extensionless files, without pruning vault files", () => {
+    const items = [file("note.md"), file("drawing.excalidraw.md"), file("photo.PNG"), file("report.pdf"), file("extra.custom"), file("LICENSE")];
+    const app = createApp(folder("", items));
+    Object.assign(app, { viewRegistry: { typeByExtension: { custom: "custom" } } });
+    expect(collectSupportedFiles(app, "", false, "documents")).toEqual(items.slice(0, 2));
+    expect(collectSupportedFiles(app, "", false, "supported")).toEqual(items.slice(0, 5));
+    expect(collectSupportedFiles(app, "", false, "all")).toEqual(items);
+    expect(collectSupportedFiles(app, "", false, "documents")).toEqual(items.slice(0, 2));
   });
 });

@@ -1,8 +1,9 @@
 import { TFile } from "obsidian";
+import type { NoteCardRecord } from "../types";
 import { diagramDependencies, isDiagramKind, type DiagramPreviewResult } from "../diagram-preview";
 import type { ThumbnailService } from "../../images/ThumbnailService";
 import { resolveFirstImage, type ImageSource } from "../../images/image-source";
-import { IMAGE_MAX_BYTES, THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
+import { maxImageBytes, THUMBNAIL_VERSION, imageKey, type CardImageState, type ImageFingerprint } from "../../images/types";
 import type { VaultMutationEvent } from "../../services/vault-events";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 import type { CardImageRevealRequest, ImageViewportRequest } from "../image-request";
@@ -43,10 +44,10 @@ export class CardImageController implements DisposableController {
       || generation !== this.context.epochs.load.value) return undefined;
     const card = this.context.store.getBaseCard(path);
     if (card && this.isDiagram(card.fileKind)) return LOADING_IMAGE_STATE;
-    if (!card || card.fileKind !== "markdown" || this.context.getSettings().cardImageMode === "off") return undefined;
+    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || this.context.getSettings().cardImageMode === "off") return undefined;
     let source: ImageSource;
-    try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return undefined; }
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > IMAGE_MAX_BYTES) return undefined;
+    try { source = this.resolveSource(card); } catch { return undefined; }
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path)) return undefined;
     const state = this.demand.get(path)?.state;
     return state?.status === "failed" ? state : LOADING_IMAGE_STATE;
   }
@@ -70,7 +71,7 @@ export class CardImageController implements DisposableController {
       if (item && generationChanged) {
         const card = this.context.store.getBaseCard(path);
         let source: ImageSource = { status: "unknown" };
-        try { if (card?.fileKind === "markdown") source = resolveFirstImage(this.context.getApp(), card.file); } catch { /* no old image on an unresolved source */ }
+        try { if (card && (card.fileKind === "markdown" || card.fileKind === "image")) source = this.resolveSource(card); } catch { /* no old image on an unresolved source */ }
         if (this.retainDiagram(path, item)) { /* Transfer the validated URL. */ }
         else if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
           && source.file.path === item.fingerprint.path && source.file.stat.mtime === item.fingerprint.mtime && source.file.stat.size === item.fingerprint.size) {
@@ -92,12 +93,12 @@ export class CardImageController implements DisposableController {
   private start(path: string): void {
     const card = this.context.store.getBaseCard(path);
     if (card && this.isDiagram(card.fileKind)) { this.startDiagram(path); return; }
-    if (!card || card.fileKind !== "markdown" || this.context.getSettings().cardImageMode === "off") return;
+    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || this.context.getSettings().cardImageMode === "off") return;
     let source: ImageSource;
-    try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return; }
+    try { source = this.resolveSource(card); } catch { return; }
     const item: Demand = { source, abort: new AbortController() };
     this.demand.set(path, item);
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > IMAGE_MAX_BYTES) {
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path)) {
       if (this.layoutHints.delete(path)) this.publish();
       return;
     }
@@ -131,6 +132,10 @@ export class CardImageController implements DisposableController {
       this.rememberLayout(path, item);
       this.publish();
     }).catch(() => { if (current() && item.state) { item.state = { status: "failed" }; this.rememberLayout(path, item); this.publish(); } });
+  }
+  private resolveSource(card: NoteCardRecord): ImageSource {
+    return card.fileKind === "image" ? { status: "found", file: card.file }
+      : resolveFirstImage(this.context.getApp(), card.file);
   }
   private isDiagram(kind: string): boolean {
     return isDiagramKind(kind) && this.context.store.getScope().kind !== "links";
@@ -201,7 +206,7 @@ export class CardImageController implements DisposableController {
     for (const [path, item] of this.demand) {
       const card = this.context.store.getBaseCard(path);
       let source: ImageSource = { status: "unknown" };
-      try { if (card?.fileKind === "markdown") source = resolveFirstImage(this.context.getApp(), card.file); } catch { /* unknown sources cannot retain an old image */ }
+      try { if (card && (card.fileKind === "markdown" || card.fileKind === "image")) source = this.resolveSource(card); } catch { /* unknown sources cannot retain an old image */ }
       if (this.retainDiagram(path, item)) { /* Transfer the validated URL. */ }
       else if (item.state?.status === "ready" && source.status === "found" && item.fingerprint
         && source.file.path === item.fingerprint.path && source.file.stat.mtime === item.fingerprint.mtime && source.file.stat.size === item.fingerprint.size) item.source = source;
@@ -250,7 +255,7 @@ export class CardImageController implements DisposableController {
     const card = this.context.store.getBaseCard(path);
     if (!card || card.fileKind !== "markdown" || !item.fingerprint) return false;
     let source: ImageSource;
-    try { source = resolveFirstImage(this.context.getApp(), card.file); } catch { return false; }
+    try { source = this.resolveSource(card); } catch { return false; }
     // Missing metadata during an edit is not proof that the reference was removed.
     // Still check the attachment's live stat rather than its mutable TFile snapshot.
     const file = source.status === "unknown" ? this.context.getApp().vault.getAbstractFileByPath(item.fingerprint.path)

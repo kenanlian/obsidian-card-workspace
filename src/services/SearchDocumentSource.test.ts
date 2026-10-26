@@ -62,23 +62,18 @@ describe("SearchDocumentSource", () => {
     expect(result.map(({ path }) => path)).toEqual(files.map(({ path }) => path).filter((path) => path !== "5.md"));
   });
 
-  it("indexes only supported card files so attachments never enter the index", async () => {
+  it("indexes all file titles independently of the display setting", async () => {
     const files = MIXED_KIND_FILES.map((path) => createFile(path));
     const prepare = vi.fn(async (file: TFile) => document(file.path));
     const source = new SearchDocumentSource({ vault: { getFiles: () => files } } as never, prepare);
 
     const result = await source.readAllDocuments();
 
-    expect(result.map(({ path }) => path)).toEqual([
-      "notes/a.md",
-      "notes/board.canvas",
-      "notes/table.base",
-      "notes/sketch.excalidraw.md",
-    ]);
-    expect(prepare).toHaveBeenCalledTimes(4);
+    expect(result.map(({ path }) => path)).toEqual(MIXED_KIND_FILES);
+    expect(prepare).toHaveBeenCalledTimes(MIXED_KIND_FILES.length);
   });
 
-  it("returns null for a single unsupported path so a mutation discards it", async () => {
+  it("prepares single attachment mutations as well as notes", async () => {
     const prepare = vi.fn(async (file: TFile) => document(file.path));
     const attachment = createFile("assets/diagram.png");
     const source = new SearchDocumentSource(
@@ -86,8 +81,8 @@ describe("SearchDocumentSource", () => {
       prepare,
     );
 
-    expect(await source.readDocument("assets/diagram.png")).toBeNull();
-    expect(prepare).not.toHaveBeenCalled();
+    expect(await source.readDocument("assets/diagram.png")).toEqual(document("assets/diagram.png"));
+    expect(prepare).toHaveBeenCalledWith(attachment);
   });
 
   it("stops dequeue and omits a read that completes after abort", async () => {
@@ -139,7 +134,7 @@ describe("SearchDocumentSource", () => {
     expect(prepare).toHaveBeenCalledTimes(SEARCH_DOCUMENT_BATCH_SIZE);
   });
 
-  it("keeps attachments out of every streamed batch", async () => {
+  it("includes attachments in streamed batches", async () => {
     const files = MIXED_KIND_FILES.map((path) => createFile(path));
     const prepare = vi.fn(async (file: TFile) => document(file.path));
     const source = new SearchDocumentSource({ vault: { getFiles: () => files } } as never, prepare);
@@ -149,16 +144,11 @@ describe("SearchDocumentSource", () => {
       batches.push(batch);
     }
 
-    expect(batches.flat().map(({ path }) => path)).toEqual([
-      "notes/a.md",
-      "notes/board.canvas",
-      "notes/table.base",
-      "notes/sketch.excalidraw.md",
-    ]);
-    expect(prepare).toHaveBeenCalledTimes(4);
+    expect(batches.flat().map(({ path }) => path)).toEqual(MIXED_KIND_FILES);
+    expect(prepare).toHaveBeenCalledTimes(MIXED_KIND_FILES.length);
   });
 
-  it("snapshots path-to-mtime for supported card files only, without reading any file", async () => {
+  it("snapshots every file path-to-mtime without reading file content", async () => {
     const files = MIXED_KIND_FILES.map((path, index) => createFile(path, 100 + index));
     const prepare = vi.fn(async (file: TFile) => document(file.path));
     const cachedRead = vi.fn(async () => "");
@@ -173,6 +163,9 @@ describe("SearchDocumentSource", () => {
     expect(cachedRead).not.toHaveBeenCalled();
     expect(snapshot).toEqual({
       "notes/a.md": 100,
+      "assets/diagram.png": 101,
+      "assets/brief.pdf": 103,
+      "assets/clip.mp4": 106,
       "notes/board.canvas": 102,
       "notes/table.base": 104,
       "notes/sketch.excalidraw.md": 105,
@@ -190,4 +183,16 @@ describe("SearchDocumentSource", () => {
     expect(source.readCatalogSnapshot()).toEqual({});
     expect(prepare).not.toHaveBeenCalled();
   });
+});
+
+it("indexes binary and unknown file titles without reading their contents", async () => {
+  const { prepareSearchDocument } = await import("./SearchDocumentSource");
+  const cachedRead = vi.fn().mockRejectedValue(new Error("must not read attachments"));
+  for (const path of ["image.png", "document.pdf", "notes.txt", "archive.zip", "LICENSE", "drawing.excalidraw.md"]) {
+    const file = createFile(path);
+    file.basename = path.split(".")[0];
+    const result = await prepareSearchDocument({ vault: { cachedRead } } as never, file);
+    expect(result).toMatchObject({ path, title: file.basename, content: "" });
+  }
+  expect(cachedRead).not.toHaveBeenCalled();
 });

@@ -140,13 +140,13 @@ export async function duplicateFile(
   file: TFile,
 ): Promise<NoteOpResult> {
   try {
-    const content = await app.vault.read(file);
     const parentPath = file.parent?.path ?? "";
-    const stem = file.basename;
-    const ext = file.extension;
-    const copyName = `${stem} copy.${ext}`;
+    const suffix = /\.excalidraw\.md$/i.test(file.name) ? file.name.slice(-".excalidraw.md".length)
+      : file.extension ? `.${file.extension}` : "";
+    const stem = suffix ? file.name.slice(0, -suffix.length) : file.name;
+    const copyName = `${stem} copy${suffix}`;
     const newPath = resolveUniquePath(app, copyName, parentPath);
-    const created = await app.vault.create(newPath, content);
+    const created = await app.vault.copy(file, newPath);
     return { ok: true, file: created };
   } catch (err) {
     return { ok: false, error: String(err), path: file.path };

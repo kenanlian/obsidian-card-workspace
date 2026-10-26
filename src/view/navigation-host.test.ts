@@ -264,7 +264,7 @@ describe("buildNavigationPanelState linksDisabled (C5b)", () => {
 
   it("disables leaves for a null or unsupported selectedPath in folder scope", () => {
     expect(captureLinksDisabled({ scope: createFolderScope("", true), selectedPath: null })).toBe(true);
-    expect(captureLinksDisabled({ scope: createFolderScope("", true), selectedPath: "P.png" })).toBe(true);
+    expect(captureLinksDisabled({ scope: createFolderScope("", true), selectedPath: "P.png" })).toBe(false);
     expect(captureLinksDisabled({ scope: createFolderScope("", true), selectedPath: "notes/A.md" })).toBe(false);
   });
 

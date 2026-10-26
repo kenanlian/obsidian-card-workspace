@@ -3,6 +3,7 @@ import type { TFile } from "obsidian";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { findCardBox, getBoxMembershipSignature } from "../card-boxes";
 import { resolveCardFileKindFromPath } from "../file-kind";
+import { createFileVisibilityPolicy } from "../../file-visibility";
 import { FolderScopeFileCache } from "../folder-scope-file-cache";
 import { collectLinksFiles, isPathRelevantToLinksScope, readLinkReferenceCount } from "../links-sources";
 import { createFolderScope, scopeDisplayPath, scopesEqual,
@@ -101,6 +102,11 @@ export class ScopeController implements DisposableController {
   }
 
   serializeLoadKey(loadKey: CardLoadKey): string {
+    const policyKey = createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility).key;
+    return `${policyKey}:${this.serializeSourceLoadKey(loadKey)}`;
+  }
+
+  private serializeSourceLoadKey(loadKey: CardLoadKey): string {
     switch (loadKey.scope.kind) {
       case "box": {
         const box = findCardBox(this.context.getSettings().boxes ?? [], loadKey.scope.boxId);
@@ -333,13 +339,14 @@ export class ScopeController implements DisposableController {
   }
 
   collectScopeFiles(scope: CardScope): TFile[] {
+    const policy = createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility);
     switch (scope.kind) {
       case "folder":
-        return collectSupportedFiles(this.context.getApp(), scope.path, scope.includeSubfolders);
+        return collectSupportedFiles(this.context.getApp(), scope.path, scope.includeSubfolders, this.context.getSettings().fileVisibility);
       case "box":
         return this.deps.collectBoxFiles(scope.boxId);
       case "links":
-        return collectLinksFiles(this.context.getApp(), scope);
+        return collectLinksFiles(this.context.getApp(), scope).filter((file) => policy.accepts(file));
       default: {
         const exhaustive: never = scope;
         throw new Error(`Unhandled card scope: ${JSON.stringify(exhaustive)}`);
@@ -349,7 +356,10 @@ export class ScopeController implements DisposableController {
 
   isPathInScope(path: string, includeSubfolders: boolean): boolean { return isPathInFolderScope(path, scopeDisplayPath(this.context.store.getScope()), includeSubfolders); }
 
-  isPathInActiveScope(path: string): boolean { return this.isPathRelevantToScope(this.context.store.getScope(), path); }
+  isPathInActiveScope(path: string): boolean {
+    return createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility).accepts({ path })
+      && this.isPathRelevantToScope(this.context.store.getScope(), path);
+  }
 
   private isPathRelevantToScope(scope: CardScope, path: string): boolean {
     switch (scope.kind) {
@@ -386,6 +396,7 @@ export class ScopeController implements DisposableController {
       deletePendingHydration: this.deps.deletePendingHydration,
       getApp: () => this.context.getApp(),
       resolveSort: () => this.buildLoadKey(scope).sort,
+      isFileVisible: (file) => createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility).accepts(file),
     };
     switch (scope.kind) {
       case "box":
@@ -476,6 +487,7 @@ export class ScopeController implements DisposableController {
     if (!deferToLinksReload && !this.inFlight && !this.loading && this.scopeSettled) {
       const outcome = applyIncrementalMutation(event, this.context.store.getBaseCards(), {
         app: this.context.getApp(),
+        fileVisibility: this.context.getSettings().fileVisibility,
         sort: this.buildLoadKey(this.context.store.getScope()).sort,
         prepareOrderMetadata: (card) => {
           const scope = this.context.store.getScope();

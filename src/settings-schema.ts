@@ -23,6 +23,7 @@ export type SettingsLayer = "preferences" | "workspace" | "userData";
  */
 export const SETTINGS_LAYER_BY_KEY = {
   // preferences layer
+  fileVisibility: "preferences",
   sort: "preferences",
   linksSort: "preferences",
   backlinkSnippetCount: "preferences",

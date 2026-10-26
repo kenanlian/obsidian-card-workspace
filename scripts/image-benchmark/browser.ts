@@ -9,6 +9,7 @@ import { HydrationController } from "../../src/view/controllers/HydrationControl
 import { CardImageController } from "../../src/view/controllers/CardImageController";
 import { ThumbnailService } from "../../src/images/ThumbnailService";
 import { ThumbnailStore } from "../../src/images/ThumbnailStore";
+import { readImageHeader } from "../../src/images/image-header";
 import { ThumbnailWorker } from "../../src/images/ThumbnailWorker";
 import { DEFAULT_SETTINGS } from "../../src/settings";
 import { DEFAULT_GROUP_SPEC } from "../../src/card-grouping-settings";
@@ -67,7 +68,7 @@ async function open(options: { mode: string; columns: number; scenario: string; 
   await close();
   settings = { ...DEFAULT_SETTINGS, cardImageMode: baseline ? "off" : options.mode, cardImageFit: "contain", includeSubfolders: true };
   store = createViewStateStore(createFolderScope("notes", true)); epochs = createViewEpochs(); sourceFiles = new Map();
-  const mappings: Record<string, string> = { dense: "regular.png", mixed: "regular.png", "8k": "8k.png", long: "long.png", repeat: "regular.png", "pixel-boundary": "pixel-boundary.png", "pixel-over": "pixel-over.png", "byte-boundary": "byte-boundary.png", "byte-over": "byte-over.png" };
+  const mappings: Record<string, string> = { "image-files": "regular.png", dense: "regular.png", mixed: "regular.png", "8k": "8k.png", long: "long.png", repeat: "regular.png", "pixel-boundary": "pixel-boundary.png", "pixel-over": "pixel-over.png", "byte-boundary": "byte-boundary.png", "byte-over": "byte-over.png" };
   const fixture = mappings[options.scenario];
   const stats = await fetch("/stats.json").then((response) => response.json());
   const markdown = await fixtureFiles.get("note.md")!.text();
@@ -217,10 +218,14 @@ async function formatChecks() {
   bmpView.setInt32(18,100,true); bmpView.setInt32(22,50,true); bmpView.setUint16(26,1,true); bmpView.setUint16(28,24,true);
   bmp.fill(150,54);
   const worker = new ThumbnailWorker(), result = [];
-  for (const [format, buffer, width, height] of [["jpeg-exif-6",oriented.buffer,160,320],["webp",webp,320,160],["bmp",bmp.buffer,100,50]] as const) {
+  const avif = await fixtureFiles.get("red.avif")!.arrayBuffer();
+  const gif = await fixtureFiles.get("animated.gif")!.arrayBuffer();
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><script>window.svgExecuted=true</script><image href="https://invalid.example/remote.png"/><rect width="80" height="40" fill="red"/></svg>');
+  for (const [format, buffer, width, height] of [["jpeg-exif-6",oriented.buffer,160,320],["webp",webp,320,160],["bmp",bmp.buffer,100,50],["avif",avif,16,8],["gif-first-frame",gif,16,8],["svg",svg.buffer,80,40]] as const) {
     let eligible = false;
     const thumbnail = await worker.generate(buffer, () => { eligible = true; });
     if (!eligible || thumbnail.status !== "ready") throw new Error(`Real Worker did not decode ${format}`);
+    if (readImageHeader(await thumbnail.blob.arrayBuffer())?.animated !== false) throw new Error(`${format} thumbnail is not static`);
     const bitmap = await createImageBitmap(thumbnail.blob);
     if (bitmap.width !== width || bitmap.height !== height) throw new Error(`Wrong ${format} output dimensions ${bitmap.width}x${bitmap.height}`);
     if (format === "jpeg-exif-6") {
@@ -234,10 +239,49 @@ async function formatChecks() {
   const corrupted = new Uint8Array(await fixtureFiles.get("regular.png")!.arrayBuffer()); corrupted[50] ^= 255;
   const failure = await worker.generate(corrupted.buffer, () => undefined);
   if (failure.status !== "failed") throw new Error("Corrupt PNG was not rejected after header eligibility");
+  for (const source of [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10000" height="5001"><rect width="1" height="1"/></svg>',
+    '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>',
+  ]) {
+    const rejected = await worker.generate(new TextEncoder().encode(source).buffer, () => { throw new Error("Unsafe SVG reached decode"); });
+    if (rejected.status !== "skipped") throw new Error("Invalid SVG was not rejected before decoding");
+  }
+  if ((window as any).svgExecuted) throw new Error("SVG script executed");
   worker.dispose(); canvas.width = canvas.height = 0;
   return { formats: result, corrupted: failure.status };
 }
-(window as any).imageBenchmark = { open, load, search, restoreBrowse, scroll, close, formatChecks,
+async function imageFileChecks() {
+  const results = [];
+  for (const mode of ["off", "right", "inline"]) {
+    await open({ mode, columns: 2, scenario: "none", namespace: `image-files-${mode}` });
+    textReads = 0; originalReads = 0; referenceReads = 0;
+    records = ["regular.png", "red.avif", "animated.gif", "vector.svg"].map((name) => {
+      const file = sourceFiles.get(name)!;
+      file.name = name; file.extension = name.split(".").pop()!; file.basename = name.split(".")[0];
+      return { file, path: name, title: name, ctime: 1, mtime: 1, fileKind: "image", taskSummary: null,
+        hydrated: false, previewHtml: "", previewMode: "empty", excerpt: "" };
+    });
+    store.replaceBaseCards(records); store.replaceVisibleCards(records); publish("cards");
+    await tick();
+    await hydration!.hydrateStartupCardPaths(records.map((card) => card.path), epochs.load.token());
+    await settleImages(); await nextFrame();
+    const images = [...document.querySelectorAll<HTMLImageElement>(".fce-card-image img")];
+    if (mode === "off") {
+      if (originalReads || images.length) throw new Error("Disabled image files performed image work");
+    } else {
+      for (const image of images) await image.decode();
+      if (images.length !== 4 || images.some((image) => !image.naturalWidth)) throw new Error(`Image files missing in ${mode} mode: ${images.length}`);
+      if (originalReads !== 4 || textReads || referenceReads) throw new Error("Image files did not use demand-only direct binary sources");
+      if (mode === "right" && !document.querySelector(".fce-card-body.has-right-image")) throw new Error("Right thumbnail layout missing");
+      if (mode === "inline" && !document.querySelector(".fce-card-image.is-inline")) throw new Error("Inline layout missing");
+    }
+    results.push({ mode, originalReads, textReads, images: images.length });
+    await close();
+    if (heldUrls.size) throw new Error("Image-file object URLs leaked after close");
+  }
+  return results;
+}
+(window as any).imageBenchmark = { open, load, search, restoreBrowse, scroll, close, formatChecks, imageFileChecks,
   setFixtureFiles: (files: File[]) => { fixtureFiles = new Map(files.map((file) => [file.name, file])); }, settleImages, layoutCheck,
   diagnostics: () => ({ textReads, originalReads, peakReads, metadataReads, referenceReads, heldUrls: heldUrls.size, urlPeak, blobBytes, longTasks: [...longTasks], imageTasks: [...imageTasks], service: service?.getDiagnostics() }),
   resetCounters: () => { referenceReads = textReads = originalReads = peakReads = metadataReads = blobBytes = urlPeak = 0; longTasks.length = 0; imageTasks.length = 0; },

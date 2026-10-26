@@ -269,10 +269,14 @@ export async function runSearchBenchmark(
     "canvas (and by the same code path base/excalidraw) documents stay title-only with empty content",
   );
   recordCheck(
-    "attachments-excluded-from-document-source",
-    excludedAttachmentPaths.length === spec.buckets.attachment
-      && excludedAttachmentPaths.every((path) => resolveCardFileKindFromPath(path) === null),
-    `${excludedAttachmentPaths.length} attachment files were filtered before document preparation`,
+    "attachments-title-only",
+    excludedAttachmentPaths.length === 0
+      && files.filter((file) => file.kind === "attachment").length === spec.buckets.attachment
+      && files.filter((file) => file.kind === "attachment").every((file) => {
+        const document = documentsByPath.get(file.path);
+        return document?.title === file.title && document.content === "";
+      }),
+    `${spec.buckets.attachment} attachment files have title-only documents`,
   );
   recordCheck(
     "fixture-deterministic",

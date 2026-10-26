@@ -108,8 +108,7 @@ interface MockAppForMerge {
 
 interface MockAppForDuplicate {
   vault: {
-    read: (file: TFile) => Promise<string>;
-    create: (path: string, content: string) => Promise<TFile>;
+    copy: (file: TFile, path: string) => Promise<TFile>;
     getAbstractFileByPath: (path: string) => unknown;
   };
 }
@@ -180,73 +179,22 @@ describe("resolveUniquePath", () => {
 });
 
 describe("duplicateFile", () => {
-  it('creates a same-folder copy and resolves name collisions', async () => {
-    const source = createFile("notes/report.md");
-    const firstCopy = createFile("notes/report copy.md");
-    const secondCopy = createFile("notes/report copy 1.md");
-    const fileMap = new Map<string, TFile>([
-      [source.path, source],
-      [firstCopy.path, firstCopy],
-      [secondCopy.path, secondCopy],
-    ]);
-
-    const app: MockAppForDuplicate = {
-      vault: {
-        read: vi.fn(async (file: TFile): Promise<string> => {
-          return file.path === source.path ? "Source body" : "";
-        }),
-        create: vi.fn(async (path: string, content: string): Promise<TFile> => {
-          expect(content).toBe("Source body");
-          const created = createFile(path);
-          fileMap.set(path, created);
-          return created;
-        }),
-        getAbstractFileByPath: vi.fn((path: string): unknown => fileMap.get(path) ?? null),
-      },
-    };
-
-    const result = await duplicateFile(app as unknown as any, source);
-
-    expect(result).toEqual({ ok: true, file: expect.objectContaining({ path: "notes/report copy 2.md" }) });
-    expect(vi.mocked(app.vault.read)).toHaveBeenCalledWith(source);
-    expect(vi.mocked(app.vault.create)).toHaveBeenCalledWith("notes/report copy 2.md", "Source body");
+  it.each(["md", "png", "pdf", "canvas", ""])('preserves file contents via native copy and resolves collisions (%s)', async (extension) => {
+    const suffix = extension ? `.${extension}` : "";
+    const source = createFile(`notes/report${suffix}`, extension);
+    const first = `notes/report copy${suffix}`, second = `notes/report copy 1${suffix}`;
+    const app: MockAppForDuplicate = { vault: {
+      copy: vi.fn(async (_file, path) => createFile(path, extension)),
+      getAbstractFileByPath: (path) => [source.path, first, second].includes(path) ? source : null,
+    } };
+    const result = await duplicateFile(app as never, source);
+    expect(result).toEqual({ ok: true, file: expect.objectContaining({ path: `notes/report copy 2${suffix}` }) });
+    expect(app.vault.copy).toHaveBeenCalledWith(source, `notes/report copy 2${suffix}`);
   });
-
-  it("preserves non-markdown extensions and returns a failure result on create errors", async () => {
-    const source = createFile("diagrams/flow.canvas", "canvas");
-    const occupied = createFile("diagrams/flow copy.canvas", "canvas");
-    const fileMap = new Map<string, TFile>([
-      [source.path, source],
-      [occupied.path, occupied],
-    ]);
-
-    const app: MockAppForDuplicate = {
-      vault: {
-        read: vi.fn(async (): Promise<string> => {
-          return "Canvas body";
-        }),
-        create: vi.fn(async (path: string): Promise<TFile> => {
-          if (path.endsWith("copy 1.canvas")) {
-            throw new Error("create blocked");
-          }
-
-          const created = createFile(path, "canvas");
-          fileMap.set(path, created);
-          return created;
-        }),
-        getAbstractFileByPath: vi.fn((path: string): unknown => fileMap.get(path) ?? null),
-      },
-    };
-
-    const result = await duplicateFile(app as unknown as any, source);
-
-    expect(result).toEqual({
-      ok: false,
-      error: "Error: create blocked",
-      path: "diagrams/flow.canvas",
-    });
-    expect(vi.mocked(app.vault.read)).toHaveBeenCalledWith(source);
-    expect(vi.mocked(app.vault.create)).toHaveBeenCalledWith("diagrams/flow copy 1.canvas", "Canvas body");
+  it("reports native copy errors", async () => {
+    const source = createFile("flow.canvas", "canvas");
+    const app = { vault: { copy: vi.fn().mockRejectedValue(new Error("copy blocked")), getAbstractFileByPath: () => null } };
+    expect(await duplicateFile(app as never, source)).toEqual({ ok: false, error: "Error: copy blocked", path: source.path });
   });
 });
 describe("clipboard operations", () => {

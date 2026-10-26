@@ -113,7 +113,7 @@ const CORPUS: FakeVaultFile[] = [
   { path: "assets/diagram.png", markdown: "", mtime: 500 },
 ];
 
-const CARD_PATHS = CORPUS.filter(({ path }) => path.endsWith(".md")).map(({ path }) => path);
+const CARD_PATHS = CORPUS.map(({ path }) => path);
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -141,7 +141,7 @@ describe("search index session lifecycle", () => {
       documentCatalog?: Record<string, number>;
       metadata: IndexStoreNamespaceMetadata;
     };
-    // Attachments must never reach the index or the catalog.
+    // Every file title reaches the catalog; attachment bodies remain unread.
     expect(Object.keys(persisted.documentCatalog ?? {}).sort()).toEqual([...CARD_PATHS].sort());
     expect(persisted.metadata.documentCount).toBe(CARD_PATHS.length);
 
@@ -219,4 +219,22 @@ describe("search index session lifecycle", () => {
     await warm.syncDocumentStateFromSource();
     expect(storage.indexWrites()).toBe(writesBeforeWarmReconcile);
   });
+});
+
+it("reconciles a pre-expansion index into attachment titles without reading binary files", async () => {
+  const storage = createMemoryAdapter();
+  const oldVault = createFakeVault(CORPUS.filter((file) => file.path.endsWith(".md")));
+  const oldSession = createSession(oldVault, storage.adapter);
+  await oldSession.restore(createMetadata());
+  await oldSession.rebuildFromSource("old document-only coverage");
+  oldSession.dispose();
+  const vault = createFakeVault(CORPUS);
+  const upgraded = createSession(vault, storage.adapter);
+  try {
+    expect((await upgraded.restore(createMetadata())).outcome).toBe("restored");
+    await upgraded.syncDocumentStateFromSource();
+    expect((await upgraded.search("diagram", CARD_PATHS)).orderedPaths).toEqual(["assets/diagram.png"]);
+    expect(vault.cachedRead.mock.calls.every(([file]) => file.path.endsWith(".md"))).toBe(true);
+    expect(upgraded.getSnapshot().health.documentCount).toBe(CORPUS.length);
+  } finally { upgraded.dispose(); }
 });

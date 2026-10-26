@@ -1,4 +1,4 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { createDeflate } from "node:zlib";
 const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let i = 0; i < 8; i++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
 function crc(data) { let c = 0xffffffff; for (const byte of data) c = crcTable[(c ^ byte) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
@@ -22,6 +22,12 @@ export async function createFixtures(directory) {
   const small = await png(32, 32);
   for (const [name, bytes] of [["byte-boundary", 50_000_000], ["byte-over", 50_000_001]]) {
     const data = Buffer.alloc(bytes); small.copy(data); await writeFile(`${directory}/${name}.png`, data); stats[`${name}.png`] = bytes;
+  }
+  const vector = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><rect width="80" height="40" fill="red"/></svg>';
+  await writeFile(`${directory}/vector.svg`, vector); stats["vector.svg"] = Buffer.byteLength(vector);
+  for (const name of ["red.avif", "animated.gif"]) {
+    const data = await readFile(new URL(`./fixtures/${name}`, import.meta.url));
+    await writeFile(`${directory}/${name}`, data); stats[name] = data.length;
   }
   return stats;
 }

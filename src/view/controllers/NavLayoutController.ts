@@ -1,4 +1,5 @@
 import { TFolder } from "obsidian";
+import { createFileVisibilityPolicy } from "../../file-visibility";
 import { mergeNavigationOrder, navigationSortingEqual, orderNavigationItems, reorderNavigationItems,
   resolveNavigationSort, updateNavigationSort, type NavigationSortMode, type NavigationSortTarget } from "../../navigation-sorting";
 import { serializePropertyScalarRef } from "../../property-filter-settings";
@@ -44,6 +45,7 @@ export class NavLayoutController implements DisposableController {
   private shellWidth = 0;
   private singlePaneView: "nav" | "cards" = "cards";
   private folderTree: FolderTreeNode[] = [];
+  private folderPolicyKey: string | null = null;
   private folderTreeCountsByPath = new Map<string, { direct: number; recursive: number }>();
   private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private navCountRefreshHandle: ReturnType<Window["setTimeout"]> | null = null;
@@ -62,7 +64,9 @@ export class NavLayoutController implements DisposableController {
   private readonly requests = new NavigationRequests();
   private disposed = false;
   private sortingInput: Pick<NavigationProjectionInput, "tags" | "properties"> = { tags: [], properties: [] };
-  constructor(private readonly deps: NavLayoutControllerDeps) {}
+  constructor(private readonly deps: NavLayoutControllerDeps) {
+    this.folderPolicyKey = createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility).key;
+  }
   private get context(): ViewContext {
     return this.deps.context;
   }
@@ -509,16 +513,24 @@ export class NavLayoutController implements DisposableController {
     await this.context.saveSettings({ navPaneWidth: normalizedWidth });
   }
   buildFolderTree(): FolderTreeNode[] {
-    return buildNavigationFolderTree(this.context.getApp());
+    return buildNavigationFolderTree(this.context.getApp(), this.context.getSettings().fileVisibility);
   }
   cacheFolderTreeCounts(tree: FolderTreeNode[]): void {
     this.folderTreeCountsByPath = cacheNavigationFolderCounts(tree);
   }
-  refreshFolderTreeState(): void {
+  prepareFileVisibility(): boolean {
+    const policy = createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility);
+    if (policy.key === this.folderPolicyKey) return false;
+    this.invalidateNavCounts();
+    this.refreshFolderTreeState(false);
+    return true;
+  }
+  refreshFolderTreeState(publish = true): void {
+    this.folderPolicyKey = createFileVisibilityPolicy(this.context.getApp(), this.context.getSettings().fileVisibility).key;
     const tree = this.buildFolderTree();
     this.cacheFolderTreeCounts(tree);
     this.folderTree = tree;
-    this.pushNavLayoutState();
+    if (publish) this.pushNavLayoutState();
   }
   scheduleFolderTreeRefresh(): void {
     this.clearFolderTreeDebounce();

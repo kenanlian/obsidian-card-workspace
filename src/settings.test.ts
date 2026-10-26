@@ -1149,6 +1149,7 @@ describe("card grouping settings normalization", () => {
       ...persisted,
       preferences: {
         ...persisted.preferences,
+        fileVisibility: "supported",
         linksSort: DEFAULT_SETTINGS.linksSort, backlinkSnippetCount: 3,
         cardImageMode: "right", cardImageFit: "cover",
         uiFontSize: "default", uiDensity: "default", cardStyle: "default",
@@ -1632,6 +1633,7 @@ describe("settings layer manifest (C4)", () => {
     linksSort: "preferences",
     backlinkSnippetCount: "preferences",
     group: "preferences",
+    fileVisibility: "preferences",
     includeSubfolders: "preferences",
     defaultView: "preferences",
     defaultCardOpenBehavior: "preferences",
@@ -1777,6 +1779,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     navSectionOrder: ["boxes", "tags", "folders", "favorites"],
   });
 
+  nonDefault.fileVisibility = "all";
   nonDefault.searchHistory = ["recent"];
 
   const serialized: PersistedSettingsV2 = serializeSettings(nonDefault);
@@ -1788,6 +1791,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["backlinkSnippetCount", (d) => d.preferences.backlinkSnippetCount, "all"],
     ["sort", (d) => d.preferences.sort, { field: "name", direction: "asc" }],
     ["group", (d) => d.preferences.group, { dimension: "tag", orderBy: "count", orderDirection: "desc" }],
+    ["fileVisibility", (d) => d.preferences.fileVisibility, "all"],
     ["includeSubfolders", (d) => d.preferences.includeSubfolders, false],
     ["defaultView", (d) => d.preferences.defaultView, "cards"],
     ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],

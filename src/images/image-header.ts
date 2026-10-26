@@ -21,6 +21,11 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
         const n = v.getUint32(p), kind = text(p + 4, 4);
         if (p + n + 12 > v.byteLength) return null;
         if (kind === "acTL" || kind === "fcTL" || kind === "fdAT") animated = true;
+        if (kind === "fcTL") {
+          if (n !== 26) return null;
+          const w = v.getUint32(p + 12), h = v.getUint32(p + 16);
+          if (!w || !h || v.getUint32(p + 20) + w > width || v.getUint32(p + 24) + h > height) return null;
+        }
         p += n + 12;
         if (kind === "IEND") { ended = true; break; }
       }
@@ -33,6 +38,11 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
         const kind = text(p, 4), n = v.getUint32(p + 4, true), d = p + 8;
         if (d + n > end) return null;
         if (kind === "ANIM" || kind === "ANMF") animated = true;
+        if (kind === "ANMF") {
+          if (n < 16 || !width || !height) return null;
+          const uint24 = (position: number): number => v.getUint8(position) + (v.getUint8(position + 1) << 8) + (v.getUint8(position + 2) << 16);
+          if (2 * uint24(d) + uint24(d + 6) + 1 > width || 2 * uint24(d + 3) + uint24(d + 9) + 1 > height) return null;
+        }
         if (kind === "VP8X" && n >= 10) {
           if (p !== 12) return null;
           animated ||= (v.getUint8(d) & 2) !== 0;
@@ -85,6 +95,15 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
         }
         p += n;
       }
+    } else if (text(0, 6) === "GIF87a" || text(0, 6) === "GIF89a") {
+      mime = "image/gif";
+      width = v.getUint16(6, true); height = v.getUint16(8, true);
+      if (!validateGifFrames(buffer, width, height)) return null;
+      animated = true;
+    } else if (text(4, 4) === "ftyp") {
+      const dimensions = readAvifDimensions(buffer);
+      if (!dimensions) return null;
+      mime = "image/avif"; width = dimensions.width; height = dimensions.height;
     } else if (text(0, 2) === "BM") {
       mime = "image/bmp";
       const dib = v.getUint32(14, true);
@@ -94,7 +113,7 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
       } else return null;
     } else return null;
   } catch { return null; }
-  if (width <= 0 || height <= 0 || width * height > IMAGE_MAX_PIXELS || animated) return null;
+  if (width <= 0 || height <= 0 || width * height > IMAGE_MAX_PIXELS) return null;
   return { width, height, orientation, mime, animated };
 }
 export function thumbnailDimensions(header: ImageHeader): { width: number; height: number } {
@@ -102,4 +121,79 @@ export function thumbnailDimensions(header: ImageHeader): { width: number; heigh
   const w = swapped ? header.height : header.width, h = swapped ? header.width : header.height;
   const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(w, h));
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) };
+}
+
+/** Bounded ISO-BMFF walk. Never inspect compressed mdat payloads. */
+function readAvifDimensions(buffer: ArrayBuffer): { width: number; height: number } | null {
+  const view = new DataView(buffer);
+  let width = 0, height = 0, boxes = 0, branded = false;
+  const text = (offset: number): string => String.fromCharCode(...new Uint8Array(buffer, offset, 4));
+  const walk = (start: number, end: number, depth: number): boolean => {
+    if (depth > 8) return false;
+    for (let offset = start; offset < end;) {
+      if (offset + 8 > end || ++boxes > 10000) return false;
+      let size = view.getUint32(offset), header = 8;
+      const kind = text(offset + 4);
+      if (size === 1) {
+        if (offset + 16 > end) return false;
+        size = view.getUint32(offset + 8) * 4294967296 + view.getUint32(offset + 12); header = 16;
+      } else if (size === 0) size = end - offset;
+      if (!Number.isSafeInteger(size) || size < header || offset + size > end) return false;
+      const data = offset + header, limit = offset + size;
+      if (kind === "ftyp") {
+        if (limit - data < 8 || (limit - data) % 4 !== 0) return false;
+        for (let position = data; position + 4 <= limit; position += 4) {
+          if (position === data + 4) continue;
+          const brand = text(position); branded ||= brand === "avif" || brand === "avis";
+        }
+      } else if (kind === "ispe") {
+        if (limit - data !== 12) return false;
+        const w = view.getUint32(data + 4), h = view.getUint32(data + 8);
+        if (!w || !h || w * h > IMAGE_MAX_PIXELS) return false;
+        width = Math.max(width, w); height = Math.max(height, h);
+      } else if (kind === "meta" || kind === "iprp" || kind === "ipco") {
+        const child = data + (kind === "meta" ? 4 : 0);
+        if (child > limit || !walk(child, limit, depth + 1)) return false;
+      }
+      offset = limit;
+    }
+    return true;
+  };
+  try {
+    return walk(0, buffer.byteLength, 0) && branded && width > 0 && height > 0 && width * height <= IMAGE_MAX_PIXELS
+      ? { width, height } : null;
+  } catch { return null; }
+}
+
+/** Validate frame bounds too: a small GIF logical screen must not hide a giant frame. */
+function validateGifFrames(buffer: ArrayBuffer, width: number, height: number): boolean {
+  if (!width || !height || width * height > IMAGE_MAX_PIXELS || buffer.byteLength < 14) return false;
+  const view = new DataView(buffer);
+  let position = 13, frames = 0;
+  if (view.getUint8(10) & 0x80) position += 3 * (2 << (view.getUint8(10) & 7));
+  const subBlocks = (): boolean => {
+    while (position < view.byteLength) {
+      const size = view.getUint8(position++);
+      if (!size) return true;
+      position += size;
+    }
+    return false;
+  };
+  while (position < view.byteLength) {
+    const kind = view.getUint8(position++);
+    if (kind === 0x3b) return frames > 0;
+    if (kind === 0x21) { position++; if (!subBlocks()) return false; }
+    else if (kind === 0x2c) {
+      if (position + 9 > view.byteLength || ++frames > 10000) return false;
+      const x = view.getUint16(position, true), y = view.getUint16(position + 2, true);
+      const w = view.getUint16(position + 4, true), h = view.getUint16(position + 6, true);
+      const packed = view.getUint8(position + 8); position += 9;
+      if (!w || !h || x + w > width || y + h > height) return false;
+      if (packed & 0x80) position += 3 * (2 << (packed & 7));
+      if (position >= view.byteLength) return false;
+      const codeSize = view.getUint8(position++);
+      if (codeSize < 2 || codeSize > 8 || !subBlocks()) return false;
+    } else return false;
+  }
+  return false;
 }

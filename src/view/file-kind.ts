@@ -1,7 +1,7 @@
 import type { TFile } from "obsidian";
 import { getUiStrings, type FileKindStrings } from "../i18n";
 
-export type CardFileKind = "markdown" | "base" | "canvas" | "excalidraw";
+export type CardFileKind = "markdown" | "base" | "canvas" | "excalidraw" | "image" | "pdf" | "audio" | "video" | "file";
 
 const CARD_FILE_KIND_RULES: ReadonlyArray<{
   suffix: string;
@@ -18,7 +18,7 @@ const CARD_FILE_ICON: Record<CardFileKind, string> = {
   markdown: "file-text",
   base: "layout-list",
   canvas: "layout-dashboard",
-  excalidraw: "pen-tool",
+  excalidraw: "pen-tool", image: "image", pdf: "file-text", audio: "audio-lines", video: "film", file: "file",
 };
 
 export function resolveCardFileKindFromPath(path: string): CardFileKind | null {
@@ -30,7 +30,12 @@ export function resolveCardFileKindFromPath(path: string): CardFileKind | null {
     }
   }
 
-  return null;
+  if (!path || path.endsWith("/")) return null;
+  if (/\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(path)) return "image";
+  if (/\.pdf$/i.test(path)) return "pdf";
+  if (/\.(mkv|mov|mp4|ogv|webm)$/i.test(path)) return "video";
+  if (/\.(flac|m4a|mp3|ogg|wav|3gp)$/i.test(path)) return "audio";
+  return "file";
 }
 
 export function resolveCardFileKind(file: TFile): CardFileKind | null {

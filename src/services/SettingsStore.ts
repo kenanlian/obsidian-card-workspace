@@ -18,6 +18,7 @@ import type { PropertyFilterClause } from "../property-filter-settings";
 import { resolveSettingsUpdateIntent, type ViewUpdateIntent } from "../view/update-intent";
 
 export interface PreferencesSettings {
+  fileVisibility: PluginSettings["fileVisibility"];
   linksSort: PluginSettings["linksSort"];
   backlinkSnippetCount: PluginSettings["backlinkSnippetCount"];
   sort: PluginSettings["sort"];
@@ -159,6 +160,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.backlinkSnippetCount !== undefined) preferences.backlinkSnippetCount = patch.backlinkSnippetCount;
   if (patch.sort !== undefined) preferences.sort = patch.sort as PreferencesSettings["sort"];
   if (patch.group !== undefined) preferences.group = patch.group;
+  if (patch.fileVisibility !== undefined) preferences.fileVisibility = patch.fileVisibility;
   if (patch.includeSubfolders !== undefined) preferences.includeSubfolders = patch.includeSubfolders;
   if (patch.defaultView !== undefined) preferences.defaultView = patch.defaultView;
   if (patch.defaultCardOpenBehavior !== undefined) {
@@ -228,6 +230,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     preferences: {
+      fileVisibility: settings.fileVisibility,
       sort: { ...settings.sort },
       linksSort: { backlinks: { ...settings.linksSort.backlinks }, outgoing: { ...settings.linksSort.outgoing } },
       backlinkSnippetCount: settings.backlinkSnippetCount,

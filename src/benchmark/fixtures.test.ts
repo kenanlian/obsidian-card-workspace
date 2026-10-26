@@ -99,17 +99,17 @@ describe("synthetic benchmark fixtures", () => {
   it("classifies kinds through the production path resolver", () => {
     const files = generateSyntheticVault("smoke");
     for (const file of files) {
-      expect(file.kind).toBe(resolveCardFileKindFromPath(file.path) ?? "attachment");
+      expect(file.kind === "attachment" || file.kind === resolveCardFileKindFromPath(file.path)).toBe(true);
     }
   });
 
-  it("produces attachment fixtures that the production resolver excludes", () => {
+  it("produces attachment fixtures classified as non-document files", () => {
     const attachments = generateSyntheticVault("smoke").filter((file) => file.bucket === "attachment");
     expect(attachments.length).toBeGreaterThan(0);
     const extensions = new Set(attachments.map((file) => file.path.slice(file.path.lastIndexOf("."))));
     expect([...extensions].sort()).toEqual([".csv", ".docx", ".mp4", ".pdf", ".png", ".txt", ".webp", ".zip"]);
     for (const attachment of attachments) {
-      expect(resolveCardFileKindFromPath(attachment.path)).toBeNull();
+      expect(["image", "pdf", "audio", "video", "file"]).toContain(resolveCardFileKindFromPath(attachment.path));
     }
   });
 

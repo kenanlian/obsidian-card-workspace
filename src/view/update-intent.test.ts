@@ -54,6 +54,7 @@ function createSettings(): PluginSettings {
  * covered by its own case below.
  */
 const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
+  fileVisibility: "reload",
   sort: "reproject",
   linksSort: "reproject",
   backlinkSnippetCount: "rehydrate",
@@ -106,6 +107,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
 
 function changeSetting(settings: PluginSettings, key: keyof PluginSettings): void {
   switch (key) {
+    case "fileVisibility": settings.fileVisibility = "all"; break;
     case "linksSort": settings.linksSort = { ...settings.linksSort, backlinks: { field: "name", direction: "asc" } }; break;
     case "backlinkSnippetCount": settings.backlinkSnippetCount = "all"; break;
     case "sort": settings.sort = { field: "ctime", direction: "asc" }; break;

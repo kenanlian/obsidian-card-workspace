@@ -50,11 +50,11 @@ describe("resolveCardFileKindFromPath", () => {
     expect(resolveCardFileKindFromPath("notes/drawing.EXCALIDRAW.MD")).toBe("excalidraw");
     expect(resolveCardFileKindFromPath("notes/board.canvas")).toBe("canvas");
     expect(resolveCardFileKindFromPath("notes/table.BASE")).toBe("base");
-    expect(resolveCardFileKindFromPath("notes/other.txt")).toBeNull();
+    expect(resolveCardFileKindFromPath("notes/other.txt")).toBe("file");
   });
 
-  it("returns null for unsupported file paths", () => {
-    expect(resolveCardFileKindFromPath("notes/other.txt")).toBeNull();
+  it("classifies other files without implying visibility", () => {
+    expect(resolveCardFileKindFromPath("notes/other.txt")).toBe("file");
   });
 
   it("prefers excalidraw over the plain markdown suffix", () => {
@@ -80,7 +80,7 @@ describe("isSupportedCardFile", () => {
   it("returns true only for supported file kinds", () => {
     expect(isSupportedCardFile(createFile("notes/note.md"))).toBe(true);
     expect(isSupportedCardFile(createFile("notes/board.canvas"))).toBe(true);
-    expect(isSupportedCardFile(createFile("notes/other.txt"))).toBe(false);
+    expect(isSupportedCardFile(createFile("notes/other.txt"))).toBe(true);
   });
 });
 

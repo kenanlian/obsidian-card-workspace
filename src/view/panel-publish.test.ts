@@ -743,7 +743,7 @@ describe("FolderCardView nav-group links publication", () => {
 
     view.setSelectedFile("picture.png");
     const unsupported = (view as unknown as { buildNavGroup: () => PanelModelState["nav"] }).buildNavGroup();
-    expect(unsupported.projection.rows.filter((row) => row.kind === "links").every((row) => row.disabled)).toBe(true);
+    expect(unsupported.projection.rows.filter((row) => row.kind === "links").every((row) => row.disabled)).toBe(false);
 
     view.cleanupLifecycle();
   });

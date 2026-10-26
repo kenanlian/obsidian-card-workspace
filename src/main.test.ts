@@ -1804,6 +1804,30 @@ describe("CardWorkspacePlugin editor drop registration", () => {
 });
 
 describe("CardWorkspacePlugin open destination routing", () => {
+  it.each([true, false])("routes unknown formats to the default app without creating a leaf (success: %s)", async (success) => {
+    const desktop = await import("./view/desktop-shell");
+    const open = vi.spyOn(desktop, "openInDefaultApp").mockResolvedValue(success ? { ok: true } : { ok: false, error: "No default app" });
+    const { plugin, app } = createPluginHarness();
+    const file = Object.assign(new TFile(), { path: "files/archive.zip" });
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    try {
+      await plugin.openNoteFromCard(file.path, "new-tab");
+      expect(open).toHaveBeenCalledWith(app, file.path);
+      expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+      if (!success) expect(obsidianMockState.notices).toContain("No default app");
+    } finally { open.mockRestore(); }
+  });
+
+  it("opens a plugin-registered format in the host", async () => {
+    const { plugin, app } = createPluginHarness();
+    Object.assign(app, { viewRegistry: { typeByExtension: { custom: "custom-view" } } });
+    const file = Object.assign(new TFile(), { path: "files/asset.custom" });
+    const leaf = { openFile: vi.fn(async () => undefined) };
+    app.vault.getAbstractFileByPath.mockReturnValue(file); app.workspace.getLeaf.mockReturnValue(leaf);
+    await plugin.openNoteFromCard(file.path, "new-tab");
+    expect(leaf.openFile).toHaveBeenCalledWith(file, { active: true });
+  });
+
   beforeEach(() => {
     obsidianMockState.notices = [];
     vi.stubGlobal("window", globalThis);

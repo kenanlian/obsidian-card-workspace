@@ -19,7 +19,7 @@ import {
   type BrowseScope,
 } from "../card-boxes";
 import { isBoxMember, matchesRule } from "../card-box-membership";
-import { isSupportedCardFile } from "../file-kind";
+import { createFileVisibilityPolicy } from "../../file-visibility";
 import { pruneFavoriteBoxes } from "../favorites";
 import { BoxConfigModal } from "../modals/BoxConfigModal";
 import { BoxNameModal } from "../modals/BoxNameModal";
@@ -105,7 +105,8 @@ export class BoxActions {
    * cheap; it is cleared on vault mutations and on box persistence.
    */
   countBoxCards(box: CardBoxDefinition): number {
-    const signature = getBoxMembershipSignature(box);
+    const signature = getBoxMembershipSignature(box) + createFileVisibilityPolicy(
+      this.deps.context.getApp(), this.deps.context.getSettings().fileVisibility).key;
     const cached = this.boxCardCountCache.get(box.id);
     if (cached && cached.signature === signature) {
       return cached.count;
@@ -124,6 +125,7 @@ export class BoxActions {
   collectBoxFiles(box: CardBoxDefinition): TFile[] {
     const app = this.deps.context.getApp();
     const candidatePaths = new Set<string>();
+    const policy = createFileVisibilityPolicy(app, this.deps.context.getSettings().fileVisibility);
 
     for (const rule of box.rules) {
       for (const file of this.deps.collectSupportedFiles(rule.folder, rule.includeSubfolders)) {
@@ -137,7 +139,7 @@ export class BoxActions {
     const files: TFile[] = [];
     for (const path of candidatePaths) {
       const file = app.vault.getAbstractFileByPath(path);
-      if (file instanceof TFile && isSupportedCardFile(file) && isBoxMember(app, path, box)) {
+      if (file instanceof TFile && policy.accepts(file) && isBoxMember(app, path, box)) {
         files.push(file);
       }
     }

@@ -1,7 +1,7 @@
 import { TFile, type App } from "obsidian";
 
 import { prepareSearchableDocument, type IndexStoreDocumentCatalog, type SearchableDocument } from "../search";
-import { isMarkdownCardKind, isSupportedCardFile, resolveCardFileKind } from "../view/file-kind";
+import { isMarkdownCardKind, resolveCardFileKind } from "../view/file-kind";
 
 export const SEARCH_DOCUMENT_READ_CONCURRENCY = 8;
 
@@ -62,11 +62,11 @@ export class SearchDocumentSource {
       return [];
     }
 
-    // Queries are always intersected with card candidates, so an attachment
-    // could never surface as a result; indexing one only inflates the index.
+    // Index file titles independently of visibility; queries intersect current card candidates.
+    // Only Markdown preparation reads a body, so binary attachments add metadata only.
     return getFiles
       .call(this.app.vault)
-      .filter((file): file is TFile => file instanceof TFile && isSupportedCardFile(file));
+      .filter((file): file is TFile => file instanceof TFile);
   }
 
   /** Synchronous path-to-mtime snapshot. Performs no file reads. */
@@ -137,7 +137,7 @@ export class SearchDocumentSource {
 
   async readDocument(path: string): Promise<SearchableDocument | null> {
     const target = this.app.vault.getAbstractFileByPath(path);
-    if (!(target instanceof TFile) || !isSupportedCardFile(target)) {
+    if (!(target instanceof TFile)) {
       return null;
     }
     return this.prepare(target);

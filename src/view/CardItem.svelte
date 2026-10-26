@@ -102,6 +102,8 @@
   let loadedUrl = $state<string | null>(null);
   let revealUrl = $state<string | null>(null);
   const isPinned = $derived(pinnedPaths.includes(card.path));
+  const fileExtension = $derived(card.file.extension || "");
+  const attachment = $derived(["image", "pdf", "audio", "video", "file"].includes(card.fileKind));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
   const normalizedSearchQuery = $derived(searchQuery.trim());
   const linkPreview = $derived(card.linkPreview);
@@ -561,6 +563,7 @@
     <div class="fce-card-header">
       <div class="fce-card-title-group" role="presentation" onmouseenter={emitCardHoverLink}>
         <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
+        {#if attachment && fileExtension}<span class="fce-card-extension">{fileExtension.toUpperCase()}</span>{/if}
         <h4>{#each highlightedTitleSegments as segment, index (index)}{#if segment.highlighted}<mark class="fce-search-hit">{segment.text}</mark>{:else}{segment.text}{/if}{/each}</h4>
         {#if card.referenceCount !== undefined}
           <span class="fce-card-reference-count">{strings.links.referenceCount(card.referenceCount)}</span>

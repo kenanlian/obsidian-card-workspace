@@ -52,7 +52,7 @@ function createPlugin(
   return {
     quickInputShortcut: { apply: vi.fn(async () => {}), subscribe: (listener) => { listener({ active: [], pending: false, error: null }); return () => {}; } },
     getSettings: vi.fn(() => ({
-      hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [],
+      hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [], fileVisibility: "supported",
       cardCornerRadius: "medium",
       uiFontSize: "default", uiDensity: "default", cardStyle: "default",
       defaultCardOpenBehavior: "split-right",
@@ -113,6 +113,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(appearance?.heading).toBe("Appearance");
 
     expect(rowsOf(behavior).map((row) => row.name)).toEqual([
+      "Show file types",
       "Default card open behavior",
       "Jump to link location when opening a link card",
       "Card drag insert behavior",
@@ -156,7 +157,7 @@ describe("CardWorkspaceSettingTab", () => {
       options: { default: "Default cards", outline: "Minimal outline", list: "List", flat: "Flat", "accent-bar": "Accent bar" },
     });
 
-    expect(controlOf(behaviorRows[0])).toEqual({
+    expect(controlOf(behaviorRows[1])).toEqual({
       type: "dropdown",
       key: "defaultCardOpenBehavior",
       options: {
@@ -166,8 +167,8 @@ describe("CardWorkspaceSettingTab", () => {
         "new-window": "Open in new window",
       },
     });
-    expect(controlOf(behaviorRows[1])).toEqual({ type: "toggle", key: "locateLinkCardOnOpen" });
-    expect(controlOf(behaviorRows[2])).toEqual({
+    expect(controlOf(behaviorRows[2])).toEqual({ type: "toggle", key: "locateLinkCardOnOpen" });
+    expect(controlOf(behaviorRows[3])).toEqual({
       type: "dropdown",
       key: "dragInsertAction",
       options: {
@@ -178,8 +179,8 @@ describe("CardWorkspaceSettingTab", () => {
         "title-content": "Insert card title & content",
       },
     });
-    expect(controlOf(behaviorRows[3])).toEqual({ type: "toggle", key: "enableHeadingDragInsert" });
-    expect(controlOf(behaviorRows[4])).toEqual({
+    expect(controlOf(behaviorRows[4])).toEqual({ type: "toggle", key: "enableHeadingDragInsert" });
+    expect(controlOf(behaviorRows[5])).toEqual({
       type: "dropdown",
       key: "newNoteTemplate",
       options: {
@@ -224,7 +225,7 @@ describe("CardWorkspaceSettingTab", () => {
     const rows = [...rowsOf(behavior), ...rowsOf(appearance)];
 
     expect(rows.every((row) => typeof row.desc === "string" && row.desc.length > 0)).toBe(true);
-    expect(rowsOf(behavior)[1]?.desc).toContain("Remember Cursor Position");
+    expect(rowsOf(behavior)[2]?.desc).toContain("Remember Cursor Position");
     expect(rowsOf(appearance)[4]?.desc).toBe(
       "Choose how many normalized summary lines each card preview can show (0-8).",
     );
@@ -263,6 +264,7 @@ describe("CardWorkspaceSettingTab", () => {
     expect(behavior?.heading).toBe("行为");
     expect(appearance?.heading).toBe("外观");
     expect(rowsOf(behavior).map((row) => row.name)).toEqual([
+      "显示文件类型",
       "卡片默认打开方式",
       "双链卡片点击定位",
       "卡片拖拽插入行为",
@@ -287,10 +289,10 @@ describe("CardWorkspaceSettingTab", () => {
     expect(controlOf(rowsOf(appearance)[2])).toMatchObject({
       options: { default: "默认卡片", outline: "极简边框", list: "列表", flat: "扁平", "accent-bar": "左侧强调条" },
     });
-    expect(controlOf(rowsOf(behavior)[0])).toMatchObject({
+    expect(controlOf(rowsOf(behavior)[1])).toMatchObject({
       options: { smart: "当前窗格 / 当前标签页" },
     });
-    expect(controlOf(rowsOf(behavior)[2])).toMatchObject({
+    expect(controlOf(rowsOf(behavior)[3])).toMatchObject({
       options: {
         ask: "每次弹框确认",
         wiki: "插入 wiki link",
@@ -392,7 +394,7 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
     const container = tab.containerEl as unknown as MockEl;
     const rows = settingsIn(container);
-    const fit = rows[13]!, mode = rows[12]!;
+    const fit = rows[14]!, mode = rows[13]!;
     expect(fit.settingEl.style.display).toBe("none");
     mode.dropdowns[0]!.select("inline");
     await Promise.resolve();
@@ -403,10 +405,10 @@ describe("CardWorkspaceSettingTab", () => {
     await tab.setControlValue("cardImageMode", "off");
     expect(fit.settingEl.style.display).toBe("none");
     await tab.setControlValue("cardImageFit", "cover");
-    await rows[9]!.sliders[0]!.slide(8);
-    await rows[9]!.sliders[0]!.slide(999);
+    await rows[10]!.sliders[0]!.slide(8);
+    await rows[10]!.sliders[0]!.slide(999);
     expect(settings.previewLines).toBe(8);
-    const radius = rows[8]!, cardStyle = rows[7]!;
+    const radius = rows[9]!, cardStyle = rows[8]!;
     expect(radius.settingEl.style.display).toBe("");
     cardStyle.dropdowns[0]!.select("list");
     await Promise.resolve();
@@ -415,9 +417,9 @@ describe("CardWorkspaceSettingTab", () => {
     expect(radius.settingEl.style.display).toBe("none");
     const reloaded = createTab(plugin);
     reloaded.display();
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[13]?.dropdowns[0]?.value).toBe("cover");
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[9]?.sliders[0]?.value).toBe(8);
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[7]?.dropdowns[0]?.value).toBe("list");
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[14]?.dropdowns[0]?.value).toBe("cover");
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[10]?.sliders[0]?.value).toBe(8);
+    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[8]?.dropdowns[0]?.value).toBe("list");
   });
 
   it.each([false, true])("keeps slider values visible without deprecated tooltips (1.13 API: %s)", async (supportsNativeApi) => {

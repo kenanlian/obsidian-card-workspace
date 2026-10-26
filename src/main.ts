@@ -58,6 +58,8 @@ import type {
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
 import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
+import { canOpenFileInObsidian } from "./file-visibility";
+import { openInDefaultApp } from "./view/desktop-shell";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { locationExistsInText, type CardOpenLocation, type LinkCardLocation, type LinkReferenceCardLocation, type SearchSnippetCardLocation } from "./view/link-card-location";
 import { resolveSearchSnippetLocation } from "./search";
@@ -478,6 +480,11 @@ export default class CardWorkspacePlugin extends Plugin {
       return;
     }
 
+    if (!canOpenFileInObsidian(this.app, target)) {
+      const result = await openInDefaultApp(this.app, target.path);
+      if (!result.ok) new Notice(result.error);
+      return;
+    }
     const leaf = await this.resolveOpenDestinationLeaf(destination);
     if (!leaf || openSeq !== this.cardOpenSeq) {
       return;

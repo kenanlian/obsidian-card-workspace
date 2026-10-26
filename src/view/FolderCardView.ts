@@ -103,7 +103,10 @@ export class FolderCardView extends ItemView implements HoverParent {
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
       publishLoadStart: (scopeChanged) => publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged),
-      publishPreparedCards: () => publishPreparedCards(this.buildLoadBoundaryHost()),
+      publishPreparedCards: (fileTypesChanged) => this.panelModel.batch(() => {
+        if (fileTypesChanged) this.publishGroups("nav");
+        publishPreparedCards(this.buildLoadBoundaryHost());
+      }),
       publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),

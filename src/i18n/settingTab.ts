@@ -1,6 +1,9 @@
 import type { UiLanguage } from "./types";
 
 export interface SettingTabStrings {
+  fileVisibilityName: string;
+  fileVisibilityDesc: string;
+  fileVisibilityOptions: Record<"documents" | "supported" | "all", string>;
   behaviorHeading: string;
   appearanceHeading: string;
   defaultCardOpenBehaviorName: string;
@@ -46,6 +49,9 @@ export interface SettingTabStrings {
 
 export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
   en: {
+    fileVisibilityName: "Show file types",
+    fileVisibilityDesc: "Apply to folders, boxes and links. Supported formats follow Obsidian and installed plugins; refresh after changing plugins. All formats may open in external apps.",
+    fileVisibilityOptions: { documents: "Documents only", supported: "Common formats", all: "All formats" },
     behaviorHeading: "Behavior",
     appearanceHeading: "Appearance",
     defaultCardOpenBehaviorName: "Default card open behavior",
@@ -69,7 +75,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     cardStyleName: "Card style",
     cardStyleDesc: "Choose how each card is framed: default cards, a minimal outline, list rows separated by lines, flat color blocks, or a left accent bar.",
     cardImageModeName: "Card images",
-    cardImageModeDesc: "Show the first supported local image in the note body. Images load near the viewport and thumbnails are cached locally.",
+    cardImageModeDesc: "Show image files and the first supported local image in a note body. Images load near the viewport and thumbnails are cached locally.",
     cardImageFitName: "Image fit",
     cardImageFitDesc: "Show the whole image or crop it to fill the image area.",
     imageOff: "Off", imageRight: "Right thumbnail", imageInline: "Below title",
@@ -91,6 +97,9 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
   },
   zh: {
+    fileVisibilityName: "显示文件类型",
+    fileVisibilityDesc: "适用于文件夹、卡片盒和链接列表。常规格式跟随 Obsidian 和已安装插件，变更插件后请刷新；全部格式可能通过外部应用打开。",
+    fileVisibilityOptions: { documents: "仅文档", supported: "常规格式", all: "全部格式" },
     behaviorHeading: "行为",
     appearanceHeading: "外观",
     defaultCardOpenBehaviorName: "卡片默认打开方式",
@@ -112,7 +121,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     cardStyleName: "卡片样式",
     cardStyleDesc: "选择卡片的外框：默认卡片、极简边框、以分隔线区分的列表、扁平色块，或左侧强调条。",
     cardImageModeName: "卡片图片",
-    cardImageModeDesc: "显示笔记正文中第一张受支持的本地图片。图片在浏览区域附近按需加载，缩略图在本地缓存。",
+    cardImageModeDesc: "显示图片文件，以及笔记正文中第一张受支持的本地图片。图片在浏览区域附近按需加载，缩略图在本地缓存。",
     cardImageFitName: "图片显示方式",
     cardImageFitDesc: "完整显示图片，或裁切铺满图片区域。",
     imageOff: "关闭", imageRight: "右侧缩略图", imageInline: "标题下方内联图片",
