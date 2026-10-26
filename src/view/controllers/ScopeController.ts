@@ -38,7 +38,7 @@ const VAULT_REFRESH_DEBOUNCE_MS = 250;
 
 export interface ScopeControllerDeps {
   context: ViewContext;
-  onScopeCommitted?: (scope: CardScope) => void;
+  onScopeCommitted?: (scope: CardScope, recordHistory: boolean) => void;
   collectBoxFiles: (boxId: string) => TFile[];
   isPathInBox: (path: string, boxId: string) => boolean;
   deriveVisibleCardsFrom: (cards: readonly NoteCardRecord[]) => NoteCardRecord[];
@@ -202,8 +202,9 @@ export class ScopeController implements DisposableController {
     const hadCommittedScope = this.loadKey !== null;
     const scopeBeforeRequest = this.context.store.getScope();
     const committed = await this.runLoad(nextLoadScope, nextKey, forceRefresh);
-    if (shouldRecordScopeHistory(request.source, hadCommittedScope && !scopesEqual(scopeBeforeRequest, this.context.store.getScope()), committed, this.queuedRequest !== null)) {
-      this.deps.onScopeCommitted?.(this.context.store.getScope());
+    if (committed && this.queuedRequest === null) {
+      const recordHistory = shouldRecordScopeHistory(request.source, hadCommittedScope && !scopesEqual(scopeBeforeRequest, this.context.store.getScope()), committed, false);
+      this.deps.onScopeCommitted?.(this.context.store.getScope(), recordHistory);
     }
     await this.drainQueuedRequest();
     if (committed && !scopesEqual(scopeBeforeRequest, this.context.store.getScope())) {

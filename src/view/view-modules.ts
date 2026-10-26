@@ -38,7 +38,7 @@ import { resolveViewConfig } from "./view-config";
  * function so `createViewModules` can run before the view finishes constructing.
  */
 export interface ViewModuleHost {
-  onScopeCommitted?: (scope: import("./scope").CardScope) => void;
+  onScopeCommitted?: (scope: import("./scope").CardScope, recordHistory: boolean) => void;
   appendMobileInsertMenu?: (menu: import("obsidian").Menu, path: string) => void;
   flushSettings?: () => Promise<void>;
   openTemplateNote?: (path: string, selectTitle?: boolean) => Promise<void>;

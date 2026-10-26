@@ -43,6 +43,9 @@ describe("mobile host history", () => {
     await flushAsyncWork(); expect(saved).toHaveLength(3);
     await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createLinksScope(file.path, "outgoing"), false, "links-follow"));
     expect(saved).toHaveLength(3);
+    expect(view.getState()).toMatchObject({ scope: createLinksScope(file.path, "outgoing") });
+    result = { history: true }; await view.setState(saved[0].state, result);
+    expect(result.history).toBe(false); expect(view.getCardScope()).toEqual(createFolderScope("notes", true)); expect(saved).toHaveLength(3);
     view.cleanupLifecycle();
   });
 });

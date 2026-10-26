@@ -59,6 +59,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private readingPosition: ReadingPositionBridge | null = null;
   private readonly historyAnchors: Map<string, import("./scroll-anchoring").RowAnchor>;
   private historySequence = 0;
+  private readonly pendingHistoryRecords = new Set<number>();
   private recordedScope: CardScope | null = null;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
@@ -91,11 +92,14 @@ export class FolderCardView extends ItemView implements HoverParent {
       notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
     };
     this.modules = createViewModules(this.context, {
-      onScopeCommitted: (scope) => {
+      onScopeCommitted: (scope, recordHistory) => {
         if (!this.navigation) return;
+        if (!recordHistory) { this.recordedScope = scope; return; }
         const sequence = ++this.historySequence;
+        this.pendingHistoryRecords.add(sequence);
         void this.leaf.setViewState({ type: FOLDER_CARD_VIEW, state: { scope, session: this.plugin.navigationSessionId, record: sequence } })
-          .catch((error: unknown) => console.warn("[Card Workspace] Scope history failed", error));
+          .catch((error: unknown) => console.warn("[Card Workspace] Scope history failed", error))
+          .finally(() => this.pendingHistoryRecords.delete(sequence));
       },
       appendMobileInsertMenu: (menu, path) => this.plugin.appendMobileInsertMenu?.(menu, path),
       flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
@@ -173,17 +177,15 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (value.session !== this.plugin.navigationSessionId) return;
     const scope = readHistoryScope(value.scope, this.app, this.plugin.getSettings().boxes ?? []);
     if (!scope) return;
-    if (typeof value.record === "number") {
+    if (typeof value.record === "number" && this.pendingHistoryRecords.delete(value.record)) {
       if (value.record !== this.historySequence) return;
       this.recordedScope = scope; result.history = true; return;
     }
-    {
-      const anchor = this.historyAnchors.get(scopeIdentity(scope));
-      await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "history"));
-      await this.modules.scopeController.waitForIdle();
-      this.recordedScope = this.cardScope;
-      if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
-    }
+    const anchor = this.historyAnchors.get(scopeIdentity(scope));
+    await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "history"));
+    await this.modules.scopeController.waitForIdle();
+    this.recordedScope = this.cardScope;
+    if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
   }
   navigateBack(): void {
     const result = this.plugin.runtimePlatform?.navigateBack(this.leaf);
