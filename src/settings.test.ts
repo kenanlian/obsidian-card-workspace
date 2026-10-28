@@ -1749,7 +1749,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     cardStyle: "list",
     newNoteTemplate: "blank",
     quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" },
-    quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true, status: true },
+    quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true },
     quickInputWidth: 640,
     quickInputHeight: 360,
     quickInputColor: "purple",
@@ -1929,8 +1929,11 @@ describe("migrateSettings — future schema refusal (C4)", () => {
 
 describe("quick input visibility", () => {
   it("defaults only the folder control on and repairs individual malformed items", () => {
-    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: false, folder: true, boxes: false, tags: false, properties: false, status: false });
-    expect(normalizeSettings({ quickInputVisibility: { title: true, folder: 0, boxes: true, tags: "yes", properties: true, status: true } } as never).quickInputVisibility)
-      .toEqual({ title: true, folder: true, boxes: true, tags: false, properties: true, status: true });
+    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: false, folder: true, boxes: false, tags: false, properties: false });
+    expect(normalizeSettings({ quickInputVisibility: { title: true, folder: 0, boxes: true, tags: "yes", properties: true } } as never).quickInputVisibility)
+      .toEqual({ title: true, folder: true, boxes: true, tags: false, properties: true });
+  });
+  it("drops the retired save-status switch from persisted data", () => {
+    expect(normalizeSettings({ quickInputVisibility: { folder: true, status: true } } as never).quickInputVisibility).not.toHaveProperty("status");
   });
 });

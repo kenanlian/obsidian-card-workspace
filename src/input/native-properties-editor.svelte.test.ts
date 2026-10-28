@@ -77,6 +77,60 @@ describe("native draft properties", () => {
     expect(f.cm.contentDOM.textContent).toContain("---");
   });
 
+  it("keeps the panel a block above an editable body line for a metadata-only draft", () => {
+    const text = "---\nstatus: draft\n---\n";
+    const f = fixture(text);
+    const [panel, line] = Array.from(f.cm.contentDOM.children);
+    expect(panel.classList.contains("metadata-container")).toBe(true);
+    expect(line.classList.contains("cm-line")).toBe(true);
+    expect(f.cm.contentDOM.querySelector(".cm-line .metadata-container")).toBeNull();
+    f.cm.dispatch({ changes: { from: text.length, insert: "Body" }, userEvent: "input.type" });
+    expect(f.cm.state.doc.toString()).toBe(`${text}Body`);
+  });
+
+  it("keeps the panel decoration unchanged when the first body character arrives, so IME composition is not redrawn", () => {
+    const text = "---\ntags: [a]\n---\n";
+    const f = fixture(text);
+    const ranges = () => {
+      const found: Array<[number, number]> = [];
+      for (const source of f.cm.state.facet(EditorView.decorations)) {
+        if (typeof source === "function") continue;
+        source.between(0, f.cm.state.doc.length, (from, to, value) => { if (value.spec.widget) found.push([from, to]); });
+      }
+      return found;
+    };
+    expect(ranges()).toEqual([[0, text.length - 1]]);
+    const line = f.cm.contentDOM.querySelector(".cm-line");
+    f.cm.dispatch({ changes: { from: text.length, insert: "c" }, userEvent: "input.type.compose" });
+    expect(ranges()).toEqual([[0, text.length - 1]]);
+    expect(f.cm.contentDOM.querySelector(".cm-line")).toBe(line);
+    f.cm.dispatch({ changes: { from: text.length + 1, insert: "测试一下" }, userEvent: "input.type.compose" });
+    expect(f.cm.state.doc.toString()).toBe(`${text}c测试一下`);
+  });
+
+  it("does not let Backspace or Delete beside the panel break or remove the properties", () => {
+    const text = "---\ntags: [a]\n---\nBody";
+    const f = fixture(text);
+    f.cm.dispatch({ changes: { from: 17, to: 18 }, userEvent: "delete.backward" });
+    f.cm.dispatch({ changes: { from: 0, to: 18 }, userEvent: "delete.backward" });
+    expect(f.cm.state.doc.toString()).toBe(text);
+    f.cm.dispatch({ changes: { from: 21, to: 22 }, userEvent: "delete.backward" });
+    expect(f.cm.state.doc.toString()).toBe("---\ntags: [a]\n---\nBod");
+    f.cm.dispatch({ selection: { anchor: 0, head: f.cm.state.doc.length } });
+    f.cm.dispatch({ changes: { from: 0, to: f.cm.state.doc.length }, userEvent: "delete.selection" });
+    expect(f.cm.state.doc.toString()).toBe("");
+  });
+
+  it("moves a caret left at either panel edge to the start of the body", () => {
+    const f = fixture("---\nstatus: draft\n---\nBody");
+    for (const anchor of [0, 21]) {
+      f.cm.dispatch({ selection: { anchor } });
+      expect(f.cm.state.selection.main.head).toBe(22);
+    }
+    f.cm.dispatch({ selection: { anchor: 0, head: 26 } });
+    expect(f.cm.state.selection.main.from).toBe(0);
+  });
+
   it("retains an editable body line for a metadata-only draft ending in a newline", () => {
     const text = "---\nstatus: draft\n---\n";
     const f = fixture(text);
@@ -130,6 +184,44 @@ describe("native draft properties", () => {
     expect(f.cm.state.doc.toString()).toBe(`${text}\nBody`);
     expect(f.cm.state.selection.main.head).toBe(text.length + 5);
     expect(f.container.querySelector(".cm-content .metadata-container")).not.toBeNull();
+  });
+
+  it.each([
+    ["an IME keydown", (cm: EditorView) => cm.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Process", bubbles: true }))],
+    ["composition start", (cm: EditorView) => cm.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }))],
+  ])("adds a YAML-only template's separator before %s, so composing never changes the panel", (_name, start) => {
+    const text = "---\nstatus: draft\n---";
+    const f = fixture(text);
+    f.cm.dispatch({ selection: { anchor: text.length } });
+    const ranges = () => {
+      const found: Array<[number, number, boolean]> = [];
+      for (const source of f.cm.state.facet(EditorView.decorations)) {
+        if (typeof source !== "function") source.between(0, f.cm.state.doc.length, (from, to, value) => { if (value.spec.widget) found.push([from, to, !!value.spec.block]); });
+      }
+      return found;
+    };
+    expect(f.cm.state.doc.toString()).toBe(text);
+    start(f.cm);
+    expect(f.cm.state.doc.toString()).toBe(`${text}\n`);
+    expect(f.cm.state.selection.main.head).toBe(text.length + 1);
+    expect(ranges()).toEqual([[0, text.length, true]]);
+    const line = f.cm.contentDOM.querySelector(".cm-line");
+    f.cm.dispatch({ changes: { from: text.length + 1, insert: "c" }, userEvent: "input.type.compose" });
+    expect(ranges()).toEqual([[0, text.length, true]]);
+    expect(f.cm.contentDOM.querySelector(".cm-line")).toBe(line);
+    start(f.cm);
+    expect(f.cm.state.doc.toString()).toBe(`${text}\nc`);
+  });
+
+  it("does not add a separator for ordinary keys or a caret away from the end", () => {
+    const text = "---\nstatus: draft\n---";
+    const f = fixture(text);
+    f.cm.dispatch({ selection: { anchor: text.length } });
+    f.cm.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    expect(f.cm.state.doc.toString()).toBe(text);
+    const body = fixture("---\nstatus: draft\n---\nBody");
+    body.cm.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    expect(body.cm.state.doc.toString()).toBe("---\nstatus: draft\n---\nBody");
   });
 
   it.each(["---\nstatus: [\n---\nBody", "---\nstatus:\n  nested: value\n---\nBody", "---\nstatus: &a value\nother: *a\n---\nBody"])("keeps complex or invalid YAML visible and intact", (text) => {

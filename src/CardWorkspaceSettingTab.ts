@@ -602,8 +602,9 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
               random: inputStrings.colorRandom, accent: inputStrings.colorAccent,
               ...Object.fromEntries(QUICK_INPUT_TINTS.map((tint) => [tint, inputStrings.colorNames[tint]])),
             } } },
-          ...Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map((key): WorkspaceSettingDefinition => ({
-            name: inputStrings.visibilityNames[key as keyof QuickInputVisibility], desc: inputStrings.visibilityDesc,
+          ...Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map((key, index): WorkspaceSettingDefinition => ({
+            name: inputStrings.visibilityNames[key as keyof QuickInputVisibility],
+            desc: index === 0 ? inputStrings.visibilityDesc : "",
             control: { type: "toggle", key: `quickInputVisibility.${key}` },
           })),
           { name: inputStrings.globalShortcutName, desc: inputStrings.globalShortcutDesc,

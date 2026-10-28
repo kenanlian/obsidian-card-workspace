@@ -1,4 +1,4 @@
-import { Platform, setIcon, setTooltip, type App } from "obsidian";
+import { Platform, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
 import { normalizeQuickInputVisibility, type QuickInputVisibility, type PreparedQuickInput, type QuickInputMode, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
 import { NoteCreationService, QuickInputPreflightError } from "../services/NoteCreationService";
@@ -7,11 +7,14 @@ import { openQuickInputSuggest } from "./quick-input-suggest";
 import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputDesktopWindow } from "./quick-input-desktop";
 import { createNativeMarkdownEditor, type NativeMarkdownEditor } from "./native-markdown-editor";
+import { stripEmptyDraftFrontmatter } from "./draft-frontmatter";
 import { installQuickInputResize } from "./quick-input-resize";
 import { installQuickInputDrag } from "./quick-input-drag";
 
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 200;
+/** Typing a title passes through other note names; only a settled title switches create/append. */
+const TITLE_TARGET_DELAY = 250;
 interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
 type DraftContext = Pick<QuickInputRequest, "config" | "template" | "now" | "target" | "templateSource">;
 interface QuickInputTarget {
@@ -29,14 +32,12 @@ interface Draft {
   boxButton: HTMLButtonElement;
   tagButton: HTMLButtonElement;
   propertyButton: HTMLButtonElement;
-  hint: HTMLSpanElement;
   boxIds: string[];
   target: QuickInputTarget;
   popup: { dispose(): void } | null;
+  titleTimer: number | null;
   root: HTMLDivElement;
   editor: NativeMarkdownEditor;
-  destination: HTMLDivElement;
-  destinationText: HTMLSpanElement;
   send: HTMLButtonElement;
   sendLabel: HTMLSpanElement;
   cancel: HTMLButtonElement;
@@ -169,14 +170,9 @@ export class QuickInputWindowManager {
     const folderButton = button("fce-quick-input-folder", strings.targetFolder, "folder", visibility.folder);
     folderButton.createSpan({ cls: "fce-quick-input-choice-name" });
     const boxButton = button("fce-quick-input-boxes", strings.boxes, "box", visibility.boxes);
-    boxButton.createSpan({ cls: "fce-quick-input-choice-name", text: strings.boxes });
+    boxButton.createSpan({ cls: "fce-quick-input-choice-count" }).hidden = true;
     const tagButton = button("fce-quick-input-tags", strings.addTags, "tags", visibility.tags);
     const propertyButton = button("fce-quick-input-property", strings.addProperty, "list", visibility.properties);
-    const destination = footer.createDiv({ cls: "fce-quick-input-destination" });
-    const destinationText = destination.createSpan({ cls: "fce-quick-input-destination-text" });
-    destination.hidden = !visibility.status;
-    const hint = destination.createSpan({ cls: "fce-quick-input-append-hint", attr: { tabindex: "0", role: "img" } });
-    setIcon(hint, "circle-alert");
     const actions = footer.createDiv({ cls: "fce-quick-input-actions" });
     const cancel = actions.createEl("button", { cls: "fce-quick-input-cancel", text: strings.cancel, attr: { type: "button" } });
     const send = actions.createEl("button", { cls: "mod-cta", attr: { type: "button" } });
@@ -203,12 +199,12 @@ export class QuickInputWindowManager {
         title = win.document.body.createEl("input");
         title.type = "text";
         title.className = "inline-title fce-quick-input-title";
-        title.value = defaultTitle;
+        title.placeholder = defaultTitle;
         title.setAttribute("aria-label", strings.title);
         editor.mountTitle(title);
       }
-      draft = { visibility, title, defaultTitle, folderButton, boxButton, tagButton, propertyButton, hint,
-        boxIds: [], popup: null, target: this.resolveTarget(context), root, editor, destination, destinationText, send, sendLabel, cancel,
+      draft = { visibility, title, defaultTitle, folderButton, boxButton, tagButton, propertyButton,
+        boxIds: [], popup: null, titleTimer: null, target: this.resolveTarget(context), root, editor, send, sendLabel, cancel,
         composing: false, pending: false, request: null, cleanup: [],
         session, context, templateReady,
       };
@@ -224,12 +220,20 @@ export class QuickInputWindowManager {
         } catch (error) { console.warn("[card-workspace] Quick input pin failed", error); this.options.notify(this.options.getStrings().desktopUnavailable); }
       });
       if (title) {
+        const settleTitle = () => {
+          if (current.titleTimer === null) return;
+          win.clearTimeout(current.titleTimer);
+          current.titleTimer = null;
+          this.updateTarget(current);
+        };
         this.listen(current, title, "input", () => {
           if (current.pending || current.request) return;
           current.context.target!.title = title.value.trim() || current.defaultTitle;
-          this.updateTarget(current);
+          if (current.titleTimer !== null) win.clearTimeout(current.titleTimer);
+          current.titleTimer = win.setTimeout(settleTitle, TITLE_TARGET_DELAY);
         });
-        this.listen(current, title, "blur", () => { if (!title.value.trim()) title.value = current.defaultTitle; });
+        this.listen(current, title, "blur", settleTitle);
+        current.cleanup.push(() => { if (current.titleTimer !== null) win.clearTimeout(current.titleTimer); });
         this.listen(current, title, "keydown", (event) => {
           const key = event as KeyboardEvent;
           key.stopPropagation();
@@ -254,7 +258,7 @@ export class QuickInputWindowManager {
       this.listen(current, win.document, "compositionend", () => { current.composing = false; this.refresh(current); });
       this.listen(current, win.document, "keydown", (event) => {
         const key = event as KeyboardEvent;
-        if (key.ctrlKey && !key.altKey && key.key === ";") {
+        if (key.ctrlKey && !key.altKey && key.key === ";" && !(key.target as HTMLElement | null)?.classList?.contains("fce-quick-input-choice-search")) {
           key.preventDefault(); key.stopPropagation();
           if (!key.isComposing && !current.composing) this.addMetadata(current, "property");
           return;
@@ -315,9 +319,11 @@ export class QuickInputWindowManager {
     if (draft.pending || draft.request || draft.composing) return;
     draft.editor.flush();
     draft.popup?.dispose();
+    const strings = this.options.getStrings();
     const candidates = kind === "folder" ? [
-      { id: "", name: this.options.getStrings().rootFolder },
-      ...(this.options.app.vault.getAllFolders?.() ?? []).filter((folder) => folder.path && folder.path !== "/").map((folder) => ({ id: folder.path, name: folder.path })),
+      { id: "", name: strings.rootFolder },
+      ...(this.options.app.vault.getAllFolders?.() ?? []).filter((folder) => folder.path && folder.path !== "/")
+        .map((folder) => ({ id: folder.path, name: folder.path })).sort((a, b) => a.name.localeCompare(b.name)),
     ] : this.options.getSettings().boxes.map((box) => ({ id: box.id, name: box.name }));
     if (kind === "boxes") {
       // Opening the picker is an explicit reselection after a stale-box error.
@@ -325,8 +331,8 @@ export class QuickInputWindowManager {
       draft.boxIds = draft.boxIds.filter((id) => available.has(id));
       this.paintBoxes(draft);
     }
-    draft.popup = openQuickInputSuggest({ app: this.options.app, anchor: kind === "folder" ? draft.folderButton : draft.boxButton,
-      candidates, multiple: kind === "boxes",
+    draft.popup = openQuickInputSuggest({ anchor: kind === "folder" ? draft.folderButton : draft.boxButton,
+      candidates, multiple: kind === "boxes", emptyText: strings.boxesEmpty, noMatchText: strings.noChoiceMatches,
       selected: (id) => kind === "folder" ? draft.target.folderPath === id : draft.boxIds.includes(id),
       select: (id) => {
         if (kind === "folder") {
@@ -344,8 +350,12 @@ export class QuickInputWindowManager {
 
   private paintBoxes(draft: Draft): void {
     const names = draft.boxIds.map((id) => this.options.getSettings().boxes.find((box) => box.id === id)?.name ?? id);
-    draft.boxButton.querySelector("span.fce-quick-input-choice-name")!.textContent = names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ""}` : this.options.getStrings().boxes;
-    draft.boxButton.title = names.join(", ") || this.options.getStrings().boxes;
+    const label = this.options.getStrings().boxes;
+    const count = draft.boxButton.querySelector<HTMLElement>("span.fce-quick-input-choice-count")!;
+    count.textContent = String(names.length);
+    count.hidden = !names.length;
+    draft.boxButton.title = names.length ? `${label} · ${names.join(", ")}` : label;
+    draft.boxButton.setAttribute("aria-label", draft.boxButton.title);
   }
 
   private resolveTint(settings: PluginSettings): { name: string; value: string } {
@@ -367,33 +377,27 @@ export class QuickInputWindowManager {
     const strings = this.options.getStrings();
     const target = { ...draft.target };
     target.valid = target.valid && draft.templateReady;
-    draft.send.disabled = draft.pending || draft.composing || !draft.editor.getValue().trim() || !target.valid;
+    draft.send.disabled = draft.pending || draft.composing || !stripEmptyDraftFrontmatter(draft.editor.getValue()).trim() || !target.valid;
     draft.cancel.disabled = draft.pending;
     const locked = draft.pending || !!draft.request;
     if (draft.title) draft.title.disabled = locked;
     draft.folderButton.disabled = draft.boxButton.disabled = locked;
     draft.tagButton.disabled = draft.propertyButton.disabled = locked || target.mode === "append";
     draft.cancel.textContent = strings.cancel;
-    draft.sendLabel.textContent = draft.pending ? strings.sending : strings.send;
-    draft.send.setAttribute("aria-label", draft.pending ? strings.sending : strings.send);
+    const action = draft.pending ? strings.sending : target.mode === "append" ? strings.appendNote : strings.send;
+    draft.sendLabel.textContent = action;
+    draft.send.setAttribute("aria-label", action);
     const shortcut = Platform.isMacOS ? "⌘+Enter" : "Ctrl+Enter";
-    draft.send.title = target.valid ? (draft.pending ? strings.sending : `${strings.send} (${shortcut})`) : strings.invalidQuickInputConfig;
+    draft.send.title = target.valid ? (draft.pending ? action : `${action} (${shortcut})`) : strings.invalidQuickInputConfig;
     draft.root.setAttribute("aria-busy", String(draft.pending));
-    this.paintDestination(draft, target, strings);
+    this.paintFolder(draft, target, strings);
   }
 
-  private paintDestination(draft: Draft, target: QuickInputTarget, strings: NoteInputStrings): void {
+  private paintFolder(draft: Draft, target: QuickInputTarget, strings: NoteInputStrings): void {
     const folderLabel = target.folderPath || strings.rootFolder;
     draft.folderButton.querySelector("span.fce-quick-input-choice-name")!.textContent = folderLabel;
-    draft.folderButton.title = folderLabel;
-    draft.destination.classList.toggle("is-invalid", !target.valid);
-    draft.destinationText.textContent = !target.valid ? strings.destinationUnavailable : target.mode === "append" ? strings.appendNote : strings.newNote;
-    draft.hint.hidden = target.mode !== "append";
-    draft.hint.setAttribute("aria-label", strings.appendHint);
-    if (draft.hint.dataset.hint !== strings.appendHint) {
-      setTooltip(draft.hint, strings.appendHint);
-      draft.hint.dataset.hint = strings.appendHint;
-    }
+    draft.folderButton.classList.toggle("is-invalid", !target.valid);
+    draft.folderButton.title = target.valid ? folderLabel : `${folderLabel} · ${strings.destinationUnavailable}`;
   }
 
   private handleModEnter(draft: Draft, event: KeyboardEvent): void {
@@ -406,7 +410,8 @@ export class QuickInputWindowManager {
   private send(draft: Draft): void {
     if (!this.drafts.has(draft) || draft.pending || draft.composing) return;
     if (!draft.request) draft.editor.flush();
-    if (!draft.editor.getValue().trim()) return;
+    const text = stripEmptyDraftFrontmatter(draft.editor.getValue());
+    if (!text.trim()) return;
     const strings = this.options.getStrings();
     const latest = this.resolveTarget(draft.context);
     if (!draft.request && latest.valid && latest.mode !== draft.target.mode) {
@@ -415,7 +420,7 @@ export class QuickInputWindowManager {
     if (!draft.templateReady || !latest.valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {
       draft.request = { ...draft.context, now: draft.context.template ? draft.context.now : new Date(),
-        submissionId: `${this.submissionPrefix}-${++this.sequence}`, text: draft.editor.getValue(),
+        submissionId: `${this.submissionPrefix}-${++this.sequence}`, text,
         target: draft.context.target ? { ...draft.context.target } : undefined, boxIds: [...draft.boxIds], expectedMode: latest.mode };
     }
     draft.popup?.dispose();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readDraftFrontmatter, updateDraftFrontmatter } from "./draft-frontmatter";
+import { readDraftFrontmatter, stripEmptyDraftFrontmatter, updateDraftFrontmatter } from "./draft-frontmatter";
 
 describe("draft frontmatter editing", () => {
   it("preserves an untouched template byte for byte", () => {
@@ -60,5 +60,14 @@ describe("draft frontmatter editing", () => {
   ])("leaves unsupported YAML in source mode: %s", (text) => {
     expect(readDraftFrontmatter(text)).toBeNull();
     expect(() => updateDraftFrontmatter(text, { a: "changed" })).toThrow();
+  });
+});
+
+describe("empty draft frontmatter", () => {
+  it.each([["---\n---\nBody", "Body"], ["---\n\n---\n", ""], ["---\r\n  \r\n---\r\nBody", "Body"], ["\uFEFF---\n\n---\nBody", "Body"]])("strips fences without properties: %j", (text, expected) => {
+    expect(stripEmptyDraftFrontmatter(text)).toBe(expected);
+  });
+  it.each(["---\ntags: []\n---\nBody", "---\n# note\n---\nBody", "Body\n---\n\n---\n", "---\n\nBody"])("keeps other text unchanged: %j", (text) => {
+    expect(stripEmptyDraftFrontmatter(text)).toBe(text);
   });
 });

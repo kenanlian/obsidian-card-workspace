@@ -2441,14 +2441,18 @@ html.fce-quick-input-window:root > body::after { display: none; }
 .fce-quick-input-editor .cm-editor { height: 100%; }
 .fce-quick-input-editor .cm-scroller { overflow: auto; padding: 10px 12px; }
 .fce-quick-input-editor .cm-sizer { max-width: none; margin: 0; }
+/* One row at every window width: the folder name truncates first, then the send label. */
 .fce-quick-input-footer {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   box-sizing: border-box;
   min-height: 40px;
   padding: 6px 6px 6px 4px;
+  container-type: inline-size;
+}
+@container (max-width: 380px) {
+  .fce-quick-input-footer .fce-quick-input-send-label { display: none; }
 }
 .fce-quick-input-footer button {
   margin: 0;
@@ -2487,19 +2491,6 @@ html.fce-quick-input-window:root > body::after { display: none; }
 .fce-quick-input-footer button.mod-cta > span,
 .fce-quick-input-send-icon svg { color: inherit; }
 .fce-quick-input-send-icon { display: inline-flex; align-items: center; }
-.fce-quick-input-destination {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-.fce-quick-input-destination.is-invalid { color: var(--text-error); }
-.fce-quick-input-destination-icon { display: inline-flex; flex: none; }
-.fce-quick-input-destination-icon svg { width: 14px; height: 14px; }
-.fce-quick-input-destination-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* File type remains identifiable when a thumbnail is disabled or unavailable. */
 .folder-card-view .fce-card-extension {
@@ -2509,24 +2500,25 @@ html.fce-quick-input-window:root > body::after { display: none; }
   font-weight: 600;
 }
 
-/* Draft controls share the editor scrollport and retain native theme typography. */
+/* Draft controls share the editor scrollport and retain the theme's title typography at a compact size. */
 .fce-quick-input-window .fce-quick-input .fce-quick-input-title.inline-title {
   display: block;
   width: 100%;
   height: auto;
   padding: 0;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   color: var(--inline-title-color);
   font-family: var(--inline-title-font);
-  font-size: var(--inline-title-size);
+  font-size: var(--h3-size);
   font-weight: var(--inline-title-weight);
   font-style: var(--inline-title-style);
-  line-height: var(--inline-title-line-height);
+  line-height: var(--h3-line-height, var(--line-height-tight));
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
+.fce-quick-input-window .fce-quick-input .fce-quick-input-title.inline-title::placeholder { color: var(--text-faint); }
 .fce-quick-input [hidden] { display: none !important; }
 .fce-quick-input-footer .fce-quick-input-folder,
 .fce-quick-input-footer .fce-quick-input-boxes {
@@ -2534,20 +2526,40 @@ html.fce-quick-input-window:root > body::after { display: none; }
   align-items: center;
   gap: 4px;
   min-width: 0;
-  max-width: min(200px, 60%);
   flex: 0 1 auto;
 }
+.fce-quick-input-footer .fce-quick-input-folder { max-width: min(200px, 45%); }
+.fce-quick-input-footer .fce-quick-input-boxes { flex: none; }
+.fce-quick-input-footer .fce-quick-input-folder > svg,
+.fce-quick-input-footer .fce-quick-input-boxes > svg { flex: none; }
+.fce-quick-input-footer .fce-quick-input-folder.is-invalid { color: var(--text-error); }
 .fce-quick-input-choice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fce-quick-input-choice-count {
+  min-width: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  line-height: 16px;
+  text-align: center;
+}
 .fce-quick-input-actions { display: flex; flex: none; gap: 8px; margin-left: auto; }
-.fce-quick-input-append-hint { display: inline-flex; align-items: center; }
-.fce-quick-input-append-hint svg { width: 14px; height: 14px; }
-.fce-quick-input-choice-search {
+/* Anchored above its footer button; search and results share one surface. */
+.fce-quick-input-choice-popover {
   position: fixed;
   z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
   box-sizing: border-box;
+  padding: var(--size-4-1);
+  overflow: hidden;
 }
-.fce-quick-input-choice-popover { box-sizing: border-box; overflow-y: auto; }
-.fce-quick-input-choice-popover .suggestion { max-height: inherit; overflow-y: auto; }
+.fce-quick-input-choice-popover .fce-quick-input-choice-search { flex: none; width: 100%; box-sizing: border-box; }
+.fce-quick-input-choice-popover .suggestion { flex: 0 1 auto; min-height: 0; padding: 0; overflow-y: auto; }
+.fce-quick-input-choice-popover .suggestion-empty { padding: var(--size-4-2) var(--size-4-3); color: var(--text-muted); font-size: var(--font-ui-small); }
 .fce-quick-input-choice-row { display: flex; gap: 8px; align-items: center; }
-.fce-quick-input-choice-row > span:first-child { flex: 0 0 16px; }
-.fce-quick-input-choice-row svg { width: 16px; height: 16px; }
+.fce-quick-input-choice-check { display: inline-flex; flex: 0 0 16px; }
+.fce-quick-input-choice-check svg { width: 16px; height: 16px; }

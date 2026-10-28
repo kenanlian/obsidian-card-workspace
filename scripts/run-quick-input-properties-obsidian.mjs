@@ -94,7 +94,7 @@ try {
     await app.vault.create("Choice 39/Append.md", "---\nstatus: original\n---\nExisting");
     await quickInputPlugin.settingsStore.updateFlat({
       quickInput: { templateId: null, folderPath: "", insertPosition: "end" },
-      quickInputVisibility: { title: true, folder: true, boxes: true, tags: true, properties: true, status: true },
+      quickInputVisibility: { title: true, folder: true, boxes: true, tags: true, properties: true },
       boxes: ["One", "Two"].map((name) => ({ id: name, name, rules: [], manualPaths: [], excludedPaths: [], pinnedPaths: [],
         sort: { field: "mtime", direction: "desc" }, group: { dimension: "none", orderBy: "name", orderDirection: "asc" } })),
     });
@@ -122,6 +122,10 @@ try {
   await controlPage.waitForSelector(".fce-quick-input-choice-search");
   assert.equal(await controlPage.locator(".fce-quick-input-choice-popover .suggestion-item").count(), 20);
   assert.equal(await main.locator(".fce-quick-input-choice-search").count(), 0);
+  const folderBounds = await controlPage.locator(".fce-quick-input-folder").boundingBox();
+  const folderPopup = await controlPage.locator(".fce-quick-input-choice-popover").boundingBox();
+  const popupGap = folderBounds.y - (folderPopup.y + folderPopup.height);
+  assert.ok(popupGap >= 0 && popupGap <= 12, `folder popover is anchored above its button (gap ${popupGap})`);
   await controlPage.locator(".fce-quick-input-choice-search").fill("Choice 39");
   await controlPage.locator(".fce-quick-input-choice-row").filter({ hasText: "Choice 39" }).click();
   assert.equal(await controlPage.locator(".fce-quick-input-choice-search").count(), 0);
@@ -133,10 +137,12 @@ try {
   const popupBounds = await controlPage.locator(".fce-quick-input-choice-popover").boundingBox();
   assert.ok(popupBounds.height <= 240);
   await controlPage.locator(".fce-quick-input-choice-search").press("Escape");
-  assert.ok((await controlPage.locator(".fce-quick-input-boxes").innerText()).includes("+1"));
+  assert.equal((await controlPage.locator(".fce-quick-input-boxes .fce-quick-input-choice-count").innerText()).trim(), "2");
   await controlPage.locator(".fce-quick-input-tags").click();
   await controlPage.waitForSelector('.metadata-property[data-property-key="tags"] .multi-select-input');
   assert.equal(await controlPage.locator('.metadata-property[data-property-key="tags"] .multi-select-input').evaluate((el) => el === el.ownerDocument.activeElement), true);
+  // A metadata-only draft keeps the panel as a block, not inside the fence line with its fold indicator.
+  assert.equal(await controlPage.locator(".cm-line .metadata-container").count(), 0);
   await controlPage.keyboard.press("Escape");
   await controlPage.screenshot({ path: output.replace(/\.json$/, "-controls.png") });
   await controlPage.locator(".fce-quick-input-title").press("Enter");
@@ -175,11 +181,12 @@ try {
   await main.evaluate(async () => { await app.vault.create("Append target.md", "---\nstatus: original\n---\nExisting"); propertiesProbe.writes = []; });
   const first = await open();
   await first.page.locator(".fce-quick-input-title").fill("Append target");
-  assert.equal(await first.page.locator(".metadata-container").evaluate((el) => el.inert), true);
+  await first.page.waitForFunction(() => document.querySelector(".metadata-container")?.inert === true);
+  assert.equal((await first.page.locator("button.mod-cta").innerText()).trim(), await main.evaluate(() => quickInputPlugin.getUiStrings().noteInput.appendNote));
   assert.equal(await first.page.locator(".fce-quick-input-tags").isDisabled(), true);
   assert.equal(await first.page.locator(".fce-quick-input-property").isDisabled(), true);
   await first.page.locator(".fce-quick-input-title").fill("Properties probe");
-  assert.equal(await first.page.locator(".metadata-container").evaluate((el) => el.inert), false);
+  await first.page.waitForFunction(() => document.querySelector(".metadata-container")?.inert === false);
   phase("template-target-mode-and-property-readonly-recovery");
   const mountProperties = async (id) => main.evaluate((id) => {
     const session = [...quickInputPlugin.quickInputManager.sessions.values()].find((entry) => entry.id === id);

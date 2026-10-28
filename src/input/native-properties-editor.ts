@@ -108,11 +108,16 @@ export function createDraftPropertiesEditor(options: {
     };
     const decorations = (text: string): DecorationSet => {
       const current = snapshot(text);
-      return current && !failed ? Decoration.set([
-        // A metadata-only draft still needs an editable body line, including
-        // when its closing fence already ends in a newline.
-        Decoration.replace({ block: current.end < text.length, widget: new PropertiesWidget(panel.containerEl) }).range(0, current.end),
-      ]) : Decoration.none;
+      if (!current || failed) return Decoration.none;
+      // Always stop before the closing fence's line break, so the body line
+      // stays outside the block even when it is empty (an inline widget would
+      // sit in the fence line with its fold indicator and cursor buffers).
+      // The range must not change when the first body character arrives:
+      // redrawing next to an active IME composition aborts it.
+      const fenced = text.charCodeAt(current.end - 1) === 10;
+      return Decoration.set([
+        Decoration.replace({ block: fenced, widget: new PropertiesWidget(panel.containerEl) }).range(0, fenced ? current.end - 1 : current.end),
+      ]);
     };
     const field = StateField.define<DecorationSet>({
       create: (state) => decorations(state.doc.toString()),
@@ -120,6 +125,17 @@ export function createDraftPropertiesEditor(options: {
         ? decorations(transaction.state.doc.toString()) : value,
       provide: (state) => [Prec.highest(EditorView.decorations.from(state)), EditorView.atomicRanges.of((view) => view.state.field(state))],
     });
+    // An IME composition must begin on the final body line: inserting the
+    // separator after composing starts would redraw that line and abort it.
+    const separateBody = (view: EditorView) => {
+      if (failed || disposed) return false;
+      const text = view.state.doc.toString();
+      const current = snapshot(text);
+      const main = view.state.selection.main;
+      if (!current || current.end !== text.length || text.endsWith("\n") || !main.empty || main.head !== text.length) return false;
+      view.dispatch({ changes: { from: text.length, insert: current.newline }, selection: { anchor: text.length + current.newline.length }, userEvent: "input" });
+      return false;
+    };
     const showSource = () => {
       failed = true;
       editor.cm.dispatch({ effects: refresh.of() });
@@ -140,6 +156,26 @@ export function createDraftPropertiesEditor(options: {
           if (needsNewline) return [transaction, { changes: { from: text.length, insert: current.newline }, sequential: true }];
         }
         return transaction;
+      }), EditorState.transactionFilter.of((transaction) => {
+        // Backspace/Delete beside the panel would otherwise remove its fence
+        // line break or the whole atomic block; properties have their own delete.
+        if (failed || !transaction.docChanged || !transaction.isUserEvent("delete") || !transaction.startState.selection.main.empty) return transaction;
+        const current = snapshot(transaction.startState.doc.toString());
+        let touches = false;
+        transaction.changes.iterChangedRanges((from) => { if (current && from < current.end) touches = true; });
+        return touches ? [] : transaction;
+      }), EditorState.transactionFilter.of((transaction) => {
+        // Atomic ranges still allow a caret at either widget edge, where typing
+        // would edit the fences. Body input always starts after the YAML.
+        const main = transaction.selection?.main;
+        if (failed || transaction.docChanged || !main?.empty) return transaction;
+        const current = snapshot(transaction.newDoc.toString());
+        return current && main.head < current.end
+          ? [transaction, { selection: { anchor: current.end }, scrollIntoView: transaction.scrollIntoView, sequential: true }]
+          : transaction;
+      }), EditorView.domEventHandlers({
+        keydown: (event, view) => event.isComposing || event.key === "Process" ? separateBody(view) : false,
+        compositionstart: (_event, view) => separateBody(view),
       }), EditorView.updateListener.of((update) => { if (update.docChanged) synchronize(); })],
       flush,
       add: (kind) => {

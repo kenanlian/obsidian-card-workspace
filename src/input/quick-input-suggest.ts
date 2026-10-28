@@ -1,115 +1,122 @@
-import { AbstractInputSuggest, Scope, setIcon, type App } from "obsidian";
+import { setIcon } from "obsidian";
 
 export interface QuickInputChoice { id: string; name: string }
-/** A short-lived, draft-document native suggestion binding; candidates are snapshotted on open. */
+
+const LIMIT = 20;
+const MAX_HEIGHT = 240;
+const GAP = 6;
+const MARGIN = 8;
+
+/** A short-lived popover in the draft document, opening upward from its footer anchor; candidates are snapshotted on open. */
 export function openQuickInputSuggest(options: {
-  app: App;
   anchor: HTMLButtonElement;
   candidates: QuickInputChoice[];
+  emptyText: string;
+  noMatchText: string;
   selected(id: string): boolean;
   multiple: boolean;
   select(id: string): void;
   restoreFocus(): void;
 }): { dispose(): void } {
-  const { anchor, app } = options;
+  const { anchor } = options;
   const doc = anchor.ownerDocument;
   const win = doc.defaultView!;
-  window.activeWindow = win;
-  window.activeDocument = doc;
-  const input = doc.body.createEl("input");
-  input.type = "search";
-  input.className = "fce-quick-input-choice-search";
-  input.setAttribute("aria-label", anchor.getAttribute("aria-label") ?? "");
-  input.setAttribute("role", "combobox");
-  doc.body.appendChild(input);
-  const rect = anchor.getBoundingClientRect();
-  const width = Math.min(320, Math.max(200, win.innerWidth - 16));
-  input.style.width = `${width}px`;
-  input.style.left = `${Math.max(8, Math.min(rect.left, win.innerWidth - width - 8))}px`;
-  input.style.top = `${Math.max(8, rect.top - Math.min(240, rect.top - 8))}px`;
-  let list: HTMLElement | null = null;
+  const popover = doc.body.createDiv({ cls: "suggestion-container fce-quick-input-choice-popover" });
+  const input = popover.createEl("input", { cls: "fce-quick-input-choice-search", attr: {
+    type: "search", role: "combobox", "aria-expanded": "true", "aria-label": anchor.getAttribute("aria-label") ?? "",
+  } });
+  const list = popover.createDiv({ cls: "suggestion", attr: { role: "listbox" } });
+  if (options.multiple) list.setAttribute("aria-multiselectable", "true");
+  let items: QuickInputChoice[] = [];
+  let active = -1;
   let disposed = false;
   let composing = false;
-  const restore = () => { options.restoreFocus(); };
-  class ChoiceSuggest extends AbstractInputSuggest<QuickInputChoice> {
-    constructor() {
-      super(app, input);
-      this.limit = 20;
-      this.scope = new Scope(this.scope);
-      this.scope.register(null, null, (event) => {
-        if (event.isComposing || composing || event.key === "Process") return true;
-        if (event.key === "Escape") { dispose(); restore(); return false; }
-        return undefined;
-      });
+
+  const place = () => {
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(320, win.innerWidth - MARGIN * 2);
+    popover.style.width = `${width}px`;
+    popover.style.left = `${Math.max(MARGIN, Math.min(rect.left, win.innerWidth - width - MARGIN))}px`;
+    popover.style.bottom = `${win.innerHeight - rect.top + GAP}px`;
+    popover.style.maxHeight = `${Math.max(0, Math.min(MAX_HEIGHT, rect.top - GAP - MARGIN))}px`;
+  };
+  const highlight = (index: number) => {
+    active = index;
+    list.querySelectorAll<HTMLElement>(".suggestion-item").forEach((row, rowIndex) => row.classList.toggle("is-selected", rowIndex === index));
+    list.children[index]?.scrollIntoView?.({ block: "nearest" });
+  };
+  const render = () => {
+    const query = input.value.toLocaleLowerCase();
+    items = options.candidates.filter((item) => item.name.toLocaleLowerCase().includes(query)).slice(0, LIMIT);
+    if (active < 0) active = Math.max(0, items.findIndex((item) => options.selected(item.id)));
+    active = Math.min(active, items.length - 1);
+    list.replaceChildren();
+    if (!items.length) {
+      list.createDiv({ cls: "suggestion-empty", text: options.candidates.length ? options.noMatchText : options.emptyText });
+      return;
     }
-    protected getSuggestions(query: string): QuickInputChoice[] {
-      return disposed || composing ? [] : options.candidates.filter((item) => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(0, 20);
+    items.forEach((item, index) => {
+      const selected = options.selected(item.id);
+      const row = list.createDiv({ cls: "suggestion-item mod-complex fce-quick-input-choice-row", attr: { role: "option", "aria-selected": String(selected), title: item.name } });
+      const check = row.createSpan({ cls: "fce-quick-input-choice-check" });
+      if (selected) setIcon(check, "check");
+      row.createSpan({ cls: "fce-quick-input-choice-name", text: item.name });
+      row.addEventListener("mousemove", () => { if (active !== index) highlight(index); });
+      row.addEventListener("click", () => choose(index));
+    });
+    highlight(active);
+  };
+  const choose = (index: number) => {
+    const item = items[index];
+    if (!item || disposed || composing) return;
+    options.select(item.id);
+    if (!options.multiple) { dispose(); options.restoreFocus(); return; }
+    active = index;
+    render();
+  };
+
+  const keydown = (event: KeyboardEvent) => {
+    if (event.isComposing || composing || event.key === "Process") return;
+    if (event.key === "Escape") {
+      event.preventDefault(); event.stopPropagation();
+      dispose(); options.restoreFocus();
+    } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && items.length) {
+      event.preventDefault();
+      highlight((active + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      choose(active);
     }
-    renderSuggestion(value: QuickInputChoice, element: HTMLElement): void {
-      list = element.closest<HTMLElement>(".suggestion-container");
-      element.setAttribute("aria-selected", String(options.selected(value.id)));
-      element.classList.add("fce-quick-input-choice-row");
-      element.title = value.name;
-      const check = element.createSpan();
-      if (options.selected(value.id)) setIcon(check, "check");
-      element.createSpan({ text: value.name, cls: "fce-quick-input-choice-name" });
-    }
-    open(): void {
-      if (disposed || composing) return;
-      window.activeWindow = win; window.activeDocument = doc;
-      super.open();
-      if (list) {
-        if (list.ownerDocument !== doc || !doc.body.contains(list)) doc.body.appendChild(list);
-        list.classList.add("fce-quick-input-choice-popover");
-        const inputRect = input.getBoundingClientRect();
-        list.style.maxHeight = `${Math.max(0, Math.min(240 - inputRect.height - 4, rect.top - inputRect.bottom - 4, win.innerHeight - inputRect.bottom - 8))}px`;
-        list.style.width = `${width}px`;
-        list.style.left = `${inputRect.left}px`;
-        list.style.top = `${inputRect.bottom + 4}px`;
-      }
-      input.setAttribute("aria-expanded", "true");
-    }
-    close(): void { super.close(); }
-    selectSuggestion(value: QuickInputChoice, event: MouseEvent | KeyboardEvent): void {
-      if (!value || disposed || composing || ("isComposing" in event && event.isComposing)) return;
-      options.select(value.id);
-      if (!options.multiple) { dispose(); restore(); }
-      else input.dispatchEvent(new win.FocusEvent("focus"));
-    }
-  }
-  const suggest = new ChoiceSuggest();
+  };
+  const query = () => { if (composing) return; active = 0; render(); };
+  // Rows must not take focus, or the search input blur would dismiss the popover first.
+  const keepFocus = (event: MouseEvent) => { if (event.target !== input) event.preventDefault(); };
   const outside = (event: Event) => {
     const node = event.target as Node | null;
-    if (node && (node === input || list?.contains(node) || anchor.contains(node))) return;
+    if (node && (popover.contains(node) || anchor.contains(node))) return;
     dispose();
   };
+  const blur = () => { queueMicrotask(() => { if (doc.activeElement !== input) dispose(); }); };
   const startComposition = () => { composing = true; };
-  const endComposition = () => { composing = false; input.dispatchEvent(new win.FocusEvent("focus")); };
+  const endComposition = () => { composing = false; query(); };
   function dispose(): void {
     if (disposed) return;
     disposed = true;
-    suggest.close();
-    list?.remove();
-    input.remove();
+    popover.remove();
     doc.removeEventListener("pointerdown", outside, true);
     win.removeEventListener("resize", dispose);
-    input.removeEventListener("keydown", keydown);
-    input.removeEventListener("blur", blur);
-    input.removeEventListener("compositionstart", startComposition);
-    input.removeEventListener("compositionend", endComposition);
   }
-  doc.addEventListener("pointerdown", outside, true);
-  win.addEventListener("resize", dispose);
-  const blur = () => { queueMicrotask(() => { if (doc.activeElement !== input && !list?.contains(doc.activeElement)) dispose(); }); };
-  const keydown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || event.isComposing || composing) return;
-    event.preventDefault(); event.stopPropagation();
-    dispose(); restore();
-  };
+
   input.addEventListener("keydown", keydown);
+  input.addEventListener("input", query);
   input.addEventListener("blur", blur);
   input.addEventListener("compositionstart", startComposition);
   input.addEventListener("compositionend", endComposition);
+  popover.addEventListener("mousedown", keepFocus);
+  doc.addEventListener("pointerdown", outside, true);
+  win.addEventListener("resize", dispose);
+  render();
+  place();
   input.focus();
   return { dispose };
 }

@@ -1,15 +1,15 @@
 import type { UiLanguage } from "./types";
 
 export interface NoteInputStrings {
-  visibilityNames: Record<"title" | "folder" | "boxes" | "tags" | "properties" | "status", string>;
+  visibilityNames: Record<"title" | "folder" | "boxes" | "tags" | "properties", string>;
   visibilityDesc: string;
   title: string;
   boxes: string;
+  boxesEmpty: string;
+  noChoiceMatches: string;
   addTags: string;
   addProperty: string;
-  newNote: string;
   appendNote: string;
-  appendHint: string;
   sourcePropertiesHint: string;
   targetModeChanged: string;
   missingBox: string;
@@ -102,13 +102,12 @@ export interface NoteInputStrings {
 
 export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   en: {
-    visibilityNames: { title: "Show title", folder: "Show folder selector", boxes: "Show card box selector", tags: "Show add tags", properties: "Show add property", status: "Show save status" },
-    visibilityDesc: "Applies to new quick input windows. Hidden controls do not disable their capabilities.",
-    title: "Title", boxes: "Card boxes", addTags: "Add tags", addProperty: "Add property",
-    newNote: "Create", appendNote: "Append",
-    appendHint: "Only the body is appended. The target note keeps its properties; draft tags and properties are not saved.",
+    visibilityNames: { title: "Show title", folder: "Show folder selector", boxes: "Show card box selector", tags: "Show add tags", properties: "Show add property" },
+    visibilityDesc: "These switches apply to new quick input windows. Hidden controls do not disable their capabilities.",
+    title: "Title", boxes: "Card boxes", boxesEmpty: "No card boxes yet", noChoiceMatches: "No matches",
+    addTags: "Add tags", addProperty: "Add property", appendNote: "Append",
     sourcePropertiesHint: "Native property editing is unavailable for this draft. Edit the YAML source here.",
-    targetModeChanged: "The target changed between create and append. Review the updated status and send again.",
+    targetModeChanged: "The target changed between create and append. Check the send button and send again.",
     missingBox: "A selected card box is unavailable. Select card boxes again.",
     savedBoxFailure: (path) => `Saved to ${path}, but adding to card boxes failed. Send again to retry only the card box step.`,
     templates: "Templates", templatesEmpty: "No templates registered", newTemplate: "New template", setAsTemplate: "Set as template",
@@ -167,13 +166,12 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     sent: (path) => `Sent to ${path}`, noteCreated: (path) => `Created ${path}`, noteOpened: (path) => `Opened ${path}`,
   },
   zh: {
-    visibilityNames: { title: "显示标题", folder: "显示文件夹选择", boxes: "显示卡片盒选择", tags: "显示标签添加", properties: "显示属性添加", status: "显示说明文字" },
-    visibilityDesc: "仅影响之后打开的快速输入窗口。隐藏入口不关闭相应能力。",
-    title: "标题", boxes: "卡片盒", addTags: "添加标签", addProperty: "添加属性",
-    newNote: "新建", appendNote: "追加",
-    appendHint: "仅追加正文，保留目标笔记原有属性；草稿中的标签和属性不会写入。",
+    visibilityNames: { title: "显示标题", folder: "显示文件夹选择", boxes: "显示卡片盒选择", tags: "显示标签添加", properties: "显示属性添加" },
+    visibilityDesc: "以下开关仅影响之后打开的快速输入窗口。隐藏入口不关闭相应能力。",
+    title: "标题", boxes: "卡片盒", boxesEmpty: "尚未创建卡片盒", noChoiceMatches: "没有匹配项",
+    addTags: "添加标签", addProperty: "添加属性", appendNote: "追加",
     sourcePropertiesHint: "此草稿无法使用原生属性编辑，请在此处编辑 YAML 源码。",
-    targetModeChanged: "目标的新建／追加状态已变化，请核对更新后的状态并再次发送。",
+    targetModeChanged: "目标已在新建与追加之间变化，请确认发送按钮后再次发送。",
     missingBox: "所选卡片盒已失效，请重新选择。",
     savedBoxFailure: (path) => `已保存到 ${path}，但加入卡片盒失败。再次发送只重试加入卡片盒，不会重复写入笔记。`,
     templates: "模板", templatesEmpty: "尚未注册模板", newTemplate: "新建模板", setAsTemplate: "设置为模板",

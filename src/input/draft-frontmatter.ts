@@ -9,6 +9,12 @@ export function draftFrontmatterSource(text: string): string {
   return /^(?:\uFEFF)?---\r?\n[\s\S]*?^(?:---|\.\.\.)(?:\r?\n|$)/m.exec(text)?.[0] ?? text;
 }
 
+/** An abandoned add-property action leaves only fences; they are not note content. */
+export function stripEmptyDraftFrontmatter(text: string): string {
+  const match = /^(?:\uFEFF)?---\r?\n(?:[ \t]*\r?\n)*---(?:\r?\n|$)/.exec(text);
+  return match ? text.slice(match[0].length) : text;
+}
+
 /** Unsupported YAML stays in the editor verbatim instead of being coerced by native widgets. */
 export function readDraftFrontmatter(text: string) {
   const match = /^---\r?\n([\s\S]*?)^---(?:\r?\n|$)/m.exec(text);
