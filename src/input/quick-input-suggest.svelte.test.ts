@@ -1,84 +1,77 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FuzzySuggestModal, type App } from "obsidian";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
-import { openQuickInputSuggest } from "./quick-input-suggest";
+import { openQuickInputSuggest, type QuickInputSuggestOptions } from "./quick-input-suggest";
 
+const scope = globalThis as { activeDocument?: Document };
 let cleanup: (() => void) | undefined;
-afterEach(() => { cleanup?.(); document.body.replaceChildren(); });
-function fixture(multiple = false, count = 100, initial: string[] = []) {
+let modals: Array<FuzzySuggestModal<unknown>> = [];
+afterEach(() => { cleanup?.(); modals = []; vi.restoreAllMocks(); delete scope.activeDocument; document.body.replaceChildren(); });
+const open = FuzzySuggestModal.prototype.open;
+function fixture(multiple = false, count = 3, initial: string[] = [], extra: Partial<QuickInputSuggestOptions> = {}) {
+  vi.spyOn(FuzzySuggestModal.prototype, "open").mockImplementation(function (this: FuzzySuggestModal<unknown>) { modals.push(this); open.call(this); });
   const frame = document.createElement("iframe"); document.body.append(frame);
-  const doc = frame.contentDocument!, win = frame.contentWindow! as Window & typeof globalThis;
+  const doc = frame.contentDocument!;
   installObsidianDomHelpers(doc);
-  const anchor = doc.body.createEl("button"); doc.body.append(anchor);
-  anchor.getBoundingClientRect = () => ({ left: 40, top: 120, right: 120, bottom: 150, width: 80, height: 30, x: 40, y: 120, toJSON: () => ({}) });
+  scope.activeDocument = doc;
   const selected = new Set<string>(initial);
-  let restored = 0;
-  const suggest = openQuickInputSuggest({ anchor,
+  let closed = 0;
+  const suggest = openQuickInputSuggest({} as App, {
     candidates: Array.from({ length: count }, (_, i) => ({ id: String(i), name: `Folder/${i}` })),
-    emptyText: "No boxes", noMatchText: "No matches",
+    placeholder: "Choose", emptyText: "No boxes", noMatchText: "No matches",
     selected: (id) => selected.has(id), multiple,
-    select: (id) => { if (selected.has(id)) selected.delete(id); else selected.add(id); }, restoreFocus: () => { restored++; } });
+    select: (id) => { if (selected.has(id)) selected.delete(id); else selected.add(id); },
+    onClose: () => { closed++; }, ...extra });
   cleanup = () => suggest.dispose();
-  const input = () => doc.querySelector<HTMLInputElement>(".fce-quick-input-choice-search")!;
-  const popover = () => doc.querySelector<HTMLElement>(".fce-quick-input-choice-popover");
+  const prompt = () => doc.querySelector<HTMLElement>(".modal-container");
   const rows = () => Array.from(doc.querySelectorAll<HTMLElement>(".suggestion-item"));
-  const active = () => rows().findIndex((row) => row.classList.contains("is-selected"));
-  const key = (name: string, isComposing = false) => input().dispatchEvent(new win.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, isComposing }));
-  const query = (text: string) => { input().value = text; input().dispatchEvent(new win.Event("input")); };
-  return { doc, win, input, popover, rows, active, key, query, selected, restored: () => restored };
+  const query = (text: string) => { const input = doc.querySelector<HTMLInputElement>(".prompt-input")!; input.value = text; input.dispatchEvent(new Event("input")); };
+  return { doc, suggest, prompt, rows, query, selected, closed: () => closed };
 }
-describe("draft destination suggestions", () => {
-  it("anchors search and results in one popover above the button, inside the draft document", () => {
+
+describe("quick input choice prompt", () => {
+  it("opens the host prompt in the active draft document with left-aligned name rows", () => {
+    const f = fixture(false, 3, ["1"]);
+    expect(f.prompt()).not.toBeNull();
+    expect(document.querySelector(".modal-container")).toBeNull();
+    expect(f.doc.querySelector<HTMLInputElement>(".prompt-input")!.placeholder).toBe("Choose");
+    const row = f.rows()[1];
+    expect(row.classList.contains("fce-quick-input-choice-row")).toBe(true);
+    expect(row.querySelector(".fce-quick-input-choice-name")!.textContent).toBe("Folder/1");
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(f.rows()[0].getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("closes before choosing a single item and never restores focus to the opener", () => {
     const f = fixture();
-    const popover = f.popover()!;
-    expect(popover.contains(f.input())).toBe(true);
-    expect(popover.querySelector(".suggestion")!.children).toHaveLength(20);
-    expect(popover.style.bottom).toBe(`${f.win.innerHeight - 120 + 6}px`);
-    expect(popover.style.top).toBe("");
-    expect(popover.style.maxHeight).toBe(`${120 - 6 - 8}px`);
-    expect(f.doc.activeElement).toBe(f.input());
-    expect(document.querySelector(".fce-quick-input-choice-popover")).toBeNull();
+    f.query("Folder/2"); expect(f.rows()).toHaveLength(1);
+    f.rows()[0].click();
+    expect(f.selected.has("2")).toBe(true);
+    expect(f.prompt()).toBeNull(); expect(f.closed()).toBe(1);
+    expect(modals[0].shouldRestoreSelection).toBe(false);
+    f.suggest.dispose(); expect(f.closed()).toBe(1);
   });
-  it("caps visible rows at twenty, searches every candidate and chooses with the keyboard", () => {
-    const f = fixture(); expect(f.rows()).toHaveLength(20);
-    f.query("Folder/99"); expect(f.rows()).toHaveLength(1);
-    f.key("Enter"); expect(f.selected.has("99")).toBe(true);
-    expect(f.popover()).toBeNull(); expect(f.restored()).toBe(1);
-  });
-  it("starts on the current choice and moves with arrow keys, wrapping at the ends", () => {
-    const f = fixture(false, 5, ["3"]);
-    expect(f.active()).toBe(3);
-    f.key("ArrowDown"); expect(f.active()).toBe(4);
-    f.key("ArrowDown"); expect(f.active()).toBe(0);
-    f.key("ArrowUp"); expect(f.active()).toBe(4);
-    f.key("Enter"); expect(f.selected.has("4")).toBe(true);
-  });
-  it("keeps multiselect open with selection marks and Escape restores focus", () => {
-    const f = fixture(true); f.rows()[0].click();
-    expect(f.selected.has("0")).toBe(true); expect(f.rows()).toHaveLength(20);
-    expect(f.rows()[0].getAttribute("aria-selected")).toBe("true");
-    f.rows()[1].click(); expect(f.selected.has("1")).toBe(true);
-    f.rows()[0].click(); expect(f.selected.has("0")).toBe(false);
-    f.key("Escape"); expect(f.popover()).toBeNull(); expect(f.restored()).toBe(1); expect(f.selected.has("1")).toBe(true);
-  });
-  it("does not filter or choose during IME composition and dismisses on outside pointerdown", () => {
+
+  it("keeps multiselect open and repaints selection marks in place", () => {
     const f = fixture(true);
-    f.input().dispatchEvent(new f.win.CompositionEvent("compositionstart"));
-    f.query("Folder/9"); expect(f.rows()).toHaveLength(20);
-    f.key("Enter"); expect(f.selected.size).toBe(0);
-    f.input().dispatchEvent(new f.win.CompositionEvent("compositionend"));
-    expect(f.rows().every((row) => row.textContent!.includes("Folder/9"))).toBe(true);
-    f.doc.body.dispatchEvent(new f.win.Event("pointerdown", { bubbles: true }));
-    expect(f.popover()).toBeNull(); expect(f.restored()).toBe(0);
+    f.rows()[0].click();
+    expect(f.prompt()).not.toBeNull(); expect(f.selected.has("0")).toBe(true);
+    expect(f.rows()[0].getAttribute("aria-selected")).toBe("true");
+    f.rows()[1].click(); f.rows()[0].click();
+    expect([...f.selected]).toEqual(["1"]);
+    expect(f.rows()[0].getAttribute("aria-selected")).toBe("false");
+    f.suggest.dispose(); expect(f.prompt()).toBeNull(); expect(f.closed()).toBe(1);
   });
-  it("explains empty candidates and empty matches, and Escape still dismisses", () => {
-    const empty = fixture(true, 0);
+
+  it("explains empty candidates separately from empty matches and passes keyboard hints", () => {
+    const instructions = [{ command: "esc", purpose: "Done" }];
+    const empty = fixture(true, 0, [], { instructions });
     expect(empty.doc.querySelector(".suggestion-empty")!.textContent).toBe("No boxes");
-    empty.key("Escape"); expect(empty.popover()).toBeNull();
+    expect((modals[0] as unknown as { instructions: unknown }).instructions).toEqual(instructions);
+    empty.suggest.dispose();
     const f = fixture();
-    f.query("no matching folder");
+    f.query("nothing");
     expect(f.rows()).toHaveLength(0);
     expect(f.doc.querySelector(".suggestion-empty")!.textContent).toBe("No matches");
-    f.key("Enter"); expect(f.selected.size).toBe(0);
-    f.key("Escape"); expect(f.popover()).toBeNull(); expect(f.restored()).toBe(1);
   });
 });

@@ -1047,14 +1047,14 @@ describe("SettingsStore — note input persistence", () => {
   it("commits template registration and quick input atomically into their additive v2 layers", async () => {
     const { store, documents } = createStore();
     await store.init();
-    const pending = store.updateFlat({ noteTemplates: [template], quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } });
+    const pending = store.updateFlat({ noteTemplates: [template], quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" } });
     expect(store.getFlat().noteTemplates).toEqual([template]);
-    expect(store.getFlat().quickInput.templateId).toBe("daily");
+    expect(store.getFlat().quickInput.duplicateTitle).toBe("append");
     await expect(pending).resolves.toBe("patch");
     expect(documents).toHaveLength(1);
-    expect(documents[0]).toMatchObject({ schemaVersion: 2, preferences: { quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" } }, userData: { noteTemplates: [template] } });
+    expect(documents[0]).toMatchObject({ schemaVersion: 2, preferences: { quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" } }, userData: { noteTemplates: [template] } });
     expect(migrateSettings(documents[0])).toEqual(store.getFlat());
     await expect(store.updateUserData({ noteTemplates: [{ ...template, targetFolderPath: "Inbox" }] })).resolves.toBe("patch");
-    await expect(store.updatePreferences({ quickInput: { templateId: null, folderPath: "Missing", insertPosition: "end" } })).resolves.toBe("patch");
+    await expect(store.updatePreferences({ quickInput: { folderPath: "Missing", insertPosition: "end", duplicateTitle: "ask" } })).resolves.toBe("patch");
   });
 });

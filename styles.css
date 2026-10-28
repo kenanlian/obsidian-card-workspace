@@ -2343,6 +2343,23 @@ html.fce-quick-input-window:root > body {
 }
 html.fce-quick-input-window:root > body::before,
 html.fce-quick-input-window:root > body::after { display: none; }
+/* Shared by the draft card and native prompts layered over it. */
+html.fce-quick-input-window:root > body {
+  --fce-quick-input-radius: max(24px, calc(var(--input-height, 32px) / 2), var(--radius-l, 12px));
+}
+/* Native prompts cover the whole transparent window: clip their backdrop to the card and fit the prompt inside it. */
+html.fce-quick-input-window:root > body > .modal-container {
+  border-radius: var(--fce-quick-input-radius);
+  overflow: hidden;
+}
+html.fce-quick-input-window .modal-container .prompt {
+  --prompt-max-width: calc(100vw - 32px);
+  --prompt-max-height: calc(100vh - 48px);
+}
+html.fce-quick-input-window .modal-container .modal {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
 .fce-quick-input-resize { position: absolute; z-index: 1; -webkit-app-region: no-drag; }
 .fce-quick-input-resize[data-edge="n"], .fce-quick-input-resize[data-edge="s"] { left: 14px; right: 14px; height: 5px; cursor: ns-resize; }
 .fce-quick-input-resize[data-edge="e"], .fce-quick-input-resize[data-edge="w"] { top: 14px; bottom: 14px; width: 5px; cursor: ew-resize; }
@@ -2360,7 +2377,6 @@ html.fce-quick-input-window:root > body::after { display: none; }
 .fce-quick-input {
   --fce-quick-input-tint: var(--interactive-accent);
   --fce-quick-input-frame: 5px;
-  --fce-quick-input-radius: max(24px, calc(var(--input-height, 32px) / 2), var(--radius-l, 12px));
   --fce-quick-input-border: color-mix(in srgb, var(--fce-quick-input-tint) 28%, var(--background-modifier-border));
   --fce-quick-input-send-background: var(--fce-quick-input-border);
   --fce-quick-input-send-color: color-mix(in srgb, var(--fce-quick-input-tint) 8%, var(--text-normal));
@@ -2546,20 +2562,8 @@ html.fce-quick-input-window:root > body::after { display: none; }
   text-align: center;
 }
 .fce-quick-input-actions { display: flex; flex: none; gap: 8px; margin-left: auto; }
-/* Anchored above its footer button; search and results share one surface. */
-.fce-quick-input-choice-popover {
-  position: fixed;
-  z-index: var(--layer-popover);
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4-1);
-  box-sizing: border-box;
-  padding: var(--size-4-1);
-  overflow: hidden;
-}
-.fce-quick-input-choice-popover .fce-quick-input-choice-search { flex: none; width: 100%; box-sizing: border-box; }
-.fce-quick-input-choice-popover .suggestion { flex: 0 1 auto; min-height: 0; padding: 0; overflow-y: auto; }
-.fce-quick-input-choice-popover .suggestion-empty { padding: var(--size-4-2) var(--size-4-3); color: var(--text-muted); font-size: var(--font-ui-small); }
+/* Prompt rows keep a fixed check column so names stay left-aligned. */
 .fce-quick-input-choice-row { display: flex; gap: 8px; align-items: center; }
+.fce-quick-input-choice-row .fce-quick-input-choice-name { flex: 1 1 auto; min-width: 0; }
 .fce-quick-input-choice-check { display: inline-flex; flex: 0 0 16px; }
 .fce-quick-input-choice-check svg { width: 16px; height: 16px; }

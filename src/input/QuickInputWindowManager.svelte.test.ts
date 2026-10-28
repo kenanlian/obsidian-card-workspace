@@ -2,14 +2,46 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform, TFile, TFolder, type App } from "obsidian";
 import { noteInputStrings } from "../i18n/noteInput";
 import { DEFAULT_SETTINGS, type PluginSettings } from "../settings";
-import type { QuickInputRequest, NoteInputResult, NoteTemplateDefinition } from "../note-input";
+import type { QuickInputRequest, NoteInputResult } from "../note-input";
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputWindowHandle } from "./quick-input-desktop";
 import { QuickInputWindowManager } from "./QuickInputWindowManager";
 import { QuickInputPreflightError } from "../services/NoteCreationService";
 import { createCardBox } from "../view/card-boxes";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
+import type { QuickInputSuggestOptions } from "./quick-input-suggest";
 
 vi.mock("obsidian", async (importOriginal) => ({ ...await importOriginal<typeof import("obsidian")>(), moment: (await import("moment")).default }));
+
+interface FakeConfirm { title: string; content: string; isOpen: boolean; buttons: Array<{ text: string; cta: boolean }>; click(text: string): void }
+const prompts = vi.hoisted(() => ({ pickers: [] as Array<{ options: QuickInputSuggestOptions; dispose: () => void }>, confirms: [] as FakeConfirm[] }));
+vi.mock("./quick-input-suggest", () => ({
+  openQuickInputSuggest: (_app: unknown, options: QuickInputSuggestOptions) => {
+    let open = true;
+    const entry = { options, dispose: () => { if (open) { open = false; options.onClose(); } } };
+    prompts.pickers.push(entry);
+    return { dispose: entry.dispose };
+  },
+}));
+vi.mock("../view/modals/compat-modal", () => ({
+  CompatConfirmationModal: class {
+    title = ""; content = ""; isOpen = false;
+    buttons: Array<{ text: string; cta: boolean; run: () => unknown }> = [];
+    constructor() { prompts.confirms.push(this as unknown as FakeConfirm); }
+    setTitle(title: string) { this.title = title; return this; }
+    setContent(content: string) { this.content = content; return this; }
+    addButton(configure: (button: unknown) => unknown) {
+      const record = { text: "", cta: false, run: (): unknown => undefined };
+      const api = { setButtonText: (text: string) => { record.text = text; return api; }, setCta: () => { record.cta = true; return api; },
+        setWarning: () => api, setDisabled: () => api, onClick: (run: () => unknown) => { record.run = run; return api; } };
+      configure(api); this.buttons.push(record); return this;
+    }
+    addCancelButton(text: string) { return this.addButton((button) => (button as { setButtonText(text: string): { onClick(run: () => unknown): unknown } }).setButtonText(text).onClick(() => undefined)); }
+    open() { this.isOpen = true; }
+    onClose() {}
+    close() { if (!this.isOpen) return; this.isOpen = false; this.onClose(); }
+    click(text: string) { if (!this.buttons.find((button) => button.text === text)!.run()) this.close(); }
+  },
+}));
 
 const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; flush: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; propertiesReadOnly: ReturnType<typeof vi.fn>; addMetadata: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
 vi.mock("./native-markdown-editor", () => ({
@@ -25,7 +57,6 @@ let manager: QuickInputWindowManager;
 let settings: PluginSettings;
 let notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 let submit: ReturnType<typeof vi.fn<(request: QuickInputRequest) => Promise<NoteInputResult>>>;
-let prepareTemplate: ReturnType<typeof vi.fn<(template: NoteTemplateDefinition, now: Date) => Promise<string>>>;
 let files: Map<string, TFile | TFolder>;
 let language: "en" | "zh";
 const rootFolder = Object.assign(new TFolder(), { path: "" });
@@ -44,10 +75,11 @@ function setText(text: string, index = 0) { state.editors[index].text = text; st
 
 beforeEach(() => {
   state.editors = []; state.unsupported = false;
+  prompts.pickers = []; prompts.confirms = [];
   language = "en";
   settings = structuredClone(DEFAULT_SETTINGS);
   files = new Map([["", rootFolder]]);
-  notify = vi.fn(); submit = vi.fn(); prepareTemplate = vi.fn(async () => "");
+  notify = vi.fn(); submit = vi.fn();
   windows = []; documentReady = null; cursor = { x: 0, y: 0 };
   desktop = { check: vi.fn(), cursor: vi.fn(() => cursor), shortcuts: vi.fn(),
     position: vi.fn((_source, width, height, ordinal) => ({ x: 100 + ordinal * 24, y: 100 + ordinal * 24, width, height })),
@@ -78,84 +110,22 @@ beforeEach(() => {
     }) };
   manager = new QuickInputWindowManager({ desktop,
     app: { vault: { getRoot: () => rootFolder, getAbstractFileByPath: (path: string) => files.get(path) ?? null, getAllFolders: vi.fn(() => [...files.values()].filter((file) => file instanceof TFolder)) } } as unknown as App,
-    getSettings: () => settings, getStrings: () => noteInputStrings[language], notify, submit, prepareTemplate,
+    getSettings: () => settings, getStrings: () => noteInputStrings[language], notify, submit,
   });
 });
 afterEach(() => { manager.dispose(); Object.assign(Platform, { isMacOS: false, isWin: false }); document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 describe("modeless quick input", async () => {
-  function useTemplate() {
-    const template = { id: "daily", name: "Daily", filePath: "Templates/template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
-    settings.noteTemplates = [template];
-    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
+  it("opens a blank draft that ignores registered templates and submits the edited draft", async () => {
+    settings.noteTemplates = [{ id: "daily", filePath: "Templates/template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }];
+    (settings.quickInput as unknown as Record<string, unknown>).templateId = "daily";
     files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
-    return template;
-  }
-
-  it("shows template properties and body before revealing and submits the complete edited draft", async () => {
-    const template = useTemplate();
-    const text = "---\nstatus: draft\n---\n## Template body";
-    prepareTemplate.mockResolvedValue(text);
     submit.mockReturnValue(new Promise<NoteInputResult>(() => {}));
     await manager.open(window);
-    expect(prepareTemplate).toHaveBeenCalledWith(template, expect.any(Date));
-    expect(state.editors[0].text).toBe(text);
-    expect(send().disabled).toBe(false);
-    const capturedTime = prepareTemplate.mock.calls[0][1].getTime();
-    template.dateFormat = "YYYY-MM";
-    settings.quickInput = { templateId: null, folderPath: "elsewhere", insertPosition: "start" };
-    setText("---\nstatus: edited\n---\n## Edited body\nmy input {{date}}");
-    send().click();
-    expect(submit.mock.calls[0][0]).toMatchObject({ text: state.editors[0].text,
-      config: { templateId: "daily", folderPath: "", insertPosition: "end" }, template: { dateFormat: "YYYY" } });
-    expect(submit.mock.calls[0][0].now.getTime()).toBe(capturedTime);
-    expect(prepareTemplate).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the window hidden until template loading completes", async () => {
-    useTemplate();
-    let finish!: (text: string) => void;
-    prepareTemplate.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-    const pending = manager.open(); await tick();
-    expect(prepareTemplate).toHaveBeenCalledOnce();
-    expect(state.editors).toHaveLength(0);
-    expect(windows[0].handle.show).not.toHaveBeenCalled();
-    finish("template body"); await pending;
-    expect(state.editors[0].text).toBe("template body");
-    expect(windows[0].handle.show).toHaveBeenCalledOnce();
-  });
-
-  it("drops a pending template read when disposed and never mounts its late content", async () => {
-    useTemplate();
-    let finish!: (text: string) => void;
-    prepareTemplate.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-    const pending = manager.open(); await tick();
-    manager.dispose(); finish("late template"); await pending;
-    expect(state.editors).toHaveLength(0);
-    expect(windows[0].handle.show).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
-  });
-
-  it("closes a failed template load without exposing an empty draft", async () => {
-    useTemplate(); prepareTemplate.mockRejectedValue(new Error("Template read failed"));
-    await manager.open();
-    expect(state.editors).toHaveLength(0);
-    expect(windows[0].dispose).toHaveBeenCalledOnce();
-    expect(notify).toHaveBeenCalledExactlyOnceWith("Template read failed");
-    expect(submit).not.toHaveBeenCalled();
-  });
-
-  it("keeps a draft blocked if its template was unavailable when it opened", async () => {
-    useTemplate(); files.delete("Templates/template.md");
-    await manager.open(); setText("keep my input");
-    expect(prepareTemplate).not.toHaveBeenCalled();
-    files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
-    windows[0].win.dispatchEvent(new Event("focus"));
-    expect(send().disabled).toBe(true);
-    expect(state.editors[0].text).toBe("keep my input");
-    expect(submit).not.toHaveBeenCalled();
-    await manager.open();
-    expect(prepareTemplate).toHaveBeenCalledOnce();
+    expect(state.editors[0].text).toBe("");
+    setText("my input {{date}}"); send().click(); await tick();
+    expect(submit.mock.calls[0][0]).toMatchObject({ text: "my input {{date}}", config: { folderPath: "", insertPosition: "end", duplicateTitle: "number" } });
+    expect(submit.mock.calls[0][0]).not.toHaveProperty("template");
   });
 
   it.each(["en", "zh"] as const)("shows the %s Send label beside its plane and changes the pending text", async (locale) => {
@@ -262,11 +232,11 @@ describe("modeless quick input", async () => {
     expect(first.text).toBe("{{date}} unchanged"); expect(root()).not.toBeNull();
     expect(state.editors[0].readOnly).toHaveBeenCalledWith(true);
     expect(state.editors[0].flush).toHaveBeenCalledOnce();
-    settings.quickInput = { templateId: "missing", folderPath: "missing", insertPosition: "start" };
+    settings.quickInput = { folderPath: "missing", insertPosition: "start", duplicateTitle: "append" };
     send().click(); await tick();
     expect(submit.mock.calls[1][0]).toBe(first);
     expect(state.editors[0].flush).toHaveBeenCalledOnce();
-    expect(first.config).toEqual({ templateId: null, folderPath: "", insertPosition: "end" });
+    expect(first.config).toEqual({ folderPath: "", insertPosition: "end", duplicateTitle: "number" });
     expect(root()).toBeUndefined();
   });
 
@@ -280,20 +250,16 @@ describe("modeless quick input", async () => {
     expect(state.editors[0].readOnly).toHaveBeenCalledWith(true);
   });
 
-  it("captures the selected template and stops unavailable configuration without losing draft", async () => {
-    settings.quickInput.templateId = "template";
-    settings.noteTemplates = [{ id: "template", filePath: "Templates/template.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }];
+  it("stops an unavailable save folder without losing the draft and keeps a captured request after it disappears", async () => {
+    settings.quickInput.folderPath = "Inbox";
     await manager.open(window); setText("draft"); expect(send().disabled).toBe(true);
-    cancel().click();
-    settings.noteTemplates[0].targetFolderPath = "";
-    files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
-    await manager.open(window); setText("draft", 1); expect(send().disabled).toBe(false);
+    files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+    windows.forEach(({ win }) => win.dispatchEvent(new Event("focus"))); expect(send().disabled).toBe(false);
     submit.mockRejectedValue(new Error("fail")); send().click(); await tick();
     const captured = submit.mock.calls[0][0] as QuickInputRequest;
-    settings.noteTemplates[0].dateFormat = "YYYY-MM";
-    expect(captured.template!.dateFormat).toBe("YYYY");
-    files.delete("Templates/template.md"); windows.forEach(({ win }) => win.dispatchEvent(new Event("focus"))); expect(send().disabled).toBe(false);
-    expect(state.editors[1].text).toBe("draft");
+    expect(captured.config.folderPath).toBe("Inbox");
+    files.delete("Inbox"); windows.forEach(({ win }) => win.dispatchEvent(new Event("focus"))); expect(send().disabled).toBe(false);
+    expect(state.editors[0].text).toBe("draft");
   });
 
   it("ignores completion after disposal and does not close a later replacement draft", async () => {
@@ -332,22 +298,19 @@ describe("modeless quick input", async () => {
     expect(root().querySelector(".fce-quick-input-destination")).toBeNull();
     expect(sendLabel()).toBe(strings.send);
     expect(folder().title).toBe(strings.rootFolder);
-    settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" };
+    settings.quickInput = { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" };
+    settings.quickInputVisibility.title = true;
     cancel().click(); await manager.open(window);
     expect(folder().title).toBe("Inbox");
-    files.set("Journal", Object.assign(new TFolder(), { path: "Journal" }));
-    files.set("Templates/daily.md", Object.assign(new TFile(), { path: "Templates/daily.md", basename: "daily", extension: "md" }));
-    settings.noteTemplates = [{ id: "daily", name: "Daily", filePath: "Templates/daily.md", targetFolderPath: "Journal", dateFormat: "YYYY", timeFormat: "HH" }];
-    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
-    cancel().click(); await manager.open(window);
+    const title = root().querySelector<HTMLInputElement>(".fce-quick-input-title")!;
+    title.value = "Daily"; title.dispatchEvent(new Event("input")); title.dispatchEvent(new Event("blur"));
     expect(sendLabel()).toBe(strings.send);
-    expect(folder().title).toBe("Journal");
-    files.set("Journal/daily.md", Object.assign(new TFile(), { path: "Journal/daily.md", extension: "md" }));
+    files.set("Inbox/Daily.md", Object.assign(new TFile(), { path: "Inbox/Daily.md", extension: "md" }));
     windows.at(-1)!.win.dispatchEvent(new Event("focus"));
     expect(sendLabel()).toBe(strings.appendNote);
     expect(send().getAttribute("aria-label")).toBe(strings.appendNote);
     expect(folder().classList.contains("is-invalid")).toBe(false);
-    settings.quickInput = { templateId: "missing", folderPath: "", insertPosition: "end" };
+    settings.quickInput = { folderPath: "missing", insertPosition: "end", duplicateTitle: "append" };
     cancel().click(); await manager.open(window);
     expect(folder().classList.contains("is-invalid")).toBe(true);
     expect(folder().title).toContain(strings.destinationUnavailable);
@@ -357,12 +320,12 @@ describe("modeless quick input", async () => {
   it("keeps describing the captured destination after a failed send and later settings edits", async () => {
     files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
     files.set("Other", Object.assign(new TFolder(), { path: "Other" }));
-    settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "end" };
+    settings.quickInput = { folderPath: "Inbox", insertPosition: "end", duplicateTitle: "ask" };
     submit.mockRejectedValue(new Error("fail"));
     await manager.open(window); setText("draft");
     expect(send().title).toBe(`${noteInputStrings.en.send} (Ctrl+Enter)`);
     send().click(); await tick();
-    settings.quickInput = { templateId: null, folderPath: "Other", insertPosition: "start" };
+    settings.quickInput = { folderPath: "Other", insertPosition: "start", duplicateTitle: "number" };
     windows.forEach(({ win }) => win.dispatchEvent(new Event("focus")));
     expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-folder")!.title).toBe("Inbox");
   });
@@ -393,7 +356,7 @@ describe("modeless quick input", async () => {
     expect(windows[0].handle.show).not.toHaveBeenCalled();
     await pending;
     await manager.open();
-    expect(desktop.position).toHaveBeenCalledWith(undefined, 480, 270, 1);
+    expect(desktop.position).toHaveBeenCalledWith(undefined, 480, 400, 1);
     for (const item of windows) {
       expect(item.handle.show).toHaveBeenCalledOnce();
       expect(item.handle.focus).toHaveBeenCalledOnce();
@@ -491,7 +454,7 @@ describe("modeless quick input", async () => {
     expect(state.editors).toHaveLength(0);
     expect(windows[0].handle.show).not.toHaveBeenCalled();
     await manager.open();
-    expect(desktop.position).toHaveBeenLastCalledWith(undefined, 480, 270, 0);
+    expect(desktop.position).toHaveBeenLastCalledWith(undefined, 480, 400, 0);
     expect(windows[1].handle.show).toHaveBeenCalledOnce();
   });
 
@@ -686,14 +649,11 @@ describe("draft target controls", () => {
     root().dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
     expect(state.editors[0].addMetadata).toHaveBeenCalledWith("property");
   });
-  it("switches template mode without loading it again and restores property editing", async () => {
+  it("previews appending to a same-name note and restores property editing for a new title", async () => {
     settings.quickInputVisibility = { title: true, folder: true, boxes: true, tags: true, properties: true };
-    settings.noteTemplates = [{ id: "t", filePath: "Templates/T.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }];
-    settings.quickInput.templateId = "t";
-    files.set("Templates/T.md", Object.assign(new TFile(), { path: "Templates/T.md", basename: "T", extension: "md" }));
+    settings.quickInput.duplicateTitle = "append";
     files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
-    prepareTemplate.mockResolvedValue("---\ntags: [draft]\n---\nBody");
-    await manager.open();
+    await manager.open(); setText("Body");
     editTitle("Existing"); settleTitle();
     expect(state.editors[0].propertiesReadOnly).toHaveBeenLastCalledWith(true);
     expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-tags")!.disabled).toBe(true);
@@ -702,16 +662,67 @@ describe("draft target controls", () => {
     editTitle("New"); settleTitle();
     expect(state.editors[0].propertiesReadOnly).toHaveBeenLastCalledWith(false);
     expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-tags")!.disabled).toBe(false);
-    expect(prepareTemplate).toHaveBeenCalledOnce();
-    expect(state.editors[0].text).toContain("tags: [draft]");
+    editTitle("Existing"); settleTitle();
+    submit.mockReturnValue(new Promise(() => {})); send().click();
+    expect(prompts.confirms).toHaveLength(0);
+    expect(submit.mock.calls[0][0]).toMatchObject({ config: { duplicateTitle: "append" }, expectedMode: "append" });
+  });
+  it("creates a numbered note beside a same-name note without previewing an append", async () => {
+    settings.quickInputVisibility.title = true;
+    settings.quickInput.duplicateTitle = "number";
+    files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
+    await manager.open(); setText("Body");
+    editTitle("Existing"); settleTitle();
+    expect(send().querySelector(".fce-quick-input-send-label")!.textContent).toBe(noteInputStrings.en.send);
+    expect(state.editors[0].propertiesReadOnly).not.toHaveBeenCalledWith(true);
+    submit.mockReturnValue(new Promise(() => {})); send().click();
+    expect(prompts.confirms).toHaveLength(0);
+    expect(submit.mock.calls[0][0]).toMatchObject({ config: { duplicateTitle: "number" }, expectedMode: "create" });
+  });
+  it.each([
+    ["appendNote", "append", "append"],
+    ["createNumberedNote", "number", "create"],
+  ] as const)("asks before sending to a same-name note and applies %s", async (button, duplicateTitle, expectedMode) => {
+    settings.quickInputVisibility.title = true;
+    settings.quickInput.insertPosition = "start";
+    files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
+    await manager.open(); setText("Body");
+    editTitle("Existing"); settleTitle();
+    expect(send().querySelector(".fce-quick-input-send-label")!.textContent).toBe(noteInputStrings.en.send);
+    send().click();
+    expect(submit).not.toHaveBeenCalled();
+    const [prompt] = prompts.confirms;
+    expect(prompt).toMatchObject({ isOpen: true, title: noteInputStrings.en.duplicateTitleHeading,
+      content: noteInputStrings.en.duplicateTitleBody("Existing.md", noteInputStrings.en.insertBodyStart) });
+    expect(prompt.buttons.map((entry) => entry.text)).toEqual([noteInputStrings.en.appendNote, noteInputStrings.en.createNumberedNote, noteInputStrings.en.cancel]);
+    root().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(prompts.confirms).toHaveLength(1);
+    submit.mockReturnValue(new Promise(() => {}));
+    prompt.click(noteInputStrings.en[button]); await tick();
+    expect(submit).toHaveBeenCalledOnce();
+    expect(submit.mock.calls[0][0]).toMatchObject({ config: { duplicateTitle, insertPosition: "start" }, expectedMode });
+  });
+  it("keeps the draft editable when the same-name prompt is cancelled and asks again on the next send", async () => {
+    settings.quickInputVisibility.title = true;
+    files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
+    await manager.open(); setText("Body");
+    editTitle("Existing"); settleTitle();
+    send().click();
+    state.editors[0].focus.mockClear();
+    prompts.confirms[0].click(noteInputStrings.en.cancel); await tick();
+    expect(submit).not.toHaveBeenCalled();
+    expect(state.editors[0].focus).toHaveBeenCalledOnce();
+    expect(title().disabled).toBe(false);
+    expect(state.editors[0].readOnly).not.toHaveBeenCalledWith(true);
+    send().click();
+    expect(prompts.confirms).toHaveLength(2);
+    cancel().click();
+    expect(prompts.confirms[1].isOpen).toBe(false);
   });
   it("switches create/append only after the typed title settles", async () => {
     settings.quickInputVisibility.title = true;
-    settings.noteTemplates = [{ id: "t", filePath: "Templates/T.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }];
-    settings.quickInput.templateId = "t";
-    files.set("Templates/T.md", Object.assign(new TFile(), { path: "Templates/T.md", basename: "T", extension: "md" }));
+    settings.quickInput.duplicateTitle = "append";
     files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
-    prepareTemplate.mockResolvedValue("Body");
     await manager.open();
     state.editors[0].propertiesReadOnly.mockClear();
     editTitle("Existing");
@@ -744,28 +755,55 @@ it("lets the user reselect boxes after a missing reference blocks a pre-write su
   settings.quickInputVisibility.boxes = true;
   settings.boxes = [createCardBox("One", [])];
   await manager.open(); setText("Body");
-  const doc = windows[0].win.document;
+  const box = settings.boxes[0];
   const boxButton = root().querySelector<HTMLButtonElement>(".fce-quick-input-boxes")!;
   const count = boxButton.querySelector<HTMLElement>(".fce-quick-input-choice-count")!;
   expect(count.hidden).toBe(true);
   boxButton.click();
-  doc.querySelector<HTMLElement>(".fce-quick-input-choice-row")!.click();
+  const [picker] = prompts.pickers;
+  expect(picker.options).toMatchObject({ multiple: true, candidates: [{ id: box.id, name: "One" }],
+    placeholder: noteInputStrings.en.chooseBoxesPlaceholder, emptyText: noteInputStrings.en.boxesEmpty });
+  expect(picker.options.instructions!.map((entry) => entry.purpose)).toEqual([
+    noteInputStrings.en.navigateChoices, noteInputStrings.en.toggleChoice, noteInputStrings.en.finishChoosing]);
+  boxButton.click();
+  expect(prompts.pickers).toHaveLength(1);
+  picker.options.select(box.id);
+  expect(picker.options.selected(box.id)).toBe(true);
   expect(count.hidden).toBe(false); expect(count.textContent).toBe("1");
   expect(boxButton.title).toBe(`${noteInputStrings.en.boxes} · One`);
-  doc.querySelector<HTMLInputElement>(".fce-quick-input-choice-search")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  send().click();
+  expect(submit).not.toHaveBeenCalled();
+  state.editors[0].focus.mockClear();
+  picker.dispose();
+  expect(state.editors[0].focus).toHaveBeenCalledOnce();
   settings.boxes = [];
   submit.mockRejectedValueOnce(new QuickInputPreflightError("missing-box"));
   send().click(); await tick();
   expect(boxButton.disabled).toBe(false);
   expect(state.editors[0].readOnly).toHaveBeenLastCalledWith(false);
   boxButton.click();
-  expect(doc.querySelector(".fce-quick-input-choice-popover .suggestion-empty")!.textContent).toBe(noteInputStrings.en.boxesEmpty);
+  expect(prompts.pickers[1].options.candidates).toEqual([]);
   expect(count.hidden).toBe(true);
-  doc.querySelector<HTMLInputElement>(".fce-quick-input-choice-search")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  prompts.pickers[1].dispose();
   submit.mockReturnValue(new Promise(() => {}));
   send().click();
   expect(submit.mock.calls[1][0].boxIds).toEqual([]);
   expect(submit.mock.calls[1][0].submissionId).not.toBe(submit.mock.calls[0][0].submissionId);
+});
+
+it("chooses the save folder from a native single-choice picker", async () => {
+  files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+  await manager.open(); setText("Body");
+  const folderButton = root().querySelector<HTMLButtonElement>(".fce-quick-input-folder")!;
+  folderButton.click();
+  const [picker] = prompts.pickers;
+  expect(picker.options).toMatchObject({ multiple: false, placeholder: noteInputStrings.en.chooseFolderPlaceholder, instructions: undefined,
+    candidates: [{ id: "", name: noteInputStrings.en.rootFolder }, { id: "Inbox", name: "Inbox" }] });
+  expect(picker.options.selected("")).toBe(true);
+  picker.options.select("Inbox"); picker.dispose();
+  expect(folderButton.title).toBe("Inbox");
+  submit.mockReturnValue(new Promise(() => {})); send().click();
+  expect(submit.mock.calls[0][0].config.folderPath).toBe("Inbox");
 });
 
 it("routes the property shortcut from draft-document popovers outside the editor root", async () => {

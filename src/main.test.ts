@@ -328,9 +328,7 @@ vi.mock("./search", async () => {
 
 vi.mock("./CardWorkspaceSettingTab", () => {
   return {
-    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {
-      refreshTemplateOptions = vi.fn();
-    },
+    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {},
   };
 });
 
@@ -3766,31 +3764,6 @@ describe("template creation assembly", () => {
     gate.resolve();
     await pending;
     expect(focusTemplateNote).not.toHaveBeenCalled();
-  });
-
-  it("refreshes settings definitions after delayed startup settings load and template changes", async () => {
-    const { plugin } = createPluginHarness();
-    const settings = deferred<unknown>();
-    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
-    plugin.onload();
-    const tab = (plugin as unknown as { addSettingTab: ReturnType<typeof vi.fn> }).addSettingTab.mock.calls[0]![0] as { refreshTemplateOptions: ReturnType<typeof vi.fn> };
-    expect(tab.refreshTemplateOptions).not.toHaveBeenCalled();
-    const template = { id: "daily", name: "Daily input", filePath: "Templates/Daily.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
-    settings.resolve({ noteTemplates: [template] });
-    await waitForPluginLoad(plugin);
-    expect(tab.refreshTemplateOptions).toHaveBeenCalledOnce();
-    expect(plugin.getSettings().noteTemplates).toEqual([template]);
-
-    await plugin.saveSettings({ noteTemplates: [...plugin.getSettings().noteTemplates, { ...template, id: "new", filePath: "Templates/New.md" }] });
-    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(2);
-    await plugin.saveSettings({ noteTemplates: plugin.getSettings().noteTemplates.map((entry) => ({ ...entry, name: "Renamed" })) });
-    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(3);
-    await plugin.saveSettings({ noteTemplates: [] });
-    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
-    await plugin.saveSettings({ previewLines: 7 });
-    await plugin.saveSettings({ noteTemplates: [] });
-    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
-    plugin.onunload();
   });
 
   it("opens the service target while keeping linked card scopes and passes one time snapshot", async () => {

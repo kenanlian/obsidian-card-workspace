@@ -4,6 +4,7 @@ import {
   DEFAULT_NOTE_TEMPLATE_TIME_FORMAT,
   NOTE_TEMPLATE_DATE_FORMATS,
   NOTE_TEMPLATE_TIME_FORMATS,
+  QUICK_INPUT_DUPLICATE_TITLES,
   type NoteInputResult,
   type TemplateNoteCursor,
   type TemplateNoteResult,
@@ -53,32 +54,16 @@ export class NoteCreationService {
     return this.createUniqueNote(folderPath, baseName, content);
   }
 
-  /** Expand the complete template before editing; submission saves this edited snapshot. */
-  async prepareQuickInputTemplate(template: NoteTemplateDefinition, now: Date): Promise<string> {
-    return (await this.prepareQuickInputDraft(template, now)).text;
-  }
-
-  async prepareQuickInputDraft(template: NoteTemplateDefinition, now: Date) {
-    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
-    const text = this.replaceTemplateVariables(await this.readLatest(target.file), target);
-    this.validateTemplateTarget(target);
-    return { text, title: target.path.split("/").pop()!.slice(0, -3), folderPath: template.targetFolderPath as string, sourceFile: target.file };
-  }
-
-  /** Shared by draft preflight and the serialized write boundary. Never reads a note. */
-  resolveQuickInputTarget(request: Pick<QuickInputRequest, "config" | "template" | "now" | "target" | "templateSource">) {
-    if (request.config.templateId !== (request.template?.id ?? null)) throw new NoteInputError("missing-template");
-    if (request.config.insertPosition !== "start" && request.config.insertPosition !== "end") throw new NoteInputError("invalid-config");
-    let path: string;
-    if (request.target) {
-      const folder = this.requireFolder(request.target.folderPath);
-      path = joinNotePath(folder, sanitizeNoteFilename(request.target.title));
-    } else {
-      path = request.template ? this.resolveTemplateTarget(request.template, request.now).path
-        : joinNotePath(this.requireFolder(request.config.folderPath), this.defaultQuickInputTitle(request.now));
-    }
-    if (request.template && (path === normalizePath(request.template.filePath) || path === request.templateSource?.path)) throw new NoteInputError("target-conflict");
-    const existing = request.template ? this.app.vault.getAbstractFileByPath(path) : null;
+  /** Shared by draft preflight and the serialized write boundary. Never reads a note.
+   * Only a titled draft can meet an existing note; numbering ignores it. */
+  resolveQuickInputTarget(request: Pick<QuickInputRequest, "config" | "now" | "target">) {
+    const { config } = request;
+    if (config.insertPosition !== "start" && config.insertPosition !== "end") throw new NoteInputError("invalid-config");
+    if (!QUICK_INPUT_DUPLICATE_TITLES.includes(config.duplicateTitle)) throw new NoteInputError("invalid-config");
+    const path = request.target
+      ? joinNotePath(this.requireFolder(request.target.folderPath), sanitizeNoteFilename(request.target.title))
+      : joinNotePath(this.requireFolder(config.folderPath), this.defaultQuickInputTitle(request.now));
+    const existing = request.target && config.duplicateTitle !== "number" ? this.app.vault.getAbstractFileByPath(path) : null;
     if (existing && (!(existing instanceof TFile) || existing.extension.toLowerCase() !== "md")) throw new NoteInputError("target-conflict");
     return { path, mode: existing ? "append" as const : "create" as const, file: existing };
   }
@@ -128,15 +113,12 @@ export class NoteCreationService {
     let submission = this.submissions.get(request.submissionId);
     if (!submission) {
       try {
-        const snapshot: QuickInputRequest = {
-          ...request, config: { ...request.config }, template: request.template ? { ...request.template } : null,
-          now: new Date(request.now.getTime()),
-        };
+        const snapshot: QuickInputRequest = { ...request, config: { ...request.config }, now: new Date(request.now.getTime()) };
         if (!snapshot.submissionId || !snapshot.text.trim()) throw new NoteInputError("empty-input");
         if (snapshot.config.insertPosition !== "start" && snapshot.config.insertPosition !== "end") {
           throw new NoteInputError("invalid-config");
         }
-        if (snapshot.config.templateId !== (snapshot.template?.id ?? null)) throw new NoteInputError("missing-template");
+        if (snapshot.config.duplicateTitle === "ask") throw new NoteInputError("invalid-config");
         snapshot.target = request.target ? { ...request.target } : undefined;
         snapshot.boxIds = request.boxIds ? [...request.boxIds] : undefined;
         const targetPath = this.resolveQuickInputTarget(snapshot).path;
@@ -150,7 +132,7 @@ export class NoteCreationService {
     if (submission.pending) return submission.pending;
     const captured = submission;
     // Unique notes acquire their final numbered path inside createUniqueNote.
-    const lockedPath = captured.creation?.path ?? (captured.request.template ? captured.targetPath : null);
+    const lockedPath = captured.creation?.path ?? (appendsToTitle(captured.request) ? captured.targetPath : null);
     const writing = lockedPath !== null
       ? this.serialize(lockedPath, () => this.writeQuickSubmission(captured))
       : this.writeQuickSubmission(captured);
@@ -214,7 +196,7 @@ export class NoteCreationService {
     }
     const { request } = submission;
     const resolved = this.preflightQuickInput(request);
-    if (!request.template) {
+    if (!appendsToTitle(request)) {
       const folder = this.requireFolder(request.target?.folderPath ?? request.config.folderPath);
       const baseName = request.target ? sanitizeNoteFilename(request.target.title) : this.defaultQuickInputTitle(request.now);
       return this.createUniqueNote(folder, baseName, request.text, (path) => {
@@ -227,7 +209,7 @@ export class NoteCreationService {
       submission.creation = { path: resolved.path, expected: request.text };
       return { file: await this.app.vault.create(resolved.path, request.text), created: true };
     }
-    // Existing notes retain their own properties, just like clicking a template.
+    // Existing notes retain their own properties; only the draft body is inserted.
     const body = request.text.slice(getFrontMatterInfo(request.text).contentStart);
     if (!body.trim()) return { file, created: false };
     const view = this.findMarkdownView(file);
@@ -408,6 +390,9 @@ function sanitizeNoteFilename(name: string): string {
 }
 
 function joinNotePath(folder: string, basename: string): string { return `${folder ? `${folder}/` : ""}${basename}.md`; }
+
+/** Only these submissions write to one exact title path; all others pick a numbered free path. */
+function appendsToTitle(request: QuickInputRequest): boolean { return !!request.target && request.config.duplicateTitle === "append"; }
 
 function buildScopeContent(request: ScopeNoteRequest): string {
   const properties = Object.entries(request.properties).filter(([key]) => key.toLowerCase() !== "tags" && key.toLowerCase() !== "tag");

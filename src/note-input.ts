@@ -12,10 +12,15 @@ export interface NoteTemplateDefinition {
   existingNoteInsertPosition?: "start" | "end";
 }
 
+/** What a titled draft does when its folder already has a note with that name. */
+export type QuickInputDuplicateTitle = "append" | "number" | "ask";
+export const QUICK_INPUT_DUPLICATE_TITLES: readonly QuickInputDuplicateTitle[] = ["append", "number", "ask"];
+
 export interface QuickInputConfig {
-  templateId: string | null;
   folderPath: string;
+  /** Where an appended draft body goes in the existing note. */
   insertPosition: "start" | "end";
+  duplicateTitle: QuickInputDuplicateTitle;
 }
 
 export interface ScopeNoteRequest {
@@ -48,20 +53,17 @@ export function normalizeQuickInputVisibility(value: unknown): QuickInputVisibil
     [key, typeof raw[key] === "boolean" ? raw[key] : fallback])) as unknown as QuickInputVisibility;
 }
 export interface QuickInputDestination { folderPath: string; title: string }
-export interface PreparedQuickInput { text: string; title: string; folderPath: string; sourceFile?: TFile }
 export type QuickInputMode = "create" | "append";
 
 export interface QuickInputRequest {
   submissionId: string;
   target?: QuickInputDestination;
-  /** Runtime identity protects the original template even after a rename. */
-  templateSource?: TFile;
   boxIds?: string[];
   expectedMode?: QuickInputMode;
-  /** Complete edited document; template variables were expanded when the draft opened. */
+  /** Complete edited document. */
   text: string;
+  /** A submitted request never carries "ask"; the draft resolves it before sending. */
   config: QuickInputConfig;
-  template: NoteTemplateDefinition | null;
   now: Date;
 }
 
@@ -73,7 +75,7 @@ export const NOTE_TEMPLATE_TIME_FORMATS = [
 ] as const;
 export const DEFAULT_NOTE_TEMPLATE_DATE_FORMAT = "YYYY-MM-DD";
 export const DEFAULT_NOTE_TEMPLATE_TIME_FORMAT = "HH:mm:ss";
-export const DEFAULT_QUICK_INPUT: QuickInputConfig = { templateId: null, folderPath: "", insertPosition: "end" };
+export const DEFAULT_QUICK_INPUT: QuickInputConfig = { folderPath: "", insertPosition: "end", duplicateTitle: "ask" };
 export const DEFAULT_TEMPLATE_STORAGE_FOLDER = "Card Workspace Templates";
 
 export function resolveTemplateName(template: NoteTemplateDefinition): string {
@@ -127,10 +129,11 @@ export function normalizeNoteTemplates(value: unknown): NoteTemplateDefinition[]
 export function normalizeQuickInput(value: unknown): QuickInputConfig {
   const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   return {
-    templateId: typeof raw.templateId === "string" && raw.templateId.trim() ? raw.templateId.trim() : null,
     // Keep malformed authored paths unavailable; replacing them with root
     // would silently redirect a submission to a different destination.
     folderPath: typeof raw.folderPath === "string" ? normalizeInputPath(raw.folderPath) ?? raw.folderPath.trim() : "",
     insertPosition: raw.insertPosition === "start" ? "start" : "end",
+    duplicateTitle: QUICK_INPUT_DUPLICATE_TITLES.includes(raw.duplicateTitle as QuickInputDuplicateTitle)
+      ? raw.duplicateTitle as QuickInputDuplicateTitle : DEFAULT_QUICK_INPUT.duplicateTitle,
   };
 }

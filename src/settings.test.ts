@@ -39,15 +39,15 @@ describe("hover preview dimensions", () => {
 });
 
 describe("quick input appearance", () => {
-  it("defaults to a 480x270 random-tint window", () => {
-    expect(normalizeSettings({})).toMatchObject({ quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random" });
+  it("defaults to a 480x400 random-tint window", () => {
+    expect(normalizeSettings({})).toMatchObject({ quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random" });
   });
 
   it("bounds dimensions and rejects unknown colors", () => {
     expect(normalizeSettings({ quickInputWidth: 100, quickInputHeight: 9000, quickInputColor: "teal" }))
       .toMatchObject({ quickInputWidth: 320, quickInputHeight: 800, quickInputColor: "random" });
     expect(normalizeSettings({ quickInputWidth: 5000, quickInputHeight: "300", quickInputColor: "accent" }))
-      .toMatchObject({ quickInputWidth: 1200, quickInputHeight: 270, quickInputColor: "accent" });
+      .toMatchObject({ quickInputWidth: 1200, quickInputHeight: 400, quickInputColor: "accent" });
     expect(normalizeSettings({ quickInputWidth: 500.6, quickInputHeight: 240.2, quickInputColor: "cyan" }))
       .toMatchObject({ quickInputWidth: 501, quickInputHeight: 240, quickInputColor: "cyan" });
   });
@@ -1159,7 +1159,7 @@ describe("card grouping settings normalization", () => {
         quickInput: DEFAULT_SETTINGS.quickInput,
         quickInputVisibility: DEFAULT_SETTINGS.quickInputVisibility,
         quickInputGlobalShortcut: "",
-        quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
+        quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random",
         templateStorageFolder: DEFAULT_SETTINGS.templateStorageFolder,
         searchPreviewSnippetCount: 2,
         hoverPreviewWidth: 600,
@@ -1748,7 +1748,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     uiDensity: "compact",
     cardStyle: "list",
     newNoteTemplate: "blank",
-    quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" },
+    quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" },
     quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true },
     quickInputWidth: 640,
     quickInputHeight: 360,

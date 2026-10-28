@@ -42,7 +42,7 @@ import {
   isNewNoteTemplate,
   type PartialPluginSettings,
 } from "./settings";
-import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, normalizeQuickInputVisibility, type QuickInputVisibility, normalizeQuickInput, resolveTemplateName } from "./note-input";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, QUICK_INPUT_DUPLICATE_TITLES, normalizeQuickInputVisibility, type QuickInputDuplicateTitle, type QuickInputVisibility, normalizeQuickInput } from "./note-input";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 import { onPlainEnter } from "./view/metadata-input-suggest";
 import { TemplateStorageError } from "./services/TemplateStorageService";
@@ -165,15 +165,6 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  /** Native hosts cache definitions at registration, before settings finish loading. */
-  refreshTemplateOptions(): void {
-    if (requireApiVersion("1.13.0") && typeof this.update === "function") {
-      this.disposeFolderSuggests();
-      this.update();
-    }
-    // Legacy display() builds fresh options each time the tab is opened.
-  }
-
   /**
    * Settings live in SettingsStore, so the declarative control binding must not
    * read or write `plugin.settings` / `saveData`.
@@ -186,8 +177,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     switch (key) {
       case "fileVisibility":
         return settings.fileVisibility;
-      case "quickInputTemplateId":
-        return normalizeQuickInput(settings.quickInput).templateId ?? "";
+      case "quickInputDuplicateTitle":
+        return normalizeQuickInput(settings.quickInput).duplicateTitle;
       case "quickInputFolderPath":
         return normalizeQuickInput(settings.quickInput).folderPath;
       case "quickInputInsertPosition":
@@ -239,7 +230,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     await this.saveDeclarativeSetting(key, value);
-    if (key === "cardImageMode" || key === "cardStyle" || (key === "quickInputTemplateId" && typeof value === "string")) {
+    if (key === "cardImageMode" || key === "cardStyle" || key === "quickInputDuplicateTitle") {
       if (requireApiVersion("1.13.0")) {
         if (typeof this.refreshDomState === "function") {
           this.refreshDomState();
@@ -401,16 +392,6 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
     const navigationStrings = getUiStrings(language).navigationVisibility;
     const inputStrings = getUiStrings(language).noteInput;
-    const settings = this.plugin.getSettings();
-    const quickInput = normalizeQuickInput(settings.quickInput);
-    const templateOptions: Record<string, string> = Object.create(null) as Record<string, string>;
-    templateOptions[""] = inputStrings.noTemplate;
-    for (const template of settings.noteTemplates ?? []) {
-      templateOptions[template.id] = resolveTemplateName(template);
-    }
-    if (quickInput.templateId && !Object.prototype.hasOwnProperty.call(templateOptions, quickInput.templateId)) {
-      templateOptions[quickInput.templateId] = `${inputStrings.templateUnavailable} (${quickInput.templateId})`;
-    }
     return [
       {
         type: "group",
@@ -583,14 +564,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         type: "group",
         heading: inputStrings.quickInputHeading,
         items: [
-          { name: inputStrings.quickInputTemplateName, desc: inputStrings.quickInputTemplateDesc,
-            control: { type: "dropdown", key: "quickInputTemplateId", options: templateOptions } },
           { name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
-            visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId === null,
             render: (setting) => this.renderQuickInputFolderSetting(setting) },
+          { name: inputStrings.quickInputDuplicateTitleName, desc: inputStrings.quickInputDuplicateTitleDesc,
+            control: { type: "dropdown", key: "quickInputDuplicateTitle", options: inputStrings.duplicateTitleOptions } },
           { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,
-            visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).templateId !== null,
-            control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertStart, end: inputStrings.insertEnd } } },
+            visible: () => normalizeQuickInput(this.plugin.getSettings().quickInput).duplicateTitle !== "number",
+            control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: inputStrings.insertBodyStart, end: inputStrings.insertEnd } } },
           { name: inputStrings.quickInputWidthName,
             desc: inputStrings.quickInputDimensionDesc(QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX, DEFAULT_QUICK_INPUT_WIDTH),
             control: { type: "slider", key: "quickInputWidth", min: QUICK_INPUT_WIDTH_MIN, max: QUICK_INPUT_WIDTH_MAX, step: 10 } },
@@ -631,11 +611,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       });
       return;
     }
-    if (key === "quickInputTemplateId" || key === "quickInputFolderPath" || key === "quickInputInsertPosition") {
+    if (key === "quickInputDuplicateTitle" || key === "quickInputFolderPath" || key === "quickInputInsertPosition") {
       if (typeof value !== "string") return;
       if (key === "quickInputInsertPosition" && value !== "start" && value !== "end") return;
+      if (key === "quickInputDuplicateTitle" && !QUICK_INPUT_DUPLICATE_TITLES.includes(value as QuickInputDuplicateTitle)) return;
       const config = normalizeQuickInput(this.plugin.getSettings().quickInput);
-      if (key === "quickInputTemplateId") config.templateId = value || null;
+      if (key === "quickInputDuplicateTitle") config.duplicateTitle = value as QuickInputDuplicateTitle;
       if (key === "quickInputFolderPath") config.folderPath = value;
       if (key === "quickInputInsertPosition") config.insertPosition = value as "start" | "end";
       await this.plugin.saveSettings({ quickInput: config });

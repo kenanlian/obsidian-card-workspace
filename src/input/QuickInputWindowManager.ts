@@ -1,8 +1,9 @@
 import { Platform, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
-import { normalizeQuickInputVisibility, type QuickInputVisibility, type PreparedQuickInput, type QuickInputMode, type NoteInputResult, type NoteTemplateDefinition, type QuickInputConfig, type QuickInputRequest } from "../note-input";
+import { normalizeQuickInputVisibility, type QuickInputVisibility, type QuickInputMode, type NoteInputResult, type QuickInputRequest } from "../note-input";
 import { NoteCreationService, QuickInputPreflightError } from "../services/NoteCreationService";
 import { QuickInputBoxesSaveError } from "../services/QuickInputSubmissionCoordinator";
+import { CompatConfirmationModal } from "../view/modals/compat-modal";
 import { openQuickInputSuggest } from "./quick-input-suggest";
 import { QUICK_INPUT_TINTS, type PluginSettings, type QuickInputTint } from "../settings";
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputDesktopWindow } from "./quick-input-desktop";
@@ -16,12 +17,14 @@ const MIN_HEIGHT = 200;
 /** Typing a title passes through other note names; only a settled title switches create/append. */
 const TITLE_TARGET_DELAY = 250;
 interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
-type DraftContext = Pick<QuickInputRequest, "config" | "template" | "now" | "target" | "templateSource">;
+type DraftContext = Pick<QuickInputRequest, "config" | "now" | "target">;
 interface QuickInputTarget {
-  template: NoteTemplateDefinition | null;
-  folderPath: string | null;
-  insertPosition: QuickInputConfig["insertPosition"];
+  folderPath: string;
+  path: string | null;
   valid: boolean;
+  /** A same-name note exists and the duplicate-title policy may append to it. */
+  existing: boolean;
+  /** What this draft shows; only the "append" policy previews appending. */
   mode: QuickInputMode;
 }
 interface Draft {
@@ -46,7 +49,6 @@ interface Draft {
   pending: boolean;
   request: QuickInputRequest | null;
   context: DraftContext;
-  templateReady: boolean;
   cleanup: Array<() => void>;
 }
 interface Options {
@@ -54,7 +56,6 @@ interface Options {
   desktop: QuickInputDesktop;
   getSettings: () => PluginSettings;
   getStrings: () => NoteInputStrings;
-  prepareTemplate: (template: NoteTemplateDefinition, now: Date) => Promise<PreparedQuickInput | string>;
   submit: (request: QuickInputRequest) => Promise<NoteInputResult>;
   describeError?: (error: unknown) => string;
   notify: (message: string) => void;
@@ -77,14 +78,12 @@ export class QuickInputWindowManager {
     if (this.disposed || source?.closed) return;
     let session: Session | undefined;
     let mountingEditor = false;
-    let preparingTemplate = false;
     try {
       this.options.desktop.check();
       const settings = this.options.getSettings();
       const config = { ...settings.quickInput };
       const visibility = normalizeQuickInputVisibility(settings.quickInputVisibility);
-      const selected = settings.noteTemplates.find((entry) => entry.id === config.templateId);
-      const context: DraftContext = { config, template: selected ? { ...selected } : null, now: new Date() };
+      const context: DraftContext = { config, now: new Date() };
       const initial = this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, 0);
       const ordinal = [...this.sessions.values()].filter((current) => current.displayId === initial.displayId).length;
       const placement = ordinal ? this.options.desktop.position(source, settings.quickInputWidth, settings.quickInputHeight, ordinal) : initial;
@@ -97,25 +96,8 @@ export class QuickInputWindowManager {
         opened.dispose(); this.closeSession(session); return;
       }
       session.window = opened;
-      let initialValue = "";
-      let templateReady = !config.templateId;
-      if (context.template && this.resolveTarget(context).valid) {
-        preparingTemplate = true;
-        const prepared = await this.options.prepareTemplate(context.template, context.now);
-        if (typeof prepared === "string") initialValue = prepared;
-        else {
-          initialValue = prepared.text;
-          context.target = { title: prepared.title, folderPath: prepared.folderPath };
-          context.templateSource = prepared.sourceFile;
-        }
-        templateReady = true;
-        preparingTemplate = false;
-        if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
-          this.closeSession(session); return;
-        }
-      }
       mountingEditor = true;
-      this.mount(session, opened.win, context, initialValue, templateReady, visibility);
+      this.mount(session, opened.win, context, visibility);
       mountingEditor = false;
       // Force style/layout before the first reveal. A hidden native window may
       // never deliver rAF, even with background throttling disabled.
@@ -130,11 +112,7 @@ export class QuickInputWindowManager {
         opened.handle.showInactive();
       }
     } catch (error) {
-      if (preparingTemplate) {
-        if (session?.closed || this.disposed) return;
-        if (session) this.closeSession(session);
-        this.options.notify(error instanceof Error ? error.message : String(error));
-      } else this.fail(session, error, mountingEditor);
+      this.fail(session, error, mountingEditor);
     }
   }
 
@@ -143,7 +121,7 @@ export class QuickInputWindowManager {
     return Promise.resolve();
   }
 
-  private mount(session: Session, win: Window, context: DraftContext, initialValue: string, templateReady: boolean, visibility: QuickInputVisibility): void {
+  private mount(session: Session, win: Window, context: DraftContext, visibility: QuickInputVisibility): void {
     const settings = this.options.getSettings();
     const strings = this.options.getStrings();
     const root = win.document.body.createDiv({ cls: "fce-quick-input" });
@@ -183,17 +161,12 @@ export class QuickInputWindowManager {
     const sendLabel = send.createSpan({ cls: "fce-quick-input-send-label", text: strings.send });
     let draft: Draft | undefined;
     try {
-      const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder, initialValue,
+      const editor = createNativeMarkdownEditor({ app: this.options.app, container: body, placeholder: strings.inputPlaceholder, initialValue: "",
         onChange: () => { if (draft) this.refresh(draft); },
         onModEnter: (event) => { if (draft) this.handleModEnter(draft, event); },
       });
-      let defaultTitle = context.target?.title ?? this.targets.defaultQuickInputTitle(context.now);
-      if (context.template && !context.target) {
-        try { defaultTitle = this.targets.resolveQuickInputTarget(context).path.split("/").pop()!.slice(0, -3); } catch { /* Invalid destination stays visible. */ }
-      }
-      if (!context.target && (context.template || visibility.title)) context.target = {
-        title: defaultTitle, folderPath: context.template?.targetFolderPath ?? context.config.folderPath,
-      };
+      const defaultTitle = this.targets.defaultQuickInputTitle(context.now);
+      if (visibility.title) context.target = { title: defaultTitle, folderPath: context.config.folderPath };
       let title: HTMLInputElement | null = null;
       if (visibility.title) {
         title = win.document.body.createEl("input");
@@ -206,7 +179,7 @@ export class QuickInputWindowManager {
       draft = { visibility, title, defaultTitle, folderButton, boxButton, tagButton, propertyButton,
         boxIds: [], popup: null, titleTimer: null, target: this.resolveTarget(context), root, editor, send, sendLabel, cancel,
         composing: false, pending: false, request: null, cleanup: [],
-        session, context, templateReady,
+        session, context,
       };
       const current = draft;
       this.drafts.add(current);
@@ -258,7 +231,9 @@ export class QuickInputWindowManager {
       this.listen(current, win.document, "compositionend", () => { current.composing = false; this.refresh(current); });
       this.listen(current, win.document, "keydown", (event) => {
         const key = event as KeyboardEvent;
-        if (key.ctrlKey && !key.altKey && key.key === ";" && !(key.target as HTMLElement | null)?.classList?.contains("fce-quick-input-choice-search")) {
+        // An open prompt owns the keyboard until it closes.
+        if (current.popup) return;
+        if (key.ctrlKey && !key.altKey && key.key === ";") {
           key.preventDefault(); key.stopPropagation();
           if (!key.isComposing && !current.composing) this.addMetadata(current, "property");
           return;
@@ -291,13 +266,14 @@ export class QuickInputWindowManager {
 
   /** A captured request keeps describing its own destination across later settings edits. */
   private resolveTarget(context: DraftContext): QuickInputTarget {
-    const { config, template } = context;
-    const folderPath = context.target?.folderPath ?? (config.templateId ? template?.targetFolderPath ?? null : config.folderPath);
+    const folderPath = context.target?.folderPath ?? context.config.folderPath;
     try {
       const resolved = this.targets.resolveQuickInputTarget(context);
-      return { template, folderPath, insertPosition: config.insertPosition, valid: true, mode: resolved.mode };
+      const existing = resolved.mode === "append";
+      return { folderPath, path: resolved.path, valid: true, existing,
+        mode: existing && context.config.duplicateTitle === "append" ? "append" : "create" };
     } catch {
-      return { template, folderPath, insertPosition: config.insertPosition, valid: false, mode: "create" };
+      return { folderPath, path: null, valid: false, existing: false, mode: "create" };
     }
   }
 
@@ -316,9 +292,8 @@ export class QuickInputWindowManager {
   }
 
   private openChoices(draft: Draft, kind: "folder" | "boxes"): void {
-    if (draft.pending || draft.request || draft.composing) return;
+    if (draft.pending || draft.request || draft.composing || draft.popup) return;
     draft.editor.flush();
-    draft.popup?.dispose();
     const strings = this.options.getStrings();
     const candidates = kind === "folder" ? [
       { id: "", name: strings.rootFolder },
@@ -331,10 +306,17 @@ export class QuickInputWindowManager {
       draft.boxIds = draft.boxIds.filter((id) => available.has(id));
       this.paintBoxes(draft);
     }
-    draft.popup = openQuickInputSuggest({ anchor: kind === "folder" ? draft.folderButton : draft.boxButton,
+    const popup = openQuickInputSuggest(this.options.app, {
       candidates, multiple: kind === "boxes", emptyText: strings.boxesEmpty, noMatchText: strings.noChoiceMatches,
+      placeholder: kind === "folder" ? strings.chooseFolderPlaceholder : strings.chooseBoxesPlaceholder,
+      instructions: kind === "boxes" ? [
+        { command: "↑↓", purpose: strings.navigateChoices },
+        { command: "↵", purpose: strings.toggleChoice },
+        { command: "esc", purpose: strings.finishChoosing },
+      ] : undefined,
       selected: (id) => kind === "folder" ? draft.target.folderPath === id : draft.boxIds.includes(id),
       select: (id) => {
+        if (!this.drafts.has(draft) || draft.pending || draft.request) return;
         if (kind === "folder") {
           if (draft.context.target) draft.context.target.folderPath = id;
           else draft.context.config.folderPath = id;
@@ -344,7 +326,36 @@ export class QuickInputWindowManager {
           this.paintBoxes(draft);
         }
       },
-      restoreFocus: () => draft.editor.focus(),
+      onClose: () => {
+        if (draft.popup === popup) draft.popup = null;
+        if (this.drafts.has(draft)) draft.editor.focus();
+      },
+    });
+    draft.popup = popup;
+  }
+
+  /** Resolves "ask" for one send; null keeps the draft unchanged. */
+  private askDuplicateTitle(draft: Draft, path: string): Promise<"append" | "number" | null> {
+    const strings = this.options.getStrings();
+    return new Promise((resolve) => {
+      let choice: "append" | "number" | null = null;
+      const modal = new CompatConfirmationModal(this.options.app);
+      modal.setTitle(strings.duplicateTitleHeading);
+      modal.setContent(strings.duplicateTitleBody(path, draft.context.config.insertPosition === "start"
+        ? strings.insertBodyStart : strings.insertEnd));
+      modal.addButton((button) => button.setCta().setButtonText(strings.appendNote).onClick(() => { choice = "append"; }));
+      modal.addButton((button) => button.setButtonText(strings.createNumberedNote).onClick(() => { choice = "number"; }));
+      modal.addCancelButton(strings.cancel);
+      const popup = { dispose: () => modal.close() };
+      const onClose = modal.onClose.bind(modal);
+      modal.onClose = () => {
+        onClose();
+        if (draft.popup === popup) draft.popup = null;
+        if (this.drafts.has(draft)) draft.editor.focus();
+        resolve(choice);
+      };
+      draft.popup = popup;
+      modal.open();
     });
   }
 
@@ -375,8 +386,7 @@ export class QuickInputWindowManager {
   private refresh(draft: Draft): void {
     if (this.disposed || !this.drafts.has(draft)) return;
     const strings = this.options.getStrings();
-    const target = { ...draft.target };
-    target.valid = target.valid && draft.templateReady;
+    const target = draft.target;
     draft.send.disabled = draft.pending || draft.composing || !stripEmptyDraftFrontmatter(draft.editor.getValue()).trim() || !target.valid;
     draft.cancel.disabled = draft.pending;
     const locked = draft.pending || !!draft.request;
@@ -407,8 +417,8 @@ export class QuickInputWindowManager {
     if (!event.isComposing && !draft.composing) void this.send(draft);
   }
 
-  private send(draft: Draft): void {
-    if (!this.drafts.has(draft) || draft.pending || draft.composing) return;
+  private async send(draft: Draft): Promise<void> {
+    if (!this.drafts.has(draft) || draft.pending || draft.composing || draft.popup) return;
     if (!draft.request) draft.editor.flush();
     const text = stripEmptyDraftFrontmatter(draft.editor.getValue());
     if (!text.trim()) return;
@@ -417,13 +427,19 @@ export class QuickInputWindowManager {
     if (!draft.request && latest.valid && latest.mode !== draft.target.mode) {
       this.updateTarget(draft); this.options.notify(strings.targetModeChanged); return;
     }
-    if (!draft.templateReady || !latest.valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
+    if (!latest.valid) { this.refresh(draft); this.options.notify(strings.invalidQuickInputConfig); return; }
     if (!draft.request) {
-      draft.request = { ...draft.context, now: draft.context.template ? draft.context.now : new Date(),
+      let duplicateTitle = draft.context.config.duplicateTitle;
+      if (duplicateTitle === "ask") {
+        const choice = latest.existing && latest.path ? await this.askDuplicateTitle(draft, latest.path) : "number";
+        if (!choice || !this.drafts.has(draft) || draft.pending || draft.request) return;
+        duplicateTitle = choice;
+      }
+      draft.request = { ...draft.context, config: { ...draft.context.config, duplicateTitle }, now: new Date(),
         submissionId: `${this.submissionPrefix}-${++this.sequence}`, text,
-        target: draft.context.target ? { ...draft.context.target } : undefined, boxIds: [...draft.boxIds], expectedMode: latest.mode };
+        target: draft.context.target ? { ...draft.context.target } : undefined, boxIds: [...draft.boxIds],
+        expectedMode: duplicateTitle === "append" && latest.existing ? "append" : "create" };
     }
-    draft.popup?.dispose();
     draft.pending = true;
     draft.editor.setReadOnly(true);
     this.refresh(draft);

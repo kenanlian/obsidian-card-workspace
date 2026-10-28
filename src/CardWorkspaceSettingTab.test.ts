@@ -60,8 +60,8 @@ function createPlugin(
       dragInsertAction: "embed",
       enableHeadingDragInsert: false,
       newNoteTemplate: "blank",
-      quickInput: { templateId: null, folderPath: "", insertPosition: "end" }, noteTemplates: [],
-      quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
+      quickInput: { folderPath: "", insertPosition: "end", duplicateTitle: "ask" }, noteTemplates: [],
+      quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random",
       previewLines: 6,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
@@ -570,60 +570,30 @@ describe("CardWorkspaceSettingTab", () => {
 });
 
 describe("quick input shared setting definitions", () => {
-  it("refreshes cached native template choices after creation, rename and removal", () => {
-    mockState.requireApiVersion.mockReturnValue(true);
-    const plugin = createPlugin();
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    const tab = createTab(plugin);
-    tab.update(); // Native hosts cache definitions when registering the tab.
-    const options = () => (tab.settingItems[3] as { items: { control: { options: Record<string, string> } }[] }).items[0]!.control.options;
-    expect(Object.keys(options())).toEqual([""]);
-
-    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
-    tab.refreshTemplateOptions();
-    expect(options().daily).toBe("Daily input");
-    settings.noteTemplates = [{ id: "daily", name: "Renamed input", filePath: "Templates/Daily.md" }];
-    tab.refreshTemplateOptions();
-    expect(options().daily).toBe("Renamed input");
-    settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
-    settings.noteTemplates = [];
-    tab.refreshTemplateOptions();
-    expect(options().daily).toBe("Template unavailable (daily)");
-  });
-
-  it("keeps legacy rendering usable when the native update API is unavailable", () => {
-    mockState.requireApiVersion.mockReturnValue(false);
-    const plugin = createPlugin();
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    const tab = createTab(plugin);
-    Object.defineProperty(tab, "update", { value: undefined });
-    settings.noteTemplates = [{ id: "daily", name: "Daily input", filePath: "Templates/Daily.md" }];
-    expect(() => tab.refreshTemplateOptions()).not.toThrow();
-    tab.display();
-    expect(groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[0]!.dropdowns[0]!.options)
-      .toContainEqual({ value: "daily", label: "Daily input" });
-  });
-
-  it("shows registered templates, retained missing choices and a custom folder input", () => {
+  it.each(["en", "zh"] as const)("offers no template choice and declares the %s folder, duplicate-title and append rows", (language) => {
+    const strings = getUiStrings(language).noteInput;
     const tab = createTab(createPlugin({
       noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md" }],
-      quickInput: { templateId: "missing", folderPath: "Missing", insertPosition: "start" },
-    }));
+      quickInput: { folderPath: "Missing", insertPosition: "start", duplicateTitle: "append" },
+    }, language));
     const definitions = tab.getSettingDefinitions()[3]!;
-    expect(definitions.heading).toBe("Quick input");
-    expect(definitions.items[0]?.control).toMatchObject({ type: "dropdown", key: "quickInputTemplateId", options: { "": "No template", daily: "Daily.md", missing: "Template unavailable (missing)" } });
-    expect(definitions.items[1]?.control).toBeUndefined();
-    expect(definitions.items[1]?.render).toBeTypeOf("function");
-    expect(tab.getControlValue("quickInputTemplateId")).toBe("missing");
+    expect(definitions.heading).toBe(strings.quickInputHeading);
+    expect(JSON.stringify(definitions.items)).not.toContain("quickInputTemplateId");
+    expect(definitions.items[0]?.control).toBeUndefined();
+    expect(definitions.items[0]?.render).toBeTypeOf("function");
+    expect(definitions.items[1]).toMatchObject({ name: strings.quickInputDuplicateTitleName,
+      control: { type: "dropdown", key: "quickInputDuplicateTitle", options: strings.duplicateTitleOptions } });
+    expect(Object.keys((definitions.items[1]!.control as { options: Record<string, string> }).options)).toEqual(["append", "number", "ask"]);
+    expect(definitions.items[2]).toMatchObject({ name: strings.quickInputPositionName,
+      control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: strings.insertBodyStart, end: strings.insertEnd } } });
+    expect(tab.getControlValue("quickInputDuplicateTitle")).toBe("append");
     expect(tab.getControlValue("quickInputFolderPath")).toBe("Missing");
     expect(tab.getControlValue("quickInputInsertPosition")).toBe("start");
   });
 
   it.each([false, true])("saves typed and suggested folders through the shared renderer (native: %s)", async (native) => {
     vi.mocked(attachFolderInputSuggest).mockClear();
-    const plugin = createPlugin({ quickInput: { templateId: null, folderPath: "Missing", insertPosition: "start" } });
+    const plugin = createPlugin({ quickInput: { folderPath: "Missing", insertPosition: "start", duplicateTitle: "ask" } });
     const settings = plugin.getSettings();
     plugin.getSettings.mockReturnValue(settings);
     plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
@@ -631,10 +601,10 @@ describe("quick input shared setting definitions", () => {
     let row: Setting;
     if (native) {
       row = new Setting(tab.containerEl as unknown as MockEl);
-      tab.getSettingDefinitions()[3]!.items[1]!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
+      tab.getSettingDefinitions()[3]!.items[0]!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
     } else {
       tab.display();
-      row = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[1]!;
+      row = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[0]!;
     }
     const text = row.texts[0]!;
     expect(text.value).toBe("Missing");
@@ -642,15 +612,15 @@ describe("quick input shared setting definitions", () => {
     const binding = vi.mocked(attachFolderInputSuggest).mock.calls.find((call) => call[1] === text.inputEl as unknown)!;
     expect(binding).toBeDefined();
     text.type("Notes/Inbox");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "Notes/Inbox", insertPosition: "start" } });
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "Notes/Inbox", insertPosition: "start", duplicateTitle: "ask" } });
     binding[2]("Projects");
     expect(text.value).toBe("Projects");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "Projects", insertPosition: "start" } });
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "Projects", insertPosition: "start", duplicateTitle: "ask" } });
     binding[2]("");
     expect(text.value).toBe("/");
     for (const value of ["", "/"]) {
       text.type(value);
-      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { templateId: null, folderPath: "", insertPosition: "start" } });
+      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "", insertPosition: "start", duplicateTitle: "ask" } });
     }
     tab.hide();
     for (const result of vi.mocked(attachFolderInputSuggest).mock.results) {
@@ -658,35 +628,34 @@ describe("quick input shared setting definitions", () => {
     }
   });
 
-  it.each([false, true])("persists each quick input field against the latest config and updates folder and position visibility (native: %s)", async (native) => {
+  it.each([false, true])("persists each quick input field against the latest config and hides the append position for numbering (native: %s)", async (native) => {
     mockState.requireApiVersion.mockReturnValue(native);
-    const plugin = createPlugin({ quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "end" } });
+    const plugin = createPlugin({ quickInput: { folderPath: "Inbox", insertPosition: "end", duplicateTitle: "ask" } });
     const settings = plugin.getSettings();
     plugin.getSettings.mockReturnValue(settings);
     plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
     const tab = createTab(plugin);
     const definitions = tab.getSettingDefinitions()[3]!.items;
-    const isFolderVisible = definitions[1]!.visible as () => boolean;
+    expect(definitions[0]!.visible).toBeUndefined();
     const isPositionVisible = definitions[2]!.visible as () => boolean;
     tab.display();
     const rows = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings;
-    expect(isFolderVisible()).toBe(false);
     expect(isPositionVisible()).toBe(true);
-    expect(rows[1]?.settingEl.style.display).toBe("none");
     expect(rows[2]?.settingEl.style.display).toBe("");
-    await tab.setControlValue("quickInputTemplateId", "");
-    expect(isFolderVisible()).toBe(true);
+    await tab.setControlValue("quickInputDuplicateTitle", "number");
     expect(isPositionVisible()).toBe(false);
-    expect(rows[1]?.settingEl.style.display).toBe("");
     expect(rows[2]?.settingEl.style.display).toBe("none");
+    await tab.setControlValue("quickInputDuplicateTitle", "append");
+    expect(rows[2]?.settingEl.style.display).toBe("");
     await tab.setControlValue("quickInputFolderPath", "Other");
     await tab.setControlValue("quickInputInsertPosition", "start");
-    expect(settings.quickInput).toEqual({ templateId: null, folderPath: "Other", insertPosition: "start" });
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(3);
+    expect(settings.quickInput).toEqual({ folderPath: "Other", insertPosition: "start", duplicateTitle: "append" });
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
     await tab.setControlValue("quickInputInsertPosition", "middle");
-    await tab.setControlValue("quickInputTemplateId", null);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(3);
-    expect((tab as unknown as { refreshDomState: ReturnType<typeof vi.fn> }).refreshDomState).toHaveBeenCalledTimes(native ? 1 : 0);
+    await tab.setControlValue("quickInputDuplicateTitle", "replace");
+    await tab.setControlValue("quickInputDuplicateTitle", null);
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
+    expect((tab as unknown as { refreshDomState: ReturnType<typeof vi.fn> }).refreshDomState).toHaveBeenCalledTimes(native ? 4 : 0);
   });
 
   it.each(["en", "zh"] as const)("declares %s window size sliders and a frame color dropdown", (language) => {
@@ -744,10 +713,6 @@ describe("template storage settings", () => {
     const tab = createTab(createPlugin({ templateStorageFolder: "" })); tab.display();
     const row = groupsIn(tab.containerEl as unknown as MockEl)[4]!.settings[0]!;
     expect(row.texts[0]!.value).toBe("/"); tab.hide();
-  });
-  it("shows the independent template name in quick-input choices", () => {
-    const tab = createTab(createPlugin({ noteTemplates: [{ id: "daily", name: "My daily template", filePath: "Templates/{{date}}.md" }] }));
-    expect(tab.getSettingDefinitions()[3]!.items[0]!.control).toMatchObject({ options: { daily: "My daily template" } });
   });
 });
 

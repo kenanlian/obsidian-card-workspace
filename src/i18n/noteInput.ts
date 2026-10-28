@@ -54,13 +54,21 @@ export interface NoteInputStrings {
   quickInput: string;
   quickInputCommand: string;
   quickInputHeading: string;
-  quickInputTemplateName: string;
-  quickInputTemplateDesc: string;
-  noTemplate: string;
   quickInputFolderName: string;
   quickInputFolderDesc: string;
+  quickInputDuplicateTitleName: string;
+  quickInputDuplicateTitleDesc: string;
+  duplicateTitleOptions: Record<"append" | "number" | "ask", string>;
   quickInputPositionName: string;
   quickInputPositionDesc: string;
+  duplicateTitleHeading: string;
+  duplicateTitleBody: (path: string, position: string) => string;
+  createNumberedNote: string;
+  chooseFolderPlaceholder: string;
+  chooseBoxesPlaceholder: string;
+  navigateChoices: string;
+  toggleChoice: string;
+  finishChoosing: string;
   quickInputWidthName: string;
   quickInputHeightName: string;
   quickInputDimensionDesc: (min: number, max: number, defaultValue: number) => string;
@@ -132,11 +140,18 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateTargetConflict: "The target note cannot be the template itself.", invalidFilename: "Enter a valid Markdown filename.",
     create: "Create", cancel: "Cancel",
     quickInput: "Quick input", quickInputCommand: "Open quick input", quickInputHeading: "Quick input",
-    quickInputTemplateName: "Quick input template",
-    quickInputTemplateDesc: "Without a template, each send creates a separate note, e.g. quick-note 2026-10-17 14-30-05.md. With a template, its destination folder and filename determine the target: create it if missing, or insert this input if it exists. For example, {{date}}.md with the YYYY-MM-DD date format collects a day's inputs in one note; including time in the filename can create separate notes.",
-    noTemplate: "No template", quickInputFolderName: "Quick input folder", quickInputFolderDesc: "Used when no template is selected. Leave empty for the vault root.",
-    quickInputPositionName: "Body insert position",
-    quickInputPositionDesc: "Insert at the start of the body (after properties) or at the end of the note. For a new note, this places your input before or after the template body; for an existing note, before or after its current body.",
+    quickInputFolderName: "Quick input folder",
+    quickInputFolderDesc: "New notes are saved here unless a draft picks another folder. Leave empty for the vault root. Without a title, each send creates a separate note, e.g. quick-note 2026-10-17 14-30-05.md.",
+    quickInputDuplicateTitleName: "When the title already exists",
+    quickInputDuplicateTitleDesc: "Applies when a draft's title matches an existing note in its save folder. Appending adds only the draft body; the note keeps its own properties.",
+    duplicateTitleOptions: { append: "Append to the existing note", number: "Create a new note with a number", ask: "Ask each time" },
+    quickInputPositionName: "Append position",
+    quickInputPositionDesc: "Where an appended draft body goes in the existing note.",
+    duplicateTitleHeading: "A note with this title exists",
+    duplicateTitleBody: (path, position) => `"${path}" already exists. Append adds this draft's body to the ${position.toLowerCase()}; draft properties are not added.`,
+    createNumberedNote: "Create numbered note",
+    chooseFolderPlaceholder: "Choose a save folder…", chooseBoxesPlaceholder: "Choose card boxes…",
+    navigateChoices: "to navigate", toggleChoice: "to toggle", finishChoosing: "to finish",
     quickInputWidthName: "Quick input width", quickInputHeightName: "Quick input height",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `Size in pixels (${min}–${max}; default ${defaultValue}) for each new draft. Resizing a draft only affects that draft; it shrinks to fit the window.`,
@@ -148,7 +163,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     insertStart: "Start of note", insertEnd: "End of note", rootFolder: "Vault root",
     inputPlaceholder: "Write a note…", send: "Send", sending: "Sending…",
     nativeEditorUnavailable: "The native Markdown editor is unavailable in this Obsidian version.",
-    invalidQuickInputConfig: "Quick input settings refer to an unavailable template or folder.",
+    invalidQuickInputConfig: "The quick input save folder or title is unavailable.",
     openQuickInputFailed: "Could not open quick input.",
     nativeFrameUnsupported: "Quick input requires the Obsidian or hidden window frame. Change Settings → Appearance → Window frame style, then fully restart Obsidian.",
     desktopUnavailable: "Quick input desktop capabilities are unavailable.",
@@ -194,11 +209,19 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     dateFormatUnavailable: "无法使用宿主日期格式化能力。", targetNoteMissing: "目标笔记不存在。",
     templateTargetConflict: "目标笔记不能是模板文件本身。", invalidFilename: "请输入有效的 Markdown 文件名。",
     create: "创建", cancel: "取消", quickInput: "快速输入", quickInputCommand: "打开快速输入",
-    quickInputHeading: "快速输入", quickInputTemplateName: "快速输入模板",
-    quickInputTemplateDesc: "不使用模板时，每次发送都会新建一篇独立笔记，文件名如 quick-note 2026-10-17 14-30-05.md。使用模板时，保存文件夹和文件名由模板决定；目标笔记不存在则创建，已存在则插入本次输入。例如，{{date}}.md 配合 YYYY-MM-DD 日期格式可将同一天的输入汇集到一篇笔记；文件名包含时间可用于分别创建笔记。",
-    noTemplate: "不使用模板", quickInputFolderName: "快速输入文件夹", quickInputFolderDesc: "未选择模板时使用，留空表示仓库根目录。",
-    quickInputPositionName: "正文插入位置",
-    quickInputPositionDesc: "将本次输入插入正文开头（属性之后）或笔记末尾。新建笔记时，相对于模板正文插入；笔记已存在时，相对于已有正文插入。",
+    quickInputHeading: "快速输入",
+    quickInputFolderName: "快速输入文件夹",
+    quickInputFolderDesc: "新笔记默认保存在此文件夹，草稿中可另选。留空表示仓库根目录。不填写标题时，每次发送都会新建一篇独立笔记，文件名如 quick-note 2026-10-17 14-30-05.md。",
+    quickInputDuplicateTitleName: "标题与已有笔记同名时",
+    quickInputDuplicateTitleDesc: "草稿标题与保存位置中的已有笔记同名时生效。追加只写入草稿正文，目标笔记保留自己的属性。",
+    duplicateTitleOptions: { append: "追加到该笔记", number: "新建笔记并在名称后加数字", ask: "每次询问" },
+    quickInputPositionName: "追加位置",
+    quickInputPositionDesc: "追加时，草稿正文写入已有笔记的位置。",
+    duplicateTitleHeading: "已存在同名笔记",
+    duplicateTitleBody: (path, position) => `“${path}”已存在。追加会把本次正文写入${position}，草稿中的属性不会写入。`,
+    createNumberedNote: "新建编号笔记",
+    chooseFolderPlaceholder: "选择保存位置…", chooseBoxesPlaceholder: "选择卡片盒…",
+    navigateChoices: "移动", toggleChoice: "选择/取消", finishChoosing: "完成",
     quickInputWidthName: "快速输入窗口宽度", quickInputHeightName: "快速输入窗口高度",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `每个新草稿的尺寸，单位为像素（${min}–${max}，默认 ${defaultValue}）。拖拽调整只影响当前草稿，会随窗口大小收缩。`,
@@ -209,7 +232,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     destinationLocation: "位置", destinationTemplate: "模板", destinationUnavailable: "目标不可用",
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",
     nativeEditorUnavailable: "当前 Obsidian 版本无法使用原生 Markdown 编辑器。",
-    invalidQuickInputConfig: "快速输入设置引用了不可用的模板或文件夹。", openQuickInputFailed: "无法打开快速输入。",
+    invalidQuickInputConfig: "快速输入的保存位置或标题不可用。", openQuickInputFailed: "无法打开快速输入。",
     nativeFrameUnsupported: "快速输入需要 Obsidian 框架或隐藏框架。请在“设置 → 外观 → 窗口框架样式”中手动切换，然后完全重启 Obsidian。",
     desktopUnavailable: "快速输入所需的桌面能力不可用。",
     pinWindow: "此窗口置顶",

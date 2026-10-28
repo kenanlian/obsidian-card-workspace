@@ -52,11 +52,11 @@ describe("note input settings", () => {
     expect(migrateSettings(document)).toEqual(settings);
   });
 
-  it("normalizes quick input without clearing a missing template selection", () => {
-    expect(normalizeQuickInput({ templateId: " missing ", folderPath: "/Inbox//Notes/", insertPosition: "start" }))
-      .toEqual({ templateId: "missing", folderPath: "Inbox/Notes", insertPosition: "start" });
-    for (const raw of [undefined, null, [], 42, { templateId: false, folderPath: false, insertPosition: "middle" }]) {
-      expect(normalizeQuickInput(raw)).toEqual({ templateId: null, folderPath: "", insertPosition: "end" });
+  it("normalizes quick input and drops the retired template selection", () => {
+    expect(normalizeQuickInput({ templateId: " missing ", folderPath: "/Inbox//Notes/", insertPosition: "start", duplicateTitle: "append" }))
+      .toEqual({ folderPath: "Inbox/Notes", insertPosition: "start", duplicateTitle: "append" });
+    for (const raw of [undefined, null, [], 42, { templateId: false, folderPath: false, insertPosition: "middle", duplicateTitle: "replace" }]) {
+      expect(normalizeQuickInput(raw)).toEqual({ folderPath: "", insertPosition: "end", duplicateTitle: "ask" });
     }
   });
 
@@ -66,7 +66,7 @@ describe("note input settings", () => {
   });
 
   it("retains a persisted invalid quick input destination across migration and serialization", () => {
-    const settings = migrateSettings({ schemaVersion: 2, preferences: { quickInput: { templateId: null, folderPath: "../Outside", insertPosition: "end" } } });
+    const settings = migrateSettings({ schemaVersion: 2, preferences: { quickInput: { folderPath: "../Outside", insertPosition: "end", duplicateTitle: "ask" } } });
     expect(settings.quickInput.folderPath).toBe("../Outside");
     const serialized = serializeSettings(settings);
     expect(serialized.preferences.quickInput.folderPath).toBe("../Outside");
@@ -76,11 +76,11 @@ describe("note input settings", () => {
   it("adds defaults to old layers and round trips template and quick input data at schema 2", () => {
     const old = migrateSettings({ schemaVersion: 2 });
     expect(old.noteTemplates).toEqual([]);
-    expect(old.quickInput).toEqual({ templateId: null, folderPath: "", insertPosition: "end" });
+    expect(old.quickInput).toEqual({ folderPath: "", insertPosition: "end", duplicateTitle: "ask" });
     expect(old.sectionCollapsed.templates).toBe(false);
     expect(old.navSectionOrder.slice(-3)).toEqual(["boxes", "links", "templates"]);
     const settings = mergeSettings(DEFAULT_SETTINGS, {
-      noteTemplates: [template], quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" }, sectionCollapsed: { templates: true },
+      noteTemplates: [template], quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" }, sectionCollapsed: { templates: true },
     });
     const document = serializeSettings(settings);
     expect(document.schemaVersion).toBe(2);

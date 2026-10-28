@@ -453,10 +453,6 @@ export default class CardWorkspacePlugin extends Plugin {
         if (this.disposed) return null;
         this.quickInputManager = new QuickInputWindowManager({
           app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
-          prepareTemplate: async (template, now) => {
-            try { return await this.getNoteCreationService().prepareQuickInputDraft(template, now); }
-            catch (error) { throw new Error(this.describeNoteInputError(error)); }
-          },
           submit: async (request) => {
             this.quickInputSubmissions ??= new QuickInputSubmissionCoordinator({
               notes: this.getNoteCreationService(), getSettings: () => this.getSettings(),
@@ -805,9 +801,6 @@ export default class CardWorkspacePlugin extends Plugin {
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
-    if (JSON.stringify(previous.noteTemplates) !== JSON.stringify(next.noteTemplates)) {
-      this.workspaceSettingTab?.refreshTemplateOptions();
-    }
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
@@ -979,7 +972,6 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
-    this.workspaceSettingTab?.refreshTemplateOptions();
   }
 
   /** Degrade to defaults read-only mode without aborting plugin startup. */

@@ -148,7 +148,6 @@ export function prepareQuickInputDocument(hostWindow: Window, targetWindow: Wind
         // Title editing uses the input's own caret/undo/IME behavior. Draft
         // shortcuts are handled by the owning document below the relay.
         if ((original.target as HTMLElement | null)?.classList?.contains("fce-quick-input-title")) return;
-        if (original.key === "Escape" && (original.target as HTMLElement | null)?.classList?.contains("fce-quick-input-choice-search")) return;
         // Send belongs to the draft even when a native property completion
         // menu has its own host scope. Let the child document capture it directly.
         if (((original.ctrlKey || original.metaKey) && !original.altKey && original.key === "Enter")

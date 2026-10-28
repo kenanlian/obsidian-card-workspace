@@ -55,14 +55,25 @@ export function normalizePath(path: string): string {
 }
 
 // Mock Obsidian module for testing
+/** Mirrors the host prompt: mounts into the active document, closes before choosing, and calls onClose on close. */
 export class FuzzySuggestModal<T> {
   protected app: any;
+  containerEl: HTMLElement | null = null;
+  inputEl: HTMLInputElement | null = null;
+  resultContainerEl: HTMLElement | null = null;
+  placeholder = "";
+  instructions: Array<{ command: string; purpose: string }> = [];
+  emptyStateText = "No results found.";
+  shouldRestoreSelection = true;
+  isOpen = false;
 
   constructor(app: any) {
     this.app = app;
   }
 
   setTitle(_title: string): void {}
+  setPlaceholder(placeholder: string): void { this.placeholder = placeholder; if (this.inputEl) this.inputEl.placeholder = placeholder; }
+  setInstructions(instructions: Array<{ command: string; purpose: string }>): void { this.instructions = instructions; }
 
   getItems(): T[] {
     return [];
@@ -72,7 +83,72 @@ export class FuzzySuggestModal<T> {
     return "";
   }
 
-  onChooseItem(_item: T): void {}
+  onChooseItem(_item: T, _evt?: MouseEvent | KeyboardEvent): void {}
+
+  getSuggestions(query: string): Array<{ item: T; match: { score: number; matches: [] } }> {
+    const needle = query.toLowerCase();
+    return this.getItems().filter((item) => this.getItemText(item).toLowerCase().includes(needle))
+      .map((item) => ({ item, match: { score: 0, matches: [] } }));
+  }
+
+  renderSuggestion(match: { item: T }, el: HTMLElement): void {
+    el.append(this.getItemText(match.item));
+  }
+
+  onChooseSuggestion(match: { item: T }, evt: MouseEvent | KeyboardEvent): void {
+    this.onChooseItem(match.item, evt);
+  }
+
+  selectSuggestion(match: { item: T }, evt: MouseEvent | KeyboardEvent): void {
+    this.close();
+    this.onChooseSuggestion(match, evt);
+  }
+
+  open(): void {
+    const doc: Document = (globalThis as { activeDocument?: Document }).activeDocument ?? document;
+    this.containerEl = doc.createElement("div");
+    this.containerEl.className = "modal-container";
+    this.inputEl = doc.createElement("input");
+    this.inputEl.className = "prompt-input";
+    this.inputEl.placeholder = this.placeholder;
+    this.resultContainerEl = doc.createElement("div");
+    this.resultContainerEl.className = "prompt-results";
+    this.containerEl.append(this.inputEl, this.resultContainerEl);
+    this.inputEl.addEventListener("input", () => this.updateSuggestions());
+    doc.body.append(this.containerEl);
+    this.isOpen = true;
+    this.onOpen();
+    this.updateSuggestions();
+  }
+
+  updateSuggestions(): void {
+    const results = this.resultContainerEl!;
+    results.replaceChildren();
+    const suggestions = this.getSuggestions(this.inputEl!.value);
+    if (!suggestions.length) {
+      const empty = results.ownerDocument.createElement("div");
+      empty.className = "suggestion-empty";
+      empty.textContent = this.emptyStateText;
+      results.append(empty);
+    }
+    for (const suggestion of suggestions) {
+      const row = results.ownerDocument.createElement("div");
+      row.className = "suggestion-item";
+      results.append(row);
+      this.renderSuggestion(suggestion, row);
+      row.addEventListener("click", (evt) => this.selectSuggestion(suggestion, evt));
+    }
+  }
+
+  close(): void {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.containerEl?.remove();
+    this.onClose();
+  }
+
+  onOpen(): void {}
+  onClose(): void {}
 }
 
 export class TFolder {

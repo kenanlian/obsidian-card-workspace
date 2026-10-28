@@ -130,7 +130,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "cardStyle": settings.cardStyle = "list"; break;
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
-    case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;
+    case "quickInput": settings.quickInput = { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "number" }; break;
     case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: true }; break;
     case "quickInputGlobalShortcut": settings.quickInputGlobalShortcut = "Control+Shift+Q"; break;
     case "quickInputWidth": settings.quickInputWidth += 10; break;

@@ -20,6 +20,13 @@ export function installObsidianDomHelpers(doc: Document): void {
       return this.createEl("div", options, callback);
     };
   }
+  const elementPrototype = host.Element.prototype;
+  if (typeof elementPrototype.addClass !== "function") {
+    elementPrototype.addClass = function (...classes: string[]) { this.classList.add(...classes); };
+  }
+  if (typeof nodePrototype.empty !== "function") {
+    nodePrototype.empty = function () { while (this.firstChild) this.removeChild(this.firstChild); };
+  }
   if (!nodePrototype || typeof nodePrototype.createEl === "function") return;
   Object.defineProperty(nodePrototype, "createEl", {
     configurable: true,

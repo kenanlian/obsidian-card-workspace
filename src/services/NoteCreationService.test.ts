@@ -81,8 +81,15 @@ const now = new Date(2026, 9, 12, 14, 5, 9);
 function template(overrides: Partial<NoteTemplateDefinition> = {}): NoteTemplateDefinition {
   return { id: "daily", filePath: "Templates/{{date}} {{time}}.md", targetFolderPath: "Notes", dateFormat: "YYYY-MM-DD", timeFormat: "HH-mm-ss", ...overrides };
 }
+const TITLE = "2026-10-12 14-05-09";
+/** A titled draft that appends to a same-name note. */
 function request(overrides: Partial<QuickInputRequest> = {}): QuickInputRequest {
-  return { submissionId: "one", text: "user {{date}} {{time}}", config: { templateId: "daily", folderPath: "ignored", insertPosition: "end" }, template: template(), now, ...overrides };
+  return { submissionId: "one", text: "user {{date}} {{time}}", config: { folderPath: "ignored", insertPosition: "end", duplicateTitle: "append" },
+    target: { folderPath: "Notes", title: TITLE }, now, ...overrides };
+}
+/** An untitled draft, always a new timestamp note. */
+function plain(overrides: Partial<QuickInputRequest> = {}): QuickInputRequest {
+  return request({ target: undefined, config: { folderPath: "", insertPosition: "end", duplicateTitle: "number" }, ...overrides });
 }
 function templateFixture(content = "template {{date}} {{time}}") {
   const f = fixture(); f.folder("Notes"); f.file(template().filePath, content); return f;
@@ -324,16 +331,16 @@ describe("NoteCreationService quick input", () => {
   it.each(["", "/"])("inserts into an existing root note with the host root normalization (%j)", async (folderPath) => {
     const f = templateFixture();
     const target = f.file("2026-10-12 14-05-09.md", "---\nstatus: existing\n---\noriginal body");
-    const sent = request({ template: template({ targetFolderPath: folderPath }), text: "---\nstatus: draft\n---\nnew body" });
+    const sent = request({ target: { folderPath, title: TITLE }, text: "---\nstatus: draft\n---\nnew body" });
     expect(await f.service.submitQuickInput(sent)).toEqual({ file: target, created: false });
     expect(f.contents.get(target.path)).toBe("---\nstatus: existing\n---\noriginal body\n\nnew body");
     expect(f.vault.create).not.toHaveBeenCalled();
     expect(f.vault.process).toHaveBeenCalledOnce();
   });
 
-  it("creates a template root note once and inserts later submissions into that same note", async () => {
+  it("creates a titled root note once and appends later submissions into that same note", async () => {
     const f = templateFixture();
-    const sent = request({ template: template({ targetFolderPath: "" }), text: "---\nstatus: draft\n---\nfirst body" });
+    const sent = request({ target: { folderPath: "", title: TITLE }, text: "---\nstatus: draft\n---\nfirst body" });
     const first = await f.service.submitQuickInput(sent);
     const second = await f.service.submitQuickInput({ ...sent, submissionId: "second", text: "---\nstatus: ignored\n---\nsecond body" });
     expect(first).toMatchObject({ created: true, file: { path: "2026-10-12 14-05-09.md" } });
@@ -346,30 +353,19 @@ describe("NoteCreationService quick input", () => {
     const f = templateFixture();
     const target = f.file("2026-10-12 14-05-09.md", "disk content");
     const editor = f.open(target, "---\nstatus: existing\n---\nunsaved body");
-    await f.service.submitQuickInput(request({ template: template({ targetFolderPath: "" }), text: "new body",
-      config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
+    await f.service.submitQuickInput(request({ target: { folderPath: "", title: TITLE }, text: "new body",
+      config: { folderPath: "", insertPosition: "start", duplicateTitle: "append" } }));
     expect(editor.getValue()).toBe("---\nstatus: existing\n---\n\nnew body\n\nunsaved body");
     expect(f.vault.create).not.toHaveBeenCalled();
     expect(editor.view.save).toHaveBeenCalledOnce();
   });
 
-  it("prepares the same complete template as clicking it, including unsaved properties and body", async () => {
-    const f = templateFixture("stale disk content");
-    f.open(f.entries.get(template().filePath) as TFile, "---\nwhen: {{date}}\n---\n## {{time:HH:mm}}\nbody");
-    const content = await f.service.prepareQuickInputTemplate(template(), now);
-    expect(content).toBe("---\nwhen: 2026-10-12\n---\n## 14:05\nbody");
-    expect(f.vault.create).not.toHaveBeenCalled();
-    expect(f.vault.process).not.toHaveBeenCalled();
-    const result = await f.service.createTemplateNote(template(), now);
-    expect(f.contents.get(result.file.path)).toBe(content);
-  });
-
-  it.each(["start", "end"] as const)("inserts edited template body at %s while keeping existing properties, including unsaved targets", async (position) => {
-    const f = templateFixture("---\nstatus: template\n---\n## Template body");
+  it.each(["start", "end"] as const)("inserts the draft body at %s while keeping existing properties, including unsaved targets", async (position) => {
+    const f = templateFixture();
     const target = f.file("Notes/2026-10-12 14-05-09.md", "disk content");
     const editor = f.open(target, "---\nstatus: existing\n---\noriginal body");
-    const text = (await f.service.prepareQuickInputTemplate(template(), now)).replace("Template body", "Edited body") + "\nmy input {{date}}";
-    await f.service.submitQuickInput(request({ text, config: { templateId: "daily", folderPath: "", insertPosition: position } }));
+    const text = "---\nstatus: draft\n---\n## Edited body\nmy input {{date}}";
+    await f.service.submitQuickInput(request({ text, config: { folderPath: "", insertPosition: position, duplicateTitle: "append" } }));
     const body = "## Edited body\nmy input {{date}}";
     expect(editor.getValue()).toBe(position === "start"
       ? `---\nstatus: existing\n---\n\n${body}\n\noriginal body`
@@ -380,7 +376,7 @@ describe("NoteCreationService quick input", () => {
   it.each(["start", "end"] as const)("strips draft properties before %s insertion through vault.process", async (position) => {
     const f = templateFixture();
     const target = f.file("Notes/2026-10-12 14-05-09.md", "---\nstatus: existing\n---\noriginal body");
-    await f.service.submitQuickInput(request({ text: "---\nstatus: edited\n---\nnew body", config: { templateId: "daily", folderPath: "", insertPosition: position } }));
+    await f.service.submitQuickInput(request({ text: "---\nstatus: edited\n---\nnew body", config: { folderPath: "", insertPosition: position, duplicateTitle: "append" } }));
     expect(f.contents.get(target.path)).toBe(position === "start"
       ? "---\nstatus: existing\n---\n\nnew body\n\noriginal body"
       : "---\nstatus: existing\n---\noriginal body\n\nnew body");
@@ -394,48 +390,46 @@ describe("NoteCreationService quick input", () => {
     expect(f.vault.process).not.toHaveBeenCalled();
   });
 
-  it("formats template overrides while preserving draft variables and captured content on retry", async () => {
-    const f = templateFixture("{{date}} {{date:YYYY/MM/DD}} {{time:HH:mm}}");
+  it("keeps draft variables literal and retries with the captured content", async () => {
+    const f = templateFixture();
     const text = "draft {{date:YYYY}} {{time:HH:mm}}";
-    const expanded = await f.service.prepareQuickInputTemplate(template(), now);
-    const sent = request({ text: `${expanded}\n\n${text}`, now: new Date(now.getTime()) });
+    const sent = request({ text, now: new Date(now.getTime()) });
     f.vault.create.mockRejectedValueOnce(new Error("disk full"));
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("disk full");
     sent.now.setFullYear(2040);
     const result = await f.service.submitQuickInput(sent);
     expect(result.file.path).toBe("Notes/2026-10-12 14-05-09.md");
-    expect(f.contents.get(result.file.path)).toBe(`2026-10-12 2026/10/12 14:05\n\n${text}`);
+    expect(f.contents.get(result.file.path)).toBe(text);
     expect(f.vault.create.mock.calls[1]).toEqual(f.vault.create.mock.calls[0]);
   });
-  it.each(["template", "plain"] as const)("recognizes a %s create that persisted before rejection without duplicating input or notes", async (kind) => {
+  it.each(["titled", "plain"] as const)("recognizes a %s create that persisted before rejection without duplicating input or notes", async (kind) => {
     const f = templateFixture();
     if (kind === "plain") f.file("quick-note 2026-10-12 14-05-09.md", "existing");
-    const sent = kind === "template" ? request({ text: "input" }) : request({ text: "input", template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } });
+    const sent = kind === "titled" ? request({ text: "input" }) : plain({ text: "input" });
     const create = f.vault.create.getMockImplementation()!;
     f.vault.create.mockImplementationOnce(async (path, content) => { await create(path, content); throw new Error("failed after create"); });
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("failed after create");
     const result = await f.service.submitQuickInput({ ...sent, text: "changed retry text", now: new Date(2040, 1, 1) });
     expect(result.created).toBe(true);
-    expect(result.file.path).toBe(kind === "template" ? "Notes/2026-10-12 14-05-09.md" : "quick-note 2026-10-12 14-05-09 1.md");
+    expect(result.file.path).toBe(kind === "titled" ? "Notes/2026-10-12 14-05-09.md" : "quick-note 2026-10-12 14-05-09 1.md");
     expect(f.contents.get(result.file.path)).toBe("input");
     expect(f.vault.create).toHaveBeenCalledTimes(1);
     expect(f.vault.process).not.toHaveBeenCalled();
     expect(await f.service.submitQuickInput(sent)).toBe(result);
   });
-  it.each(["template", "plain"] as const)("retries an absent %s creation at the captured path with captured content", async (kind) => {
+  it.each(["titled", "plain"] as const)("retries an absent %s creation at the captured path with captured content", async (kind) => {
     const f = templateFixture();
-    const sent = kind === "template" ? request({ text: "input" }) : request({ text: "input", template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } });
+    const sent = kind === "titled" ? request({ text: "input" }) : plain({ text: "input" });
     f.vault.create.mockRejectedValueOnce(new Error("disk full"));
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("disk full");
-    f.contents.set(template().filePath, "edited template {{date}}");
     const result = await f.service.submitQuickInput({ ...sent, text: "changed retry text" });
     expect(result.created).toBe(true);
     expect(f.contents.get(result.file.path)).toBe("input");
     expect(f.vault.create.mock.calls[1]).toEqual(f.vault.create.mock.calls[0]);
   });
-  it.each(["template", "plain"] as const)("blocks divergent content after an uncertain %s creation", async (kind) => {
+  it.each(["titled", "plain"] as const)("blocks divergent content after an uncertain %s creation", async (kind) => {
     const f = templateFixture();
-    const sent = kind === "template" ? request({ text: "input" }) : request({ text: "input", template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } });
+    const sent = kind === "titled" ? request({ text: "input" }) : plain({ text: "input" });
     const create = f.vault.create.getMockImplementation()!;
     f.vault.create.mockImplementationOnce(async (path, content) => { await create(path, content); throw new Error("failed after create"); });
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("failed after create");
@@ -448,7 +442,7 @@ describe("NoteCreationService quick input", () => {
   });
   it("keeps created:true through editor save failure while recovering an uncertain creation", async () => {
     const f = fixture();
-    const sent = request({ text: "input", template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } });
+    const sent = plain({ text: "input" });
     const create = f.vault.create.getMockImplementation()!;
     f.vault.create.mockImplementationOnce(async (path, content) => { await create(path, content); throw new Error("failed after create"); });
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("failed after create");
@@ -461,7 +455,7 @@ describe("NoteCreationService quick input", () => {
     expect(editor.view.save).toHaveBeenCalledTimes(2);
     expect(f.vault.create).toHaveBeenCalledTimes(1);
   });
-  it("saves the edited draft once without restoring deleted template content or replacing user variables", async () => {
+  it("saves the edited draft once without reading any note or replacing user variables", async () => {
     const f = templateFixture(); const sent = request();
     const pending = f.service.submitQuickInput(sent);
     expect(f.service.submitQuickInput(sent)).toBe(pending);
@@ -577,11 +571,11 @@ describe("NoteCreationService quick input", () => {
     await expect(f.service.submitQuickInput(request({ text: "input" }))).rejects.toMatchObject({ code: "target-changed" });
     expect(f.contents.get(target.path)).toBe("new disk edit");
   });
-  it.each(["existing", "template", "plain"] as const)("releases completed %s submission text and recovery snapshots while preserving ID deduplication", async (kind) => {
+  it.each(["existing", "titled", "plain"] as const)("releases completed %s submission text and recovery snapshots while preserving ID deduplication", async (kind) => {
     const f = templateFixture();
     if (kind === "existing") f.file("Notes/2026-10-12 14-05-09.md", "body");
     const text = "large draft".repeat(10000);
-    const sent = kind === "plain" ? request({ text, template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } }) : request({ text });
+    const sent = kind === "plain" ? plain({ text }) : request({ text });
     const result = await f.service.submitQuickInput(sent);
     const submissions = (f.service as unknown as { submissions: Map<string, { request: QuickInputRequest; attempted: unknown; inserted: unknown; creation: unknown }> }).submissions;
     expect(submissions.get(sent.submissionId)?.request.text).toBe("");
@@ -594,18 +588,18 @@ describe("NoteCreationService quick input", () => {
   });
   it.each(["start", "end"] as const)("preserves YAML and existing body on %s insertion", async (position) => {
     const f = templateFixture(); f.file("Notes/2026-10-12 14-05-09.md", "---\nstatus: true\n---\n\nbody\n");
-    const result = await f.service.submitQuickInput(request({ text: "input", config: { templateId: "daily", folderPath: "", insertPosition: position } }));
+    const result = await f.service.submitQuickInput(request({ text: "input", config: { folderPath: "", insertPosition: position, duplicateTitle: "append" } }));
     expect(f.contents.get(result.file.path)).toBe(position === "start" ? "---\nstatus: true\n---\n\ninput\n\nbody\n" : "---\nstatus: true\n---\n\nbody\n\ninput");
   });
-  it("saves edited properties and body exactly when creating a new template target", async () => {
-    const f = templateFixture("---\nwhen: {{date}}\n---\nbody");
+  it("saves edited properties and body exactly when creating a new titled target", async () => {
+    const f = templateFixture();
     const text = "---\nwhen: edited\n---\nfirst\n\nedited body";
-    const result = await f.service.submitQuickInput(request({ text, config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
+    const result = await f.service.submitQuickInput(request({ text, config: { folderPath: "", insertPosition: "start", duplicateTitle: "append" } }));
     expect(f.contents.get(result.file.path)).toBe(text);
   });
   it("preserves CRLF content and inserts at the front of body-only notes", async () => {
     const f = templateFixture(); const target = f.file("Notes/2026-10-12 14-05-09.md", "body\r\n");
-    await f.service.submitQuickInput(request({ text: "first", config: { templateId: "daily", folderPath: "", insertPosition: "start" } }));
+    await f.service.submitQuickInput(request({ text: "first", config: { folderPath: "", insertPosition: "start", duplicateTitle: "append" } }));
     expect(f.contents.get(target.path)).toBe("first\r\n\r\nbody\r\n");
   });
   it("uses latest unsaved editor text, an insertion edit, and saves the view", async () => {
@@ -633,29 +627,30 @@ describe("NoteCreationService quick input", () => {
     await Promise.all([f.service.submitQuickInput(request({ text: "one" })), f.service.submitQuickInput(request({ submissionId: "two", text: "two" }))]);
     expect(f.contents.get(target.path)).toBe("body\n\none\n\ntwo");
   });
-  it("creates unique timestamp notes with only input when no template is selected", async () => {
+  it.each(["append", "number"] as const)("creates unique timestamp notes with only input for untitled drafts (%s)", async (duplicateTitle) => {
     const f = fixture(); f.file("quick-note 2026-10-12 14-05-09.md", "existing");
-    const result = await f.service.submitQuickInput(request({ template: null, config: { templateId: null, folderPath: "", insertPosition: "start" }, text: "just {{date}}" }));
+    const result = await f.service.submitQuickInput(plain({ config: { folderPath: "", insertPosition: "start", duplicateTitle }, text: "just {{date}}" }));
     expect(result.file.path).toBe("quick-note 2026-10-12 14-05-09 1.md"); expect(f.contents.get(result.file.path)).toBe("just {{date}}");
+    expect(f.contents.get("quick-note 2026-10-12 14-05-09.md")).toBe("existing");
   });
   it("snapshots config and Date before the queued operation runs", async () => {
-    const f = fixture(); f.folder("Notes"); const sent = request({ template: null, now: new Date(now), config: { templateId: null, folderPath: "Notes", insertPosition: "end" } });
+    const f = fixture(); f.folder("Notes"); const sent = plain({ now: new Date(now), config: { folderPath: "Notes", insertPosition: "end", duplicateTitle: "number" } });
     const pending = f.service.submitQuickInput(sent); sent.config.folderPath = "missing"; sent.now.setFullYear(2040); sent.text = "changed";
     const result = await pending;
     expect(result.file.path).toBe("Notes/quick-note 2026-10-12 14-05-09.md"); expect(f.contents.get(result.file.path)).toBe("user {{date}} {{time}}");
   });
   it("retains the original request on retry after creation failure", async () => {
     const f = fixture(); f.vault.create.mockRejectedValueOnce(new Error("disk full"));
-    const sent = request({ template: null, config: { templateId: null, folderPath: "", insertPosition: "end" } });
+    const sent = plain();
     await expect(f.service.submitQuickInput(sent)).rejects.toThrow("disk full");
     const result = await f.service.submitQuickInput({ ...sent, text: "changed", now: new Date(2040, 1, 1) });
     expect(result.file.path).toBe("quick-note 2026-10-12 14-05-09.md"); expect(f.contents.get(result.file.path)).toBe(sent.text);
   });
-  it("rejects whitespace, mismatched template references and missing folders without fallback", async () => {
+  it("rejects whitespace, an unresolved ask policy and missing folders without fallback", async () => {
     const f = templateFixture();
     await expect(f.service.submitQuickInput(request({ text: " \n\t" }))).rejects.toMatchObject({ code: "empty-input" });
-    await expect(f.service.submitQuickInput(request({ template: null }))).rejects.toMatchObject({ code: "missing-template" });
-    await expect(f.service.submitQuickInput(request({ template: null, config: { templateId: null, folderPath: "Missing", insertPosition: "end" } }))).rejects.toMatchObject({ code: "missing-folder" });
+    await expect(f.service.submitQuickInput(request({ config: { folderPath: "", insertPosition: "end", duplicateTitle: "ask" } }))).rejects.toMatchObject({ code: "invalid-config" });
+    await expect(f.service.submitQuickInput(plain({ config: { folderPath: "Missing", insertPosition: "end", duplicateTitle: "number" } }))).rejects.toMatchObject({ code: "missing-folder" });
     expect(f.vault.create).not.toHaveBeenCalled();
   });
   it("normalizes non-Error setup failures while preserving Error instances", async () => {
@@ -671,27 +666,37 @@ describe("NoteCreationService quick input", () => {
 });
 
 
-it.each(["en", "zh"] as const)("blocks an unchanged template title in %s for note creation and quick input", async (language) => {
+it.each(["en", "zh"] as const)("blocks an unchanged template title in %s for note creation", async (language) => {
   const f = templateFixture();
   const path = `Templates/${getUiStrings(language).noteInput.initialTemplateTitle} 1.md`;
   f.file(path);
   await expect(f.service.createTemplateNote(template({ filePath: path }), now)).rejects.toMatchObject({ code: "unedited-template-title" });
-  await expect(f.service.submitQuickInput(request({ template: template({ filePath: path }) }))).rejects.toMatchObject({ code: "unedited-template-title" });
   expect(f.vault.create).not.toHaveBeenCalled();
 });
 
 
 describe("editable quick input destination", () => {
-  it("prepares the expanded default title alongside content without reading again on submission", async () => {
-    const f = templateFixture("Body {{date}}");
-    const prepared = await f.service.prepareQuickInputDraft(template(), now);
-    expect(prepared).toMatchObject({ text: "Body 2026-10-12", title: "2026-10-12 14-05-09", folderPath: "Notes" });
+  it("saves a literal title and draft without reading any note", async () => {
+    const f = templateFixture();
     const result = await f.service.submitQuickInput(request({ text: "Edited {{date}}", target: { folderPath: "Notes", title: "Custom {{date}}" }, expectedMode: "create" }));
     expect(result.file.path).toBe("Notes/Custom {{date}}.md");
     expect(f.contents.get(result.file.path)).toBe("Edited {{date}}");
-    expect(f.vault.cachedRead).toHaveBeenCalledOnce();
+    expect(f.vault.cachedRead).not.toHaveBeenCalled();
   });
-  it("requires another send when a template target appears before the serialized write", async () => {
+  it.each([["append", "append"], ["ask", "append"], ["number", "create"]] as const)("reports a same-name note under the %s policy as %s", (duplicateTitle, mode) => {
+    const f = templateFixture(); f.file("Notes/Custom.md", "Existing");
+    const resolved = f.service.resolveQuickInputTarget({ config: { folderPath: "", insertPosition: "end", duplicateTitle }, now, target: { folderPath: "Notes", title: "Custom" } });
+    expect(resolved).toMatchObject({ path: "Notes/Custom.md", mode });
+  });
+  it("numbers a titled draft beside a same-name note without touching it", async () => {
+    const f = templateFixture(); f.file("Notes/Custom.md", "Existing");
+    const result = await f.service.submitQuickInput(request({ text: "New", target: { folderPath: "Notes", title: "Custom" },
+      config: { folderPath: "", insertPosition: "end", duplicateTitle: "number" }, expectedMode: "create" }));
+    expect(result).toMatchObject({ created: true, file: { path: "Notes/Custom 1.md" } });
+    expect(f.contents.get("Notes/Custom.md")).toBe("Existing");
+    expect(f.vault.process).not.toHaveBeenCalled();
+  });
+  it("requires another send when a same-name note appears before the serialized write", async () => {
     const f = templateFixture();
     const sent = request({ target: { folderPath: "Notes", title: "Custom" }, expectedMode: "create" });
     const writing = f.service.submitQuickInput(sent);
@@ -706,45 +711,30 @@ describe("editable quick input destination", () => {
     f.file("Other/Custom.md", "---\nstatus: original\n---\nExisting");
     const result = await f.service.submitQuickInput(request({ target: { folderPath: "Other", title: "Custom" }, expectedMode: "append", text: "---\ntags: [draft]\n---\nNew body" }));
     expect(f.contents.get(result.file.path)).toBe("---\nstatus: original\n---\nExisting\n\nNew body");
-    expect(f.contents.get(template().filePath)).toBeDefined();
   });
-  it("prevents overwriting the source template and rejects non-Markdown or missing-folder targets", async () => {
+  it("rejects non-Markdown or missing-folder targets", async () => {
     const f = templateFixture();
-    const source = template().filePath;
-    f.folder(source.slice(0, source.lastIndexOf("/")));
-    await expect(f.service.submitQuickInput(request({ target: { folderPath: source.slice(0, source.lastIndexOf("/")), title: source.split("/").pop()!.slice(0, -3) } }))).rejects.toMatchObject({ code: "target-conflict" });
     f.folder("Notes/Occupied.md");
     await expect(f.service.submitQuickInput(request({ target: { folderPath: "Notes", title: "Occupied" } }))).rejects.toMatchObject({ code: "target-conflict" });
     await expect(f.service.submitQuickInput(request({ target: { folderPath: "Missing", title: "New" } }))).rejects.toMatchObject({ code: "missing-folder" });
     expect(f.vault.create).not.toHaveBeenCalled();
   });
-  it("continues numbering explicit titles for independent non-template submissions", async () => {
+  it("continues numbering explicit titles for independent numbered submissions", async () => {
     const f = fixture();
-    const first = request({ template: null, config: { templateId: null, folderPath: "", insertPosition: "end" }, target: { folderPath: "", title: "Custom" } });
+    const first = plain({ target: { folderPath: "", title: "Custom" } });
     const results = await Promise.all([f.service.submitQuickInput(first), f.service.submitQuickInput({ ...first, submissionId: "second" })]);
     expect(results.map((result) => result.file.path)).toEqual(["Custom.md", "Custom 1.md"]);
   });
 });
 
 
-it("allows reselection when a non-template folder disappears while its unique path is queued", async () => {
+it("allows reselection when a folder disappears while its unique path is queued", async () => {
   const f = fixture(); f.folder("Inbox");
-  const sent = request({ template: null, config: { templateId: null, folderPath: "Inbox", insertPosition: "end" }, target: { folderPath: "Inbox", title: "Draft" } });
+  const sent = plain({ config: { folderPath: "Inbox", insertPosition: "end", duplicateTitle: "number" }, target: { folderPath: "Inbox", title: "Draft" } });
   const saving = f.service.submitQuickInput(sent);
   f.entries.delete("Inbox");
   await expect(saving).rejects.toBeInstanceOf(QuickInputPreflightError);
   expect(f.vault.create).not.toHaveBeenCalled();
   const result = await f.service.submitQuickInput({ ...sent, target: { folderPath: "", title: "Draft" } });
   expect(result.file.path).toBe("Draft.md");
-});
-
-
-it("protects the prepared template source after it is renamed to the edited target", async () => {
-  const f = templateFixture();
-  const prepared = await f.service.prepareQuickInputDraft(template(), now);
-  const file = prepared.sourceFile!;
-  f.entries.delete(file.path); file.path = "Notes/Renamed.md"; f.entries.set(file.path, file);
-  await expect(f.service.submitQuickInput(request({ target: { folderPath: "Notes", title: "Renamed" }, templateSource: file })))
-    .rejects.toMatchObject({ code: "target-conflict" });
-  expect(f.vault.process).not.toHaveBeenCalled(); expect(f.vault.create).not.toHaveBeenCalled();
 });

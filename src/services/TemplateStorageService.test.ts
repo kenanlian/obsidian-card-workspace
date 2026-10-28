@@ -20,7 +20,6 @@ function fixture() {
   const first = file("Old/{{date}}.md"), second = file("Old/Second.md");
   settings.noteTemplates = [first, second].map((value, index) => ({ id: String(index), name: `Display ${index}`, filePath: value.path,
     targetFolderPath: "Notes", dateFormat: "YYYY-MM-DD", timeFormat: "HH" }));
-  settings.quickInput.templateId = "0";
   const saveSettings = vi.fn(async (patch: PartialPluginSettings) => { settings = mergeSettings(settings, patch); });
   const reconciler = new TemplateReferenceReconciler({ getSettings: () => settings, saveSettings });
   bus.subscribe((event) => reconciler.handleVaultMutation(event));
@@ -40,7 +39,7 @@ function fixture() {
 }
 
 describe("TemplateStorageService", () => {
-  it("creates nested storage and moves all templates while preserving names, contents, destinations and quick-input IDs", async () => {
+  it("creates nested storage and moves all templates while preserving IDs, names, contents and destinations", async () => {
     const f = fixture();
     await f.service.changeFolder("/New//Templates/");
     expect(f.createFolder.mock.calls).toEqual([["New"], ["New/Templates"]]);
@@ -50,7 +49,6 @@ describe("TemplateStorageService", () => {
       { id: "1", name: "Display 1", filePath: "New/Templates/Second.md", targetFolderPath: "Notes", dateFormat: "YYYY-MM-DD", timeFormat: "HH" },
     ]);
     expect(f.contents.get(f.first)).toBe("body {{date}}");
-    expect(f.settings().quickInput.templateId).toBe("0");
   });
   it("preflights every collision before moving any template or saving a new folder", async () => {
     const f = fixture(); f.folder("New"); const occupied = f.file("New/Second.md", "keep me");

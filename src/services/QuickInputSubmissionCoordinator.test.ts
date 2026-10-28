@@ -17,8 +17,8 @@ function fixture() {
   });
   const coordinator = new QuickInputSubmissionCoordinator({ notes: { submitQuickInput } as unknown as NoteCreationService,
     getSettings: () => settings, saveSettings });
-  const request: QuickInputRequest = { submissionId: "one", text: "Body", template: null,
-    config: { ...settings.quickInput }, now: new Date(), boxIds: settings.boxes.map((box) => box.id) };
+  const request: QuickInputRequest = { submissionId: "one", text: "Body",
+    config: { ...settings.quickInput, duplicateTitle: "number" }, now: new Date(), boxIds: settings.boxes.map((box) => box.id) };
   return { coordinator, request, submitQuickInput, saveSettings, settings: () => settings, fail: (value: boolean) => { fail = value; } };
 }
 describe("quick input plugin submission", () => {
