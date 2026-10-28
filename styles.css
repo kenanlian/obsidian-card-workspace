@@ -2443,6 +2443,7 @@ html.fce-quick-input-window:root > body::after { display: none; }
 .fce-quick-input-editor .cm-sizer { max-width: none; margin: 0; }
 .fce-quick-input-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
@@ -2507,3 +2508,46 @@ html.fce-quick-input-window:root > body::after { display: none; }
   font-size: 0.75em;
   font-weight: 600;
 }
+
+/* Draft controls share the editor scrollport and retain native theme typography. */
+.fce-quick-input-window .fce-quick-input .fce-quick-input-title.inline-title {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 0;
+  margin: 0 0 12px;
+  color: var(--inline-title-color);
+  font-family: var(--inline-title-font);
+  font-size: var(--inline-title-size);
+  font-weight: var(--inline-title-weight);
+  font-style: var(--inline-title-style);
+  line-height: var(--inline-title-line-height);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.fce-quick-input [hidden] { display: none !important; }
+.fce-quick-input-footer .fce-quick-input-folder,
+.fce-quick-input-footer .fce-quick-input-boxes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(200px, 60%);
+  flex: 0 1 auto;
+}
+.fce-quick-input-choice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fce-quick-input-actions { display: flex; flex: none; gap: 8px; margin-left: auto; }
+.fce-quick-input-append-hint { display: inline-flex; align-items: center; }
+.fce-quick-input-append-hint svg { width: 14px; height: 14px; }
+.fce-quick-input-choice-search {
+  position: fixed;
+  z-index: var(--layer-popover);
+  box-sizing: border-box;
+}
+.fce-quick-input-choice-popover { box-sizing: border-box; overflow-y: auto; }
+.fce-quick-input-choice-popover .suggestion { max-height: inherit; overflow-y: auto; }
+.fce-quick-input-choice-row { display: flex; gap: 8px; align-items: center; }
+.fce-quick-input-choice-row > span:first-child { flex: 0 0 16px; }
+.fce-quick-input-choice-row svg { width: 16px; height: 16px; }

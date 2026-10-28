@@ -198,6 +198,7 @@ export function resolveSettingsUpdateIntent(
   if (previous.newNoteTemplate !== next.newNoteTemplate) intent = mergeIntent(intent, "patch");
   if (previous.templateStorageFolder !== next.templateStorageFolder) intent = mergeIntent(intent, "patch");
   if (JSON.stringify(previous.quickInput) !== JSON.stringify(next.quickInput)) intent = mergeIntent(intent, "patch");
+  if (JSON.stringify(previous.quickInputVisibility) !== JSON.stringify(next.quickInputVisibility)) intent = mergeIntent(intent, "patch");
   if (previous.quickInputGlobalShortcut !== next.quickInputGlobalShortcut) intent = mergeIntent(intent, "patch");
   if (previous.quickInputWidth !== next.quickInputWidth) intent = mergeIntent(intent, "patch");
   if (previous.quickInputHeight !== next.quickInputHeight) intent = mergeIntent(intent, "patch");

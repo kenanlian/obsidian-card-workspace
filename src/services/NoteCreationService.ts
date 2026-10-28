@@ -15,7 +15,7 @@ import {
 
 export type NoteInputErrorCode = "missing-folder" | "invalid-folder" | "missing-template" | "invalid-template"
   | "missing-template-folder" | "target-conflict" | "invalid-filename" | "moment-unavailable"
-  | "invalid-date" | "empty-input" | "invalid-config" | "pending-save-unavailable" | "target-missing" | "target-changed" | "unedited-template-title";
+  | "target-mode-changed" | "missing-box" | "invalid-date" | "empty-input" | "invalid-config" | "pending-save-unavailable" | "target-missing" | "target-changed" | "unedited-template-title";
 
 export class NoteInputError extends Error {
   constructor(readonly code: NoteInputErrorCode) {
@@ -23,6 +23,9 @@ export class NoteInputError extends Error {
     this.name = "NoteInputError";
   }
 }
+
+/** No vault/editor write has happened, so this draft may safely edit its target. */
+export class QuickInputPreflightError extends NoteInputError {}
 
 interface QuickSubmission {
   request: QuickInputRequest;
@@ -41,7 +44,7 @@ export class NoteCreationService {
   private readonly pathQueues = new Map<string, Promise<unknown>>();
   private readonly submissions = new Map<string, QuickSubmission>();
 
-  constructor(private readonly app: App) {}
+  constructor(private readonly app: App, private readonly beforeQuickWrite?: (request: QuickInputRequest) => void) {}
 
   async createScopeNote(request: ScopeNoteRequest): Promise<NoteInputResult> {
     const folderPath = this.requireFolder(request.folderPath);
@@ -52,11 +55,35 @@ export class NoteCreationService {
 
   /** Expand the complete template before editing; submission saves this edited snapshot. */
   async prepareQuickInputTemplate(template: NoteTemplateDefinition, now: Date): Promise<string> {
-    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
-    const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
-    this.validateTemplateTarget(target);
-    return content;
+    return (await this.prepareQuickInputDraft(template, now)).text;
   }
+
+  async prepareQuickInputDraft(template: NoteTemplateDefinition, now: Date) {
+    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
+    const text = this.replaceTemplateVariables(await this.readLatest(target.file), target);
+    this.validateTemplateTarget(target);
+    return { text, title: target.path.split("/").pop()!.slice(0, -3), folderPath: template.targetFolderPath as string, sourceFile: target.file };
+  }
+
+  /** Shared by draft preflight and the serialized write boundary. Never reads a note. */
+  resolveQuickInputTarget(request: Pick<QuickInputRequest, "config" | "template" | "now" | "target" | "templateSource">) {
+    if (request.config.templateId !== (request.template?.id ?? null)) throw new NoteInputError("missing-template");
+    if (request.config.insertPosition !== "start" && request.config.insertPosition !== "end") throw new NoteInputError("invalid-config");
+    let path: string;
+    if (request.target) {
+      const folder = this.requireFolder(request.target.folderPath);
+      path = joinNotePath(folder, sanitizeNoteFilename(request.target.title));
+    } else {
+      path = request.template ? this.resolveTemplateTarget(request.template, request.now).path
+        : joinNotePath(this.requireFolder(request.config.folderPath), this.defaultQuickInputTitle(request.now));
+    }
+    if (request.template && (path === normalizePath(request.template.filePath) || path === request.templateSource?.path)) throw new NoteInputError("target-conflict");
+    const existing = request.template ? this.app.vault.getAbstractFileByPath(path) : null;
+    if (existing && (!(existing instanceof TFile) || existing.extension.toLowerCase() !== "md")) throw new NoteInputError("target-conflict");
+    return { path, mode: existing ? "append" as const : "create" as const, file: existing };
+  }
+
+  defaultQuickInputTitle(now: Date): string { return `quick-note ${this.format(now, "YYYY-MM-DD HH-mm-ss")}`; }
 
   async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<TemplateNoteResult> {
     const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
@@ -110,13 +137,13 @@ export class NoteCreationService {
           throw new NoteInputError("invalid-config");
         }
         if (snapshot.config.templateId !== (snapshot.template?.id ?? null)) throw new NoteInputError("missing-template");
-        const targetPath = snapshot.template
-          ? this.resolveTemplateTarget(snapshot.template, snapshot.now).path
-          : joinNotePath(this.requireFolder(snapshot.config.folderPath), `quick-note ${this.format(snapshot.now, "YYYY-MM-DD HH-mm-ss")}`);
+        snapshot.target = request.target ? { ...request.target } : undefined;
+        snapshot.boxIds = request.boxIds ? [...request.boxIds] : undefined;
+        const targetPath = this.resolveQuickInputTarget(snapshot).path;
         submission = { request: snapshot, targetPath, pending: null, result: null, inserted: null, attempted: null, creation: null };
         this.submissions.set(snapshot.submissionId, submission);
       } catch (error) {
-        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        return Promise.reject(error instanceof NoteInputError ? new QuickInputPreflightError(error.code) : error instanceof Error ? error : new Error(String(error)));
       }
     }
     if (submission.result) return Promise.resolve(submission.result);
@@ -124,9 +151,13 @@ export class NoteCreationService {
     const captured = submission;
     // Unique notes acquire their final numbered path inside createUniqueNote.
     const lockedPath = captured.creation?.path ?? (captured.request.template ? captured.targetPath : null);
-    const pending = lockedPath !== null
+    const writing = lockedPath !== null
       ? this.serialize(lockedPath, () => this.writeQuickSubmission(captured))
       : this.writeQuickSubmission(captured);
+    const pending = writing.catch((error: unknown) => {
+      if (error instanceof QuickInputPreflightError && (captured.attempted || captured.creation || captured.inserted)) throw new NoteInputError(error.code);
+      throw error;
+    });
     captured.pending = pending;
     void pending.then((result) => {
       captured.result = result;
@@ -135,7 +166,12 @@ export class NoteCreationService {
       captured.inserted = null;
       captured.attempted = null;
       captured.creation = null;
-    }, () => { captured.pending = null; });
+    }, (error: unknown) => {
+      captured.pending = null;
+      if (error instanceof QuickInputPreflightError && !captured.attempted && !captured.creation && !captured.inserted) {
+        this.submissions.delete(captured.request.submissionId);
+      }
+    });
     return pending;
   }
 
@@ -177,19 +213,19 @@ export class NoteCreationService {
       if (latest !== original) throw new NoteInputError("target-changed");
     }
     const { request } = submission;
+    const resolved = this.preflightQuickInput(request);
     if (!request.template) {
-      const folder = this.requireFolder(request.config.folderPath);
-      const baseName = `quick-note ${this.format(request.now, "YYYY-MM-DD HH-mm-ss")}`;
+      const folder = this.requireFolder(request.target?.folderPath ?? request.config.folderPath);
+      const baseName = request.target ? sanitizeNoteFilename(request.target.title) : this.defaultQuickInputTitle(request.now);
       return this.createUniqueNote(folder, baseName, request.text, (path) => {
+        this.preflightQuickInput(request);
         submission.creation = { path, expected: request.text };
       });
     }
-    const target = this.resolveTemplateTarget(request.template, request.now);
-    this.validateTemplateTarget(target);
-    const file = this.existingTarget(target);
+    const file = resolved.file;
     if (!file) {
-      submission.creation = { path: target.path, expected: request.text };
-      return { file: await this.app.vault.create(target.path, request.text), created: true };
+      submission.creation = { path: resolved.path, expected: request.text };
+      return { file: await this.app.vault.create(resolved.path, request.text), created: true };
     }
     // Existing notes retain their own properties, just like clicking a template.
     const body = request.text.slice(getFrontMatterInfo(request.text).contentStart);
@@ -212,6 +248,8 @@ export class NoteCreationService {
       await this.app.vault.process(file, (content) => {
         // Vault.process may wait for another writer before invoking this callback.
         // An editor opened meanwhile owns newer unsaved content; retry through it.
+        const latestTarget = this.preflightQuickInput(request);
+        if (latestTarget.file !== file || file.path !== resolved.path) throw new QuickInputPreflightError("target-mode-changed");
         if (this.findMarkdownView(file)) throw new NoteInputError("target-changed");
         const attempt = submission.attempted;
         if (attempt) {
@@ -227,6 +265,18 @@ export class NoteCreationService {
       });
     }
     return { file, created: false };
+  }
+
+  private preflightQuickInput(request: QuickInputRequest) {
+    try {
+      const resolved = this.resolveQuickInputTarget(request);
+      if (request.expectedMode && resolved.mode !== request.expectedMode) throw new NoteInputError("target-mode-changed");
+      this.beforeQuickWrite?.(request);
+      return resolved;
+    } catch (error) {
+      if (error instanceof NoteInputError) throw new QuickInputPreflightError(error.code);
+      throw error;
+    }
   }
 
   private resolveTemplateTarget(template: NoteTemplateDefinition, now: Date): TemplateTarget {
@@ -289,10 +339,12 @@ export class NoteCreationService {
     while (true) {
       const path = this.uniquePath(folder, baseName);
       const file = await this.serialize(path, async () => {
-        this.requireFolder(folder);
         // Another filename sequence or a template may have claimed this numbered path.
         if (this.app.vault.getAbstractFileByPath(path)) return null;
+        // Quick-input preflight must run before recording an uncertain creation,
+        // including when the destination disappeared while this path was queued.
         beforeCreate?.(path);
+        this.requireFolder(folder);
         return this.app.vault.create(path, content);
       });
       if (file) return { file, created: true };

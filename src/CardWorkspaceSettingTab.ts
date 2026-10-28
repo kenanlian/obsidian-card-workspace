@@ -42,7 +42,7 @@ import {
   isNewNoteTemplate,
   type PartialPluginSettings,
 } from "./settings";
-import { DEFAULT_TEMPLATE_STORAGE_FOLDER, normalizeQuickInput, resolveTemplateName } from "./note-input";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, normalizeQuickInputVisibility, type QuickInputVisibility, normalizeQuickInput, resolveTemplateName } from "./note-input";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 import { onPlainEnter } from "./view/metadata-input-suggest";
 import { TemplateStorageError } from "./services/TemplateStorageService";
@@ -180,6 +180,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
    */
   getControlValue(key: string): unknown {
     const settings = this.plugin.getSettings();
+    if (key.startsWith("quickInputVisibility.")) return normalizeQuickInputVisibility(settings.quickInputVisibility)[key.slice(21) as keyof QuickInputVisibility];
     const section = this.resolveSectionControl(key);
     if (section) return !settings.hiddenNavSections.includes(section);
     switch (key) {
@@ -601,6 +602,10 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
               random: inputStrings.colorRandom, accent: inputStrings.colorAccent,
               ...Object.fromEntries(QUICK_INPUT_TINTS.map((tint) => [tint, inputStrings.colorNames[tint]])),
             } } },
+          ...Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map((key): WorkspaceSettingDefinition => ({
+            name: inputStrings.visibilityNames[key as keyof QuickInputVisibility], desc: inputStrings.visibilityDesc,
+            control: { type: "toggle", key: `quickInputVisibility.${key}` },
+          })),
           { name: inputStrings.globalShortcutName, desc: inputStrings.globalShortcutDesc,
             render: (setting) => this.renderQuickInputShortcutSetting(setting, inputStrings) },
         ],
@@ -618,6 +623,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   }
 
   private async saveDeclarativeSetting(key: string, value: unknown): Promise<void> {
+    if (key.startsWith("quickInputVisibility.") && typeof value === "boolean") {
+      const field = key.slice(21);
+      if (Object.prototype.hasOwnProperty.call(DEFAULT_QUICK_INPUT_VISIBILITY, field)) await this.plugin.saveSettings({
+        quickInputVisibility: { ...normalizeQuickInputVisibility(this.plugin.getSettings().quickInputVisibility), [field]: value },
+      });
+      return;
+    }
     if (key === "quickInputTemplateId" || key === "quickInputFolderPath" || key === "quickInputInsertPosition") {
       if (typeof value !== "string") return;
       if (key === "quickInputInsertPosition" && value !== "start" && value !== "end") return;

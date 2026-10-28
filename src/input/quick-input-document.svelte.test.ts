@@ -114,6 +114,16 @@ describe("custom quick input document", () => {
     expect(local).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps title caret, undo and Enter keys out of native editor scopes", async () => {
+    const runtime = prepare(); loadResources(); await runtime.ready;
+    const title = child.document.createElement("input"); title.className = "fce-quick-input-title"; child.document.body.append(title);
+    const host = vi.fn();
+    window.addEventListener("keydown", host);
+    cleanups.push(() => window.removeEventListener("keydown", host));
+    for (const key of ["Enter", "ArrowLeft", "z"]) title.dispatchEvent(new child.KeyboardEvent("keydown", { key, ctrlKey: key === "z", bubbles: true }));
+    expect(host).not.toHaveBeenCalled();
+  });
+
   it("does not overwrite another focused window during cleanup", async () => {
     const runtime = prepare(); loadResources(); await runtime.ready;
     child.dispatchEvent(new Event("focus"));

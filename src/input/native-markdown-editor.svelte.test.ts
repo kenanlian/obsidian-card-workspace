@@ -187,3 +187,39 @@ describe("native Markdown editor compatibility seam", () => {
     expect(f.probeUnload).toHaveBeenCalledOnce(); expect(f.destroyed).not.toHaveBeenCalled();
   });
 });
+
+
+describe("append mode property protection", () => {
+  it.each(["---\nstatus: draft\n---\nBody", "---\nstatus: [\n---\nBody", "---\nstatus:\n  nested: value\n---\nBody"])("protects source properties while allowing body edits: %s", (text) => {
+    const f = fixture(); const editor = f.open(f.container, f.onModEnter, text);
+    const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+    editor.setPropertiesReadOnly(true);
+    cm.dispatch({ changes: { from: 5, to: 6, insert: "X" } });
+    expect(editor.getValue()).toBe(text);
+    cm.dispatch({ changes: { from: text.length, insert: " edited" } });
+    expect(editor.getValue()).toBe(`${text} edited`);
+    editor.setPropertiesReadOnly(false);
+    cm.dispatch({ changes: { from: 5, to: 6, insert: "X" } });
+    expect(editor.getValue()).toContain("X");
+  });
+  it("keeps body input available in an append draft without frontmatter", () => {
+    const f = fixture(); const editor = f.open();
+    editor.setPropertiesReadOnly(true);
+    const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+    cm.dispatch({ changes: { from: 0, insert: "Body" } });
+    expect(editor.getValue()).toBe("Body");
+    editor.setReadOnly(true);
+    cm.dispatch({ changes: { from: 4, insert: "no" } });
+    expect(editor.getValue()).toBe("Body");
+  });
+});
+
+
+it("clamps body focus out of frontmatter while preserving an existing body selection", () => {
+  const f = fixture(); const editor = f.open(f.container, f.onModEnter, "---\ntags: []\n---\nBody");
+  const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+  cm.dispatch({ selection: { anchor: 3 } });
+  editor.focus(); expect(cm.state.selection.main.head).toBe(17);
+  cm.dispatch({ selection: { anchor: 18, head: 20 } });
+  editor.focus(); expect(cm.state.selection.main.anchor).toBe(18); expect(cm.state.selection.main.head).toBe(20);
+});

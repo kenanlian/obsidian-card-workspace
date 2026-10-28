@@ -7,6 +7,7 @@
 import { Scope, type App, type Editor } from "obsidian";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, placeholder } from "@codemirror/view";
+import { draftFrontmatterSource } from "./draft-frontmatter";
 import { createDraftPropertiesEditor, type DraftPropertiesEditor, type NativePropertiesConstructor } from "./native-properties-editor";
 
 export interface NativeMarkdownEditor {
@@ -14,6 +15,9 @@ export interface NativeMarkdownEditor {
   focus(): void;
   flush(): void;
   setReadOnly(value: boolean): void;
+  setPropertiesReadOnly(value: boolean): void;
+  addMetadata(kind: "tags" | "property"): boolean;
+  mountTitle(element: HTMLElement): void;
   dispose(): void;
 }
 
@@ -85,6 +89,8 @@ export function createNativeMarkdownEditor(options: {
   const { app, container, onChange, onModEnter } = options;
   const capabilities = resolveConstructor(app, container.ownerDocument);
   const Base = capabilities.Editor;
+  let propertiesReadOnly = false;
+  let allReadOnly = false;
   const editable = new Compartment();
   const propertiesExtension = new Compartment();
   class DraftEditor extends Base {
@@ -97,6 +103,14 @@ export function createNativeMarkdownEditor(options: {
         drawSelection(),
         Prec.highest(editable.of([EditorState.readOnly.of(false), EditorView.editable.of(true), EditorView.contentAttributes.of({ contenteditable: "true" })])),
         propertiesExtension.of([]),
+        EditorState.transactionFilter.of((transaction) => {
+          if (!transaction.docChanged || (!propertiesReadOnly && !allReadOnly)) return transaction;
+          if (allReadOnly) return [];
+          const source = draftFrontmatterSource(transaction.startState.doc.toString());
+          let blocked = false;
+          transaction.changes.iterChangedRanges((from) => { if (from < source.length) blocked = true; });
+          return blocked ? [] : transaction;
+        }),
         EditorView.updateListener.of((update) => { if (update.docChanged) onChange(); }),
       ];
     }
@@ -170,11 +184,40 @@ export function createNativeMarkdownEditor(options: {
     const editor = native;
     return {
       getValue: () => editor.editor.getValue(),
-      focus: () => { if (!disposed) editor.editor.focus(); },
+      focus: () => {
+        if (disposed) return;
+        const cm = editor.editor.cm;
+        const start = draftFrontmatterSource(editor.editor.getValue()).length;
+        const selection = cm.state.selection.main;
+        if (selection.from < start) cm.dispatch({ selection: { anchor: Math.max(start, selection.anchor), head: Math.max(start, selection.head) }, scrollIntoView: true });
+        cm.focus();
+      },
       flush: () => properties?.flush(),
+      mountTitle: (element) => {
+        // Obsidian's content container is a horizontal flex row (gutters/body).
+        // Its preceding sibling shares the sizer/scrollport without squeezing the body.
+        const content = editor.editor.cm.contentDOM;
+        const row = content.parentElement;
+        (row?.classList.contains("cm-contentContainer") ? row : content).before(element);
+      },
+      setPropertiesReadOnly: (value) => {
+        propertiesReadOnly = value;
+        properties?.setReadOnly(value || allReadOnly);
+      },
+      addMetadata: (kind) => {
+        if (disposed || propertiesReadOnly || allReadOnly) return false;
+        if (properties?.add(kind)) return true;
+        const source = draftFrontmatterSource(editor.editor.getValue());
+        if (!source) editor.editor.cm.dispatch({ changes: { from: 0, insert: "---\n\n---\n" } });
+        const start = draftFrontmatterSource(editor.editor.getValue()).indexOf("\n") + 1;
+        editor.editor.cm.dispatch({ selection: { anchor: start }, scrollIntoView: true });
+        editor.editor.cm.focus();
+        return false;
+      },
       setReadOnly: (value) => {
         if (!disposed) {
-          properties?.setReadOnly(value);
+          allReadOnly = value;
+          properties?.setReadOnly(value || propertiesReadOnly);
           editor.editor.cm.dispatch({ effects: editable.reconfigure([EditorState.readOnly.of(value), EditorView.editable.of(!value),
             EditorView.contentAttributes.of({ contenteditable: String(!value) })]) });
         }

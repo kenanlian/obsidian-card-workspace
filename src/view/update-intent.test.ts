@@ -75,6 +75,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   newNoteTemplate: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
+  quickInputVisibility: "patch",
   quickInputGlobalShortcut: "patch",
   quickInputWidth: "patch",
   quickInputHeight: "patch",
@@ -130,6 +131,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" }; break;
+    case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: true }; break;
     case "quickInputGlobalShortcut": settings.quickInputGlobalShortcut = "Control+Shift+Q"; break;
     case "quickInputWidth": settings.quickInputWidth += 10; break;
     case "quickInputHeight": settings.quickInputHeight += 10; break;

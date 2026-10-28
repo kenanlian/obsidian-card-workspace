@@ -1,6 +1,6 @@
 import { isFileVisibility, type FileVisibility } from "./file-visibility";
 import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
-import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT, normalizeNoteTemplates, normalizeQuickInput, type NoteTemplateDefinition, type QuickInputConfig } from "./note-input";
+import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, normalizeQuickInputVisibility, type QuickInputVisibility, DEFAULT_QUICK_INPUT, normalizeNoteTemplates, normalizeQuickInput, type NoteTemplateDefinition, type QuickInputConfig } from "./note-input";
 import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
@@ -199,6 +199,7 @@ export interface PluginSettings {
   noteTemplates: NoteTemplateDefinition[];
   templateStorageFolder: string;
   quickInput: QuickInputConfig;
+  quickInputVisibility: QuickInputVisibility;
   quickInputWidth: number;
   quickInputHeight: number;
   quickInputColor: QuickInputColor;
@@ -262,6 +263,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   noteTemplates: [],
   templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
   quickInput: { ...DEFAULT_QUICK_INPUT },
+  quickInputVisibility: { ...DEFAULT_QUICK_INPUT_VISIBILITY },
   quickInputWidth: DEFAULT_QUICK_INPUT_WIDTH,
   quickInputHeight: DEFAULT_QUICK_INPUT_HEIGHT,
   quickInputColor: "random",
@@ -671,6 +673,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
     quickInputGlobalShortcut: typeof data.quickInputGlobalShortcut === "string" ? data.quickInputGlobalShortcut.trim() : "",
     quickInput: normalizeQuickInput(data.quickInput),
+    quickInputVisibility: normalizeQuickInputVisibility(data.quickInputVisibility),
     quickInputWidth: normalizeHoverPreviewDimension(data.quickInputWidth,
       DEFAULT_QUICK_INPUT_WIDTH, QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX),
     quickInputHeight: normalizeHoverPreviewDimension(data.quickInputHeight,

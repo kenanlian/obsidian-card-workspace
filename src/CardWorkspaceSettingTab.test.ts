@@ -777,3 +777,16 @@ describe("explicit global shortcut configuration", () => {
     tab.hide(); shortcut.dispose();
   });
 });
+
+
+describe("quick input visibility settings", () => {
+  it("shares six independent toggles and saves one field without resetting the others", async () => {
+    const plugin = createPlugin(); const tab = createTab(plugin);
+    const group = tab.getSettingDefinitions().find((entry) => entry.heading === getUiStrings("en").noteInput.quickInputHeading)!;
+    const toggles = group.items.filter((entry) => entry.control?.key.startsWith("quickInputVisibility."));
+    expect(toggles.map((entry) => entry.control?.key)).toEqual(["title", "folder", "boxes", "tags", "properties", "status"].map((key) => `quickInputVisibility.${key}`));
+    expect(tab.getControlValue("quickInputVisibility.folder")).toBe(true);
+    await tab.setControlValue("quickInputVisibility.title", true);
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputVisibility: { title: true, folder: true, boxes: false, tags: false, properties: false, status: false } });
+  });
+});

@@ -87,6 +87,78 @@ try {
   if (expectedVersion) assert.equal(report.runtime.obsidian, expectedVersion);
   phase("enabled", report.runtime);
 
+  // Exercise draft-only title, native selectors and metadata entry points before
+  // the existing template/property acceptance sequence.
+  await main.evaluate(async () => {
+    for (let i = 0; i < 40; i++) await app.vault.createFolder(`Choice ${String(i).padStart(2, "0")}`);
+    await app.vault.create("Choice 39/Append.md", "---\nstatus: original\n---\nExisting");
+    await quickInputPlugin.settingsStore.updateFlat({
+      quickInput: { templateId: null, folderPath: "", insertPosition: "end" },
+      quickInputVisibility: { title: true, folder: true, boxes: true, tags: true, properties: true, status: true },
+      boxes: ["One", "Two"].map((name) => ({ id: name, name, rules: [], manualPaths: [], excludedPaths: [], pinnedPaths: [],
+        sort: { field: "mtime", direction: "desc" }, group: { dimension: "none", orderBy: "name", orderDirection: "asc" } })),
+    });
+  });
+  const controls = await open();
+  const controlPage = controls.page;
+  assert.equal(await controlPage.locator(".fce-quick-input-title").isVisible(), true);
+  assert.equal(await controlPage.locator(".cm-scroller .fce-quick-input-title").count(), 1);
+  assert.equal(await controlPage.locator(".cm-content").evaluate((el) => el === el.ownerDocument.activeElement), true);
+  await main.evaluate((id) => {
+    const handle = [...quickInputPlugin.quickInputManager.sessions.values()].find((session) => session.id === id).window.handle;
+    handle.setBounds({ ...handle.getBounds(), width: 320 });
+  }, controls.snapshot.id);
+  report.narrowControls = await controlPage.locator(".fce-quick-input-actions").evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, bottom: rect.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight };
+  });
+  assert.ok(report.narrowControls.left >= 0 && report.narrowControls.right <= report.narrowControls.viewportWidth);
+  assert.ok(report.narrowControls.bottom <= report.narrowControls.viewportHeight);
+  await main.evaluate((id) => {
+    const handle = [...quickInputPlugin.quickInputManager.sessions.values()].find((session) => session.id === id).window.handle;
+    handle.setBounds({ ...handle.getBounds(), width: 480 });
+  }, controls.snapshot.id);
+  await controlPage.locator(".fce-quick-input-folder").click();
+  await controlPage.waitForSelector(".fce-quick-input-choice-search");
+  assert.equal(await controlPage.locator(".fce-quick-input-choice-popover .suggestion-item").count(), 20);
+  assert.equal(await main.locator(".fce-quick-input-choice-search").count(), 0);
+  await controlPage.locator(".fce-quick-input-choice-search").fill("Choice 39");
+  await controlPage.locator(".fce-quick-input-choice-row").filter({ hasText: "Choice 39" }).click();
+  assert.equal(await controlPage.locator(".fce-quick-input-choice-search").count(), 0);
+  assert.equal(await controlPage.locator(".cm-content").evaluate((el) => el === el.ownerDocument.activeElement), true);
+  await controlPage.locator(".fce-quick-input-boxes").click();
+  await controlPage.locator(".fce-quick-input-choice-row").filter({ hasText: "One" }).click();
+  await controlPage.locator(".fce-quick-input-choice-row").filter({ hasText: "Two" }).click();
+  assert.equal(await controlPage.locator('.fce-quick-input-choice-row[aria-selected="true"]').count(), 2);
+  const popupBounds = await controlPage.locator(".fce-quick-input-choice-popover").boundingBox();
+  assert.ok(popupBounds.height <= 240);
+  await controlPage.locator(".fce-quick-input-choice-search").press("Escape");
+  assert.ok((await controlPage.locator(".fce-quick-input-boxes").innerText()).includes("+1"));
+  await controlPage.locator(".fce-quick-input-tags").click();
+  await controlPage.waitForSelector('.metadata-property[data-property-key="tags"] .multi-select-input');
+  assert.equal(await controlPage.locator('.metadata-property[data-property-key="tags"] .multi-select-input').evaluate((el) => el === el.ownerDocument.activeElement), true);
+  await controlPage.keyboard.press("Escape");
+  await controlPage.screenshot({ path: output.replace(/\.json$/, "-controls.png") });
+  await controlPage.locator(".fce-quick-input-title").press("Enter");
+  await controlPage.keyboard.press("Control+;");
+  const controlKey = controlPage.locator('.metadata-property[data-property-key=""] .metadata-property-key-input');
+  await controlKey.waitFor();
+  assert.equal(await controlKey.evaluate((el) => el === el.ownerDocument.activeElement), true);
+  await controlKey.fill("extra"); await controlKey.press("Enter");
+  await controlPage.locator(".fce-quick-input-title").fill("Draft controls");
+  await controlPage.locator(".fce-quick-input-title").press("Enter");
+  assert.equal(await controlPage.locator(".cm-content").evaluate((el) => el === el.ownerDocument.activeElement), true);
+  await controlPage.keyboard.insertText("Draft body");
+  assert.equal(await main.evaluate(() => app.vault.getAbstractFileByPath("Choice 39/Draft controls.md") === null), true);
+  await controlPage.locator("button.mod-cta").click();
+  await main.waitForFunction(() => app.vault.getAbstractFileByPath("Choice 39/Draft controls.md") !== null && quickInputPlugin.quickInputManager.sessions.size === 0);
+  assert.equal(await main.evaluate(async () => {
+    const text = await app.vault.cachedRead(app.vault.getAbstractFileByPath("Choice 39/Draft controls.md"));
+    return text.slice(quickInputHostApi.getFrontMatterInfo(text).contentStart).includes("Draft body");
+  }), true);
+  assert.equal(await main.evaluate(() => quickInputPlugin.getSettings().boxes.every((box) => box.manualPaths.includes("Choice 39/Draft controls.md"))), true);
+  phase("draft-title-native-selectors-and-metadata-actions");
+
   const template = "---\n# Keep this comment\nstatus: 'draft' # Keep status comment\ncount: 3\ndone: false\ndue: 2026-10-20\ntags:\n  - alpha\nrelated:\n  - '[[Target]]'\n---\n# Draft body\nKeep this body unchanged.\n";
   await main.evaluate(async (text) => {
     await app.vault.createFolder("Templates");
@@ -100,7 +172,15 @@ try {
       app.vault.on(name, (file) => propertiesProbe.writes.push({ name, path: file.path }));
     }
   }, template);
+  await main.evaluate(async () => { await app.vault.create("Append target.md", "---\nstatus: original\n---\nExisting"); propertiesProbe.writes = []; });
   const first = await open();
+  await first.page.locator(".fce-quick-input-title").fill("Append target");
+  assert.equal(await first.page.locator(".metadata-container").evaluate((el) => el.inert), true);
+  assert.equal(await first.page.locator(".fce-quick-input-tags").isDisabled(), true);
+  assert.equal(await first.page.locator(".fce-quick-input-property").isDisabled(), true);
+  await first.page.locator(".fce-quick-input-title").fill("Properties probe");
+  assert.equal(await first.page.locator(".metadata-container").evaluate((el) => el.inert), false);
+  phase("template-target-mode-and-property-readonly-recovery");
   const mountProperties = async (id) => main.evaluate((id) => {
     const session = [...quickInputPlugin.quickInputManager.sessions.values()].find((entry) => entry.id === id);
     const draft = session.draft;
@@ -223,6 +303,7 @@ try {
   phase("rename-add-delete-properties");
 
   const second = await open();
+  await second.page.locator(".fce-quick-input-title").fill("Second properties probe");
   await mountProperties(second.snapshot.id);
   assert.equal((await snapshot(second.snapshot.id)).properties.status, "draft");
   assert.equal((await snapshot()).properties.state, "ready");

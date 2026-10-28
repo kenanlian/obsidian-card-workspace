@@ -19,7 +19,7 @@ vi.mock("obsidian", async () => {
 
 import { MarkdownView, TFile, TFolder, moment, normalizePath, type App } from "obsidian";
 import { NOTE_TEMPLATE_DATE_FORMATS, NOTE_TEMPLATE_TIME_FORMATS, type NoteTemplateDefinition, type QuickInputRequest } from "../note-input";
-import { NoteCreationService } from "./NoteCreationService";
+import { NoteCreationService, QuickInputPreflightError } from "./NoteCreationService";
 import { getUiStrings } from "../i18n";
 
 function fixture() {
@@ -678,4 +678,73 @@ it.each(["en", "zh"] as const)("blocks an unchanged template title in %s for not
   await expect(f.service.createTemplateNote(template({ filePath: path }), now)).rejects.toMatchObject({ code: "unedited-template-title" });
   await expect(f.service.submitQuickInput(request({ template: template({ filePath: path }) }))).rejects.toMatchObject({ code: "unedited-template-title" });
   expect(f.vault.create).not.toHaveBeenCalled();
+});
+
+
+describe("editable quick input destination", () => {
+  it("prepares the expanded default title alongside content without reading again on submission", async () => {
+    const f = templateFixture("Body {{date}}");
+    const prepared = await f.service.prepareQuickInputDraft(template(), now);
+    expect(prepared).toMatchObject({ text: "Body 2026-10-12", title: "2026-10-12 14-05-09", folderPath: "Notes" });
+    const result = await f.service.submitQuickInput(request({ text: "Edited {{date}}", target: { folderPath: "Notes", title: "Custom {{date}}" }, expectedMode: "create" }));
+    expect(result.file.path).toBe("Notes/Custom {{date}}.md");
+    expect(f.contents.get(result.file.path)).toBe("Edited {{date}}");
+    expect(f.vault.cachedRead).toHaveBeenCalledOnce();
+  });
+  it("requires another send when a template target appears before the serialized write", async () => {
+    const f = templateFixture();
+    const sent = request({ target: { folderPath: "Notes", title: "Custom" }, expectedMode: "create" });
+    const writing = f.service.submitQuickInput(sent);
+    f.file("Notes/Custom.md", "Existing");
+    await expect(writing).rejects.toMatchObject({ code: "target-mode-changed" });
+    expect(f.vault.create).not.toHaveBeenCalled(); expect(f.vault.process).not.toHaveBeenCalled();
+    const result = await f.service.submitQuickInput({ ...sent, expectedMode: "append" });
+    expect(result.created).toBe(false); expect(f.contents.get(result.file.path)).toContain("Existing");
+  });
+  it("uses edited folder/title and preserves target properties when appending", async () => {
+    const f = templateFixture(); f.folder("Other");
+    f.file("Other/Custom.md", "---\nstatus: original\n---\nExisting");
+    const result = await f.service.submitQuickInput(request({ target: { folderPath: "Other", title: "Custom" }, expectedMode: "append", text: "---\ntags: [draft]\n---\nNew body" }));
+    expect(f.contents.get(result.file.path)).toBe("---\nstatus: original\n---\nExisting\n\nNew body");
+    expect(f.contents.get(template().filePath)).toBeDefined();
+  });
+  it("prevents overwriting the source template and rejects non-Markdown or missing-folder targets", async () => {
+    const f = templateFixture();
+    const source = template().filePath;
+    f.folder(source.slice(0, source.lastIndexOf("/")));
+    await expect(f.service.submitQuickInput(request({ target: { folderPath: source.slice(0, source.lastIndexOf("/")), title: source.split("/").pop()!.slice(0, -3) } }))).rejects.toMatchObject({ code: "target-conflict" });
+    f.folder("Notes/Occupied.md");
+    await expect(f.service.submitQuickInput(request({ target: { folderPath: "Notes", title: "Occupied" } }))).rejects.toMatchObject({ code: "target-conflict" });
+    await expect(f.service.submitQuickInput(request({ target: { folderPath: "Missing", title: "New" } }))).rejects.toMatchObject({ code: "missing-folder" });
+    expect(f.vault.create).not.toHaveBeenCalled();
+  });
+  it("continues numbering explicit titles for independent non-template submissions", async () => {
+    const f = fixture();
+    const first = request({ template: null, config: { templateId: null, folderPath: "", insertPosition: "end" }, target: { folderPath: "", title: "Custom" } });
+    const results = await Promise.all([f.service.submitQuickInput(first), f.service.submitQuickInput({ ...first, submissionId: "second" })]);
+    expect(results.map((result) => result.file.path)).toEqual(["Custom.md", "Custom 1.md"]);
+  });
+});
+
+
+it("allows reselection when a non-template folder disappears while its unique path is queued", async () => {
+  const f = fixture(); f.folder("Inbox");
+  const sent = request({ template: null, config: { templateId: null, folderPath: "Inbox", insertPosition: "end" }, target: { folderPath: "Inbox", title: "Draft" } });
+  const saving = f.service.submitQuickInput(sent);
+  f.entries.delete("Inbox");
+  await expect(saving).rejects.toBeInstanceOf(QuickInputPreflightError);
+  expect(f.vault.create).not.toHaveBeenCalled();
+  const result = await f.service.submitQuickInput({ ...sent, target: { folderPath: "", title: "Draft" } });
+  expect(result.file.path).toBe("Draft.md");
+});
+
+
+it("protects the prepared template source after it is renamed to the edited target", async () => {
+  const f = templateFixture();
+  const prepared = await f.service.prepareQuickInputDraft(template(), now);
+  const file = prepared.sourceFile!;
+  f.entries.delete(file.path); file.path = "Notes/Renamed.md"; f.entries.set(file.path, file);
+  await expect(f.service.submitQuickInput(request({ target: { folderPath: "Notes", title: "Renamed" }, templateSource: file })))
+    .rejects.toMatchObject({ code: "target-conflict" });
+  expect(f.vault.process).not.toHaveBeenCalled(); expect(f.vault.create).not.toHaveBeenCalled();
 });

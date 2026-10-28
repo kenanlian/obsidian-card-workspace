@@ -3,6 +3,12 @@ import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, visit, type Doc
 export type DraftPropertyValue = string | number | boolean | null | string[];
 export type DraftProperties = Record<string, DraftPropertyValue>;
 
+/** The recognized source range also protects unsupported YAML in append mode. */
+export function draftFrontmatterSource(text: string): string {
+  if (!/^(?:\uFEFF)?---\r?\n/.test(text)) return "";
+  return /^(?:\uFEFF)?---\r?\n[\s\S]*?^(?:---|\.\.\.)(?:\r?\n|$)/m.exec(text)?.[0] ?? text;
+}
+
 /** Unsupported YAML stays in the editor verbatim instead of being coerced by native widgets. */
 export function readDraftFrontmatter(text: string) {
   const match = /^---\r?\n([\s\S]*?)^---(?:\r?\n|$)/m.exec(text);

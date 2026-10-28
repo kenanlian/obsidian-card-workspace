@@ -4,6 +4,7 @@
  * See LICENSE for the GNU General Public License, version 3.
  */
 
+import { QuickInputSubmissionCoordinator, validateQuickInputBoxes } from "./services/QuickInputSubmissionCoordinator";
 import { NoteCreationService, NoteInputError } from "./services/NoteCreationService";
 import { TemplateStorageService } from "./services/TemplateStorageService";
 import { TemplateActions } from "./view/actions/template-actions";
@@ -72,6 +73,7 @@ function normalizeFolderScopePath(path: string): string { return path === "/" ? 
 
 export default class CardWorkspacePlugin extends Plugin {
   private readonly popoutEvents = new Map<Window, Component>();
+  private quickInputSubmissions: QuickInputSubmissionCoordinator | null = null;
   private noteCreationService: NoteCreationService | null = null;
   private workspaceSettingTab: CardWorkspaceSettingTab | null = null;
   private readonly templateStorageService = new TemplateStorageService({
@@ -347,7 +349,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private getNoteCreationService(): NoteCreationService {
-    return this.noteCreationService ??= new NoteCreationService(this.app);
+    return this.noteCreationService ??= new NoteCreationService(this.app, (request) => validateQuickInputBoxes(this.getSettings(), request));
   }
 
   async createNoteInFolder(folderPath: string, tags: string[] = [], properties: Record<string, string | number | boolean> = {}): Promise<void> {
@@ -436,6 +438,8 @@ export default class CardWorkspacePlugin extends Plugin {
         case "pending-save-unavailable": return strings.pendingSaveUnavailable;
         case "moment-unavailable": case "invalid-date": return strings.dateFormatUnavailable;
         case "target-missing": return strings.targetNoteMissing;
+        case "target-mode-changed": return strings.targetModeChanged;
+        case "missing-box": return strings.missingBox;
       }
     }
     return error instanceof Error ? error.message : String(error);
@@ -450,13 +454,17 @@ export default class CardWorkspacePlugin extends Plugin {
         this.quickInputManager = new QuickInputWindowManager({
           app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
           prepareTemplate: async (template, now) => {
-            try { return await this.getNoteCreationService().prepareQuickInputTemplate(template, now); }
+            try { return await this.getNoteCreationService().prepareQuickInputDraft(template, now); }
             catch (error) { throw new Error(this.describeNoteInputError(error)); }
           },
           submit: async (request) => {
-            try { return await this.getNoteCreationService().submitQuickInput(request); }
-            catch (error) { throw new Error(this.describeNoteInputError(error)); }
+            this.quickInputSubmissions ??= new QuickInputSubmissionCoordinator({
+              notes: this.getNoteCreationService(), getSettings: () => this.getSettings(),
+              saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
+            });
+            return this.quickInputSubmissions.submit(request);
           },
+          describeError: (error) => this.describeNoteInputError(error),
           notify: (message) => { new Notice(message); },
         });
         return this.quickInputManager;

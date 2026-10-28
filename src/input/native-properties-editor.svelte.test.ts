@@ -5,6 +5,7 @@ import type { App, Editor } from "obsidian";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 import { createDraftPropertiesEditor, type DraftPropertiesEditor, type NativePropertiesConstructor } from "./native-properties-editor";
 import type { DraftProperties } from "./draft-frontmatter";
+import * as frontmatter from "./draft-frontmatter";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); document.body.replaceChildren(); vi.restoreAllMocks(); });
@@ -37,12 +38,17 @@ function fixture(text = "---\nstatus: draft\n---\nBody", failing = false, child 
       this.properties = properties;
       this.values.replaceChildren();
       for (const [key, value] of Object.entries(properties)) {
+        const row = doc.createElement("div"); row.className = "metadata-property"; row.dataset.propertyKey = key;
+        const keyInput = doc.createElement("input"); keyInput.className = "metadata-property-key-input"; keyInput.value = key;
+        row.append(keyInput);
+        const valueEl = doc.createElement("div"); valueEl.className = "metadata-property-value"; row.append(valueEl);
         const input = doc.createElement("input"); input.dataset.key = key; input.value = String(value);
+        if (key === "tags") input.className = "multi-select-input";
         input.addEventListener("blur", () => {
           this.properties = { ...this.properties, [key]: input.value };
           (owner.current!.saveFrontmatter as (values: DraftProperties) => void)(this.properties);
         });
-        this.values.append(input);
+        valueEl.append(input); this.values.append(row);
       }
     }
   }
@@ -55,6 +61,40 @@ function fixture(text = "---\nstatus: draft\n---\nBody", failing = false, child 
 }
 
 describe("native draft properties", () => {
+  it("creates tags from an empty draft and focuses the value rather than the preceding key", () => {
+    const f = fixture("Body");
+    expect(f.adapter.add("tags")).toBe(true);
+    expect(f.cm.state.doc.toString()).toBe("---\ntags: []\n---\nBody");
+    const input = f.container.querySelector(".multi-select-input");
+    expect(input).toBe(document.activeElement);
+  });
+
+  it("reveals source when a native panel cannot provide the add control", () => {
+    const f = fixture("Body");
+    expect(f.adapter.add("property")).toBe(false);
+    expect(f.cm.state.doc.toString()).toBe("---\n\n---\nBody");
+    expect(f.container.querySelector(".cm-content .metadata-container")).toBeNull();
+    expect(f.cm.contentDOM.textContent).toContain("---");
+  });
+
+  it("retains an editable body line for a metadata-only draft ending in a newline", () => {
+    const text = "---\nstatus: draft\n---\n";
+    const f = fixture(text);
+    expect(f.cm.contentDOM.querySelector(".cm-line")).not.toBeNull();
+    f.cm.dispatch({ changes: { from: text.length, insert: "Body" }, userEvent: "input.type" });
+    expect(f.cm.state.doc.toString()).toBe(`${text}Body`);
+    expect(f.cm.contentDOM.textContent).toContain("Body");
+    expect(f.cm.contentDOM.textContent).not.toContain("status: draft");
+  });
+
+  it("reuses the YAML parse during repeated long body edits", () => {
+    const read = vi.spyOn(frontmatter, "readDraftFrontmatter");
+    const f = fixture("---\nstatus: draft\n---\n" + "Body ".repeat(10000));
+    read.mockClear();
+    for (let i = 0; i < 10; i++) f.cm.dispatch({ changes: { from: f.cm.state.doc.length, insert: String(i) } });
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("replaces the YAML display with a native widget while keeping the full document", () => {
     const f = fixture();
     expect(f.container.querySelector(".cm-content .metadata-container")).not.toBeNull();

@@ -667,6 +667,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["newNoteTemplate", { newNoteTemplate: "blank" }],
     ["templateStorageFolder", { templateStorageFolder: "Templates" }],
     ["quickInput", { quickInput: DEFAULT_SETTINGS.quickInput }],
+    ["quickInputVisibility", { quickInputVisibility: { ...DEFAULT_SETTINGS.quickInputVisibility, title: true } }],
     ["noteTemplates", { noteTemplates: [] }],
     ["previewLines", { previewLines: 8 }],
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],

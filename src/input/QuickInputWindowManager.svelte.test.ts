@@ -5,15 +5,19 @@ import { DEFAULT_SETTINGS, type PluginSettings } from "../settings";
 import type { QuickInputRequest, NoteInputResult, NoteTemplateDefinition } from "../note-input";
 import { QuickInputDesktopError, type QuickInputDesktop, type QuickInputWindowHandle } from "./quick-input-desktop";
 import { QuickInputWindowManager } from "./QuickInputWindowManager";
+import { QuickInputPreflightError } from "../services/NoteCreationService";
+import { createCardBox } from "../view/card-boxes";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 
-const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; flush: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
+vi.mock("obsidian", async (importOriginal) => ({ ...await importOriginal<typeof import("obsidian")>(), moment: (await import("moment")).default }));
+
+const state = vi.hoisted(() => ({ editors: [] as Array<{ container: HTMLElement; text: string; focus: ReturnType<typeof vi.fn>; flush: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; readOnly: ReturnType<typeof vi.fn>; propertiesReadOnly: ReturnType<typeof vi.fn>; addMetadata: ReturnType<typeof vi.fn>; change: () => void }>, unsupported: false }));
 vi.mock("./native-markdown-editor", () => ({
   createNativeMarkdownEditor: (options: { container: HTMLElement; initialValue?: string; onChange: () => void }) => {
     if (state.unsupported) throw new Error("unsupported");
-    const editor = { container: options.container, text: options.initialValue ?? "", focus: vi.fn(), flush: vi.fn(), dispose: vi.fn(), readOnly: vi.fn(), change: options.onChange };
+    const editor = { container: options.container, text: options.initialValue ?? "", focus: vi.fn(), flush: vi.fn(), dispose: vi.fn(), readOnly: vi.fn(), propertiesReadOnly: vi.fn(), addMetadata: vi.fn(() => true), change: options.onChange };
     state.editors.push(editor);
-    return { getValue: () => editor.text, focus: editor.focus, flush: editor.flush, dispose: editor.dispose, setReadOnly: editor.readOnly };
+    return { getValue: () => editor.text, focus: editor.focus, flush: editor.flush, dispose: editor.dispose, setReadOnly: editor.readOnly, setPropertiesReadOnly: editor.propertiesReadOnly, addMetadata: editor.addMetadata, mountTitle: (element: HTMLElement) => options.container.prepend(element) };
   },
 }));
 
@@ -73,7 +77,7 @@ beforeEach(() => {
       return { win, handle, dispose };
     }) };
   manager = new QuickInputWindowManager({ desktop,
-    app: { vault: { getRoot: () => rootFolder, getAbstractFileByPath: (path: string) => files.get(path) ?? null } } as unknown as App,
+    app: { vault: { getRoot: () => rootFolder, getAbstractFileByPath: (path: string) => files.get(path) ?? null, getAllFolders: vi.fn(() => [...files.values()].filter((file) => file instanceof TFolder)) } } as unknown as App,
     getSettings: () => settings, getStrings: () => noteInputStrings[language], notify, submit, prepareTemplate,
   });
 });
@@ -81,10 +85,10 @@ afterEach(() => { manager.dispose(); Object.assign(Platform, { isMacOS: false, i
 
 describe("modeless quick input", async () => {
   function useTemplate() {
-    const template = { id: "daily", name: "Daily", filePath: "template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
+    const template = { id: "daily", name: "Daily", filePath: "Templates/template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" };
     settings.noteTemplates = [template];
     settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
-    files.set("template.md", Object.assign(new TFile(), { path: "template.md", extension: "md" }));
+    files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
     return template;
   }
 
@@ -142,10 +146,10 @@ describe("modeless quick input", async () => {
   });
 
   it("keeps a draft blocked if its template was unavailable when it opened", async () => {
-    useTemplate(); files.delete("template.md");
+    useTemplate(); files.delete("Templates/template.md");
     await manager.open(); setText("keep my input");
     expect(prepareTemplate).not.toHaveBeenCalled();
-    files.set("template.md", Object.assign(new TFile(), { path: "template.md", extension: "md" }));
+    files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
     windows[0].win.dispatchEvent(new Event("focus"));
     expect(send().disabled).toBe(true);
     expect(state.editors[0].text).toBe("keep my input");
@@ -278,17 +282,17 @@ describe("modeless quick input", async () => {
 
   it("captures the selected template and stops unavailable configuration without losing draft", async () => {
     settings.quickInput.templateId = "template";
-    settings.noteTemplates = [{ id: "template", filePath: "template.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }];
+    settings.noteTemplates = [{ id: "template", filePath: "Templates/template.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }];
     await manager.open(window); setText("draft"); expect(send().disabled).toBe(true);
     cancel().click();
     settings.noteTemplates[0].targetFolderPath = "";
-    files.set("template.md", Object.assign(new TFile(), { path: "template.md", extension: "md" }));
+    files.set("Templates/template.md", Object.assign(new TFile(), { path: "Templates/template.md", basename: "template", extension: "md" }));
     await manager.open(window); setText("draft", 1); expect(send().disabled).toBe(false);
     submit.mockRejectedValue(new Error("fail")); send().click(); await tick();
     const captured = submit.mock.calls[0][0] as QuickInputRequest;
     settings.noteTemplates[0].dateFormat = "YYYY-MM";
     expect(captured.template!.dateFormat).toBe("YYYY");
-    files.delete("template.md"); windows.forEach(({ win }) => win.dispatchEvent(new Event("focus"))); expect(send().disabled).toBe(true);
+    files.delete("Templates/template.md"); windows.forEach(({ win }) => win.dispatchEvent(new Event("focus"))); expect(send().disabled).toBe(false);
     expect(state.editors[1].text).toBe("draft");
   });
 
@@ -322,27 +326,30 @@ describe("modeless quick input", async () => {
     language = locale;
     const strings = noteInputStrings[locale];
     const destination = () => root().querySelector<HTMLDivElement>(".fce-quick-input-destination")!;
-    const icon = () => destination().querySelector(".fce-quick-input-destination-icon")!.getAttribute("data-icon");
+    settings.quickInputVisibility.status = true;
+    const folder = () => root().querySelector<HTMLButtonElement>(".fce-quick-input-folder")!;
     files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
     await manager.open(window);
-    expect(destination().textContent).toBe(`${strings.destinationLocation} · ${strings.rootFolder}`);
-    expect(icon()).toBe("folder");
+    expect(destination().textContent).toBe(strings.newNote);
+    expect(folder().title).toBe(strings.rootFolder);
     settings.quickInput = { templateId: null, folderPath: "Inbox", insertPosition: "start" };
     cancel().click(); await manager.open(window);
-    expect(destination().textContent).toBe(`${strings.destinationLocation} · Inbox`);
-    expect(destination().title).toBe("Inbox"); expect(destination().classList.contains("is-invalid")).toBe(false);
+    expect(folder().title).toBe("Inbox");
     files.set("Journal", Object.assign(new TFolder(), { path: "Journal" }));
-    files.set("Templates/daily.md", Object.assign(new TFile(), { path: "Templates/daily.md", extension: "md" }));
+    files.set("Templates/daily.md", Object.assign(new TFile(), { path: "Templates/daily.md", basename: "daily", extension: "md" }));
     settings.noteTemplates = [{ id: "daily", name: "Daily", filePath: "Templates/daily.md", targetFolderPath: "Journal", dateFormat: "YYYY", timeFormat: "HH" }];
     settings.quickInput = { templateId: "daily", folderPath: "", insertPosition: "end" };
     cancel().click(); await manager.open(window);
-    expect(destination().textContent).toBe(`${strings.destinationTemplate} · Daily`);
-    expect(destination().title).toBe("Journal"); expect(icon()).toBe("file-plus-2");
+    expect(destination().textContent).toBe(strings.newNote);
+    expect(folder().title).toBe("Journal");
+    files.set("Journal/daily.md", Object.assign(new TFile(), { path: "Journal/daily.md", extension: "md" }));
+    windows.at(-1)!.win.dispatchEvent(new Event("focus"));
+    expect(destination().textContent).toBe(strings.appendNote);
+    expect(destination().querySelector(".fce-quick-input-append-hint")!.getAttribute("aria-label")).toBe(strings.appendHint);
     settings.quickInput = { templateId: "missing", folderPath: "", insertPosition: "end" };
     cancel().click(); await manager.open(window);
     expect(destination().textContent).toBe(strings.destinationUnavailable);
-    expect(destination().title).toBe(strings.invalidQuickInputConfig);
-    expect(destination().classList.contains("is-invalid")).toBe(true); expect(icon()).toBe("alert-triangle");
+    expect(destination().classList.contains("is-invalid")).toBe(true);
     expect(send().title).toBe(strings.invalidQuickInputConfig);
   });
 
@@ -356,7 +363,7 @@ describe("modeless quick input", async () => {
     send().click(); await tick();
     settings.quickInput = { templateId: null, folderPath: "Other", insertPosition: "start" };
     windows.forEach(({ win }) => win.dispatchEvent(new Event("focus")));
-    expect(root().querySelector(".fce-quick-input-destination")!.textContent).toBe(`${noteInputStrings.en.destinationLocation} · Inbox`);
+    expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-folder")!.title).toBe("Inbox");
   });
 
   it("picks a random frame tint without repeating the previous draft and keeps it per draft", async () => {
@@ -501,7 +508,7 @@ describe("modeless quick input", async () => {
     expect(windows[1].handle.setAlwaysOnTop).toHaveBeenCalledExactlyOnceWith(true);
     pin.click();
     expect(pin.parentElement?.className).toBe("fce-quick-input-footer");
-    expect(pin.nextElementSibling?.className).toBe("fce-quick-input-destination");
+    expect(pin.nextElementSibling?.classList.contains("fce-quick-input-folder")).toBe(true);
     expect(root().querySelector(".fce-quick-input-grip button")).toBeNull();
     cancel().click();
     expect(windows[0].dispose).toHaveBeenCalledOnce();
@@ -639,4 +646,97 @@ describe("modeless quick input", async () => {
     expect(windows[0].handle.setBounds).toHaveBeenCalledOnce();
     expect(send().isConnected).toBe(true);
   });
+});
+
+
+describe("draft target controls", () => {
+  const title = () => root().querySelector<HTMLInputElement>(".fce-quick-input-title")!;
+  const editTitle = (value: string) => { title().value = value; title().dispatchEvent(new Event("input", { bubbles: true })); };
+  it("snapshots visibility, focuses the body, and sends a separate title without changing text", async () => {
+    settings.quickInputVisibility.title = true;
+    await manager.open(); setText("Body");
+    expect(title().value).toMatch(/^quick-note /);
+    expect(state.editors[0].focus).toHaveBeenCalled();
+    settings.quickInputVisibility.title = false;
+    expect(title()).not.toBeNull();
+    editTitle("My note {{date}}");
+    submit.mockReturnValue(new Promise(() => {})); send().click();
+    expect(submit.mock.calls[0][0]).toMatchObject({ target: { title: "My note {{date}}", folderPath: "" }, text: "Body", boxIds: [], expectedMode: "create" });
+    expect(title().disabled).toBe(true);
+    await manager.open(); expect(root(1).querySelector(".fce-quick-input-title")).toBeNull();
+  });
+  it("restores the opening title when cleared and Enter focuses body only outside composition", async () => {
+    settings.quickInputVisibility.title = true;
+    await manager.open(); const original = title().value;
+    editTitle(""); title().dispatchEvent(new Event("blur")); expect(title().value).toBe(original);
+    state.editors[0].focus.mockClear();
+    title().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }));
+    expect(state.editors[0].focus).not.toHaveBeenCalled();
+    title().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(state.editors[0].focus).toHaveBeenCalledOnce(); expect(submit).not.toHaveBeenCalled();
+  });
+  it("keeps Ctrl+; available when the property button is hidden", async () => {
+    await manager.open();
+    expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-property")!.hidden).toBe(true);
+    root().dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
+    expect(state.editors[0].addMetadata).toHaveBeenCalledWith("property");
+  });
+  it("switches template mode without loading it again and restores property editing", async () => {
+    settings.quickInputVisibility = { title: true, folder: true, boxes: true, tags: true, properties: true, status: true };
+    settings.noteTemplates = [{ id: "t", filePath: "Templates/T.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }];
+    settings.quickInput.templateId = "t";
+    files.set("Templates/T.md", Object.assign(new TFile(), { path: "Templates/T.md", basename: "T", extension: "md" }));
+    files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
+    prepareTemplate.mockResolvedValue("---\ntags: [draft]\n---\nBody");
+    await manager.open();
+    editTitle("Existing");
+    expect(state.editors[0].propertiesReadOnly).toHaveBeenLastCalledWith(true);
+    expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-tags")!.disabled).toBe(true);
+    root().dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
+    expect(state.editors[0].addMetadata).not.toHaveBeenCalled();
+    editTitle("New");
+    expect(state.editors[0].propertiesReadOnly).toHaveBeenLastCalledWith(false);
+    expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-tags")!.disabled).toBe(false);
+    expect(prepareTemplate).toHaveBeenCalledOnce();
+    expect(state.editors[0].text).toContain("tags: [draft]");
+  });
+  it("does not enumerate folders or boxes during long body edits", async () => {
+    await manager.open();
+    const app = (manager as unknown as { options: { app: App } }).options.app;
+    const getFolders = vi.mocked(app.vault.getAllFolders);
+    const boxes = vi.fn(() => []);
+    Object.defineProperty(settings, "boxes", { get: boxes, configurable: true });
+    for (let i = 0; i < 10; i++) setText("Long body ".repeat(10000) + i);
+    expect(getFolders).not.toHaveBeenCalled(); expect(boxes).not.toHaveBeenCalled();
+  });
+});
+
+
+it("lets the user reselect boxes after a missing reference blocks a pre-write submission", async () => {
+  settings.quickInputVisibility.boxes = true;
+  settings.boxes = [createCardBox("One", [])];
+  await manager.open(); setText("Body");
+  const doc = windows[0].win.document;
+  const boxButton = root().querySelector<HTMLButtonElement>(".fce-quick-input-boxes")!;
+  boxButton.click();
+  doc.querySelector<HTMLElement>(".fce-quick-input-choice-row")!.click();
+  doc.querySelector<HTMLInputElement>(".fce-quick-input-choice-search")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  settings.boxes = [];
+  submit.mockRejectedValueOnce(new QuickInputPreflightError("missing-box"));
+  send().click(); await tick();
+  expect(boxButton.disabled).toBe(false);
+  expect(state.editors[0].readOnly).toHaveBeenLastCalledWith(false);
+  boxButton.click();
+  doc.querySelector<HTMLInputElement>(".fce-quick-input-choice-search")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  submit.mockReturnValue(new Promise(() => {}));
+  send().click();
+  expect(submit.mock.calls[1][0].boxIds).toEqual([]);
+  expect(submit.mock.calls[1][0].submissionId).not.toBe(submit.mock.calls[0][0].submissionId);
+});
+
+it("routes the property shortcut from draft-document popovers outside the editor root", async () => {
+  await manager.open();
+  const input = windows[0].win.document.body.createEl("input");
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
+  expect(state.editors[0].addMetadata).toHaveBeenCalledWith("property");
 });

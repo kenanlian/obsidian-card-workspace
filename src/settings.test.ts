@@ -1157,6 +1157,7 @@ describe("card grouping settings normalization", () => {
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
         quickInput: DEFAULT_SETTINGS.quickInput,
+        quickInputVisibility: DEFAULT_SETTINGS.quickInputVisibility,
         quickInputGlobalShortcut: "",
         quickInputWidth: 480, quickInputHeight: 270, quickInputColor: "random",
         templateStorageFolder: DEFAULT_SETTINGS.templateStorageFolder,
@@ -1645,7 +1646,7 @@ describe("settings layer manifest (C4)", () => {
     uiDensity: "preferences",
     cardStyle: "preferences",
     newNoteTemplate: "preferences",
-    quickInput: "preferences",
+    quickInput: "preferences", quickInputVisibility: "preferences",
     templateStorageFolder: "preferences",
     noteTemplates: "userData",
     previewLines: "preferences",
@@ -1748,6 +1749,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     cardStyle: "list",
     newNoteTemplate: "blank",
     quickInput: { templateId: "daily", folderPath: "Inbox", insertPosition: "start" },
+    quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true, status: true },
     quickInputWidth: 640,
     quickInputHeight: 360,
     quickInputColor: "purple",
@@ -1805,6 +1807,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
     ["templateStorageFolder", (d) => d.preferences.templateStorageFolder, nonDefault.templateStorageFolder],
     ["quickInput", (d) => d.preferences.quickInput, nonDefault.quickInput],
+    ["quickInputVisibility", (d) => d.preferences.quickInputVisibility, nonDefault.quickInputVisibility],
     ["quickInputWidth", (d) => d.preferences.quickInputWidth, 640],
     ["quickInputHeight", (d) => d.preferences.quickInputHeight, 360],
     ["quickInputColor", (d) => d.preferences.quickInputColor, "purple"],
@@ -1921,5 +1924,13 @@ describe("migrateSettings — future schema refusal (C4)", () => {
       schemaVersion: SETTINGS_SCHEMA_VERSION,
       preferences: { previewLines: 7 },
     })).toEqual({ ...DEFAULT_SETTINGS, previewLines: 7 });
+  });
+});
+
+describe("quick input visibility", () => {
+  it("defaults only the folder control on and repairs individual malformed items", () => {
+    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: false, folder: true, boxes: false, tags: false, properties: false, status: false });
+    expect(normalizeSettings({ quickInputVisibility: { title: true, folder: 0, boxes: true, tags: "yes", properties: true, status: true } } as never).quickInputVisibility)
+      .toEqual({ title: true, folder: true, boxes: true, tags: false, properties: true, status: true });
   });
 });

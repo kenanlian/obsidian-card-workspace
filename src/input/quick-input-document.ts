@@ -145,9 +145,14 @@ export function prepareQuickInputDocument(hostWindow: Window, targetWindow: Wind
       listen(win, type, (event) => {
         focus();
         const original = event as KeyboardEvent;
+        // Title editing uses the input's own caret/undo/IME behavior. Draft
+        // shortcuts are handled by the owning document below the relay.
+        if ((original.target as HTMLElement | null)?.classList?.contains("fce-quick-input-title")) return;
+        if (original.key === "Escape" && (original.target as HTMLElement | null)?.classList?.contains("fce-quick-input-choice-search")) return;
         // Send belongs to the draft even when a native property completion
-        // menu has its own host scope. Let the child root capture it directly.
-        if ((original.ctrlKey || original.metaKey) && !original.altKey && original.key === "Enter") return;
+        // menu has its own host scope. Let the child document capture it directly.
+        if (((original.ctrlKey || original.metaKey) && !original.altKey && original.key === "Enter")
+          || (original.ctrlKey && !original.altKey && original.key === ";")) return;
         // Construct in the source realm, just as the host's popout relay does.
         // Do not override native Event.target across DOM realms; the active
         // editor's Scope owns keyboard routing in the receiving window.

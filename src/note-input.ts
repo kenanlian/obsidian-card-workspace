@@ -32,8 +32,33 @@ export interface NoteInputResult { file: TFile; created: boolean }
 export interface TemplateNoteCursor { content: string; offset: number }
 export interface TemplateNoteResult extends NoteInputResult { cursor?: TemplateNoteCursor }
 
+export interface QuickInputVisibility {
+  title: boolean;
+  folder: boolean;
+  boxes: boolean;
+  tags: boolean;
+  properties: boolean;
+  status: boolean;
+}
+export const DEFAULT_QUICK_INPUT_VISIBILITY: QuickInputVisibility = {
+  title: false, folder: true, boxes: false, tags: false, properties: false, status: false,
+};
+export function normalizeQuickInputVisibility(value: unknown): QuickInputVisibility {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return Object.fromEntries(Object.entries(DEFAULT_QUICK_INPUT_VISIBILITY).map(([key, fallback]) =>
+    [key, typeof raw[key] === "boolean" ? raw[key] : fallback])) as unknown as QuickInputVisibility;
+}
+export interface QuickInputDestination { folderPath: string; title: string }
+export interface PreparedQuickInput { text: string; title: string; folderPath: string; sourceFile?: TFile }
+export type QuickInputMode = "create" | "append";
+
 export interface QuickInputRequest {
   submissionId: string;
+  target?: QuickInputDestination;
+  /** Runtime identity protects the original template even after a rename. */
+  templateSource?: TFile;
+  boxIds?: string[];
+  expectedMode?: QuickInputMode;
   /** Complete edited document; template variables were expanded when the draft opened. */
   text: string;
   config: QuickInputConfig;

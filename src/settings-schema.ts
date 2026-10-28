@@ -40,6 +40,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   cardStyle: "preferences",
   newNoteTemplate: "preferences",
   quickInput: "preferences",
+  quickInputVisibility: "preferences",
   quickInputWidth: "preferences",
   quickInputHeight: "preferences",
   quickInputColor: "preferences",

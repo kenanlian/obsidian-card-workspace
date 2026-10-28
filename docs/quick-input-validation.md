@@ -79,3 +79,9 @@ Record OS/build, Obsidian application and installer versions, frame style, theme
 - Invalid destinations, failed send/retry, cancellation, system close during a send, plugin reload, vault close and application restart.
 
 Use Obsidian or hidden frame mode and fully restart after changing the frame setting. Native frame mode remains explicitly unsupported. macOS Spaces/fullscreen/application hiding and Linux Wayland are outside the verified platform behavior.
+
+## Editable draft controls (2026-10-27)
+
+The extended `scripts/run-quick-input-properties-obsidian.mjs` harness passed on isolated Linux/Xvfb hosts using Obsidian 1.11.4 / Electron 39.2.7 and Obsidian 1.14.4 with the same installer. It verifies the title remains visible with the host inline-title setting disabled, shares the Markdown scrollport, and leaves initial focus in the body; native folder suggestions remain in the child document, search beyond the first twenty candidates and restore body focus; boxes remain open for multiple selections and persist the final note path; tags can be created in an empty draft and Ctrl+; focuses the new native property name; template target changes toggle property read-only state and restore editing. The existing property-type, comment preservation, pending-input flush, two-draft isolation, source fallback and cleanup checks also pass.
+
+Node/jsdom coverage includes visibility normalization and layer persistence, settings bindings, long-body YAML parse reuse, folder-enumeration isolation, IME key guards, source frontmatter protection, numbered filenames, queued target-state changes, selected-box validation and retry after a successful note write. These automated checks do not replace the Windows/macOS and physical IME acceptance above. Also check 320px-wide windows with all six options enabled: controls wrap in order and Cancel/Send remain available together.
