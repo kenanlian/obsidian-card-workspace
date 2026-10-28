@@ -34,6 +34,7 @@ export interface PreferencesSettings {
   uiDensity: PluginSettings["uiDensity"];
   cardStyle: PluginSettings["cardStyle"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
+  boxNewNoteFolderPath: string;
   quickInput: PluginSettings["quickInput"];
   quickInputVisibility: PluginSettings["quickInputVisibility"];
   quickInputGlobalShortcut: string;
@@ -176,6 +177,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.uiDensity !== undefined) preferences.uiDensity = patch.uiDensity;
   if (patch.cardStyle !== undefined) preferences.cardStyle = patch.cardStyle;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
+  if (patch.boxNewNoteFolderPath !== undefined) preferences.boxNewNoteFolderPath = patch.boxNewNoteFolderPath;
   if (patch.quickInputGlobalShortcut !== undefined) preferences.quickInputGlobalShortcut = patch.quickInputGlobalShortcut;
   if (patch.quickInputVisibility !== undefined) preferences.quickInputVisibility = patch.quickInputVisibility;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
@@ -250,6 +252,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       uiDensity: settings.uiDensity,
       cardStyle: settings.cardStyle,
       newNoteTemplate: settings.newNoteTemplate,
+      boxNewNoteFolderPath: settings.boxNewNoteFolderPath,
       quickInput: { ...settings.quickInput },
       quickInputVisibility: { ...settings.quickInputVisibility },
       quickInputGlobalShortcut: settings.quickInputGlobalShortcut,

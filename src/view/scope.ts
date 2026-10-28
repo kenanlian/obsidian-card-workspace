@@ -188,14 +188,15 @@ export function resolveScopeFolderPath(scope: CardScope): string | null {
 
 /**
  * Folder used for toolbar new-note. Folder scopes use their own path
- * (including `""` for vault root). Box and links fall back to the persisted
- * last-folder path and do not switch scope.
+ * (including `""` for vault root). Boxes use their configured destination,
+ * defaulting to root; links use the persisted last-folder path. Neither switches scope.
  */
-export function resolveNewNoteFolderPath(scope: CardScope, fallback: string): string {
+export function resolveNewNoteFolderPath(scope: CardScope, fallback: string, boxFolderPath = ""): string {
   switch (scope.kind) {
     case "folder":
       return scope.path;
     case "box":
+      return boxFolderPath;
     case "links":
       return fallback;
     default: {

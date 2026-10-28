@@ -665,6 +665,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["uiDensity", { uiDensity: "compact" }],
     ["cardStyle", { cardStyle: "list" }],
     ["newNoteTemplate", { newNoteTemplate: "blank" }],
+    ["boxNewNoteFolderPath", { boxNewNoteFolderPath: "Box notes" }],
     ["templateStorageFolder", { templateStorageFolder: "Templates" }],
     ["quickInput", { quickInput: DEFAULT_SETTINGS.quickInput }],
     ["quickInputVisibility", { quickInputVisibility: { ...DEFAULT_SETTINGS.quickInputVisibility, title: true } }],

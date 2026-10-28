@@ -3363,12 +3363,13 @@ describe("WP-07 arrangement routing and view-scoped note creation", () => {
     expect(plugin.createNoteInCurrentFolder).toBeUndefined();
   });
 
-  it("uses persisted lastFolderPath for Box new-note without adding to the Box", () => {
+  it("passes the selected Box when creating in its configured folder", () => {
     const { view, plugin } = createViewWithFile();
     const previous = plugin.getSettings();
     plugin.getSettings = vi.fn(() => ({
       ...previous,
-      lastFolderPath: "inbox",
+      lastFolderPath: "recent",
+      boxNewNoteFolderPath: "inbox",
       boxes: [],
     }));
     (view as any).cardScope = createBoxScope("box-1");
@@ -3376,7 +3377,7 @@ describe("WP-07 arrangement routing and view-scoped note creation", () => {
 
     view.handleToolbarAction({ action: "new-note" });
 
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {});
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {}, "box-1");
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
     expect(addSpy).not.toHaveBeenCalled();
   });

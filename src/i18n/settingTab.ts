@@ -16,6 +16,8 @@ export interface SettingTabStrings {
   enableHeadingDragInsertDesc: string;
   newNoteTemplateName: string;
   newNoteTemplateDesc: string;
+  boxNewNoteFolderName: string;
+  boxNewNoteFolderDesc: string;
   cardCornerRadiusName: string;
   cardCornerRadiusDesc: string;
   uiFontSizeName: string;
@@ -64,6 +66,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     enableHeadingDragInsertName: "Enable section drag insertion",
     enableHeadingDragInsertDesc: "Choose a heading section when dropping a Markdown card. Uses the selected drag insert behavior; whole-note insertion stays available.",
     newNoteTemplateName: "New note content",
+    boxNewNoteFolderName: "Folder for new notes in card boxes",
+    boxNewNoteFolderDesc: "Notes created from a card box are saved here and manually added to that box. Defaults to the vault root. Leave empty or enter / for the root.",
     newNoteTemplateDesc:
       "Choose what the toolbar's create-note action writes into a new note: an empty tags property, or nothing at all.",
     cardCornerRadiusName: "Card corner radius",
@@ -111,6 +115,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     enableHeadingDragInsertName: "启用章节拖拽插入",
     enableHeadingDragInsertDesc: "拖入 Markdown 卡片时选择标题章节，沿用当前拖拽插入方式，并保留整篇笔记入口。",
     newNoteTemplateName: "新建笔记内容",
+    boxNewNoteFolderName: "卡片盒新建笔记保存位置",
+    boxNewNoteFolderDesc: "从卡片盒新建的笔记保存在此文件夹，并手动加入该卡片盒。默认为仓库根目录；留空或填写 / 使用根目录。",
     newNoteTemplateDesc: "选择工具栏“创建笔记”生成的笔记内容：带一个空的 tags 属性，或完全空白。",
     cardCornerRadiusName: "卡片圆角",
     cardCornerRadiusDesc: "调整面板中每张卡片边框的方正或圆润程度。",

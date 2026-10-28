@@ -111,8 +111,10 @@ export class FolderCardView extends ItemView implements HoverParent {
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),
       openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
-      createNoteInFolder: (folderPath, tags, properties) => properties === undefined
-        ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
+      createNoteInFolder: (folderPath, tags, properties, boxId) => boxId !== undefined
+        ? this.plugin.createNoteInFolder(folderPath, tags, properties, boxId)
+        : properties === undefined
+          ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
       getSearchService: () => this.plugin.getSearchService(),
       getSearchSnapshot: () => this.plugin.getSearchSnapshot(),
       subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),

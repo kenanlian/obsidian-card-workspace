@@ -42,6 +42,7 @@ import { EditorDropController } from "./services/EditorDropController";
 import { NativeFileDragController } from "./services/NativeFileDragController";
 import type { CardFileDragStartPayload } from "./view/types";
 import { BoxReconciler } from "./services/BoxReconciler";
+import { addManualPaths, findCardBox, upsertCardBox } from "./view/card-boxes";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
 import { PinnedPathReconciler } from "./services/PinnedPathReconciler";
@@ -352,13 +353,21 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.noteCreationService ??= new NoteCreationService(this.app, (request) => validateQuickInputBoxes(this.getSettings(), request));
   }
 
-  async createNoteInFolder(folderPath: string, tags: string[] = [], properties: Record<string, string | number | boolean> = {}): Promise<void> {
+  async createNoteInFolder(folderPath: string, tags: string[] = [], properties: Record<string, string | number | boolean> = {}, boxId?: string): Promise<void> {
+    if (boxId !== undefined && !findCardBox(this.getSettings().boxes, boxId)) throw new NoteInputError("missing-box");
     const result = await this.getNoteCreationService().createScopeNote({
       folderPath: normalizeFolderScopePath(folderPath), tags: [...tags], properties: { ...properties },
       baseName: this.getUiStrings().app.untitledNoteBaseName,
       emptyTags: this.getSettings().newNoteTemplate === "tags-frontmatter",
     });
-    await this.openNoteFromCard(result.file.path, "new-tab");
+    if (this.disposed) return;
+    if (boxId !== undefined) {
+      const settings = this.getSettings();
+      const box = findCardBox(settings.boxes, boxId);
+      if (!box) throw new NoteInputError("missing-box");
+      await this.saveSettings({ boxes: upsertCardBox(settings.boxes, addManualPaths(box, [result.file.path])) });
+    }
+    if (!this.disposed) await this.openNoteFromCard(result.file.path, "new-tab");
   }
 
   async createNoteFromTemplate(id: string): Promise<void> {

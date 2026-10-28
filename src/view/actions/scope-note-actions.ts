@@ -7,7 +7,7 @@ import type { ViewContext } from "../view-context";
 
 export interface ScopeNoteActionsDeps {
   context: ViewContext;
-  createNote: (folderPath: string, tags: string[], properties: Record<string, string | number | boolean>) => Promise<void>;
+  createNote: (folderPath: string, tags: string[], properties: Record<string, string | number | boolean>, boxId?: string) => Promise<void>;
 }
 
 /** Capture the committed source and complete filter ordering before any await. */
@@ -18,7 +18,7 @@ export class ScopeNoteActions {
     const { context } = this.deps;
     const scope = context.store.getScope();
     const settings = context.getSettings();
-    const folderPath = resolveNewNoteFolderPath(scope, settings.lastFolderPath);
+    const folderPath = resolveNewNoteFolderPath(scope, settings.lastFolderPath, settings.boxNewNoteFolderPath);
     const tags = scope.kind === "folder" ? [...settings.filter.tags] : [];
     const properties: Record<string, string | number | boolean> = Object.create(null) as Record<string, string | number | boolean>;
     if (scope.kind === "folder") {
@@ -31,6 +31,8 @@ export class ScopeNoteActions {
         if (ref && ref.kind !== "missing" && facet.key !== "tags" && facet.key !== "tag") properties[facet.label] = ref.value;
       }
     }
-    return this.deps.createNote(folderPath, tags, properties);
+    return scope.kind === "box"
+      ? this.deps.createNote(folderPath, tags, properties, scope.boxId)
+      : this.deps.createNote(folderPath, tags, properties);
   }
 }

@@ -34,7 +34,7 @@ vi.mock("./view/metadata-input-suggest", () => ({ onPlainEnter: vi.fn() }));
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
-import { getUiStrings } from "./i18n";
+import { getSettingTabStrings, getUiStrings } from "./i18n";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 
 interface PluginStub {
@@ -60,6 +60,7 @@ function createPlugin(
       dragInsertAction: "embed",
       enableHeadingDragInsert: false,
       newNoteTemplate: "blank",
+      boxNewNoteFolderPath: "",
       quickInput: { folderPath: "", insertPosition: "end", duplicateTitle: "ask" }, noteTemplates: [],
       quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
       previewLines: 6,
@@ -119,6 +120,7 @@ describe("CardWorkspaceSettingTab", () => {
       "Card drag insert behavior",
       "Enable section drag insertion",
       "New note content",
+      "Folder for new notes in card boxes",
     ]);
     expect(rowsOf(appearance).map((row) => row.name)).toEqual([
       "Font size",
@@ -270,6 +272,7 @@ describe("CardWorkspaceSettingTab", () => {
       "卡片拖拽插入行为",
       "启用章节拖拽插入",
       "新建笔记内容",
+      "卡片盒新建笔记保存位置",
     ]);
     expect(rowsOf(appearance).map((row) => row.name)).toEqual([
       "字体大小",
@@ -360,7 +363,8 @@ describe("CardWorkspaceSettingTab", () => {
       definition.items.forEach((row, index) => {
         const setting = settings[index]!, control = row.control;
         if (!control) {
-          if (row.name === getUiStrings(language).noteInput.quickInputFolderName) {
+          if (row.name === getUiStrings(language).noteInput.quickInputFolderName
+            || row.name === getSettingTabStrings(language).boxNewNoteFolderName) {
             expect(setting.texts[0]?.value).toBe("/");
             expect(setting.dropdowns).toHaveLength(0);
           } else if (row.name === getUiStrings(language).noteInput.globalShortcutName) {
@@ -394,7 +398,8 @@ describe("CardWorkspaceSettingTab", () => {
     tab.display();
     const container = tab.containerEl as unknown as MockEl;
     const rows = settingsIn(container);
-    const fit = rows[14]!, mode = rows[13]!;
+    const fit = rows.find((row) => row.name === "Image fit")!;
+    const mode = rows.find((row) => row.name === "Card images")!;
     expect(fit.settingEl.style.display).toBe("none");
     mode.dropdowns[0]!.select("inline");
     await Promise.resolve();
@@ -405,10 +410,11 @@ describe("CardWorkspaceSettingTab", () => {
     await tab.setControlValue("cardImageMode", "off");
     expect(fit.settingEl.style.display).toBe("none");
     await tab.setControlValue("cardImageFit", "cover");
-    await rows[10]!.sliders[0]!.slide(8);
-    await rows[10]!.sliders[0]!.slide(999);
+    await rows.find((row) => row.name === "Preview lines")!.sliders[0]!.slide(8);
+    await rows.find((row) => row.name === "Preview lines")!.sliders[0]!.slide(999);
     expect(settings.previewLines).toBe(8);
-    const radius = rows[9]!, cardStyle = rows[8]!;
+    const radius = rows.find((row) => row.name === "Card corner radius")!;
+    const cardStyle = rows.find((row) => row.name === "Card style")!;
     expect(radius.settingEl.style.display).toBe("");
     cardStyle.dropdowns[0]!.select("list");
     await Promise.resolve();
@@ -417,9 +423,10 @@ describe("CardWorkspaceSettingTab", () => {
     expect(radius.settingEl.style.display).toBe("none");
     const reloaded = createTab(plugin);
     reloaded.display();
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[14]?.dropdowns[0]?.value).toBe("cover");
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[10]?.sliders[0]?.value).toBe(8);
-    expect(settingsIn(reloaded.containerEl as unknown as MockEl)[8]?.dropdowns[0]?.value).toBe("list");
+    const reloadedRows = settingsIn(reloaded.containerEl as unknown as MockEl);
+    expect(reloadedRows.find((row) => row.name === "Image fit")?.dropdowns[0]?.value).toBe("cover");
+    expect(reloadedRows.find((row) => row.name === "Preview lines")?.sliders[0]?.value).toBe(8);
+    expect(reloadedRows.find((row) => row.name === "Card style")?.dropdowns[0]?.value).toBe("list");
   });
 
   it.each([false, true])("keeps slider values visible without deprecated tooltips (1.13 API: %s)", async (supportsNativeApi) => {
@@ -626,6 +633,38 @@ describe("quick input shared setting definitions", () => {
     for (const result of vi.mocked(attachFolderInputSuggest).mock.results) {
       expect(result.value.dispose).toHaveBeenCalledOnce();
     }
+  });
+
+  it.each([false, true])("configures the box note destination with root as default (native: %s)", async (native) => {
+    vi.mocked(attachFolderInputSuggest).mockClear();
+    const plugin = createPlugin();
+    const settings = plugin.getSettings();
+    plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
+    const tab = createTab(plugin);
+    let row: Setting;
+    if (native) {
+      row = new Setting(tab.containerEl as unknown as MockEl);
+      tab.getSettingDefinitions()[0]!.items.at(-1)!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
+    } else {
+      tab.display();
+      row = groupsIn(tab.containerEl as unknown as MockEl)[0]!.settings.at(-1)!;
+    }
+    const text = row.texts[0]!;
+    expect(text.value).toBe("/");
+    text.type("Notes/Box notes");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "Notes/Box notes" });
+    const binding = vi.mocked(attachFolderInputSuggest).mock.calls.find((call) => call[1] === text.inputEl as unknown)!;
+    binding[2]("Inbox");
+    expect(text.value).toBe("Inbox");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "Inbox" });
+    binding[2]("");
+    expect(text.value).toBe("/");
+    for (const value of ["", "/"]) {
+      text.type(value);
+      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "" });
+    }
+    tab.hide();
   });
 
   it.each([false, true])("persists each quick input field against the latest config and hides the append position for numbering (native: %s)", async (native) => {

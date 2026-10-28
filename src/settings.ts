@@ -70,7 +70,7 @@ export const CARD_PANE_MIN_WIDTH = 160;
 export const DEFAULT_CARD_OPEN_BEHAVIOR: DefaultCardOpenBehavior = "smart";
 export const DEFAULT_DRAG_INSERT_ACTION: DragInsertAction = "ask";
 export const DEFAULT_CARD_CORNER_RADIUS: CardCornerRadius = "rounded";
-export const DEFAULT_NEW_NOTE_TEMPLATE: NewNoteTemplate = "tags-frontmatter";
+export const DEFAULT_NEW_NOTE_TEMPLATE: NewNoteTemplate = "blank";
 
 export const DEFAULT_CARD_OPEN_BEHAVIOR_OPTIONS: ReadonlyArray<{
   value: DefaultCardOpenBehavior;
@@ -196,6 +196,7 @@ export interface PluginSettings {
   uiDensity: UiDensity;
   cardStyle: CardStyle;
   newNoteTemplate: NewNoteTemplate;
+  boxNewNoteFolderPath: string;
   noteTemplates: NoteTemplateDefinition[];
   templateStorageFolder: string;
   quickInput: QuickInputConfig;
@@ -261,6 +262,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   uiDensity: "default",
   cardStyle: "default",
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
+  boxNewNoteFolderPath: "",
   noteTemplates: [],
   templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
   quickInput: { ...DEFAULT_QUICK_INPUT },
@@ -671,6 +673,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     uiDensity: isUiDensity(data.uiDensity) ? data.uiDensity : DEFAULT_SETTINGS.uiDensity,
     cardStyle: isCardStyle(data.cardStyle) ? data.cardStyle : DEFAULT_SETTINGS.cardStyle,
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
+    boxNewNoteFolderPath: typeof data.boxNewNoteFolderPath === "string" ? data.boxNewNoteFolderPath.trim().replace(/^\/$/, "") : "",
     noteTemplates: normalizeNoteTemplates(data.noteTemplates),
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
     quickInputGlobalShortcut: typeof data.quickInputGlobalShortcut === "string" ? data.quickInputGlobalShortcut.trim() : "",

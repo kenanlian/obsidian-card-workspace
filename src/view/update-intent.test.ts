@@ -73,6 +73,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   uiDensity: "patch",
   cardStyle: "patch",
   newNoteTemplate: "patch",
+  boxNewNoteFolderPath: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
   quickInputVisibility: "patch",
@@ -129,7 +130,8 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "uiFontSize": settings.uiFontSize = "large"; break;
     case "uiDensity": settings.uiDensity = "compact"; break;
     case "cardStyle": settings.cardStyle = "list"; break;
-    case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
+    case "newNoteTemplate": settings.newNoteTemplate = "tags-frontmatter"; break;
+    case "boxNewNoteFolderPath": settings.boxNewNoteFolderPath = "Inbox"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "number" }; break;
     case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: !settings.quickInputVisibility.title }; break;

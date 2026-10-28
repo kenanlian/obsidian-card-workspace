@@ -39,6 +39,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   uiDensity: "preferences",
   cardStyle: "preferences",
   newNoteTemplate: "preferences",
+  boxNewNoteFolderPath: "preferences",
   quickInput: "preferences",
   quickInputVisibility: "preferences",
   quickInputWidth: "preferences",

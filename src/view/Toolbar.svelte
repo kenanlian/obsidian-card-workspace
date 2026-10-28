@@ -519,6 +519,15 @@
         {#if isBoxMode}
           <button
             type="button"
+            class="clickable-icon fce-toolbar-button"
+            aria-label={toolbarStrings.actions.newNoteTitle}
+            onclick={(event) => selectToolbarAction("new-note", event)}
+            use:applyIcon={"square-pen"}
+          >
+            <span class="fce-sr-only">{toolbarStrings.actions.newNote}</span>
+          </button>
+          <button
+            type="button"
             class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
             aria-label={sortGroupStrings.title}
             onclick={(event) => selectToolbarAction("sort", event)}

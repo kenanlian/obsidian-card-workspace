@@ -27,11 +27,14 @@ export class TemplateReferenceReconciler {
       || template.targetFolderPath !== settings.noteTemplates[index].targetFolderPath);
     const folderPath = event.isFolder ? rewrite(settings.quickInput.folderPath) : settings.quickInput.folderPath;
     const templateStorageFolder = event.isFolder ? rewrite(settings.templateStorageFolder) : settings.templateStorageFolder;
-    if (!changed && folderPath === settings.quickInput.folderPath && templateStorageFolder === settings.templateStorageFolder) return;
+    const boxNewNoteFolderPath = event.isFolder ? rewrite(settings.boxNewNoteFolderPath) : settings.boxNewNoteFolderPath;
+    if (!changed && folderPath === settings.quickInput.folderPath && templateStorageFolder === settings.templateStorageFolder
+      && boxNewNoteFolderPath === settings.boxNewNoteFolderPath) return;
     await this.deps.saveSettings({
       ...(changed ? { noteTemplates } : {}),
       ...(folderPath !== settings.quickInput.folderPath ? { quickInput: { ...settings.quickInput, folderPath } } : {}),
       ...(templateStorageFolder !== settings.templateStorageFolder ? { templateStorageFolder } : {}),
+      ...(boxNewNoteFolderPath !== settings.boxNewNoteFolderPath ? { boxNewNoteFolderPath } : {}),
     });
   }
 }

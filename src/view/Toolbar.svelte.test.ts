@@ -853,9 +853,9 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("does not keep the create-note action visually selected after it emits", async () => {
+  it.each([null, "box-1"])("emits new-note without staying selected in scope %s", async (activeBoxId) => {
     const captured = createCapturedCallbacks();
-    const { component } = mountToolbar({}, captured.callbacks);
+    const { component } = mountToolbar({ activeBoxId, activeBoxName: "Reading" }, captured.callbacks);
 
     const createNoteButton = document.querySelector<HTMLButtonElement>('button[aria-label="Create note"]');
     expect(createNoteButton).not.toBeNull();

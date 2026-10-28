@@ -196,6 +196,7 @@ export function resolveSettingsUpdateIntent(
   if (previous.uiDensity !== next.uiDensity) intent = mergeIntent(intent, "patch");
   if (previous.cardStyle !== next.cardStyle) intent = mergeIntent(intent, "patch");
   if (previous.newNoteTemplate !== next.newNoteTemplate) intent = mergeIntent(intent, "patch");
+  if (previous.boxNewNoteFolderPath !== next.boxNewNoteFolderPath) intent = mergeIntent(intent, "patch");
   if (previous.templateStorageFolder !== next.templateStorageFolder) intent = mergeIntent(intent, "patch");
   if (JSON.stringify(previous.quickInput) !== JSON.stringify(next.quickInput)) intent = mergeIntent(intent, "patch");
   if (JSON.stringify(previous.quickInputVisibility) !== JSON.stringify(next.quickInputVisibility)) intent = mergeIntent(intent, "patch");

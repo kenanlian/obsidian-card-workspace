@@ -61,7 +61,7 @@ export interface ViewModuleHost {
   /** One coherent metadata publication; nav derives from the exact fresh projection snapshot. */
   publishImpactBatch: (batch: MetadataImpactBatch) => void;
   openNoteFromCard: (path: string, destination?: OpenDestination) => Promise<void>;
-  createNoteInFolder: (folderPath: string, tags: string[], properties?: Record<string, string | number | boolean>) => Promise<void>;
+  createNoteInFolder: (folderPath: string, tags: string[], properties?: Record<string, string | number | boolean>, boxId?: string) => Promise<void>;
   getSearchService: () => SearchService | null;
   getSearchSnapshot: () => SearchServiceSnapshot | null;
   subscribeSearchSnapshots: (listener: (snapshot: SearchServiceSnapshot) => void) => () => void;

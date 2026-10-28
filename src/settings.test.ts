@@ -166,13 +166,13 @@ describe("normalizeSettings — includeSubfolders and view mode", () => {
     expect(normalizeSettings(raw).includeSubfolders).toBe(false);
   });
 
-  it("defaults newNoteTemplate to tags-frontmatter when the raw value is missing or invalid", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: undefined } as unknown).newNoteTemplate).toBe("tags-frontmatter");
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "template" } as unknown).newNoteTemplate).toBe("tags-frontmatter");
+  it("defaults newNoteTemplate to blank when the raw value is missing or invalid", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: undefined } as unknown).newNoteTemplate).toBe("blank");
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "template" } as unknown).newNoteTemplate).toBe("blank");
   });
 
-  it("preserves explicit newNoteTemplate blank", () => {
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "blank" } as unknown).newNoteTemplate).toBe("blank");
+  it("preserves an explicitly configured tags-frontmatter template", () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, newNoteTemplate: "tags-frontmatter" } as unknown).newNoteTemplate).toBe("tags-frontmatter");
   });
 
   it("drops the removed enableFileExplorerFolderClicks setting", () => {
@@ -1156,6 +1156,7 @@ describe("card grouping settings normalization", () => {
         group: DEFAULT_GROUP_SPEC,
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
+        boxNewNoteFolderPath: "",
         quickInput: DEFAULT_SETTINGS.quickInput,
         quickInputVisibility: DEFAULT_SETTINGS.quickInputVisibility,
         quickInputGlobalShortcut: "",
@@ -1646,6 +1647,7 @@ describe("settings layer manifest (C4)", () => {
     uiDensity: "preferences",
     cardStyle: "preferences",
     newNoteTemplate: "preferences",
+    boxNewNoteFolderPath: "preferences",
     quickInput: "preferences", quickInputVisibility: "preferences",
     templateStorageFolder: "preferences",
     noteTemplates: "userData",
@@ -1693,6 +1695,22 @@ describe("settings layer manifest (C4)", () => {
   it("re-exports SETTINGS_SCHEMA_VERSION from the neutral schema module", () => {
     expect(SETTINGS_SCHEMA_VERSION).toBe(SCHEMA_MODULE_VERSION);
     expect(SETTINGS_SCHEMA_VERSION).toBe(2);
+  });
+});
+
+describe("card box new-note destination", () => {
+  it("defaults existing settings to vault root independently of the last browsed folder", () => {
+    expect(migrateSettings({ lastFolderPath: "Projects" }).boxNewNoteFolderPath).toBe("");
+    expect(migrateSettings({ schemaVersion: 2, workspace: { lastFolderPath: "Projects" } }).boxNewNoteFolderPath).toBe("");
+  });
+
+  it.each(["", "/", "Notes/Inbox", "Missing/Folder"])("persists destination %s in preferences", (path) => {
+    const settings = mergeSettings(DEFAULT_SETTINGS, { boxNewNoteFolderPath: path });
+    const expected = path === "/" ? "" : path;
+    const document = serializeSettings(settings);
+    expect(document.preferences.boxNewNoteFolderPath).toBe(expected);
+    expect(document.workspace).not.toHaveProperty("boxNewNoteFolderPath");
+    expect(migrateSettings(document).boxNewNoteFolderPath).toBe(expected);
   });
 });
 
@@ -1749,6 +1767,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     uiDensity: "compact",
     cardStyle: "list",
     newNoteTemplate: "blank",
+    boxNewNoteFolderPath: "Box notes",
     quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" },
     quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true },
     quickInputWidth: 640,
@@ -1807,6 +1826,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["uiDensity", (d) => d.preferences.uiDensity, "compact"],
     ["cardStyle", (d) => d.preferences.cardStyle, "list"],
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
+    ["boxNewNoteFolderPath", (d) => d.preferences.boxNewNoteFolderPath, "Box notes"],
     ["templateStorageFolder", (d) => d.preferences.templateStorageFolder, nonDefault.templateStorageFolder],
     ["quickInput", (d) => d.preferences.quickInput, nonDefault.quickInput],
     ["quickInputVisibility", (d) => d.preferences.quickInputVisibility, nonDefault.quickInputVisibility],

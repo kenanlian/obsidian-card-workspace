@@ -1,6 +1,6 @@
 # Creating notes, templates and quick input
 
-The top **New note** button creates in the current folder, including the vault root. Selected tags and text, number or boolean property filters become YAML properties. When several values for a property are selected, the first actual value in the complete navigation order is used. A missing-only selection writes no property. Boxes and links use the most recently visited folder and leave paused browsing filters out.
+The top **New note** button creates in the current folder, including the vault root. Selected tags and text, number or boolean property filters become YAML properties. When several values for a property are selected, the first actual value in the complete navigation order is used. A missing-only selection writes no property. Card boxes use **Folder for new notes in card boxes** in the Behavior settings, defaulting to the vault root; links use the most recently visited folder. Both leave paused browsing filters out. In a card box, the button also adds the new note as a manual member of that box. The default new-note template is blank and adds no empty `tags` property; an explicitly configured tags template is still honored.
 
 The **Templates** section appears below Links by default. **New template** asks for a display name and the folder for notes created with the template. The folder input suggests existing vault folders; leave it empty for the vault root. The display name appears in navigation and template choices and does not determine created-note filenames. Creation opens the template in editing mode and selects its initial title. Replace the title to define created-note filenames; edit or delete the initial body guidance (it is actual template content).
 
@@ -36,7 +36,7 @@ Quick input uses an internal native Markdown editor capability adapter. If the h
 
 # 笔记创建、模板与快速输入
 
-顶部“新建笔记”在当前文件夹创建，包括仓库根目录，并继承选中标签及文本、数字、布尔属性筛选。同一属性多选时取完整导航排序中第一个实际值；仅选“缺失”时不写该属性。盒子、链接范围使用最近浏览的文件夹，不继承暂停的筛选。
+顶部“新建笔记”在当前文件夹创建，包括仓库根目录，并继承选中标签及文本、数字、布尔属性筛选。同一属性多选时取完整导航排序中第一个实际值；仅选“缺失”时不写该属性。卡片盒使用“行为”设置中的“卡片盒新建笔记保存位置”，默认为仓库根目录；链接范围使用最近浏览的文件夹。两者均不继承暂停的筛选。卡片盒中也显示此按钮，创建后将笔记手动加入该卡片盒。新建笔记模板默认为空白，不添加空的 `tags` 属性；已明确设置的标签模板仍会保留。
 
 “模板”区默认位于双链下方。“新建模板”填写模板名称和新建笔记文件夹，文件夹输入框提供已有仓库文件夹建议，留空表示仓库根目录。模板名称用于导航和模板选择，不作为生成笔记的文件名。创建后直接进入模板编辑模式，并选中初始标题。修改标题来定义生成笔记的文件名；正文引导行属于实际内容，若希望正文为空，请删除该行。
 

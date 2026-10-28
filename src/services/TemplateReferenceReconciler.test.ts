@@ -7,7 +7,7 @@ function harness() {
   const settings = { ...DEFAULT_SETTINGS, noteTemplates: [
     { id: "one", filePath: "Old/daily.md", targetFolderPath: "Old/notes", dateFormat: "YYYY", timeFormat: "HH" },
     { id: "two", filePath: "Older/note.md", targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" },
-  ], quickInput: { folderPath: "Old/quick", insertPosition: "end" as const, duplicateTitle: "ask" as const } };
+  ], boxNewNoteFolderPath: "Old/boxes", quickInput: { folderPath: "Old/quick", insertPosition: "end" as const, duplicateTitle: "ask" as const } };
   const saveSettings = vi.fn(async (_patch: PartialPluginSettings) => undefined);
   return { settings, saveSettings, reconciler: new TemplateReferenceReconciler({ getSettings: () => settings, saveSettings }) };
 }
@@ -16,7 +16,7 @@ describe("TemplateReferenceReconciler", () => {
     const h = harness(); await h.reconciler.handleVaultMutation(event);
     expect(h.saveSettings).toHaveBeenCalledWith({ noteTemplates: [
       { ...h.settings.noteTemplates[0], name: "daily.md", filePath: "New/daily.md", targetFolderPath: "New/notes" }, h.settings.noteTemplates[1],
-    ], quickInput: { ...h.settings.quickInput, folderPath: "New/quick" } });
+    ], boxNewNoteFolderPath: "New/boxes", quickInput: { ...h.settings.quickInput, folderPath: "New/quick" } });
   });
   it("follows exact file rename and preserves destination and stable ID", async () => {
     const h = harness(); await h.reconciler.handleVaultMutation({ ...event, oldPath: "Old/daily.md", path: "New/different.md", isFolder: false, fileKind: "markdown" });

@@ -540,6 +540,7 @@ import { DEFAULT_SETTINGS } from "./settings";
 import { UnsupportedSettingsSchemaError } from "./settings-schema";
 import { FolderCardView } from "./view/FolderCardView";
 import { createBoxScope, createFolderScope } from "./view/scope";
+import { createCardBox } from "./view/card-boxes";
 
 function mutateStoreMemory(plugin: CardWorkspacePlugin, patch: Record<string, unknown>): void {
   const store = (plugin as unknown as { settingsStore: { memory: Record<string, unknown> } }).settingsStore;
@@ -2484,29 +2485,87 @@ describe("CardWorkspacePlugin open destination routing", () => {
     expect(openNoteFromCard).toHaveBeenCalledWith("notes/Untitled.md", "new-tab");
   });
 
-  it("seeds new notes with a tags property by default", async () => {
+  it("creates notes without a tags property by default", async () => {
     const { plugin, app } = createPluginHarness();
     app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
     app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
-    app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
-    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
-
-    await plugin.createNoteInFolder("notes");
-
-    expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "---\ntags:\n---\n\n");
-  });
-
-  it("creates a completely blank note when the blank template is configured", async () => {
-    const { plugin, app } = createPluginHarness();
-    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
-    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
-    mutateStoreMemory(plugin, { newNoteTemplate: "blank" });
     app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
     vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
 
     await plugin.createNoteInFolder("notes");
 
     expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "");
+  });
+
+  it("adds the created note to the captured box using its latest manual membership", async () => {
+    const { plugin, app } = createPluginHarness();
+    const box = createCardBox("Reading", []);
+    const other = createCardBox("Other", [box]);
+    mutateStoreMemory(plugin, { boxes: [box, other], activeBoxId: box.id });
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    const writing = deferred<TFile>();
+    app.vault.create.mockReturnValue(writing.promise);
+    const open = vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    const pending = plugin.createNoteInFolder("", [], {}, box.id);
+    mutateStoreMemory(plugin, {
+      activeBoxId: other.id,
+      boxes: [{ ...box, name: "Renamed", manualPaths: ["existing.md"], excludedPaths: ["Untitled.md"] }, other],
+    });
+    writing.resolve(Object.assign(new TFile(), { path: "Untitled.md" }));
+    await pending;
+
+    expect(plugin.getSettings().boxes[0]).toMatchObject({
+      id: box.id, name: "Renamed", manualPaths: ["existing.md", "Untitled.md"], excludedPaths: [],
+    });
+    expect(plugin.getSettings().boxes[1]).toEqual(other);
+    expect(plugin.getSettings().activeBoxId).toBe(other.id);
+    expect(open).toHaveBeenCalledWith("Untitled.md", "new-tab");
+  });
+
+  it("rejects a missing box before creating a note", async () => {
+    const { plugin, app } = createPluginHarness();
+    await expect(plugin.createNoteInFolder("", [], {}, "missing")).rejects.toMatchObject({ code: "missing-box" });
+    expect(app.vault.create).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a box deleted while note creation was pending", async () => {
+    const { plugin, app } = createPluginHarness();
+    const box = createCardBox("Reading", []);
+    mutateStoreMemory(plugin, { boxes: [box] });
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    const writing = deferred<TFile>();
+    app.vault.create.mockReturnValue(writing.promise);
+    const pending = plugin.createNoteInFolder("", [], {}, box.id);
+    mutateStoreMemory(plugin, { boxes: [] });
+    writing.resolve(Object.assign(new TFile(), { path: "Untitled.md" }));
+
+    await expect(pending).rejects.toMatchObject({ code: "missing-box" });
+    expect(plugin.getSettings().boxes).toEqual([]);
+  });
+
+  it("leaves box membership unchanged when note creation fails", async () => {
+    const { plugin, app } = createPluginHarness();
+    const box = createCardBox("Reading", []);
+    mutateStoreMemory(plugin, { boxes: [box] });
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.create.mockRejectedValue(new Error("write failed"));
+
+    await expect(plugin.createNoteInFolder("", [], {}, box.id)).rejects.toThrow("write failed");
+    expect(plugin.getSettings().boxes).toEqual([box]);
+  });
+
+  it("seeds an empty tags property when the tags-frontmatter template is configured", async () => {
+    const { plugin, app } = createPluginHarness();
+    app.vault.getRoot.mockReturnValue(Object.assign(new TFolder(), { path: "" }));
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => ["notes", "Projects"].includes(path) ? Object.assign(new TFolder(), { path }) : null);
+    mutateStoreMemory(plugin, { newNoteTemplate: "tags-frontmatter" });
+    app.vault.create.mockResolvedValue({ path: "notes/Untitled.md" });
+    vi.spyOn(plugin, "openNoteFromCard").mockResolvedValue(undefined);
+
+    await plugin.createNoteInFolder("notes");
+
+    expect(app.vault.create).toHaveBeenCalledWith("notes/Untitled.md", "---\ntags:\n---\n\n");
   });
 
   it("does not expose createNoteInCurrentFolder", () => {
@@ -2524,7 +2583,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
 
     await plugin.createNoteInFolder("Projects");
 
-    expect(app.vault.create).toHaveBeenCalledWith("Projects/Untitled.md", "---\ntags:\n---\n\n");
+    expect(app.vault.create).toHaveBeenCalledWith("Projects/Untitled.md", "");
     expect(openNoteFromCard).toHaveBeenCalledWith("Projects/Untitled.md", "new-tab");
   });
 

@@ -46,10 +46,17 @@ describe("ScopeNoteActions", () => {
     await h.actions.createNote();
     expect(h.createNote.mock.calls[0][0]).toBe("");
   });
+  it("uses the configured box destination while keeping browse filters paused", async () => {
+    const h = harness(createBoxScope("b"));
+    h.settings.boxNewNoteFolderPath = "Box notes";
+    await h.actions.createNote();
+    expect(h.createNote).toHaveBeenCalledWith("Box notes", [], {}, "b");
+  });
   it.each([createBoxScope("b"), createLinksScope("note.md", "backlinks")])("keeps paused browse filters out of %s", async (scope) => {
     const h = harness(scope);
     await h.actions.createNote();
-    expect(h.createNote).toHaveBeenCalledWith("recent", [], {});
+    expect(h.createNote.mock.calls[0]).toEqual(scope.kind === "box"
+      ? ["", [], {}, "b"] : ["recent", [], {}]);
   });
   it("passes snapshots unaffected by later settings changes", async () => {
     const h = harness();

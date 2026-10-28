@@ -95,6 +95,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "string" && isNewNoteTemplate(value)
         ? { newNoteTemplate: value }
         : null;
+    case "boxNewNoteFolderPath":
+      return typeof value === "string" ? { boxNewNoteFolderPath: value } : null;
     case "cardCornerRadius":
       return typeof value === "string" && isCardCornerRadius(value)
         ? { cardCornerRadius: value }
@@ -203,6 +205,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.enableHeadingDragInsert;
       case "newNoteTemplate":
         return settings.newNoteTemplate;
+      case "boxNewNoteFolderPath":
+        return settings.boxNewNoteFolderPath;
       case "cardCornerRadius":
         return settings.cardCornerRadius;
       case "uiFontSize":
@@ -346,14 +350,14 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   }
   private readonly shortcutCleanups: Array<() => void> = [];
 
-  private renderQuickInputFolderSetting(setting: Setting): void {
+  private renderNoteFolderSetting(setting: Setting, key: "quickInputFolderPath" | "boxNewNoteFolderPath"): void {
     setting.addText((text) => {
-      text.setValue(String(this.getControlValue("quickInputFolderPath")) || "/")
+      text.setValue(String(this.getControlValue(key)) || "/")
         .setPlaceholder("/")
-        .onChange((value) => this.setControlValue("quickInputFolderPath", value === "/" ? "" : value));
+        .onChange((value) => this.setControlValue(key, value === "/" ? "" : value));
       const suggest = attachFolderInputSuggest(this.app, text.inputEl, (path) => {
         text.setValue(path || "/");
-        void this.setControlValue("quickInputFolderPath", path);
+        void this.setControlValue(key, path);
       });
       this.folderSuggests.add(suggest);
     });
@@ -439,6 +443,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
               key: "newNoteTemplate",
               options: optionRecord(getNewNoteTemplateOptions(language)),
             },
+          },
+          {
+            name: strings.boxNewNoteFolderName,
+            desc: strings.boxNewNoteFolderDesc,
+            render: (setting) => this.renderNoteFolderSetting(setting, "boxNewNoteFolderPath"),
           },
         ],
       },
@@ -569,7 +578,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         heading: inputStrings.quickInputHeading,
         items: [
           { name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
-            render: (setting) => this.renderQuickInputFolderSetting(setting) },
+            render: (setting) => this.renderNoteFolderSetting(setting, "quickInputFolderPath") },
           { name: inputStrings.quickInputDuplicateTitleName, desc: inputStrings.quickInputDuplicateTitleDesc,
             control: { type: "dropdown", key: "quickInputDuplicateTitle", options: inputStrings.duplicateTitleOptions } },
           { name: inputStrings.quickInputPositionName, desc: inputStrings.quickInputPositionDesc,

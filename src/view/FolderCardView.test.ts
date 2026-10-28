@@ -613,10 +613,11 @@ describe("FolderCardView host contract", () => {
     expect(harnessB.plugin.createNoteInFolder).not.toHaveBeenCalledWith("other");
   });
 
-  it("falls back to lastFolderPath for Box new-note without switching scope or auto-adding", () => {
+  it("creates for the selected Box in its configured folder without switching scope", () => {
     const { view, plugin } = createHarness();
     Object.assign(readSettingsObject(plugin), {
-      lastFolderPath: "inbox",
+      lastFolderPath: "recent",
+      boxNewNoteFolderPath: "inbox",
       boxes: [createBox()],
       activeBoxId: "box-1",
     });
@@ -625,7 +626,7 @@ describe("FolderCardView host contract", () => {
 
     view.handleToolbarAction({ action: "new-note" });
 
-    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {});
+    expect(plugin.createNoteInFolder).toHaveBeenCalledWith("inbox", [], {}, "box-1");
     expect(view.getCardScope()).toEqual({ kind: "box", boxId: "box-1" });
     expect(addSpy).not.toHaveBeenCalled();
     expect(plugin.selectFolderByPath).not.toHaveBeenCalled();
