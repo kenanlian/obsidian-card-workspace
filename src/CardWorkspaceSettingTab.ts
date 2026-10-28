@@ -142,6 +142,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "number" && Number.isInteger(value)
         && value >= QUICK_INPUT_HEIGHT_MIN && value <= QUICK_INPUT_HEIGHT_MAX
         ? { quickInputHeight: value } : null;
+    case "quickInputCornerRadius":
+      return typeof value === "string" && isCardCornerRadius(value) ? { quickInputCornerRadius: value } : null;
     case "quickInputColor":
       return isQuickInputColor(value) ? { quickInputColor: value } : null;
     case "showNavItemCounts":
@@ -187,6 +189,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.quickInputWidth;
       case "quickInputHeight":
         return settings.quickInputHeight;
+      case "quickInputCornerRadius":
+        return settings.quickInputCornerRadius;
       case "quickInputColor":
         return settings.quickInputColor;
       case "backlinkSnippetCount":
@@ -580,8 +584,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           { name: inputStrings.quickInputColorName, desc: inputStrings.quickInputColorDesc,
             control: { type: "dropdown", key: "quickInputColor", options: {
               random: inputStrings.colorRandom, accent: inputStrings.colorAccent,
+              primary: inputStrings.colorPrimary, secondary: inputStrings.colorSecondary,
               ...Object.fromEntries(QUICK_INPUT_TINTS.map((tint) => [tint, inputStrings.colorNames[tint]])),
             } } },
+          { name: inputStrings.quickInputCornerRadiusName, desc: inputStrings.quickInputCornerRadiusDesc,
+            control: { type: "dropdown", key: "quickInputCornerRadius", options: optionRecord(getCardCornerRadiusOptions(language)) } },
           ...Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map((key, index): WorkspaceSettingDefinition => ({
             name: inputStrings.visibilityNames[key as keyof QuickInputVisibility],
             desc: index === 0 ? inputStrings.visibilityDesc : "",

@@ -130,6 +130,7 @@ export class QuickInputWindowManager {
     root.setAttribute("aria-label", strings.quickInput);
     root.setAttribute("aria-modal", "false");
     const tint = this.resolveTint(settings);
+    win.document.body.dataset.quickInputRadius = settings.quickInputCornerRadius;
     root.dataset.color = tint.name;
     root.style.setProperty("--fce-quick-input-tint", tint.value);
     const top = root.createDiv({ cls: "fce-quick-input-grip" });
@@ -371,6 +372,7 @@ export class QuickInputWindowManager {
 
   private resolveTint(settings: PluginSettings): { name: string; value: string } {
     const color = settings.quickInputColor;
+    if (color === "primary" || color === "secondary") return { name: color, value: `var(--background-${color})` };
     if (color === "accent") return { name: "accent", value: "var(--interactive-accent)" };
     let tint: QuickInputTint;
     if (color === "random") {

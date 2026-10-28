@@ -116,6 +116,16 @@ beforeEach(() => {
 afterEach(() => { manager.dispose(); Object.assign(Platform, { isMacOS: false, isWin: false }); document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 describe("modeless quick input", async () => {
+  it.each(["compact", "medium", "rounded"] as const)("applies the %s window radius and shows the default draft controls", async (radius) => {
+    settings.quickInputCornerRadius = radius;
+    await manager.open();
+    expect(root().ownerDocument.body.dataset.quickInputRadius).toBe(radius);
+    expect(root().querySelector(".fce-quick-input-title")).not.toBeNull();
+    for (const cls of ["folder", "boxes", "tags", "property"]) {
+      expect(root().querySelector<HTMLButtonElement>(`.fce-quick-input-${cls}`)!.hidden).toBe(false);
+    }
+  });
+
   it("opens a blank draft that ignores registered templates and submits the edited draft", async () => {
     settings.noteTemplates = [{ id: "daily", filePath: "Templates/template.md", targetFolderPath: "", dateFormat: "YYYY", timeFormat: "HH" }];
     (settings.quickInput as unknown as Record<string, unknown>).templateId = "daily";
@@ -644,6 +654,7 @@ describe("draft target controls", () => {
     expect(submit.mock.calls[0][0].target!.title).toBe(original);
   });
   it("keeps Ctrl+; available when the property button is hidden", async () => {
+    settings.quickInputVisibility.properties = false;
     await manager.open();
     expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-property")!.hidden).toBe(true);
     root().dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
@@ -803,7 +814,7 @@ it("chooses the save folder from a native single-choice picker", async () => {
   picker.options.select("Inbox"); picker.dispose();
   expect(folderButton.title).toBe("Inbox");
   submit.mockReturnValue(new Promise(() => {})); send().click();
-  expect(submit.mock.calls[0][0].config.folderPath).toBe("Inbox");
+  expect(submit.mock.calls[0][0].target?.folderPath).toBe("Inbox");
 });
 
 it("routes the property shortcut from draft-document popovers outside the editor root", async () => {

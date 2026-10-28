@@ -80,6 +80,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   quickInputWidth: "patch",
   quickInputHeight: "patch",
   quickInputColor: "patch",
+  quickInputCornerRadius: "patch",
   noteTemplates: "patch",
   previewLines: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
@@ -131,10 +132,11 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "blank"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
     case "quickInput": settings.quickInput = { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "number" }; break;
-    case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: true }; break;
+    case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: !settings.quickInputVisibility.title }; break;
     case "quickInputGlobalShortcut": settings.quickInputGlobalShortcut = "Control+Shift+Q"; break;
     case "quickInputWidth": settings.quickInputWidth += 10; break;
     case "quickInputHeight": settings.quickInputHeight += 10; break;
+    case "quickInputCornerRadius": settings.quickInputCornerRadius = "compact"; break;
     case "quickInputColor": settings.quickInputColor = "blue"; break;
     case "noteTemplates": settings.noteTemplates = [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" }]; break;
     case "cardImageMode": settings.cardImageMode = "off"; break;

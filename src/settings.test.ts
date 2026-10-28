@@ -1159,7 +1159,7 @@ describe("card grouping settings normalization", () => {
         quickInput: DEFAULT_SETTINGS.quickInput,
         quickInputVisibility: DEFAULT_SETTINGS.quickInputVisibility,
         quickInputGlobalShortcut: "",
-        quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random",
+        quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
         templateStorageFolder: DEFAULT_SETTINGS.templateStorageFolder,
         searchPreviewSnippetCount: 2,
         hoverPreviewWidth: 600,
@@ -1656,6 +1656,7 @@ describe("settings layer manifest (C4)", () => {
     quickInputWidth: "preferences",
     quickInputHeight: "preferences",
     quickInputColor: "preferences",
+    quickInputCornerRadius: "preferences",
     quickInputGlobalShortcut: "preferences",
     cardImageMode: "preferences",
     cardImageFit: "preferences",
@@ -1753,6 +1754,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     quickInputWidth: 640,
     quickInputHeight: 360,
     quickInputColor: "purple",
+    quickInputCornerRadius: "medium",
     quickInputGlobalShortcut: "Control+Shift+Q",
     templateStorageFolder: "My Templates",
     noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYYMMDD", timeFormat: "HH-mm" }],
@@ -1811,6 +1813,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["quickInputWidth", (d) => d.preferences.quickInputWidth, 640],
     ["quickInputHeight", (d) => d.preferences.quickInputHeight, 360],
     ["quickInputColor", (d) => d.preferences.quickInputColor, "purple"],
+    ["quickInputCornerRadius", (d) => d.preferences.quickInputCornerRadius, "medium"],
     ["quickInputGlobalShortcut", (d) => d.preferences.quickInputGlobalShortcut, "Control+Shift+Q"],
     ["noteTemplates", (d) => d.userData.noteTemplates, nonDefault.noteTemplates],
     ["cardImageMode", (d) => d.preferences.cardImageMode, "off"],
@@ -1927,11 +1930,26 @@ describe("migrateSettings — future schema refusal (C4)", () => {
   });
 });
 
+describe("quick input corner radius", () => {
+  it("repairs invalid values and preserves the three supported options", () => {
+    for (const value of [undefined, null, "invalid", 24]) {
+      expect(normalizeSettings({ quickInputCornerRadius: value }).quickInputCornerRadius).toBe("rounded");
+    }
+    for (const value of ["compact", "medium", "rounded"]) {
+      expect(normalizeSettings({ quickInputCornerRadius: value }).quickInputCornerRadius).toBe(value);
+    }
+  });
+});
+
 describe("quick input visibility", () => {
-  it("defaults only the folder control on and repairs individual malformed items", () => {
-    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: false, folder: true, boxes: false, tags: false, properties: false });
+  it("defaults all controls on and repairs individual malformed items", () => {
+    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true });
     expect(normalizeSettings({ quickInputVisibility: { title: true, folder: 0, boxes: true, tags: "yes", properties: true } } as never).quickInputVisibility)
-      .toEqual({ title: true, folder: true, boxes: true, tags: false, properties: true });
+      .toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true });
+  });
+  it("preserves explicitly hidden controls", () => {
+    const visibility = { title: false, folder: false, boxes: false, tags: false, properties: false };
+    expect(normalizeSettings({ quickInputVisibility: visibility }).quickInputVisibility).toEqual(visibility);
   });
   it("drops the retired save-status switch from persisted data", () => {
     expect(normalizeSettings({ quickInputVisibility: { folder: true, status: true } } as never).quickInputVisibility).not.toHaveProperty("status");

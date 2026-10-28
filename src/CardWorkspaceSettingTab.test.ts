@@ -61,7 +61,7 @@ function createPlugin(
       enableHeadingDragInsert: false,
       newNoteTemplate: "blank",
       quickInput: { folderPath: "", insertPosition: "end", duplicateTitle: "ask" }, noteTemplates: [],
-      quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random",
+      quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
       previewLines: 6,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
@@ -666,8 +666,10 @@ describe("quick input shared setting definitions", () => {
     expect(items[4]).toMatchObject({ name: strings.quickInputHeightName,
       control: { type: "slider", key: "quickInputHeight", min: 200, max: 800, step: 10 } });
     expect(items[5]).toMatchObject({ name: strings.quickInputColorName, control: { type: "dropdown", key: "quickInputColor" } });
+    expect(items[6]).toMatchObject({ name: strings.quickInputCornerRadiusName,
+      control: { type: "dropdown", key: "quickInputCornerRadius", options: { compact: expect.any(String), medium: expect.any(String), rounded: expect.any(String) } } });
     expect(Object.keys((items[5]!.control as { options: Record<string, string> }).options)).toEqual(
-      ["random", "accent", "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"]);
+      ["random", "accent", "primary", "secondary", "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"]);
     expect((items[5]!.control as { options: Record<string, string> }).options.random).toBe(strings.colorRandom);
   });
 
@@ -753,6 +755,6 @@ describe("quick input visibility settings", () => {
     expect(toggles.map((entry) => entry.desc)).toEqual([getUiStrings("en").noteInput.visibilityDesc, "", "", "", ""]);
     expect(tab.getControlValue("quickInputVisibility.folder")).toBe(true);
     await tab.setControlValue("quickInputVisibility.title", true);
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputVisibility: { title: true, folder: true, boxes: false, tags: false, properties: false } });
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputVisibility: { title: true, folder: true, boxes: true, tags: true, properties: true } });
   });
 });

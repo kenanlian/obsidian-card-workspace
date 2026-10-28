@@ -40,6 +40,7 @@ export interface PreferencesSettings {
   quickInputWidth: number;
   quickInputHeight: number;
   quickInputColor: PluginSettings["quickInputColor"];
+  quickInputCornerRadius: PluginSettings["quickInputCornerRadius"];
   templateStorageFolder: string;
   previewLines: number;
   searchPreviewSnippetCount: number;
@@ -180,6 +181,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
   if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
   if (patch.quickInputHeight !== undefined) preferences.quickInputHeight = patch.quickInputHeight;
+  if (patch.quickInputCornerRadius !== undefined) preferences.quickInputCornerRadius = patch.quickInputCornerRadius;
   if (patch.quickInputColor !== undefined) preferences.quickInputColor = patch.quickInputColor;
   if (patch.templateStorageFolder !== undefined) preferences.templateStorageFolder = patch.templateStorageFolder;
   if (patch.cardImageMode !== undefined) preferences.cardImageMode = patch.cardImageMode;
@@ -254,6 +256,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       quickInputWidth: settings.quickInputWidth,
       quickInputHeight: settings.quickInputHeight,
       quickInputColor: settings.quickInputColor,
+      quickInputCornerRadius: settings.quickInputCornerRadius,
       templateStorageFolder: settings.templateStorageFolder,
       previewLines: settings.previewLines,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,

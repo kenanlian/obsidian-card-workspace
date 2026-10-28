@@ -90,19 +90,44 @@ describe("native Markdown editor compatibility seam", () => {
   it("pushes focus scope once, restores the underlying editor on blur, and never overwrites another focus owner", () => {
     const f = fixture(); const adapter = f.open();
     const content = f.container.querySelector<HTMLElement>(".cm-content")!;
-    content.dispatchEvent(new FocusEvent("focusin")); content.dispatchEvent(new FocusEvent("focusin"));
+    content.dispatchEvent(new FocusEvent("focus")); content.dispatchEvent(new FocusEvent("focus"));
     expect(f.keymap.pushScope).toHaveBeenCalledOnce();
     expect(f.workspace.activeEditor).not.toBe(f.underlying);
     content.dispatchEvent(new FocusEvent("focusout"));
     expect(f.workspace.activeEditor).toBe(f.underlying);
     expect(f.keymap.popScope).toHaveBeenCalledOnce();
-    content.dispatchEvent(new FocusEvent("focusin"));
+    content.dispatchEvent(new FocusEvent("focus"));
     const other = { marker: "other-window" }; f.workspace.activeEditor = other;
     adapter.dispose(); adapter.dispose();
     expect(f.workspace.activeEditor).toBe(other);
     expect(f.keymap.popScope).toHaveBeenCalledTimes(2);
     expect(f.destroyed).toHaveBeenCalledOnce();
-    content.dispatchEvent(new FocusEvent("focusin")); expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+    content.dispatchEvent(new FocusEvent("focus")); expect(f.keymap.pushScope).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["tags", "property"])("keeps the %s completion scope above the draft scope when focusing from a toolbar button", (kind) => {
+    const f = fixture();
+    f.open();
+    const activeScopes: unknown[] = [];
+    f.keymap.pushScope.mockImplementation((scope) => { activeScopes.push(scope); });
+    f.keymap.popScope.mockImplementation((scope) => { activeScopes.splice(activeScopes.indexOf(scope), 1); });
+    const toolbar = document.createElement("button"); document.body.append(toolbar); toolbar.focus();
+    const input: HTMLElement = document.createElement(kind === "tags" ? "div" : "input");
+    if (kind === "tags") { input.contentEditable = "true"; input.tabIndex = 0; }
+    f.container.append(input);
+    const completion = { selectNext: vi.fn() };
+    input.addEventListener("focus", () => f.app.keymap.pushScope(completion as never));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" && activeScopes[activeScopes.length - 1] === completion) {
+        completion.selectNext(); event.preventDefault();
+      }
+    });
+    input.focus();
+    const key = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    input.dispatchEvent(key);
+    expect(completion.selectNext).toHaveBeenCalledOnce();
+    expect(key.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(input);
   });
 
   it("routes ModEnter through its owned scope and removes editing permission while pending", () => {

@@ -45,7 +45,7 @@ export interface QuickInputVisibility {
   properties: boolean;
 }
 export const DEFAULT_QUICK_INPUT_VISIBILITY: QuickInputVisibility = {
-  title: false, folder: true, boxes: false, tags: false, properties: false,
+  title: true, folder: true, boxes: true, tags: true, properties: true,
 };
 export function normalizeQuickInputVisibility(value: unknown): QuickInputVisibility {
   const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};

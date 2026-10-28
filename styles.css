@@ -2347,6 +2347,12 @@ html.fce-quick-input-window:root > body::after { display: none; }
 html.fce-quick-input-window:root > body {
   --fce-quick-input-radius: max(24px, calc(var(--input-height, 32px) / 2), var(--radius-l, 12px));
 }
+html.fce-quick-input-window:root > body[data-quick-input-radius="compact"] {
+  --fce-quick-input-radius: 8px;
+}
+html.fce-quick-input-window:root > body[data-quick-input-radius="medium"] {
+  --fce-quick-input-radius: 16px;
+}
 /* Native prompts cover the whole transparent window: clip their backdrop to the card and fit the prompt inside it. */
 html.fce-quick-input-window:root > body > .modal-container {
   border-radius: var(--fce-quick-input-radius);
@@ -2396,6 +2402,10 @@ html.fce-quick-input-window .modal-container .modal {
   background: color-mix(in srgb, var(--fce-quick-input-tint) 12%, var(--background-secondary));
   color: var(--text-normal);
   box-shadow: inset 0 0 0 1px var(--fce-quick-input-border);
+}
+.fce-quick-input[data-color="primary"],
+.fce-quick-input[data-color="secondary"] {
+  background: var(--fce-quick-input-tint);
 }
 /* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
 @supports (color: color(from white srgb-linear round(up, r, 1) g b)) {

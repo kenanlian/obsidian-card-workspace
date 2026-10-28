@@ -677,6 +677,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["quickInputWidth", { quickInputWidth: 640 }],
     ["quickInputHeight", { quickInputHeight: 360 }],
     ["quickInputColor", { quickInputColor: "purple" }],
+    ["quickInputCornerRadius", { quickInputCornerRadius: "medium" }],
     ["cardImageMode", { cardImageMode: "inline" }],
     ["cardImageFit", { cardImageFit: "cover" }],
     ["showNavItemCounts", { showNavItemCounts: true }],

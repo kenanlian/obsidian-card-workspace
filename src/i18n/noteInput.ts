@@ -72,10 +72,14 @@ export interface NoteInputStrings {
   quickInputWidthName: string;
   quickInputHeightName: string;
   quickInputDimensionDesc: (min: number, max: number, defaultValue: number) => string;
+  quickInputCornerRadiusName: string;
+  quickInputCornerRadiusDesc: string;
   quickInputColorName: string;
   quickInputColorDesc: string;
   colorRandom: string;
   colorAccent: string;
+  colorPrimary: string;
+  colorSecondary: string;
   colorNames: Record<"red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "pink", string>;
   destinationLocation: string;
   destinationTemplate: string;
@@ -155,9 +159,12 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     quickInputWidthName: "Quick input width", quickInputHeightName: "Quick input height",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `Size in pixels (${min}–${max}; default ${defaultValue}) for each new draft. Resizing a draft only affects that draft; it shrinks to fit the window.`,
+    quickInputCornerRadiusName: "Quick input corner radius",
+    quickInputCornerRadiusDesc: "Adjust the corner radius of the entire quick input window.",
     quickInputColorName: "Quick input frame color",
     quickInputColorDesc: "Random picks a different theme color for each new draft.",
     colorRandom: "Random", colorAccent: "Accent color",
+    colorPrimary: "Theme primary background", colorSecondary: "Theme secondary background",
     colorNames: { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", cyan: "Cyan", blue: "Blue", purple: "Purple", pink: "Pink" },
     destinationLocation: "Location", destinationTemplate: "Template", destinationUnavailable: "Destination unavailable",
     insertStart: "Start of note", insertEnd: "End of note", rootFolder: "Vault root",
@@ -225,9 +232,12 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     quickInputWidthName: "快速输入窗口宽度", quickInputHeightName: "快速输入窗口高度",
     quickInputDimensionDesc: (min, max, defaultValue) =>
       `每个新草稿的尺寸，单位为像素（${min}–${max}，默认 ${defaultValue}）。拖拽调整只影响当前草稿，会随窗口大小收缩。`,
+    quickInputCornerRadiusName: "快速输入窗口圆角",
+    quickInputCornerRadiusDesc: "调整整个快速输入窗口的圆角程度。",
     quickInputColorName: "快速输入边框颜色",
     quickInputColorDesc: "选择“随机”时，每个新草稿使用一种与上次不同的主题颜色。",
     colorRandom: "随机", colorAccent: "强调色",
+    colorPrimary: "主题主背景", colorSecondary: "主题次背景",
     colorNames: { red: "红色", orange: "橙色", yellow: "黄色", green: "绿色", cyan: "青色", blue: "蓝色", purple: "紫色", pink: "粉色" },
     destinationLocation: "位置", destinationTemplate: "模板", destinationUnavailable: "目标不可用",
     insertStart: "笔记开头", insertEnd: "笔记末尾", rootFolder: "仓库根目录", inputPlaceholder: "记录笔记…", send: "发送", sending: "发送中…",

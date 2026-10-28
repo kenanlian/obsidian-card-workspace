@@ -171,7 +171,9 @@ export function createNativeMarkdownEditor(options: {
     properties = createDraftPropertiesEditor({ app, container, editor: native.editor, Constructor: capabilities.Properties });
     if (properties) native.editor.cm.dispatch({ effects: propertiesExtension.reconfigure(properties.extension) });
     const focusOut = (event: FocusEvent) => { if (!container.contains(event.relatedTarget as Node | null)) releaseFocus(); };
-    container.addEventListener("focusin", takeFocus, true);
+    // Capture focus before native inputs open completion scopes in their own
+    // focus handlers. Pushing ours on focusin would cover the completion scope.
+    container.addEventListener("focus", takeFocus, true);
     container.addEventListener("focusout", focusOut, true);
     const win = container.ownerDocument.defaultView!;
     const focusWindow = () => {
@@ -225,7 +227,7 @@ export function createNativeMarkdownEditor(options: {
       dispose: () => {
         if (disposed) return;
         disposed = true;
-        container.removeEventListener("focusin", takeFocus, true);
+        container.removeEventListener("focus", takeFocus, true);
         container.removeEventListener("focusout", focusOut, true);
         win.removeEventListener("blur", releaseFocus);
         win.removeEventListener("focus", focusWindow);
