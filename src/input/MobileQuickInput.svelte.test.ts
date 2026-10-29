@@ -21,7 +21,7 @@ vi.mock("obsidian", async importOriginal => {
     open() { document.body.append(this.modalEl); this.onOpen(); }
     close() { this.onClose(); this.modalEl.remove(); }
   }
-  return { ...actual, Modal };
+  return { ...actual, Modal, moment: (await import("moment")).default };
 });
 vi.mock("../view/modals/compat-modal", () => ({ CompatConfirmationModal: class {
   discard = () => {}; onClose = () => {}; actions: Array<() => void> = [];

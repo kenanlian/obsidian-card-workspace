@@ -1,3 +1,5 @@
+import moment from "moment";
+export { moment };
 /** Explicit host substitutes for the production bundle admission test. */
 export * from "../src/__mocks__/obsidian";
 import { TFile, TFolder } from "../src/__mocks__/obsidian";
@@ -92,14 +94,22 @@ export function createApp() {
     return { stop: () => entries!.delete(callback) };
   };
   const file = Object.assign(new TFile(), { path: "note.md", basename: "note", extension: "md", name: "note.md", stat: { mtime: 1, ctime: 1, size: 14 } });
+  const files = new Map([[file.path, file]]);
+  const created: Array<{ path: string; content: string }> = [];
   const root = Object.assign(new TFolder(), { path: "", name: "/", children: [file] });
   const leaves: Array<Record<string, any>> = []; let ready = () => {}; let plugin: Plugin;
   const local = new Map<string, unknown>();
   const app = {
     loadLocalStorage: (key: string) => local.get(key) ?? null,
     saveLocalStorage: (key: string, data: unknown) => { local.set(key, data); },
-    vault: { adapter: {}, on, getRoot: () => root, getFiles: () => [file], getMarkdownFiles: () => [file], getName: () => "synthetic-bundle-vault",
-      getAbstractFileByPath: (path: string) => path === "" ? root : path === file.path ? file : null,
+    vault: { adapter: {}, on, getRoot: () => root, getFiles: () => [...files.values()], getMarkdownFiles: () => [...files.values()], getName: () => "synthetic-bundle-vault",
+      getAbstractFileByPath: (path: string) => path === "" ? root : files.get(path) ?? null,
+      offref: (ref: { stop(): void }) => ref.stop(),
+      create: async (path: string, content: string) => {
+        if (files.has(path)) throw new Error("File already exists");
+        const note = Object.assign(new TFile(), { path, basename: path.replace(/\.md$/, ""), extension: "md", name: path, stat: { mtime: 2, ctime: 2, size: content.length } });
+        files.set(path, note); root.children.push(note); created.push({ path, content }); return note;
+      },
       cachedRead: async () => "Core browsing preview", readBinary: async () => new ArrayBuffer(0) },
     metadataCache: { on, getFileCache: () => ({}), resolvedLinks: {}, getFirstLinkpathDest: () => null },
     fileManager: {}, workspace: {
@@ -118,5 +128,5 @@ export function createApp() {
       },
     };
   }
-  return { app, file, leaves, layoutReady: () => ready(), bind: (value: Plugin) => { plugin = value; } };
+  return { app, file, leaves, created, layoutReady: () => ready(), bind: (value: Plugin) => { plugin = value; } };
 }

@@ -60,7 +60,16 @@ try {
     assert.equal((await plugin.openQuickInput()).outcome, "ok");
     await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(win.document.querySelectorAll(".fce-mobile-quick-input").length, 1);
-    assert(win.document.querySelector(".fce-mobile-draft-source"), "Missing native editor must retain a source editor");
+    const draft = win.document.querySelector(".fce-mobile-draft-source");
+    assert(draft, "Missing native editor must retain a source editor");
+    assert(win.document.querySelector(".fce-quick-input-title"), "Mobile must use main's template-independent titled draft");
+    draft.value = "Mobile merge submission"; draft.dispatchEvent(new win.Event("input", { bubbles: true }));
+    const send = win.document.querySelector(".fce-mobile-quick-input button.mod-cta");
+    assert.equal(send.disabled, false); send.click(); send.click();
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(fixture.created.length, 1, "Repeated Send must write once through the plugin coordinator");
+    assert.equal(fixture.created[0].content, "Mobile merge submission");
+    assert.equal(win.document.querySelectorAll(".fce-mobile-quick-input").length, 0);
     assert.equal(plugin.runtimePlatform.quickInputDesktop().outcome, "unavailable");
   assert.equal((await plugin.openNoteFromCard("note.md", "new-window")).outcome, "unavailable");
   assert.equal((await plugin.runtimePlatform.openWindow()).outcome, "unavailable");

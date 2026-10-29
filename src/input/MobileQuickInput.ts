@@ -77,7 +77,7 @@ export class MobileQuickInput extends Modal {
       if (visibility.title) {
         this.initialTitle = new NoteCreationService(this.app).defaultQuickInputTitle(session.context.now);
         session.context.target = { title: this.initialTitle, folderPath: config.folderPath };
-        const title = body.ownerDocument.createElement("input"); this.title = title;
+        const title = body.createEl("input"); this.title = title;
         title.className = "inline-title fce-quick-input-title";
         title.placeholder = this.initialTitle; title.setAttribute("aria-label", strings.noteInput.title);
         this.editor.mountTitle(title);

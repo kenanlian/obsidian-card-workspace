@@ -1815,7 +1815,7 @@ describe("CardWorkspacePlugin open destination routing", () => {
     app.vault.getAbstractFileByPath.mockReturnValue(file);
     try {
       await plugin.openNoteFromCard(file.path, "new-tab");
-      expect(open).toHaveBeenCalledWith(app, file.path);
+      expect(open).toHaveBeenCalledWith(app, file.path, plugin.getUiStrings().desktopShell);
       expect(app.workspace.getLeaf).not.toHaveBeenCalled();
       if (!success) expect(obsidianMockState.notices).toContain("No default app");
     } finally { open.mockRestore(); }
