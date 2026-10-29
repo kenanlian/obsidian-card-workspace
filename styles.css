@@ -2577,3 +2577,72 @@ html.fce-quick-input-window .modal-container .modal {
 .fce-quick-input-choice-row .fce-quick-input-choice-name { flex: 1 1 auto; min-width: 0; }
 .fce-quick-input-choice-check { display: inline-flex; flex: 0 0 16px; }
 .fce-quick-input-choice-check svg { width: 16px; height: 16px; }
+/* Device policy stays fixed; container width alone controls tablet pane layout. */
+.folder-card-view .fce-shell[data-fce-device="phone"],
+.folder-card-view .fce-shell[data-fce-device="tablet"] {
+  min-width: 0;
+  max-height: var(--fce-region-height, 100%);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  --fce-card-min-width: 240px;
+}
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-wall-row-grid { grid-template-columns: minmax(0, 1fr); }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-main-pane,
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-main-pane { display: flex; min-width: 0; }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar,
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar { flex-wrap: wrap; min-width: 0; }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar > *,
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar > * { max-width: 100%; min-width: 0; }
+.folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
+.folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,
+.fce-mobile-navigation :is(button, .fce-tree-row),
+.fce-mobile-quick-input button { min-height: 44px; min-width: 44px; }
+.folder-card-view .fce-shell[data-fce-device="phone"] :is(input, textarea),
+.folder-card-view .fce-shell[data-fce-device="tablet"] :is(input, textarea),
+.fce-mobile-navigation input,
+.fce-mobile-quick-input :is(input, textarea, .cm-content) { font-size: max(16px, var(--font-text-size)); }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-more-actions-btn,
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-more-actions-btn,
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-nav-row-more,
+.fce-mobile-navigation .fce-nav-row-more { opacity: 1; visibility: visible; }
+.fce-mobile-navigation.modal {
+  width: min(90vw, 360px); height: calc(100dvh - env(safe-area-inset-top, 0px));
+  max-height: 100dvh; margin-inline-start: 0; margin-inline-end: auto;
+  align-self: stretch; border-radius: 0;
+}
+.fce-mobile-navigation .modal-content { display: flex; min-height: 0; margin: 0; }
+.fce-mobile-navigation .fce-nav-pane { display: flex; width: 100%; min-width: 0; flex: 1; }
+.fce-mobile-navigation .fce-nav-resize-handle { display: none; }
+.fce-mobile-quick-input.modal {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  top: calc(var(--fce-viewport-top, 0px) + max(0px, (var(--fce-viewport-height, 100dvh) - 640px) / 2));
+  width: min(720px, 96vw); height: min(640px, var(--fce-viewport-height, 90dvh)); max-height: var(--fce-viewport-height, 90dvh);
+}
+.fce-mobile-quick-input.is-phone.modal {
+  top: var(--fce-viewport-top, 0px); left: 0; transform: none;
+  width: 100vw; max-width: 100vw; height: var(--fce-viewport-height, 100dvh); border-radius: 0;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.fce-mobile-quick-input .modal-content { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.fce-mobile-quick-input-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fce-mobile-quick-input .fce-quick-input-editor { flex: 1; min-height: 0; overflow: auto; }
+.fce-mobile-quick-input .fce-quick-input-footer { flex-shrink: 0; flex-wrap: wrap; }
+.fce-mobile-draft-source { width: 100%; height: 100%; min-height: 100px; resize: none; }
+.fce-copy-fallback { width: 100%; min-height: 200px; font-size: 16px; }
+body.is-mobile .fce-compat-modal { max-width: calc(100vw - 16px); max-height: 90dvh; overflow: auto; }
+body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
+
+.fce-mobile-quick-input .fce-quick-input-title {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 8px;
+  font-size: max(16px, var(--h3-size));
+}
+.fce-mobile-quick-input .fce-quick-input-folder {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

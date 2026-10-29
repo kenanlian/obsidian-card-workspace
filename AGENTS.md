@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-**Card Workspace** (also "Folder Card Explorer") is a desktop-only Obsidian plugin that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar**. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
+**Card Workspace** (also "Folder Card Explorer") is an Obsidian plugin for desktop, phones and tablets that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar** on desktop and the main workspace on mobile. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
 
 - **Plugin ID**: `card-workspace`
-- **Version**: `1.3.6` (source of truth: `manifest.json`)
+- **Version**: `1.4.9` (source of truth: `manifest.json`)
 - **License**: GPL-3.0-only (previous releases through 1.4.2 retain MIT)
 - **Min Obsidian**: `1.11.4` (`SettingGroup` is available; confirmation dialogs and declarative settings use capability-checked 1.13+ APIs with legacy fallbacks; do not use APIs tagged `@since 1.13.1` or later)
 - **Runtime dependencies**: `minisearch` ^7.2.0 and `yaml` ^2.9.1 (bundled)
-- **Desktop only**: `manifest.json` declares `isDesktopOnly: true`
+- **Platforms**: `manifest.json` declares `isDesktopOnly: false`; device policy is injected and frozen at plugin construction.
 
 ## Documentation Map
 
@@ -33,6 +33,22 @@ Enumerable implementation details (settings keys, panel fields, module methods) 
 - **Search boundary**: indexed-only search via `IndexStore` + `SearchIndexManager` + `IndexedSearchService`; non-empty queries stay blocked until the index is ready; `src/search/` has no runtime dependency on `src/view/`
 - **Settings**: `SettingsStore` owns three-layer persistence; `getFlat()` is the flattened `PluginSettings` read view; `schemaVersion` is 2. A future schema is degraded read-only operation (defaults in memory, no write), not a migration
 
+## Mobile behavior
+
+See `docs/mobile.md` for device behavior, settings ownership and real-device acceptance.
+`src/runtime/platform-services.ts` selects desktop/phone/tablet once; `resource-budget.ts`
+freezes policy independent of viewport changes. Desktop uses path cache identity;
+mobile resolves a vault-local UUID once for search and thumbnails, disabling persistent
+caches when local storage is unavailable. `SettingsStore` merges vault-local device
+settings without writing merged device values into shared `data.json`.
+
+Mobile navigation moves the existing navigation DOM into a host Modal in single-pane
+mode. `ScopeController` signals committed user scope changes; the view implements host
+history state, and runtime reading anchors are retained per leaf. Quick input uses one
+host Modal per plugin, sharing target validation and frozen submission sessions with
+desktop windows; missing native editing falls back to full Markdown source. Touch menus
+publish ordinary host intents and share insertion text generation with desktop drops.
+
 ## Current Project Status
 
 - Quick-input drafts use the native Properties component for supported flat frontmatter, backed by the same complete CodeMirror document as the body. `src/input/draft-frontmatter.ts` owns comment-preserving YAML updates; `native-properties-editor.ts` owns optional native component lifecycle and display-only decorations. Unsupported/invalid YAML or missing native capabilities retain source editing. Submission flushes the active property input before freezing the request; both properties and Markdown remain read-only during pending/frozen retries.
@@ -48,9 +64,11 @@ Enumerable implementation details (settings keys, panel fields, module methods) 
 - A deterministic search benchmark harness exists (`npm run benchmark:search`, documented in `.dev/search-benchmark.md`). It reuses production preparation, the capped index tokenizer, MiniSearch options, and production `addDocumentsWithYield` over seeded synthetic fixtures (`smoke`, `full`, and `xl`), writes a schema-v2 JSON diagnostic report to a caller-supplied path, and never touches a real vault or IndexedDB. It always enforces correctness assertions. Only when `--max-slice-ms` is passed does it also enforce two blocking-slice ceilings: the flag's value for the production budgeted-ingest phase (`minisearch-budgeted-ingest`) and a fixed 750 ms for `minisearch-to-json` and `persist-structured-clone`. The global max blocking slice is reported and stays outside that gate. Deliberate large-vault runs use `--profile xl --max-slice-ms 300`. The `xl` profile stays out of CI.
 - The persisted index is a structured-clone object, not a JSON string. Do not reintroduce `JSON.stringify` on a whole-vault index: it blocks the main thread and can exceed the engine's maximum string length.
 - Index documents are capped at 512KB of markdown each and, on the index tokenizer, at 50,000 terms per indexed field (`title` and `content`). The index covers titles for all Vault files independently of display visibility; only Markdown contributes body content, and attachments are never read for search. Content past the term budget is not searchable. Query tokenization stays uncapped.
-- A full build persists an attempt marker before it starts and clears it only on success. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
+- A guarded full rebuild persists an attempt marker before it starts, clears it on success, and restores the prior count after cooperative cancellation has cleaned up. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
 - Plugin surfaces register synchronously; restored card scope foreground work is the complete card publish, and it still completes before `searchCoordinator.initialize()`. `reconcileInitial` schedules the vault tag scan with `scheduleIdleTask` at 10_000ms. Full-vault search scans then wait for an idle window.
-- Production builds are minified and automatically checked for externals and sourcemap policy.
+- Production builds are minified and checked for externals/sourcemaps plus native-free bundle startup and real Svelte browsing (`scripts/check-runtime-bundle.mjs`).
+- `src/runtime/` holds injected platform contracts, immutable resource budgets, activity/work gates and bounded aggregate diagnostics. Desktop defaults remain unchanged. Shared actions/controllers must not import desktop adapters; capability checks belong to the injected platform result.
+- All workspace documents hidden pauses full-source work; each hidden card region pauses its automatic preview/image queue. Incremental events and writes continue. Never wait on a work gate while holding a mutation lock.
 - `lastFolderPath = ""` is the persisted vault-root folder scope.
 - Startup restores **folder** scope only when a card-view leaf already exists, and forces `activeBoxId = null`. Enabling the plugin does not create a leaf. The ribbon, the `open-view` command, and that restore each activate the view and, when it has never loaded a scope, dispatch the persisted folder scope (`lastFolderPath`, with `""` still meaning vault root).
 - Default card open behavior is owned by `main.ts`.
@@ -159,7 +177,7 @@ CI already runs this chain with lint first. The source scan follows the official
 - Prefer `app.vault`, `cachedRead()`, and FileManager/Vault APIs over lower-level adapter access
 - Keep `onload()` light; expensive vault/watcher work belongs behind `workspace.onLayoutReady()`
 - Register plugin-owned events and DOM listeners with Obsidian cleanup helpers
-- `manifest.json` is desktop-only; do not add mobile assumptions without updating that contract
+- Mobile surfaces use the injected platform device class and capability-checked host adapters. Desktop defaults and the minimum 1.11.4 contract remain unchanged.
 
 ### CSS
 

@@ -29,6 +29,26 @@ describe("thumbnail IndexedDB", () => {
     expect(await store.get(key("folder/a.png"))).toBeNull(); expect(await store.get(key("folderish/a.png"))).not.toBeNull(); store.close();
   });
 
+  it("survives quota failures without putting image failures into file operations", async () => {
+    const factory = new IDBFactory(), open = factory.open.bind(factory);
+    factory.open = (...args) => {
+      const request = open(...args);
+      request.addEventListener("success", () => {
+        const db = request.result, transaction = db.transaction.bind(db);
+        db.transaction = (...txArgs) => {
+          const tx = transaction(...txArgs);
+          // Abort only the thumbnail write transaction; the cache stays optional.
+          if (tx.mode === "readwrite") queueMicrotask(() => tx.abort());
+          return tx;
+        };
+      });
+      return request;
+    };
+    const store = new ThumbnailStore("quota-fixture", factory);
+    await expect(store.put("key", new Blob(["thumb"]))).resolves.toBeUndefined();
+    expect(await store.get("key")).toBeNull(); store.close();
+  });
+
   it("degrades to memory operation with unavailable IndexedDB", async () => {
     const store = new ThumbnailStore("a", null); await store.put("key", new Blob(["x"]));
     expect(await store.get("key")).toBeNull(); store.close();

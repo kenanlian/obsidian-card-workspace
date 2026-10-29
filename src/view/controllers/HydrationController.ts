@@ -1,3 +1,5 @@
+import { RuntimePhaseTimings } from "../../runtime/diagnostics";
+import { DESKTOP_RESOURCE_BUDGET } from "../../runtime/resource-budget";
 import { TFile } from "obsidian";
 import { diagramDependencies, diagramSourceFingerprint, isDiagramKind, readDiagramPreview, type DiagramPreviewResult } from "../diagram-preview";
 import { buildLinkReferenceSnippets, buildOutgoingReferenceSnippets, type LinkReferencePreview } from "../link-reference-preview";
@@ -12,7 +14,7 @@ import { buildLocationPreview } from "../context-preview";
 import { readLinkReferenceCount } from "../links-sources";
 import { resolveLinkCardLocation } from "../link-card-location";
 import type { CardScope } from "../scope";
-import { createPreviewFingerprint, fingerprintsEqual, PreviewCache, PREVIEW_CACHE_CAPACITY,
+import { createPreviewFingerprint, fingerprintsEqual, PreviewCache,
   type PreviewFingerprint } from "../preview-cache";
 import type { NoteCardRecord, VaultMutationEvent } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
@@ -20,9 +22,6 @@ import type { CardPreviewFields, CardPreviewUpdate } from "../view-state-store";
 import { buildEmptyPreviewPatch, buildPlaceholderPatch, buildPreviewPatch,
   type HydrationPreview } from "./hydration-patch";
 
-const MAX_ACTIVE_READS = 5;
-const STARTUP_PREVIEW_CARD_COUNT = 6;
-const STARTUP_PREVIEW_WAIT_MS = 120;
 interface HydrationJob {
   readonly path: string;
   fingerprint: PreviewFingerprint;
@@ -35,6 +34,7 @@ interface HydrationJob {
   startup: boolean;
   startupLate: boolean;
   forced: boolean;
+  explicit: boolean;
   foreground: boolean;
   replacementRequested: boolean;
   readonly settled: Promise<void>;
@@ -59,11 +59,15 @@ export interface HydrationControllerDeps {
 }
 /** Owns the per-view preview cache, demand queue, and incremental publication. */
 export class HydrationController implements DisposableController {
-  private readonly cache = new PreviewCache();
-  private readonly searchSources = new SearchPreviewSourceCache();
+  private readonly timings = new RuntimePhaseTimings();
+  private readonly cache: PreviewCache;
+  private readonly searchSources: SearchPreviewSourceCache;
+  private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   private readonly appliedFingerprints = new Map<string, PreviewFingerprint>();
   private readonly jobs = new Map<string, HydrationJob>();
   private readonly queue: HydrationJob[] = [];
+  private latestViewportRequest: HydrateViewportRequest | null = null;
+  private readonly stopWorkGate: () => void;
   private readonly latestViewport = new Set<string>();
   private pendingPatches: PendingPatch[] = [];
   private activeReads = 0;
@@ -80,7 +84,18 @@ export class HydrationController implements DisposableController {
   private sourceRead: { key: string; promise: Promise<string> } | null = null;
   private readonly fileRevisions = new WeakMap<object, number>();
   getFileRevision(file: NoteCardRecord["file"]): number { return this.fileRevisions.get(file) ?? 0; }
-  constructor(private readonly deps: HydrationControllerDeps) {}
+  constructor(private readonly deps: HydrationControllerDeps) {
+    this.stopWorkGate = this.context.workGate?.subscribe((active) => {
+      if (!active || this.disposed) return;
+      for (const job of this.queue.slice()) {
+        if (!this.currentFingerprint(job) || (!job.explicit && this.latestViewportRequest && !this.latestViewport.has(job.path))) this.dropQueuedJob(job);
+      }
+      if (this.latestViewportRequest) void this.hydrateViewport(this.latestViewportRequest);
+      this.pump();
+    }) ?? (() => {});
+    this.cache = new PreviewCache(this.budget.preview.entries, this.budget.preview.diagramBytes);
+    this.searchSources = new SearchPreviewSourceCache(this.budget.searchPreview.bytes, this.budget.searchPreview.entries);
+  }
   private get context(): ViewContext {
     return this.deps.context;
   }
@@ -122,7 +137,7 @@ export class HydrationController implements DisposableController {
     this.context.store.patchCardPreviews([{ path, patch: { linkPreview: previous
       ? { ...initial, totalSnippets: previous.totalSnippets, snippets: [] } : initial } }]);
     this.context.publishGroups("cards");
-    await this.requestPath(path, 0, { forced: true, foreground: true });
+    await this.requestPath(path, 0, { forced: true, foreground: true, explicit: true });
   }
   /** Count-only changes must re-sort too; metadata positions invalidate existing previews. */
   invalidateLinkMetadata(path?: string): boolean {
@@ -150,7 +165,7 @@ export class HydrationController implements DisposableController {
     }));
     const visible = this.context.store.getVisibleCards();
     const visiblePaths = new Set(visible.map((card) => card.path));
-    const startupPaths = new Set(visible.slice(0, STARTUP_PREVIEW_CARD_COUNT).map((card) => card.path));
+    const startupPaths = new Set(visible.slice(0, this.budget.preview.startupCards).map((card) => card.path));
     for (const card of cards) {
       if (visiblePaths.has(card.path) && (this.latestViewport.has(card.path) || startupPaths.has(card.path))) {
         this.schedulePath(card.path);
@@ -213,7 +228,12 @@ export class HydrationController implements DisposableController {
     return { path: openPath, location: { kind: "link-reference", location: { ...location }, isCurrent } };
   }
   static get startupCardCount(): number {
-    return STARTUP_PREVIEW_CARD_COUNT;
+    return DESKTOP_RESOURCE_BUDGET.preview.startupCards;
+  }
+  get startupCardCount(): number { return this.budget.preview.startupCards; }
+  getDiagnostics() {
+    return { gate: this.context.workGate?.getDiagnostics(), active: this.activeReads, queued: this.queue.length, cacheEntries: this.cache.size,
+      diagramBytes: this.cache.diagramBytes, phases: this.timings.snapshot(), searchSources: this.searchSources.getDiagnostics() };
   }
   hasPending(path: string): boolean {
     return this.jobs.has(path);
@@ -352,6 +372,7 @@ export class HydrationController implements DisposableController {
   }
   async hydrateViewport(request: HydrateViewportRequest): Promise<void> {
     if (!this.validRequestIdentity(request) || this.deps.isLoading()) return;
+    this.latestViewportRequest = { ...request, paths: [...request.paths] };
     const visible = this.context.store.getVisibleCards();
     const count = Math.max(0, request.end - request.start);
     const paths = request.paths.slice(0, count).filter(
@@ -370,7 +391,7 @@ export class HydrationController implements DisposableController {
   }
   async hydrateStartupCardPaths(paths: string[], token: EpochToken): Promise<void> {
     if (this.disposed || !this.context.epochs.load.isCurrent(token)) return;
-    const targets = paths.slice(0, STARTUP_PREVIEW_CARD_COUNT);
+    const targets = paths.slice(0, this.budget.preview.startupCards);
     const jobs = targets.map((path) => this.requestPath(path, 2, { startup: true }));
     if (jobs.length === 0) return;
     const hydration = Promise.all(jobs);
@@ -379,7 +400,7 @@ export class HydrationController implements DisposableController {
       this.startupWaitTimer = viewWindow.setTimeout(() => {
         this.startupWaitTimer = null;
         resolve("timeout");
-      }, STARTUP_PREVIEW_WAIT_MS);
+      }, this.budget.preview.startupWaitMs);
     });
     const result = await Promise.race([hydration.then(() => "hydrated" as const), timeout]);
     if (this.startupWaitTimer !== null) {
@@ -397,7 +418,7 @@ export class HydrationController implements DisposableController {
   hydrateVisibleCardsOnOpen(): void {
     if (this.disposed || this.deps.isLoading()) return;
     const visible = this.context.store.getVisibleCards();
-    const paths = visible.slice(0, STARTUP_PREVIEW_CARD_COUNT).map((card) => card.path);
+    const paths = visible.slice(0, this.budget.preview.startupCards).map((card) => card.path);
     void this.hydrateViewport({
       generation: this.context.epochs.load.value,
       hydrationRevision: this.context.store.getHydrationRevision(),
@@ -423,7 +444,7 @@ export class HydrationController implements DisposableController {
   }
 
   private requestPath(path: string, priority: number,
-    owner: { viewport?: boolean; startup?: boolean; forced?: boolean; foreground?: boolean }): Promise<void> {
+    owner: { viewport?: boolean; startup?: boolean; forced?: boolean; foreground?: boolean; explicit?: boolean }): Promise<void> {
     if (this.disposed) return Promise.resolve();
     const card = this.context.store.getBaseCard(path);
     if (!card || (this.deps.isCommittedQueryCurrent?.() === false && !this.wantsDiagram(card))) return Promise.resolve();
@@ -440,6 +461,7 @@ export class HydrationController implements DisposableController {
     const fingerprint = this.fingerprintFor(card);
     const existing = this.jobs.get(path);
     if (existing) {
+      existing.explicit ||= owner.explicit === true;
       existing.viewport ||= owner.viewport === true;
       existing.startup ||= owner.startup === true;
       existing.forced ||= owner.forced === true;
@@ -476,6 +498,7 @@ export class HydrationController implements DisposableController {
       viewport: owner.viewport === true,
       startup: owner.startup === true,
       startupLate: false,
+      explicit: owner.explicit === true,
       forced: owner.forced === true,
       foreground: owner.foreground === true,
       replacementRequested: false,
@@ -488,12 +511,17 @@ export class HydrationController implements DisposableController {
     return settled;
   }
   private pump(): void {
-    while (!this.disposed && this.activeReads < MAX_ACTIVE_READS && this.queue.length > 0) {
-      const job = this.queue.shift();
+    while (!this.disposed && this.activeReads < this.budget.preview.concurrency && this.queue.length > 0) {
+      if (this.context.workGate?.isClosed) return;
+      const index = this.context.workGate?.isPaused ? this.queue.findIndex(job => job.explicit) : 0;
+      if (index < 0) return;
+      const [job] = this.queue.splice(index, 1);
       if (!job || this.jobs.get(job.path) !== job) continue;
       job.state = "active";
       this.activeReads += 1;
+      const finishTiming = this.timings.start("preview");
       void this.runJob(job).finally(() => {
+        finishTiming();
         this.activeReads -= 1;
         this.finishJob(job);
         this.pump();
@@ -683,7 +711,7 @@ export class HydrationController implements DisposableController {
   private rememberAppliedFingerprint(path: string, fingerprint: PreviewFingerprint): void {
     this.appliedFingerprints.delete(path);
     this.appliedFingerprints.set(path, fingerprint);
-    if (this.appliedFingerprints.size > PREVIEW_CACHE_CAPACITY) {
+    if (this.appliedFingerprints.size > this.budget.preview.entries) {
       const oldest = this.appliedFingerprints.keys().next().value;
       if (oldest !== undefined) this.appliedFingerprints.delete(oldest);
     }
@@ -737,6 +765,7 @@ export class HydrationController implements DisposableController {
       this.startupWaitTimer = null;
     }
     this.disposed = true;
+    this.stopWorkGate(); this.latestViewportRequest = null;
     this.sourceRead = null;
     this.expandedReferences.clear();
     this.cache.clear();

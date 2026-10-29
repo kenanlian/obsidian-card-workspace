@@ -502,6 +502,7 @@ vi.mock("obsidian", () => {
   const addIcon = vi.fn();
 
   return {
+    Platform: { isDesktopApp: true, isMacOS: false },
     Plugin: MockPlugin,
     Component: MockComponent,
     Notice: MockNotice,
@@ -590,7 +591,10 @@ function createPluginHarness(): {
     };
   };
 } {
+  const deviceStorage = new Map<string, unknown>();
   const app = {
+    loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
+    saveLocalStorage: (key: string, data: unknown) => { deviceStorage.set(key, data); },
     workspace: {
       on: vi.fn((eventName: string, callback: (...args: unknown[]) => unknown) => {
         obsidianMockState.workspaceCallbacks[eventName] = callback;
@@ -2718,13 +2722,11 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
   });
 
   it("isolates initial navigation persistence failure from search startup", async () => {
-    const { plugin } = createPluginHarness();
+    const { plugin, app } = createPluginHarness();
     (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
       expandedFolderPaths: ["missing"],
     });
-    (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData.mockRejectedValue(
-      new Error("disk unavailable"),
-    );
+    (app as unknown as { saveLocalStorage: () => void }).saveLocalStorage = () => { throw new Error("disk unavailable"); };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     plugin.onload();
@@ -3381,10 +3383,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
       },
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledTimes(1));
     expect(searchMockState.managers[0]?.rebuildFromSource).toHaveBeenCalledWith(
       "Unsafe vault mutation requires full search rebuild.",
     );
@@ -3918,7 +3917,7 @@ describe("quick input startup and lifetime", () => {
     expect(internals.quickInputManager).toBeNull(); expect(internals.quickInputInitialization).toBeNull();
     expect(initialization).toHaveBeenCalledOnce();
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(searchInitialization.mock.invocationCallOrder[0]!);
-    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue();
+    const open = vi.spyOn(plugin, "openQuickInput").mockResolvedValue({ outcome: "ok", value: undefined });
     shared.get("Control+Shift+Q")!(); expect(open).toHaveBeenCalledExactlyOnceWith();
     plugin.onunload(); expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q");
   });

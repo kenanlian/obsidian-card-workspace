@@ -277,7 +277,6 @@ describe("card context menu contract", () => {
       { kind: "item", title: "Open in current window", icon: "folder-open" },
       { kind: "item", title: "Open in new tab", icon: "file-plus" },
       { kind: "item", title: "Open to the right", icon: "separator-vertical" },
-      { kind: "item", title: "Open in new window", icon: "picture-in-picture-2" },
       { kind: "separator" },
       { kind: "item", title: "Make a copy", icon: "copy" },
       { kind: "item", title: "Move file to...", icon: "folder-input" },
@@ -293,6 +292,9 @@ describe("card context menu contract", () => {
       { kind: "separator" },
       { kind: "item", title: "Rename...", icon: "pencil" },
       { kind: "item", title: "Delete", icon: "trash" },
+      { kind: "separator" },
+      { kind: "item", title: "Select cards", icon: "list-checks" },
+      { kind: "item", title: "Pin note", icon: "pin" },
     ]);
     expect(nonDesktopMarkdownMenu?.showAtPosition).toHaveBeenCalledWith({ x: 12, y: 18 });
     expect(nonDesktopMarkdownMenu?.showAtMouseEvent).not.toHaveBeenCalled();

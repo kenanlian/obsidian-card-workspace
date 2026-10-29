@@ -3,7 +3,7 @@ import { TFile, type Menu, type TFolder } from "obsidian";
 import type { UiStrings } from "../../i18n";
 import { PLAIN_FOLDER_ICON } from "../../icons";
 import type { OpenDestination } from "../../settings";
-import { getSystemPath, showInSystemExplorer } from "../desktop-shell";
+import { UNAVAILABLE_PLATFORM } from "../../runtime/platform";
 import { isFavorite, isFavoriteKind, moveFavorite, reorderFavorite, toggleFavorite, type FavoriteReorderPosition } from "../favorites";
 import { getCardFileIcon, resolveCardFileKindFromPath } from "../file-kind";
 import { copyPathToClipboard } from "../note-ops";
@@ -319,7 +319,7 @@ export class FavoriteActions {
       return;
     }
 
-    const systemPath = getSystemPath(this.deps.context.getApp(), ref);
+    const systemPath = (this.deps.context.runtimePlatform ?? UNAVAILABLE_PLATFORM).systemPath(ref);
     if (systemPath === null) {
       this.deps.context.notify(this.strings.desktopShell.unavailable);
       return;
@@ -329,9 +329,9 @@ export class FavoriteActions {
   }
 
   async revealInSystemExplorer(ref: string): Promise<void> {
-    const result = await showInSystemExplorer(this.deps.context.getApp(), ref, this.strings.desktopShell);
+    const result = await (this.deps.context.runtimePlatform ?? UNAVAILABLE_PLATFORM).reveal(ref, this.strings.desktopShell);
     if (!result.ok) {
-      this.deps.context.notify(result.error);
+      this.deps.context.notify(result.error ?? this.strings.desktopShell.unavailable);
     }
   }
 

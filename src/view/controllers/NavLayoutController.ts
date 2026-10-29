@@ -438,6 +438,9 @@ export class NavLayoutController implements DisposableController {
     return this.projection;
   }
   getLayoutMode(): "dual" | "single" {
+    const device = this.context.runtimePlatform?.device ?? "desktop";
+    if (device === "phone") return "single";
+    if (device === "tablet") return this.shellWidth >= Math.max(640, this.context.getSettings().navPaneWidth + 320) ? "dual" : "single";
     if (this.shellWidth <= 0) {
       return "dual";
     }

@@ -39,3 +39,17 @@ Saved delivery artifacts: [Chromium report](../diagnostics/card-images-20261002.
 The saved Chromium run contains 120 baseline/candidate rows and nine cache rows, with five warmups and 30 measured samples each. All P95 and instrumented image-task gates pass. Maximum image timings are 0.9 ms for viewport resolution, 3 ms for image-only publication, 6 ms for Worker availability/construction and 0.3 ms for dispatch. Cold repeated-attachment samples read one original; memory and fresh-service persistent samples read zero. A 55 ms **global** task remains recorded in the dense/four-column/right case; this run does not claim zero global long tasks or establish that task's cause. Scroll diagnostics report no global long tasks. The real desktop report passes its read, concurrency, layout, refresh, scrolling and cleanup assertions, with no long tasks in its image phases.
 
 The Chromium smoke checks also decode generated AVIF and animated GIF fixtures, rasterize sanitized SVG, reject over-budget/DOCTYPE SVG before decoding, and mount independent PNG/AVIF/GIF/SVG image cards in off/right/inline modes. They assert zero image reads when disabled, no Markdown reads for standalone images, shared source jobs, static output, and URL cleanup. For a patch comparison, pass `--baseline <pre-change commit>`; short smoke samples are resource/behavior checks rather than stable timing estimates.
+
+For the mobile-adaptation fixed baseline, retain the ordinary off-versus-images report
+and additionally compare identical modes:
+
+```sh
+npm run benchmark:images -- --baseline 6aeaf3d32c126876116d09d0028a48fa0a7c8d9d --output /absolute/path/off-versus-images.json
+npm run benchmark:images -- --baseline 6aeaf3d32c126876116d09d0028a48fa0a7c8d9d --same-image-modes --output /absolute/path/same-image-modes.json
+```
+
+`--same-image-modes` freezes the baseline image implementation as well as its panel,
+then runs off/right/inline in both lanes. It preserves sample counts and thresholds;
+its separate `comparison` report field distinguishes it from the original report.
+Both commands start a loopback HTTP server. Do not run them without the task's explicit
+network authorization. Neither substitutes for Android/iOS/iPadOS validation.

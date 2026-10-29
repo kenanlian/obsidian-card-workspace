@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { touchMenu } from "./touch-menu";
   import { setIcon, setTooltip } from "obsidian";
   import type { Snippet } from "svelte";
   import type { UiStrings } from "../i18n";
@@ -110,6 +111,7 @@
   onfocus={() => onFocus?.(row.id)}
   onclick={(event) => onActivate?.(event, row)}
   onkeydown={(event) => onKeydown?.(event, row)}
+  use:touchMenu={(event) => onContextMenu?.(event, row)}
   oncontextmenu={(event) => onContextMenu?.(event, row)}
   ondragstart={(event) => onRowDragStart?.(event, row)}
   ondragover={(event) => onRowDragOver?.(event, row)}

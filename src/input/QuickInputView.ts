@@ -1,7 +1,7 @@
 import { ItemView, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
 
-import { QUICK_INPUT_VIEW } from "./quick-input-desktop";
-export { QUICK_INPUT_VIEW } from "./quick-input-desktop";
+import { QUICK_INPUT_VIEW } from "./quick-input-contract";
+export { QUICK_INPUT_VIEW } from "./quick-input-contract";
 export interface QuickInputViewHost {
   getTitle(): string;
   discard(view: QuickInputView): void;

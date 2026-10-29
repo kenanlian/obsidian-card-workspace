@@ -342,3 +342,20 @@ describe("ArrangementActions", () => {
     expect(harness.updateActiveBox).not.toHaveBeenCalled();
   });
 });
+
+describe("touch pinned ordering", () => {
+  it("moves pins with the active scope owner and preserves filter membership rules", async () => {
+    const h = createHarness();
+    await h.actions.onPinToggle({ path: "a.md", pinned: true });
+    await h.actions.onPinToggle({ path: "b.md", pinned: true });
+    await h.actions.movePinnedCard("b.md", -1);
+    expect(h.getSettings().pinnedPaths).toEqual(["b.md", "a.md"]);
+    await h.actions.movePinnedCard("b.md", -1);
+    expect(h.getSettings().pinnedPaths).toEqual(["b.md", "a.md"]);
+    const box = makeBox({ pinnedPaths: ["a.md", "b.md"] });
+    const scoped = createHarness({ scope: createBoxScope(box.id), box });
+    await scoped.actions.movePinnedCard("a.md", 1);
+    expect(scoped.getSettings().boxes[0].pinnedPaths).toEqual(["b.md", "a.md"]);
+    expect(scoped.getSettings().pinnedPaths).toEqual(DEFAULT_SETTINGS.pinnedPaths);
+  });
+});

@@ -1,4 +1,7 @@
-import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf } from "obsidian";
+import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
+import { RuntimeWorkGate } from "../runtime/work-gate";
+import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
+import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import { mount, unmount } from "svelte";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import type { UiStrings } from "../i18n";
@@ -53,6 +56,11 @@ export const FOLDER_CARD_VIEW = "folder-card-view";
 
 export class FolderCardView extends ItemView implements HoverParent {
   plugin: CardWorkspacePlugin;
+  private readingPosition: ReadingPositionBridge | null = null;
+  private readonly historyAnchors: Map<string, import("./scroll-anchoring").RowAnchor>;
+  private historySequence = 0;
+  private readonly pendingHistoryRecords = new Set<number>();
+  private recordedScope: CardScope | null = null;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
   private metadataEventUnsubscribe: (() => void) | null = null;
@@ -61,6 +69,8 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
   private readonly epochs: ViewEpochs = createViewEpochs();
+  private readonly workGate = new RuntimeWorkGate();
+  private stopActivity: (() => void) | null = null;
   private readonly context: ViewContext; readonly modules: ViewModules;
 
   get hoverPopover(): HoverPopover | null { return this.modules.hoverPreview.hoverPopover; }
@@ -69,7 +79,12 @@ export class FolderCardView extends ItemView implements HoverParent {
   constructor(leaf: WorkspaceLeaf, plugin: CardWorkspacePlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.historyAnchors = plugin.getScopeHistoryAnchors?.(leaf) ?? new Map();
+    this.navigation = (plugin.runtimePlatform?.device ?? "desktop") !== "desktop";
     this.context = {
+      workGate: this.workGate,
+      resourceBudget: this.plugin.resourceBudget,
+      runtimePlatform: this.plugin.runtimePlatform,
       getApp: () => this.app, store: this.store, epochs: this.epochs,
       getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.saveViewSettings(patch),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
@@ -77,6 +92,16 @@ export class FolderCardView extends ItemView implements HoverParent {
       notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
     };
     this.modules = createViewModules(this.context, {
+      onScopeCommitted: (scope, recordHistory) => {
+        if (!this.navigation) return;
+        if (!recordHistory) { this.recordedScope = scope; return; }
+        const sequence = ++this.historySequence;
+        this.pendingHistoryRecords.add(sequence);
+        void this.leaf.setViewState({ type: FOLDER_CARD_VIEW, state: { scope, session: this.plugin.navigationSessionId, record: sequence } })
+          .catch((error: unknown) => console.warn("[Card Workspace] Scope history failed", error))
+          .finally(() => this.pendingHistoryRecords.delete(sequence));
+      },
+      appendMobileInsertMenu: (menu, path) => this.plugin.appendMobileInsertMenu?.(menu, path),
       flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
       openTemplateNote: (path, selectTitle) => this.plugin.openTemplateEditor(path, selectTitle),
       runTemplateOperation: (work) => this.plugin.runTemplateOperation(work),
@@ -102,15 +127,22 @@ export class FolderCardView extends ItemView implements HoverParent {
       },
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
-      publishLoadStart: (scopeChanged) => publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged),
+      publishLoadStart: (scopeChanged) => {
+        if (scopeChanged && this.navigation) {
+          const anchor = this.readingPosition?.capture();
+          if (anchor) { this.historyAnchors.set(scopeIdentity(this.cardScope), anchor); if (this.historyAnchors.size > 32) this.historyAnchors.delete(this.historyAnchors.keys().next().value!); }
+        }
+        publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged);
+      },
       publishPreparedCards: (fileTypesChanged) => this.panelModel.batch(() => {
+        this.recordedScope ??= this.cardScope;
         if (fileTypesChanged) this.publishGroups("nav");
         publishPreparedCards(this.buildLoadBoundaryHost());
       }),
       publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
       publishImpactBatch: (batch) => this.publishImpactBatch(batch),
-      openNoteFromCard: (path, destination) => this.plugin.openNoteFromCard(path, destination),
+      openNoteFromCard: async (path, destination) => { await this.plugin.openNoteFromCard(path, destination); },
       createNoteInFolder: (folderPath, tags, properties, boxId) => boxId !== undefined
         ? this.plugin.createNoteInFolder(folderPath, tags, properties, boxId)
         : properties === undefined
@@ -120,6 +152,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
     });
     this.panelModel = createPanelModel({
+      capabilities: this.plugin.runtimePlatform?.capabilities,
       strings: this.strings,
       scope: this.buildScopeGroup(),
       cards: this.buildCardsGroup(),
@@ -135,6 +168,32 @@ export class FolderCardView extends ItemView implements HoverParent {
   private get baseCards(): NoteCardRecord[] { return this.store.getBaseCards() as NoteCardRecord[]; } private set baseCards(cards: NoteCardRecord[]) { this.store.replaceBaseCards(cards); }
   private get visibleCards(): NoteCardRecord[] { return this.store.getVisibleCards() as NoteCardRecord[]; } private set visibleCards(cards: NoteCardRecord[]) { this.store.replaceVisibleCards(cards); }
   private get selectedPath(): string | null { return this.store.getSelectedPath(); } private set selectedPath(path: string | null) { this.store.setSelectedPath(path); }
+  registerReadingPosition(bridge: ReadingPositionBridge | null): void { this.readingPosition = bridge; }
+  override getState(): Record<string, unknown> {
+    return this.navigation ? { scope: this.recordedScope ?? this.cardScope, session: this.plugin.navigationSessionId } : {};
+  }
+  override async setState(state: unknown, result: ViewStateResult): Promise<void> {
+    result.history = false;
+    if (!this.navigation || !state || typeof state !== "object") return;
+    const value = state as { scope?: unknown; session?: unknown; record?: unknown };
+    // Host workspace restoration must not restore a persisted box or links source on launch.
+    if (value.session !== this.plugin.navigationSessionId) return;
+    const scope = readHistoryScope(value.scope, this.app, this.plugin.getSettings().boxes ?? []);
+    if (!scope) return;
+    if (typeof value.record === "number" && this.pendingHistoryRecords.delete(value.record)) {
+      if (value.record !== this.historySequence) return;
+      this.recordedScope = scope; result.history = true; return;
+    }
+    const anchor = this.historyAnchors.get(scopeIdentity(scope));
+    await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "history"));
+    await this.modules.scopeController.waitForIdle();
+    this.recordedScope = this.cardScope;
+    if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
+  }
+  navigateBack(): void {
+    const result = this.plugin.runtimePlatform?.navigateBack(this.leaf);
+    if (!result || result.outcome === "unavailable") new Notice(this.strings.mobile.backUnavailable);
+  }
   getViewType(): string { return FOLDER_CARD_VIEW; }
   getDisplayText(): string { return this.strings.view.displayName; }
   getIcon(): string { return CARD_WORKSPACE_ICON; }
@@ -228,6 +287,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       props: buildPanelProps(this),
     });
 
+    this.stopActivity = this.plugin.runtimeActivity?.observeRegion(this.hostEl.querySelector<HTMLElement>(".fce-list") ?? this.hostEl, this.workGate) ?? null;
     this.modules.navLayout.refreshFolderTreeState();
     this.modules.hydration.hydrateVisibleCardsOnOpen();
     this.viewEventUnsubscribe?.();
@@ -434,7 +494,10 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.modules.navLayout.refreshNavState();
   }
 
+  getRuntimeDiagnostics() { return { preview: this.modules.hydration.getDiagnostics(), images: this.modules.images.getDiagnostics() }; }
+
   cleanupLifecycle(): CleanupResult {
+    this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
     this.viewEventUnsubscribe?.();
     this.viewEventUnsubscribe = null;
     this.metadataEventUnsubscribe?.();
@@ -630,6 +693,9 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.panelModel.batch((state) => {
       for (const group of uniqueGroups) {
         switch (group) {
+          case "capabilities":
+            state.capabilities = this.plugin.runtimePlatform?.capabilities ?? UNSUPPORTED_CAPABILITIES;
+            break;
           case "strings":
             state.strings = this.strings;
             break;

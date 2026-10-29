@@ -1,3 +1,4 @@
+import { UNSUPPORTED_CAPABILITIES, type RuntimeCapabilities } from "../runtime/capabilities";
 import type { CardImageState } from "../images/types";
 import type { CardImageFit, CardImageMode, CardStyle, UiDensity, UiFontSize } from "../settings";
 import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
@@ -226,6 +227,7 @@ export interface PanelAppearanceState {
 }
 
 export interface PanelModelState {
+  capabilities?: Readonly<RuntimeCapabilities>;
   strings: UiStrings;
   scope: PanelScopeState;
   cards: PanelCardsState;
@@ -240,6 +242,7 @@ export interface PanelModelState {
 export type PanelGroup = keyof PanelModelState;
 
 export const PANEL_GROUPS: readonly PanelGroup[] = [
+  "capabilities",
   "strings",
   "scope",
   "cards",
@@ -274,7 +277,7 @@ export interface PanelModel {
 }
 
 export function createPanelModel(initialState: PanelModelState): PanelModel {
-  let state = initialState;
+  let state = { ...initialState, capabilities: initialState.capabilities ?? UNSUPPORTED_CAPABILITIES };
   let batchDepth = 0;
   let pendingNotification = false;
   const listeners = new Set<(state: PanelModelState) => void>();

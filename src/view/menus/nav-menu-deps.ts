@@ -3,7 +3,7 @@ import { hideNavigationEntry } from "../actions/navigation-visibility-actions";
 import type { NavMenuDeps } from "../nav-context-menu";
 import { resolveFolderSortMode } from "../../folder-sibling-orders";
 import { propertyScalarRefsEqual } from "../../property-filter-settings";
-import { canResolveSystemPath } from "../desktop-shell";
+
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { ViewContext } from "../view-context";
 import type { ViewModules } from "../view-modules";
@@ -20,6 +20,29 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
   const capabilities = resolveSourceCapabilities(deps.context.store.getScope());
   return {
     strings: deps.context.getUiStrings(),
+    appendTouchOrderMenu: (menu, originId) => {
+      if ((deps.context.runtimePlatform?.device ?? "desktop") === "desktop") return;
+      const rows = deps.modules.navLayout.getProjection().rows, row = rows.find(item => item.id === originId);
+      if (!row || !["folder", "tag", "property", "property-value", "box"].includes(row.kind) || row.disabled) return;
+      const siblings = rows.filter(item => item.kind === row.kind && item.parentId === row.parentId);
+      const index = siblings.indexOf(row);
+      menu.addSeparator();
+      for (const delta of [-1, 1] as const) {
+        const target = siblings[index + delta];
+        const strings = deps.context.getUiStrings().mobile;
+        menu.addItem(item => item.setTitle(delta < 0 ? strings.moveEarlier : strings.moveLater)
+          .setIcon(delta < 0 ? "arrow-up" : "arrow-down").setDisabled(!target).onClick(() => {
+            if (!target) return;
+            const position = delta < 0 ? "before" : "after";
+            if (row.kind === "folder" && target.kind === "folder") void deps.modules.navLayout.reorderFolders(row.folderPath, target.folderPath, position);
+            else if (row.kind === "box" && target.kind === "box") {
+              const boxes = [...deps.context.getSettings().boxes], from = boxes.findIndex(box => box.id === row.boxId), to = boxes.findIndex(box => box.id === target.boxId);
+              if (from < 0 || to < 0) return;
+              const [box] = boxes.splice(from, 1); boxes.splice(to, 0, box); void deps.context.saveSettings({ boxes });
+            } else void deps.modules.navLayout.reorderNavigationItems(row.id, target.id, position);
+          }));
+      }
+    },
     browseTagFilter: capabilities.browseTagFilter,
     browsePropertyFilter: capabilities.browsePropertyFilter,
     supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
@@ -31,7 +54,8 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
       settings.filter.properties.some(
         (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
       ),
-    canResolveSystemPath: canResolveSystemPath(deps.context.getApp()),
+    canRevealInSystemExplorer: deps.context.runtimePlatform?.capabilities.systemFileManager ?? false,
+    canResolveSystemPath: deps.context.runtimePlatform?.capabilities.systemPath ?? false,
     hasActiveFile: deps.context.getApp().workspace.getActiveFile() !== null,
     favorites: settings.favorites ?? [],
     boxes: settings.boxes ?? [],

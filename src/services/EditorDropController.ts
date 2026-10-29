@@ -1,6 +1,7 @@
 import {
   Editor,
   Menu,
+  Modal,
   MarkdownFileInfo,
   MarkdownView,
   Notice,
@@ -16,8 +17,8 @@ import type { UiStrings } from "../i18n";
 import type { DragInsertAction, PluginSettings } from "../settings";
 import { resolveCardFileKind } from "../view/file-kind";
 import { getMenuDom } from "../view/menu-dom";
-import { buildContentClipboardText, buildTitleAndContentClipboardText } from "../view/note-ops";
-import { extractHeadingSection, headingsEqual, resolveHeadingAnchor, snapshotHeadings } from "./heading-drag-insert";
+import { buildCardInsertText } from "../view/card-insert-text";
+import { headingsEqual, snapshotHeadings } from "./heading-drag-insert";
 import type { VaultMutationEvent } from "./vault-events";
 
 // Duplicated in CardItem.svelte to preserve the Svelte/services boundary; update both together.
@@ -59,6 +60,7 @@ interface DropOperation {
   useHeadings: boolean;
   menu: Menu | null;
   inserting: boolean;
+  menuTarget?: NonNullable<EditorDropController["menuTarget"]>;
 }
 
 export interface EditorDropControllerDeps {
@@ -74,6 +76,8 @@ export class EditorDropController {
   private readonly getUiStrings: () => UiStrings;
   private pendingDrop: DropOperation | null = null;
   private disposed = false;
+  private lastMarkdown: MarkdownView | null = null;
+  private menuTarget: { view: MarkdownView; file: TFile; path: string; editor: Editor; document: unknown; content: string; position: EditorPosition } | null = null;
 
   constructor(deps: EditorDropControllerDeps) {
     this.app = deps.app;
@@ -83,7 +87,7 @@ export class EditorDropController {
 
   dispose(): void {
     this.disposed = true;
-    this.cancelPendingDrop();
+    this.cancelPendingDrop(); this.menuTarget = null; this.lastMarkdown = null;
   }
 
   cancelPendingDrop(): void {
@@ -93,6 +97,8 @@ export class EditorDropController {
   }
 
   handleEditorChange(editor: Editor, info: MarkdownView | MarkdownFileInfo): void {
+    const target = this.menuTarget;
+    if (target && editor === target.editor && (this.getEditorDocument(editor) !== target.document || editor.getValue() !== target.content)) this.menuTarget = null;
     const operation = this.pendingDrop;
     if (!operation) return;
     // Obsidian may deliver a debounced event from before this drop. Immutable
@@ -106,7 +112,25 @@ export class EditorDropController {
     }
   }
 
+  captureMenuTargetBeforeActivation(): void {
+    const view = this.app.workspace.getActiveViewOfType?.(MarkdownView);
+    if (view?.file) this.captureMenuTarget(view);
+  }
+
+  private captureMenuTarget(view: MarkdownView): void {
+    if (!view.file) return;
+    this.menuTarget = { view, file: view.file, path: view.file.path, editor: view.editor,
+      document: this.getEditorDocument(view.editor), content: view.editor.getValue(), position: { ...view.editor.getCursor("head") } };
+  }
+
   handleActiveLeafChange(leaf: WorkspaceLeaf | null): void {
+    if (leaf?.view instanceof MarkdownView) {
+      this.lastMarkdown = leaf.view; this.menuTarget = null;
+    } else if (leaf?.view?.getViewType?.() === "folder-card-view") {
+      const view = this.lastMarkdown;
+      if (view?.file) this.captureMenuTarget(view);
+      this.lastMarkdown = null;
+    } else { this.lastMarkdown = null; this.menuTarget = null; }
     if (this.pendingDrop && (!(leaf?.view instanceof MarkdownView)
       || leaf.view.editor !== this.pendingDrop.editor || !this.isDropCurrent(this.pendingDrop))) {
       this.cancelPendingDrop();
@@ -118,12 +142,12 @@ export class EditorDropController {
   }
 
   handleVaultMutation(event: VaultMutationEvent): void {
-    const operation = this.pendingDrop;
-    if (!operation) return;
     const affects = (path: string | null) => path !== null && [event.path, event.oldPath].some(
-      (changed) => changed !== null && (path === changed || (event.isFolder && path.startsWith(`${changed}/`))),
+      changed => changed !== null && (path === changed || (event.isFolder && path.startsWith(`${changed}/`))),
     );
-    if (affects(operation.sourcePath) || affects(operation.targetPath)) this.cancelPendingDrop();
+    if (this.menuTarget && affects(this.menuTarget.path)) this.menuTarget = null;
+    const operation = this.pendingDrop;
+    if (operation && (affects(operation.sourcePath) || affects(operation.targetPath))) this.cancelPendingDrop();
   }
 
   handleDragStart(event: DragEvent): void {
@@ -241,6 +265,23 @@ export class EditorDropController {
     }
 
     const settings = this.getSettings();
+    const operation = this.prepareOperation(file, editor, info, this.resolveDropEditorPosition(event, editor, info), this.resolveDragMenuPosition(event));
+    const useHeadings = operation.useHeadings;
+    this.pendingDrop = operation;
+    const action = settings.dragInsertAction;
+    if (action === "ask") {
+      this.openDragInsertMenu(operation);
+      return;
+    }
+    if (useHeadings) {
+      this.openHeadingMenu(operation, action);
+      return;
+    }
+    await this.insertCardDragContent(operation, action, { kind: "whole" });
+  }
+
+  private prepareOperation(file: TFile, editor: Editor, info: MarkdownView | MarkdownFileInfo, position: EditorPosition, menuPosition: { x: number; y: number }): DropOperation {
+    const settings = this.getSettings();
     const useHeadings = settings.enableHeadingDragInsert && resolveCardFileKind(file) === "markdown";
     const cache = useHeadings ? this.app.metadataCache.getFileCache(file) : null;
     const operation: DropOperation = {
@@ -255,22 +296,74 @@ export class EditorDropController {
           ? [{ editor: view.editor, document: this.getEditorDocument(view.editor) }] : [];
       }),
       sourcePath: file.path, mtime: file.stat.mtime, size: file.stat.size,
-      position: this.resolveDropEditorPosition(event, editor, info),
-      menuPosition: this.resolveDragMenuPosition(event),
+      position,
+      menuPosition,
       headings: cache ? snapshotHeadings(cache.headings ?? []) : null,
       menu: null, inserting: false,
     };
-    this.pendingDrop = operation;
-    const action = settings.dragInsertAction;
-    if (action === "ask") {
-      this.openDragInsertMenu(operation);
-      return;
+    return operation;
+  }
+
+  private isMenuTargetCurrent(target: NonNullable<EditorDropController["menuTarget"]>): boolean {
+    return this.menuTarget === target && target.view.file === target.file && target.file.path === target.path
+      && this.app.vault.getAbstractFileByPath(target.path) === target.file && target.view.editor === target.editor
+      && this.getEditorDocument(target.editor) === target.document && target.editor.getValue() === target.content
+      && this.app.workspace.getLeavesOfType("markdown").some(leaf => leaf.view === target.view);
+  }
+
+  appendMobileMenu(menu: Menu, path: string): void {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return;
+    const sourcePath = file.path, sourceMtime = file.stat.mtime, sourceSize = file.stat.size;
+    const strings = this.getUiStrings(), target = this.menuTarget;
+    const valid = target && this.isMenuTargetCurrent(target);
+    menu.addItem(item => item.setTitle(valid ? strings.mobile.insertInto(target.path) : strings.mobile.noTarget).setDisabled(true));
+    const addAction = (destination: Menu, action: SupportedDragInsertAction, heading?: HeadingCache) => {
+      const label = heading?.heading ?? this.getDragInsertMenuItemDetails(action, strings.view.dragInsertMenu, false).title;
+      if (valid) destination.addItem(item => item.setTitle(label).setIcon("text-cursor-input").onClick(() => {
+        if (file.path !== sourcePath || file.stat.mtime !== sourceMtime || file.stat.size !== sourceSize || !this.isMenuTargetCurrent(target)) { new Notice(strings.mobile.staleTarget); return; }
+        this.cancelPendingDrop();
+        const operation = this.prepareOperation(file, target.editor, target.view, target.position, { x: 0, y: 0 });
+        operation.menuTarget = target;
+        // Keep the snapshot from entry, rather than accepting edits made before this menu.
+        operation.targetContent = target.content; operation.targetDocument = target.document;
+        this.pendingDrop = operation;
+        void this.insertCardDragContent(operation, action, heading ? { kind: "heading", heading } : { kind: "whole" });
+      }));
+      destination.addItem(item => item.setTitle(`${strings.mobile.copy} · ${label}`).setIcon("copy").onClick(() => {
+        void this.copyMobile(file, action, heading);
+      }));
+    };
+    for (const action of this.getSupportedDragInsertActions(file)) {
+      addAction(menu, action);
+      if (this.getSettings().enableHeadingDragInsert && resolveCardFileKind(file) === "markdown") {
+        const headings = this.app.metadataCache.getFileCache(file)?.headings ?? [];
+        if (headings.length) menu.addItem(item => {
+          item.setTitle(`${this.getDragInsertMenuItemDetails(action, strings.view.dragInsertMenu, true).title}…`).setIcon("heading").onClick(() => {
+            const sections = new Menu().setUseNativeMenu(false);
+            for (const heading of headings) addAction(sections, action, heading);
+            sections.showAtPosition({ x: 24, y: 80 });
+          });
+        });
+      }
     }
-    if (useHeadings) {
-      this.openHeadingMenu(operation, action);
-      return;
-    }
-    await this.insertCardDragContent(operation, action, { kind: "whole" });
+  }
+
+  private async copyMobile(file: TFile, action: SupportedDragInsertAction, heading?: HeadingCache): Promise<void> {
+    const path = file.path, mtime = file.stat.mtime, size = file.stat.size;
+    try {
+      const headings = snapshotHeadings(this.app.metadataCache.getFileCache(file)?.headings ?? []);
+      const text = await buildCardInsertText(this.app, file, action, heading ? { heading, headings } : undefined);
+      if (this.disposed || file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file || file.stat.mtime !== mtime || file.stat.size !== size
+        || heading && !headingsEqual(headings, snapshotHeadings(this.app.metadataCache.getFileCache(file)?.headings ?? []))) return;
+      if (text === null) return;
+      try { await navigator.clipboard.writeText(text); }
+      catch {
+        const modal = new Modal(this.app); modal.setTitle(this.getUiStrings().mobile.selectText);
+        const field = modal.contentEl.createEl("textarea", { cls: "fce-copy-fallback" }); field.value = text; field.readOnly = true;
+        modal.open(); field.focus(); field.select();
+      }
+    } catch { new Notice(this.getUiStrings().view.dragInsertMenu.readFailed); }
   }
 
   private resolveDropEditorPosition(
@@ -421,6 +514,7 @@ export class EditorDropController {
 
   private isDropCurrent(operation: DropOperation): boolean {
     return !this.disposed && this.pendingDrop === operation
+      && (!operation.menuTarget || this.isMenuTargetCurrent(operation.menuTarget))
       && operation.file.path === operation.sourcePath
       && this.app.vault.getAbstractFileByPath(operation.sourcePath) === operation.file
       && operation.file.stat.mtime === operation.mtime && operation.file.stat.size === operation.size
@@ -459,17 +553,9 @@ export class EditorDropController {
     return { x: event.clientX, y: event.clientY };
   }
 
-  private async buildDragInsertText(file: TFile, action: SupportedDragInsertAction): Promise<string | null> {
-    switch (action) {
-      case "wiki":
-        return `[[${file.basename}]]`;
-      case "embed":
-        return `![[${file.basename}]]`;
-      case "content":
-        return await buildContentClipboardText(this.app, file);
-      case "title-content":
-        return await buildTitleAndContentClipboardText(this.app, file);
-    }
+  private buildOperationText(operation: DropOperation, action: SupportedDragInsertAction, target: DragInsertTarget): string | null | Promise<string | null> {
+    return buildCardInsertText(this.app, operation.file, action,
+      target.kind === "heading" ? { heading: target.heading, headings: operation.headings! } : undefined, operation.targetPath ?? "");
   }
 
   private async insertCardDragContent(
@@ -486,35 +572,17 @@ export class EditorDropController {
         new Notice(strings.unsupportedForFileType);
         return;
       }
-      let text: string | null;
-      if (target.kind === "whole") {
-        text = await this.buildDragInsertText(file, action);
-      } else {
-        if (!this.isHeadingCurrent(operation)) {
-          new Notice(strings.staleDrop);
-          return;
-        }
-        const headings = operation.headings!;
-        if (action === "wiki" || action === "embed") {
-          const anchor = resolveHeadingAnchor(headings, target.heading);
-          if (anchor === null) {
-            new Notice(strings.headingLinkUnavailable);
-            return;
-          }
-          const linktext = this.app.metadataCache.fileToLinktext(file, operation.targetPath ?? "", true);
-          text = `${action === "embed" ? "!" : ""}[[${linktext}${anchor}]]`;
-        } else {
-          const content = await this.app.vault.cachedRead(file);
-          text = extractHeadingSection(content, headings, target.heading, action === "title-content");
-        }
-      }
-      if (!this.isDropCurrent(operation)) return;
+      if (target.kind === "heading" && !this.isHeadingCurrent(operation)) { new Notice(strings.staleDrop); return; }
+      const generated = this.buildOperationText(operation, action, target);
+      const text = typeof generated === "string" || generated === null ? generated : await generated;
+      if (!this.isDropCurrent(operation)) { if (operation.menuTarget) new Notice(this.getUiStrings().mobile.staleTarget); return; }
       if (text === null || (target.kind === "heading" && !this.isHeadingCurrent(operation))) {
-        new Notice(strings.staleDrop);
+        new Notice(text === null && target.kind === "heading" && (action === "wiki" || action === "embed") ? strings.headingLinkUnavailable : strings.staleDrop);
         return;
       }
       // Retire before replaceRange emits editor-change synchronously.
       this.pendingDrop = null;
+      if (operation.menuTarget) this.menuTarget = null;
       operation.menu?.hide();
       if (text.length === 0) return;
       editor.replaceRange(text, position, undefined, "card-workspace-drag");

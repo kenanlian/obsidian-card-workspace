@@ -511,7 +511,7 @@ describe("modeless quick input", async () => {
   it("rejects unsupported frames before creating any document", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(desktop.check).mockImplementation(() => { throw new QuickInputDesktopError("native-frame"); });
-    await manager.open();
+    expect(await manager.open()).toEqual({ outcome: "unavailable", reason: "host" });
     expect(desktop.createWindow).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(noteInputStrings.en.nativeFrameUnsupported);
   });

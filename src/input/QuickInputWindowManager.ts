@@ -1,6 +1,8 @@
+import { resolveQuickInputTarget, type QuickInputDraftContext as DraftContext, type QuickInputTarget } from "./quick-input-session";
+import type { RuntimeActionResult } from "../runtime/platform";
 import { Platform, setIcon, type App } from "obsidian";
 import type { NoteInputStrings } from "../i18n/noteInput";
-import { normalizeQuickInputVisibility, type QuickInputVisibility, type QuickInputMode, type NoteInputResult, type QuickInputRequest } from "../note-input";
+import { normalizeQuickInputVisibility, type QuickInputVisibility, type NoteInputResult, type QuickInputRequest } from "../note-input";
 import { NoteCreationService, QuickInputPreflightError } from "../services/NoteCreationService";
 import { QuickInputBoxesSaveError } from "../services/QuickInputSubmissionCoordinator";
 import { CompatConfirmationModal } from "../view/modals/compat-modal";
@@ -17,16 +19,6 @@ const MIN_HEIGHT = 200;
 /** Typing a title passes through other note names; only a settled title switches create/append. */
 const TITLE_TARGET_DELAY = 250;
 interface Session { displayId?: number; id: string; abort: AbortController; window: QuickInputDesktopWindow | null; draft: Draft | null; closed: boolean }
-type DraftContext = Pick<QuickInputRequest, "config" | "now" | "target">;
-interface QuickInputTarget {
-  folderPath: string;
-  path: string | null;
-  valid: boolean;
-  /** A same-name note exists and the duplicate-title policy may append to it. */
-  existing: boolean;
-  /** What this draft shows; only the "append" policy previews appending. */
-  mode: QuickInputMode;
-}
 interface Draft {
   visibility: QuickInputVisibility;
   title: HTMLInputElement | null;
@@ -74,8 +66,9 @@ export class QuickInputWindowManager {
 
   constructor(private readonly options: Options) { this.targets = new NoteCreationService(options.app); }
 
-  async open(source?: Window): Promise<void> {
-    if (this.disposed || source?.closed) return;
+  async open(source?: Window): Promise<RuntimeActionResult> {
+    const unavailable = { outcome: "unavailable", reason: "host" } as const;
+    if (this.disposed || source?.closed) return unavailable;
     let session: Session | undefined;
     let mountingEditor = false;
     try {
@@ -93,7 +86,7 @@ export class QuickInputWindowManager {
       this.sessions.set(id, session);
       const opened = await this.options.desktop.createWindow({ id, placement, signal: session.abort.signal });
       if (session.closed || this.disposed || opened.win.closed || opened.handle.isDestroyed()) {
-        opened.dispose(); this.closeSession(session); return;
+        opened.dispose(); this.closeSession(session); return unavailable;
       }
       session.window = opened;
       mountingEditor = true;
@@ -102,7 +95,7 @@ export class QuickInputWindowManager {
       // Force style/layout before the first reveal. A hidden native window may
       // never deliver rAF, even with background throttling disabled.
       await this.waitForLayout(session);
-      if (session.closed || this.disposed || opened.handle.isDestroyed()) return;
+      if (session.closed || this.disposed || opened.handle.isDestroyed()) return unavailable;
       if (id === this.latestOpenId) {
         opened.handle.show();
         opened.handle.focus();
@@ -111,8 +104,10 @@ export class QuickInputWindowManager {
         // Reveal only this late draft; do not refocus or reorder other windows.
         opened.handle.showInactive();
       }
+      return { outcome: "ok", value: undefined };
     } catch (error) {
       this.fail(session, error, mountingEditor);
+      return unavailable;
     }
   }
 
@@ -267,15 +262,7 @@ export class QuickInputWindowManager {
 
   /** A captured request keeps describing its own destination across later settings edits. */
   private resolveTarget(context: DraftContext): QuickInputTarget {
-    const folderPath = context.target?.folderPath ?? context.config.folderPath;
-    try {
-      const resolved = this.targets.resolveQuickInputTarget(context);
-      const existing = resolved.mode === "append";
-      return { folderPath, path: resolved.path, valid: true, existing,
-        mode: existing && context.config.duplicateTitle === "append" ? "append" : "create" };
-    } catch {
-      return { folderPath, path: null, valid: false, existing: false, mode: "create" };
-    }
+    return resolveQuickInputTarget(this.options.app, context);
   }
 
   private updateTarget(draft: Draft): void {

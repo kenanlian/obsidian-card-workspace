@@ -1,8 +1,13 @@
-import { IMAGE_MAX_BYTES, maxImageBytes, MEMORY_MAX_BYTES, MEMORY_MAX_ENTRIES, imageKey,
+import { RuntimePhaseTimings } from "../runtime/diagnostics";
+import type { RuntimeWorkGate } from "../runtime/work-gate";
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
+import { maxImageBytes, imageKey,
   type ImageFingerprint, type ThumbnailGenerator, type ThumbnailResult, type ThumbnailStorage } from "./types";
 interface Consumer { signal: AbortSignal; canGenerate: () => boolean; onEligible: () => void; resolve: (result: ThumbnailResult) => void; abort: () => void }
 interface Job { fingerprint: ImageFingerprint; key: string; consumers: Set<Consumer>; eligible: boolean; invalidated?: boolean; step?: string; phase: "cache" | "queued" | "active" }
 export interface ThumbnailServiceDeps {
+  workGate?: RuntimeWorkGate;
+  resourceBudget?: RuntimeResourceBudget;
   storage: ThumbnailStorage;
   generator: ThumbnailGenerator;
   read: (fingerprint: ImageFingerprint) => Promise<ArrayBuffer>;
@@ -10,6 +15,7 @@ export interface ThumbnailServiceDeps {
 }
 /** Plugin-wide single cold task, dedupe, bounded Blob LRU and demand-only persistence. */
 export class ThumbnailService {
+  private readonly timings = new RuntimePhaseTimings();
   private readonly memory = new Map<string, Blob>();
   private readonly touched = new Map<string, number>();
   private readonly outcomes = new Map<string, ThumbnailResult>();
@@ -19,7 +25,11 @@ export class ThumbnailService {
   private coldTurn: number | null = null;
   private disposed = false;
   private owners = 0;
-  constructor(private readonly deps: ThumbnailServiceDeps) {}
+  private readonly stopWorkGate: () => void;
+  constructor(private readonly deps: ThumbnailServiceDeps) {
+    this.stopWorkGate = deps.workGate?.subscribe(active => { if (active) this.pump(); }) ?? (() => {});
+  }
+  private get budget() { return this.deps.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   acquire(): () => void {
     this.owners++;
     let released = false;
@@ -33,7 +43,7 @@ export class ThumbnailService {
       return Promise.resolve({ status: "ready", blob: cached }); }
     const outcome = this.outcomes.get(key);
     if (outcome) return Promise.resolve(outcome);
-    if (fingerprint.size <= 0 || fingerprint.size > maxImageBytes(fingerprint.path)) return Promise.resolve({ status: "skipped" });
+    if (fingerprint.size <= 0 || fingerprint.size > maxImageBytes(fingerprint.path, this.budget.image)) return Promise.resolve({ status: "skipped" });
     return new Promise((resolve) => {
       let job = this.jobs.get(key);
       const fresh = !job;
@@ -66,24 +76,30 @@ export class ThumbnailService {
     if (this.jobs.get(job.key) !== job || this.disposed) return;
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); return; }
     if (blob) { this.remember(job.key, blob); this.finish(job, { status: "ready", blob }); return; }
-    if (!this.deps.generator.available()) { this.finish(job, { status: "skipped" }); return; }
+    // Preserve visible desktop preflight timing; a paused cache miss must not
+    // allocate a decoder. Resume performs the same check in runNext.
+    if ((!this.deps.workGate || this.deps.workGate.isActive) && !this.deps.generator.available()) {
+      this.finish(job, { status: "skipped" }); return;
+    }
     job.phase = "queued";
     this.pump();
   }
   /** Called after visible text hydration settles or demand changes. Cache lookup never waits. */
   pump(): void {
-    if (this.disposed || this.active || this.coldTurn !== null || ![...this.jobs.values()].some((job) => job.phase === "queued")) return;
+    if ((this.deps.workGate && !this.deps.workGate.isActive) || this.disposed || this.active || this.coldTurn !== null || ![...this.jobs.values()].some((job) => job.phase === "queued")) return;
     // Let the foreground card paint and its ResizeObserver demand settle first.
     // Cache hits bypass this cold-only turn entirely.
     this.coldTurn = window.setTimeout(() => { this.coldTurn = null; this.runNext(); }, 32);
   }
   private runNext(): void {
-    if (this.disposed || this.active) return;
+    if ((this.deps.workGate && !this.deps.workGate.isActive) || this.disposed || this.active) return;
     const job = [...this.jobs.values()].find((item) => item.phase === "queued" && [...item.consumers].some((owner) => !owner.signal.aborted && owner.canGenerate()));
     if (!job) return;
     if (!this.valid(job)) { this.finish(job, { status: "skipped" }); this.pump(); return; }
+    if (!this.deps.generator.available()) { this.finish(job, { status: "skipped" }); this.pump(); return; }
     job.phase = "active"; this.active = true;
-    void this.generate(job).finally(() => { this.active = false; this.pump(); });
+    const finishTiming = this.timings.start("thumbnail");
+    void this.generate(job).finally(() => { finishTiming(); this.active = false; this.pump(); });
   }
   private async generate(job: Job): Promise<void> {
     let result: ThumbnailResult = { status: "skipped" };
@@ -91,7 +107,7 @@ export class ThumbnailService {
       if (this.deps.generator.available() && this.valid(job)) {
         job.step = "read";
         const buffer = await this.deps.read(job.fingerprint);
-        if (this.valid(job) && buffer.byteLength <= IMAGE_MAX_BYTES && job.consumers.size) {
+        if (this.valid(job) && buffer.byteLength <= maxImageBytes(job.fingerprint.path, this.budget.image) && job.consumers.size) {
           job.step = "render";
           result = await this.deps.generator.generate(buffer, () => {
             if (!this.valid(job)) return;
@@ -109,7 +125,7 @@ export class ThumbnailService {
       job.step = "persist";
       try { await this.deps.storage.put(job.key, result.blob); } catch { /* bounded memory remains usable */ }
       if (!this.valid(job)) { this.remove(job.key); result = { status: "skipped" }; }
-    } else if (job.consumers.size > 0) { this.outcomes.set(job.key, result); if (this.outcomes.size > MEMORY_MAX_ENTRIES) this.outcomes.delete(this.outcomes.keys().next().value!); }
+    } else if (job.consumers.size > 0) { this.outcomes.set(job.key, result); if (this.outcomes.size > this.budget.thumbnails.memoryEntries) this.outcomes.delete(this.outcomes.keys().next().value!); }
     this.finish(job, result);
   }
   private finish(job: Job, result: ThumbnailResult): void {
@@ -120,15 +136,17 @@ export class ThumbnailService {
   private remove(key: string): void { const blob = this.memory.get(key); if (blob) this.bytes -= blob.size; this.memory.delete(key); this.touched.delete(key); }
   private remember(key: string, blob: Blob): void {
     this.remove(key);
-    if (blob.size > MEMORY_MAX_BYTES) return;
+    if (blob.size > this.budget.thumbnails.memoryBytes) return;
     this.memory.set(key, blob); this.touched.set(key, Date.now()); this.bytes += blob.size;
-    while (this.memory.size > MEMORY_MAX_ENTRIES || this.bytes > MEMORY_MAX_BYTES) this.remove(this.memory.keys().next().value!);
+    while (this.memory.size > this.budget.thumbnails.memoryEntries || this.bytes > this.budget.thumbnails.memoryBytes) this.remove(this.memory.keys().next().value!);
   }
-  getDiagnostics(): { entries: number; bytes: number; jobs: number; active: number; owners: number } {
-    return { entries: this.memory.size, bytes: this.bytes, jobs: this.jobs.size, active: Number(this.active), owners: this.owners };
+  getDiagnostics() {
+    return { entries: this.memory.size, bytes: this.bytes, jobs: this.jobs.size, active: Number(this.active), owners: this.owners, queued: [...this.jobs.values()].filter(job => job.phase === "queued").length,
+      gate: this.deps.workGate?.getDiagnostics(), phases: this.timings.snapshot() };
   }
   dispose(): void {
     this.disposed = true;
+    this.stopWorkGate();
     if (this.coldTurn !== null) window.clearTimeout(this.coldTurn);
     this.coldTurn = null;
     for (const job of this.jobs.values()) this.finish(job, { status: "skipped" });

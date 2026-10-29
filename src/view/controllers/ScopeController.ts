@@ -1,3 +1,4 @@
+import { shouldRecordScopeHistory } from "../scope-history";
 import type { TFile } from "obsidian";
 
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
@@ -38,6 +39,7 @@ const VAULT_REFRESH_DEBOUNCE_MS = 250;
 
 export interface ScopeControllerDeps {
   context: ViewContext;
+  onScopeCommitted?: (scope: CardScope, recordHistory: boolean) => void;
   collectBoxFiles: (boxId: string) => TFile[];
   isPathInBox: (path: string, boxId: string) => boolean;
   deriveVisibleCardsFrom: (cards: readonly NoteCardRecord[]) => NoteCardRecord[];
@@ -86,6 +88,13 @@ export class ScopeController implements DisposableController {
   constructor(private readonly deps: ScopeControllerDeps) {}
 
   private get context(): ViewContext { return this.deps.context; }
+
+  async waitForIdle(): Promise<void> {
+    while (!this.disposed && (this.inFlight || this.queuedRequest)) {
+      if (this.inFlight) await this.inFlight;
+      await this.drainQueuedRequest();
+    }
+  }
 
   getLoadKey(): string | null { return this.loadKey; }
 
@@ -196,8 +205,13 @@ export class ScopeController implements DisposableController {
       };
     }
 
+    const hadCommittedScope = this.loadKey !== null;
     const scopeBeforeRequest = this.context.store.getScope();
     const committed = await this.runLoad(nextLoadScope, nextKey, forceRefresh);
+    if (committed && this.queuedRequest === null) {
+      const recordHistory = shouldRecordScopeHistory(request.source, hadCommittedScope && !scopesEqual(scopeBeforeRequest, this.context.store.getScope()), committed, false);
+      this.deps.onScopeCommitted?.(this.context.store.getScope(), recordHistory);
+    }
     await this.drainQueuedRequest();
     if (committed && !scopesEqual(scopeBeforeRequest, this.context.store.getScope())) {
       await this.persistScopeProjection();
@@ -229,7 +243,7 @@ export class ScopeController implements DisposableController {
       }
     }
     const result = await this.handleScopeSelection(
-      this.createProgrammaticSelectionRequest(scope, request.forceRefresh ?? true));
+      this.createProgrammaticSelectionRequest(scope, request.forceRefresh ?? true, "restore"));
     if (result.action === "rejected_invalid") {
       return { action: "skipped_invalid_folder", inFlightKey: this.inFlightKey };
     }

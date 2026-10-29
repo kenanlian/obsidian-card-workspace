@@ -1,3 +1,4 @@
+import { mobileStrings } from "./mobile";
 import * as Obsidian from "obsidian";
 import { navigationVisibilityStrings } from "./navigationVisibility";
 
@@ -50,6 +51,7 @@ export function isChineseLanguage(language: string = safeGetLanguage()): boolean
 }
 
 const EN: UiStrings = {
+  mobile: mobileStrings.en,
   navigationVisibility: navigationVisibilityStrings.en,
   settingTab: settingTabStrings.en,
   toolbar: toolbarStrings.en,
@@ -69,6 +71,7 @@ const EN: UiStrings = {
 };
 
 const ZH: UiStrings = {
+  mobile: mobileStrings.zh,
   navigationVisibility: navigationVisibilityStrings.zh,
   settingTab: settingTabStrings.zh,
   toolbar: toolbarStrings.zh,

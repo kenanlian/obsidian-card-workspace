@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-25T14:32:36.939357+00:00",
+  "baseCommit": "213f926d4ae7726ef23233f8488a1ad055d37470",
+  "sourceCommit": "500457cbc3c13d663403622ec81d3811ef36289a",
+  "branch": "refactor/mobile-readiness",
+  "worktree": "/home/kenan/Secret-Projects/obsidian-card-workspace-mobile-readiness",
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "22.18.0",
+    "npm": "10.9.3",
+    "chromium": "153.0.8010.12",
+    "independentDependencyInstall": true
+  },
+  "acceptance": {
+    "implementationAndOrdinaryValidationPassed": true,
+    "strictPerformanceAcceptancePassed": false,
+    "allPlanAcceptancePassed": false,
+    "remainingGaps": [
+      "XL minisearch-to-json exceeds the unchanged 750ms ceiling on both baseline and candidate.",
+      "Full image long/4/right textReady exceeds the unchanged relative ceiling; the unchanged baseline focused run reproduces the scenario."
+    ],
+    "thresholdsChanged": false,
+    "realDeviceCompatibilityClaimed": false
+  },
+  "ordinaryValidation": {
+    "passed": true,
+    "commands": [
+      "npm run lint",
+      "npm run check",
+      "npm run check:svelte",
+      "npm run build",
+      "npm test"
+    ],
+    "lintErrors": 0,
+    "lintWarnings": 0,
+    "svelteErrors": 0,
+    "svelteWarnings": 0,
+    "testFilesPassed": 179,
+    "testsPassed": 3696,
+    "testsSkipped": 1,
+    "productionNativeFreeStartupPassed": true,
+    "logs": {
+      "lint": {
+        "path": ".dev/mobile-readiness/final/lint.log",
+        "sha256": "53b37f2843c321e3304b66452562cf467e847c2fb2ff5f4737bc04affea61775"
+      },
+      "check": {
+        "path": ".dev/mobile-readiness/final/check.log",
+        "sha256": "ec2427facc7e94a7823d494b677842c8e71028805c9289a441b76c1dcda7d197"
+      },
+      "svelte": {
+        "path": ".dev/mobile-readiness/final/svelte.log",
+        "sha256": "7d024699151f0a9ec279dc14bdf116ee8ed302f7e00ba34b2d8d7e2eb5c9029a"
+      },
+      "build": {
+        "path": ".dev/mobile-readiness/final/build.log",
+        "sha256": "d8e244703bc90cee679643146aea9b6fe99ebf2adf0b84eaa745b1c19d8a5540"
+      },
+      "tests": {
+        "path": ".dev/mobile-readiness/final/tests.log",
+        "sha256": "ef6294f28ecfe794d971723af6a9faab896932c4a9e15817c2b85f39a162ae44"
+      }
+    }
+  },
+  "diagnostics": {
+    "searchSmoke": {
+      "exitCode": 0,
+      "report": {
+        "path": ".dev/mobile-readiness/final/search-smoke.json",
+        "sha256": "59fbd3845bd577240d9660ae7d2b97832cd52339965ae00036ad5b1ffd4929d9"
+      },
+      "contentChecksPassed": 9,
+      "contentChecksTotal": 9,
+      "buildSliceGate": null,
+      "perPhaseMaxSliceMs": {
+        "read-prepare": 101.904,
+        "minisearch-budgeted-ingest": 17.874,
+        "minisearch-to-json": 22.34,
+        "persist-structured-clone": 9.694,
+        "size-estimate-json-stringify": 9.906,
+        "search-sample-queries": 6.912
+      }
+    },
+    "searchFull": {
+      "exitCode": 0,
+      "report": {
+        "path": ".dev/mobile-readiness/final/search-full.json",
+        "sha256": "0529b1c04932302b589b88298f269eb46d579faa42cd192592f20ad280e7af2b"
+      },
+      "contentChecksPassed": 9,
+      "contentChecksTotal": 9,
+      "buildSliceGate": null,
+      "perPhaseMaxSliceMs": {
+        "read-prepare": 318.913,
+        "minisearch-budgeted-ingest": 16.432,
+        "minisearch-to-json": 72.843,
+        "persist-structured-clone": 33.6,
+        "size-estimate-json-stringify": 50.292,
+        "search-sample-queries": 36.644
+      }
+    },
+    "searchXl": {
+      "exitCode": 1,
+      "report": {
+        "path": ".dev/mobile-readiness/final/search-xl.json",
+        "sha256": "9ed10d7782cbf4c494f3cb9c4efb123032586c2615bfc179350767a05e1b25e8"
+      },
+      "contentChecksPassed": 9,
+      "contentChecksTotal": 9,
+      "buildSliceGate": {
+        "ingestThresholdMs": 300,
+        "otherBuildPhaseCeilingMs": 750,
+        "ingest": {
+          "id": "minisearch-budgeted-ingest",
+          "maxSliceMs": 32.538,
+          "ceilingMs": 300,
+          "passed": true
+        },
+        "otherBuildPhases": [
+          {
+            "id": "minisearch-to-json",
+            "maxSliceMs": 780.043,
+            "ceilingMs": 750,
+            "passed": false
+          },
+          {
+            "id": "persist-structured-clone",
+            "maxSliceMs": 332.426,
+            "ceilingMs": 750,
+            "passed": true
+          }
+        ],
+        "excludedPhases": [
+          {
+            "id": "read-prepare",
+            "reason": "Benchmark artifact: fixture Markdown is already in memory, so the whole corpus is prepared in one synchronous loop. Production interleaves awaited vault reads every 200 documents, which puts per-window preparation two orders of magnitude below this figure. No renderer experiences this slice."
+          },
+          {
+            "id": "size-estimate-json-stringify",
+            "reason": "Diagnostic-only isolated experiment that production is forbidden to perform; gating it would gate code that does not ship."
+          },
+          {
+            "id": "search-sample-queries",
+            "reason": "Query-time cost over a finished index, not a build phase at all."
+          }
+        ],
+        "passed": false
+      },
+      "perPhaseMaxSliceMs": {
+        "read-prepare": 1873.306,
+        "minisearch-budgeted-ingest": 32.538,
+        "minisearch-to-json": 780.043,
+        "persist-structured-clone": 332.426,
+        "size-estimate-json-stringify": 517.451,
+        "search-sample-queries": 335.419
+      }
+    },
+    "baselineSearchXl": {
+      "exitCode": 1,
+      "report": {
+        "path": ".dev/mobile-readiness/final/baseline-search-xl.json",
+        "sha256": "811fc4260811f2bb3e2c5d670ee09cb193e9d7848075051529133e60454a2aff"
+      },
+      "contentChecksPassed": 9,
+      "contentChecksTotal": 9,
+      "buildSliceGate": {
+        "ingestThresholdMs": 300,
+        "otherBuildPhaseCeilingMs": 750,
+        "ingest": {
+          "id": "minisearch-budgeted-ingest",
+          "maxSliceMs": 32.163,
+          "ceilingMs": 300,
+          "passed": true
+        },
+        "otherBuildPhases": [
+          {
+            "id": "minisearch-to-json",
+            "maxSliceMs": 778.338,
+            "ceilingMs": 750,
+            "passed": false
+          },
+          {
+            "id": "persist-structured-clone",
+            "maxSliceMs": 332.814,
+            "ceilingMs": 750,
+            "passed": true
+          }
+        ],
+        "excludedPhases": [
+          {
+            "id": "read-prepare",
+            "reason": "Benchmark artifact: fixture Markdown is already in memory, so the whole corpus is prepared in one synchronous loop. Production interleaves awaited vault reads every 200 documents, which puts per-window preparation two orders of magnitude below this figure. No renderer experiences this slice."
+          },
+          {
+            "id": "size-estimate-json-stringify",
+            "reason": "Diagnostic-only isolated experiment that production is forbidden to perform; gating it would gate code that does not ship."
+          },
+          {
+            "id": "search-sample-queries",
+            "reason": "Query-time cost over a finished index, not a build phase at all."
+          }
+        ],
+        "passed": false
+      },
+      "perPhaseMaxSliceMs": {
+        "read-prepare": 1789.257,
+        "minisearch-budgeted-ingest": 32.163,
+        "minisearch-to-json": 778.338,
+        "persist-structured-clone": 332.814,
+        "size-estimate-json-stringify": 536.804,
+        "search-sample-queries": 331.887
+      }
+    },
+    "images": {
+      "exitCode": 1,
+      "report": {
+        "path": ".dev/mobile-readiness/final/images.json",
+        "sha256": "95d1a2a844d2bbef6bd10b2103488f2d9fad48fdd1d16d42ae3893423ad2b23e"
+      },
+      "samples": 30,
+      "warmups": 5,
+      "measurementRows": 120,
+      "resourceRows": 120,
+      "cacheCases": 9,
+      "violations": [
+        "long/4/right: textReady 25.00 > 22.38 ms"
+      ],
+      "functionalAssertionsCompleted": true,
+      "scenarios": [
+        "none",
+        "mixed",
+        "dense",
+        "8k",
+        "long",
+        "repeat",
+        "pixel-boundary",
+        "pixel-over",
+        "byte-boundary",
+        "byte-over"
+      ],
+      "columns": [
+        1,
+        2,
+        4
+      ]
+    },
+    "baselineImagesFocused": {
+      "exitCode": 1,
+      "report": {
+        "path": ".dev/mobile-readiness/final/baseline-images-focused.json",
+        "sha256": "5109100656d0d43c792906bd2ee8a61f4e1e087b7b936dfc566540cd13151378"
+      },
+      "samples": 30,
+      "warmups": 5,
+      "measurementRows": 12,
+      "resourceRows": 12,
+      "cacheCases": 0,
+      "violations": [
+        "long/4/right: cardPublish 16.00 > 7.20 ms",
+        "long/4/right: textReady 35.10 > 22.16 ms",
+        "byte-boundary/4/right: cardPublish 22.50 > 7.20 ms",
+        "byte-boundary/4/right: textReady 33.30 > 22.27 ms"
+      ],
+      "functionalAssertionsCompleted": true,
+      "scenarios": [
+        "none",
+        "long",
+        "byte-boundary"
+      ],
+      "columns": [
+        4
+      ],
+      "bothSourceLanesAtBaseCommit": true,
+      "comparison": "Existing harness compares off against images; this is not a same-mode comparison."
+    },
+    "searchPreviewNode": {
+      "exitCode": 0,
+      "report": {
+        "path": ".dev/mobile-readiness/final/search-preview-node.json",
+        "sha256": "b6e4bcc5ce09a1ea294d734248d58fbf49673615f47183856036f66b26e4f295"
+      },
+      "passed": true,
+      "gatesPassed": 34,
+      "gatesTotal": 34
+    },
+    "searchPreviewBrowser": {
+      "exitCode": 0,
+      "report": {
+        "path": ".dev/mobile-readiness/final/search-preview-browser.json",
+        "sha256": "de5f118fa5676e9aa24b3c91768bb779e92fc19d5432f136db0a0c41a01f83cc"
+      },
+      "passed": true,
+      "gatesPassed": 48,
+      "gatesTotal": 48,
+      "layoutChecks": 60,
+      "browserErrors": []
+    }
+  },
+  "isolation": {
+    "originalWorkspace": "/home/kenan/Secret-Projects/obsidian-card-workspace",
+    "originalWorkspaceCleanAtBaseCommit": true,
+    "originalCompanionFilesCompared": 284,
+    "originalCompanionChangedFiles": 0,
+    "independentDevDirectory": true,
+    "unchangedVersionArtifacts": [
+      "manifest.json",
+      "versions.json",
+      "package-lock.json"
+    ],
+    "settingsSchemaVersion": 2,
+    "indexSchemaVersion": "phase3-v2",
+    "manifestVersion": "1.4.9",
+    "minAppVersion": "1.11.4",
+    "isDesktopOnly": true,
+    "merged": false,
+    "pushed": false,
+    "released": false
+  },
+  "developerDocumentation": {
+    "initialSnapshot": {
+      "path": ".dev/mobile-readiness/docs-initial.tar.gz",
+      "sha256": "d0345c8cb978b3ee03484dbbd4acb2864f984133a6ea82cd99ca2ee2070c9ed1"
+    },
+    "patch": {
+      "path": ".dev/mobile-readiness/development-docs.patch",
+      "sha256": "fb377b5339070f635c2e82e9f22816c462379aa83273938ca2eece90b4664ea9"
+    },
+    "snapshotVerification": {
+      "path": ".dev/mobile-readiness/docs-snapshot-verification.json",
+      "sha256": "5bb24b4cd553defacb5d05f208494e1b91b6e3e0fe1eaed25f11a7bbaf03c7e1"
+    },
+    "patchReverseCheckPassed": true
+  },
+  "retainedEvidence": {
+    "initialBaseline": ".dev/mobile-readiness/baseline/",
+    "firstDiagnosticAttempt": ".dev/mobile-readiness/diagnostic-attempt-1/",
+    "final": ".dev/mobile-readiness/final/",
+    "serialRunner": ".dev/mobile-readiness/run-final-diagnostics.sh",
+    "baselineSource": ".dev/mobile-readiness/baseline-source/",
+    "baselineImageLoadFailure": ".dev/mobile-readiness/final/baseline-images-focused-load-failure.log"
+  },
+  "scopeLimits": [
+    "Synthetic vaults and temporary profiles only.",
+    "Raw reports remain private artifacts in the retained worktree.",
+    "No mobile UI, touch, device settings migration, search read-pass reduction, search Worker or index format change.",
+    "No real Obsidian disk IO, native decoder memory peak or mobile device acceptance measurement."
+  ]
+}

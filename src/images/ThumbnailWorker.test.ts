@@ -1,8 +1,16 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThumbnailService } from "./ThumbnailService";
 import { ThumbnailWorker } from "./ThumbnailWorker";
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("Worker lifecycle", () => {
+  it.each(["Worker", "OffscreenCanvas", "createImageBitmap"])("degrades without %s before allocating a decoder", (missing) => {
+    const construct = vi.fn();
+    vi.stubGlobal("Worker", class { constructor() { construct(); } });
+    vi.stubGlobal("OffscreenCanvas", class {}); vi.stubGlobal("createImageBitmap", vi.fn());
+    vi.stubGlobal(missing, undefined);
+    expect(new ThumbnailWorker().available()).toBe(false); expect(construct).not.toHaveBeenCalled();
+  });
   it("releases the decoder Worker after a completed cold task", async () => {
     const terminate = vi.fn(), workers: Array<{ onmessage?: (event: { data: unknown }) => void }> = [];
     vi.stubGlobal("URL", { createObjectURL: () => "blob:worker", revokeObjectURL: vi.fn() });
@@ -33,7 +41,7 @@ describe("Worker lifecycle", () => {
     vi.stubGlobal("Worker", class { terminate = terminate; postMessage = postMessage; });
     const worker = new ThumbnailWorker(); expect(createObjectURL).not.toHaveBeenCalled();
     const buffer = new ArrayBuffer(100), pending = worker.generate(buffer, vi.fn());
-    expect(postMessage).toHaveBeenCalledWith(buffer, [buffer]); expect(revokeObjectURL).toHaveBeenCalledWith("blob:worker");
+    expect(postMessage).toHaveBeenCalledWith({ buffer, budget: DESKTOP_RESOURCE_BUDGET.image }, [buffer]); expect(revokeObjectURL).toHaveBeenCalledWith("blob:worker");
     await vi.advanceTimersByTimeAsync(10_000); expect(await pending).toEqual({ status: "skipped" }); expect(terminate).toHaveBeenCalledOnce();
     worker.dispose();
   });

@@ -204,6 +204,7 @@ export function openNavigationContextMenu(input: {
     },
   };
   if (!buildNavContextMenu(menu, payload, menuDeps)) return;
+  deps.appendTouchOrderMenu?.(menu, payload.originId);
   menu.onHide(() => input.restoreFocus(focusReturnId));
   if (trigger.kind === "pointer") menu.showAtMouseEvent(trigger.mouseEvent);
   else menu.showAtPosition(trigger.position);

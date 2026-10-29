@@ -1,3 +1,5 @@
+import { RuntimeWorkGate } from "../runtime/work-gate";
+import { createRuntimeResourceBudget } from "../runtime/resource-budget";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
@@ -32,6 +34,33 @@ const MIXED_KIND_FILES = [
 ];
 
 describe("SearchDocumentSource", () => {
+  it("pauses only full-source reads and aborts paused readers without blocking mutations", async () => {
+    const file = createFile("note.md"), prepare = vi.fn(async () => document(file.path));
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const source = new SearchDocumentSource({ vault: { getFiles: () => [file], getAbstractFileByPath: () => file } } as never,
+      prepare, undefined, gate);
+    const abort = new AbortController(), paused = source.readAllDocuments(abort.signal);
+    await Promise.resolve(); expect(prepare).not.toHaveBeenCalled();
+    expect(await source.readDocument(file.path)).toEqual(document(file.path));
+    abort.abort(); expect(await paused).toEqual([]); expect(gate.getDiagnostics().waiters).toBe(0);
+    const resumed = source.readAllDocuments(); gate.setActive(true);
+    expect(await resumed).toEqual([document(file.path)]); gate.close();
+  });
+
+  it("honors injected reader and batch budgets without changing vault order", async () => {
+    const files = Array.from({ length: 8 }, (_, i) => createFile(`${i}.md`));
+    let active = 0, peak = 0;
+    const source = new SearchDocumentSource({ vault: { getFiles: () => files } } as never, async (file) => {
+      active++; peak = Math.max(peak, active); await Promise.resolve(); active--;
+      return document(file.path);
+    }, createRuntimeResourceBudget({ search: { readers: 2, batchSize: 3 } }).search);
+    const batches = [];
+    for await (const batch of source.streamDocuments()) batches.push(batch);
+    expect(peak).toBe(2);
+    expect(batches.map(batch => batch.length)).toEqual([3, 3, 2]);
+    expect(batches.flat().map(doc => doc.path)).toEqual(files.map(file => file.path));
+  });
+
   it("limits reads to eight and returns successful documents in vault order", async () => {
     const files = Array.from({ length: 20 }, (_, index) => createFile(`${index}.md`));
     let active = 0;

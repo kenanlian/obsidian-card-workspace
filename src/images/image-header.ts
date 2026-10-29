@@ -1,8 +1,8 @@
-import { IMAGE_MAX_BYTES, IMAGE_MAX_PIXELS, THUMBNAIL_MAX_EDGE } from "./types";
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 export interface ImageHeader { width: number; height: number; orientation: number; mime: string; animated: boolean }
 /** Bounds checked container parsing. Never decode an unmeasurable image. Runs in the Worker. */
-export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
-  if (buffer.byteLength > IMAGE_MAX_BYTES || buffer.byteLength < 12) return null;
+export function readImageHeader(buffer: ArrayBuffer, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): ImageHeader | null {
+  if (buffer.byteLength > budget.maxBytes || buffer.byteLength < 12) return null;
   const v = new DataView(buffer);
   const text = (p: number, n: number): string => {
     if (p + n > v.byteLength) return "";
@@ -98,10 +98,10 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
     } else if (text(0, 6) === "GIF87a" || text(0, 6) === "GIF89a") {
       mime = "image/gif";
       width = v.getUint16(6, true); height = v.getUint16(8, true);
-      if (!validateGifFrames(buffer, width, height)) return null;
+      if (!validateGifFrames(buffer, width, height, budget.maxPixels)) return null;
       animated = true;
     } else if (text(4, 4) === "ftyp") {
-      const dimensions = readAvifDimensions(buffer);
+      const dimensions = readAvifDimensions(buffer, budget.maxPixels);
       if (!dimensions) return null;
       mime = "image/avif"; width = dimensions.width; height = dimensions.height;
     } else if (text(0, 2) === "BM") {
@@ -113,18 +113,18 @@ export function readImageHeader(buffer: ArrayBuffer): ImageHeader | null {
       } else return null;
     } else return null;
   } catch { return null; }
-  if (width <= 0 || height <= 0 || width * height > IMAGE_MAX_PIXELS) return null;
+  if (width <= 0 || height <= 0 || width * height > budget.maxPixels) return null;
   return { width, height, orientation, mime, animated };
 }
-export function thumbnailDimensions(header: ImageHeader): { width: number; height: number } {
+export function thumbnailDimensions(header: ImageHeader, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): { width: number; height: number } {
   const swapped = header.orientation >= 5;
   const w = swapped ? header.height : header.width, h = swapped ? header.width : header.height;
-  const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(w, h));
+  const scale = Math.min(1, budget.maxEdge / Math.max(w, h));
   return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) };
 }
 
 /** Bounded ISO-BMFF walk. Never inspect compressed mdat payloads. */
-function readAvifDimensions(buffer: ArrayBuffer): { width: number; height: number } | null {
+function readAvifDimensions(buffer: ArrayBuffer, maxPixels: number): { width: number; height: number } | null {
   const view = new DataView(buffer);
   let width = 0, height = 0, boxes = 0, branded = false;
   const text = (offset: number): string => String.fromCharCode(...new Uint8Array(buffer, offset, 4));
@@ -149,7 +149,7 @@ function readAvifDimensions(buffer: ArrayBuffer): { width: number; height: numbe
       } else if (kind === "ispe") {
         if (limit - data !== 12) return false;
         const w = view.getUint32(data + 4), h = view.getUint32(data + 8);
-        if (!w || !h || w * h > IMAGE_MAX_PIXELS) return false;
+        if (!w || !h || w * h > maxPixels) return false;
         width = Math.max(width, w); height = Math.max(height, h);
       } else if (kind === "meta" || kind === "iprp" || kind === "ipco") {
         const child = data + (kind === "meta" ? 4 : 0);
@@ -160,14 +160,14 @@ function readAvifDimensions(buffer: ArrayBuffer): { width: number; height: numbe
     return true;
   };
   try {
-    return walk(0, buffer.byteLength, 0) && branded && width > 0 && height > 0 && width * height <= IMAGE_MAX_PIXELS
+    return walk(0, buffer.byteLength, 0) && branded && width > 0 && height > 0 && width * height <= maxPixels
       ? { width, height } : null;
   } catch { return null; }
 }
 
 /** Validate frame bounds too: a small GIF logical screen must not hide a giant frame. */
-function validateGifFrames(buffer: ArrayBuffer, width: number, height: number): boolean {
-  if (!width || !height || width * height > IMAGE_MAX_PIXELS || buffer.byteLength < 14) return false;
+function validateGifFrames(buffer: ArrayBuffer, width: number, height: number, maxPixels: number): boolean {
+  if (!width || !height || width * height > maxPixels || buffer.byteLength < 14) return false;
   const view = new DataView(buffer);
   let position = 13, frames = 0;
   if (view.getUint8(10) & 0x80) position += 3 * (2 << (view.getUint8(10) & 7));

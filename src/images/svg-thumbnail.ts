@@ -1,13 +1,14 @@
 import { sanitizeSvg } from "../view/svg-sanitize";
-import { IMAGE_MAX_PIXELS, SVG_MAX_BYTES, THUMBNAIL_MAX_EDGE, type ThumbnailResult } from "./types";
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
+import { SVG_MAX_BYTES, type ThumbnailResult } from "./types";
 
 export function isSvgBuffer(buffer: ArrayBuffer): boolean {
   return /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg(?:\s|>)/i.test(
     new TextDecoder().decode(buffer.slice(0, 4096)));
 }
 /** DOM parsing stays on the host; only a detached, sanitized, bounded image is decoded. */
-export async function generateSvgThumbnail(buffer: ArrayBuffer, onEligible: () => void, signal: AbortSignal): Promise<ThumbnailResult> {
-  if (buffer.byteLength > SVG_MAX_BYTES || signal.aborted) return { status: "skipped" };
+export async function generateSvgThumbnail(buffer: ArrayBuffer, onEligible: () => void, signal: AbortSignal, budget: RuntimeResourceBudget["image"] = DESKTOP_RESOURCE_BUDGET.image): Promise<ThumbnailResult> {
+  if (buffer.byteLength > Math.min(SVG_MAX_BYTES, budget.maxBytes) || signal.aborted) return { status: "skipped" };
   const source = new TextDecoder().decode(buffer);
   if (/<!DOCTYPE|<!ENTITY/i.test(source)) return { status: "skipped" };
   const doc = new DOMParser().parseFromString(source, "image/svg+xml");
@@ -21,9 +22,9 @@ export async function generateSvgThumbnail(buffer: ArrayBuffer, onEligible: () =
   };
   const width = length(root.getAttribute("width"), validBox ? viewBox[2] : 300);
   const height = length(root.getAttribute("height"), validBox ? viewBox[3] : 150);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width * height > IMAGE_MAX_PIXELS) return { status: "skipped" };
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width * height > budget.maxPixels) return { status: "skipped" };
   if (!validBox) root.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(width, height));
+  const scale = Math.min(1, budget.maxEdge / Math.max(width, height));
   const outputWidth = Math.max(1, Math.round(width * scale)), outputHeight = Math.max(1, Math.round(height * scale));
   root.setAttribute("width", String(outputWidth)); root.setAttribute("height", String(outputHeight));
   const sanitized = sanitizeSvg(doc);

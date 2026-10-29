@@ -38,6 +38,8 @@ import { resolveViewConfig } from "./view-config";
  * function so `createViewModules` can run before the view finishes constructing.
  */
 export interface ViewModuleHost {
+  onScopeCommitted?: (scope: import("./scope").CardScope, recordHistory: boolean) => void;
+  appendMobileInsertMenu?: (menu: import("obsidian").Menu, path: string) => void;
   flushSettings?: () => Promise<void>;
   openTemplateNote?: (path: string, selectTitle?: boolean) => Promise<void>;
   runTemplateOperation?: (work: () => Promise<boolean>) => Promise<boolean>;
@@ -189,7 +191,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getTooltipSide: () => host.getTooltipSide(),
   });
   const scopeController: ScopeController = new ScopeController({
-    context,
+    context, onScopeCommitted: host.onScopeCommitted,
     collectBoxFiles: gate.guard("boxActions.collectBoxFilesById", (boxId) =>
       boxActions.collectBoxFilesById(boxId),
     ),
@@ -229,7 +231,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       else host.publishLoadCommit?.();
     },
     publishSettledScope: () => (host.publishSettledScope ?? host.publishLoadCommit)?.(),
-    startupCardCount: HydrationController.startupCardCount,
+    startupCardCount: hydration.startupCardCount,
   });
 
   const templateActions = new TemplateActions({
@@ -357,6 +359,24 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const cardMenu: CardContextMenu = new CardContextMenu({
     context,
+    appendMobileActions: (menu, path) => {
+      if ((context.runtimePlatform?.device ?? "desktop") === "desktop") return;
+      host.appendMobileInsertMenu?.(menu, path);
+      menu.addSeparator();
+      menu.addItem(item => item.setTitle(context.getUiStrings().mobile.bulkSelect).setIcon("list-checks").onClick(() => {
+        if (!bulk.isBulkMode()) bulk.toggleBulkMode(); bulk.onBulkSelectCard({ path });
+      }));
+      const pins = resolveViewConfig(context.store.getScope(), context.getSettings()).pinnedPaths;
+      const pinned = pins.includes(path);
+      if (pinned) for (const delta of [-1, 1] as const) {
+        const index = pins.indexOf(path) + delta;
+        menu.addItem(item => item.setTitle(delta < 0 ? context.getUiStrings().mobile.moveEarlier : context.getUiStrings().mobile.moveLater)
+          .setIcon(delta < 0 ? "arrow-up" : "arrow-down").setDisabled(index < 0 || index >= pins.length).onClick(() => { void arrangementActions.movePinnedCard(path, delta); }));
+      }
+      menu.addItem(item => item.setTitle(pinned ? context.getUiStrings().cardItem.unpin : context.getUiStrings().cardItem.pin).setIcon("pin").onClick(() => {
+        void arrangementActions.onPinToggle({ path, pinned: !pinned });
+      }));
+    },
     resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
     isBoxMode: () => boxActions.isBoxMode(),
     appendAddToBoxMenu: (menu, paths) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readImageHeader, thumbnailDimensions } from "./image-header";
-import { IMAGE_MAX_BYTES } from "./types";
+import { resolveRuntimeResourceBudget } from "../runtime/resource-budget";
+import { IMAGE_MAX_BYTES, maxImageBytes, SVG_MAX_BYTES } from "./types";
 function png(width = 80, height = 40, animated = false): ArrayBuffer {
   const bytes = new Uint8Array(animated ? 65 : 45), v = new DataView(bytes.buffer);
   v.setUint32(0, 0x89504e47); v.setUint32(4, 0x0d0a1a0a); v.setUint32(8, 13);
@@ -84,4 +85,16 @@ it("bounds GIF canvas and AVIF spatial properties before decode", () => {
   expect(readImageHeader(malformed)).toBeNull();
   const nonAvif = avif(80, 40); new Uint8Array(nonAvif).fill(0, 8, 20);
   expect(readImageHeader(nonAvif)).toBeNull();
+});
+
+it("keeps main format support while enforcing the selected mobile image budget", () => {
+  const phone = resolveRuntimeResourceBudget("phone").image;
+  expect(readImageHeader(avif(4000, 4000), phone)).not.toBeNull();
+  expect(readImageHeader(avif(4000, 4001), phone)).toBeNull();
+  expect(readImageHeader(png(4000, 4000, true), phone)).toMatchObject({ animated: true });
+  expect(readImageHeader(png(4000, 4001, true), phone)).toBeNull();
+  expect(readImageHeader(webp(true), phone)).toMatchObject({ animated: true });
+  expect(maxImageBytes("photo.avif", phone)).toBe(phone.maxBytes);
+  expect(maxImageBytes("diagram.SVG", phone)).toBe(SVG_MAX_BYTES);
+  expect(maxImageBytes("diagram.svg", { ...phone, maxBytes: 100 })).toBe(100);
 });

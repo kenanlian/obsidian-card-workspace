@@ -1,3 +1,5 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import type MiniSearch from "minisearch";
 import type { SearchableDocument } from "./types";
 
@@ -9,7 +11,7 @@ import type { SearchableDocument } from "./types";
  * notes are a yield boundary that buys nothing and costs a clamped timer.
  * A term budget scales the yield interval with the work actually done.
  */
-export const INGEST_YIELD_TERM_BUDGET = 20_000;
+export const INGEST_YIELD_TERM_BUDGET = DESKTOP_RESOURCE_BUDGET.search.ingestTerms;
 
 /**
  * Upper bound on the terms `tokenizeSearchIndexText` can emit for a document.
@@ -42,18 +44,22 @@ export async function addDocumentsWithYield(
   carryOverTerms: number,
   isCurrent: () => boolean,
   signal?: AbortSignal,
+  termBudget = INGEST_YIELD_TERM_BUDGET,
+  workGate?: RuntimeWorkGate,
 ): Promise<number> {
   let accumulated = carryOverTerms;
+  if (workGate && !(await workGate.wait(signal))) return accumulated;
   for (const document of documents) {
     if (signal?.aborted || !isCurrent()) return accumulated;
     index.add(document);
     accumulated += estimateEmittedTerms(document);
-    if (accumulated < INGEST_YIELD_TERM_BUDGET) continue;
+    if (accumulated < termBudget) continue;
     accumulated = 0;
     // Main-window timer. The Node benchmark aliases window before this runs.
     await new Promise<void>((resolve) => {
       window.setTimeout(resolve, 0);
     });
+    if (workGate && !(await workGate.wait(signal))) return accumulated;
   }
   return accumulated;
 }

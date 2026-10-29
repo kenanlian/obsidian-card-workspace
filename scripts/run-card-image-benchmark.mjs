@@ -15,10 +15,11 @@ if (!output || !path.isAbsolute(output)) throw new Error("Pass --output <absolut
 const baselineCommit = option("--baseline", "60724aceb4cfebffad3e4d26d8f7043271f6749d");
 const samples = Number(option("--samples", "30")), warmups = Number(option("--warmups", "5"));
 const smoke = args.includes("--smoke");
+const sameImageModes = args.includes("--same-image-modes");
 const project = process.cwd(), temporary = await mkdtemp(path.join(tmpdir(), "card-images-"));
 const frozen = path.join(temporary, "baseline"), publicDir = path.join(temporary, "public");
 let browser, server, traceSession;
-const report = { schemaVersion: 1, baselineCommit, samples, warmups, smoke, environment: { platform: process.platform, node: process.version }, metrics: [], resources: [], violations: [], limitations: ["Synthetic Vault/MetadataCache APIs; native local File.arrayBuffer reads stand in for vault.readBinary. Real Svelte, production hydration/projection/image controllers, Worker decode, IndexedDB and layout.", "Search measures ready-result projection and rendering, not MiniSearch query/build time.", "Obsidian desktop disk IO and Electron decode peaks require the desktop acceptance procedure."] };
+const report = { schemaVersion: 1, baselineCommit, samples, warmups, smoke, comparison: sameImageModes ? "same-image-modes" : "off-versus-images", environment: { platform: process.platform, node: process.version }, metrics: [], resources: [], violations: [], limitations: ["Synthetic Vault/MetadataCache APIs; native local File.arrayBuffer reads stand in for vault.readBinary. Real Svelte, production hydration/projection/image controllers, Worker decode, IndexedDB and layout.", "Search measures ready-result projection and rendering, not MiniSearch query/build time.", "Obsidian desktop disk IO and Electron decode peaks require the desktop acceptance procedure."] };
 const p95 = (values) => [...values].sort((a,b) => a-b)[Math.max(0, Math.ceil(values.length * .95) - 1)];
 function imageTaskGate(tasks, label) {
   const byKind = {};
@@ -38,8 +39,8 @@ try {
         // Image modules only exist in the candidate; baseline never activates them.
         // Both lanes use the same Obsidian DOM helpers from the shared host stub.
         const relative = args.path.replace("../../src/", "src/");
-        const owner = relative.startsWith("src/images/") || relative.endsWith("CardImageController")
-          || relative === "src/__mocks__/obsidian-dom" ? project : root;
+        const owner = ((!sameImageModes && (relative.startsWith("src/images/") || relative.endsWith("CardImageController")))
+          || relative === "src/__mocks__/obsidian-dom") ? project : root;
         const suffix = args.path.endsWith(".svelte") ? "" : relative === "src/i18n" ? "/index.ts" : ".ts";
         return { path: path.join(owner, relative + suffix) };
       });
@@ -47,7 +48,7 @@ try {
     } };
     await build({ entryPoints: [path.join(project, "scripts/image-benchmark/browser.ts")], outfile: path.join(publicDir, `${target}.js`),
       bundle: true, format: "iife", platform: "browser", target: "es2020", minify: true, sourcemap: false,
-      conditions: ["browser"], define: { BENCHMARK_BASELINE: String(target === "baseline") },
+      conditions: ["browser"], define: { BENCHMARK_BASELINE: String(target === "baseline" && !sameImageModes) },
       plugins: [redirect, thumbnailWorkerPlugin({ production: true }), sveltePlugin({ compilerOptions: { dev: false, css: "injected" } })] });
     const css = await readFile(path.join(root, "styles.css"), "utf8");
     await writeFile(path.join(publicDir, `${target}.html`), `<!doctype html><meta charset="utf-8"><style>
@@ -78,7 +79,7 @@ try {
   for (const scenario of scenarios) for (const columns of columnsList) {
     const baselineMetrics = {};
     for (const target of ["baseline", "candidate"]) {
-      for (const mode of target === "baseline" ? ["off"] : ["off", "right", "inline"]) {
+      for (const mode of target === "baseline" && !sameImageModes ? ["off"] : ["off", "right", "inline"]) {
         // Each mode starts in its own renderer, just as the baseline does.
         // Previous mode scroll/decoder teardown must not contaminate its samples.
         const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } }); const page = await context.newPage();
@@ -99,11 +100,11 @@ try {
         }
         await page.evaluate(() => window.imageBenchmark.settleImages());
         const row = { target, mode, scenario, columns, p95: Object.fromEntries(Object.entries(values).map(([key, list]) => [key, p95(list)])), samples: values, mainThreadLongTasks, originalReadSamples };
-        if (target === "baseline") baselineMetrics.off = row.p95;
+        if (target === "baseline") baselineMetrics[mode] = row.p95;
         else {
           row.gates = Object.fromEntries((mode === "off" ? ["cardPublish", "search"] : ["cardPublish", "textReady"]).map((metric) => {
             const multiplier = mode === "off" ? 1.05 : 1.1, allowance = mode === "off" ? 2 : 5;
-            const limit = baselineMetrics.off[metric] * multiplier + allowance;
+            const limit = baselineMetrics[sameImageModes ? mode : "off"][metric] * multiplier + allowance;
             const passed = row.p95[metric] <= limit;
             if (!passed) report.violations.push(`${scenario}/${columns}/${mode}: ${metric} ${row.p95[metric].toFixed(2)} > ${limit.toFixed(2)} ms`);
             return [metric, { limit, passed }];

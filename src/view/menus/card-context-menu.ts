@@ -18,6 +18,7 @@ export type CardMenuAction =
 
 export interface CardContextMenuDeps {
   context: ViewContext;
+  appendMobileActions?: (menu: Menu, path: string) => void;
   resolveLiveMarkdownFile: (notePath: string) => TFile | null;
   isBoxMode: () => boolean;
   appendAddToBoxMenu: (menu: Menu, paths: string[]) => void;
@@ -146,7 +147,7 @@ export class CardContextMenu {
     addAction(strings.openInCurrentWindow, "folder-open", "current-area");
     addAction(strings.openInNewTab, "file-plus", "new-tab");
     addAction(strings.openToTheRight, "separator-vertical", "split-right");
-    addAction(strings.openInNewWindow, "picture-in-picture-2", "new-window");
+    if (this.deps.context.runtimePlatform?.capabilities.newWindow) addAction(strings.openInNewWindow, "picture-in-picture-2", "new-window");
 
     menu.addSeparator();
 
@@ -186,6 +187,7 @@ export class CardContextMenu {
 
     addAction(strings.rename, "pencil", "rename");
     addAction(strings.delete, "trash", "delete");
+    this.deps.appendMobileActions?.(menu, notePath);
   }
 
   async routeAction(action: CardMenuAction, notePath: string): Promise<void> {

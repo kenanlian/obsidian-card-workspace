@@ -1,3 +1,5 @@
+import { RuntimeActivity } from "./runtime/activity";
+import { resolveRuntimeResourceBudget } from "./runtime/resource-budget";
 /*
  * Copyright (c) 2026 kenanlian
  * SPDX-License-Identifier: GPL-3.0-only
@@ -9,10 +11,12 @@ import { NoteCreationService, NoteInputError } from "./services/NoteCreationServ
 import { TemplateStorageService } from "./services/TemplateStorageService";
 import { TemplateActions } from "./view/actions/template-actions";
 import { focusTemplateEditor, focusTemplateNote } from "./input/template-editor";
-import type { TemplateNoteCursor } from "./note-input";
+import type { QuickInputRequest, TemplateNoteCursor } from "./note-input";
 import { TemplateReferenceReconciler } from "./services/TemplateReferenceReconciler";
 import { QUICK_INPUT_VIEW, QuickInputView } from "./input/QuickInputView";
-import { createQuickInputDesktop } from "./input/quick-input-desktop";
+import { createRuntimePlatformServices } from "./runtime/platform-services";
+import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
+import type { RuntimeActionResult, RuntimeUnavailable } from "./runtime/platform";
 import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import type { QuickInputWindowManager } from "./input/QuickInputWindowManager";
 
@@ -33,7 +37,7 @@ import { isSupportedImagePath } from "./images/image-source";
 import { ThumbnailService } from "./images/ThumbnailService";
 import { ThumbnailStore } from "./images/ThumbnailStore";
 import { ThumbnailWorker } from "./images/ThumbnailWorker";
-import { resolveSearchVaultNamespace } from "./services/SearchDocumentSource";
+import { resolveVaultCacheIdentity } from "./runtime/vault-namespace";
 import { EditorView, dropCursor } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
 import { getUiStrings, resolveUiLanguage, type UiLanguage, type UiStrings } from "./i18n";
@@ -61,7 +65,6 @@ import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./s
 import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
 import { canOpenFileInObsidian } from "./file-visibility";
-import { openInDefaultApp } from "./view/desktop-shell";
 import { createFolderScope, type CardScope } from "./view/scope";
 import { locationExistsInText, type CardOpenLocation, type LinkCardLocation, type LinkReferenceCardLocation, type SearchSnippetCardLocation } from "./view/link-card-location";
 import { resolveSearchSnippetLocation } from "./search";
@@ -86,12 +89,24 @@ export default class CardWorkspacePlugin extends Plugin {
       await this.settingsStore.updateFlat({});
     },
   });
-  private readonly quickInputDesktop = createQuickInputDesktop(window);
+  readonly runtimeActivity = new RuntimeActivity();
+  private readonly activityWindows = new Map<Window, () => void>();
+  readonly runtimePlatform = createRuntimePlatformServices(() => this.app, window);
+  readonly resourceBudget = resolveRuntimeResourceBudget(this.runtimePlatform.device);
+  private resolvedCacheIdentity: ReturnType<typeof resolveVaultCacheIdentity> | null = null;
+  private get vaultCacheIdentity() { return this.resolvedCacheIdentity ??= resolveVaultCacheIdentity(this.app, this.runtimePlatform.device); }
+  private get vaultCacheNamespace(): string { return this.vaultCacheIdentity.namespace; }
   readonly quickInputShortcut = new QuickInputShortcut({
-    bridge: () => this.quickInputDesktop.shortcuts(),
+    bridge: () => {
+      const result = this.runtimePlatform.quickInputDesktop();
+      if (result.outcome === "unavailable") throw new Error("Desktop shortcut unavailable");
+      return result.value.shortcuts();
+    },
     save: async (accelerator) => { await this.saveSettings({ quickInputGlobalShortcut: accelerator }); await this.flushSettings(); },
     open: () => { void this.openQuickInput(); },
   });
+  private mobileQuickInput: import("./input/MobileQuickInput").MobileQuickInput | null = null;
+  private mobileQuickInputOpening: Promise<RuntimeActionResult> | null = null;
   private quickInputManager: QuickInputWindowManager | null = null;
   private quickInputInitialization: Promise<QuickInputWindowManager | null> | null = null;
   private readonly templateReferenceReconciler = new TemplateReferenceReconciler({
@@ -101,8 +116,20 @@ export default class CardWorkspacePlugin extends Plugin {
   private readonly settingsStore = new SettingsStore({
     load: () => this.loadData(),
     save: (data) => this.saveData(data),
+    local: {
+      load: () => this.app.loadLocalStorage("card-workspace.device-settings.v1"),
+      save: (data) => this.app.saveLocalStorage("card-workspace.device-settings.v1", data),
+      onError: (error) => { console.warn("[Card Workspace] Device settings unavailable", error); new Notice(this.getUiStrings().mobile.localStorageUnavailable); },
+    },
   });
   private thumbnails: { service: ThumbnailService; vault: string } | null = null;
+  private readonly scopeHistoryAnchors = new WeakMap<WorkspaceLeaf, Map<string, import("./view/scroll-anchoring").RowAnchor>>();
+  getScopeHistoryAnchors(leaf: WorkspaceLeaf) {
+    let anchors = this.scopeHistoryAnchors.get(leaf);
+    if (!anchors) { anchors = new Map(); this.scopeHistoryAnchors.set(leaf, anchors); }
+    return anchors;
+  }
+  readonly navigationSessionId = `${Date.now()}-${Math.random()}`;
   private selectionRequestSeq = 0;
   private cardOpenSeq = 0;
   private templateOpenDepth = 0;
@@ -124,6 +151,10 @@ export default class CardWorkspacePlugin extends Plugin {
   });
   private readonly nativeFileDragController = new NativeFileDragController(() => this.app);
   private readonly searchCoordinator = new SearchCoordinator({
+    workGate: this.runtimeActivity.background,
+    resourceBudget: this.resourceBudget,
+    getVaultNamespace: () => this.vaultCacheNamespace,
+    canPersist: () => this.vaultCacheIdentity.persistent,
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
     getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
@@ -149,6 +180,7 @@ export default class CardWorkspacePlugin extends Plugin {
     getApp: () => this.app,
   });
   private readonly navigationWorkspaceReconciler = new NavigationWorkspaceReconciler({
+    workGate: this.runtimeActivity.background,
     getSettings: () => this.getSettings(),
     saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
@@ -159,15 +191,34 @@ export default class CardWorkspacePlugin extends Plugin {
   });
 
   startCardFileDrag({ event, path }: CardFileDragStartPayload): (() => void) | null {
-    return this.nativeFileDragController.start(event, path);
+    return this.runtimePlatform.capabilities.nativeFileDrag ? this.nativeFileDragController.start(event, path) : null;
+  }
+
+  /** Bounded on-demand evidence; per-view caches are additive, not process limits. */
+  getRuntimeDiagnostics() {
+    const views: ReturnType<FolderCardView["getRuntimeDiagnostics"]>[] = [];
+    let viewCount = 0, activePreviewReads = 0, previewCacheEntries = 0, diagramBytes = 0, searchSourceBytes = 0, objectUrls = 0;
+    this.withFolderViews((view) => {
+      const snapshot = view.getRuntimeDiagnostics(); viewCount++;
+      activePreviewReads += snapshot.preview.active; previewCacheEntries += snapshot.preview.cacheEntries;
+      diagramBytes += snapshot.preview.diagramBytes; searchSourceBytes += snapshot.preview.searchSources.estimatedBytes;
+      objectUrls += snapshot.images.objectUrls;
+      if (views.length < 16) views.push(snapshot);
+    });
+    return { device: this.runtimePlatform.device, storage: this.vaultCacheIdentity, settingsStorage: this.settingsStore.getPersistenceDiagnostics(), resourceBudget: this.resourceBudget, activity: this.runtimeActivity.getDiagnostics(),
+      search: this.searchCoordinator.getResourceDiagnostics(), thumbnails: this.thumbnails?.service.getDiagnostics() ?? null,
+      totals: { viewCount, activePreviewReads, previewCacheEntries, diagramBytes, searchSourceBytes, objectUrls }, views, omittedViews: Math.max(0, viewCount - views.length) };
   }
 
   getThumbnailService(): { service: ThumbnailService; vault: string } | null {
     if (this.disposed || this.getSettings().cardImageMode === "off") return null;
     if (!this.thumbnails) {
-      const vault = resolveSearchVaultNamespace(this.app);
+      const vault = this.vaultCacheNamespace;
       const service = new ThumbnailService({
-        storage: new ThumbnailStore(vault), generator: new ThumbnailWorker(),
+        workGate: this.runtimeActivity.background,
+        resourceBudget: this.resourceBudget,
+        storage: new ThumbnailStore(vault, this.vaultCacheIdentity.persistent ? undefined : null, this.resourceBudget.thumbnails.diskEntries, this.resourceBudget.thumbnails.diskBytes),
+        generator: new ThumbnailWorker(this.resourceBudget.image),
         isCurrent: (fingerprint) => {
           const file = this.app.vault.getAbstractFileByPath(fingerprint.path);
           return file instanceof TFile && file.stat.mtime === fingerprint.mtime && file.stat.size === fingerprint.size;
@@ -184,6 +235,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onload(): void {
+    if (typeof document !== "undefined" && typeof document.addEventListener === "function") this.trackActivityWindow(window);
     this.registerVaultEventListeners();
     this.registerCustomIcons();
     this.register(() => this.disposeRuntime());
@@ -222,21 +274,24 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("quit", () => this.disposeRuntime()));
     this.registerEvent(this.app.workspace.on("window-close", (_workspaceWindow, win) => {
       this.popoutEvents.get(win)?.unload(); this.popoutEvents.delete(win);
+      this.activityWindows.get(win)?.(); this.activityWindows.delete(win);
     }));
     this.registerDomEvent(window, "unload", () => this.disposeRuntime());
-    this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
+    if (this.runtimePlatform.capabilities.quickInput) this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
     this.registerSearchCommands();
-    if (typeof document !== "undefined") {
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.runtimeActivity.refresh()));
+    if (this.runtimePlatform.capabilities.editorDrop && typeof document !== "undefined") {
       this.registerDomEvent(document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
     }
     this.registerEvent(this.app.workspace.on("window-open", (_workspaceWindow, win) => {
+      this.trackActivityWindow(win);
       this.popoutEvents.get(win)?.unload();
       const events = new Component(); events.load();
-      events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
+      if (this.runtimePlatform.capabilities.editorDrop) events.registerDomEvent(win.document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
       this.popoutEvents.set(win, events);
     }));
-    this.registerEditorExtension([
+    if (this.runtimePlatform.capabilities.editorDrop) this.registerEditorExtension([
       dropCursor(),
       Prec.highest(EditorView.domEventHandlers({
         dragover: (event) => this.editorDropController.handleDragOver(event),
@@ -245,7 +300,7 @@ export default class CardWorkspacePlugin extends Plugin {
     ]);
     this.registerEvent(
       this.app.workspace.on("editor-drop", (event, editor, info) => {
-        if (event.defaultPrevented) return;
+        if (!this.runtimePlatform.capabilities.editorDrop || event.defaultPrevented) return;
         if (this.editorDropController.handleWorkspaceEditorDrop(event, editor, info)) event.preventDefault();
       }),
     );
@@ -282,8 +337,14 @@ export default class CardWorkspacePlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(QUICK_INPUT_VIEW)) {
       leaf.detach();
     }
-    await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
+    if (this.runtimePlatform.capabilities.globalShortcut) await this.quickInputShortcut.start(this.getSettings().quickInputGlobalShortcut);
     if (this.disposed) return;
+    this.app.workspace.iterateAllLeaves?.((leaf) => {
+      if (leaf.view.getViewType() !== QUICK_INPUT_VIEW) {
+        const win = leaf.view.containerEl?.ownerDocument?.defaultView;
+        if (win) this.trackActivityWindow(win);
+      }
+    });
     this.registerVaultObservers(); this.registerMetadataObservers();
     this.syncSelection(this.app.workspace.getActiveFile()?.path ?? null);
     // Session restore never creates a leaf: it only reloads a view the user left open.
@@ -293,6 +354,12 @@ export default class CardWorkspacePlugin extends Plugin {
       "Initial navigation reconciliation failed.");
     await this.searchCoordinator.initialize(); if (this.disposed) return;
     this.searchCoordinator.flushDeferredStartupWork();
+  }
+
+  private trackActivityWindow(win: Window): void {
+    if (!this.activityWindows.has(win) && typeof win.document?.addEventListener === "function") {
+      this.activityWindows.set(win, this.runtimeActivity.trackDocument(win.document));
+    }
   }
 
   private registerCustomIcons(): void {
@@ -310,6 +377,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private disposeRuntime(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.runtimeActivity.dispose(); this.activityWindows.clear();
     this.popoutEvents.forEach((events) => events.unload()); this.popoutEvents.clear();
     this.quickInputShortcut.dispose();
     this.quickInputManager?.dispose();
@@ -320,6 +388,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.templateNoteFocusAbort?.abort();
     this.templateNoteFocusAbort = null;
     this.workspaceSettingTab = null;
+    this.mobileQuickInput?.dispose(); this.mobileQuickInput = null;
     this.editorDropController.dispose();
     this.nativeFileDragController.dispose();
     this.cancelLinkCorrection?.();
@@ -454,21 +523,45 @@ export default class CardWorkspacePlugin extends Plugin {
     return error instanceof Error ? error.message : String(error);
   }
 
-  async openQuickInput(win?: Window): Promise<void> {
+  appendMobileInsertMenu(menu: import("obsidian").Menu, path: string): void {
+    if (this.runtimePlatform.device !== "desktop") this.editorDropController.appendMobileMenu(menu, path);
+  }
+
+  private submitQuickInput(request: QuickInputRequest) {
+    this.quickInputSubmissions ??= new QuickInputSubmissionCoordinator({
+      notes: this.getNoteCreationService(), getSettings: () => this.getSettings(),
+      saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
+    });
+    return this.quickInputSubmissions.submit(request);
+  }
+
+  async openQuickInput(win?: Window): Promise<RuntimeActionResult> {
+    if (this.runtimePlatform.quickInputPresentation === "modal") {
+      await this.settingsReadyPromise;
+      if (this.disposed) return { outcome: "unavailable", reason: "host" };
+      if (this.mobileQuickInput?.isOpen()) { this.mobileQuickInput.focusDraft(); return { outcome: "ok", value: undefined }; }
+      if (this.mobileQuickInputOpening) return this.mobileQuickInputOpening;
+      this.mobileQuickInputOpening = import("./input/MobileQuickInput").then(({ MobileQuickInput }) => {
+        if (this.disposed) return { outcome: "unavailable", reason: "host" } as const;
+        this.mobileQuickInput = new MobileQuickInput({ app: this.app, phone: this.runtimePlatform.device === "phone",
+          getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings(), notify: message => { new Notice(message); },
+          describeError: error => this.describeNoteInputError(error),
+          submit: request => this.submitQuickInput(request),
+        });
+        this.mobileQuickInput.open(); return { outcome: "ok", value: undefined } as const;
+      }).finally(() => { this.mobileQuickInputOpening = null; });
+      return this.mobileQuickInputOpening;
+    }
+    const desktop = this.runtimePlatform.quickInputDesktop();
+    if (desktop.outcome === "unavailable") return desktop;
     await this.settingsReadyPromise;
-    if (this.disposed || win?.closed) return;
+    if (this.disposed || win?.closed) return { outcome: "unavailable", reason: "host" };
     if (!this.quickInputInitialization) {
       this.quickInputInitialization = import("./input/QuickInputWindowManager").then(({ QuickInputWindowManager }) => {
         if (this.disposed) return null;
         this.quickInputManager = new QuickInputWindowManager({
-          app: this.app, desktop: this.quickInputDesktop, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
-          submit: async (request) => {
-            this.quickInputSubmissions ??= new QuickInputSubmissionCoordinator({
-              notes: this.getNoteCreationService(), getSettings: () => this.getSettings(),
-              saveSettings: async (patch) => { await this.saveSettings(patch); await this.flushSettings(); },
-            });
-            return this.quickInputSubmissions.submit(request);
-          },
+          app: this.app, desktop: desktop.value, getSettings: () => this.getSettings(), getStrings: () => this.getUiStrings().noteInput,
+          submit: request => this.submitQuickInput(request),
           describeError: (error) => this.describeNoteInputError(error),
           notify: (message) => { new Notice(message); },
         });
@@ -481,10 +574,14 @@ export default class CardWorkspacePlugin extends Plugin {
       });
     }
     const manager = await this.quickInputInitialization;
-    if (!this.disposed && !win?.closed) await manager?.open(win);
+    if (!this.disposed && !win?.closed && manager) {
+      return await manager.open(win);
+    }
+    return { outcome: "unavailable", reason: "host" };
   }
 
-  async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void> {
+  async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void | RuntimeUnavailable> {
+    if (destination === "new-window" && !this.runtimePlatform.capabilities.newWindow) return { outcome: "unavailable", reason: "platform" };
     const openSeq = ++this.cardOpenSeq;
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
@@ -494,12 +591,13 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     if (!canOpenFileInObsidian(this.app, target)) {
-      const result = await openInDefaultApp(this.app, target.path);
-      if (!result.ok) new Notice(result.error);
+      const result = await this.runtimePlatform.openExternal(target.path, this.getUiStrings().desktopShell);
+      if (!result.ok) new Notice(result.error ?? this.getUiStrings().desktopShell.unavailable);
       return;
     }
     const leaf = await this.resolveOpenDestinationLeaf(destination);
     if (!leaf || openSeq !== this.cardOpenSeq) {
+      if (!leaf && destination === "new-window") return { outcome: "unavailable", reason: "host" };
       return;
     }
 
@@ -656,19 +754,16 @@ export default class CardWorkspacePlugin extends Plugin {
       return this.app.workspace.getLeaf(true);
     }
 
-    const workspaceWithPopout = this.app.workspace as unknown as {
-      openPopoutLeaf?: () => WorkspaceLeaf | Promise<WorkspaceLeaf>;
-    };
-    if (typeof workspaceWithPopout.openPopoutLeaf !== "function") {
+    const result = await this.runtimePlatform.openWindow();
+    if (result.outcome === "unavailable") {
       new Notice(this.getUiStrings().app.openInNewWindowDesktopOnly);
       return null;
     }
-
-    return await workspaceWithPopout.openPopoutLeaf();
+    return result.value;
   }
 
   private async resolveDefaultCardOpenLeaf(): Promise<WorkspaceLeaf | null> {
-    const defaultCardOpenBehavior = this.getSettings().defaultCardOpenBehavior;
+    const defaultCardOpenBehavior = resolveRuntimeOpenBehavior(this.getSettings().defaultCardOpenBehavior, this.runtimePlatform.capabilities);
     if (defaultCardOpenBehavior !== "smart") {
       return this.resolveOpenDestinationLeaf(defaultCardOpenBehavior);
     }
@@ -849,8 +944,9 @@ export default class CardWorkspacePlugin extends Plugin {
   private async activateView(allowCreate = true): Promise<FolderCardView | null> {
     try {
       if (this.disposed) return null;
+      if (this.runtimePlatform.device !== "desktop") this.editorDropController.captureMenuTargetBeforeActivation();
       return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
-        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate);
+        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop");
     } catch (error) {
       if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
       return null;
@@ -875,7 +971,7 @@ export default class CardWorkspacePlugin extends Plugin {
     const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
     if (!(folder instanceof TFolder)) return view;
     await this.dispatchSelectionRequest(this.createSelectionRequest(
-      createFolderScope(folder.path, settings.includeSubfolders), "programmatic"));
+      createFolderScope(folder.path, settings.includeSubfolders), "restore"));
     return view;
   }
 
@@ -976,6 +1072,7 @@ export default class CardWorkspacePlugin extends Plugin {
 
   private async loadSettings(): Promise<void> {
     const status = await this.settingsStore.init();
+    if (!this.vaultCacheIdentity.persistent) new Notice(this.getUiStrings().mobile.cacheUnavailable);
     if (status === "unsupported-schema") {
       this.showUnsupportedSchemaNotice();
     }

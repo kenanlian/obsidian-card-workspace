@@ -1,3 +1,4 @@
+import { overlayDeviceSettings, pickDeviceSettings, sharedSettings } from "./device-settings";
 import { normalizeNavigationSorting } from "../navigation-sorting";
 import { debounce } from "obsidian";
 
@@ -98,6 +99,7 @@ export interface UserDataSettings {
 export interface SettingsStoreDeps {
   load: () => Promise<unknown>;
   save: (data: unknown) => Promise<void>;
+  local?: { load: () => unknown; save: (data: unknown) => void | Promise<void>; onError?: (error: unknown) => void };
 }
 
 const WORKSPACE_DEBOUNCE_MS = 300;
@@ -125,6 +127,7 @@ function assertKnownFlatPatch(patch: object): void {
 
 type PersistWaiter = {
   revision: number;
+  destinations?: { shared: number; local: number };
   resolve: () => void;
   reject: (error: unknown) => void;
 };
@@ -329,6 +332,13 @@ function workspacePatchToFlat(patch: WorkspaceSettingsPatch): PartialPluginSetti
 export class SettingsStore {
   private readonly load: () => Promise<unknown>;
   private readonly save: (data: unknown) => Promise<void>;
+  private readonly local: SettingsStoreDeps["local"];
+  private sharedDocument: PersistedSettingsV2 | null = null;
+  private sharedRevision = 0;
+  private localRevision = 0;
+  private savedSharedRevision = 0;
+  private savedLocalRevision = 0;
+  private localStorageDegraded = false;
   private memory: PluginSettings = normalizeSettings(undefined);
   private revision = 0;
   private persistedRevision = 0;
@@ -342,6 +352,7 @@ export class SettingsStore {
   };
 
   constructor(deps: SettingsStoreDeps) {
+    this.local = deps.local;
     this.load = deps.load;
     this.save = deps.save;
     this.debouncedWorkspaceWrite = debounce(
@@ -354,11 +365,26 @@ export class SettingsStore {
   }
 
   async init(): Promise<SettingsCompatibilityStatus> {
+    this.localStorageDegraded = false;
     this.debouncedWorkspaceWrite.cancel();
     const raw = await this.load();
     try {
       this.memory = migrateSettings(raw);
       this.compatibility = "ready";
+      this.sharedDocument = serializeSettings(this.memory);
+      if (this.local) {
+        try {
+          const record: unknown = this.local.load();
+          if (record && typeof record === "object" && "version" in record && typeof record.version === "number" && record.version > 1) {
+            throw new UnsupportedSettingsSchemaError(record.version, 1);
+          }
+          this.memory = migrateSettings(overlayDeviceSettings(this.sharedDocument, record));
+        } catch (error) {
+          if (error instanceof UnsupportedSettingsSchemaError) throw error;
+          this.localStorageDegraded = true;
+          this.local.onError?.(error);
+        }
+      }
       this.unsupportedSchemaError = null;
     } catch (error) {
       if (!(error instanceof UnsupportedSettingsSchemaError)) {
@@ -370,10 +396,16 @@ export class SettingsStore {
       this.unsupportedSchemaError = error;
       this.memory = normalizeSettings(undefined);
     }
+    this.sharedRevision = this.localRevision = this.savedSharedRevision = this.savedLocalRevision = 0;
     this.revision = 0;
     this.persistedRevision = 0;
     this.dirty = false;
     return this.compatibility;
+  }
+
+  getPersistenceDiagnostics() {
+    return { localStorageDegraded: this.localStorageDegraded, sharedPending: this.sharedRevision > this.savedSharedRevision,
+      localPending: this.localRevision > this.savedLocalRevision, compatibility: this.compatibility };
   }
 
   /** Compatibility state of the loaded document: writable, or read-only defaults. */
@@ -470,10 +502,19 @@ export class SettingsStore {
       return Promise.resolve(null);
     }
 
+    const priorDocument = serializeSettings(previous), nextDocument = serializeSettings(next);
     this.memory = next;
     this.revision += 1;
+    if (this.local && this.sharedDocument) {
+      if (JSON.stringify(pickDeviceSettings(priorDocument)) !== JSON.stringify(pickDeviceSettings(nextDocument))) this.localRevision = this.revision;
+      const shared = sharedSettings(nextDocument, this.sharedDocument);
+      if (JSON.stringify(shared) !== JSON.stringify(this.sharedDocument)) {
+        this.sharedDocument = shared;
+        this.sharedRevision = this.revision;
+      }
+    } else this.sharedRevision = this.revision;
     const myRevision = this.revision;
-    const wait = this.waitForPersisted(myRevision);
+    const wait = this.waitForPersisted(myRevision, this.local ? { shared: this.sharedRevision === myRevision ? myRevision : 0, local: this.localRevision === myRevision ? myRevision : 0 } : undefined);
     if (persist === "workspace") {
       this.debouncedWorkspaceWrite();
     } else {
@@ -482,19 +523,19 @@ export class SettingsStore {
     return wait.then(() => intent);
   }
 
-  private waitForPersisted(revision: number): Promise<void> {
-    if (this.persistedRevision >= revision) {
+  private waitForPersisted(revision: number, destinations = this.local ? { shared: this.sharedRevision, local: this.localRevision } : undefined): Promise<void> {
+    if (destinations ? this.savedSharedRevision >= destinations.shared && this.savedLocalRevision >= destinations.local : this.persistedRevision >= revision) {
       return Promise.resolve();
     }
     return new Promise((resolve, reject) => {
-      this.persistWaiters.push({ revision, resolve, reject });
+      this.persistWaiters.push({ revision, destinations, resolve, reject });
     });
   }
 
   private resolveWaiters(upTo: number): void {
     const remaining: PersistWaiter[] = [];
     for (const waiter of this.persistWaiters) {
-      if (waiter.revision <= upTo) {
+      if (waiter.destinations ? this.savedSharedRevision >= waiter.destinations.shared && this.savedLocalRevision >= waiter.destinations.local : waiter.revision <= upTo) {
         waiter.resolve();
       } else {
         remaining.push(waiter);
@@ -503,10 +544,10 @@ export class SettingsStore {
     this.persistWaiters = remaining;
   }
 
-  private rejectUnpersistedWaiters(error: unknown): void {
+  private rejectUnpersistedWaiters(error: unknown, destination?: "shared" | "local"): void {
     const remaining: PersistWaiter[] = [];
     for (const waiter of this.persistWaiters) {
-      if (waiter.revision > this.persistedRevision) {
+      if (waiter.destinations && destination ? waiter.destinations[destination] > (destination === "shared" ? this.savedSharedRevision : this.savedLocalRevision) : waiter.revision > this.persistedRevision) {
         waiter.reject(error);
       } else {
         remaining.push(waiter);
@@ -541,13 +582,29 @@ export class SettingsStore {
         return;
       }
       const revisionAtStart = this.revision;
-      try {
-        await this.save(serializeSettings(this.getFlat()));
-      } catch (error) {
-        this.dirty = true;
-        this.rejectUnpersistedWaiters(error);
-        throw error;
+      const failures: unknown[] = [];
+      if (this.savedSharedRevision < this.sharedRevision) {
+        const sharedRevision = this.sharedRevision;
+        try {
+          await this.save(this.local && this.sharedDocument ? this.sharedDocument : serializeSettings(this.getFlat()));
+          this.savedSharedRevision = sharedRevision;
+          this.resolveWaiters(this.persistedRevision);
+        } catch (error) {
+          failures.push(error); this.rejectUnpersistedWaiters(error, "shared");
+        }
       }
+      if (this.local && this.savedLocalRevision < this.localRevision) {
+        const localRevision = this.localRevision;
+        try {
+          await this.local.save(pickDeviceSettings(serializeSettings(this.getFlat())));
+          this.savedLocalRevision = localRevision; this.localStorageDegraded = false;
+          this.resolveWaiters(this.persistedRevision);
+        } catch (error) {
+          this.localStorageDegraded = true; this.local.onError?.(error);
+          failures.push(error); this.rejectUnpersistedWaiters(error, "local");
+        }
+      }
+      if (failures.length) { this.dirty = true; throw failures[0]; }
       this.persistedRevision = revisionAtStart;
       this.resolveWaiters(revisionAtStart);
       if (this.revision === this.persistedRevision) {

@@ -12,3 +12,5 @@ export function normalizePath(path: string) { return path; }
 export function debounce(fn: (...args: any[]) => void) { return fn; }
 export function resolveSubpath() { return null; }
 export function getLanguage() { return "en"; }
+
+export class Modal {} // Desktop diagnostic never opens mobile navigation.

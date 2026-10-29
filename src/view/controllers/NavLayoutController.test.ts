@@ -964,3 +964,15 @@ describe("folder drag navigation state", () => {
   });
 
 });
+
+describe("mobile container layout", () => {
+  it.each(["phone", "tablet"] as const)("keeps %s policy fixed through split, rotation and keyboard resize", device => {
+    const f = createHarness(); f.context.runtimePlatform = { device } as never;
+    f.controller.onShellResize(1200); expect(f.controller.getLayoutMode()).toBe(device === "phone" ? "single" : "dual");
+    f.controller.onShellResize(639); expect(f.controller.getLayoutMode()).toBe("single");
+    f.controller.onShellResize(640); expect(f.controller.getLayoutMode()).toBe(device === "phone" ? "single" : "dual");
+    f.settings.navPaneWidth = 340; f.controller.onShellResize(650); expect(f.controller.getLayoutMode()).toBe("single");
+    expect(f.context.store.getScope()).toEqual(createFolderScope("", true)); expect(f.saveSettings).not.toHaveBeenCalled();
+    f.controller.dispose();
+  });
+});

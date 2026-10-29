@@ -1,3 +1,6 @@
+import { RuntimePhaseTimings } from "../runtime/diagnostics";
+import type { RuntimeWorkGate } from "../runtime/work-gate";
+import { DESKTOP_RESOURCE_BUDGET, type RuntimeResourceBudget } from "../runtime/resource-budget";
 import MiniSearch, { type AsPlainObject } from "minisearch";
 import { scheduleIdleTask } from "./idle-task";
 import type {
@@ -58,9 +61,19 @@ export interface SearchIndexDocumentSource {
   readAllDocuments(signal?: AbortSignal): Promise<SearchableDocument[]>;
   readDocument(path: string): Promise<SearchableDocument | null>;
   readCatalogSnapshot(): IndexStoreDocumentCatalog;
+  getDiagnostics?(): unknown;
 }
 
+export type SearchBuildResult = { outcome: "success" | "cancelled" | "failed" };
+
+export interface ReconcileBuildAttempt {
+  finish(outcome: SearchBuildResult["outcome"]): Promise<void>;
+}
 interface SearchIndexManagerOptions {
+  /** Called lazily only when reconcile actually constructs a replacement. */
+  beginReconcileBuild?: () => Promise<ReconcileBuildAttempt | null>;
+  workGate?: RuntimeWorkGate;
+  resourceBudget?: RuntimeResourceBudget["search"];
   store: Pick<IndexStore, "restore" | "write" | "clear" | "isAvailable">;
   documentSource: SearchIndexDocumentSource;
 }
@@ -106,6 +119,9 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
 };
 
 export class SearchIndexManager {
+  private readonly timings = new RuntimePhaseTimings();
+  getDiagnostics() { return { sourceWorkPending: this.sourceWorkPending, mutationJournal: this.mutationJournal?.length ?? 0,
+    retryPending: this.pausedInvalidated, gate: this.options.workGate?.getDiagnostics(), phases: this.timings.snapshot(), source: this.documentSource.getDiagnostics?.() }; }
   /**
    * Incremental mutations keep the in-memory index current immediately, but the
    * full-index serialization is coalesced: deleting a folder fans out one event
@@ -147,7 +163,9 @@ export class SearchIndexManager {
   private readonly mutationGate = new SearchMutationGate();
   private mutationJournal: SearchVaultMutation[] | null = null;
   private sourceWorkPending = 0;
-  private sourceWorkPromise: Promise<void> | null = null;
+  private pausedInvalidated = false;
+  private sourceWorkPromise: Promise<SearchBuildResult> | null = null;
+  private settlingSourceWork = false;
   private queuedRebuildDetail: string | null = null;
   private disposed = false;
   private generation = 0;
@@ -158,7 +176,7 @@ export class SearchIndexManager {
     markFolderRebuildRequired: (detail) => this.markFolderRebuildRequired(detail),
   };
 
-  constructor(options: SearchIndexManagerOptions) {
+  constructor(private readonly options: SearchIndexManagerOptions) {
     this.store = options.store;
     this.documentSource = options.documentSource;
     this.index = this.createEmptyIndex();
@@ -372,12 +390,12 @@ export class SearchIndexManager {
     }
   }
 
-  async syncDocumentStateFromSource(): Promise<void> {
-    await this.runReplacement("reconcile", "Search index reconciled with vault source.");
+  async syncDocumentStateFromSource(): Promise<SearchBuildResult> {
+    return this.runReplacement("reconcile", "Search index reconciled with vault source.");
   }
 
-  async rebuildFromSource(detail = "Manual rebuild requested."): Promise<void> {
-    await this.runReplacement("rebuild", detail);
+  async rebuildFromSource(detail = "Manual rebuild requested."): Promise<SearchBuildResult> {
+    return this.runReplacement("rebuild", detail);
   }
 
   async clearAndReset(detail = "Manual clear/reset requested."): Promise<IndexStoreClearResult> {
@@ -512,8 +530,14 @@ export class SearchIndexManager {
   async applyMutation(event: SearchVaultMutation): Promise<SearchIndexManagerMutationResult> {
     if (this.disposed) return { action: "ignored", rebuildRequired: false };
     const scanning = this.sourceWorkPending > 0;
+    if (scanning && this.options.workGate?.isPaused) {
+      this.pausedInvalidated = true;
+      this.sourceRunner.cancelCurrent();
+      this.mutationJournal = null;
+      this.queuedRebuildDetail = null;
+    }
     const decision = classifySearchMutation(event);
-    if (scanning && decision.action === "rebuild-required") {
+    if (scanning && !this.pausedInvalidated && decision.action === "rebuild-required") {
       this.queuedRebuildDetail = "Rebuild requested after queued mutations.";
       return { action: "ignored", rebuildRequired: false };
     }
@@ -527,29 +551,56 @@ export class SearchIndexManager {
     return scanning ? { action: "ignored", rebuildRequired: false } : result;
   }
 
-  private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+  private async runReplacement(kind: "reconcile" | "rebuild", detail: string): Promise<SearchBuildResult> {
     if (this.sourceWorkPromise) {
+      if (kind === "rebuild" && this.settlingSourceWork) {
+        await this.sourceWorkPromise;
+        return this.runReplacement(kind, detail);
+      }
       if (kind === "rebuild") this.queuedRebuildDetail = detail;
       return this.sourceWorkPromise;
     }
-    const run = this.runReplacementLoop(kind, detail);
-    this.sourceWorkPromise = run;
-    try {
-      await run;
-    } finally {
-      if (this.sourceWorkPromise === run) this.sourceWorkPromise = null;
-    }
+    if (this.disposed) return { outcome: "cancelled" };
+    const finishTiming = this.timings.start("replacement");
+    const attempt: { current?: ReconcileBuildAttempt } = {};
+    this.settlingSourceWork = false;
+    const completion = this.runReplacementLoop(kind, detail, attempt).then(async (result) => {
+      this.settlingSourceWork = true;
+      await attempt.current?.finish(result.outcome);
+      return result;
+    }).finally(() => {
+      finishTiming();
+      if (this.sourceWorkPromise === completion) { this.sourceWorkPromise = null; this.settlingSourceWork = false; }
+    });
+    this.sourceWorkPromise = completion;
+    return completion;
   }
 
-  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string): Promise<void> {
+  private async runReplacementLoop(kind: "reconcile" | "rebuild", detail: string,
+    attempt: { current?: ReconcileBuildAttempt }): Promise<SearchBuildResult> {
     let nextKind = kind;
     let nextDetail = detail;
+    let completed = false;
     this.sourceWorkPending = 1;
+    this.pausedInvalidated = false;
     try {
       do {
         this.queuedRebuildDetail = null;
-        await this.sourceRunner.run(async (signal, isCurrent) => {
-      if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) return;
+        completed = false;
+        await this.sourceRunner.run(async (signal, runnerIsCurrent) => {
+      const isCurrent = () => runnerIsCurrent() && !this.options.workGate?.isClosed;
+      if (this.options.workGate && !(await this.options.workGate.wait(signal))) return;
+      if (!isCurrent()) return;
+      if (nextKind === "reconcile" && (await this.tryHydrateUnchangedVault(signal, isCurrent))) { completed = isCurrent(); return; }
+      if (kind === "reconcile" && !attempt.current && this.options.beginReconcileBuild) {
+        const admitted = await this.options.beginReconcileBuild();
+        if (!admitted) {
+          if (isCurrent()) this.markFolderRebuildRequired("Automatic source replacement suspended after unfinished builds.");
+          return;
+        }
+        attempt.current = admitted;
+        if (!isCurrent()) return;
+      }
       if (nextKind === "rebuild") this.setBuilding(nextDetail, "building");
       this.cancelPendingPersist();
       this.mutationJournal = [];
@@ -561,7 +612,8 @@ export class SearchIndexManager {
       let carryOverTerms = 0;
       for await (const batch of this.documentSource.streamDocuments(signal)) {
         if (!isCurrent()) return;
-        carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal);
+        const finishIngest = this.timings.start("ingest");
+        try { carryOverTerms = await addDocumentsWithYield(replacement, batch, carryOverTerms, isCurrent, signal, this.options.resourceBudget?.ingestTerms ?? DESKTOP_RESOURCE_BUDGET.search.ingestTerms, this.options.workGate); } finally { finishIngest(); }
         for (const document of batch) {
           replacementDocuments.set(document.path, document);
           replacementCatalog.set(document.path, document.mtime);
@@ -574,6 +626,8 @@ export class SearchIndexManager {
         catalog: replacementCatalog,
       };
 
+      if (this.options.workGate && !(await this.options.workGate.wait(signal))) return;
+      if (!isCurrent()) return;
       const release = await this.mutationGate.acquire();
       let persisted = false;
       try {
@@ -592,6 +646,7 @@ export class SearchIndexManager {
           for (const [path, document] of replacementDocuments) this.documentsByPath.set(path, document);
           this.documentCatalog = replacementCatalog;
           this.publishReplacementSuccess(nextKind, nextDetail, now);
+          completed = true;
         }
       } finally {
         this.mutationJournal = null;
@@ -605,8 +660,15 @@ export class SearchIndexManager {
           nextKind = "rebuild";
           nextDetail = this.queuedRebuildDetail;
         }
-      } while (this.queuedRebuildDetail && !this.disposed);
+      } while (this.queuedRebuildDetail && !this.disposed && !this.pausedInvalidated);
+      return { outcome: this.disposed || this.pausedInvalidated || this.options.workGate?.isClosed ? "cancelled"
+        : !completed || this.snapshot.status === "error" ? "failed" : "success" };
+    } catch (error) {
+      if (this.disposed || this.pausedInvalidated || this.options.workGate?.isClosed) return { outcome: "cancelled" };
+      this.markInitializationFailure(error);
+      return { outcome: "failed" };
     } finally {
+      this.mutationJournal = null;
       this.sourceWorkPending = 0;
     }
   }
@@ -714,54 +776,57 @@ export class SearchIndexManager {
     documentCount: number,
     lastIndexedAt: number,
   ): Promise<boolean> {
-    if (!this.expectedMetadata) {
-      return false;
-    }
-
-    // Snapshotting the index is the most expensive step in the whole pipeline;
-    // never pay for it when the destination cannot accept the write anyway.
-    if (!this.store.isAvailable()) {
-      this.applyWriteFailure({
-        outcome: "failed",
-        reason: "unavailable",
-        detail: "IndexedDB unavailable.",
-      });
-      return false;
-    }
-
-    if (index.dirtCount >= SearchIndexManager.VACUUM_MIN_DIRT_COUNT) {
-      try {
-        await index.vacuum();
-      } catch (error) {
-        // A vacuum is an optimization; losing the snapshot over one would be
-        // strictly worse than persisting an index that still carries tombstones.
-        console.warn("Search index vacuum failed; serializing without it.", error);
+    const finishTiming = this.timings.start("persist");
+    try {
+      if (!this.expectedMetadata) {
+        return false;
       }
+
+      // Snapshotting the index is the most expensive step in the whole pipeline;
+      // never pay for it when the destination cannot accept the write anyway.
+      if (!this.store.isAvailable()) {
+        this.applyWriteFailure({
+          outcome: "failed",
+          reason: "unavailable",
+          detail: "IndexedDB unavailable.",
+        });
+        return false;
+      }
+
+      if (index.dirtCount >= SearchIndexManager.VACUUM_MIN_DIRT_COUNT) {
+        try {
+          await index.vacuum();
+        } catch (error) {
+          // A vacuum is an optimization; losing the snapshot over one would be
+          // strictly worse than persisting an index that still carries tombstones.
+          console.warn("Search index vacuum failed; serializing without it.", error);
+        }
+        if (this.disposed) return false;
+      }
+
+      const writeResult = await this.store.write(
+        {
+          ...this.expectedMetadata,
+          documentCount,
+          lastIndexedAt,
+        },
+        {
+          serializedIndex: index.toJSON(),
+          documentCount,
+          lastIndexedAt,
+          documentCatalog: catalog.toSerializable(),
+        },
+      );
+
       if (this.disposed) return false;
-    }
+      if (writeResult.outcome === "failed") {
+        this.applyWriteFailure(writeResult);
+        return false;
+      }
 
-    const writeResult = await this.store.write(
-      {
-        ...this.expectedMetadata,
-        documentCount,
-        lastIndexedAt,
-      },
-      {
-        serializedIndex: index.toJSON(),
-        documentCount,
-        lastIndexedAt,
-        documentCatalog: catalog.toSerializable(),
-      },
-    );
-
-    if (this.disposed) return false;
-    if (writeResult.outcome === "failed") {
-      this.applyWriteFailure(writeResult);
-      return false;
-    }
-
-    this.catalogAvailable = true;
-    return true;
+      this.catalogAvailable = true;
+      return true;
+    } finally { finishTiming(); }
   }
 
   private applyWriteFailure(writeResult: IndexStoreWriteFailureResult): void {

@@ -1,3 +1,4 @@
+import { RuntimeWorkGate } from "../../runtime/work-gate";
 import { TFile, type App } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../settings";
@@ -10,7 +11,7 @@ import { createFolderScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import type { ViewContext } from "../view-context";
 import { CardImageController } from "./CardImageController";
-function harness(mode: "off" | "right" | "inline" = "right") {
+function harness(mode: "off" | "right" | "inline" = "right", workGate?: RuntimeWorkGate) {
   const note = Object.assign(new TFile(), { path: "notes/n.md", stat: { mtime: 1, size: 100, ctime: 1 } });
   const image = Object.assign(new TFile(), { path: "outside/image.png", stat: { mtime: 1, size: 100, ctime: 1 } });
   const files = new Map([[note.path, note], [image.path, image]]);
@@ -23,7 +24,7 @@ function harness(mode: "off" | "right" | "inline" = "right") {
   store.replaceBaseCards([card]); store.replaceVisibleCards([card]);
   const epochs = createViewEpochs(), publish = vi.fn();
   const urls = { createObjectURL: vi.fn(() => "blob:thumbnail"), revokeObjectURL: vi.fn() };
-  const context = { getApp: () => app, getSettings: () => settings, store, epochs, getUiStrings: () => getUiStrings("en"), publishGroups: publish,
+  const context = { workGate, getApp: () => app, getSettings: () => settings, store, epochs, getUiStrings: () => getUiStrings("en"), publishGroups: publish,
     getViewWindow: () => ({ setTimeout, clearTimeout, URL: urls }) } as unknown as ViewContext;
   const read = vi.fn(async () => new ArrayBuffer(100));
   const generate = vi.fn(async (_buffer: ArrayBuffer, eligible: () => void): Promise<ThumbnailResult> => { eligible(); return { status: "ready", blob: new Blob(["thumb"]) }; });
@@ -36,6 +37,21 @@ function harness(mode: "off" | "right" | "inline" = "right") {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(80); }
 afterEach(() => vi.useRealTimers());
 describe("per-view images", () => {
+  it("releases hidden demand and URLs, retains layout hints and validates on resume", async () => {
+    vi.useFakeTimers(); const gate = new RuntimeWorkGate(), h = harness("right", gate);
+    h.demand(); await settle(); expect(h.read).toHaveBeenCalledOnce();
+    gate.setActive(false);
+    expect(h.urls.revokeObjectURL).toHaveBeenCalledOnce();
+    expect(h.controller.getDiagnostics()).toMatchObject({ demand: 0, objectUrls: 0 });
+    expect(h.controller.getPanelState().byPath[h.card.path]).toEqual({ status: "loading" });
+    h.demand(); await settle(); expect(h.read).toHaveBeenCalledOnce();
+    h.image.stat.mtime++;
+    gate.setActive(true); await settle();
+    expect(h.read).toHaveBeenCalledTimes(2);
+    expect(h.controller.getPanelState().byPath[h.card.path]?.status).toBe("ready");
+    h.controller.dispose(); gate.close();
+  });
+
   it("off mode performs zero metadata/attachment work", () => {
     const h = harness("off"); h.demand(); h.controller.handleMetadataChange(h.card.path);
     expect(h.controller.resolvePlaceholder(h.card.path, h.epochs.load.value)).toBeUndefined();

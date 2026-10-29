@@ -1,3 +1,4 @@
+import { resolveRuntimeCapabilities } from "../runtime/capabilities";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import { attachSearchHistorySuggest, type SearchHistorySuggestOptions } from "./search-history-suggest";
@@ -222,9 +223,24 @@ describe("FolderCardPanel.svelte", () => {
     resetObsidianMenuInstances();
   });
 
+  it("hides unsupported drag behavior from the host-projected capability group", async () => {
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState(); state.capabilities = resolveRuntimeCapabilities(false);
+    state.cards.records = [createCard("notes/a.md", "A")];
+    const onCardDragStart = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel: createPanelModel(state), onCardDragStart } });
+    await tick(); const card = target.querySelector<HTMLElement>(".fce-card")!;
+    expect(card.draggable).toBe(false);
+    const event = new Event("dragstart", { bubbles: true });
+    const transfer = { setData: vi.fn(), setDragImage: vi.fn() };
+    Object.defineProperty(event, "dataTransfer", { value: transfer }); card.dispatchEvent(event);
+    expect(onCardDragStart).not.toHaveBeenCalled(); expect(transfer.setData).not.toHaveBeenCalled();
+    await unmount(component);
+  });
+
   it("passes a single card's native drag and cleanup through the panel in bulk mode", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
-    const state = createInitialPanelState();
+    const state = createInitialPanelState(); state.capabilities = resolveRuntimeCapabilities(true);
     state.cards.records = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
     state.bulk = { ...state.bulk, bulkMode: true, selectedPaths: ["notes/a.md", "notes/b.md"], selectedCount: 2 };
     const finish = vi.fn();

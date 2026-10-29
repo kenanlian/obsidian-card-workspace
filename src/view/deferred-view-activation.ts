@@ -6,10 +6,11 @@ export async function activateDeferredView<T>(
   isExpectedView: (value: unknown) => value is T,
   isCurrent: () => boolean = () => true,
   allowCreate = true,
+  mainWorkspace = false,
 ): Promise<T | null> {
   const existing = workspace.getLeavesOfType(viewType);
   if (existing.length === 0 && !allowCreate) return null;
-  const leaf: WorkspaceLeaf | null = existing[0] ?? workspace.getLeftLeaf(false);
+  const leaf: WorkspaceLeaf | null = existing[0] ?? (mainWorkspace ? workspace.getLeaf("tab") : workspace.getLeftLeaf(false));
   if (!leaf) return null;
   if (existing.length === 0) {
     await leaf.setViewState({ type: viewType, active: true });

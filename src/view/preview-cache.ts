@@ -1,11 +1,12 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
 import { DEFAULT_PREVIEW_LINES, PREVIEW_LINES_MAX, PREVIEW_LINES_MIN } from "../settings";
 import type { LightPreviewResult } from "./markdown-utils";
 import type { SearchPreview } from "../search";
 
 export type CachedPreview = LightPreviewResult & { readonly diagramPreview?: import("./diagram-preview").DiagramPreviewResult; readonly searchPreview?: SearchPreview; readonly linkPreview?: import("./link-reference-preview").LinkReferencePreview };
 
-export const PREVIEW_CACHE_CAPACITY = 512;
-export const DIAGRAM_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+export const PREVIEW_CACHE_CAPACITY = DESKTOP_RESOURCE_BUDGET.preview.entries;
+export const DIAGRAM_CACHE_MAX_BYTES = DESKTOP_RESOURCE_BUDGET.preview.diagramBytes;
 
 export interface PreviewFingerprint {
   readonly path: string;
@@ -49,6 +50,7 @@ export function fingerprintsEqual(
 }
 
 export class PreviewCache {
+  constructor(private readonly maxEntries = PREVIEW_CACHE_CAPACITY, private readonly maxDiagramBytes = DIAGRAM_CACHE_MAX_BYTES) {}
   private readonly entries = new Map<string, PreviewCacheEntry>();
   private blobBytes = 0;
 
@@ -111,7 +113,7 @@ export class PreviewCache {
   }
 
   private evict(): void {
-    while (this.entries.size > PREVIEW_CACHE_CAPACITY || this.diagramBytes > DIAGRAM_CACHE_MAX_BYTES) {
+    while (this.entries.size > this.maxEntries || this.diagramBytes > this.maxDiagramBytes) {
       const oldest = this.entries.keys().next();
       if (oldest.done) break;
       this.remove(oldest.value);

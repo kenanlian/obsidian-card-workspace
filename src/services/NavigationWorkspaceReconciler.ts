@@ -1,3 +1,4 @@
+import type { RuntimeWorkGate } from "../runtime/work-gate";
 import { folderParentPath, folderSiblingOrdersEqual, hasFolderSiblingOrder, normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, orderFolderSiblings,
   pruneFolderSiblingOrders, rewriteFolderSiblingOrders, type FolderSiblingOrders } from "../folder-sibling-orders";
 import { debounce, TFolder, type App } from "obsidian";
@@ -16,6 +17,7 @@ const TAG_RECONCILE_DEBOUNCE_MS = 1000;
 const INITIAL_TAG_RECONCILE_IDLE_TIMEOUT_MS = 10_000;
 
 export interface NavigationWorkspaceReconcilerDeps {
+  workGate?: RuntimeWorkGate;
   getSettings: () => PluginSettings;
   saveSettings: (patch: PartialPluginSettings) => Promise<unknown>;
   getApp: () => App;
@@ -76,12 +78,13 @@ export class NavigationWorkspaceReconciler {
   private readonly getApp: () => App;
   private readonly onStep?: (step: string) => void;
   private readonly scheduleIdle: (task: () => void, timeoutMs: number) => () => void;
+  private readonly lifetime = new AbortController();
   private disposed = false;
   private generation = 0;
   private cancelInitialTagIdle: (() => void) | null = null;
   private readonly debouncedTagReconcile: (() => void) & { cancel: () => void };
 
-  constructor(deps: NavigationWorkspaceReconcilerDeps) {
+  constructor(private readonly deps: NavigationWorkspaceReconcilerDeps) {
     this.getSettings = deps.getSettings;
     this.saveSettings = deps.saveSettings;
     this.getApp = deps.getApp;
@@ -182,6 +185,7 @@ export class NavigationWorkspaceReconciler {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
     this.generation += 1;
     this.cancelInitialTagIdle?.();
     this.cancelInitialTagIdle = null;
@@ -189,6 +193,7 @@ export class NavigationWorkspaceReconciler {
   }
 
   private async reconcileInitialTags(generation: number): Promise<void> {
+    if (this.deps.workGate && !(await this.deps.workGate.wait(this.lifetime.signal))) return;
     if (this.disposed || generation !== this.generation) return;
     const settings = this.getSettings();
     const vaultTags = collectVaultTagIndex(this.getApp());

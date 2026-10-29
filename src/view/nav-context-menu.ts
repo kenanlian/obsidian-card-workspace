@@ -68,6 +68,7 @@ export interface NavMenuActions {
   filterByOnlyPropertyValue: (key: string, ref: PropertyScalarRef) => void;
 }
 export interface NavMenuDeps {
+  appendTouchOrderMenu?: (menu: Menu, originId: string) => void;
   strings: UiStrings;
   /** Browse Tag filter capability; Tag menus filter only when enabled (C6). */
   browseTagFilter: boolean;
@@ -84,6 +85,7 @@ export interface NavMenuDeps {
   /** Checked state for one property value menu target (type-sensitive identity). */
   isPropertyValueActive: (key: string, ref: PropertyScalarRef) => boolean;
   canResolveSystemPath: boolean;
+  canRevealInSystemExplorer?: boolean;
   hasActiveFile: boolean;
   favorites: FavoriteEntry[];
   boxes: CardBoxDefinition[];
@@ -207,7 +209,7 @@ function buildRootFolderItemMenu(menu: Menu, deps: NavMenuDeps): boolean {
   appendFolderNameOrder(menu, deps, "");
   menu.addSeparator();
   addItem(menu, navMenu.findInFolder, "search", () => deps.actions.findInFolder("/"));
-  if (deps.canResolveSystemPath) {
+  if (deps.canRevealInSystemExplorer ?? deps.canResolveSystemPath) {
     addItem(menu, navMenu.revealInSystemExplorer, "folder-symlink", () =>
       deps.actions.revealInSystemExplorer(""),
     );
@@ -231,7 +233,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
 
   menu.addSeparator();
   appendCopyPathItem(menu, deps, itemId);
-  if (deps.canResolveSystemPath) {
+  if (deps.canRevealInSystemExplorer ?? deps.canResolveSystemPath) {
     addItem(menu, navMenu.revealInSystemExplorer, "folder-symlink", () =>
       deps.actions.revealInSystemExplorer(itemId),
     );

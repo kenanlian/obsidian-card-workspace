@@ -1,3 +1,4 @@
+import { DESKTOP_RESOURCE_BUDGET } from "../../runtime/resource-budget";
 import { TFile } from "obsidian";
 import type { NoteCardRecord } from "../types";
 import { diagramDependencies, isDiagramKind, type DiagramPreviewResult } from "../diagram-preview";
@@ -29,7 +30,21 @@ export class CardImageController implements DisposableController {
   private frame: number | null = null;
   private releaseService: (() => void) | null = null;
   private disposed = false;
-  constructor(private readonly deps: CardImageControllerDeps) {}
+  private latestViewport: ImageViewportRequest | null = null;
+  private readonly stopWorkGate: () => void;
+  constructor(private readonly deps: CardImageControllerDeps) {
+    this.stopWorkGate = this.context.workGate?.subscribe((active) => {
+      if (this.disposed) return;
+      if (!active) {
+        for (const [path, item] of this.demand) { this.rememberLayout(path, item); this.drop(item); }
+        this.demand.clear();
+      }
+      this.requestVersion++;
+      if (active && this.latestViewport) this.requestViewport({ ...this.latestViewport, requestVersion: this.requestVersion });
+      this.publish();
+    }) ?? (() => {});
+  }
+  private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   private get context(): ViewContext { return this.deps.context; }
   getPanelState(): { byPath: Record<string, CardImageState>; requestVersion: number; generation: number } {
     const byPath: Record<string, CardImageState> = Object.create(null) as Record<string, CardImageState>;
@@ -47,7 +62,7 @@ export class CardImageController implements DisposableController {
     if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || this.context.getSettings().cardImageMode === "off") return undefined;
     let source: ImageSource;
     try { source = this.resolveSource(card); } catch { return undefined; }
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path)) return undefined;
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path, this.budget.image)) return undefined;
     const state = this.demand.get(path)?.state;
     return state?.status === "failed" ? state : LOADING_IMAGE_STATE;
   }
@@ -57,6 +72,8 @@ export class CardImageController implements DisposableController {
       || request.sequenceRevision !== this.context.store.getVisibleSequenceRevision()
       || request.requestVersion !== this.requestVersion) return;
     if (!Number.isInteger(request.start) || !Number.isInteger(request.end) || request.start < 0 || request.end < request.start) return;
+    this.latestViewport = { ...request, paths: [...request.paths] };
+    if (this.context.workGate && !this.context.workGate.isActive) return;
     if (request.paths.length === 0) { this.resetDemand(); return; }
     if (this.deps.isLoading()) return;
     const visible = this.context.store.getVisibleCards();
@@ -88,7 +105,7 @@ export class CardImageController implements DisposableController {
     if (!item.state || !item.fingerprint) return;
     this.layoutHints.delete(path);
     this.layoutHints.set(path, { attachmentPath: item.fingerprint.path, state: { status: item.state.status === "failed" ? "failed" : "loading" } });
-    if (this.layoutHints.size > 512) this.layoutHints.delete(this.layoutHints.keys().next().value!);
+    if (this.layoutHints.size > this.budget.preview.entries) this.layoutHints.delete(this.layoutHints.keys().next().value!);
   }
   private start(path: string): void {
     const card = this.context.store.getBaseCard(path);
@@ -98,7 +115,7 @@ export class CardImageController implements DisposableController {
     try { source = this.resolveSource(card); } catch { return; }
     const item: Demand = { source, abort: new AbortController() };
     this.demand.set(path, item);
-    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path)) {
+    if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path, this.budget.image)) {
       if (this.layoutHints.delete(path)) this.publish();
       return;
     }
@@ -300,8 +317,10 @@ export class CardImageController implements DisposableController {
       if (!this.disposed) this.context.publishGroups("images");
     });
   }
+  getDiagnostics() { return { demand: this.demand.size, objectUrls: this.urls.size, layoutHints: this.layoutHints.size, gate: this.context.workGate?.getDiagnostics() }; }
   dispose(): DisposeReport {
     this.disposed = true;
+    this.stopWorkGate(); this.latestViewport = null;
     this.resetDemand();
     this.revealedImages.clear();
     if (this.frame !== null) this.cancelFrame(this.frame);
