@@ -538,6 +538,7 @@ import { getAppStrings } from "./i18n";
 import CardWorkspacePlugin from "./main";
 import { NoteCreationService } from "./services/NoteCreationService";
 import { DEFAULT_SETTINGS } from "./settings";
+import { CARD_BACKGROUND_TINTS } from "./card-background";
 import { UnsupportedSettingsSchemaError } from "./settings-schema";
 import { FolderCardView } from "./view/FolderCardView";
 import { createBoxScope, createFolderScope } from "./view/scope";
@@ -695,6 +696,21 @@ describe("CardWorkspacePlugin settings update intents", () => {
     await plugin.saveSettings({ previewLines: plugin.getSettings().previewLines });
 
     expect(view.applyUpdateIntent).not.toHaveBeenCalled();
+  });
+
+  it("persists clearing the final card color and immediately updates the view", async () => {
+    const { plugin, view } = attachView();
+    await plugin.saveSettings({ cardBackgroundOverrides: { "editing.md": "red" } });
+    view.applyUpdateIntent.mockClear();
+    const saveData = (plugin as unknown as { saveData: ReturnType<typeof vi.fn> }).saveData;
+    saveData.mockClear();
+
+    const pending = plugin.saveSettings({ cardBackgroundOverrides: {} });
+    expect(plugin.getSettings().cardBackgroundOverrides).toEqual({});
+    expect(view.applyUpdateIntent).toHaveBeenCalledExactlyOnceWith("patch", "settings-change");
+    await pending;
+    expect(saveData).toHaveBeenCalledTimes(1);
+    expect(saveData.mock.calls[0]?.[0]).toMatchObject({ userData: { cardBackgroundOverrides: {} } });
   });
 
   it("dispatches rehydrate when previewLines changes", async () => {
@@ -2860,7 +2876,13 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
 
     const obsidianModule = await import("obsidian");
     const addIcon = vi.mocked(obsidianModule.addIcon);
-    expect(addIcon).toHaveBeenCalledTimes(4);
+    expect(addIcon).toHaveBeenCalledTimes(12);
+    for (const tint of CARD_BACKGROUND_TINTS) {
+      expect(addIcon).toHaveBeenCalledWith(
+        `card-workspace-background-${tint}`,
+        expect.stringContaining(`class="fce-card-color-icon fce-card-color-${tint}"`),
+      );
+    }
     expect(addIcon).toHaveBeenNthCalledWith(
       1,
       "card-workspace",

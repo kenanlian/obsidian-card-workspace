@@ -1435,6 +1435,39 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   box-shadow: none;
 }
 
+
+/* Explicit fills override style transparency without changing geometry. */
+.fce-card-color-icon.fce-card-color-red,
+.folder-card-view .fce-card[data-fce-card-background="red"] { --fce-card-tint: var(--color-red); }
+.fce-card-color-icon.fce-card-color-orange,
+.folder-card-view .fce-card[data-fce-card-background="orange"] { --fce-card-tint: var(--color-orange); }
+.fce-card-color-icon.fce-card-color-yellow,
+.folder-card-view .fce-card[data-fce-card-background="yellow"] { --fce-card-tint: var(--color-yellow); }
+.fce-card-color-icon.fce-card-color-green,
+.folder-card-view .fce-card[data-fce-card-background="green"] { --fce-card-tint: var(--color-green); }
+.fce-card-color-icon.fce-card-color-cyan,
+.folder-card-view .fce-card[data-fce-card-background="cyan"] { --fce-card-tint: var(--color-cyan); }
+.fce-card-color-icon.fce-card-color-blue,
+.folder-card-view .fce-card[data-fce-card-background="blue"] { --fce-card-tint: var(--color-blue); }
+.fce-card-color-icon.fce-card-color-purple,
+.folder-card-view .fce-card[data-fce-card-background="purple"] { --fce-card-tint: var(--color-purple); }
+.fce-card-color-icon.fce-card-color-pink,
+.folder-card-view .fce-card[data-fce-card-background="pink"] { --fce-card-tint: var(--color-pink); }
+.folder-card-view .fce-card[data-fce-card-background] {
+  --fce-card-color-fill: color-mix(in srgb, var(--fce-card-tint) 12%, var(--fce-surface, var(--background-secondary)));
+}
+.folder-card-view .fce-card[data-fce-card-background] {
+  background: var(--fce-card-color-fill);
+}
+.folder-card-view .fce-card[data-fce-card-background]:hover,
+.folder-card-view .fce-card[data-fce-card-background].is-selected,
+.folder-card-view .fce-card[data-fce-card-background].is-bulk-selected {
+  background: color-mix(in srgb, var(--fce-card-tint) 18%, var(--fce-surface));
+}
+.fce-card-color-icon {
+  color: color-mix(in srgb, var(--fce-card-tint) 45%, var(--background-modifier-border));
+}
+
 .fce-card-native-drag-image {
   position: fixed;
   top: 0;

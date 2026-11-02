@@ -49,6 +49,7 @@ import { BoxReconciler } from "./services/BoxReconciler";
 import { addManualPaths, findCardBox, upsertCardBox } from "./view/card-boxes";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
+import { CardBackgroundReconciler } from "./services/CardBackgroundReconciler";
 import { PinnedPathReconciler } from "./services/PinnedPathReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
 import { SettingsStore, hasPatchValues } from "./services/SettingsStore";
@@ -71,7 +72,7 @@ import { resolveSearchSnippetLocation } from "./search";
 import { findSearchContextLocation } from "./view/context-preview";
 import { resolveSettingsUpdateIntent } from "./view/update-intent";
 import { activateDeferredView } from "./view/deferred-view-activation";
-import { BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
+import { CARD_BACKGROUND_ICONS, BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
 function normalizeFolderScopePath(path: string): string { return path === "/" ? "" : path; }
 
@@ -184,6 +185,10 @@ export default class CardWorkspacePlugin extends Plugin {
     getSettings: () => this.getSettings(),
     saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
+  });
+  private readonly cardBackgroundReconciler = new CardBackgroundReconciler({
+    getSettings: () => this.getSettings(),
+    saveSettings: patch => this.saveSettings(patch),
   });
   private readonly pinnedPathReconciler = new PinnedPathReconciler({
     getSettings: () => this.getSettings(),
@@ -367,6 +372,7 @@ export default class CardWorkspacePlugin extends Plugin {
     addIcon(PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG);
     addIcon(BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG);
     addIcon(BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG);
+    for (const { id, svg } of CARD_BACKGROUND_ICONS) addIcon(id, svg);
   }
 
   onunload(): void {
@@ -1149,10 +1155,11 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.vaultEventListenersRegistered = true;
-    // Plugin order: navigation workspace → global pins → templates → boxes → favorites/tag prune → search. Views subscribe later.
+    // Plugin order: navigation workspace → global pins → card backgrounds → templates → boxes → favorites/tag prune → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
       this.subscribeVaultEvents((event) => this.pinnedPathReconciler.handleVaultMutation(event)),
+      this.subscribeVaultEvents((event) => this.cardBackgroundReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.templateReferenceReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.favoriteReconciler.handleVaultMutation(event)),

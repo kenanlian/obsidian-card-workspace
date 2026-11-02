@@ -105,6 +105,7 @@
   let failedUrl = $state<string | null>(null);
   let loadedUrl = $state<string | null>(null);
   let revealUrl = $state<string | null>(null);
+  const backgroundColor = $derived(appearance.cardBackgroundOverrides?.[card.path] ?? appearance.cardBackgroundColor ?? "theme");
   const isPinned = $derived(pinnedPaths.includes(card.path));
   const fileExtension = $derived(card.file.extension || "");
   const attachment = $derived(["image", "pdf", "audio", "video", "file"].includes(card.fileKind));
@@ -553,6 +554,7 @@
 
 <div
   class="fce-card fce-card-radius-{cardCornerRadius} {selected ? 'is-selected' : ''} {bulkSelected ? 'is-bulk-selected' : ''} {isPinned ? 'is-pinned' : ''}"
+  data-fce-card-background={backgroundColor === "theme" ? undefined : backgroundColor}
   role="button"
   tabindex="0"
   draggable={nativeFileDrag || editorDrop}

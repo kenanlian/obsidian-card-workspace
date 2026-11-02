@@ -1,3 +1,5 @@
+import { CARD_BACKGROUND_TINTS, type CardBackgroundTint } from "./card-background";
+
 /**
  * Plugin-registered icons.
  *
@@ -32,3 +34,13 @@ export const BULK_ADD_TO_BOX_ICON_SVG = `<g fill="none" stroke="currentColor" st
 export const BULK_REMOVE_FROM_BOX_ICON = "card-workspace-package-export";
 
 export const BULK_REMOVE_FROM_BOX_ICON_SVG = `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(${ICON_VIEWBOX_SCALE})"><path d="M12 21l-8 -4.5v-9l8 -4.5l8 4.5v4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12v9" /><path d="M12 12l-8 -4.5" /><path d="M15 18h7" /><path d="M19 15l3 3l-3 3" /></g>`;
+
+/** Native menu icons keep the swatch in Obsidian's icon column. */
+export function getCardBackgroundIcon(tint: CardBackgroundTint): string {
+  return `card-workspace-background-${tint}`;
+}
+
+export const CARD_BACKGROUND_ICONS = CARD_BACKGROUND_TINTS.map(tint => ({
+  id: getCardBackgroundIcon(tint),
+  svg: `<g class="fce-card-color-icon fce-card-color-${tint}"><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="6"/><circle cx="50" cy="50" r="28" fill="currentColor" stroke="none"/></g>`,
+}));

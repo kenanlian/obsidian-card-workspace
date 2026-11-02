@@ -19,6 +19,7 @@ export type CardMenuAction =
 export interface CardContextMenuDeps {
   context: ViewContext;
   appendMobileActions?: (menu: Menu, path: string) => void;
+  appendBackgroundMenu?: (menu: Menu, path: string) => void;
   resolveLiveMarkdownFile: (notePath: string) => TFile | null;
   isBoxMode: () => boolean;
   appendAddToBoxMenu: (menu: Menu, paths: string[]) => void;
@@ -157,6 +158,7 @@ export class CardContextMenu {
     menu.addSeparator();
     this.deps.appendAddToBoxMenu(menu, [notePath]);
     this.deps.appendCardFavoriteMenuItem(menu, notePath);
+    this.deps.appendBackgroundMenu?.(menu, notePath);
     if (this.deps.isBoxMode()) {
       menu.addItem((item) => {
         item

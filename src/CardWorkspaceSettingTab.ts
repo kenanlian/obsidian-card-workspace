@@ -1,4 +1,6 @@
 import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
+import { isCardBackgroundColor } from "./card-background";
+import { cardBackgroundStrings } from "./i18n";
 import {
   PluginSettingTab, SettingGroup, Notice, requireApiVersion, type App, type Setting,
 } from "obsidian";
@@ -106,6 +108,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return isUiFontSize(value) ? { uiFontSize: value } : null;
     case "uiDensity":
       return isUiDensity(value) ? { uiDensity: value } : null;
+    case "cardBackgroundColor":
+      return isCardBackgroundColor(value) ? { cardBackgroundColor: value } : null;
     case "cardStyle":
       return isCardStyle(value) ? { cardStyle: value } : null;
     case "cardImageMode":
@@ -214,6 +218,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.uiFontSize;
       case "uiDensity":
         return settings.uiDensity;
+      case "cardBackgroundColor":
+        return settings.cardBackgroundColor;
       case "cardStyle":
         return settings.cardStyle;
       case "cardImageMode":
@@ -545,6 +551,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             name: strings.hoverPreviewHeightName,
             desc: strings.hoverPreviewDimensionDesc(HOVER_PREVIEW_HEIGHT_MIN, HOVER_PREVIEW_HEIGHT_MAX, DEFAULT_HOVER_PREVIEW_HEIGHT),
             control: { type: "slider", key: "hoverPreviewHeight", min: HOVER_PREVIEW_HEIGHT_MIN, max: HOVER_PREVIEW_HEIGHT_MAX, step: 10 },
+          },
+          {
+            name: cardBackgroundStrings(language).defaultName,
+            desc: cardBackgroundStrings(language).defaultDesc,
+            control: { type: "dropdown", key: "cardBackgroundColor", options: { theme: cardBackgroundStrings(language).theme, ...cardBackgroundStrings(language).colors } },
           },
         ],
       },

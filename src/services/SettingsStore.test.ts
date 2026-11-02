@@ -664,6 +664,8 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["uiFontSize", { uiFontSize: "large" }],
     ["uiDensity", { uiDensity: "compact" }],
     ["cardStyle", { cardStyle: "list" }],
+    ["cardBackgroundColor", { cardBackgroundColor: "green" }],
+    ["cardBackgroundOverrides", { cardBackgroundOverrides: { "a.pdf": "blue" } }],
     ["newNoteTemplate", { newNoteTemplate: "blank" }],
     ["boxNewNoteFolderPath", { boxNewNoteFolderPath: "Box notes" }],
     ["templateStorageFolder", { templateStorageFolder: "Templates" }],

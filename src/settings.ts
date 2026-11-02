@@ -1,3 +1,4 @@
+import { isCardBackgroundColor, normalizeCardBackgroundOverrides, type CardBackgroundColor, type CardBackgroundTint } from "./card-background";
 import { isFileVisibility, type FileVisibility } from "./file-visibility";
 import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
 import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, normalizeQuickInputVisibility, type QuickInputVisibility, DEFAULT_QUICK_INPUT, normalizeNoteTemplates, normalizeQuickInput, type NoteTemplateDefinition, type QuickInputConfig } from "./note-input";
@@ -195,6 +196,8 @@ export interface PluginSettings {
   uiFontSize: UiFontSize;
   uiDensity: UiDensity;
   cardStyle: CardStyle;
+  cardBackgroundColor: CardBackgroundColor;
+  cardBackgroundOverrides: Record<string, CardBackgroundTint>;
   newNoteTemplate: NewNoteTemplate;
   boxNewNoteFolderPath: string;
   noteTemplates: NoteTemplateDefinition[];
@@ -261,6 +264,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   uiFontSize: "default",
   uiDensity: "default",
   cardStyle: "default",
+  cardBackgroundColor: "theme",
+  cardBackgroundOverrides: {},
   newNoteTemplate: DEFAULT_NEW_NOTE_TEMPLATE,
   boxNewNoteFolderPath: "",
   noteTemplates: [],
@@ -609,6 +614,7 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     favorites: userData.favorites,
     pinnedPaths: userData.pinnedPaths,
     searchHistory: userData.searchHistory,
+    cardBackgroundOverrides: userData.cardBackgroundOverrides,
     hiddenFolderPaths: userData.hiddenFolderPaths, hiddenTagPaths: userData.hiddenTagPaths,
   };
 }
@@ -671,6 +677,8 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     cardCornerRadius: normalizeCardCornerRadius(data.cardCornerRadius),
     uiFontSize: isUiFontSize(data.uiFontSize) ? data.uiFontSize : DEFAULT_SETTINGS.uiFontSize,
     uiDensity: isUiDensity(data.uiDensity) ? data.uiDensity : DEFAULT_SETTINGS.uiDensity,
+    cardBackgroundColor: isCardBackgroundColor(data.cardBackgroundColor) ? data.cardBackgroundColor : "theme",
+    cardBackgroundOverrides: normalizeCardBackgroundOverrides(data.cardBackgroundOverrides),
     cardStyle: isCardStyle(data.cardStyle) ? data.cardStyle : DEFAULT_SETTINGS.cardStyle,
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     boxNewNoteFolderPath: typeof data.boxNewNoteFolderPath === "string" ? data.boxNewNoteFolderPath.trim().replace(/^\/$/, "") : "",

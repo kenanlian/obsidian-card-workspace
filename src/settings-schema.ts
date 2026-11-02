@@ -38,6 +38,8 @@ export const SETTINGS_LAYER_BY_KEY = {
   uiFontSize: "preferences",
   uiDensity: "preferences",
   cardStyle: "preferences",
+  cardBackgroundColor: "preferences",
+  cardBackgroundOverrides: "userData",
   newNoteTemplate: "preferences",
   boxNewNoteFolderPath: "preferences",
   quickInput: "preferences",

@@ -1,3 +1,4 @@
+import { CardBackgroundActions } from "./actions/card-background-actions";
 import { TemplateActions } from "./actions/template-actions";
 import { ScopeNoteActions } from "./actions/scope-note-actions";
 import { normalizeGroupSpec, type GroupSpec } from "../card-grouping-settings";
@@ -89,6 +90,7 @@ export interface ViewModules {
   boxActions: BoxActions;
   tagActions: TagActions;
   bulkPropertyActions: BulkPropertyActions;
+  cardBackgroundActions: CardBackgroundActions;
   tagManageActions: TagManagementActions;
   favoriteActions: FavoriteActions;
   linksActions: LinksActions;
@@ -288,6 +290,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       navLayout.returnToCardsViewIfSinglePane();
     },
   });
+  const cardBackgroundActions = new CardBackgroundActions(context);
   const bulkPropertyActions = new BulkPropertyActions({
     context,
     resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
@@ -377,6 +380,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
         void arrangementActions.onPinToggle({ path, pinned: !pinned });
       }));
     },
+    appendBackgroundMenu: (menu, path) => cardBackgroundActions.appendMenu(menu, path),
     resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
     isBoxMode: () => boxActions.isBoxMode(),
     appendAddToBoxMenu: (menu, paths) => {
@@ -492,6 +496,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     boxActions,
     tagActions,
     bulkPropertyActions,
+    cardBackgroundActions,
     tagManageActions,
     favoriteActions,
     linksActions,

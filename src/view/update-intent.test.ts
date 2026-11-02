@@ -72,6 +72,8 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   uiFontSize: "patch",
   uiDensity: "patch",
   cardStyle: "patch",
+  cardBackgroundColor: "patch",
+  cardBackgroundOverrides: "patch",
   newNoteTemplate: "patch",
   boxNewNoteFolderPath: "patch",
   templateStorageFolder: "patch",
@@ -129,6 +131,8 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "cardCornerRadius": settings.cardCornerRadius = "compact"; break;
     case "uiFontSize": settings.uiFontSize = "large"; break;
     case "uiDensity": settings.uiDensity = "compact"; break;
+    case "cardBackgroundColor": settings.cardBackgroundColor = "blue"; break;
+    case "cardBackgroundOverrides": settings.cardBackgroundOverrides = { "a.md": "red" }; break;
     case "cardStyle": settings.cardStyle = "list"; break;
     case "newNoteTemplate": settings.newNoteTemplate = "tags-frontmatter"; break;
     case "boxNewNoteFolderPath": settings.boxNewNoteFolderPath = "Inbox"; break;

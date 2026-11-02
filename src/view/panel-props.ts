@@ -21,7 +21,7 @@ export interface PanelHost {
   };
   resolveCardLocation?: (path: string) => CardOpenLocation | null;
   resolveSearchSnippetLocation?: (path: string, snippetId: string) => CardOpenLocation | null;
-    handleToolbarAction: (detail: { action?: unknown }) => void;
+    handleToolbarAction: (detail: { action?: unknown; position?: { x: number; y: number } }) => void;
     onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
   onCardHoverLink: (detail: CardHoverLinkPayload) => void;
   selectFolderFromNav: (path: string) => Promise<void>;
@@ -112,7 +112,7 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
       view.modules.images.resolvePlaceholder(path, generation),
     onImageReveal: (detail: import("./image-request").CardImageRevealRequest) =>
       view.modules.images.handleImageReveal(detail),
-    onToolbarAction: (detail: { action?: unknown }) => {
+    onToolbarAction: (detail: { action?: unknown; position?: { x: number; y: number } }) => {
       view.handleToolbarAction(detail);
     },
     onSortChange: (detail: { field?: unknown; direction?: unknown }) => {

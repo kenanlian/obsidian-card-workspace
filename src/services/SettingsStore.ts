@@ -34,6 +34,7 @@ export interface PreferencesSettings {
   uiFontSize: PluginSettings["uiFontSize"];
   uiDensity: PluginSettings["uiDensity"];
   cardStyle: PluginSettings["cardStyle"];
+  cardBackgroundColor: PluginSettings["cardBackgroundColor"];
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   boxNewNoteFolderPath: string;
   quickInput: PluginSettings["quickInput"];
@@ -84,6 +85,7 @@ export type WorkspaceSettingsPatch = Omit<Partial<WorkspaceSettings>, "sectionCo
 };
 
 export interface UserDataSettings {
+  cardBackgroundOverrides: PluginSettings["cardBackgroundOverrides"];
   hiddenFolderPaths: string[];
   hiddenTagPaths: string[];
   folderSiblingOrders: PluginSettings["folderSiblingOrders"];
@@ -138,8 +140,9 @@ export function hasPatchValues(patch: object): boolean {
     if (value === undefined) {
       continue;
     }
-    // This map is replaced wholesale: {} explicitly restores name sorting.
-    if (key === "folderSiblingOrders" || key === "navigationSorting") return true;
+    // These maps are replaced wholesale. Empty maps explicitly reset sorting
+    // or clear the last individual card color, rather than omitting a patch.
+    if (key === "folderSiblingOrders" || key === "navigationSorting" || key === "cardBackgroundOverrides") return true;
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
       if (hasPatchValues(value)) {
         return true;
@@ -178,6 +181,8 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.cardCornerRadius !== undefined) preferences.cardCornerRadius = patch.cardCornerRadius;
   if (patch.uiFontSize !== undefined) preferences.uiFontSize = patch.uiFontSize;
   if (patch.uiDensity !== undefined) preferences.uiDensity = patch.uiDensity;
+  if (patch.cardBackgroundColor !== undefined) preferences.cardBackgroundColor = patch.cardBackgroundColor;
+  if (patch.cardBackgroundOverrides !== undefined) userData.cardBackgroundOverrides = patch.cardBackgroundOverrides;
   if (patch.cardStyle !== undefined) preferences.cardStyle = patch.cardStyle;
   if (patch.newNoteTemplate !== undefined) preferences.newNoteTemplate = patch.newNoteTemplate;
   if (patch.boxNewNoteFolderPath !== undefined) preferences.boxNewNoteFolderPath = patch.boxNewNoteFolderPath;
@@ -254,6 +259,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       uiFontSize: settings.uiFontSize,
       uiDensity: settings.uiDensity,
       cardStyle: settings.cardStyle,
+      cardBackgroundColor: settings.cardBackgroundColor,
       newNoteTemplate: settings.newNoteTemplate,
       boxNewNoteFolderPath: settings.boxNewNoteFolderPath,
       quickInput: { ...settings.quickInput },
@@ -299,6 +305,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       boxes: settings.boxes,
       noteTemplates: settings.noteTemplates.map((template) => ({ ...template })),
       favorites: settings.favorites,
+      cardBackgroundOverrides: { ...settings.cardBackgroundOverrides },
       pinnedPaths: [...settings.pinnedPaths],
       searchHistory: [...settings.searchHistory],
     },

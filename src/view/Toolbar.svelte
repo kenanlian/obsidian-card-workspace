@@ -18,6 +18,7 @@
   import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
   interface ToolbarActionPayload {
     action: string;
+    position?: { x: number; y: number };
   }
   interface BoxCommandPayload {
     command: string;
@@ -308,6 +309,7 @@
     { id: "bulk-clear-selection", label: toolbarStrings.bulkActionLabels.clearSelection, icon: "x-square", disabled: !canBulkClearSelection },
     { type: "separator" },
     { id: "bulk-edit-tags-selected", label: toolbarStrings.bulkActionLabels.editTagsSelected, icon: BULK_EDIT_TAGS_ICON, disabled: !canBulkEditTagsSelected },
+    { id: "bulk-background-color", label: strings.cardBackground.title, icon: "palette", disabled: !canBulkClearSelection },
     { id: "bulk-edit-properties-selected", label: toolbarStrings.bulkActionLabels.editPropertiesSelected, icon: BULK_EDIT_PROPERTIES_ICON, disabled: !canBulkEditPropertiesSelected },
     { type: "separator" },
     { id: "bulk-move-selected", label: toolbarStrings.bulkActionLabels.moveSelected, icon: "folder-input", disabled: !canBulkMoveSelected },

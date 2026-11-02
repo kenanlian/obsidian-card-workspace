@@ -1408,3 +1408,23 @@ describe("diagram presentation", () => {
     }
   });
 });
+
+
+describe("card background inheritance", () => {
+  it.each([
+    { defaultColor: "theme", overrides: {}, expected: null },
+    { defaultColor: "blue", overrides: {}, expected: "blue" },
+    { defaultColor: "blue", overrides: { "notes/a.md": "pink" }, expected: "pink" },
+  ])("resolves $expected without affecting selection or previews", async ({ defaultColor, overrides, expected }) => {
+    const mounted = mountCardItem({ selected: true, bulkSelected: true, appearance: {
+      cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2,
+      cardBackgroundColor: defaultColor, cardBackgroundOverrides: overrides,
+    } });
+    await tick();
+    const card = mounted.target.querySelector(".fce-card")!;
+    expect(card.getAttribute("data-fce-card-background")).toBe(expected);
+    expect(card.classList.contains("is-selected")).toBe(true);
+    expect(card.classList.contains("is-bulk-selected")).toBe(true);
+    await disposeMountedComponent(mounted.component);
+  });
+});

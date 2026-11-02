@@ -109,6 +109,10 @@ const testState = vi.hoisted(() => {
       return this;
     }
 
+    addSeparator(): this {
+      return this;
+    }
+
     showAtMouseEvent(): void {
       return;
     }
@@ -513,6 +517,74 @@ describe("FolderCardView host contract", () => {
 
     await view.onClose();
   });
+  it("updates an editor-selected card after bulk colors without reloading cards", async () => {
+    const { view, plugin, panelContainer } = createHarness();
+    const first = createCard("notes/editing.md", "Editing");
+    Object.assign(first.file, { extension: "md" });
+    const second = createCard("notes/other.md", "Other");
+    const files = [first.file, second.file];
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockImplementation((path: string) => files.find(file => file.path === path) ?? null);
+    await view.onOpen();
+    (view as any).baseCards = [first, second];
+    publishAll(view);
+    view.setSelectedFile(first.path);
+    await tick();
+    const card = panelContainer.querySelector(".fce-card.is-selected")!;
+    expect(card).not.toBeNull();
+    const refresh = vi.spyOn(view, "refresh");
+    view.modules.bulk.toggleBulkMode();
+    for (const file of files) view.modules.bulk.onBulkSelectCard({ path: file.path });
+    await tick();
+    expect(card.classList.contains("is-bulk-selected")).toBe(true);
+    await view.modules.cardBackgroundActions.apply(files, "blue");
+    await tick();
+    expect(card.getAttribute("data-fce-card-background")).toBe("blue");
+    view.modules.bulk.toggleBulkMode();
+    await tick();
+    expect(card.classList.contains("is-bulk-selected")).toBe(false);
+    // Record the real host menu callbacks, including the native submenu path.
+    interface MenuChoice { title: string; click?: () => void; submenu?: ReturnType<typeof paletteMenu> }
+    function paletteMenu() {
+      const items: MenuChoice[] = [];
+      const menu = {
+        items,
+        setUseNativeMenu: () => menu,
+        addSeparator: () => menu,
+        addItem(configure: (item: any) => void) {
+          const choice: MenuChoice = { title: "" };
+          const item = {
+            setTitle(title: string | DocumentFragment) { choice.title = typeof title === "string" ? title : title.textContent ?? ""; return item; },
+            setIcon() { return item; }, setChecked() { return item; }, setDisabled() { return item; },
+            onClick(click: () => void) { choice.click = click; return item; },
+            setSubmenu() { choice.submenu = paletteMenu(); return choice.submenu; },
+          };
+          configure(item);
+          items.push(choice);
+          return menu;
+        },
+      };
+      return menu;
+    }
+    let rootMenu = paletteMenu();
+    vi.spyOn(testState.TestMenu.prototype, "addItem").mockImplementation(function(this: InstanceType<typeof testState.TestMenu>, configure) {
+      rootMenu.addItem(configure);
+      return this;
+    });
+    for (const color of ["red", "green", "pink", null] as const) {
+      rootMenu = paletteMenu();
+      card.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 10, clientY: 10 }));
+      const choices = rootMenu.items.find(item => item.title === "Background color")!.submenu!;
+      const label = color === null ? "Follow default" : getUiStrings("en").cardBackground.colors[color];
+      choices.items.find(item => item.title === label)!.click!();
+      await tick();
+      expect(panelContainer.querySelector(".fce-card.is-selected")).toBe(card);
+      expect(card.getAttribute("data-fce-card-background")).toBe(color);
+      expect(readSettingsObject(plugin).cardBackgroundOverrides[second.path]).toBe("blue");
+    }
+    expect(refresh).not.toHaveBeenCalled();
+    await view.onClose();
+  });
+
   it("re-sorts loaded cards immediately when sort changes to filename order", async () => {
     const { view, plugin } = createHarness();
     const zetaCard = createCard("notes/zeta.md", "Zeta");

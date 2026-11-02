@@ -194,6 +194,8 @@ export function resolveSettingsUpdateIntent(
   if (previous.cardCornerRadius !== next.cardCornerRadius) intent = mergeIntent(intent, "patch");
   if (previous.uiFontSize !== next.uiFontSize) intent = mergeIntent(intent, "patch");
   if (previous.uiDensity !== next.uiDensity) intent = mergeIntent(intent, "patch");
+  if (previous.cardBackgroundColor !== next.cardBackgroundColor
+    || JSON.stringify(previous.cardBackgroundOverrides) !== JSON.stringify(next.cardBackgroundOverrides)) intent = mergeIntent(intent, "patch");
   if (previous.cardStyle !== next.cardStyle) intent = mergeIntent(intent, "patch");
   if (previous.newNoteTemplate !== next.newNoteTemplate) intent = mergeIntent(intent, "patch");
   if (previous.boxNewNoteFolderPath !== next.boxNewNoteFolderPath) intent = mergeIntent(intent, "patch");

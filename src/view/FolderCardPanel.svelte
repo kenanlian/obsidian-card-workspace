@@ -62,6 +62,7 @@
   }
   interface ToolbarActionPayload {
     action: string;
+    position?: { x: number; y: number };
   }
   interface BoxCommandPayload {
     command: string;

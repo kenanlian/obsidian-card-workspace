@@ -1,4 +1,5 @@
 import { UNSUPPORTED_CAPABILITIES, type RuntimeCapabilities } from "../runtime/capabilities";
+import type { CardBackgroundColor, CardBackgroundTint } from "../card-background";
 import type { CardImageState } from "../images/types";
 import type { CardImageFit, CardImageMode, CardStyle, UiDensity, UiFontSize } from "../settings";
 import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
@@ -216,6 +217,8 @@ export interface PanelNavState {
 }
 
 export interface PanelAppearanceState {
+  cardBackgroundColor?: CardBackgroundColor;
+  cardBackgroundOverrides?: Record<string, CardBackgroundTint>;
   cardCornerRadius: CardCornerRadius;
   previewLines: number;
   searchPreviewSnippetCount: number;

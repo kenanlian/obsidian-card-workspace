@@ -54,7 +54,7 @@ function createPlugin(
     getSettings: vi.fn(() => ({
       hiddenNavSections: [], hiddenFolderPaths: [], hiddenTagPaths: [], fileVisibility: "supported",
       cardCornerRadius: "medium",
-      uiFontSize: "default", uiDensity: "default", cardStyle: "default",
+      uiFontSize: "default", uiDensity: "default", cardStyle: "default", cardBackgroundColor: "theme",
       defaultCardOpenBehavior: "split-right",
       locateLinkCardOnOpen: false,
       dragInsertAction: "embed",
@@ -135,6 +135,7 @@ describe("CardWorkspaceSettingTab", () => {
       "Show item counts in navigation",
       "Card hover preview width",
       "Card hover preview height",
+      "Default card background color",
     ]);
   });
 
@@ -287,6 +288,7 @@ describe("CardWorkspaceSettingTab", () => {
       "在导航栏显示条目计数",
       "卡片悬浮预览宽度",
       "卡片悬浮预览高度",
+      "默认卡片背景颜色",
     ]);
     expect(rowsOf(appearance)[6]?.desc).toBe("搜索时最多显示多少个正文命中片段，每个片段占两行。");
     expect(controlOf(rowsOf(appearance)[2])).toMatchObject({

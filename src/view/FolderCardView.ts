@@ -319,7 +319,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.hostEl = null;
   }
 
-  handleToolbarAction(detail: { action?: unknown }): void {
+  handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number } }): void {
     const action = detail.action;
 
     if (action === "new-note") {
@@ -341,6 +341,11 @@ export class FolderCardView extends ItemView implements HoverParent {
 
     if (action === "bulk-clear-selection") {
       this.modules.bulk.bulkClearSelection();
+      return;
+    }
+
+    if (action === "bulk-background-color") {
+      if (this.modules.bulk.isBulkMode() && detail.position) this.modules.cardBackgroundActions.openBulk([...this.modules.bulk.getSelectedPaths()], detail.position);
       return;
     }
 
@@ -505,6 +510,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     const scopeReport = this.modules.scopeController.dispose();
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
+    this.modules.cardBackgroundActions.dispose();
     const searchReport = this.modules.search.dispose();
     const hydrationReport = this.modules.hydration.dispose();
     this.modules.metadataImpact.dispose();
@@ -682,6 +688,8 @@ export class FolderCardView extends ItemView implements HoverParent {
       uiFontSize: settings.uiFontSize,
       uiDensity: settings.uiDensity,
       cardStyle: settings.cardStyle,
+      cardBackgroundColor: settings.cardBackgroundColor,
+      cardBackgroundOverrides: settings.cardBackgroundOverrides,
     };
   }
 

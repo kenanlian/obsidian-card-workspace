@@ -889,7 +889,7 @@ describe("Toolbar.svelte", () => {
 
     const bulkActions = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-actions");
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
-    expect(bulkButtons).toHaveLength(8);
+    expect(bulkButtons).toHaveLength(9);
     const tagsButton = bulkButtons.find((button) => button.getAttribute("data-tooltip") === "Bulk tag operations");
     const propertiesButton = bulkButtons.find((button) => button.getAttribute("data-tooltip") === "Bulk property operations");
     expect(tagsButton?.disabled).toBe(false);
@@ -899,12 +899,17 @@ describe("Toolbar.svelte", () => {
     captured.toolbarActionEvents.length = 0;
 
 
+    const colorButton = bulkButtons.find(button => button.getAttribute("aria-label") === "Background color")!;
+    colorButton.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "bulk-background-color", position: { x: 0, y: 0 } }]);
+    captured.toolbarActionEvents.length = 0;
+
     const destructiveButtons = bulkButtons.filter((button) => button.classList.contains("is-destructive"));
     expect(destructiveButtons).toHaveLength(1);
     expect(destructiveButtons[0]?.getAttribute("data-tooltip")).toBe("Delete selected");
 
     bulkButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    bulkButtons[7]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    bulkButtons[8]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await tick();
 
     expect(captured.toolbarActionEvents).toEqual([
@@ -935,7 +940,7 @@ describe("Toolbar.svelte", () => {
 
     const bulkActions = document.querySelector<HTMLDivElement>(".fce-toolbar-bulk-actions");
     const bulkButtons = Array.from(bulkActions?.querySelectorAll<HTMLButtonElement>("button") || []);
-    expect(bulkButtons).toHaveLength(9);
+    expect(bulkButtons).toHaveLength(10);
 
     const addButton = bulkButtons.find(
       (button) => button.getAttribute("data-tooltip") === "Add to card box",

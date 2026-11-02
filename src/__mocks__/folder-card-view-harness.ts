@@ -1172,6 +1172,7 @@ export function createViewWithFile(
       lastViewMode: "folder",
       pinnedPaths: [],
       searchHistory: [],
+      cardBackgroundColor: "theme", cardBackgroundOverrides: {},
       previewLines: 5,
       templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
       noteTemplates: [] as NoteTemplateDefinition[],

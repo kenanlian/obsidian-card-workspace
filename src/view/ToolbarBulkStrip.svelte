@@ -3,6 +3,7 @@
 
   interface ToolbarActionPayload {
     action: string;
+    position?: { x: number; y: number };
   }
 
   interface BulkActionOption {
@@ -53,8 +54,9 @@
     };
   }
 
-  function emitToolbarAction(actionId: string): void {
-    onToolbarAction?.({ action: actionId });
+  function emitToolbarAction(actionId: string, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    onToolbarAction?.(actionId === "bulk-background-color" ? { action: actionId, position: { x: rect.left, y: rect.bottom } } : { action: actionId });
   }
 </script>
 
@@ -69,7 +71,7 @@
           class="clickable-icon fce-toolbar-bulk-button {action.danger ? 'is-destructive' : ''}"
           aria-label={action.label}
           disabled={action.disabled}
-          onclick={() => emitToolbarAction(action.id)}
+          onclick={(event) => emitToolbarAction(action.id, event)}
           use:applyIcon={action.icon}
           use:applyTooltip={action.label}
         >
