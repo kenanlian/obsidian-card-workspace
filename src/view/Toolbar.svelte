@@ -339,9 +339,12 @@
   const searchStatusLabel = $derived(
     getSearchStatusLabel(toolbarStrings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
-  // Host-derived paused state (scope.browseFiltersPaused): active workspace filters kept dormant by a non-folder scope.
+  // Host-derived paused state (scope.browseFiltersPaused): active workspace filters kept dormant by a non-filterable scope.
   const showFiltersPaused = $derived(scope.browseFiltersPaused ?? false);
-  const hasSummary = $derived(showSearchStatus || showFiltersPaused);
+  const activeTagCount = $derived(scope.browseFilterState?.tagCount ?? 0);
+  const activePropertyCount = $derived(scope.browseFilterState?.propertyValueCount ?? 0);
+  const hasBrowseFilters = $derived(activeTagCount > 0 || activePropertyCount > 0);
+  const hasSummary = $derived(showSearchStatus || showFiltersPaused || hasBrowseFilters);
 
   function applyIcon(node: HTMLElement, iconName: string): { update: (nextIconName: string) => void } {
     setIcon(node, iconName);
@@ -679,6 +682,14 @@
       <div class="fce-toolbar-content">
         {#if showSearchStatus}
           <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
+        {/if}
+        {#if hasBrowseFilters}
+          <span class="fce-toolbar-summary-segment fce-active-filters">
+            {#if activeTagCount > 0}{toolbarStrings.activeTagFilters(activeTagCount)}{/if}
+            {#if activePropertyCount > 0}{#if activeTagCount > 0} · {/if}{strings.property.activeFilterSummary(activePropertyCount)}{/if}
+          </span>
+          <button type="button" class="clickable-icon" aria-label={toolbarStrings.clearBrowseFilters}
+            onclick={() => emitToolbarAction("clear-browse-filters")} use:applyIcon={"filter-x"}></button>
         {/if}
         {#if showFiltersPaused}<span class="fce-toolbar-summary-segment fce-filters-paused">{toolbarStrings.filtersPaused}</span>{/if}
       </div>

@@ -33,8 +33,8 @@ describe("resolveSourceCapabilities", () => {
   it("returns the exact six-field capability table for box scope", () => {
     expect(resolveSourceCapabilities(createBoxScope("box-42"))).toEqual({
       arrangementOwner: { kind: "box", boxId: "box-42" },
-      browseTagFilter: false,
-      browsePropertyFilter: false,
+      browseTagFilter: true,
+      browsePropertyFilter: true,
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
       groupDimensions: ["none", "folder", "tag", "task", "property", "box-rule"],

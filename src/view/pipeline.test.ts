@@ -445,36 +445,20 @@ describe("applyPropertyFilter behavior", () => {
     ]);
   });
 
-  it("skips the property step in box scopes", () => {
-    const cards = [
-      createMockCard("prop-filtered.md"),
-      createMockCard("visible.md"),
-    ];
+  it("filters box members without mutating the full source or restoring filtered pins", () => {
+    const cards = [createMockCard("hidden.md"), createMockCard("visible.md")];
     const context = createMockContext();
-    context.filterTags = ["folder-only-filter"];
     context.propertyFilters = [{ key: "status", values: [text("open")] }];
-
-    // Tag and property filtering are skipped for box scopes; these rejecting
-    // mocks prove neither step ran (every card stays visible).
-    vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
-    vi.spyOn(metadataUtils, "getFileFrontmatter").mockReturnValue({ status: "done" });
-
-    const steps = stepsForScope(createBoxScope("box-1"));
-    expect(steps).not.toContain(applyTagFilter);
-    expect(steps).not.toContain(applyPropertyFilter);
-
-    expect(runPipeline(cards, steps, context).cards).toEqual(cards);
-
-    // Folder-chain regression: the property step stays in the folder chain.
-    expect(folderSteps()).toEqual([
-      applyTagFilter,
-      applyPropertyFilter,
-      applySearchFilter,
-      applyPinReorder,
-    ]);
+    context.pinnedPaths = ["hidden.md"];
+    vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation((_app, file) =>
+      ({ status: file.path === "visible.md" ? "open" : "closed" }));
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards.map(card => card.path)).toEqual(["visible.md"]);
+    expect(cards).toHaveLength(2);
+    context.propertyFilters = [];
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards).toEqual(cards);
   });
 
-  it("keeps links scopes on the box-aligned chain and dormant for both browse filters", () => {
+  it("keeps links scopes on their search and pin chain and dormant for both browse filters", () => {
     const cards = [
       createMockCard("prop-filtered.md"),
       createMockCard("visible.md"),
@@ -484,7 +468,7 @@ describe("applyPropertyFilter behavior", () => {
     context.propertyFilters = [{ key: "status", values: [text("open")] }];
 
     // Both rejecting mocks prove neither browse filter step ran (every card
-    // stays visible): links is a non-filterable scope like box.
+    // stays visible): links is a non-filterable scope.
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
     vi.spyOn(metadataUtils, "getFileFrontmatter").mockImplementation(() => ({ status: "done" }));
 
@@ -505,14 +489,14 @@ describe("applyPropertyFilter behavior", () => {
     expect(frontmatter).not.toHaveBeenCalled();
   });
 
-  it("keeps the full member set visible in box scopes despite non-empty workspace property clauses", () => {
+  it("filters the box member set by workspace property clauses", () => {
     const cards = [createMockCard("a.md"), createMockCard("b.md")];
     const context = createMockContext();
     context.propertyFilters = [{ key: "status", values: [text("open")] }];
-    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter");
+    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter").mockReturnValue({ status: "closed" });
 
-    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards).toEqual(cards);
-    expect(frontmatter).not.toHaveBeenCalled();
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box-1")), context).cards).toEqual([]);
+    expect(frontmatter).toHaveBeenCalled();
   });
 
   it("projects zero cards for a non-ready search even with an active property clause", () => {
@@ -994,11 +978,10 @@ describe("stepsForScope", () => {
     expect(steps[3]).toBe(applyPinReorder);
   });
 
-  it("contains exactly 2 steps in correct order for box scopes", () => {
-    const steps = stepsForScope(createBoxScope("box-1"));
-    expect(steps).toHaveLength(2);
-    expect(steps[0]).toBe(applySearchFilter);
-    expect(steps[1]).toBe(applyPinReorder);
+  it("contains all four filter steps in correct order for box scopes", () => {
+    expect(stepsForScope(createBoxScope("box-1"))).toEqual([
+      applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder,
+    ]);
   });
 
   it("contains exactly 2 steps in correct order for links scopes", () => {
@@ -1029,15 +1012,16 @@ describe("stepsForScope", () => {
     expect(result.cards).toHaveLength(3);
   });
 
-  it("skips tag filtering for box scopes without shrinking box membership", () => {
+  it("applies tag filtering in boxes without mutating membership", () => {
     const cards = [createMockCard("box-a.md"), createMockCard("box-b.md")];
     const context = createMockContext();
     context.filterTags = ["folder-only-filter"];
     vi.spyOn(metadataUtils, "matchesTagFilter").mockReturnValue(false);
 
     const steps = stepsForScope(createBoxScope("box-1"));
-    expect(steps).not.toContain(applyTagFilter);
-    expect(runPipeline(cards, steps, context).cards).toEqual(cards);
+    expect(steps).toContain(applyTagFilter);
+    expect(runPipeline(cards, steps, context).cards).toEqual([]);
+    expect(cards).toHaveLength(2);
   });
 
   it("throws for an unhandled card source instead of inheriting folder steps", () => {

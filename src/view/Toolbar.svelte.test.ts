@@ -140,9 +140,10 @@ function mountToolbar(
         sourceIdentity: values.activeBoxId
           ? `box:${values.activeBoxId}`
           : `folder:${values.folderPath ?? "notes"}:true`,
-        browseTagFilterEnabled: !values.activeBoxId,
-        browsePropertyFilterEnabled: !values.activeBoxId,
+        browseTagFilterEnabled: !values.linksDirection,
+        browsePropertyFilterEnabled: !values.linksDirection,
         browseFiltersPaused: values.filtersPaused ?? false,
+        browseFilterState: values.browseFilterState,
         supportsIncludeSubfolders: !values.activeBoxId,
         supportsBoxRuleSeeding: values.supportsBoxRuleSeeding ?? !values.activeBoxId,
         linksDirection: values.linksDirection ?? null,
@@ -731,6 +732,20 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
+  it.each(["en", "zh"] as const)("shows effective box filters and emits a clear intent (%s)", async (locale) => {
+    const captured = createCapturedCallbacks();
+    const strings = getUiStrings(locale);
+    const { component } = mountToolbar({ activeBoxId: "box-1", strings,
+      browseFilterState: { tagCount: 2, propertyValueCount: 0, canClearEmptyResult: false } }, captured.callbacks);
+    await tick();
+    expect(document.querySelector(".fce-active-filters")?.textContent).toContain(strings.toolbar.activeTagFilters(2));
+    const clear = document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.clearBrowseFilters}"]`)!;
+    clear.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "clear-browse-filters" }]);
+    expect(document.querySelector(".fce-filters-paused")).toBeNull();
+    await disposeMountedComponent(component);
+  });
+
   it("renders the paused-filters hint only when a non-folder scope keeps active filters dormant", async () => {
     let { component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: undefined });
     await tick();
@@ -738,13 +753,13 @@ describe("Toolbar.svelte", () => {
     expect(document.querySelector(".fce-toolbar-content-row")).toBeNull();
     await disposeMountedComponent(component);
 
-    ({ component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: true }));
+    ({ component } = mountToolbar({ linksDirection: "backlinks", filtersPaused: true }));
     await tick();
     const pausedEl = document.querySelector<HTMLElement>(".fce-toolbar-content-row .fce-filters-paused");
     expect(pausedEl?.textContent).toBe("Tag/property filters are paused in this view");
     await disposeMountedComponent(component);
 
-    ({ component } = mountToolbar({ activeBoxId: "box-1", filtersPaused: true, strings: getUiStrings("zh") }));
+    ({ component } = mountToolbar({ linksDirection: "backlinks", filtersPaused: true, strings: getUiStrings("zh") }));
     await tick();
     expect(document.querySelector(".fce-filters-paused")?.textContent)
       .toBe("标签/属性筛选已在当前视图暂停");

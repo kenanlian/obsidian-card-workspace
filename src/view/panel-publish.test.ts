@@ -611,7 +611,7 @@ describe("FolderCardView grouped panel publishing", () => {
 
     const boxView = baseView();
     boxView.cardScope = createBoxScope(box.id);
-    expect(boxView.buildScopeGroup().browseFiltersPaused).toBe(true);
+    expect(boxView.buildScopeGroup().browseFiltersPaused).toBe(false);
 
     const linksView = baseView();
     linksView.cardScope = createLinksScope("notes/a.md", "backlinks");

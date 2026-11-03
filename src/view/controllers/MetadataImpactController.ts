@@ -25,7 +25,7 @@ export interface MetadataImpactControllerDeps {
   onImageMetadataChange?: (path?: string) => void;
   refreshLinkMetadata?: (path?: string) => boolean;
   getGroupDimension: () => GroupDimension;
-  /** True while the runtime scope is a folder with an active browse Tag filter. */
+  /** True while the runtime scope supports an active browse Tag filter. */
   isBrowseTagFilterActive: () => boolean;
   /** True while the view's query is non-empty (drives the batch's search group). */
   isSearchActive: () => boolean;
@@ -194,9 +194,9 @@ export class MetadataImpactController implements DisposableController {
     const bucketsMoved = this.deps.refreshMetadataGroupBuckets();
     const tagsChanged = this.deps.refreshScopeTagData();
 
-    // Folder scope: an in-base tag change re-runs the sole pipeline whenever
+    // Filterable scope: an in-base tag change re-runs the sole pipeline whenever
     // browse Tag filters are active, so matching-to-nonmatching and back are
-    // visible immediately. Box scopes skip browse Tag and Property filters.
+    // visible immediately. Links scopes skip browse Tag and Property filters.
     const needsReproject = this.deps.isBrowseTagFilterActive()
       || movedTaskBucket
       || bucketsMoved

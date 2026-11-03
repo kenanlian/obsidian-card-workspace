@@ -1457,9 +1457,10 @@ describe("nav context menu wiring", () => {
       expect(mockState.menuInstances[0].showAtMouseEvent).toHaveBeenCalledTimes(1);
     });
 
-    it("skips the menu entirely for a tag row in box mode", () => {
+    it("offers filtering in the tag row menu in box mode", () => {
       const { view } = createNavView({
         activeBoxId: "box-1",
+        filter: { tags: ["work"], properties: [] },
         boxes: [
           {
             id: "box-1",
@@ -1473,11 +1474,13 @@ describe("nav context menu wiring", () => {
         ],
       });
 
+      (view as any).buildNavGroup();
       (view as any).openNavContextMenu(
         navPayload({ section: "tags", scope: "item", itemId: "work" }),
       );
 
-      expect(mockState.menuInstances).toHaveLength(0);
+      expect(mockState.menuInstances).toHaveLength(1);
+      expect(latestMenuTitles()).toContain("Filter by this tag only");
     });
 
     // Cross-module: panel favorite-activate event -> FolderCardView.selectFolderFromNav.

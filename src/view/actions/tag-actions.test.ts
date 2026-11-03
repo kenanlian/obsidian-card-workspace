@@ -15,7 +15,7 @@ vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
 
 import { TagActions } from "./tag-actions";
 import { FolderCardView } from "../FolderCardView";
-import { createBoxScope } from "../scope";
+import { createLinksScope } from "../scope";
 import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
 
 registerFolderCardView(FolderCardView);
@@ -71,7 +71,7 @@ describe("TagActions filter-change capability gating", () => {
 
   it("clears dormant tag filters from a non-filterable scope but never sets tags there", async () => {
     const { view, plugin } = createViewWithFile("notes/box-clear.md");
-    (view as any).cardScope = createBoxScope("box-1");
+    (view as any).cardScope = createLinksScope("notes/box-clear.md", "backlinks");
     const settings = {
       includeSubfolders: true,
       sort: { field: "mtime", direction: "desc" },
@@ -84,7 +84,7 @@ describe("TagActions filter-change capability gating", () => {
     plugin.getSettings = vi.fn(() => settings);
     const tagActions = (view as any).modules.tagActions;
 
-    // Setting tags from a box scope stays blocked: dormant filters are not settable here.
+    // Setting tags from a links scope stays blocked: dormant filters are not settable here.
     await tagActions.onFilterChange({ tags: ["new-tag"] });
     expect(plugin.saveSettings).not.toHaveBeenCalled();
 

@@ -917,6 +917,29 @@ describe("FolderCardView host contract", () => {
     expect(settings.filter.tags).toEqual([]);
   });
 
+  it("offers clearing box filters from an empty stream", async () => {
+    const { view, plugin, panelContainer } = createHarness();
+    const settings = readSettingsObject(plugin);
+    const target = createCard("notes/a.md", "A");
+    settings.boxes = [makeTestBox({ manualPaths: [target.path] }) as never];
+    settings.filter = { tags: ["absent"], properties: [] };
+    (view as any).cardScope = createBoxScope("box-1");
+    (view as any).baseCards = [target];
+    (view as any).visibleCards = [];
+    await view.onOpen();
+    publishAll(view);
+    await tick();
+    expect(panelContainer.querySelector(".fce-active-filters")?.textContent).toContain("1 tag filter active");
+    expect(panelContainer.querySelector(".fce-empty")?.textContent).toContain("No cards match the current filters.");
+    const clear = panelContainer.querySelector<HTMLButtonElement>(".fce-empty button")!;
+    expect(clear).not.toBeNull();
+    clear.click();
+    await tick();
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    expect(settings.boxes[0].manualPaths).toEqual([target.path]);
+    await view.onClose();
+  });
+
   it("computes default and search-specific empty-state messages", () => {
     const { view, plugin } = createHarness();
 
@@ -946,10 +969,10 @@ describe("FolderCardView host contract", () => {
       previewLines: 5,
       includeSubfolders: true,
     }));
-    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
+    expect((view as any).buildEmptyStateMessage()).toBe('No cards match “alpha” and the current filters.');
 
     (view as any).cardScope = createFolderScope("", true);
-    expect((view as any).buildEmptyStateMessage()).toBe('No results for “alpha” in current folder and tag scope.');
+    expect((view as any).buildEmptyStateMessage()).toBe('No cards match “alpha” and the current filters.');
 
     plugin.getSettings = vi.fn(() => ({
       sort: { field: "mtime", direction: "desc" },
@@ -3163,7 +3186,7 @@ describe("FolderCardView navigation scope activation", () => {
     vi.restoreAllMocks();
   });
 
-  it("clears the tag filter when the activated folder differs from the current scope", async () => {
+  it("preserves the tag filter when the activated folder differs from the current scope", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = { tags: ["alpha"], properties: [] };
@@ -3171,11 +3194,11 @@ describe("FolderCardView navigation scope activation", () => {
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("resumes dormant property clauses instead of clearing them when leaving a box for a folder", async () => {
+  it("preserves property clauses when leaving a box for a folder", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -3186,13 +3209,13 @@ describe("FolderCardView navigation scope activation", () => {
 
     await (view as any).selectFolderFromNav("other");
 
-    // Box scopes keep filters dormant; navigating back into a folder resumes them.
+    // Box and folder scopes share browse conditions.
     expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(settings.filter.properties).toHaveLength(1);
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("resumes both dormant tags and property clauses when a box is left with both active", async () => {
+  it("preserves legacy combined filters when leaving a box", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {

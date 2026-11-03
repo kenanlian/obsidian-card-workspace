@@ -140,8 +140,8 @@ const scope: PanelScopeState = {
 const boxScopeState: PanelScopeState = {
   ...scope,
   activeBoxId: "box-1",
-  sourceIdentity: "box:box-1", browseTagFilterEnabled: false,
-  browsePropertyFilterEnabled: false, supportsIncludeSubfolders: false, supportsBoxRuleSeeding: false,
+  sourceIdentity: "box:box-1", browseTagFilterEnabled: true,
+  browsePropertyFilterEnabled: true, supportsIncludeSubfolders: false, supportsBoxRuleSeeding: false,
 };
 
 function render(options: {
@@ -487,10 +487,10 @@ describe("NavigationPane projected ARIA tree", () => {
     await unmount(components.pop()!);
   });
 
-  it("retains muted metadata rows and keeps their filters dormant in a box scope", async () => {
+  it("retains muted metadata rows and keeps their filters dormant in a links scope", async () => {
     render({
       nav: nav({ projection: projection("", defaultNavSectionOrder(), true, true) }),
-      scope: boxScopeState,
+      scope: { ...boxScopeState, activeBoxId: null, sourceIdentity: "links:notes/a.md:backlinks", browseTagFilterEnabled: false, browsePropertyFilterEnabled: false },
       activeFilterTags: ["work"],
     });
 
@@ -1049,7 +1049,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(document.querySelector('[data-nav-row-id^="property:"]')).toBeNull();
   });
 
-  it("renders normal empty metadata copy and pins the chooser action in a box", async () => {
+  it("renders empty metadata copy with a clear action for active box filters", async () => {
     const base = projection();
     const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
     const boxScope = boxScopeState;
@@ -1063,12 +1063,12 @@ describe("NavigationPane projected ARIA tree", () => {
     await tick();
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
       .toBe("No properties selected — choose which properties to show");
-    expect(row("section:properties").querySelector(".fce-nav-section-clear")).toBeNull();
-    const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-choose");
+    expect(row("section:properties").querySelector(".fce-nav-section-choose")).toBeNull();
+    const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-clear");
     expect(choose).not.toBeNull();
     choose?.click();
     await tick();
-    expect(commands).toEqual([{ command: "choose-visible" }]);
+    expect(commands).toEqual([{ command: "clear-filters" }]);
 
     await unmount(components.pop()!);
     render({

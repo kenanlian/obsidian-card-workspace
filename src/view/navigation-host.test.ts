@@ -344,7 +344,7 @@ describe("buildNavigationPanelState browse-filter disabled flags (C6)", () => {
     expect(captureDisabledFlags(createFolderScope("notes", true)))
       .toEqual({ tagsDisabled: false, propertiesDisabled: false });
     expect(captureDisabledFlags(createBoxScope("box-1")))
-      .toEqual({ tagsDisabled: true, propertiesDisabled: true });
+      .toEqual({ tagsDisabled: false, propertiesDisabled: false });
     expect(captureDisabledFlags(createLinksScope("notes/a.md", "backlinks")))
       .toEqual({ tagsDisabled: true, propertiesDisabled: true });
   });

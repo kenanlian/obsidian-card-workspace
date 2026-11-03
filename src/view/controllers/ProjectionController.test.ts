@@ -120,7 +120,7 @@ describe("ProjectionController", () => {
     vi.restoreAllMocks();
   });
 
-  it("groups property values in folder, box, and links sources while box and links filters stay paused", () => {
+  it("groups property values in folder, box, and links sources while only links filters stay paused", () => {
     const cards = [createCard("notes/a.md"), createCard("notes/b.md")];
     const clause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
     const group: GroupSpec = { dimension: "property", propertyKey: "status", orderBy: "default", orderDirection: "asc" };
@@ -128,8 +128,8 @@ describe("ProjectionController", () => {
       const { controller } = createHarness({ scope, group, filterProperties: [clause],
         fileCache: (file) => ({ frontmatter: { status: file.path.endsWith("a.md") ? "open" : "closed" } }) });
       const result = controller.deriveArrangementFrom(cards);
-      expect(result.segments.length).toBe(scope.kind === "folder" ? 1 : 2);
-      expect(result.cards.length).toBe(scope.kind === "folder" ? 1 : 2);
+      expect(result.segments.length).toBe(scope.kind === "links" ? 2 : 1);
+      expect(result.cards.length).toBe(scope.kind === "links" ? 2 : 1);
     }
   });
 
@@ -162,7 +162,7 @@ describe("ProjectionController", () => {
     ]);
   });
 
-  it("skips tag filtering in box scope while retaining search and pin ordering", () => {
+  it("applies tag filtering in box scope while retaining search and pin ordering", () => {
     const cards = [createCard("a.md"), createCard("b.md"), createCard("c.md")];
     const { controller } = createHarness({
       scope: createBoxScope("box-1"),
@@ -174,30 +174,29 @@ describe("ProjectionController", () => {
       },
       pinnedPaths: ["b.md"],
     });
-    const matches = vi.spyOn(metadataUtils, "matchesTagFilter");
+    const matches = vi.spyOn(metadataUtils, "matchesTagFilter").mockImplementation((_app, file) => file.path !== "a.md");
 
     expect(controller.deriveVisibleCardsFrom(cards).map((card) => card.path)).toEqual([
       "b.md",
       "c.md",
-      "a.md",
     ]);
-    expect(matches).not.toHaveBeenCalled();
+    expect(matches).toHaveBeenCalledTimes(3);
   });
 
-  it("keeps the full member set visible in box scope despite active workspace property clauses", () => {
+  it("applies active workspace property clauses to box members", () => {
     const cards = [createCard("a.md"), createCard("b.md")];
     const { controller } = createHarness({
       scope: createBoxScope("box-1"),
-      filterTags: ["must-not-run"],
+      filterTags: [],
       filterProperties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
     });
-    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter");
+    const frontmatter = vi.spyOn(metadataUtils, "getFileFrontmatter").mockReturnValue({ status: "closed" });
 
-    expect(controller.deriveVisibleCardsFrom(cards)).toEqual(cards);
-    expect(frontmatter).not.toHaveBeenCalled();
+    expect(controller.deriveVisibleCardsFrom(cards)).toEqual([]);
+    expect(frontmatter).toHaveBeenCalled();
   });
 
-  it("injects empty propertyFilters into the pipeline context in box scope", () => {
+  it("injects workspace propertyFilters into the pipeline context in box scope", () => {
     const cards = [createCard("a.md"), createCard("b.md")];
     const clause: PropertyFilterClause = { key: "status", values: [{ kind: "text", value: "open" }] };
     const box = createHarness({
@@ -208,7 +207,7 @@ describe("ProjectionController", () => {
     const runPipeline = vi.spyOn(pipeline, "runPipeline");
 
     box.controller.deriveVisibleCardsFrom(cards);
-    expect(runPipeline.mock.calls[0]?.[2].propertyFilters).toEqual([]);
+    expect(runPipeline.mock.calls[0]?.[2].propertyFilters).toEqual([clause]);
 
     folder.controller.deriveVisibleCardsFrom(cards);
     expect(runPipeline.mock.calls[1]?.[2].propertyFilters).toEqual([clause]);

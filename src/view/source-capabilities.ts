@@ -15,7 +15,7 @@ import type { CardScope } from "./scope";
  *
  * Links keeps global grouping and pin ownership; view-config resolves its
  * per-direction sort independently. Browse tag and property filters
- * are folder-only capabilities: box and links scopes keep the workspace filter
+ * are supported by folders and boxes: links scopes keep the workspace filter
  * clauses dormant (never applied to their card streams) and surface that state
  * through the paused-filters hint instead. Accepted side effect: card-pin
  * toggles inside a Links scope write global `settings.pinnedPaths` and affect
@@ -59,8 +59,8 @@ export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities 
     case "box":
       return {
         arrangementOwner: { kind: "box", boxId: scope.boxId },
-        browseTagFilter: false,
-        browsePropertyFilter: false,
+        browseTagFilter: true,
+        browsePropertyFilter: true,
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: BOX_GROUP_DIMENSIONS,

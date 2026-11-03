@@ -46,17 +46,26 @@ describe("ScopeNoteActions", () => {
     await h.actions.createNote();
     expect(h.createNote.mock.calls[0][0]).toBe("");
   });
-  it("uses the configured box destination while keeping browse filters paused", async () => {
+  it("uses the configured box destination and inherits current browse filters", async () => {
     const h = harness(createBoxScope("b"));
     h.settings.boxNewNoteFolderPath = "Box notes";
     await h.actions.createNote();
-    expect(h.createNote).toHaveBeenCalledWith("Box notes", [], {}, "b");
+    expect(h.createNote).toHaveBeenCalledWith("Box notes", ["project", "project/nested"], { text: "a", number: 1, flag: false }, "b");
   });
-  it.each([createBoxScope("b"), createLinksScope("note.md", "backlinks")])("keeps paused browse filters out of %s", async (scope) => {
+  it.each([createLinksScope("note.md", "backlinks")])("keeps paused browse filters out of %s", async (scope) => {
     const h = harness(scope);
     await h.actions.createNote();
     expect(h.createNote.mock.calls[0]).toEqual(scope.kind === "box"
       ? ["", [], {}, "b"] : ["recent", [], {}]);
+  });
+  it("captures box filter values in complete manual order before settings change", async () => {
+    const h = harness(createBoxScope("b"));
+    h.settings.navigationSorting.propertyValues.text = { mode: "manual", order: [serializePropertyScalarRef({ kind: "text", value: "z" })] };
+    const pending = h.actions.createNote();
+    h.settings.filter.tags.push("later");
+    h.settings.filter.properties[0].values = [{ kind: "text", value: "changed" }];
+    await pending;
+    expect(h.createNote).toHaveBeenCalledWith("", ["project", "project/nested"], { text: "z", number: 1, flag: false }, "b");
   });
   it("passes snapshots unaffected by later settings changes", async () => {
     const h = harness();

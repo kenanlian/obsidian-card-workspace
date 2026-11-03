@@ -2,6 +2,12 @@ import type { UiLanguage } from "./types";
 
 export interface ToolbarStrings {
   filtersPaused: string;
+  activeTagFilters: (count: number) => string;
+  clearBrowseFilters: string;
+  emptyBrowseFilters: string;
+  emptySearchFilters: (query: string) => string;
+  emptyBox: string;
+  emptySearchScope: (query: string) => string;
   searchStatus: {
     buildingRestoring: string;
     building: string;
@@ -104,6 +110,12 @@ export interface ToolbarStrings {
 export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
   en: {
     filtersPaused: "Tag/property filters are paused in this view",
+    activeTagFilters: (count) => count === 1 ? "1 tag filter active" : `${count} tag filters active`,
+    clearBrowseFilters: "Clear filters",
+    emptyBrowseFilters: "No cards match the current filters.",
+    emptySearchFilters: (query) => `No cards match “${query}” and the current filters.`,
+    emptyBox: "No displayable files in this card box.",
+    emptySearchScope: (query) => `No results for “${query}” in the current scope.`,
     searchStatus: {
       buildingRestoring: "Restoring index",
       building: "Building index",
@@ -206,6 +218,12 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
   },
   zh: {
     filtersPaused: "标签/属性筛选已在当前视图暂停",
+    activeTagFilters: (count) => `已启用 ${count} 个标签筛选`,
+    clearBrowseFilters: "清除筛选",
+    emptyBrowseFilters: "没有符合当前筛选条件的卡片。",
+    emptySearchFilters: (query) => `没有同时符合搜索“${query}”和当前筛选条件的卡片。`,
+    emptyBox: "此卡片盒中没有可显示的文件。",
+    emptySearchScope: (query) => `在当前范围内没有找到“${query}”的结果。`,
     searchStatus: {
       buildingRestoring: "正在恢复索引",
       building: "正在构建索引",

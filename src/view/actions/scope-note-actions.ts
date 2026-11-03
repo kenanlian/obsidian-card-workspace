@@ -1,3 +1,4 @@
+import { resolveSourceCapabilities } from "../source-capabilities";
 import { serializePropertyScalarRef } from "../../property-filter-settings";
 import { buildPropertyFacets } from "../property-facets";
 import { getFileFrontmatter } from "../metadata-utils";
@@ -19,9 +20,10 @@ export class ScopeNoteActions {
     const scope = context.store.getScope();
     const settings = context.getSettings();
     const folderPath = resolveNewNoteFolderPath(scope, settings.lastFolderPath, settings.boxNewNoteFolderPath);
-    const tags = scope.kind === "folder" ? [...settings.filter.tags] : [];
+    const capabilities = resolveSourceCapabilities(scope);
+    const tags = capabilities.browseTagFilter ? [...settings.filter.tags] : [];
     const properties: Record<string, string | number | boolean> = Object.create(null) as Record<string, string | number | boolean>;
-    if (scope.kind === "folder") {
+    if (capabilities.browsePropertyFilter) {
       const clauses = settings.filter.properties;
       const facets = buildPropertyFacets(context.store.getBaseCards(), clauses.map((clause) => clause.key), clauses,
         (file) => getFileFrontmatter(context.getApp(), file), context.getUiStrings().property);

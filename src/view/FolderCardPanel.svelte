@@ -1006,7 +1006,12 @@
         </div>
       </div>
     {:else}
-      <div class="fce-empty">{scope.emptyStateMessage}</div>
+      <div class="fce-empty">
+        <div>{scope.emptyStateMessage}</div>
+        {#if scope.browseFilterState?.canClearEmptyResult}
+          <button type="button" onclick={() => handleToolbarAction({ action: "clear-browse-filters" })}>{strings.toolbar.clearBrowseFilters}</button>
+        {/if}
+      </div>
     {/if}
     {:else}
       <div class="fce-virtual-spacer" style={getTopPaddingStyle()}></div>

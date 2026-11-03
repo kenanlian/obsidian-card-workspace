@@ -62,6 +62,16 @@ describe("resolveEmptyStateMessage", () => {
     })).toBe(strings.links.emptyLinks);
   });
 
+  it.each(["en", "zh"] as const)("uses source-specific box and combined-filter search copy (%s)", (locale) => {
+    const strings = getUiStrings(locale);
+    expect(resolveEmptyStateMessage({ strings, ...baseInput, query: "needle",
+      emptySearchMessage: strings.toolbar.emptySearchScope })).toBe(strings.toolbar.emptySearchScope("needle"));
+    expect(resolveEmptyStateMessage({ strings, ...baseInput, query: "needle", activeTagCount: 1,
+      emptySearchMessage: strings.toolbar.emptySearchScope })).toBe(strings.toolbar.emptySearchFilters("needle"));
+    expect(resolveEmptyStateMessage({ strings, ...baseInput, baseCardCount: 2, activeTagCount: 1 }))
+      .toBe(strings.toolbar.emptyBrowseFilters);
+  });
+
   it("keeps query empty copy when a search is active", () => {
     const strings = getUiStrings("en");
     expect(resolveEmptyStateMessage({

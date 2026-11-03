@@ -68,10 +68,12 @@ export interface PanelScopeState {
   browsePropertyFilterEnabled: boolean;
   /**
    * Host-derived, never persisted: workspace tag/property filters are active
-   * but dormant in this non-folder scope. Optional so existing panel defaults
+   * but dormant in this non-filterable scope. Optional so existing panel defaults
    * stay valid; the Toolbar reads it with a false fallback and never derives.
    */
   browseFiltersPaused?: boolean;
+  /** Effective browse filters, derived by the host; never persisted. */
+  browseFilterState?: { tagCount: number; propertyValueCount: number; canClearEmptyResult: boolean };
   /** Include-subfolders control availability for this source (C6 capability). */
   supportsIncludeSubfolders: boolean;
   /** Save/add-current-source Box-rule seeding availability (C6 capability). */
@@ -133,7 +135,7 @@ export function buildLinksScopeGroupFields(
 
 /**
  * Host-derived, never persisted: workspace tag/property filters are active
- * but dormant in this non-folder scope. Drives the toolbar's paused hint.
+ * but dormant in this non-filterable scope. Drives the toolbar's paused hint.
  */
 export function resolveBrowseFiltersPaused(
   scope: CardScope,

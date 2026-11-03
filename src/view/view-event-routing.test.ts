@@ -3027,7 +3027,8 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       expect(next.bulk).toBe(initial.bulk);
     });
 
-    it("downgrades the property impact to nav inside a box even with active clauses (C6/V-Q)", async () => {
+    it("reprojects box members when active property metadata changes", async () => {
+      const frontmatter = { "notes/a.md": { status: "open" } };
       const { view, plugin } = createPropertyHarness({
         settings: {
           ...propertySettings({
@@ -3045,7 +3046,7 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
             group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
           }],
         },
-        frontmatter: { "notes/a.md": { status: "open" } },
+        frontmatter,
         cards: [createCardRecordFromPath("notes/a.md")],
       });
       (view as any).cardScope = createBoxScope("box-1");
@@ -3057,17 +3058,76 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       listener.mockClear();
       const initial = view.panelModel.getState();
 
-      emitMetadata({ path: "notes/a.md" });
+      frontmatter["notes/a.md"].status = "closed";
+      await emitMetadata({ path: "notes/a.md" });
 
       expect(listener).toHaveBeenCalledTimes(1);
       const next = view.panelModel.getState();
       expect(next.nav).not.toBe(initial.nav);
-      // The facets batch carries the fresh projection snapshot too; only the
-      // card/scope/bulk groups stay untouched on this non-reprojecting path.
+      // The coherent batch changes presentation while preserving box membership.
       expect(next.projection).not.toBe(initial.projection);
-      expect(next.cards).toBe(initial.cards);
-      expect(next.scope).toBe(initial.scope);
-      expect(next.bulk).toBe(initial.bulk);
+      expect(next.cards).not.toBe(initial.cards);
+      expect(next.cards.records).toEqual([]);
+      expect((view as any).baseCards).toHaveLength(1);
+      expect(next.scope).not.toBe(initial.scope);
+      expect(next.bulk).not.toBe(initial.bulk);
+      frontmatter["notes/a.md"].status = "open";
+      await emitMetadata({ path: "notes/a.md" });
+      expect(view.panelModel.getState().cards.records).toHaveLength(1);
+    });
+
+    it("reprojects box members when active tag metadata changes", async () => {
+      const frontmatter = { "notes/a.md": { tags: ["work"] } };
+      const { view, plugin, app } = createPropertyHarness({
+        settings: {
+          ...propertySettings({
+            visiblePropertyKeys: ["status"],
+          }),
+          filter: { tags: ["work"], properties: [] },
+          boxes: [{
+            id: "box-1",
+            name: "Box",
+            rules: [{ id: "rule-1", name: "Notes", folder: "notes", includeSubfolders: true, tags: [], properties: [] }],
+            manualPaths: [],
+            excludedPaths: [],
+            pinnedPaths: [],
+            sort: { field: "mtime", direction: "desc" },
+            group: { dimension: "none", orderBy: "default", orderDirection: "asc" },
+          }],
+        },
+        frontmatter,
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+      (view as any).cardScope = createBoxScope("box-1");
+
+      app.metadataCache.getFileCache = vi.fn(() => ({
+        frontmatter: frontmatter["notes/a.md"],
+        tags: frontmatter["notes/a.md"].tags.map(tag => ({ tag: `#${tag}` })),
+      }));
+      const emitMetadata = await openWithMetadataListener(view, plugin);
+
+      const listener = vi.fn();
+      view.panelModel.subscribe(listener);
+      listener.mockClear();
+      const initial = view.panelModel.getState();
+      expect(initial.cards.records).toHaveLength(1);
+
+      frontmatter["notes/a.md"].tags = [];
+      await emitMetadata({ path: "notes/a.md" });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      const next = view.panelModel.getState();
+      expect(next.nav).not.toBe(initial.nav);
+      // The coherent batch changes presentation while preserving box membership.
+      expect(next.projection).not.toBe(initial.projection);
+      expect(next.cards).not.toBe(initial.cards);
+      expect(next.cards.records).toEqual([]);
+      expect((view as any).baseCards).toHaveLength(1);
+      expect(next.scope).not.toBe(initial.scope);
+      expect(next.bulk).not.toBe(initial.bulk);
+      frontmatter["notes/a.md"].tags = ["work"];
+      await emitMetadata({ path: "notes/a.md" });
+      expect(view.panelModel.getState().cards.records).toHaveLength(1);
     });
 
     it("performs no property-owned publication for an out-of-base metadata event", async () => {
@@ -3186,6 +3246,23 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
     });
   });
 
+  describe("clearing effective browse filters", () => {
+    it.each([createFolderScope("notes", true), createBoxScope("box-1"), createLinksScope("notes/a.md", "backlinks")])("clears once only in filterable scopes (%s)", (scope) => {
+      const { view, plugin } = createPropertyHarness({ settings: {
+        ...propertySettings(), filter: { tags: ["work"], properties: [propertyClause("status", [propertyText("open")])] },
+      } });
+      (view as any).cardScope = scope;
+      (view as any).modules.search.query = "keep-search";
+      view.handleToolbarAction({ action: "clear-browse-filters" });
+      if (scope.kind === "links") expect(plugin.saveSettings).not.toHaveBeenCalled();
+      else {
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+      }
+      expect((view as any).modules.search.query).toBe("keep-search");
+    });
+  });
+
   describe("empty-state classification", () => {
     it("classifies property-filter, source-empty, and query empty copies", () => {
       const { view } = createPropertyHarness({
@@ -3208,11 +3285,10 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       (view as any).baseCards = [card];
       (view as any).modules.search.query = "needle";
       expect((view as any).buildScopeGroup().emptyStateMessage).toBe(
-        strings.view.emptySearchCurrentFolder("needle"),
+        strings.toolbar.emptySearchFilters("needle"),
       );
 
-      // An active tag filter keeps the source-empty copy even while property
-      // clauses exist: the property message claims property filtering alone.
+      // Legacy combined conditions use the generic filter copy.
       (view as any).modules.search.query = "";
       const settings = (view as any).plugin.getSettings() as {
         filter: { tags: string[]; properties: unknown };
@@ -3220,10 +3296,10 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       settings.filter = { ...settings.filter, tags: ["work"] };
       (view as any).baseCards = [card];
       (view as any).visibleCards = [];
-      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.toolbar.emptyBrowseFilters);
     });
 
-    it("treats property clauses as absent inside a box: the source copy wins (C5/V-R)", () => {
+    it("reports property-filter zero results inside a box", () => {
       const card = createCardRecordFromPath("notes/a.md");
       const { view } = createPropertyHarness({
         settings: propertySettings({
@@ -3237,8 +3313,8 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       (view as any).cardScope = createBoxScope("box-1");
       (view as any).visibleCards = [];
 
-      expect((view as any).buildScopeGroup().emptyStateMessage).not.toBe(strings.property.emptyPropertyFilter);
-      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.view.emptyFolder);
+      expect((view as any).buildScopeGroup().emptyStateMessage).toBe(strings.property.emptyPropertyFilter);
+      expect((view as any).buildScopeGroup().browseFilterState.canClearEmptyResult).toBe(true);
     });
   });
 

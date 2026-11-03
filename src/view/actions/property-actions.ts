@@ -20,7 +20,7 @@ export interface PropertyActionsDeps {
   /** Fresh vault frontmatter inventory; invoked once per chooser opening. */
   collectPropertyInventory: () => PropertyInventorySnapshot;
   getStrings: () => UiStrings;
-  /** Browse property filter capability for the current source (C6); boxes disable it. */
+  /** Browse property filter capability for the current source (C6); links disable it. */
   browsePropertyFilterEnabled: () => boolean;
 }
 

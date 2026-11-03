@@ -12,7 +12,6 @@ import type CardWorkspacePlugin from "../main";
 import {
   createFolderScope,
   isBoxScope, isLinksScope,
-  normalizeScopePath,
   resolveScopeFolderPath,
   scopeDisplayPath,
   scopeIdentity,
@@ -218,12 +217,14 @@ export class FolderCardView extends ItemView implements HoverParent {
     const capabilities = resolveSourceCapabilities(this.cardScope);
     return resolveEmptyStateMessage({
       strings: this.strings, query: this.modules.search.getQuery().trim(),
-      // Dormant filters never narrow a non-folder scope, so they must not shape its copy.
+      // Dormant filters never narrow a non-filterable scope, so they must not shape its copy.
       activeTagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
       baseCardCount: this.baseCards.length,
       visibleCardCount: this.visibleCards.length,
       propertyClauseCount: capabilities.browsePropertyFilter ? settings.filter.properties.length : 0,
-      emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks : undefined,
+      emptySearchMessage: isBoxScope(this.cardScope) ? this.strings.toolbar.emptySearchScope : undefined,
+      emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks
+        : isBoxScope(this.cardScope) ? this.strings.toolbar.emptyBox : undefined,
     });
   }
   private openCardWithDestination(path: string, destination: OpenDestination): void {
@@ -324,6 +325,19 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number } }): void {
     const action = detail.action;
+
+    if (action === "clear-browse-filters") {
+      const capabilities = resolveSourceCapabilities(this.cardScope);
+      const filter = this.plugin.getSettings().filter;
+      if ((capabilities.browseTagFilter && filter.tags.length > 0)
+        || (capabilities.browsePropertyFilter && filter.properties.length > 0)) {
+        void this.saveViewSettings({ filter: {
+          ...(capabilities.browseTagFilter ? { tags: [] } : {}),
+          ...(capabilities.browsePropertyFilter ? { properties: [] } : {}),
+        } });
+      }
+      return;
+    }
 
     if (action === "new-note") {
       void this.modules.scopeNoteActions.createNote().catch((error: unknown) => {
@@ -628,6 +642,14 @@ export class FolderCardView extends ItemView implements HoverParent {
       browseTagFilterEnabled: capabilities.browseTagFilter,
       browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
       browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter),
+      browseFilterState: {
+        tagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
+        propertyValueCount: capabilities.browsePropertyFilter
+          ? settings.filter.properties.reduce((count, clause) => count + clause.values.length, 0) : 0,
+        canClearEmptyResult: this.baseCards.length > 0 && this.visibleCards.length === 0
+          && ((capabilities.browseTagFilter && settings.filter.tags.length > 0)
+            || (capabilities.browsePropertyFilter && settings.filter.properties.length > 0)),
+      },
       supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
       supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
       ...buildLinksScopeGroupFields(this.cardScope, this.store, this.strings),
@@ -787,20 +809,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   async selectFolderFromNav(path: string): Promise<void> {
     this.modules.navLayout.returnToCardsViewIfSinglePane();
 
-    const targetFolderPath = normalizeScopePath(path);
-    // Folder-to-folder moves reset filters; box/links kept them dormant, so entering a folder resumes them.
-    const currentFolderPath = resolveScopeFolderPath(this.cardScope);
-    const leavingFolderScope = currentFolderPath !== null && normalizeScopePath(currentFolderPath) !== targetFolderPath;
-    const { tags, properties } = this.plugin.getSettings().filter;
-
-    const patch: PartialPluginSettings = {};
-    if (leavingFolderScope && (tags.length > 0 || properties.length > 0)) {
-      patch.filter = { tags: [], properties: [] };
-    }
-    if (Object.keys(patch).length > 0) {
-      await this.plugin.saveSettings(patch);
-    }
-
+    // Browse conditions survive source changes; the destination applies its capabilities.
     await this.plugin.selectFolderByPath(path, "panel-picker");
   }
 

@@ -13,7 +13,7 @@ import type { NoteCardRecord, PipelineSearchInput } from "./types";
 export interface PipelineContext {
   app: App;
   filterTags: string[];
-  // Workspace-persisted property clauses; applied in folder scopes only.
+  // Workspace-persisted property clauses; applied in folder and box scopes.
   propertyFilters: readonly PropertyFilterClause[];
   // Runtime-only input from FolderCardView; query stays out of persisted settings.
   search: PipelineSearchInput;
@@ -173,26 +173,15 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
   return [...pinnedCards, ...unpinnedCards];
 }
 
-/**
- * The member set (rule hits ∪ manual − excluded) is resolved during box load
- * and digests the rule's property clauses there, so the box pipeline skips
- * the browse tag and property filters and runs `search -> pin`.
- * `context.pinnedPaths` carries the box's own pinned paths.
- *
- * Links digests nothing at load either and runs the same `search -> pin` chain:
- * browse tag and property filtering are folder-only capabilities, so any
- * workspace-persisted filter clauses stay dormant in a Links scope.
- *
- * Dispatch is total over `CardScope["kind"]`: the `never` arm exists so a new
- * Card Source must declare its own filter chain rather than silently inheriting
- * Folder's.
+/** Box membership is resolved before projection; browse filters narrow that set.
+ * Links keeps browse filters dormant. Dispatch stays exhaustive over CardScope.
  */
 export function stepsForScope(scope: CardScope): PipelineStep[] {
   switch (scope.kind) {
     case "folder":
       return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "box":
-      return [applySearchFilter, applyPinReorder];
+      return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "links":
       return [applySearchFilter, applyPinReorder];
     default: {

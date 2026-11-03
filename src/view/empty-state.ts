@@ -1,11 +1,6 @@
 import type { UiStrings } from "../i18n";
 
-/**
- * Card-stream empty-state copy (C10). Property-filter empty wins only when the
- * base source still has cards, no tag filter is active, and the visible
- * projection is empty while property clauses are active; an empty base source
- * keeps the source copy and query/tag messages stay unchanged.
- */
+/** Source-empty and search copy stay distinct from browse-filter zero results. */
 export function resolveEmptyStateMessage(input: {
   strings: UiStrings;
   query: string;
@@ -14,9 +9,14 @@ export function resolveEmptyStateMessage(input: {
   visibleCardCount: number;
   propertyClauseCount: number;
   emptyBaseMessage?: string;
+  emptySearchMessage?: (query: string) => string;
 }): string {
   const { strings, query } = input;
+  const hasFilters = input.activeTagCount > 0 || input.propertyClauseCount > 0;
+  if (query.length > 0 && hasFilters) return strings.toolbar.emptySearchFilters(query);
   if (query.length === 0) {
+    if (hasFilters && input.baseCardCount > 0 && input.visibleCardCount === 0
+      && input.activeTagCount > 0) return strings.toolbar.emptyBrowseFilters;
     if (
       input.propertyClauseCount > 0 && input.activeTagCount === 0
       && input.baseCardCount > 0 && input.visibleCardCount === 0
@@ -25,7 +25,5 @@ export function resolveEmptyStateMessage(input: {
     }
     return input.emptyBaseMessage ?? strings.view.emptyFolder;
   }
-  return input.activeTagCount > 0
-    ? strings.view.emptySearchCurrentFolderWithTags(query)
-    : strings.view.emptySearchCurrentFolder(query);
+  return input.emptySearchMessage?.(query) ?? strings.view.emptySearchCurrentFolder(query);
 }

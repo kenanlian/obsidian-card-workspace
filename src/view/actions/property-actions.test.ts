@@ -301,7 +301,7 @@ describe("createPropertyActions", () => {
     expect(getSettings().filter.properties).toEqual([clause("beta", [textRef("y")])]);
   });
 
-  it("writes nothing for apply/filter-by-only/clear inside a box (C6/S11/V-O)", async () => {
+  it("writes nothing for apply/filter-by-only/clear when browse filtering is disabled (Links)", async () => {
     const { actions, saves, getSettings } = createHarness(createSettings({
       visiblePropertyKeys: ["alpha"],
       filterProperties: [clause("alpha", [textRef("x")])],
@@ -316,7 +316,7 @@ describe("createPropertyActions", () => {
     expect(getSettings().filter.properties).toEqual([clause("alpha", [textRef("x")])]);
   });
 
-  it("keeps the chooser and hide working inside a box (C6/V-O)", async () => {
+  it("keeps the chooser and hide working when browse filtering is disabled (Links)", async () => {
     const { actions, saves } = createHarness(createSettings({
       visiblePropertyKeys: ["alpha", "beta"],
     }), undefined, false);
