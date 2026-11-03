@@ -136,6 +136,8 @@ interface NavigationRowBase {
   expandable: boolean;
   expanded: boolean;
   disabled: boolean;
+  /** Scope has no matches, or browse filtering is paused. Identity stays interactive for ordering/drops. */
+  muted?: boolean;
   semanticState: NavigationSemanticState;
   label: string;
   fullPath: string | null;
@@ -265,6 +267,8 @@ export type NavigationIntent =
   | { type: "move-folder"; sourcePath: string; targetFolderPath: string }
   | { type: "reorder-navigation-items"; sourceId: string; targetId: string; position: "before" | "after" }
   | { type: "reorder-folders"; sourcePath: string; targetPath: string; position: "before" | "after" }
+  | { type: "drag-expand-navigation"; rowId: string }
+  | { type: "clear-navigation-drag" }
   | { type: "drag-expand-folder"; path: string }
   | { type: "clear-folder-drag" }
   | { type: "query-update"; query: string }

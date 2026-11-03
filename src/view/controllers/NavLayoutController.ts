@@ -8,7 +8,7 @@ import type { TagTreeNode } from "../tag-tree";
 import { folderParentPath, folderSiblingOrdersEqual, normalizeFolderDescendingNameSorts, orderFolderSiblings, reorderFolderSiblings, type FolderSortMode } from "../../folder-sibling-orders";
 import { NAVIGATION_FILTER_FOCUS_ID } from "../navigation-model";
 import { isPathAtOrBelow } from "../../path-references";
-import { moveNavSection } from "../../navigation-section-order";
+import { moveNavSection, reorderNavSections } from "../../navigation-section-order";
 import { CARD_PANE_MIN_WIDTH } from "../../settings";
 import { normalizeScopePath, scopesEqual, type CardScope } from "../scope";
 import {
@@ -50,6 +50,9 @@ export class NavLayoutController implements DisposableController {
   private folderTreeDebounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private navCountRefreshHandle: ReturnType<Window["setTimeout"]> | null = null;
   private readonly dragExpandedFolders = new Set<string>();
+  private readonly dragExpandedTags = new Set<string>();
+  private readonly dragExpandedProperties = new Set<string>();
+  private readonly dragExpandedSections = new Set<NavSectionId>();
   private query = "";
   private filterVisible = false;
   private focusId: string | null = null;
@@ -76,6 +79,26 @@ export class NavLayoutController implements DisposableController {
     if (!row?.expandable || row.expanded) return;
     this.dragExpandedFolders.add(path);
     this.pushNavLayoutState();
+  }
+  expandForDrag(rowId: string): void {
+    if (this.disposed) return;
+    const row = this.projection.rows.find((candidate) => candidate.id === rowId);
+    if (!row?.expandable || row.expanded) return;
+    switch (row.kind) {
+      case "folder": this.dragExpandedFolders.add(row.folderPath); break;
+      case "tag": this.dragExpandedTags.add(row.tagPath); break;
+      case "property": this.dragExpandedProperties.add(row.propertyKey); break;
+      case "section": this.dragExpandedSections.add(row.section); break;
+      default: return;
+    }
+    this.pushNavLayoutState();
+  }
+  clearNavigationDrag(): void {
+    const changed = this.dragExpandedFolders.size + this.dragExpandedTags.size
+      + this.dragExpandedProperties.size + this.dragExpandedSections.size > 0;
+    this.dragExpandedFolders.clear(); this.dragExpandedTags.clear();
+    this.dragExpandedProperties.clear(); this.dragExpandedSections.clear();
+    if (changed && !this.disposed) this.pushNavLayoutState();
   }
   clearFolderDrag(): void {
     if (this.dragExpandedFolders.size === 0) return;
@@ -173,6 +196,34 @@ export class NavLayoutController implements DisposableController {
     if (!targetRow || !canAcceptNavigationSortDrop(source, targetRow) || !source) return;
     const entry = navigationSortEntry(source), destination = navigationSortEntry(targetRow);
     if (!entry || !destination) return;
+    const settings = this.context.getSettings();
+    const reorderCollection = <T>(items: T[], identity: (item: T) => string): T[] | null => {
+      const order = reorderNavigationItems(items.map(identity), entry.identity, destination.identity, position);
+      if (order === null) return null;
+      const itemsById = new Map(items.map((item) => [identity(item), item]));
+      return order.map((id) => itemsById.get(id)!);
+    };
+    if (entry.target.kind === "sections") {
+      if (source.kind !== "section" || targetRow.kind !== "section") return;
+      const next = reorderNavSections(settings.navSectionOrder, source.section, targetRow.section, position, this.getHiddenSectionsForMove());
+      if (next !== null) await this.context.saveSettings({ navSectionOrder: next });
+      return;
+    }
+    if (entry.target.kind === "boxes") {
+      const next = reorderCollection(settings.boxes, (box) => box.id);
+      if (next !== null) await this.context.saveSettings({ boxes: next });
+      return;
+    }
+    if (entry.target.kind === "templates") {
+      const next = reorderCollection(settings.noteTemplates, (template) => template.id);
+      if (next !== null) await this.context.saveSettings({ noteTemplates: next });
+      return;
+    }
+    if (entry.target.kind === "links") {
+      const next = reorderCollection(settings.navigationSorting.links, (direction) => direction);
+      if (next !== null) await this.context.saveSettings({ navigationSorting: { ...settings.navigationSorting, links: next } });
+      return;
+    }
     const candidates = this.getSortCandidates(entry.target);
     if (candidates === null) return;
     const sorting = this.context.getSettings().navigationSorting;
@@ -407,9 +458,9 @@ export class NavLayoutController implements DisposableController {
       }
     }
     const previous = this.projection;
-    const sectionCollapsed = this.revealFoldersSection
-      ? { ...input.sectionCollapsed, folders: false }
-      : input.sectionCollapsed;
+    const sectionCollapsed = { ...input.sectionCollapsed };
+    if (this.revealFoldersSection) sectionCollapsed.folders = false;
+    for (const section of this.dragExpandedSections) sectionCollapsed[section] = false;
     const querying = this.query.trim().length > 0;
     this.projection = projectNavigation({
       ...input,
@@ -424,9 +475,9 @@ export class NavLayoutController implements DisposableController {
           query: [...this.expansion.queryFolders],
           suppressed: querying ? [...this.expansion.querySuppressedFolders] : [...this.expansion.suppressedFolders],
         },
-        tags: { manual: settings.expandedTagPaths ?? [], reveal: [], query: [...this.expansion.queryTags], suppressed: [...this.expansion.querySuppressedTags] },
-        properties: { manual: settings.expandedPropertyKeys ?? [], reveal: [], query: [], suppressed: [...this.expansion.querySuppressedProperties] },
-        queryCollapsedSections: [...this.queryCollapsedSections],
+        tags: { temporary: [...this.dragExpandedTags], manual: settings.expandedTagPaths ?? [], reveal: [], query: [...this.expansion.queryTags], suppressed: [...this.expansion.querySuppressedTags] },
+        properties: { temporary: [...this.dragExpandedProperties], manual: settings.expandedPropertyKeys ?? [], reveal: [], query: [], suppressed: [...this.expansion.querySuppressedProperties] },
+        queryCollapsedSections: [...this.queryCollapsedSections].filter((section) => !this.dragExpandedSections.has(section)),
       },
     });
     if (this.focusEstablished) this.focusId = resolveNavigationFocus(previous.rows, this.projection.rows, this.focusId);
@@ -586,6 +637,7 @@ export class NavLayoutController implements DisposableController {
     this.focusId = null; this.focusEstablished = false;
     this.projection = { normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false };
     this.dragExpandedFolders.clear();
+    this.dragExpandedTags.clear(); this.dragExpandedProperties.clear(); this.dragExpandedSections.clear();
     clearNavigationExpansionState(this.expansion);
     this.queryCollapsedSections.clear();
     this.queryBaseline = null;

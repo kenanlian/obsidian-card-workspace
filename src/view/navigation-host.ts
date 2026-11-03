@@ -3,6 +3,8 @@ import type { UiStrings } from "../i18n";
 import type { PluginSettings } from "../settings";
 import type { PropertyScalarRef } from "../property-filter-settings";
 import type { PropertyFacet } from "./property-facets";
+import type { NavigationMetadataSnapshot } from "../services/NavigationMetadataCatalog";
+import { mergeNavigationPropertyFacets } from "./navigation-metadata";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
 import type { NavigationIntent, NavigationTemplateSource } from "./navigation-model";
 import type {
@@ -35,6 +37,7 @@ export function buildNavigationPanelState(input: {
   tooltipSide: "left" | "right";
   /** Immutable facet snapshot (WP-05 obtains it from PropertyController). */
   propertyFacets?: readonly PropertyFacet[];
+  metadataCatalog?: NavigationMetadataSnapshot;
   templates?: readonly NavigationTemplateSource[];
 }): PanelModelState["nav"] {
   const { settings, strings, scope, navLayout } = input;
@@ -46,7 +49,7 @@ export function buildNavigationPanelState(input: {
     selectedPath: input.selectedPath,
     favorites: input.favorites,
     folders: input.folderTree,
-    tags: buildTagTree(input.cardProjection.availableTags),
+    tags: buildTagTree([...input.metadataCatalog?.tags ?? [], ...input.cardProjection.availableTags, ...settings.filter.tags]),
     boxes: input.boxSummaries,
     templates: input.templates ?? [],
     tagCounts: input.cardProjection.tagCounts,
@@ -67,7 +70,7 @@ export function buildNavigationPanelState(input: {
     },
     rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
     linksLeafLabels: { backlinks: strings.links.directionBacklinks, outgoing: strings.links.directionOutgoing }, linksDisabled: !isLinksScope(scope) && (input.selectedPath === null || resolveCardFileKindFromPath(input.selectedPath) === null),
-    properties: input.propertyFacets ?? [],
+    properties: mergeNavigationPropertyFacets(input.propertyFacets ?? [], input.metadataCatalog, strings.property),
     propertyClauses: settings.filter.properties,
   });
   return {
@@ -250,6 +253,8 @@ export function routeNavigationIntent(input: {
   if (intent.type === "reorder-navigation-items") { void navLayout.reorderNavigationItems(intent.sourceId, intent.targetId, intent.position); return; }
   if (intent.type === "move-folder") { if (navLayout.isDisposed()) return; input.moveFolder?.(intent.sourcePath, intent.targetFolderPath); return; }
   if (intent.type === "reorder-folders") { void navLayout.reorderFolders(intent.sourcePath, intent.targetPath, intent.position); return; }
+  if (intent.type === "drag-expand-navigation") { navLayout.expandForDrag(intent.rowId); return; }
+  if (intent.type === "clear-navigation-drag") { navLayout.clearNavigationDrag(); return; }
   if (intent.type === "drag-expand-folder") { navLayout.expandFolderForDrag(intent.path); return; }
   if (intent.type === "clear-folder-drag") { navLayout.clearFolderDrag(); return; }
   if (intent.type === "query-update") { navLayout.updateQuery(intent.query); return; }

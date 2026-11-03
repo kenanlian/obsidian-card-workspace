@@ -92,7 +92,7 @@ describe("navigation visual contract", () => {
     expect(styles).toMatch(
       /\.is-subtree-hovered \{\s*background: color-mix\(in srgb, var\(--fce-nav-row-hover\) 40%, transparent\);/,
     );
-    expect(styles).toMatch(/\.is-synthetic \.fce-tree-label \{\s*color: var\(--text-faint,/);
+    expect(styles).toMatch(/\.is-synthetic \.fce-tree-label,\s*\.folder-card-view \.fce-nav-tree \.fce-tree-row\.is-muted \.fce-tree-label,[^}]*color: var\(--text-faint,/);
   });
 
   it("indents empty-section copy with the section label, not the item leading track", () => {

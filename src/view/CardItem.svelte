@@ -5,7 +5,7 @@
 <script lang="ts">
   import { contentIcon, renderContentIcon } from "../icon-render";
   import { resolveContentIcon } from "../icon-config";
-  import { touchMenu } from "./touch-menu";
+  import { type DragSession, INTERNAL_CARD_DRAG_MIME } from "./drag-session";
   import { onDestroy } from "svelte";
   import type { CardImageState } from "../images/types";
   import { setIcon } from "obsidian";
@@ -59,6 +59,8 @@
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
     onCardDragStart?: CardFileDragStarter;
+    dragSession?: DragSession;
+    resolveCardDragPaths?: (path: string) => string[];
     onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
     previewHtmlSanitizer?: PreviewHtmlSanitizer;
   }
@@ -87,7 +89,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
-    onCardDragStart,
+    onCardDragStart, dragSession, resolveCardDragPaths,
     onImageReveal,
     previewHtmlSanitizer = sanitizePreviewHtml,
   }: CardItemProps = $props();
@@ -264,7 +266,7 @@
     activeDragGhost = null;
   }
 
-  function createDragGhost(doc: Document): HTMLElement {
+  function createDragGhost(doc: Document, count = 1): HTMLElement {
     const ghost = doc.createElement("div");
     ghost.className = "fce-card-drag-ghost";
 
@@ -288,6 +290,7 @@
 
     if (icon) self.append(icon);
     self.append(title);
+    if (count > 1) { const badge = doc.createElement("span"); badge.className = "fce-card-drag-count"; badge.textContent = String(count); self.append(badge); }
     ghost.append(self, action);
 
     return ghost;
@@ -449,7 +452,7 @@
   }
 
   function handleCardDragStart(event: DragEvent): void {
-    if ((!nativeFileDrag && !editorDrop) || event.dataTransfer == null) {
+    if ((!nativeFileDrag && !editorDrop && !dragSession) || event.dataTransfer == null) {
       return;
     }
 
@@ -463,18 +466,25 @@
     finishNativeDrag = nativeFileDrag ? onCardDragStart?.({ path: card.path, event }) ?? null : null;
     // Native initialization may write transfer data. Always retain our editor protocol afterwards.
     if (editorDrop) event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));
-    event.dataTransfer.effectAllowed = finishNativeDrag ? "copyLink" : "copy";
+    const paths = resolveCardDragPaths?.(card.path) ?? [card.path];
+    if (dragSession) {
+      dragSession.begin({ kind: "cards", paths }, doc, "native", event.clientX, event.clientY);
+      event.dataTransfer.setData(INTERNAL_CARD_DRAG_MIME, JSON.stringify(paths));
+    }
+    event.dataTransfer.effectAllowed = dragSession ? "all" : finishNativeDrag ? "copyLink" : "copy";
     dragSource = cardEl;
     cardEl.classList?.add("is-dragging");
-    if (finishNativeDrag) return;
+    if (finishNativeDrag && paths.length === 1) return;
 
-    const nativeDragImage = doc.createElement("div");
-    nativeDragImage.className = "fce-card-native-drag-image";
-    doc.body.appendChild(nativeDragImage);
-    event.dataTransfer.setDragImage(nativeDragImage, 0, 0);
-    requestAnimationFrame(() => nativeDragImage.remove());
+    if (!finishNativeDrag) {
+      const nativeDragImage = doc.createElement("div");
+      nativeDragImage.className = "fce-card-native-drag-image";
+      doc.body.appendChild(nativeDragImage);
+      event.dataTransfer.setDragImage(nativeDragImage, 0, 0);
+      requestAnimationFrame(() => nativeDragImage.remove());
+    }
 
-    const ghost = createDragGhost(doc);
+    const ghost = createDragGhost(doc, paths.length);
     doc.body.appendChild(ghost);
     activeDragGhost = ghost;
     moveDragGhost(event);
@@ -486,6 +496,11 @@
 
   function onCardDragEnd(): void {
     finishCardDrag();
+    dragSession?.cancel();
+  }
+
+  function touchDrag(node: HTMLElement) {
+    return dragSession?.bindTouch(node, () => ({ kind: "cards", paths: resolveCardDragPaths?.(card.path) ?? [card.path], label: card.title }));
   }
 
   function onBulkSelectClick(event: MouseEvent): void {
@@ -565,10 +580,10 @@
   data-fce-card-background={backgroundColor === "theme" ? undefined : backgroundColor}
   role="button"
   tabindex="0"
-  draggable={nativeFileDrag || editorDrop}
+  draggable={nativeFileDrag || editorDrop || !!dragSession}
   onclick={onCardClick}
   onkeydown={onCardKeydown}
-  use:touchMenu={onCardContextMenuAction}
+  use:touchDrag
   oncontextmenu={onCardContextMenuAction}
   ondragstart={handleCardDragStart}
   ondrag={onCardDrag}

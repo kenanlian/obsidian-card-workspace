@@ -39,6 +39,9 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onNavigateBack: () => view.navigateBack?.(),
     mobileApp: view.app, runtimeDevice: view.plugin.runtimePlatform?.device ?? "desktop",
     panelModel: view.panelModel,
+    resolveCardDragPaths: (path: string) => view.modules.cardDropActions.resolvePaths(path),
+    onBeginCardDrag: (paths: string[]) => view.modules.cardDropActions.begin(paths),
+    onDropCards: (target: import("./card-drop").CardDropTarget, paths: string[]) => { void view.modules.cardDropActions.drop(target, paths); },
     onCardDragStart: (detail: CardFileDragStartPayload) => view.plugin.startCardFileDrag(detail),
     attachSearchHistorySuggest: (input: HTMLInputElement, options: SearchHistorySuggestOptions) =>
       attachSearchHistorySuggest(view.app, input, options),

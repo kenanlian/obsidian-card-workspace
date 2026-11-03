@@ -1,6 +1,5 @@
 <script lang="ts">
   import { contentIcon } from "../icon-render";
-  import { touchMenu } from "./touch-menu";
   import { setIcon, setTooltip } from "obsidian";
   import type { Snippet } from "svelte";
   import type { UiStrings } from "../i18n";
@@ -19,6 +18,7 @@
     subtreeHovered?: boolean;
     revealed?: boolean;
     dragState?: NavigationRowDragState | null;
+    touchDrag?: (node: HTMLElement, rowId: string) => { destroy: () => void };
     rowRef?: (node: HTMLElement, rowId: string) => { destroy: () => void };
     onIcon?: (anchor: HTMLElement, row: NavigationRow) => void;
     onFocus?: (rowId: string) => void;
@@ -44,6 +44,7 @@
     subtreeHovered = false,
     revealed = false,
     dragState = null,
+    touchDrag = () => ({ destroy: () => undefined }),
     rowRef = () => ({ destroy: () => undefined }),
     onIcon,
     onFocus,
@@ -66,6 +67,10 @@
     tagSection ? activeFilterTags.length
       : propertySection ? activePropertyFilterCount
         : showItemCounts ? row.count : 0);
+  const showCount = $derived(visibleCount > 0 || (showItemCounts && (
+    row.kind === "folder" || row.kind === "tag" || row.kind === "property" || row.kind === "property-value"
+    || row.kind === "box" || (row.kind === "favorite" && row.favorite.kind !== "file")
+  )));
   const summaryLabel = $derived(tagSection && activeFilterTags.length > 0
     ? labels.activeTagCount(activeFilterTags.length)
     : propertySection && activePropertyFilterCount > 0
@@ -93,6 +98,7 @@
   class="fce-popup-row fce-tree-row fce-nav-projected-row is-{row.kind} fce-{row.section === 'folders' ? 'folder' : row.section === 'tags' ? 'tag' : row.section === 'favorites' ? 'favorites' : row.section === 'properties' ? 'property' : 'nav-box'}-menu {row.semanticState !== 'none' ? `is-${row.semanticState}` : ''} {row.disabled ? 'is-disabled' : ''} {subtreeHovered ? 'is-subtree-hovered' : ''} {row.kind === 'tag' && row.synthetic ? 'is-synthetic' : ''} {dragState?.dragging ? (row.kind === 'folder' ? 'is-folder-dragging' : row.kind === 'favorite' ? 'is-favorite-dragging' : 'is-navigation-dragging') : ''} {dragState?.dropInside ? 'is-drop-inside' : ''} {dragState?.dropIndicator === 'before' ? 'is-drop-before' : ''} {dragState?.dropIndicator === 'after' ? 'is-drop-after' : ''}"
   data-nav-row-id={row.id}
   class:is-revealed={revealed}
+  class:is-muted={row.muted === true}
   class:is-unavailable={row.kind === "template" && row.unavailable}
   data-nav-section={row.section}
   style={`padding-inline-start: calc(var(--fce-nav-indent-step) * ${row.level - 1});`}
@@ -114,7 +120,7 @@
   onfocus={() => onFocus?.(row.id)}
   onclick={(event) => onActivate?.(event, row)}
   onkeydown={(event) => onKeydown?.(event, row)}
-  use:touchMenu={(event) => onContextMenu?.(event, row)}
+  use:touchDrag={row.id}
   oncontextmenu={(event) => onContextMenu?.(event, row)}
   ondragstart={(event) => onRowDragStart?.(event, row)}
   ondragover={(event) => onRowDragOver?.(event, row)}
@@ -150,7 +156,7 @@
   </div>
   <div class="fce-popup-row-trailing fce-nav-row-trailing {actions ? 'has-actions' : ''}">
     <div class="fce-nav-row-summary">
-      {#if visibleCount > 0}
+      {#if showCount}
         <span class="fce-nav-row-count {tagSection ? 'fce-nav-active-tag-count' : ''} {propertySection ? 'fce-nav-active-property-count' : ''}" aria-label={summaryLabel}>{visibleCount}</span>
       {/if}
       {#if row.semanticState === "checked-filter"}

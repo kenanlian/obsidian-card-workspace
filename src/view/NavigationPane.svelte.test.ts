@@ -12,6 +12,8 @@ import {
 import { resolveNavigationKey, resolveSeparatorWidth } from "./navigation-keyboard";
 import { projectNavigation } from "./navigation-projection";
 import type { PropertyFacet } from "./property-facets";
+import { DragSession } from "./drag-session";
+import type { CardDropTarget } from "./card-drop";
 import NavigationPane from "./NavigationPane.svelte";
 import NavigationPaneHarness from "../__mocks__/NavigationPaneHarness.svelte";
 import type { NavContextMenuPayload } from "./types";
@@ -143,6 +145,8 @@ const boxScopeState: PanelScopeState = {
 };
 
 function render(options: {
+  dragSession?: DragSession;
+  onDropCards?: (target: CardDropTarget, paths: string[]) => void;
   nav?: PanelNavState;
   scope?: PanelScopeState;
   activeFilterTags?: string[];
@@ -159,7 +163,7 @@ function render(options: {
     strings: options.strings ?? getUiStrings("en"), nav: options.nav ?? nav(), scope: options.scope ?? scope,
     activeFilterTags: options.activeFilterTags ?? ["work"], onNavigationIntent: options.onIntent,
     onNavContextMenu: options.onMenu, onPropertyCommand: options.onPropertyCommand,
-    onNavPaneResize: options.onResize,
+    onNavPaneResize: options.onResize, dragSession: options.dragSession, onDropCards: options.onDropCards,
   } });
   components.push(component);
   return component;
@@ -247,6 +251,23 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(row("box:box-1").getAttribute("data-tooltip")).toBe("2 files");
     expect(row("favorite:file:notes/A.md").getAttribute("data-tooltip")).toBe("A");
     expect(row("section:favorites").getAttribute("data-tooltip")).toBeNull();
+  });
+
+  it.each([true, false])("shows zero note counts only when counts are enabled=%s", async (enabled) => {
+    const projected = projection();
+    const properties = propertyProjection().rows.filter(row => row.kind === "property" || row.kind === "property-value");
+    projected.rows = [...projected.rows, ...properties].map(row => ({ ...row, count: 0 }));
+    render({ nav: nav({ projection: projected, showItemCounts: enabled }) });
+    await tick();
+    for (const id of ["folder:notes", "tag:work", "box:box-1", navigationPropertyId("status"),
+      navigationPropertyValueId("status", { kind: "text", value: "Open" })]) {
+      const item = Array.from(document.querySelectorAll<HTMLElement>("[data-nav-row-id]")).find(node => node.dataset.navRowId === id)!;
+      expect(item.querySelector(".fce-nav-row-count")?.textContent ?? null).toBe(enabled ? "0" : null);
+    }
+    // Direction/template leaves have no note count; section summaries mean active filters.
+    expect(row("links:backlinks").querySelector(".fce-nav-row-count")).toBeNull();
+    expect(row("section:properties").querySelector(".fce-nav-row-count")).toBeNull();
+    expect(row("section:tags").querySelector(".fce-nav-row-count")?.textContent).toBe("1");
   });
 
   it("keeps count tooltips when the visible count badges are hidden", async () => {
@@ -437,8 +458,8 @@ describe("NavigationPane projected ARIA tree", () => {
       node.dataset.navEmptySection, node.textContent?.trim(),
     ])).toEqual([
       ["favorites", "No favorites yet — right-click an item to add one"],
-      ["tags", "Tag filter is unavailable in this view"],
-      ["properties", "Property filter is unavailable in this view"],
+      ["tags", "No tags found"],
+      ["properties", "No properties selected — choose which properties to show"],
       ["boxes", "No card boxes yet — right-click to create one"],
       ["templates", "No templates yet"],
     ]);
@@ -466,19 +487,19 @@ describe("NavigationPane projected ARIA tree", () => {
     await unmount(components.pop()!);
   });
 
-  it("renders header-only tags and properties sections with disabled copy in a box scope", async () => {
+  it("retains muted metadata rows and keeps their filters dormant in a box scope", async () => {
     render({
       nav: nav({ projection: projection("", defaultNavSectionOrder(), true, true) }),
       scope: boxScopeState,
       activeFilterTags: ["work"],
     });
 
-    expect(document.querySelector('[data-nav-row-id="tag:work"]')).toBeNull();
+    expect(document.querySelector('[data-nav-row-id="tag:work"]')?.getAttribute("aria-disabled")).toBe("true");
+    expect(document.querySelector('[data-nav-row-id="tag:work"]')?.classList.contains("is-muted")).toBe(true);
     expect(document.querySelector("[data-nav-row-id^=\"property:\"]")).toBeNull();
-    expect(document.querySelector('[data-nav-empty-section="tags"]')?.textContent?.trim())
-      .toBe("Tag filter is unavailable in this view");
+    expect(document.querySelector('[data-nav-empty-section="tags"]')).toBeNull();
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
-      .toBe("Property filter is unavailable in this view");
+      .toBe("No properties selected — choose which properties to show");
     // Dormant tag filters keep the header clear button as the explicit escape hatch.
     expect(document.querySelector(".fce-tag-menu .fce-nav-section-clear")).not.toBeNull();
     expect(document.querySelector("[data-nav-row-id=\"section:tags\"]")).not.toBeNull();
@@ -1028,7 +1049,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(document.querySelector('[data-nav-row-id^="property:"]')).toBeNull();
   });
 
-  it("renders the properties disabled-in-box copy and pins the chooser action in a box (V-S)", async () => {
+  it("renders normal empty metadata copy and pins the chooser action in a box", async () => {
     const base = projection();
     const emptyRows = base.rows.filter((candidate) => candidate.kind === "section" || candidate.section === "folders");
     const boxScope = boxScopeState;
@@ -1041,7 +1062,7 @@ describe("NavigationPane projected ARIA tree", () => {
     });
     await tick();
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
-      .toBe("Property filter is unavailable in this view");
+      .toBe("No properties selected — choose which properties to show");
     expect(row("section:properties").querySelector(".fce-nav-section-clear")).toBeNull();
     const choose = row("section:properties").querySelector<HTMLButtonElement>(".fce-nav-section-choose");
     expect(choose).not.toBeNull();
@@ -1057,7 +1078,7 @@ describe("NavigationPane projected ARIA tree", () => {
       strings: getUiStrings("zh"),
     });
     expect(document.querySelector('[data-nav-empty-section="properties"]')?.textContent?.trim())
-      .toBe("当前视图不可使用属性筛选");
+      .toBe(getUiStrings("zh").property.sectionEmpty);
   });
 
   it("keeps property key/value action slots limited to the shared more button", async () => {
@@ -1151,7 +1172,7 @@ describe("NavigationPane favorites manual drag reorder", () => {
     const folderRow = row("favorite:folder:notes");
     expect(home.getAttribute("draggable")).toBe("true");
     expect(folderRow.getAttribute("draggable")).toBe("true");
-    expect(row("section:favorites").getAttribute("draggable")).toBeNull();
+    expect(row("section:favorites").getAttribute("draggable")).toBe("true");
 
     home.dispatchEvent(dragEvent("dragstart", 220));
     await tick();
@@ -1570,5 +1591,65 @@ describe("NavigationPane tag and property drag sorting", () => {
     expect(frames.size).toBe(1);
     await unmount(components.pop()!);
     expect(frames.size).toBe(0);
+  });
+});
+
+
+describe("NavigationPane shared card and touch drops", () => {
+  const sessions: DragSession[] = [];
+  function event(type: string, y = 220) { return new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 100, clientY: y }); }
+  function touch(type: string, y = 220) {
+    const value = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(value, "touches", { value: type === "touchend" ? [] : [{ identifier: 1, clientX: 100, clientY: y }] }); return value;
+  }
+  function session() { const value = new DragSession(); sessions.push(value); return value; }
+  beforeEach(() => {
+    vi.useFakeTimers();
+    HTMLElement.prototype.getBoundingClientRect = () => ({ top: 200, height: 40, bottom: 240, left: 0, right: 240, width: 240, x: 0, y: 200, toJSON: () => ({}) }) as DOMRect;
+  });
+  afterEach(async () => {
+    for (const value of sessions.splice(0)) value.dispose();
+    await Promise.all(components.splice(0).map((component) => unmount(component)));
+    HTMLElement.prototype.getBoundingClientRect = originalRect;
+    delete (document as Partial<Document>).elementFromPoint;
+    vi.runOnlyPendingTimers(); vi.useRealTimers(); document.body.replaceChildren();
+  });
+  it("accepts frozen cards on muted tags, highlights the whole row and keeps activation dormant", async () => {
+    const dragSession = session(), onDropCards = vi.fn(), onIntent = vi.fn();
+    render({ nav: nav({ projection: projection("", defaultNavSectionOrder(), true, true) }), scope: boxScopeState, dragSession, onDropCards, onIntent });
+    await tick(); const tag = document.querySelector<HTMLElement>('[data-nav-row-id="tag:work"]')!;
+    dragSession.begin({ kind: "cards", paths: ["A.md", "B.png"] }, document, "native", 100, 220);
+    const over = event("dragover"); tag.dispatchEvent(over); await tick();
+    expect(over.defaultPrevented).toBe(true); expect(tag.classList.contains("is-drop-inside")).toBe(true);
+    tag.dispatchEvent(event("drop")); await tick();
+    expect(onDropCards).toHaveBeenCalledExactlyOnceWith({ kind: "tag", tag: "work" }, ["A.md", "B.png"]);
+    expect(onIntent.mock.calls.some(([intent]) => intent.type === "activate")).toBe(false);
+    expect(dragSession.current).toBeNull();
+  });
+  it("preserves typed property targets and rejects missing values and section headers", async () => {
+    const dragSession = session(), onDropCards = vi.fn();
+    const facets = [propertyFacet({ values: [{ ref: { kind: "number", value: 7 }, label: "7", count: 1 }, { ref: { kind: "missing" }, label: "Unassigned", count: 1 }] })];
+    render({ nav: nav({ projection: propertyProjection({ facets }) }), dragSession, onDropCards }); await tick();
+    const find = (id: string) => document.querySelector<HTMLElement>(`[data-nav-row-id='${id}']`)!;
+    for (const id of ["section:properties", navigationPropertyId("status"), navigationPropertyValueId("status", { kind: "missing" })]) {
+      dragSession.begin({ kind: "cards", paths: ["A.md"] }, document, "native", 100, 220); find(id).dispatchEvent(event("drop"));
+    }
+    expect(onDropCards).not.toHaveBeenCalled();
+    dragSession.begin({ kind: "cards", paths: ["A.md"] }, document, "native", 100, 220);
+    find(navigationPropertyValueId("status", { kind: "number", value: 7 })).dispatchEvent(event("drop"));
+    expect(onDropCards).toHaveBeenCalledExactlyOnceWith({ kind: "property", key: "status", value: { kind: "number", value: 7 } }, ["A.md"]);
+  });
+  it("uses long press and document touch movement to reorder sections with feedback after their last child", async () => {
+    const dragSession = session(), intents: NavigationIntent[] = [];
+    render({ dragSession, onIntent: (intent) => intents.push(intent) }); await tick();
+    const source = document.querySelector<HTMLElement>('[data-nav-row-id="section:folders"]')!;
+    const target = document.querySelector<HTMLElement>('[data-nav-row-id="section:tags"]')!;
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => target });
+    source.dispatchEvent(touch("touchstart")); vi.advanceTimersByTime(500);
+    document.dispatchEvent(touch("touchmove", 230)); await tick();
+    expect(target.classList.contains("is-drop-after")).toBe(false);
+    expect(document.querySelector('[data-nav-row-id="tag:work"]')?.classList.contains("is-drop-after")).toBe(true);
+    document.dispatchEvent(touch("touchend", 230)); await tick();
+    expect(intents).toContainEqual({ type: "reorder-navigation-items", sourceId: "section:folders", targetId: "section:tags", position: "after" });
   });
 });

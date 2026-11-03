@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { DragSession } from "./drag-session";
+  import type { CardDropTarget } from "./card-drop";
   import { installVisualViewport } from "../runtime/visual-viewport";
   import { onDestroy, untrack, tick } from "svelte";
   import type { CardImageState } from "../images/types";
@@ -122,6 +124,9 @@
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
     onCardDragStart?: CardFileDragStarter;
+    resolveCardDragPaths?: (path: string) => string[];
+    onBeginCardDrag?: (paths: string[]) => void;
+    onDropCards?: (target: CardDropTarget, paths: string[]) => void;
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
     onSortChange?: (payload: SortChangePayload) => void;
     onGroupChange?: (payload: GroupChangePayload) => void;
@@ -227,7 +232,7 @@
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
-    onCardDragStart,
+    onCardDragStart, resolveCardDragPaths, onBeginCardDrag, onDropCards,
     onReadingPosition, onNavigateBack, mobileApp, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
@@ -599,6 +604,18 @@
     applyScrollTop(clampLayoutScrollTop(scrollTop, totalHeight, viewportHeight));
   }
 
+  const dragSession = new DragSession();
+  let frozenDragSource: import("./drag-session").DragSource | null = null;
+  const stopDragSubscription = dragSession.subscribe((snapshot) => {
+    if (snapshot?.source.kind === "cards" && snapshot.source !== frozenDragSource) {
+      frozenDragSource = snapshot.source;
+      onBeginCardDrag?.([...snapshot.source.paths]);
+    } else if (!snapshot) frozenDragSource = null;
+  });
+  function cardDragPaths(path: string): string[] { return resolveCardDragPaths?.(path) ?? [path]; }
+  $effect(() => { scope.sourceIdentity; untrack(() => dragSession.cancel()); });
+  $effect(() => { if (cards.loading) untrack(() => dragSession.cancel()); });
+  onDestroy(() => { dragSession.dispose(); stopDragSubscription(); });
   function bindShell(node: HTMLDivElement): { destroy: () => void } {
     const stopViewport = runtimeDevice !== "desktop" ? installVisualViewport(node) : () => undefined;
     const report = (): void => {
@@ -928,6 +945,7 @@
   use:bindShell
 >
   <NavigationPane
+    {dragSession} {onDropCards}
     {mobileApp} mobile={runtimeDevice !== "desktop"}
     {strings}
     {nav}
@@ -1025,6 +1043,7 @@
             {#each getRowCards(row) as card (card.path)}
               <CardItem
                 {card}
+                {dragSession} resolveCardDragPaths={cardDragPaths}
                 nativeFileDrag={panelState.capabilities?.nativeFileDrag ?? false}
                 editorDrop={panelState.capabilities?.editorDrop ?? false}
                 {strings}

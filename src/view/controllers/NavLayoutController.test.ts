@@ -20,6 +20,8 @@ vi.mock("obsidian", () => ({
   TFolder: obsidianTypes.MockTFolder,
 }));
 
+import { createCardBox } from "../card-boxes";
+import { resolveSettingsUpdateIntent } from "../update-intent";
 import { defaultNavSectionOrder } from "../../navigation-section-order";
 import { getUiStrings } from "../../i18n";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
@@ -974,5 +976,104 @@ describe("mobile container layout", () => {
     f.settings.navPaneWidth = 340; f.controller.onShellResize(650); expect(f.controller.getLayoutMode()).toBe("single");
     expect(f.context.store.getScope()).toEqual(createFolderScope("", true)); expect(f.saveSettings).not.toHaveBeenCalled();
     f.controller.dispose();
+  });
+});
+
+
+describe("navigation collection drop ordering", () => {
+  it("reorders complete box/template arrays under a query using shared patch-only persistence", async () => {
+    const h = createHarness();
+    h.settings.boxes = ["a", "hidden", "c"].map((id) => ({ ...createCardBox(id, []), id }));
+    h.settings.noteTemplates = ["a", "hidden", "c"].map((id) => ({ id, name: id, filePath: `${id}.md`, targetFolderPath: null, dateFormat: "YYYY", timeFormat: "HH" }));
+    const before = normalizeSettings(h.settings);
+    const input = { ...projectionInput(), boxes: h.settings.boxes.map((box) => ({ ...box, cardCount: 0 })),
+      templates: h.settings.noteTemplates.map((template) => ({ id: template.id, label: template.id === "hidden" ? "Excluded" : "match", filePath: template.filePath, unavailable: true })) };
+    input.boxes = input.boxes.map((box) => ({ ...box, name: box.id === "hidden" ? "Excluded" : "match" }));
+    h.controller.updateQuery("match");
+    h.controller.project(input);
+    await h.controller.reorderNavigationItems("box:c", "box:a", "before");
+    await h.controller.reorderNavigationItems("template:c", "template:a", "before");
+    expect(h.settings.boxes.map((box) => box.id)).toEqual(["c", "a", "hidden"]);
+    expect(h.settings.noteTemplates.map((template) => template.id)).toEqual(["c", "a", "hidden"]);
+    expect(resolveSettingsUpdateIntent(before, h.settings, createBoxScope("a"))).toBe("patch");
+  });
+  it("sorts disabled links and keeps its custom order when queried", async () => {
+    const h = createHarness();
+    const before = normalizeSettings(h.settings);
+    h.controller.project(projectionInput());
+    await h.controller.reorderNavigationItems("links:backlinks", "links:outgoing", "before");
+    expect(h.settings.navigationSorting.links).toEqual(["backlinks", "outgoing"]);
+    expect(resolveSettingsUpdateIntent(before, h.settings, createLinksScope("note.md", "outgoing"))).toBe("patch");
+    expect(h.controller.project(projectionInput()).rows.filter((row) => row.kind === "links").map((row) => row.direction)).toEqual(["backlinks", "outgoing"]);
+    h.controller.updateQuery("Outgoing");
+    expect(h.controller.project(projectionInput()).rows.filter((row) => row.kind === "links").map((row) => row.direction)).toEqual(["outgoing"]);
+  });
+  it("reorders sections while keeping hidden section slots and rejects cross-group collection drops", async () => {
+    const h = createHarness();
+    h.settings.hiddenNavSections = ["folders", "tags", "links"];
+    h.controller.project({ ...projectionInput(), hiddenNavSections: h.settings.hiddenNavSections });
+    await h.controller.reorderNavigationItems("section:templates", "section:favorites", "before");
+    expect(h.settings.navSectionOrder).toEqual(["templates", "folders", "tags", "favorites", "properties", "links", "boxes"]);
+    h.saveSettings.mockClear();
+    await h.controller.reorderNavigationItems("section:templates", "section:tags", "before");
+    await h.controller.reorderNavigationItems("section:templates", "links:outgoing", "before");
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("navigation drag hover expansion", () => {
+  it("temporarily expands collapsed sections and metadata branches without persisting", async () => {
+    const h = createHarness();
+    const input = { ...propertyInput([statusFacet]), tags: buildTagTree(["work/child"]),
+      sectionCollapsed: { ...projectionInput().sectionCollapsed, tags: true, properties: true } };
+    h.controller.project(input);
+    h.controller.expandForDrag("section:tags");
+    h.controller.expandForDrag("section:properties");
+    let projection = h.controller.project(input);
+    expect(projection.rows.find((row) => row.id === "section:tags")?.expanded).toBe(true);
+    expect(projection.rows.find((row) => row.id === "section:properties")?.expanded).toBe(true);
+    h.controller.expandForDrag("tag:work");
+    h.controller.expandForDrag(navigationPropertyId("status"));
+    projection = h.controller.project(input);
+    expect(projection.rows.some((row) => row.id === "tag:work/child")).toBe(true);
+    expect(projection.rows.some((row) => row.id === navigationPropertyValueId("status", { kind: "text", value: "open" }))).toBe(true);
+    expect(h.settings.expandedTagPaths).toEqual([]);
+    expect(h.settings.expandedPropertyKeys).toEqual([]);
+    h.controller.clearNavigationDrag();
+    projection = h.controller.project(input);
+    expect(projection.rows.find((row) => row.id === "section:tags")?.expanded).toBe(false);
+    expect(projection.rows.find((row) => row.id === "section:properties")?.expanded).toBe(false);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+  it("overrides query collapses only during a drag and restores suppression afterward", async () => {
+    const h = createHarness();
+    const input = { ...propertyInput([statusFacet]), tags: buildTagTree(["work/child"]) };
+    h.controller.updateQuery("work");
+    h.controller.project(input);
+    const branch = h.controller.getProjection().rows.find((row) => row.id === "tag:work")!;
+    await h.controller.setExpanded(branch, false);
+    h.controller.project(input);
+    h.controller.expandForDrag("tag:work");
+    expect(h.controller.project(input).rows.some((row) => row.id === "tag:work/child")).toBe(true);
+    h.controller.clearNavigationDrag();
+    expect(h.controller.project(input).rows.some((row) => row.id === "tag:work/child")).toBe(false);
+    const section = h.controller.getProjection().rows.find((row) => row.id === "section:tags")!;
+    await h.controller.setExpanded(section, false);
+    h.controller.project(input);
+    h.controller.expandForDrag("section:tags");
+    expect(h.controller.project(input).rows.find((row) => row.id === "section:tags")?.expanded).toBe(true);
+    h.controller.clearNavigationDrag();
+    expect(h.controller.project(input).rows.find((row) => row.id === "section:tags")?.expanded).toBe(false);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+  it("allows metadata presentation reorder when activation is disabled", async () => {
+    const h = createHarness();
+    const input = { ...propertyInput([statusFacet, priorityFacet]), scope: createBoxScope("box"), tagsDisabled: true, propertiesDisabled: true, tags: buildTagTree(["alpha", "beta"]) };
+    h.controller.project(input);
+    await h.controller.reorderNavigationItems("tag:beta", "tag:alpha", "before");
+    await h.controller.reorderNavigationItems(navigationPropertyId("status"), navigationPropertyId("priority"), "before");
+    expect(h.settings.navigationSorting.tags[""].order).toEqual(["beta", "alpha"]);
+    expect(h.settings.navigationSorting.propertyKeys.order).toEqual(["status", "priority"]);
   });
 });

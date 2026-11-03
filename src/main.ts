@@ -51,6 +51,7 @@ import { BoxReconciler } from "./services/BoxReconciler";
 import { addManualPaths, findCardBox, upsertCardBox } from "./view/card-boxes";
 import { FavoriteReconciler } from "./services/FavoriteReconciler";
 import { NavigationWorkspaceReconciler } from "./services/NavigationWorkspaceReconciler";
+import { NavigationMetadataCatalog } from "./services/NavigationMetadataCatalog";
 import { CardBackgroundReconciler } from "./services/CardBackgroundReconciler";
 import { PinnedPathReconciler } from "./services/PinnedPathReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
@@ -144,6 +145,9 @@ export default class CardWorkspacePlugin extends Plugin {
   private vaultEventListenersRegistered = false;
   private readonly vaultEventBus = new VaultEventBus();
   private readonly metadataEventBus = new MetadataEventBus();
+  readonly navigationMetadataCatalog = new NavigationMetadataCatalog({
+    getApp: () => this.app, workGate: this.runtimeActivity.background,
+  });
   private vaultEventUnsubscribers: Array<() => void> = [];
   private disposed = false; private settingsReadyPromise: Promise<void> = Promise.resolve();
   private layoutReadyTask: Promise<void> = Promise.resolve(); private startupPromise: Promise<void> = Promise.resolve();
@@ -359,6 +363,7 @@ export default class CardWorkspacePlugin extends Plugin {
     // Session restore never creates a leaf: it only reloads a view the user left open.
     await this.activateAndEnsureScope(false);
     if (this.disposed) return;
+    this.navigationMetadataCatalog.start();
     this.runDetached(this.navigationWorkspaceReconciler.reconcileInitial(),
       "Initial navigation reconciliation failed.");
     await this.searchCoordinator.initialize(); if (this.disposed) return;
@@ -406,6 +411,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.cancelLinkCorrection = null;
     this.vaultEventBus.dispose();
     this.metadataEventBus.dispose();
+    this.navigationMetadataCatalog.dispose();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
     };
@@ -1164,6 +1170,9 @@ export default class CardWorkspacePlugin extends Plugin {
     this.vaultEventListenersRegistered = true;
     // Plugin order: navigation workspace → global pins → icons → card backgrounds → templates → boxes → favorites/tag prune → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
+      this.navigationMetadataCatalog.subscribe(() => this.withFolderViews(view => view.refreshNavigationMetadata())),
+      this.metadataEventBus.subscribe(event => this.navigationMetadataCatalog.handleMetadataChange(event)),
+      this.subscribeVaultEvents(event => this.navigationMetadataCatalog.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
       this.subscribeVaultEvents((event) => this.pinnedPathReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.iconReconciler.handleVaultMutation(event)),

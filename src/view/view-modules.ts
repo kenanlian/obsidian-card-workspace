@@ -1,3 +1,4 @@
+import { CardDropActions } from "./actions/card-drop-actions";
 import { IconActions } from "./actions/icon-actions";
 import { CardBackgroundActions } from "./actions/card-background-actions";
 import { TemplateActions } from "./actions/template-actions";
@@ -73,6 +74,7 @@ export interface ViewModuleHost {
 }
 
 export interface ViewModules {
+  cardDropActions: CardDropActions;
   iconActions: IconActions;
   projection: ProjectionController;
   groupCollapse: GroupCollapseController;
@@ -479,9 +481,17 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getGroupSegmentKeys: () => projection.getGroupSegments().map((segment) => segment.key),
   });
 
+  const cardDropActions = new CardDropActions({ context,
+    getSourceVersion: () => scopeController.getActiveSelectionVersion(),
+    getVisiblePaths: () => context.store.getVisibleCards().map(card => card.path),
+    getSelection: () => bulk.getSelectedPaths(), isBulkMode: () => bulk.isBulkMode(),
+    setSelection: paths => { bulk.reconcileSelectionToOrderedPaths(paths); host.publishSelection(); },
+  });
+
   gate.markAssembled();
 
   return {
+    cardDropActions,
     iconActions,
     projection,
     groupCollapse,

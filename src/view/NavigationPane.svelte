@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { DragSession, type DragSource } from "./drag-session";
+  import { resolveCardDropTarget } from "./card-drop-target";
+  import type { CardDropTarget } from "./card-drop";
   import { mobileNavigation } from "./mobile-navigation";
   import { NAVIGATION_FILTER_FOCUS_ID } from "./navigation-model";
   import { setIcon, setTooltip } from "obsidian";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { getUiStrings, type UiStrings } from "../i18n";
   import { NAV_PANE_WIDTH_MAX, NAV_PANE_WIDTH_MIN } from "../settings";
   import type { PanelNavState, PanelScopeState } from "./panel-model";
@@ -22,6 +25,8 @@
     type NavigationSortDragState } from "./navigation-sort-dnd";
   import type { FolderActionPayload, NavContextMenuPayload } from "./types";
   interface Props {
+    dragSession?: DragSession;
+    onDropCards?: (target: CardDropTarget, paths: string[]) => void;
     mobileApp?: import("obsidian").App;
     mobile?: boolean;
     strings?: UiStrings;
@@ -50,6 +55,7 @@
     supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
   let {
+    dragSession = new DragSession(), onDropCards,
     mobileApp, mobile = false,
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
     onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
@@ -59,7 +65,6 @@
   const rows = $derived(nav.projection.rows);
   const filterVisible = $derived(nav.filterVisible === true || nav.query.length > 0);
   const hasFilterQuery = $derived(nav.query.trim().length > 0);
-  const browseTagFilterEnabled = $derived(scope.browseTagFilterEnabled);
   const browsePropertyFilterEnabled = $derived(scope.browsePropertyFilterEnabled);
   let dragWidth = $state<number | null>(null);
   let composing = $state(false);
@@ -69,6 +74,12 @@
   let filterEl: HTMLInputElement | null = $state(null);
   let focusFilterOnOpen = false;
   let hoveredRowIds = $state<ReadonlySet<string>>(new Set());
+  let cardTargetRowId: string | null = $state(null);
+  let dragOpenedNavigation = $state(false);
+  let activeSharedSource: DragSource | null = null;
+  let sharedHoverRowId: string | null = null;
+  let temporaryDragExpansion = false;
+  let sharedHoverTimer: ReturnType<typeof setTimeout> | null = null;
   let favoriteDrag = $state<FavoriteDragState>({ source: null, target: null });
   let folderDrag = $state<FolderDragState>({ source: null, target: null });
   let sortDrag = $state<NavigationSortDragState>({ sourceId: null, target: null });
@@ -127,7 +138,89 @@
     if (sortDrag.sourceId !== null && (!nav.visible || !source || !navigationSortEntry(source))) clearSortDrag();
     else if (sortDrag.target !== null && (!target || !canAcceptNavigationSortDrop(source, target))) sortDrag = { ...sortDrag, target: null };
   });
-  $effect(() => () => { disposed = true; clearFolderDrag(); clearSortDrag(); clearRevealHighlight(); rowElements.clear(); });
+  $effect(() => () => { disposed = true; dragSession.cancel(); clearSharedHover(); clearFolderDrag(); clearSortDrag(); clearRevealHighlight(); rowElements.clear(); });
+  function clearSharedHover(): void {
+    if (sharedHoverTimer !== null) clearTimeout(sharedHoverTimer);
+    sharedHoverTimer = null; sharedHoverRowId = null;
+  }
+  function hoverForDrag(row: NavigationRow | undefined): void {
+    if (sharedHoverRowId === row?.id) return;
+    clearSharedHover();
+    if (!row?.expandable || row.expanded) return;
+    sharedHoverRowId = row.id;
+    sharedHoverTimer = setTimeout(() => {
+      sharedHoverTimer = null;
+      if (dragSession.current && sharedHoverRowId === row.id) { temporaryDragExpansion = true; emitIntent({ type: "drag-expand-navigation", rowId: row.id }); }
+    }, 600);
+  }
+  function sharedTargetAt(element: Element | null, scheduleScroll = true): void {
+    const snapshot = dragSession.current;
+    if (!snapshot) return;
+    const node = element?.closest<HTMLElement>("[data-nav-row-id]");
+    const row = node && scrollerEl?.contains(node) ? rowsById.get(node.dataset.navRowId ?? "") : undefined;
+    if (snapshot.source.kind !== "cards" && folderDrag.source !== null && row?.kind === "folder") clearSharedHover(); else hoverForDrag(row);
+    if (snapshot.source.kind === "cards") {
+      const target = row ? resolveCardDropTarget(row) : null;
+      cardTargetRowId = target && row ? row.id : null;
+      const paths = [...snapshot.source.paths];
+      dragSession.setTarget(target ? () => onDropCards?.(target, paths) : null);
+    } else {
+      folderTargetAt(element);
+      if (row?.kind === "favorite" && node) onFavoriteDragOver({ preventDefault() {}, clientY: pointerY, currentTarget: node } as unknown as DragEvent, row);
+      const accepted = folderDrag.target || sortDrag.target || favoriteDrag.target;
+      dragSession.setTarget(row && node && accepted ? () => onRowDrop({ preventDefault() {}, clientY: pointerY, currentTarget: node } as unknown as DragEvent, row) : null);
+    }
+    if (!scheduleScroll) return;
+    if (scrollerEl && folderDragScrollSpeed(pointerY, scrollerEl.getBoundingClientRect()) !== 0) {
+      if (scrollFrame === null) scrollFrame = scrollerEl.ownerDocument.defaultView?.requestAnimationFrame(scrollDragFrame) ?? null;
+    } else stopScroll();
+  }
+  $effect(() => {
+    const unsubscribe = untrack(() => dragSession.subscribe((snapshot) => {
+      if (!snapshot) {
+        activeSharedSource = null; cardTargetRowId = null; dragOpenedNavigation = false;
+        clearSharedHover(); clearFolderDrag(); clearSortDrag(); clearFavoriteDrag(); stopScroll();
+        if (temporaryDragExpansion) { temporaryDragExpansion = false; emitIntent({ type: "clear-navigation-drag" }); }
+        return;
+      }
+      pointerX = snapshot.x; pointerY = snapshot.y;
+      if (activeSharedSource !== snapshot.source) {
+        activeSharedSource = snapshot.source;
+        if (snapshot.source.kind === "cards" && snapshot.mode === "touch" && mobile && nav.layoutMode === "single" && !nav.visible) dragOpenedNavigation = true;
+        if (snapshot.source.kind !== "cards" && snapshot.mode === "touch") {
+          const row = rowsById.get(snapshot.source.rowId);
+          if (row) onRowDragStart({ dataTransfer: null, preventDefault() {} } as DragEvent, row, true);
+        }
+      }
+      if (snapshot.mode === "touch" && scrollerEl?.ownerDocument.elementFromPoint) sharedTargetAt(scrollerEl.ownerDocument.elementFromPoint(pointerX, pointerY));
+    }));
+    return () => { unsubscribe(); clearSharedHover(); };
+  });
+  const sectionDropAfterId = $derived.by(() => {
+    const target = sortDrag.target;
+    const section = target && rowsById.get(target.rowId);
+    if (target?.position !== "after" || section?.kind !== "section") return null;
+    for (let index = rows.length - 1; index >= 0; index--) {
+      if (rows[index].section === section.section) return rows[index].id;
+    }
+    return null;
+  });
+  function rowDragState(row: NavigationRow) {
+    if (cardTargetRowId === row.id) return { draggable: false, dragging: false, dropInside: true, dropIndicator: null };
+    const state = folderRowDragState(row, folderDrag) ?? favoriteRowDragState(row, favoriteDrag) ?? navigationSortRowDragState(row, sortDrag);
+    const target = sortDrag.target;
+    const section = target && rowsById.get(target.rowId);
+    if (target?.position !== "after" || section?.kind !== "section") return state;
+    if (sectionDropAfterId === row.id) return { draggable: state?.draggable ?? false, dragging: state?.dragging ?? false, dropInside: false, dropIndicator: "after" as const };
+    return state?.dropIndicator ? { ...state, dropIndicator: null } : state;
+  }
+  function touchDrag(node: HTMLElement, rowId: string): { destroy: () => void } {
+    return dragSession.bindTouch(node, () => {
+      const row = rowsById.get(rowId);
+      if (!row || !(navigationSortEntry(row) || row.kind === "favorite" || row.kind === "folder" && row.folderPath)) return null;
+      return { kind: row.kind === "section" ? "navigation-section" : "navigation-item", rowId, label: row.label };
+    });
+  }
   function icon(node: HTMLElement, name: string): { update: (next: string) => void } {
     setIcon(node, name);
     return { update: (next) => setIcon(node, next) };
@@ -223,7 +316,7 @@
   }
   function scrollDragFrame(time: number): void {
     scrollFrame = null;
-    if ((folderDrag.source === null && sortDrag.sourceId === null) || !scrollerEl) return;
+    if ((folderDrag.source === null && sortDrag.sourceId === null && favoriteDrag.source === null && !dragSession.current) || !scrollerEl) return;
     const speed = folderDragScrollSpeed(pointerY, scrollerEl.getBoundingClientRect());
     if (speed === 0) { scrollTime = 0; return; }
     const elapsed = scrollTime ? Math.min(time - scrollTime, 50) : 16;
@@ -232,7 +325,8 @@
     scrollerEl.scrollTop = Math.max(0, Math.min(scrollerEl.scrollHeight - scrollerEl.clientHeight,
       previous + speed * elapsed / 1000));
     if (scrollerEl.scrollTop === previous) { scrollTime = 0; return; }
-    folderTargetAt(scrollerEl.ownerDocument.elementFromPoint(pointerX, pointerY));
+    const element = scrollerEl.ownerDocument.elementFromPoint?.(pointerX, pointerY) ?? null;
+    if (dragSession.current) sharedTargetAt(element, false); else folderTargetAt(element);
     if ((speed < 0 && scrollerEl.scrollTop === 0)
       || (speed > 0 && scrollerEl.scrollTop >= scrollerEl.scrollHeight - scrollerEl.clientHeight)) {
       scrollTime = 0; return;
@@ -242,12 +336,13 @@
   function folderDragSurface(node: HTMLElement): { destroy: () => void } {
     const doc = node.ownerDocument;
     const over = (event: DragEvent): void => {
-      if (folderDrag.source === null && sortDrag.sourceId === null) return;
+      if (folderDrag.source === null && sortDrag.sourceId === null && !dragSession.current) return;
       pointerX = event.clientX; pointerY = event.clientY;
-      folderTargetAt((event.target as Node | null)?.nodeType === 1 ? event.target as Element : null);
-      if (folderDrag.target !== null || sortDrag.target !== null) {
+      const element = (event.target as Node | null)?.nodeType === 1 ? event.target as Element : null;
+      if (dragSession.current) sharedTargetAt(element); else folderTargetAt(element);
+      if (folderDrag.target !== null || sortDrag.target !== null || cardTargetRowId !== null) {
         event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) event.dataTransfer.dropEffect = dragSession.current?.source.kind === "cards" && rowsById.get(cardTargetRowId ?? "")?.kind !== "folder" ? "copy" : "move";
       }
       if (folderDragScrollSpeed(pointerY, node.getBoundingClientRect()) !== 0) {
         if (scrollFrame === null) scrollFrame = doc.defaultView?.requestAnimationFrame(scrollDragFrame) ?? null;
@@ -258,10 +353,12 @@
       if (related?.nodeType && node.contains(related)) return;
       if (event.target !== node && related === null) return;
       stopScroll(); updateFolderTarget(null); sortDrag = { ...sortDrag, target: null };
+      cardTargetRowId = null; clearSharedHover(); dragSession.setTarget(null);
     };
     const outside = (event: DragEvent): void => {
-      if ((folderDrag.source !== null || sortDrag.sourceId !== null) && (!(event.target as Node | null)?.nodeType || !node.contains(event.target as Node))) {
+      if ((folderDrag.source !== null || sortDrag.sourceId !== null || dragSession.current) && (!(event.target as Node | null)?.nodeType || !node.contains(event.target as Node))) {
         stopScroll(); updateFolderTarget(null); sortDrag = { ...sortDrag, target: null };
+        cardTargetRowId = null; clearSharedHover(); dragSession.setTarget(null);
       }
     };
     const drop = (): void => { clearFolderDrag(); clearSortDrag(); };
@@ -278,7 +375,9 @@
       doc.removeEventListener("dragend", drop); doc.defaultView?.removeEventListener("blur", drop);
     } };
   }
-  function onRowDragStart(event: DragEvent, row: NavigationRow): void {
+  function onRowDragStart(event: DragEvent, row: NavigationRow, fromTouch = false): void {
+    if (!fromTouch) dragSession.begin({ kind: row.kind === "section" ? "navigation-section" : "navigation-item", rowId: row.id },
+      (event.currentTarget as HTMLElement).ownerDocument, "native", event.clientX, event.clientY);
     clearSortDrag();
     if (navigationSortEntry(row)) {
       clearFavoriteDrag(); clearFolderDrag();
@@ -299,24 +398,33 @@
     }
   }
   function onRowDrop(event: DragEvent, row: NavigationRow): void {
+    const source = dragSession.current?.source;
+    if (source?.kind === "cards") {
+      const target = resolveCardDropTarget(row);
+      event.preventDefault();
+      if (target) { event.stopPropagation?.(); onDropCards?.(target, [...source.paths]); }
+      dragSession.cancel(); return;
+    }
     if (sortDrag.sourceId !== null) {
       const sourceId = sortDrag.sourceId;
       const accepted = canAcceptNavigationSortDrop(rowsById.get(sourceId), row);
       const position = resolveFavoriteDropPosition(event.clientY, (event.currentTarget as HTMLElement).getBoundingClientRect());
       event.preventDefault(); clearSortDrag();
-      if (accepted) emitIntent({ type: "reorder-navigation-items", sourceId, targetId: row.id, position });
-      return;
+      if (accepted) { event.stopPropagation?.(); emitIntent({ type: "reorder-navigation-items", sourceId, targetId: row.id, position }); }
+      dragSession.cancel(); return;
     }
     if (folderDrag.source === null) { onFavoriteDrop(event, row); return; }
     const sourcePath = folderDrag.source;
     const target = row.kind === "folder"
       ? resolveFolderDrop(sourcePath, row.folderPath, event.clientY, (event.currentTarget as HTMLElement).getBoundingClientRect()) : null;
     event.preventDefault(); clearFolderDrag();
-    if (!target) return;
+    if (!target) { dragSession.cancel(); return; }
+    event.stopPropagation?.();
     if (target.operation === "inside") emitIntent({ type: "move-folder", sourcePath, targetFolderPath: target.path });
     else emitIntent({ type: "reorder-folders", sourcePath, targetPath: target.path, position: target.operation });
+    dragSession.cancel();
   }
-  function onRowDragEnd(): void { clearFavoriteDrag(); clearFolderDrag(); clearSortDrag(); }
+  function onRowDragEnd(): void { dragSession.cancel(); clearFavoriteDrag(); clearFolderDrag(); clearSortDrag(); }
   function clearSortDrag(): void {
     if (sortDrag.sourceId !== null) {
       suppressClickUntil = performance.now() + 300;
@@ -366,7 +474,9 @@
     if (source === null) return;
     const target = { ...row.favorite };
     clearFavoriteDrag();
+    event.stopPropagation?.();
     emitIntent({ type: "reorder-favorites", source, target, position });
+    dragSession.cancel();
   }
 
   function pointerMenu(event: MouseEvent, row: NavigationRow): void {
@@ -484,7 +594,7 @@
   The accessible name is a hidden element rather than `aria-label`, because
   Obsidian renders a hover tooltip for every element carrying `aria-label`.
 -->
-<nav use:mobileNavigation={{ app: mobileApp, enabled: mobile && nav.layoutMode === "single", visible: nav.visible, onClose: onToggleNavPane }} class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
+<nav use:mobileNavigation={{ app: mobileApp, enabled: mobile && nav.layoutMode === "single", visible: nav.visible || dragOpenedNavigation, onClose: () => { if (dragOpenedNavigation) dragSession.cancel(); else onToggleNavPane?.(); } }} class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
   <span class="fce-sr-only" id={paneLabelId}>{labels.ariaLabel}</span>
   <div class="fce-nav-pane-header">
     {#if nav.layoutMode === "single"}
@@ -532,8 +642,8 @@
             subtreeHovered={hoveredRowIds.has(row.id)} {strings} {activeFilterTags}
             activePropertyFilterCount={nav.propertyFilterCount}
             showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}
-            dragState={folderRowDragState(row, folderDrag) ?? favoriteRowDragState(row, favoriteDrag) ?? navigationSortRowDragState(row, sortDrag)}
-            rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
+            dragState={rowDragState(row)}
+            {touchDrag} rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
             onIcon={(anchor, row) => emitIntent({ type: "change-icon", rowId: row.id, anchor })}
             onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}
             onRowDragStart={onRowDragStart} onRowDragOver={onFavoriteDragOver}
@@ -569,11 +679,9 @@
             && (row.section === "tags" || nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel)
             && !rows.some((candidate) => candidate.kind !== "section" && candidate.section === row.section)}
             <div class="fce-tree-empty fce-nav-section-empty" data-nav-empty-section={row.section} role="none">
-              {row.section === "properties" && !browsePropertyFilterEnabled
-                ? labels.propertiesFilterUnavailable
-                : row.section === "tags"
-                  ? (browseTagFilterEnabled ? strings.toolbar.filter.noTagsFound : labels.tagsFilterUnavailable)
-                  : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
+              {row.section === "tags" ? strings.toolbar.filter.noTagsFound
+                : row.section === "properties" ? strings.property.sectionEmpty
+                : nav.projection.sections.find((section) => section.section === row.section)?.emptyLabel}
             </div>
           {/if}
         {/each}

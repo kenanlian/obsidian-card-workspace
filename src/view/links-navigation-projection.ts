@@ -1,3 +1,4 @@
+import { normalizeNavigationLinksOrder } from "../navigation-sorting";
 import {
   navigationLinksId,
   navigationSectionId,
@@ -9,7 +10,7 @@ import { isLinksScope } from "./scope";
 /**
  * Links navigation projection (C4).
  *
- * Two fixed leaves — outgoing then backlinks — with no deeper nesting and no
+ * Two leaves in the saved order (outgoing then backlinks by default), with no
  * count badges (v1). Disabled is host-owned via `input.linksDisabled`; this
  * module never derives enablement. Rows are returned with zeroed set metadata
  * regardless of section expansion; the caller assigns positions with
@@ -22,7 +23,7 @@ export interface LinksProjectionResult {
   matchedItemCount: number;
 }
 
-const LINK_DIRECTIONS = ["outgoing", "backlinks"] as const;
+type LinkDirection = "outgoing" | "backlinks";
 
 function matches(needle: string, ...candidates: string[]): boolean {
   return candidates.some((candidate) => candidate.toLowerCase().includes(needle));
@@ -30,7 +31,7 @@ function matches(needle: string, ...candidates: string[]): boolean {
 
 function leafLabel(
   labels: NavigationProjectionInput["linksLeafLabels"],
-  direction: (typeof LINK_DIRECTIONS)[number],
+  direction: LinkDirection,
 ): string {
   const raw = direction === "outgoing" ? labels.outgoing : labels.backlinks;
   return typeof raw === "string" && raw.length > 0 ? raw : direction;
@@ -43,7 +44,7 @@ export function projectLinksRows(
   const querying = needle.length > 0;
   const rows: NavigationLinksRow[] = [];
 
-  for (const direction of LINK_DIRECTIONS) {
+  for (const direction of normalizeNavigationLinksOrder(input.navigationSorting?.links)) {
     const label = leafLabel(input.linksLeafLabels, direction);
     if (querying && !matches(needle, label)) continue;
     rows.push({

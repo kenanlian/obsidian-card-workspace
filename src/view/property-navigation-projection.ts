@@ -45,11 +45,12 @@ function buildExpansionSet(layer: NavigationExpansionLayer, querying: boolean): 
     for (const value of layer.query) expanded.add(value);
   }
   for (const value of layer.suppressed) expanded.delete(value);
+  for (const value of layer.temporary ?? []) expanded.add(value);
   return expanded;
 }
 
 function isSuppressed(layer: NavigationExpansionLayer, identity: string): boolean {
-  return layer.suppressed.includes(identity);
+  return layer.suppressed.includes(identity) && !layer.temporary?.includes(identity);
 }
 
 function isPropertyFacet(value: unknown): value is PropertyFacet {

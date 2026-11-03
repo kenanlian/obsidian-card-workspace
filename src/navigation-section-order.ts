@@ -1,3 +1,4 @@
+import { reorderNavigationItems } from "./navigation-sorting";
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import type { NavSectionId } from "./view/types";
 
@@ -68,4 +69,20 @@ export function canMoveNavSection(
   hidden: readonly NavSectionId[] = [],
 ): boolean {
   return moveNavSection(order, section, delta, hidden) !== null;
+}
+
+/** Move visible sections while retaining hidden section slots exactly. */
+export function reorderNavSections(
+  order: readonly NavSectionId[],
+  source: NavSectionId,
+  target: NavSectionId,
+  position: "before" | "after",
+  hidden: readonly NavSectionId[] = [],
+): NavSectionId[] | null {
+  const full = normalizeNavSectionOrder(order);
+  const visible = full.filter((section) => !hidden.includes(section));
+  const reordered = reorderNavigationItems(visible, source, target, position);
+  if (reordered === null) return null;
+  let index = 0;
+  return full.map((section) => hidden.includes(section) ? section : reordered[index++] as NavSectionId);
 }

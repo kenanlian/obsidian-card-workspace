@@ -403,15 +403,14 @@ describe("projectNavigation", () => {
 
     expect(byId.get(navigationFavoriteId("folder", "Projects/Alpha"))?.semanticState).toBe("none");
     expect(byId.get(navigationFavoriteId("box", "box-a"))?.semanticState).toBe("current-range");
-    // Tag favorites keep reflecting the dormant global filter; tag section
-    // child rows are simply not projected in a non-filterable scope.
+    // Dormant filters keep checked identities visible across source changes.
     expect(byId.get(navigationFavoriteId("tag", "work/current"))?.semanticState).toBe("checked-filter");
     expect(byId.get(navigationFavoriteId("file", "Projects/Alpha/Current.md"))?.semanticState).toBe("active-file");
-    expect(byId.get(navigationTagId("work/current"))).toBeUndefined();
+    expect(byId.get(navigationTagId("work/current"))).toMatchObject({ muted: true, disabled: true, semanticState: "checked-filter" });
     expect(byId.get(navigationBoxId("box-a"))?.semanticState).toBe("current-range");
   });
 
-  it("keeps the tags section header but projects no child rows in non-filterable scopes", () => {
+  it("keeps tags muted and nonfilterable in boxes and links", () => {
     for (const scope of [
       { kind: "box", boxId: "box-a" } as const,
       { kind: "links", notePath: "notes/a.md", direction: "backlinks" } as const,
@@ -422,10 +421,11 @@ describe("projectNavigation", () => {
         propertiesDisabled: true,
       }));
       const tagRows = projection.rows.filter((row) => row.kind === "tag");
-      expect(tagRows).toEqual([]);
+      expect(tagRows.length).toBeGreaterThan(0);
+      expect(tagRows.every(row => row.muted && row.disabled)).toBe(true);
       const tagsSection = projection.sections.find((section) => section.section === "tags");
       expect(tagsSection?.visible).toBe(true);
-      expect(tagsSection?.matchedItemCount).toBe(0);
+      expect(tagsSection?.matchedItemCount).toBeGreaterThan(0);
       expect(projection.rows.some((row) => row.id === navigationSectionId("tags"))).toBe(true);
     }
   });
@@ -436,6 +436,13 @@ describe("projectNavigation", () => {
     });
     expect(projectNavigation(buildInput({ rootFolderLabel: "根目录 /" }))
       .rows.find((row) => row.id === navigationFolderId(""))?.label).toBe("根目录 /");
+  });
+
+  it("keeps zero-count folder metadata muted and filterable", () => {
+    const projection = projectNavigation(buildInput({ tagCounts: {} }));
+    const rows = projection.rows.filter(row => row.kind === "tag");
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every(row => row.muted && !row.disabled && row.count === 0)).toBe(true);
   });
 
   it("matches the localized root folder label", () => {
@@ -568,18 +575,21 @@ describe("projectNavigation — properties", () => {
     });
   }
 
-  it("keeps the properties section header but projects no child rows in non-filterable scopes", () => {
+  it("keeps properties muted and expandable with nonfilterable values in links", () => {
     const projection = projectNavigation(withProperties({
       scope: { kind: "links", notePath: "notes/a.md", direction: "outgoing" },
       tagsDisabled: true,
       propertiesDisabled: true,
       expansion: { ...buildInput().expansion, properties: propertyExpansion(["status"]) },
     }));
-    expect(projection.rows.filter((row) => row.kind === "property" || row.kind === "property-value"))
-      .toEqual([]);
+    const rows = projection.rows.filter(row => row.kind === "property" || row.kind === "property-value");
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every(row => row.muted)).toBe(true);
+    expect(rows.filter(row => row.kind === "property-value").every(row => row.disabled)).toBe(true);
+    expect(rows.find(row => row.id === navigationPropertyId("status"))).toMatchObject({ expanded: true, disabled: false });
     const propertiesSection = projection.sections.find((section) => section.section === "properties");
     expect(propertiesSection?.visible).toBe(true);
-    expect(propertiesSection?.matchedItemCount).toBe(0);
+    expect(propertiesSection?.matchedItemCount).toBe(2);
     expect(projection.rows.some((row) => row.id === navigationSectionId("properties"))).toBe(true);
   });
 

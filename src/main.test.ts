@@ -336,6 +336,7 @@ vi.mock("./view/FolderCardView", () => {
   return {
     FOLDER_CARD_VIEW: "folder-card-view",
     FolderCardView: class MockFolderCardView {
+      refreshNavigationMetadata = vi.fn();
       cardScope: unknown = { kind: "folder", path: "", includeSubfolders: true };
       /** Mirrors `ScopeController.getLoadKey() !== null`: false until a load is accepted. */
       loadedScope = false;

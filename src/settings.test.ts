@@ -1809,7 +1809,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     boxes: [inboxBox],
     folderSiblingOrders: { "": ["Projects"] },
     folderDescendingNameSorts: [""],
-    navigationSorting: { tags: { "": { mode: "manual", order: ["work"] } }, propertyKeys: { mode: "desc", order: [] }, propertyValues: {} },
+    navigationSorting: { tags: { "": { mode: "manual", order: ["work"] } }, propertyKeys: { mode: "desc", order: [] }, propertyValues: {}, links: ["outgoing", "backlinks"] },
     favorites: [{ kind: "folder", ref: "Projects" }],
     activeBoxId: "box-1",
     navPaneWidth: 200,

@@ -497,7 +497,10 @@ export class FolderCardView extends ItemView implements HoverParent {
     });
   }
 
-  /** Re-push nav-derived state after the plugin reconciled boxes/favorites outside the view. */
+  /** Publish global metadata identities without invalidating scope count caches. */
+  refreshNavigationMetadata(): void { this.publishGroups("nav"); }
+
+  /** Re-push nav-derived state after plugin box/favorite reconciliation. */
   refreshNavState(): void {
     this.modules.navLayout.refreshNavState();
   }
@@ -513,6 +516,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     const scopeReport = this.modules.scopeController.dispose();
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
+    this.modules.cardDropActions.dispose();
     this.modules.cardBackgroundActions.dispose();
     this.modules.iconActions.dispose();
     const searchReport = this.modules.search.dispose();
@@ -678,10 +682,13 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
   private projectNavGroup(folderTree: PanelModelState["nav"]["folderTree"], favorites: PanelModelState["nav"]["favorites"],
     boxSummaries: PanelModelState["nav"]["boxSummaries"], projectionGroup: PanelModelState["projection"]): PanelModelState["nav"] {
+    const propertyFacets = this.modules.property.derivePropertyFacets();
+    this.plugin.navigationMetadataCatalog?.seedScope(projectionGroup.availableTags, propertyFacets);
     return buildNavigationPanelState({
+      metadataCatalog: this.plugin.navigationMetadataCatalog?.getSnapshot(),
       settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
       folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
-      propertyFacets: this.modules.property.derivePropertyFacets(),
+      propertyFacets,
       templates: (this.plugin.getSettings().noteTemplates ?? []).map((template) => {
         const file = this.app.vault.getAbstractFileByPath(template.filePath);
         const folder = template.targetFolderPath === "" ? this.app.vault.getRoot()

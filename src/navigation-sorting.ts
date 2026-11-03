@@ -7,11 +7,21 @@ export interface NavigationSorting {
   tags: Record<string, NavigationSortSpec>;
   propertyKeys: NavigationSortSpec;
   propertyValues: Record<string, NavigationSortSpec>;
+  links: Array<"outgoing" | "backlinks">;
 }
 export type NavigationSortTarget =
   | { kind: "tags"; parent: string }
   | { kind: "property-keys" }
   | { kind: "property-values"; key: string };
+
+export function normalizeNavigationLinksOrder(value: unknown): NavigationSorting["links"] {
+  const order: NavigationSorting["links"] = [];
+  for (const direction of Array.isArray(value) ? value : []) {
+    if ((direction === "outgoing" || direction === "backlinks") && !order.includes(direction)) order.push(direction);
+  }
+  for (const direction of ["outgoing", "backlinks"] as const) if (!order.includes(direction)) order.push(direction);
+  return order;
+}
 
 const DEFAULT_SORT: NavigationSortSpec = { mode: "asc", order: [] };
 function record(value: unknown): Record<string, unknown> {
@@ -43,6 +53,7 @@ function normalizeValueIdentity(raw: string): string | null {
 export function normalizeNavigationSorting(value: unknown): NavigationSorting {
   const source = record(value);
   return {
+    links: normalizeNavigationLinksOrder(source.links),
     tags: Object.fromEntries(Object.entries(record(source.tags)).map(([rawParent, spec]) => {
       const parent = normalizeTagPath(rawParent);
       return [parent, normalizeSpec(spec, (raw) => {
@@ -101,7 +112,8 @@ export function navigationSortingEqual(a: NavigationSorting, b: NavigationSortin
   const sameMap = (left: Record<string, NavigationSortSpec>, right: Record<string, NavigationSortSpec>): boolean =>
     Object.keys(left).length === Object.keys(right).length && Object.keys(left).every((key) =>
       Object.prototype.hasOwnProperty.call(right, key) && sameSpec(left[key], right[key]));
-  return sameSpec(a.propertyKeys, b.propertyKeys) && sameMap(a.tags, b.tags) && sameMap(a.propertyValues, b.propertyValues);
+  return a.links.length === b.links.length && a.links.every((direction, index) => direction === b.links[index])
+    && sameSpec(a.propertyKeys, b.propertyKeys) && sameMap(a.tags, b.tags) && sameMap(a.propertyValues, b.propertyValues);
 }
 
 /** Plugin tag mutations rewrite ordering references without pruning scope-dependent inventories. */

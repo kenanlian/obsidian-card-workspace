@@ -2,6 +2,7 @@ import { bulkMetadataStrings } from "./bulkMetadata";
 import type { ViewStrings } from "./view";
 
 export const viewStringsEn: ViewStrings = {
+    cardDropSkipped: (count) => `Skipped ${count} non-Markdown files.`,
     bulkMetadata: bulkMetadataStrings.en,
     displayName: "Card Workspace",
     emptyFolder: "No supported files found in this folder.",

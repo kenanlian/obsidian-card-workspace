@@ -2,6 +2,7 @@ import { bulkMetadataStrings } from "./bulkMetadata";
 import type { ViewStrings } from "./view";
 
 export const viewStringsZh: ViewStrings = {
+    cardDropSkipped: (count) => `已跳过 ${count} 个非 Markdown 文件。`,
     bulkMetadata: bulkMetadataStrings.zh,
     displayName: "Card Workspace",
     emptyFolder: "此文件夹中没有找到受支持的文件。",

@@ -466,7 +466,12 @@
   box-shadow: inset 0 0 0 2px var(--fce-nav-reveal-border);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row.is-synthetic .fce-tree-label {
+/* Reuse the empty parent-tag color for out-of-scope metadata. Keep menu actions
+ * and row focus/drop feedback at full strength. */
+.folder-card-view .fce-nav-tree .fce-tree-row.is-synthetic .fce-tree-label,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-muted .fce-tree-label,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-muted .fce-tree-item-identity,
+.folder-card-view .fce-nav-tree .fce-tree-row.is-muted .fce-nav-row-count {
   color: var(--text-faint, var(--fce-text-muted));
 }
 
@@ -3126,3 +3131,6 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   pointer-events: auto;
   -webkit-user-drag: element;
 }
+
+.fce-touch-drag-ghost { z-index: calc(var(--layer-modal, 50) + 1); pointer-events: none; }
+.fce-card-drag-count { margin-inline-start: 6px; color: var(--text-muted); font-variant-numeric: tabular-nums; }

@@ -25,8 +25,6 @@ import {
   type NavigationProjectedSection,
   type NavigationProjection,
   type NavigationProjectionInput,
-  type NavigationPropertyRow,
-  type NavigationPropertyValueRow,
   type NavigationRow,
   type NavigationSemanticState,
   type NavigationTagRow,
@@ -67,7 +65,7 @@ function buildExpansionSet(layer: NavigationExpansionLayer, querying: boolean): 
 }
 
 function isSuppressed(layer: NavigationExpansionLayer, identity: string): boolean {
-  return layer.suppressed.includes(identity);
+  return layer.suppressed.includes(identity) && !layer.temporary?.includes(identity);
 }
 
 function favoriteSemanticState(
@@ -187,7 +185,7 @@ function projectTags(
   sectionExpanded: boolean,
   activeTags: ReadonlySet<string>,
 ): NavigationTagRow[] {
-  if (!sectionExpanded || input.tagsDisabled) return [];
+  if (!sectionExpanded) return [];
   const querying = needle.length > 0;
   const matched = querying
     ? filterTagTree(input.tags, needle)
@@ -228,6 +226,7 @@ function projectTags(
         expandable,
         expanded,
         disabled: input.tagsDisabled,
+        muted: input.tagsDisabled || count(input.tagCounts[tagPath]) === 0,
         semanticState: activeTags.has(tagPath) ? "checked-filter" : "none",
         label: node.label,
         fullPath: tagPath,
@@ -296,7 +295,7 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
 
   const folderMatches = querying ? filterFolderTree(input.folders, normalizedQuery, input.rootFolderLabel).length : input.folders.length;
   matchedCounts.set("folders", folderMatches);
-  const tagMatches = input.tagsDisabled ? 0 : (querying ? filterTagTree(input.tags, normalizedQuery).length : input.tags.length);
+  const tagMatches = querying ? filterTagTree(input.tags, normalizedQuery).length : input.tags.length;
   matchedCounts.set("tags", tagMatches);
 
   const boxRows: NavigationBoxRow[] = [];
@@ -338,11 +337,12 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     }));
   matchedCounts.set("templates", templateRows.length);
 
-  // Same plan-A rule as tags: a non-filterable scope projects no property rows.
-  const propertyProjection = input.propertiesDisabled
-    ? { rows: [] as (NavigationPropertyRow | NavigationPropertyValueRow)[], matchedItemCount: 0 }
-    : projectPropertyRows(input.properties ?? [], input.propertyClauses ?? [], normalizedQuery,
-      input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER, input.navigationSorting);
+  const propertyProjection = projectPropertyRows(input.properties ?? [], input.propertyClauses ?? [], normalizedQuery,
+    input.expansion.properties ?? EMPTY_NAVIGATION_EXPANSION_LAYER, input.navigationSorting);
+  for (const row of propertyProjection.rows) {
+    row.disabled = input.propertiesDisabled && row.kind === "property-value";
+    row.muted = input.propertiesDisabled || row.count === 0;
+  }
   matchedCounts.set("properties", propertyProjection.matchedItemCount);
   const linksProjection = projectLinksRows(input, normalizedQuery);
   matchedCounts.set("links", linksProjection.matchedItemCount);

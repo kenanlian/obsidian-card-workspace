@@ -5,6 +5,7 @@ import {
   defaultNavSectionOrder,
   moveNavSection,
   normalizeNavSectionOrder,
+  reorderNavSections,
 } from "./navigation-section-order";
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import type { NavSectionId } from "./view/types";
@@ -192,4 +193,20 @@ it("moves between visible sections while leaving hidden sections at their origin
   expect(canMoveNavSection(DEFAULT_ORDER, "properties", -1, hidden)).toBe(true);
   expect(moveNavSection(DEFAULT_ORDER, "folders", 1, hidden)).toBeNull();
   expect(moveNavSection(DEFAULT_ORDER, "favorites", 1, DEFAULT_ORDER.filter((id) => id !== "favorites"))).toBeNull();
+});
+
+
+describe("section drop ordering", () => {
+  it("reorders visible slots while preserving every hidden slot and the input", () => {
+    const original = [...DEFAULT_ORDER];
+    expect(reorderNavSections(original, "templates", "favorites", "before", ["folders", "tags", "links"]))
+      .toEqual(["templates", "folders", "tags", "favorites", "properties", "links", "boxes"]);
+    expect(original).toEqual(DEFAULT_ORDER);
+  });
+  it("rejects hidden sources, targets, unknown identities and noops", () => {
+    expect(reorderNavSections(DEFAULT_ORDER, "tags", "boxes", "after", ["tags"])).toBeNull();
+    expect(reorderNavSections(DEFAULT_ORDER, "boxes", "tags", "after", ["tags"])).toBeNull();
+    expect(reorderNavSections(DEFAULT_ORDER, "favorites", "folders", "before")).toBeNull();
+    expect(reorderNavSections(DEFAULT_ORDER, "bad" as NavSectionId, "folders", "before")).toBeNull();
+  });
 });

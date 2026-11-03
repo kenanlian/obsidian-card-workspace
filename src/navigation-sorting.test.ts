@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { migrateSettings } from "./settings";
 import { serializeSettings } from "./services/SettingsStore";
-import { mergeNavigationOrder, normalizeNavigationSorting, orderNavigationItems, rewriteNavigationTagSorting } from "./navigation-sorting";
+import { mergeNavigationOrder, navigationSortingEqual, normalizeNavigationLinksOrder, normalizeNavigationSorting, orderNavigationItems, rewriteNavigationTagSorting } from "./navigation-sorting";
 
 describe("navigation sorting persistence and identities", () => {
   it("restores old documents to name sorting and round trips independent authored lanes", () => {
-    expect(migrateSettings({ schemaVersion: 2 }).navigationSorting).toEqual({ tags: {}, propertyKeys: { mode: "asc", order: [] }, propertyValues: {} });
+    expect(migrateSettings({ schemaVersion: 2 }).navigationSorting).toEqual({ tags: {}, propertyKeys: { mode: "asc", order: [] }, propertyValues: {}, links: ["outgoing", "backlinks"] });
     const settings = migrateSettings({ navigationSorting: {
       tags: { "": { mode: "manual", order: ["work", "home"] }, work: { mode: "desc", order: [] } },
       propertyKeys: { mode: "manual", order: ["status", "priority"] },
@@ -24,6 +24,7 @@ describe("navigation sorting persistence and identities", () => {
       propertyKeys: { mode: "bad", order: [" Status ", "status", "position", 3] },
       propertyValues: { " Status ": { mode: "desc", order: ['["t","1"]', '["n",1]', '["m"]', 'bad', '["n",null]', '["b",true]'] } },
     })).toEqual({
+      links: ["outgoing", "backlinks"],
       tags: { work: { mode: "manual", order: ["work/a"] } },
       propertyKeys: { mode: "asc", order: ["status"] },
       propertyValues: { status: { mode: "desc", order: ['["t","1"]', '["n",1]', '["b",true]'] } },
@@ -77,5 +78,20 @@ describe("tag sorting mutation reconciliation", () => {
     const removed = rewriteNavigationTagSorting(sorting(), "work", null);
     expect(Object.keys(removed.tags)).toEqual(["", "other"]);
     expect(removed.tags[""].order).toEqual(["keep", "other"]);
+  });
+});
+
+
+describe("links ordering", () => {
+  it("normalizes and deduplicates the fixed directions with outgoing first by default", () => {
+    expect(normalizeNavigationLinksOrder(undefined)).toEqual(["outgoing", "backlinks"]);
+    expect(normalizeNavigationLinksOrder(["backlinks", "bad", "backlinks", null])).toEqual(["backlinks", "outgoing"]);
+    expect(normalizeNavigationLinksOrder(["outgoing", "backlinks", "outgoing"])).toEqual(["outgoing", "backlinks"]);
+  });
+  it("round trips shared user data and compares links order independently", () => {
+    const before = migrateSettings({});
+    const after = migrateSettings({ navigationSorting: { links: ["backlinks", "outgoing"] } });
+    expect(navigationSortingEqual(before.navigationSorting, after.navigationSorting)).toBe(false);
+    expect(migrateSettings(serializeSettings(after)).navigationSorting.links).toEqual(["backlinks", "outgoing"]);
   });
 });

@@ -5,6 +5,7 @@ import { viewStringsZh } from "./view.zh";
 import type { BulkMetadataStrings } from "./bulkMetadata";
 
 export interface ViewStrings {
+  cardDropSkipped: (count: number) => string;
   bulkMetadata: BulkMetadataStrings;
   displayName: string;
   emptyFolder: string;

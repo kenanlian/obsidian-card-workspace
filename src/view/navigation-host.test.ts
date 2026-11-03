@@ -276,6 +276,27 @@ describe("buildNavigationPanelState linksDisabled (C5b)", () => {
 });
 
 describe("buildNavigationPanelState browse-filter disabled flags (C6)", () => {
+  it("keeps whole-vault and vanished active tag identities alongside current scope counts", () => {
+    const project = vi.fn(() => ({ normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false }));
+    buildNavigationPanelState({
+      settings: { ...DEFAULT_SETTINGS, filter: { ...DEFAULT_SETTINGS.filter, tags: ["vanished"] } },
+      strings: getUiStrings("en"), scope: createFolderScope("notes", false), selectedPath: null,
+      folderTree: [], favorites: [], boxSummaries: [],
+      cardProjection: { sortField: "mtime", sortDirection: "desc", availableTags: ["local"], tagCounts: { local: 2 },
+        activeFilterTags: ["vanished"], pinnedPaths: [], group: DEFAULT_SETTINGS.group,
+        availableGroupDimensions: ["none"], groupSegmentCount: 0, metadataStatus: "ready" },
+      metadataCatalog: { ready: true, tags: ["elsewhere"], properties: [] },
+      navLayout: { project, getLayoutMode: () => "dual", getNavVisible: () => true, getQuery: () => "",
+        getFocusId: () => null, getFocusRequest: () => null, getRevealRequest: () => null } as never,
+      tooltipSide: "right",
+    });
+    expect(project).toHaveBeenCalledWith(expect.objectContaining({
+      tags: expect.arrayContaining([expect.objectContaining({ tag: "elsewhere" }),
+        expect.objectContaining({ tag: "local" }), expect.objectContaining({ tag: "vanished" })]),
+      tagCounts: { local: 2 },
+    }));
+  });
+
   function captureDisabledFlags(scope: ReturnType<typeof createFolderScope>): {
     tagsDisabled: boolean;
     propertiesDisabled: boolean;

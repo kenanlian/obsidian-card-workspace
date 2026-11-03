@@ -107,3 +107,35 @@ separate task permission. Existing XL serialization over 750ms and image/text-re
 gaps remain explicit performance concerns; previous branch evidence cannot certify this
 candidate. No mobile-device performance or subjective UX acceptance is implied by a
 successful synthetic run.
+
+## Dragging cards and navigation
+
+Long press a card or sortable navigation row for 500ms to begin dragging. Moving
+more than 8px or scrolling before activation leaves ordinary scrolling in control.
+Use the row/card menu button for actions previously opened by long press. A second
+finger or a canceled touch cancels the drag. Buttons, links and icon pickers do not
+start drags.
+
+On a single-pane layout, dragging a card opens the existing navigation dialog
+without changing the card scope. Drop on a folder to move, a tag to add it, a property
+value to set/append it, or a box to add a manual member. Drag a selected card to apply
+the operation to the visible selection. Metadata operations skip non-Markdown files
+and report partial failures. The dialog closes when a drag that opened it ends.
+
+Navigation lists all known vault tags and the configured properties' known values.
+Zero-count items are dimmed but remain filterable in folders. In boxes and links,
+all metadata rows are dimmed and filtering stays paused, while expansion and card
+drops remain available. Whole-vault identities populate from cached metadata during
+idle initialization; no note-body reads are required.
+
+Real-device drag acceptance must cover Android, iPhone and iPad: long press versus
+scrolling, one-pane dialog opening, dropping selected mixed file types, hover
+expansion, edge scrolling, second-finger cancellation and returning to normal scrolling.
+
+The browser drag diagnostic is
+`node scripts/run-navigation-drag-browser.mjs --output /absolute/report.json`.
+It mounts the production card/navigation components in Chromium and checks real mouse
+and CDP touch input: typed multi-card drops onto a muted tag, active move cancellation,
+and scrolling before long-press activation. It uses a synthetic host, so it does not
+replace Obsidian device acceptance. The existing
+`run-card-modifier-drag-browser.mjs` separately checks native/editor protocol regression.

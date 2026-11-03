@@ -223,29 +223,49 @@ describe("FolderCardPanel.svelte", () => {
     resetObsidianMenuInstances();
   });
 
-  it("hides unsupported drag behavior from the host-projected capability group", async () => {
+  it("keeps internal card drops available when native and editor drags are unavailable", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState(); state.capabilities = resolveRuntimeCapabilities(false);
     state.cards.records = [createCard("notes/a.md", "A")];
     const onCardDragStart = vi.fn();
     const component = mount(FolderCardPanel, { target, props: { panelModel: createPanelModel(state), onCardDragStart } });
     await tick(); const card = target.querySelector<HTMLElement>(".fce-card")!;
-    expect(card.draggable).toBe(false);
+    expect(card.draggable).toBe(true);
     const event = new Event("dragstart", { bubbles: true });
     const transfer = { setData: vi.fn(), setDragImage: vi.fn() };
     Object.defineProperty(event, "dataTransfer", { value: transfer }); card.dispatchEvent(event);
-    expect(onCardDragStart).not.toHaveBeenCalled(); expect(transfer.setData).not.toHaveBeenCalled();
+    expect(onCardDragStart).not.toHaveBeenCalled();
+    expect(transfer.setData).toHaveBeenCalledExactlyOnceWith("application/x-card-workspace-cards", JSON.stringify(["notes/a.md"]));
     await unmount(component);
   });
 
-  it("passes a single card's native drag and cleanup through the panel in bulk mode", async () => {
+  it("cancels an active touch gesture as soon as precommit scope loading starts", async () => {
+    vi.useFakeTimers();
+    const target = document.createElement("div"); document.body.append(target);
+    const state = createInitialPanelState(); state.cards.records = [createCard("notes/a.md", "A")];
+    const model = createPanelModel(state), onBeginCardDrag = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel: model, onBeginCardDrag } });
+    await tick();
+    const card = target.querySelector<HTMLElement>(".fce-card")!;
+    const event = new Event("touchstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "touches", { value: [{ identifier: 1, clientX: 30, clientY: 50 }] });
+    card.dispatchEvent(event); vi.advanceTimersByTime(500); await tick();
+    expect(onBeginCardDrag).toHaveBeenCalledExactlyOnceWith(["notes/a.md"]);
+    expect(document.body.querySelector(".fce-touch-drag-ghost")).not.toBeNull();
+    model.mutate((draft) => { draft.cards = { ...draft.cards, loading: true }; }); await tick();
+    expect(document.body.querySelector(".fce-touch-drag-ghost")).toBeNull();
+    await unmount(component); vi.useRealTimers();
+  });
+
+  it("preserves the primary native file while freezing selected internal cards", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState(); state.capabilities = resolveRuntimeCapabilities(true);
     state.cards.records = [createCard("notes/a.md", "A"), createCard("notes/b.md", "B")];
     state.bulk = { ...state.bulk, bulkMode: true, selectedPaths: ["notes/a.md", "notes/b.md"], selectedCount: 2 };
     const finish = vi.fn();
-    const onCardDragStart = vi.fn(() => finish);
-    const component = mount(FolderCardPanel, { target, props: { panelModel: createPanelModel(state), onCardDragStart } });
+    const onCardDragStart = vi.fn(() => finish), onBeginCardDrag = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel: createPanelModel(state), onCardDragStart,
+      onBeginCardDrag, resolveCardDragPaths: () => ["notes/a.md", "notes/b.md"] } });
     await tick();
     const card = target.querySelector<HTMLElement>(".fce-card")!;
     const event = new Event("dragstart", { bubbles: true });
@@ -253,8 +273,9 @@ describe("FolderCardPanel.svelte", () => {
     Object.defineProperty(event, "dataTransfer", { value: transfer });
     card.dispatchEvent(event);
     expect(onCardDragStart).toHaveBeenCalledExactlyOnceWith({ path: "notes/a.md", event });
-    expect(transfer.effectAllowed).toBe("copyLink");
-    expect(document.body.querySelector(".fce-card-drag-ghost")).toBeNull();
+    expect(transfer.effectAllowed).toBe("all");
+    expect(onBeginCardDrag).toHaveBeenCalledExactlyOnceWith(["notes/a.md", "notes/b.md"]);
+    expect(document.body.querySelector(".fce-card-drag-count")?.textContent).toBe("2");
     await unmount(component);
     expect(finish).toHaveBeenCalledOnce();
   });
