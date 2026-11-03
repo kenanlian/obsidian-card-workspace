@@ -81,6 +81,8 @@ export interface ToolbarStrings {
     favoritesSection: string;
     favoritesEmpty: string;
     favoriteMissing: string;
+    collapseAll: string;
+    expandAll: string;
     collapseSection: string;
     expandSection: string;
     tagsFilterUnavailable: string;
@@ -189,6 +191,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       favoritesSection: "Favorites",
       favoritesEmpty: "No favorites yet — right-click an item to add one",
       favoriteMissing: "(missing)",
+      collapseAll: "Collapse all",
+      expandAll: "Expand all",
       collapseSection: "Collapse section",
       expandSection: "Expand section",
       tagsFilterUnavailable: "Tag filter is unavailable in this view",
@@ -297,6 +301,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       favoritesSection: "收藏",
       favoritesEmpty: "还没有收藏 — 右键任意条目即可添加",
       favoriteMissing: "（已失效）",
+      collapseAll: "全部折叠",
+      expandAll: "全部展开",
       collapseSection: "折叠此区",
       expandSection: "展开此区",
       tagsFilterUnavailable: "当前视图不可使用标签筛选",

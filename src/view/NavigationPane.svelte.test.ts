@@ -204,6 +204,33 @@ describe("NavigationPane projected ARIA tree", () => {
     vi.useRealTimers();
   });
 
+  it.each(["en", "zh"] as const)("switches the global expansion button with projected section state (%s)", async (language) => {
+    const intents: NavigationIntent[] = [];
+    const strings = getUiStrings(language);
+    render({ strings, onIntent: (intent) => intents.push(intent) });
+    await tick();
+    const button = document.querySelector<HTMLButtonElement>(".fce-nav-toggle-all")!;
+    expect(button.getAttribute("aria-label")).toBe(strings.toolbar.navPane.collapseAll);
+    button.click();
+    expect(intents).toContainEqual({ type: "toggle-all-navigation" });
+    await unmount(components.pop()!);
+    const collapsed = projection();
+    collapsed.sections = collapsed.sections.map((section) => ({ ...section, expanded: false }));
+    collapsed.rows = collapsed.rows.filter((row) => row.kind === "section").map((row) => ({ ...row, expanded: false }));
+    render({ strings, nav: nav({ projection: collapsed }), onIntent: (intent) => intents.push(intent) });
+    await tick();
+    const expand = document.querySelector<HTMLButtonElement>(".fce-nav-toggle-all")!;
+    expect(expand.getAttribute("aria-label")).toBe(strings.toolbar.navPane.expandAll);
+    expand.click();
+    expect(intents.filter((intent) => intent.type === "toggle-all-navigation")).toHaveLength(2);
+  });
+
+  it("disables global expansion when no navigation sections are shown", async () => {
+    render({ nav: nav({ projection: { ...projection(), sections: [], rows: [], allSectionsHidden: true } }) });
+    await tick();
+    expect(document.querySelector<HTMLButtonElement>(".fce-nav-toggle-all")!.disabled).toBe(true);
+  });
+
   it("defines every tree key without handling Tab or unrelated host keys", () => {
     const rows = projection().rows;
     const command = (key: string, rowId: string, shiftKey = false) =>
@@ -278,7 +305,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(row("tag:work").getAttribute("data-tooltip")).toBe("2 files, 0 subtags");
   });
 
-  it("keeps the search and send header separate from the next-line input", async () => {
+  it("groups collapse, search and send above the next-line input", async () => {
     render();
     await tick();
     const filter = document.querySelector<HTMLElement>(".fce-nav-filter")!;
@@ -288,7 +315,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(filter.querySelector("input")?.classList.contains("fce-search-input")).toBe(true);
     expect(filter.querySelector("input")?.getAttribute("role")).not.toBe("combobox");
     const actions = document.querySelector<HTMLElement>(".fce-nav-pane-header-group")!;
-    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["search", "send"]);
+    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["chevrons-down-up", "search", "send"]);
     expect(document.querySelector<HTMLElement>(".fce-nav-search-toggle")?.dataset.icon).toBe("search");
     expect(filter.querySelector(".fce-nav-filter-clear")).toBeNull();
 

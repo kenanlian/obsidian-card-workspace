@@ -274,8 +274,33 @@ export class NavLayoutController implements DisposableController {
   }
   async toggleAll(kind: NavigationBranchKind): Promise<void> {
     if (this.disposed) return;
-    await applyNavigationExpansionBatch({ kind, collapse: this.hasExpandedRows(kind),
+    await applyNavigationExpansionBatch({ kinds: [kind], collapse: this.hasExpandedRows(kind),
       querying: this.query.trim().length > 0, state: this.expansion, context: this.context,
+      onPropertyCollapse: () => this.returnPropertyValueFocusToKey() });
+  }
+  async toggleAllNavigation(): Promise<void> {
+    if (this.disposed || this.projection.sections.length === 0) return;
+    const collapse = this.projection.sections.some((section) => section.expanded);
+    const sections = NAVIGATION_SECTION_ORDER.filter((section) => !this.context.getSettings().hiddenNavSections.includes(section));
+    const sectionCollapsed: Partial<Record<NavSectionId, boolean>> = {};
+    const querying = this.query.trim().length > 0;
+    for (const section of sections) {
+      sectionCollapsed[section] = collapse;
+      if (querying) {
+        if (collapse) this.queryCollapsedSections.add(section);
+        else this.queryCollapsedSections.delete(section);
+      }
+    }
+    this.dragExpandedFolders.clear(); this.dragExpandedTags.clear();
+    this.dragExpandedProperties.clear(); this.dragExpandedSections.clear();
+    this.revealFoldersSection = false;
+    this.revealCurrentRangeAfterProjection = false;
+    const kinds: NavigationBranchKind[] = [];
+    if (sections.includes("folders")) kinds.push("folder");
+    if (sections.includes("tags")) kinds.push("tag");
+    if (sections.includes("properties")) kinds.push("property");
+    await applyNavigationExpansionBatch({ kinds, collapse, querying, sectionCollapsed,
+      state: this.expansion, context: this.context,
       onPropertyCollapse: () => this.returnPropertyValueFocusToKey() });
   }
   private returnPropertyValueFocusToKey(): void {

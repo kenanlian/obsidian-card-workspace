@@ -66,6 +66,15 @@ function linksRow(direction: "backlinks" | "outgoing", disabled = false): Naviga
 }
 
 describe("navigation host intent routing", () => {
+  it("routes global expansion to the navigation controller", () => {
+    const toggleAllNavigation = vi.fn();
+    routeNavigationIntent({ intent: { type: "toggle-all-navigation" },
+      navLayout: { toggleAllNavigation } as never,
+      scope: createFolderScope("", true), activeTags: [], selectFolder: vi.fn(), switchBox: vi.fn(),
+      applyTagFilter: vi.fn(), activateFavorite: vi.fn() });
+    expect(toggleAllNavigation).toHaveBeenCalledOnce();
+  });
+
   it("routes template and quick-input actions without touching card source or filters", () => {
     const template: NavigationRow = {
       id: "template:daily", kind: "template", section: "templates", parentId: "section:templates",

@@ -275,6 +275,7 @@ export type NavigationIntent =
   | { type: "query-clear"; origin: "input" | "tree" | "menu" }
   | { type: "focus"; rowId: string | null }
   | { type: "set-expanded"; rowId: string; expanded: boolean }
+  | { type: "toggle-all-navigation" }
   | { type: "toggle-section"; section: NavSectionId }
   | { type: "activate"; rowId: string; mode: NavigationActivationMode }
   | { type: "reveal-consumed"; token: number }

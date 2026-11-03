@@ -249,6 +249,7 @@ export function routeNavigationIntent(input: {
   if (intent.type === "quick-input") { if (!navLayout.isDisposed()) input.openQuickInput?.(intent.win); return; }
   if (intent.type === "template-command") { if (!navLayout.isDisposed()) input.templateCommand?.(intent.command); return; }
   if (intent.type === "filter-toggle") { navLayout.toggleFilter(); return; }
+  if (intent.type === "toggle-all-navigation") { void navLayout.toggleAllNavigation(); return; }
   if (intent.type === "filter-show") { navLayout.showFilter(); return; }
   if (intent.type === "reorder-navigation-items") { void navLayout.reorderNavigationItems(intent.sourceId, intent.targetId, intent.position); return; }
   if (intent.type === "move-folder") { if (navLayout.isDisposed()) return; input.moveFolder?.(intent.sourcePath, intent.targetFolderPath); return; }

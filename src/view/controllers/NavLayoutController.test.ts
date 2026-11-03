@@ -680,6 +680,85 @@ describe("NavLayoutController", () => {
     expect(saveSettings).toHaveBeenCalledWith({ expandedPropertyKeys: ["status"] });
   });
 
+  it("collapses every section and descendant, then expands all in a single settings update each", async () => {
+    const h = createHarness();
+    h.settings.expandedFolderPaths = ["a", "a/b"];
+    h.settings.expandedTagPaths = ["work", "work/ai"];
+    h.settings.expandedPropertyKeys = ["status"];
+    const input = { ...propertyInput([statusFacet, priorityFacet]), tags: buildTagTree(["work/ai/ml"]) };
+    const project = () => h.controller.project({ ...input, sectionCollapsed: h.settings.sectionCollapsed });
+    project();
+    h.controller.expandForDrag(navigationPropertyId("priority"));
+    h.controller.setFocus(navigationFolderId("a/b"));
+
+    await h.controller.toggleAllNavigation();
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+    expect(h.settings.expandedFolderPaths).toEqual([]);
+    expect(h.settings.expandedTagPaths).toEqual([]);
+    expect(h.settings.expandedPropertyKeys).toEqual([]);
+    let projected = project();
+    expect(projected.rows.every((row) => row.kind === "section" && !row.expanded)).toBe(true);
+    expect(projected.rows.some((row) => row.id === h.controller.getFocusId())).toBe(true);
+    // Reopening just a section also verifies that nested/reveal/drag expansion was cleared.
+    expect(h.controller.project({ ...input, sectionCollapsed: { ...h.settings.sectionCollapsed, folders: false, tags: false, properties: false } })
+      .rows.filter((row) => row.expandable && row.kind !== "section").every((row) => !row.expanded)).toBe(true);
+    project();
+
+    await h.controller.toggleAllNavigation();
+    expect(h.saveSettings).toHaveBeenCalledTimes(2);
+    expect(Object.values(h.settings.sectionCollapsed).every((collapsed) => !collapsed)).toBe(true);
+    expect(h.settings.expandedFolderPaths).toEqual(["a", "a/b"]);
+    expect(h.settings.expandedTagPaths).toEqual(["work", "work/ai"]);
+    expect(h.settings.expandedPropertyKeys).toEqual(["priority", "status"]);
+    projected = project();
+    expect(projected.rows.filter((row) => row.expandable).every((row) => row.expanded)).toBe(true);
+    expect(projected.rows.some((row) => row.id === "folder:a/b/c")).toBe(true);
+    expect(projected.rows.some((row) => row.id === "tag:work/ai/ml")).toBe(true);
+    expect(h.context.store.getVisibleCards()).toEqual([]);
+  });
+
+  it("toggles all query sections and descendants in one publication without persisting", async () => {
+    const h = createHarness();
+    const input = { ...propertyInput([statusFacet]), tags: buildTagTree(["work/ai/ml"]) };
+    const before = structuredClone(h.settings);
+    h.controller.updateQuery("a");
+    h.controller.project(input);
+    h.publishGroups.mockClear();
+    await h.controller.toggleAllNavigation();
+    expect(h.controller.project(input).rows.every((row) => row.kind === "section" && !row.expanded)).toBe(true);
+    expect(h.publishGroups).toHaveBeenCalledTimes(1);
+    // Individual section reopening must leave its nested branches collapsed.
+    await h.controller.toggleById("section:folders");
+    expect(h.controller.project(input).rows.find((row) => row.id === "folder:a")?.expanded).toBe(false);
+    await h.controller.toggleById("section:folders");
+    h.controller.project(input);
+    h.publishGroups.mockClear();
+    await h.controller.toggleAllNavigation();
+    expect(h.controller.project(input).rows.filter((row) => row.expandable).every((row) => row.expanded)).toBe(true);
+    expect(h.publishGroups).toHaveBeenCalledTimes(1);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    h.controller.clearQuery();
+    h.controller.project(input);
+    expect(h.settings).toEqual(before);
+  });
+
+  it("preserves hidden sections and branches during global toggles", async () => {
+    const h = createHarness();
+    h.settings.hiddenNavSections = ["tags"];
+    h.settings.expandedTagPaths = ["work"];
+    h.settings.expandedFolderPaths = ["a", "a/b"];
+    const input = { ...projectionInput(createFolderScope("", true)), hiddenNavSections: ["tags"] as NavSectionId[],
+      hiddenFolderPaths: ["a"], tags: buildTagTree(["work/ai"]) };
+    h.controller.project(input);
+    await h.controller.toggleAllNavigation();
+    expect(h.settings.expandedTagPaths).toEqual(["work"]);
+    expect(h.settings.expandedFolderPaths).toEqual(["a", "a/b"]);
+    expect(h.saveSettings.mock.calls[0]?.[0].sectionCollapsed).not.toHaveProperty("tags");
+    h.controller.dispose();
+    await h.controller.toggleAllNavigation();
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("expands complete folder, Tag, and property branches with one save per command", async () => {
     const { controller, saveSettings } = createHarness();
     const input = projectionInput(createFolderScope("", true));

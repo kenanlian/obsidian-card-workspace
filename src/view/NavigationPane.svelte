@@ -63,6 +63,8 @@
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
   const rows = $derived(nav.projection.rows);
+  const hasExpandedSections = $derived(nav.projection.sections.some((section) => section.expanded));
+  const expansionLabel = $derived(hasExpandedSections ? labels.collapseAll : labels.expandAll);
   const filterVisible = $derived(nav.filterVisible === true || nav.query.length > 0);
   const hasFilterQuery = $derived(nav.query.trim().length > 0);
   const browsePropertyFilterEnabled = $derived(scope.browsePropertyFilterEnabled);
@@ -602,6 +604,10 @@
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
     <div class="fce-nav-pane-header-group">
+      <button type="button" class="clickable-icon fce-nav-header-button fce-nav-toggle-all"
+        aria-label={expansionLabel} disabled={nav.projection.sections.length === 0}
+        onclick={() => emitIntent({ type: "toggle-all-navigation" })}
+        use:icon={hasExpandedSections ? "chevrons-down-up" : "chevrons-up-down"} use:tooltip={expansionLabel}></button>
       <button type="button" class="clickable-icon fce-nav-header-button fce-nav-search-toggle {filterVisible || hasFilterQuery ? 'is-active' : ''}"
         aria-label={labels.filterLabel} aria-expanded={filterVisible} aria-controls={`${paneLabelId}-filter`}
         onmousedown={(event) => event.preventDefault()}

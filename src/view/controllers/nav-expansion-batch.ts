@@ -1,3 +1,5 @@
+import type { PartialPluginSettings } from "../../settings";
+import type { NavSectionId } from "../types";
 import { pruneHiddenNavigationTree } from "../../navigation-visibility";
 import { normalizeScopePath } from "../scope";
 import { normalizeTagPath } from "../tag-tree";
@@ -42,55 +44,59 @@ export function captureExpandableNavigationBranches(
 }
 
 export async function applyNavigationExpansionBatch(input: {
-  kind: NavigationBranchKind;
+  kinds: readonly NavigationBranchKind[];
   collapse: boolean;
   querying: boolean;
+  sectionCollapsed?: Partial<Record<NavSectionId, boolean>>;
   state: NavigationExpansionState;
   context: Pick<ViewContext, "getSettings" | "saveSettings" | "publishGroups">;
   onPropertyCollapse: () => void;
 }): Promise<void> {
-  const { kind, collapse, querying, state, context } = input;
-  const identities = state.expandable[kind];
-  if (identities.length === 0) return;
+  const { kinds, collapse, querying, state, context } = input;
+  if (!input.sectionCollapsed && kinds.every((kind) => state.expandable[kind].length === 0)) return;
   const expanded = !collapse;
+  const settings = context.getSettings();
+  const patch: PartialPluginSettings = {};
+  if (input.sectionCollapsed && Object.entries(input.sectionCollapsed).some(
+    ([section, value]) => settings.sectionCollapsed[section as NavSectionId] !== value,
+  )) patch.sectionCollapsed = input.sectionCollapsed;
 
-  if (querying) {
-    const target = kind === "folder" ? state.queryFolders : kind === "tag" ? state.queryTags : null;
-    const suppressed = kind === "folder"
-      ? state.querySuppressedFolders
-      : kind === "tag" ? state.querySuppressedTags : state.querySuppressedProperties;
-    for (const identity of identities) {
-      if (expanded) { target?.add(identity); suppressed.delete(identity); }
-      else { target?.delete(identity); suppressed.add(identity); }
+  for (const kind of kinds) {
+    const identities = state.expandable[kind];
+    if (querying) {
+      const target = kind === "folder" ? state.queryFolders : kind === "tag" ? state.queryTags : null;
+      const suppressed = kind === "folder"
+        ? state.querySuppressedFolders
+        : kind === "tag" ? state.querySuppressedTags : state.querySuppressedProperties;
+      for (const identity of identities) {
+        if (expanded) { target?.add(identity); suppressed.delete(identity); }
+        else { target?.delete(identity); suppressed.add(identity); }
+      }
+    } else {
+      if (kind === "folder") {
+        if (collapse) state.revealFolders.clear();
+        for (const identity of identities) {
+          if (expanded) state.suppressedFolders.delete(identity);
+          else state.suppressedFolders.add(identity);
+        }
+      }
+      const key = kind === "folder"
+        ? "expandedFolderPaths"
+        : kind === "tag" ? "expandedTagPaths" : "expandedPropertyKeys";
+      const next = new Set(settings[key]);
+      for (const identity of identities) {
+        if (expanded) next.add(identity);
+        else next.delete(identity);
+      }
+      const nextValues = [...next].sort();
+      if (nextValues.length !== settings[key].length
+        || nextValues.some((value, index) => value !== settings[key][index])) patch[key] = nextValues;
     }
     if (kind === "property" && collapse) input.onPropertyCollapse();
-    context.publishGroups("nav");
-    return;
   }
 
-  if (kind === "folder") {
-    if (collapse) state.revealFolders.clear();
-    for (const identity of identities) {
-      if (expanded) state.suppressedFolders.delete(identity);
-      else state.suppressedFolders.add(identity);
-    }
-  }
-  if (kind === "property" && collapse) input.onPropertyCollapse();
-
-  const settings = context.getSettings();
-  const key = kind === "folder"
-    ? "expandedFolderPaths"
-    : kind === "tag" ? "expandedTagPaths" : "expandedPropertyKeys";
-  const next = new Set(settings[key]);
-  for (const identity of identities) {
-    if (expanded) next.add(identity);
-    else next.delete(identity);
-  }
-  const nextValues = [...next].sort();
-  const unchanged = nextValues.length === settings[key].length
-    && nextValues.every((value, index) => value === settings[key][index]);
-  if (unchanged) context.publishGroups("nav");
-  else await context.saveSettings({ [key]: nextValues });
+  if (querying || Object.keys(patch).length === 0) context.publishGroups("nav");
+  else await context.saveSettings(patch);
 }
 
 export function clearNavigationExpansionState(state: NavigationExpansionState): void {
