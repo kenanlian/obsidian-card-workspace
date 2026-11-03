@@ -1,8 +1,8 @@
 import MiniSearch from "minisearch";
 import { describe, expect, it } from "vitest";
 
-import { prepareSearchableDocument } from "../search/document-preparation";
-import { resolveCardFileKindFromPath } from "../view/file-kind";
+import { prepareSearchableDocument } from "../../src/search/document-preparation";
+import { resolveCardFileKindFromPath } from "../../src/view/file-kind";
 import {
   BENCHMARK_PROFILE_SPECS,
   ENGLISH_NEEDLE_PATH,

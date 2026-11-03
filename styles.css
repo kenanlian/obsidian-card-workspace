@@ -2126,7 +2126,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   box-shadow: inset 0 -2px 0 0 var(--fce-accent);
 }
 
-.folder-card-view .fce-card-body.has-right-image { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-content: start; column-gap: 10px; }
+.folder-card-view .fce-card-body.has-right-image { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-content: start; gap: var(--fce-card-gap) 10px; }
 .folder-card-view .fce-card-body.has-right-image .fce-card-header { grid-column: 1 / -1; grid-row: 1; }
 .folder-card-view .fce-card-body.has-right-image .fce-excerpt { grid-column: 1; grid-row: 2; min-width: 0; }
 .folder-card-view .fce-card-body.has-right-image .fce-card-image { grid-column: 2; grid-row: 2; }
@@ -2583,7 +2583,7 @@ html.fce-quick-input-window .modal-container .modal {
   box-shadow: none;
 }
 .fce-quick-input-window .fce-quick-input .fce-quick-input-title.inline-title::placeholder { color: var(--text-faint); }
-.fce-quick-input [hidden] { display: none !important; }
+:root .fce-quick-input [hidden] { display: none; }
 .fce-quick-input-footer .fce-quick-input-folder,
 .fce-quick-input-footer .fce-quick-input-boxes {
   display: inline-flex;
@@ -2838,7 +2838,7 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 @media (prefers-reduced-motion: reduce) {
   .fce-icon-picker { animation: none; }
 }
-.fce-icon-picker [hidden] { display: none !important; }
+:root .fce-icon-picker [hidden] { display: none; }
 
 .fce-icon-picker-header {
   display: flex;

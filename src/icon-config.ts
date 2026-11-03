@@ -92,14 +92,16 @@ export function parseIconTargetKey(key: string): IconTarget | null {
   try {
     const tuple: unknown = JSON.parse(key);
     if (!Array.isArray(tuple) || tuple.length < 2 || tuple.length > 3) return null;
+    const [targetKind, ref, serializedScalar] = tuple as unknown[];
     let value: unknown;
-    if (tuple[0] === "property-value") {
-      const scalar: unknown = JSON.parse(String(tuple[2]));
+    if (targetKind === "property-value") {
+      const scalar: unknown = JSON.parse(String(serializedScalar));
       if (!Array.isArray(scalar)) return null;
-      const kind = ({ t: "text", n: "number", b: "boolean", m: "missing" } as Record<string, string>)[String(scalar[0])];
-      value = { kind, value: scalar[1] };
+      const [scalarKind, scalarValue] = scalar as unknown[];
+      const kind = ({ t: "text", n: "number", b: "boolean", m: "missing" } as Record<string, string>)[String(scalarKind)];
+      value = { kind, value: scalarValue };
     }
-    return normalizeIconTarget({ kind: tuple[0], ref: tuple[1], value });
+    return normalizeIconTarget({ kind: targetKind, ref, value });
   } catch { return null; }
 }
 export function normalizeIconDefaults(raw: unknown): IconDefaults {

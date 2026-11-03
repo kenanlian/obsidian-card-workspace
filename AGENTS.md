@@ -94,7 +94,7 @@ publish ordinary host intents and share insertion text generation with desktop d
 | `src/view/modals/` | `FormModal` subclasses; host/actions route into them |
 | `src/services/` | Plugin-level assembly: settings, search coordinator, editor drop, vault/metadata buses, reconcilers |
 | `src/search/` | Local search subsystem (MiniSearch + IndexedDB) |
-| `src/benchmark/` | Deterministic search-index benchmark harness (bundled for Node by `scripts/run-search-benchmark.mjs`; not part of the plugin bundle) |
+| `scripts/search-benchmark/` | Deterministic search-index benchmark harness (bundled for Node by `scripts/run-search-benchmark.mjs`; not part of the plugin bundle) |
 | `src/i18n/` | Domain-split UI strings; callers still import `../i18n` |
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
@@ -251,7 +251,7 @@ Vitest 4 with two named projects:
 
 1. **`node` project** — pure logic tests
    - Environment: `node`
-   - Includes: `src/**/*.test.ts` **excluding** `*.svelte.test.ts` and `FolderCardView.test.ts`
+   - Includes: `src/**/*.test.ts` **excluding** `*.svelte.test.ts` and `FolderCardView.test.ts`, plus `scripts/search-benchmark/**/*.test.ts`
    - Aliases: `obsidian` → `src/__mocks__/obsidian.ts`, `./FolderCardPanel.svelte` → `src/__mocks__/FolderCardPanel.svelte.ts`
    - Shared FolderCardView node harness lives under `src/__mocks__/`
    - Good for: settings, note-ops, search subsystem, markdown-utils, pipeline, view-event routing, actions, menus

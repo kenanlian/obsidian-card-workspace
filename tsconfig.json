@@ -22,6 +22,7 @@
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.svelte"
+    "src/**/*.svelte",
+    "scripts/search-benchmark/**/*.ts"
   ]
 }

@@ -8,11 +8,11 @@ import { promisify } from "node:util";
 import MiniSearch from "minisearch";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { prepareSearchableDocument } from "../search/document-preparation";
-import { INGEST_YIELD_TERM_BUDGET, addDocumentsWithYield } from "../search/index-ingest";
-import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "../search/minisearch-options";
-import type { SearchableDocument } from "../search/types";
-import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../view/file-kind";
+import { prepareSearchableDocument } from "../../src/search/document-preparation";
+import { INGEST_YIELD_TERM_BUDGET, addDocumentsWithYield } from "../../src/search/index-ingest";
+import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "../../src/search/minisearch-options";
+import type { SearchableDocument } from "../../src/search/types";
+import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../../src/view/file-kind";
 import { SEARCH_BENCHMARK_REPORT_SCHEMA, runSearchBenchmark } from "./harness";
 import {
   INGEST_GATED_PHASE_ID,
@@ -182,7 +182,7 @@ describe("search benchmark harness", () => {
     // source instead: the harness must call the production ingest helper and
     // must not have kept addAllAsync anywhere.
     const harnessSource = await readFile(join(benchmarkDirectory, "harness.ts"), "utf8");
-    expect(harnessSource).toContain('from "../search/index-ingest"');
+    expect(harnessSource).toContain('from "../../src/search/index-ingest"');
     expect(harnessSource).toContain("addDocumentsWithYield(index, documents");
     expect(harnessSource).not.toMatch(/\baddAllAsync\b/);
 

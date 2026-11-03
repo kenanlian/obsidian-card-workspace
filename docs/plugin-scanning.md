@@ -28,6 +28,11 @@ is also excluded because source files are scanned directly. Svelte components
 continue to be checked with `npm run check:svelte`; this ESLint configuration
 does not parse `.svelte` files.
 
+The Node-only search benchmark lives in `scripts/search-benchmark/`, outside
+plugin source scanning and the production bundle. Its sources remain included
+in `npm run check`, and its tests run in the node Vitest project. Keep Node-only
+tools under `scripts/` rather than adding plugin-source lint exceptions.
+
 To save a machine-readable report:
 
 ```bash

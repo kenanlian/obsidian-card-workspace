@@ -1040,7 +1040,6 @@ describe("runtime platform admission boundary", () => {
   it("allows native resolution only inside guarded adapter functions, never native import()", () => {
     const violations: string[] = [];
     for (const [file, dependencies] of runtimeDependencyGraph) {
-      if (isUnder(file, "src/benchmark")) continue;
       const native = (specifier: string) => specifier === "electron" || specifier === "@electron/remote"
         || specifier.startsWith("node:") || ["fs", "path", "os", "buffer", "util", "module", "child_process", "crypto", "stream"].includes(specifier);
       for (const specifier of dependencies.bare) if (native(specifier)) violations.push(`${file}: native import ${specifier}`);

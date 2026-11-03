@@ -121,7 +121,7 @@ export default class CardWorkspacePlugin extends Plugin {
     load: () => this.loadData(),
     save: (data) => this.saveData(data),
     local: {
-      load: () => this.app.loadLocalStorage("card-workspace.device-settings.v1"),
+      load: (): unknown => this.app.loadLocalStorage("card-workspace.device-settings.v1"),
       save: (data) => this.app.saveLocalStorage("card-workspace.device-settings.v1", data),
       onError: (error) => { console.warn("[Card Workspace] Device settings unavailable", error); new Notice(this.getUiStrings().mobile.localStorageUnavailable); },
     },

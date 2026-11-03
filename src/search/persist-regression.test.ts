@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
  * index is a structured-clone object. These checks fail if anyone reintroduces
  * a whole-index stringify anywhere on the production persist path.
  *
- * The benchmark's labeled diagnostic stringify lives in `src/benchmark/` and
+ * The benchmark's labeled diagnostic stringify lives in `scripts/search-benchmark/` and
  * is deliberately outside the scanned production set.
  */
 
@@ -43,7 +43,7 @@ describe("production search persistence", () => {
     for (const { file, source } of sources) {
       expect(
         source,
-        `${file} must not JSON.stringify on the production search path; persist uses structured-clone objects (benchmark-only stringify lives in src/benchmark/)`,
+        `${file} must not JSON.stringify on the production search path; persist uses structured-clone objects (benchmark-only stringify lives in scripts/search-benchmark/)`,
       ).not.toMatch(/JSON\.stringify/);
     }
   });

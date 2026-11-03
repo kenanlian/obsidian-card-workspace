@@ -16,7 +16,7 @@
  * `./fixture-content`.
  */
 
-import { resolveCardFileKindFromPath } from "../view/file-kind";
+import { resolveCardFileKindFromPath } from "../../src/view/file-kind";
 import {
   buildEnglishMarkdown,
   buildEnglishNeedleMarkdown,

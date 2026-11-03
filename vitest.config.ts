@@ -18,7 +18,7 @@ export default defineConfig({
           name: "node",
           environment: "node",
           setupFiles: ["src/__mocks__/node-window.ts"],
-          include: ["src/**/*.test.ts"],
+          include: ["src/**/*.test.ts", "scripts/search-benchmark/**/*.test.ts"],
           exclude: ["src/**/*.svelte.test.ts", "src/view/FolderCardView.test.ts"],
         },
         resolve: {

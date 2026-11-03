@@ -20,11 +20,11 @@
 import MiniSearch from "minisearch";
 import { serialize as v8Serialize } from "node:v8";
 
-import { prepareSearchableDocument } from "../search/document-preparation";
-import { INGEST_YIELD_TERM_BUDGET, addDocumentsWithYield } from "../search/index-ingest";
-import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "../search/minisearch-options";
-import type { SearchableDocument } from "../search/types";
-import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../view/file-kind";
+import { prepareSearchableDocument } from "../../src/search/document-preparation";
+import { INGEST_YIELD_TERM_BUDGET, addDocumentsWithYield } from "../../src/search/index-ingest";
+import { createMiniSearchOptions, MINISEARCH_SEARCH_OPTIONS } from "../../src/search/minisearch-options";
+import type { SearchableDocument } from "../../src/search/types";
+import { isMarkdownCardKind, resolveCardFileKindFromPath } from "../../src/view/file-kind";
 import {
   BENCHMARK_PROFILE_SPECS,
   ENGLISH_NEEDLE_PATH,

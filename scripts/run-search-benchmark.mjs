@@ -1,7 +1,7 @@
 /**
  * Runner for `npm run benchmark:search`.
  *
- * Bundles the benchmark CLI (src/benchmark/main.ts) with esbuild, aliasing the
+ * Bundles the benchmark CLI (scripts/search-benchmark/main.ts) with esbuild, aliasing the
  * `obsidian` external to an inert stub so production search modules load in
  * plain Node, then executes the bundle with the caller's arguments. The
  * production plugin build (esbuild.config.mjs, entry src/main.ts) is
@@ -22,7 +22,7 @@ const bundleFile = join(bundleDirectory, "benchmark.mjs");
 
 try {
   await build({
-    entryPoints: [join(repositoryRoot, "src/benchmark/main.ts")],
+    entryPoints: [join(repositoryRoot, "scripts/search-benchmark/main.ts")],
     bundle: true,
     format: "esm",
     platform: "node",
@@ -32,7 +32,7 @@ try {
     minify: false,
     logLevel: "warning",
     alias: {
-      obsidian: join(repositoryRoot, "src/benchmark/obsidian-stub.ts"),
+      obsidian: join(repositoryRoot, "scripts/search-benchmark/obsidian-stub.ts"),
     },
   });
 

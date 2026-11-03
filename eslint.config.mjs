@@ -49,13 +49,6 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/benchmark/**/*.ts"],
-    rules: {
-      // This diagnostic CLI runs only in Node and is never bundled into the plugin.
-      "obsidianmd/no-nodejs-modules": "off",
-    },
-  },
-  {
     files: ["**/*.{ts,tsx,js,jsx}"],
     rules: {
       // These are disabled by the community scanner, which checks manifest
