@@ -534,6 +534,7 @@
             showItemCounts={nav.showItemCounts} tooltipSide={nav.tooltipSide}
             dragState={folderRowDragState(row, folderDrag) ?? favoriteRowDragState(row, favoriteDrag) ?? navigationSortRowDragState(row, sortDrag)}
             rowRef={bindRow} onFocus={(id) => emitIntent({ type: "focus", rowId: id })}
+            onIcon={(anchor, row) => emitIntent({ type: "change-icon", rowId: row.id, anchor })}
             onActivate={activate} onToggleExpansion={toggleExpansion} onKeydown={keydown} onContextMenu={pointerMenu}
             onRowDragStart={onRowDragStart} onRowDragOver={onFavoriteDragOver}
             onRowDrop={onRowDrop} onRowDragEnd={onRowDragEnd}>

@@ -245,6 +245,8 @@ vi.mock("obsidian", async () => {
     TFile: testState.TestTFile,
     TFolder: testState.TestTFolder,
     normalizePath: (path: string) => path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, ""),
+    getIcon: () => document.createElementNS("http://www.w3.org/2000/svg", "svg"),
+    getIconIds: () => ["file", "folder", "heart"],
     setIcon: (el: Element, icon: string) => {
       el.setAttribute("data-icon", icon);
     },
@@ -517,6 +519,29 @@ describe("FolderCardView host contract", () => {
 
     await view.onClose();
   });
+  it("isolates icon activation and preserves cards, selection and scroll through patch publication", async () => {
+    const { view, plugin, panelContainer } = createHarness();
+    const first = createCard("notes/editing.md", "Editing"), second = createCard("notes/other.md", "Other");
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockImplementation(path => [first.file, second.file].find(file => file.path === path) ?? null);
+    await view.onOpen();
+    (view as any).baseCards = [first, second]; publishAll(view); view.setSelectedFile(first.path); await tick();
+    const before = getPanelState(view), records = before.cards.records;
+    const cardEl = panelContainer.querySelector(".fce-card.is-selected")!;
+    const list = panelContainer.querySelector<HTMLElement>(".fce-list")!; list.scrollTop = 35;
+    const refresh = vi.spyOn(view, "refresh"), project = vi.spyOn(view.modules.projection, "reprojectCards");
+    const openIcon = vi.spyOn(view.modules.iconActions, "open").mockReturnValue(null);
+    const icon = cardEl.querySelector<HTMLElement>(".fce-card-file-icon")!;
+    icon.click();
+    expect(openIcon).toHaveBeenCalledExactlyOnceWith({ kind: "file", ref: first.path }, icon);
+    expect(plugin.openNoteFromCard).not.toHaveBeenCalled();
+    await (plugin.saveSettings as (patch: import("../settings").PartialPluginSettings) => Promise<void>)({ iconOverrides: { '["file","notes/editing.md"]': { kind: "emoji", value: "📘" } } }); await tick();
+    expect(cardEl.querySelector(".fce-card-file-icon")?.textContent).toBe("📘");
+    expect(getPanelState(view).cards.records).toBe(records);
+    expect(getPanelState(view).cards.selectedPath).toBe(first.path);
+    expect(list.scrollTop).toBe(35); expect(refresh).not.toHaveBeenCalled(); expect(project).not.toHaveBeenCalled();
+    await view.onClose();
+  });
+
   it("updates an editor-selected card after bulk colors without reloading cards", async () => {
     const { view, plugin, panelContainer } = createHarness();
     const first = createCard("notes/editing.md", "Editing");
@@ -1922,7 +1947,7 @@ describe("FolderCardView host contract", () => {
     publishAll(view);
     await tick();
 
-    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-text") as HTMLElement | null;
     const excerpt = (view as any).containerEl.querySelector(".fce-excerpt") as HTMLElement | null;
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
@@ -1964,7 +1989,7 @@ describe("FolderCardView host contract", () => {
 
     const triggerSpy = (view as any).app.workspace.trigger as ReturnType<typeof vi.fn>;
 
-    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-group") as HTMLElement | null;
+    const titleGroup = (view as any).containerEl.querySelector(".fce-card-title-text") as HTMLElement | null;
     const excerpt = (view as any).containerEl.querySelector(".fce-card-image") as HTMLElement | null;
     const pinButton = (view as any).containerEl.querySelector(".fce-card-pin-btn") as HTMLButtonElement | null;
     const moreActionsButton = (view as any).containerEl.querySelector(".fce-more-actions-btn") as HTMLButtonElement | null;

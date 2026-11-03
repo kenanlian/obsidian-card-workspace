@@ -1452,6 +1452,7 @@ describe("nav context menu wiring", () => {
 
       const titles = latestMenuTitles();
       expect(titles.slice(0, 3)).toEqual(["Remove from favorites", "Move up", "Move down"]);
+      expect(titles.filter((title) => title === "Change icon")).toHaveLength(1);
       expect(titles).toContain("Open in new tab");
       expect(mockState.menuInstances[0].showAtMouseEvent).toHaveBeenCalledTimes(1);
     });

@@ -19,6 +19,8 @@ import type { PropertyFilterClause } from "../property-filter-settings";
 import { resolveSettingsUpdateIntent, type ViewUpdateIntent } from "../view/update-intent";
 
 export interface PreferencesSettings {
+  iconDefaults: PluginSettings["iconDefaults"];
+  emojiSkinTone: PluginSettings["emojiSkinTone"];
   fileVisibility: PluginSettings["fileVisibility"];
   linksSort: PluginSettings["linksSort"];
   backlinkSnippetCount: PluginSettings["backlinkSnippetCount"];
@@ -85,6 +87,8 @@ export type WorkspaceSettingsPatch = Omit<Partial<WorkspaceSettings>, "sectionCo
 };
 
 export interface UserDataSettings {
+  iconOverrides: PluginSettings["iconOverrides"];
+  recentIcons: PluginSettings["recentIcons"];
   cardBackgroundOverrides: PluginSettings["cardBackgroundOverrides"];
   hiddenFolderPaths: string[];
   hiddenTagPaths: string[];
@@ -142,7 +146,7 @@ export function hasPatchValues(patch: object): boolean {
     }
     // These maps are replaced wholesale. Empty maps explicitly reset sorting
     // or clear the last individual card color, rather than omitting a patch.
-    if (key === "folderSiblingOrders" || key === "navigationSorting" || key === "cardBackgroundOverrides") return true;
+    if (key === "iconDefaults" || key === "iconOverrides" || key === "folderSiblingOrders" || key === "navigationSorting" || key === "cardBackgroundOverrides") return true;
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
       if (hasPatchValues(value)) {
         return true;
@@ -165,6 +169,10 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   const userData: Partial<UserDataSettings> = {};
   const sectionCollapsed: Partial<WorkspaceSectionCollapsed> = {};
 
+  if (patch.iconDefaults !== undefined) preferences.iconDefaults = patch.iconDefaults;
+  if (patch.iconOverrides !== undefined) userData.iconOverrides = patch.iconOverrides;
+  if (patch.recentIcons !== undefined) userData.recentIcons = patch.recentIcons;
+  if (patch.emojiSkinTone !== undefined) preferences.emojiSkinTone = patch.emojiSkinTone;
   if (patch.linksSort !== undefined) preferences.linksSort = patch.linksSort;
   if (patch.backlinkSnippetCount !== undefined) preferences.backlinkSnippetCount = patch.backlinkSnippetCount;
   if (patch.sort !== undefined) preferences.sort = patch.sort as PreferencesSettings["sort"];
@@ -244,6 +252,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     preferences: {
+      iconDefaults: Object.fromEntries(Object.entries(settings.iconDefaults).map(([key, spec]) => [key, { ...spec }])),
+      emojiSkinTone: settings.emojiSkinTone,
       fileVisibility: settings.fileVisibility,
       sort: { ...settings.sort },
       linksSort: { backlinks: { ...settings.linksSort.backlinks }, outgoing: { ...settings.linksSort.outgoing } },
@@ -297,6 +307,8 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       sectionCollapsed: { ...settings.sectionCollapsed },
     },
     userData: {
+      iconOverrides: Object.fromEntries(Object.entries(settings.iconOverrides).map(([key, spec]) => [key, { ...spec }])),
+      recentIcons: settings.recentIcons.map(spec => ({ ...spec })),
       hiddenFolderPaths: [...settings.hiddenFolderPaths],
       hiddenTagPaths: [...settings.hiddenTagPaths],
       folderSiblingOrders: Object.fromEntries(Object.entries(settings.folderSiblingOrders).map(([parent, paths]) => [parent, [...paths]])),

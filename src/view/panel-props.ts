@@ -66,6 +66,7 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onBulkSelectCard: (detail: { path?: unknown; shiftKey?: unknown }) => {
       view.modules.bulk.onBulkSelectCard(detail);
     },
+    onCardIcon: (detail: { path: string; anchor: HTMLElement }) => view.modules.iconActions.open({ kind: "file", ref: detail.path }, detail.anchor),
     onCardContextMenu: (detail: {
       path?: unknown;
       mouseEvent?: unknown;

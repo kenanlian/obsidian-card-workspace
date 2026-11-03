@@ -1,3 +1,6 @@
+import { builtinCategoryIcon, pushRecentIcon, type IconCategory, type IconSpec } from "./icon-config";
+import { IconPicker, closeIconPickerForAnchor } from "./icon-picker/IconPicker";
+import { renderContentIcon } from "./icon-render";
 import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
 import { isCardBackgroundColor } from "./card-background";
 import { cardBackgroundStrings } from "./i18n";
@@ -72,6 +75,10 @@ type WorkspaceSettingDefinition = {
   | { control: WorkspaceSettingControl; render?: never }
   | { control?: never; render: (setting: Setting, group: SettingGroup) => void }
 );
+const ICON_CATEGORY_GROUPS: ReadonlyArray<{ heading: "navigationHeading" | "cardsHeading"; categories: readonly IconCategory[] }> = [
+  { heading: "navigationHeading", categories: ["folder", "tag", "property", "property-value", "box", "backlinks", "outgoing", "template"] },
+  { heading: "cardsHeading", categories: ["markdown", "base", "canvas", "excalidraw", "image", "pdf", "audio", "video", "file"] },
+];
 type WorkspaceSettingGroup = {
   type: "group";
   heading?: string;
@@ -315,8 +322,10 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     }
   }
 
+  private readonly iconPickers = new Set<IconPicker>();
   hide(): void { this.disposeFolderSuggests(); }
   private disposeFolderSuggests(): void {
+    this.iconPickers.forEach(picker => picker.close(false));
     this.shortcutCleanups.splice(0).forEach((cleanup) => cleanup());
     this.folderSuggests.forEach((suggest) => suggest.dispose()); this.folderSuggests.clear();
   }
@@ -399,6 +408,61 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         onPlainEnter(text.inputEl, suggest.isOpen, submit);
       });
     });
+  }
+
+  private renderIconSetting(setting: Setting, category: IconCategory): void {
+    const strings = getUiStrings(this.plugin.getUiLanguage()).icons;
+    const fallback = builtinCategoryIcon(category);
+    const read = (): IconSpec => this.plugin.getSettings().iconDefaults?.[category] ?? { kind: "lucide", value: fallback };
+    const customized = (): boolean => Boolean(this.plugin.getSettings().iconDefaults?.[category]);
+    const device = this.plugin.runtimePlatform?.device ?? "desktop";
+    const save = async (spec: IconSpec | null): Promise<void> => {
+      const current = this.plugin.getSettings();
+      const next = { ...current.iconDefaults };
+      if (spec === null) delete next[category]; else next[category] = spec;
+      const pending = this.plugin.saveSettings({ iconDefaults: next, ...(spec ? { recentIcons: pushRecentIcon(current.recentIcons, spec) } : {}) });
+      render(); await pending;
+      await this.plugin.flushSettings();
+    };
+    let iconButton: HTMLElement | null = null;
+    let resetButton: HTMLElement | null = null;
+    const render = (): void => {
+      if (iconButton) {
+        const spec = read();
+        renderContentIcon(iconButton, { spec, fallback });
+        if (spec.kind === "none") iconButton.textContent = strings.noIcon;
+      }
+      resetButton?.toggleClass("fce-is-hidden", !customized());
+    };
+    setting.addButton(button => {
+      iconButton = button.buttonEl;
+      button.buttonEl.addClass("fce-icon-setting-button");
+      button.buttonEl.setAttribute("aria-label", `${strings.change}: ${strings.categories[category]}`);
+      button.onClick(() => {
+        if (closeIconPickerForAnchor(button.buttonEl)) return;
+        const picker = new IconPicker({ anchor: button.buttonEl, strings, read, category,
+          title: strings.categories[category], subtitle: strings.defaultSubtitle,
+          layout: device === "phone" ? "sheet" : "popover", autoFocusSearch: device === "desktop",
+          canReset: customized, resetLabel: strings.resetDefault,
+          recent: () => this.plugin.getSettings().recentIcons ?? [],
+          skinTone: () => this.plugin.getSettings().emojiSkinTone ?? "",
+          setSkinTone: tone => { this.plugin.saveSettings({ emojiSkinTone: tone }).catch(error => console.warn("Card Workspace: skin tone save failed", error)); },
+          isValid: () => button.buttonEl.isConnected,
+          apply: save,
+          retry: () => this.plugin.flushSettings(),
+          onClose: () => this.iconPickers.delete(picker),
+        });
+        this.iconPickers.add(picker);
+      });
+    });
+    setting.addExtraButton(button => {
+      resetButton = button.extraSettingsEl;
+      button.extraSettingsEl.addClass("fce-icon-setting-reset");
+      button.setIcon("rotate-ccw").setTooltip(strings.resetDefault).onClick(() => {
+        save(null).catch(error => { console.warn("Card Workspace: icon save failed", error); new Notice(strings.error); });
+      });
+    });
+    render();
   }
 
   getSettingDefinitions(): WorkspaceSettingGroup[] {
@@ -624,6 +688,10 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         items: [{ name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
           render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
       },
+      ...ICON_CATEGORY_GROUPS.map(({ heading, categories }, groupIndex): WorkspaceSettingGroup => ({ type: "group", heading: getUiStrings(language).icons[heading],
+        items: categories.map((category, index) => ({ name: getUiStrings(language).icons.categories[category],
+          desc: groupIndex === 0 && index === 0 ? getUiStrings(language).icons.description : "",
+          render: (setting: Setting) => this.renderIconSetting(setting, category) })) })),
     ];
     return groups.filter((group) => group.heading !== inputStrings.quickInputHeading || this.plugin.runtimePlatform?.capabilities.quickInput !== false)
       .map((group) => ({ ...group, items: group.items.filter((item) => ((this.plugin.runtimePlatform?.device ?? "desktop") === "desktop"

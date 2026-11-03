@@ -1,3 +1,5 @@
+import { closeAllIconPickers, validateIconPickers } from "./icon-picker/IconPicker";
+import { IconReconciler } from "./services/IconReconciler";
 import { RuntimeActivity } from "./runtime/activity";
 import { resolveRuntimeResourceBudget } from "./runtime/resource-budget";
 /*
@@ -186,6 +188,7 @@ export default class CardWorkspacePlugin extends Plugin {
     saveSettings: (patch) => this.saveSettings(patch),
     getApp: () => this.app,
   });
+  private readonly iconReconciler = new IconReconciler({ getSettings: () => this.getSettings(), saveSettings: patch => this.saveSettings(patch) });
   private readonly cardBackgroundReconciler = new CardBackgroundReconciler({
     getSettings: () => this.getSettings(),
     saveSettings: patch => this.saveSettings(patch),
@@ -317,6 +320,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.editorDropController.handleActiveLeafChange(leaf);
+        this.withFolderViews(view => { if (view.leaf !== leaf) view.modules?.iconActions?.close(); });
       }),
     );
     this.registerEvent(
@@ -376,6 +380,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   onunload(): void {
+    closeAllIconPickers();
     this.disposeRuntime(); this.runDetached(
       this.settingsStore.flushPendingWrites(), "Settings flush failed.");
   }
@@ -907,10 +912,12 @@ export default class CardWorkspacePlugin extends Plugin {
       this.showUnsupportedSchemaNotice();
     }
     const previous = this.getSettings();
+    patch = this.iconReconciler.reconcileDefinitions(previous, patch);
     const write = this.settingsStore.updateFlat(patch);
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
+    validateIconPickers();
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
@@ -1155,10 +1162,11 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.vaultEventListenersRegistered = true;
-    // Plugin order: navigation workspace → global pins → card backgrounds → templates → boxes → favorites/tag prune → search. Views subscribe later.
+    // Plugin order: navigation workspace → global pins → icons → card backgrounds → templates → boxes → favorites/tag prune → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
       this.subscribeVaultEvents((event) => this.pinnedPathReconciler.handleVaultMutation(event)),
+      this.subscribeVaultEvents((event) => this.iconReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.cardBackgroundReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.templateReferenceReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),

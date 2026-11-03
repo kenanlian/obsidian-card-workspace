@@ -5,6 +5,8 @@ installObsidianDomHelpers(document);
 export class TFile { path = ""; basename = ""; stat = { mtime: 1, ctime: 1, size: 1 }; }
 export class TFolder {}
 export class Menu { addItem() { return this; } addSeparator() { return this; } showAtMouseEvent() {} }
+export function getIconIds() { return ["file", "folder", "heart", "sun", "moon"]; }
+export function getIcon() { return document.createElementNS("http://www.w3.org/2000/svg", "svg"); }
 export function setIcon(el: HTMLElement, icon: string) { el.dataset.icon = icon; }
 export function setTooltip() {}
 export function getAllTags() { return []; }

@@ -19,6 +19,7 @@ export type CardMenuAction =
 export interface CardContextMenuDeps {
   context: ViewContext;
   appendMobileActions?: (menu: Menu, path: string) => void;
+  appendIconMenu?: (menu: Menu, path: string, anchor?: HTMLElement, position?: { x: number; y: number }) => void;
   appendBackgroundMenu?: (menu: Menu, path: string) => void;
   resolveLiveMarkdownFile: (notePath: string) => TFile | null;
   isBoxMode: () => boolean;
@@ -109,7 +110,11 @@ export class CardContextMenu {
     }
 
     const menu = new Menu().setUseNativeMenu(false);
-    this.addItems(menu, detail.notePath);
+    const event = isMouseEventLike(detail.mouseEvent) ? detail.mouseEvent : null;
+    const eventTarget = event?.currentTarget ?? event?.target;
+    const anchor = eventTarget && "ownerDocument" in eventTarget && "getBoundingClientRect" in eventTarget ? eventTarget as HTMLElement : undefined;
+    const position = isMenuPosition(detail.position) ? detail.position : event ? { x: event.clientX, y: event.clientY } : undefined;
+    this.addItems(menu, detail.notePath, anchor, position);
 
     if (detail.trigger === "button") {
       const position = detail.position;
@@ -131,7 +136,7 @@ export class CardContextMenu {
     }
   }
 
-  addItems(menu: Menu, notePath: string): void {
+  addItems(menu: Menu, notePath: string, anchor?: HTMLElement, position?: { x: number; y: number }): void {
     const strings = this.strings.view.contextMenu;
     const liveMarkdownFile = this.deps.resolveLiveMarkdownFile(notePath);
     const addAction = (title: string, icon: string, action: CardMenuAction): void => {
@@ -158,6 +163,7 @@ export class CardContextMenu {
     menu.addSeparator();
     this.deps.appendAddToBoxMenu(menu, [notePath]);
     this.deps.appendCardFavoriteMenuItem(menu, notePath);
+    this.deps.appendIconMenu?.(menu, notePath, anchor, position);
     this.deps.appendBackgroundMenu?.(menu, notePath);
     if (this.deps.isBoxMode()) {
       menu.addItem((item) => {

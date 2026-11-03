@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { contentIcon } from "../icon-render";
   import { touchMenu } from "./touch-menu";
   import { setIcon, setTooltip } from "obsidian";
   import type { Snippet } from "svelte";
@@ -19,6 +20,7 @@
     revealed?: boolean;
     dragState?: NavigationRowDragState | null;
     rowRef?: (node: HTMLElement, rowId: string) => { destroy: () => void };
+    onIcon?: (anchor: HTMLElement, row: NavigationRow) => void;
     onFocus?: (rowId: string) => void;
     onActivate?: (event: MouseEvent, row: NavigationRow) => void;
     onToggleExpansion?: (event: MouseEvent, row: NavigationRow) => void;
@@ -43,6 +45,7 @@
     revealed = false,
     dragState = null,
     rowRef = () => ({ destroy: () => undefined }),
+    onIcon,
     onFocus,
     onActivate,
     onToggleExpansion,
@@ -132,8 +135,14 @@
     {:else}
       <span class="fce-tree-item-disclosure is-placeholder" aria-hidden="true"></span>
     {/if}
-    {#if identityIcon !== null}
-      <span class="fce-tree-item-identity" aria-hidden="true" use:icon={identityIcon}></span>
+    {#if identityIcon !== null && row.contentIcon?.kind !== "none"}
+      <button type="button" class="fce-tree-item-identity fce-content-icon-button" tabindex="-1"
+        aria-label={strings.icons.change} aria-disabled="false" draggable="false"
+        onpointerdown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        ondragstart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onkeydown={(event) => event.stopPropagation()}
+        onclick={(event) => { event.preventDefault(); event.stopPropagation(); onIcon?.(event.currentTarget, row); }}
+        use:contentIcon={{ spec: row.contentIcon ?? { kind: "lucide", value: identityIcon }, fallback: identityIcon }}></button>
     {/if}
   </div>
   <div class="fce-popup-row-content fce-tree-button">

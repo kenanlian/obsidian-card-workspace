@@ -1,3 +1,4 @@
+import type { IconSettings } from "../icon-config";
 import { UNSUPPORTED_CAPABILITIES, type RuntimeCapabilities } from "../runtime/capabilities";
 import type { CardBackgroundColor, CardBackgroundTint } from "../card-background";
 import type { CardImageState } from "../images/types";
@@ -216,7 +217,7 @@ export interface PanelNavState {
   revealRequest: NavigationRevealRequest | null;
 }
 
-export interface PanelAppearanceState {
+export interface PanelAppearanceState extends IconSettings {
   cardBackgroundColor?: CardBackgroundColor;
   cardBackgroundOverrides?: Record<string, CardBackgroundTint>;
   cardCornerRadius: CardCornerRadius;

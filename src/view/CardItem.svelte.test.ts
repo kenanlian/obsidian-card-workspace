@@ -1133,11 +1133,22 @@ describe("CardItem.svelte", () => {
     expect(icon?.getAttribute("data-icon")).toBe("layout-list");
   });
 
+  it("renders a plain-text title when the card's icon is set to none", async () => {
+    const { target } = mountCardItem({
+      appearance: { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2, iconDefaults: { markdown: { kind: "none", value: "" } }, iconOverrides: {} },
+    });
+
+    await tick();
+
+    expect(target.querySelector(".fce-card-file-icon")).toBeNull();
+    expect(target.querySelector(".fce-card-title-text h4")?.textContent).toBe("A note");
+  });
+
   it("emits hover-link payload from title and excerpt surfaces for markdown cards", () => {
     const captured = createCapturedCallbacks();
     const { target } = mountCardItem({}, captured.callbacks);
 
-    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
+    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-text");
     const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();
@@ -1176,7 +1187,7 @@ describe("CardItem.svelte", () => {
       captured.callbacks,
     );
 
-    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-group");
+    const titleGroup = target.querySelector<HTMLElement>(".fce-card-title-text");
     const excerpt = target.querySelector<HTMLElement>(".fce-excerpt");
     expect(titleGroup).not.toBeNull();
     expect(excerpt).not.toBeNull();

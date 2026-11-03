@@ -676,6 +676,7 @@ describe("card box context menus", () => {
         "Configure card box…",
         "Add current view to this card box",
         "Add to favorites",
+        "Change icon",
         "Make a copy",
         "Rename…",
         "Delete",

@@ -117,6 +117,7 @@
     onOpenNote?: (payload: OpenNotePayload) => void;
     onToggleReferences?: (payload: { path: string }) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
+    onCardIcon?: (payload: { path: string; anchor: HTMLElement }) => void;
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
@@ -222,6 +223,7 @@
     onOpenNote,
     onToggleReferences,
     onBulkSelectCard,
+    onCardIcon,
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
@@ -1027,6 +1029,7 @@
                 editorDrop={panelState.capabilities?.editorDrop ?? false}
                 {strings}
                 {appearance}
+                {onCardIcon}
                 image={getCardImage(card.path)}
                 {onImageReveal}
                 pinnedPaths={projection.pinnedPaths}

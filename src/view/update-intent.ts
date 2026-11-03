@@ -143,6 +143,10 @@ export function resolveSettingsUpdateIntent(
   scope?: CardScope,
 ): ViewUpdateIntent | null {
   let intent: ViewUpdateIntent | null = null;
+  if (JSON.stringify(previous.iconDefaults) !== JSON.stringify(next.iconDefaults)
+    || JSON.stringify(previous.iconOverrides) !== JSON.stringify(next.iconOverrides)
+    || JSON.stringify(previous.recentIcons) !== JSON.stringify(next.recentIcons)
+    || previous.emojiSkinTone !== next.emojiSkinTone) intent = "patch";
   if (previous.fileVisibility !== next.fileVisibility) intent = "reload";
 
   if (previous.backlinkSnippetCount !== next.backlinkSnippetCount) {

@@ -18,6 +18,14 @@ export type MockNode = MockEl | Setting | SettingGroup;
 
 export class MockEl {
   readonly style = { display: "" };
+  readonly classList = {
+    add: (...values: string[]) => this.addClass(...values),
+    remove: (...values: string[]) => this.removeClass(...values),
+    toggle: (value: string, force?: boolean) => { const on = force ?? !this.hasClass(value); this.toggleClass(value, on); return on; },
+  };
+  replaceChildren(): void { this.empty(); }
+  get textContent(): string { return this.text; }
+  set textContent(value: string) { this.text = value; }
   readonly buttons: MockButton[] = [];
   isConnected = true;
   tag = "div";
@@ -98,6 +106,8 @@ export class MockEl {
 }
 
 export class MockButton {
+  readonly buttonEl = new MockEl();
+  get extraSettingsEl(): MockEl { return this.buttonEl; }
   text = "";
   icon = "";
   tooltip = "";
@@ -147,7 +157,6 @@ export class MockButton {
 }
 
 export class ButtonComponent extends MockButton {
-  readonly buttonEl = { get disabled() { return false; } };
 
   constructor(containerEl: MockEl) {
     super();
@@ -559,3 +568,7 @@ export function elementsIn(root: MockEl, predicate: (el: MockEl) => boolean): Mo
 export function asMock(modal: unknown): ConfirmationModal {
   return modal as ConfirmationModal;
 }
+
+export function getIconIds(): string[] { return ["file", "folder", "heart"]; }
+export function getIcon(): object { return {}; }
+export function setIcon(el: MockEl, icon: string): void { el.setAttribute("data-icon", icon); }

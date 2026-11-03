@@ -1,3 +1,4 @@
+import { normalizeEmojiSkinTone, normalizeIconDefaults, normalizeIconOverrides, normalizeRecentIcons, type EmojiSkinTone, type IconDefaults, type IconOverrides, type IconSpec } from "./icon-config";
 import { isCardBackgroundColor, normalizeCardBackgroundOverrides, type CardBackgroundColor, type CardBackgroundTint } from "./card-background";
 import { isFileVisibility, type FileVisibility } from "./file-visibility";
 import { normalizeNavigationSorting, type NavigationSorting } from "./navigation-sorting";
@@ -175,6 +176,10 @@ export function isCardStyle(value: unknown): value is CardStyle {
 }
 
 export interface PluginSettings {
+  iconDefaults: IconDefaults;
+  iconOverrides: IconOverrides;
+  recentIcons: IconSpec[];
+  emojiSkinTone: EmojiSkinTone;
   fileVisibility: FileVisibility;
   linksSort: { backlinks: LinksSortSpec; outgoing: LinksSortSpec };
   backlinkSnippetCount: BacklinkSnippetCount;
@@ -243,6 +248,10 @@ export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filt
 };
 
 export const DEFAULT_SETTINGS: PluginSettings = {
+  iconDefaults: {},
+  iconOverrides: {},
+  recentIcons: [],
+  emojiSkinTone: "",
   linksSort: { backlinks: { field: "reference-count", direction: "desc" }, outgoing: { field: "reference-count", direction: "desc" } },
   backlinkSnippetCount: 3,
   sort: {
@@ -615,6 +624,8 @@ function flattenV2(raw: Record<string, unknown>): Record<string, unknown> {
     pinnedPaths: userData.pinnedPaths,
     searchHistory: userData.searchHistory,
     cardBackgroundOverrides: userData.cardBackgroundOverrides,
+    iconOverrides: userData.iconOverrides,
+    recentIcons: userData.recentIcons,
     hiddenFolderPaths: userData.hiddenFolderPaths, hiddenTagPaths: userData.hiddenTagPaths,
   };
 }
@@ -679,6 +690,10 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     uiDensity: isUiDensity(data.uiDensity) ? data.uiDensity : DEFAULT_SETTINGS.uiDensity,
     cardBackgroundColor: isCardBackgroundColor(data.cardBackgroundColor) ? data.cardBackgroundColor : "theme",
     cardBackgroundOverrides: normalizeCardBackgroundOverrides(data.cardBackgroundOverrides),
+    iconDefaults: normalizeIconDefaults(data.iconDefaults),
+    iconOverrides: normalizeIconOverrides(data.iconOverrides),
+    recentIcons: normalizeRecentIcons(data.recentIcons),
+    emojiSkinTone: normalizeEmojiSkinTone(data.emojiSkinTone),
     cardStyle: isCardStyle(data.cardStyle) ? data.cardStyle : DEFAULT_SETTINGS.cardStyle,
     newNoteTemplate: normalizeNewNoteTemplate(data.newNoteTemplate),
     boxNewNoteFolderPath: typeof data.boxNewNoteFolderPath === "string" ? data.boxNewNoteFolderPath.trim().replace(/^\/$/, "") : "",

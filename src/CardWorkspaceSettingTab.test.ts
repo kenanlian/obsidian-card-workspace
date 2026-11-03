@@ -108,7 +108,7 @@ describe("CardWorkspaceSettingTab", () => {
     const definitions = tab.getSettingDefinitions();
 
     const [behavior, appearance] = groupsOf(definitions);
-    expect(definitions).toHaveLength(5);
+    expect(definitions).toHaveLength(7);
     expect(behavior?.type).toBe("group");
     expect(behavior?.heading).toBe("Behavior");
     expect(appearance?.heading).toBe("Appearance");
@@ -372,6 +372,9 @@ describe("CardWorkspaceSettingTab", () => {
           } else if (row.name === getUiStrings(language).noteInput.globalShortcutName) {
             expect(setting.texts).toHaveLength(1);
             expect(setting.buttons.map((button) => button.text)).toEqual([getUiStrings(language).noteInput.apply, getUiStrings(language).noteInput.clearShortcut]);
+          } else if (definition.heading === getUiStrings(language).icons.navigationHeading || definition.heading === getUiStrings(language).icons.cardsHeading) {
+            expect(setting.buttons[0]?.buttonEl.attrs["aria-label"]).toBe(`${getUiStrings(language).icons.change}: ${row.name}`);
+            expect(setting.extraButtons[0]?.tooltip).toBe(getUiStrings(language).icons.resetDefault);
           } else {
             expect(setting.buttons[0]?.text).toBe(definition.heading === (language === "zh" ? "模板" : "Templates") ? (language === "zh" ? "应用" : "Apply") : (language === "zh" ? "管理" : "Manage"));
           }
@@ -387,6 +390,16 @@ describe("CardWorkspaceSettingTab", () => {
         }
       });
     });
+  });
+
+  it("labels a category default of no icon as plain text", () => {
+    const tab = createTab(createPlugin({ iconDefaults: { folder: { kind: "none", value: "" } }, iconOverrides: {} }));
+    tab.display();
+    const strings = getUiStrings("en").icons;
+    const group = groupsIn(tab.containerEl as unknown as MockEl).find((entry) => entry.heading === strings.navigationHeading)!;
+    const button = group.settings.find((row) => row.name === strings.categories.folder)!.buttons[0]!.buttonEl;
+    expect(button.textContent).toBe(strings.noIcon);
+    expect(button.hasClass("fce-icon-none")).toBe(true);
   });
 
   it.each([false, true])("updates legacy visibility without refreshDomState or rebuilding controls (1.13 API: %s)", async (supportsNativeApi) => {

@@ -1,3 +1,4 @@
+import type { IconSettings, IconSpec } from "../icon-config";
 import type { NavigationSorting } from "../navigation-sorting";
 import type { FolderSiblingOrders } from "../folder-sibling-orders";
 import {
@@ -83,7 +84,7 @@ export interface NavigationBoxSource {
   cardCount: number;
 }
 
-export interface NavigationProjectionInput {
+export interface NavigationProjectionInput extends IconSettings {
   hiddenFolderPaths?: readonly string[];
   hiddenTagPaths?: readonly string[];
   hiddenNavSections?: readonly NavSectionId[];
@@ -140,6 +141,7 @@ interface NavigationRowBase {
   fullPath: string | null;
   count: number;
   icon: string | null;
+  contentIcon?: IconSpec;
   menuTarget: NavigationMenuTarget;
 }
 
@@ -255,6 +257,7 @@ export const EMPTY_NAVIGATION_PROJECTION: NavigationProjection = {
 };
 
 export type NavigationIntent =
+  | { type: "change-icon"; rowId: string; anchor: HTMLElement }
   | { type: "quick-input"; win: Window }
   | { type: "template-command"; command: "new" }
   | { type: "filter-toggle" }

@@ -68,6 +68,10 @@ export interface NavMenuActions {
   filterByOnlyPropertyValue: (key: string, ref: PropertyScalarRef) => void;
 }
 export interface NavMenuDeps {
+  shouldRestoreFocus?: () => boolean;
+  appendIconMenu?: (menu: Menu, payload: NavContextMenuPayload, options?: { separatorBefore?: boolean }) => boolean;
+  /** Bound to the current payload by the menu opener; builders place icon items beside personalization items. */
+  appendIconItems?: (menu: Menu) => void;
   appendTouchOrderMenu?: (menu: Menu, originId: string) => void;
   strings: UiStrings;
   /** Browse Tag filter capability; Tag menus filter only when enabled (C6). */
@@ -209,6 +213,7 @@ function buildRootFolderItemMenu(menu: Menu, deps: NavMenuDeps): boolean {
   appendFolderNameOrder(menu, deps, "");
   menu.addSeparator();
   addItem(menu, navMenu.findInFolder, "search", () => deps.actions.findInFolder("/"));
+  deps.appendIconItems?.(menu);
   if (deps.canRevealInSystemExplorer ?? deps.canResolveSystemPath) {
     addItem(menu, navMenu.revealInSystemExplorer, "folder-symlink", () =>
       deps.actions.revealInSystemExplorer(""),
@@ -230,6 +235,7 @@ function buildFolderItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boo
   addItem(menu, navMenu.findInFolder, "search", () => deps.actions.findInFolder(itemId));
   appendFavoriteToggleItem(menu, deps, "folder", itemId);
   addItem(menu, deps.strings.navigationVisibility.hideFolder, "eye-off", () => deps.actions.hideFolder(itemId));
+  deps.appendIconItems?.(menu);
 
   menu.addSeparator();
   appendCopyPathItem(menu, deps, itemId);
@@ -330,6 +336,7 @@ function buildTagItemMenu(
   addItem(menu, navMenu.copyTag, "clipboard-copy", () => deps.actions.copyTag(itemId));
   appendFavoriteToggleItem(menu, deps, "tag", itemId);
   addItem(menu, deps.strings.navigationVisibility.hideTag, "eye-off", () => deps.actions.hideTag(itemId));
+  deps.appendIconItems?.(menu);
 
   menu.addSeparator();
   addItem(menu, navMenu.renameTag, "pencil", () => deps.actions.renameTag(itemId));
@@ -384,6 +391,7 @@ function buildBoxItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boolea
   }
 
   appendFavoriteToggleItem(menu, deps, "box", itemId);
+  deps.appendIconItems?.(menu);
 
   menu.addSeparator();
   addItem(menu, box.duplicate, "copy", () => deps.actions.boxCommand("duplicate", itemId));

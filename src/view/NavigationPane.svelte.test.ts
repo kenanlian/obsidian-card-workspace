@@ -25,8 +25,10 @@ function projection(
   sectionOrder = defaultNavSectionOrder(),
   linksDisabled = true,
   browseFiltersDisabled = false,
+  icons: Pick<Parameters<typeof projectNavigation>[0], "iconDefaults" | "iconOverrides"> = {},
 ) {
   return projectNavigation({
+    ...icons,
     query,
     scope: browseFiltersDisabled
       ? { kind: "box", boxId: "box-1" }
@@ -867,6 +869,17 @@ describe("NavigationPane projected ARIA tree", () => {
       { type: "reveal-consumed", token: 6 },
       { type: "reveal-consumed", token: 8 },
     ]);
+  });
+
+  it("omits the identity icon for rows whose content icon is none", async () => {
+    render({ nav: nav({ projection: projection("", defaultNavSectionOrder(), true, false, {
+      iconDefaults: { folder: { kind: "none", value: "" } },
+    }) }) });
+    await tick();
+
+    expect(findRow("folder:notes").querySelector(".fce-tree-item-identity")).toBeNull();
+    expect(findRow("folder:notes").querySelector(".fce-tree-label")?.textContent).toBe("notes");
+    expect(findRow("tag:work").querySelector(".fce-tree-item-identity")).not.toBeNull();
   });
 
   it("renders property key and value rows inside the single navigation tree", async () => {

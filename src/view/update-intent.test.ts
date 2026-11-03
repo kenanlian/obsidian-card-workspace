@@ -54,6 +54,10 @@ function createSettings(): PluginSettings {
  * covered by its own case below.
  */
 const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
+  iconDefaults: "patch",
+  iconOverrides: "patch",
+  recentIcons: "patch",
+  emojiSkinTone: "patch",
   fileVisibility: "reload",
   sort: "reproject",
   linksSort: "reproject",
@@ -123,6 +127,10 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "includeSubfolders": settings.includeSubfolders = !settings.includeSubfolders; break;
     // The current union has one member. An out-of-domain value still exercises
     // the resolver comparison and keeps this key in the exhaustive contract.
+    case "iconDefaults": settings.iconDefaults = { folder: { kind: "emoji", value: "📂" } }; break;
+    case "iconOverrides": settings.iconOverrides = { '["folder",""]': { kind: "emoji", value: "📂" } }; break;
+    case "recentIcons": settings.recentIcons = [{ kind: "emoji", value: "📂" }]; break;
+    case "emojiSkinTone": settings.emojiSkinTone = "🏽"; break;
     case "defaultView": settings.defaultView = "changed" as DefaultViewMode; break;
     case "defaultCardOpenBehavior": settings.defaultCardOpenBehavior = "new-tab"; break;
     case "locateLinkCardOnOpen": settings.locateLinkCardOnOpen = !settings.locateLinkCardOnOpen; break;

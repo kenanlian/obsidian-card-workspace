@@ -1,3 +1,4 @@
+import { iconStrings } from "./icons";
 import { mobileStrings } from "./mobile";
 import { cardBackgroundStrings } from "./cardBackground";
 export { cardBackgroundStrings } from "./cardBackground";
@@ -53,6 +54,7 @@ export function isChineseLanguage(language: string = safeGetLanguage()): boolean
 }
 
 const EN: UiStrings = {
+  icons: iconStrings.en,
   mobile: mobileStrings.en,
   cardBackground: cardBackgroundStrings("en"),
   navigationVisibility: navigationVisibilityStrings.en,
@@ -74,6 +76,7 @@ const EN: UiStrings = {
 };
 
 const ZH: UiStrings = {
+  icons: iconStrings.zh,
   mobile: mobileStrings.zh,
   cardBackground: cardBackgroundStrings("zh"),
   navigationVisibility: navigationVisibilityStrings.zh,

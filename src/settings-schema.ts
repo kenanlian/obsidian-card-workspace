@@ -23,6 +23,10 @@ export type SettingsLayer = "preferences" | "workspace" | "userData";
  */
 export const SETTINGS_LAYER_BY_KEY = {
   // preferences layer
+  iconDefaults: "preferences",
+  iconOverrides: "userData",
+  recentIcons: "userData",
+  emojiSkinTone: "preferences",
   fileVisibility: "preferences",
   sort: "preferences",
   linksSort: "preferences",

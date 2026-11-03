@@ -43,6 +43,7 @@ export function buildPropertiesHeaderMenu(menu: Menu, deps: NavMenuDeps): boolea
 /** Property-key item menu: visibility and sorting of this key's scalar values. */
 export function buildPropertyKeyMenu(menu: Menu, deps: NavMenuDeps, key: string): boolean {
   addItem(menu, deps.strings.property.hideThisProperty, "eye-off", () => deps.actions.hideProperty(key));
+  deps.appendIconItems?.(menu);
   menu.addSeparator();
   appendNavigationSortItems(menu, deps, { kind: "property-values", key });
   return true;

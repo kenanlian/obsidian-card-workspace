@@ -213,6 +213,11 @@ export const Platform = {
   isWin: false,
 };
 
+export function getIconIds(): string[] { return ["file", "file-text", "folder", "house", "tag", "box", "star", "list", "dot", "file-plus-2", "links-coming-in", "links-going-out", "heart", "sun", "moon"]; }
+export function getIcon(icon: string): SVGSVGElement | null {
+  if (icon === "missing-icon") return null;
+  return typeof document === "undefined" ? {} as SVGSVGElement : document.createElementNS("http://www.w3.org/2000/svg", "svg");
+}
 export function setIcon(el: Element, icon: string): void {
   el.setAttribute("data-icon", icon);
 }

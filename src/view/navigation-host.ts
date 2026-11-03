@@ -40,6 +40,7 @@ export function buildNavigationPanelState(input: {
   const { settings, strings, scope, navLayout } = input;
   const sectionCollapsed = settings.sectionCollapsed;
   const projection = navLayout.project({
+    iconDefaults: settings.iconDefaults, iconOverrides: settings.iconOverrides,
     scope,
     activeTags: settings.filter.tags,
     selectedPath: input.selectedPath,
@@ -149,6 +150,7 @@ export function isCurrentNavigationMenuTarget(input: {
 }): boolean {
   const { payload, settings } = input;
   if (payload.scope === "header") return payload.originId === `section:${payload.section}`;
+  if (payload.section === "links") return payload.itemId === "backlinks" || payload.itemId === "outgoing";
   if (payload.section === "templates") {
     return typeof payload.itemId === "string" && settings.noteTemplates.some((template) => template.id === payload.itemId);
   }
@@ -190,6 +192,7 @@ export function openNavigationContextMenu(input: {
   let focusReturnId = payload.originId;
   const menuDeps: NavMenuDeps = {
     ...deps,
+    appendIconItems: deps.appendIconMenu ? (target) => { deps.appendIconMenu?.(target, payload); } : undefined,
     actions: {
       ...deps.actions,
       revealActiveFileFolder: () => {
@@ -203,9 +206,12 @@ export function openNavigationContextMenu(input: {
       },
     },
   };
-  if (!buildNavContextMenu(menu, payload, menuDeps)) return;
+  const built = buildNavContextMenu(menu, payload, menuDeps);
+  // Menus without a personalization group (links, templates, filter-less values) take icon items last.
+  const iconItems = deps.appendIconMenu?.(menu, payload, { separatorBefore: built }) ?? false;
+  if (!built && !iconItems) return;
   deps.appendTouchOrderMenu?.(menu, payload.originId);
-  menu.onHide(() => input.restoreFocus(focusReturnId));
+  menu.onHide(() => { if (deps.shouldRestoreFocus?.() !== false) input.restoreFocus(focusReturnId); });
   if (trigger.kind === "pointer") menu.showAtMouseEvent(trigger.mouseEvent);
   else menu.showAtPosition(trigger.position);
   const menuDom = getMenuDom(menu);
@@ -236,6 +242,7 @@ export function routeNavigationIntent(input: {
   reorderFavorites?: (source: FavoriteEntry, target: FavoriteEntry, position: "before" | "after") => void;
 }): void {
   const { intent, navLayout } = input;
+  if (intent.type === "change-icon") return;
   if (intent.type === "quick-input") { if (!navLayout.isDisposed()) input.openQuickInput?.(intent.win); return; }
   if (intent.type === "template-command") { if (!navLayout.isDisposed()) input.templateCommand?.(intent.command); return; }
   if (intent.type === "filter-toggle") { navLayout.toggleFilter(); return; }

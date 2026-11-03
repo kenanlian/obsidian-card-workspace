@@ -1,3 +1,4 @@
+import { navigationIconTarget } from "./content-icon-target";
 import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
 import { RuntimeWorkGate } from "../runtime/work-gate";
 import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
@@ -127,7 +128,9 @@ export class FolderCardView extends ItemView implements HoverParent {
       },
       publishSelection: () => this.publishGroups("bulk", "cards"),
       publishHydration: () => this.publishGroups("cards"),
+      getIconAnchor: () => this.hostEl ?? this.containerEl,
       publishLoadStart: (scopeChanged) => {
+        if (scopeChanged) this.modules.iconActions.close();
         if (scopeChanged && this.navigation) {
           const anchor = this.readingPosition?.capture();
           if (anchor) { this.historyAnchors.set(scopeIdentity(this.cardScope), anchor); if (this.historyAnchors.size > 32) this.historyAnchors.delete(this.historyAnchors.keys().next().value!); }
@@ -511,6 +514,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
     this.modules.cardBackgroundActions.dispose();
+    this.modules.iconActions.dispose();
     const searchReport = this.modules.search.dispose();
     const hydrationReport = this.modules.hydration.dispose();
     this.modules.metadataImpact.dispose();
@@ -558,15 +562,27 @@ export class FolderCardView extends ItemView implements HoverParent {
     });
     openNavigationContextMenu({
       payload, disposed: this.modules.navLayout.isDisposed(), targetCurrent,
-      deps: buildNavMenuDepsFor({
+      deps: { ...buildNavMenuDepsFor({
         context: this.context, modules: this.modules,
         onIncludeSubfoldersChange: (detail) => this.onIncludeSubfoldersChange(detail),
-      }),
+      }), shouldRestoreFocus: () => !this.modules.iconActions.hasOpenSession(), appendIconMenu: (menu, payload, options) => {
+        const target = navigationIconTarget(payload as import("./navigation-model").NavigationMenuTarget);
+        if (!target) return false;
+        const anchor = Array.from(this.hostEl?.querySelectorAll<HTMLElement>("[data-nav-row-id]") ?? []).find(el => el.dataset.navRowId === payload.originId) ?? this.hostEl ?? this.containerEl;
+        const position = payload.trigger.kind === "position" ? payload.trigger.position : { x: payload.trigger.mouseEvent.clientX, y: payload.trigger.mouseEvent.clientY };
+        return this.modules.iconActions.appendMenu(menu, target, anchor, position, options);
+      } },
       restoreFocus: (originId) => this.modules.navLayout.restoreFocus(originId),
     });
   }
 
   handleNavigationIntent(intent: NavigationIntent): void {
+    if (intent.type === "change-icon") {
+      const row = this.modules.navLayout.getProjection().rows.find(row => row.id === intent.rowId);
+      const target = row ? navigationIconTarget(row.menuTarget) : null;
+      if (target) this.modules.iconActions.open(target, intent.anchor);
+      return;
+    }
     routeNavigationIntent({
       intent, navLayout: this.modules.navLayout, scope: this.cardScope,
       activeTags: this.plugin.getSettings().filter.tags,
@@ -680,6 +696,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private buildAppearanceGroup(): PanelModelState["appearance"] {
     const settings = this.plugin.getSettings();
     return {
+      iconDefaults: settings.iconDefaults, iconOverrides: settings.iconOverrides,
       cardCornerRadius: settings.cardCornerRadius,
       previewLines: settings.previewLines,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,

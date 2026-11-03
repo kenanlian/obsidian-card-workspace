@@ -21,6 +21,7 @@ export interface LocalizedOption<TValue extends string = string> {
 }
 
 export interface UiStrings {
+  icons: import("./icons").IconStrings;
   mobile: import("./mobile").MobileStrings;
   cardBackground: ReturnType<typeof import("./cardBackground").cardBackgroundStrings>;
   navigationVisibility: import("./navigationVisibility").NavigationVisibilityStrings;

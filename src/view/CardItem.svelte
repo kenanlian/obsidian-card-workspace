@@ -3,6 +3,8 @@
 </script>
 
 <script lang="ts">
+  import { contentIcon, renderContentIcon } from "../icon-render";
+  import { resolveContentIcon } from "../icon-config";
   import { touchMenu } from "./touch-menu";
   import { onDestroy } from "svelte";
   import type { CardImageState } from "../images/types";
@@ -52,6 +54,7 @@
     onOpenNote?: (payload: OpenNotePayload) => void;
     onToggleReferences?: (payload: { path: string }) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
+    onCardIcon?: (payload: { path: string; anchor: HTMLElement }) => void;
     onCardContextMenu?: (payload: CardContextMenuPayload) => void;
     onPinToggle?: (payload: PinTogglePayload) => void;
     onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
@@ -80,6 +83,7 @@
     onOpenNote,
     onToggleReferences,
     onBulkSelectCard,
+    onCardIcon,
     onCardContextMenu,
     onPinToggle,
     onCardHoverLink,
@@ -88,6 +92,7 @@
     previewHtmlSanitizer = sanitizePreviewHtml,
   }: CardItemProps = $props();
 
+  const resolvedIcon = $derived(resolveContentIcon(appearance, { kind: "file", ref: card.path }, getCardFileIcon(card.fileKind)));
   const cardStrings = $derived(strings.cardItem);
   const fileKindStrings = $derived(strings.fileKind);
   const cardCornerRadius = $derived(appearance.cardCornerRadius);
@@ -266,10 +271,12 @@
     const self = doc.createElement("div");
     self.className = "fce-card-drag-ghost-self";
 
-    const icon = doc.createElement("span");
-    icon.className = "fce-card-drag-ghost-icon";
-    icon.setAttribute("aria-hidden", "true");
-    setIcon(icon, getCardFileIcon(card.fileKind));
+    const icon = resolvedIcon.kind === "none" ? null : doc.createElement("span");
+    if (icon) {
+      icon.className = "fce-card-drag-ghost-icon";
+      icon.setAttribute("aria-hidden", "true");
+      renderContentIcon(icon, { spec: resolvedIcon, fallback: getCardFileIcon(card.fileKind) });
+    }
 
     const title = doc.createElement("span");
     title.className = "fce-card-drag-ghost-title";
@@ -279,7 +286,8 @@
     action.className = "fce-card-drag-ghost-action";
     action.textContent = cardStrings.dragInsert;
 
-    self.append(icon, title);
+    if (icon) self.append(icon);
+    self.append(title);
     ghost.append(self, action);
 
     return ghost;
@@ -568,8 +576,17 @@
 >
   <div class="fce-card-body" class:has-right-image={showImage && imageMode === "right"} class:has-reference-preview={inlineReferences} class:has-reference-details={!!showReferenceList || !!canToggleReferences}>
     <div class="fce-card-header">
-      <div class="fce-card-title-group" role="presentation" onmouseenter={emitCardHoverLink}>
-        <span class="fce-card-file-icon" aria-hidden="true" data-file-kind={card.fileKind} use:applyIcon={getCardFileIcon(card.fileKind)}></span>
+      <div class="fce-card-title-group" role="presentation">
+        {#if resolvedIcon.kind !== "none"}
+        <button type="button" class="fce-card-file-icon fce-content-icon-button" aria-label={strings.icons.change}
+          data-file-kind={card.fileKind} draggable="false"
+          onpointerdown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+          ondragstart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+          onkeydown={(event) => event.stopPropagation()}
+          onclick={(event) => { event.preventDefault(); event.stopPropagation(); onCardIcon?.({ path: card.path, anchor: event.currentTarget }); }}
+          use:contentIcon={{ spec: resolvedIcon, fallback: getCardFileIcon(card.fileKind) }}></button>
+        {/if}
+        <div class="fce-card-title-text" role="presentation" onmouseenter={emitCardHoverLink}>
         {#if attachment && fileExtension}<span class="fce-card-extension">{fileExtension.toUpperCase()}</span>{/if}
         <h4>{#each highlightedTitleSegments as segment, index (index)}{#if segment.highlighted}<mark class="fce-search-hit">{segment.text}</mark>{:else}{segment.text}{/if}{/each}</h4>
         {#if card.referenceCount !== undefined}
@@ -583,6 +600,7 @@
               {cardStrings.searchCount(searchMatchCount)}
             </span>
         {/if}
+        </div>
       </div>
       <div class="fce-card-actions">
         {#if bulkMode}

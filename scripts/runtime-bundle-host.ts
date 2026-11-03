@@ -4,6 +4,7 @@ export { moment };
 export * from "../src/__mocks__/obsidian";
 import { TFile, TFolder } from "../src/__mocks__/obsidian";
 import { installObsidianDomHelpers } from "../src/__mocks__/obsidian-dom";
+export { installObsidianDomHelpers };
 
 export const Platform = { isTablet: false, isDesktopApp: false, isMacOS: false, isWin: false };
 export const requireApiVersion = () => false;
@@ -48,6 +49,7 @@ export class Modal {
 export class PluginSettingTab { containerEl = document.createElement("div"); constructor(_app: unknown, _plugin: unknown) { document.body.append(this.containerEl); } }
 class Control {
   inputEl = document.createElement("input"); buttonEl = document.createElement("button");
+  get extraSettingsEl() { return this.buttonEl; }
   constructor(container: HTMLElement) { container.append(this.inputEl, this.buttonEl); }
   setValue(value: unknown) { this.inputEl.value = String(value); return this; }
   setPlaceholder(value: string) { this.inputEl.placeholder = value; return this; }

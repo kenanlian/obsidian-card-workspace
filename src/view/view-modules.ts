@@ -1,3 +1,4 @@
+import { IconActions } from "./actions/icon-actions";
 import { CardBackgroundActions } from "./actions/card-background-actions";
 import { TemplateActions } from "./actions/template-actions";
 import { ScopeNoteActions } from "./actions/scope-note-actions";
@@ -39,6 +40,7 @@ import { resolveViewConfig } from "./view-config";
  * function so `createViewModules` can run before the view finishes constructing.
  */
 export interface ViewModuleHost {
+  getIconAnchor?: () => HTMLElement;
   onScopeCommitted?: (scope: import("./scope").CardScope, recordHistory: boolean) => void;
   appendMobileInsertMenu?: (menu: import("obsidian").Menu, path: string) => void;
   flushSettings?: () => Promise<void>;
@@ -71,6 +73,7 @@ export interface ViewModuleHost {
 }
 
 export interface ViewModules {
+  iconActions: IconActions;
   projection: ProjectionController;
   groupCollapse: GroupCollapseController;
   hydration: HydrationController;
@@ -125,6 +128,7 @@ export function createModuleConstructionGate(): {
 
 /** Builds and cross-wires every controller and action module for one view. */
 export function createViewModules(context: ViewContext, host: ViewModuleHost): ViewModules {
+  const iconActions = new IconActions(context, host.flushSettings ?? (() => Promise.resolve()), () => host.getIconAnchor?.() ?? document.body);
   // Controllers are constructed before actions because actions reach into them
   // for scope loads and selection; every dependency is a function, so the
   // declaration order below does not have to match the call order at runtime.
@@ -380,6 +384,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
         void arrangementActions.onPinToggle({ path, pinned: !pinned });
       }));
     },
+    appendIconMenu: (menu, path, anchor, position) => iconActions.appendMenu(menu, { kind: "file", ref: path }, anchor, position),
     appendBackgroundMenu: (menu, path) => cardBackgroundActions.appendMenu(menu, path),
     resolveLiveMarkdownFile: (path) => fileActions.resolveLiveMarkdownFile(path),
     isBoxMode: () => boxActions.isBoxMode(),
@@ -477,6 +482,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   gate.markAssembled();
 
   return {
+    iconActions,
     projection,
     groupCollapse,
     hydration,

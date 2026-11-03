@@ -1,3 +1,6 @@
+import { rewriteTagIconOverrides } from "../../icon-config";
+import { closeIconPickersForTarget } from "../../icon-picker/IconPicker";
+import { isPathAtOrBelow } from "../../path-references";
 import { navigationSortingEqual, rewriteNavigationTagSorting } from "../../navigation-sorting";
 import { rewriteHiddenTagsAfterRename } from "../../navigation-visibility";
 import { tagPathIsOrUnder } from "../tag-tree";
@@ -94,6 +97,10 @@ export class TagManagementActions {
     }
 
     const summary = await batchRenameTagInFiles(this.deps.context.getApp(), scan.files, from, to);
+    const iconOverrides = this.deps.context.getSettings().iconOverrides ?? {};
+    const iconChanged = summary.failed.length === 0 || summary.changed.length > 0;
+    if (iconChanged) closeIconPickersForTarget(target => target.kind === "tag" && isPathAtOrBelow(target.ref, from));
+    const nextIcons = iconChanged ? rewriteTagIconOverrides(iconOverrides, from, to, summary.failed.length > 0) : iconOverrides;
     const hidden = this.deps.context.getSettings().hiddenTagPaths;
     const hiddenTagPaths = summary.failed.length > 0 && summary.changed.length === 0 ? hidden
       : rewriteHiddenTagsAfterRename(hidden, from, to, summary.failed.length > 0);
@@ -102,6 +109,7 @@ export class TagManagementActions {
     const navigationSorting = summary.failed.length > 0 && summary.changed.length === 0 ? sorting
       : rewriteNavigationTagSorting(sorting, from, to, summary.failed.length > 0);
     await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForRename(refs, from, to), {
+      ...(nextIcons !== iconOverrides ? { iconOverrides: nextIcons } : {}),
       ...(hiddenChanged ? { hiddenTagPaths } : {}),
       ...(!navigationSortingEqual(sorting, navigationSorting) ? { navigationSorting } : {}),
     });
@@ -141,10 +149,14 @@ export class TagManagementActions {
     }
 
     const summary = await batchRemoveTagsFromFiles(this.deps.context.getApp(), scan.files, [target]);
+    if (summary.failed.length === 0) closeIconPickersForTarget(icon => icon.kind === "tag" && isPathAtOrBelow(icon.ref, target));
+    const iconOverrides = this.deps.context.getSettings().iconOverrides ?? {};
     const sorting = this.deps.context.getSettings().navigationSorting;
+    const nextIcons = summary.failed.length === 0 ? rewriteTagIconOverrides(iconOverrides, target, null) : iconOverrides;
     const navigationSorting = summary.failed.length > 0 ? sorting : rewriteNavigationTagSorting(sorting, target, null);
     await this.persistTagReferenceRewrite((refs) => rewriteTagReferencesForDelete(refs, target),
-      !navigationSortingEqual(sorting, navigationSorting) ? { navigationSorting } : {});
+      { ...(nextIcons !== iconOverrides ? { iconOverrides: nextIcons } : {}),
+        ...(!navigationSortingEqual(sorting, navigationSorting) ? { navigationSorting } : {}) });
     this.notifyTagMutationSummary(
       summary,
       (count) => strings.removed(target, count),

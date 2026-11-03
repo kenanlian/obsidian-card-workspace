@@ -1,3 +1,5 @@
+import { resolveContentIcon } from "../icon-config";
+import { navigationIconTarget } from "./content-icon-target";
 import { normalizeNavigationSorting, orderNavigationItems, resolveNavigationSort, type NavigationSorting } from "../navigation-sorting";
 import { orderFolderSiblings, type FolderSiblingOrders } from "../folder-sibling-orders";
 import { pruneHiddenNavigationTree } from "../navigation-visibility";
@@ -400,7 +402,10 @@ export function projectNavigation(input: NavigationProjectionInput): NavigationP
     normalizedQuery,
     querying,
     sections,
-    rows,
+    rows: rows.map(row => {
+      const target = navigationIconTarget(row.menuTarget);
+      return target && row.icon !== null ? { ...row, contentIcon: resolveContentIcon(input, target, row.icon) } : row;
+    }),
     noResults: querying && visibleSectionIds.length === 0,
     ...(normalizeNavSectionOrder(input.sectionOrder).every((section) => input.hiddenNavSections?.includes(section))
       ? { allSectionsHidden: true } : {}),
