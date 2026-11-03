@@ -1392,7 +1392,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 
 .folder-card-view .fce-shell[data-fce-card-style="accent-bar"] .fce-card {
-  border-left-width: 3px;
+  border-left-width: 4px;
   border-left-color: color-mix(in srgb, var(--fce-accent) 55%, transparent);
 }
 
