@@ -2773,8 +2773,24 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   opacity: 1;
   font-size: calc(var(--icon-size, 18px) * 0.85);
 }
+.fce-icon-setting-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--input-height, 32px);
+  min-width: var(--input-height, 32px);
+  height: var(--input-height, 32px);
+  padding: 0;
+  line-height: 1;
+}
 .fce-icon-setting-button.fce-emoji-icon { font-size: 16px; }
-.fce-icon-setting-button.fce-icon-none { color: var(--text-muted); font-size: var(--font-ui-small, 13px); }
+.fce-icon-setting-button.fce-icon-none {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 13px);
+  white-space: normal;
+}
 .fce-icon-setting-reset.fce-is-hidden { display: none; }
 
 .fce-icon-picker {
