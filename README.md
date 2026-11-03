@@ -8,8 +8,6 @@ Each Markdown card shows a title and a lightweight content preview, so a set of 
 
 Documentation: [card-workspace](https://kenanlian.github.io/card-workspace/en/).
 
-![Card Workspace demo](screenshots/2026_09_22_19_36_27.jpg)
-
 ![Eight Card Workspace appearance combinations in two columns: default cards, minimal outlines, accent bars, flat cards, and lists](screenshots/card-looks-en.png)
 
 ## Table of contents

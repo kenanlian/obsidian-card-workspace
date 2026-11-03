@@ -8,8 +8,6 @@ Card Workspace 是一款支持**输入、汇集、整理、重构**的 [Obsidian
 
 使用文档：[card-workspace](https://kenanlian.github.io/card-workspace/zh/)。
 
-![Card Workspace 演示](screenshots/2026_09_22_19_36_27.jpg)
-
 ![Card Workspace 两列四行外观展示：默认卡片、极简边框、左侧强调条、扁平卡片与列表的八种组合](screenshots/card-looks-zh.png)
 
 ## 目录
