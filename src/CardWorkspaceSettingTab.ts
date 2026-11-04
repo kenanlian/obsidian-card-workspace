@@ -5,7 +5,7 @@ import { resolveRuntimeOpenBehavior } from "./runtime/capabilities";
 import { isCardBackgroundColor } from "./card-background";
 import { cardBackgroundStrings } from "./i18n";
 import {
-  PluginSettingTab, SettingGroup, Notice, requireApiVersion, type App, type Setting,
+  PluginSettingTab, SettingGroup, Notice, requireApiVersion, Setting, type App, type SettingDefinitionItem,
 } from "obsidian";
 import {
   getCardCornerRadiusOptions,
@@ -58,6 +58,7 @@ import { collectNavigationVisibilityPaths } from "./navigation-visibility-invent
 import { NAVIGATION_SECTION_ORDER } from "./view/navigation-model";
 import { normalizeHiddenNavSections } from "./navigation-visibility";
 import { captureQuickInputAccelerator } from "./input/QuickInputShortcut";
+import type { SettingsPageId } from "./i18n/settingTab";
 import type CardWorkspacePlugin from "./main";
 import { isFileVisibility } from "./file-visibility";
 
@@ -68,12 +69,13 @@ type WorkspaceSettingControl =
   | { type: "toggle"; key: string }
   | { type: "slider"; key: string; min: number; max: number; step: number };
 type WorkspaceSettingDefinition = {
+  id?: string;
   name: string;
   desc?: string;
   visible?: boolean | (() => boolean);
 } & (
   | { control: WorkspaceSettingControl; render?: never }
-  | { control?: never; render: (setting: Setting, group: SettingGroup) => void }
+  | { control?: never; render: (setting: Setting, group: SettingGroup) => void | (() => void) }
 );
 const ICON_CATEGORY_GROUPS: ReadonlyArray<{ heading: "navigationHeading" | "cardsHeading"; categories: readonly IconCategory[] }> = [
   { heading: "navigationHeading", categories: ["folder", "tag", "property", "property-value", "box", "backlinks", "outgoing", "template"] },
@@ -84,6 +86,8 @@ type WorkspaceSettingGroup = {
   heading?: string;
   items: WorkspaceSettingDefinition[];
 };
+
+type WorkspaceSettingsPage = { id: SettingsPageId; name: string; desc: string; groups: WorkspaceSettingGroup[] };
 
 function optionRecord(options: readonly { value: string; label: string }[]): Record<string, string> {
   return Object.fromEntries(options.map((option) => [option.value, option.label]));
@@ -174,7 +178,26 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
 export class CardWorkspaceSettingTab extends PluginSettingTab {
   private plugin: CardWorkspacePlugin;
   private readonly legacyVisibility = new Map<HTMLElement, () => boolean>();
-  private readonly folderSuggests = new Set<ReturnType<typeof attachFolderInputSuggest>>();
+  private readonly rowCleanups = new Set<() => void>();
+  private landingScrollTop = 0;
+
+  private trackCleanup(cleanup: () => void): () => void {
+    let active = true;
+    const dispose = () => {
+      if (!active) return;
+      active = false;
+      this.rowCleanups.delete(dispose);
+      cleanup();
+    };
+    this.rowCleanups.add(dispose);
+    return dispose;
+  }
+
+  private clearPage(): void {
+    for (const cleanup of [...this.rowCleanups]) cleanup();
+    this.legacyVisibility.clear();
+    this.containerEl.empty();
+  }
 
   constructor(app: App, plugin: CardWorkspacePlugin) {
     super(app, plugin);
@@ -262,12 +285,62 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     }
   }
 
-  /** Obsidian 1.13+ renders definitions directly and skips this legacy entry point. */
+  /** Older hosts use the same page inventory with imperative navigation. */
   display(): void {
-    this.disposeFolderSuggests();
-    this.containerEl.empty();
-    this.legacyVisibility.clear();
-    for (const definition of this.getSettingDefinitions()) {
+    this.landingScrollTop = 0;
+    this.renderLanding();
+  }
+
+  private renderLanding(returnTo?: SettingsPageId): void {
+    this.clearPage();
+    const group = new SettingGroup(this.containerEl);
+    for (const page of this.getSettingsPages()) {
+      group.addSetting(setting => {
+        setting.setName(page.name).setDesc(page.desc);
+        setting.settingEl.addClass("fce-settings-page-link");
+        setting.settingEl.tabIndex = 0;
+        setting.settingEl.setAttribute("role", "button");
+        setting.settingEl.setAttribute("aria-label", page.name);
+        const open = () => {
+          this.landingScrollTop = this.containerEl.scrollTop;
+          this.renderLegacyPage(page.id);
+        };
+        setting.addExtraButton(button => button.setIcon("chevron-right").setTooltip(page.name).onClick(open));
+        const click = (event: MouseEvent) => {
+          if ((event.target as HTMLElement).closest("button, input, select, textarea, a, .clickable-icon")) return;
+          open();
+        };
+        const keydown = (event: KeyboardEvent) => {
+          if (event.target !== setting.settingEl || (event.key !== "Enter" && event.key !== " ")) return;
+          event.preventDefault(); open();
+        };
+        setting.settingEl.addEventListener("click", click);
+        setting.settingEl.addEventListener("keydown", keydown);
+        this.trackCleanup(() => {
+          setting.settingEl.removeEventListener("click", click);
+          setting.settingEl.removeEventListener("keydown", keydown);
+        });
+        if (returnTo === page.id) setting.settingEl.focus();
+      });
+    }
+    this.containerEl.scrollTop = this.landingScrollTop;
+  }
+
+  private renderLegacyPage(id: SettingsPageId): void {
+    const page = this.getSettingsPages().find(page => page.id === id);
+    if (!page) return;
+    this.clearPage();
+    new Setting(this.containerEl).setName(page.name).setHeading().addExtraButton(button => {
+      const back = getSettingTabStrings(this.plugin.getUiLanguage()).back;
+      button.setIcon("chevron-left").setTooltip(back).onClick(() => this.renderLanding(id));
+      button.extraSettingsEl.setAttribute("aria-label", back);
+    });
+    this.renderLegacyGroups(page.groups);
+    this.containerEl.scrollTop = 0;
+  }
+
+  private renderLegacyGroups(definitions: WorkspaceSettingGroup[]): void {
+    for (const definition of definitions) {
       const group = new SettingGroup(this.containerEl);
       if (definition.heading) {
         group.setHeading(definition.heading);
@@ -322,15 +395,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     }
   }
 
-  private readonly iconPickers = new Set<IconPicker>();
-  hide(): void { this.disposeFolderSuggests(); }
-  private disposeFolderSuggests(): void {
-    this.iconPickers.forEach(picker => picker.close(false));
-    this.shortcutCleanups.splice(0).forEach((cleanup) => cleanup());
-    this.folderSuggests.forEach((suggest) => suggest.dispose()); this.folderSuggests.clear();
+  hide(): void {
+    for (const cleanup of [...this.rowCleanups]) cleanup();
+    this.legacyVisibility.clear();
+    this.landingScrollTop = 0;
   }
 
-  private renderQuickInputShortcutSetting(setting: Setting, strings: NoteInputStrings): void {
+  private renderQuickInputShortcutSetting(setting: Setting, strings: NoteInputStrings): () => void {
     setting.settingEl.addClass("fce-shortcut-setting");
     let draft = this.plugin.getSettings().quickInputGlobalShortcut;
     let input!: HTMLInputElement;
@@ -362,11 +433,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       status.textContent = [state.active.length ? strings.shortcutActive(state.active.join(", ")) : strings.shortcutInactive,
         state.error ? errors[state.error] : ""].filter(Boolean).join(" · ");
     });
-    this.shortcutCleanups.push(() => { unsubscribe(); input.removeEventListener("keydown", capture); });
+    return this.trackCleanup(() => { unsubscribe(); input.removeEventListener("keydown", capture); });
   }
-  private readonly shortcutCleanups: Array<() => void> = [];
 
-  private renderNoteFolderSetting(setting: Setting, key: "quickInputFolderPath" | "boxNewNoteFolderPath"): void {
+  private renderNoteFolderSetting(setting: Setting, key: "quickInputFolderPath" | "boxNewNoteFolderPath"): () => void {
+    let dispose = () => {};
     setting.addText((text) => {
       text.setValue(String(this.getControlValue(key)) || "/")
         .setPlaceholder("/")
@@ -375,42 +446,48 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         text.setValue(path || "/");
         void this.setControlValue(key, path);
       });
-      this.folderSuggests.add(suggest);
+      dispose = this.trackCleanup(() => suggest.dispose());
     });
+    return dispose;
   }
 
-  private renderTemplateFolderSetting(setting: Setting, strings: NoteInputStrings): void {
+  private renderTemplateFolderSetting(setting: Setting, strings: NoteInputStrings): () => void {
+    let disposed = false;
+    let disposeSuggest = () => {};
     let draft = this.plugin.getSettings().templateStorageFolder ?? DEFAULT_TEMPLATE_STORAGE_FOLDER;
     if (draft === "") draft = "/";
     let pending = false;
     setting.addText((text) => {
       text.setValue(draft).setPlaceholder(DEFAULT_TEMPLATE_STORAGE_FOLDER).onChange((value) => { draft = value; });
       const suggest = attachFolderInputSuggest(this.app, text.inputEl, (path) => { draft = path || "/"; text.setValue(draft); });
-      this.folderSuggests.add(suggest);
+      disposeSuggest = () => suggest.dispose();
       setting.addButton((button) => {
         const apply = async () => {
-          if (pending) return;
+          if (pending || disposed) return;
           pending = true; suggest.close(); text.inputEl.disabled = true;
           button.setDisabled(true).setButtonText(strings.applying);
           try {
             await this.plugin.changeTemplateStorageFolder(draft);
-            draft = this.plugin.getSettings().templateStorageFolder || "/"; text.setValue(draft);
+            if (!disposed) { draft = this.plugin.getSettings().templateStorageFolder || "/"; text.setValue(draft); }
           } catch (error) {
             const reason = error instanceof TemplateStorageError
               ? error.code === "invalid-folder" ? strings.invalidTemplateFolder
                 : error.code === "missing-template" ? `${strings.templateNotFound} ${error.path}`
                   : `${strings.targetConflict} ${error.path}` : String(error);
             new Notice(strings.saveTemplateFailed(reason));
-          } finally { pending = false; text.inputEl.disabled = false; button.setDisabled(false).setButtonText(strings.apply); }
+          } finally { pending = false; if (!disposed) { text.inputEl.disabled = false; button.setDisabled(false).setButtonText(strings.apply); } }
         };
         const submit = () => { void apply(); };
         button.setButtonText(strings.apply).onClick(submit);
         onPlainEnter(text.inputEl, suggest.isOpen, submit);
       });
     });
+    return this.trackCleanup(() => { disposed = true; disposeSuggest(); });
   }
 
-  private renderIconSetting(setting: Setting, category: IconCategory): void {
+  private renderIconSetting(setting: Setting, category: IconCategory): () => void {
+    const pickers = new Set<IconPicker>();
+    let disposed = false;
     const strings = getUiStrings(this.plugin.getUiLanguage()).icons;
     const fallback = builtinCategoryIcon(category);
     const read = (): IconSpec => this.plugin.getSettings().iconDefaults?.[category] ?? { kind: "lucide", value: fallback };
@@ -427,6 +504,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     let iconButton: HTMLElement | null = null;
     let resetButton: HTMLElement | null = null;
     const render = (): void => {
+      if (disposed) return;
       if (iconButton) {
         const spec = read();
         renderContentIcon(iconButton, { spec, fallback });
@@ -439,7 +517,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       button.buttonEl.addClass("fce-icon-setting-button");
       button.buttonEl.setAttribute("aria-label", `${strings.change}: ${strings.categories[category]}`);
       button.onClick(() => {
-        if (closeIconPickerForAnchor(button.buttonEl)) return;
+        if (disposed || closeIconPickerForAnchor(button.buttonEl)) return;
         const picker = new IconPicker({ anchor: button.buttonEl, strings, read, category,
           title: strings.categories[category], subtitle: strings.defaultSubtitle,
           layout: device === "phone" ? "sheet" : "popover", autoFocusSearch: device === "desktop",
@@ -447,12 +525,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           recent: () => this.plugin.getSettings().recentIcons ?? [],
           skinTone: () => this.plugin.getSettings().emojiSkinTone ?? "",
           setSkinTone: tone => { this.plugin.saveSettings({ emojiSkinTone: tone }).catch(error => console.warn("Card Workspace: skin tone save failed", error)); },
-          isValid: () => button.buttonEl.isConnected,
+          isValid: () => !disposed && button.buttonEl.isConnected,
           apply: save,
           retry: () => this.plugin.flushSettings(),
-          onClose: () => this.iconPickers.delete(picker),
+          onClose: () => pickers.delete(picker),
         });
-        this.iconPickers.add(picker);
+        pickers.add(picker);
       });
     });
     setting.addExtraButton(button => {
@@ -463,9 +541,16 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       });
     });
     render();
+    return this.trackCleanup(() => { disposed = true; pickers.forEach(picker => picker.close(false)); pickers.clear(); });
   }
 
-  getSettingDefinitions(): WorkspaceSettingGroup[] {
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    if (!requireApiVersion("1.13.0")) return [];
+    return this.getSettingsPages().map(page => ({ type: "page", name: page.name, desc: page.desc,
+      items: page.groups.map(group => ({ ...group, items: group.items.map(({ id: _id, ...row }) => row) })) }));
+  }
+
+  private getSettingsPages(): WorkspaceSettingsPage[] {
     const language = this.plugin.getUiLanguage();
     const strings = getSettingTabStrings(language);
 
@@ -516,7 +601,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             },
           },
           {
-            name: strings.boxNewNoteFolderName,
+            id: "boxNewNoteFolderPath", name: strings.boxNewNoteFolderName,
             desc: strings.boxNewNoteFolderDesc,
             render: (setting) => this.renderNoteFolderSetting(setting, "boxNewNoteFolderPath"),
           },
@@ -633,6 +718,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             control: { type: "toggle", key: `navSection:${section}` },
           })),
           ...(["folders", "tags"] as const).map((kind): WorkspaceSettingDefinition => ({
+            id: kind === "folders" ? "hiddenFolderPaths" : "hiddenTagPaths",
             name: kind === "folders" ? navigationStrings.manageFolders : navigationStrings.manageTags,
             desc: navigationStrings.description,
             render: (setting) => {
@@ -653,7 +739,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         type: "group",
         heading: inputStrings.quickInputHeading,
         items: [
-          { name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
+          { id: "quickInputFolderPath", name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
             render: (setting) => this.renderNoteFolderSetting(setting, "quickInputFolderPath") },
           { name: inputStrings.quickInputDuplicateTitleName, desc: inputStrings.quickInputDuplicateTitleDesc,
             control: { type: "dropdown", key: "quickInputDuplicateTitle", options: inputStrings.duplicateTitleOptions } },
@@ -679,23 +765,43 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             desc: index === 0 ? inputStrings.visibilityDesc : "",
             control: { type: "toggle", key: `quickInputVisibility.${key}` },
           })),
-          { name: inputStrings.globalShortcutName, desc: inputStrings.globalShortcutDesc,
+          { id: "quickInputGlobalShortcut", name: inputStrings.globalShortcutName, desc: inputStrings.globalShortcutDesc,
             render: (setting) => this.renderQuickInputShortcutSetting(setting, inputStrings) },
         ],
       },
       {
         type: "group", heading: inputStrings.templates,
-        items: [{ name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
+        items: [{ id: "templateStorageFolder", name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
           render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
       },
       ...ICON_CATEGORY_GROUPS.map(({ heading, categories }, groupIndex): WorkspaceSettingGroup => ({ type: "group", heading: getUiStrings(language).icons[heading],
-        items: categories.map((category, index) => ({ name: getUiStrings(language).icons.categories[category],
+        items: categories.map((category, index) => ({ id: `iconDefaults.${category}`, name: getUiStrings(language).icons.categories[category],
           desc: groupIndex === 0 && index === 0 ? getUiStrings(language).icons.description : "",
           render: (setting: Setting) => this.renderIconSetting(setting, category) })) })),
     ];
-    return groups.filter((group) => group.heading !== inputStrings.quickInputHeading || this.plugin.runtimePlatform?.capabilities.quickInput !== false)
-      .map((group) => ({ ...group, items: group.items.filter((item) => ((this.plugin.runtimePlatform?.device ?? "desktop") === "desktop"
-        || (item.name !== inputStrings.globalShortcutName && (!item.control || !["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"].includes(item.control.key))))) }));
+    const rows = new Map(groups.flatMap(group => group.items).map(row => [row.control?.key ?? row.id!, row]));
+    const headings = strings.groups;
+    const group = (heading: string, ids: string[]): WorkspaceSettingGroup => ({ type: "group", heading,
+      items: ids.map(id => rows.get(id)!) });
+    const page = (id: SettingsPageId, groups: WorkspaceSettingGroup[]): WorkspaceSettingsPage => ({ id, ...strings.pages[id], groups });
+    const pages = [
+      page("appearance", [group(headings.text, ["uiFontSize", "uiDensity"]), group(headings.style, ["cardStyle", "cardCornerRadius", "cardBackgroundColor"])]),
+      page("cards-preview", [group(headings.content, ["fileVisibility", "previewLines"]), group(headings.references, ["backlinkSnippetCount", "searchPreviewSnippetCount"]),
+        group(headings.images, ["cardImageMode", "cardImageFit"]), group(headings.hover, ["hoverPreviewWidth", "hoverPreviewHeight"])]),
+      page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
+      page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
+      page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"])]),
+      page("quick-input", [group(headings.saving, ["quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
+        group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
+        group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),
+      page("default-icons", groups.slice(-2)),
+    ];
+    const desktop = (this.plugin.runtimePlatform?.device ?? "desktop") === "desktop";
+    const desktopOnly = new Set(["quickInputGlobalShortcut", "quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]);
+    return pages.filter(page => page.id !== "quick-input" || this.plugin.runtimePlatform?.capabilities.quickInput !== false)
+      .map(page => ({ ...page, groups: page.groups.map(group => ({ ...group,
+        items: group.items.filter(row => desktop || !desktopOnly.has(row.control?.key ?? row.id!)),
+      })).filter(group => group.items.length > 0) }));
   }
 
   private resolveSectionControl(key: string) {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
-import { MockEl, Setting, SettingGroup, groupsIn, settingsIn } from "./__mocks__/obsidian-modal-mock";
+import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem, SettingDefinitionPage } from "obsidian";
+import { MockEl, Setting, SettingGroup, Notice, groupsIn, settingsIn } from "./__mocks__/obsidian-modal-mock";
 
 const mockState = vi.hoisted(() => {
   class MockPluginSettingTab {
@@ -31,6 +31,12 @@ vi.mock("obsidian", async () => ({
 vi.mock("./view/folder-input-suggest", () => ({ attachFolderInputSuggest: vi.fn(() => ({ isOpen: () => false, close: vi.fn(), dispose: vi.fn() })) }));
 vi.mock("./view/metadata-input-suggest", () => ({ onPlainEnter: vi.fn() }));
 
+vi.mock("./icon-picker/IconPicker", () => ({
+  IconPicker: class { close(_restoreFocus: boolean) {} },
+  closeIconPickerForAnchor: vi.fn(() => false),
+}));
+
+import { IconPicker } from "./icon-picker/IconPicker";
 import { NavigationVisibilityModal } from "./view/modals/NavigationVisibilityModal";
 import { QuickInputShortcut } from "./input/QuickInputShortcut";
 import { CardWorkspaceSettingTab } from "./CardWorkspaceSettingTab";
@@ -42,6 +48,8 @@ interface PluginStub {
   getSettings: ReturnType<typeof vi.fn<() => Record<string, unknown>>>;
   saveSettings: ReturnType<typeof vi.fn<(patch: Record<string, unknown>) => Promise<unknown>>>;
   getUiLanguage: ReturnType<typeof vi.fn<() => string>>;
+  runtimePlatform?: { device: string; capabilities: { quickInput?: boolean; newWindow?: boolean } };
+  flushSettings: ReturnType<typeof vi.fn>;
   changeTemplateStorageFolder: ReturnType<typeof vi.fn<(path: string) => Promise<void>>>;
 }
 
@@ -75,6 +83,7 @@ function createPlugin(
     })),
     saveSettings: vi.fn(async () => undefined),
     getUiLanguage: vi.fn(() => language),
+    flushSettings: vi.fn(async () => {}),
     changeTemplateStorageFolder: vi.fn(async () => undefined),
   };
 }
@@ -83,381 +92,237 @@ function createTab(plugin: PluginStub = createPlugin()) {
   return new CardWorkspaceSettingTab({} as never, plugin as never);
 }
 
-function groupsOf(definitions: SettingDefinitionItem[]): SettingDefinitionGroup[] {
-  return definitions.filter(
-    (definition): definition is SettingDefinitionGroup => "items" in definition,
-  );
+function pagesOf(tab: CardWorkspaceSettingTab): SettingDefinitionPage[] {
+  return tab.getSettingDefinitions() as SettingDefinitionPage[];
+}
+function rowsOfPage(tab: CardWorkspaceSettingTab, name: string): SettingDefinition[] {
+  const page = pagesOf(tab).find(page => page.name === name)!;
+  return (page.items as SettingDefinitionGroup[]).flatMap(group => group.items ?? []) as SettingDefinition[];
+}
+function rowFor(tab: CardWorkspaceSettingTab, key: string): SettingDefinition {
+  return pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name)).find(row => row.control?.key === key || row.name === key)!;
+}
+function legacyOpen(tab: CardWorkspaceSettingTab, name: string): void {
+  tab.display();
+  settingsIn(tab.containerEl as unknown as MockEl).find(row => row.name === name)!.extraButtons[0]!.click();
+}
+function renderedRow(tab: CardWorkspaceSettingTab, name: string): Setting {
+  return settingsIn(tab.containerEl as unknown as MockEl).find(row => row.name === name)!;
 }
 
-function rowsOf(group: SettingDefinitionGroup | undefined): SettingDefinition[] {
-  return (group?.items ?? []).filter((item): item is SettingDefinition => !("items" in item));
-}
+describe("settings pages", () => {
+  beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
 
-function controlOf(row: SettingDefinition | undefined) {
-  return row?.control;
-}
-
-describe("CardWorkspaceSettingTab", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockState.requireApiVersion.mockReturnValue(true);
-  });
-
-  it("describes the settings as two declarative groups with native controls", () => {
-    const tab = createTab();
-    const definitions = tab.getSettingDefinitions();
-
-    const [behavior, appearance] = groupsOf(definitions);
-    expect(definitions).toHaveLength(7);
-    expect(behavior?.type).toBe("group");
-    expect(behavior?.heading).toBe("Behavior");
-    expect(appearance?.heading).toBe("Appearance");
-
-    expect(rowsOf(behavior).map((row) => row.name)).toEqual([
-      "Show file types",
-      "Default card open behavior",
-      "Jump to link location when opening a link card",
-      "Card drag insert behavior",
-      "Enable section drag insertion",
-      "New note content",
-      "Folder for new notes in card boxes",
-    ]);
-    expect(rowsOf(appearance).map((row) => row.name)).toEqual([
-      "Font size",
-      "Density",
-      "Card style",
-      "Card corner radius",
-      "Preview lines",
-      "Default backlink reference snippets",
-      "Maximum search hit snippets in each card preview",
-      "Card images",
-      "Image fit",
-      "Show item counts in navigation",
-      "Card hover preview width",
-      "Card hover preview height",
-      "Default card background color",
-    ]);
-  });
-
-  it("binds each row to a persisted key with the expected option sets", () => {
-    const [behavior, appearance] = groupsOf(createTab().getSettingDefinitions());
-    const behaviorRows = rowsOf(behavior);
-    const [fontSizeRow, densityRow, cardStyleRow, ...appearanceRows] = rowsOf(appearance);
-
-    expect(controlOf(fontSizeRow)).toEqual({
-      type: "dropdown",
-      key: "uiFontSize",
-      options: { small: "Small", default: "Default", large: "Large", "x-large": "Extra large" },
-    });
-    expect(controlOf(densityRow)).toEqual({
-      type: "dropdown",
-      key: "uiDensity",
-      options: { compact: "Compact", default: "Default", comfortable: "Comfortable" },
-    });
-    expect(controlOf(cardStyleRow)).toEqual({
-      type: "dropdown",
-      key: "cardStyle",
-      options: { default: "Default cards", outline: "Minimal outline", list: "List", flat: "Flat", "accent-bar": "Accent bar" },
-    });
-
-    expect(controlOf(behaviorRows[1])).toEqual({
-      type: "dropdown",
-      key: "defaultCardOpenBehavior",
-      options: {
-        smart: "Current pane / current tab",
-        "new-tab": "Open in new tab",
-        "split-right": "Open to the right",
-        "new-window": "Open in new window",
-      },
-    });
-    expect(controlOf(behaviorRows[2])).toEqual({ type: "toggle", key: "locateLinkCardOnOpen" });
-    expect(controlOf(behaviorRows[3])).toEqual({
-      type: "dropdown",
-      key: "dragInsertAction",
-      options: {
-        ask: "Ask every time",
-        wiki: "Insert wiki link",
-        embed: "Insert embed link",
-        content: "Insert card content",
-        "title-content": "Insert card title & content",
-      },
-    });
-    expect(controlOf(behaviorRows[4])).toEqual({ type: "toggle", key: "enableHeadingDragInsert" });
-    expect(controlOf(behaviorRows[5])).toEqual({
-      type: "dropdown",
-      key: "newNoteTemplate",
-      options: {
-        "tags-frontmatter": "Start with a tags property",
-        blank: "Start blank",
-      },
-    });
-
-    expect(controlOf(appearanceRows[0])).toEqual({
-      type: "dropdown",
-      key: "cardCornerRadius",
-      options: { compact: "Compact", medium: "Softer", rounded: "Rounded" },
-    });
-    expect(controlOf(appearanceRows[1])).toEqual({
-      type: "slider",
-      key: "previewLines",
-      min: 0,
-      max: 8,
-      step: 1,
-    });
-    expect(controlOf(appearanceRows[2])).toEqual({ type: "dropdown", key: "backlinkSnippetCount", options: { "1": "1", "2": "2", "3": "3", all: "All" } });
-    expect(controlOf(appearanceRows[3])).toEqual({
-      type: "slider", key: "searchPreviewSnippetCount", min: 1, max: 5, step: 1,
-    });
-    expect(controlOf(appearanceRows[4])).toEqual({
-      type: "dropdown",
-      key: "cardImageMode",
-      options: { off: "Off", right: "Right thumbnail", inline: "Below title" },
-    });
-    expect(controlOf(appearanceRows[5])).toEqual({
-      type: "dropdown",
-      key: "cardImageFit",
-      options: { contain: "Show whole image", cover: "Crop to fill" },
-    });
-    expect(controlOf(appearanceRows[6])).toEqual({ type: "toggle", key: "showNavItemCounts" });
-    expect(controlOf(appearanceRows[7])).toEqual({ type: "slider", key: "hoverPreviewWidth", min: 320, max: 1600, step: 10 });
-    expect(controlOf(appearanceRows[8])).toEqual({ type: "slider", key: "hoverPreviewHeight", min: 200, max: 1200, step: 10 });
-  });
-
-  it("keeps descriptions on every row, including the Remember Cursor Position caveat", () => {
-    const [behavior, appearance] = groupsOf(createTab().getSettingDefinitions());
-    const rows = [...rowsOf(behavior), ...rowsOf(appearance)];
-
-    expect(rows.every((row) => typeof row.desc === "string" && row.desc.length > 0)).toBe(true);
-    expect(rowsOf(behavior)[2]?.desc).toContain("Remember Cursor Position");
-    expect(rowsOf(appearance)[4]?.desc).toBe(
-      "Choose how many normalized summary lines each card preview can show (0-8).",
-    );
-  });
-
-  it("hides the corner radius row for the list card style", () => {
-    const plugin = createPlugin({ cardStyle: "list" });
-    const radius = rowsOf(groupsOf(createTab(plugin).getSettingDefinitions())[1])[3];
-    const isVisible = radius?.visible as () => boolean;
-
-    expect(radius?.control?.key).toBe("cardCornerRadius");
-    expect(isVisible()).toBe(false);
-    for (const cardStyle of ["default", "outline", "flat", "accent-bar"]) {
-      plugin.getSettings.mockReturnValue({ cardStyle });
-      expect(isVisible()).toBe(true);
-    }
-  });
-
-  it("only offers the image fit row while card images are enabled", () => {
-    const plugin = createPlugin({ cardImageMode: "off" });
+  it.each(["en", "zh"])("keeps all 60 settings in seven searchable declarative pages (%s)", language => {
+    const plugin = createPlugin({}, language);
     const tab = createTab(plugin);
-    const fit = rowsOf(groupsOf(tab.getSettingDefinitions())[1])[8];
-    const isVisible = fit?.visible as () => boolean;
-
-    expect(isVisible()).toBe(false);
-    plugin.getSettings.mockReturnValue({ cardImageMode: "right" });
-    expect(isVisible()).toBe(true);
-    plugin.getSettings.mockReturnValue({ cardImageMode: "inline" });
-    expect(isVisible()).toBe(true);
+    const strings = getSettingTabStrings(language as "en" | "zh");
+    const pages = pagesOf(tab);
+    expect(pages.map(page => page.name)).toEqual(Object.values(strings.pages).map(page => page.name));
+    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 8, 10, 4, 3, 13, 17]);
+    const rows = pages.flatMap(page => rowsOfPage(tab, page.name));
+    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(60);
+    expect(pages.every(page => page.type === "page" && page.desc && page.items && !page.page)).toBe(true);
+    expect(rows.every(row => row.name && row.searchable !== false)).toBe(true);
+    expect(attachFolderInputSuggest).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(rowFor(tab, "fileVisibility").control).toMatchObject({ type: "dropdown", options: strings.fileVisibilityOptions });
+    expect(rowsOfPage(tab, strings.pages.appearance.name).map(row => row.control?.key)).toEqual(["uiFontSize", "uiDensity", "cardStyle", "cardCornerRadius", "cardBackgroundColor"]);
+    expect(rowsOfPage(tab, strings.pages.navigation.name).map(row => row.control?.key).slice(0, 8)).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links", "templates"].map(id => `navSection:${id}`).concat("showNavItemCounts"));
+    expect(rowsOfPage(tab, strings.pages["notes-templates"].name).map(row => row.name)).toEqual([strings.newNoteTemplateName, strings.boxNewNoteFolderName, getUiStrings(language as "en" | "zh").noteInput.templateStorageFolder]);
   });
 
-  it("renders Chinese labels when the Obsidian language is Chinese", () => {
-    const tab = createTab(createPlugin({}, "zh"));
-    const [behavior, appearance] = groupsOf(tab.getSettingDefinitions());
-
-    expect(behavior?.heading).toBe("行为");
-    expect(appearance?.heading).toBe("外观");
-    expect(rowsOf(behavior).map((row) => row.name)).toEqual([
-      "显示文件类型",
-      "卡片默认打开方式",
-      "双链卡片点击定位",
-      "卡片拖拽插入行为",
-      "启用章节拖拽插入",
-      "新建笔记内容",
-      "卡片盒新建笔记保存位置",
-    ]);
-    expect(rowsOf(appearance).map((row) => row.name)).toEqual([
-      "字体大小",
-      "紧凑程度",
-      "卡片样式",
-      "卡片圆角",
-      "预览行数",
-      "反链默认显示的引用片段数",
-      "每张卡片预览最多显示的命中片段",
-      "卡片图片",
-      "图片显示方式",
-      "在导航栏显示条目计数",
-      "卡片悬浮预览宽度",
-      "卡片悬浮预览高度",
-      "默认卡片背景颜色",
-    ]);
-    expect(rowsOf(appearance)[6]?.desc).toBe("搜索时最多显示多少个正文命中片段，每个片段占两行。");
-    expect(controlOf(rowsOf(appearance)[2])).toMatchObject({
-      options: { default: "默认卡片", outline: "极简边框", list: "列表", flat: "扁平", "accent-bar": "左侧强调条" },
-    });
-    expect(controlOf(rowsOf(behavior)[1])).toMatchObject({
-      options: { smart: "当前窗格 / 当前标签页" },
-    });
-    expect(controlOf(rowsOf(behavior)[3])).toMatchObject({
-      options: {
-        ask: "每次弹框确认",
-        wiki: "插入 wiki link",
-        embed: "插入嵌入 link",
-        content: "插入卡片内容",
-        "title-content": "插入卡片标题&内容",
-      },
-    });
-  });
-
-  it("binds all six visibility toggles to latest shared sections and preserves unrelated hidden rules", async () => {
-    const plugin = createPlugin({ hiddenNavSections: ["folders"], hiddenFolderPaths: ["keep"] });
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    plugin.saveSettings.mockImplementation(async (patch) => { Object.assign(settings, patch); });
+  it.each(["phone", "tablet"])("preserves device filtering on %s", device => {
+    const plugin = createPlugin();
+    plugin.runtimePlatform = { device, capabilities: { newWindow: false } };
     const tab = createTab(plugin);
-    const navigation = tab.getSettingDefinitions()[2]!;
-    expect(navigation.heading).toBe("Navigation");
-    expect(navigation.items).toHaveLength(9);
-    for (const row of navigation.items.slice(0, 7)) {
-      const key = row.control!.key;
-      const section = key.slice("navSection:".length);
-      expect(tab.getControlValue(key)).toBe(section !== "folders");
-      await tab.setControlValue(key, false);
-      expect(tab.getControlValue(key)).toBe(false);
-    }
-    expect(settings.hiddenNavSections).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links", "templates"]);
-    await tab.setControlValue("navSection:folders", true);
-    expect(settings.hiddenNavSections).not.toContain("folders");
-    expect(settings.hiddenFolderPaths).toEqual(["keep"]);
+    expect(pagesOf(tab)).toHaveLength(7);
+    const rows = pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name));
+    expect(rows).toHaveLength(55);
+    for (const key of ["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]) expect(rowFor(tab, key)).toBeUndefined();
+    expect(rowFor(tab, "quickInputCornerRadius")).toBeDefined();
+    expect(rowFor(tab, "defaultCardOpenBehavior").control).not.toHaveProperty("options.new-window");
+    expect(pagesOf(tab).every(page => (page.items as SettingDefinitionGroup[]).every(group => group.items?.length))).toBe(true);
+    plugin.runtimePlatform.capabilities.quickInput = false;
+    expect(pagesOf(tab)).toHaveLength(6);
   });
 
-  it.each([false, true])("opens both management dialogs through the shared render callbacks (native: %s)", (native) => {
-    const opened = vi.spyOn(NavigationVisibilityModal.prototype, "open").mockImplementation(() => {});
-    const getRoot = vi.fn(() => ({ children: [] }));
-    const app = { vault: { getRoot, getMarkdownFiles: () => [] }, metadataCache: { getFileCache: vi.fn() } };
-    const tab = new CardWorkspaceSettingTab(app as never, createPlugin() as never);
+  it.each(["en", "zh"])("renders the same groups and controls through legacy page navigation (%s)", language => {
+    const tab = createTab(createPlugin({}, language));
+    const pages = pagesOf(tab);
+    mockState.requireApiVersion.mockReturnValue(false);
+    expect(tab.getSettingDefinitions()).toEqual([]);
+    for (const page of pages) {
+      legacyOpen(tab, page.name);
+      const groups = groupsIn(tab.containerEl as unknown as MockEl);
+      const definitions = page.items as SettingDefinitionGroup[];
+      expect(groups.map(group => group.heading)).toEqual(definitions.map(group => group.heading));
+      definitions.forEach((definition, i) => {
+        const rows = definition.items as SettingDefinition[];
+        expect(groups[i]!.settings.map(row => row.name)).toEqual(rows.map(row => row.name));
+        rows.forEach((row, j) => {
+          const rendered = groups[i]!.settings[j]!;
+          expect(rendered.desc).toBe(row.desc ?? "");
+          if (row.control?.type === "slider") expect(rendered.sliders[0]).toMatchObject({ min: row.control.min, max: row.control.max, step: row.control.step });
+          if (row.control?.type === "dropdown") expect(rendered.dropdowns[0]?.options).toEqual(Object.entries(row.control.options).map(([value, label]) => ({ value, label })));
+        });
+      });
+    }
+    tab.hide();
+  });
+
+  it("supports keyboard entry, restores landing scroll/focus and resets on reopen without writes", () => {
+    const plugin = createPlugin(); const tab = createTab(plugin);
+    mockState.requireApiVersion.mockReturnValue(false);
+    tab.display();
+    const container = tab.containerEl as unknown as MockEl;
+    container.scrollTop = 123;
+    const entry = renderedRow(tab, "Default icons").settingEl;
+    const preventDefault = vi.fn();
+    entry.dispatch("keydown", { key: " ", target: entry, preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(container.scrollTop).toBe(0);
+    expect(settingsIn(container)).toHaveLength(18);
+    settingsIn(container)[0]!.extraButtons[0]!.click();
+    expect(container.scrollTop).toBe(123);
+    expect(renderedRow(tab, "Default icons").settingEl.focused).toBe(true);
+    tab.hide(); tab.display();
+    expect(container.scrollTop).toBe(0);
+    expect(settingsIn(container)).toHaveLength(7);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("updates conditional rows in place across separate pages", async () => {
+    mockState.requireApiVersion.mockReturnValue(false);
+    const plugin = createPlugin(); const settings = plugin.getSettings(); plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async patch => Object.assign(settings, patch));
+    const tab = createTab(plugin);
+    legacyOpen(tab, "Interface appearance");
+    const radius = renderedRow(tab, "Card corner radius");
+    await tab.setControlValue("cardStyle", "list"); expect(radius.settingEl.style.display).toBe("none");
+    await tab.setControlValue("cardStyle", "flat"); expect(radius.settingEl.style.display).toBe("");
+    legacyOpen(tab, "Cards and previews");
+    const fit = renderedRow(tab, "Image fit"); expect(fit.settingEl.style.display).toBe("none");
+    await tab.setControlValue("cardImageMode", "right"); expect(fit.settingEl.style.display).toBe("");
+    expect(renderedRow(tab, "Image fit")).toBe(fit);
+    legacyOpen(tab, "Quick input");
+    const append = renderedRow(tab, "Append position");
+    await tab.setControlValue("quickInputDuplicateTitle", "number"); expect(append.settingEl.style.display).toBe("none");
+    expect(tab.refreshDomState).not.toHaveBeenCalled();
+    tab.hide();
+  });
+
+  it.each([false, true])("cleans custom rows on native teardown or legacy navigation exactly once (%s)", native => {
+    const plugin = createPlugin(); const unsubscribe = vi.fn(); plugin.quickInputShortcut.subscribe = () => unsubscribe;
+    const tab = createTab(plugin);
+    let cleanup: void | (() => void);
     if (native) {
       const group = new SettingGroup(tab.containerEl as unknown as MockEl);
-      for (const row of tab.getSettingDefinitions()[2]!.items.slice(7)) {
-        const setting = new Setting(tab.containerEl as unknown as MockEl);
-        row.render!(setting as never, group as never);
-        setting.buttons[0]?.click();
-      }
+      cleanup = rowFor(tab, "Quick input folder").render!(new Setting(tab.containerEl as unknown as MockEl) as never, group as never);
+      rowFor(tab, "Global quick input shortcut").render!(new Setting(tab.containerEl as unknown as MockEl) as never, group as never);
+      if (cleanup) { cleanup(); cleanup(); }
     } else {
-      tab.display();
-      groupsIn(tab.containerEl as unknown as MockEl)[2]!.settings.slice(7).forEach((row) => row.buttons[0]?.click());
+      mockState.requireApiVersion.mockReturnValue(false); legacyOpen(tab, "Quick input");
+      settingsIn(tab.containerEl as unknown as MockEl)[0]!.extraButtons[0]!.click();
     }
-    expect(opened).toHaveBeenCalledTimes(2);
-    expect(getRoot).toHaveBeenCalledTimes(1);
-    opened.mockRestore();
+    tab.hide(); tab.hide();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    for (const result of vi.mocked(attachFolderInputSuggest).mock.results) expect(result.value.dispose).toHaveBeenCalledOnce();
   });
 
-  it.each(["en", "zh"])("renders identical legacy groups, order, controls and ranges in %s", (language) => {
-    const tab = createTab(createPlugin({}, language));
-    tab.display();
-    const container = tab.containerEl as unknown as MockEl;
-    const definitions = tab.getSettingDefinitions();
-    const groups = groupsIn(container);
-    expect(groups.map((group) => group.heading)).toEqual(definitions.map((group) => group.heading));
-    definitions.forEach((definition, groupIndex) => {
-      const settings = groups[groupIndex]!.settings;
-      expect(settings.map((row) => row.name)).toEqual(definition.items.map((row) => row.name));
-      expect(settings.map((row) => row.desc)).toEqual(definition.items.map((row) => row.desc));
-      definition.items.forEach((row, index) => {
-        const setting = settings[index]!, control = row.control;
-        if (!control) {
-          if (row.name === getUiStrings(language).noteInput.quickInputFolderName
-            || row.name === getSettingTabStrings(language).boxNewNoteFolderName) {
-            expect(setting.texts[0]?.value).toBe("/");
-            expect(setting.dropdowns).toHaveLength(0);
-          } else if (row.name === getUiStrings(language).noteInput.globalShortcutName) {
-            expect(setting.texts).toHaveLength(1);
-            expect(setting.buttons.map((button) => button.text)).toEqual([getUiStrings(language).noteInput.apply, getUiStrings(language).noteInput.clearShortcut]);
-          } else if (definition.heading === getUiStrings(language).icons.navigationHeading || definition.heading === getUiStrings(language).icons.cardsHeading) {
-            expect(setting.buttons[0]?.buttonEl.attrs["aria-label"]).toBe(`${getUiStrings(language).icons.change}: ${row.name}`);
-            expect(setting.extraButtons[0]?.tooltip).toBe(getUiStrings(language).icons.resetDefault);
-          } else {
-            expect(setting.buttons[0]?.text).toBe(definition.heading === (language === "zh" ? "模板" : "Templates") ? (language === "zh" ? "应用" : "Apply") : (language === "zh" ? "管理" : "Manage"));
-          }
-          return;
-        }
-        if (control.type === "dropdown") {
-          expect(setting.dropdowns[0]?.options).toEqual(Object.entries(control.options).map(([value, label]) => ({ value, label })));
-          expect(setting.dropdowns[0]?.value).toBe(tab.getControlValue(control.key));
-        } else if (control.type === "slider") {
-          expect(setting.sliders[0]).toMatchObject({ min: control.min, max: control.max, step: control.step, value: tab.getControlValue(control.key), dynamicTooltip: false });
-        } else {
-          expect(setting.toggles[0]?.value).toBe(tab.getControlValue(control.key));
-        }
-      });
-    });
+  it("continues a pending template save after teardown without updating its old controls", async () => {
+    const plugin = createPlugin({ templateStorageFolder: "Templates" });
+    let resolve!: () => void;
+    plugin.changeTemplateStorageFolder.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+    const tab = createTab(plugin); legacyOpen(tab, "New notes and templates");
+    const row = renderedRow(tab, "Template storage folder"); row.texts[0]!.type("New");
+    const pending = row.buttons[0]!.click();
+    expect(row.buttons[0]!.disabled).toBe(true);
+    tab.hide(); resolve(); await pending;
+    expect(row.buttons[0]!.disabled).toBe(true);
+    expect(plugin.changeTemplateStorageFolder).toHaveBeenCalledExactlyOnceWith("New");
   });
 
-  it("labels a category default of no icon as plain text", () => {
-    const tab = createTab(createPlugin({ iconDefaults: { folder: { kind: "none", value: "" } }, iconOverrides: {} }));
-    tab.display();
-    const strings = getUiStrings("en").icons;
-    const group = groupsIn(tab.containerEl as unknown as MockEl).find((entry) => entry.heading === strings.navigationHeading)!;
-    const button = group.settings.find((row) => row.name === strings.categories.folder)!.buttons[0]!.buttonEl;
-    expect(button.textContent).toBe(strings.noIcon);
-    expect(button.hasClass("fce-icon-none")).toBe(true);
+  it.each([false, true])("preserves root folder input and explicit template apply (%s)", native => {
+    const plugin = createPlugin(); const tab = createTab(plugin);
+    const row = new Setting(tab.containerEl as unknown as MockEl);
+    const group = new SettingGroup(tab.containerEl as unknown as MockEl);
+    if (native) rowFor(tab, "Folder for new notes in card boxes").render!(row as never, group as never);
+    else { mockState.requireApiVersion.mockReturnValue(false); legacyOpen(tab, "New notes and templates"); }
+    const folder = native ? row : renderedRow(tab, "Folder for new notes in card boxes");
+    expect(folder.texts[0]!.value).toBe("/"); folder.texts[0]!.type("Inbox");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "Inbox" });
+    folder.texts[0]!.type("/"); expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "" });
+    tab.hide();
   });
 
-  it.each([false, true])("updates legacy visibility without refreshDomState or rebuilding controls (1.13 API: %s)", async (supportsNativeApi) => {
-    mockState.requireApiVersion.mockReturnValue(supportsNativeApi);
-    const plugin = createPlugin();
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockImplementation(() => settings);
-    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
+  it("keeps explicit shortcut Apply/Clear and never registers while typing", async () => {
+    const plugin = createPlugin(); const tab = createTab(plugin); legacyOpen(tab, "Quick input");
+    const row = renderedRow(tab, "Global quick input shortcut"); row.texts[0]!.type("Control+Shift+Q");
+    expect(plugin.quickInputShortcut.apply).not.toHaveBeenCalled();
+    await row.buttons[0]!.click(); expect(plugin.quickInputShortcut.apply).toHaveBeenLastCalledWith("Control+Shift+Q");
+    await row.buttons[1]!.click(); expect(plugin.quickInputShortcut.apply).toHaveBeenLastCalledWith("");
+    tab.hide();
+  });
+
+  it("opens both navigation management dialogs only on request", () => {
+    const opened = vi.spyOn(NavigationVisibilityModal.prototype, "open").mockImplementation(() => {});
+    const tab = new CardWorkspaceSettingTab({ vault: { getRoot: () => ({ children: [] }), getMarkdownFiles: () => [] }, metadataCache: { getFileCache: vi.fn() } } as never, createPlugin() as never); legacyOpen(tab, "Navigation");
+    expect(opened).not.toHaveBeenCalled();
+    renderedRow(tab, "Hidden folders").buttons[0]!.click(); renderedRow(tab, "Hidden tags").buttons[0]!.click();
+    expect(opened).toHaveBeenCalledTimes(2); opened.mockRestore(); tab.hide();
+  });
+  it("releases an open icon picker when returning from its page", () => {
+    const close = vi.spyOn(IconPicker.prototype, "close");
+    const tab = createTab(createPlugin({ iconDefaults: { folder: { kind: "none", value: "" } } }));
+    legacyOpen(tab, "Default icons");
+    const row = renderedRow(tab, "Folders");
+    expect(row.buttons[0]!.buttonEl.textContent).toBe("No icon");
+    row.buttons[0]!.click();
+    settingsIn(tab.containerEl as unknown as MockEl)[0]!.extraButtons[0]!.click();
+    tab.hide(); expect(close).toHaveBeenCalledExactlyOnceWith(false); close.mockRestore();
+  });
+
+  it("allows a failed template migration to be retried", async () => {
+    const plugin = createPlugin({ templateStorageFolder: "Templates" });
+    plugin.changeTemplateStorageFolder.mockRejectedValueOnce(new Error("disk"));
+    const tab = createTab(plugin); legacyOpen(tab, "New notes and templates");
+    const row = renderedRow(tab, "Template storage folder"); row.texts[0]!.type("New/Templates");
+    expect(plugin.changeTemplateStorageFolder).not.toHaveBeenCalled();
+    await row.buttons[0]!.click();
+    expect(Notice.messages[Notice.messages.length - 1]).toContain("disk");
+    expect(row.buttons[0]!.disabled).toBe(false);
+    expect(row.texts[0]!.value).toBe("New/Templates");
+    await row.buttons[0]!.click();
+    expect(plugin.changeTemplateStorageFolder).toHaveBeenCalledTimes(2); tab.hide();
+  });
+
+  it("merges navigation and quick input changes against the latest settings", async () => {
+    const plugin = createPlugin({ hiddenFolderPaths: ["Keep"], quickInputVisibility: { title: false, folder: true, boxes: false, tags: true, properties: true } });
+    const settings = plugin.getSettings(); plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async patch => Object.assign(settings, patch));
     const tab = createTab(plugin);
-    Object.defineProperty(tab, "refreshDomState", { value: undefined });
-    tab.display();
-    const container = tab.containerEl as unknown as MockEl;
-    const rows = settingsIn(container);
-    const fit = rows.find((row) => row.name === "Image fit")!;
-    const mode = rows.find((row) => row.name === "Card images")!;
-    expect(fit.settingEl.style.display).toBe("none");
-    mode.dropdowns[0]!.select("inline");
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(fit.settingEl.style.display).toBe("");
-    expect(settingsIn(container)).toEqual(rows);
-    await tab.setControlValue("cardImageMode", "off");
-    expect(fit.settingEl.style.display).toBe("none");
-    await tab.setControlValue("cardImageFit", "cover");
-    await rows.find((row) => row.name === "Preview lines")!.sliders[0]!.slide(8);
-    await rows.find((row) => row.name === "Preview lines")!.sliders[0]!.slide(999);
-    expect(settings.previewLines).toBe(8);
-    const radius = rows.find((row) => row.name === "Card corner radius")!;
-    const cardStyle = rows.find((row) => row.name === "Card style")!;
-    expect(radius.settingEl.style.display).toBe("");
-    cardStyle.dropdowns[0]!.select("list");
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(radius.settingEl.style.display).toBe("none");
-    const reloaded = createTab(plugin);
-    reloaded.display();
-    const reloadedRows = settingsIn(reloaded.containerEl as unknown as MockEl);
-    expect(reloadedRows.find((row) => row.name === "Image fit")?.dropdowns[0]?.value).toBe("cover");
-    expect(reloadedRows.find((row) => row.name === "Preview lines")?.sliders[0]?.value).toBe(8);
-    expect(reloadedRows.find((row) => row.name === "Card style")?.dropdowns[0]?.value).toBe("list");
+    for (const section of ["favorites", "folders", "tags", "properties", "boxes", "links", "templates"]) await tab.setControlValue(`navSection:${section}`, false);
+    await tab.setControlValue("navSection:folders", true);
+    expect(settings.hiddenNavSections).toEqual(["favorites", "tags", "properties", "boxes", "links", "templates"]);
+    expect(settings.hiddenFolderPaths).toEqual(["Keep"]);
+    await tab.setControlValue("quickInputVisibility.folder", false);
+    expect(settings.quickInputVisibility).toEqual({ title: false, folder: false, boxes: false, tags: true, properties: true });
+    await tab.setControlValue("quickInputFolderPath", "Inbox");
+    await tab.setControlValue("quickInputDuplicateTitle", "number");
+    await tab.setControlValue("quickInputInsertPosition", "start");
+    expect(settings.quickInput).toEqual({ folderPath: "Inbox", duplicateTitle: "number", insertPosition: "start" });
   });
 
-  it.each([false, true])("keeps slider values visible without deprecated tooltips (1.13 API: %s)", async (supportsNativeApi) => {
-    mockState.requireApiVersion.mockReturnValue(supportsNativeApi);
-    const plugin = createPlugin();
-    const tab = createTab(plugin);
-    tab.display();
-    const row = settingsIn(tab.containerEl as unknown as MockEl).find((setting) => setting.name === "Preview lines")!;
-    const slider = row.sliders[0]!;
-    const labels = row.controlEl.nodes.filter((node): node is MockEl => node instanceof MockEl && node.classes.has("fce-setting-slider-value"));
-    expect(slider.dynamicTooltip).toBe(false);
-    expect(labels).toHaveLength(supportsNativeApi ? 0 : 1);
-    if (!supportsNativeApi) expect(labels[0]!.text).toBe("6");
-    await slider.slide(8);
-    if (!supportsNativeApi) expect(labels[0]!.text).toBe("8");
-    expect(plugin.saveSettings).toHaveBeenCalledWith({ previewLines: 8 });
+  it("preserves slider limits and displays legacy values inline", async () => {
+    const tab = createTab();
+    for (const [key, min, max, step] of [["previewLines", 0, 8, 1], ["searchPreviewSnippetCount", 1, 5, 1], ["hoverPreviewWidth", 320, 1600, 10], ["hoverPreviewHeight", 200, 1200, 10], ["quickInputWidth", 320, 1200, 10], ["quickInputHeight", 200, 800, 10]] as const) {
+      expect(rowFor(tab, key).control).toMatchObject({ min, max, step });
+    }
+    mockState.requireApiVersion.mockReturnValue(false); legacyOpen(tab, "Cards and previews");
+    const row = renderedRow(tab, "Preview lines");
+    const label = row.controlEl.nodes.find(node => node instanceof MockEl && node.hasClass("fce-setting-slider-value")) as MockEl;
+    expect(label.text).toBe("6"); await row.sliders[0]!.slide(8); expect(label.text).toBe("8"); tab.hide();
   });
 
   it("reads control values from the settings store only", () => {
@@ -487,24 +352,6 @@ describe("CardWorkspaceSettingTab", () => {
     for (const value of ["4", "0", "", 1, null]) await tab.setControlValue("backlinkSnippetCount", value);
     expect(plugin.saveSettings.mock.calls).toEqual([
       [{ backlinkSnippetCount: 1 }], [{ backlinkSnippetCount: 2 }], [{ backlinkSnippetCount: 3 }], [{ backlinkSnippetCount: "all" }],
-    ]);
-  });
-
-  it.each([false, true])("saves hover dimensions through shared controls (1.13 API: %s)", async (native) => {
-    mockState.requireApiVersion.mockReturnValue(native);
-    const plugin = createPlugin(), tab = createTab(plugin);
-    expect(tab.getControlValue("hoverPreviewWidth")).toBe(600);
-    expect(tab.getControlValue("hoverPreviewHeight")).toBe(400);
-    tab.display();
-    const rows = settingsIn(tab.containerEl as unknown as MockEl);
-    await rows.find((row) => row.name === "Card hover preview width")!.sliders[0]!.slide(800);
-    await rows.find((row) => row.name === "Card hover preview height")!.sliders[0]!.slide(600);
-    for (const value of ["600", NaN, Infinity, 0, 190, 1601, 600.5]) {
-      await tab.setControlValue("hoverPreviewWidth", value);
-      await tab.setControlValue("hoverPreviewHeight", value);
-    }
-    expect(plugin.saveSettings.mock.calls).toEqual([
-      [{ hoverPreviewWidth: 800 }], [{ hoverPreviewHeight: 600 }],
     ]);
   });
 
@@ -588,227 +435,5 @@ describe("CardWorkspaceSettingTab", () => {
     expect(plugin.saveSettings).toHaveBeenCalledWith({ cardImageMode: "right" });
     expect(mockState.requireApiVersion).toHaveBeenCalledWith("1.13.0");
     expect(tab.refreshDomState).not.toHaveBeenCalled();
-  });
-});
-
-describe("quick input shared setting definitions", () => {
-  it.each(["en", "zh"] as const)("offers no template choice and declares the %s folder, duplicate-title and append rows", (language) => {
-    const strings = getUiStrings(language).noteInput;
-    const tab = createTab(createPlugin({
-      noteTemplates: [{ id: "daily", filePath: "Templates/Daily.md" }],
-      quickInput: { folderPath: "Missing", insertPosition: "start", duplicateTitle: "append" },
-    }, language));
-    const definitions = tab.getSettingDefinitions()[3]!;
-    expect(definitions.heading).toBe(strings.quickInputHeading);
-    expect(JSON.stringify(definitions.items)).not.toContain("quickInputTemplateId");
-    expect(definitions.items[0]?.control).toBeUndefined();
-    expect(definitions.items[0]?.render).toBeTypeOf("function");
-    expect(definitions.items[1]).toMatchObject({ name: strings.quickInputDuplicateTitleName,
-      control: { type: "dropdown", key: "quickInputDuplicateTitle", options: strings.duplicateTitleOptions } });
-    expect(Object.keys((definitions.items[1]!.control as { options: Record<string, string> }).options)).toEqual(["append", "number", "ask"]);
-    expect(definitions.items[2]).toMatchObject({ name: strings.quickInputPositionName,
-      control: { type: "dropdown", key: "quickInputInsertPosition", options: { start: strings.insertBodyStart, end: strings.insertEnd } } });
-    expect(tab.getControlValue("quickInputDuplicateTitle")).toBe("append");
-    expect(tab.getControlValue("quickInputFolderPath")).toBe("Missing");
-    expect(tab.getControlValue("quickInputInsertPosition")).toBe("start");
-  });
-
-  it.each([false, true])("saves typed and suggested folders through the shared renderer (native: %s)", async (native) => {
-    vi.mocked(attachFolderInputSuggest).mockClear();
-    const plugin = createPlugin({ quickInput: { folderPath: "Missing", insertPosition: "start", duplicateTitle: "ask" } });
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
-    const tab = createTab(plugin);
-    let row: Setting;
-    if (native) {
-      row = new Setting(tab.containerEl as unknown as MockEl);
-      tab.getSettingDefinitions()[3]!.items[0]!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
-    } else {
-      tab.display();
-      row = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings[0]!;
-    }
-    const text = row.texts[0]!;
-    expect(text.value).toBe("Missing");
-    expect(row.dropdowns).toHaveLength(0);
-    const binding = vi.mocked(attachFolderInputSuggest).mock.calls.find((call) => call[1] === text.inputEl as unknown)!;
-    expect(binding).toBeDefined();
-    text.type("Notes/Inbox");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "Notes/Inbox", insertPosition: "start", duplicateTitle: "ask" } });
-    binding[2]("Projects");
-    expect(text.value).toBe("Projects");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "Projects", insertPosition: "start", duplicateTitle: "ask" } });
-    binding[2]("");
-    expect(text.value).toBe("/");
-    for (const value of ["", "/"]) {
-      text.type(value);
-      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInput: { folderPath: "", insertPosition: "start", duplicateTitle: "ask" } });
-    }
-    tab.hide();
-    for (const result of vi.mocked(attachFolderInputSuggest).mock.results) {
-      expect(result.value.dispose).toHaveBeenCalledOnce();
-    }
-  });
-
-  it.each([false, true])("configures the box note destination with root as default (native: %s)", async (native) => {
-    vi.mocked(attachFolderInputSuggest).mockClear();
-    const plugin = createPlugin();
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
-    const tab = createTab(plugin);
-    let row: Setting;
-    if (native) {
-      row = new Setting(tab.containerEl as unknown as MockEl);
-      tab.getSettingDefinitions()[0]!.items.at(-1)!.render!(row as never, new SettingGroup(tab.containerEl as unknown as MockEl) as never);
-    } else {
-      tab.display();
-      row = groupsIn(tab.containerEl as unknown as MockEl)[0]!.settings.at(-1)!;
-    }
-    const text = row.texts[0]!;
-    expect(text.value).toBe("/");
-    text.type("Notes/Box notes");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "Notes/Box notes" });
-    const binding = vi.mocked(attachFolderInputSuggest).mock.calls.find((call) => call[1] === text.inputEl as unknown)!;
-    binding[2]("Inbox");
-    expect(text.value).toBe("Inbox");
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "Inbox" });
-    binding[2]("");
-    expect(text.value).toBe("/");
-    for (const value of ["", "/"]) {
-      text.type(value);
-      expect(plugin.saveSettings).toHaveBeenLastCalledWith({ boxNewNoteFolderPath: "" });
-    }
-    tab.hide();
-  });
-
-  it.each([false, true])("persists each quick input field against the latest config and hides the append position for numbering (native: %s)", async (native) => {
-    mockState.requireApiVersion.mockReturnValue(native);
-    const plugin = createPlugin({ quickInput: { folderPath: "Inbox", insertPosition: "end", duplicateTitle: "ask" } });
-    const settings = plugin.getSettings();
-    plugin.getSettings.mockReturnValue(settings);
-    plugin.saveSettings.mockImplementation(async (patch) => Object.assign(settings, patch));
-    const tab = createTab(plugin);
-    const definitions = tab.getSettingDefinitions()[3]!.items;
-    expect(definitions[0]!.visible).toBeUndefined();
-    const isPositionVisible = definitions[2]!.visible as () => boolean;
-    tab.display();
-    const rows = groupsIn(tab.containerEl as unknown as MockEl)[3]!.settings;
-    expect(isPositionVisible()).toBe(true);
-    expect(rows[2]?.settingEl.style.display).toBe("");
-    await tab.setControlValue("quickInputDuplicateTitle", "number");
-    expect(isPositionVisible()).toBe(false);
-    expect(rows[2]?.settingEl.style.display).toBe("none");
-    await tab.setControlValue("quickInputDuplicateTitle", "append");
-    expect(rows[2]?.settingEl.style.display).toBe("");
-    await tab.setControlValue("quickInputFolderPath", "Other");
-    await tab.setControlValue("quickInputInsertPosition", "start");
-    expect(settings.quickInput).toEqual({ folderPath: "Other", insertPosition: "start", duplicateTitle: "append" });
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
-    await tab.setControlValue("quickInputInsertPosition", "middle");
-    await tab.setControlValue("quickInputDuplicateTitle", "replace");
-    await tab.setControlValue("quickInputDuplicateTitle", null);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(4);
-    expect((tab as unknown as { refreshDomState: ReturnType<typeof vi.fn> }).refreshDomState).toHaveBeenCalledTimes(native ? 4 : 0);
-  });
-
-  it.each(["en", "zh"] as const)("declares %s window size sliders and a frame color dropdown", (language) => {
-    const strings = getUiStrings(language).noteInput;
-    const items = createTab(createPlugin({}, language)).getSettingDefinitions()[3]!.items;
-    expect(items[3]).toMatchObject({ name: strings.quickInputWidthName,
-      control: { type: "slider", key: "quickInputWidth", min: 320, max: 1200, step: 10 } });
-    expect(items[4]).toMatchObject({ name: strings.quickInputHeightName,
-      control: { type: "slider", key: "quickInputHeight", min: 200, max: 800, step: 10 } });
-    expect(items[5]).toMatchObject({ name: strings.quickInputColorName, control: { type: "dropdown", key: "quickInputColor" } });
-    expect(items[6]).toMatchObject({ name: strings.quickInputCornerRadiusName,
-      control: { type: "dropdown", key: "quickInputCornerRadius", options: { compact: expect.any(String), medium: expect.any(String), rounded: expect.any(String) } } });
-    expect(Object.keys((items[5]!.control as { options: Record<string, string> }).options)).toEqual(
-      ["random", "accent", "primary", "secondary", "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"]);
-    expect((items[5]!.control as { options: Record<string, string> }).options.random).toBe(strings.colorRandom);
-  });
-
-  it("reads and saves quick input size and color, ignoring out-of-range values", async () => {
-    const plugin = createPlugin({ quickInputWidth: 600, quickInputHeight: 300, quickInputColor: "blue" }), tab = createTab(plugin);
-    expect(tab.getControlValue("quickInputWidth")).toBe(600);
-    expect(tab.getControlValue("quickInputHeight")).toBe(300);
-    expect(tab.getControlValue("quickInputColor")).toBe("blue");
-    await tab.setControlValue("quickInputWidth", 640);
-    await tab.setControlValue("quickInputHeight", 360);
-    await tab.setControlValue("quickInputColor", "accent");
-    for (const value of ["600", NaN, 100, 5000, 600.5]) {
-      await tab.setControlValue("quickInputWidth", value);
-      await tab.setControlValue("quickInputHeight", value);
-    }
-    await tab.setControlValue("quickInputColor", "teal");
-    expect(plugin.saveSettings.mock.calls).toEqual([
-      [{ quickInputWidth: 640 }], [{ quickInputHeight: 360 }], [{ quickInputColor: "accent" }],
-    ]);
-  });
-});
-
-
-describe("template storage settings", () => {
-  it.each(["en", "zh"])("explains automatic migration and applies the shared field in %s", async (language) => {
-    const plugin = createPlugin({ templateStorageFolder: "Card Workspace Templates" }, language);
-    const settings = plugin.getSettings(); plugin.getSettings.mockReturnValue(settings);
-    plugin.changeTemplateStorageFolder.mockImplementation(async (path) => { settings.templateStorageFolder = path; });
-    const tab = createTab(plugin);
-    const definition = tab.getSettingDefinitions()[4]!;
-    expect(definition.items[0]?.desc).toContain(language === "zh" ? "现有模板会自动迁移" : "moves existing templates");
-    tab.display();
-    const row = groupsIn(tab.containerEl as unknown as MockEl)[4]!.settings[0]!;
-    expect(row.texts[0]!.value).toBe("Card Workspace Templates");
-    row.texts[0]!.type("New/Templates");
-    expect(plugin.changeTemplateStorageFolder).not.toHaveBeenCalled();
-    await row.buttons[0]!.click();
-    expect(plugin.changeTemplateStorageFolder).toHaveBeenCalledExactlyOnceWith("New/Templates");
-    expect(row.texts[0]!.value).toBe("New/Templates");
-    tab.hide();
-  });
-  it("displays a root storage selection explicitly instead of showing the default-folder placeholder", () => {
-    const tab = createTab(createPlugin({ templateStorageFolder: "" })); tab.display();
-    const row = groupsIn(tab.containerEl as unknown as MockEl)[4]!.settings[0]!;
-    expect(row.texts[0]!.value).toBe("/"); tab.hide();
-  });
-});
-
-
-describe("explicit global shortcut configuration", () => {
-  it.each([false, true])("records without registration and shares Apply/Clear behavior (native: %s)", async (native) => {
-    const registered = new Set<string>();
-    const register = vi.fn((key: string) => { registered.add(key); return true; });
-    const unregister = vi.fn((key: string) => { registered.delete(key); });
-    const save = vi.fn(async (_key: string) => {});
-    const shortcut = new QuickInputShortcut({ bridge: () => ({ register, unregister, isRegistered: (key) => registered.has(key) }), save, open: vi.fn() });
-    const plugin = createPlugin(); plugin.quickInputShortcut = shortcut;
-    const tab = createTab(plugin);
-    const strings = getUiStrings("en").noteInput;
-    let row: Setting;
-    if (native) {
-      row = new Setting(tab.containerEl as unknown as MockEl);
-      tab.getSettingDefinitions()[3]!.items.find((item) => item.name === strings.globalShortcutName)!.render!(row as never, {} as never);
-    } else { tab.display(); row = settingsIn(tab.containerEl as unknown as MockEl).find((item) => item.name === strings.globalShortcutName)!; }
-    row.texts[0]!.type("Control+Shift+Q"); expect(register).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
-    row.buttons.find((button) => button.text === strings.apply)!.click();
-    await vi.waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q"));
-    expect(registered.has("Control+Shift+Q")).toBe(true);
-    row.buttons.find((button) => button.text === strings.clearShortcut)!.click();
-    await vi.waitFor(() => expect(save).toHaveBeenLastCalledWith(""));
-    expect(unregister).toHaveBeenCalledExactlyOnceWith("Control+Shift+Q"); expect(registered.size).toBe(0);
-    tab.hide(); shortcut.dispose();
-  });
-});
-
-
-describe("quick input visibility settings", () => {
-  it("shares five independent toggles and saves one field without resetting the others", async () => {
-    const plugin = createPlugin(); const tab = createTab(plugin);
-    const group = tab.getSettingDefinitions().find((entry) => entry.heading === getUiStrings("en").noteInput.quickInputHeading)!;
-    const toggles = group.items.filter((entry) => entry.control?.key.startsWith("quickInputVisibility."));
-    expect(toggles.map((entry) => entry.control?.key)).toEqual(["title", "folder", "boxes", "tags", "properties"].map((key) => `quickInputVisibility.${key}`));
-    expect(toggles.map((entry) => entry.desc)).toEqual([getUiStrings("en").noteInput.visibilityDesc, "", "", "", ""]);
-    expect(tab.getControlValue("quickInputVisibility.folder")).toBe(true);
-    await tab.setControlValue("quickInputVisibility.title", true);
-    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputVisibility: { title: true, folder: true, boxes: true, tags: true, properties: true } });
   });
 });

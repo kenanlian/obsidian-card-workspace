@@ -7,7 +7,9 @@ import { installObsidianDomHelpers } from "../src/__mocks__/obsidian-dom";
 export { installObsidianDomHelpers };
 
 export const Platform = { isTablet: false, isDesktopApp: false, isMacOS: false, isWin: false };
-export const requireApiVersion = () => false;
+let settingsApiAvailable = false;
+export const setSettingsApiAvailable = (available: boolean) => { settingsApiAvailable = available; };
+export const requireApiVersion = (version: string) => settingsApiAvailable && version === "1.13.0";
 export const getLanguage = () => "en";
 export const notices: string[] = [];
 export class Notice { constructor(message: string) { notices.push(message); } }

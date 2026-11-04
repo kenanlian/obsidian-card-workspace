@@ -31,6 +31,8 @@ export class MockEl {
   tag = "div";
   text = "";
   scrollTop = 0;
+  focused = false;
+  focus(): void { this.focused = true; }
   readonly classes = new Set<string>();
   readonly attrs: Record<string, string> = {};
   readonly nodes: MockNode[] = [];
@@ -296,6 +298,8 @@ export class Setting {
   constructor(containerEl: MockEl) {
     containerEl.nodes.push(this);
   }
+
+  setHeading(): this { return this; }
 
   setName(name: string): this {
     this.name = name;

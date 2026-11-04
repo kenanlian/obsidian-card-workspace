@@ -3328,3 +3328,17 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 
 .fce-touch-drag-ghost { z-index: calc(var(--layer-modal, 50) + 1); pointer-events: none; }
 .fce-card-drag-count { margin-inline-start: 6px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Legacy settings category navigation. Native pages use host styling. */
+.fce-settings-page-link {
+  cursor: pointer;
+}
+
+.fce-settings-page-link:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.fce-settings-page-link:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}

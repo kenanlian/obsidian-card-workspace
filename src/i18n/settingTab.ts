@@ -1,6 +1,11 @@
 import type { UiLanguage } from "./types";
 
+export type SettingsPageId = "appearance" | "cards-preview" | "navigation" | "opening-dragging" | "notes-templates" | "quick-input" | "default-icons";
+
 export interface SettingTabStrings {
+  pages: Record<SettingsPageId, { name: string; desc: string }>;
+  groups: Record<"text" | "style" | "content" | "references" | "images" | "hover" | "sections" | "entries" | "opening" | "dragging" | "newNotes" | "templateFiles" | "saving" | "fields" | "window" | "shortcut", string>;
+  back: string;
   fileVisibilityName: string;
   fileVisibilityDesc: string;
   fileVisibilityOptions: Record<"documents" | "supported" | "all", string>;
@@ -51,6 +56,55 @@ export interface SettingTabStrings {
 
 export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
   en: {
+    pages: {
+      "appearance": {
+        "name": "Interface appearance",
+        "desc": "Fonts, spacing, card styles and colors"
+      },
+      "cards-preview": {
+        "name": "Cards and previews",
+        "desc": "File types, summaries, images and hover previews"
+      },
+      "navigation": {
+        "name": "Navigation",
+        "desc": "Sections, item counts and hidden entries"
+      },
+      "opening-dragging": {
+        "name": "Opening and dragging",
+        "desc": "Card opening, link locations and editor insertion"
+      },
+      "notes-templates": {
+        "name": "New notes and templates",
+        "desc": "Initial content, destinations and template storage"
+      },
+      "quick-input": {
+        "name": "Quick input",
+        "desc": "Saving rules, input fields, window and shortcut"
+      },
+      "default-icons": {
+        "name": "Default icons",
+        "desc": "Icons for navigation entries and file cards"
+      }
+    },
+    groups: {
+      "text": "Text and spacing",
+      "style": "Card style",
+      "content": "Displayed content",
+      "references": "References and search",
+      "images": "Images",
+      "hover": "Hover preview",
+      "sections": "Visible sections",
+      "entries": "Navigation entries",
+      "opening": "Card opening",
+      "dragging": "Drag insertion",
+      "newNotes": "New notes",
+      "templateFiles": "Template files",
+      "saving": "Saving and appending",
+      "fields": "Input fields",
+      "window": "Window appearance",
+      "shortcut": "Shortcut"
+    },
+    back: "Back",
     fileVisibilityName: "Show file types",
     fileVisibilityDesc: "Apply to folders, boxes and links. Supported formats follow Obsidian and installed plugins; refresh after changing plugins. All formats may open in external apps.",
     fileVisibilityOptions: { documents: "Documents only", supported: "Common formats", all: "All formats" },
@@ -101,6 +155,55 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
   },
   zh: {
+    pages: {
+      "appearance": {
+        "name": "界面外观",
+        "desc": "字体、间距、卡片样式与颜色"
+      },
+      "cards-preview": {
+        "name": "卡片与预览",
+        "desc": "文件类型、摘要、图片与悬浮预览"
+      },
+      "navigation": {
+        "name": "导航栏",
+        "desc": "分区显示、条目计数与隐藏条目"
+      },
+      "opening-dragging": {
+        "name": "打开与拖拽",
+        "desc": "点击打开、链接定位与编辑器插入"
+      },
+      "notes-templates": {
+        "name": "新建与模板",
+        "desc": "新建内容、保存位置与模板文件夹"
+      },
+      "quick-input": {
+        "name": "快速输入",
+        "desc": "保存规则、输入字段、窗口与快捷键"
+      },
+      "default-icons": {
+        "name": "默认图标",
+        "desc": "导航条目与各类文件卡片的图标"
+      }
+    },
+    groups: {
+      "text": "文字与间距",
+      "style": "卡片样式",
+      "content": "显示内容",
+      "references": "引用与搜索",
+      "images": "图片",
+      "hover": "悬浮预览",
+      "sections": "分区显示",
+      "entries": "条目显示",
+      "opening": "点击打开",
+      "dragging": "拖拽插入",
+      "newNotes": "新建笔记",
+      "templateFiles": "模板文件",
+      "saving": "保存与追加",
+      "fields": "输入字段",
+      "window": "窗口外观",
+      "shortcut": "快捷键"
+    },
+    back: "返回",
     fileVisibilityName: "显示文件类型",
     fileVisibilityDesc: "适用于文件夹、卡片盒和链接列表。常规格式跟随 Obsidian 和已安装插件，变更插件后请刷新；全部格式可能通过外部应用打开。",
     fileVisibilityOptions: { documents: "仅文档", supported: "常规格式", all: "全部格式" },
