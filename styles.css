@@ -2664,7 +2664,21 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,
-.fce-mobile-navigation :is(button, .fce-tree-row) { min-height: 44px; min-width: 44px; }
+.fce-mobile-navigation button { min-height: 44px; min-width: 44px; }
+/* Phone tree rows stay compact; in-row actions keep their painted slot and extend the
+ * touch target to the full row height invisibly instead of inflating every row. */
+.folder-card-view.fce-mobile-navigation {
+  --fce-nav-row-height: 36px;
+  --fce-nav-section-height: 36px;
+  --fce-nav-action-slot: 28px;
+}
+.fce-mobile-navigation .fce-nav-tree .fce-nav-row-actions > * { position: relative; min-width: 0; min-height: 0; }
+.fce-mobile-navigation .fce-nav-tree .fce-nav-row-actions > *::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block: calc((var(--fce-nav-row-height) - var(--fce-nav-action-slot)) / -2);
+}
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(input, textarea),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(input, textarea),
 .fce-mobile-navigation input,
@@ -2934,11 +2948,11 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   min-width: 0;
   min-height: 0;
 }
-.folder-card-view .fce-shell[data-fce-device] .fce-nav-tree button.fce-tree-item-disclosure::before,
-.fce-mobile-navigation .fce-nav-tree button.fce-tree-item-disclosure::before {
+.folder-card-view .fce-shell[data-fce-device] .fce-nav-tree button.fce-tree-item-disclosure::before {
   inset-block: -14px;
   inset-inline-start: -8px;
 }
+.fce-mobile-navigation .fce-nav-tree button.fce-tree-item-disclosure::before { inset-inline-start: -8px; }
 .fce-emoji-icon {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   line-height: 1;

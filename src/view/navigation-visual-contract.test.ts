@@ -38,6 +38,19 @@ describe("navigation visual contract", () => {
     );
   });
 
+  it("keeps phone navigation rows compact while in-row actions extend their touch target", () => {
+    expect(styles).toMatch(
+      /\.folder-card-view\.fce-mobile-navigation \{\s*--fce-nav-row-height: 36px;\s*--fce-nav-section-height: 36px;/,
+    );
+    expect(styles).not.toMatch(/\.fce-mobile-navigation :is\([^)]*\.fce-tree-row[^)]*\) \{\s*min-height: 44px;/);
+    expect(styles).toMatch(
+      /\.fce-mobile-navigation \.fce-nav-tree \.fce-nav-row-actions > \* \{[^}]*min-height: 0;/,
+    );
+    expect(styles).toMatch(
+      /\.fce-mobile-navigation \.fce-nav-tree \.fce-nav-row-actions > \*::after \{[\s\S]*?inset-block: calc\(\(var\(--fce-nav-row-height\) - var\(--fce-nav-action-slot\)\) \/ -2\);/,
+    );
+  });
+
   it("separates sections with a hairline painted inside the existing section gap", () => {
     expect(styles).toMatch(
       /--fce-nav-section-divider: color-mix\(\s*in srgb,\s*var\(--background-modifier-border-hover,[\s\S]*?\) 35%,\s*transparent\s*\);/,
