@@ -384,7 +384,13 @@ export class ProjectionController {
       return cached.counts;
     }
 
-    const counts = collectVaultTagIndex(this.context.getApp())?.counts ?? {};
+    const index = collectVaultTagIndex(this.context.getApp());
+    if (index === null) {
+      // Unavailable metadata must remain retryable within the same count epoch.
+      return {};
+    }
+
+    const counts = index.counts;
     this.vaultTagCountsCache = { seq, counts };
     return counts;
   }

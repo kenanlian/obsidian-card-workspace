@@ -29,11 +29,11 @@ export class DragSession {
     this.snapshot = { source: source.kind === "cards" ? { ...source, paths: Object.freeze([...source.paths]) } : { ...source }, mode, x, y };
     if (mode === "touch") {
       // Use the owning document in browser stages and secondary windows.
-      this.ghost = doc.createElement("div");
+      this.ghost = doc.defaultView!.createFragment().createDiv();
       this.ghost.className = "fce-card-drag-ghost fce-touch-drag-ghost";
       this.ghost.textContent = source.label ?? (source.kind === "cards" ? source.paths[0]?.split("/").pop() ?? "" : "");
       if (source.kind === "cards" && source.paths.length > 1) {
-        const count = doc.createElement("span"); count.className = "fce-card-drag-count"; count.textContent = String(source.paths.length); this.ghost.append(count);
+        this.ghost.createSpan({ cls: "fce-card-drag-count", text: String(source.paths.length) });
       }
       this.ghost.setAttribute("aria-hidden", "true"); doc.body.append(this.ghost); this.moveGhost(x, y);
     }

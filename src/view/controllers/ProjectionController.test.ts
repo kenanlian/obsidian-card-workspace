@@ -70,7 +70,7 @@ function createHarness(options: {
   const getFileCache = vi.fn(options.fileCache ?? (() => ({ tags: [{ tag: "#work" }] })));
   const app = {
     metadataCache: { getFileCache },
-    vault: { getMarkdownFiles: vi.fn(() => []), getAbstractFileByPath: vi.fn(() => null) },
+    vault: { getMarkdownFiles: vi.fn((): NoteCardRecord["file"][] => []), getAbstractFileByPath: vi.fn(() => null) },
   };
   const store = createViewStateStore(scope);
   const state = {
@@ -294,6 +294,73 @@ describe("ProjectionController", () => {
     controller.refreshScopeTagData();
     expect(getFileCache).toHaveBeenCalledTimes(cards.length);
   });
+});
+
+describe("ProjectionController vault tag counts", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("retries unavailable vault counts after files become available", () => {
+    const { app, context, controller } = createHarness();
+    const seq = context.epochs.navCount.value;
+
+    expect(controller.getVaultTagCounts()).toEqual({});
+
+    app.vault.getMarkdownFiles.mockReturnValue([createCard("archive/outside.md").file]);
+
+    expect(context.epochs.navCount.value).toBe(seq);
+    expect(controller.getVaultTagCounts()).toEqual({ work: 1 });
+    expect(app.vault.getMarkdownFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches empty counts when markdown files exist but have no tags", () => {
+    const { app, controller, getFileCache } = createHarness({ fileCache: () => ({}) });
+    app.vault.getMarkdownFiles.mockReturnValue([createCard("archive/outside.md").file]);
+
+    const counts = controller.getVaultTagCounts();
+
+    expect(counts).toEqual({});
+    expect(controller.getVaultTagCounts()).toBe(counts);
+    expect(app.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
+    expect(getFileCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses successful counts and counts each note once for ancestor tags", () => {
+    const { app, controller, getFileCache } = createHarness({
+      fileCache: () => ({ tags: [{ tag: "#work/ai" }, { tag: "#work" }] }),
+    });
+    app.vault.getMarkdownFiles.mockReturnValue([
+      createCard("archive/a.md").file,
+      createCard("archive/b.md").file,
+    ]);
+
+    const counts = controller.getVaultTagCounts();
+
+    expect(counts).toEqual({ work: 2, "work/ai": 2 });
+    expect(controller.getVaultTagCounts()).toBe(counts);
+    expect(app.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
+    expect(getFileCache).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["navCount", "invalidateVaultCaches", "invalidateMetadataDerivedCaches"] as const)(
+    "refreshes cached counts after %s invalidation",
+    (invalidation) => {
+      const { app, context, controller, getFileCache } = createHarness();
+      app.vault.getMarkdownFiles.mockReturnValue([createCard("archive/outside.md").file]);
+      expect(controller.getVaultTagCounts()).toEqual({ work: 1 });
+
+      getFileCache.mockReturnValue({ tags: [{ tag: "#home" }] });
+      if (invalidation === "navCount") {
+        context.epochs.navCount.bump();
+      } else {
+        controller[invalidation]();
+      }
+
+      expect(controller.getVaultTagCounts()).toEqual({ home: 1 });
+      expect(app.vault.getMarkdownFiles).toHaveBeenCalledTimes(2);
+    },
+  );
 });
 
 describe("ProjectionController group arrangement", () => {
