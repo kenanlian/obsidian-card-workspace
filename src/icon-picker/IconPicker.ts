@@ -96,6 +96,7 @@ export class IconPicker {
     const s = options.strings;
     this.element = this.create("div", "fce-icon-picker");
     this.element.classList.toggle("is-sheet", options.layout === "sheet");
+    this.element.classList.toggle("is-above-modal", options.anchor.closest(".modal-container") !== null);
     this.element.tabIndex = -1;
     this.element.setAttribute("role", "dialog");
     this.element.setAttribute("aria-label", options.title ? `${s.change}: ${options.title}` : s.change);

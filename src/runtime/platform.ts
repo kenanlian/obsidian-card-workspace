@@ -10,7 +10,6 @@ export type RuntimeActionResult<T = void> = { outcome: "ok"; value: T } | Runtim
 export interface RuntimePlatformServices {
   readonly device: RuntimeDevice;
   readonly quickInputPresentation: "window" | "modal" | "unavailable";
-  navigateBack(leaf: WorkspaceLeaf): RuntimeActionResult;
   readonly capabilities: RuntimeCapabilities;
   systemPath(path: string): string | null;
   reveal(path: string, strings: DesktopShellStrings): Promise<{ ok: boolean; error?: string }>;
@@ -23,7 +22,6 @@ export interface RuntimePlatformServices {
 export const UNAVAILABLE_PLATFORM: RuntimePlatformServices = Object.freeze({
   device: "desktop",
   quickInputPresentation: "unavailable",
-  navigateBack: () => ({ outcome: "unavailable" as const, reason: "host" as const }),
   capabilities: UNSUPPORTED_CAPABILITIES,
   systemPath: () => null,
   reveal: (_path: string, strings: DesktopShellStrings) => Promise.resolve({ ok: false, error: strings.unavailable }),

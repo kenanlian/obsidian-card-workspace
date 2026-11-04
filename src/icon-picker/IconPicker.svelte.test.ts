@@ -43,6 +43,12 @@ describe("document-local nonmodal icon picker", () => {
     expect(document.activeElement).toBe(root.querySelector("input[type=search]"));
     expect(isEmojiCatalogInitialized()).toBe(false);
   });
+  it("layers above a host Modal only when its anchor is inside one", () => {
+    expect(fixture().picker.element.classList.contains("is-above-modal")).toBe(false);
+    const container = document.createElement("div"); container.className = "modal-container"; document.body.append(container);
+    const anchor = document.createElement("button"); container.append(anchor);
+    expect(fixture(document, { anchor }).picker.element.classList.contains("is-above-modal")).toBe(true);
+  });
   it("searches Lucide by ID tokens and Chinese keywords, and closes after a successful choice", async () => {
     const { picker, apply, anchor } = fixture();
     const root = picker.element;

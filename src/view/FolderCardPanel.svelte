@@ -111,7 +111,6 @@
 
   interface FolderCardPanelProps {
     onReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
-    onNavigateBack?: () => void;
     mobileApp?: import("obsidian").App;
     runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
@@ -233,7 +232,7 @@
     onPinToggle,
     onCardHoverLink,
     onCardDragStart, resolveCardDragPaths, onBeginCardDrag, onDropCards,
-    onReadingPosition, onNavigateBack, mobileApp, runtimeDevice = "desktop",
+    onReadingPosition, mobileApp, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -962,9 +961,6 @@
     onToggleNavPane={handleToggleNavPane}
   />
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
-  {#if runtimeDevice !== "desktop"}
-    <button class="fce-mobile-back clickable-icon" type="button" aria-label={strings.mobile.back} onclick={() => onNavigateBack?.()}>{strings.mobile.back}</button>
-  {/if}
   <Toolbar
     {attachSearchHistorySuggest}
     {strings}

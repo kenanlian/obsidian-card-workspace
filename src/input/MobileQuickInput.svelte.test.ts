@@ -117,6 +117,22 @@ describe("merged mobile quick-input contracts", () => {
     expect(submit.mock.calls[1][0]).not.toBe(first);
     expect(submit.mock.calls[1][0]).toMatchObject({ target: { title: "可修改" } });
   });
+  it("keeps cancel and send in its own header and paints the target in the toolbar", () => {
+    const header = document.querySelector(".fce-mobile-quick-input-header")!;
+    expect(header.querySelector(".fce-quick-input-cancel")).not.toBeNull();
+    expect(header.contains(send())).toBe(true);
+    expect(send().querySelector(".fce-quick-input-send-label")!.textContent).toBe("发送");
+    files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+    settings.boxes = [{ id: "box", name: "收件箱" } as never];
+    const folder = document.querySelector<HTMLButtonElement>(".fce-quick-input-folder")!;
+    expect(folder.querySelector(".fce-quick-input-choice-name")!.textContent).toBe("仓库根目录");
+    folder.click(); state.picker!.select("Inbox"); state.picker!.onClose();
+    expect(folder.querySelector(".fce-quick-input-choice-name")!.textContent).toBe("Inbox");
+    const count = document.querySelector<HTMLElement>(".fce-quick-input-boxes .fce-quick-input-choice-count")!;
+    expect(count.hidden).toBe(true);
+    document.querySelector<HTMLButtonElement>(".fce-quick-input-boxes")!.click(); state.picker!.select("box"); state.picker!.onClose();
+    expect(count.hidden).toBe(false); expect(count.textContent).toBe("1");
+  });
   it("does not send an empty frontmatter skeleton", () => {
     text("---\n\n---\n"); expect(send().disabled).toBe(true);
   });

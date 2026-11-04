@@ -11,7 +11,6 @@ import { attachSearchHistorySuggest, type SearchHistorySuggestOptions } from "./
 export interface PanelHost {
   app: App;
   registerReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
-  navigateBack?: () => void;
   panelModel: PanelModel;
   modules: ViewModules;
   plugin: {
@@ -36,7 +35,6 @@ type PanelCallbackProps = { panelModel: PanelModel; onCardDragStart: CardFileDra
 export function buildPanelProps(view: PanelHost): PanelCallbackProps {
   return {
     onReadingPosition: (bridge: import("./scope-history").ReadingPositionBridge | null) => view.registerReadingPosition?.(bridge),
-    onNavigateBack: () => view.navigateBack?.(),
     mobileApp: view.app, runtimeDevice: view.plugin.runtimePlatform?.device ?? "desktop",
     panelModel: view.panelModel,
     resolveCardDragPaths: (path: string) => view.modules.cardDropActions.resolvePaths(path),

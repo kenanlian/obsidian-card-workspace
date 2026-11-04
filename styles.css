@@ -2634,8 +2634,7 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,
-.fce-mobile-navigation :is(button, .fce-tree-row),
-.fce-mobile-quick-input button { min-height: 44px; min-width: 44px; }
+.fce-mobile-navigation :is(button, .fce-tree-row) { min-height: 44px; min-width: 44px; }
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(input, textarea),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(input, textarea),
 .fce-mobile-navigation input,
@@ -2644,46 +2643,183 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-more-actions-btn,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-nav-row-more,
 .fce-mobile-navigation .fce-nav-row-more { opacity: 1; visibility: visible; }
-.fce-mobile-navigation.modal {
-  width: min(90vw, 360px); height: calc(100dvh - env(safe-area-inset-top, 0px));
+/* The pane paints the whole drawer, as the sidebar does on desktop; host Modal padding and
+ * its empty title bar would otherwise frame it in the modal background. */
+.modal-container > .fce-mobile-navigation.modal {
+  width: min(90vw, 360px); height: 100dvh;
   max-height: 100dvh; margin-inline-start: 0; margin-inline-end: auto;
-  align-self: stretch; border-radius: 0;
+  align-self: stretch; border: 0; border-radius: 0;
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) 0 var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  background: var(--fce-nav-bg);
 }
-.fce-mobile-navigation .modal-content { display: flex; min-height: 0; margin: 0; }
+.fce-mobile-navigation.modal > :is(.modal-header-button, .modal-close-button, .modal-header, .modal-title) { display: none; }
+.fce-mobile-navigation.modal > .modal-content { display: flex; flex: 1; min-height: 0; margin: 0; padding: 0; overflow: hidden; }
 .fce-mobile-navigation .fce-nav-pane { display: flex; width: 100%; min-width: 0; flex: 1; }
 .fce-mobile-navigation .fce-nav-resize-handle { display: none; }
+/* Obsidian Android draws under the status bar and exposes insets as variables; env() is the iOS fallback. */
 .fce-mobile-quick-input.modal {
+  --fce-quick-input-radius: var(--radius-m, 8px);
+  --fce-mobile-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --fce-mobile-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --fce-mobile-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --fce-mobile-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   position: fixed; left: 50%; transform: translateX(-50%);
   top: calc(var(--fce-viewport-top, 0px) + max(0px, (var(--fce-viewport-height, 100dvh) - 640px) / 2));
   width: min(720px, 96vw); height: min(640px, var(--fce-viewport-height, 90dvh)); max-height: var(--fce-viewport-height, 90dvh);
+  display: flex; flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--background-primary);
 }
 .fce-mobile-quick-input.is-phone.modal {
   top: var(--fce-viewport-top, 0px); left: 0; transform: none;
-  width: 100vw; max-width: 100vw; height: var(--fce-viewport-height, 100dvh); border-radius: 0;
-  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  width: 100vw; max-width: 100vw; height: var(--fce-viewport-height, 100dvh); border: 0; border-radius: 0;
+  padding: var(--fce-mobile-safe-top) var(--fce-mobile-safe-right) 0 var(--fce-mobile-safe-left);
 }
-.fce-mobile-quick-input .modal-content { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+/* The plugin header replaces the host title and close button, which overlap the status bar on phones. */
+.fce-mobile-quick-input.modal > :is(.modal-header-button, .modal-close-button, .modal-header, .modal-title) { display: none; }
+.fce-mobile-quick-input .modal-content { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 0; padding: 0; overflow: hidden; }
 .fce-mobile-quick-input-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.fce-mobile-quick-input .fce-quick-input-editor { flex: 1; min-height: 0; overflow: auto; }
-.fce-mobile-quick-input .fce-quick-input-footer { flex-shrink: 0; flex-wrap: wrap; }
-.fce-mobile-draft-source { width: 100%; height: 100%; min-height: 100px; resize: none; }
+.fce-mobile-quick-input-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 52px;
+  padding: 4px 12px 4px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.fce-mobile-quick-input-heading {
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium, 15px);
+  font-weight: var(--font-semibold, 600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fce-mobile-quick-input .fce-quick-input-cancel {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--text-muted);
+  --icon-size: 20px;
+}
+.fce-mobile-quick-input .fce-quick-input-send {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 16px;
+  border-radius: 18px;
+  box-shadow: none;
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+  --icon-size: 16px;
+}
+.fce-mobile-quick-input .fce-quick-input-send:disabled {
+  background: var(--interactive-normal);
+  color: var(--text-faint);
+  opacity: 1;
+  cursor: default;
+}
+.fce-mobile-quick-input .fce-quick-input-send-label { overflow: hidden; text-overflow: ellipsis; }
+.fce-mobile-quick-input .fce-quick-input-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 0;
+  background: var(--background-primary);
+}
+.fce-mobile-quick-input .fce-quick-input-editor .cm-scroller { padding: 16px 16px 24px; }
+.fce-mobile-quick-input .fce-quick-input-editor > .fce-quick-input-title.inline-title { padding: 16px 16px 0; box-sizing: border-box; }
+.fce-mobile-quick-input .fce-quick-input-footer {
+  flex: none;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px 8px max(4px, var(--fce-mobile-safe-bottom));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fce-mobile-quick-input .fce-quick-input-footer::-webkit-scrollbar { display: none; }
+.fce-mobile-quick-input .fce-quick-input-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: var(--radius-m, 8px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  --icon-size: 20px;
+}
+.fce-mobile-quick-input .fce-quick-input-footer button:disabled { opacity: 0.4; }
+.fce-mobile-quick-input .fce-quick-input-footer .fce-quick-input-folder {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(60%, 260px);
+  height: 36px;
+  margin-inline-end: 4px;
+  padding: 0 12px;
+  border-radius: 18px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+  --icon-size: 16px;
+}
+.fce-mobile-quick-input .fce-quick-input-footer .fce-quick-input-folder.is-invalid { color: var(--text-error); }
+:root .fce-mobile-quick-input .fce-quick-input-footer [hidden] { display: none; }
+.fce-mobile-draft-source {
+  flex: 1;
+  width: 100%;
+  min-height: 100px;
+  padding: 8px 16px 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: none;
+}
+.fce-mobile-draft-source:focus { box-shadow: none; }
 .fce-copy-fallback { width: 100%; min-height: 200px; font-size: 16px; }
 body.is-mobile .fce-compat-modal { max-width: calc(100vw - 16px); max-height: 90dvh; overflow: auto; }
 body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 
-.fce-mobile-quick-input .fce-quick-input-title {
+.fce-mobile-quick-input .fce-quick-input-title.inline-title {
   display: block;
   width: 100%;
-  min-height: 44px;
-  margin-bottom: 8px;
+  height: auto;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--inline-title-color);
+  font-family: var(--inline-title-font);
   font-size: max(16px, var(--h3-size));
+  font-weight: var(--inline-title-weight);
+  font-style: var(--inline-title-style);
+  line-height: var(--h3-line-height, var(--line-height-tight));
 }
-.fce-mobile-quick-input .fce-quick-input-folder {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.fce-mobile-quick-input .fce-quick-input-title.inline-title:focus { border: 0; box-shadow: none; outline: none; }
+.fce-mobile-quick-input .fce-quick-input-title.inline-title::placeholder { color: var(--text-faint); }
 
 /* Content icons are separate intent regions; their slot remains stable. The hover
  * plate is a square centred on the glyph and sized from it, so navigation and card
@@ -2761,6 +2897,18 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   position: absolute;
   inset: -8px -6px;
 }
+/* Expandable rows render the disclosure as a button and leaves as a span; both must keep
+ * the same track width or the identity icons of sibling rows stop lining up. */
+.folder-card-view .fce-shell[data-fce-device] .fce-nav-tree .fce-tree-item-disclosure,
+.fce-mobile-navigation .fce-nav-tree .fce-tree-item-disclosure {
+  min-width: 0;
+  min-height: 0;
+}
+.folder-card-view .fce-shell[data-fce-device] .fce-nav-tree button.fce-tree-item-disclosure::before,
+.fce-mobile-navigation .fce-nav-tree button.fce-tree-item-disclosure::before {
+  inset-block: -14px;
+  inset-inline-start: -8px;
+}
 .fce-emoji-icon {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   line-height: 1;
@@ -2820,6 +2968,8 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   --fce-picker-safe-bottom: env(safe-area-inset-bottom, 0px);
   --fce-picker-safe-left: env(safe-area-inset-left, 0px);
 }
+/* Anchors inside a host Modal (mobile navigation, settings) need the picker above that layer. */
+.fce-icon-picker.is-above-modal { z-index: calc(var(--layer-modal, 50) + 1); }
 @keyframes fce-icon-picker-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }

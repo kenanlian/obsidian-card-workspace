@@ -29,6 +29,15 @@ describe("navigation visual contract", () => {
     );
   });
 
+  it("keeps touch disclosure buttons on the same track as leaf placeholders", () => {
+    expect(styles).toMatch(
+      /\.fce-mobile-navigation \.fce-nav-tree \.fce-tree-item-disclosure \{\s*min-width: 0;\s*min-height: 0;\s*\}/,
+    );
+    expect(styles).toMatch(
+      /\.folder-card-view \.fce-shell\[data-fce-device\] \.fce-nav-tree \.fce-tree-item-disclosure,/,
+    );
+  });
+
   it("separates sections with a hairline painted inside the existing section gap", () => {
     expect(styles).toMatch(
       /--fce-nav-section-divider: color-mix\(\s*in srgb,\s*var\(--background-modifier-border-hover,[\s\S]*?\) 35%,\s*transparent\s*\);/,

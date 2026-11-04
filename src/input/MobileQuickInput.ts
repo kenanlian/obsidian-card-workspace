@@ -1,4 +1,4 @@
-import { Modal, type App } from "obsidian";
+import { Modal, setIcon, type App } from "obsidian";
 import type { UiStrings } from "../i18n";
 import { normalizeQuickInputVisibility, type NoteInputResult, type QuickInputRequest } from "../note-input";
 import type { PluginSettings } from "../settings";
@@ -34,6 +34,7 @@ export class MobileQuickInput extends Modal {
   private confirming: CompatConfirmationModal | null = null;
   private cleanup: Array<() => void> = [];
   private sendButton: HTMLButtonElement | null = null;
+  private sendLabel: HTMLSpanElement | null = null;
   private sequence = 0;
   private readonly prefix = `${Date.now()}-${Math.random()}`;
   constructor(private readonly options: Options) { super(options.app); }
@@ -43,26 +44,36 @@ export class MobileQuickInput extends Modal {
     this.modalEl.toggleClass("is-phone", this.options.phone);
     this.cleanup.push(installVisualViewport(this.modalEl));
     const strings = this.options.getStrings();
-    this.setTitle(strings.noteInput.quickInput);
+    this.modalEl.setAttribute("aria-label", strings.noteInput.quickInput);
     const settings = this.options.getSettings(), config = { ...settings.quickInput };
     const visibility = normalizeQuickInputVisibility(settings.quickInputVisibility);
     const session = new QuickInputDraftSession({ config, now: new Date() });
     this.submission = session;
     const root = this.contentEl.createDiv({ cls: "fce-mobile-quick-input-body" });
+    const header = root.createDiv({ cls: "fce-mobile-quick-input-header" });
+    const cancel = header.createEl("button", { cls: "clickable-icon fce-quick-input-cancel", attr: { type: "button", "aria-label": strings.noteInput.cancel } });
+    setIcon(cancel, "x");
+    cancel.addEventListener("click", () => this.close());
+    header.createDiv({ cls: "fce-mobile-quick-input-heading", text: strings.noteInput.quickInput });
+    this.sendButton = header.createEl("button", { cls: "mod-cta fce-quick-input-send", attr: { type: "button" } });
+    setIcon(this.sendButton.createSpan({ cls: "fce-quick-input-send-icon", attr: { "aria-hidden": "true" } }), "send");
+    this.sendLabel = this.sendButton.createSpan({ cls: "fce-quick-input-send-label", text: strings.noteInput.send });
+    this.sendButton.addEventListener("click", () => { void this.send(); });
     const body = root.createDiv({ cls: "fce-quick-input-editor" });
     const footer = root.createDiv({ cls: "fce-quick-input-footer" });
-    const button = (cls: string, label: string, visible: boolean, action: () => void) => {
-      const element = footer.createEl("button", { cls, text: label, attr: { type: "button" } });
+    const button = (cls: string, label: string, icon: string, visible: boolean, action: () => void) => {
+      const element = footer.createEl("button", { cls: `clickable-icon ${cls}`, attr: { type: "button", "aria-label": label } });
+      setIcon(element, icon);
       element.hidden = !visible;
       element.addEventListener("click", action);
       return element;
     };
-    this.folderButton = button("fce-quick-input-folder", strings.noteInput.rootFolder, visibility.folder, () => this.openChoices("folder"));
-    this.boxButton = button("fce-quick-input-boxes", strings.noteInput.boxes, visibility.boxes, () => this.openChoices("boxes"));
-    this.metadataButtons = [button("fce-quick-input-tags", strings.noteInput.addTags, visibility.tags, () => this.addMetadata("tags")),
-      button("fce-quick-input-property", strings.noteInput.addProperty, visibility.properties, () => this.addMetadata("property"))];
-    button("fce-quick-input-cancel", strings.noteInput.cancel, true, () => this.close());
-    this.sendButton = button("mod-cta", strings.noteInput.send, true, () => { void this.send(); });
+    this.folderButton = button("fce-quick-input-folder", strings.noteInput.targetFolder, "folder", visibility.folder, () => this.openChoices("folder"));
+    this.folderButton.createSpan({ cls: "fce-quick-input-choice-name" });
+    this.boxButton = button("fce-quick-input-boxes", strings.noteInput.boxes, "box", visibility.boxes, () => this.openChoices("boxes"));
+    this.boxButton.createSpan({ cls: "fce-quick-input-choice-count" }).hidden = true;
+    this.metadataButtons = [button("fce-quick-input-tags", strings.noteInput.addTags, "tags", visibility.tags, () => this.addMetadata("tags")),
+      button("fce-quick-input-property", strings.noteInput.addProperty, "list", visibility.properties, () => this.addMetadata("property"))];
     const compositionStart = () => { session.composing = true; this.refresh(); };
     const compositionEnd = () => { session.composing = false; this.refresh(); };
     root.addEventListener("compositionstart", compositionStart); root.addEventListener("compositionend", compositionEnd);
@@ -121,16 +132,23 @@ export class MobileQuickInput extends Modal {
     if (!this.sendButton || !session) return;
     const strings = this.options.getStrings().noteInput, locked = session.pending || !!session.request;
     this.sendButton.disabled = !editor || session.pending || session.composing || !stripEmptyDraftFrontmatter(editor.getValue()).trim() || !target?.valid;
-    this.sendButton.textContent = session.pending ? strings.sending : target?.mode === "append" ? strings.appendNote : strings.send;
+    const action = session.pending ? strings.sending : target?.mode === "append" ? strings.appendNote : strings.send;
+    if (this.sendLabel) this.sendLabel.textContent = action;
+    this.sendButton.setAttribute("aria-label", action);
     if (this.title) this.title.disabled = locked;
     if (this.folderButton) {
+      const folderLabel = target?.folderPath || strings.rootFolder;
       this.folderButton.disabled = locked;
-      this.folderButton.textContent = target?.folderPath || strings.rootFolder;
+      this.folderButton.querySelector("span.fce-quick-input-choice-name")!.textContent = folderLabel;
       this.folderButton.classList.toggle("is-invalid", !target?.valid);
+      this.folderButton.setAttribute("aria-label", target?.valid === false ? `${folderLabel} · ${strings.destinationUnavailable}` : `${strings.targetFolder}: ${folderLabel}`);
     }
     if (this.boxButton) {
+      const count = this.boxButton.querySelector<HTMLElement>("span.fce-quick-input-choice-count")!;
       this.boxButton.disabled = locked;
-      this.boxButton.textContent = this.boxIds.length ? `${strings.boxes} (${this.boxIds.length})` : strings.boxes;
+      count.textContent = String(this.boxIds.length);
+      count.hidden = !this.boxIds.length;
+      this.boxButton.setAttribute("aria-label", this.boxIds.length ? `${strings.boxes} (${this.boxIds.length})` : strings.boxes);
     }
     for (const button of this.metadataButtons) button.disabled = locked || target?.mode === "append";
     this.contentEl.setAttribute("aria-busy", String(session.pending));
@@ -232,7 +250,7 @@ export class MobileQuickInput extends Modal {
     this.popup?.dispose(); this.popup = null;
     this.confirming?.close(); this.confirming = null;
     for (const stop of this.cleanup.splice(0)) stop();
-    this.editor?.dispose(); this.editor = null; this.submission = null; this.sendButton = null;
+    this.editor?.dispose(); this.editor = null; this.submission = null; this.sendButton = null; this.sendLabel = null;
     this.title = null; this.folderButton = this.boxButton = null; this.metadataButtons = []; this.boxIds = []; this.target = null;
     this.contentEl.empty();
   }

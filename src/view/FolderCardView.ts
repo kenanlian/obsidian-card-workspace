@@ -192,10 +192,6 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.recordedScope = this.cardScope;
     if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
   }
-  navigateBack(): void {
-    const result = this.plugin.runtimePlatform?.navigateBack(this.leaf);
-    if (!result || result.outcome === "unavailable") new Notice(this.strings.mobile.backUnavailable);
-  }
   getViewType(): string { return FOLDER_CARD_VIEW; }
   getDisplayText(): string { return this.strings.view.displayName; }
   getIcon(): string { return CARD_WORKSPACE_ICON; }

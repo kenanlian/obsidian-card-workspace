@@ -13,13 +13,6 @@ export function createRuntimePlatformServices(getApp: () => App, win: Window): R
   return Object.freeze({
     device,
     quickInputPresentation: device === "desktop" ? "window" : "modal",
-    navigateBack(leaf) {
-      // Optional host bridge; the public View state contract remains usable without it.
-      const history = (leaf as unknown as { history?: { back?: () => void } }).history;
-      if (typeof history?.back !== "function") return { outcome: "unavailable", reason: "host" } as const;
-      history.back();
-      return { outcome: "ok", value: undefined } as const;
-    },
     capabilities: Object.freeze({ ...capabilities, quickInput: true }),
     systemPath: (path: string) => capabilities.systemPath ? getSystemPath(getApp(), path) : null,
     reveal: (path, strings) => capabilities.systemFileManager ? showInSystemExplorer(getApp(), path, strings)

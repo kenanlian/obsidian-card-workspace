@@ -36,10 +36,10 @@ a pending submission waits. Drafts live only in memory and are never sent in the
 Scope navigation participates in Obsidian's view history. Committed folder, box and links
 switches record history; refreshes, preview updates, failures, superseded requests and
 links-follow do not. History loads through the same scope controller and pipeline. Reading
-anchors are runtime-only, bounded per leaf, and do not enter plugin settings. The Back
-button calls an optional checked host history bridge; if unavailable, use Obsidian's own
-back control. The plugin does not intercept Android's global Back event. Host keyboard,
-menu and Modal dismissal retain their normal precedence.
+anchors are runtime-only, bounded per leaf, and do not enter plugin settings. Use
+Obsidian's own back and forward controls; the card page adds no Back button of its own.
+The plugin does not intercept Android's global Back event. Host keyboard, menu and Modal
+dismissal retain their normal precedence.
 
 ## Device settings and cache identity
 
