@@ -49,3 +49,47 @@ describe("mobile host history", () => {
     view.cleanupLifecycle();
   });
 });
+
+describe("phone header title", () => {
+  function setupFolders(isDesktopApp: boolean) {
+    const harness = createViewWithFile("notes/a.md", { isDesktopApp });
+    const { app, file, plugin } = harness;
+    Object.assign(file, { stat: { ctime: 1, mtime: 1, size: 1 } });
+    const root = createFolder(""), folder = createFolder("notes"); attachChildren(folder, [file]); attachChildren(root, [folder]);
+    app.vault.getRoot = () => root;
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => path === "" ? root : path === "notes" ? folder : path === file.path ? file : null);
+    app.metadataCache.resolvedLinks = {};
+    const settings = normalizeSettings({}); plugin.getSettings.mockImplementation(() => settings);
+    return harness;
+  }
+
+  it("shows the current scope on phones and refreshes the host header only when it changes", async () => {
+    const { view } = setupFolders(false);
+    const updateHeader = vi.fn();
+    const titleEl = { setText: vi.fn() };
+    Object.assign(view.leaf, { updateHeader, setViewState: vi.fn(async () => undefined) });
+    Object.assign(view, { titleEl, hostEl: {} });
+    await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("", true), false, "restore"));
+    await flushAsyncWork();
+    const strings = view.plugin.getUiStrings();
+    expect(view.getDisplayText()).toBe(strings.toolbar.folderMenu.rootFolder);
+    const rootRefreshes = updateHeader.mock.calls.length;
+    expect(rootRefreshes).toBeGreaterThan(0);
+    view.refreshNavigationMetadata();
+    expect(updateHeader).toHaveBeenCalledTimes(rootRefreshes);
+    await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("notes", true), false, "panel-picker"));
+    await flushAsyncWork();
+    expect(view.getDisplayText()).toBe("notes");
+    expect(updateHeader.mock.calls.length).toBeGreaterThan(rootRefreshes);
+    expect(titleEl.setText).toHaveBeenLastCalledWith("notes");
+    view.cleanupLifecycle();
+  });
+
+  it("keeps the plugin name on desktop", async () => {
+    const { view } = setupFolders(true);
+    await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("notes", true), false, "restore"));
+    await flushAsyncWork();
+    expect(view.getDisplayText()).toBe(view.plugin.getUiStrings().view.displayName);
+    view.cleanupLifecycle();
+  });
+});

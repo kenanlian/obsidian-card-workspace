@@ -21,6 +21,33 @@
   overflow: hidden;
 }
 
+/*
+ * Phone auto-hide follows the host's `is-hidden-nav`, which slides away its fixed view header.
+ * The space the host reserves for that header and the plugin toolbar collapse with it in one
+ * untransitioned layout change; `mobile-chrome.ts` animates the move with a transform.
+ * Like hidden-nav notes, the cards then run under the status bar behind the host's top fade.
+ */
+body.is-phone.is-hidden-nav .workspace-leaf-content[data-type="folder-card-view"] > .view-content {
+  margin-top: 0;
+  mask-image: var(--view-top-fade-mask);
+}
+
+body.is-phone .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
+  transition: opacity 0.2s ease-in-out;
+}
+
+body.is-phone.is-hidden-nav .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
+  margin-top: calc(-1 * var(--fce-toolbar-height, 0px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-phone .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
+    transition: none;
+  }
+}
+
 .folder-card-view,
 .folder-card-view .fce-shell {
   height: 100%;
@@ -2631,6 +2658,9 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar { flex-wrap: wrap; min-width: 0; }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar > *,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar > * { max-width: 100%; min-width: 0; }
+/* Phones show the scope in the host view header instead. */
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar-scope { display: none; }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar-actions { margin-inline-start: auto; }
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,

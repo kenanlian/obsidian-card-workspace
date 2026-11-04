@@ -13,7 +13,11 @@ export function installVisualViewport(root: HTMLElement): () => void {
   update();
   win.addEventListener("resize", schedule);
   viewport?.addEventListener("resize", schedule); viewport?.addEventListener("scroll", schedule);
+  // Host chrome above the region (for example a collapsing view header) moves its top edge without a window resize.
+  const containerObserver = typeof win.ResizeObserver === "function" && root.parentElement ? new win.ResizeObserver(schedule) : null;
+  if (root.parentElement) containerObserver?.observe(root.parentElement);
   return () => {
+    containerObserver?.disconnect();
     win.removeEventListener("resize", schedule); viewport?.removeEventListener("resize", schedule); viewport?.removeEventListener("scroll", schedule);
     if (frame) win.cancelAnimationFrame(frame);
     root.style.removeProperty("--fce-region-height"); root.style.removeProperty("--fce-viewport-height"); root.style.removeProperty("--fce-viewport-top");

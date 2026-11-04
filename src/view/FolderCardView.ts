@@ -1,4 +1,6 @@
 import { navigationIconTarget } from "./content-icon-target";
+import { installMobileChromeAutoHide, type MobileChromeAutoHide } from "./mobile-chrome";
+import { buildScopeTitle } from "./scope-label";
 import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
 import { RuntimeWorkGate } from "../runtime/work-gate";
 import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
@@ -63,6 +65,8 @@ export class FolderCardView extends ItemView implements HoverParent {
   private recordedScope: CardScope | null = null;
   private component: ReturnType<typeof mount> | null = null;
   private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
+  private mobileChrome: MobileChromeAutoHide | null = null;
+  private headerTitle: string | null = null;
   private metadataEventUnsubscribe: (() => void) | null = null;
   private suppressScopeProjectionPatch = false;
   readonly panelModel: PanelModel;
@@ -193,7 +197,31 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
   }
   getViewType(): string { return FOLDER_CARD_VIEW; }
-  getDisplayText(): string { return this.strings.view.displayName; }
+  getDisplayText(): string {
+    const state = this.isPhone ? this.panelModel?.getState() : undefined;
+    const title = state ? buildScopeTitle({
+      scope: state.scope, activeFilterTags: state.projection.activeFilterTags, strings: state.strings.toolbar,
+      propertyFilters: this.plugin.getSettings().filter.properties, propertyStrings: state.strings.property,
+    }) : "";
+    return title || this.strings.view.displayName;
+  }
+  private get isPhone(): boolean { return this.plugin.runtimePlatform?.device === "phone"; }
+  /**
+   * Phones show the scope in the host header. The host writes the view title element only on
+   * load and `updateHeader` refreshes only the tab title, so both are host-internal and optional.
+   */
+  private syncHeaderTitle(): void {
+    if (!this.isPhone || !this.hostEl) return;
+    const title = this.getDisplayText();
+    if (title === this.headerTitle) return;
+    this.headerTitle = title;
+    const ownTitleEl = (this as unknown as { titleEl?: { setText?: unknown } }).titleEl;
+    const titleEl = typeof ownTitleEl?.setText === "function" ? ownTitleEl as HTMLElement
+      : this.containerEl.querySelector?.<HTMLElement>(".view-header-title");
+    titleEl?.setText(title);
+    const leaf = this.leaf as WorkspaceLeaf & { updateHeader?: () => void };
+    if (typeof leaf.updateHeader === "function") leaf.updateHeader();
+  }
   getIcon(): string { return CARD_WORKSPACE_ICON; }
   private get strings(): UiStrings {
     return this.plugin.getUiStrings();
@@ -288,6 +316,10 @@ export class FolderCardView extends ItemView implements HoverParent {
     });
 
     this.stopActivity = this.plugin.runtimeActivity?.observeRegion(this.hostEl.querySelector<HTMLElement>(".fce-list") ?? this.hostEl, this.workGate) ?? null;
+    if (this.isPhone) {
+      this.mobileChrome = installMobileChromeAutoHide(this.app, this.hostEl);
+      this.syncHeaderTitle();
+    }
     this.modules.navLayout.refreshFolderTreeState();
     this.modules.hydration.hydrateVisibleCardsOnOpen();
     this.viewEventUnsubscribe?.();
@@ -505,6 +537,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       state.projection = projectionGroup;
       state.nav = navGroup;
     });
+    this.syncHeaderTitle();
   }
 
   /** Publish global metadata identities without invalidating scope count caches. */
@@ -519,6 +552,7 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   cleanupLifecycle(): CleanupResult {
     this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
+    this.mobileChrome?.dispose(); this.mobileChrome = null;
     this.viewEventUnsubscribe?.();
     this.viewEventUnsubscribe = null;
     this.metadataEventUnsubscribe?.();
@@ -776,6 +810,7 @@ export class FolderCardView extends ItemView implements HoverParent {
         }
       }
     });
+    if (uniqueGroups.has("scope") || uniqueGroups.has("projection") || uniqueGroups.has("strings")) this.syncHeaderTitle();
   }
   private buildLoadBoundaryHost(): LoadBoundaryHost {
     return {

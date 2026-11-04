@@ -10,7 +10,11 @@ reuses that page on later opens. Startup restores only the saved folder, includi
 root, and clears the active box without changing shared settings.
 
 Phones show one card column. Navigation opens in an Obsidian Modal; selecting a scope
-closes it. Tablets use two panes only when the container is at least 640px and fits the
+closes it. On phones the Obsidian page header shows the current source and its active
+tag and property filters instead of the toolbar. With Obsidian's Auto full screen
+setting, scrolling the cards hides the header, bottom navigation and toolbar exactly as
+it does for notes; scrolling up or tapping restores them. Tablets keep the scope in the
+toolbar. Tablets use two panes only when the container is at least 640px and fits the
 saved navigation width plus 320px for cards. Rotation, split view and keyboard resizing
 update layout without loading the scope again. Cards remain virtualized and hydrate on
 demand. Menus have tap buttons and a 500ms long press, canceled by more than 8px movement,

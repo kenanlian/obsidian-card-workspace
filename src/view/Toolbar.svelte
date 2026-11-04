@@ -13,6 +13,7 @@
     PanelSearchState,
   } from "./panel-model";
   import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
+  import { buildScopeLabel } from "./scope-label";
   import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
   import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
@@ -166,8 +167,6 @@
   const boxStrings = $derived(strings.box);
   const sortGroupStrings = $derived(strings.sortGroup);
   const activeBoxId = $derived(scope.activeBoxId);
-  const activeBoxName = $derived(scope.activeBoxName);
-  const folderPath = $derived(scope.displayPath);
   const activeFilterTags = $derived(projection.activeFilterTags);
   const sortField = $derived(projection.sortField);
   const sortDirection = $derived(projection.sortDirection);
@@ -208,31 +207,8 @@
   const hasBoxes = $derived(boxSummaries.length > 0);
   const isSortGroupTriggerSelected = $derived(group.dimension !== "none");
 
-  function formatScopeTag(tag: string): string {
-    return tag.startsWith("#") ? tag : `#${tag}`;
-  }
-
-  const isVaultRootScope = $derived(folderPath === "/" || folderPath === "");
-  const folderScopeName = $derived(
-    isVaultRootScope ? toolbarStrings.folderMenu.rootFolder : (folderPath.split("/").pop() ?? folderPath),
-  );
-  const folderScopeFullLabel = $derived(
-    isVaultRootScope ? toolbarStrings.folderMenu.rootFolder : folderPath,
-  );
-  const tagScopeLabel = $derived(activeFilterTags.map(formatScopeTag).join(", "));
-
-  function joinScope(folderLabel: string): string {
-    return tagScopeLabel.length > 0
-      ? `${folderLabel}${toolbarStrings.scope.separator}${tagScopeLabel}`
-      : folderLabel;
-  }
-
-  const scopeText = $derived(
-    isLinksMode ? (scope.linksLabel ?? "") : isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeName),
-  );
-  const scopeTooltip = $derived(
-    isLinksMode ? (scope.linksLabel ?? "") : isBoxMode ? (activeBoxName ?? "") : joinScope(folderScopeFullLabel),
-  );
+  const scopeText = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "name"));
+  const scopeTooltip = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "full"));
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(false);
