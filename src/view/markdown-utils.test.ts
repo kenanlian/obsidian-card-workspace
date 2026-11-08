@@ -9,6 +9,21 @@ import type { PreviewTextSource } from "./preview-source-collector";
 // buildLightPreview
 // ---------------------------------------------------------------------------
 describe("buildLightPreview", () => {
+  it("skips leading tag-only lines before charging character and line budgets", () => {
+    const markdown = "---\r\ntags: [读书]\r\n---\r\n\r\n#读书 #项目/子项\r\n#待整理\r\n\r\n正文内容\r\n下一行";
+    expect(buildLightPreview(markdown, 4, 1, true).html).toBe("<p>正文内容</p>");
+    expect(buildLightPreview("#读书\n#待整理", 200, 5, true).mode).toBe("empty");
+    expect(buildLightPreview("#读书\n正文", 200, 1).html).toBe("<p>#读书</p>");
+  });
+
+  it.each([
+    "# 标题\n#读书", "#读书 正文", "正文\n#读书", "```\n#读书\n```",
+    "    code\n#读书", "#123\n#读书", "#标签!\n#读书", "`#读书`",
+    "> #读书", "\\#读书", "#读书\n---\n正文",
+  ])("preserves body tags and Markdown structures: %s", (markdown) => {
+    expect(buildLightPreview(markdown, 500, 5, true)).toEqual(buildLightPreview(markdown, 500, 5));
+  });
+
   it.each([0, 1, 2])("respects a %i-line budget for text and code previews", (previewLines) => {
     for (const markdown of ["first\nsecond\nthird", "```\nfirst\nsecond\nthird\n```"]) {
       const result = buildLightPreview(markdown, 500, previewLines);

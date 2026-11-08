@@ -12,6 +12,7 @@ export interface PreviewFingerprint {
   readonly path: string;
   readonly mtime: number;
   readonly previewLines: number;
+  readonly skipLeadingTags: boolean;
   readonly maxVisibleChars: number;
   readonly contextKey: string;
 }
@@ -34,8 +35,9 @@ export function createPreviewFingerprint(
   previewLines: number,
   maxVisibleChars: number,
   contextKey = "",
+  skipLeadingTags = false,
 ): PreviewFingerprint {
-  return { path, mtime, previewLines: normalizePreviewLines(previewLines), maxVisibleChars, contextKey };
+  return { path, mtime, skipLeadingTags, previewLines: normalizePreviewLines(previewLines), maxVisibleChars, contextKey };
 }
 
 export function fingerprintsEqual(
@@ -44,6 +46,7 @@ export function fingerprintsEqual(
 ): boolean {
   return left.path === right.path
     && left.mtime === right.mtime
+    && left.skipLeadingTags === right.skipLeadingTags
     && left.previewLines === right.previewLines
     && left.maxVisibleChars === right.maxVisibleChars
     && left.contextKey === right.contextKey;

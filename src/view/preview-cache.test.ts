@@ -14,6 +14,12 @@ describe("PreviewCache", () => {
     expect(cache.get(createPreviewFingerprint("a.md", 2, 5, 200, "link:line-2"))).toBeUndefined();
   });
 
+  it("rejects cached previews after the leading-tag preference changes", () => {
+    const cache = new PreviewCache();
+    cache.set(fingerprint("a.md"), { html: "#tag", mode: "text" });
+    expect(cache.get(createPreviewFingerprint("a.md", 1, 5, 200, "", true))).toBeUndefined();
+  });
+
   it("retains ordinary previews and only the current query inside a single LRU entry", () => {
     const cache = new PreviewCache();
     const ordinary = createPreviewFingerprint("a.md", 2, 5, 200, "|live:2");

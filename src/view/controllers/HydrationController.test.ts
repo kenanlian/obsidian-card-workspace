@@ -69,6 +69,23 @@ async function ticks(count = 4): Promise<void> {
 }
 
 describe("HydrationController", () => {
+  it("rebuilds cached opening previews when skipping leading tags is toggled", async () => {
+    const record = card("tags.md");
+    const { context, controller } = harness([record], vi.fn(async () => "#读书\n正文"));
+    let skipLeadingTags = false;
+    context.getSettings = () => ({ ...DEFAULT_SETTINGS, previewLines: 1, skipLeadingTags });
+    for (const enabled of [false, true, false]) {
+      skipLeadingTags = enabled;
+      const fresh = card(record.path);
+      context.store.replaceBaseCards([fresh]);
+      context.store.replaceVisibleCards([fresh]);
+      controller.resetForLoad();
+      await controller.hydrateStartupCardPaths([record.path], context.epochs.load.token());
+      expect(context.store.getBaseCard(record.path)?.previewHtml).toBe(enabled ? "<p>正文</p>" : "<p>#读书</p>");
+    }
+    controller.dispose();
+  });
+
   it("allows the explicit reference expansion to complete while automatic work is paused", async () => {
     const gate = new RuntimeWorkGate(); gate.setActive(false);
     const record = card("note.md"), { controller, context, read } = harness([record], undefined, {}, undefined, undefined, gate);

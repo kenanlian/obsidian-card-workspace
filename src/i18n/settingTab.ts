@@ -40,6 +40,8 @@ export interface SettingTabStrings {
   imageInline: string;
   imageContain: string;
   imageCover: string;
+  skipLeadingTagsName: string;
+  skipLeadingTagsDesc: string;
   previewLinesName: string;
   previewLinesDesc: (min: number, max: number) => string;
   backlinkSnippetCountName: string;
@@ -138,6 +140,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     cardImageFitDesc: "Show the whole image or crop it to fill the image area.",
     imageOff: "Off", imageRight: "Right thumbnail", imageInline: "Below title",
     imageContain: "Show whole image", imageCover: "Crop to fill",
+    skipLeadingTagsName: "Skip leading tags",
+    skipLeadingTagsDesc: "Skip tag-only lines at the start of a note in card previews, leaving more room for the body.",
     previewLinesName: "Preview lines",
     backlinkSnippetCountName: "Default backlink reference snippets",
     backlinkSnippetCountDesc: "Show 1, 2, 3, or all reference contexts by default. Remaining contexts can be expanded in each card.",
@@ -235,6 +239,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     cardImageFitDesc: "完整显示图片，或裁切铺满图片区域。",
     imageOff: "关闭", imageRight: "右侧缩略图", imageInline: "标题下方内联图片",
     imageContain: "完整显示", imageCover: "裁切铺满",
+    skipLeadingTagsName: "预览跳过顶部标签",
+    skipLeadingTagsDesc: "卡片预览跳过笔记开头仅包含标签的行，为正文留出更多空间。",
     previewLinesName: "预览行数",
     backlinkSnippetCountName: "反链默认显示的引用片段数",
     backlinkSnippetCountDesc: "默认显示 1、2、3 条或全部引用上下文，可在每张卡片中展开其余引用。",

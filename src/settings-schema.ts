@@ -55,6 +55,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   quickInputGlobalShortcut: "preferences",
   templateStorageFolder: "preferences",
   previewLines: "preferences",
+  skipLeadingTags: "preferences",
   searchPreviewSnippetCount: "preferences",
   hoverPreviewWidth: "preferences",
   hoverPreviewHeight: "preferences",

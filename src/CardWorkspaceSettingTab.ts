@@ -127,6 +127,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return isCardImageMode(value) ? { cardImageMode: value } : null;
     case "cardImageFit":
       return isCardImageFit(value) ? { cardImageFit: value } : null;
+    case "skipLeadingTags":
+      return typeof value === "boolean" ? { skipLeadingTags: value } : null;
     case "previewLines":
       return typeof value === "number"
         && Number.isInteger(value)
@@ -256,6 +258,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.cardImageMode;
       case "cardImageFit":
         return settings.cardImageFit;
+      case "skipLeadingTags":
+        return settings.skipLeadingTags;
       case "previewLines":
         return settings.previewLines;
       case "searchPreviewSnippetCount":
@@ -648,6 +652,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             },
           },
           {
+            name: strings.skipLeadingTagsName,
+            desc: strings.skipLeadingTagsDesc,
+            control: { type: "toggle", key: "skipLeadingTags" },
+          },
+          {
             name: strings.backlinkSnippetCountName,
             desc: strings.backlinkSnippetCountDesc,
             control: { type: "dropdown", key: "backlinkSnippetCount", options: { "1": "1", "2": "2", "3": "3", all: strings.allReferenceSnippets } },
@@ -786,7 +795,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const page = (id: SettingsPageId, groups: WorkspaceSettingGroup[]): WorkspaceSettingsPage => ({ id, ...strings.pages[id], groups });
     const pages = [
       page("appearance", [group(headings.text, ["uiFontSize", "uiDensity"]), group(headings.style, ["cardStyle", "cardCornerRadius", "cardBackgroundColor"])]),
-      page("cards-preview", [group(headings.content, ["fileVisibility", "previewLines"]), group(headings.references, ["backlinkSnippetCount", "searchPreviewSnippetCount"]),
+      page("cards-preview", [group(headings.content, ["fileVisibility", "previewLines", "skipLeadingTags"]), group(headings.references, ["backlinkSnippetCount", "searchPreviewSnippetCount"]),
         group(headings.images, ["cardImageMode", "cardImageFit"]), group(headings.hover, ["hoverPreviewWidth", "hoverPreviewHeight"])]),
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),

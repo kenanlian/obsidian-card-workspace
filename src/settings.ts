@@ -215,6 +215,7 @@ export interface PluginSettings {
   quickInputCornerRadius: CardCornerRadius;
   quickInputGlobalShortcut: string;
   previewLines: number;
+  skipLeadingTags: boolean;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
   hoverPreviewHeight: number;
@@ -287,6 +288,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   quickInputCornerRadius: "rounded",
   quickInputGlobalShortcut: "",
   previewLines: DEFAULT_PREVIEW_LINES,
+  skipLeadingTags: false,
   searchPreviewSnippetCount: DEFAULT_SEARCH_PREVIEW_SNIPPET_COUNT,
   hoverPreviewWidth: DEFAULT_HOVER_PREVIEW_WIDTH,
   hoverPreviewHeight: DEFAULT_HOVER_PREVIEW_HEIGHT,
@@ -709,6 +711,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     quickInputCornerRadius: normalizeCardCornerRadius(data.quickInputCornerRadius),
     quickInputColor: isQuickInputColor(data.quickInputColor) ? data.quickInputColor : DEFAULT_SETTINGS.quickInputColor,
     previewLines: normalizePreviewLines(data.previewLines),
+    skipLeadingTags: typeof data.skipLeadingTags === "boolean" ? data.skipLeadingTags : DEFAULT_SETTINGS.skipLeadingTags,
     searchPreviewSnippetCount: normalizeSearchPreviewSnippetCount(data.searchPreviewSnippetCount),
     hoverPreviewWidth: normalizeHoverPreviewDimension(data.hoverPreviewWidth,
       DEFAULT_HOVER_PREVIEW_WIDTH, HOVER_PREVIEW_WIDTH_MIN, HOVER_PREVIEW_WIDTH_MAX),

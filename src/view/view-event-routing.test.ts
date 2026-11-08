@@ -1600,6 +1600,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             "line1\nline2\nline3\nline4",
             expect.any(Number),
             3,
+            false,
           );
 
           previewLines = 9;
@@ -1615,6 +1616,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             "line1\nline2\nline3\nline4",
             expect.any(Number),
             8,
+            false,
           );
         });
 
@@ -1697,6 +1699,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             "fresh\npreview\ncontent",
             expect.any(Number),
             8,
+            false,
           );
           expect((view as any).baseCards[0]?.hydrated).toBe(true);
         });
@@ -1751,6 +1754,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             "only\none\ntwo\nthree",
             expect.any(Number),
             4,
+            false,
           );
           expect(mockState.panelInstances).toHaveLength(1);
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
@@ -1776,6 +1780,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
             "only\none\ntwo\nthree",
             expect.any(Number),
             8,
+            false,
           );
           expect(mockState.panelInstances[0]?.modelSnapshots.at(-1)).toMatchObject({
             projection: {

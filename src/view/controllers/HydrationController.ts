@@ -546,7 +546,7 @@ export class HydrationController implements DisposableController {
     const fields = this.deps.getMatchFields?.(card.path);
     const titleOnly = !!query && fields?.includes("title") && !fields.includes("content");
     const ordinaryFingerprint = createPreviewFingerprint(card.path, card.mtime,
-      job.fingerprint.previewLines, job.fingerprint.maxVisibleChars, `|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`);
+      job.fingerprint.previewLines, job.fingerprint.maxVisibleChars, `|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`, job.fingerprint.skipLeadingTags);
     const ordinary = this.cache.get(ordinaryFingerprint);
     if (titleOnly && ordinary && this.context.store.getScope().kind !== "links") {
       const preview = { ...ordinary, searchPreview: this.searchPreviewFor(card, "title-only") };
@@ -567,7 +567,7 @@ export class HydrationController implements DisposableController {
       const location = !query && scope.kind === "links"
         ? resolveLinkCardLocation(this.context.getApp(), scope, card.path) : null;
       let preview: HydrationPreview;
-      const leading = ordinary ?? buildLightPreview(markdown, job.fingerprint.maxVisibleChars, job.fingerprint.previewLines);
+      const leading = ordinary ?? buildLightPreview(markdown, job.fingerprint.maxVisibleChars, job.fingerprint.previewLines, job.fingerprint.skipLeadingTags);
       if (query && titleOnly) {
         preview = { ...leading, searchPreview: this.searchPreviewFor(card, "title-only") };
       } else if (query) {
@@ -706,6 +706,7 @@ export class HydrationController implements DisposableController {
       this.context.getSettings().previewLines,
       DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
       `${isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
+      this.context.getSettings().skipLeadingTags,
     );
   }
   private rememberAppliedFingerprint(path: string, fingerprint: PreviewFingerprint): void {

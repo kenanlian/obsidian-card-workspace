@@ -72,6 +72,7 @@ function createPlugin(
       quickInput: { folderPath: "", insertPosition: "end", duplicateTitle: "ask" }, noteTemplates: [],
       quickInputGlobalShortcut: "", quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
       previewLines: 6,
+      skipLeadingTags: false,
       backlinkSnippetCount: 3,
       searchPreviewSnippetCount: 2,
       hoverPreviewWidth: 600,
@@ -113,15 +114,15 @@ function renderedRow(tab: CardWorkspaceSettingTab, name: string): Setting {
 describe("settings pages", () => {
   beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
 
-  it.each(["en", "zh"])("keeps all 60 settings in seven searchable declarative pages (%s)", language => {
+  it.each(["en", "zh"])("keeps all 61 settings in seven searchable declarative pages (%s)", language => {
     const plugin = createPlugin({}, language);
     const tab = createTab(plugin);
     const strings = getSettingTabStrings(language as "en" | "zh");
     const pages = pagesOf(tab);
     expect(pages.map(page => page.name)).toEqual(Object.values(strings.pages).map(page => page.name));
-    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 8, 10, 4, 3, 13, 17]);
+    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 13, 17]);
     const rows = pages.flatMap(page => rowsOfPage(tab, page.name));
-    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(60);
+    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(61);
     expect(pages.every(page => page.type === "page" && page.desc && page.items && !page.page)).toBe(true);
     expect(rows.every(row => row.name && row.searchable !== false)).toBe(true);
     expect(attachFolderInputSuggest).not.toHaveBeenCalled();
@@ -138,7 +139,7 @@ describe("settings pages", () => {
     const tab = createTab(plugin);
     expect(pagesOf(tab)).toHaveLength(7);
     const rows = pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name));
-    expect(rows).toHaveLength(55);
+    expect(rows).toHaveLength(56);
     for (const key of ["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]) expect(rowFor(tab, key)).toBeUndefined();
     expect(rowFor(tab, "quickInputCornerRadius")).toBeDefined();
     expect(rowFor(tab, "defaultCardOpenBehavior").control).not.toHaveProperty("options.new-window");
@@ -295,6 +296,16 @@ describe("settings pages", () => {
     expect(row.texts[0]!.value).toBe("New/Templates");
     await row.buttons[0]!.click();
     expect(plugin.changeTemplateStorageFolder).toHaveBeenCalledTimes(2); tab.hide();
+  });
+
+  it("shares the leading-tag toggle across native and legacy settings", async () => {
+    const plugin = createPlugin();
+    const tab = createTab(plugin);
+    expect(rowFor(tab, "skipLeadingTags").control).toMatchObject({ type: "toggle" });
+    expect(tab.getControlValue("skipLeadingTags")).toBe(false);
+    await tab.setControlValue("skipLeadingTags", true);
+    await tab.setControlValue("skipLeadingTags", "true");
+    expect(plugin.saveSettings.mock.calls).toEqual([[{ skipLeadingTags: true }]]);
   });
 
   it("merges navigation and quick input changes against the latest settings", async () => {

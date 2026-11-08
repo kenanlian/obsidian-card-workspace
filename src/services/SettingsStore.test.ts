@@ -677,6 +677,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["quickInputVisibility", { quickInputVisibility: { ...DEFAULT_SETTINGS.quickInputVisibility, title: true } }],
     ["noteTemplates", { noteTemplates: [] }],
     ["previewLines", { previewLines: 8 }],
+    ["skipLeadingTags", { skipLeadingTags: true }],
     ["searchPreviewSnippetCount", { searchPreviewSnippetCount: 5 }],
     ["hoverPreviewWidth", { hoverPreviewWidth: 800 }],
     ["hoverPreviewHeight", { hoverPreviewHeight: 600 }],

@@ -15,12 +15,12 @@ describe("device overlays", () => {
   it("seeds legacy device fields without startup writes; keeps mixed patches in their own documents", async () => {
     const f = fixture({ ...DEFAULT_SETTINGS, previewLines: 7, lastFolderPath: "old" }); await f.store.init();
     expect(f.store.getFlat().previewLines).toBe(7); expect(f.shared).toEqual([]); expect(f.local).toEqual([]);
-    await f.store.updateFlat({ previewLines: 3, pinnedPaths: ["a.md"] });
+    await f.store.updateFlat({ previewLines: 3, skipLeadingTags: true, pinnedPaths: ["a.md"] });
     expect(f.shared).toHaveLength(1); expect(f.local).toHaveLength(1);
-    expect(f.shared[0]).toMatchObject({ schemaVersion: 2, preferences: { previewLines: 7 }, workspace: { lastFolderPath: "old" }, userData: { pinnedPaths: ["a.md"] } });
-    expect(f.local[0]).toMatchObject({ version: 1, preferences: { previewLines: 3 }, workspace: { lastFolderPath: "old" } });
+    expect(f.shared[0]).toMatchObject({ schemaVersion: 2, preferences: { previewLines: 7, skipLeadingTags: false }, workspace: { lastFolderPath: "old" }, userData: { pinnedPaths: ["a.md"] } });
+    expect(f.local[0]).toMatchObject({ version: 1, preferences: { previewLines: 3, skipLeadingTags: true }, workspace: { lastFolderPath: "old" } });
     const restarted = fixture(f.shared[0], f.local[0]); await restarted.store.init();
-    expect(restarted.store.getFlat()).toMatchObject({ previewLines: 3, pinnedPaths: ["a.md"] });
+    expect(restarted.store.getFlat()).toMatchObject({ previewLines: 3, skipLeadingTags: true, pinnedPaths: ["a.md"] });
     await restarted.store.updateFlat({ favorites: [] }); expect(restarted.shared).toHaveLength(0);
   });
   it("debounces all workspace changes locally; local-only writes never touch shared data", async () => {

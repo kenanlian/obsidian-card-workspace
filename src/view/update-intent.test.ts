@@ -90,6 +90,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   quickInputCornerRadius: "patch",
   noteTemplates: "patch",
   previewLines: "rehydrate",
+  skipLeadingTags: "rehydrate",
   searchPreviewSnippetCount: "rehydrate",
   hoverPreviewWidth: "patch",
   hoverPreviewHeight: "patch",
@@ -155,6 +156,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "noteTemplates": settings.noteTemplates = [{ id: "daily", filePath: "Templates/Daily.md", targetFolderPath: "Daily", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" }]; break;
     case "cardImageMode": settings.cardImageMode = "off"; break;
     case "cardImageFit": settings.cardImageFit = "contain"; break;
+    case "skipLeadingTags": settings.skipLeadingTags = !settings.skipLeadingTags; break;
     case "previewLines": settings.previewLines += 1; break;
     case "searchPreviewSnippetCount": settings.searchPreviewSnippetCount += 1; break;
     case "hoverPreviewWidth": settings.hoverPreviewWidth += 10; break;

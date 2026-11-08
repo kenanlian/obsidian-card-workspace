@@ -48,6 +48,7 @@ export interface PreferencesSettings {
   quickInputCornerRadius: PluginSettings["quickInputCornerRadius"];
   templateStorageFolder: string;
   previewLines: number;
+  skipLeadingTags: boolean;
   searchPreviewSnippetCount: number;
   hoverPreviewWidth: number;
   hoverPreviewHeight: number;
@@ -205,6 +206,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.cardImageMode !== undefined) preferences.cardImageMode = patch.cardImageMode;
   if (patch.cardImageFit !== undefined) preferences.cardImageFit = patch.cardImageFit;
   if (patch.previewLines !== undefined) preferences.previewLines = patch.previewLines;
+  if (patch.skipLeadingTags !== undefined) preferences.skipLeadingTags = patch.skipLeadingTags;
   if (patch.searchPreviewSnippetCount !== undefined) preferences.searchPreviewSnippetCount = patch.searchPreviewSnippetCount;
   if (patch.hoverPreviewWidth !== undefined) preferences.hoverPreviewWidth = patch.hoverPreviewWidth;
   if (patch.hoverPreviewHeight !== undefined) preferences.hoverPreviewHeight = patch.hoverPreviewHeight;
@@ -281,6 +283,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       quickInputCornerRadius: settings.quickInputCornerRadius,
       templateStorageFolder: settings.templateStorageFolder,
       previewLines: settings.previewLines,
+      skipLeadingTags: settings.skipLeadingTags,
       searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
       hoverPreviewWidth: settings.hoverPreviewWidth,
       hoverPreviewHeight: settings.hoverPreviewHeight,

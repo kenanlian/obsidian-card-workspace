@@ -1166,6 +1166,7 @@ describe("card grouping settings normalization", () => {
         quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
         templateStorageFolder: DEFAULT_SETTINGS.templateStorageFolder,
         searchPreviewSnippetCount: 2,
+        skipLeadingTags: false,
         hoverPreviewWidth: 600,
         hoverPreviewHeight: 400,
         navSectionOrder: ["properties", "boxes", "tags", "folders", "favorites", "links", "templates"],
@@ -1664,6 +1665,7 @@ describe("settings layer manifest (C4)", () => {
     templateStorageFolder: "preferences",
     noteTemplates: "userData",
     previewLines: "preferences",
+    skipLeadingTags: "preferences",
     searchPreviewSnippetCount: "preferences",
     hoverPreviewWidth: "preferences",
     hoverPreviewHeight: "preferences",
@@ -1798,6 +1800,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     cardImageMode: "off",
     cardImageFit: "contain",
     previewLines: 8,
+    skipLeadingTags: true,
     lastFolderPath: "Projects",
     searchPreviewSnippetCount: 5,
     hoverPreviewWidth: 800,
@@ -1863,6 +1866,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["cardImageMode", (d) => d.preferences.cardImageMode, "off"],
     ["cardImageFit", (d) => d.preferences.cardImageFit, "contain"],
     ["previewLines", (d) => d.preferences.previewLines, 8],
+    ["skipLeadingTags", (d) => d.preferences.skipLeadingTags, true],
     ["searchPreviewSnippetCount", (d) => d.preferences.searchPreviewSnippetCount, 5],
     ["hoverPreviewWidth", (d) => d.preferences.hoverPreviewWidth, 800],
     ["hoverPreviewHeight", (d) => d.preferences.hoverPreviewHeight, 600],
@@ -1997,5 +2001,15 @@ describe("quick input visibility", () => {
   });
   it("drops the retired save-status switch from persisted data", () => {
     expect(normalizeSettings({ quickInputVisibility: { folder: true, status: true } } as never).quickInputVisibility).not.toHaveProperty("status");
+  });
+});
+
+describe("skipLeadingTags preference", () => {
+  it("defaults safely and round-trips through schema v2", () => {
+    for (const skipLeadingTags of [undefined, null, "true", 1]) {
+      expect(normalizeSettings({ skipLeadingTags }).skipLeadingTags).toBe(false);
+    }
+    expect(mergeSettings(DEFAULT_SETTINGS, { skipLeadingTags: true }).skipLeadingTags).toBe(true);
+    expect(migrateSettings({ schemaVersion: 2, preferences: { skipLeadingTags: true } }).skipLeadingTags).toBe(true);
   });
 });

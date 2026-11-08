@@ -37,11 +37,13 @@ export function buildLightPreview(
   markdown: string | PreviewTextSource,
   maxVisibleChars = DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
   previewLines = DEFAULT_PREVIEW_LINES,
+  skipLeadingTags = false,
 ): LightPreviewResult {
   const normalizedPreviewLines = normalizePreviewLineBudget(previewLines);
   if (normalizedPreviewLines === 0) return { html: "", mode: "empty" };
   const source = typeof markdown === "string" ? createStringPreviewTextSource(markdown) : markdown;
-  const lines = normalizePreviewBlocks(collectPreviewSource(source).lines);
+  const collected = collectPreviewSource(source).lines;
+  const lines = normalizePreviewBlocks(skipLeadingTags ? omitLeadingTagLines(collected) : collected);
   const scanLimit = lines.length;
 
   let index = 0;
@@ -187,6 +189,21 @@ export function buildLightPreview(
   }
 
   return { html: htmlParts.join(""), mode: sawCodeBlock && !sawTextBlock ? "code" : "text" };
+}
+
+/** Only remove the leading tag-only region, before Markdown normalization. */
+function omitLeadingTagLines(lines: string[]): string[] {
+  let start = 0;
+  while (start < lines.length) {
+    const line = lines[start].trim();
+    // A tag-looking Setext heading is still content.
+    if (line && /^ {0,3}(?:=+|-+)\s*$/.test(lines[start + 1] ?? "")) break;
+    if (/^(?: {4}|\t)/.test(lines[start]) && line) break;
+    if (line && !line.split(/\s+/).every((tag) =>
+      /^#[\p{L}\p{M}\p{N}_/-]+$/u.test(tag) && /[\p{L}\p{M}_-]/u.test(tag))) break;
+    start += 1;
+  }
+  return lines.slice(start);
 }
 
 function isBlockStarter(line: string): boolean {
