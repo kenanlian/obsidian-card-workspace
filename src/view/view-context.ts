@@ -16,7 +16,8 @@ export interface ViewContext {
   store: ViewStateStore;
   epochs: ViewEpochs;
   getSettings: () => PluginSettings;
-  saveSettings: (patch: PartialPluginSettings) => Promise<void>;
+  /** Settings memory updates synchronously; a scope commit can publish its own view update. */
+  saveSettings: (patch: PartialPluginSettings, options?: { skipViewUpdate: boolean }) => Promise<void>;
   getUiStrings: () => UiStrings;
   publishGroups: (...groups: PanelGroup[]) => void;
   requestUpdate: (intent: ViewUpdateIntent, reason: RefreshReason) => Promise<void>;

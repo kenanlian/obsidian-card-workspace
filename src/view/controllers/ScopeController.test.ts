@@ -160,6 +160,68 @@ function installLinksVault(
 }
 
 describe("ScopeController", () => {
+  describe("browse filters on source changes", () => {
+    const filter = {
+      tags: ["work"],
+      properties: [{ key: "status", values: [{ kind: "text" as const, value: "open" }] }],
+    };
+
+    it.each([
+      [createFolderScope("old/nested", true), createFolderScope("next", true), true],
+      [createFolderScope("old/nested", true), createFolderScope("", true), true],
+      [createFolderScope("old/nested", true), createBoxScope("box-1"), true],
+      [createBoxScope("box-1"), createBoxScope("box-2"), true],
+      [createBoxScope("box-1"), createFolderScope("next", true), true],
+      [createLinksScope("source.md", "outgoing"), createFolderScope("next", true), true],
+      [createFolderScope("next", true), createFolderScope("next", true), false],
+      [createFolderScope("next", true), createFolderScope("next", false), false],
+      [createBoxScope("box-1"), createBoxScope("box-1"), false],
+      [createFolderScope("next", true), createLinksScope("source.md", "outgoing"), false],
+    ] as const)("resets filters from %j to %j only on a folder or box switch (clear=%s)", async (previous, next, clear) => {
+      const { context, controller, saveSettings, projectVisibleCards, publishLoadStart, publishPreparedCards } = createHarness();
+      context.store.setScope(previous);
+      Object.assign(context.getSettings(), {
+        filter,
+        boxes: [propertyBox({ kind: "text", value: "open" }), { ...propertyBox({ kind: "text", value: "open" }), id: "box-2" }],
+      });
+      const app = context.getApp();
+      vi.mocked(app.vault.getAbstractFileByPath).mockImplementation((path) =>
+        path === "source.md" ? makeLiveFile(path) : Object.assign(new TFolder(), { path, children: [] }));
+      vi.mocked(app.vault.getRoot).mockReturnValue(Object.assign(new TFolder(), { path: "", children: [] }));
+      const expected = clear ? { tags: [], properties: [] } : filter;
+      publishLoadStart.mockImplementation(() => expect(context.getSettings().filter).toEqual(filter));
+      projectVisibleCards.mockImplementation(() => {
+        expect(context.getSettings().filter).toEqual(expected);
+        context.store.replaceVisibleCards([...context.store.getBaseCards()]);
+      });
+      publishPreparedCards.mockImplementation(() => expect(context.getSettings().filter).toEqual(expected));
+
+      await controller.handleScopeSelection(controller.createProgrammaticSelectionRequest(next, true));
+
+      expect(context.getSettings().filter).toEqual(expected);
+      expect(projectVisibleCards).toHaveBeenCalledTimes(1);
+      expect(publishPreparedCards).toHaveBeenCalledTimes(1);
+      const clears = saveSettings.mock.calls.filter(([patch]) => patch.filter);
+      expect(clears).toHaveLength(clear ? 1 : 0);
+    });
+
+    it.each(["preparation", "projection"])("keeps the committed filters after a %s failure", async (phase) => {
+      const { context, controller, prepareRecordsFromCache, projectVisibleCards } = createHarness();
+      context.getSettings().filter = filter;
+      vi.mocked(context.getApp().vault.getAbstractFileByPath).mockReturnValue(
+        Object.assign(new TFolder(), { path: "next", children: [] }),
+      );
+      const fail = () => { throw new Error("load failed"); };
+      if (phase === "preparation") prepareRecordsFromCache.mockImplementationOnce(fail);
+      else projectVisibleCards.mockImplementationOnce(fail);
+
+      await expect(controller.moveScopeToFolder("next")).rejects.toThrow("load failed");
+
+      expect(context.getSettings().filter).toEqual(filter);
+      expect(context.store.getScope()).toEqual(createFolderScope("old/nested", true));
+    });
+  });
+
   it("versions valid active selections but excludes automatic links following", async () => {
     const {controller, context} = createHarness();
     const file = Object.assign(new TFile(), {path: "A.md", extension: "md", basename: "A", stat: {ctime: 1, mtime: 1}});

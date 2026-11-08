@@ -2,6 +2,7 @@ import type { TFile } from "obsidian";
 import { createFileVisibilityPolicy, type FileVisibilityPolicy } from "../file-visibility";
 
 import { normalizeGroupSpec } from "../card-grouping-settings";
+import type { PluginSettings } from "../settings";
 import type { EpochToken } from "./async-epoch";
 import { readLinkReferenceCount } from "./links-sources";
 import { createCardRecord } from "./card-record";
@@ -117,6 +118,25 @@ function rememberLoad(runtime: ScopeLoadRuntime): void {
   runtime.setLastLoadedIncludeSubfolders(resolveLoadedIncludeSubfolders(runtime.loadScope.scope));
 }
 
+function shouldClearBrowseFilters(previous: CardScope, next: CardScope): boolean {
+  switch (next.kind) {
+    case "folder":
+      return previous.kind !== "folder" || previous.path !== next.path;
+    case "box":
+      return previous.kind !== "box" || previous.boxId !== next.boxId;
+    case "links":
+      return false;
+  }
+}
+
+function saveBrowseFilters(context: ViewContext, filter: PluginSettings["filter"]): void {
+  // Memory changes synchronously. This load publishes the initiating view;
+  // other views still receive the ordinary shared-settings update.
+  void context.saveSettings({ filter }, { skipViewUpdate: true }).catch((error: unknown) => {
+    console.warn("Failed to persist browse filters after a scope change.", error);
+  });
+}
+
 function releasePrepared(runtime: ScopeLoadRuntime, token: EpochToken, onPublished: () => void): boolean {
   runtime.setExtentCount(runtime.context.store.getVisibleCards().length);
   runtime.setMetadataStatus("ready");
@@ -151,6 +171,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
   runtime.setLoading(true);
   const loadToken = context.epochs.load.bump();
   let published = false;
+  let clearedFilter: PluginSettings["filter"] | null = null;
   try {
     runtime.setScopeSettled(false);
     runtime.setMetadataStatus("pending");
@@ -201,6 +222,12 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     // if projection is interrupted before the prepared publish.
     rememberLoad(runtime);
     try {
+      const filter = context.getSettings().filter;
+      if (shouldClearBrowseFilters(previousScope, loadScope.scope)
+        && (filter.tags.length > 0 || filter.properties.length > 0)) {
+        clearedFilter = filter;
+        saveBrowseFilters(context, { tags: [], properties: [] });
+      }
       runtime.projectVisibleCards();
     } catch (error) {
       runtime.setLoadKey(previousLoadKey);
@@ -220,6 +247,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     return committed;
   } finally {
     if (!published && isCurrent(runtime, loadToken)) {
+      if (clearedFilter !== null) saveBrowseFilters(context, clearedFilter);
       runtime.setLoadKey(previousLoadKey);
       runtime.setLastLoadedIncludeSubfolders(previousIncludeSubfolders);
       context.store.setScope(previousScope);

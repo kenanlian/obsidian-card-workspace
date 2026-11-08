@@ -3186,19 +3186,28 @@ describe("FolderCardView navigation scope activation", () => {
     vi.restoreAllMocks();
   });
 
-  it("preserves the tag filter when the activated folder differs from the current scope", async () => {
+  it("clears the tag filter when the activated folder differs from the current scope without a redundant reload", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = { tags: ["alpha"], properties: [] };
     (view as any).cardScope = createFolderScope("notes", true);
+    const folder = new testState.TestTFolder("other");
+    folder.children = [Object.assign(new testState.TestTFile("other/untagged.md"), { extension: "md" })];
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockReturnValue(folder as never);
+    const refresh = vi.spyOn(view, "refresh");
+    const project = vi.spyOn(view.modules.projection, "reprojectCards");
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter).toEqual({ tags: [], properties: [] });
+    expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { tags: [], properties: [] } });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(project).toHaveBeenCalledTimes(1);
+    expect(getPanelState(view).cards.records.map(card => card.path)).toEqual(["other/untagged.md"]);
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("preserves property clauses when leaving a box for a folder", async () => {
+  it("clears property clauses when leaving a box for a folder", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -3206,16 +3215,15 @@ describe("FolderCardView navigation scope activation", () => {
       properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
     };
     (view as any).cardScope = createBoxScope("box-1");
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockReturnValue(new testState.TestTFolder("other") as never);
 
     await (view as any).selectFolderFromNav("other");
 
-    // Box and folder scopes share browse conditions.
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(settings.filter.properties).toHaveLength(1);
+    expect(settings.filter).toEqual({ tags: [], properties: [] });
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 
-  it("preserves legacy combined filters when leaving a box", async () => {
+  it("clears legacy combined filters when leaving a box", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -3223,15 +3231,14 @@ describe("FolderCardView navigation scope activation", () => {
       properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
     };
     (view as any).cardScope = createBoxScope("box-1");
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockReturnValue(new testState.TestTFolder("other") as never);
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(settings.filter.tags).toEqual(["alpha"]);
-    expect(settings.filter.properties).toHaveLength(1);
+    expect(settings.filter).toEqual({ tags: [], properties: [] });
   });
 
-  it("resumes dormant filters when leaving a links scope for a folder", async () => {
+  it("clears dormant filters when leaving a links scope for a folder", async () => {
     const { view, plugin } = createHarness();
     const settings = readSettings(plugin);
     settings.filter = {
@@ -3239,10 +3246,11 @@ describe("FolderCardView navigation scope activation", () => {
       properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }],
     };
     (view as any).cardScope = createLinksScope("notes/a.md", "backlinks");
+    vi.mocked(view.app.vault.getAbstractFileByPath).mockReturnValue(new testState.TestTFolder("other") as never);
 
     await (view as any).selectFolderFromNav("other");
 
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(settings.filter).toEqual({ tags: [], properties: [] });
     expect(plugin.selectFolderByPath).toHaveBeenCalledWith("other", "panel-picker");
   });
 

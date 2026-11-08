@@ -68,7 +68,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private mobileChrome: MobileChromeAutoHide | null = null;
   private headerTitle: string | null = null;
   private metadataEventUnsubscribe: (() => void) | null = null;
-  private suppressScopeProjectionPatch = false;
+  private suppressSettingsUpdate = false;
   readonly panelModel: PanelModel;
 
   private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
@@ -90,7 +90,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       resourceBudget: this.plugin.resourceBudget,
       runtimePlatform: this.plugin.runtimePlatform,
       getApp: () => this.app, store: this.store, epochs: this.epochs,
-      getSettings: () => this.plugin.getSettings(), saveSettings: (patch) => this.saveViewSettings(patch),
+      getSettings: () => this.plugin.getSettings(), saveSettings: (patch, options) => this.saveViewSettings(patch, options),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
       requestUpdate: (intent, reason) => this.applyUpdateIntent(intent, reason),
       notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
@@ -226,11 +226,12 @@ export class FolderCardView extends ItemView implements HoverParent {
   private get strings(): UiStrings {
     return this.plugin.getUiStrings();
   }
-  private saveViewSettings(patch: PartialPluginSettings): Promise<void> {
+  private saveViewSettings(patch: PartialPluginSettings, options?: { skipViewUpdate: boolean }): Promise<void> {
     const scopeOnly = Object.keys(patch).every((key) => key === "lastFolderPath" || key === "activeBoxId");
-    if (!scopeOnly) return this.plugin.saveSettings(patch);
-    this.suppressScopeProjectionPatch = true; try { return this.plugin.saveSettings(patch); }
-    finally { this.suppressScopeProjectionPatch = false; }
+    if (!scopeOnly && !options?.skipViewUpdate) return this.plugin.saveSettings(patch);
+    const previous = this.suppressSettingsUpdate;
+    this.suppressSettingsUpdate = true; try { return this.plugin.saveSettings(patch); }
+    finally { this.suppressSettingsUpdate = previous; }
   }
   private resolveTooltipSide(): "left" | "right" {
     const root = this.leaf.getRoot();
@@ -463,6 +464,7 @@ export class FolderCardView extends ItemView implements HoverParent {
    * re-collects files; the weaker tiers keep scroll position and loaded previews.
    */
   async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
+    if (reason === "settings-change" && this.suppressSettingsUpdate) return;
     this.modules.hoverPreview.applySize();
     this.modules.images.onSettingsChanged();
     const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
@@ -485,7 +487,6 @@ export class FolderCardView extends ItemView implements HoverParent {
         this.publishForIntent(intent);
         return;
       case "patch":
-        if (this.suppressScopeProjectionPatch) return;
         this.publishForIntent(intent);
         return;
     }
@@ -840,7 +841,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   async selectFolderFromNav(path: string): Promise<void> {
     this.modules.navLayout.returnToCardsViewIfSinglePane();
 
-    // Browse conditions survive source changes; the destination applies its capabilities.
+    // The scope load clears browse filters when the destination commits.
     await this.plugin.selectFolderByPath(path, "panel-picker");
   }
 
