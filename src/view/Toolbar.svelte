@@ -14,13 +14,9 @@
   } from "./panel-model";
   import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
   import { buildScopeLabel } from "./scope-label";
-  import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource } from "./types";
+  import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource, ToolbarActionPayload } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
   import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
-  interface ToolbarActionPayload {
-    action: string;
-    position?: { x: number; y: number };
-  }
   interface BoxCommandPayload {
     command: string;
     boxId?: string;
@@ -317,9 +313,8 @@
   );
   // Host-derived paused state (scope.browseFiltersPaused): active workspace filters kept dormant by a non-filterable scope.
   const showFiltersPaused = $derived(scope.browseFiltersPaused ?? false);
-  const activeTagCount = $derived(scope.browseFilterState?.tagCount ?? 0);
-  const activePropertyCount = $derived(scope.browseFilterState?.propertyValueCount ?? 0);
-  const hasBrowseFilters = $derived(activeTagCount > 0 || activePropertyCount > 0);
+  const activeFilters = $derived(scope.browseFilterState?.items ?? []);
+  const hasBrowseFilters = $derived(activeFilters.length > 0);
   const hasSummary = $derived(showSearchStatus || showFiltersPaused || hasBrowseFilters);
 
   function applyIcon(node: HTMLElement, iconName: string): { update: (nextIconName: string) => void } {
@@ -660,12 +655,28 @@
           <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
         {/if}
         {#if hasBrowseFilters}
-          <span class="fce-toolbar-summary-segment fce-active-filters">
-            {#if activeTagCount > 0}{toolbarStrings.activeTagFilters(activeTagCount)}{/if}
-            {#if activePropertyCount > 0}{#if activeTagCount > 0} · {/if}{strings.property.activeFilterSummary(activePropertyCount)}{/if}
-          </span>
-          <button type="button" class="clickable-icon" aria-label={toolbarStrings.clearBrowseFilters}
-            onclick={() => emitToolbarAction("clear-browse-filters")} use:applyIcon={"filter-x"}></button>
+          <div class="fce-active-filters">
+            <span class="fce-active-filters-label">{toolbarStrings.activeFilters}</span>
+            {#each activeFilters as filter (filter.id)}
+              <span class="fce-filter-chip" class:is-property={filter.property !== undefined} title={filter.label}>
+                {#if filter.property}
+                  <span class="fce-filter-chip-key"><span class="fce-filter-chip-label">{filter.property.name}</span></span>
+                  <span class="fce-sr-only">: </span>
+                {/if}
+                <span class="fce-filter-chip-content">
+                  <span class="fce-filter-chip-label">{filter.property?.value ?? filter.label}</span>
+                  <button type="button" class="clickable-icon fce-filter-chip-remove"
+                    aria-label={toolbarStrings.removeFilter(filter.label)}
+                    use:applyTooltip={toolbarStrings.removeFilter(filter.label)}
+                    onclick={() => onToolbarAction?.({ action: "remove-browse-filter", filter: filter.target })}
+                    use:applyIcon={"x"}></button>
+                </span>
+              </span>
+            {/each}
+            <button type="button" class="clickable-icon fce-clear-browse-filters" aria-label={toolbarStrings.clearBrowseFilters}
+              use:applyTooltip={toolbarStrings.clearBrowseFilters}
+              onclick={() => emitToolbarAction("clear-browse-filters")} use:applyIcon={"filter-x"}></button>
+          </div>
         {/if}
         {#if showFiltersPaused}<span class="fce-toolbar-summary-segment fce-filters-paused">{toolbarStrings.filtersPaused}</span>{/if}
       </div>

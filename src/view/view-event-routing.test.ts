@@ -3252,6 +3252,25 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
   });
 
   describe("clearing effective browse filters", () => {
+    it.each([createFolderScope("notes", true), createBoxScope("box-1"), createLinksScope("notes/a.md", "backlinks")])("routes individual removal against current filters (%s)", (scope) => {
+      const { view, plugin } = createPropertyHarness({ settings: {
+        ...propertySettings({ visiblePropertyKeys: ["status"] }),
+        filter: { tags: ["work", "keep"], properties: [propertyClause("status", [propertyText("open"), propertyText("closed")])] },
+      } });
+      (view as any).cardScope = scope;
+      (view as any).modules.search.query = "keep-search";
+      const items = (view as any).buildScopeGroup().browseFilterState.items;
+      if (scope.kind === "links") expect(items).toEqual([]);
+      else expect(items.map((item: { label: string }) => item.label)).toEqual(["work", "keep", "status: open", "status: closed"]);
+      view.handleToolbarAction({ action: "remove-browse-filter", filter: { kind: "property", key: "status", ref: propertyText("open") } });
+      if (scope.kind === "links") expect(plugin.saveSettings).not.toHaveBeenCalled();
+      else {
+        expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        expect(plugin.saveSettings).toHaveBeenCalledWith({ filter: { properties: [propertyClause("status", [propertyText("closed")])] } });
+      }
+      expect((view as any).modules.search.query).toBe("keep-search");
+    });
+
     it.each([createFolderScope("notes", true), createBoxScope("box-1"), createLinksScope("notes/a.md", "backlinks")])("clears once only in filterable scopes (%s)", (scope) => {
       const { view, plugin } = createPropertyHarness({ settings: {
         ...propertySettings(), filter: { tags: ["work"], properties: [propertyClause("status", [propertyText("open")])] },

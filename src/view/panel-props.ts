@@ -1,4 +1,5 @@
 import type { PanelModel } from "./panel-model";
+import type { ToolbarActionPayload } from "./types";
 import type { HydrateViewportRequest } from "./hydration-request";
 import type { CardFileDragStarter, CardFileDragStartPayload, SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
@@ -20,7 +21,7 @@ export interface PanelHost {
   };
   resolveCardLocation?: (path: string) => CardOpenLocation | null;
   resolveSearchSnippetLocation?: (path: string, snippetId: string) => CardOpenLocation | null;
-    handleToolbarAction: (detail: { action?: unknown; position?: { x: number; y: number } }) => void;
+    handleToolbarAction: (detail: ToolbarActionPayload) => void;
     onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
   onCardHoverLink: (detail: CardHoverLinkPayload) => void;
   selectFolderFromNav: (path: string) => Promise<void>;
@@ -114,7 +115,7 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
       view.modules.images.resolvePlaceholder(path, generation),
     onImageReveal: (detail: import("./image-request").CardImageRevealRequest) =>
       view.modules.images.handleImageReveal(detail),
-    onToolbarAction: (detail: { action?: unknown; position?: { x: number; y: number } }) => {
+    onToolbarAction: (detail: ToolbarActionPayload) => {
       view.handleToolbarAction(detail);
     },
     onSortChange: (detail: { field?: unknown; direction?: unknown }) => {

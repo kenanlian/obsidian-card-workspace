@@ -10,6 +10,10 @@ import {
 } from "../__mocks__/obsidian";
 import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
 import { getUiStrings } from "../i18n";
+import { buildBrowseFilterChips } from "./browse-filters";
+import { resolveSourceCapabilities } from "./source-capabilities";
+import { createBoxScope, createFolderScope } from "./scope";
+import type { ToolbarActionPayload } from "./types";
 
 interface SortChangePayload {
   field: string;
@@ -34,10 +38,6 @@ interface SearchQueryChangePayload {
 
 interface SearchQueryResetPayload {
   source: "clear-button" | "collapse";
-}
-
-interface ToolbarActionPayload {
-  action: string;
 }
 
 interface BoxCommandPayload {
@@ -735,14 +735,47 @@ describe("Toolbar.svelte", () => {
   it.each(["en", "zh"] as const)("shows effective box filters and emits a clear intent (%s)", async (locale) => {
     const captured = createCapturedCallbacks();
     const strings = getUiStrings(locale);
+    const items = buildBrowseFilterChips({ tags: ["work", "project/nested"], properties: [] },
+      resolveSourceCapabilities(createBoxScope("box-1")), [], strings.property);
     const { component } = mountToolbar({ activeBoxId: "box-1", strings,
-      browseFilterState: { tagCount: 2, propertyValueCount: 0, canClearEmptyResult: false } }, captured.callbacks);
+      browseFilterState: { tagCount: 2, propertyValueCount: 0, items, canClearEmptyResult: false } }, captured.callbacks);
     await tick();
-    expect(document.querySelector(".fce-active-filters")?.textContent).toContain(strings.toolbar.activeTagFilters(2));
+    expect(document.querySelector(".fce-active-filters")?.textContent).toContain(strings.toolbar.activeFilters);
+    expect(Array.from(document.querySelectorAll(".fce-filter-chip-label"), (node) => node.textContent))
+      .toEqual(["work", "project/nested"]);
+    document.querySelector<HTMLButtonElement>(".fce-filter-chip-remove")!.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "remove-browse-filter", filter: { kind: "tag", tag: "work" } }]);
+    captured.toolbarActionEvents.length = 0;
     const clear = document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.clearBrowseFilters}"]`)!;
     clear.click();
     expect(captured.toolbarActionEvents).toEqual([{ action: "clear-browse-filters" }]);
     expect(document.querySelector(".fce-filters-paused")).toBeNull();
+    await disposeMountedComponent(component);
+  });
+
+  it.each(["en", "zh"] as const)("shows property values as individually removable chips (%s)", async (locale) => {
+    const captured = createCapturedCallbacks();
+    const strings = getUiStrings(locale);
+    const properties = [
+      { key: "status", values: [{ kind: "text" as const, value: "open" }, { kind: "text" as const, value: "closed" }] },
+      { key: "done", values: [{ kind: "boolean" as const, value: false }] },
+      { key: "owner", values: [{ kind: "missing" as const }] },
+    ];
+    const items = buildBrowseFilterChips({ tags: [], properties },
+      resolveSourceCapabilities(createFolderScope("notes", true)), [], strings.property);
+    const { component } = mountToolbar({ strings,
+      browseFilterState: { tagCount: 0, propertyValueCount: 4, items, canClearEmptyResult: true } }, captured.callbacks);
+    await tick();
+    expect(Array.from(document.querySelectorAll(".fce-filter-chip-key"), (node) => node.textContent))
+      .toEqual(["status", "status", "done", "owner"]);
+    expect(Array.from(document.querySelectorAll(".fce-filter-chip-content > .fce-filter-chip-label"), (node) => node.textContent))
+      .toEqual(["open", "closed", strings.property.valueFalse, strings.property.valueUnassigned]);
+    const removeButtons = document.querySelectorAll<HTMLButtonElement>(".fce-filter-chip-remove");
+    expect(removeButtons[1].getAttribute("aria-label")).toBe(strings.toolbar.removeFilter("status: closed"));
+    removeButtons[1].click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "remove-browse-filter",
+      filter: { kind: "property", key: "status", ref: { kind: "text", value: "closed" } } }]);
+    expect(document.querySelector(".fce-clear-browse-filters")).not.toBeNull();
     await disposeMountedComponent(component);
   });
 

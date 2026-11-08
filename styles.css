@@ -710,6 +710,7 @@ body.is-phone.is-hidden-nav .folder-card-view .fce-shell[data-fce-device="phone"
 
 .folder-card-view .fce-toolbar-content {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -723,6 +724,90 @@ body.is-phone.is-hidden-nav .folder-card-view .fce-shell[data-fce-device="phone"
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.folder-card-view .fce-active-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.folder-card-view .fce-active-filters-label {
+  margin-inline-end: 2px;
+}
+
+.folder-card-view .fce-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 3px 1px var(--tag-padding-x, 0.6em);
+  border-radius: var(--tag-radius, 2em);
+  background: color-mix(in srgb, var(--fce-accent) 30%, transparent);
+  color: var(--text-accent);
+  font-size: var(--fce-font-ui-smaller);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.folder-card-view .fce-filter-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-filter-chip-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.folder-card-view .fce-filter-chip.is-property {
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.folder-card-view .fce-filter-chip-key {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 12em;
+  padding: 1px var(--tag-padding-x, 0.6em);
+  background: var(--background-modifier-hover);
+  color: var(--fce-text-muted);
+}
+
+.folder-card-view .fce-filter-chip.is-property .fce-filter-chip-content {
+  flex: 1 1 auto;
+  padding: 1px 3px 1px var(--tag-padding-x, 0.6em);
+  background: color-mix(in srgb, var(--fce-accent) 30%, transparent);
+  color: var(--text-accent);
+}
+
+.folder-card-view .fce-filter-chip-remove {
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: 50%;
+  color: inherit;
+}
+
+.folder-card-view .fce-filter-chip-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+.folder-card-view .fce-clear-browse-filters {
+  flex: 0 0 auto;
 }
 
 .folder-card-view .fce-toolbar-toggle {
@@ -1266,8 +1351,8 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   flex: 0 0 auto;
   padding: 1px var(--tag-padding-x, 0.6em);
   border-radius: var(--tag-radius, 2em);
-  background: var(--tag-background, var(--background-modifier-hover));
-  color: var(--tag-color, var(--text-accent));
+  background: color-mix(in srgb, var(--fce-accent) 30%, transparent);
+  color: var(--text-accent);
   font-size: var(--fce-font-ui-smaller);
   font-weight: 500;
   line-height: 1.5;
@@ -1303,11 +1388,6 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 .folder-card-view .fce-card-group-value-icon svg {
   width: 13px;
   height: 13px;
-}
-
-.folder-card-view .fce-card-group-header.is-missing .fce-card-group-value {
-  background: var(--background-modifier-hover);
-  color: var(--fce-text-muted);
 }
 
 .folder-card-view .fce-card-group-count {

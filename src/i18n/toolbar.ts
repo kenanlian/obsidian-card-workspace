@@ -1,6 +1,8 @@
 import type { UiLanguage } from "./types";
 
 export interface ToolbarStrings {
+  activeFilters: string;
+  removeFilter: (label: string) => string;
   filtersPaused: string;
   activeTagFilters: (count: number) => string;
   clearBrowseFilters: string;
@@ -113,6 +115,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
   en: {
     filtersPaused: "Tag/property filters are paused in this view",
     activeTagFilters: (count) => count === 1 ? "1 tag filter active" : `${count} tag filters active`,
+    activeFilters: "Active filters",
+    removeFilter: (label: string) => `Remove filter: ${label}`,
     clearBrowseFilters: "Clear filters",
     emptyBrowseFilters: "No cards match the current filters.",
     emptySearchFilters: (query) => `No cards match “${query}” and the current filters.`,
@@ -223,6 +227,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
   zh: {
     filtersPaused: "标签/属性筛选已在当前视图暂停",
     activeTagFilters: (count) => `已启用 ${count} 个标签筛选`,
+    activeFilters: "已启用筛选",
+    removeFilter: (label: string) => `移除筛选：${label}`,
     clearBrowseFilters: "清除筛选",
     emptyBrowseFilters: "没有符合当前筛选条件的卡片。",
     emptySearchFilters: (query) => `没有同时符合搜索“${query}”和当前筛选条件的卡片。`,

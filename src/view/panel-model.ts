@@ -9,6 +9,7 @@ import type { UiStrings } from "../i18n";
 import { isLinksScope, type CardScope } from "./scope";
 import { resolveSourceCapabilities } from "./source-capabilities";
 import type { CardGroupSegment } from "./card-grouping";
+import type { BrowseFilterChip } from "./browse-filters";
 import type {
   NavigationFocusRequest,
   NavigationProjection,
@@ -73,7 +74,7 @@ export interface PanelScopeState {
    */
   browseFiltersPaused?: boolean;
   /** Effective browse filters, derived by the host; never persisted. */
-  browseFilterState?: { tagCount: number; propertyValueCount: number; canClearEmptyResult: boolean };
+  browseFilterState?: { tagCount: number; propertyValueCount: number; items: BrowseFilterChip[]; canClearEmptyResult: boolean };
   /** Include-subfolders control availability for this source (C6 capability). */
   supportsIncludeSubfolders: boolean;
   /** Save/add-current-source Box-rule seeding availability (C6 capability). */

@@ -6,6 +6,13 @@ import type { LinksSortSpec, SortDirection, SortField } from "../settings";
 import type { CardFileKind } from "./file-kind";
 import type { CardScope } from "./scope";
 import type { CardTaskSummary } from "./task-summary";
+import type { BrowseFilterTarget } from "./browse-filters";
+
+export interface ToolbarActionPayload {
+  action: string;
+  position?: { x: number; y: number };
+  filter?: BrowseFilterTarget;
+}
 
 export interface CardFileDragStartPayload {
   path: string;

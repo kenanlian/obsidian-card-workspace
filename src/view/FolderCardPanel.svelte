@@ -47,6 +47,7 @@
     NavContextMenuPayload,
     NavSectionId,
     NoteCardRecord,
+    ToolbarActionPayload,
   } from "./types";
   interface BulkSelectCardPayload {
     path: string;
@@ -61,10 +62,6 @@
   interface PinTogglePayload {
     path: string;
     pinned: boolean;
-  }
-  interface ToolbarActionPayload {
-    action: string;
-    position?: { x: number; y: number };
   }
   interface BoxCommandPayload {
     command: string;

@@ -20,6 +20,7 @@ import {
   type CardScope,
 } from "./scope";
 import { resolveSourceCapabilities } from "./source-capabilities";
+import { buildBrowseFilterChips, buildBrowseFilterRemovalPatch, type BrowseFilterTarget } from "./browse-filters";
 import type { ViewUpdateIntent } from "./update-intent";
 import { resolveViewConfig } from "./view-config";
 import { createViewEpochs, type ViewEpochs } from "./view-epochs";
@@ -352,8 +353,16 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.hostEl = null;
   }
 
-  handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number } }): void {
+  handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
     const action = detail.action;
+
+    if (action === "remove-browse-filter") {
+      if (!detail.filter) return;
+      const patch = buildBrowseFilterRemovalPatch(this.plugin.getSettings().filter, detail.filter,
+        resolveSourceCapabilities(this.cardScope));
+      if (patch) void this.saveViewSettings(patch);
+      return;
+    }
 
     if (action === "clear-browse-filters") {
       const capabilities = resolveSourceCapabilities(this.cardScope);
@@ -674,6 +683,9 @@ export class FolderCardView extends ItemView implements HoverParent {
       browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
       browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter),
       browseFilterState: {
+        items: buildBrowseFilterChips(settings.filter, capabilities,
+          capabilities.browsePropertyFilter && settings.filter.properties.length > 0
+            ? this.modules.property.derivePropertyFacets() : [], this.strings.property),
         tagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
         propertyValueCount: capabilities.browsePropertyFilter
           ? settings.filter.properties.reduce((count, clause) => count + clause.values.length, 0) : 0,

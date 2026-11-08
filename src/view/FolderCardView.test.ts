@@ -929,7 +929,8 @@ describe("FolderCardView host contract", () => {
     await view.onOpen();
     publishAll(view);
     await tick();
-    expect(panelContainer.querySelector(".fce-active-filters")?.textContent).toContain("1 tag filter active");
+    expect(panelContainer.querySelector(".fce-active-filters")?.textContent).toContain("Active filters");
+    expect(panelContainer.querySelector(".fce-filter-chip-label")?.textContent).toBe("absent");
     expect(panelContainer.querySelector(".fce-empty")?.textContent).toContain("No cards match the current filters.");
     const clear = panelContainer.querySelector<HTMLButtonElement>(".fce-empty button")!;
     expect(clear).not.toBeNull();
