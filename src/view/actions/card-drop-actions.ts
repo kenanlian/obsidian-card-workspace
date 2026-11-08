@@ -23,8 +23,9 @@ export async function applyDroppedProperty(app: App, file: TFile, target: Extrac
     }
     for (const raw of keys.length ? keys : [target.key.trim()]) {
       const previous = frontmatter[raw];
-      if (Array.isArray(previous) ? previous.includes(value) : previous === value) continue;
-      Object.defineProperty(frontmatter, raw, { value: Array.isArray(previous) ? [...previous, value] : value,
+      const previousList: unknown[] | null = Array.isArray(previous) ? previous : null;
+      if (previousList ? previousList.includes(value) : previous === value) continue;
+      Object.defineProperty(frontmatter, raw, { value: previousList ? [...previousList, value] : value,
         enumerable: true, configurable: true, writable: true });
       changed = true;
     }

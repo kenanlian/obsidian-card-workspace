@@ -16,7 +16,8 @@ export type NavigationSortTarget =
 
 export function normalizeNavigationLinksOrder(value: unknown): NavigationSorting["links"] {
   const order: NavigationSorting["links"] = [];
-  for (const direction of Array.isArray(value) ? value : []) {
+  const directions: unknown[] = Array.isArray(value) ? value : [];
+  for (const direction of directions) {
     if ((direction === "outgoing" || direction === "backlinks") && !order.includes(direction)) order.push(direction);
   }
   for (const direction of ["outgoing", "backlinks"] as const) if (!order.includes(direction)) order.push(direction);
