@@ -72,6 +72,6 @@ Quick input uses an internal native Markdown editor capability adapter. If the h
 
 移动端快速输入使用 Obsidian Modal，手机全屏、平板居中；同一插件实例只有一个移动草稿。非空已修改草稿关闭时需要确认，发送中保持界面，失败后冻结原请求重试。缺少原生编辑能力时保留完整 Markdown 源码输入。详见 [移动端说明](mobile.md)。
 
-Card boxes support the same mutually exclusive tag or property browsing filters as folders. Switching to a different folder or card box clears both selections; refreshing the current source keeps them. Filters only narrow display, without changing box rules or membership counts. The toolbar shows active filter counts and a clear action; clearing browsing filters keeps the search query. Links still pause browsing filters.
+Card boxes support the same tag and property browsing filters as folders. Ctrl/Cmd-click or choose **Add to filter** in a tag or property value context menu to combine conditions; **Remove from filter** removes only that condition. Ordinary clicks and **Filter by … only** select one filter type. Switching to a different folder or card box clears both selections; refreshing the current source keeps them. Filters only narrow display, without changing box rules or membership counts. The toolbar shows active filter counts and a clear action; clearing browsing filters keeps the search query. Links still pause browsing filters.
 
-卡片盒支持与文件夹相同的标签或属性浏览筛选，两类筛选互斥。切换到其他文件夹或卡片盒时自动清空这两类选择，刷新当前来源则保留筛选。筛选只收窄展示，不改变盒子规则、成员关系或成员计数。工具栏显示当前筛选数量并可清除；清除浏览筛选保留搜索词。链接范围仍暂停浏览筛选。
+卡片盒支持与文件夹相同的标签和属性浏览筛选。按住 Ctrl/Cmd 点击，或在标签、属性值的右键菜单中选择“添加到筛选”，即可组合条件；“从筛选中移除”仅移除当前条件。普通点击及“仅按此标签／值筛选”使用单类筛选。切换到其他文件夹或卡片盒时自动清空这两类选择，刷新当前来源则保留筛选。筛选只收窄展示，不改变盒子规则、成员关系或成员计数。工具栏显示当前筛选数量并可清除；清除浏览筛选保留搜索词。链接范围仍暂停浏览筛选。

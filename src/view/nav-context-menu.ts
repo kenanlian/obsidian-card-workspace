@@ -314,7 +314,7 @@ function buildTagItemMenu(
     "filter",
     () => deps.actions.filterByOnlyTag(itemId),
     (item) => {
-      item.setDisabled(isActive && deps.activeFilterTags.length === 1);
+      item.setDisabled(isActive && deps.activeFilterTags.length === 1 && deps.propertyFilterCount === 0);
     },
   );
 

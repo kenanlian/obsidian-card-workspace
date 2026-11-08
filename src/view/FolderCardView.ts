@@ -649,7 +649,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       openQuickInput: (win) => { void this.plugin.openQuickInput(win); },
       selectFolder: (path) => { void this.selectFolderFromNav(path); },
       switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
-      applyTagFilter: (tags) => { void this.modules.tagActions.applyTagFilter(tags); },
+      applyTagFilter: (tags, additive) => { void this.modules.tagActions.applyTagFilter(tags, additive); },
       activateFavorite: (favorite) => this.modules.favoriteActions.handleFavoriteActivate({ favorite }),
       selectPropertyValue: (key, ref, additive) => void this.modules.propertyActions.applyValueFilter(key, ref, additive),
       selectLinksDirection: (direction) => this.modules.linksActions.enterOrSwitchLinks(direction),

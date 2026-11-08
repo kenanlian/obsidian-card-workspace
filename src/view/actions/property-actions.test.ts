@@ -215,6 +215,7 @@ describe("createPropertyActions", () => {
 
   it("applies an additive value selection as a within-key toggle", async () => {
     const { actions, getSettings } = createHarness(createSettings({
+      visiblePropertyKeys: ["alpha", "beta"],
       filterProperties: [clause("alpha", [textRef("x")])],
     }));
 
@@ -222,11 +223,19 @@ describe("createPropertyActions", () => {
     expect(getSettings().filter.properties).toEqual([
       clause("alpha", [textRef("x"), textRef("z")]),
     ]);
+    expect(getSettings().filter.tags).toEqual(["keep-me"]);
+    await actions.applyValueFilter("beta", { kind: "boolean", value: false }, true);
+    expect(getSettings().filter.properties).toEqual([
+      clause("alpha", [textRef("x"), textRef("z")]),
+      clause("beta", [{ kind: "boolean", value: false }]),
+    ]);
+    await actions.applyValueFilter("beta", { kind: "boolean", value: false }, true);
 
     // Toggling the last active value of a clause drops the clause.
     await actions.applyValueFilter("alpha", textRef("x"), true);
     await actions.applyValueFilter("alpha", textRef("z"), true);
     expect(getSettings().filter.properties).toEqual([]);
+    expect(getSettings().filter.tags).toEqual(["keep-me"]);
   });
 
   it("filters by only one value, replacing every clause without toggling off", async () => {

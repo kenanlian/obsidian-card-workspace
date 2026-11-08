@@ -53,6 +53,12 @@ describe("TagActions", () => {
       returnToCardsViewIfSinglePane: () => {},
     } as never);
 
+    await actions.applyTagFilter(["work", "project"], true);
+    expect(settings.filter).toEqual({ tags: ["work", "project"], properties: [selected] });
+    await actions.applyTagFilter(["work"], true);
+    expect(settings.filter).toEqual({ tags: ["work"], properties: [selected] });
+    saves.length = 0;
+
     await actions.onFilterChange({ tags: ["work"] });
     expect(saves).toEqual([{ filter: { tags: ["work"], properties: [] } }]);
     expect(settings.filter).toEqual({ tags: ["work"], properties: [] });
@@ -61,6 +67,27 @@ describe("TagActions", () => {
     await actions.filterByOnlyTag("other");
     expect(saves.at(-1)).toEqual({ filter: { tags: ["other"], properties: [] } });
     expect(settings.filter).toEqual({ tags: ["other"], properties: [] });
+  });
+
+  it("adds and removes menu tags without clearing property filters or sibling tags", async () => {
+    const selected = { key: "status", values: [{ kind: "text" as const, value: "open" }] };
+    let settings: PluginSettings = {
+      ...DEFAULT_SETTINGS, visiblePropertyKeys: ["status"],
+      filter: { tags: ["work"], properties: [selected] },
+    };
+    const saveSettings = vi.fn(async (patch: PartialPluginSettings) => {
+      settings = mergeSettings(settings, patch);
+    });
+    const actions = new TagActions({ context: { getSettings: () => settings, saveSettings } } as never);
+
+    await actions.addTagToFilter("project");
+    expect(settings.filter).toEqual({ tags: ["work", "project"], properties: [selected] });
+    await actions.addTagToFilter("project");
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    await actions.removeTagFromFilter("project");
+    expect(settings.filter).toEqual({ tags: ["work"], properties: [selected] });
+    await actions.removeTagFromFilter("work");
+    expect(settings.filter).toEqual({ tags: [], properties: [selected] });
   });
 });
 

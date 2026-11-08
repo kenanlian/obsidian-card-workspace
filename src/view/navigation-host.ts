@@ -228,7 +228,7 @@ export function routeNavigationIntent(input: {
   activeTags: readonly string[];
   selectFolder: (path: string) => void;
   switchBox: (boxId: string) => void;
-  applyTagFilter: (tags: string[]) => void;
+  applyTagFilter: (tags: string[], additive: boolean) => void;
   activateFavorite: (favorite: FavoriteEntry) => void;
   /**
    * Property-value selection callback (WP-05 binds PropertyActions). Optional so
@@ -286,7 +286,8 @@ export function routeNavigationIntent(input: {
     return;
   }
   if (row.kind === "tag") {
-    input.applyTagFilter(resolveTagSelection([...input.activeTags], row.tagPath, intent.mode === "additive"));
+    const additive = intent.mode === "additive";
+    input.applyTagFilter(resolveTagSelection([...input.activeTags], row.tagPath, additive), additive);
     return;
   }
   if (row.kind === "property") { void navLayout.setExpanded(row, !row.expanded); return; }
@@ -297,7 +298,7 @@ export function routeNavigationIntent(input: {
   if (row.kind === "links") { input.selectLinksDirection?.(row.direction); return; }
   if (row.kind === "favorite") {
     if (row.favorite.kind === "tag" && intent.mode === "additive") {
-      input.applyTagFilter(resolveTagSelection([...input.activeTags], row.favorite.ref, true));
+      input.applyTagFilter(resolveTagSelection([...input.activeTags], row.favorite.ref, true), true);
       return;
     }
     input.activateFavorite(row.favorite);

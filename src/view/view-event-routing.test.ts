@@ -73,6 +73,7 @@ import {
 } from "./note-ops";
 import { buildPanelProps } from "./panel-props";
 import { getUiStrings } from "../i18n";
+import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings } from "../settings";
 import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 
 registerFolderCardView(FolderCardView);
@@ -2862,6 +2863,47 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
   });
 
   describe("selection persistence", () => {
+    it.each(["folder", "box"])("combines tag and property activation in either order in %s scope", async (scopeKind) => {
+      const selected = propertyClause("status", [propertyText("open")]);
+      const { view, plugin } = createPropertyHarness({
+        settings: propertySettings({ visiblePropertyKeys: ["status"], expandedPropertyKeys: ["status"] }),
+        frontmatter: { "notes/a.md": { status: "open", tags: ["work"] } },
+        cards: [createCardRecordFromPath("notes/a.md")],
+      });
+      let settings = mergeSettings(DEFAULT_SETTINGS, plugin.getSettings());
+      plugin.getSettings = vi.fn(() => settings);
+      plugin.saveSettings.mockImplementation(async (patch: PartialPluginSettings) => {
+        settings = mergeSettings(settings, patch);
+      });
+      vi.mocked(view.app.metadataCache.getFileCache).mockReturnValue({
+        frontmatter: { status: "open" }, tags: [{ tag: "#work" }],
+      } as never);
+      if (scopeKind === "box") (view as any).cardScope = createBoxScope("box-1");
+      (view as any).publishGroups("projection");
+      (view as any).publishGroups("nav");
+      const rows = (view as any).modules.navLayout.getProjection().rows;
+      const tagRow = rows.find((row: any) => row.kind === "tag" && row.tagPath === "work");
+      const valueRow = rows.find((row: any) => row.kind === "property-value" && row.propertyKey === "status");
+      expect(tagRow).toBeDefined();
+      expect(valueRow).toBeDefined();
+
+      // The host must pass the additive intent all the way to persistence.
+      view.handleNavigationIntent({ type: "activate", rowId: tagRow.id, mode: "ordinary" });
+      view.handleNavigationIntent({ type: "activate", rowId: valueRow.id, mode: "additive" });
+      await flushAsyncWork();
+      expect(plugin.getSettings().filter).toEqual({ tags: ["work"], properties: [selected] });
+
+      view.handleNavigationIntent({ type: "activate", rowId: valueRow.id, mode: "ordinary" });
+      view.handleNavigationIntent({ type: "activate", rowId: valueRow.id, mode: "ordinary" });
+      view.handleNavigationIntent({ type: "activate", rowId: tagRow.id, mode: "additive" });
+      await flushAsyncWork();
+      expect(plugin.getSettings().filter).toEqual({ tags: ["work"], properties: [selected] });
+
+      view.handleNavigationIntent({ type: "activate", rowId: tagRow.id, mode: "additive" });
+      await flushAsyncWork();
+      expect(plugin.getSettings().filter).toEqual({ tags: [], properties: [selected] });
+    });
+
     it("routes a projected property-value activation to applyValueFilter and persists the clause", async () => {
       const { view, plugin } = createPropertyHarness({
         settings: propertySettings({ visiblePropertyKeys: ["status"], expandedPropertyKeys: ["status"] }),

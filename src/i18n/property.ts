@@ -63,7 +63,7 @@ export const propertyStrings: Record<UiLanguage, PropertyStrings> = {
     expandAll: "展开全部属性",
     collapseAll: "折叠全部属性",
     hideThisProperty: "隐藏此属性",
-    addToFilter: "加入筛选",
+    addToFilter: "添加到筛选",
     removeFromFilter: "从筛选中移除",
     filterByOnlyThisValue: "仅按此值筛选",
     emptyNoProperties: "未发现属性",

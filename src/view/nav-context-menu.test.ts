@@ -540,7 +540,7 @@ describe("tag row menu", () => {
 
     expect(result).toBe(true);
     expect(getSignature(menu)).toEqual([
-      { title: "Add tag to filter", icon: "tag" },
+      { title: "Add to filter", icon: "tag" },
       { title: "Filter by this tag only", icon: "filter" },
       "sep",
       { title: "New note with this tag", icon: "square-pen" },
@@ -551,18 +551,26 @@ describe("tag row menu", () => {
       { title: "Rename tag…", icon: "pencil" },
       { title: "Delete tag…", icon: "trash" },
     ]);
-    expect(findItem(menu, "Add tag to filter")?.checked).toBe(false);
+    expect(findItem(menu, "Add to filter")?.checked).toBe(false);
   });
 
   it("flips to remove-from-filter and disables only-this-tag for the single active tag", () => {
     const deps = createDeps({ activeFilterTags: ["work"] });
     const { menu } = build(createPayload({ section: "tags", scope: "item", itemId: "work" }), deps);
 
-    const toggle = findItem(menu, "Remove tag from filter");
+    const toggle = findItem(menu, "Remove from filter");
     expect(toggle?.checked).toBe(true);
     toggle?.clickHandler?.();
     expect(deps.actions.removeTagFromFilter).toHaveBeenCalledWith("work");
     expect(findItem(menu, "Filter by this tag only")?.disabled).toBe(true);
+  });
+
+  it("keeps only-this-tag available to clear properties from combined filters", () => {
+    const deps = createDeps({ activeFilterTags: ["work"], propertyFilterCount: 1 });
+    const { menu } = build(createPayload({ section: "tags", scope: "item", itemId: "work" }), deps);
+    expect(findItem(menu, "Filter by this tag only")?.disabled).toBe(false);
+    findItem(menu, "Filter by this tag only")?.clickHandler?.();
+    expect(deps.actions.filterByOnlyTag).toHaveBeenCalledWith("work");
   });
 
   it("adds the subtag expansion item only for a parent tag", () => {
@@ -576,7 +584,7 @@ describe("tag row menu", () => {
     const { menu } = build(payload, deps);
 
     expect(getSignature(menu)).toEqual([
-      { title: "Add tag to filter", icon: "tag" },
+      { title: "Add to filter", icon: "tag" },
       { title: "Filter by this tag only", icon: "filter" },
       "sep",
       { title: "Name (A to Z)", icon: "sort-asc" },
@@ -1100,6 +1108,15 @@ describe("section header move items", () => {
 
     findItem(menu, "Filter by only this value")?.clickHandler?.();
     expect(deps.actions.filterByOnlyPropertyValue).toHaveBeenCalledWith("priority", value);
+  });
+
+  it("keeps only-this-value available to clear tags from combined filters", () => {
+    const value = { kind: "text", value: "open" } as const;
+    const deps = createDeps({ activeFilterTags: ["work"], propertyFilterCount: 1, isPropertyValueActive: () => true });
+    const { menu } = build(createPayload({ section: "properties", scope: "item", itemId: "status", value }), deps);
+    expect(findItem(menu, "Filter by only this value")?.disabled).toBe(false);
+    findItem(menu, "Filter by only this value")?.clickHandler?.();
+    expect(deps.actions.filterByOnlyPropertyValue).toHaveBeenCalledWith("status", value);
   });
 
   it("suppresses the property value-row menu entirely in box mode (C6/V-O)", () => {

@@ -41,8 +41,8 @@ export class TagActions {
 
   // -- Tag filter --------------------------------------------------------
 
-  async applyTagFilter(nextTags: string[]): Promise<void> {
-    await this.deps.context.saveSettings({ filter: nextTags.length > 0
+  async applyTagFilter(nextTags: string[], additive = false): Promise<void> {
+    await this.deps.context.saveSettings({ filter: !additive && nextTags.length > 0
       ? { tags: nextTags, properties: [] } : { tags: nextTags } });
   }
 
@@ -50,8 +50,8 @@ export class TagActions {
     const filter = this.deps.context.getSettings().filter;
     const current = filter.tags;
     const alreadySelected = current.some((existing) => normalizeTagPath(existing) === tag);
-    if (alreadySelected && filter.properties.length === 0) return;
-    await this.applyTagFilter(alreadySelected ? current : [...current, tag]);
+    if (alreadySelected) return;
+    await this.applyTagFilter([...current, tag], true);
   }
 
   async removeTagFromFilter(tag: string): Promise<void> {
@@ -60,7 +60,7 @@ export class TagActions {
     if (nextTags.length === current.length) {
       return;
     }
-    await this.applyTagFilter(nextTags);
+    await this.applyTagFilter(nextTags, true);
   }
 
   async filterByOnlyTag(tag: string): Promise<void> {

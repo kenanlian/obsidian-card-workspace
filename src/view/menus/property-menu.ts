@@ -77,7 +77,7 @@ export function buildPropertyValueMenu(
     "list-filter",
     () => deps.actions.filterByOnlyPropertyValue(key, value),
     (item) => {
-      item.setDisabled(isActive && deps.propertyFilterCount === 1);
+      item.setDisabled(isActive && deps.propertyFilterCount === 1 && deps.activeFilterTags.length === 0);
     },
   );
   return true;

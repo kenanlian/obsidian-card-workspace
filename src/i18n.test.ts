@@ -81,7 +81,7 @@ describe("i18n", () => {
     expect([zh.sectionLabel, zh.chooseVisible, zh.searchPlaceholder, zh.clearFilters, zh.hideThisProperty])
       .toEqual(["属性", "选择可见属性", "搜索属性…", "清除属性筛选", "隐藏此属性"]);
     expect([zh.addToFilter, zh.removeFromFilter, zh.filterByOnlyThisValue])
-      .toEqual(["加入筛选", "从筛选中移除", "仅按此值筛选"]);
+      .toEqual(["添加到筛选", "从筛选中移除", "仅按此值筛选"]);
     expect([zh.emptyNoProperties, zh.partialWarning, zh.unavailable])
       .toEqual(["未发现属性", "部分属性元数据仍在加载", "属性元数据暂不可用"]);
     expect([zh.valueUnassigned, zh.valueTrue, zh.valueFalse]).toEqual(["未分配", "是", "否"]);

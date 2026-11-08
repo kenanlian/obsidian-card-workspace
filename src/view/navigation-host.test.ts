@@ -106,8 +106,8 @@ describe("navigation host intent routing", () => {
     };
     routeNavigationIntent({ ...common, intent: { type: "activate", rowId: "tag:work", mode: "ordinary" } });
     routeNavigationIntent({ ...common, intent: { type: "activate", rowId: "tag:work", mode: "additive" } });
-    expect(applyTagFilter).toHaveBeenNthCalledWith(1, ["work"]);
-    expect(applyTagFilter).toHaveBeenNthCalledWith(2, ["old", "work"]);
+    expect(applyTagFilter).toHaveBeenNthCalledWith(1, ["work"], false);
+    expect(applyTagFilter).toHaveBeenNthCalledWith(2, ["old", "work"], true);
   });
 
   it("makes direct activation of the current Box a complete no-op", () => {

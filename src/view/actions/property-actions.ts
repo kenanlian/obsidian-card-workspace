@@ -70,12 +70,12 @@ export function buildPropertyVisibilityPatch(
  * owns view publication after each save. No-op state changes write nothing.
  */
 export function createPropertyActions(deps: PropertyActionsDeps): PropertyActions {
-  async function savePropertyClauses(next: PropertyFilterClause[]): Promise<void> {
+  async function savePropertyClauses(next: PropertyFilterClause[], additive = false): Promise<void> {
     const current = deps.getSettings().filter;
-    if (propertyFilterClausesEqual(next, current.properties) && (next.length === 0 || current.tags.length === 0)) {
+    if (propertyFilterClausesEqual(next, current.properties) && (additive || next.length === 0 || current.tags.length === 0)) {
       return;
     }
-    await deps.saveSettings({ filter: next.length > 0 ? { tags: [], properties: next } : { properties: next } });
+    await deps.saveSettings({ filter: !additive && next.length > 0 ? { tags: [], properties: next } : { properties: next } });
   }
 
   return {
@@ -129,7 +129,7 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
         ref,
         additive,
       );
-      await savePropertyClauses(next);
+      await savePropertyClauses(next, additive);
     },
 
     async filterByOnlyValue(key, ref): Promise<void> {
