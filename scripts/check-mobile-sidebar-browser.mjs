@@ -22,7 +22,7 @@ window.renderSidebar = async (device,width) => {
  const cardsGroup=()=>({records,searchMatchCountsByPath:{},sequenceRevision:1,groupRevision:0,extentCount:records.length,groupSegments:[],loading:false,generation:1,hydrationRevision:0,selectedPath:null});
  ${modelCode}
  window.sidebarDrops=[];
- model.mutate(s=>{s.nav={...s.nav,projection:{...s.nav.projection,rows:[{id:'folder:',kind:'folder',section:'folders',folderPath:'',parentId:null,level:1,positionInSet:1,setSize:1,expandable:false,expanded:false,disabled:false,semanticState:'none',label:'Vault',fullPath:'',count:60,icon:null,directCount:60,recursiveCount:60,recursiveFolderCount:0,menuTarget:{section:'folders',scope:'item',itemId:''}}]}};s.scope={...s.scope,displayPath:'Very long folder name with 中文 and many more words'};s.nav={...s.nav,layoutMode:'single',visible:false};});
+ model.mutate(s=>{s.nav={...s.nav,projection:{...s.nav.projection,rows:[{id:'folder:',kind:'folder',section:'folders',folderPath:'',parentId:null,level:1,positionInSet:1,setSize:1,expandable:false,expanded:false,disabled:false,semanticState:'none',label:'Vault',fullPath:'',count:60,icon:null,directCount:60,recursiveCount:60,recursiveFolderCount:0,menuTarget:{section:'folders',scope:'item',itemId:''}}]}};s.scope={...s.scope,displayPath:'Very long folder name with 中文 and many more words'};s.nav={...s.nav,layoutMode:'single',visible:false,boxSummaries:[{id:'box-1',name:'Reading',cardCount:3}]};});
  const target=document.querySelector('#mount');target.style.width=width+'px';
  component=mount(Panel,{target,props:{panelModel:model,runtimeDevice:device,
  onDropCards:(target,paths)=>window.sidebarDrops.push({target,paths}),
@@ -40,14 +40,20 @@ try {
  await page.setContent('<style>body{margin:0;background:#eee}#mount{height:700px;box-sizing:border-box}button{box-sizing:border-box}*{box-sizing:border-box}</style><div id="mount" class="folder-card-view"></div>');
  await page.addStyleTag({content:await readFile('styles.css','utf8')});
  await page.addScriptTag({content:bundle.outputFiles[0].text});
- for(const device of ['phone','tablet']) for(const width of [320,360,390,600]) {
+ for(const device of ['phone','tablet']) for(const width of [280,320,360,390,600,768]) {
   await page.evaluate(([device,width])=>window.renderSidebar(device,width),[device,width]);
   assert.deepEqual(errors,[]);
   const initial=await page.evaluate(()=>{
    const root=document.querySelector('#mount'),shell=root.querySelector('.fce-shell'),toolbar=root.querySelector('.fce-header'),scope=root.querySelector('.fce-toolbar-scope');
-   return {overflow:shell.scrollWidth>root.clientWidth,toolbarOverflow:toolbar.scrollWidth>root.clientWidth,scopeWidth:scope.getBoundingClientRect().width};
+   const buttons=[...toolbar.querySelectorAll('.fce-toolbar-buttons button')].map(b=>b.getBoundingClientRect());
+   return {overflow:shell.scrollWidth>root.clientWidth,toolbarOverflow:toolbar.scrollWidth>root.clientWidth,scopeWidth:scope.getBoundingClientRect().width,
+    buttonCount:buttons.length,sameRow:buttons.every(b=>Math.abs(b.top-buttons[0].top)<1),touchTargets:buttons.every(b=>b.width>=44&&b.height>=44),
+    ellipsis:getComputedStyle(scope.querySelector('.fce-toolbar-scope-text')).textOverflow};
   });
   assert(!initial.overflow&&!initial.toolbarOverflow,JSON.stringify({device,width,initial}));assert(initial.scopeWidth>0);
+  assert(initial.sameRow&&initial.touchTargets,JSON.stringify({device,width,initial}));
+  assert.equal(initial.buttonCount,device==='phone'||width<640?4:7);
+  assert.equal(initial.ellipsis,'ellipsis');
   await page.evaluate(()=>{document.body.className='is-phone is-hidden-nav';});
   assert.equal(await page.locator('.fce-header').evaluate(node=>getComputedStyle(node).opacity),'1');
   await page.locator('.fce-toolbar-button').first().click();
@@ -70,9 +76,22 @@ try {
   await page.waitForSelector('.fce-shell.is-nav-hidden');
   assert.equal(await page.evaluate(()=>window.sidebarDrops.length),1);
   await page.waitForTimeout(700); // Let the completed gesture's synthetic-click suppression retire.
-  await page.locator('.fce-toolbar-actions .fce-toolbar-button').last().click();
+  await page.getByRole('button',{name:'Toggle search',exact:true}).click();
   await page.locator('.fce-search-input').fill('中文 search');
+  // Tablet split-pane resizing updates toolbar presentation without dropping the draft.
+  if(device==='tablet') {
+   for(const resizedWidth of [700,320,width]) {
+    await page.locator('#mount').evaluate((node,w)=>{node.style.width=w+'px'},resizedWidth);
+    await page.waitForFunction(w=>!!document.querySelector('.fce-header.is-compact')===(w<640),resizedWidth);
+    assert.equal(await page.locator('.fce-search-input').inputValue(),'中文 search');
+   }
+  }
   await page.evaluate(()=>window.sidebarModel.mutate(s=>{s.bulk={...s.bulk,bulkMode:true}}));
+  if(device==='phone'||width<640) {
+   await page.getByRole('button',{name:'Exit bulk selection',exact:true}).click();
+   await page.waitForSelector('.fce-header:not(.is-bulk-mode)');
+   await page.evaluate(()=>window.sidebarModel.mutate(s=>{s.bulk={...s.bulk,bulkMode:true}}));
+  }
   assert.equal(await page.locator('.fce-header').evaluate(e=>e.scrollWidth<=e.closest('.fce-shell').clientWidth),true);
   await page.setViewportSize({width:900,height:400});
   await page.waitForTimeout(40);

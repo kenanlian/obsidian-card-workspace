@@ -960,6 +960,7 @@
   />
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
+    {runtimeDevice}
     {attachSearchHistorySuggest}
     {strings}
     {scope}

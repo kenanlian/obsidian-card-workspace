@@ -130,6 +130,7 @@ function mountToolbar(
     target,
     props: {
       strings: values.strings ?? getUiStrings("en"),
+      runtimeDevice: values.runtimeDevice ?? "desktop",
       scope: {
         displayPath: values.folderPath ?? "notes",
         includeSubfolders: true,
@@ -279,6 +280,93 @@ describe("Toolbar.svelte", () => {
     document.body.innerHTML = "";
     resetObsidianMenuInstances();
     vi.restoreAllMocks();
+  });
+
+  async function openMoreMenu(): Promise<ObsidianMockMenu> {
+    await tick();
+    document.querySelector<HTMLButtonElement>(".fce-toolbar-more")?.click();
+    await tick();
+    const menu = getObsidianMenuInstances().at(-1);
+    expect(menu).toBeDefined();
+    return menu!;
+  }
+
+  it("keeps phone primary actions accessible and routes secondary folder actions through More", async () => {
+    const captured = createCapturedCallbacks();
+    mountToolbar({ runtimeDevice: "phone", boxSummaries: BOX_SUMMARIES }, captured.callbacks);
+    await tick();
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-toolbar-buttons button"));
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Expand navigation", "Create note", "Toggle search", "More actions",
+    ]);
+    buttons[1]?.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "new-note" }]);
+    buttons[2]?.click();
+    await tick();
+    expect(document.activeElement).toBe(document.querySelector(".fce-search-input"));
+    let menu = await openMoreMenu();
+    expect(menu.items.map(itemTitle)).toEqual([
+      "Sort & group", "Bulk actions", "Save current view as card box", "Add current view to card box",
+    ]);
+    clickMenuItem(menu, "Save current view as card box");
+    expect(captured.boxCommandEvents).toEqual([{ command: "save-scope-as-box" }]);
+    menu = await openMoreMenu();
+    clickMenuItem(menu, "Add current view to card box");
+    const picker = getObsidianMenuInstances().at(-1)!;
+    expect(picker.items.map(itemTitle)).toEqual(["Reading", "Plans"]);
+    clickMenuItem(picker, "Plans");
+    expect(captured.boxCommandEvents.at(-1)).toEqual({ command: "add-scope-to-box", boxId: "box-2" });
+    menu = await openMoreMenu();
+    clickMenuItem(menu, "Sort & group");
+    const sortMenu = getObsidianMenuInstances().at(-1)!;
+    expect(sortMenu).not.toBe(menu);
+    // Reuse the full sort/group surface and its original callbacks.
+    clickMenuItem(sortMenu, "Filename");
+    expect(captured.sortEvents).toEqual([{ field: "name", direction: "desc" }]);
+    expect(sortMenu.positions).toEqual(menu.positions);
+    menu = await openMoreMenu();
+    clickMenuItem(menu, "Bulk actions");
+    expect(captured.toolbarActionEvents.at(-1)).toEqual({ action: "bulk" });
+  });
+
+  it("provides a visible localized bulk exit and retains box configuration", async () => {
+    const captured = createCapturedCallbacks();
+    const strings = getUiStrings("zh");
+    mountToolbar({ runtimeDevice: "phone", bulkMode: true, selectedCount: 2,
+      activeBoxId: "box-1", activeBoxName: "Reading", strings }, captured.callbacks);
+    await tick();
+    const exit = document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.actions.exitBulk}"]`);
+    expect(exit?.classList.contains("is-selected")).toBe(true);
+    expect(document.querySelector(".fce-toolbar-bulk-summary")?.textContent).toContain(strings.toolbar.bulkSummary(2));
+    const menu = await openMoreMenu();
+    expect(findMenuItem(menu, strings.toolbar.actions.exitBulk)?.checked).toBe(true);
+    expect(findMenuItem(menu, strings.box.saveScopeTitle)).toBeUndefined();
+    clickMenuItem(menu, strings.box.configureTitle);
+    expect(captured.boxCommandEvents).toEqual([{ command: "configure" }]);
+    exit?.click();
+    expect(captured.toolbarActionEvents).toEqual([{ action: "bulk" }]);
+  });
+
+  it("retains link pinning and snapshots in the compact menu without folder-only commands", async () => {
+    const captured = createCapturedCallbacks();
+    mountToolbar({ runtimeDevice: "phone", linksDirection: "outgoing", linksPinned: true,
+      supportsLinksSnapshot: true, supportsBoxRuleSeeding: false }, captured.callbacks);
+    const strings = getUiStrings("en");
+    let menu = await openMoreMenu();
+    expect(findMenuItem(menu, strings.box.saveScopeTitle)).toBeUndefined();
+    expect(findMenuItem(menu, strings.links.resumeFollow)?.checked).toBe(true);
+    clickMenuItem(menu, strings.links.resumeFollow);
+    menu = await openMoreMenu();
+    clickMenuItem(menu, strings.links.saveSnapshot);
+    expect(captured.toolbarActionEvents).toEqual([{ action: "links-pin-toggle" }, { action: "links-save-snapshot" }]);
+  });
+
+  it("closes the compact menu when its toolbar is unmounted", async () => {
+    const { component } = mountToolbar({ runtimeDevice: "phone" });
+    const menu = await openMoreMenu();
+    const hide = vi.spyOn(menu, "hide");
+    await disposeMountedComponent(component);
+    expect(hide).toHaveBeenCalledOnce();
   });
 
   it("keeps the search input closed while the focus token is zero", async () => {

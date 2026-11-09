@@ -40,6 +40,8 @@ export interface ToolbarStrings {
     bulk: string;
     bulkTitle: string;
     toggleSearch: string;
+    more: string;
+    exitBulk: string;
   };
   bulkSummary: (count: number) => string;
   bulkActionLabels: {
@@ -152,6 +154,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       bulk: "Bulk",
       bulkTitle: "Bulk actions",
       toggleSearch: "Toggle search",
+      more: "More actions",
+      exitBulk: "Exit bulk selection",
     },
     bulkSummary: (count: number) => (count === 1 ? "1 selected" : `${count} selected`),
     bulkActionLabels: {
@@ -264,6 +268,8 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       bulk: "批量",
       bulkTitle: "批量操作",
       toggleSearch: "切换搜索",
+      more: "更多操作",
+      exitBulk: "退出批量选择",
     },
     bulkSummary: (count: number) => (count === 1 ? "已选 1 项" : `已选 ${count} 项`),
     bulkActionLabels: {

@@ -14,6 +14,11 @@ again in the new leaf; open menus, gestures and bulk selection are not transferr
 
 Phones show one card column and display the current source inside the plugin toolbar.
 The toolbar stays visible even when the main editor uses Obsidian's Auto full screen.
+Phones use a single toolbar row with navigation, the current source, new note, search,
+and More actions. Tablets use this compact row when the card pane is narrower than
+640px. More actions contains sorting/grouping, bulk selection and the commands for
+the current folder, card box or links view. During bulk selection, the new-note button
+becomes an explicit exit button; selected counts and bulk operations remain below.
 Navigation switches inside the sidebar, using the same mounted navigation tree; selecting
 a source or filter returns to cards. Tablets use two panes only when the plugin container
 is at least 640px and fits the saved navigation width plus 320px for cards. Rotation, split

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Menu, setIcon, setTooltip } from "obsidian";
   import { tick, untrack } from "svelte";
+  import type { RuntimeDevice } from "../runtime/platform";
   import type { AttachSearchHistorySuggest, SearchHistorySuggestHandle } from "./search-history-suggest";
   import { DEFAULT_GROUP_SPEC, type GroupSpec } from "../card-grouping-settings";
   import { getUiStrings, type ToolbarStrings, type UiStrings } from "../i18n";
@@ -57,6 +58,7 @@
     visibleGroupProperties?: Array<{ key: string; label: string }>;
     bulk?: BulkRuntimePanelState;
     boxSummaries?: BoxSummary[];
+    runtimeDevice?: RuntimeDevice;
     navVisible?: boolean;
     onToggleNavPane?: () => void;
     tooltipSide?: "top" | "right" | "bottom" | "left";
@@ -147,6 +149,7 @@
     visibleGroupProperties = [],
     bulk = DEFAULT_BULK,
     boxSummaries = [],
+    runtimeDevice = "desktop",
     navVisible = false,
     onToggleNavPane,
     tooltipSide = "right",
@@ -197,6 +200,24 @@
   let boxPickerCloseNonce = $state(0);
 
   let sortButtonEl: HTMLElement | null = null;
+  let toolbarWidth = $state(0);
+  const compact = $derived(runtimeDevice === "phone" || (runtimeDevice === "tablet" && toolbarWidth < 640));
+  let moreMenu = $state.raw<Menu | null>(null);
+
+  function bindToolbarWidth(node: HTMLElement): { destroy: () => void } {
+    if (runtimeDevice !== "tablet") return { destroy() {} };
+    const measure = (): void => { toolbarWidth = node.clientWidth; };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
+
+  $effect(() => {
+    // Close menus whose anchor or source is being replaced, including on unmount.
+    compact; scope.sourceIdentity;
+    return () => { moreMenu?.hide(); moreMenu = null; };
+  });
 
   const isBoxMode = $derived(activeBoxId !== null);
   const isLinksMode = $derived(scope.linksDirection != null);
@@ -340,7 +361,7 @@
    * button. The Menu owns closing, keyboard navigation, and viewport fitting,
    * so the toolbar only builds the items and decorates the surface.
    */
-  function openSortGroupMenu(event: MouseEvent): void {
+  function openSortGroupMenu(event: MouseEvent, anchor?: DOMRect): void {
     closeBoxPickerMenu();
 
     const menu = new Menu().setUseNativeMenu(false);
@@ -360,13 +381,65 @@
       },
     );
 
-    const triggerRect = sortButtonEl?.getBoundingClientRect();
+    const triggerRect = anchor ?? sortButtonEl?.getBoundingClientRect();
     menu.showAtPosition({
       x: triggerRect?.left ?? event.clientX,
       y: triggerRect?.bottom ?? event.clientY,
       overlap: true,
     });
     decorateSortGroupMenu(menu, sortGroupStrings);
+  }
+
+  function openMoreMenu(event: MouseEvent): void {
+    if (moreMenu) {
+      moreMenu.hide();
+      moreMenu = null;
+      return;
+    }
+    closeBoxPickerMenu();
+    const anchor = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const position = { x: anchor.left, y: anchor.bottom, overlap: true };
+    const menu = new Menu().setUseNativeMenu(false);
+    moreMenu = menu;
+    menu.onHide(() => { if (moreMenu === menu) moreMenu = null; });
+    const addAction = (label: string, icon: string, run: () => void, checked?: boolean): void => {
+      menu.addItem((item) => {
+        item.setTitle(label).setIcon(icon).onClick(() => {
+          menu.hide(); moreMenu = null; run();
+        });
+        if (checked !== undefined) item.setChecked(checked);
+      });
+    };
+    addAction(sortGroupStrings.title, "arrow-up-narrow-wide", () => openSortGroupMenu(event, anchor), isSortGroupTriggerSelected);
+    addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
+    if (isBoxMode) {
+      addAction(boxStrings.configureTitle, "settings-2", () => emitBoxCommand("configure"));
+    }
+    if (scope.supportsBoxRuleSeeding) {
+      menu.addSeparator();
+      addAction(boxStrings.saveScopeTitle, "package-plus", () => emitBoxCommand("save-scope-as-box"));
+      if (hasBoxes) {
+        addAction(boxStrings.addScopeToBox, "package-check", () => {
+          const picker = new Menu().setUseNativeMenu(false);
+          moreMenu = picker;
+          picker.onHide(() => { if (moreMenu === picker) moreMenu = null; });
+          for (const box of boxSummaries) {
+            picker.addItem((item) => item.setTitle(box.name).setIcon("box").onClick(() => {
+              picker.hide(); moreMenu = null; emitBoxCommand("add-scope-to-box", box.id);
+            }));
+          }
+          picker.showAtPosition(position);
+        });
+      }
+    }
+    if (isLinksMode) {
+      menu.addSeparator();
+      addAction(scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote, "pin", () => emitToolbarAction("links-pin-toggle"), scope.linksPinned ?? false);
+      if (scope.supportsLinksSnapshot) {
+        addAction(strings.links.saveSnapshot, "package-plus", () => emitToolbarAction("links-save-snapshot"));
+      }
+    }
+    menu.showAtPosition(position);
   }
 
   function selectToolbarAction(actionId: string, event: MouseEvent): void {
@@ -461,9 +534,9 @@
   }
 </script>
 
-<header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}">
+<header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}" class:is-compact={compact}>
   <div class="fce-toolbar" role="toolbar" aria-label={toolbarStrings.actions.toolbarAriaLabel}>
-    <div class="fce-toolbar-buttons">
+    <div class="fce-toolbar-buttons" use:bindToolbarWidth>
       <button
         type="button"
         class="clickable-icon fce-toolbar-button"
@@ -480,115 +553,126 @@
         <span class="fce-toolbar-scope-text">{scopeText}</span>
       </div>
       <div class="fce-toolbar-actions">
-        {#if isLinksMode}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button {scope.linksPinned ? 'is-selected' : ''}"
-            aria-label={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
-            aria-pressed={scope.linksPinned ?? false}
-            onclick={() => emitToolbarAction("links-pin-toggle")}
-            use:applyIcon={"pin"}
-            use:applyTooltip={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
-          >
-            <span class="fce-sr-only">{scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}</span>
-          </button>
-        {/if}
-        {#if isBoxMode}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button"
-            aria-label={toolbarStrings.actions.newNoteTitle}
-            onclick={(event) => selectToolbarAction("new-note", event)}
-            use:applyIcon={"square-pen"}
-          >
-            <span class="fce-sr-only">{toolbarStrings.actions.newNote}</span>
-          </button>
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
-            aria-label={sortGroupStrings.title}
-            onclick={(event) => selectToolbarAction("sort", event)}
-            use:applyIcon={"arrow-up-narrow-wide"}
-            use:captureSortButton
-          >
-            <span class="fce-sr-only">{sortGroupStrings.title}</span>
-          </button>
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button"
-            aria-label={boxStrings.configureTitle}
-            onclick={() => emitBoxCommand("configure")}
-            use:applyIcon={"settings-2"}
-            use:applyTooltip={boxStrings.configureTitle}
-          >
-            <span class="fce-sr-only">{boxStrings.configure}</span>
-          </button>
+        {#if compact}
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
-            aria-label={toolbarStrings.actions.bulkTitle}
-            onclick={(event) => selectToolbarAction("bulk", event)}
-            use:applyIcon={"check-check"}
-          >
-            <span class="fce-sr-only">{toolbarStrings.actions.bulk}</span>
-          </button>
+            aria-label={bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.newNoteTitle}
+            onclick={() => emitToolbarAction(bulkMode ? "bulk" : "new-note")}
+            use:applyIcon={bulkMode ? "x" : "square-pen"}
+            use:applyTooltip={bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.newNoteTitle}
+          ></button>
         {:else}
-          {#each TOOLBAR_ACTIONS as action}
-            {#if action.id === "sort"}
-              <button
-                type="button"
-                class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
-                aria-label={sortGroupStrings.title}
-                onclick={(event) => selectToolbarAction(action.id, event)}
-                use:applyIcon={action.icon}
-                use:captureSortButton
-              >
-                <span class="fce-sr-only">{sortGroupStrings.title}</span>
-              </button>
-            {:else}
-              <button
-                type="button"
-                class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
-                aria-label={action.title}
-                onclick={(event) => selectToolbarAction(action.id, event)}
-                use:applyIcon={action.icon}
-              >
-                <span class="fce-sr-only">{action.label}</span>
-              </button>
-            {/if}
-          {/each}
-          {#if scope.supportsBoxRuleSeeding}
+          {#if isLinksMode}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {scope.linksPinned ? 'is-selected' : ''}"
+              aria-label={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
+              aria-pressed={scope.linksPinned ?? false}
+              onclick={() => emitToolbarAction("links-pin-toggle")}
+              use:applyIcon={"pin"}
+              use:applyTooltip={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
+            >
+              <span class="fce-sr-only">{scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}</span>
+            </button>
+          {/if}
+          {#if isBoxMode}
             <button
               type="button"
               class="clickable-icon fce-toolbar-button"
-              aria-label={boxStrings.saveScopeTitle}
-              onclick={() => emitBoxCommand("save-scope-as-box")}
-              use:applyIcon={"package-plus"}
-              use:applyTooltip={boxStrings.saveScopeTitle}
+              aria-label={toolbarStrings.actions.newNoteTitle}
+              onclick={(event) => selectToolbarAction("new-note", event)}
+              use:applyIcon={"square-pen"}
             >
-              <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
+              <span class="fce-sr-only">{toolbarStrings.actions.newNote}</span>
+            </button>
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
+              aria-label={sortGroupStrings.title}
+              onclick={(event) => selectToolbarAction("sort", event)}
+              use:applyIcon={"arrow-up-narrow-wide"}
+              use:captureSortButton
+            >
+              <span class="fce-sr-only">{sortGroupStrings.title}</span>
+            </button>
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button"
+              aria-label={boxStrings.configureTitle}
+              onclick={() => emitBoxCommand("configure")}
+              use:applyIcon={"settings-2"}
+              use:applyTooltip={boxStrings.configureTitle}
+            >
+              <span class="fce-sr-only">{boxStrings.configure}</span>
+            </button>
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
+              aria-label={toolbarStrings.actions.bulkTitle}
+              onclick={(event) => selectToolbarAction("bulk", event)}
+              use:applyIcon={"check-check"}
+            >
+              <span class="fce-sr-only">{toolbarStrings.actions.bulk}</span>
+            </button>
+          {:else}
+            {#each TOOLBAR_ACTIONS as action}
+              {#if action.id === "sort"}
+                <button
+                  type="button"
+                  class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
+                  aria-label={sortGroupStrings.title}
+                  onclick={(event) => selectToolbarAction(action.id, event)}
+                  use:applyIcon={action.icon}
+                  use:captureSortButton
+                >
+                  <span class="fce-sr-only">{sortGroupStrings.title}</span>
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
+                  aria-label={action.title}
+                  onclick={(event) => selectToolbarAction(action.id, event)}
+                  use:applyIcon={action.icon}
+                >
+                  <span class="fce-sr-only">{action.label}</span>
+                </button>
+              {/if}
+            {/each}
+            {#if scope.supportsBoxRuleSeeding}
+              <button
+                type="button"
+                class="clickable-icon fce-toolbar-button"
+                aria-label={boxStrings.saveScopeTitle}
+                onclick={() => emitBoxCommand("save-scope-as-box")}
+                use:applyIcon={"package-plus"}
+                use:applyTooltip={boxStrings.saveScopeTitle}
+              >
+                <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
+              </button>
+            {/if}
+            {#if scope.supportsBoxRuleSeeding && hasBoxes}
+              <ToolbarBoxPicker
+                {boxSummaries}
+                addScopeLabel={boxStrings.addScopeToBox}
+                closeNonce={boxPickerCloseNonce}
+                onAddToBox={(boxId) => emitBoxCommand("add-scope-to-box", boxId)}
+              />
+            {/if}
+          {/if}
+          {#if isLinksMode && scope.supportsLinksSnapshot}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button"
+              aria-label={strings.links.saveSnapshot}
+              onclick={() => emitToolbarAction("links-save-snapshot")}
+              use:applyIcon={"package-plus"}
+              use:applyTooltip={strings.links.saveSnapshot}
+            >
+              <span class="fce-sr-only">{strings.links.saveSnapshot}</span>
             </button>
           {/if}
-          {#if scope.supportsBoxRuleSeeding && hasBoxes}
-            <ToolbarBoxPicker
-              {boxSummaries}
-              addScopeLabel={boxStrings.addScopeToBox}
-              closeNonce={boxPickerCloseNonce}
-              onAddToBox={(boxId) => emitBoxCommand("add-scope-to-box", boxId)}
-            />
-          {/if}
-        {/if}
-        {#if isLinksMode && scope.supportsLinksSnapshot}
-          <button
-            type="button"
-            class="clickable-icon fce-toolbar-button"
-            aria-label={strings.links.saveSnapshot}
-            onclick={() => emitToolbarAction("links-save-snapshot")}
-            use:applyIcon={"package-plus"}
-            use:applyTooltip={strings.links.saveSnapshot}
-          >
-            <span class="fce-sr-only">{strings.links.saveSnapshot}</span>
-          </button>
         {/if}
         <button
           type="button"
@@ -604,6 +688,18 @@
         >
           <span class="fce-sr-only">{toolbarStrings.actions.toggleSearch}</span>
         </button>
+        {#if compact}
+          <button
+            type="button"
+            class="clickable-icon fce-toolbar-button fce-toolbar-more {(bulkMode || isSortGroupTriggerSelected || scope.linksPinned) ? 'is-selected' : ''}"
+            aria-label={toolbarStrings.actions.more}
+            aria-haspopup="menu"
+            aria-expanded={moreMenu !== null}
+            onclick={openMoreMenu}
+            use:applyIcon={"ellipsis"}
+            use:applyTooltip={toolbarStrings.actions.more}
+          ></button>
+        {/if}
       </div>
     </div>
   </div>

@@ -2715,11 +2715,11 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar { flex-wrap: wrap; min-width: 0; }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar > *,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar > * { max-width: 100%; min-width: 0; }
-/* Keep the source readable above the action row in narrow mobile sidebars. */
-.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-buttons { flex-wrap: wrap; width: 100%; }
-.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-scope { flex-basis: calc(100% - 64px); }
-.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-actions { flex-wrap: wrap; }
-.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar-actions { margin-inline-start: auto; }
+/* Compact mobile chrome keeps primary actions beside an ellipsized source label. */
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-buttons { width: 100%; }
+.folder-card-view .fce-header.is-compact .fce-toolbar-buttons { flex-wrap: nowrap; }
+.folder-card-view .fce-header.is-compact .fce-toolbar-scope { flex: 1 1 0; }
+.folder-card-view .fce-header.is-compact .fce-toolbar-actions { flex-wrap: nowrap; }
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,
