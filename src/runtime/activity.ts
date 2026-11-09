@@ -32,17 +32,21 @@ export class RuntimeActivity {
   }
 
   /** Geometry is also the fallback for hosts without IntersectionObserver.
-   * Refresh on existing layout events, never infer visibility from active leaf. */
+   * Observe size changes as startup layout can settle without another intersection
+   * or host layout event. Never infer visibility from active leaf. */
   observeRegion(element: HTMLElement, gate: RuntimeWorkGate): () => void {
     if (this.disposed) { gate.close(); return () => {}; }
     let doc = element.ownerDocument;
     let releaseDocument = this.trackDocument(doc);
     let intersection: boolean | null = null;
     let observer: IntersectionObserver | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     let observerGeneration = 0;
     const observe = () => {
       const generation = ++observerGeneration;
       observer?.disconnect();
+      resizeObserver?.disconnect();
+      observer = null; resizeObserver = null;
       const Observer = (doc.defaultView as (Window & { IntersectionObserver?: typeof IntersectionObserver }) | null)?.IntersectionObserver;
       if (Observer) {
         observer = new Observer((entries) => {
@@ -52,6 +56,14 @@ export class RuntimeActivity {
           region.refresh();
         });
         observer.observe(element);
+      }
+      const Resize = (doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null)?.ResizeObserver;
+      if (Resize) {
+        resizeObserver = new Resize(() => {
+          if (generation !== observerGeneration || this.disposed) return;
+          region.refresh();
+        });
+        resizeObserver.observe(element);
       }
     };
     const region: Region = {
@@ -71,7 +83,7 @@ export class RuntimeActivity {
           && rect.width > 0 && rect.height > 0 && overlapsViewport && intersection !== false;
         gate.setActive(visible);
       },
-      stop: () => { observerGeneration++; observer?.disconnect(); releaseDocument(); gate.close(); },
+      stop: () => { observerGeneration++; observer?.disconnect(); resizeObserver?.disconnect(); releaseDocument(); gate.close(); },
     };
     this.regions.add(region); observe(); region.refresh();
     return () => { if (this.regions.delete(region)) region.stop(); };

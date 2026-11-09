@@ -76,4 +76,74 @@ describe("workspace visibility", () => {
     changed([{ target: element, isIntersecting: true }] as unknown as IntersectionObserverEntry[], {} as IntersectionObserver);
     expect(gate.isActive).toBe(true); stop(); expect(disconnect).toHaveBeenCalledOnce(); activity.dispose();
   });
+
+  it("resumes after zero-height startup layout without another intersection or host event", async () => {
+    const activity = new RuntimeActivity(), main = documentFixture();
+    let intersectionChanged!: IntersectionObserverCallback;
+    let sizeChanged!: ResizeObserverCallback;
+    const disconnect = vi.fn(), observe = vi.fn();
+    Object.assign(main.doc.defaultView!, {
+      IntersectionObserver: class {
+        constructor(callback: IntersectionObserverCallback) { intersectionChanged = callback; }
+        observe() {}
+        disconnect() {}
+      },
+      ResizeObserver: class {
+        constructor(callback: ResizeObserverCallback) { sizeChanged = callback; }
+        observe = observe;
+        disconnect = disconnect;
+      },
+    });
+    let height = 0;
+    const element = { ...regionFixture(main.doc), getBoundingClientRect: () => ({ width: 300, height }) };
+    const gate = new RuntimeWorkGate();
+    const stop = activity.observeRegion(element as unknown as HTMLElement, gate);
+    // A zero-area target can already intersect, so growing it need not emit
+    // another intersection notification when the mobile drawer settles.
+    intersectionChanged([{ target: element, isIntersecting: true }] as unknown as IntersectionObserverEntry[], {} as IntersectionObserver);
+    expect(gate.isPaused).toBe(true);
+    const resumed = gate.wait();
+    height = 500;
+    sizeChanged([], {} as ResizeObserver);
+    expect(gate.isActive).toBe(true);
+    expect(await resumed).toBe(true);
+    expect(observe).toHaveBeenCalledWith(element);
+
+    height = 0; sizeChanged([], {} as ResizeObserver);
+    expect(gate.isPaused).toBe(true);
+    main.visibility("hidden"); height = 500; sizeChanged([], {} as ResizeObserver);
+    expect(gate.isPaused).toBe(true);
+    main.visibility("visible"); expect(gate.isActive).toBe(true);
+    stop(); expect(disconnect).toHaveBeenCalledOnce(); activity.dispose();
+  });
+
+  it("rebinds size observation to the owning document and ignores retired callbacks", () => {
+    const activity = new RuntimeActivity(), main = documentFixture(), popout = documentFixture();
+    const callbacks: ResizeObserverCallback[] = [], disconnects = [vi.fn(), vi.fn()];
+    for (const [index, fixture] of [main, popout].entries()) {
+      Object.assign(fixture.doc.defaultView!, { ResizeObserver: class {
+        constructor(callback: ResizeObserverCallback) { callbacks.push(callback); }
+        observe() {}
+        disconnect = disconnects[index];
+      } });
+    }
+    let height = 0;
+    const readRect = vi.fn(() => ({ width: 300, height }));
+    const element = { ...regionFixture(main.doc), getBoundingClientRect: readRect };
+    const gate = new RuntimeWorkGate();
+    const stop = activity.observeRegion(element as unknown as HTMLElement, gate);
+    element.ownerDocument = popout.doc; activity.refresh();
+    expect(disconnects[0]).toHaveBeenCalledOnce();
+    height = 500;
+    callbacks[0]([], {} as ResizeObserver);
+    expect(gate.isPaused).toBe(true);
+    callbacks[1]([], {} as ResizeObserver);
+    expect(gate.isActive).toBe(true);
+    stop(); expect(disconnects[1]).toHaveBeenCalledOnce();
+    const reads = readRect.mock.calls.length;
+    callbacks[1]([], {} as ResizeObserver);
+    expect(readRect).toHaveBeenCalledTimes(reads);
+    expect(activity.getDiagnostics()).toMatchObject({ documents: 0, regions: 0 });
+    expect(gate.isClosed).toBe(true); activity.dispose();
+  });
 });
