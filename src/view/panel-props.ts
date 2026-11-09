@@ -36,7 +36,7 @@ type PanelCallbackProps = { panelModel: PanelModel; onCardDragStart: CardFileDra
 export function buildPanelProps(view: PanelHost): PanelCallbackProps {
   return {
     onReadingPosition: (bridge: import("./scope-history").ReadingPositionBridge | null) => view.registerReadingPosition?.(bridge),
-    mobileApp: view.app, runtimeDevice: view.plugin.runtimePlatform?.device ?? "desktop",
+    runtimeDevice: view.plugin.runtimePlatform?.device ?? "desktop",
     panelModel: view.panelModel,
     resolveCardDragPaths: (path: string) => view.modules.cardDropActions.resolvePaths(path),
     onBeginCardDrag: (paths: string[]) => view.modules.cardDropActions.begin(paths),

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Card Workspace** (also "Folder Card Explorer") is an Obsidian plugin for desktop, phones and tablets that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar** on desktop and the main workspace on mobile. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
+**Card Workspace** (also "Folder Card Explorer") is an Obsidian plugin for desktop, phones and tablets that renders a folder's or card box's notes as a virtualized card stream in the **left sidebar** on desktop and mobile. It provides indexed full-text search, tag filtering, pin reordering, bulk operations, favorites, nav/card context menus, card-to-editor drag insert, and its own two-column navigation pane for folders, tags, properties, and boxes.
 
 - **Plugin ID**: `card-workspace`
 - **Version**: `1.4.9` (source of truth: `manifest.json`)
@@ -42,8 +42,9 @@ mobile resolves a vault-local UUID once for search and thumbnails, disabling per
 caches when local storage is unavailable. `SettingsStore` merges vault-local device
 settings without writing merged device values into shared `data.json`.
 
-Mobile navigation moves the existing navigation DOM into a host Modal in single-pane
-mode. `ScopeController` signals committed user scope changes; the view implements host
+Mobile navigation switches inline with the mounted card stream in single-pane
+mode. Mobile main-workspace card leaves relocate to the left sidebar on activation;
+successful main-workspace card opens collapse the mobile drawer. `ScopeController` signals committed user scope changes; the view implements host
 history state, and runtime reading anchors are retained per leaf. Quick input uses one
 host Modal per plugin, sharing target validation and frozen submission sessions with
 desktop windows; missing native editing falls back to full Markdown source. Touch menus

@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-Card Workspace is an [Obsidian](https://obsidian.md/) plugin for **capturing, gathering, organizing, and reframing notes**. Capture ideas with quick input or templates, then browse folders, tags, properties, outgoing links, backlinks, and card boxes as a readable card stream. On desktop, it sits in the **left sidebar** beside the editor; on phones and tablets, it opens in the main workspace.
+Card Workspace is an [Obsidian](https://obsidian.md/) plugin for **capturing, gathering, organizing, and reframing notes**. Capture ideas with quick input or templates, then browse folders, tags, properties, outgoing links, backlinks, and card boxes as a readable card stream. On desktop, it sits in the **left sidebar** beside the editor; on phones and tablets, it also opens in the left sidebar.
 
 Each Markdown card shows a title and a lightweight content preview, so a set of notes stays readable without collapsing into filenames. Click a card to open its note. Card boxes bring notes together while keeping source files in their original folders; drag cards onto navigation items to move files, apply metadata, or add them to a box.
 
@@ -61,7 +61,7 @@ Choose **Documents only**, **Common formats** (default), or **All formats** in s
 
 ## Quick start
 
-1. Select the ribbon icon, or run **Open Card Workspace view** from the command palette. The view opens in the **left sidebar** on desktop, or the main workspace on mobile.
+1. Select the ribbon icon, or run **Open Card Workspace view** from the command palette. The view opens in the **left sidebar** on desktop and mobile.
 2. Use **New note**, choose a template, or select the paper-plane button (**Open quick input**) to capture an idea. Quick input uses independent windows on desktop and a dialog on mobile.
 3. Pick a folder or card box in the navigation pane, then narrow it with tags or property values. You can also start from the note you are reading with its outgoing links or backlinks.
 4. Browse the card stream. Use search, sorting, grouping, or pins to shape the view, then click a card to open its note.
@@ -95,12 +95,12 @@ Card Workspace restores the last **folder** you browsed. If it was the vault roo
 - **Context menus.** Right-click in the navigation pane or on a card to create notes, folders, canvases, Excalidraw files, and bases, rename, duplicate, move, delete, copy vault or system paths, reveal in the system file explorer, and search within a folder. Rename or delete a tag with confirmation; the change updates notes, active filters, favorites, and card-box rules.
 - **Open your way.** Hover-preview a note, or open it in the current tab, a new tab, a split, or a window. With the Page preview core plugin enabled, adjust card hover preview width and height in this plugin's Appearance settings (default 600 × 400 pixels); previews shrink to fit the window. Click a card to open its note; switch notes in the editor and the matching card is selected.
 - **Virtualized scrolling.** Only visible cards are rendered, so large sources stay practical to scan.
-- **Mobile workspace.** Phones use a single card column with navigation in a dialog; tablets adapt to the available width. Tap menu buttons for actions, insert or copy card content, and navigate scope history with Obsidian’s back controls. Appearance and workspace preferences stay local to each device; boxes, favorites, pins, and templates can sync with the vault. See [mobile usage](docs/mobile.md).
+- **Mobile workspace.** Phones use a single card column with navigation switching inside the sidebar; tablets adapt to the available width. Tap menu buttons for actions, insert or copy card content, and navigate scope history with Obsidian’s back controls. Appearance and workspace preferences stay local to each device; boxes, favorites, pins, and templates can sync with the vault. See [mobile usage](docs/mobile.md).
 
 ## Compatibility and limitations
 
-- **Desktop and mobile.** Phones use a main workspace page with modal navigation; tablets adapt to container width. See [mobile usage and validation](docs/mobile.md) for device settings and pending real-device acceptance.
-- **Opening the view.** Use the ribbon icon or command palette: desktop opens in the left sidebar, mobile in the main workspace.
+- **Desktop and mobile.** Phones use a left sidebar with modal navigation; tablets adapt to container width. See [mobile usage and validation](docs/mobile.md) for device settings and pending real-device acceptance.
+- **Opening the view.** Use the ribbon icon or command palette: desktop and mobile open in the left sidebar.
 - **Desktop quick input.** Requires **Obsidian frame** or **Hidden frame** under Obsidian’s Appearance settings and a full restart after changing it. Drafts stay in memory and do not survive a restart. Platform capability and validation details are in [quick input](docs/note-input.md).
 - **Obsidian version.** Requires Obsidian 1.11.4 or later. Obsidian 1.13+ uses native confirmation dialogs and declarative settings with settings search; 1.11.4–1.12 use compatible dialogs and the same settings through the legacy renderer. Behavior and compatibility follow `manifest.json`. Earlier Obsidian versions keep receiving the last compatible release (1.3.4).
 - **Supported files.** Markdown (`.md`) cards receive full previews and full-text search. Bases (`.base`) use a title and placeholder. Canvas (`.canvas`) renders a small diagram of nodes, connections, and labels. Excalidraw (`.excalidraw` and `.excalidraw.md`) displays an SVG exported beside the scene; install the Excalidraw plugin and enable SVG auto-export. These three kinds are searched by title only. Diagram previews always appear inline with the whole image visible, independently of the card image settings. Image files can show thumbnails; PDF, audio, video, and other files show their type and file information, without a content preview or player. See [file types](docs/file-types.md) and [diagram preview limits and export names](docs/diagram-previews.md).

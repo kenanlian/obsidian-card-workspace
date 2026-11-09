@@ -4,21 +4,24 @@ Card Workspace 1.4.10 supports desktop, Android and iOS/iPadOS with Obsidian 1.1
 Mobile support is enabled in the manifest. Real-device acceptance of this candidate is
 pending; synthetic host tests establish implementation contracts, not device results.
 
-Open Card Workspace from its ribbon or command. Enabling the plugin does not create a
-page. Desktop continues to use the left sidebar; mobile uses a main workspace tab and
-reuses that page on later opens. Startup restores only the saved folder, including vault
-root, and clears the active box without changing shared settings.
+Open Card Workspace from its ribbon or command. Desktop and mobile default to the left
+sidebar. Enabling the plugin does not create a view. On mobile, an existing main-workspace
+card page is relocated into the sidebar after its replacement is ready; later opens reuse
+the sidebar. Startup restores only the saved folder, including vault root, and clears the
+active box without changing shared settings. During a same-session relocation, the current
+source, browse filters, search text and reading position are retained. Host history starts
+again in the new leaf; open menus, gestures and bulk selection are not transferred.
 
-Phones show one card column. Navigation opens in an Obsidian Modal; selecting a scope
-closes it. On phones the Obsidian page header shows the current source and its active
-tag and property filters instead of the toolbar. With Obsidian's Auto full screen
-setting, scrolling the cards hides the header, bottom navigation and toolbar exactly as
-it does for notes; scrolling up or tapping restores them. Tablets keep the scope in the
-toolbar. Tablets use two panes only when the container is at least 640px and fits the
-saved navigation width plus 320px for cards. Rotation, split view and keyboard resizing
-update layout without loading the scope again. Cards remain virtualized and hydrate on
-demand. Menus have tap buttons and a 500ms long press, canceled by more than 8px movement,
-scroll, release, cancellation or another pointer. Desktop right-click and drag remain.
+Phones show one card column and display the current source inside the plugin toolbar.
+The toolbar stays visible even when the main editor uses Obsidian's Auto full screen.
+Navigation switches inside the sidebar, using the same mounted navigation tree; selecting
+a source or filter returns to cards. Tablets use two panes only when the plugin container
+is at least 640px and fits the saved navigation width plus 320px for cards. Rotation, split
+view and keyboard resizing update layout without loading the scope again. Cards remain
+virtualized and hydrate on demand. A successful card open in the main workspace collapses
+the mobile sidebar to reveal the note; failed and superseded opens leave it available.
+Menus have tap buttons. Long pressing a card for 500ms starts a drag; moving more than 8px
+or scrolling before activation leaves ordinary scrolling in control.
 
 The mobile card menu includes insertion and copying for links, embeds, content and title
 plus content, with the same file-kind restrictions and heading sections as desktop drops.
@@ -120,11 +123,11 @@ Use the row/card menu button for actions previously opened by long press. A seco
 finger or a canceled touch cancels the drag. Buttons, links and icon pickers do not
 start drags.
 
-On a single-pane layout, dragging a card opens the existing navigation dialog
+On a single-pane layout, dragging a card temporarily shows the inline navigation
 without changing the card scope. Drop on a folder to move, a tag to add it, a property
 value to set/append it, or a box to add a manual member. Drag a selected card to apply
 the operation to the visible selection. Metadata operations skip non-Markdown files
-and report partial failures. The dialog closes when a drag that opened it ends.
+and report partial failures. The card list returns when the drag ends.
 
 Navigation lists all known vault tags and the configured properties' known values.
 Zero-count items are dimmed but remain filterable in folders. In boxes and links,
@@ -133,7 +136,7 @@ drops remain available. Whole-vault identities populate from cached metadata dur
 idle initialization; no note-body reads are required.
 
 Real-device drag acceptance must cover Android, iPhone and iPad: long press versus
-scrolling, one-pane dialog opening, dropping selected mixed file types, hover
+scrolling, one-pane navigation switching, dropping selected mixed file types, hover
 expansion, edge scrolling, second-finger cancellation and returning to normal scrolling.
 
 The browser drag diagnostic is
@@ -143,3 +146,10 @@ and CDP touch input: typed multi-card drops onto a muted tag, active move cancel
 and scrolling before long-press activation. It uses a synthetic host, so it does not
 replace Obsidian device acceptance. The existing
 `run-card-modifier-drag-browser.mjs` separately checks native/editor protocol regression.
+
+The sidebar browser diagnostic is
+`node scripts/check-mobile-sidebar-browser.mjs --output /absolute/report.json`.
+It mounts the production panel and CSS in Chromium at phone and tablet sidebar widths,
+checking inline navigation, real touch drag/drop and cancellation, long source labels,
+search/bulk controls, main-editor auto-full-screen classes and keyboard-sized viewports.
+It uses a synthetic host and does not replace Obsidian mobile-device acceptance.

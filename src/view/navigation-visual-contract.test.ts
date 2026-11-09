@@ -31,7 +31,7 @@ describe("navigation visual contract", () => {
 
   it("keeps touch disclosure buttons on the same track as leaf placeholders", () => {
     expect(styles).toMatch(
-      /\.fce-mobile-navigation \.fce-nav-tree \.fce-tree-item-disclosure \{\s*min-width: 0;\s*min-height: 0;\s*\}/,
+      /\.folder-card-view \.fce-shell:is\(\[data-fce-device="phone"\], \[data-fce-device="tablet"\]\) \.fce-nav-tree \.fce-tree-item-disclosure \{\s*min-width: 0;\s*min-height: 0;\s*\}/,
     );
     expect(styles).toMatch(
       /\.folder-card-view \.fce-shell\[data-fce-device\] \.fce-nav-tree \.fce-tree-item-disclosure,/,
@@ -40,14 +40,14 @@ describe("navigation visual contract", () => {
 
   it("keeps phone navigation rows compact while in-row actions extend their touch target", () => {
     expect(styles).toMatch(
-      /\.folder-card-view\.fce-mobile-navigation \{\s*--fce-nav-row-height: 36px;\s*--fce-nav-section-height: 36px;/,
+      /\.folder-card-view \.fce-shell\[data-fce-device="phone"\] \{\s*--fce-nav-row-height: 36px;\s*--fce-nav-section-height: 36px;/,
     );
-    expect(styles).not.toMatch(/\.fce-mobile-navigation :is\([^)]*\.fce-tree-row[^)]*\) \{\s*min-height: 44px;/);
+    expect(styles).not.toMatch(/\.folder-card-view \.fce-shell:is\(\[data-fce-device="phone"\], \[data-fce-device="tablet"\]\) :is\([^)]*\.fce-tree-row[^)]*\) \{\s*min-height: 44px;/);
     expect(styles).toMatch(
-      /\.fce-mobile-navigation \.fce-nav-tree \.fce-nav-row-actions > \* \{[^}]*min-height: 0;/,
+      /\.folder-card-view \.fce-shell:is\(\[data-fce-device="phone"\], \[data-fce-device="tablet"\]\) \.fce-nav-tree \.fce-nav-row-actions > \* \{[^}]*min-height: 0;/,
     );
     expect(styles).toMatch(
-      /\.fce-mobile-navigation \.fce-nav-tree \.fce-nav-row-actions > \*::after \{[\s\S]*?inset-block: calc\(\(var\(--fce-nav-row-height\) - var\(--fce-nav-action-slot\)\) \/ -2\);/,
+      /\.folder-card-view \.fce-shell:is\(\[data-fce-device="phone"\], \[data-fce-device="tablet"\]\) \.fce-nav-tree \.fce-nav-row-actions > \*::after \{[\s\S]*?inset-block: calc\(\(var\(--fce-nav-row-height\) - var\(--fce-nav-action-slot\)\) \/ -2\);/,
     );
   });
 

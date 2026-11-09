@@ -117,15 +117,16 @@ export function createApp() {
       cachedRead: async () => "Core browsing preview", readBinary: async () => new ArrayBuffer(0) },
     metadataCache: { on, getFileCache: () => ({}), resolvedLinks: {}, getFirstLinkpathDest: () => null },
     fileManager: {}, workspace: {
-      on, onLayoutReady: (callback: () => void) => { ready = callback; }, rootSplit: {},
+      on, onLayoutReady: (callback: () => void) => { ready = callback; }, rootSplit: {}, leftSplit: { collapsed: false, collapse() { this.collapsed = true; } },
       getActiveFile: () => null, getLeavesOfType: (type: string) => leaves.filter(leaf => leaf.type === type),
       getActiveViewOfType: () => null, getMostRecentLeaf: () => null, iterateAllLeaves: (callback: (leaf: unknown) => void) => leaves.forEach(callback),
       revealLeaf: async () => {}, setActiveLeaf: () => {}, trigger: () => {},
-      getLeftLeaf: () => createLeaf(), getLeaf: () => createLeaf(),
+      getLeftLeaf: () => createLeaf(true), getLeaf: () => createLeaf(),
     },
   };
-  function createLeaf() {
-    return { app, type: "", view: null as any, getRoot: () => app.workspace.rootSplit,
+  function createLeaf(sidebar = false) {
+    return { app, type: "", view: null as any, getRoot: () => sidebar ? app.workspace.leftSplit : app.workspace.rootSplit,
+      detach() { const index = leaves.indexOf(this); if (index >= 0) leaves.splice(index, 1); void this.view?.onClose(); },
       async setViewState({ type, state }: { type: string; state?: unknown }) {
         if (this.type !== type) { this.type = type; this.view = plugin.views.get(type)(this); leaves.push(this); await this.view.onOpen(); }
         if (state) await this.view.setState(state, { history: false });

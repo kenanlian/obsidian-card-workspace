@@ -1729,7 +1729,7 @@ describe("FolderCardView host contract", () => {
       editor: { setSelection: vi.fn(), scrollIntoView: vi.fn() },
     });
     const host = Object.assign(Object.create(CardWorkspacePlugin.prototype), {
-      app, cardOpenSeq: 0, disposed: false, getSettings: plugin.getSettings,
+      app, cardOpenSeq: 0, disposed: false, getSettings: plugin.getSettings, runtimePlatform: { device: "desktop" },
     });
     const leaf = { view: editing, openFile: vi.fn(async () => {
       for (const fn of listeners.get("file-open") ?? []) fn(b);

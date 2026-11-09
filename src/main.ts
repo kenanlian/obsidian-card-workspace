@@ -140,6 +140,7 @@ export default class CardWorkspacePlugin extends Plugin {
   private templateNoteFocusAbort: AbortController | null = null;
   private cancelLinkCorrection: (() => void) | null = null;
   private latestHandledRequestId = 0;
+  private pendingViewActivation: Promise<FolderCardView | null> | null = null;
   private vaultObserversRegistered = false;
   private metadataObserversRegistered = false;
   private vaultEventListenersRegistered = false;
@@ -599,6 +600,9 @@ export default class CardWorkspacePlugin extends Plugin {
 
   async openNoteFromCard(path: string, destination?: OpenDestination, location?: CardOpenLocation): Promise<void | RuntimeUnavailable> {
     if (destination === "new-window" && !this.runtimePlatform.capabilities.newWindow) return { outcome: "unavailable", reason: "platform" };
+    const drawer = this.app.workspace.leftSplit;
+    const fromMobileSidebar = this.runtimePlatform.device !== "desktop"
+      && this.app.workspace.getActiveViewOfType(FolderCardView)?.leaf.getRoot() === drawer;
     const openSeq = ++this.cardOpenSeq;
     this.cancelLinkCorrection?.();
     this.cancelLinkCorrection = null;
@@ -651,7 +655,12 @@ export default class CardWorkspacePlugin extends Plugin {
           this.scheduleLinkCorrection(leaf, target, jump, openSeq);
         }
       }
-      if (openSeq === this.cardOpenSeq && !this.disposed) this.syncSelection(target.path);
+      if (openSeq === this.cardOpenSeq && !this.disposed) {
+        this.syncSelection(target.path);
+        if (fromMobileSidebar && this.isCardOpenLeafActive(leaf)
+          && leaf.getRoot() === this.app.workspace.rootSplit && !drawer.collapsed
+          && this.app.workspace.getLeavesOfType(FOLDER_CARD_VIEW).some(item => item.getRoot() === drawer)) drawer.collapse();
+      }
     } finally {
       if (snippetJump) for (const event of inputEvents) inputTarget?.removeEventListener(event, markInput, { capture: true });
       if (leafChange) this.app.workspace.offref?.(leafChange);
@@ -961,11 +970,26 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private async activateView(allowCreate = true): Promise<FolderCardView | null> {
+    while (this.pendingViewActivation) {
+      const view = await this.pendingViewActivation;
+      if (view || !allowCreate || this.disposed) return view;
+    }
+    const task = this.activateViewOnce(allowCreate);
+    this.pendingViewActivation = task;
+    try { return await task; }
+    finally { if (this.pendingViewActivation === task) this.pendingViewActivation = null; }
+  }
+
+  private async activateViewOnce(allowCreate: boolean): Promise<FolderCardView | null> {
     try {
       if (this.disposed) return null;
       if (this.runtimePlatform.device !== "desktop") this.editorDropController.captureMenuTargetBeforeActivation();
       return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
-        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop");
+        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop",
+        async (source, target) => {
+          const requestId = this.latestHandledRequestId;
+          return await source.transferToSidebar(target, () => !this.disposed && requestId === this.latestHandledRequestId);
+        });
     } catch (error) {
       if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
       return null;

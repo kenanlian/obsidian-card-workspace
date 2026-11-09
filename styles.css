@@ -21,33 +21,6 @@
   overflow: hidden;
 }
 
-/*
- * Phone auto-hide follows the host's `is-hidden-nav`, which slides away its fixed view header.
- * The space the host reserves for that header and the plugin toolbar collapse with it in one
- * untransitioned layout change; `mobile-chrome.ts` animates the move with a transform.
- * Like hidden-nav notes, the cards then run under the status bar behind the host's top fade.
- */
-body.is-phone.is-hidden-nav .workspace-leaf-content[data-type="folder-card-view"] > .view-content {
-  margin-top: 0;
-  mask-image: var(--view-top-fade-mask);
-}
-
-body.is-phone .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
-  transition: opacity 0.2s ease-in-out;
-}
-
-body.is-phone.is-hidden-nav .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
-  margin-top: calc(-1 * var(--fce-toolbar-height, 0px));
-  opacity: 0;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.is-phone .folder-card-view .fce-shell[data-fce-device="phone"] .fce-header {
-    transition: none;
-  }
-}
-
 .folder-card-view,
 .folder-card-view .fce-shell {
   height: 100%;
@@ -2722,6 +2695,10 @@ html.fce-quick-input-window .modal-container .modal {
 .fce-quick-input-choice-row .fce-quick-input-choice-name { flex: 1 1 auto; min-width: 0; }
 .fce-quick-input-choice-check { display: inline-flex; flex: 0 0 16px; }
 .fce-quick-input-choice-check svg { width: 16px; height: 16px; }
+/* A temporary drag target covers the cards without hiding the original touch target. */
+.folder-card-view .fce-shell.is-drag-navigation { position: relative; }
+.folder-card-view .fce-shell.is-single.is-drag-navigation .fce-main-pane { display: flex; }
+.folder-card-view .fce-shell.is-single.is-drag-navigation .fce-nav-pane { position: absolute; inset: 0; z-index: 4; background: var(--fce-nav-bg); }
 /* Device policy stays fixed; container width alone controls tablet pane layout. */
 .folder-card-view .fce-shell[data-fce-device="phone"],
 .folder-card-view .fce-shell[data-fce-device="tablet"] {
@@ -2738,22 +2715,24 @@ html.fce-quick-input-window .modal-container .modal {
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar { flex-wrap: wrap; min-width: 0; }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar > *,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-toolbar > * { max-width: 100%; min-width: 0; }
-/* Phones show the scope in the host view header instead. */
-.folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar-scope { display: none; }
+/* Keep the source readable above the action row in narrow mobile sidebars. */
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-buttons { flex-wrap: wrap; width: 100%; }
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-scope { flex-basis: calc(100% - 64px); }
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-toolbar-actions { flex-wrap: wrap; }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-toolbar-actions { margin-inline-start: auto; }
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(button, input, select),
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-tree-row,
-.fce-mobile-navigation button { min-height: 44px; min-width: 44px; }
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-nav-header-button { min-height: 44px; min-width: 44px; }
 /* Phone tree rows stay compact; in-row actions keep their painted slot and extend the
  * touch target to the full row height invisibly instead of inflating every row. */
-.folder-card-view.fce-mobile-navigation {
+.folder-card-view .fce-shell[data-fce-device="phone"] {
   --fce-nav-row-height: 36px;
   --fce-nav-section-height: 36px;
   --fce-nav-action-slot: 28px;
 }
-.fce-mobile-navigation .fce-nav-tree .fce-nav-row-actions > * { position: relative; min-width: 0; min-height: 0; }
-.fce-mobile-navigation .fce-nav-tree .fce-nav-row-actions > *::after {
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-nav-tree .fce-nav-row-actions > * { position: relative; min-width: 0; min-height: 0; }
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-nav-tree .fce-nav-row-actions > *::after {
   content: "";
   position: absolute;
   inset-inline: 0;
@@ -2761,25 +2740,11 @@ html.fce-quick-input-window .modal-container .modal {
 }
 .folder-card-view .fce-shell[data-fce-device="phone"] :is(input, textarea),
 .folder-card-view .fce-shell[data-fce-device="tablet"] :is(input, textarea),
-.fce-mobile-navigation input,
 .fce-mobile-quick-input :is(input, textarea, .cm-content) { font-size: max(16px, var(--font-text-size)); }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-more-actions-btn,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-more-actions-btn,
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-nav-row-more,
-.fce-mobile-navigation .fce-nav-row-more { opacity: 1; visibility: visible; }
-/* The pane paints the whole drawer, as the sidebar does on desktop; host Modal padding and
- * its empty title bar would otherwise frame it in the modal background. */
-.modal-container > .fce-mobile-navigation.modal {
-  width: min(90vw, 360px); height: 100dvh;
-  max-height: 100dvh; margin-inline-start: 0; margin-inline-end: auto;
-  align-self: stretch; border: 0; border-radius: 0;
-  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) 0 var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
-  background: var(--fce-nav-bg);
-}
-.fce-mobile-navigation.modal > :is(.modal-header-button, .modal-close-button, .modal-header, .modal-title) { display: none; }
-.fce-mobile-navigation.modal > .modal-content { display: flex; flex: 1; min-height: 0; margin: 0; padding: 0; overflow: hidden; }
-.fce-mobile-navigation .fce-nav-pane { display: flex; width: 100%; min-width: 0; flex: 1; }
-.fce-mobile-navigation .fce-nav-resize-handle { display: none; }
+.folder-card-view .fce-shell[data-fce-device="phone"] .fce-nav-row-more { opacity: 1; visibility: visible; }
 /* Obsidian Android draws under the status bar and exposes insets as variables; env() is the iOS fallback. */
 .fce-mobile-quick-input.modal {
   --fce-quick-input-radius: var(--radius-m, 8px);
@@ -3009,14 +2974,12 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 }
 /* Touch layouts keep the icon slot size; an invisible margin supplies the touch target
  * instead of the 44px minimum that would otherwise inflate the title row. */
-.folder-card-view .fce-shell[data-fce-device] .fce-content-icon-button,
-.fce-mobile-navigation .fce-content-icon-button {
+.folder-card-view .fce-shell[data-fce-device] .fce-content-icon-button {
   min-width: 0;
   min-height: 0;
 }
 .folder-card-view .fce-shell[data-fce-device="phone"] .fce-content-icon-button::after,
-.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-content-icon-button::after,
-.fce-mobile-navigation .fce-content-icon-button::after {
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-content-icon-button::after {
   content: "";
   position: absolute;
   inset: -8px -6px;
@@ -3024,7 +2987,7 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 /* Expandable rows render the disclosure as a button and leaves as a span; both must keep
  * the same track width or the identity icons of sibling rows stop lining up. */
 .folder-card-view .fce-shell[data-fce-device] .fce-nav-tree .fce-tree-item-disclosure,
-.fce-mobile-navigation .fce-nav-tree .fce-tree-item-disclosure {
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-nav-tree .fce-tree-item-disclosure {
   min-width: 0;
   min-height: 0;
 }
@@ -3032,7 +2995,7 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   inset-block: -14px;
   inset-inline-start: -8px;
 }
-.fce-mobile-navigation .fce-nav-tree button.fce-tree-item-disclosure::before { inset-inline-start: -8px; }
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-nav-tree button.fce-tree-item-disclosure::before { inset-inline-start: -8px; }
 .fce-emoji-icon {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   line-height: 1;

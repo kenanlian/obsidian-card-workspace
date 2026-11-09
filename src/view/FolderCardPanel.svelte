@@ -108,7 +108,6 @@
 
   interface FolderCardPanelProps {
     onReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
-    mobileApp?: import("obsidian").App;
     runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
@@ -229,7 +228,7 @@
     onPinToggle,
     onCardHoverLink,
     onCardDragStart, resolveCardDragPaths, onBeginCardDrag, onDropCards,
-    onReadingPosition, mobileApp, runtimeDevice = "desktop",
+    onReadingPosition, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -602,11 +601,14 @@
 
   const dragSession = new DragSession();
   let frozenDragSource: import("./drag-session").DragSource | null = null;
+  let dragNavigation = $state(false);
+  const displayedNav = $derived(dragNavigation ? { ...nav, visible: true } : nav);
   const stopDragSubscription = dragSession.subscribe((snapshot) => {
     if (snapshot?.source.kind === "cards" && snapshot.source !== frozenDragSource) {
+      if (snapshot.mode === "touch" && runtimeDevice !== "desktop" && nav.layoutMode === "single" && !nav.visible) dragNavigation = true;
       frozenDragSource = snapshot.source;
       onBeginCardDrag?.([...snapshot.source.paths]);
-    } else if (!snapshot) frozenDragSource = null;
+    } else if (!snapshot) { frozenDragSource = null; dragNavigation = false; }
   });
   function cardDragPaths(path: string): string[] { return resolveCardDragPaths?.(path) ?? [path]; }
   $effect(() => { scope.sourceIdentity; untrack(() => dragSession.cancel()); });
@@ -934,7 +936,7 @@
 
 <div
   data-fce-device={runtimeDevice}
-  class="fce-shell {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {nav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
+  class="fce-shell {dragNavigation ? 'is-drag-navigation' : ''} {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {displayedNav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
   data-fce-font-size={appearance.uiFontSize ?? "default"}
   data-fce-density={appearance.uiDensity ?? "default"}
   data-fce-card-style={appearance.cardStyle ?? "default"}
@@ -942,9 +944,8 @@
 >
   <NavigationPane
     {dragSession} {onDropCards}
-    {mobileApp} mobile={runtimeDevice !== "desktop"}
     {strings}
-    {nav}
+    nav={displayedNav}
     {scope}
     activeFilterTags={projection.activeFilterTags}
     onFolderAction={handleFolderAction}

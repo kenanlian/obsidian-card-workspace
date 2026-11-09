@@ -3954,3 +3954,56 @@ describe("quick input startup and lifetime", () => {
     expect(stale.detach).toHaveBeenCalledOnce(); expect(ordinary.detach).not.toHaveBeenCalled();
   });
 });
+
+describe("mobile sidebar card opening", () => {
+  function setup() {
+    const h = createPluginHarness();
+    Object.assign(h.plugin, { runtimePlatform: { ...h.plugin.runtimePlatform, device: "phone" } });
+    const collapse = vi.fn();
+    Object.assign(h.app.workspace.leftSplit, { collapsed: false, collapse });
+    const source = { leaf: { getRoot: () => h.app.workspace.leftSplit } };
+    const editor = {};
+    h.app.workspace.getActiveViewOfType.mockImplementation((ctor) => ctor === FolderCardView ? source : editor);
+    const leaf = { view: editor, getRoot: () => h.app.workspace.rootSplit, openFile: vi.fn(async () => {}) };
+    h.app.workspace.getLeaf.mockReturnValue(leaf);
+    h.app.workspace.getLeavesOfType.mockReturnValue([source.leaf]);
+    const file = Object.assign(new TFile(), { path: "note.md" });
+    h.app.vault.getAbstractFileByPath.mockReturnValue(file);
+    return { ...h, collapse, leaf, file };
+  }
+  it("collapses the mobile drawer after a successful main-workspace card open", async () => {
+    const h = setup(); await h.plugin.openNoteFromCard(h.file.path, "new-tab");
+    expect(h.collapse).toHaveBeenCalledOnce();
+  });
+  it("keeps the drawer available after a failed open", async () => {
+    const h = setup(); h.leaf.openFile.mockRejectedValue(new Error("failed"));
+    await expect(h.plugin.openNoteFromCard(h.file.path, "new-tab")).rejects.toThrow("failed");
+    expect(h.collapse).not.toHaveBeenCalled();
+  });
+  it("does not collapse the drawer for an obsolete open", async () => {
+    const h = setup(), pending = deferred<void>();
+    h.leaf.openFile.mockImplementationOnce(() => pending.promise);
+    const first = h.plugin.openNoteFromCard(h.file.path, "new-tab");
+    await vi.waitFor(() => expect(h.leaf.openFile).toHaveBeenCalledOnce());
+    await h.plugin.openNoteFromCard(h.file.path, "new-tab");
+    h.collapse.mockClear(); pending.resolve(); await first;
+    expect(h.collapse).not.toHaveBeenCalled();
+  });
+  it("does not collapse another active sidebar view", async () => {
+    const h = setup(); h.app.workspace.getActiveViewOfType.mockReturnValue(null);
+    await h.plugin.openNoteFromCard(h.file.path, "new-tab"); expect(h.collapse).not.toHaveBeenCalled();
+  });
+});
+
+it("shares concurrent view activation rather than creating duplicate leaves", async () => {
+  obsidianMockState.leavesByType = {};
+  const { plugin, app } = createPluginHarness(), opening = deferred<void>();
+  const ViewCtor = FolderCardView as unknown as { new (): FolderCardView };
+  const view = new ViewCtor();
+  const leaf = { view, setViewState: vi.fn(() => opening.promise), detach: vi.fn() };
+  app.workspace.getLeftLeaf.mockReturnValue(leaf);
+  const activate = () => (plugin as unknown as { activateView(): Promise<FolderCardView | null> }).activateView();
+  const first = activate(), second = activate(); opening.resolve();
+  expect(await first).toBe(view); expect(await second).toBe(view);
+  expect(app.workspace.getLeftLeaf).toHaveBeenCalledOnce();
+});

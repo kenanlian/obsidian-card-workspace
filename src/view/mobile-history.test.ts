@@ -63,7 +63,7 @@ describe("phone header title", () => {
     return harness;
   }
 
-  it("shows the current scope on phones and refreshes the host header only when it changes", async () => {
+  it("keeps a stable sidebar title on phones without patching internal host chrome", async () => {
     const { view } = setupFolders(false);
     const updateHeader = vi.fn();
     const titleEl = { setText: vi.fn() };
@@ -72,17 +72,43 @@ describe("phone header title", () => {
     await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("", true), false, "restore"));
     await flushAsyncWork();
     const strings = view.plugin.getUiStrings();
-    expect(view.getDisplayText()).toBe(strings.toolbar.folderMenu.rootFolder);
-    const rootRefreshes = updateHeader.mock.calls.length;
-    expect(rootRefreshes).toBeGreaterThan(0);
+    expect(view.getDisplayText()).toBe(strings.view.displayName);
     view.refreshNavigationMetadata();
-    expect(updateHeader).toHaveBeenCalledTimes(rootRefreshes);
     await view.handleScopeSelection(view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("notes", true), false, "panel-picker"));
     await flushAsyncWork();
-    expect(view.getDisplayText()).toBe("notes");
-    expect(updateHeader.mock.calls.length).toBeGreaterThan(rootRefreshes);
-    expect(titleEl.setText).toHaveBeenLastCalledWith("notes");
+    expect(view.getDisplayText()).toBe(strings.view.displayName);
+    expect(updateHeader).not.toHaveBeenCalled();
+    expect(titleEl.setText).not.toHaveBeenCalled();
     view.cleanupLifecycle();
+  });
+
+  it("transfers the committed scope, filters, search and reading anchor without persistence", async () => {
+    const source = setupFolders(false), target = setupFolders(false);
+    const scope = createFolderScope("notes", true);
+    await source.view.handleScopeSelection(source.view.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "restore"));
+    const settings = source.plugin.getSettings();
+    settings.filter.tags = ["project"];
+    target.plugin.getSettings.mockImplementation(() => settings);
+    source.view.modules.search.onQueryChange({ query: "needle" });
+    const anchor = { ref: { kind: "card" as const, path: source.file.path }, offset: 17 };
+    source.view.registerReadingPosition({ capture: () => anchor, restore: vi.fn() });
+    const restore = vi.fn(); target.view.registerReadingPosition({ capture: () => null, restore });
+    target.plugin.saveSettings.mockClear();
+    await source.view.transferToSidebar(target.view, () => true);
+    expect(target.view.getCardScope()).toEqual(scope);
+    expect(target.view.modules.search.getQuery()).toBe("needle");
+    expect(settings.filter.tags).toEqual(["project"]);
+    expect(target.plugin.saveSettings).not.toHaveBeenCalled();
+    expect(restore).toHaveBeenCalledWith(anchor, "folder:notes:true");
+    source.view.cleanupLifecycle(); target.view.cleanupLifecycle();
+  });
+
+  it("does not restore an obsolete relocation snapshot", async () => {
+    const source = setupFolders(false), target = setupFolders(false);
+    await source.view.handleScopeSelection(source.view.modules.scopeController.createProgrammaticSelectionRequest(createFolderScope("notes", true), false, "restore"));
+    await source.view.transferToSidebar(target.view, () => false);
+    expect(target.view.hasLoadedScope()).toBe(false);
+    source.view.cleanupLifecycle(); target.view.cleanupLifecycle();
   });
 
   it("keeps the plugin name on desktop", async () => {

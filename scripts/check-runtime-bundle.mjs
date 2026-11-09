@@ -56,7 +56,8 @@ try {
     view.modules.navLayout.onShellResize(320);
     await view.modules.navLayout.onToggleNavPane();
     await new Promise(resolve => win.setTimeout(resolve, 0));
-    assert.equal(win.document.querySelector(".fce-mobile-navigation .fce-nav-pane"), navigation);
+    assert.equal(win.document.querySelector(".fce-shell.is-nav-visible .fce-nav-pane"), navigation);
+    assert.equal(win.document.querySelectorAll(".fce-mobile-navigation").length, 0);
     await view.selectFolderFromNav("");
     await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(win.document.querySelectorAll(".fce-mobile-navigation").length, 0);

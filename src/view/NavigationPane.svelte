@@ -2,7 +2,6 @@
   import { DragSession, type DragSource } from "./drag-session";
   import { resolveCardDropTarget } from "./card-drop-target";
   import type { CardDropTarget } from "./card-drop";
-  import { mobileNavigation } from "./mobile-navigation";
   import { NAVIGATION_FILTER_FOCUS_ID } from "./navigation-model";
   import { setIcon, setTooltip } from "obsidian";
   import { tick, untrack } from "svelte";
@@ -27,8 +26,6 @@
   interface Props {
     dragSession?: DragSession;
     onDropCards?: (target: CardDropTarget, paths: string[]) => void;
-    mobileApp?: import("obsidian").App;
-    mobile?: boolean;
     strings?: UiStrings;
     nav?: PanelNavState;
     scope?: PanelScopeState;
@@ -56,7 +53,6 @@
   };
   let {
     dragSession = new DragSession(), onDropCards,
-    mobileApp, mobile = false,
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
     onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
     onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane,
@@ -77,7 +73,6 @@
   let focusFilterOnOpen = false;
   let hoveredRowIds = $state<ReadonlySet<string>>(new Set());
   let cardTargetRowId: string | null = $state(null);
-  let dragOpenedNavigation = $state(false);
   let activeSharedSource: DragSource | null = null;
   let sharedHoverRowId: string | null = null;
   let temporaryDragExpansion = false;
@@ -180,7 +175,7 @@
   $effect(() => {
     const unsubscribe = untrack(() => dragSession.subscribe((snapshot) => {
       if (!snapshot) {
-        activeSharedSource = null; cardTargetRowId = null; dragOpenedNavigation = false;
+        activeSharedSource = null; cardTargetRowId = null;
         clearSharedHover(); clearFolderDrag(); clearSortDrag(); clearFavoriteDrag(); stopScroll();
         if (temporaryDragExpansion) { temporaryDragExpansion = false; emitIntent({ type: "clear-navigation-drag" }); }
         return;
@@ -188,7 +183,6 @@
       pointerX = snapshot.x; pointerY = snapshot.y;
       if (activeSharedSource !== snapshot.source) {
         activeSharedSource = snapshot.source;
-        if (snapshot.source.kind === "cards" && snapshot.mode === "touch" && mobile && nav.layoutMode === "single" && !nav.visible) dragOpenedNavigation = true;
         if (snapshot.source.kind !== "cards" && snapshot.mode === "touch") {
           const row = rowsById.get(snapshot.source.rowId);
           if (row) onRowDragStart({ dataTransfer: null, preventDefault() {} } as DragEvent, row, true);
@@ -596,7 +590,7 @@
   The accessible name is a hidden element rather than `aria-label`, because
   Obsidian renders a hover tooltip for every element carrying `aria-label`.
 -->
-<nav use:mobileNavigation={{ app: mobileApp, enabled: mobile && nav.layoutMode === "single", visible: nav.visible || dragOpenedNavigation, onClose: () => { if (dragOpenedNavigation) dragSession.cancel(); else onToggleNavPane?.(); } }} class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
+<nav class="fce-nav-pane" aria-labelledby={paneLabelId} style={nav.layoutMode === "single" ? "" : `width: ${paneWidth}px;`}>
   <span class="fce-sr-only" id={paneLabelId}>{labels.ariaLabel}</span>
   <div class="fce-nav-pane-header">
     {#if nav.layoutMode === "single"}
