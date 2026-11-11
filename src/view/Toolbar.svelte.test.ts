@@ -947,17 +947,22 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("renders the browsed folder and tags as truncatable scope text", async () => {
+  it("renders only the browsed folder as scope text, with tags in the filter row", async () => {
+    const items = buildBrowseFilterChips({ tags: ["work", "idea"], properties: [] },
+      resolveSourceCapabilities(createFolderScope("Projects/2026/Notes", true)), [], getUiStrings("en").property);
     let { component } = mountToolbar({
       folderPath: "Projects/2026/Notes",
       activeFilterTags: ["work", "idea"],
+      browseFilterState: { tagCount: 2, propertyValueCount: 0, items, canClearEmptyResult: false },
     });
     await tick();
 
     let scope = document.querySelector<HTMLElement>(".fce-toolbar-scope");
     expect(scope).not.toBeNull();
     expect(scope?.classList.contains("is-box")).toBe(false);
-    expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Notes · #work, #idea");
+    expect(document.querySelector(".fce-toolbar-scope-text")?.textContent).toBe("Notes");
+    expect(Array.from(document.querySelectorAll(".fce-filter-chip-label"), (chip) => chip.textContent))
+      .toEqual(["work", "idea"]);
 
     await disposeMountedComponent(component);
 

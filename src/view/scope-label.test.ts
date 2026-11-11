@@ -16,9 +16,9 @@ describe("buildScopeLabel", () => {
     expect(buildScopeLabel(folder("projects/alpha"), "full")).toBe("projects/alpha");
   });
 
-  it("appends active tag filters to folder scopes", () => {
-    expect(buildScopeLabel(folder("projects", ["work", "#urgent"]), "name"))
-      .toBe(`projects${strings.scope.separator}#work, #urgent`);
+  it("keeps active tag filters out of folder labels and tooltips", () => {
+    expect(buildScopeLabel(folder("projects/alpha", ["work", "#urgent"]), "name")).toBe("alpha");
+    expect(buildScopeLabel(folder("projects/alpha", ["work", "#urgent"]), "full")).toBe("projects/alpha");
   });
 
   it("builds the phone title from the source and every applicable browse filter", () => {

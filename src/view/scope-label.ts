@@ -22,12 +22,9 @@ function buildSourceLabel(input: ScopeLabelInput, variant: "name" | "full"): str
   return variant === "name" ? (path.split("/").pop() ?? path) : path;
 }
 
-/** Toolbar label. `name` shows only the folder's last segment; `full` shows its vault path. */
+/** Toolbar source label, without browse filters. `full` shows the folder's vault path. */
 export function buildScopeLabel(input: ScopeLabelInput, variant: "name" | "full"): string {
-  const source = buildSourceLabel(input, variant);
-  const { scope, activeFilterTags, strings } = input;
-  if (scope.linksDirection != null || scope.activeBoxId !== null || activeFilterTags.length === 0) return source;
-  return `${source}${strings.scope.separator}${formatTags(activeFilterTags)}`;
+  return buildSourceLabel(input, variant);
 }
 
 export interface ScopeTitleInput extends ScopeLabelInput {
