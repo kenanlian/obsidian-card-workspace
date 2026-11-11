@@ -4,7 +4,7 @@
  * Copyright 2024 Matthew Meyers, Fevol; MIT (see THIRD_PARTY_NOTICES).
  * The adapter deliberately does not patch workspace methods.
  */
-import { Scope, type App, type Editor } from "obsidian";
+import { Scope, type App, type Editor, type TFile } from "obsidian";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, placeholder } from "@codemirror/view";
 import { draftFrontmatterSource } from "./draft-frontmatter";
@@ -38,14 +38,58 @@ interface InternalEmbed {
 }
 type EditorConstructor = new (app: App, el: HTMLElement, owner: Record<string, unknown>) => InternalEditor;
 type InternalApp = App & {
-  embedRegistry?: { embedByExtension?: { md?: (context: { app: App; containerEl: HTMLElement }, file: null, subpath: string) => InternalEmbed } };
+  embedRegistry?: { embedByExtension?: { md?: (context: { app: App; containerEl: HTMLElement }, file: TFile | null, subpath: string) => InternalEmbed } };
 };
+/** One successful probe is enough. Extra attempts cover a file whose embed is not the native editor. */
+const MAX_EDITOR_PROBES = 8;
 
 export class NativeMarkdownEditorUnavailable extends Error {}
 
 interface NativeEditorCapabilities { Editor: EditorConstructor; Properties?: NativePropertiesConstructor }
 const constructors = new WeakMap<App, NativeEditorCapabilities>();
 const focusedDrafts = new WeakMap<App, { baseline: App["workspace"]["activeEditor"]; owners: Map<InternalEditor, Scope> }>();
+/** gogoga treats these frontmatter values as a mind map and swaps in its own embed. */
+function isRecordedMindMap(value: unknown): boolean {
+  return value === true || value === "true" || (typeof value === "string" && value.length > 0 && value !== "false");
+}
+
+/**
+ * Vault notes give embed wrappers a `file.path`. Plain notes are probed before mind-map notes.
+ * With no markdown files, the host still receives null.
+ */
+function probeMarkdownFiles(app: App): Array<TFile | null> {
+  const listed = app.vault?.getMarkdownFiles?.() ?? [];
+  const plain: TFile[] = [];
+  let fallback: TFile | null = null;
+  for (const file of listed) {
+    if (!file || typeof file.path !== "string") continue;
+    fallback ??= file;
+    const mindmap = app.metadataCache?.getFileCache(file)?.frontmatter?.mindmap;
+    if (isRecordedMindMap(mindmap)) continue;
+    plain.push(file);
+    if (plain.length >= MAX_EDITOR_PROBES) break;
+  }
+  if (plain.length) return plain;
+  return fallback ? [fallback] : [null];
+}
+
+function readEditorCapabilities(probe: InternalEmbed): NativeEditorCapabilities {
+  if (!probe || typeof probe.showEditor !== "function" || typeof probe.unload !== "function") throw new Error("Missing embed lifecycle");
+  probe.editable = true;
+  probe.showEditor();
+  const editModePrototype: unknown = probe.editMode && Object.getPrototypeOf(probe.editMode);
+  const prototype: unknown = typeof editModePrototype === "object" && editModePrototype !== null
+    ? Object.getPrototypeOf(editModePrototype) : null;
+  if (typeof prototype !== "object" || prototype === null
+    || !["set", "buildLocalExtensions", "unload", "destroy"].every((name) => typeof (prototype as Record<string, unknown>)[name] === "function")
+    || typeof prototype.constructor !== "function") {
+    throw new Error("Missing native editor prototype");
+  }
+  const capabilities: NativeEditorCapabilities = { Editor: prototype.constructor as EditorConstructor };
+  if (typeof probe.metadataEditor?.constructor === "function") capabilities.Properties = probe.metadataEditor.constructor as NativePropertiesConstructor;
+  return capabilities;
+}
+
 function resolveConstructor(app: App, document: Document): NativeEditorCapabilities {
   const cached = constructors.get(app);
   if (cached) return cached;
@@ -53,29 +97,21 @@ function resolveConstructor(app: App, document: Document): NativeEditorCapabilit
   if (typeof create !== "function" || !app.keymap?.pushScope || !app.keymap?.popScope || !app.workspace || typeof Scope !== "function") {
     throw new NativeMarkdownEditorUnavailable("Missing native Markdown editor capabilities");
   }
-  let probe: InternalEmbed | undefined;
-  try {
-    probe = create({ app, containerEl: document.defaultView!.createFragment().createDiv() }, null, "");
-    if (!probe || typeof probe.showEditor !== "function" || typeof probe.unload !== "function") throw new Error("Missing embed lifecycle");
-    probe.editable = true;
-    probe.showEditor();
-    const editModePrototype: unknown = probe.editMode && Object.getPrototypeOf(probe.editMode);
-    const prototype: unknown = typeof editModePrototype === "object" && editModePrototype !== null
-      ? Object.getPrototypeOf(editModePrototype) : null;
-    if (typeof prototype !== "object" || prototype === null
-      || !["set", "buildLocalExtensions", "unload", "destroy"].every((name) => typeof (prototype as Record<string, unknown>)[name] === "function")
-      || typeof prototype.constructor !== "function") {
-      throw new Error("Missing native editor prototype");
+  let lastError: unknown = new Error("Missing native editor prototype");
+  for (const file of probeMarkdownFiles(app)) {
+    let probe: InternalEmbed | undefined;
+    try {
+      probe = create({ app, containerEl: document.defaultView!.createFragment().createDiv() }, file, "");
+      const capabilities = readEditorCapabilities(probe);
+      constructors.set(app, capabilities);
+      return capabilities;
+    } catch (error) {
+      lastError = error;
+    } finally {
+      probe?.unload?.();
     }
-    const capabilities: NativeEditorCapabilities = { Editor: prototype.constructor as EditorConstructor };
-    if (typeof probe.metadataEditor?.constructor === "function") capabilities.Properties = probe.metadataEditor.constructor as NativePropertiesConstructor;
-    constructors.set(app, capabilities);
-    return capabilities;
-  } catch (error) {
-    throw new NativeMarkdownEditorUnavailable(String(error));
-  } finally {
-    probe?.unload?.();
   }
+  throw new NativeMarkdownEditorUnavailable(String(lastError));
 }
 
 export function createNativeMarkdownEditor(options: {

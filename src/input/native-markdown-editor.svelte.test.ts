@@ -38,11 +38,17 @@ function fixture(lazy = false) {
   }
   class EmbedEditor extends NativeBase {}
   const probeUnload = vi.fn();
-  const create = vi.fn(() => ({ editable: false, showEditor: vi.fn(), editMode: Object.create(EmbedEditor.prototype) as object, unload: probeUnload }));
+  const note = { path: "notes/probe.md", extension: "md" };
+  const getMarkdownFiles = vi.fn(() => [note]);
+  interface ProbeEmbed { editable?: boolean; showEditor?: () => void; editMode?: object; unload?: () => void }
+  const create = vi.fn((_context: unknown, file: { path?: string } | null): ProbeEmbed => {
+    if (typeof file?.path !== "string") throw new TypeError("Cannot read properties of null (reading 'path')");
+    return { editable: false, showEditor: vi.fn(), editMode: Object.create(EmbedEditor.prototype) as object, unload: probeUnload };
+  });
   const underlying = { marker: "underlying" };
   const workspace = { activeEditor: underlying, setActiveLeaf: vi.fn() };
   const keymap = { pushScope: vi.fn(), popScope: vi.fn() };
-  const app = { scope: {}, workspace, keymap, embedRegistry: { embedByExtension: { md: create } } } as unknown as App;
+  const app = { scope: {}, workspace, keymap, vault: { getMarkdownFiles }, embedRegistry: { embedByExtension: { md: create } } } as unknown as App;
   const onChange = vi.fn();
   const onModEnter = vi.fn();
   const container = document.createElement("div"); document.body.append(container);
@@ -50,7 +56,7 @@ function fixture(lazy = false) {
     const adapter = createNativeMarkdownEditor({ app, container: target, placeholder: "Write", initialValue, onChange, onModEnter: handleModEnter });
     live.push(adapter); return adapter;
   };
-  return { app, container, open, underlying, workspace, keymap, create, probeUnload, destroyed, onChange, onModEnter };
+  return { app, container, open, underlying, workspace, keymap, create, probeUnload, destroyed, onChange, onModEnter, note, getMarkdownFiles, EmbedEditor };
 }
 
 describe("native Markdown editor compatibility seam", () => {
@@ -72,10 +78,11 @@ describe("native Markdown editor compatibility seam", () => {
     expect(f.onChange).toHaveBeenCalledOnce();
   });
 
-  it("discovers the internal prototype in the owning document, unloads probes, and uses the native editor", () => {
+  it("discovers the internal prototype from a vault note, unloads probes, and uses the native editor", () => {
     const f = fixture(); const adapter = f.open();
     expect(f.create).toHaveBeenCalledOnce();
-    expect(f.create.mock.calls[0]).toEqual([{ app: f.app, containerEl: expect.any(HTMLDivElement) }, null, ""]);
+    expect(f.create.mock.calls[0]).toEqual([{ app: f.app, containerEl: expect.any(HTMLDivElement) }, f.note, ""]);
+    expect(f.getMarkdownFiles).toHaveBeenCalledOnce();
     expect(f.probeUnload).toHaveBeenCalledOnce();
     expect(f.container.querySelector(".cm-editor")).not.toBeNull();
     expect(f.container.querySelector("textarea")).toBeNull();
@@ -85,6 +92,56 @@ describe("native Markdown editor compatibility seam", () => {
     expect(f.destroyed).toHaveBeenCalledOnce();
     expect(f.container.childElementCount).toBe(0);
     f.open(); expect(f.create).toHaveBeenCalledOnce();
+    expect(f.getMarkdownFiles).toHaveBeenCalledOnce();
+  });
+
+  it("skips mind-map notes and probes the next plain markdown file", () => {
+    const f = fixture();
+    const mindmap = { path: "maps/launch.md", extension: "md" };
+    f.getMarkdownFiles.mockReturnValue([mindmap, f.note]);
+    f.app.metadataCache = { getFileCache: (file: { path: string }) => file.path === mindmap.path ? { frontmatter: { mindmap: true } } : null } as never;
+    f.open();
+    expect(f.create.mock.calls.map((call) => call[1])).toEqual([f.note]);
+  });
+
+  it("still probes a note whose mindmap frontmatter is false", () => {
+    const f = fixture();
+    f.app.metadataCache = { getFileCache: () => ({ frontmatter: { mindmap: "false" } }) } as never;
+    f.open();
+    expect(f.create.mock.calls[0]?.[1]).toBe(f.note);
+  });
+
+  it("uses a mind-map note when the vault has no plain markdown file", () => {
+    const f = fixture();
+    const mindmap = { path: "maps/only.md", extension: "md" };
+    f.getMarkdownFiles.mockReturnValue([mindmap]);
+    f.app.metadataCache = { getFileCache: () => ({ frontmatter: { mindmap: true } }) } as never;
+    f.open();
+    expect(f.create.mock.calls[0]?.[1]).toBe(mindmap);
+  });
+
+  it("tries the next note when an embed wrapper does not provide the native editor", () => {
+    const f = fixture();
+    const first = { path: "notes/a.md", extension: "md" };
+    const second = { path: "notes/b.md", extension: "md" };
+    f.getMarkdownFiles.mockReturnValue([first, second]);
+    f.create.mockImplementation((_context: unknown, file: { path?: string } | null) => {
+      if (typeof file?.path !== "string") throw new TypeError("Cannot read properties of null (reading 'path')");
+      if (file === first) return { unload: f.probeUnload };
+      return { editable: false, showEditor: vi.fn(), editMode: Object.create(f.EmbedEditor.prototype) as object, unload: f.probeUnload };
+    });
+    const adapter = f.open();
+    expect(f.create.mock.calls.map((call) => call[1])).toEqual([first, second]);
+    expect(f.probeUnload).toHaveBeenCalledTimes(2);
+    expect(adapter.getValue()).toBe("");
+  });
+
+  it("passes null when the vault has no markdown file", () => {
+    const f = fixture();
+    f.getMarkdownFiles.mockReturnValue([]);
+    f.create.mockImplementation(() => ({ editable: false, showEditor: vi.fn(), editMode: Object.create(f.EmbedEditor.prototype) as object, unload: f.probeUnload }));
+    f.open();
+    expect(f.create.mock.calls[0]?.[1]).toBeNull();
   });
 
   it("pushes focus scope once, restores the underlying editor on blur, and never overwrites another focus owner", () => {
