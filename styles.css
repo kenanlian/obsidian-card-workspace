@@ -35,6 +35,9 @@
   --fce-text-muted: var(--text-muted);
   --fce-border: var(--background-modifier-border);
   --fce-hover: var(--background-modifier-hover);
+  /* Local actions must remain visible over an already hovered card or row. */
+  --fce-control-hover-bg: color-mix(in srgb, var(--text-normal, #202020) 16%, transparent);
+  --fce-control-active-bg: color-mix(in srgb, var(--text-normal, #202020) 24%, transparent);
   --fce-accent: var(--interactive-accent);
   --fce-accent-hover: var(--interactive-accent-hover, var(--interactive-accent));
   --fce-wall-gap: 12px;
@@ -92,7 +95,7 @@
    * already painted with `--fce-nav-row-hover`, which many themes alias to the
    * same value, leaving the chevron hover invisible.
    */
-  --fce-nav-chevron-hover-bg: color-mix(in srgb, var(--text-normal, #202020) 16%, transparent);
+  --fce-nav-chevron-hover-bg: var(--fce-control-hover-bg);
   /*
    * Built from the stronger hover border because the plain border token is nearly
    * invisible in most themes at the widths this separator uses; the mix keeps it
@@ -304,6 +307,10 @@
   transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
 }
 
+.folder-card-view .fce-nav-tree .fce-tree-row:not(.is-disabled) {
+  cursor: pointer;
+}
+
 .folder-card-view .fce-nav-tree .fce-tree-row.is-section {
   min-height: var(--fce-nav-section-height);
   margin-block-start: 10px;
@@ -336,7 +343,7 @@
   background: color-mix(in srgb, var(--fce-nav-row-hover) 40%, transparent);
 }
 
-.folder-card-view .fce-nav-tree .fce-tree-row:hover {
+.folder-card-view .fce-nav-tree .fce-tree-row:where(:not(.is-disabled)):hover {
   background: var(--fce-nav-row-hover);
 }
 
@@ -538,6 +545,27 @@
   height: var(--fce-nav-action-slot);
   min-width: 0;
   padding: 0;
+}
+
+.folder-card-view .fce-nav-tree .fce-nav-row-actions > button:not(:disabled) {
+  cursor: pointer;
+  border-radius: var(--clickable-icon-radius, var(--radius-s, 4px));
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.folder-card-view .fce-nav-tree .fce-nav-row-actions > button:not(:disabled):hover,
+.folder-card-view .fce-nav-tree .fce-nav-row-actions > button:not(:disabled):focus-visible {
+  background: var(--fce-control-hover-bg);
+  color: var(--fce-text);
+}
+
+.folder-card-view .fce-nav-tree .fce-nav-row-actions > button:not(:disabled):active {
+  background: var(--fce-control-active-bg);
+}
+
+.folder-card-view .fce-nav-tree .fce-nav-row-actions > button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .folder-card-view .fce-nav-tree .fce-nav-row-actions {
@@ -1738,7 +1766,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 
 .folder-card-view .fce-card-pin-btn:hover {
-  background-color: var(--fce-surface-alt);
+  background-color: var(--fce-control-hover-bg);
   color: var(--fce-text);
 }
 
@@ -1769,7 +1797,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 }
 
 .folder-card-view .fce-more-actions-btn:hover {
-  background-color: var(--fce-surface-alt);
+  background-color: var(--fce-control-hover-bg);
   color: var(--fce-text);
 }
 
@@ -1780,6 +1808,21 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 
 .folder-card-view .fce-card.is-pinned .fce-more-actions-btn {
   opacity: 1;
+}
+
+/* Separate actions share local hover, press and keyboard-focus feedback. */
+.folder-card-view .fce-card-pin-btn:active,
+.folder-card-view .fce-more-actions-btn:active,
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure:active {
+  background: var(--fce-control-active-bg);
+}
+
+.folder-card-view .fce-card-pin-btn:focus-visible,
+.folder-card-view .fce-more-actions-btn:focus-visible,
+.folder-card-view .fce-nav-tree button.fce-tree-item-disclosure:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+  background: var(--fce-control-hover-bg);
 }
 
 .folder-card-view .fce-card-reference-count {
@@ -2949,13 +2992,13 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   background: transparent;
   box-shadow: none;
 }
-@media (hover: hover) {
+@media (any-hover: hover) {
   .folder-card-view .fce-content-icon-button:hover::before {
-    background: var(--background-modifier-hover);
+    background: var(--fce-control-hover-bg);
   }
 }
 .folder-card-view .fce-content-icon-button:active::before {
-  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
+  background: var(--fce-control-active-bg);
 }
 .folder-card-view .fce-content-icon-button:focus-visible {
   outline: none;
