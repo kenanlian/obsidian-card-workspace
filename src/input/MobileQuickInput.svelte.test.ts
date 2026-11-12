@@ -21,7 +21,7 @@ vi.mock("obsidian", async importOriginal => {
     open() { document.body.append(this.modalEl); this.onOpen(); }
     close() { this.onClose(); this.modalEl.remove(); }
   }
-  return { ...actual, Modal, moment: (await import("moment")).default };
+  return { ...actual, Modal, MarkdownView: class {}, moment: (await import("moment")).default };
 });
 vi.mock("../view/modals/compat-modal", () => ({ CompatConfirmationModal: class {
   discard = () => {}; onClose = () => {}; actions: Array<() => void> = [];
@@ -35,14 +35,16 @@ vi.mock("../view/modals/compat-modal", () => ({ CompatConfirmationModal: class {
 let modal: MobileQuickInput;
 let settings: PluginSettings;
 let files: Map<string, TFile | TFolder>;
+let readTemplate: ReturnType<typeof vi.fn<(file: TFile) => Promise<string>>>;
 let submit: ReturnType<typeof vi.fn<(request: unknown) => Promise<{ file: { path: string } }>>>, notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
 beforeEach(async () => {
   installObsidianDomHelpers(document); state.confirmations = []; state.picker = null; settings = structuredClone(DEFAULT_SETTINGS); files = new Map();
   Object.assign(HTMLElement.prototype, { addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); }, toggleClass(this: HTMLElement, name: string, value: boolean) { this.classList.toggle(name, value); }, empty(this: HTMLElement) { this.replaceChildren(); } });
+  readTemplate = vi.fn(async () => "---\ntags: [template]\n---\n模板 {{date:YYYY}}");
   const folder = Object.assign(new TFolder(), { path: "" });
   submit = vi.fn(async () => ({ file: { path: "new.md" } })); notify = vi.fn();
-  modal = new MobileQuickInput({ app: { vault: { getRoot: () => folder, getAbstractFileByPath: (path: string) => files.get(path) ?? null } } as never, phone: true,
+  modal = new MobileQuickInput({ app: { workspace: { getActiveViewOfType: () => null, getLeavesOfType: () => [] }, vault: { cachedRead: (file: TFile) => readTemplate(file), getRoot: () => folder, getAbstractFileByPath: (path: string) => files.get(path) ?? null } } as never, phone: true,
     getSettings: () => settings, getStrings: () => getUiStrings("zh"),
     submit: request => submit(request) as never, notify });
   modal.open(); await tick();
@@ -53,6 +55,7 @@ const send = () => document.querySelector<HTMLButtonElement>("button.mod-cta")!;
 function text(value: string) { field().value = value; field().dispatchEvent(new Event("input", { bubbles: true })); }
 describe("mobile draft Modal", () => {
   it("uses full Markdown source when native editor is missing and closes an empty draft immediately", () => {
+    expect(document.querySelector<HTMLButtonElement>(".fce-quick-input-template")!.hidden).toBe(true);
     expect(field()).not.toBeNull(); expect(document.activeElement).toBe(field()); expect(send().disabled).toBe(true);
     modal.close(); expect(modal.isOpen()).toBe(false);
   });
@@ -135,5 +138,53 @@ describe("merged mobile quick-input contracts", () => {
   });
   it("does not send an empty frontmatter skeleton", () => {
     text("---\n\n---\n"); expect(send().disabled).toBe(true);
+  });
+});
+
+
+describe("mobile quick input templates", () => {
+  beforeEach(async () => {
+    settings.quickInputVisibility.template = true;
+    const app = modal.app; modal.dispose();
+    modal = new MobileQuickInput({ app, phone: true, getSettings: () => settings, getStrings: () => getUiStrings("zh"), submit: request => submit(request) as never, notify });
+    modal.open(); await tick();
+    expect(document.querySelector<HTMLButtonElement>(".fce-quick-input-template")!.hidden).toBe(false);
+  });
+  function register() {
+    settings.noteTemplates = [{ id: "daily", name: "日记", filePath: "Templates/Daily {{date:YYYY}}.md", targetFolderPath: "Inbox", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm" }];
+    files.set("Inbox", Object.assign(new TFolder(), { path: "Inbox" }));
+    files.set(settings.noteTemplates[0].filePath, Object.assign(new TFile(), { path: settings.noteTemplates[0].filePath, basename: "Daily {{date:YYYY}}", extension: "md" }));
+  }
+  const templateButton = () => document.querySelector<HTMLButtonElement>(".fce-quick-input-template")!;
+  it("selects a full template into source fallback and submits its title and folder", async () => {
+    register(); templateButton().click();
+    expect(state.picker!.candidates).toEqual([{ id: "", name: "不使用模板" }, { id: "daily", name: "日记" }]);
+    state.picker!.onClose(); state.picker!.select("daily"); await tick(); await tick();
+    expect(field().value).toMatch(/模板 \d{4}/);
+    const title = document.querySelector<HTMLInputElement>(".fce-quick-input-title")!.value;
+    expect(title).toMatch(/^Daily \d{4}$/);
+    expect(document.querySelector(".fce-quick-input-folder")!.textContent).toBe("Inbox");
+    expect(settings.quickInputTemplateId).toBeNull();
+    send().click(); await tick();
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("tags: [template]"), target: { title, folderPath: "Inbox" } }));
+  });
+  it("loads a configured default and clears it for only this draft", async () => {
+    register(); settings.quickInputTemplateId = "daily";
+    const app = modal.app; modal.dispose();
+    modal = new MobileQuickInput({ app, phone: true, getSettings: () => settings, getStrings: () => getUiStrings("zh"), submit: request => submit(request) as never, notify });
+    modal.open(); await tick(); await tick();
+    expect(field().value).toContain("模板");
+    templateButton().click(); state.picker!.onClose(); state.picker!.select(""); await tick();
+    expect(field().value).toBe(""); expect(settings.quickInputTemplateId).toBe("daily");
+    expect(document.querySelector<HTMLInputElement>(".fce-quick-input-title")!.value).toBe("");
+    expect(document.querySelector(".fce-quick-input-folder")!.textContent).toBe(getUiStrings("zh").noteInput.rootFolder);
+  });
+  it("cancels template replacement without losing typed text or unlocking a frozen submission", async () => {
+    register(); text("保留正文"); templateButton().click(); state.picker!.onClose(); state.picker!.select("daily");
+    expect(field().readOnly).toBe(true); expect(send().disabled).toBe(true);
+    state.confirmations.at(-1)!.cancel(); await tick(); await tick();
+    expect(field().value).toBe("保留正文"); expect(field().readOnly).toBe(false);
+    submit.mockRejectedValueOnce(new Error("uncertain")); send().click(); await tick(); await tick();
+    expect(templateButton().disabled).toBe(true); expect(field().readOnly).toBe(true);
   });
 });

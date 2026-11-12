@@ -7,6 +7,7 @@ import { QuickInputBoxesSaveError } from "../services/QuickInputSubmissionCoordi
 import { CompatConfirmationModal } from "../view/modals/compat-modal";
 import { installVisualViewport } from "../runtime/visual-viewport";
 import type { NativeMarkdownEditor } from "./native-markdown-editor";
+import { QuickInputTemplates } from "./quick-input-templates";
 import { stripEmptyDraftFrontmatter } from "./draft-frontmatter";
 import { createMobileDraftEditor } from "./mobile-editor";
 import { openQuickInputSuggest } from "./quick-input-suggest";
@@ -20,6 +21,7 @@ interface Options {
 /** One runtime draft per plugin instance. Closing is guarded even for host Escape/back/dismiss. */
 export class MobileQuickInput extends Modal {
   private editor: NativeMarkdownEditor | null = null;
+  private templates: QuickInputTemplates | null = null;
   private submission: QuickInputDraftSession | null = null;
   private target: QuickInputTarget | null = null;
   private title: HTMLInputElement | null = null;
@@ -74,6 +76,7 @@ export class MobileQuickInput extends Modal {
     this.boxButton.createSpan({ cls: "fce-quick-input-choice-count" }).hidden = true;
     this.metadataButtons = [button("fce-quick-input-tags", strings.noteInput.addTags, "tags", visibility.tags, () => this.addMetadata("tags")),
       button("fce-quick-input-property", strings.noteInput.addProperty, "list", visibility.properties, () => this.addMetadata("property"))];
+    const templateButton = button("fce-quick-input-template", strings.noteInput.chooseTemplate, "layout-template", visibility.template, () => this.templates?.open());
     const compositionStart = () => { session.composing = true; this.refresh(); };
     const compositionEnd = () => { session.composing = false; this.refresh(); };
     root.addEventListener("compositionstart", compositionStart); root.addEventListener("compositionend", compositionEnd);
@@ -82,7 +85,7 @@ export class MobileQuickInput extends Modal {
     try {
       this.editor = createMobileDraftEditor({ app: this.app, container: body, initialValue: "", placeholder: strings.noteInput.inputPlaceholder,
         onChange: () => this.refresh(), onModEnter: event => {
-          if (event.defaultPrevented || event.isComposing || session.composing || this.popup) return;
+          if (event.defaultPrevented || event.isComposing || session.composing || this.popup || this.templates?.active) return;
           event.preventDefault(); void this.send();
         } });
       if (visibility.title) {
@@ -113,7 +116,21 @@ export class MobileQuickInput extends Modal {
           this.cleanup.push(() => this.app.vault.offref(ref));
         }
       }
+      const configFolder = config.folderPath;
+      const initialTarget = session.context.target ? { ...session.context.target } : undefined;
+      this.templates = new QuickInputTemplates({ app: this.app, editor: this.editor, button: templateButton,
+        getTemplates: () => this.options.getSettings().noteTemplates, getStrings: () => this.options.getStrings().noteInput,
+        canEdit: () => this.alive && !session.pending && !session.request && !session.composing && !this.popup && !this.confirming,
+        destinationSignature: () => JSON.stringify([session.context.target?.title ?? "", session.context.target?.folderPath ?? session.context.config.folderPath]),
+        applyDestination: (template) => {
+          session.context.target = template ? { title: template.title, folderPath: template.folderPath } : initialTarget ? { ...initialTarget } : undefined;
+          session.context.config.folderPath = template?.folderPath ?? configFolder;
+          if (this.title) this.title.value = template?.title ?? "";
+          this.updateTarget();
+        },
+        changed: () => this.refresh(), notify: this.options.notify });
       this.updateTarget();
+      this.templates.initialize(settings.quickInputTemplateId);
       // Opening is an explicit user action; later publications never focus the editor.
       this.editor.focus();
     } catch (error) { this.options.notify(String(error)); }
@@ -130,8 +147,9 @@ export class MobileQuickInput extends Modal {
   private refresh(): void {
     const session = this.submission, editor = this.editor, target = this.target;
     if (!this.sendButton || !session) return;
-    const strings = this.options.getStrings().noteInput, locked = session.pending || !!session.request;
-    this.sendButton.disabled = !editor || session.pending || session.composing || !stripEmptyDraftFrontmatter(editor.getValue()).trim() || !target?.valid;
+    const strings = this.options.getStrings().noteInput, locked = session.pending || !!session.request || !!this.templates?.busy;
+    this.templates?.refresh(locked);
+    this.sendButton.disabled = !editor || session.pending || session.composing || !!this.templates?.active || !stripEmptyDraftFrontmatter(editor.getValue()).trim() || !target?.valid;
     const action = session.pending ? strings.sending : target?.mode === "append" ? strings.appendNote : strings.send;
     if (this.sendLabel) this.sendLabel.textContent = action;
     this.sendButton.setAttribute("aria-label", action);
@@ -154,12 +172,12 @@ export class MobileQuickInput extends Modal {
     this.contentEl.setAttribute("aria-busy", String(session.pending));
   }
   private addMetadata(kind: "tags" | "property"): void {
-    if (!this.submission || this.submission.pending || this.submission.request || this.target?.mode === "append") return;
+    if (!this.submission || this.submission.pending || this.submission.request || this.templates?.active || this.target?.mode === "append") return;
     if (!this.editor?.addMetadata(kind)) this.options.notify(this.options.getStrings().noteInput.sourcePropertiesHint);
   }
   private openChoices(kind: "folder" | "boxes"): void {
     const session = this.submission;
-    if (!session || session.pending || session.request || session.composing || this.popup) return;
+    if (!session || session.pending || session.request || session.composing || this.popup || this.templates?.active) return;
     this.editor?.flush();
     const strings = this.options.getStrings().noteInput;
     const candidates = kind === "folder" ? [{ id: "", name: strings.rootFolder },
@@ -198,7 +216,7 @@ export class MobileQuickInput extends Modal {
   }
   private async send(): Promise<void> {
     const session = this.submission, editor = this.editor;
-    if (!this.alive || !session || !editor || session.pending || session.composing || this.popup) return;
+    if (!this.alive || !session || !editor || session.pending || session.composing || this.popup || this.templates?.active) return;
     const strings = this.options.getStrings().noteInput;
     if (!session.request) editor.flush();
     if (!stripEmptyDraftFrontmatter(editor.getValue()).trim()) return;
@@ -234,7 +252,7 @@ export class MobileQuickInput extends Modal {
     const strings = this.options.getStrings();
     if (this.submission?.pending) { this.options.notify(strings.mobile.wait); return; }
     if (stripEmptyDraftFrontmatter(this.editor?.getValue() ?? "").trim() || this.title?.value.trim() || this.boxIds.length) {
-      if (this.confirming || this.popup) return;
+      if (this.confirming || this.popup || this.templates?.active) return;
       const modal = new CompatConfirmationModal(this.app); this.confirming = modal;
       modal.setTitle(strings.mobile.discardTitle);
       modal.addButton(button => button.setButtonText(strings.mobile.discard).setWarning().onClick(() => { this.confirming = null; this.forceClose = true; this.close(); }));
@@ -247,6 +265,7 @@ export class MobileQuickInput extends Modal {
   }
   override onClose(): void {
     this.alive = false;
+    this.templates?.dispose(); this.templates = null;
     this.popup?.dispose(); this.popup = null;
     this.confirming?.close(); this.confirming = null;
     for (const stop of this.cleanup.splice(0)) stop();

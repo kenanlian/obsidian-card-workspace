@@ -208,6 +208,7 @@ export interface PluginSettings {
   noteTemplates: NoteTemplateDefinition[];
   templateStorageFolder: string;
   quickInput: QuickInputConfig;
+  quickInputTemplateId: string | null;
   quickInputVisibility: QuickInputVisibility;
   quickInputWidth: number;
   quickInputHeight: number;
@@ -281,6 +282,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   noteTemplates: [],
   templateStorageFolder: DEFAULT_TEMPLATE_STORAGE_FOLDER,
   quickInput: { ...DEFAULT_QUICK_INPUT },
+  quickInputTemplateId: null,
   quickInputVisibility: { ...DEFAULT_QUICK_INPUT_VISIBILITY },
   quickInputWidth: DEFAULT_QUICK_INPUT_WIDTH,
   quickInputHeight: DEFAULT_QUICK_INPUT_HEIGHT,
@@ -703,6 +705,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     templateStorageFolder: typeof data.templateStorageFolder === "string" ? data.templateStorageFolder : DEFAULT_SETTINGS.templateStorageFolder,
     quickInputGlobalShortcut: typeof data.quickInputGlobalShortcut === "string" ? data.quickInputGlobalShortcut.trim() : "",
     quickInput: normalizeQuickInput(data.quickInput),
+    quickInputTemplateId: typeof data.quickInputTemplateId === "string" ? data.quickInputTemplateId.trim() || null : null,
     quickInputVisibility: normalizeQuickInputVisibility(data.quickInputVisibility),
     quickInputWidth: normalizeHoverPreviewDimension(data.quickInputWidth,
       DEFAULT_QUICK_INPUT_WIDTH, QUICK_INPUT_WIDTH_MIN, QUICK_INPUT_WIDTH_MAX),

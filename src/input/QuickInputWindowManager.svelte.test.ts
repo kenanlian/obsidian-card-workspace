@@ -10,7 +10,7 @@ import { createCardBox } from "../view/card-boxes";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 import type { QuickInputSuggestOptions } from "./quick-input-suggest";
 
-vi.mock("obsidian", async (importOriginal) => ({ ...await importOriginal<typeof import("obsidian")>(), moment: (await import("moment")).default }));
+vi.mock("obsidian", async (importOriginal) => ({ ...await importOriginal<typeof import("obsidian")>(), MarkdownView: class {}, moment: (await import("moment")).default }));
 
 interface FakeConfirm { title: string; content: string; isOpen: boolean; buttons: Array<{ text: string; cta: boolean }>; click(text: string): void }
 const prompts = vi.hoisted(() => ({ pickers: [] as Array<{ options: QuickInputSuggestOptions; dispose: () => void }>, confirms: [] as FakeConfirm[] }));
@@ -49,7 +49,7 @@ vi.mock("./native-markdown-editor", () => ({
     if (state.unsupported) throw new Error("unsupported");
     const editor = { container: options.container, text: options.initialValue ?? "", focus: vi.fn(), flush: vi.fn(), dispose: vi.fn(), readOnly: vi.fn(), propertiesReadOnly: vi.fn(), addMetadata: vi.fn(() => true), change: options.onChange };
     state.editors.push(editor);
-    return { getValue: () => editor.text, focus: editor.focus, flush: editor.flush, dispose: editor.dispose, setReadOnly: editor.readOnly, setPropertiesReadOnly: editor.propertiesReadOnly, addMetadata: editor.addMetadata, mountTitle: (element: HTMLElement) => options.container.prepend(element) };
+    return { getValue: () => editor.text, setValue: (value: string) => { editor.text = value; options.onChange(); }, focus: editor.focus, flush: editor.flush, dispose: editor.dispose, setReadOnly: editor.readOnly, setPropertiesReadOnly: editor.propertiesReadOnly, addMetadata: editor.addMetadata, mountTitle: (element: HTMLElement) => options.container.prepend(element) };
   },
 }));
 
@@ -58,6 +58,7 @@ let settings: PluginSettings;
 let notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 let submit: ReturnType<typeof vi.fn<(request: QuickInputRequest) => Promise<NoteInputResult>>>;
 let files: Map<string, TFile | TFolder>;
+let readTemplate: ReturnType<typeof vi.fn<(file: TFile) => Promise<string>>>;
 let language: "en" | "zh";
 const rootFolder = Object.assign(new TFolder(), { path: "" });
 type TestHandle = QuickInputWindowHandle & { moveTop: ReturnType<typeof vi.fn>; hide: ReturnType<typeof vi.fn>; setOpacity: ReturnType<typeof vi.fn>; setShape: ReturnType<typeof vi.fn> };
@@ -79,6 +80,7 @@ beforeEach(() => {
   language = "en";
   settings = structuredClone(DEFAULT_SETTINGS);
   files = new Map([["", rootFolder]]);
+  readTemplate = vi.fn(async () => "Template {{date:YYYY}} {{time:HH:mm}}\n---");
   notify = vi.fn(); submit = vi.fn();
   windows = []; documentReady = null; cursor = { x: 0, y: 0 };
   desktop = { check: vi.fn(), cursor: vi.fn(() => cursor), shortcuts: vi.fn(),
@@ -109,7 +111,7 @@ beforeEach(() => {
       return { win, handle, dispose };
     }) };
   manager = new QuickInputWindowManager({ desktop,
-    app: { vault: { getRoot: () => rootFolder, getAbstractFileByPath: (path: string) => files.get(path) ?? null, getAllFolders: vi.fn(() => [...files.values()].filter((file) => file instanceof TFolder)) } } as unknown as App,
+    app: { workspace: { getActiveViewOfType: () => null, getLeavesOfType: () => [] }, vault: { cachedRead: (file: TFile) => readTemplate(file), getRoot: () => rootFolder, getAbstractFileByPath: (path: string) => files.get(path) ?? null, getAllFolders: vi.fn(() => [...files.values()].filter((file) => file instanceof TFolder)) } } as unknown as App,
     getSettings: () => settings, getStrings: () => noteInputStrings[language], notify, submit,
   });
 });
@@ -121,6 +123,7 @@ describe("modeless quick input", async () => {
     await manager.open();
     expect(root().ownerDocument.body.dataset.quickInputRadius).toBe(radius);
     expect(root().querySelector(".fce-quick-input-title")).not.toBeNull();
+    expect(root().querySelector<HTMLButtonElement>(".fce-quick-input-template")!.hidden).toBe(true);
     for (const cls of ["folder", "boxes", "tags", "property"]) {
       expect(root().querySelector<HTMLButtonElement>(`.fce-quick-input-${cls}`)!.hidden).toBe(false);
     }
@@ -661,7 +664,7 @@ describe("draft target controls", () => {
     expect(state.editors[0].addMetadata).toHaveBeenCalledWith("property");
   });
   it("previews appending to a same-name note and restores property editing for a new title", async () => {
-    settings.quickInputVisibility = { title: true, folder: true, boxes: true, tags: true, properties: true };
+    settings.quickInputVisibility = { title: true, folder: true, boxes: true, tags: true, properties: true, template: false };
     settings.quickInput.duplicateTitle = "append";
     files.set("Existing.md", Object.assign(new TFile(), { path: "Existing.md", extension: "md" }));
     await manager.open(); setText("Body");
@@ -822,4 +825,76 @@ it("routes the property shortcut from draft-document popovers outside the editor
   const input = windows[0].win.document.body.createEl("input");
   input.dispatchEvent(new KeyboardEvent("keydown", { key: ";", ctrlKey: true, bubbles: true }));
   expect(state.editors[0].addMetadata).toHaveBeenCalledWith("property");
+});
+
+
+describe("quick input templates", () => {
+  beforeEach(() => { settings.quickInputVisibility.template = true; });
+  function register(id = "daily", folderPath = "Inbox") {
+    const definition = { id, name: "日记", filePath: `Templates/${id} {{date:YYYY}}.md`, targetFolderPath: folderPath, dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm" };
+    settings.noteTemplates.push(definition);
+    files.set(folderPath, Object.assign(new TFolder(), { path: folderPath }));
+    files.set(definition.filePath, Object.assign(new TFile(), { path: definition.filePath, basename: `${id} {{date:YYYY}}`, extension: "md" }));
+    return definition;
+  }
+  const templateButton = (index = 0) => root(index).querySelector<HTMLButtonElement>(".fce-quick-input-template")!;
+  const choose = async (id: string, index = 0) => {
+    expect(templateButton(index).hidden).toBe(false);
+    templateButton(index).click();
+    const picker = prompts.pickers.at(-1)!; picker.dispose(); picker.options.select(id); await tick();
+  };
+  it("fills the default template, title and folder independently for each new draft", async () => {
+    register(); settings.quickInputTemplateId = "daily"; settings.quickInputVisibility.template = false;
+    await manager.open(); await tick();
+    expect(state.editors[0].text).toMatch(/^Template \d{4} \d{2}:\d{2}/);
+    const title = root().querySelector<HTMLInputElement>(".fce-quick-input-title")!;
+    expect(title.value).toMatch(/^daily \d{4}$/);
+    expect(root().querySelector(".fce-quick-input-folder")!.textContent).toBe("Inbox");
+    expect(templateButton().getAttribute("aria-label")).toContain("日记");
+    expect(templateButton().hidden).toBe(true);
+    setText("my changes");
+    await manager.open(); await tick();
+    expect(state.editors[1].text).toContain("Template"); expect(state.editors[0].text).toBe("my changes");
+    submit.mockReturnValue(new Promise(() => {})); send(1).click(); await tick();
+    expect(submit.mock.calls[0][0]).toMatchObject({ target: { title: title.value, folderPath: "Inbox" }, text: state.editors[1].text });
+  });
+  it("chooses templates at send time without changing the default and confirms replacement of edits", async () => {
+    register(); await manager.open();
+    setText("keep this");
+    await choose("daily");
+    expect(prompts.confirms.at(-1)!.title).toBe(noteInputStrings.en.replaceDraftTitle);
+    expect(state.editors[0].text).toBe("keep this");
+    prompts.confirms.at(-1)!.click(noteInputStrings.en.cancel); await tick();
+    expect(state.editors[0].text).toBe("keep this"); expect(send().disabled).toBe(false);
+    await choose("daily"); prompts.confirms.at(-1)!.click(noteInputStrings.en.replaceDraft); await tick(); await tick();
+    expect(state.editors[0].text).toContain("Template"); expect(settings.quickInputTemplateId).toBeNull();
+    await choose("");
+    expect(state.editors[0].text).toBe("");
+    expect(root().querySelector<HTMLInputElement>(".fce-quick-input-title")!.value).toBe("");
+    expect(root().querySelector(".fce-quick-input-folder")!.textContent).toBe(noteInputStrings.en.rootFolder);
+  });
+  it("preserves the current draft after a read failure and rejects late completion after close", async () => {
+    register(); await manager.open();
+    readTemplate.mockRejectedValueOnce(new Error("read failed")); await choose("daily");
+    expect(state.editors[0].text).toBe(""); expect(templateButton().getAttribute("aria-pressed")).toBe("false");
+    expect(notify).toHaveBeenCalledWith(noteInputStrings.en.templateUnavailable);
+    let finish!: (text: string) => void;
+    readTemplate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await choose("daily"); expect(send().disabled).toBe(true); expect(templateButton().disabled).toBe(true);
+    cancel().click(); finish("late"); await tick(); await tick();
+    expect(state.editors[0].text).toBe(""); expect(state.editors[0].dispose).toHaveBeenCalledOnce();
+  });
+  it("uses the template filename and folder even with hidden title and folder controls", async () => {
+    register(); settings.quickInputTemplateId = "daily";
+    settings.quickInputVisibility.title = settings.quickInputVisibility.folder = false;
+    await manager.open(); await tick();
+    submit.mockReturnValue(new Promise(() => {})); send().click(); await tick();
+    expect(submit.mock.calls[0][0]).toMatchObject({ target: { title: expect.stringMatching(/^daily \d{4}$/), folderPath: "Inbox" } });
+  });
+  it("keeps template selection locked through an uncertain frozen submission", async () => {
+    register(); await manager.open(); await choose("daily");
+    submit.mockRejectedValueOnce(new Error("uncertain")); send().click(); await tick(); await tick();
+    expect(templateButton().disabled).toBe(true);
+    expect(state.editors[0].readOnly).toHaveBeenLastCalledWith(true);
+  });
 });

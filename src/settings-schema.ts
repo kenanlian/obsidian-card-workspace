@@ -47,6 +47,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   newNoteTemplate: "preferences",
   boxNewNoteFolderPath: "preferences",
   quickInput: "preferences",
+  quickInputTemplateId: "preferences",
   quickInputVisibility: "preferences",
   quickInputWidth: "preferences",
   quickInputHeight: "preferences",

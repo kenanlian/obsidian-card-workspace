@@ -48,7 +48,7 @@ import {
   isNewNoteTemplate,
   type PartialPluginSettings,
 } from "./settings";
-import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, QUICK_INPUT_DUPLICATE_TITLES, normalizeQuickInputVisibility, type QuickInputDuplicateTitle, type QuickInputVisibility, normalizeQuickInput } from "./note-input";
+import { resolveTemplateName, DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, QUICK_INPUT_DUPLICATE_TITLES, normalizeQuickInputVisibility, type QuickInputDuplicateTitle, type QuickInputVisibility, normalizeQuickInput } from "./note-input";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
 import { onPlainEnter } from "./view/metadata-input-suggest";
 import { TemplateStorageError } from "./services/TemplateStorageService";
@@ -182,6 +182,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   private readonly legacyVisibility = new Map<HTMLElement, () => boolean>();
   private readonly rowCleanups = new Set<() => void>();
   private landingScrollTop = 0;
+  private templateOptionsSignature = "";
 
   private trackCleanup(cleanup: () => void): () => void {
     let active = true;
@@ -206,6 +207,24 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /** Native hosts cache definitions at registration, before async settings are ready. */
+  refreshTemplateOptions(): void {
+    if (requireApiVersion("1.13.0")) {
+      if (typeof this.update === "function" && JSON.stringify(this.getQuickInputTemplateOptions()) !== this.templateOptionsSignature) this.update();
+    }
+  }
+
+  private getQuickInputTemplateOptions(): Record<string, string> {
+    const strings = getUiStrings(this.plugin.getUiLanguage()).noteInput;
+    const { noteTemplates, quickInputTemplateId } = this.plugin.getSettings();
+    return {
+      "": strings.noTemplate,
+      ...Object.fromEntries(noteTemplates.map(template => [template.id, resolveTemplateName(template)])),
+      ...(quickInputTemplateId && !noteTemplates.some(template => template.id === quickInputTemplateId)
+        ? { [quickInputTemplateId]: strings.templateUnavailable } : {}),
+    };
+  }
+
   /**
    * Settings live in SettingsStore, so the declarative control binding must not
    * read or write `plugin.settings` / `saveData`.
@@ -218,6 +237,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     switch (key) {
       case "fileVisibility":
         return settings.fileVisibility;
+      case "quickInputTemplateId":
+        return settings.quickInputTemplateId ?? "";
       case "quickInputDuplicateTitle":
         return normalizeQuickInput(settings.quickInput).duplicateTitle;
       case "quickInputFolderPath":
@@ -560,6 +581,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
     const navigationStrings = getUiStrings(language).navigationVisibility;
     const inputStrings = getUiStrings(language).noteInput;
+    const templateOptions = this.getQuickInputTemplateOptions();
+    this.templateOptionsSignature = JSON.stringify(templateOptions);
     const groups: WorkspaceSettingGroup[] = [
       {
         type: "group",
@@ -748,6 +771,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         type: "group",
         heading: inputStrings.quickInputHeading,
         items: [
+          { name: inputStrings.quickInputTemplateName, desc: inputStrings.quickInputTemplateDesc,
+            control: { type: "dropdown", key: "quickInputTemplateId", options: templateOptions } },
           { id: "quickInputFolderPath", name: inputStrings.quickInputFolderName, desc: inputStrings.quickInputFolderDesc,
             render: (setting) => this.renderNoteFolderSetting(setting, "quickInputFolderPath") },
           { name: inputStrings.quickInputDuplicateTitleName, desc: inputStrings.quickInputDuplicateTitleDesc,
@@ -800,7 +825,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
       page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"])]),
-      page("quick-input", [group(headings.saving, ["quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
+      page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
         group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
         group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),
       page("default-icons", groups.slice(-2)),
@@ -823,6 +848,11 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       if (Object.prototype.hasOwnProperty.call(DEFAULT_QUICK_INPUT_VISIBILITY, field)) await this.plugin.saveSettings({
         quickInputVisibility: { ...normalizeQuickInputVisibility(this.plugin.getSettings().quickInputVisibility), [field]: value },
       });
+      return;
+    }
+    if (key === "quickInputTemplateId") {
+      if (typeof value !== "string" || (value && !this.plugin.getSettings().noteTemplates.some(template => template.id === value))) return;
+      await this.plugin.saveSettings({ quickInputTemplateId: value || null });
       return;
     }
     if (key === "quickInputDuplicateTitle" || key === "quickInputFolderPath" || key === "quickInputInsertPosition") {

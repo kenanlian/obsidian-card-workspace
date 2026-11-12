@@ -82,6 +82,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   boxNewNoteFolderPath: "patch",
   templateStorageFolder: "patch",
   quickInput: "patch",
+  quickInputTemplateId: "patch",
   quickInputVisibility: "patch",
   quickInputGlobalShortcut: "patch",
   quickInputWidth: "patch",
@@ -146,6 +147,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "newNoteTemplate": settings.newNoteTemplate = "tags-frontmatter"; break;
     case "boxNewNoteFolderPath": settings.boxNewNoteFolderPath = "Inbox"; break;
     case "templateStorageFolder": settings.templateStorageFolder = "Templates"; break;
+    case "quickInputTemplateId": settings.quickInputTemplateId = "daily"; break;
     case "quickInput": settings.quickInput = { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "number" }; break;
     case "quickInputVisibility": settings.quickInputVisibility = { ...settings.quickInputVisibility, title: !settings.quickInputVisibility.title }; break;
     case "quickInputGlobalShortcut": settings.quickInputGlobalShortcut = "Control+Shift+Q"; break;

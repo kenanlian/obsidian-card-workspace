@@ -328,7 +328,7 @@ vi.mock("./search", async () => {
 
 vi.mock("./CardWorkspaceSettingTab", () => {
   return {
-    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab {},
+    CardWorkspaceSettingTab: class MockCardWorkspaceSettingTab { refreshTemplateOptions = vi.fn(); },
   };
 });
 
@@ -2703,6 +2703,38 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     settings.resolve(null);
     await waitForPluginLoad(plugin);
     expect(searchMockState.managers).toHaveLength(1);
+  });
+
+  it("refreshes registered settings options only after delayed template data has loaded", async () => {
+    const settings = deferred<unknown>();
+    const { plugin } = createPluginHarness();
+    (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockReturnValue(settings.promise);
+    plugin.onload();
+    const tab = (plugin as unknown as { addSettingTab: ReturnType<typeof vi.fn> }).addSettingTab.mock.calls[0]![0] as { refreshTemplateOptions: ReturnType<typeof vi.fn> };
+    const templates = [{ id: "daily", name: "日记", filePath: "Templates/daily.md", targetFolderPath: "", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" }];
+    const snapshots: unknown[] = [];
+    tab.refreshTemplateOptions.mockImplementation(() => snapshots.push(plugin.getSettings().noteTemplates));
+    expect(tab.refreshTemplateOptions).not.toHaveBeenCalled();
+    settings.resolve({ noteTemplates: templates });
+    await waitForPluginLoad(plugin);
+    expect(snapshots).toEqual([templates]);
+  });
+
+  it("updates template settings choices from synchronous settings memory when templates change", async () => {
+    const { plugin } = createPluginHarness(); plugin.onload(); await waitForPluginLoad(plugin);
+    const tab = (plugin as unknown as { addSettingTab: ReturnType<typeof vi.fn> }).addSettingTab.mock.calls[0]![0] as { refreshTemplateOptions: ReturnType<typeof vi.fn> };
+    tab.refreshTemplateOptions.mockClear();
+    const snapshots: unknown[] = [];
+    tab.refreshTemplateOptions.mockImplementation(() => snapshots.push(plugin.getSettings().noteTemplates));
+    const template = { id: "daily", name: "日记", filePath: "Templates/daily.md", targetFolderPath: "", dateFormat: "YYYY-MM-DD", timeFormat: "HH:mm:ss" };
+    await plugin.saveSettings({ noteTemplates: [template] });
+    await plugin.saveSettings({ noteTemplates: [{ ...template, name: "每日记录" }] });
+    await plugin.saveSettings({ noteTemplates: [] });
+    expect(snapshots).toEqual([[template], [{ ...template, name: "每日记录" }], []]);
+    await plugin.saveSettings({ previewLines: 8 });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(3);
+    await plugin.saveSettings({ quickInputTemplateId: "missing" });
+    expect(tab.refreshTemplateOptions).toHaveBeenCalledTimes(4);
   });
 
   it("runs initial navigation reconciliation with zero vault events", async () => {

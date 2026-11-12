@@ -128,3 +128,24 @@ describe("template names and storage", () => {
     expect(isInitialTemplateTitle("Daily {{date}}")).toBe(false);
   });
 });
+
+
+describe("quick input default template", () => {
+  it("defaults existing installs to no template and validates saved IDs", () => {
+    for (const value of [undefined, null, false, 42, "", "  "]) {
+      expect(migrateSettings({ quickInputTemplateId: value }).quickInputTemplateId).toBeNull();
+    }
+    // The retired setting must not silently reactivate an old selection.
+    expect(migrateSettings({ quickInput: { templateId: "daily" } }).quickInputTemplateId).toBeNull();
+  });
+  it("round trips a stable template ID in preferences and retains temporarily missing registrations", () => {
+    const settings = mergeSettings(DEFAULT_SETTINGS, { quickInputTemplateId: " daily " });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.preferences.quickInputTemplateId).toBe("daily");
+    expect(document.workspace).not.toHaveProperty("quickInputTemplateId");
+    expect(document.userData).not.toHaveProperty("quickInputTemplateId");
+    expect(migrateSettings(document).quickInputTemplateId).toBe("daily");
+    expect(mergeSettings(settings, { quickInputTemplateId: null }).quickInputTemplateId).toBeNull();
+  });
+});

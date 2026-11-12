@@ -1161,6 +1161,7 @@ describe("card grouping settings normalization", () => {
         enableHeadingDragInsert: false,
         boxNewNoteFolderPath: "",
         quickInput: DEFAULT_SETTINGS.quickInput,
+        quickInputTemplateId: null,
         quickInputVisibility: DEFAULT_SETTINGS.quickInputVisibility,
         quickInputGlobalShortcut: "",
         quickInputWidth: 480, quickInputHeight: 400, quickInputColor: "random", quickInputCornerRadius: "rounded",
@@ -1661,7 +1662,7 @@ describe("settings layer manifest (C4)", () => {
     cardBackgroundOverrides: "userData",
     newNoteTemplate: "preferences",
     boxNewNoteFolderPath: "preferences",
-    quickInput: "preferences", quickInputVisibility: "preferences",
+    quickInput: "preferences", quickInputTemplateId: "preferences", quickInputVisibility: "preferences",
     templateStorageFolder: "preferences",
     noteTemplates: "userData",
     previewLines: "preferences",
@@ -1789,7 +1790,8 @@ describe("non-default v2 round trip per layer (C4)", () => {
     newNoteTemplate: "blank",
     boxNewNoteFolderPath: "Box notes",
     quickInput: { folderPath: "Inbox", insertPosition: "start", duplicateTitle: "append" },
-    quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true },
+    quickInputVisibility: { title: true, folder: false, boxes: true, tags: true, properties: true, template: true },
+    quickInputTemplateId: "daily",
     quickInputWidth: 640,
     quickInputHeight: 360,
     quickInputColor: "purple",
@@ -1855,6 +1857,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["newNoteTemplate", (d) => d.preferences.newNoteTemplate, "blank"],
     ["boxNewNoteFolderPath", (d) => d.preferences.boxNewNoteFolderPath, "Box notes"],
     ["templateStorageFolder", (d) => d.preferences.templateStorageFolder, nonDefault.templateStorageFolder],
+    ["quickInputTemplateId", (d) => d.preferences.quickInputTemplateId, "daily"],
     ["quickInput", (d) => d.preferences.quickInput, nonDefault.quickInput],
     ["quickInputVisibility", (d) => d.preferences.quickInputVisibility, nonDefault.quickInputVisibility],
     ["quickInputWidth", (d) => d.preferences.quickInputWidth, 640],
@@ -1990,13 +1993,13 @@ describe("quick input corner radius", () => {
 });
 
 describe("quick input visibility", () => {
-  it("defaults all controls on and repairs individual malformed items", () => {
-    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true });
+  it("defaults the template selector off and repairs individual malformed items", () => {
+    expect(normalizeSettings({}).quickInputVisibility).toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true, template: false });
     expect(normalizeSettings({ quickInputVisibility: { title: true, folder: 0, boxes: true, tags: "yes", properties: true } } as never).quickInputVisibility)
-      .toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true });
+      .toEqual({ title: true, folder: true, boxes: true, tags: true, properties: true, template: false });
   });
   it("preserves explicitly hidden controls", () => {
-    const visibility = { title: false, folder: false, boxes: false, tags: false, properties: false };
+    const visibility = { title: false, folder: false, boxes: false, tags: false, properties: false, template: false };
     expect(normalizeSettings({ quickInputVisibility: visibility }).quickInputVisibility).toEqual(visibility);
   });
   it("drops the retired save-status switch from persisted data", () => {

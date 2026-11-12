@@ -933,6 +933,7 @@ export default class CardWorkspacePlugin extends Plugin {
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
     validateIconPickers();
+    if (patch.noteTemplates !== undefined || patch.quickInputTemplateId !== undefined) this.workspaceSettingTab?.refreshTemplateOptions();
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
@@ -1121,6 +1122,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
+    this.workspaceSettingTab?.refreshTemplateOptions();
   }
 
   /** Degrade to defaults read-only mode without aborting plugin startup. */

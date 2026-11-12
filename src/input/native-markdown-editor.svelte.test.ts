@@ -60,6 +60,20 @@ function fixture(lazy = false) {
 }
 
 describe("native Markdown editor compatibility seam", () => {
+  it("replaces complete template documents while retaining read-only input protection", () => {
+    const f = fixture(); const adapter = f.open();
+    adapter.setPropertiesReadOnly(true); adapter.setReadOnly(true);
+    const text = "---\nstatus: draft\n---\nTemplate body";
+    adapter.setValue(text);
+    const cm = EditorView.findFromDOM(f.container.querySelector(".cm-content")!)!;
+    expect(adapter.getValue()).toBe(text);
+    expect(cm.state.selection.main.head).toBe(text.length);
+    cm.dispatch({ changes: { from: 0, insert: "blocked" } });
+    expect(adapter.getValue()).toBe(text);
+    adapter.setReadOnly(false);
+    cm.dispatch({ changes: { from: text.length, insert: " edited" } });
+    expect(adapter.getValue()).toBe(text + " edited");
+  });
   it("loads editable template properties and body with the cursor at the end", () => {
     const f = fixture(true);
     const text = "---\nstatus: draft\n---\n## Template body";

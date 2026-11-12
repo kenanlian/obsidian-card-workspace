@@ -33,6 +33,8 @@ export interface ScopeNoteRequest {
 
 export interface NoteInputResult { file: TFile; created: boolean }
 
+export interface QuickInputTemplateDraft { content: string; title: string; folderPath: string }
+
 /** Runtime snapshot used to avoid positioning into a note edited after the write. */
 export interface TemplateNoteCursor { content: string; offset: number }
 export interface TemplateNoteResult extends NoteInputResult { cursor?: TemplateNoteCursor }
@@ -43,9 +45,10 @@ export interface QuickInputVisibility {
   boxes: boolean;
   tags: boolean;
   properties: boolean;
+  template: boolean;
 }
 export const DEFAULT_QUICK_INPUT_VISIBILITY: QuickInputVisibility = {
-  title: true, folder: true, boxes: true, tags: true, properties: true,
+  title: true, folder: true, boxes: true, tags: true, properties: true, template: false,
 };
 export function normalizeQuickInputVisibility(value: unknown): QuickInputVisibility {
   const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};

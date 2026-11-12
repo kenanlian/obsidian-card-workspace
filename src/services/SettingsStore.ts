@@ -40,6 +40,7 @@ export interface PreferencesSettings {
   newNoteTemplate: PluginSettings["newNoteTemplate"];
   boxNewNoteFolderPath: string;
   quickInput: PluginSettings["quickInput"];
+  quickInputTemplateId: string | null;
   quickInputVisibility: PluginSettings["quickInputVisibility"];
   quickInputGlobalShortcut: string;
   quickInputWidth: number;
@@ -197,6 +198,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.boxNewNoteFolderPath !== undefined) preferences.boxNewNoteFolderPath = patch.boxNewNoteFolderPath;
   if (patch.quickInputGlobalShortcut !== undefined) preferences.quickInputGlobalShortcut = patch.quickInputGlobalShortcut;
   if (patch.quickInputVisibility !== undefined) preferences.quickInputVisibility = patch.quickInputVisibility;
+  if (patch.quickInputTemplateId !== undefined) preferences.quickInputTemplateId = patch.quickInputTemplateId;
   if (patch.quickInput !== undefined) preferences.quickInput = patch.quickInput;
   if (patch.quickInputWidth !== undefined) preferences.quickInputWidth = patch.quickInputWidth;
   if (patch.quickInputHeight !== undefined) preferences.quickInputHeight = patch.quickInputHeight;
@@ -275,6 +277,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       newNoteTemplate: settings.newNoteTemplate,
       boxNewNoteFolderPath: settings.boxNewNoteFolderPath,
       quickInput: { ...settings.quickInput },
+      quickInputTemplateId: settings.quickInputTemplateId,
       quickInputVisibility: { ...settings.quickInputVisibility },
       quickInputGlobalShortcut: settings.quickInputGlobalShortcut,
       quickInputWidth: settings.quickInputWidth,

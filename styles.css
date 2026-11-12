@@ -2548,6 +2548,9 @@ html.fce-quick-input-window .modal-container .modal {
   --fce-quick-input-send-background: var(--fce-quick-input-border);
   --fce-quick-input-send-color: color-mix(in srgb, var(--fce-quick-input-tint) 8%, var(--text-normal));
   --fce-quick-input-send-border: color-mix(in srgb, var(--fce-quick-input-tint) 55%, var(--background-modifier-border));
+  --fce-quick-input-control-hover: color-mix(in srgb, var(--fce-quick-input-tint) 16%, transparent);
+  --fce-quick-input-control-active: color-mix(in srgb, var(--fce-quick-input-tint) 26%, transparent);
+  --fce-quick-input-control-accent: color-mix(in srgb, var(--fce-quick-input-tint) 75%, var(--text-normal));
   width: 100%;
   height: 100%;
   pointer-events: auto;
@@ -2566,6 +2569,9 @@ html.fce-quick-input-window .modal-container .modal {
 }
 .fce-quick-input[data-color="primary"],
 .fce-quick-input[data-color="secondary"] {
+  --fce-quick-input-control-hover: var(--background-modifier-hover);
+  --fce-quick-input-control-active: var(--background-modifier-active-hover);
+  --fce-quick-input-control-accent: var(--text-accent);
   background: var(--fce-quick-input-tint);
 }
 /* Choose black or white from the fill's linear-sRGB luminance, independently of theme colors. */
@@ -2656,6 +2662,14 @@ html.fce-quick-input-window .modal-container .modal {
   box-shadow: none;
 }
 .fce-quick-input-pin[aria-pressed="true"] { color: var(--interactive-accent); }
+/* Footer controls take their hover and pressed fills from the frame tint instead of neutral gray. */
+.fce-quick-input .fce-quick-input-footer button.clickable-icon:hover:not(:disabled) {
+  background-color: var(--fce-quick-input-control-hover);
+}
+.fce-quick-input .fce-quick-input-footer button.clickable-icon:active:not(:disabled) {
+  background-color: var(--fce-quick-input-control-active);
+}
+.fce-quick-input .fce-quick-input-pin[aria-pressed="true"] { color: var(--fce-quick-input-control-accent); }
 /* Tint the primary action more strongly than the surrounding frame. */
 .fce-quick-input-footer button.mod-cta {
   display: inline-flex;
@@ -2720,6 +2734,18 @@ html.fce-quick-input-window .modal-container .modal {
 .fce-quick-input-footer .fce-quick-input-folder > svg,
 .fce-quick-input-footer .fce-quick-input-boxes > svg { flex: none; }
 .fce-quick-input-footer .fce-quick-input-folder.is-invalid { color: var(--text-error); }
+.fce-quick-input-footer .fce-quick-input-template[aria-pressed="true"] {
+  color: var(--text-accent);
+  background-color: var(--background-modifier-hover);
+}
+.fce-quick-input .fce-quick-input-footer .fce-quick-input-template[aria-pressed="true"] {
+  color: var(--fce-quick-input-control-accent);
+  background-color: var(--fce-quick-input-control-hover);
+}
+.fce-quick-input .fce-quick-input-footer .fce-quick-input-template[aria-pressed="true"]:hover {
+  background-color: var(--fce-quick-input-control-active);
+}
+.fce-quick-input .fce-quick-input-choice-count { background: var(--fce-quick-input-control-active); }
 .fce-quick-input-choice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fce-quick-input-choice-count {
   min-width: 16px;

@@ -6,6 +6,7 @@ import {
   NOTE_TEMPLATE_TIME_FORMATS,
   QUICK_INPUT_DUPLICATE_TITLES,
   type NoteInputResult,
+  type QuickInputTemplateDraft,
   type TemplateNoteCursor,
   type TemplateNoteResult,
   type NoteTemplateDefinition,
@@ -69,6 +70,16 @@ export class NoteCreationService {
   }
 
   defaultQuickInputTitle(now: Date): string { return `quick-note ${this.format(now, "YYYY-MM-DD HH-mm-ss")}`; }
+
+  /** Prepare the complete template draft without creating or modifying a vault note. */
+  async readQuickInputTemplate(template: NoteTemplateDefinition, now = new Date()): Promise<QuickInputTemplateDraft> {
+    const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));
+    const content = this.replaceTemplateVariables(await this.readLatest(target.file), target);
+    this.validateTemplateTarget(target);
+    const folderPath = this.requireFolder(target.template.targetFolderPath!);
+    const title = target.path.slice(folderPath ? folderPath.length + 1 : 0, -3);
+    return { content, title, folderPath };
+  }
 
   async createTemplateNote(template: NoteTemplateDefinition, now = new Date()): Promise<TemplateNoteResult> {
     const target = this.resolveTemplateTarget({ ...template }, new Date(now.getTime()));

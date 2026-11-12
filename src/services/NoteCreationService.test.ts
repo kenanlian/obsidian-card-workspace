@@ -738,3 +738,35 @@ it("allows reselection when a folder disappears while its unique path is queued"
   const result = await f.service.submitQuickInput({ ...sent, target: { folderPath: "", title: "Draft" } });
   expect(result.file.path).toBe("Draft.md");
 });
+
+
+describe("quick input template content", () => {
+  it("expands title, properties and body with one time snapshot and adopts the template destination", async () => {
+    const f = fixture();
+    const definition = template();
+    f.folder("Notes");
+    f.file(definition.filePath, "---\ncreated: {{date}}\n---\n{{time}} / {{date:YYYY/MM/DD}} {{time:HH:mm}} {{date:}}");
+    expect(await f.service.readQuickInputTemplate(definition, now)).toEqual({ content: "---\ncreated: 2026-10-12\n---\n14-05-09 / 2026/10/12 14:05 2026-10-12", title: TITLE, folderPath: "Notes" });
+    expect(f.vault.create).not.toHaveBeenCalled();
+    expect(f.vault.process).not.toHaveBeenCalled();
+  });
+  it("prefers unsaved template text and rejects missing or non-Markdown files", async () => {
+    const f = fixture(), definition = template();
+    f.folder("Notes");
+    const file = f.file(definition.filePath, "old");
+    f.open(file, "unsaved {{date}}");
+    expect(await f.service.readQuickInputTemplate(definition, now)).toEqual({ content: "unsaved 2026-10-12", title: TITLE, folderPath: "Notes" });
+    expect(f.vault.cachedRead).not.toHaveBeenCalled();
+    await expect(f.service.readQuickInputTemplate(template({ filePath: "missing.md" }), now)).rejects.toMatchObject({ code: "missing-template" });
+    f.file("bad.canvas");
+    await expect(f.service.readQuickInputTemplate(template({ filePath: "bad.canvas" }), now)).rejects.toMatchObject({ code: "invalid-template" });
+  });
+  it("drops a template deleted while its content is being read", async () => {
+    const f = templateFixture();
+    let resolve!: (value: string) => void;
+    f.vault.cachedRead.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const reading = f.service.readQuickInputTemplate(template(), now);
+    f.entries.delete(template().filePath); resolve("stale");
+    await expect(reading).rejects.toMatchObject({ code: "missing-template" });
+  });
+});

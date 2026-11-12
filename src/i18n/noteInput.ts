@@ -1,7 +1,7 @@
 import type { UiLanguage } from "./types";
 
 export interface NoteInputStrings {
-  visibilityNames: Record<"title" | "folder" | "boxes" | "tags" | "properties", string>;
+  visibilityNames: Record<"title" | "folder" | "boxes" | "tags" | "properties" | "template", string>;
   visibilityDesc: string;
   title: string;
   boxes: string;
@@ -54,6 +54,13 @@ export interface NoteInputStrings {
   quickInput: string;
   quickInputCommand: string;
   quickInputHeading: string;
+  quickInputTemplateName: string;
+  quickInputTemplateDesc: string;
+  chooseTemplate: string;
+  noTemplate: string;
+  replaceDraftTitle: string;
+  replaceDraftBody: string;
+  replaceDraft: string;
   quickInputFolderName: string;
   quickInputFolderDesc: string;
   quickInputDuplicateTitleName: string;
@@ -114,7 +121,7 @@ export interface NoteInputStrings {
 
 export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
   en: {
-    visibilityNames: { title: "Show title", folder: "Show folder selector", boxes: "Show card box selector", tags: "Show add tags", properties: "Show add property" },
+    visibilityNames: { title: "Show title", folder: "Show folder selector", boxes: "Show card box selector", tags: "Show add tags", properties: "Show add property", template: "Show template selector" },
     visibilityDesc: "These switches apply to new quick input windows. Hidden controls do not disable their capabilities.",
     title: "Title", boxes: "Card boxes", boxesEmpty: "No card boxes yet", noChoiceMatches: "No matches",
     addTags: "Add tags", addProperty: "Add property", appendNote: "Append",
@@ -144,6 +151,12 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateTargetConflict: "The target note cannot be the template itself.", invalidFilename: "Enter a valid Markdown filename.",
     create: "Create", cancel: "Cancel",
     quickInput: "Quick input", quickInputCommand: "Open quick input", quickInputHeading: "Quick input",
+    quickInputTemplateName: "Default quick input template",
+    quickInputTemplateDesc: "New drafts use this template's title, content, properties and save folder. Choose No template to start blank.",
+    chooseTemplate: "Choose a template…", noTemplate: "No template",
+    replaceDraftTitle: "Replace draft content?",
+    replaceDraftBody: "Choosing a template replaces this draft's title, content, properties and save folder. Your current edits will be discarded.",
+    replaceDraft: "Replace",
     quickInputFolderName: "Quick input folder",
     quickInputFolderDesc: "New notes are saved here unless a draft picks another folder. Leave empty for the vault root. Without a title, each send creates a separate note, e.g. quick-note 2026-10-17 14-30-05.md.",
     quickInputDuplicateTitleName: "When the title already exists",
@@ -188,7 +201,7 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     sent: (path) => `Sent to ${path}`, noteCreated: (path) => `Created ${path}`, noteOpened: (path) => `Opened ${path}`,
   },
   zh: {
-    visibilityNames: { title: "显示标题", folder: "显示文件夹选择", boxes: "显示卡片盒选择", tags: "显示标签添加", properties: "显示属性添加" },
+    visibilityNames: { title: "显示标题", folder: "显示文件夹选择", boxes: "显示卡片盒选择", tags: "显示标签添加", properties: "显示属性添加", template: "显示模板选择" },
     visibilityDesc: "以下开关仅影响之后打开的快速输入窗口。隐藏入口不关闭相应能力。",
     title: "标题", boxes: "卡片盒", boxesEmpty: "尚未创建卡片盒", noChoiceMatches: "没有匹配项",
     addTags: "添加标签", addProperty: "添加属性", appendNote: "追加",
@@ -217,6 +230,12 @@ export const noteInputStrings: Record<UiLanguage, NoteInputStrings> = {
     templateTargetConflict: "目标笔记不能是模板文件本身。", invalidFilename: "请输入有效的 Markdown 文件名。",
     create: "创建", cancel: "取消", quickInput: "快速输入", quickInputCommand: "打开快速输入",
     quickInputHeading: "快速输入",
+    quickInputTemplateName: "快速输入默认模板",
+    quickInputTemplateDesc: "新草稿自动使用模板的标题、正文、属性和保存文件夹。默认不使用模板。",
+    chooseTemplate: "选择模板…", noTemplate: "不使用模板",
+    replaceDraftTitle: "替换草稿内容？",
+    replaceDraftBody: "选择模板会替换草稿的标题、正文、属性和保存文件夹，当前编辑将被丢弃。",
+    replaceDraft: "替换",
     quickInputFolderName: "快速输入文件夹",
     quickInputFolderDesc: "新笔记默认保存在此文件夹，草稿中可另选。留空表示仓库根目录。不填写标题时，每次发送都会新建一篇独立笔记，文件名如 quick-note 2026-10-17 14-30-05.md。",
     quickInputDuplicateTitleName: "标题与已有笔记同名时",

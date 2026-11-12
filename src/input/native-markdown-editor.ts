@@ -12,6 +12,7 @@ import { createDraftPropertiesEditor, type DraftPropertiesEditor, type NativePro
 
 export interface NativeMarkdownEditor {
   getValue(): string;
+  setValue(value: string): void;
   focus(): void;
   flush(): void;
   setReadOnly(value: boolean): void;
@@ -127,6 +128,7 @@ export function createNativeMarkdownEditor(options: {
   const Base = capabilities.Editor;
   let propertiesReadOnly = false;
   let allReadOnly = false;
+  let replacingDocument = false;
   const editable = new Compartment();
   const propertiesExtension = new Compartment();
   class DraftEditor extends Base {
@@ -140,7 +142,7 @@ export function createNativeMarkdownEditor(options: {
         Prec.highest(editable.of([EditorState.readOnly.of(false), EditorView.editable.of(true), EditorView.contentAttributes.of({ contenteditable: "true" })])),
         propertiesExtension.of([]),
         EditorState.transactionFilter.of((transaction) => {
-          if (!transaction.docChanged || (!propertiesReadOnly && !allReadOnly)) return transaction;
+          if (replacingDocument || !transaction.docChanged || (!propertiesReadOnly && !allReadOnly)) return transaction;
           if (allReadOnly) return [];
           const source = draftFrontmatterSource(transaction.startState.doc.toString());
           let blocked = false;
@@ -222,6 +224,14 @@ export function createNativeMarkdownEditor(options: {
     const editor = native;
     return {
       getValue: () => editor.editor.getValue(),
+      setValue: (value) => {
+        if (disposed) return;
+        replacingDocument = true;
+        try {
+          editor.editor.cm.dispatch({ changes: { from: 0, to: editor.editor.cm.state.doc.length, insert: value },
+            selection: { anchor: value.length }, scrollIntoView: true });
+        } finally { replacingDocument = false; }
+      },
       focus: () => {
         if (disposed) return;
         const cm = editor.editor.cm;

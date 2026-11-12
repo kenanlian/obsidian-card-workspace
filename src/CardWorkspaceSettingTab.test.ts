@@ -114,15 +114,15 @@ function renderedRow(tab: CardWorkspaceSettingTab, name: string): Setting {
 describe("settings pages", () => {
   beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
 
-  it.each(["en", "zh"])("keeps all 61 settings in seven searchable declarative pages (%s)", language => {
+  it.each(["en", "zh"])("keeps all 63 settings in seven searchable declarative pages (%s)", language => {
     const plugin = createPlugin({}, language);
     const tab = createTab(plugin);
     const strings = getSettingTabStrings(language as "en" | "zh");
     const pages = pagesOf(tab);
     expect(pages.map(page => page.name)).toEqual(Object.values(strings.pages).map(page => page.name));
-    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 13, 17]);
+    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 15, 17]);
     const rows = pages.flatMap(page => rowsOfPage(tab, page.name));
-    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(61);
+    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(63);
     expect(pages.every(page => page.type === "page" && page.desc && page.items && !page.page)).toBe(true);
     expect(rows.every(row => row.name && row.searchable !== false)).toBe(true);
     expect(attachFolderInputSuggest).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe("settings pages", () => {
     const tab = createTab(plugin);
     expect(pagesOf(tab)).toHaveLength(7);
     const rows = pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name));
-    expect(rows).toHaveLength(56);
+    expect(rows).toHaveLength(58);
     for (const key of ["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]) expect(rowFor(tab, key)).toBeUndefined();
     expect(rowFor(tab, "quickInputCornerRadius")).toBeDefined();
     expect(rowFor(tab, "defaultCardOpenBehavior").control).not.toHaveProperty("options.new-window");
@@ -318,7 +318,10 @@ describe("settings pages", () => {
     expect(settings.hiddenNavSections).toEqual(["favorites", "tags", "properties", "boxes", "links", "templates"]);
     expect(settings.hiddenFolderPaths).toEqual(["Keep"]);
     await tab.setControlValue("quickInputVisibility.folder", false);
-    expect(settings.quickInputVisibility).toEqual({ title: false, folder: false, boxes: false, tags: true, properties: true });
+    expect(settings.quickInputVisibility).toEqual({ title: false, folder: false, boxes: false, tags: true, properties: true, template: false });
+    expect(tab.getControlValue("quickInputVisibility.template")).toBe(false);
+    await tab.setControlValue("quickInputVisibility.template", true);
+    expect(tab.getControlValue("quickInputVisibility.template")).toBe(true);
     await tab.setControlValue("quickInputFolderPath", "Inbox");
     await tab.setControlValue("quickInputDuplicateTitle", "number");
     await tab.setControlValue("quickInputInsertPosition", "start");
@@ -446,5 +449,81 @@ describe("settings pages", () => {
     expect(plugin.saveSettings).toHaveBeenCalledWith({ cardImageMode: "right" });
     expect(mockState.requireApiVersion).toHaveBeenCalledWith("1.13.0");
     expect(tab.refreshDomState).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("quick input default template setting", () => {
+  beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
+  it("offers named templates and persists a selection or no-template through the shared setting path", async () => {
+    const plugin = createPlugin({ noteTemplates: [{ id: "daily", name: "日记", filePath: "Templates/daily.md" }] });
+    const tab = createTab(plugin);
+    expect(rowFor(tab, "quickInputTemplateId").control).toMatchObject({ type: "dropdown", options: { "": "No template", daily: "日记" } });
+    expect(tab.getControlValue("quickInputTemplateId")).toBe("");
+    await tab.setControlValue("quickInputTemplateId", "daily");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputTemplateId: "daily" });
+    await tab.setControlValue("quickInputTemplateId", "");
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ quickInputTemplateId: null });
+    const calls = plugin.saveSettings.mock.calls.length;
+    await tab.setControlValue("quickInputTemplateId", "missing");
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(calls);
+    mockState.requireApiVersion.mockReturnValue(false); legacyOpen(tab, "Quick input");
+    expect(renderedRow(tab, "Default quick input template").dropdowns[0]!.options).toEqual([{ value: "", label: "No template" }, { value: "daily", label: "日记" }]);
+    tab.hide();
+  });
+  it("keeps a missing default visible so it can be cleared", () => {
+    const tab = createTab(createPlugin({ quickInputTemplateId: "missing" }));
+    expect(rowFor(tab, "quickInputTemplateId").control).toMatchObject({ options: { "": "No template", missing: "Template unavailable" } });
+    expect(tab.getControlValue("quickInputTemplateId")).toBe("missing");
+  });
+});
+
+
+describe("cached native template options", () => {
+  beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
+  const cachedOptions = (tab: CardWorkspaceSettingTab) => {
+    const rows = (tab.settingItems as SettingDefinitionPage[]).flatMap(page =>
+      (page.items as SettingDefinitionGroup[]).flatMap(group => group.items ?? [])) as SettingDefinition[];
+    return rows.find(row => row.control?.key === "quickInputTemplateId")!.control;
+  };
+  it("replaces the startup cache after persisted templates load, without reopening settings", () => {
+    const plugin = createPlugin(); const settings = plugin.getSettings();
+    plugin.getSettings.mockImplementation(() => settings);
+    const tab = createTab(plugin);
+    // Obsidian calls update() as soon as addSettingTab() registers the tab.
+    tab.update();
+    expect(cachedOptions(tab)).toMatchObject({ options: { "": "No template" } });
+    settings.noteTemplates = [{ id: "daily", name: "日记", filePath: "Templates/daily.md" }];
+    tab.refreshTemplateOptions();
+    expect(cachedOptions(tab)).toMatchObject({ options: { "": "No template", daily: "日记" } });
+    expect(tab.update).toHaveBeenCalledTimes(2);
+    tab.refreshTemplateOptions();
+    expect(tab.update).toHaveBeenCalledTimes(2);
+  });
+  it("refreshes renamed/deleted choices and missing-default recovery without rebuilding for format changes", () => {
+    const plugin = createPlugin({ noteTemplates: [{ id: "daily", name: "日记", filePath: "Templates/daily.md" }], quickInputTemplateId: "daily" });
+    const settings = plugin.getSettings(); plugin.getSettings.mockImplementation(() => settings);
+    const tab = createTab(plugin); tab.update();
+    settings.noteTemplates = [{ id: "daily", name: "日记", filePath: "Templates/moved.md", dateFormat: "YYYY" }];
+    tab.refreshTemplateOptions(); expect(tab.update).toHaveBeenCalledTimes(1);
+    settings.noteTemplates = [{ id: "daily", name: "每日记录", filePath: "Templates/moved.md" }];
+    tab.refreshTemplateOptions();
+    expect(cachedOptions(tab)).toMatchObject({ options: { "": "No template", daily: "每日记录" } });
+    settings.noteTemplates = []; tab.refreshTemplateOptions();
+    expect(cachedOptions(tab)).toMatchObject({ options: { "": "No template", daily: "Template unavailable" } });
+    settings.quickInputTemplateId = null; tab.refreshTemplateOptions();
+    expect(cachedOptions(tab)).toMatchObject({ options: { "": "No template" } });
+  });
+  it("keeps legacy hosts compatible and reads loaded templates when the page opens", () => {
+    mockState.requireApiVersion.mockReturnValue(false);
+    const plugin = createPlugin(); const settings = plugin.getSettings();
+    plugin.getSettings.mockImplementation(() => settings);
+    const tab = createTab(plugin);
+    Object.defineProperty(tab, "update", { value: undefined });
+    settings.noteTemplates = [{ id: "daily", name: "日记", filePath: "Templates/daily.md" }];
+    expect(() => tab.refreshTemplateOptions()).not.toThrow();
+    legacyOpen(tab, "Quick input");
+    expect(renderedRow(tab, "Default quick input template").dropdowns[0]!.options).toEqual([{ value: "", label: "No template" }, { value: "daily", label: "日记" }]);
+    tab.hide();
   });
 });
