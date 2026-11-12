@@ -52,9 +52,6 @@
   --fce-card-hover-elevation: 0 4px 10px rgba(0, 0, 0, 0.16);
   --fce-search-height: 30px;
   --fce-title-line-height: 1.35;
-  /* file-text's outline sits at x=4 on the 24 canvas. Pull the box left by that
-     inset so the visible edge meets the preview column. */
-  --fce-card-file-ink-inset: calc(var(--icon-size, 18px) * 4 / 24 - var(--icon-stroke, 1.75px) / 2);
   --fce-preview-line-height: 1.5;
   --fce-preview-line-clamp: 5;
   --fce-preview-context-spacing: 4px;
@@ -1718,7 +1715,6 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   justify-content: center;
   color: var(--fce-text-muted);
   opacity: 0.7;
-  margin-inline-start: calc(-1 * var(--fce-card-file-ink-inset));
 }
 
 .folder-card-view .fce-card h4 {
