@@ -1,7 +1,16 @@
 import type { SortDirection } from "./settings";
 import { normalizePropertyKey } from "./property-filter-settings";
 
-export type GroupDimension = "none" | "folder" | "tag" | "box-rule" | "task" | "property";
+export type GroupDimension = "none" | "folder" | "tag" | "box-rule" | "task" | "property" | "ctime" | "mtime";
+
+export const TIME_GROUP_GRANULARITIES = ["day", "week", "biweek", "month", "year", "relative"] as const;
+export type TimeGroupGranularity = typeof TIME_GROUP_GRANULARITIES[number];
+export function isTimeGroupDimension(value: unknown): value is "ctime" | "mtime" {
+  return value === "ctime" || value === "mtime";
+}
+export function isTimeGroupGranularity(value: unknown): value is TimeGroupGranularity {
+  return TIME_GROUP_GRANULARITIES.some((entry) => entry === value);
+}
 
 export type GroupOrderBy = "default" | "name" | "count";
 
@@ -16,6 +25,8 @@ export interface GroupSpec {
   dimension: GroupDimension;
   /** Present only for property grouping. */
   propertyKey?: string;
+  /** Present only for creation/edit time grouping; defaults to calendar day. */
+  timeGranularity?: TimeGroupGranularity;
   orderBy: GroupOrderBy;
   orderDirection: SortDirection;
 }
@@ -27,6 +38,8 @@ export const DEFAULT_GROUP_SPEC: GroupSpec = {
 };
 
 const KNOWN_GROUP_DIMENSIONS: ReadonlySet<string> = new Set<GroupDimension>([
+  "ctime",
+  "mtime",
   "none",
   "folder",
   "tag",
@@ -71,6 +84,7 @@ export function normalizeGroupSpec(value: unknown): GroupSpec {
   return {
     dimension: dimension === "property" && propertyKey === null ? "none" : dimension,
     ...(propertyKey === null ? {} : { propertyKey }),
+    ...(isTimeGroupDimension(dimension) ? { timeGranularity: isTimeGroupGranularity(value.timeGranularity) ? value.timeGranularity : "day" as const } : {}),
     orderBy: normalizeGroupOrderBy(value.orderBy),
     orderDirection: normalizeGroupOrderDirection(value.orderDirection),
   };

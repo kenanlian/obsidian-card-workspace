@@ -12,6 +12,7 @@ export type GroupHeaderPropertyValue =
  * `text` is the kind-less fallback for a card missing from the bucket map.
  */
 export type GroupHeaderContent =
+  | { readonly kind: "time"; readonly field: "ctime" | "mtime"; readonly text: string }
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "folder"; readonly name: string; readonly path: string }
   | { readonly kind: "tags"; readonly tags: readonly string[] }
@@ -59,6 +60,9 @@ export function resolveGroupHeaderParts(
   strings: SortGroupStrings,
 ): GroupHeaderParts {
   switch (header.kind) {
+    case "time":
+      return { dimension: { icon: header.field === "ctime" ? "file-plus-2" : "file-clock",
+        label: header.field === "ctime" ? strings.dimensionCtime : strings.dimensionMtime }, chips: [{ text: header.text }] };
     case "folder":
       return {
         dimension: { icon: "folder", label: strings.dimensionFolder },

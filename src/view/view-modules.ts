@@ -1,3 +1,4 @@
+import { TimeGroupController } from "./controllers/TimeGroupController";
 import { CardDropActions } from "./actions/card-drop-actions";
 import { IconActions } from "./actions/icon-actions";
 import { CardBackgroundActions } from "./actions/card-background-actions";
@@ -74,6 +75,7 @@ export interface ViewModuleHost {
 }
 
 export interface ViewModules {
+  timeGroup: TimeGroupController;
   cardDropActions: CardDropActions;
   iconActions: IconActions;
   projection: ProjectionController;
@@ -488,9 +490,20 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     setSelection: paths => { bulk.reconcileSelectionToOrderedPaths(paths); host.publishSelection(); },
   });
 
+  const timeGroup = new TimeGroupController(context, {
+    getGroup: resolveGroupSpec,
+    isSearchActive: () => search.getQuery().trim().length > 0,
+    isSettled: () => scopeController.isScopeSettled(),
+    refresh: () => {
+      projection.reprojectCards();
+      bulk.reconcileToVisibleCards();
+      host.publishGroups("cards", "projection", "bulk");
+    },
+  });
   gate.markAssembled();
 
   return {
+    timeGroup,
     cardDropActions,
     iconActions,
     projection,

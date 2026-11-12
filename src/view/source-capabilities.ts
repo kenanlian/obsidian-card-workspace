@@ -33,7 +33,7 @@ export interface SourceCapabilities {
 }
 
 /** Grouping dimensions offered in folder scope; `box-rule` needs a box's rule list. */
-export const FOLDER_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "task", "property"];
+export const FOLDER_GROUP_DIMENSIONS: readonly GroupDimension[] = ["none", "folder", "tag", "task", "property", "ctime", "mtime"];
 
 /** Grouping dimensions offered in box scope, including the box's own rules. */
 export const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = [
@@ -43,6 +43,8 @@ export const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = [
   "task",
   "property",
   "box-rule",
+  "ctime",
+  "mtime",
 ];
 
 export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities {

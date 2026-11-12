@@ -651,3 +651,24 @@ describe("arrangeCardsByGroup — degraded inputs", () => {
     expect(result.segments[result.segments.length - 1].isMissingBucket).toBe(true);
   });
 });
+
+describe("time grouping integration", () => {
+  it("buckets by the chosen timestamp and orders groups while retaining member order", () => {
+    const day = (n: number) => new Date(2026, 10, n, 12).getTime();
+    const cards = [createCard("pinned.md", { ctime: day(10), mtime: day(12) }),
+      createCard("ordinary.md", { ctime: day(10), mtime: day(11) }),
+      createCard("older.md", { ctime: day(9), mtime: day(12) }),
+      createCard("unknown.md", { ctime: NaN, mtime: NaN })];
+    const spec: GroupSpec = { dimension: "ctime", timeGranularity: "day", orderBy: "default", orderDirection: "desc" };
+    const buckets = buildGroupBuckets(createApp(), cards, spec, [], LABELS, STRINGS, day(12));
+    const result = arrangeCardsByGroup(cards, buckets, spec, new Set());
+    expect(result.cards.map(card => card.path)).toEqual(["pinned.md", "ordinary.md", "older.md", "unknown.md"]);
+    expect(result.segments.map(group => group.count)).toEqual([2, 1, 1]);
+    const collapsed = arrangeCardsByGroup(cards, buckets, spec, new Set([result.segments[0].key]));
+    expect(collapsed.cards.map(card => card.path)).toEqual(["older.md", "unknown.md"]);
+    expect(collapsed.segments[0]).toMatchObject({ count: 2, visibleCount: 0 });
+    const edited = buildGroupBuckets(createApp(), cards, { ...spec, dimension: "mtime" }, [], LABELS, STRINGS, day(12));
+    expect(edited.get("pinned.md")?.key).toBe(edited.get("older.md")?.key);
+    expect(edited.get("ordinary.md")?.key).not.toBe(edited.get("older.md")?.key);
+  });
+});

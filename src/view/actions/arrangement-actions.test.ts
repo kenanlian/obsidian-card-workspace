@@ -203,6 +203,20 @@ describe("ArrangementActions", () => {
     ]);
   });
 
+  it("saves grain-only changes, rejects invalid grains, and keeps box settings local", async () => {
+    const global = createHarness();
+    await global.actions.onGroupChange({ dimension: "mtime", timeGranularity: "week" });
+    await global.actions.onGroupChange({ timeGranularity: "month" });
+    expect(global.getSettings().group).toMatchObject({ dimension: "mtime", timeGranularity: "month" });
+    await global.actions.onGroupChange({ timeGranularity: "invalid" });
+    expect(global.saveSettings).toHaveBeenCalledTimes(2);
+    const box = createHarness({ scope: createBoxScope("box-1") });
+    await box.actions.onGroupChange({ dimension: "ctime", timeGranularity: "biweek" });
+    expect(box.getBox()?.group).toMatchObject({ dimension: "ctime", timeGranularity: "biweek" });
+    expect(box.getSettings().group.dimension).toBe("none");
+    expect(box.requestUpdate).not.toHaveBeenCalled();
+  });
+
   it("writes global group and Box-local group independently", async () => {
     const globalHarness = createHarness();
     await globalHarness.actions.onGroupChange({ dimension: "folder" });

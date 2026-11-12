@@ -1,5 +1,5 @@
 import type { App, Setting } from "obsidian";
-import { normalizeGroupSpec, type GroupDimension, type GroupOrderBy } from "../../card-grouping-settings";
+import { TIME_GROUP_GRANULARITIES, isTimeGroupDimension, isTimeGroupGranularity, normalizeGroupSpec, type GroupDimension, type GroupOrderBy } from "../../card-grouping-settings";
 import type { UiStrings } from "../../i18n";
 import { normalizePropertyFilterClauses } from "../../property-filter-settings";
 import type { SortDirection, SortField } from "../../settings";
@@ -115,6 +115,8 @@ export class BoxConfigModal extends FormModal {
     let selectedPropertyKey = this.draft.group.propertyKey ?? propertyKeys[0];
     const group = createModalGroup(this.contentEl, { heading: strings.box.groupHeading });
     const dimensionLabels: Record<GroupDimension, string> = {
+      ctime: labels.dimensionCtime,
+      mtime: labels.dimensionMtime,
       none: labels.dimensionNone,
       folder: labels.dimensionFolder,
       tag: labels.dimensionTag,
@@ -126,9 +128,13 @@ export class BoxConfigModal extends FormModal {
       dimension !== "property" || propertyKeys.length > 0,
     );
     let propertyRow: Setting;
+    let timeRow: Setting;
+    let timeDropdown: import("obsidian").DropdownComponent;
     let orderByRow: Setting;
     let orderDirectionRow: Setting;
     const refreshVisibility = (): void => {
+      timeDropdown.setValue(this.draft.group.timeGranularity ?? "day");
+      timeRow.settingEl.style.display = isTimeGroupDimension(this.draft.group.dimension) ? "" : "none";
       propertyRow.settingEl.style.display = this.draft.group.dimension === "property" ? "" : "none";
       const orderDisplay = this.draft.group.dimension === "none" ? "none" : "";
       orderByRow.settingEl.style.display = orderDisplay;
@@ -165,6 +171,17 @@ export class BoxConfigModal extends FormModal {
           if (this.draft.group.dimension !== "property" || !propertyKeys.includes(key)) return;
           selectedPropertyKey = key;
           this.draft = { ...this.draft, group: { ...this.draft.group, propertyKey: key } };
+        });
+      });
+    });
+    group.addSetting((setting) => {
+      timeRow = setting;
+      setting.setName(labels.timeGranularity).addDropdown((dropdown) => {
+        timeDropdown = dropdown;
+        for (const grain of TIME_GROUP_GRANULARITIES) dropdown.addOption(grain, labels.timeGranularities[grain]);
+        dropdown.setValue(this.draft.group.timeGranularity ?? "day").onChange((value) => {
+          if (!isTimeGroupDimension(this.draft.group.dimension) || !isTimeGroupGranularity(value)) return;
+          this.draft = { ...this.draft, group: { ...this.draft.group, timeGranularity: value } };
         });
       });
     });

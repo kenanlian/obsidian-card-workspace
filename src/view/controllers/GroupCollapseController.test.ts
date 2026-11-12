@@ -8,6 +8,14 @@ const ARCHIVE = createFolderScope("archive", true);
 const BOX = createBoxScope("box-1");
 
 describe("GroupCollapseController", () => {
+  it("isolates time collapse by field and granularity", () => {
+    const controller = new GroupCollapseController();
+    const spec = { dimension: "mtime" as const, timeGranularity: "day" as const, orderBy: "default" as const, orderDirection: "asc" as const };
+    controller.toggle(NOTES, spec, "today");
+    expect(controller.getCollapsedKeys(NOTES, { ...spec, timeGranularity: "month" }).size).toBe(0);
+    expect(controller.getCollapsedKeys(NOTES, { ...spec, dimension: "ctime" }).size).toBe(0);
+    expect(controller.getCollapsedKeys(NOTES, spec).has("today")).toBe(true);
+  });
   it("keeps collapsed property groups separate for each property key", () => {
     const controller = new GroupCollapseController();
     const scope = createFolderScope("notes", true);

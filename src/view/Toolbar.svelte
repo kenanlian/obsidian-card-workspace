@@ -29,6 +29,7 @@
   interface GroupChangePayload {
     dimension: string;
     propertyKey?: string;
+    timeGranularity?: import("../card-grouping-settings").TimeGroupGranularity;
     orderBy: string;
     orderDirection: string;
   }
@@ -373,6 +374,7 @@
         onSelectSort: (field) => applySort(field, sortDirection),
         onSelectDirection: (direction) => applySort(sortField, direction),
         onSelectDimension: (dimension) => applyGroupSpec({ ...group, dimension }),
+        onSelectTime: (dimension, timeGranularity) => applyGroupSpec({ ...group, dimension, timeGranularity }),
         onSelectProperty: (propertyKey) => applyGroupSpec({ ...group, dimension: "property", propertyKey }),
         onSelectOrderBy: (orderBy) => applyGroupSpec({ ...group, orderBy }),
         onSelectOrderDirection: (orderDirection) => applyGroupSpec({ ...group, orderDirection }),
@@ -465,12 +467,12 @@
   }
 
   function applyGroupSpec(next: GroupSpec): void {
-    const { dimension, orderBy, orderDirection, propertyKey } = next;
-    if (dimension === group.dimension && propertyKey === group.propertyKey && orderBy === group.orderBy && orderDirection === group.orderDirection) {
+    const { dimension, orderBy, orderDirection, propertyKey, timeGranularity } = next;
+    if (timeGranularity === group.timeGranularity && dimension === group.dimension && propertyKey === group.propertyKey && orderBy === group.orderBy && orderDirection === group.orderDirection) {
       return;
     }
 
-    onGroupChange?.({ dimension, ...(propertyKey ? { propertyKey } : {}), orderBy, orderDirection });
+    onGroupChange?.({ dimension, timeGranularity, ...(propertyKey ? { propertyKey } : {}), orderBy, orderDirection });
   }
 
   function emitGroupCollapseCommand(command: string): void {

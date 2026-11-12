@@ -743,6 +743,8 @@ describe("FolderCardView host contract", () => {
       "tag",
       "task",
       "property",
+      "ctime",
+      "mtime",
     ]);
 
     Object.assign(readSettingsObject(plugin), { boxes: [createBox()], activeBoxId: "box-1" });
@@ -756,6 +758,8 @@ describe("FolderCardView host contract", () => {
       "task",
       "property",
       "box-rule",
+      "ctime",
+      "mtime",
     ]);
   });
 

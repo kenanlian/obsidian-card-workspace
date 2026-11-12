@@ -7,7 +7,8 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 function runtimeKey(scope: CardScope, spec: GroupSpec | GroupDimension): string {
   const dimension = typeof spec === "string" ? spec : spec.dimension;
   return JSON.stringify([scopeIdentity(scope), dimension,
-    dimension === "property" && typeof spec !== "string" ? spec.propertyKey : null]);
+    dimension === "property" && typeof spec !== "string" ? spec.propertyKey : null,
+    (dimension === "ctime" || dimension === "mtime") && typeof spec !== "string" ? spec.timeGranularity ?? "day" : null]);
 }
 
 /**

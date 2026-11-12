@@ -213,17 +213,32 @@ describe("BoxConfigModal rule names", () => {
 });
 
 describe("BoxConfigModal grouping", () => {
+  it.each(["en", "zh"] as const)("saves time granularity and shows it only for time grouping in %s", async (locale) => {
+    const { onConfirm } = openModal(createBox(), locale);
+    const ui = getUiStrings(locale);
+    const [dimension, , grain] = requireGroup(contentOf(), ui.box.groupHeading).settings;
+    expect(grain?.settingEl.style.display).toBe("none");
+    dimension?.dropdowns[0]?.select("ctime");
+    expect(grain?.settingEl.style.display).toBe("");
+    expect(grain?.dropdowns[0]?.value).toBe("day");
+    grain?.dropdowns[0]?.select("biweek");
+    dimension?.dropdowns[0]?.select("mtime");
+    expect(grain?.dropdowns[0]?.value).toBe("biweek");
+    await clickButton(ui.box.done); await flush();
+    expect(onConfirm.mock.calls[0]?.[0].group).toMatchObject({ dimension: "mtime", timeGranularity: "biweek" });
+  });
   it.each(["en", "zh"] as const)("edits box grouping in %s without mutating the source or rebuilding the body", async (locale) => {
     const { box, onConfirm } = openModal(createBox(), locale, ["status", "priority"]);
     const ui = getUiStrings(locale);
     const group = requireGroup(contentOf(), ui.box.groupHeading);
-    const [dimension, property, orderBy, orderDirection] = group.settings;
+    const [dimension, property, , orderBy, orderDirection] = group.settings;
 
     expect(dimension?.name).toBe(ui.sortGroup.groupHeading);
     expect(dimension?.dropdowns[0]?.value).toBe("box-rule");
     expect(dimension?.dropdowns[0]?.options.map((option) => option.label)).toEqual([
       ui.sortGroup.dimensionNone, ui.sortGroup.dimensionFolder, ui.sortGroup.dimensionTag,
       ui.sortGroup.dimensionTask, ui.sortGroup.dimensionProperty, ui.sortGroup.dimensionBoxRule,
+      ui.sortGroup.dimensionCtime, ui.sortGroup.dimensionMtime,
     ]);
     expect(property?.settingEl.style.display).toBe("none");
     expect(orderBy?.dropdowns[0]?.value).toBe("name");
@@ -252,7 +267,7 @@ describe("BoxConfigModal grouping", () => {
     const box = createBox();
     box.group = { dimension: "property", propertyKey: "priority", orderBy: "count", orderDirection: "desc" };
     const { onConfirm } = openModal(box, "en", ["status", "priority"]);
-    const [dimension, property, orderBy, orderDirection] = requireGroup(contentOf(), strings.box.groupHeading).settings;
+    const [dimension, property, , orderBy, orderDirection] = requireGroup(contentOf(), strings.box.groupHeading).settings;
 
     expect(property?.dropdowns[0]?.value).toBe("priority");
     dimension?.dropdowns[0]?.select("none");
@@ -271,7 +286,7 @@ describe("BoxConfigModal grouping", () => {
   it("omits property grouping when no properties are enabled and explains how to enable it", () => {
     openModal();
     const row = requireGroup(contentOf(), strings.box.groupHeading).settings[0];
-    expect(row?.dropdowns[0]?.options.map((option) => option.value)).toEqual(["none", "folder", "tag", "task", "box-rule"]);
+    expect(row?.dropdowns[0]?.options.map((option) => option.value)).toEqual(["none", "folder", "tag", "task", "box-rule", "ctime", "mtime"]);
     expect(row?.desc).toBe(strings.sortGroup.enablePropertyHint);
   });
 

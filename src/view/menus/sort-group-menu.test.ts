@@ -131,6 +131,23 @@ function buildMenu(
 }
 
 describe("buildSortGroupMenu", () => {
+  it("selects both the time field and granularity from submenus and flat fallback", () => {
+    const state = createState({ availableGroupDimensions: ["none", "ctime", "mtime"],
+      group: { dimension: "mtime", timeGranularity: "month", orderBy: "default", orderDirection: "asc" } });
+    const onSelectTime = vi.fn();
+    const deps = createDeps({ onSelectTime });
+    const menu = new MockMenu(true);
+    buildSortGroupMenu(menu.asMenu(), state, deps);
+    // Sort and group share their field names; inspect the item carrying a submenu.
+    const submenu = menu.items.find(item => titleText(item) === "Edited time" && item.submenu)?.submenu;
+    expect(submenu?.items).toHaveLength(6);
+    expect(submenu && itemByTitle(submenu, "Month")?.checked).toBe(true);
+    submenu && itemByTitle(submenu, "Two weeks")?.clickHandler?.();
+    expect(onSelectTime).toHaveBeenLastCalledWith("mtime", "biweek");
+    const flat = new MockMenu(); buildSortGroupMenu(flat.asMenu(), state, deps);
+    itemByTitle(flat, "Created time · Year")?.clickHandler?.();
+    expect(onSelectTime).toHaveBeenLastCalledWith("ctime", "year");
+  });
   it("offers visible source properties in a submenu and a flat fallback", () => {
     const state = createState({ availableGroupDimensions: ["none", "property"],
       visibleGroupProperties: [{ key: "status", label: "Status" }, { key: "priority", label: "Priority" }] });

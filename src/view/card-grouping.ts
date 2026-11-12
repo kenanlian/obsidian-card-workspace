@@ -1,3 +1,4 @@
+import { resolveTimeBucket } from "./time-grouping";
 import type { App } from "obsidian";
 import type { GroupOrderBy, GroupSpec } from "../card-grouping-settings";
 import type { UiStrings } from "../i18n";
@@ -233,6 +234,7 @@ export function buildGroupBuckets(
   rules: readonly Rule[],
   labels: GroupLabels,
   strings: UiStrings,
+  now: number = Date.now(),
 ): Map<string, GroupBucket> {
   const buckets = new Map<string, GroupBucket>();
   if (spec.dimension === "none") {
@@ -244,6 +246,10 @@ export function buildGroupBuckets(
 
   for (const card of cards) {
     switch (spec.dimension) {
+      case "ctime":
+      case "mtime":
+        buckets.set(card.path, resolveTimeBucket(card[spec.dimension], spec.dimension, spec.timeGranularity ?? "day", strings.sortGroup, now));
+        break;
       case "folder":
         buckets.set(card.path, resolveFolderBucket(card, labels));
         break;

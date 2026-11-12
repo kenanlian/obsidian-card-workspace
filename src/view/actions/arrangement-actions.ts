@@ -1,4 +1,4 @@
-import { normalizeGroupSpec, type GroupSpec } from "../../card-grouping-settings";
+import { isTimeGroupDimension, isTimeGroupGranularity, normalizeGroupSpec, type GroupSpec } from "../../card-grouping-settings";
 import { normalizePropertyKey } from "../../property-filter-settings";
 import type { LinksSortField, SortDirection } from "../../settings";
 import { compareCards } from "../card-sort";
@@ -148,6 +148,7 @@ export class ArrangementActions {
   async onGroupChange(detail: {
     dimension?: unknown;
     propertyKey?: unknown;
+    timeGranularity?: unknown;
     orderBy?: unknown;
     orderDirection?: unknown;
   }): Promise<void> {
@@ -161,6 +162,8 @@ export class ArrangementActions {
     const group: GroupSpec = {
       dimension,
       ...(key === null ? {} : { propertyKey: key }),
+      ...(isTimeGroupDimension(dimension) ? { timeGranularity: isTimeGroupGranularity(detail.timeGranularity)
+        ? detail.timeGranularity : current.timeGranularity ?? "day" as const } : {}),
       orderBy: coerceGroupField("orderBy", detail.orderBy, current.orderBy),
       orderDirection: coerceGroupField("orderDirection", detail.orderDirection, current.orderDirection),
     };
@@ -168,7 +171,7 @@ export class ArrangementActions {
     if (
       group.dimension === current.dimension &&
       group.orderBy === current.orderBy &&
-      group.orderDirection === current.orderDirection && group.propertyKey === current.propertyKey
+      group.orderDirection === current.orderDirection && group.propertyKey === current.propertyKey && group.timeGranularity === current.timeGranularity
     ) {
       return;
     }

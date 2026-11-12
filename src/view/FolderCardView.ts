@@ -578,6 +578,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.modules.images.dispose();
     this.modules.hoverPreview.dispose();
     this.modules.groupCollapse.dispose();
+    this.modules.timeGroup.dispose();
     this.modules.property.dispose();
 
     return {
@@ -797,6 +798,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private publishGroups(...groups: PanelGroup[]): void {
     if (groups.includes("cards") && this.modules?.images.prepareGeneration() && !groups.includes("images")) groups.push("images");
     if (groups.includes("cards")) this.modules?.images.notifyTextReady();
+    if (groups.includes("cards") || groups.includes("projection") || groups.includes("search")) this.modules?.timeGroup.sync();
     const uniqueGroups = new Set(groups);
     this.panelModel.batch((state) => {
       for (const group of uniqueGroups) {

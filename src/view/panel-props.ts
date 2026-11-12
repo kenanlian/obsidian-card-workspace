@@ -121,7 +121,7 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onSortChange: (detail: { field?: unknown; direction?: unknown }) => {
       void view.modules.arrangementActions.onSortChange(detail);
     },
-    onGroupChange: (detail: { dimension?: unknown; propertyKey?: unknown; orderBy?: unknown; orderDirection?: unknown }) => {
+    onGroupChange: (detail: { dimension?: unknown; timeGranularity?: unknown; propertyKey?: unknown; orderBy?: unknown; orderDirection?: unknown }) => {
       void view.modules.arrangementActions.onGroupChange(detail);
     },
     onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => {

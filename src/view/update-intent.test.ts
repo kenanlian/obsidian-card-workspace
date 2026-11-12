@@ -204,6 +204,15 @@ describe("update intent rank", () => {
 });
 
 describe("resolveSettingsUpdateIntent", () => {
+  it("reprojects grain-only changes for global and box grouping", () => {
+    const before = createSettings();
+    before.group = { dimension: "mtime", timeGranularity: "day", orderBy: "default", orderDirection: "asc" };
+    const after = { ...before, group: { ...before.group, timeGranularity: "month" as const } };
+    expect(resolveSettingsUpdateIntent(before, after, createFolderScope("", true))).toBe("reproject");
+    const oldBox = createBox({ group: before.group });
+    const newBox = { ...oldBox, group: after.group };
+    expect(resolveBoxesUpdateIntent([oldBox], [newBox], oldBox.id)).toBe("reproject");
+  });
   it("returns null for semantically equal settings, including rebuilt arrays", () => {
     const previous = createSettings();
     previous.pinnedPaths = ["notes/a.md"];

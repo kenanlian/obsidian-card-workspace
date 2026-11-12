@@ -15,7 +15,7 @@ describe("resolveSourceCapabilities", () => {
       browsePropertyFilter: true,
       supportsIncludeSubfolders: true,
       supportsBoxRuleSeeding: true,
-      groupDimensions: ["none", "folder", "tag", "task", "property"],
+      groupDimensions: ["none", "folder", "tag", "task", "property", "ctime", "mtime"],
     });
   });
 
@@ -26,7 +26,7 @@ describe("resolveSourceCapabilities", () => {
       browsePropertyFilter: true,
       supportsIncludeSubfolders: true,
       supportsBoxRuleSeeding: true,
-      groupDimensions: ["none", "folder", "tag", "task", "property"],
+      groupDimensions: ["none", "folder", "tag", "task", "property", "ctime", "mtime"],
     });
   });
 
@@ -37,7 +37,7 @@ describe("resolveSourceCapabilities", () => {
       browsePropertyFilter: true,
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
-      groupDimensions: ["none", "folder", "tag", "task", "property", "box-rule"],
+      groupDimensions: ["none", "folder", "tag", "task", "property", "box-rule", "ctime", "mtime"],
     });
   });
 
@@ -70,8 +70,8 @@ describe("resolveSourceCapabilities", () => {
   });
 
   it("keeps the group-dimension constants stable and module-level", () => {
-    expect(FOLDER_GROUP_DIMENSIONS).toEqual(["none", "folder", "tag", "task", "property"]);
-    expect(BOX_GROUP_DIMENSIONS).toEqual(["none", "folder", "tag", "task", "property", "box-rule"]);
+    expect(FOLDER_GROUP_DIMENSIONS).toEqual(["none", "folder", "tag", "task", "property", "ctime", "mtime"]);
+    expect(BOX_GROUP_DIMENSIONS).toEqual(["none", "folder", "tag", "task", "property", "box-rule", "ctime", "mtime"]);
 
     // `box-rule` is the only Box-only dimension; both share the rest.
     expect(BOX_GROUP_DIMENSIONS.filter((dimension) => !FOLDER_GROUP_DIMENSIONS.includes(dimension)))

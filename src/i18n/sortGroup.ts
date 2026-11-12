@@ -12,6 +12,11 @@ export interface SortGroupStrings {
   fieldCtime: string;
   fieldName: string;
   fieldReferenceCount: string;
+  dimensionCtime: string;
+  dimensionMtime: string;
+  timeGranularity: string;
+  timeGranularities: Record<"day" | "week" | "biweek" | "month" | "year" | "relative", string>;
+  relativeBuckets: { today: string; yesterday: string; week: string; month: string; older: string; future: string; unknown: string };
   dimensionNone: string;
   dimensionFolder: string;
   dimensionTag: string;
@@ -48,6 +53,11 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     fieldCtime: "Created time",
     fieldName: "Filename",
     fieldReferenceCount: "Reference count",
+    dimensionCtime: "Created time",
+    dimensionMtime: "Edited time",
+    timeGranularity: "Time granularity",
+    timeGranularities: { day: "Day", week: "Week", biweek: "Two weeks", month: "Month", year: "Year", relative: "Relative periods" },
+    relativeBuckets: { today: "Today", yesterday: "Yesterday", week: "Past 7 days", month: "Past 30 days", older: "Older", future: "Future", unknown: "Unknown time" },
     dimensionNone: "None",
     dimensionFolder: "Folder",
     dimensionTag: "Tag",
@@ -83,6 +93,11 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     fieldCtime: "创建时间",
     fieldName: "文件名",
     fieldReferenceCount: "引用次数",
+    dimensionCtime: "创建时间",
+    dimensionMtime: "编辑时间",
+    timeGranularity: "时间粒度",
+    timeGranularities: { day: "按天", week: "按周", biweek: "按双周", month: "按月", year: "按年", relative: "相对时间段" },
+    relativeBuckets: { today: "今天", yesterday: "昨天", week: "过去 7 天", month: "过去 30 天", older: "更早", future: "未来", unknown: "未知时间" },
     dimensionNone: "不分组",
     dimensionFolder: "文件夹",
     dimensionTag: "标签",

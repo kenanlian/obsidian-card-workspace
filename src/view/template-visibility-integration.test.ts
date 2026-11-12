@@ -37,7 +37,8 @@ describe("template visibility view integration", () => {
     } finally { view.cleanupLifecycle(); }
   });
   it("keeps an unpinned links source committed during template editor opening", () => {
-    const { view } = createViewWithFile();
+    const { view, plugin } = createViewWithFile();
+    plugin.getSettings = () => structuredClone(DEFAULT_SETTINGS);
     const source = createLinksScope("source.md", "backlinks");
     (view as unknown as { cardScope: typeof source }).cardScope = source;
     const select = vi.spyOn(view.modules.scopeController, "handleScopeSelection");

@@ -1,6 +1,6 @@
 import type { Menu } from "obsidian";
 
-import type { GroupDimension, GroupOrderBy, GroupSpec } from "../../card-grouping-settings";
+import { TIME_GROUP_GRANULARITIES, type TimeGroupGranularity, type GroupDimension, type GroupOrderBy, type GroupSpec } from "../../card-grouping-settings";
 import type { SortGroupStrings } from "../../i18n";
 import type { SortDirection, LinksSortField } from "../../settings";
 import { getMenuDom } from "../menu-dom";
@@ -25,6 +25,7 @@ export interface SortGroupMenuDeps {
   onSelectSort: (field: LinksSortField) => void;
   onSelectDirection: (direction: SortDirection) => void;
   onSelectDimension: (dimension: GroupDimension) => void;
+  onSelectTime?: (dimension: "ctime" | "mtime", granularity: TimeGroupGranularity) => void;
   onSelectProperty?: (key: string) => void;
   onSelectOrderBy: (orderBy: GroupOrderBy) => void;
   onSelectOrderDirection: (direction: SortDirection) => void;
@@ -136,6 +137,29 @@ export function buildSortGroupMenu(
       disabled: !state.availableGroupDimensions.includes(dimension),
       onSelect: () => deps.onSelectDimension(dimension),
     });
+  }
+  for (const dimension of ["ctime", "mtime"] as const) {
+    if (!state.availableGroupDimensions.includes(dimension)) continue;
+    const title = dimension === "ctime" ? strings.dimensionCtime : strings.dimensionMtime;
+    const icon = dimension === "ctime" ? "file-plus-2" : "file-clock";
+    let flatFallback = false;
+    menu.addItem((item) => {
+      item.setTitle(title).setIcon(icon).setChecked(state.group.dimension === dimension);
+      const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
+      if (submenu && typeof submenu.addItem === "function") {
+        submenu.setUseNativeMenu(false);
+        for (const granularity of TIME_GROUP_GRANULARITIES) {
+          addOptionItem(submenu, { title: strings.timeGranularities[granularity], icon,
+            checked: state.group.dimension === dimension && (state.group.timeGranularity ?? "day") === granularity,
+            disabled: false, onSelect: () => deps.onSelectTime?.(dimension, granularity) });
+        }
+      } else { item.setDisabled(true); flatFallback = true; }
+    });
+    if (flatFallback) for (const granularity of TIME_GROUP_GRANULARITIES) {
+      addOptionItem(menu, { title: `${title} · ${strings.timeGranularities[granularity]}`, icon,
+        checked: state.group.dimension === dimension && (state.group.timeGranularity ?? "day") === granularity,
+        disabled: false, onSelect: () => deps.onSelectTime?.(dimension, granularity) });
+    }
   }
   if (state.availableGroupDimensions.includes("property")) {
     const properties = state.visibleGroupProperties ?? [];
