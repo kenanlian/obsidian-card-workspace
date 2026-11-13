@@ -17,6 +17,7 @@ export interface MappedSearchText {
 }
 
 const COPY_CHUNK = 1024;
+const anchoredRules = new WeakMap<object, RegExp>();
 
 function* copyOffsets(target: number[], source: readonly number[], start: number, end: number) {
   for (let index = start; index < end; index += 1) {
@@ -26,13 +27,19 @@ function* copyOffsets(target: number[], source: readonly number[], start: number
 }
 
 function* join(parts: readonly MappedSearchText[]): Generator<unknown, MappedSearchText> {
+  const nonempty = parts.filter((part) => part.text.length > 0);
+  if (nonempty.length === 1) return { text: nonempty[0].text, offsets: nonempty[0].offsets };
   const text: string[] = [];
-  const offsets: number[] = [];
-  for (const part of parts) {
-    if (!part.text) continue;
-    if (text.length) { text.push(" "); offsets.push(-1); }
+  const length = nonempty.reduce((sum, part) => sum + part.offsets.length, 0) + Math.max(0, nonempty.length - 1);
+  const offsets: number[] = new Array<number>(length);
+  let cursor = 0;
+  for (const part of nonempty) {
+    if (text.length) { text.push(" "); offsets[cursor++] = -1; }
     text.push(part.text);
-    yield* copyOffsets(offsets, part.offsets, 0, part.offsets.length);
+    for (let index = 0; index < part.offsets.length; index += 1) {
+      offsets[cursor++] = part.offsets[index];
+      if ((index + 1) % COPY_CHUNK === 0) yield;
+    }
     yield;
   }
   return { text: text.join(""), offsets };
@@ -71,7 +78,11 @@ function* replace(
 function* ruleMatches(text: string, rule: typeof MARKDOWN_SEARCH_REPLACEMENTS[number]) {
   if (!rule.opener || !rule.boundary) { yield* text.matchAll(rule.pattern); return; }
   if (rule.closer && !text.includes(rule.closer)) return;
-  const anchored = new RegExp(`^(?:${rule.pattern.source})`);
+  let anchored = anchoredRules.get(rule);
+  if (!anchored) {
+    anchored = new RegExp(`^(?:${rule.pattern.source})`);
+    anchoredRules.set(rule, anchored);
+  }
   let cursor = 0;
   while (cursor < text.length) {
     const start = text.indexOf(rule.opener, cursor);
@@ -97,7 +108,14 @@ function* collapse(source: MappedSearchText): Generator<unknown, MappedSearchTex
   // Most joined prose is already collapsed. Preserve its offsets instead of
   // allocating and copying another full character map for every single space.
   if (!/^\s|\s$|[^\S ]| {2}/.test(source.text)) return source;
-  const collapsed = yield* replace(source, /\s+/g, (match) => ({ text: " ", start: match.index ?? 0 }));
+  function* changedWhitespace() {
+    let count = 0;
+    for (const match of source.text.matchAll(/\s+/g)) {
+      if (match[0] !== " ") yield match;
+      else if (++count % 256 === 0) yield;
+    }
+  }
+  const collapsed = yield* replace(source, /\s+/g, (match) => ({ text: " ", start: match.index ?? 0 }), changedWhitespace());
   const left = collapsed.text.startsWith(" ") ? 1 : 0;
   const end = collapsed.text.endsWith(" ") ? collapsed.text.length - 1 : collapsed.text.length;
   return { text: collapsed.text.slice(left, end), offsets: collapsed.offsets.slice(left, end) };
@@ -111,6 +129,7 @@ function captureStart(match: RegExpMatchArray, group: number): number {
 function* normalize(source: MappedSearchText): Generator<unknown, MappedSearchText> {
   if (!/[[#$\\`*_~=>]|^\s*(?:[-+]\s|\d+\.\s)/.test(source.text)) return yield* collapse(source);
   for (const rule of MARKDOWN_SEARCH_REPLACEMENTS) {
+    if (rule.opener ? !source.text.includes(rule.opener) : source.text.search(rule.pattern) < 0) continue;
     source = yield* replace(source, rule.pattern, (match) => {
       const text = searchReplacementText(rule, match);
       const group = rule.aliasGroup && match[rule.aliasGroup] !== undefined ? rule.aliasGroup : rule.group;
@@ -139,6 +158,7 @@ function* readableLine(source: MappedSearchText): Generator<unknown, MappedSearc
 function* expand(source: MappedSearchText): Generator<unknown, MappedSearchText> {
   if (!/[._/\\-]/.test(source.text) || !/[A-Za-z0-9]/.test(source.text)) return { text: "", offsets: [] };
   const parts: MappedSearchText[] = [];
+  let scanned = 0;
   for (const match of source.text.matchAll(/\S+/g)) {
     const token = match[0];
     if (/[._/\\-]/.test(token) && /[A-Za-z0-9]/.test(token)) {
@@ -148,7 +168,7 @@ function* expand(source: MappedSearchText): Generator<unknown, MappedSearchText>
       const expanded = yield* collapse(replaced);
       if (expanded.text && expanded.text !== token) parts.push(expanded);
     }
-    yield;
+    if (++scanned % 256 === 0) yield;
   }
   return yield* join(parts);
 }
@@ -186,9 +206,9 @@ export function* mapMarkdownSearchText(markdown: string): Generator<unknown, Map
       fence = getFenceInfo(trimmed);
       fencedRanges.push(end + 1);
     } else if (fence || trimmed) {
-      const offsets: number[] = [];
+      const offsets: number[] = new Array<number>(lineEnd - start);
       for (let index = start; index < lineEnd; index += 1) {
-        offsets.push(index);
+        offsets[index - start] = index;
         if ((index - start + 1) % COPY_CHUNK === 0) yield;
       }
       const part = { text: line, offsets };
@@ -207,8 +227,12 @@ export function* mapMarkdownSearchText(markdown: string): Generator<unknown, Map
     fencedRanges.push(bounded.length);
     yield* append(yield* collapse(yield* join(fenceParts)));
   }
+  // Most lines share their matching and presentation text. Reuse the joined
+  // map when no expanded tail or literal inline code requires another map.
   const mapped = yield* collapse(yield* join([...parts, ...expanded]));
-  mapped.readable = yield* collapse(yield* join(readable));
+  mapped.readable = !expanded.length && readable.length === parts.length && readable.every((part, index) => part === parts[index])
+    ? { text: mapped.text, offsets: mapped.offsets }
+    : yield* collapse(yield* join(readable));
   mapped.fencedRanges = fencedRanges;
   mapped.primaryLength = parts.reduce((length, part) => length + part.text.length, 0) + Math.max(0, parts.length - 1);
   return mapped;

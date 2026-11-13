@@ -21,6 +21,7 @@ export interface SearchControllerDeps {
     listener: (snapshot: SearchServiceSnapshot) => void,
   ) => () => void;
   publishSearchProjection: () => void;
+  prepareSearchProjection?: (query: string, result: SearchQueryResult, revision: number, isCurrent: () => boolean) => Promise<() => void>;
   /** When omitted, the scope is treated as settled. */
   isScopeSettled?: () => boolean;
 }
@@ -82,10 +83,9 @@ export class SearchController implements DisposableController {
   isCommittedQueryCurrent(): boolean { return this.query.trim() === this.committedQuery.trim(); }
   getMatchFields(path: string): readonly SearchMatchField[] | undefined { return this.matchFieldsByPath[path]; }
 
-  private invalidateSearchPreviews(preserveDisplayed: boolean = false): void {
-    this.contentRevision += 1;
+  private invalidateSearchPreviews(advanceContent: boolean = false): void {
+    if (advanceContent) this.contentRevision += 1;
     this.context.store.advanceHydrationRevision();
-    if (preserveDisplayed) return;
     this.context.store.patchCardPreviews(this.context.store.getBaseCards()
       .filter((card) => card.searchPreview !== undefined).map((card) => ({
         path: card.path, patch: {
@@ -96,6 +96,7 @@ export class SearchController implements DisposableController {
   }
 
   private setCommittedQuery(query: string): void {
+    query = query.trim();
     if (this.committedQuery !== query) {
       this.committedQuery = query;
       this.invalidateSearchPreviews();
@@ -148,23 +149,33 @@ export class SearchController implements DisposableController {
   }
 
   private applySnapshot(snapshot: SearchServiceSnapshot | null, publish: boolean): void {
-    if (this.query.trim() || this.committedQuery.trim()) this.invalidateSearchPreviews();
+    const previous = this.snapshot;
     this.snapshot = snapshot;
+    const ready = this.isIndexReady();
+    const wasReady = previous?.initialized && !previous.disposed && previous.mode === "indexed" && previous.status === "ready";
+    const sameIndex = previous?.indexGeneration === snapshot?.indexGeneration;
+    const sameContent = previous?.contentRevision === snapshot?.contentRevision;
+    if (ready && wasReady && sameIndex && sameContent) {
+      this.status = this.deriveStatus();
+      if (publish) this.context.publishGroups("search");
+      return;
+    }
     this.snapshotEpoch.bump();
     this.requestEpoch.bump();
-    this.setCommittedQuery(this.query);
-    this.clearMatchCounts();
-    this.execution = this.derivePendingExecution();
-    this.orderedPaths = undefined;
-    this.status = this.deriveStatus();
-
-    if (publish) {
-      this.deps.publishSearchProjection();
+    if (ready && wasReady && sameIndex) {
+      // Incremental content updates requery while retaining unaffected previews.
+      this.status = this.deriveStatus();
+      if (publish) this.context.publishGroups("search");
+    } else {
+      if (this.query.trim() || this.committedQuery.trim()) this.invalidateSearchPreviews(true);
+      this.setCommittedQuery(this.query);
+      this.clearMatchCounts();
+      this.execution = this.derivePendingExecution();
+      this.orderedPaths = undefined;
+      this.status = this.deriveStatus();
+      if (publish) this.deps.publishSearchProjection();
     }
-
-    if (this.query.trim().length > 0 && snapshot?.mode === "indexed" && snapshot.status === "ready") {
-      void this.refreshProjection();
-    }
+    if (this.query.trim() && ready) void this.refreshProjection();
   }
 
   private clearSnapshotSubscription(): void {
@@ -180,7 +191,6 @@ export class SearchController implements DisposableController {
 
     this.query = nextQuery;
     this.inputRevision += 1;
-    this.invalidateSearchPreviews(this.scopeSettled() && this.isIndexReady() && nextQuery.trim().length > 0);
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
     if (!this.scopeSettled()) {
@@ -312,6 +322,12 @@ export class SearchController implements DisposableController {
         return;
       }
 
+      const isCurrent = () => this.isRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query);
+      const installPrepared = result.execution === "indexed-ready" && options.allowUnsettled !== true && this.deps.prepareSearchProjection
+        ? await this.deps.prepareSearchProjection(query, result,
+          this.contentRevision, isCurrent)
+        : undefined;
+      if (!isCurrent()) return;
       this.execution = result.execution;
       this.setCommittedQuery(this.query);
       if (result.execution === "indexed-ready") {
@@ -323,6 +339,7 @@ export class SearchController implements DisposableController {
         this.clearMatchCounts();
       }
       this.status = this.toRuntimeStatus(result);
+      installPrepared?.();
       if (publish) {
         this.deps.publishSearchProjection();
       }

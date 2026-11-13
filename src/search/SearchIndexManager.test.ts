@@ -1901,6 +1901,61 @@ describe("SearchIndexManager", () => {
     });
   });
 
+  it("advances indexGeneration only on successful whole-index restore or replacement", async () => {
+    const docs = [createDocument("notes/a.md", "Roadmap")];
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: 1, lastIndexedAt: 111 }),
+      payload: {
+        serializedIndex: await createSerializedIndex(docs),
+        documentCount: 1, lastIndexedAt: 111,
+        documentCatalog: { "notes/a.md": 10 },
+      },
+    });
+    const { source, byPath } = createDocumentSource(docs);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    const seen: number[] = [];
+    manager.subscribe((snapshot) => seen.push(snapshot.indexGeneration));
+    expect(manager.getSnapshot().indexGeneration).toBe(0);
+    await manager.restore(createMetadata());
+    expect(manager.getSnapshot().indexGeneration).toBe(1);
+    expect(seen.at(-1)).toBe(1);
+    await manager.syncDocumentStateFromSource();
+    expect(manager.getSnapshot().indexGeneration).toBe(1);
+    byPath.set("notes/a.md", createDocument("notes/a.md", "Roadmap updated"));
+    await manager.applyMutation(createMutation({ type: "modify", path: "notes/a.md" }));
+    await manager.flushPendingPersist();
+    expect(manager.getSnapshot().contentRevision).toBe(1);
+    expect(manager.getSnapshot().indexGeneration).toBe(1);
+    await manager.rebuildFromSource();
+    expect(manager.getSnapshot().indexGeneration).toBe(2);
+    expect(seen.at(-1)).toBe(2);
+    await manager.clearAndReset();
+    expect(manager.getSnapshot().indexGeneration).toBe(2);
+    store.write.mockResolvedValue({ outcome: "failed", reason: "write-failed", detail: "disk full" });
+    expect((await manager.rebuildFromSource()).outcome).toBe("failed");
+    expect(manager.getSnapshot().indexGeneration).toBe(2);
+    manager.markInitializationFailure("health only");
+    manager.dispose();
+    expect(manager.getSnapshot().indexGeneration).toBe(2);
+  });
+
+  it("keeps indexGeneration unchanged after unsuccessful restore or cancelled replacement", async () => {
+    const store = createStoreMock();
+    const { source, readAllDocuments } = createDocumentSource([createDocument("notes/a.md")]);
+    const manager = new SearchIndexManager({ store, documentSource: source });
+    await manager.restore(createMetadata());
+    expect(manager.getSnapshot().indexGeneration).toBe(0);
+    let release!: (documents: SearchableDocument[]) => void;
+    readAllDocuments.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const pending = manager.rebuildFromSource();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    manager.dispose();
+    release([createDocument("notes/a.md")]);
+    expect((await pending).outcome).toBe("cancelled");
+    expect(manager.getSnapshot().indexGeneration).toBe(0);
+  });
+
   it("increments contentRevision on a same-count modify and emits the snapshot", async () => {
     const docs = [
       createDocument("notes/a.md", "Roadmap"),

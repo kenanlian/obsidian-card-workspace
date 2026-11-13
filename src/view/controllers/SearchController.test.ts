@@ -41,6 +41,7 @@ function createSnapshot(
     status: "ready",
     lastError: null,
     contentRevision: 0,
+    indexGeneration: 0,
     health: createHealth(),
     ...patch,
   };
@@ -167,7 +168,7 @@ describe("SearchController", () => {
     expect(controller.getCommittedQuery()).toBe("alpha");
     expect(context.store.getVisibleCards().map((card) => card.path)).toEqual([alpha.path]);
     expect(context.store.getBaseCard(alpha.path)?.searchPreview).toBe(preview);
-    expect(context.store.getHydrationRevision()).toBe(revision + 1);
+    expect(context.store.getHydrationRevision()).toBe(revision);
     expect(controller.isCommittedQueryCurrent()).toBe(false);
     expect(publishSearchProjection).not.toHaveBeenCalled();
 
@@ -606,6 +607,163 @@ describe("SearchController history and collapse", () => {
     await controller.refreshProjection({ allowUnsettled: true, publish: false });
     expect(controller.getCommittedQuery()).toBe("");
     expect(controller.buildPipelineSearchInput().query).toBe("");
+    controller.dispose();
+  });
+});
+
+describe("SearchController preview commit and snapshot identity", () => {
+  const result = () => ({ mode: "indexed" as const, status: "ready" as const, execution: "indexed-ready" as const,
+    orderedPaths: ["note.md"], matchCountsByPath: { "note.md": 1 }, matchFieldsByPath: { "note.md": ["content" as const] } });
+
+  it("keeps query changes separate from the broad content revision", async () => {
+    const context = createContext();
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(async () => result()), getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => {}, publishSearchProjection: vi.fn() });
+    controller.initializeSnapshotState();
+    const revision = controller.getContentRevision();
+    controller.onQueryChange({ query: "first" });
+    await controller.refreshProjection();
+    controller.onQueryChange({ query: "second" });
+    await controller.refreshProjection();
+    controller.resetQuery();
+    expect(controller.getContentRevision()).toBe(revision);
+    controller.dispose();
+  });
+
+  it("commits staged previews before publishing and drops a preparation superseded by a newer query", async () => {
+    const context = createContext();
+    let release!: (install: () => void) => void;
+    const preparation = new Promise<() => void>(resolve => { release = resolve; });
+    const installed = vi.fn();
+    const publish = vi.fn(() => { expect(installed).toHaveBeenCalledOnce(); });
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(async () => result()), getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => {}, publishSearchProjection: publish,
+      prepareSearchProjection: vi.fn(() => preparation) });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "first" });
+    const refresh = controller.refreshProjection();
+    await Promise.resolve();
+    expect(controller.getCommittedQuery()).toBe("");
+    expect(publish).not.toHaveBeenCalled();
+    release(installed);
+    await refresh;
+    expect(controller.getCommittedQuery()).toBe("first");
+    expect(publish).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
+  it("does not install or publish stale preparation after an input change", async () => {
+    const context = createContext();
+    let release!: (install: () => void) => void;
+    const preparation = new Promise<() => void>(resolve => { release = resolve; });
+    const installed = vi.fn(), publish = vi.fn();
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(async () => result()), getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => {}, publishSearchProjection: publish,
+      prepareSearchProjection: () => preparation });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "first" });
+    const refresh = controller.refreshProjection();
+    await Promise.resolve();
+    controller.onQueryChange({ query: "second" });
+    release(installed);
+    await refresh;
+    expect(installed).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(controller.getCommittedQuery()).toBe("");
+    controller.dispose();
+  });
+
+  it("keeps ready health notifications from canceling an in-flight query", async () => {
+    const context = createContext();
+    let release!: (value: ReturnType<typeof result>) => void;
+    const pending = new Promise<ReturnType<typeof result>>(resolve => { release = resolve; });
+    const publish = vi.fn();
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(() => pending), getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => {}, publishSearchProjection: publish });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "needle" });
+    const refresh = controller.refreshProjection();
+    controller.onSearchSnapshot(createSnapshot({ health: createHealth({ lastIndexedAt: 22 }) }));
+    release(result());
+    await refresh;
+    expect(controller.getCommittedQuery()).toBe("needle");
+    expect(publish).toHaveBeenCalledOnce();
+    expect(context.publishGroups).toHaveBeenLastCalledWith("search");
+    controller.dispose();
+  });
+
+  it("retains committed output during incremental requery and broadly invalidates replaced indexes", async () => {
+    const context = createContext();
+    const service = vi.fn(async () => result());
+    const publish = vi.fn();
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(service), getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => {}, publishSearchProjection: publish });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "needle" });
+    await controller.refreshProjection();
+    const revision = controller.getContentRevision();
+    publish.mockClear();
+    controller.onSearchSnapshot(createSnapshot({ contentRevision: 1 }));
+    expect(controller.buildPipelineSearchInput()).toMatchObject({ execution: "indexed-ready", query: "needle" });
+    expect(controller.getContentRevision()).toBe(revision);
+    expect(publish).not.toHaveBeenCalled();
+    await Promise.resolve();
+    controller.onSearchSnapshot(createSnapshot({ contentRevision: 1, indexGeneration: 1 }));
+    expect(controller.getContentRevision()).toBe(revision + 1);
+    expect(controller.buildPipelineSearchInput()).toMatchObject({ execution: "indexed-unavailable" });
+    controller.dispose();
+  });
+});
+
+describe("search preparation invalidation boundaries", () => {
+  it("blocks immediately when readiness is lost during bounded preparation", async () => {
+    const context = createContext();
+    let release!: (install: () => void) => void;
+    const preparation = new Promise<() => void>(resolve => { release = resolve; });
+    const installed = vi.fn(), publish = vi.fn();
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(async () => ({ mode: "indexed", status: "ready", execution: "indexed-ready", orderedPaths: ["note.md"] })),
+      getSearchSnapshot: () => createSnapshot(), subscribeSearchSnapshots: () => () => {},
+      publishSearchProjection: publish, prepareSearchProjection: () => preparation });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "needle" });
+    const refresh = controller.refreshProjection();
+    await Promise.resolve();
+    controller.onSearchSnapshot(createSnapshot({ status: "building" }));
+    expect(controller.buildPipelineSearchInput()).toEqual({ query: "needle", execution: "indexed-building" });
+    expect(publish).toHaveBeenCalledOnce();
+    release(installed);
+    await refresh;
+    expect(installed).not.toHaveBeenCalled();
+    expect(publish).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
+  it("preserves committed preview records for whitespace-only query edits", async () => {
+    const context = createContext();
+    const record = { path: "note.md", fileKind: "markdown", mtime: 1, previewHtml: "body", hydrated: true } as NoteCardRecord;
+    context.store.replaceBaseCards([record]);
+    const controller = new SearchController({ context,
+      getSearchService: () => asService(async () => ({ mode: "indexed", status: "ready", execution: "indexed-ready", orderedPaths: [record.path] })),
+      getSearchSnapshot: () => createSnapshot(), subscribeSearchSnapshots: () => () => {},
+      publishSearchProjection: vi.fn() });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "needle" });
+    await controller.refreshProjection();
+    const preview = { query: "needle", revision: 0, mtime: 1, previewLines: 5, snippetLimit: 2,
+      status: "hits" as const, snippets: [] };
+    context.store.patchCardPreviews([{ path: record.path, patch: { searchPreview: preview } }]);
+    const revision = context.store.getHydrationRevision();
+    controller.onQueryChange({ query: " needle " });
+    await controller.refreshProjection();
+    expect(controller.getCommittedQuery()).toBe("needle");
+    expect(context.store.getBaseCard(record.path)?.searchPreview).toBe(preview);
+    expect(context.store.getHydrationRevision()).toBe(revision);
     controller.dispose();
   });
 });

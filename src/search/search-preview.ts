@@ -27,7 +27,11 @@ export interface SearchPreview {
   mtime: number;
   previewLines: number;
   snippetLimit: number;
-  status: "hits" | "title-only" | "unavailable";
+  status: "pending" | "hits" | "title-only" | "unavailable";
+  expectedSnippetCount?: number;
+  totalSnippets?: number;
+  expanded?: boolean;
+  requestedSnippetCount?: number;
   snippets: SearchPreviewSnippet[];
 }
 
@@ -81,6 +85,16 @@ export interface SearchPreviewExtractionOptions {
   onPrepared?: (source: SearchPreviewSource) => void;
 }
 
+export interface SearchPreviewWindowExtractionOptions extends SearchPreviewExtractionOptions {
+  /** Zero-based offset into the merged snippet windows. */
+  offset?: number;
+}
+
+export interface SearchPreviewExtractionResult {
+  snippets: SearchPreviewSnippet[];
+  totalSnippets: number;
+}
+
 function findLine(starts: readonly number[], offset: number): number {
   let low = 0;
   let high = starts.length;
@@ -94,20 +108,23 @@ function findLine(starts: readonly number[], offset: number): number {
 
 function isLowSurrogate(code: number): boolean { return code >= 0xdc00 && code <= 0xdfff; }
 
-function mergeRanges(ranges: SearchTextRange[]): SearchTextRange[] {
+function* mergeRanges(ranges: SearchTextRange[]): Generator<unknown, SearchTextRange[]> {
   const merged: SearchTextRange[] = [];
+  let work = 0;
   for (const range of ranges.sort((a, b) => a.start - b.start || a.end - b.end)) {
     const last = merged[merged.length - 1];
     if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
     else merged.push({ ...range });
+    if (++work % 256 === 0) yield;
   }
   return merged;
 }
 
-function* collectSnippets(input: string | SearchPreviewSource, options: SearchPreviewExtractionOptions, phases: Record<string, number>): Generator<unknown, SearchPreviewSnippet[]> {
+function* collectSnippets(input: string | SearchPreviewSource, options: SearchPreviewWindowExtractionOptions, phases: Record<string, number>, countAll: boolean): Generator<unknown, SearchPreviewExtractionResult> {
   const startTime = performance.now();
   const limit = Math.max(0, Math.floor(options.limit));
-  if (!limit) return [];
+  const pageOffset = Math.max(0, Math.floor(options.offset ?? 0));
+  if (!countAll && !limit) return { snippets: [], totalSnippets: 0 };
   const prepared = typeof input === "string" ? yield* prepareSearchPreviewSource(input) : input;
   if (typeof input === "string") options.onPrepared?.(prepared);
   const { source, body, starts, matchOffsets, displayOffsets, reverse, lineRanges, terms, fencedRanges } = prepared;
@@ -117,8 +134,9 @@ function* collectSnippets(input: string | SearchPreviewSource, options: SearchPr
   // The expanded tail participates in the index term budget and matching,
   // but all display ranges point back into the readable primary body.
   const hits: SearchTextRange[] = [];
+  let matchingWork = 0;
   for (const [term, positions] of terms) {
-    yield;
+    if (++matchingWork % 256 === 0) yield;
     const length = options.matcher(term);
     if (!length) continue;
     for (let index = 0; index < positions.length; index += 1) {
@@ -128,16 +146,18 @@ function* collectSnippets(input: string | SearchPreviewSource, options: SearchPr
       if (from >= 0 && to >= from && reverse[from] >= 0 && reverse[to] >= 0) {
         hits.push({ start: reverse[from], end: reverse[to] + 1 });
       }
-      if (index % 1024 === 0) yield;
+      if (++matchingWork % 256 === 0) yield;
     }
   }
-  const merged = mergeRanges(hits);
+  const merged = yield* mergeRanges(hits);
   const matchedTime = performance.now();
   phases.budgetedMatchingMs = matchedTime - preparedTime;
   const snippets: SearchPreviewSnippet[] = [];
   let formattingMs = 0;
   let previousEnd = 0;
-  for (let hitIndex = 0; hitIndex < merged.length && snippets.length < limit; hitIndex += 1) {
+  let totalSnippets = 0;
+  for (let hitIndex = 0; hitIndex < merged.length && (countAll || snippets.length < limit); hitIndex += 1) {
+    if (hitIndex % 256 === 0) yield;
     const first = merged[hitIndex];
     if (first.start < previousEnd) continue;
     const offset = displayOffsets[first.start];
@@ -166,6 +186,7 @@ function* collectSnippets(input: string | SearchPreviewSource, options: SearchPr
     // If an overlapping context can fit by spending less on the preceding
     // text, include its hit in this same 200-unit window. Never crop the target.
     for (let index = hitIndex + 1; index < merged.length; index += 1) {
+      if (index % 256 === 0) yield;
       const next = merged[index];
       if (next.start < end) continue;
       if (next.start >= blockEnd || next.start - 60 >= end
@@ -178,10 +199,16 @@ function* collectSnippets(input: string | SearchPreviewSource, options: SearchPr
     }
     if (isLowSurrogate(body.charCodeAt(end))) end -= 1;
     const suffix = end < blockEnd ? "…" : "";
+    // Count and paging share this exact window construction. Unrequested
+    // windows advance the overlap boundary without formatting or source data.
+    const windowIndex = totalSnippets++;
+    previousEnd = end;
+    if (windowIndex < pageOffset || snippets.length >= limit) { yield; continue; }
     // Every hit inside this context is represented once; overlapping contexts
     // collapse into this window, leaving room for later independent snippets.
     const highlights: SearchTextRange[] = [];
     for (let index = hitIndex; index < merged.length && merged[index].start < end; index += 1) {
+      if (index % 256 === 0) yield;
       const range = merged[index];
       highlights.push({ start: range.start - start + prefix.length,
         end: Math.min(end, range.end) - start + prefix.length });
@@ -214,17 +241,28 @@ function* collectSnippets(input: string | SearchPreviewSource, options: SearchPr
       starts[line], starts[lastLine + 1] ?? source.length, low % 2 === 1);
     formattingMs += performance.now() - formatStart;
     snippets.push(snippet);
-    previousEnd = end;
     yield;
   }
   phases.collectionMs = performance.now() - matchedTime;
   phases.formattingMs = formattingMs;
-  return snippets;
+  return { snippets, totalSnippets };
 }
 
 export function extractSearchPreviewSnippets(markdown: string | SearchPreviewSource, options: SearchPreviewExtractionOptions) {
   const phases: Record<string, number> = {};
-  return runSearchTask(collectSnippets(markdown, options, phases), options.isCurrent,
+  return runSearchTask(collectLegacySnippets(markdown, options, phases), options.isCurrent,
+    (diagnostics) => options.onDiagnostics?.({ ...diagnostics, phases }));
+}
+
+function* collectLegacySnippets(input: string | SearchPreviewSource, options: SearchPreviewExtractionOptions,
+  phases: Record<string, number>): Generator<unknown, SearchPreviewSnippet[]> {
+  return (yield* collectSnippets(input, options, phases, false)).snippets;
+}
+
+/** Count all merged windows while formatting only the requested page. */
+export function extractSearchPreview(input: string | SearchPreviewSource, options: SearchPreviewWindowExtractionOptions): Promise<SearchPreviewExtractionResult | undefined> {
+  const phases: Record<string, number> = {};
+  return runSearchTask(collectSnippets(input, options, phases, true), options.isCurrent,
     (diagnostics) => options.onDiagnostics?.({ ...diagnostics, phases }));
 }
 

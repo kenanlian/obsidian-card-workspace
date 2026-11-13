@@ -14,6 +14,9 @@ export interface CardItemStrings {
   imageLoading: string;
   imageFailed: string;
   searchBodyUnavailable: string;
+  searchSnippetsExpand: (count: number) => string;
+  searchSnippetsMore: string;
+  searchSnippetsCollapse: string;
   taskProgressAria: (completed: number, total: number) => string;
 }
 
@@ -32,6 +35,9 @@ export const cardItemStrings: Record<UiLanguage, CardItemStrings> = {
     placeholderEmpty: "No previewable text near the top.",
     imageLoading: "Loading image", imageFailed: "Image unavailable",
     searchBodyUnavailable: "Body preview unavailable",
+    searchSnippetsExpand: (count: number) => `${count} more matching ${count === 1 ? "passage" : "passages"}`,
+    searchSnippetsMore: "Show 20 more matches",
+    searchSnippetsCollapse: "Collapse matches",
     taskProgressAria: (completed: number, total: number) =>
       `${completed} of ${total} ${total === 1 ? "task" : "tasks"} complete`,
   },
@@ -48,6 +54,9 @@ export const cardItemStrings: Record<UiLanguage, CardItemStrings> = {
     placeholderEmpty: "顶部附近没有可预览的文本。",
     imageLoading: "图片加载中", imageFailed: "图片不可用",
     searchBodyUnavailable: "正文预览不可用",
+    searchSnippetsExpand: (count: number) => `还有 ${count} 条命中片段`,
+    searchSnippetsMore: "再显示 20 处命中",
+    searchSnippetsCollapse: "收起命中",
     taskProgressAria: (completed: number, total: number) =>
       `${total} 个任务中已完成 ${completed} 个`,
   },

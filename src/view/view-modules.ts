@@ -175,6 +175,11 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getSearchSnapshot: () => host.getSearchSnapshot(),
     subscribeSearchSnapshots: (listener) => host.subscribeSearchSnapshots(listener),
     publishSearchProjection: () => host.publishSearch(),
+    prepareSearchProjection: (query, result, revision, isCurrent) => {
+      const getCards = () => projection.previewSearchCards({ query, execution: result.execution, orderedPaths: result.orderedPaths ?? [] });
+      return hydration.prepareSearchProjection(getCards(),
+        { query, revision, matchFieldsByPath: result.matchFieldsByPath ?? {}, isCurrent, getCards });
+    },
     isScopeSettled: gate.guard("scopeController.isScopeSettled", () => scopeController.isScopeSettled()),
   });
   const bulk: BulkController = new BulkController({

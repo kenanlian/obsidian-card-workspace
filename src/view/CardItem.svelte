@@ -52,6 +52,7 @@
     searchQuery?: string;
     searchMatchCount?: number;
     onOpenNote?: (payload: OpenNotePayload) => void;
+    onSearchSnippetsCommand?: (payload: { path: string; command: "expand" | "more" | "collapse" }) => void;
     onToggleReferences?: (payload: { path: string }) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
     onCardIcon?: (payload: { path: string; anchor: HTMLElement }) => void;
@@ -83,6 +84,7 @@
     searchQuery = "",
     searchMatchCount = 0,
     onOpenNote,
+    onSearchSnippetsCommand,
     onToggleReferences,
     onBulkSelectCard,
     onCardIcon,
@@ -122,6 +124,7 @@
   const searchPreview = $derived(card.searchPreview?.query === normalizedSearchQuery
     && card.searchPreview.previewLines === previewLines
     && card.searchPreview.snippetLimit === searchPreviewSnippetCount ? card.searchPreview : undefined);
+  const showSearchSnippetControls = $derived(searchPreview?.status === "hits" && (searchPreview.expanded || (searchPreview.totalSnippets ?? searchPreview.snippets.length) > searchPreview.snippets.length));
   const inlineReferences = $derived(card.referenceCount !== undefined && (!normalizedSearchQuery || searchPreview?.status === "title-only"));
   const showReferenceList = $derived(inlineReferences || linkPreview?.expanded);
   const canToggleReferences = $derived(card.referenceCount !== undefined && (linkPreview?.expanded || (!inlineReferences && normalizedSearchQuery) || (linkPreview?.totalSnippets ?? 0) > (linkPreview?.snippets.length ?? 0)));
@@ -136,20 +139,30 @@
   let snippetFonts = $state<Record<string, string>>({});
   let textMeasure: CanvasRenderingContext2D | null = null;
   const measuredFonts: Record<string, string> = {};
+  let snippetObserver: ResizeObserver | null = null;
+  type Snippet = NonNullable<NoteCardRecord["searchPreview"]>["snippets"][number];
+  const snippetSegmentCache = new Map<string, {
+    snippet: Snippet; width: number; fonts: Record<string, string>; segments: SearchSnippetSegment[];
+  }>();
   const snippetMeasurements = new Map<string, () => void>();
   let snippetMeasureQueued = false;
+  let checkSnippetFont = true;
   function scheduleSnippetMeasures(): void {
     if (snippetMeasureQueued) return;
     snippetMeasureQueued = true;
     queueMicrotask(() => {
       snippetMeasureQueued = false;
+      checkSnippetFont = true;
       for (const measure of snippetMeasurements.values()) measure();
     });
   }
   const displayedSnippets = $derived(searchPreview?.status === "hits" ? searchPreview.snippets : []);
+  const snippetsById = $derived(new Map(displayedSnippets.map(snippet => [snippet.id, snippet])));
+
   // A font size change alters glyph widths without resizing the snippet box, so ResizeObserver misses it.
   $effect(() => {
     void appearance.uiFontSize;
+    for (const key of Object.keys(measuredFonts)) delete measuredFonts[key];
     scheduleSnippetMeasures();
   });
   function measureSnippet(node: HTMLButtonElement, id: string) {
@@ -158,12 +171,17 @@
       const width = content.clientWidth;
       if (!width) return;
       const win = node.ownerDocument.defaultView;
-      const font = win?.getComputedStyle(node).font ?? "";
-      if (measuredFonts.text !== font) {
-        for (const key of Object.keys(measuredFonts)) delete measuredFonts[key];
-        measuredFonts.text = font;
+      if (checkSnippetFont) {
+        checkSnippetFont = false;
+        const currentFont = win?.getComputedStyle(node).font ?? "";
+        if (measuredFonts.text !== currentFont) {
+          for (const key of Object.keys(measuredFonts)) delete measuredFonts[key];
+          measuredFonts.text = currentFont;
+        }
       }
-      const presentation = searchPreview?.snippets.find(snippet => snippet.id === id)?.presentation;
+      const font = measuredFonts.text ?? "";
+      const snippet = snippetsById.get(id);
+      const presentation = snippet?.presentation;
       const keys = new Set(presentation?.runs.map(run => run.kind === "code"
         ? run.heading ? "code-heading" : "code" : run.heading ? "heading" : "text"));
       for (const key of keys) {
@@ -174,12 +192,8 @@
       }
       const fonts = { ...measuredFonts };
       if (!textMeasure) textMeasure = node.ownerDocument.createElement("canvas").getContext("2d");
-      const snippet = searchPreview?.snippets.find(value => value.id === id);
       if (snippet && textMeasure) {
-        const segments = buildSearchSnippetSegments(snippet, width, (value, kind, heading) => {
-          textMeasure!.font = fonts[kind === "code" ? heading ? "code-heading" : "code" : heading ? "heading" : "text"] ?? fonts.text;
-          return textMeasure!.measureText(value).width + (kind === "code" && !presentation?.codeBlock ? 6 : 0);
-        });
+        const segments = getSnippetSegments(snippet, width, fonts);
         // Short contexts already fit; storing identical metrics would cause a redundant render.
         if (content.textContent === segments.map(segment => segment.text).join("")) return;
       }
@@ -195,11 +209,12 @@
     };
     snippetMeasurements.set(id, measure);
     scheduleSnippetMeasures();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleSnippetMeasures);
-    observer?.observe(content);
+    if (!snippetObserver && typeof ResizeObserver !== "undefined") snippetObserver = new ResizeObserver(scheduleSnippetMeasures);
+    snippetObserver?.observe(content);
     return { destroy() {
-      observer?.disconnect();
+      snippetObserver?.unobserve?.(content);
       snippetMeasurements.delete(id);
+      snippetSegmentCache.delete(id);
       delete snippetMetrics[id];
     } };
   }
@@ -216,7 +231,12 @@
     removeDragGhost();
   }
 
-  onDestroy(finishCardDrag);
+  onDestroy(() => {
+    finishCardDrag();
+    snippetObserver?.disconnect();
+    snippetMeasurements.clear();
+    snippetSegmentCache.clear();
+  });
 
   function revealImage(node: HTMLImageElement, url: string): { destroy: () => void } {
     const path = card.path;
@@ -374,12 +394,22 @@
     });
   }
 
-  function snippetSegments(snippet: NonNullable<NoteCardRecord["searchPreview"]>["snippets"][number]): SearchSnippetSegment[] {
-    const metrics = snippet.presentation?.list ? snippetMetrics[snippet.id] : { width: snippetWidth, fonts: snippetFonts };
-    return buildSearchSnippetSegments(snippet, metrics?.width, metrics && metrics.width > 0 && textMeasure ? (value, kind, heading) => {
-      textMeasure!.font = metrics.fonts[kind === "code" ? heading ? "code-heading" : "code" : heading ? "heading" : "text"] ?? metrics.fonts.text;
+  function getSnippetSegments(snippet: Snippet, width = 0, fonts: Record<string, string> = {}): SearchSnippetSegment[] {
+    const cached = snippetSegmentCache.get(snippet.id);
+    if (cached?.snippet === snippet && cached.width === width
+      && cached.fonts.text === fonts.text && cached.fonts.code === fonts.code
+      && cached.fonts.heading === fonts.heading && cached.fonts["code-heading"] === fonts["code-heading"]) return cached.segments;
+    const segments = buildSearchSnippetSegments(snippet, width, width > 0 && textMeasure ? (value, kind, heading) => {
+      textMeasure!.font = fonts[kind === "code" ? heading ? "code-heading" : "code" : heading ? "heading" : "text"] ?? fonts.text;
       return textMeasure!.measureText(value).width + (kind === "code" && !snippet.presentation?.codeBlock ? 6 : 0);
     } : undefined);
+    snippetSegmentCache.set(snippet.id, { snippet, width, fonts, segments });
+    return segments;
+  }
+
+  function snippetSegments(snippet: Snippet): SearchSnippetSegment[] {
+    const metrics = snippet.presentation?.list ? snippetMetrics[snippet.id] : { width: snippetWidth, fonts: snippetFonts };
+    return getSnippetSegments(snippet, metrics?.width, metrics?.fonts);
   }
 
   function onSnippetClick(event: MouseEvent, snippetId: string): void {
@@ -416,6 +446,17 @@
     }
     if (bulkMode) emitBulkSelect(event.shiftKey);
     else onToggleReferences?.({ path: card.path });
+  }
+
+  function onSearchSnippets(event: MouseEvent | KeyboardEvent, command: "expand" | "more" | "collapse"): void {
+    event.stopPropagation();
+    if ("key" in event) {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (event.repeat) return;
+    }
+    if (bulkMode) emitBulkSelect(event.shiftKey);
+    else onSearchSnippetsCommand?.({ path: card.path, command });
   }
 
   function emitBulkSelect(shiftKey: boolean): void {
@@ -565,8 +606,10 @@
   }
 
   function getPreviewStyle(): string {
-    const lines = searchPreview?.status === "hits" ? searchPreviewSnippetCount * 2 : previewLines;
-    const dividers = Math.max(0, displayedSnippets.length - 1);
+    const pending = searchPreview?.status === "pending";
+    const count = pending ? searchPreview.expectedSnippetCount ?? searchPreviewSnippetCount : displayedSnippets.length;
+    const lines = searchPreview?.status === "hits" || (pending && count > 0) ? count * 2 : previewLines;
+    const dividers = Math.max(0, count - 1);
     return `--fce-preview-line-clamp: ${lines}; --fce-preview-divider-count: ${dividers};`;
   }
 </script>
@@ -589,7 +632,7 @@
   ondrag={onCardDrag}
   ondragend={onCardDragEnd}
 >
-  <div class="fce-card-body" class:has-right-image={showImage && imageMode === "right"} class:has-reference-preview={inlineReferences} class:has-reference-details={!!showReferenceList || !!canToggleReferences}>
+  <div class="fce-card-body" class:has-right-image={showImage && imageMode === "right"} class:has-search-controls={showSearchSnippetControls} class:has-reference-preview={inlineReferences} class:has-reference-details={!!showReferenceList || !!canToggleReferences}>
     <div class="fce-card-header">
       <div class="fce-card-title-group" role="presentation">
         {#if resolvedIcon.kind !== "none"}
@@ -668,9 +711,9 @@
         {/if}
       </div>
     {/if}
-    {#if !diagram && !inlineReferences && (previewLines > 0 || searchPreview?.status === "hits")}
+    {#if !diagram && !inlineReferences && (previewLines > 0 || searchPreview?.status === "hits" || searchPreview?.status === "pending")}
     <div
-      class="fce-excerpt {searchPreview?.status === 'hits' ? 'is-search' : ''} {card.previewMode === 'code' && (!normalizedSearchQuery || searchPreview?.status === 'title-only') ? 'is-code' : ''} {card.hydrated && (!normalizedSearchQuery || searchPreview) ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated && !normalizedSearchQuery ? 'is-empty' : ''}"
+      class="fce-excerpt {searchPreview?.status === 'hits' || (searchPreview?.status === 'pending' && searchPreview.expectedSnippetCount !== 0) ? 'is-search' : ''} {card.previewMode === 'code' && (!normalizedSearchQuery || searchPreview?.status === 'title-only') ? 'is-code' : ''} {searchPreview?.status === 'pending' ? 'is-search-pending' : ''} {card.hydrated && (!normalizedSearchQuery || searchPreview) ? '' : 'is-loading'} {(card.previewMode === 'empty' || (card.previewMode !== 'placeholder' && !card.previewHtml)) && card.hydrated && !normalizedSearchQuery ? 'is-empty' : ''}"
       role="presentation"
       style={getPreviewStyle()}
       onmouseenter={emitCardHoverLink}
@@ -711,6 +754,13 @@
               {/if}
             </button>
           {/each}
+        {:else if searchPreview?.status === "pending"}
+          <span class="fce-search-pending" role="status" aria-label={cardStrings.placeholderLoading}>
+            {#each Array.from({ length: searchPreview.expectedSnippetCount === 0 ? 1 : searchPreview.expectedSnippetCount ?? searchPreviewSnippetCount }) as _, index (index)}
+              {#if index > 0}<span class="fce-preview-context-divider" aria-hidden="true"></span>{/if}
+              <span class="fce-search-pending-lines" aria-hidden="true"></span>
+            {/each}
+          </span>
         {:else if searchPreview?.status === "title-only"}
           {#if card.previewMode === "placeholder"}
             <p class="fce-preview-placeholder">{getCardPlaceholderText(card.fileKind, fileKindStrings)}</p>
@@ -736,6 +786,22 @@
         <p class="fce-preview-empty">{cardStrings.placeholderLoading}</p>
       {/if}
     </div>
+    {/if}
+    {#if showSearchSnippetControls && searchPreview}
+      <div class="fce-search-snippet-controls">
+        {#if (searchPreview.totalSnippets ?? displayedSnippets.length) > displayedSnippets.length}
+          <button type="button" class="fce-search-snippets-toggle" aria-expanded={searchPreview.expanded ?? false}
+            onclick={(event) => onSearchSnippets(event, searchPreview?.expanded ? "more" : "expand")}
+            onkeydown={(event) => onSearchSnippets(event, searchPreview?.expanded ? "more" : "expand")}>
+            {searchPreview.expanded ? cardStrings.searchSnippetsMore : cardStrings.searchSnippetsExpand((searchPreview.totalSnippets ?? displayedSnippets.length) - displayedSnippets.length)}
+          </button>
+        {/if}
+        {#if searchPreview.expanded}
+          <button type="button" class="fce-search-snippets-toggle" aria-expanded="true"
+            onclick={(event) => onSearchSnippets(event, "collapse")}
+            onkeydown={(event) => onSearchSnippets(event, "collapse")}>{cardStrings.searchSnippetsCollapse}</button>
+        {/if}
+      </div>
     {/if}
     {#if showReferenceList || canToggleReferences}
     <div class="fce-reference-details">

@@ -199,6 +199,8 @@ export interface SearchServiceSnapshot {
    * previously computed query results may be stale and refresh them.
    */
   contentRevision: number;
+  /** Runtime-only generation; advances only after a successful whole-index restore or replacement. */
+  indexGeneration: number;
 }
 
 /** Lightweight local-only observability payload for command/debug surfaces. */

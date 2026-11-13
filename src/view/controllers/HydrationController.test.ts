@@ -330,26 +330,30 @@ describe("HydrationController", () => {
     expect(read).toHaveBeenCalledTimes(2);
     controller.dispose();
   });
-  it("hydrates search context only for viewport cards and refreshes after a committed query change", async () => {
+  it("hydrates viewport context and a bounded lookahead after a committed query change", async () => {
     const records = Array.from({ length: 30 }, (_, index) => card(`${index}.md`));
     const read = vi.fn(async () => "opening\nfirst needle here\nsecond target here");
     let query = "needle";
     const { context, controller } = harness(records, read, {}, () => query);
 
     await controller.hydrateViewport(request(context, records.slice(0, 1)));
-    expect(read).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0 }));
+    expect(read).toHaveBeenCalledTimes(25);
     expect(context.store.getBaseCard("0.md")?.searchPreview?.snippets[0].text).toContain("needle");
     expect(context.store.getBaseCard("1.md")?.hydrated).toBe(false);
+    expect(controller.getDiagnostics().searchSources.entries).toBe(1);
 
     query = "target";
     context.store.advanceHydrationRevision();
     await controller.hydrateViewport(request(context, records.slice(0, 1)));
-    expect(read).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0 }));
+    expect(read).toHaveBeenCalledTimes(49);
     expect(context.store.getBaseCard("0.md")?.searchPreview?.snippets[0].text).toContain("target");
     query = "needle";
     context.store.advanceHydrationRevision();
     await controller.hydrateViewport(request(context, records.slice(0, 1)));
-    expect(read).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0 }));
+    expect(read).toHaveBeenCalledTimes(73);
     expect(context.store.getBaseCard("0.md")?.searchPreview?.snippets[0].location.from.line).toBe(1);
     controller.dispose();
   });
@@ -756,5 +760,360 @@ describe("HydrationController", () => {
 
     expect(context.store.getBaseCard(record.path)?.hydrated).toBe(false);
     expect(context.publishGroups).not.toHaveBeenCalled();
+  });
+});
+
+describe("bounded search preparation and append expansion", () => {
+  it("prepares the real visible window using an immutable query and installs one coherent snapshot", async () => {
+    const records = Array.from({ length: 5 }, (_, index) => card(`${index}.md`));
+    let query = "";
+    const { controller, context, read } = harness(records, vi.fn(async () => "old opening\n\nnew needle body"), {}, () => query,
+      createRuntimeResourceBudget({ searchPreview: { prepareCards: 2 } }));
+    await controller.hydrateViewport({ ...request(context, []), visibleStart: 2, visibleEnd: 4 });
+    const installer = await controller.prepareSearchProjection(records, {
+      query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+    });
+    expect(read.mock.calls.map(([file]) => file.path)).toEqual(["2.md", "3.md"]);
+    expect(records.every(record => record.searchPreview === undefined)).toBe(true);
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    query = "needle";
+    context.store.advanceHydrationRevision();
+    installer();
+    expect(context.store.getBaseCard("2.md")?.searchPreview).toMatchObject({ query: "needle", status: "hits" });
+    expect(context.store.getBaseCard("0.md")?.searchPreview).toMatchObject({ query: "needle", status: "pending", expectedSnippetCount: DEFAULT_SETTINGS.searchPreviewSnippetCount });
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("keeps same-query preparation staged until its explicit installer runs", async () => {
+    const record = card("same.md");
+    const { controller, context } = harness([record], vi.fn(async () => "needle body"), {}, () => "needle");
+    const install = await controller.prepareSearchProjection([record], {
+      query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+    });
+    expect(context.store.getBaseCard(record.path)?.searchPreview).toBeUndefined();
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    install();
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.status).toBe("hits");
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("stops queued preparation on timeout and shares the active read with post-commit viewport demand", async () => {
+    vi.useFakeTimers();
+    try {
+      const records = Array.from({ length: 3 }, (_, index) => card(`${index}.md`));
+      const pending = deferred<string>();
+      let query = "";
+      const { controller, context, read } = harness(records, vi.fn(() => pending.promise), {}, () => query,
+        createRuntimeResourceBudget({ preview: { concurrency: 1 }, searchPreview: { prepareCards: 3, prepareWaitMs: 10, lookaheadCards: 1 } }));
+      const preparation = controller.prepareSearchProjection(records, {
+        query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+      });
+      expect(read).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10);
+      const install = await preparation;
+      expect(controller.getDiagnostics()).toMatchObject({ active: 1, queued: 0, searchPreview: { prepareTimedOut: 1 } });
+      query = "needle";
+      context.store.advanceHydrationRevision();
+      install();
+      expect(context.store.getBaseCard("0.md")?.searchPreview?.status).toBe("pending");
+      const viewport = controller.hydrateViewport(request(context, [records[0]]));
+      pending.resolve("opening\n\nneedle body");
+      await viewport;
+      expect(read.mock.calls.filter(([file]) => file.path === "0.md")).toHaveLength(1);
+      expect(context.store.getBaseCard("0.md")?.searchPreview?.status).toBe("hits");
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("installs pending rows while hidden without starting preparation or prefetch", async () => {
+    const gate = new RuntimeWorkGate(); gate.setActive(false);
+    const record = card("hidden.md");
+    let query = "";
+    const { controller, context, read } = harness([record], undefined, {}, () => query, undefined, gate);
+    const install = await controller.prepareSearchProjection([record], {
+      query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+    });
+    query = "needle";
+    install();
+    expect(read).not.toHaveBeenCalled();
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.status).toBe("pending");
+    expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0 });
+    controller.dispose(); gate.close();
+  });
+
+  it("does not install previews from a preparation whose query lost the race", async () => {
+    const record = card("race.md");
+    let current = true;
+    const { controller, context } = harness([record], vi.fn(async () => "needle body"), {}, () => "needle");
+    const install = await controller.prepareSearchProjection([record], {
+      query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => current,
+    });
+    current = false;
+    install();
+    expect(context.store.getBaseCard(record.path)?.searchPreview).toBeUndefined();
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("appends twenty snippets at a time, preserves the prefix, and restores configured compactness", async () => {
+    const record = card("many.md");
+    const source = Array.from({ length: 55 }, (_, index) => `section ${index} needle`).join("\n\n");
+    const { controller, context, read } = harness([record], vi.fn(async () => source), {}, () => "needle");
+    context.getSettings = () => ({ ...DEFAULT_SETTINGS, searchPreviewSnippetCount: 2 });
+    await controller.hydrateViewport(request(context, [record]));
+    const first = context.store.getBaseCard(record.path)!.searchPreview!;
+    expect(first).toMatchObject({ totalSnippets: 55, expanded: false, snippetLimit: 2 });
+    await controller.changeSearchSnippets(record.path, "expand");
+    const expanded = context.store.getBaseCard(record.path)!.searchPreview!;
+    expect(expanded.snippets).toHaveLength(22);
+    expect(expanded.snippets.slice(0, 2)).toEqual(first.snippets);
+    expect(expanded).toMatchObject({ totalSnippets: 55, expanded: true, snippetLimit: 2, requestedSnippetCount: 22 });
+    await controller.changeSearchSnippets(record.path, "more");
+    expect(context.store.getBaseCard(record.path)!.searchPreview!.snippets).toHaveLength(42);
+    await controller.changeSearchSnippets(record.path, "collapse");
+    expect(context.store.getBaseCard(record.path)!.searchPreview!).toMatchObject({ expanded: false, requestedSnippetCount: 2, snippetLimit: 2 });
+    expect(context.store.getBaseCard(record.path)!.searchPreview!.snippets).toEqual(first.snippets);
+    expect(read).toHaveBeenCalledOnce();
+    const replacement = card(record.path);
+    controller.prepareRecordsFromCache([replacement]);
+    expect(replacement.searchPreview?.snippets).toEqual(first.snippets);
+    controller.dispose();
+  });
+
+  it("retains the displayed prefix while an explicit append is pending and permits retry after failure", async () => {
+    const record = card("retry.md");
+    const source = Array.from({ length: 30 }, (_, index) => `${index} needle`).join("\n\n");
+    const { controller, context, read } = harness([record], vi.fn(async () => source), {}, () => "needle");
+    context.getSettings = () => ({ ...DEFAULT_SETTINGS, searchPreviewSnippetCount: 2 });
+    await controller.hydrateViewport(request(context, [record]));
+    const original = context.store.getBaseCard(record.path)!.searchPreview!;
+    controller.clearPreviewCache();
+    const pending = deferred<string>();
+    read.mockImplementationOnce(() => pending.promise);
+    const append = controller.changeSearchSnippets(record.path, "more");
+    expect(context.store.getBaseCard(record.path)?.searchPreview).toBe(original);
+    pending.reject(new Error("read failed"));
+    await append;
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.snippets).toEqual(original.snippets);
+    await controller.changeSearchSnippets(record.path, "more");
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.snippets).toHaveLength(22);
+    controller.dispose();
+  });
+});
+
+describe("search preparation owner replacement", () => {
+  it("adopts an identical active read when a newer same-query request replaces its owner", async () => {
+    vi.useFakeTimers();
+    try {
+      const record = card("adopt.md"), pending = deferred<string>();
+      const { controller, context, read } = harness([record], vi.fn(() => pending.promise), {}, () => "needle",
+        createRuntimeResourceBudget({ searchPreview: { prepareWaitMs: 10 } }));
+      let oldCurrent = true;
+      const first = controller.prepareSearchProjection([record], {
+        query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => oldCurrent,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      const installFirst = await first;
+      installFirst();
+      oldCurrent = false;
+      const second = controller.prepareSearchProjection([record], {
+        query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+      });
+      pending.resolve("needle body");
+      const installSecond = await second;
+      expect(read).toHaveBeenCalledOnce();
+      installSecond();
+      expect(context.store.getBaseCard(record.path)?.searchPreview?.status).toBe("hits");
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("uses a prefetched result without another read and keeps automatic work gated", async () => {
+    const records = Array.from({ length: 5 }, (_, index) => card(`${index}.md`));
+    const gate = new RuntimeWorkGate();
+    const { controller, context, read } = harness(records, vi.fn(async () => "needle body"), {}, () => "needle",
+      createRuntimeResourceBudget({ searchPreview: { lookaheadCards: 1 } }), gate);
+    await controller.hydrateViewport(request(context, [records[0]]));
+    await vi.waitFor(() => expect(controller.getDiagnostics()).toMatchObject({ active: 0, queued: 0 }));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(controller.getDiagnostics().searchSources.entries).toBe(1);
+    gate.setActive(false);
+    await controller.hydrateViewport({ ...request(context, records), start: 1, end: 2, paths: [records[1].path] });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(controller.getDiagnostics().searchPreview.prefetchHits).toBe(1);
+    expect(controller.getDiagnostics().searchSources.entries).toBe(1);
+    controller.dispose(); gate.close();
+  });
+});
+
+describe("bounded preparation window clamping", () => {
+  it("fills the clamped final visible window when a shorter result replaces a far-down stream", async () => {
+    const records = Array.from({ length: 6 }, (_, index) => card(`${index}.md`));
+    const { controller, context, read } = harness(records, vi.fn(async () => "needle body"));
+    await controller.hydrateViewport({ ...request(context, []), visibleStart: 80, visibleEnd: 90 });
+    await controller.prepareSearchProjection(records, { query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true });
+    expect(read.mock.calls.map(([file]) => file.path)).toEqual(records.map(record => record.path));
+    controller.dispose();
+  });
+});
+
+describe("search expansion scope ownership", () => {
+  it("does not project an old scope's expanded cache into a new scope while preserving the committed scope", async () => {
+    const record = card("shared.md");
+    const source = Array.from({ length: 30 }, (_, index) => `${index} needle`).join("\n\n");
+    const { controller, context } = harness([record], vi.fn(async () => source), {}, () => "needle");
+    context.getSettings = () => ({ ...DEFAULT_SETTINGS, searchPreviewSnippetCount: 2 });
+    await controller.hydrateViewport(request(context, [record]));
+    await controller.changeSearchSnippets(record.path, "expand");
+    const committed = context.store.getBaseCard(record.path)!.searchPreview!;
+    expect(committed.snippets).toHaveLength(22);
+    const incomingScope = createFolderScope("different", true);
+    const incoming = card(record.path);
+    controller.prepareRecordsFromCache([incoming], incomingScope);
+    expect(incoming.searchPreview).toBeUndefined();
+    expect(context.store.getBaseCard(record.path)?.searchPreview).toBe(committed);
+    const oldScopeRecord = card(record.path);
+    controller.prepareRecordsFromCache([oldScopeRecord]);
+    expect(oldScopeRecord.searchPreview?.snippets).toHaveLength(22);
+    context.store.setScope(incomingScope);
+    context.store.replaceBaseCards([incoming]);
+    context.store.replaceVisibleCards([incoming]);
+    await controller.hydrateViewport(request(context, [incoming]));
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.snippets).toHaveLength(2);
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.expanded).toBe(false);
+    controller.dispose();
+  });
+});
+
+describe("prefetch demand priority", () => {
+  it("defers lookahead until foreground demand settles and cancels obsolete scheduled windows", async () => {
+    vi.useFakeTimers();
+    try {
+      const records = Array.from({ length: 5 }, (_, index) => card(`${index}.md`));
+      const { controller, context, read } = harness(records, vi.fn(async () => "needle body"), {}, () => "needle",
+        createRuntimeResourceBudget({ searchPreview: { lookaheadCards: 1 } }));
+      await controller.hydrateViewport(request(context, [records[0]]));
+      expect(read.mock.calls.map(([file]) => file.path)).toEqual(["0.md"]);
+      await controller.hydrateViewport({ ...request(context, records), start: 3, end: 4, paths: [records[3].path] });
+      expect(read.mock.calls.map(([file]) => file.path)).toEqual(["0.md", "3.md"]);
+      await vi.runAllTimersAsync();
+      expect(read.mock.calls.map(([file]) => file.path)).toEqual(["0.md", "3.md", "4.md"]);
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("retains a prepared source when viewport demand promotes an active prefetch", async () => {
+    vi.useFakeTimers();
+    try {
+      const records = [card("0.md"), card("1.md")], pending = deferred<string>();
+      let query = "needle";
+      const source = "needle and target";
+      const read = vi.fn(async (file: { path: string }) => file.path === "1.md" ? pending.promise : source);
+      const { controller, context } = harness(records, read, {}, () => query,
+        createRuntimeResourceBudget({ searchPreview: { lookaheadCards: 1 } }));
+      await controller.hydrateViewport(request(context, [records[0]]));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(read).toHaveBeenCalledTimes(2);
+      const promoted = controller.hydrateViewport({ ...request(context, records), start: 1, end: 2, paths: [records[1].path] });
+      pending.resolve(source);
+      await promoted;
+      expect(controller.getDiagnostics().searchSources.entries).toBe(2);
+      query = "target";
+      context.store.advanceHydrationRevision();
+      await controller.hydrateViewport({ ...request(context, records), start: 1, end: 2, paths: [records[1].path] });
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(context.store.getBaseCard("1.md")?.searchPreview?.query).toBe("target");
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("satisfied viewport fast path", () => {
+  it("keeps an identical satisfied window's scheduled lookahead and still validates live file versions", async () => {
+    vi.useFakeTimers();
+    try {
+      const records = [card("0.md"), card("1.md")];
+      const { controller, context, read } = harness(records, vi.fn(async () => "needle body"), {}, () => "needle",
+        createRuntimeResourceBudget({ searchPreview: { lookaheadCards: 1 } }));
+      await controller.hydrateViewport(request(context, [records[0]]));
+      const timerCount = vi.getTimerCount();
+      const pendingTimer = (controller as unknown as { lookaheadTimer: number }).lookaheadTimer;
+      await controller.hydrateViewport(request(context, [records[0]]));
+      expect(vi.getTimerCount()).toBe(timerCount);
+      expect((controller as unknown as { lookaheadTimer: number }).lookaheadTimer).toBe(pendingTimer);
+      expect(read).toHaveBeenCalledOnce();
+      records[0].file.stat.mtime++;
+      await controller.hydrateViewport(request(context, [records[0]]));
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(context.store.getBaseCard(records[0].path)?.searchPreview?.mtime).toBe(records[0].file.stat.mtime);
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("revalidates snippet settings and the committed query for identical viewport bounds", async () => {
+    const record = card("same-bounds.md");
+    let query = "needle", limit = 2;
+    const source = Array.from({ length: 6 }, (_, index) => `${index} needle target`).join("\n\n");
+    const { controller, context, read } = harness([record], vi.fn(async () => source), {}, () => query);
+    context.getSettings = () => ({ ...DEFAULT_SETTINGS, searchPreviewSnippetCount: limit });
+    await controller.hydrateViewport(request(context, [record]));
+    limit = 5;
+    await controller.hydrateViewport(request(context, [record]));
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.snippets).toHaveLength(5);
+    query = "target";
+    await controller.hydrateViewport(request(context, [record]));
+    expect(context.store.getBaseCard(record.path)?.searchPreview?.query).toBe("target");
+    expect(read).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+});
+
+describe("directional search lookahead", () => {
+  it("reverses beyond the overscan window when real visible motion reverses", async () => {
+    vi.useFakeTimers();
+    try {
+      const records = Array.from({ length: 12 }, (_, index) => card(`${index}.md`));
+      const { controller, context, read } = harness(records, vi.fn(async () => "needle body"), {}, () => "needle",
+        createRuntimeResourceBudget({ searchPreview: { lookaheadCards: 2 } }));
+      const demand = (start: number, end: number, visibleStart: number, visibleEnd: number) => ({
+        ...request(context, records), start, end, visibleStart, visibleEnd, paths: records.slice(start, end).map(record => record.path),
+      });
+      await controller.hydrateViewport(demand(7, 10, 8, 9));
+      await vi.runAllTimersAsync();
+      expect(read.mock.calls.map(([file]) => file.path)).toEqual(["7.md", "8.md", "9.md", "10.md", "11.md"]);
+      read.mockClear();
+      await controller.hydrateViewport(demand(4, 7, 5, 6));
+      await vi.runAllTimersAsync();
+      expect(read.mock.calls.map(([file]) => file.path)).toEqual(["4.md", "5.md", "6.md", "3.md", "2.md"]);
+      controller.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("preparation commit projection revalidation", () => {
+  it("installs pending previews for cards added by browse filters while preparation waits", async () => {
+    const records = [card("prepared.md"), card("newly-visible.md")];
+    const pending = deferred<string>();
+    let query = "";
+    let projected = records.slice(0, 1);
+    const { controller, context } = harness(records, vi.fn(() => pending.promise), {}, () => query);
+    const preparation = controller.prepareSearchProjection(projected, {
+      query: "needle", revision: 0, matchFieldsByPath: {}, isCurrent: () => true,
+      getCards: () => projected,
+    });
+    projected = records;
+    // The commit reads current host records as well as the latest projection.
+    context.store.patchCardPreviews([{ path: records[1].path, patch: { previewHtml: "current ordinary body" } }]);
+    pending.resolve("needle body");
+    const install = await preparation;
+    query = "needle";
+    install();
+    expect(context.store.getBaseCard(records[0].path)?.searchPreview?.status).toBe("hits");
+    expect(context.store.getBaseCard(records[1].path)).toMatchObject({ previewHtml: "current ordinary body",
+      searchPreview: { query: "needle", status: "pending", expectedSnippetCount: DEFAULT_SETTINGS.searchPreviewSnippetCount } });
+    expect(context.publishGroups).not.toHaveBeenCalled();
+    controller.dispose();
   });
 });

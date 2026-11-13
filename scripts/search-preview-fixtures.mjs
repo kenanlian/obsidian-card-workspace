@@ -7,6 +7,16 @@ export const formattedSource = [
 
 export const denseSource = Array.from({ length: 12 }, () => "- needle `needle_code` [[Target|needle alias]] [needle label](url)").join("\n\n");
 
+// Independent paragraphs deliberately produce hundreds of merged windows.
+// Both browser lifecycle and extraction paging use the production window rules.
+export const hundredsSource = Array.from({length: 340}, (_, index) =>
+  `Paragraph ${index}: needle context ${"readable words ".repeat(6)}`).join("\n\n");
+
+export function lifecycleFixtures(count = 240) {
+  return Array.from({length: count}, (_, index) => ({path: `lifecycle/${index}.md`,
+    title: `Note ${index}`, markdown: hundredsSource, mtime: 2, ctime: 1}));
+}
+
 export function previewFixtures(kind) {
   return Array.from({ length: 36 }, (_, i) => ({ path: `fixture/${i}.md`, title: `Note ${i}`,
     markdown: Array.from({ length: 320 }, (_, line) => `context ${i} line ${line} ordinary prose`).join("\n")

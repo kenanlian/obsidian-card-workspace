@@ -55,16 +55,22 @@ export function* prepareSearchPreviewSource(markdown: string): Generator<unknown
   const reverse = new Int32Array(source.length).fill(-1);
   const lineRanges = new Map<number, { start: number; end: number }>();
   let line = 0;
+  let currentRange: { start: number; end: number } | undefined;
   // Readable source offsets preserve order. Advance the line once instead of
   // binary-searching the line table for every displayed character.
   for (let index = 0; index < body.length; index += 1) {
     const offset = displayOffsets[index];
     if (offset >= 0) {
       reverse[offset] = index;
-      while (line + 1 < starts.length && starts[line + 1] <= offset) line += 1;
-      const range = lineRanges.get(line);
-      if (range) range.end = index + 1;
-      else lineRanges.set(line, { start: index, end: index + 1 });
+      while (line + 1 < starts.length && starts[line + 1] <= offset) {
+        line += 1;
+        currentRange = undefined;
+      }
+      if (currentRange) currentRange.end = index + 1;
+      else {
+        currentRange = { start: index, end: index + 1 };
+        lineRanges.set(line, currentRange);
+      }
     }
     if (index % 1024 === 0) yield;
   }
@@ -72,9 +78,12 @@ export function* prepareSearchPreviewSource(markdown: string): Generator<unknown
   let termBytes = 0;
   // Preserve the index tokenizer's order and cap, including expanded terms.
   // A subsequent query tests each distinct spelling once without retokenizing.
+  let termBatch = 0;
   for (const term of iterateSearchIndexTerms(mapped.text)) {
-    yield;
-    if (!term) continue;
+    // Keep the tokenizer's long-run checkpoints, while amortizing scheduler
+    // clock reads over ordinary terms rather than testing every token.
+    if (!term) { yield; continue; }
+    if (++termBatch === 256) { termBatch = 0; yield; }
     const positions = terms.get(term.text);
     if (positions) positions.push(term.start);
     else {

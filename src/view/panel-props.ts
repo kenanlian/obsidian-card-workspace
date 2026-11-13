@@ -20,6 +20,7 @@ export interface PanelHost {
     startCardFileDrag: CardFileDragStarter;
   };
   resolveCardLocation?: (path: string) => CardOpenLocation | null;
+  changeSearchSnippets?: (path: string, command: "expand" | "more" | "collapse") => Promise<void>;
   resolveSearchSnippetLocation?: (path: string, snippetId: string) => CardOpenLocation | null;
     handleToolbarAction: (detail: ToolbarActionPayload) => void;
     onIncludeSubfoldersChange: (detail: { value?: unknown }) => Promise<void>;
@@ -62,6 +63,11 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
       if (location) void view.plugin.openNoteFromCard(detail.path, undefined, location);
       else void view.plugin.openNoteFromCard(detail.path);
     },
+    onSearchSnippetsCommand: (detail: { path?: unknown; command?: unknown }) => {
+      const command = detail.command;
+      if (typeof detail.path !== "string" || (command !== "expand" && command !== "more" && command !== "collapse") || view.modules.bulk.isBulkMode()) return;
+      void view.changeSearchSnippets?.(detail.path, command).catch((error: unknown) => console.warn("Card Workspace search preview failed", error));
+    },
     onToggleReferences: (detail: { path?: unknown }) => {
       if (typeof detail.path === "string" && !view.modules.bulk.isBulkMode()) void view.modules.hydration.toggleReferences(detail.path).catch((error: unknown) => console.warn("Card Workspace reference preview failed", error));
     },
@@ -101,6 +107,8 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
         start: request.start,
         end: request.end,
         paths: request.paths,
+        ...(typeof request.visibleStart === "number" ? { visibleStart: request.visibleStart } : {}),
+        ...(typeof request.visibleEnd === "number" ? { visibleEnd: request.visibleEnd } : {}),
       });
     },
     onImageViewport: (detail: unknown) => {

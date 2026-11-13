@@ -1160,12 +1160,14 @@ describe("FolderCardView host contract", () => {
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
       expect(query).toHaveBeenCalledTimes(1);
       expect((view as any).visibleCards).toEqual([]);
 
       emitSnapshot({
         initialized: true,
         contentRevision: 0,
+        indexGeneration: 0,
         disposed: false,
         mode: "indexed",
         status: "ready",
@@ -1183,6 +1185,7 @@ describe("FolderCardView host contract", () => {
 
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
 
       expect(query).toHaveBeenCalledTimes(2);
       expect(getSearchController(view).getQuery()).toBe("beta");
@@ -1243,6 +1246,7 @@ describe("FolderCardView host contract", () => {
       emitSnapshot({
         initialized: true,
         contentRevision: 0,
+        indexGeneration: 0,
         disposed: false,
         mode: "indexed",
         status: "building",
@@ -1575,6 +1579,7 @@ describe("FolderCardView host contract", () => {
     vi.useFakeTimers();
     try {
       const { view, plugin } = createHarness();
+      (view.app.vault.cachedRead as ReturnType<typeof vi.fn>).mockResolvedValue("Preview text");
       const query = vi.fn(async () => ({
         mode: "indexed",
         status: "ready",
@@ -1601,11 +1606,15 @@ describe("FolderCardView host contract", () => {
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
 
       const panelState = getPanelState(view);
       expect(panelState.cards.searchMatchCountsByPath).toEqual({ "notes/alpha.md": 3 });
       expect(card.previewHtml).toBe("<p>Preview text</p>");
-      expect((view as any).baseCards[0]).toBe(card);
+      // Bounded preparation replaces the record with its contextual preview before commit.
+      expect((view as any).baseCards[0]).toMatchObject(card);
+      expect((view as any).baseCards[0]).not.toHaveProperty("matchCount");
+      expect((view as any).baseCards[0]).not.toHaveProperty("searchMatchCount");
       expect(panelState.cards.records[0]).not.toHaveProperty("matchCount");
       expect(panelState.cards.records[0]).not.toHaveProperty("searchMatchCount");
       expect(panelState.cards.records[0]).toMatchObject({ path: "notes/alpha.md", title: "Alpha" });
@@ -1648,6 +1657,7 @@ describe("FolderCardView host contract", () => {
       vi.advanceTimersByTime(120);
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
       await (view as any).modules.hydration.hydrateViewport({
         generation: (view as any).epochs.load.value,
         hydrationRevision: (view as any).store.getHydrationRevision(),
@@ -1898,6 +1908,7 @@ describe("FolderCardView host contract", () => {
       });
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
 
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({});
 
@@ -1910,6 +1921,7 @@ describe("FolderCardView host contract", () => {
       });
       await Promise.resolve();
       await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
 
       expect(getPanelState(view).cards.searchMatchCountsByPath).toEqual({ "notes/beta.md": 2 });
     } finally {

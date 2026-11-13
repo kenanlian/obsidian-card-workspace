@@ -1,6 +1,6 @@
 import { RuntimeWorkGate } from "./work-gate";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRuntimeResourceBudget, DESKTOP_RESOURCE_BUDGET } from "./resource-budget";
+import { createRuntimeResourceBudget, DESKTOP_RESOURCE_BUDGET, resolveRuntimeResourceBudget } from "./resource-budget";
 import { PreviewCache, createPreviewFingerprint } from "../view/preview-cache";
 import { readImageHeader, thumbnailDimensions } from "../images/image-header";
 import { ThumbnailService } from "../images/ThumbnailService";
@@ -9,6 +9,15 @@ import { addDocumentsWithYield } from "../search/index-ingest";
 afterEach(() => { vi.useRealTimers(); });
 
 describe("internal resource budgets", () => {
+  it("selects bounded preparation and lookahead independently of the shared read pool", () => {
+    expect(resolveRuntimeResourceBudget("desktop").searchPreview).toMatchObject({ prepareCards: 12, prepareWaitMs: 100, lookaheadCards: 24 });
+    expect(resolveRuntimeResourceBudget("tablet").searchPreview).toMatchObject({ prepareCards: 8, prepareWaitMs: 120, lookaheadCards: 12 });
+    expect(resolveRuntimeResourceBudget("phone").searchPreview).toMatchObject({ prepareCards: 6, prepareWaitMs: 140, lookaheadCards: 8 });
+    expect(resolveRuntimeResourceBudget("desktop").preview.concurrency).toBe(5);
+    expect(resolveRuntimeResourceBudget("tablet").preview.concurrency).toBe(3);
+    expect(resolveRuntimeResourceBudget("phone").preview.concurrency).toBe(2);
+  });
+
   it("copies, validates and freezes every group", () => {
     const preview = { concurrency: 1 };
     const budget = createRuntimeResourceBudget({ preview }); preview.concurrency = 9;

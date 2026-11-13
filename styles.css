@@ -1857,6 +1857,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   font-size: var(--font-smallest);
 }
 
+.folder-card-view .fce-search-snippets-toggle,
 .folder-card-view .fce-references-toggle,
 .folder-card-view .fce-reference-target {
   height: auto;
@@ -1882,6 +1883,47 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 
 .folder-card-view .fce-card-body.has-right-image.has-reference-details .fce-card-task-footer {
   grid-row: auto;
+}
+
+.folder-card-view .fce-search-snippet-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.folder-card-view .fce-card-body.has-right-image .fce-search-snippet-controls {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.folder-card-view .fce-card-body.has-right-image.has-search-controls .fce-reference-details {
+  grid-row: 4;
+}
+
+.folder-card-view .fce-card-body.has-right-image.has-search-controls .fce-card-task-footer {
+  grid-row: auto;
+}
+
+.folder-card-view .fce-search-pending .fce-preview-context-divider {
+  display: block;
+}
+
+.folder-card-view .fce-search-pending,
+.folder-card-view .fce-search-pending-lines {
+  display: block;
+  width: 100%;
+}
+
+.folder-card-view .fce-search-pending-lines {
+  height: calc(2em * var(--fce-preview-line-height));
+  border-radius: var(--radius-s);
+  background: linear-gradient(transparent 25%, var(--background-modifier-hover) 25%, var(--background-modifier-hover) 70%, transparent 70%);
+  background-size: 100% calc(1em * var(--fce-preview-line-height));
+}
+
+.folder-card-view .fce-excerpt.is-search-pending:not(.is-search) .fce-search-pending-lines {
+  height: calc(var(--fce-preview-line-clamp) * 1em * var(--fce-preview-line-height));
 }
 
 /* === preview === */

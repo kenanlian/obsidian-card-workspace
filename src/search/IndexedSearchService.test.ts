@@ -30,6 +30,7 @@ function createSnapshot(overrides: Partial<SearchServiceSnapshot> = {}): SearchS
     status: "building",
     lastError: null,
     contentRevision: 0,
+    indexGeneration: 0,
     health: createHealth(),
     ...overrides,
   };
@@ -170,6 +171,19 @@ describe("IndexedSearchService", () => {
     expect(seen).toEqual(["building", "building", "building", "ready"]);
 
     unsubscribe();
+  });
+
+  it("passes through content revision and whole-index generation independently", async () => {
+    const harness = createManagerHarness(createSnapshot({ status: "ready", indexGeneration: 2 }));
+    const service = new IndexedSearchService(harness.manager, { maxCandidatePaths: 25 });
+    await service.initialize();
+    const seen: number[] = [];
+    service.subscribe((snapshot) => seen.push(snapshot.indexGeneration));
+    harness.emit(createSnapshot({ status: "ready", contentRevision: 3, indexGeneration: 2 }));
+    expect(service.getSnapshot()).toMatchObject({ contentRevision: 3, indexGeneration: 2 });
+    harness.emit(createSnapshot({ status: "ready", contentRevision: 4, indexGeneration: 3 }));
+    expect(service.getSnapshot()).toMatchObject({ contentRevision: 4, indexGeneration: 3 });
+    expect(seen).toEqual([2, 2, 3]);
   });
 
   it("disposes safely, unsubscribes manager listener, and emits final disposed snapshot", async () => {

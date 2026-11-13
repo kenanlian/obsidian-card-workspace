@@ -43,6 +43,7 @@ interface CardItemCallbacks {
   onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
   onCardHoverLink?: (payload: CardHoverLinkPayload) => void;
   onCardDragStart?: CardFileDragStarter;
+  onSearchSnippetsCommand?: (payload: { path: string; command: "expand" | "more" | "collapse" }) => void;
   onToggleReferences?: (payload: { path: string }) => void;
   onImageReveal?: (payload: import("./image-request").CardImageRevealRequest) => boolean;
 }
@@ -811,6 +812,84 @@ describe("CardItem.svelte", () => {
     const { target } = mountCardItem({ searchQuery: "needle", card, appearance: { cardCornerRadius: "compact", previewLines: 0, searchPreviewSnippetCount: snippetLimit } });
     expect(target.querySelectorAll(".fce-search-snippet")).toHaveLength(snippetLimit);
     expect(target.querySelector(".fce-excerpt")?.getAttribute("style")).toContain(`--fce-preview-line-clamp: ${snippetLimit * 2}`);
+  });
+
+  it.each([0, 3])("reserves pending preview geometry for expected count %i", async (expectedSnippetCount) => {
+    const card = createCard(); card.hydrated = false;
+    card.searchPreview = { query: "needle", revision: 1, mtime: card.mtime, previewLines: 5, snippetLimit: 2,
+      status: "pending", expectedSnippetCount, snippets: [] };
+    const { target } = mountCardItem({ card, searchQuery: "needle" }); await tick();
+    expect(target.querySelectorAll(".fce-search-pending-lines")).toHaveLength(expectedSnippetCount || 1);
+    expect(target.querySelector(".fce-excerpt")?.getAttribute("style")).toContain(`--fce-preview-line-clamp: ${expectedSnippetCount ? expectedSnippetCount * 2 : 5}`);
+    expect(target.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(getUiStrings("en").cardItem.placeholderLoading);
+    expect(target.textContent).not.toContain(getUiStrings("en").cardItem.searchBodyUnavailable);
+  });
+
+  it.each(["en", "zh"] as const)("routes snippet controls once and keeps expansion host-owned in %s", async (language) => {
+    const card = await searchCard("needle", "first needle\n\nsecond needle");
+    card.searchPreview = { ...card.searchPreview!, totalSnippets: 45 };
+    const onSearchSnippetsCommand = vi.fn();
+    const { target } = mountCardItem({ card, language, searchQuery: "needle" }, { onSearchSnippetsCommand });
+    const expand = target.querySelector<HTMLButtonElement>(".fce-search-snippets-toggle")!;
+    expect(expand.textContent).toContain("43");
+    expand.click();
+    expand.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expand.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true, cancelable: true }));
+    expand.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    expect(onSearchSnippetsCommand.mock.calls.map(([payload]) => payload.command)).toEqual(["expand", "expand", "expand"]);
+    expect(target.querySelectorAll(".fce-search-snippet")).toHaveLength(2);
+    const expanded = { ...card, searchPreview: { ...card.searchPreview!, expanded: true,
+      snippets: Array.from({ length: 22 }, (_, index) => ({ ...card.searchPreview!.snippets[index % 2], id: `expanded-${index}` })) } };
+    const next = mountCardItem({ card: expanded, language, searchQuery: "needle" }, { onSearchSnippetsCommand });
+    const controls = next.target.querySelectorAll<HTMLButtonElement>(".fce-search-snippets-toggle");
+    controls[0].click(); controls[1].click();
+    expect(onSearchSnippetsCommand.mock.calls.slice(-2).map(([payload]) => payload.command)).toEqual(["more", "collapse"]);
+    expect(next.target.querySelectorAll(".fce-search-snippet")).toHaveLength(22);
+    expect(next.target.querySelector(".fce-excerpt")?.getAttribute("style")).toContain("--fce-preview-line-clamp: 44");
+  });
+
+  it("uses one shared snippet observer and releases all targets on teardown", async () => {
+    const observers: Array<{ observe: ReturnType<typeof vi.fn>; unobserve: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = [];
+    const originalObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe = vi.fn(); unobserve = vi.fn(); disconnect = vi.fn();
+      constructor() { observers.push(this); }
+    } as unknown as typeof ResizeObserver;
+    try {
+      const card = await searchCard("needle", "needle");
+      card.searchPreview = { ...card.searchPreview!, expanded: true, totalSnippets: 100,
+        snippets: Array.from({ length: 100 }, (_, index) => ({ ...card.searchPreview!.snippets[0], id: `long-${index}` })) };
+      const { component, target } = mountCardItem({ card, searchQuery: "needle" }); await tick();
+      expect(target.querySelectorAll(".fce-search-snippet")).toHaveLength(100);
+      expect(observers).toHaveLength(1); expect(observers[0].observe).toHaveBeenCalledTimes(100);
+      await disposeMountedComponent(component);
+      expect(observers[0].unobserve).toHaveBeenCalledTimes(100); expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    } finally { globalThis.ResizeObserver = originalObserver; }
+  });
+
+  it("keeps search expansion independent of Links reference expansion", async () => {
+    const card = referenceCard("backlinks", true);
+    const search = await searchCard("needle", "needle");
+    card.searchPreview = { ...search.searchPreview!, totalSnippets: 10 };
+    const onSearchSnippetsCommand = vi.fn(), onToggleReferences = vi.fn();
+    const { target } = mountCardItem({ card, searchQuery: "needle" }, { onSearchSnippetsCommand, onToggleReferences });
+    target.querySelector<HTMLButtonElement>(".fce-search-snippets-toggle")!.click();
+    target.querySelector<HTMLButtonElement>(".fce-references-toggle")!.click();
+    expect(onSearchSnippetsCommand).toHaveBeenCalledExactlyOnceWith({ path: card.path, command: "expand" });
+    expect(onToggleReferences).toHaveBeenCalledExactlyOnceWith({ path: card.path });
+    expect(target.querySelectorAll(".fce-reference-snippet")).toHaveLength(5);
+    expect(target.querySelectorAll(".fce-search-snippet:not(.fce-reference-snippet)")).toHaveLength(1);
+  });
+
+  it("selects cards for snippet expansion controls in bulk mode", async () => {
+    const card = await searchCard("needle", "needle"); card.searchPreview = { ...card.searchPreview!, totalSnippets: 10, expanded: true };
+    const captured = createCapturedCallbacks(), onSearchSnippetsCommand = vi.fn();
+    const { target } = mountCardItem({ card, searchQuery: "needle", bulkMode: true }, { ...captured.callbacks, onSearchSnippetsCommand });
+    const controls = target.querySelectorAll<HTMLButtonElement>(".fce-search-snippets-toggle");
+    controls[0].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    controls[1].dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    expect(onSearchSnippetsCommand).not.toHaveBeenCalled(); expect(captured.openEvents).toEqual([]);
+    expect(captured.bulkEvents).toEqual([{ path: card.path, shiftKey: true }, { path: card.path, shiftKey: false }]);
   });
 
   it("opens each snippet once by mouse, Enter, and Space; the title opens normally", async () => {

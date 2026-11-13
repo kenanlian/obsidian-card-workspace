@@ -6,7 +6,7 @@ import { buildLinkReferenceSnippets, buildOutgoingReferenceSnippets, type LinkRe
 import { collectLinkReferenceLocations, type LinkReferenceCardLocation } from "../link-card-location";
 import { scopeIdentity, type LinksScope } from "../scope";
 import type { EpochToken } from "../async-epoch";
-import { createSearchPreviewMatcher, extractSearchPreviewSnippets, SearchPreviewSourceCache, type SearchPreview, type SearchMatchField } from "../../search";
+import { createSearchPreviewMatcher, extractSearchPreview, SearchPreviewSourceCache, type SearchPreview, type SearchMatchField } from "../../search";
 import { isMarkdownCardKind, resolveCardFileKind } from "../file-kind";
 import type { HydrateViewportRequest } from "../hydration-request";
 import { buildLightPreview, DEFAULT_PREVIEW_MAX_VISIBLE_CHARS } from "../markdown-utils";
@@ -22,6 +22,13 @@ import type { CardPreviewFields, CardPreviewUpdate } from "../view-state-store";
 import { buildEmptyPreviewPatch, buildPlaceholderPatch, buildPreviewPatch,
   type HydrationPreview } from "./hydration-patch";
 
+export interface SearchPreparationContext {
+  readonly query: string;
+  readonly revision: number;
+  readonly matchFieldsByPath: Readonly<Record<string, SearchMatchField[]>>;
+  readonly isCurrent: () => boolean;
+  readonly getCards?: () => readonly NoteCardRecord[];
+}
 interface HydrationJob {
   readonly path: string;
   fingerprint: PreviewFingerprint;
@@ -36,6 +43,9 @@ interface HydrationJob {
   forced: boolean;
   explicit: boolean;
   foreground: boolean;
+  prefetch: boolean;
+  retainSource: boolean;
+  preparation?: SearchPreparationContext;
   replacementRequested: boolean;
   readonly settled: Promise<void>;
   resolve: () => void;
@@ -66,7 +76,12 @@ export class HydrationController implements DisposableController {
   private readonly appliedFingerprints = new Map<string, PreviewFingerprint>();
   private readonly jobs = new Map<string, HydrationJob>();
   private readonly queue: HydrationJob[] = [];
+  private lookaheadTimer: ReturnType<Window["setTimeout"]> | null = null;
+  private lookaheadPaths: readonly string[] = [];
   private latestViewportRequest: HydrateViewportRequest | null = null;
+  private latestViewportSequence = -1;
+  private latestViewportScope = "";
+  private lookaheadDirection: 1 | -1 = 1;
   private readonly stopWorkGate: () => void;
   private readonly latestViewport = new Set<string>();
   private pendingPatches: PendingPatch[] = [];
@@ -81,6 +96,12 @@ export class HydrationController implements DisposableController {
   private expansionScope = "";
   private snippetCount: import("../../settings").BacklinkSnippetCount = 3;
   private readonly expandedReferences = new Set<string>();
+  private readonly searchSnippetTargets = new Map<string, number>();
+  private searchExpansionIdentity = "";
+  private readonly previewDiagnostics = { prepareCompleted: 0, prepareTimedOut: 0, prepareWaitMs: 0, prefetchHits: 0, prefetchWaste: 0 };
+  private readonly prefetchedPaths = new Map<string, PreviewFingerprint>();
+  private readonly expiredPreparations = new WeakSet<SearchPreparationContext>();
+  private readonly installedPreparations = new WeakSet<SearchPreparationContext>();
   private sourceRead: { key: string; promise: Promise<string> } | null = null;
   private readonly fileRevisions = new WeakMap<object, number>();
   getFileRevision(file: NoteCardRecord["file"]): number { return this.fileRevisions.get(file) ?? 0; }
@@ -138,6 +159,104 @@ export class HydrationController implements DisposableController {
       ? { ...initial, totalSnippets: previous.totalSnippets, snippets: [] } : initial } }]);
     this.context.publishGroups("cards");
     await this.requestPath(path, 0, { forced: true, foreground: true, explicit: true });
+  }
+  private ensureSearchExpansion(): void {
+    const identity = `${scopeIdentity(this.context.store.getScope())}:${this.deps.getCommittedQuery?.().trim() ?? ""}:${this.context.getSettings().searchPreviewSnippetCount}`;
+    if (identity !== this.searchExpansionIdentity) {
+      this.searchExpansionIdentity = identity;
+      this.searchSnippetTargets.clear();
+    }
+  }
+  private searchTarget(path: string, query = this.deps.getCommittedQuery?.().trim() ?? "", scope = this.context.store.getScope()): number {
+    if (scopeIdentity(scope) !== scopeIdentity(this.context.store.getScope())) return this.context.getSettings().searchPreviewSnippetCount;
+    this.ensureSearchExpansion();
+    return query === (this.deps.getCommittedQuery?.().trim() ?? "")
+      ? this.searchSnippetTargets.get(path) ?? this.context.getSettings().searchPreviewSnippetCount
+      : this.context.getSettings().searchPreviewSnippetCount;
+  }
+  async changeSearchSnippets(path: string, command: "expand" | "more" | "collapse"): Promise<void> {
+    const card = this.context.store.getBaseCard(path);
+    if (this.disposed || !card || !this.deps.getCommittedQuery?.().trim() || this.deps.isCommittedQueryCurrent?.() === false) return;
+    this.ensureSearchExpansion();
+    const preview = card.searchPreview;
+    if (!preview || preview.status !== "hits") return;
+    const initial = this.context.getSettings().searchPreviewSnippetCount;
+    const target = command === "collapse" ? initial : preview.snippets.length + 20;
+    this.searchSnippetTargets.set(path, target);
+    if (command === "collapse") {
+      const fingerprint = this.fingerprintFor(card);
+      const collapsed = { ...preview, snippets: preview.snippets.slice(0, initial), expanded: false, requestedSnippetCount: initial };
+      const cached = this.cache.get(this.ordinaryFingerprintFor(card, fingerprint));
+      this.cache.set(fingerprint, { ...(cached ?? { html: card.previewHtml, mode: card.previewMode === "placeholder" ? "empty" : card.previewMode }), searchPreview: collapsed });
+      this.context.store.patchCardPreviews([{ path, patch: { searchPreview: collapsed } }]);
+      this.rememberAppliedFingerprint(path, fingerprint);
+      this.context.publishGroups("cards");
+      return;
+    }
+    await this.requestPath(path, 0, { forced: true, foreground: true, explicit: true });
+  }
+
+  /** Prepare only the real visible window; the returned installer is synchronous. */
+  async prepareSearchProjection(cards: readonly NoteCardRecord[], preparation: SearchPreparationContext): Promise<() => void> {
+    if (this.disposed || this.context.store.getScope().kind === "links" || !preparation.isCurrent()) return () => {};
+    const requested = this.latestViewportRequest;
+    const requestedStart = requested?.visibleStart ?? requested?.start ?? 0;
+    const requestedEnd = requested?.visibleEnd ?? requested?.end ?? this.budget.searchPreview.prepareCards;
+    const desiredCount = Math.min(this.budget.searchPreview.prepareCards, Math.max(1, requestedEnd - requestedStart));
+    const start = Math.max(0, Math.min(requestedStart, Math.max(0, cards.length - desiredCount)));
+    const targets = cards.slice(start, start + desiredCount);
+    if (!this.context.workGate?.isPaused && !this.context.workGate?.isClosed) {
+      const started = performance.now();
+      const work = Promise.all(targets.filter(card => isMarkdownCardKind(card.fileKind)).map(card => this.requestPath(card.path, 0, { preparation, foreground: true })));
+      let timer: ReturnType<Window["setTimeout"]> | undefined;
+      const completed = await Promise.race([
+        work.then(() => true),
+        new Promise<false>(resolve => { timer = this.context.getViewWindow().setTimeout(() => resolve(false), this.budget.searchPreview.prepareWaitMs); }),
+      ]);
+      if (timer !== undefined) this.context.getViewWindow().clearTimeout(timer);
+      this.previewDiagnostics.prepareWaitMs += performance.now() - started;
+      if (completed) this.previewDiagnostics.prepareCompleted++;
+      else {
+        this.previewDiagnostics.prepareTimedOut++;
+        this.expiredPreparations.add(preparation);
+        for (const job of this.queue.slice()) {
+          if (job.preparation === preparation && !job.viewport && !job.startup && !job.explicit && !job.forced) this.dropQueuedJob(job);
+        }
+      }
+    }
+    return () => {
+      if (!preparation.isCurrent() || this.disposed) return;
+      this.installedPreparations.add(preparation);
+      const updates: CardPreviewUpdate[] = [];
+      for (const projected of preparation.getCards?.() ?? cards) {
+        const card = this.context.store.getBaseCard(projected.path);
+        if (!card) continue;
+        const fingerprint = this.fingerprintFor(card);
+        const cached = this.cache.get(fingerprint);
+        const applied = this.appliedFingerprints.get(card.path);
+        if (this.context.store.getBaseCard(card.path)?.searchPreview && applied && fingerprintsEqual(applied, fingerprint)) continue;
+        if (cached) {
+          updates.push({ path: card.path, patch: this.previewPatch(card, cached) });
+          this.rememberAppliedFingerprint(card.path, fingerprint);
+        } else if (!isMarkdownCardKind(card.fileKind)) {
+          updates.push({ path: card.path, patch: this.placeholderPatch(card) });
+          this.rememberAppliedFingerprint(card.path, fingerprint);
+        } else {
+          const fields = preparation.matchFieldsByPath[card.path];
+          const titleOnly = fields?.includes("title") && !fields.includes("content");
+          const ordinary = titleOnly ? this.cache.get(this.ordinaryFingerprintFor(card, fingerprint)) : undefined;
+          if (ordinary) {
+            const preview = { ...ordinary, searchPreview: this.searchPreviewFor(card, "title-only") };
+            this.cache.set(fingerprint, preview);
+            updates.push({ path: card.path, patch: this.previewPatch(card, preview) });
+            this.rememberAppliedFingerprint(card.path, fingerprint);
+          } else updates.push({ path: card.path, patch: { searchPreview: {
+            ...this.searchPreviewFor(card, "pending"), expectedSnippetCount: titleOnly ? 0 : this.context.getSettings().searchPreviewSnippetCount,
+          } } });
+        }
+      }
+      this.context.store.patchCardPreviews(updates);
+    };
   }
   /** Count-only changes must re-sort too; metadata positions invalidate existing previews. */
   invalidateLinkMetadata(path?: string): boolean {
@@ -232,8 +351,8 @@ export class HydrationController implements DisposableController {
   }
   get startupCardCount(): number { return this.budget.preview.startupCards; }
   getDiagnostics() {
-    return { gate: this.context.workGate?.getDiagnostics(), active: this.activeReads, queued: this.queue.length, cacheEntries: this.cache.size,
-      diagramBytes: this.cache.diagramBytes, phases: this.timings.snapshot(), searchSources: this.searchSources.getDiagnostics() };
+    return { gate: this.context.workGate?.getDiagnostics(), active: this.activeReads, queued: this.queue.length + this.lookaheadPaths.length, cacheEntries: this.cache.size,
+      searchPreview: { ...this.previewDiagnostics }, diagramBytes: this.cache.diagramBytes, phases: this.timings.snapshot(), searchSources: this.searchSources.getDiagnostics() };
   }
   hasPending(path: string): boolean {
     return this.jobs.has(path);
@@ -252,12 +371,14 @@ export class HydrationController implements DisposableController {
     this.resetForLoad();
   }
   resetForLoad(): void {
+    this.cancelLookahead();
     this.latestViewport.clear();
     for (const job of this.jobs.values()) {
       job.viewport = false;
       job.startup = false;
       job.forced = false;
       job.foreground = false;
+      job.prefetch = false;
       if (job.state === "queued") this.dropQueuedJob(job);
     }
   }
@@ -325,6 +446,11 @@ export class HydrationController implements DisposableController {
       }
     }
     const invalidate = (path: string): void => {
+      if (event.eventType === "delete" || event.eventType === "rename") {
+        for (const key of this.searchSnippetTargets.keys()) {
+          if (key === path || (event.isFolder && key.startsWith(`${path}/`))) this.searchSnippetTargets.delete(key);
+        }
+      }
       if (event.isFolder) {
         this.cache.invalidatePrefix(path);
         this.searchSources.invalidatePrefix(path);
@@ -372,12 +498,38 @@ export class HydrationController implements DisposableController {
   }
   async hydrateViewport(request: HydrateViewportRequest): Promise<void> {
     if (!this.validRequestIdentity(request) || this.deps.isLoading()) return;
+    if (this.isCurrentViewportSatisfied(request)) return;
+    this.cancelLookahead();
+    const previousViewport = this.latestViewportRequest;
+    const realStart = request.visibleStart ?? request.start;
+    const previousStart = previousViewport?.visibleStart ?? previousViewport?.start ?? realStart;
+    if (!previousViewport || previousViewport.generation !== request.generation) this.lookaheadDirection = 1;
+    else if (realStart !== previousStart) this.lookaheadDirection = realStart > previousStart ? 1 : -1;
     this.latestViewportRequest = { ...request, paths: [...request.paths] };
+    this.latestViewportSequence = this.context.store.getVisibleSequenceRevision();
+    this.latestViewportScope = scopeIdentity(this.context.store.getScope());
+    const viewportIdentity = this.latestViewportRequest;
     const visible = this.context.store.getVisibleCards();
     const count = Math.max(0, request.end - request.start);
     const paths = request.paths.slice(0, count).filter(
       (path, offset) => visible[request.start + offset]?.path === path,
     );
+    const realEnd = Math.min(visible.length, request.visibleEnd ?? request.end);
+    const lookahead = this.deps.getCommittedQuery?.().trim() && this.context.store.getScope().kind !== "links"
+      ? (this.lookaheadDirection === 1
+        ? visible.slice(request.end, request.end + this.budget.searchPreview.lookaheadCards)
+        : visible.slice(Math.max(0, request.start - this.budget.searchPreview.lookaheadCards), request.start).reverse())
+        .map(card => card.path) : [];
+    const nextPrefetch = new Set(lookahead);
+    for (const job of this.jobs.values()) {
+      if (job.prefetch && !nextPrefetch.has(job.path)) {
+        job.prefetch = false;
+        if (job.state === "queued" && !job.viewport && !job.startup && !job.forced && !job.foreground) {
+          this.previewDiagnostics.prefetchWaste++;
+          this.dropQueuedJob(job);
+        }
+      }
+    }
     const next = new Set(paths);
     for (const job of this.jobs.values()) {
       if (job.viewport && !next.has(job.path)) {
@@ -387,7 +539,26 @@ export class HydrationController implements DisposableController {
     }
     this.latestViewport.clear();
     paths.forEach((path) => this.latestViewport.add(path));
-    await Promise.all(paths.map((path) => this.requestPath(path, 1, { viewport: true })));
+    const visibleWork = paths.map((path, offset) => this.requestPath(path,
+      request.start + offset >= realStart && request.start + offset < realEnd ? 0 : 1, { viewport: true }));
+    await Promise.all(visibleWork);
+    if (this.latestViewportRequest === viewportIdentity && !this.disposed
+      && !this.context.workGate?.isPaused && !this.context.workGate?.isClosed && lookahead.length > 0) {
+      this.lookaheadPaths = lookahead;
+      this.lookaheadTimer = this.context.getViewWindow().setTimeout(() => {
+        this.lookaheadTimer = null;
+        const paths = this.lookaheadPaths;
+        this.lookaheadPaths = [];
+        if (this.disposed || this.context.workGate?.isPaused || this.context.workGate?.isClosed
+          || this.latestViewportRequest !== viewportIdentity) return;
+        for (const path of paths) void this.requestPath(path, 4, { prefetch: true });
+      }, 0);
+    }
+  }
+  private cancelLookahead(): void {
+    if (this.lookaheadTimer !== null) this.context.getViewWindow().clearTimeout(this.lookaheadTimer);
+    this.lookaheadTimer = null;
+    this.lookaheadPaths = [];
   }
   async hydrateStartupCardPaths(paths: string[], token: EpochToken): Promise<void> {
     if (this.disposed || !this.context.epochs.load.isCurrent(token)) return;
@@ -427,6 +598,30 @@ export class HydrationController implements DisposableController {
       paths,
     });
   }
+  private isCurrentViewportSatisfied(request: HydrateViewportRequest): boolean {
+    const previous = this.latestViewportRequest;
+    if (!previous || this.deps.isCommittedQueryCurrent?.() === false
+      || this.latestViewportSequence !== this.context.store.getVisibleSequenceRevision()
+      || this.latestViewportScope !== scopeIdentity(this.context.store.getScope())
+      || previous.generation !== request.generation || previous.hydrationRevision !== request.hydrationRevision
+      || previous.start !== request.start || previous.end !== request.end
+      || (previous.visibleStart ?? previous.start) !== (request.visibleStart ?? request.start)
+      || (previous.visibleEnd ?? previous.end) !== (request.visibleEnd ?? request.end)
+      || previous.paths.length !== request.paths.length) return false;
+    const visible = this.context.store.getVisibleCards();
+    for (let offset = 0; offset < request.paths.length; offset++) {
+      const path = request.paths[offset];
+      if (path !== previous.paths[offset]) return false;
+      if (offset >= request.end - request.start) continue;
+      const card = visible[request.start + offset];
+      const applied = this.appliedFingerprints.get(path);
+      if (card?.path !== path || !card.hydrated || !applied
+        || !fingerprintsEqual(applied, this.fingerprintFor(card))
+        || (card.linkPreview && card.linkPreview.status === "loading")) return false;
+    }
+    return true;
+  }
+
   private validRequestIdentity(request: HydrateViewportRequest): boolean {
     return !this.disposed
       && Number.isInteger(request.start)
@@ -444,10 +639,10 @@ export class HydrationController implements DisposableController {
   }
 
   private requestPath(path: string, priority: number,
-    owner: { viewport?: boolean; startup?: boolean; forced?: boolean; foreground?: boolean; explicit?: boolean }): Promise<void> {
-    if (this.disposed) return Promise.resolve();
+    owner: { viewport?: boolean; startup?: boolean; forced?: boolean; foreground?: boolean; explicit?: boolean; prefetch?: boolean; preparation?: SearchPreparationContext }): Promise<void> {
+    if (this.disposed || (owner.preparation && this.expiredPreparations.has(owner.preparation))) return Promise.resolve();
     const card = this.context.store.getBaseCard(path);
-    if (!card || (this.deps.isCommittedQueryCurrent?.() === false && !this.wantsDiagram(card))) return Promise.resolve();
+    if (!card || (!owner.preparation && this.deps.isCommittedQueryCurrent?.() === false && !this.wantsDiagram(card))) return Promise.resolve();
     const scope = this.context.store.getScope();
     const wantsReferences = scope.kind === "links"
       && (this.expandedReferences.has(path) || (scope.direction === "outgoing" && this.hasInlineLinkPreview(card)));
@@ -458,9 +653,30 @@ export class HydrationController implements DisposableController {
         owner.viewport === true || owner.foreground === true || owner.startup === true,
       );
     }
-    const fingerprint = this.fingerprintFor(card);
+    const fingerprint = this.fingerprintFor(card, undefined, owner.preparation);
     const existing = this.jobs.get(path);
+    if (existing && owner.preparation && !fingerprintsEqual(existing.fingerprint, fingerprint)) {
+      return existing.settled.then(() => owner.preparation?.isCurrent() ? this.requestPath(path, priority, owner) : undefined);
+    }
+    if (existing?.preparation && !existing.preparation.isCurrent()
+      && fingerprintsEqual(existing.fingerprint, fingerprint) && existing.generation === this.context.epochs.load.value) {
+      // A newer owner may adopt an identical in-flight extraction without
+      // discarding its read or allowing the superseded request to publish.
+      existing.preparation = owner.preparation;
+      existing.hydrationRevision = this.context.store.getHydrationRevision();
+    }
+    if (!owner.prefetch) {
+      const prefetched = this.prefetchedPaths.get(path);
+      if (prefetched) {
+        if (fingerprintsEqual(prefetched, fingerprint) && this.cache.get(fingerprint)) this.previewDiagnostics.prefetchHits++;
+        else this.previewDiagnostics.prefetchWaste++;
+        this.prefetchedPaths.delete(path);
+      }
+    }
     if (existing) {
+      existing.retainSource ||= owner.viewport === true || owner.startup === true || owner.foreground === true || owner.explicit === true || owner.preparation !== undefined;
+      if (existing.retainSource) existing.prefetch = false;
+      else existing.prefetch ||= owner.prefetch === true;
       existing.explicit ||= owner.explicit === true;
       existing.viewport ||= owner.viewport === true;
       existing.startup ||= owner.startup === true;
@@ -469,7 +685,7 @@ export class HydrationController implements DisposableController {
       existing.priority = Math.min(existing.priority, priority);
       if (!fingerprintsEqual(existing.fingerprint, fingerprint)
         || existing.generation !== this.context.epochs.load.value
-        || existing.hydrationRevision !== this.context.store.getHydrationRevision()) {
+        || (!existing.preparation && existing.hydrationRevision !== this.context.store.getHydrationRevision())) {
         existing.replacementRequested = true;
       }
       this.sortQueue();
@@ -481,6 +697,8 @@ export class HydrationController implements DisposableController {
         && (!wantsReferences || (card.linkPreview !== undefined && card.linkPreview.status !== "loading"))) return Promise.resolve();
       const cached = this.cache.get(fingerprint);
       if (cached) {
+        if (owner.prefetch) return Promise.resolve();
+        if (owner.preparation && !this.installedPreparations.has(owner.preparation)) return Promise.resolve();
         return this.enqueuePatch(
           path, isMarkdownCardKind(card.fileKind) ? this.previewPatch(card, cached)
             : { ...this.placeholderPatch(card), linkPreview: this.previewPatch(card, cached).linkPreview }, fingerprint,
@@ -501,6 +719,9 @@ export class HydrationController implements DisposableController {
       explicit: owner.explicit === true,
       forced: owner.forced === true,
       foreground: owner.foreground === true,
+      prefetch: owner.prefetch === true,
+      retainSource: owner.viewport === true || owner.startup === true || owner.foreground === true || owner.explicit === true || owner.preparation !== undefined,
+      preparation: owner.preparation,
       replacementRequested: false,
       settled, resolve,
     };
@@ -542,14 +763,13 @@ export class HydrationController implements DisposableController {
       if (this.shouldPatch(job)) await this.enqueuePatch(job.path, this.placeholderPatch(card), job.fingerprint, true);
       return;
     }
-    const query = this.deps.getCommittedQuery?.().trim() ?? "";
-    const fields = this.deps.getMatchFields?.(card.path);
+    const query = job.preparation?.query ?? this.deps.getCommittedQuery?.().trim() ?? "";
+    const fields = job.preparation ? job.preparation.matchFieldsByPath[card.path] : this.deps.getMatchFields?.(card.path);
     const titleOnly = !!query && fields?.includes("title") && !fields.includes("content");
-    const ordinaryFingerprint = createPreviewFingerprint(card.path, card.mtime,
-      job.fingerprint.previewLines, job.fingerprint.maxVisibleChars, `|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`, job.fingerprint.skipLeadingTags);
+    const ordinaryFingerprint = this.ordinaryFingerprintFor(card, job.fingerprint);
     const ordinary = this.cache.get(ordinaryFingerprint);
     if (titleOnly && ordinary && this.context.store.getScope().kind !== "links") {
-      const preview = { ...ordinary, searchPreview: this.searchPreviewFor(card, "title-only") };
+      const preview = { ...ordinary, searchPreview: this.searchPreviewFor(card, "title-only", [], job.preparation) };
       this.cache.set(job.fingerprint, preview);
       if (this.shouldPatch(job)) await this.enqueuePatch(job.path, this.previewPatch(card, preview), job.fingerprint,
         job.viewport || job.foreground || job.startup || job.startupLate);
@@ -569,24 +789,31 @@ export class HydrationController implements DisposableController {
       let preview: HydrationPreview;
       const leading = ordinary ?? buildLightPreview(markdown, job.fingerprint.maxVisibleChars, job.fingerprint.previewLines, job.fingerprint.skipLeadingTags);
       if (query && titleOnly) {
-        preview = { ...leading, searchPreview: this.searchPreviewFor(card, "title-only") };
+        preview = { ...leading, searchPreview: this.searchPreviewFor(card, "title-only", [], job.preparation) };
       } else if (query) {
         if (this.matcherQuery !== query) {
           this.matcherQuery = query;
           this.matcher = createSearchPreviewMatcher(query);
         }
-        const snippets = await extractSearchPreviewSnippets(prepared ?? markdown, {
-          limit: this.context.getSettings().searchPreviewSnippetCount,
+        const target = this.searchTarget(card.path, query);
+        const previous = card.searchPreview?.query === query && card.searchPreview.revision === (job.preparation?.revision ?? this.deps.getSearchContentRevision?.() ?? 0)
+          && card.searchPreview.mtime === (card.file.stat?.mtime ?? card.mtime) ? card.searchPreview.snippets : [];
+        const prefix = target > this.context.getSettings().searchPreviewSnippetCount ? previous.slice(0, target) : [];
+        const result = await extractSearchPreview(prepared ?? markdown, {
+          offset: prefix.length,
+          limit: Math.max(0, target - prefix.length),
           maxChars: 200,
           idPrefix: `${job.generation}:${job.hydrationRevision}:${job.fingerprint.contextKey}`,
           matcher: this.matcher,
           isCurrent: () => this.currentFingerprint(job),
           onPrepared: (source) => {
-            if (this.currentFingerprint(job)) this.searchSources.set(card.path, sourceVersion, source);
+            if (job.retainSource && this.currentFingerprint(job)) this.searchSources.set(card.path, sourceVersion, source);
           },
         });
-        if (!snippets || !this.currentFingerprint(job)) return;
-        preview = { ...leading, searchPreview: this.searchPreviewFor(card, snippets.length ? "hits" : "unavailable", snippets) };
+        if (!result || !this.currentFingerprint(job)) return;
+        const snippets = [...prefix, ...result.snippets];
+        preview = { ...leading, searchPreview: { ...this.searchPreviewFor(card, snippets.length ? "hits" : "unavailable", snippets, job.preparation),
+          totalSnippets: result.totalSnippets, expanded: target > this.context.getSettings().searchPreviewSnippetCount, requestedSnippetCount: target } };
       } else {
         preview = (location
           ? buildLocationPreview(markdown, location, job.fingerprint.maxVisibleChars, job.fingerprint.previewLines)
@@ -604,6 +831,15 @@ export class HydrationController implements DisposableController {
       if (!this.currentFingerprint(job)) return;
       this.cache.set(ordinaryFingerprint, leading);
       this.cache.set(job.fingerprint, preview);
+      if (job.prefetch) {
+        this.prefetchedPaths.delete(job.path);
+        this.prefetchedPaths.set(job.path, job.fingerprint);
+        if (this.prefetchedPaths.size > this.budget.preview.entries) {
+          const oldest = this.prefetchedPaths.keys().next().value;
+          if (oldest !== undefined) this.prefetchedPaths.delete(oldest);
+          this.previewDiagnostics.prefetchWaste++;
+        }
+      }
       patch = isMarkdownCardKind(card.fileKind) ? this.previewPatch(card, preview)
         : { ...this.placeholderPatch(card), linkPreview: preview.linkPreview };
     } catch {
@@ -612,7 +848,8 @@ export class HydrationController implements DisposableController {
       const scope = this.context.store.getScope();
       if (scope.kind === "links") patch.linkPreview = { ...this.emptyLinkPreview(card, scope), status: "unavailable" };
       if (this.deps.getCommittedQuery?.().trim()) {
-        patch.searchPreview = this.searchPreviewFor(card, "unavailable");
+        patch.searchPreview = card.searchPreview?.status === "hits" && card.searchPreview.query === query
+          ? card.searchPreview : this.searchPreviewFor(card, "unavailable", [], job.preparation);
       }
     }
     if (this.shouldPatch(job)) {
@@ -642,16 +879,18 @@ export class HydrationController implements DisposableController {
   private currentFingerprint(job: HydrationJob): boolean {
     const card = this.context.store.getBaseCard(job.path);
     return !this.disposed
-      && (this.deps.isCommittedQueryCurrent?.() !== false || (!!card && this.wantsDiagram(card)))
+      && (job.preparation ? job.preparation.isCurrent() : this.deps.isCommittedQueryCurrent?.() !== false || (!!card && this.wantsDiagram(card)))
       && job.generation === this.context.epochs.load.value
-      && job.hydrationRevision === this.context.store.getHydrationRevision()
+      && (job.preparation !== undefined || job.hydrationRevision === this.context.store.getHydrationRevision())
       && card !== undefined
-      && fingerprintsEqual(job.fingerprint, this.fingerprintFor(card));
+      && fingerprintsEqual(job.fingerprint, this.fingerprintFor(card, undefined, job.preparation));
   }
   private hasDemand(job: HydrationJob): boolean {
-    return job.forced || job.startup || job.viewport;
+    return job.forced || job.startup || job.viewport || job.foreground || job.prefetch;
   }
   private shouldPatch(job: HydrationJob): boolean {
+    if (job.preparation && (!this.installedPreparations.has(job.preparation) || this.deps.getCommittedQuery?.().trim() !== job.preparation.query
+      || (this.deps.getSearchContentRevision?.() ?? 0) !== job.preparation.revision)) return false;
     return job.startup || job.foreground || (job.viewport && this.latestViewport.has(job.path));
   }
 
@@ -694,9 +933,14 @@ export class HydrationController implements DisposableController {
   private wantsDiagram(card: NoteCardRecord): boolean {
     return isDiagramKind(card.fileKind) && this.context.store.getScope().kind !== "links";
   }
-  private fingerprintFor(card: NoteCardRecord, scopeOverride?: CardScope): PreviewFingerprint {
-    const query = this.deps.getCommittedQuery?.().trim() ?? "";
+  private ordinaryFingerprintFor(card: NoteCardRecord, fingerprint: PreviewFingerprint): PreviewFingerprint {
+    return createPreviewFingerprint(card.path, card.mtime, fingerprint.previewLines, fingerprint.maxVisibleChars,
+      `|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`, fingerprint.skipLeadingTags);
+  }
+  private fingerprintFor(card: NoteCardRecord, scopeOverride?: CardScope, preparation?: SearchPreparationContext): PreviewFingerprint {
+    const query = preparation?.query ?? this.deps.getCommittedQuery?.().trim() ?? "";
     const scope = scopeOverride ?? this.context.store.getScope();
+    const fields = preparation ? preparation.matchFieldsByPath[card.path] : this.deps.getMatchFields?.(card.path);
     this.ensureExpansionScope(scope);
     const location = !query && scope.kind === "links"
       ? resolveLinkCardLocation(this.context.getApp(), scope, card.path) : null;
@@ -705,7 +949,7 @@ export class HydrationController implements DisposableController {
       card.mtime,
       this.context.getSettings().previewLines,
       DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
-      `${isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
+      `${isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${preparation?.revision ?? this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}:target:${this.searchTarget(card.path, query, scope)}:fields:${fields?.join(",") ?? ""}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
       this.context.getSettings().skipLeadingTags,
     );
   }
@@ -738,10 +982,10 @@ export class HydrationController implements DisposableController {
     if (this.deps.getCommittedQuery?.().trim()) patch.searchPreview = this.searchPreviewFor(card, "title-only");
     return patch;
   }
-  private searchPreviewFor(card: NoteCardRecord, status: SearchPreview["status"], snippets: SearchPreview["snippets"] = []): SearchPreview {
+  private searchPreviewFor(card: NoteCardRecord, status: SearchPreview["status"], snippets: SearchPreview["snippets"] = [], preparation?: SearchPreparationContext): SearchPreview {
     return {
-      query: this.deps.getCommittedQuery?.().trim() ?? "",
-      revision: this.deps.getSearchContentRevision?.() ?? 0,
+      query: preparation?.query ?? this.deps.getCommittedQuery?.().trim() ?? "",
+      revision: preparation?.revision ?? this.deps.getSearchContentRevision?.() ?? 0,
       mtime: card.file.stat?.mtime ?? card.mtime,
       previewLines: this.context.getSettings().previewLines,
       snippetLimit: this.context.getSettings().searchPreviewSnippetCount,
@@ -766,9 +1010,12 @@ export class HydrationController implements DisposableController {
       this.startupWaitTimer = null;
     }
     this.disposed = true;
+    this.cancelLookahead();
     this.stopWorkGate(); this.latestViewportRequest = null;
     this.sourceRead = null;
     this.expandedReferences.clear();
+    this.searchSnippetTargets.clear();
+    this.prefetchedPaths.clear();
     this.cache.clear();
     this.searchSources.clear();
     this.appliedFingerprints.clear();

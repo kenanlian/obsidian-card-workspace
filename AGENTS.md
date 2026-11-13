@@ -52,6 +52,8 @@ publish ordinary host intents and share insertion text generation with desktop d
 
 ## Current Project Status
 
+- Search result submission prepares a bounded real-visible window before one atomic publish (desktop/tablet/phone: 12/8/6 cards, 100/120/140ms). Timeout skeletons participate in row measurement and shrink to actual content. Ready-to-ready health updates preserve results; per-file mutations invalidate locally, and runtime index generations identify full replacement. Search-only lookahead uses the existing pool and cache limits. Snippet expansion is host-owned and appends 20 merged windows per action; totals are independent of occurrence badges. See `docs/search-preview-diagnostics.md` for verification and limitations.
+
 - Content icons use `IconSpec` (`lucide` / `emoji` / `none`; `none` renders plain text and is never recorded as recent), preference `iconDefaults`, and user-data `iconOverrides` without a schema bump. Favorites alias their source identities; property values use typed scalar serialization. Icons update all views via `patch`, with no card projection or preview/search IO. `IconReconciler` runs before view vault consumers; only explicit identity operations prune/migrate overrides. The document-local nonmodal picker uses the host Lucide catalogue (rebuilt per session) and a lazily parsed offline Unicode 17.0 / CLDR 48 catalogue; a successful choice closes it, and a failed save keeps it open with retry. User-data `recentIcons` and preference `emojiSkinTone` are written alongside choices. Phones use a bottom sheet. See `docs/content-icons.md`.
 
 - Quick-input drafts use the native Properties component for supported flat frontmatter, backed by the same complete CodeMirror document as the body. `src/input/draft-frontmatter.ts` owns comment-preserving YAML updates; `native-properties-editor.ts` owns optional native component lifecycle and display-only decorations. Unsupported/invalid YAML or missing native capabilities retain source editing. Submission flushes the active property input before freezing the request; both properties and Markdown remain read-only during pending/frozen retries.
@@ -205,7 +207,7 @@ CI already runs this chain with lint first. The source scan follows the official
 | `src/view/Toolbar.svelte` | Svelte 5 toolbar — scope label, sort, tag filter, search, bulk mode |
 | `src/view/CardItem.svelte` | Svelte 5 card — preview HTML, search highlighting, pin toggle, bulk checkbox, drag source |
 | `src/view/panel-model.ts` | Host-to-Svelte grouped state bridge |
-| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → property filter → search filter → pin reorder (boxes skip browse tag and property filters; search and pins still apply) |
+| `src/view/pipeline.ts` | Sole visible-card projection: tag filter → property filter → search filter → pin reorder for folders and boxes; Links runs search → pin with browse filters paused |
 | `src/view/types.ts` | View-layer type definitions |
 | `src/settings.ts` | `PluginSettings`, `DEFAULT_SETTINGS`, `schemaVersion`, `migrateSettings`, `mergeSettings` |
 | `src/i18n/` | i18n strings (`en` / `zh`), domain-split; callers still import `../i18n` |

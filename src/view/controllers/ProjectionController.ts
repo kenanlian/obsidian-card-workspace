@@ -117,7 +117,18 @@ export class ProjectionController {
     return { cards, segments: this.arrangedSegments };
   }
 
+  /** Derives a candidate projection without changing the committed group arrangement. */
+  previewSearchCards(search: PipelineSearchInput): NoteCardRecord[] {
+    return this.computeArrangement(this.context.store.getBaseCards(), search).cards;
+  }
+
   deriveArrangementFrom(cards: readonly NoteCardRecord[]): GroupArrangement {
+    const result = this.computeArrangement(cards, this.deps.getSearchInput());
+    this.arrangedSegments = result.segments;
+    return result;
+  }
+
+  private computeArrangement(cards: readonly NoteCardRecord[], search: PipelineSearchInput): GroupArrangement {
     const spec = this.resolveGroupSpec();
     const settings = this.context.getSettings();
     const pipelineContext: PipelineContext = {
@@ -126,7 +137,7 @@ export class ProjectionController {
       propertyFilters: resolveSourceCapabilities(this.context.store.getScope()).browsePropertyFilter
         ? settings.filter.properties
         : [],
-      search: this.deps.getSearchInput(),
+      search,
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
       group: { spec, buckets: this.resolveGroupBuckets(spec, cards) },
       collapsedGroupKeys: this.deps.getCollapsedGroupKeys(),
@@ -137,7 +148,6 @@ export class ProjectionController {
       stepsForScope(this.context.store.getScope()),
       pipelineContext,
     );
-    this.arrangedSegments = result.segments;
     return result;
   }
 

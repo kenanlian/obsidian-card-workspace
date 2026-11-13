@@ -1,4 +1,4 @@
-/** Real Chromium layout/activation checks; no vault, network assets or timing gates. */
+/** Real Chromium legacy rendering gates plus candidate controller lifecycle. */
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import sveltePlugin from "esbuild-svelte";
@@ -91,6 +91,14 @@ window.searchPreviewBrowser = {perf, render, events: () => events, resize: async
     assets.set("/" + name + "/browser.js", {type: "text/javascript", body: await readFile(bundle)});
     assets.set("/" + name, {type: "text/html", body: `<!doctype html><meta charset="utf-8"><style>:root { --background-primary:#fff; --background-secondary:#eee; --background-modifier-border:#d5d5d5; --text-normal:#222; --text-muted:#666; --text-faint:#999; --interactive-accent:#668cee; --text-highlight-bg:#fff0a5; --font-interface:Arial; --font-text:Arial; --font-monospace:monospace; } body {margin:20px; font:14px Arial;} button,input,select {font:inherit;} #mount {display:flex;} ${css} .folder-card-view { --fce-card-min-width:220px; --fce-wall-gap:12px; }</style><div id="mount" class="folder-card-view"></div><script src="/${name}/browser.js"></script>`});
   }
+  if (!selfCheck) {
+    const bundle = path.join(temporary, "production-lifecycle.js");
+    await build({entryPoints: [path.join(root, "scripts/search-preview/production-lifecycle.ts")], outfile: bundle,
+      bundle: true, format: "iife", platform: "browser", target: "es2020", conditions: ["browser"],
+      alias: {obsidian: path.join(root, "scripts/image-benchmark/obsidian.ts")}, plugins: [sveltePlugin({compilerOptions: {dev: false, css: "injected"}})]});
+    assets.set("/production/browser.js", {type: "text/javascript", body: await readFile(bundle)});
+    assets.set("/production", {type: "text/html", body: assets.get("/after").body.replace('/after/browser.js', '/production/browser.js')});
+  }
   server = createServer((request, response) => {
     const asset = assets.get(request.url);
     if (!asset) {response.writeHead(404); response.end(); return;}
@@ -98,6 +106,24 @@ window.searchPreviewBrowser = {perf, render, events: () => events, resize: async
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   browser = await chromium.launch({headless: true, args: ["--no-sandbox"]});
+  const runProduction = async () => {
+    if (selfCheck) return null;
+    const productionPage = await browser.newPage({viewport: {width: 1000, height: 850}});
+    const errors = []; productionPage.on("pageerror", error => errors.push(String(error)));
+    try {
+      await productionPage.goto(`http://127.0.0.1:${server.address().port}/production`);
+      await productionPage.waitForFunction(() => !!window.searchPreviewProduction);
+      const result = await productionPage.evaluate(() => window.searchPreviewProduction.run());
+      assert.deepEqual(errors, []); return result;
+    } finally {await productionPage.close();}
+  };
+  if (process.argv.includes("--lifecycle-only")) {
+    assert(!selfCheck, "Lifecycle smoke uses candidate production APIs");
+    const productionLifecycle = await runProduction();
+    await mkdir(path.dirname(output), {recursive: true});
+    await writeFile(output, JSON.stringify({schemaVersion: 3, baselineCommit: frozen.revision, smoke: true, chromium: browser.version(), productionLifecycle, passed: true}, null, 2));
+    console.log(JSON.stringify({output, smoke: true, passed: true}));
+  } else {
   const page = await browser.newPage({viewport: {width: 1000, height: 850}});
   const errors = []; page.on("pageerror", error => errors.push(String(error)));
   await page.goto(`http://127.0.0.1:${server.address().port}/after`);
@@ -204,10 +230,12 @@ window.searchPreviewBrowser = {perf, render, events: () => events, resize: async
   }
   assert(performanceCases.length > 0, "No matching timing case");
   assert.deepEqual(errors, []);
-  const report = {schemaVersion:2, baselineCommit:frozen.revision, selfCheck, sampleCount, warmups, chromium:browser.version(), layouts, styledPrefixes, bulkSelections:selections.length, scroll:{before,after,resized}, errors, performanceCases, gates, passed:gates.every(g=>g.passed), scope:"Real Chromium production Svelte; synthetic host groups, no Obsidian or disk IO"};
+  const productionLifecycle = await runProduction();
+  const report = {schemaVersion:3, baselineCommit:frozen.revision, selfCheck, sampleCount, warmups, chromium:browser.version(), layouts, styledPrefixes, bulkSelections:selections.length, scroll:{before,after,resized}, errors, performanceCases, productionLifecycle, gates, passed:gates.every(g=>g.passed), scope:"Real Chromium production Svelte; separate candidate SearchController/ProjectionController/HydrationController lifecycle with synthetic indexed membership and source IO, no Obsidian or disk IO"};
   await writeFile(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({output, layouts:layouts.length, passed:report.passed, failed:gates.filter(g=>!g.passed)}));
   if ((selfCheck || process.argv.includes("--check")) && !report.passed) process.exitCode=1;
+  }
 } finally {
   await browser?.close(); server?.close(); frozen.dispose();
   await rm(temporary, {recursive: true, force: true});

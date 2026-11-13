@@ -1,0 +1,61 @@
+{
+  "parity": 509,
+  "results": [
+    {
+      "name": "prose",
+      "fn": "mapMarkdownSearchText",
+      "base": 19.757652999999664,
+      "cand": 15.231425999999828,
+      "improvement": 22.908728076153135
+    },
+    {
+      "name": "prose",
+      "fn": "prepareSearchPreviewSource",
+      "base": 31.31662499999993,
+      "cand": 23.691649000000325,
+      "improvement": 24.34801323578011
+    },
+    {
+      "name": "markdown",
+      "fn": "mapMarkdownSearchText",
+      "base": 64.00133899999946,
+      "cand": 49.73056600000018,
+      "improvement": 22.29761630455794
+    },
+    {
+      "name": "markdown",
+      "fn": "prepareSearchPreviewSource",
+      "base": 74.26154700000006,
+      "cand": 57.25517000000036,
+      "improvement": 22.900650049748744
+    },
+    {
+      "name": "cjk",
+      "fn": "mapMarkdownSearchText",
+      "base": 5.8572690000000875,
+      "cand": 3.0058979999994335,
+      "improvement": 48.68089548218823
+    },
+    {
+      "name": "cjk",
+      "fn": "prepareSearchPreviewSource",
+      "base": 14.662313999999242,
+      "cand": 10.14699500000097,
+      "improvement": 30.795405145453202
+    },
+    {
+      "name": "longline",
+      "fn": "mapMarkdownSearchText",
+      "base": 74.6519129999997,
+      "cand": 63.04257899999902,
+      "improvement": 15.551288015888781
+    },
+    {
+      "name": "longline",
+      "fn": "prepareSearchPreviewSource",
+      "base": 84.9035960000001,
+      "cand": 69.06720499999938,
+      "improvement": 18.65220290551735
+    }
+  ]
+}

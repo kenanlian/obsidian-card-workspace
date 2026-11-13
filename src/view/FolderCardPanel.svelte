@@ -113,6 +113,7 @@
     panelModel: PanelModel;
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     onOpenNote?: (payload: OpenNotePayload) => void;
+    onSearchSnippetsCommand?: (payload: { path: string; command: "expand" | "more" | "collapse" }) => void;
     onToggleReferences?: (payload: { path: string }) => void;
     onBulkSelectCard?: (payload: BulkSelectCardPayload) => void;
     onCardIcon?: (payload: { path: string; anchor: HTMLElement }) => void;
@@ -222,6 +223,7 @@
     panelModel,
     attachSearchHistorySuggest,
     onOpenNote,
+    onSearchSnippetsCommand,
     onToggleReferences,
     onBulkSelectCard,
     onCardIcon,
@@ -435,6 +437,12 @@
     return rows[0]?.segmentIndex === -1;
   }
 
+  let snippetInteraction: {
+    anchor: { ref: RowAnchorRef; offset: number };
+    preview: NoteCardRecord["searchPreview"];
+    identity: string;
+    query: string;
+  } | null = null;
   let pendingLayoutAnchor = $state<{ ref: RowAnchorRef; offset: number } | null>(null);
   let rowHeightMap = $state<Map<string, number>>(new Map());
   let projectedRows = $state.raw<ProjectedRow[]>([]);
@@ -466,6 +474,10 @@
     headerHeight: stickyHeaderHeight,
   }));
   const viewportBounds = $derived(getHydrateRangeForPanelRows(projectedRows, startRowIndex, endRowIndex));
+  const actualVisibleWindow = $derived(computeVirtualRowWindow(projectedRows.length,
+    findIndexAtOffset(Math.max(0, scrollTop - listPaddingTop), rowPositions),
+    findIndexAtOffset(Math.max(0, scrollTop + viewportHeight - listPaddingTop - 1), rowPositions), 0));
+  const actualVisibleBounds = $derived(getHydrateRangeForPanelRows(projectedRows, actualVisibleWindow.start, actualVisibleWindow.end));
   const hydratePaths = $derived(cardRecords
     .slice(viewportBounds.start, viewportBounds.end)
     .map((card) => card.path));
@@ -522,6 +534,7 @@
   });
 
   function markUserScrolling(): void {
+    snippetInteraction = null;
     userScrollLockUntilMs = Date.now() + USER_SCROLL_LOCK_MS;
   }
 
@@ -700,6 +713,7 @@
         // empty row frame can appear between the two scopes.
         lastRequestIdentity = null;
         pendingLayoutAnchor = null;
+        snippetInteraction = null;
         rowHeightMap = new Map();
         rowPositions = [];
         totalHeight = 0;
@@ -733,9 +747,11 @@
       return;
     }
     if (!viewportEl || viewportWidth === 0 || hydratePaths.length === 0) return;
-    const { identity, request } = createViewportRequest(
+    const viewportRequest = createViewportRequest(
       cards.generation, cards.hydrationRevision, viewportBounds.start, viewportBounds.end, hydratePaths,
     );
+    const request = { ...viewportRequest.request, visibleStart: actualVisibleBounds.start, visibleEnd: actualVisibleBounds.end };
+    const identity = `${viewportRequest.identity}:${request.visibleStart}:${request.visibleEnd}`;
     if (identity === lastRequestIdentity) return;
     lastRequestIdentity = identity;
     onHydrateViewport?.(request);
@@ -779,7 +795,7 @@
   }
 
   function rowNeedsMeasuredHeight(row: ProjectedRow): boolean {
-    return row.kind === "group-header" || getRowCards(row).every((card) => card.hydrated);
+    return row.kind === "group-header" || getRowCards(row).every((card) => card.hydrated || card.searchPreview?.status === "pending");
   }
 
   function getGroupHeaderId(segmentIndex: number): string {
@@ -815,6 +831,17 @@
     onGroupCollapseCommand?.({ command: "toggle", key });
   }
 
+  function handleSearchSnippetsCommand(payload: { path: string; command: "expand" | "more" | "collapse" }): void {
+    const rowIndex = projectedRows.findIndex(row => row.kind === "cards" && row.cards.some(card => card.path === payload.path));
+    const rowAnchor = captureRowAnchor({ scrollTop, rowPositions, rows: projectedRows, rowIndex });
+    snippetInteraction = rowAnchor ? {
+      anchor: { ref: { kind: "card", path: payload.path }, offset: rowAnchor.offset },
+      preview: cardRecords.find(card => card.path === payload.path)?.searchPreview,
+      identity: scopeIdentity, query: search.committedQuery,
+    } : null;
+    onSearchSnippetsCommand?.(payload);
+  }
+
   const mountedRows = new Map<string, { node: HTMLDivElement; row: ProjectedRow }>();
   let forceRowMeasurement = false;
   let measureWindow: Window | null = null;
@@ -842,7 +869,17 @@
       }
     }
     let first = projectedRows.length;
-    const anchor = pendingLayoutAnchor ?? captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: false });
+    let interactionAnchor: { ref: RowAnchorRef; offset: number } | null = null;
+    if (snippetInteraction) {
+      const path = snippetInteraction.anchor.ref.kind === "card" ? snippetInteraction.anchor.ref.path : "";
+      const preview = cardRecords.find(card => card.path === path)?.searchPreview;
+      if (snippetInteraction.identity !== scopeIdentity || snippetInteraction.query !== search.committedQuery || !preview) snippetInteraction = null;
+      else if (preview !== snippetInteraction.preview && preview.status !== "pending") {
+        interactionAnchor = snippetInteraction.anchor;
+        snippetInteraction = null;
+      }
+    }
+    const anchor = interactionAnchor ?? pendingLayoutAnchor ?? captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: false });
     for (const [key, item] of pendingRowSizes) {
       const current = projectedRows[item.row.index];
       if (current?.key !== key || !rowNeedsMeasuredHeight(current)) continue;
@@ -1060,6 +1097,7 @@
                 selected={cards.selectedPath === card.path}
                 onOpenNote={handleCardOpenNote}
                 {onToggleReferences}
+                onSearchSnippetsCommand={handleSearchSnippetsCommand}
                 onBulkSelectCard={handleCardBulkSelect}
                 onCardContextMenu={handleCardContextMenu}
                 onPinToggle={handleCardPinToggle}

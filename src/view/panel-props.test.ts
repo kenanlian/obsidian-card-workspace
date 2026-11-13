@@ -59,6 +59,24 @@ describe("buildPanelProps arrangement routing", () => {
     expect(props.onCardDragStart(detail)).toBe(finish);
     expect(host.plugin.startCardFileDrag).toHaveBeenCalledExactlyOnceWith(detail);
   });
+  it("routes valid snippet commands through the host and forwards actual visible bounds", () => {
+    const { host } = createHost(); host.changeSearchSnippets = vi.fn(async () => undefined);
+    const props = buildPanelProps(host) as unknown as {
+      onSearchSnippetsCommand: (detail: { path?: unknown; command?: unknown }) => void;
+      onHydrateViewport: (detail: unknown) => void;
+    };
+    for (const command of ["expand", "more", "collapse"]) props.onSearchSnippetsCommand({ path: "a.md", command });
+    props.onSearchSnippetsCommand({ path: "a.md", command: "all" });
+    props.onSearchSnippetsCommand({ path: 4, command: "expand" });
+    host.modules.bulk.isBulkMode = () => true;
+    props.onSearchSnippetsCommand({ path: "a.md", command: "expand" });
+    expect(host.changeSearchSnippets).toHaveBeenCalledTimes(3);
+    expect(host.changeSearchSnippets).toHaveBeenLastCalledWith("a.md", "collapse");
+    const request = { generation: 1, hydrationRevision: 2, start: 0, end: 10, paths: ["a.md"], visibleStart: 3, visibleEnd: 5 };
+    props.onHydrateViewport(request);
+    expect(host.modules.hydration.hydrateViewport).toHaveBeenCalledExactlyOnceWith(request);
+  });
+
   it("routes collapse and history commands to the search controller", () => {
     const { host } = createHost();
     const props = buildPanelProps(host) as unknown as {

@@ -120,13 +120,15 @@ export class IndexedSearchService implements SearchService {
 
     const allowed = new Set(boundedCandidates);
     const orderedPaths: string[] = [];
+    const seen = new Set<string>();
     for (const path of searchResult.orderedPaths) {
       if (!allowed.has(path)) {
         continue;
       }
-      if (orderedPaths.includes(path)) {
+      if (seen.has(path)) {
         continue;
       }
+      seen.add(path);
       orderedPaths.push(path);
     }
 

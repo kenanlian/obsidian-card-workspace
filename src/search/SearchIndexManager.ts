@@ -101,6 +101,7 @@ const INITIAL_SNAPSHOT: SearchServiceSnapshot = {
   status: "building",
   lastError: null,
   contentRevision: 0,
+  indexGeneration: 0,
   health: {
     outcome: "none",
     readiness: "initializing",
@@ -153,6 +154,7 @@ export class SearchIndexManager {
   };
   /** Monotonic in-memory content revision; surfaced through `getSnapshot()`. */
   private contentRevision = 0;
+  private indexGeneration = 0;
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private readonly documentsByPath = new Map<string, SearchableDocument>();
   private documentCatalog = new SearchDocumentCatalog();
@@ -240,6 +242,7 @@ export class SearchIndexManager {
     return {
       ...this.snapshot,
       contentRevision: this.contentRevision,
+      indexGeneration: this.indexGeneration,
       health: {
         ...this.snapshot.health,
       },
@@ -315,6 +318,7 @@ export class SearchIndexManager {
         return { status: "building", outcome: "rebuild-required", detail: null };
       }
       this.index = restoredIndex;
+      this.indexGeneration += 1;
       const restoredCatalog = restoreResult.payload.documentCatalog;
       if (restoredCatalog) {
         this.documentCatalog.loadFrom(restoredCatalog);
@@ -735,6 +739,7 @@ export class SearchIndexManager {
     // applied incrementally (rebuild-required, or ignored while scanning) only
     // lands its effect here, so the revision moves with the cutover.
     this.contentRevision += 1;
+    this.indexGeneration += 1;
     const documentCount = this.index.documentCount;
     const outcome = kind === "rebuild" ? "rebuilt" : "restored";
     this.snapshot = {

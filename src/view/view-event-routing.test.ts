@@ -567,6 +567,7 @@ describe("FolderCardView host/event-routing contracts (node mock seam)", () => {
           emitSnapshot({
             initialized: true,
             contentRevision: 0,
+            indexGeneration: 0,
             disposed: false,
             mode: "indexed",
             status: "building",
@@ -3248,6 +3249,7 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
         status: "ready",
         lastError: null,
         contentRevision: 0,
+        indexGeneration: 0,
         health: createSearchHealth(),
       }));
 
@@ -3287,9 +3289,11 @@ describe("FolderCardView property lane host integration (WP-05)", () => {
       // The candidate request carried the full new base-card paths.
       const requests = query.mock.calls.map(([request]) => request);
       expect(requests.at(-1)?.candidatePaths).toEqual([enteringFile.path]);
-      // The entered card became a hydration candidate only after the refreshed
-      // projection published it visible.
-      expect(hydrateSpy).toHaveBeenCalledWith(enteringFile.path);
+      // Silent candidate refresh prepared the card before the single coherent
+      // publication, so projection need not schedule a redundant hydration.
+      expect(next.cards.records[0]?.hydrated).toBe(true);
+      expect(next.cards.records[0]?.searchPreview?.query).toBe("roadmap");
+      expect(hydrateSpy).not.toHaveBeenCalled();
     });
   });
 

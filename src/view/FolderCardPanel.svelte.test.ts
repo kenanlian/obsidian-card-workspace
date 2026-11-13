@@ -481,6 +481,78 @@ describe("FolderCardPanel.svelte", () => {
     } finally { await unmount(h.component); }
   });
 
+  it("measures pending rows, reports real visible bounds and shrinks after hydration", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState(); state.search = { ...state.search, query: "needle", committedQuery: "needle" };
+    state.cards.records = Array.from({ length: 40 }, (_, index) => {
+      const card = createCard(`pending/${index}.md`, `Pending ${index}`);
+      return { ...card, hydrated: false, searchPreview: { query: "needle", revision: 1, mtime: card.mtime,
+        previewLines: 5, snippetLimit: 2, status: "pending" as const, expectedSnippetCount: 2, snippets: [] } };
+    });
+    let rowHeight = 100;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+      const height = this.classList.contains("fce-wall-row") ? rowHeight : 0;
+      return { height, width: 600, left: 0, right: 600, top: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) };
+    });
+    const model = createPanelModel(state), onHydrateViewport = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel: model, onHydrateViewport } });
+    await tick(); await new Promise(resolve => setTimeout(resolve, 25)); await tick();
+    let request = onHydrateViewport.mock.calls.at(-1)![0];
+    expect(request.visibleStart).toBe(0); expect(request.visibleEnd).toBe(3);
+    expect(request.end).toBeGreaterThan(request.visibleEnd);
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 100; list.dispatchEvent(new Event("scroll")); await tick();
+    request = onHydrateViewport.mock.calls.at(-1)![0];
+    expect(request.visibleStart).toBe(1); expect(request.visibleEnd).toBe(4);
+    rowHeight = 50;
+    model.mutate(draft => { draft.cards = { ...draft.cards, records: draft.cards.records.map(card => ({ ...card,
+      hydrated: true, searchPreview: { ...card.searchPreview!, status: "title-only", expectedSnippetCount: undefined } })) }; });
+    await tick(); ResizeObserverStub.trigger(); await new Promise(resolve => setTimeout(resolve, 25)); await tick();
+    request = onHydrateViewport.mock.calls.at(-1)![0];
+    expect(request.visibleEnd - request.visibleStart).toBeGreaterThan(3);
+    expect(target.querySelector(".fce-search-pending")).toBeNull();
+    await unmount(component);
+  });
+
+  it("anchors asynchronous snippet commands to the selected card and releases the interaction after measurement", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ font: "", measureText: (text: string) => ({ width: text.length * 7 }) } as unknown as CanvasRenderingContext2D);
+    const target = document.createElement("div"); document.body.appendChild(target);
+    const state = createInitialPanelState(); state.search = { ...state.search, query: "needle", committedQuery: "needle" };
+    state.cards.records = Array.from({ length: 40 }, (_, index) => {
+      const card = createCard(`search/${index}.md`, `Search ${index}`);
+      return { ...card, searchPreview: { query: "needle", revision: 1, mtime: card.mtime, previewLines: 5, snippetLimit: 2,
+        status: "hits" as const, totalSnippets: 45, snippets: [{ id: `snippet-${index}`, text: "needle", highlights: [{ start: 0, end: 6 }], location: { from: { line: 0, ch: 0 }, to: { line: 0, ch: 6 }, offset: 0, text: "needle", before: "", after: "" } }] } };
+    });
+    let precedingHeight = ESTIMATED_ROW_HEIGHT;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+      const height = this.classList.contains("fce-wall-row")
+        ? this.querySelector("h4")?.textContent === "Search 3" ? precedingHeight : ESTIMATED_ROW_HEIGHT : 0;
+      return { height, width: 600, left: 0, right: 600, top: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) };
+    });
+    const model = createPanelModel(state), onSearchSnippetsCommand = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel: model, onSearchSnippetsCommand } });
+    await tick(); await new Promise(resolve => setTimeout(resolve, 25)); await tick();
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 700; list.dispatchEvent(new Event("scroll")); await tick();
+    const selected = Array.from(target.querySelectorAll<HTMLElement>(".fce-card")).find(card => card.querySelector("h4")?.textContent === "Search 4")!;
+    selected.querySelector<HTMLButtonElement>(".fce-search-snippets-toggle")!.click();
+    expect(onSearchSnippetsCommand).toHaveBeenCalledExactlyOnceWith({ path: "search/4.md", command: "expand" });
+    // A later host publication changes the preceding visible row while the selected card appends.
+    await new Promise(resolve => setTimeout(resolve, 1)); precedingHeight += 200;
+    model.mutate(draft => { draft.cards = { ...draft.cards, records: draft.cards.records.map((card, index) => index !== 4 ? card : {
+      ...card, searchPreview: { ...card.searchPreview!, expanded: true, requestedSnippetCount: 22,
+        snippets: Array.from({ length: 22 }, (_, snippet) => ({ ...card.searchPreview!.snippets[0], id: `expanded-${snippet}` })) },
+    }) }; });
+    await tick(); ResizeObserverStub.trigger(); await new Promise(resolve => setTimeout(resolve, 25)); await tick();
+    expect(list.scrollTop).toBe(900);
+    // Subsequent automatic geometry changes use the viewport anchor again.
+    precedingHeight += 100; ResizeObserverStub.trigger(); await new Promise(resolve => setTimeout(resolve, 25)); await tick();
+    expect(list.scrollTop).toBe(900);
+    await unmount(component);
+  });
+
   it("retains the viewport anchor when a reference list above it expands", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState();

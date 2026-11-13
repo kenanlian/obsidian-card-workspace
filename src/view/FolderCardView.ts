@@ -272,6 +272,10 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (query) return { query };
     return resolveLinkCardLocation(this.app, scope, path);
   }
+  changeSearchSnippets(path: string, command: "expand" | "more" | "collapse"): Promise<void> {
+    return this.modules.hydration.changeSearchSnippets(path, command);
+  }
+
   resolveSearchSnippetLocation(path: string, snippetId: string): CardOpenLocation | null {
     const card = this.store.getBaseCard(path);
     const preview = card?.searchPreview;

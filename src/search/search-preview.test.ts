@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { iterateSearchIndexTerms, tokenizeSearchIndexText } from "../search-tokenization";
+import * as snippetPresentation from "./snippet-presentation";
 import { runSearchTask } from "./cooperative-task";
 import { SEARCH_MARKDOWN_MAX_LENGTH } from "./document-preparation";
 import { mapMarkdownSearchText } from "./mapped-search-text";
 import { extractMarkdownSearchText } from "./markdown-search-text";
-import { createSearchPreviewMatcher, extractSearchPreviewSnippets, resolveSearchSnippetLocation } from "./search-preview";
+import { createSearchPreviewMatcher, extractSearchPreview, extractSearchPreviewSnippets, resolveSearchSnippetLocation } from "./search-preview";
 
 async function extract(markdown: string, query: string, limit = 5) {
   return (await extractSearchPreviewSnippets(markdown, { limit, idPrefix: "test", matcher: createSearchPreviewMatcher(query) }))!;
@@ -146,6 +147,65 @@ describe("source-mapped search previews", () => {
     });
     expect(result).toBeUndefined();
     expect(yields).toBeGreaterThan(0);
+  });
+});
+
+describe("counted and paged search previews", () => {
+  const options = (limit: number, offset = 0) => ({
+    limit, offset, idPrefix: "test", matcher: createSearchPreviewMatcher("needle other 中文文档"),
+  });
+
+  it("counts merged windows and preserves legacy prefix, page IDs, formatting, and source positions", async () => {
+    const source = [
+      "# first needle\ncontinued **other** [[target|needle]]",
+      "prefix ".repeat(15) + "needle " + "padding ".repeat(20) + "other" + " tail ".repeat(100) + "needle",
+      "```ts\nneedle_code 中文文档\n```",
+      ...Array.from({ length: 23 }, (_, index) => `section ${index} needle other`),
+    ].join("\n\n");
+    const legacy = await extract(source, "needle other 中文文档", 100);
+    expect(legacy.length).toBeGreaterThan(20);
+    for (const limit of [1, 5, 20]) {
+      const first = (await extractSearchPreview(source, options(limit)))!;
+      expect(first.totalSnippets).toBe(legacy.length);
+      expect(first.snippets).toEqual(legacy.slice(0, limit));
+      const page = (await extractSearchPreview(source, options(limit, limit)))!;
+      expect(page.totalSnippets).toBe(legacy.length);
+      expect(page.snippets).toEqual(legacy.slice(limit, limit * 2));
+      for (const snippet of page.snippets) {
+        expect(await resolveSearchSnippetLocation(source, snippet.location))
+          .toEqual({ from: snippet.location.from, to: snippet.location.to });
+      }
+    }
+  });
+
+  it("formats only the requested page and supports count-only and out-of-range requests", async () => {
+    const source = Array.from({ length: 37 }, (_, index) => `line ${index} needle needle`).join("\n\n");
+    const format = vi.spyOn(snippetPresentation, "buildSearchSnippetPresentation");
+    try {
+      expect((await extractSearchPreview(source, options(3, 20)))!.totalSnippets).toBe(37);
+      expect(format).toHaveBeenCalledTimes(3);
+      format.mockClear();
+      expect(await extractSearchPreview(source, options(0))).toEqual({ snippets: [], totalSnippets: 37 });
+      expect(await extractSearchPreview(source, options(5, 40))).toEqual({ snippets: [], totalSnippets: 37 });
+      expect(format).not.toHaveBeenCalled();
+    } finally { format.mockRestore(); }
+  });
+
+  it("counts within the same source and index-term caps as legacy extraction", async () => {
+    for (const source of [
+      "z".repeat(SEARCH_MARKDOWN_MAX_LENGTH) + " needle",
+      "word ".repeat(50_000) + "needle",
+    ]) {
+      expect(await extractSearchPreview(source, options(20))).toEqual({ snippets: [], totalSnippets: 0 });
+    }
+    const result = (await extractSearchPreview("word ".repeat(49_999) + "needle", options(0)))!;
+    expect(result).toEqual({ snippets: [], totalSnippets: 1 });
+  });
+
+  it("keeps the zero-limit legacy wrapper cheap", async () => {
+    const onPrepared = vi.fn();
+    expect(await extractSearchPreviewSnippets("needle", { ...options(0), onPrepared })).toEqual([]);
+    expect(onPrepared).not.toHaveBeenCalled();
   });
 });
 
