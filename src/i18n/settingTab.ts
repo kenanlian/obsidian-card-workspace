@@ -146,8 +146,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     backlinkSnippetCountName: "Default backlink reference snippets",
     backlinkSnippetCountDesc: "Show 1, 2, 3, or all reference contexts by default. Remaining contexts can be expanded in each card.",
     allReferenceSnippets: "All",
-    searchPreviewSnippetCountName: "Maximum search hit snippets in each card preview",
-    searchPreviewSnippetCountDesc: "Choose the maximum number of body hit snippets shown during search. Each snippet occupies two lines.",
+    searchPreviewSnippetCountName: "Default search hit snippets in each card preview",
+    searchPreviewSnippetCountDesc: "Choose the number of body hit snippets shown by default during search. Each snippet occupies two lines. Remaining snippets can be expanded in each card.",
     hoverPreviewWidthName: "Card hover preview width",
     hoverPreviewHeightName: "Card hover preview height",
     hoverPreviewDimensionDesc: (min, max, defaultValue) =>
@@ -245,8 +245,8 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     backlinkSnippetCountName: "反链默认显示的引用片段数",
     backlinkSnippetCountDesc: "默认显示 1、2、3 条或全部引用上下文，可在每张卡片中展开其余引用。",
     allReferenceSnippets: "全部",
-    searchPreviewSnippetCountName: "每张卡片预览最多显示的命中片段",
-    searchPreviewSnippetCountDesc: "搜索时最多显示多少个正文命中片段，每个片段占两行。",
+    searchPreviewSnippetCountName: "每张卡片预览默认显示的命中片段数",
+    searchPreviewSnippetCountDesc: "搜索时默认显示多少个正文命中片段，每个片段占两行，可在每张卡片中展开其余命中片段。",
     hoverPreviewWidthName: "卡片悬浮预览宽度",
     hoverPreviewHeightName: "卡片悬浮预览高度",
     hoverPreviewDimensionDesc: (min, max, defaultValue) =>
