@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import * as obsidian from "obsidian";
 import { Platform } from "obsidian";
 import { createQuickInputDesktop, QuickInputDesktopError, type QuickInputWindowHandle } from "./quick-input-desktop";
 
@@ -33,7 +34,10 @@ function fixture(style: string | undefined = "custom") {
   const create = () => desktop.createWindow({ id: "session-1", placement: { x: -1200, y: 205, width: 480, height: 270, displayId: 1 }, signal: abort.signal });
   return { win, child, native, mainHandle, nearest, desktop, create, abort, contents, creationOptions };
 }
-beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
+beforeEach(() => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(obsidian, "requireApiVersion").mockReturnValue(false);
+});
 afterEach(() => {
   Object.assign(Platform, { isWin: false, isMacOS: false });
   runtime.ready = Promise.resolve(); runtime.dispose.mockClear();
@@ -92,6 +96,58 @@ describe("quick input desktop adapter", () => {
     expect(f.native.webContents.setBackgroundThrottling).toHaveBeenLastCalledWith(true);
     expect(f.contents.listenerCount("did-create-window")).toBe(0);
   });
+  it("keeps the legacy popup prefix without requesting an unsupported IPC channel", async () => {
+    const f = fixture();
+    const sendSync = vi.fn(() => { throw new Error("No popup-token handler"); });
+    Object.assign(f.win.electron, { ipcRenderer: { sendSync } });
+    const opened = await f.create();
+    expect(f.win.open.mock.calls[0][2].split(",")[0]).toBe("popup");
+    expect(sendSync).not.toHaveBeenCalled();
+    opened.dispose();
+  });
+  it("uses the host popup token first on 1.15.1 while preserving hidden transparent window options", async () => {
+    vi.mocked(obsidian.requireApiVersion).mockReturnValue(true);
+    const f = fixture(), token = "0123456789abcdef0123456789abcdef";
+    const sendSync = vi.fn(() => token);
+    Object.assign(f.win.electron, { ipcRenderer: { sendSync } });
+    f.win.open.mockImplementation((_url, id, features) => {
+      // Match 1.15.1's main-process gate: "popup" alone is rejected.
+      if (features.split(",")[0] !== `token=${token}`) return null as never;
+      queueMicrotask(() => f.contents.emit("did-create-window", f.native, { frameName: id, options: f.creationOptions }));
+      return f.child;
+    });
+    const opened = await f.create();
+    expect(obsidian.requireApiVersion).toHaveBeenCalledWith("1.15.1");
+    expect(sendSync).toHaveBeenCalledExactlyOnceWith("popup-token");
+    const features = f.win.open.mock.calls[0][2].split(",");
+    for (const feature of ["popup", "show=no", "frame=no", "transparent=yes", "thickFrame=no", "roundedCorners=no", "hasShadow=no"]) {
+      expect(features).toContain(feature);
+    }
+    expect(opened.handle).toBe(f.native);
+    expect(f.native.show).not.toHaveBeenCalled();
+    expect(f.native.focus).not.toHaveBeenCalled();
+    opened.dispose();
+    expect(f.child.close).toHaveBeenCalledOnce();
+    expect(f.contents.listenerCount("did-create-window")).toBe(0);
+  });
+  it.each([undefined, null, false, 42, "", "token,frame=yes", "with whitespace"])("rejects an unavailable or malformed modern popup token (%s) before opening", async (token) => {
+    vi.mocked(obsidian.requireApiVersion).mockReturnValue(true);
+    const f = fixture();
+    Object.assign(f.win.electron, { ipcRenderer: { sendSync: () => token } });
+    await expect(f.create()).rejects.toThrow(new QuickInputDesktopError("unavailable"));
+    expect(f.win.open).not.toHaveBeenCalled();
+    expect(f.contents.listenerCount("did-create-window")).toBe(0);
+  });
+  it("reports a missing or throwing modern IPC bridge without attempting the legacy protocol", async () => {
+    vi.mocked(obsidian.requireApiVersion).mockReturnValue(true);
+    for (const ipcRenderer of [undefined, { sendSync: () => { throw new Error("IPC unavailable"); } }]) {
+      const f = fixture();
+      Object.assign(f.win.electron, { ipcRenderer });
+      await expect(f.create()).rejects.toThrow(new QuickInputDesktopError("unavailable"));
+      expect(f.win.open).not.toHaveBeenCalled();
+      expect(f.contents.listenerCount("did-create-window")).toBe(0);
+    }
+  });
   it("closes a pending document immediately on cancellation and ignores its late readiness", async () => {
     let finish!: () => void;
     runtime.ready = new Promise((resolve) => { finish = resolve; });
@@ -138,8 +194,10 @@ describe("quick input desktop adapter", () => {
     expect(missing.child.close).toHaveBeenCalledOnce();
   });
 
-  it("rejects ignored constructor options before revealing an opaque or system-decorated window", async () => {
+  it.each([false, true])("rejects ignored constructor options before revealing an opaque or system-decorated window (token protocol: %s)", async (modern) => {
+    vi.mocked(obsidian.requireApiVersion).mockReturnValue(modern);
     const f = fixture(); f.creationOptions.transparent = false;
+    Object.assign(f.win.electron, { ipcRenderer: { sendSync: () => "0123456789abcdef0123456789abcdef" } });
     await expect(f.create()).rejects.toThrow(QuickInputDesktopError);
     expect(f.native.show).not.toHaveBeenCalled(); expect(f.child.close).toHaveBeenCalledOnce();
     expect(f.contents.listenerCount("did-create-window")).toBe(0);

@@ -1,9 +1,9 @@
-import { Platform } from "obsidian";
+import { Platform, requireApiVersion } from "obsidian";
 import { prepareQuickInputDocument } from "./quick-input-document";
 
 export { QUICK_INPUT_VIEW } from "./quick-input-contract";
 export interface QuickInputRectangle { x: number; y: number; width: number; height: number }
-/** Capability-checked host internals, verified against Obsidian 1.11.4.
+/** Capability-checked host internals, verified against Obsidian 1.11.4–1.15.1.
  * Never resolve a target through the currently focused Electron window.
  */
 export interface QuickInputWindowHandle {
@@ -41,7 +41,10 @@ interface WindowCreationEvents {
 type DesktopWindow = Window & {
   titlebarStyle?: string;
   electronWindow?: QuickInputWindowHandle;
-  electron?: { remote?: { screen?: ScreenBridge; globalShortcut?: QuickInputShortcutBridge; getCurrentWindow?(): QuickInputWindowHandle; getCurrentWebContents?(): WindowCreationEvents } };
+  electron?: {
+    ipcRenderer?: { sendSync(channel: "popup-token"): unknown };
+    remote?: { screen?: ScreenBridge; globalShortcut?: QuickInputShortcutBridge; getCurrentWindow?(): QuickInputWindowHandle; getCurrentWebContents?(): WindowCreationEvents };
+  };
   require?: (id: string) => unknown;
   app?: unknown;
 };
@@ -93,10 +96,20 @@ export function createQuickInputDesktop(mainWindow: Window): QuickInputDesktop {
     async createWindow({ id, placement, signal }) {
       this.check();
       if (signal.aborted) throw new QuickInputDesktopError("unavailable");
-      // The host's main-process popup handler (1.11.4–1.14.4) creates these hidden.
+      // 1.15.1 requires its per-process token as the first window feature. Older
+      // hosts require "popup" first and have no popup-token IPC handler.
+      let popupFeature = "popup";
+      if (requireApiVersion("1.15.1")) {
+        let token: unknown;
+        try { token = host.electron?.ipcRenderer?.sendSync("popup-token"); }
+        catch { throw new QuickInputDesktopError("unavailable"); }
+        if (typeof token !== "string" || !/^[0-9a-f]+$/i.test(token)) throw new QuickInputDesktopError("unavailable");
+        popupFeature = `token=${token},popup`;
+      }
+      // The host's main-process popup handler creates these hidden.
       // Bypass its renderer popout helper, which adds chrome, style/focus relays
       // and an unconditional show before a draft can finish initializing.
-      const features = ["popup", "show=no", "frame=no", "transparent=yes", "background=#00000000", "hasShadow=no", "roundedCorners=no", "thickFrame=no", "backgroundMaterial=none",
+      const features = [popupFeature, "show=no", "frame=no", "transparent=yes", "background=#00000000", "hasShadow=no", "roundedCorners=no", "thickFrame=no", "backgroundMaterial=none",
         `x=${placement.x}`, `y=${placement.y}`, `width=${placement.width}`, `height=${placement.height}`].join(",");
       const contents = host.electron?.remote?.getCurrentWebContents?.();
       if (!contents?.on || !contents.removeListener) throw new QuickInputDesktopError("unavailable");
