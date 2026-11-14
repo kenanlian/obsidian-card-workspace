@@ -25,6 +25,7 @@ import { buildNavContextMenu, resolveNavMenuDangerLabel, type NavMenuDeps } from
 import { decorateCardContextMenu, isMouseEventLike } from "./menus/card-context-menu";
 
 export function buildNavigationPanelState(input: {
+  drawActive?: boolean;
   settings: PluginSettings;
   strings: UiStrings;
   scope: CardScope;
@@ -54,8 +55,8 @@ export function buildNavigationPanelState(input: {
     templates: input.templates ?? [],
     tagCounts: input.cardProjection.tagCounts,
     includeSubfolders: settings.includeSubfolders,
-    tagsDisabled: !resolveSourceCapabilities(scope).browseTagFilter,
-    propertiesDisabled: !resolveSourceCapabilities(scope).browsePropertyFilter,
+    tagsDisabled: !resolveSourceCapabilities(scope, input.drawActive).browseTagFilter,
+    propertiesDisabled: !resolveSourceCapabilities(scope, input.drawActive).browsePropertyFilter,
     sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
     hiddenFolderPaths: settings.hiddenFolderPaths, hiddenTagPaths: settings.hiddenTagPaths, hiddenNavSections: settings.hiddenNavSections,

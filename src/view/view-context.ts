@@ -15,6 +15,8 @@ export interface ViewContext {
   getApp: () => App;
   store: ViewStateStore;
   epochs: ViewEpochs;
+  waitForSettings?: () => Promise<void>;
+  flushSettings?: () => Promise<void>;
   getSettings: () => PluginSettings;
   /** Settings memory updates synchronously; a scope commit can publish its own view update. */
   saveSettings: (patch: PartialPluginSettings, options?: { skipViewUpdate: boolean }) => Promise<void>;

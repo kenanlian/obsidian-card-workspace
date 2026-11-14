@@ -428,6 +428,17 @@ export class SettingsStore {
     return this.compatibility;
   }
 
+  async reloadExternal(): Promise<SettingsCompatibilityStatus> {
+    this.debouncedWorkspaceWrite.cancel();
+    this.dirty = false;
+    this.rejectUnpersistedWaiters(new Error("Settings superseded by an external update."));
+    await this.pending?.catch(() => undefined);
+    if (this.local && this.localRevision > this.savedLocalRevision) {
+      await this.local.save(pickDeviceSettings(serializeSettings(this.getFlat())));
+    }
+    return this.init();
+  }
+
   getPersistenceDiagnostics() {
     return { localStorageDegraded: this.localStorageDegraded, sharedPending: this.sharedRevision > this.savedSharedRevision,
       localPending: this.localRevision > this.savedLocalRevision, compatibility: this.compatibility };

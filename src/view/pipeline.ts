@@ -11,6 +11,7 @@ import type { CardScope } from "./scope";
 import type { NoteCardRecord, PipelineSearchInput } from "./types";
 
 export interface PipelineContext {
+  drawPaths?: readonly string[] | null;
   app: App;
   filterTags: string[];
   // Workspace-persisted property clauses; applied in folder and box scopes.
@@ -47,7 +48,7 @@ export function runPipeline(
   for (const step of steps) {
     result = step(result, context);
   }
-  return applyGroupArrangement(result, context);
+  return steps.includes(applyDrawSelection) ? { cards: result, segments: [] } : applyGroupArrangement(result, context);
 }
 
 /**
@@ -76,6 +77,16 @@ function applyGroupArrangement(
     context.group.spec,
     context.collapsedGroupKeys,
   );
+}
+
+/** Explicit box-only stage: search pauses the saved group without consuming it. */
+export function applyDrawSelection(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+  if (context.search.query.trim()) return applyPinReorder(applySearchFilter(cards, context), context);
+  const byPath = new Map(cards.map(card => [card.path, card]));
+  return (context.drawPaths ?? []).flatMap(path => {
+    const card = byPath.get(path);
+    return card ? [card] : [];
+  });
 }
 
 /** Tag filter step — filter cards by metadata tags using AND logic. */
@@ -176,12 +187,12 @@ export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContex
 /** Box membership is resolved before projection; browse filters narrow that set.
  * Links keeps browse filters dormant. Dispatch stays exhaustive over CardScope.
  */
-export function stepsForScope(scope: CardScope): PipelineStep[] {
+export function stepsForScope(scope: CardScope, drawActive = false): PipelineStep[] {
   switch (scope.kind) {
     case "folder":
       return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "box":
-      return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
+      return drawActive ? [applyDrawSelection] : [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "links":
       return [applySearchFilter, applyPinReorder];
     default: {

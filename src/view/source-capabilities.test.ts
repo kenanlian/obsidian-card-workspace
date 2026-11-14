@@ -10,6 +10,7 @@ import {
 describe("resolveSourceCapabilities", () => {
   it("returns the exact six-field capability table for folder scope", () => {
     expect(resolveSourceCapabilities(createFolderScope("notes/ideas", true))).toEqual({
+      supportsCardDraw: false,
       arrangementOwner: { kind: "global" },
       browseTagFilter: true,
       browsePropertyFilter: true,
@@ -21,6 +22,7 @@ describe("resolveSourceCapabilities", () => {
 
   it("returns the exact six-field capability table for vault-root folder scope", () => {
     expect(resolveSourceCapabilities(createFolderScope("/", false))).toEqual({
+      supportsCardDraw: false,
       arrangementOwner: { kind: "global" },
       browseTagFilter: true,
       browsePropertyFilter: true,
@@ -32,6 +34,7 @@ describe("resolveSourceCapabilities", () => {
 
   it("returns the exact six-field capability table for box scope", () => {
     expect(resolveSourceCapabilities(createBoxScope("box-42"))).toEqual({
+      supportsCardDraw: true,
       arrangementOwner: { kind: "box", boxId: "box-42" },
       browseTagFilter: true,
       browsePropertyFilter: true,
@@ -43,6 +46,7 @@ describe("resolveSourceCapabilities", () => {
 
   it("returns the exact six-field capability table for links scope", () => {
     const expected = {
+      supportsCardDraw: false,
       arrangementOwner: { kind: "global" as const },
       browseTagFilter: false,
       browsePropertyFilter: false,

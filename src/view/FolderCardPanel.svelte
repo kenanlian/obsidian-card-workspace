@@ -700,7 +700,7 @@
     const nextScopeIdentity = scopeIdentity;
     const revision = cards.sequenceRevision;
     const groupRevision = cards.groupRevision;
-    const nextArrangementIdentity = [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000");
+    const nextArrangementIdentity = [scope.draw?.active ? `draw:${scope.draw.revision}` : "browse", projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000");
     const nextBrowseFilterMode = resolveBrowseFilterMode(scope, projection.activeFilterTags.length, nav.propertyFilterCount), columns = columnCount;
     untrack(() => {
       const scopeChanged = nextScopeIdentity !== lastProjectedScopeIdentity;

@@ -132,6 +132,7 @@ export class ProjectionController {
     const spec = this.resolveGroupSpec();
     const settings = this.context.getSettings();
     const pipelineContext: PipelineContext = {
+      drawPaths: resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw ? this.context.store.getDrawPaths() : null,
       app: this.context.getApp(),
       filterTags: settings.filter.tags,
       propertyFilters: resolveSourceCapabilities(this.context.store.getScope()).browsePropertyFilter
@@ -145,7 +146,7 @@ export class ProjectionController {
 
     const result = runPipeline(
       [...cards],
-      stepsForScope(this.context.store.getScope()),
+      stepsForScope(this.context.store.getScope(), this.context.store.getDrawPaths() !== null),
       pipelineContext,
     );
     return result;

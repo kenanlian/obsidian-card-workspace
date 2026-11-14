@@ -14,6 +14,10 @@ export interface CardPreviewUpdate {
 
 /** Shared mutable state exposed to controllers without exposing the view. */
 export interface ViewStateStore {
+  getDrawRevision(): number;
+  advanceDrawRevision(): void;
+  getDrawPaths(): readonly string[] | null;
+  setDrawPaths(paths: readonly string[] | null): void;
   getScope(): CardScope;
   setScope(scope: CardScope): void;
   getBaseCards(): readonly NoteCardRecord[];
@@ -33,6 +37,8 @@ export interface ViewStateStore {
 
 export function createViewStateStore(initialScope: CardScope): ViewStateStore {
   let scope = initialScope;
+  let drawRevision = 0;
+  let drawPaths: readonly string[] | null = null;
   let baseCards: NoteCardRecord[] = [];
   let visibleCards: NoteCardRecord[] = [];
   let baseIndexByPath = new Map<string, number>();
@@ -46,8 +52,13 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
     new Map(cards.map((card, index) => [card.path, index]));
 
   return {
+    getDrawRevision: () => drawRevision,
+    advanceDrawRevision: () => { drawRevision++; },
+    getDrawPaths: () => drawPaths,
+    setDrawPaths: paths => { drawPaths = paths; },
     getScope: () => scope,
     setScope(nextScope) {
+      if (JSON.stringify(scope) !== JSON.stringify(nextScope)) drawPaths = null;
       scope = nextScope;
     },
     getBaseCards: () => baseCards,

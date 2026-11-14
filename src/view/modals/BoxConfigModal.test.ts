@@ -331,6 +331,7 @@ describe("BoxConfigModal layout", () => {
       ui.box.excludedHeading,
       ui.box.sortHeading,
       ui.box.groupHeading,
+      ui.box.drawTitle,
     ]);
   });
 
@@ -480,5 +481,27 @@ describe("BoxConfigModal layout", () => {
     finish();
     await flush();
     expect(asMock(modal).closeCount).toBe(1);
+  });
+});
+
+describe("BoxConfigModal draw configuration", () => {
+  it.each(["en", "zh"] as const)("edits method and count as a cancelable draft in %s", async locale => {
+    const source = createBox();
+    const { onConfirm } = openModal(source, locale);
+    const ui = getUiStrings(locale);
+    const group = requireGroup(contentOf(), ui.box.drawTitle);
+    expect(group.settings[0]?.dropdowns[0]?.value).toBe("random");
+    expect(group.settings[1]?.sliders[0]?.value).toBe(5);
+    group.settings[0]?.dropdowns[0]?.select("daily");
+    await group.settings[1]?.sliders[0]?.slide(12);
+    expect(source.draw).toBeUndefined();
+    await clickButton(ui.box.done);
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ draw: { mode: "daily", count: 12 } }));
+  });
+  it("does not persist draw draft edits on cancel", async () => {
+    const { onConfirm } = openModal();
+    requireGroup(contentOf(), strings.box.drawTitle).settings[0]?.dropdowns[0]?.select("cycle");
+    await clickButton(strings.box.cancel);
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });

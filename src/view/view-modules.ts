@@ -1,3 +1,4 @@
+import { BoxDrawController } from "./controllers/BoxDrawController";
 import { TimeGroupController } from "./controllers/TimeGroupController";
 import { CardDropActions } from "./actions/card-drop-actions";
 import { IconActions } from "./actions/icon-actions";
@@ -75,6 +76,7 @@ export interface ViewModuleHost {
 }
 
 export interface ViewModules {
+  boxDraw: BoxDrawController;
   timeGroup: TimeGroupController;
   cardDropActions: CardDropActions;
   iconActions: IconActions;
@@ -240,6 +242,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     scheduleFolderTreeRefresh: () => navLayout.scheduleFolderTreeRefresh(),
     publishLoadStart: (scopeChanged) => host.publishLoadStart(scopeChanged),
     publishPreparedCards: () => {
+      boxDraw.reconcile();
       const fileTypesChanged = navLayout.prepareFileVisibility();
       bulk.reconcileToVisibleCards();
       if (host.publishPreparedCards) host.publishPreparedCards(fileTypesChanged);
@@ -289,6 +292,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   });
   const boxActions: BoxActions = new BoxActions({
     context,
+    drawCommand: command => command === "draw-retry" ? boxDraw.retrySave() : command === "draw-enter" ? boxDraw.enter() : command === "draw-next" ? boxDraw.next() : command === "draw-exit" ? Promise.resolve(boxDraw.exit()) : boxDraw.toggle(),
+    resetDraw: id => boxDraw.reset(id),
     getSelectedPaths: () => bulk.getSelectedPaths(),
     getOrderedVisiblePaths: () => projection.getOrderedVisiblePaths(),
     isMouseEventLike,
@@ -302,6 +307,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     returnToCardsViewIfSinglePane: () => {
       navLayout.returnToCardsViewIfSinglePane();
     },
+  });
+  const boxDraw = new BoxDrawController(context, {
+    pool: () => context.store.getBaseCards().map(card => card.path), query: () => search.getQuery(),
+    reproject: () => { projection.reprojectCards(); bulk.reconcileToVisibleCards(); },
   });
   const cardBackgroundActions = new CardBackgroundActions(context);
   const bulkPropertyActions = new BulkPropertyActions({
@@ -322,7 +331,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       bulk.reconcileSelectionToOrderedPaths(paths);
     },
     deriveAvailableTags: () => projection.deriveAvailableTags(),
-    browseTagFilterEnabled: () => resolveSourceCapabilities(context.store.getScope()).browseTagFilter,
+    browseTagFilterEnabled: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browseTagFilter,
     getDisplayFolderPath: () => host.getDisplayFolderPath(),
     createNoteIn: (folderUiPath, tags) => folderActions.createNoteIn(folderUiPath, tags),
     returnToCardsViewIfSinglePane: () => {
@@ -342,7 +351,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     saveSettings: (patch) => context.saveSettings(patch),
     collectPropertyInventory: () => property.collectPropertyInventory(),
     getStrings: () => context.getUiStrings(),
-    browsePropertyFilterEnabled: () => resolveSourceCapabilities(context.store.getScope()).browsePropertyFilter,
+    browsePropertyFilterEnabled: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browsePropertyFilter,
   });
   const mergeActions: MergeActions = new MergeActions({
     context,
@@ -435,9 +444,9 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     onImageMetadataChange: (path) => images.handleMetadataChange(path),
     refreshLinkMetadata: (path) => hydration.invalidateLinkMetadata(path),
     getGroupDimension: () => resolveGroupSpec().dimension,
-    isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope()).browseTagFilter && context.getSettings().filter.tags.length > 0,
+    isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browseTagFilter && context.getSettings().filter.tags.length > 0,
     isSearchActive: () => search.getQuery().trim().length > 0,
-    reconcileMetadataMembershipForPath: (path) => scopeController.reconcileMetadataMembershipForPath(path),
+    reconcileMetadataMembershipForPath: (path) => { const result = scopeController.reconcileMetadataMembershipForPath(path); boxDraw.reconcile(); return result; },
     refreshMetadataGroupBuckets: () => projection.refreshMetadataGroupBuckets(),
     refreshScopeTagData: () => projection.refreshScopeTagData(),
     classifyPropertyMetadataImpact: (path) => {
@@ -445,7 +454,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
         return "none";
       }
       const settings = context.getSettings();
-      if (resolveSourceCapabilities(context.store.getScope()).browsePropertyFilter
+      if (resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browsePropertyFilter
         && settings.filter.properties.length > 0) {
         return "reproject";
       }
@@ -478,7 +487,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     saveSettings: (patch) => context.saveSettings(patch),
     getActiveBox: () => boxActions.getActiveBox(),
     updateActiveBox: (mutate) => boxActions.updateActiveBox(mutate),
-    resolveCapabilities: () => resolveSourceCapabilities(context.store.getScope()),
+    resolveCapabilities: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null),
     publishGroups: (...groups) => host.publishGroups(...groups),
     refreshLoadKeyForCurrentScope: () => scopeController.refreshLoadKeyForCurrentScope(),
     reprojectCards: () => projection.reprojectCards(),
@@ -508,6 +517,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   gate.markAssembled();
 
   return {
+    boxDraw,
     timeGroup,
     cardDropActions,
     iconActions,

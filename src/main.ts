@@ -1,3 +1,4 @@
+import { reconcileBoxDrawMembership } from "./view/card-box-membership";
 import { closeAllIconPickers, validateIconPickers } from "./icon-picker/IconPicker";
 import { IconReconciler } from "./services/IconReconciler";
 import { RuntimeActivity } from "./runtime/activity";
@@ -292,6 +293,17 @@ export default class CardWorkspacePlugin extends Plugin {
     this.registerDomEvent(window, "unload", () => this.disposeRuntime());
     if (this.runtimePlatform.capabilities.quickInput) this.addCommand({ id: "quick-input", name: this.getUiStrings().noteInput.quickInputCommand,
       callback: () => { void this.openQuickInput(typeof activeWindow !== "undefined" ? activeWindow : window); } });
+    for (const command of ["draw", "draw-next"] as const) this.addCommand({
+      id: command === "draw" ? "toggle-box-draw" : "next-box-draw",
+      name: command === "draw" ? this.getUiStrings().box.drawToggleCommand : this.getUiStrings().box.drawNextCommand,
+      checkCallback: checking => {
+        const view = this.app.workspace.getActiveViewOfType(FolderCardView);
+        const available = view && (command === "draw" ? view.modules.boxDraw.available : view.modules.boxDraw.canNext);
+        if (!available) return false;
+        if (!checking) view.modules.boxActions.handleBoxCommand({ command });
+        return true;
+      },
+    });
     this.registerSearchCommands();
     this.registerEvent(this.app.workspace.on("layout-change", () => this.runtimeActivity.refresh()));
     if (this.runtimePlatform.capabilities.editorDrop && typeof document !== "undefined") {
@@ -919,7 +931,53 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.settingsStore.flushPendingWrites();
   }
 
+  private externalSettingsReload: Promise<void> | null = null;
+  async waitForExternalSettings(): Promise<void> { await this.externalSettingsReload; }
+  onExternalSettingsChange(): Promise<void> {
+    const reload = async () => {
+      const previous = this.getSettings();
+      await this.settingsReadyPromise;
+      await this.settingsStore.reloadExternal();
+      if (this.disposed) return;
+      const next = this.getSettings();
+      this.workspaceSettingTab?.refreshTemplateOptions();
+      this.withFolderViews(view => {
+        const scope = view.getCardScope();
+        if (scope.kind === "box" && !next.boxes.some(box => box.id === scope.boxId)) {
+          this.runDetached(view.modules.boxActions.exitBoxScope(), "Deleted external box fallback failed.");
+          return;
+        }
+        const intent = resolveSettingsUpdateIntent(previous, next, scope);
+        if (intent) this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "External settings update failed.");
+      });
+    };
+    const previousReload = this.externalSettingsReload;
+    const task = (previousReload ?? Promise.resolve()).then(reload);
+    this.externalSettingsReload = task;
+    void task.finally(() => { if (this.externalSettingsReload === task) this.externalSettingsReload = null; }).catch(error => console.warn("External settings reload failed", error));
+    return task;
+  }
+
   async saveSettings(patch: PartialPluginSettings): Promise<void> {
+    if (this.externalSettingsReload) {
+      const baseline = this.getSettings().boxes;
+      await this.externalSettingsReload;
+      if (patch.boxes) {
+        const requested = patch.boxes;
+        const removed = new Set(baseline.filter(box => !requested.some(entry => entry.id === box.id)).map(box => box.id));
+        const live = this.getSettings().boxes.filter(box => !removed.has(box.id));
+        patch = { ...patch, boxes: live.map(box => {
+          const before = baseline.find(entry => entry.id === box.id);
+          const after = requested.find(entry => entry.id === box.id);
+          if (!before || !after) return box;
+          const result = { ...box };
+          for (const key of Object.keys(after) as Array<keyof typeof after>) {
+            if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) Object.assign(result, { [key]: after[key] });
+          }
+          return result;
+        }).concat(requested.filter(box => !baseline.some(entry => entry.id === box.id) && !live.some(entry => entry.id === box.id))) };
+      }
+    }
     if (!hasPatchValues(patch)) {
       return;
     }
@@ -928,6 +986,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
     const previous = this.getSettings();
     patch = this.iconReconciler.reconcileDefinitions(previous, patch);
+    if (patch.boxes) patch = { ...patch, boxes: patch.boxes.map(box => reconcileBoxDrawMembership(this.app, box)) };
     const write = this.settingsStore.updateFlat(patch);
 
     // Render synchronous memory now; the returned promise still waits for persistence.
@@ -1198,6 +1257,11 @@ export default class CardWorkspacePlugin extends Plugin {
     this.vaultEventUnsubscribers = [
       this.navigationMetadataCatalog.subscribe(() => this.withFolderViews(view => view.refreshNavigationMetadata())),
       this.metadataEventBus.subscribe(event => this.navigationMetadataCatalog.handleMetadataChange(event)),
+      this.metadataEventBus.subscribe(async event => {
+        const boxes = this.getSettings().boxes;
+        const next = boxes.map(box => reconcileBoxDrawMembership(this.app, box, event.kind === "changed" ? event.path : undefined));
+        if (next.some((box, index) => box !== boxes[index])) await this.saveSettings({ boxes: next });
+      }),
       this.subscribeVaultEvents(event => this.navigationMetadataCatalog.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.reconcileLastFolderPath(event)),
       this.subscribeVaultEvents((event) => this.pinnedPathReconciler.handleVaultMutation(event)),

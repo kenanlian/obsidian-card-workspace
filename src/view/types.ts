@@ -98,6 +98,8 @@ export interface CardBoxSortSpec {
  * Invariant: `manualPaths ∩ excludedPaths = ∅`.
  */
 export interface CardBoxDefinition {
+  draw?: import("./box-draw").BoxDrawConfig;
+  drawProgress?: import("./box-draw").BoxDrawProgress;
   id: string;
   name: string;
   rules: Rule[];

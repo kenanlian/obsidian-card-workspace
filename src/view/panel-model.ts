@@ -52,6 +52,7 @@ export interface FavoriteRowModel {
 }
 
 export interface PanelScopeState {
+  draw?: { revision: number; saveFailed: boolean; available: boolean; active: boolean; mode: "random" | "cycle" | "daily"; count: number; total: number; round: number; drawn: number; date?: string; canNext: boolean; paused: boolean };
   displayPath: string;
   includeSubfolders: boolean;
   activeBoxId: string | null;

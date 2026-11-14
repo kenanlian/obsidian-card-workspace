@@ -132,6 +132,7 @@ function mountToolbar(
       strings: values.strings ?? getUiStrings("en"),
       runtimeDevice: values.runtimeDevice ?? "desktop",
       scope: {
+        draw: values.draw,
         displayPath: values.folderPath ?? "notes",
         includeSubfolders: true,
         activeBoxId: values.activeBoxId ?? null,
@@ -1261,5 +1262,83 @@ describe("Toolbar.svelte links controls", () => {
     expect(document.querySelector(`button[aria-label="${getUiStrings("en").links.saveSnapshot}"]`)).toBeNull();
 
     await disposeMountedComponent(component);
+  });
+});
+
+
+describe("draw toolbar entry", () => {
+  it("publishes a toggle intent and shows the active state for a box", async () => {
+    const events = createCapturedCallbacks();
+    const { target } = mountToolbar({ activeBoxId: "box-1", draw: { available: true, active: true } }, events.callbacks);
+    await tick();
+    const button = target.querySelector<HTMLButtonElement>('.fce-toolbar-button[aria-label="Exit draw"]');
+    expect(button?.getAttribute("aria-pressed")).toBe("true");
+    button?.click();
+    expect(events.boxCommandEvents).toEqual([{ command: "draw" }]);
+  });
+  it("does not show a draw entry for other sources", async () => {
+    const { target } = mountToolbar(); await tick();
+    expect(target.querySelector('button[aria-label="Draw cards"]')).toBeNull();
+  });
+});
+
+describe("draw action strip", () => {
+  const draw = {
+    available: true, active: true, mode: "cycle", count: 2, total: 10, round: 1,
+    drawn: 2, canNext: true, paused: false, saveFailed: false, revision: 1,
+  };
+
+  it.each(["en", "zh"] as const)("uses bulk-style icon actions and routes their commands (%s)", async locale => {
+    const strings = getUiStrings(locale);
+    const captured = createCapturedCallbacks();
+    const { target } = mountToolbar({ strings, activeBoxId: "box-1", draw }, captured.callbacks);
+    await tick();
+    const strip = target.querySelector(".fce-toolbar-draw-strip");
+    expect(strip?.classList.contains("fce-toolbar-bulk-strip")).toBe(true);
+    expect(target.querySelector(".fce-header")?.classList.contains("is-draw-mode")).toBe(true);
+    const buttons = Array.from(strip!.querySelectorAll<HTMLButtonElement>("button"));
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([strings.box.drawNext, strings.box.drawExit]);
+    expect(buttons.map(button => button.getAttribute("data-icon"))).toEqual(["skip-forward", "x"]);
+    buttons.forEach(button => button.click());
+    expect(captured.boxCommandEvents).toEqual([{ command: "draw-next" }, { command: "draw-exit" }]);
+  });
+
+  it("keeps exit available while next is paused by search", async () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountToolbar({ activeBoxId: "box-1", draw: { ...draw, paused: true, canNext: false } }, captured.callbacks);
+    await tick();
+    const strip = target.querySelector(".fce-toolbar-draw-strip")!;
+    const next = strip.querySelector<HTMLButtonElement>('button[aria-label="Draw next group"]')!;
+    expect(next.disabled).toBe(true);
+    next.click();
+    expect(captured.boxCommandEvents).toEqual([]);
+    strip.querySelector<HTMLButtonElement>('button[aria-label="Exit draw"]')?.click();
+    expect(captured.boxCommandEvents).toEqual([{ command: "draw-exit" }]);
+  });
+
+  it("shows daily status and a retry icon without offering an extra daily group", async () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountToolbar({ activeBoxId: "box-1", draw: { ...draw, mode: "daily", date: "2026-11-14", canNext: false, saveFailed: true } }, captured.callbacks);
+    await tick();
+    const strip = target.querySelector(".fce-toolbar-draw-strip")!;
+    expect(strip.querySelector('[aria-label="Draw next group"]')).toBeNull();
+    expect(strip.textContent).toContain("2026-11-14");
+    expect(strip.textContent).toContain(getUiStrings("en").box.drawTomorrow);
+    const retry = strip.querySelector<HTMLButtonElement>('[aria-label="Retry saving"]')!;
+    expect(retry.getAttribute("data-icon")).toBe("refresh-cw");
+    retry.click();
+    expect(captured.boxCommandEvents).toEqual([{ command: "draw-retry" }]);
+  });
+
+  it("reflects draw activation in the phone More menu and keeps strip actions accessible", async () => {
+    const captured = createCapturedCallbacks();
+    const { target } = mountToolbar({ runtimeDevice: "phone", activeBoxId: "box-1", draw }, captured.callbacks);
+    await tick();
+    const more = target.querySelector<HTMLButtonElement>(".fce-toolbar-more")!;
+    expect(more.classList.contains("is-selected")).toBe(true);
+    more.click(); await tick();
+    const entry = getObsidianMenuInstances().at(-1)?.items.find(item => item.title === "Exit draw");
+    expect(entry?.checked).toBe(true);
+    expect(target.querySelector('.fce-toolbar-draw-strip [aria-label="Draw next group"]')).not.toBeNull();
   });
 });

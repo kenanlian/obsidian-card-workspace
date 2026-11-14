@@ -1,3 +1,4 @@
+import { mapBoxDrawProgress } from "./box-draw";
 import type { App } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import {
@@ -85,6 +86,7 @@ export function createCardBox(
     excludedPaths: init.excludedPaths ? [...init.excludedPaths] : [],
     pinnedPaths: init.pinnedPaths ? [...init.pinnedPaths] : [],
     sort: init.sort ? { ...init.sort } : { ...DEFAULT_BOX_SORT },
+    draw: init.draw ? { ...init.draw } : undefined,
     group: init.group ? { ...init.group } : { ...DEFAULT_GROUP_SPEC },
   };
 }
@@ -134,6 +136,7 @@ export function duplicateCardBox(
     pinnedPaths: [...source.pinnedPaths],
     sort: { ...source.sort },
     group: { ...source.group },
+    draw: source.draw ? { ...source.draw } : undefined,
   };
 
   const index = boxes.findIndex((box) => box.id === id);
@@ -251,7 +254,7 @@ export interface BoxVaultMutation {
  *
  * Returns the same box reference when nothing changes.
  */
-export function reconcileBoxForVaultMutation(
+function reconcileBoxPathsForVaultMutation(
   box: CardBoxDefinition,
   event: BoxVaultMutation,
 ): CardBoxDefinition {
@@ -366,4 +369,16 @@ export function restoreExcludedPaths(
   }
   const removeSet = new Set(paths);
   return { ...box, excludedPaths: box.excludedPaths.filter((path) => !removeSet.has(path)) };
+}
+
+export function reconcileBoxForVaultMutation(box: CardBoxDefinition, event: BoxVaultMutation): CardBoxDefinition {
+  const next = reconcileBoxPathsForVaultMutation(box, event);
+  const drawProgress = mapBoxDrawProgress(box.drawProgress, path => {
+    const source = event.oldPath ?? event.path;
+    const matches = path === source || (event.isFolder && path.startsWith(`${source}/`));
+    if (!matches) return path;
+    if (event.eventType === "delete") return null;
+    return event.eventType === "rename" ? event.path + path.slice(source.length) : path;
+  });
+  return drawProgress === box.drawProgress ? next : { ...next, drawProgress };
 }

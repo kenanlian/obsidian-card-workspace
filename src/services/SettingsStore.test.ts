@@ -1068,3 +1068,41 @@ describe("SettingsStore — note input persistence", () => {
     await expect(store.updatePreferences({ quickInput: { folderPath: "Missing", insertPosition: "end", duplicateTitle: "ask" } })).resolves.toBe("patch");
   });
 });
+
+describe("external settings adoption", () => {
+  it("adopts synced box progress without echoing a write", async () => {
+    let disk: unknown = {};
+    const h = createStore({ load: async () => disk });
+    await h.store.init();
+    disk = { schemaVersion: 2, userData: { boxes: [{ id: "synced", name: "Synced", draw: { mode: "daily", count: 7 },
+      drawProgress: { round: 3, drawnPaths: ["a.md"], currentGroup: { paths: ["a.md"], date: "2026-11-14" } } }] } };
+    await h.store.reloadExternal();
+    expect(h.store.getFlat().boxes[0]?.drawProgress?.round).toBe(3);
+    expect(h.save).not.toHaveBeenCalled();
+  });
+  it("enters read-only mode when the external schema is newer", async () => {
+    let disk: unknown = {};
+    const h = createStore({ load: async () => disk });
+    await h.store.init(); disk = { schemaVersion: 999 };
+    await h.store.reloadExternal();
+    expect(h.store.getCompatibility()).toBe("unsupported-schema");
+    await h.store.flushPendingWrites();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+});
+
+it("external reload cancels an older queued workspace write rather than overwriting synced progress", async () => {
+  vi.useFakeTimers();
+  try {
+    let disk: unknown = {};
+    const h = createStore({ load: async () => disk });
+    await h.store.init();
+    const pending = h.store.updateWorkspace({ lastFolderPath: "old-device" }).catch(error => error);
+    disk = { schemaVersion: 2, workspace: { lastFolderPath: "synced" } };
+    await h.store.reloadExternal();
+    expect(await pending).toBeInstanceOf(Error);
+    await vi.runAllTimersAsync();
+    expect(h.store.getFlat().lastFolderPath).toBe("synced");
+    expect(h.save).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});

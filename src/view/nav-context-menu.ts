@@ -375,6 +375,7 @@ function buildBoxItemMenu(menu: Menu, deps: NavMenuDeps, itemId: string): boolea
     isActive ? "log-out" : "box",
     () => deps.actions.boxCommand(isActive ? "exit" : "switch", itemId),
   );
+  addItem(menu, box.drawTitle, "dices", () => deps.actions.boxCommand("draw-enter", itemId));
   addItem(menu, box.configure, "settings-2", () => deps.actions.boxCommand("configure", itemId));
 
   if (deps.supportsBoxRuleSeeding) {

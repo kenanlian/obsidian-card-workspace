@@ -20,7 +20,7 @@ export class ScopeNoteActions {
     const scope = context.store.getScope();
     const settings = context.getSettings();
     const folderPath = resolveNewNoteFolderPath(scope, settings.lastFolderPath, settings.boxNewNoteFolderPath);
-    const capabilities = resolveSourceCapabilities(scope);
+    const capabilities = resolveSourceCapabilities(scope, context.store.getDrawPaths() !== null);
     const tags = capabilities.browseTagFilter ? [...settings.filter.tags] : [];
     const properties: Record<string, string | number | boolean> = Object.create(null) as Record<string, string | number | boolean>;
     if (capabilities.browsePropertyFilter) {

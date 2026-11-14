@@ -297,6 +297,34 @@
     });
   });
 
+  const drawActive = $derived(scope.draw?.active ?? false);
+  const drawToggleLabel = $derived(drawActive ? boxStrings.drawExit : boxStrings.drawTitle);
+  const drawActions = $derived.by((): BulkToolbarOption[] => {
+    const draw = scope.draw;
+    if (!draw?.active) return [];
+    const actions: BulkToolbarOption[] = [];
+    if (draw.mode !== "daily" && draw.total > 0) {
+      actions.push({ id: "draw-next", label: boxStrings.drawNext, icon: "skip-forward", disabled: !draw.canNext });
+    }
+    if (draw.saveFailed) {
+      actions.push({ id: "draw-retry", label: boxStrings.drawRetry, icon: "refresh-cw", disabled: false });
+    }
+    actions.push({ id: "draw-exit", label: boxStrings.drawExit, icon: "x", disabled: false });
+    return actions;
+  });
+  const drawSummary = $derived.by(() => {
+    const draw = scope.draw;
+    if (!draw?.active) return "";
+    const mode = draw.mode === "random" ? boxStrings.drawRandom : draw.mode === "cycle" ? boxStrings.drawCycle : boxStrings.drawDaily;
+    const parts = [mode, `${draw.count} / ${draw.total}`];
+    if (draw.mode !== "random") parts.push(boxStrings.drawProgress(draw.round, draw.drawn, draw.total));
+    if (draw.paused) parts.push(boxStrings.drawPaused);
+    if (draw.total === 0) parts.push(boxStrings.drawEmpty);
+    if (draw.total > 0 && draw.drawn === draw.total && draw.mode !== "random") parts.push(boxStrings.drawLast);
+    if (draw.mode === "daily") parts.push(draw.date ?? "", boxStrings.drawTomorrow);
+    return parts.filter(Boolean).join(" · ");
+  });
+
   const bulkSelectionSummary = $derived(toolbarStrings.bulkSummary(selectedCount));
   const bulkActions = $derived<BulkToolbarOption[]>([
     { id: "bulk-select-all", label: toolbarStrings.bulkActionLabels.selectAll, icon: "check-square", disabled: !canBulkSelectAll },
@@ -415,6 +443,7 @@
     addAction(sortGroupStrings.title, "arrow-up-narrow-wide", () => openSortGroupMenu(event, anchor), isSortGroupTriggerSelected);
     addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
     if (isBoxMode) {
+      if (scope.draw?.available) addAction(drawToggleLabel, "dices", () => emitBoxCommand("draw"), drawActive);
       addAction(boxStrings.configureTitle, "settings-2", () => emitBoxCommand("configure"));
     }
     if (scope.supportsBoxRuleSeeding) {
@@ -536,7 +565,7 @@
   }
 </script>
 
-<header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}" class:is-compact={compact}>
+<header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}" class:is-draw-mode={drawActive} class:is-compact={compact}>
   <div class="fce-toolbar" role="toolbar" aria-label={toolbarStrings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons" use:bindToolbarWidth>
       <button
@@ -576,6 +605,20 @@
               use:applyTooltip={scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}
             >
               <span class="fce-sr-only">{scope.linksPinned ? strings.links.resumeFollow : strings.links.pinToNote}</span>
+            </button>
+          {/if}
+          {#if scope.draw?.available}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button"
+              class:is-selected={drawActive}
+              aria-pressed={drawActive}
+              aria-label={drawToggleLabel}
+              onclick={() => { closeBoxPickerMenu(); emitBoxCommand("draw"); }}
+              use:applyIcon={"dices"}
+              use:applyTooltip={drawToggleLabel}
+            >
+              <span class="fce-sr-only">{drawToggleLabel}</span>
             </button>
           {/if}
           {#if isBoxMode}
@@ -693,7 +736,7 @@
         {#if compact}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button fce-toolbar-more {(bulkMode || isSortGroupTriggerSelected || scope.linksPinned) ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button fce-toolbar-more {(bulkMode || drawActive || isSortGroupTriggerSelected || scope.linksPinned) ? 'is-selected' : ''}"
             aria-label={toolbarStrings.actions.more}
             aria-haspopup="menu"
             aria-expanded={moreMenu !== null}
@@ -707,7 +750,7 @@
   </div>
 
   {#if searchExpanded}
-    <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}">
+    <div class="fce-toolbar-search-row {bulkMode ? 'is-bulk-mode' : ''}" class:is-draw-mode={drawActive}>
       <div class="fce-toolbar-search" role="search" bind:this={searchControlEl}
         onfocusout={handleSearchFocusOut}>
         <label class="fce-sr-only" for={inputId}>{toolbarStrings.search.inputLabel}</label>
@@ -747,7 +790,7 @@
   {/if}
 
   {#if hasSummary}
-    <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}">
+    <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}" class:is-draw-mode={drawActive}>
       <div class="fce-toolbar-content">
         {#if showSearchStatus}
           <span class="fce-toolbar-summary-segment fce-search-status" data-search-status={searchStatus}>{searchStatusLabel}</span>
@@ -779,6 +822,17 @@
         {#if showFiltersPaused}<span class="fce-toolbar-summary-segment fce-filters-paused">{toolbarStrings.filtersPaused}</span>{/if}
       </div>
     </div>
+  {/if}
+
+  {#if drawActive}
+    <ToolbarBulkStrip
+      className="fce-toolbar-draw-strip"
+      bulkActions={drawActions}
+      bulkSelectionSummary={drawSummary}
+      ariaLabel={boxStrings.drawTitle}
+      {tooltipSide}
+      onToolbarAction={({ action }) => emitBoxCommand(action)}
+    />
   {/if}
 
   {#if bulkMode}

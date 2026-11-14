@@ -99,6 +99,8 @@ export function resolveBoxesUpdateIntent(
     return "reload";
   }
 
+  if (JSON.stringify(previousBox.draw) !== JSON.stringify(nextBox.draw)
+    || JSON.stringify(previousBox.drawProgress) !== JSON.stringify(nextBox.drawProgress)) return "reproject";
   const sortChanged = previousBox.sort.field !== nextBox.sort.field
     || previousBox.sort.direction !== nextBox.sort.direction;
   return sortChanged

@@ -22,7 +22,7 @@ function harness(scope: CardScope = createFolderScope("notes", true)) {
   const context = {
     getSettings: () => settings, getApp: () => ({ metadataCache: { getFileCache: () => null } }),
     getUiStrings: () => getUiStrings("en"),
-    store: { getScope: () => scope, getBaseCards: () => [] },
+    store: { getDrawPaths: () => null, getScope: () => scope, getBaseCards: () => [] },
   } as unknown as ViewContext;
   const createNote = vi.fn<ScopeNoteActionsDeps["createNote"]>(async () => undefined);
   return { settings, createNote, actions: new ScopeNoteActions({ context, createNote }) };

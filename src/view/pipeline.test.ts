@@ -1029,3 +1029,36 @@ describe("stepsForScope", () => {
     expect(() => stepsForScope(unknownScope)).toThrow(/Unhandled card source/);
   });
 });
+
+describe("draw projection", () => {
+  it("uses draw order without pins, browse filters or collapsed grouping", () => {
+    const cards = [createMockCard("a.md"), createMockCard("b.md"), createMockCard("c.md")];
+    const context = withFolderGrouping(createMockContext(), cards);
+    context.drawPaths = ["c.md", "a.md"];
+    context.pinnedPaths = ["b.md", "a.md"];
+    context.filterTags = ["never"];
+    context.collapsedGroupKeys = new Set(["folder:"]);
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box"), true), context)).toMatchObject({
+      cards: [cards[2], cards[0]], segments: [],
+    });
+  });
+  it("searches the full box during pause, blocks an unavailable index, and restores the unchanged group", () => {
+    const cards = [createMockCard("a.md"), createMockCard("b.md")];
+    const context = createMockContext();
+    context.drawPaths = ["a.md"];
+    context.search = { query: "test", execution: "indexed-ready", orderedPaths: ["b.md"] };
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box"), true), context).cards).toEqual([cards[1]]);
+    context.search.execution = "indexed-unavailable";
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box"), true), context).cards).toEqual([]);
+    context.search.query = "";
+    expect(runPipeline(cards, stepsForScope(createBoxScope("box"), true), context).cards).toEqual([cards[0]]);
+  });
+});
+
+it("dispatches draw selection exclusively for box sources", () => {
+  const folder = createFolderScope("", true);
+  const links = createLinksScope("a.md", "backlinks");
+  expect(stepsForScope(folder, true)).toEqual(stepsForScope(folder));
+  expect(stepsForScope(links, true)).toEqual(stepsForScope(links));
+  expect(stepsForScope(createBoxScope("box"), true)).not.toEqual(stepsForScope(createBoxScope("box")));
+});

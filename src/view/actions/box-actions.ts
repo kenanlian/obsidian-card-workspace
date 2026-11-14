@@ -37,6 +37,8 @@ import {
 } from "./box-action-helpers";
 
 export interface BoxActionsDeps {
+  drawCommand?: (command: string) => Promise<void>;
+  resetDraw?: (boxId: string) => Promise<void>;
   context: ViewContext;
   getSelectedPaths: () => Set<string>;
   getOrderedVisiblePaths: () => string[];
@@ -208,6 +210,16 @@ export class BoxActions {
     const boxId = typeof detail.boxId === "string" ? detail.boxId : null;
 
     switch (command) {
+      case "draw-retry":
+      case "draw-enter":
+      case "draw":
+      case "draw-next":
+      case "draw-exit":
+        void (async () => {
+          if (boxId && this.getActiveBox()?.id !== boxId) await this.enterBoxScope(boxId);
+          if (!boxId || this.getActiveBox()?.id === boxId) await this.deps.drawCommand?.(command);
+        })().catch(error => console.warn("Card Workspace: draw command failed", error));
+        return;
       case "switch":
         if (boxId && this.getActiveBox()?.id !== boxId) {
           void this.enterBoxScope(boxId);
@@ -418,9 +430,16 @@ export class BoxActions {
       describeRule: (rule) => this.describeRule(rule),
       isRuleFolderMissing: (rule) => this.deps.resolveFolderFromUiPath(rule.folder) === null,
       describeMemberPath: (path) => stripCardFileExtension(path.slice(path.lastIndexOf("/") + 1)),
+      onResetDraw: () => this.deps.resetDraw?.(box.id) ?? Promise.resolve(),
+      getDrawStatus: () => {
+        const latest = findCardBox(this.deps.context.getSettings().boxes, box.id);
+        const pool = new Set(latest ? this.collectBoxFiles(latest).map(file => file.path) : []);
+        return { round: latest?.drawProgress?.round ?? 1, drawn: latest?.drawProgress?.drawnPaths.filter(path => pool.has(path)).length ?? 0, total: pool.size };
+      },
       onConfirm: async (nextBox) => {
         const current = this.deps.context.getSettings();
-        await this.persistBoxes(upsertCardBox(current.boxes, nextBox));
+        const live = findCardBox(current.boxes, nextBox.id);
+        if (live) await this.persistBoxes(upsertCardBox(current.boxes, { ...nextBox, drawProgress: live.drawProgress }));
       },
     }).open();
   }

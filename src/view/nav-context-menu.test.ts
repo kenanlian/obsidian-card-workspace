@@ -674,6 +674,7 @@ describe("box row menu", () => {
     expect(result).toBe(true);
     expect(getSignature(menu)).toEqual([
       { title: "Open card box", icon: "box" },
+      { title: "Draw cards", icon: "dices" },
       { title: "Configure card box…", icon: "settings-2" },
       { title: "Add current view to this card box", icon: "list-plus" },
       { title: "Add to favorites", icon: "star" },

@@ -21,6 +21,7 @@
   type BulkToolbarOption = BulkActionOption | BulkActionSeparatorOption;
 
   interface Props {
+    className?: string;
     bulkActions?: BulkToolbarOption[];
     bulkSelectionSummary?: string;
     ariaLabel?: string;
@@ -29,6 +30,7 @@
   }
 
   let {
+    className = "",
     bulkActions = [],
     bulkSelectionSummary = "",
     ariaLabel = "",
@@ -60,7 +62,7 @@
   }
 </script>
 
-<div class="fce-toolbar-bulk-strip" role="group" aria-label={ariaLabel}>
+<div class="fce-toolbar-bulk-strip {className}" role="group" aria-label={ariaLabel}>
   <div class="fce-toolbar-bulk-actions">
     {#each bulkActions as action}
       {#if "type" in action}

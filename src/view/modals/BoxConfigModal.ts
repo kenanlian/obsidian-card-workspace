@@ -1,3 +1,5 @@
+import { normalizeBoxDraw, type BoxDrawMode } from "../box-draw";
+import { CompatConfirmationModal } from "./compat-modal";
 import type { App, Setting } from "obsidian";
 import { TIME_GROUP_GRANULARITIES, isTimeGroupDimension, isTimeGroupGranularity, normalizeGroupSpec, type GroupDimension, type GroupOrderBy } from "../../card-grouping-settings";
 import type { UiStrings } from "../../i18n";
@@ -16,6 +18,9 @@ export interface BoxConfigModalOptions {
   describeRule: (rule: Rule) => string;
   isRuleFolderMissing: (rule: Rule) => boolean;
   describeMemberPath: (path: string) => string;
+  onResetDraw?: () => Promise<void>;
+  drawPoolSize?: number;
+  getDrawStatus?: () => { round: number; drawn: number; total: number };
   onConfirm: (box: CardBoxDefinition) => Promise<void>;
 }
 
@@ -86,6 +91,37 @@ export class BoxConfigModal extends FormModal {
     this.renderExcludedGroup();
     this.renderSortGroup();
     this.renderGroupingGroup();
+    this.renderDrawGroup();
+  }
+
+  private renderDrawGroup(): void {
+    const strings = this.options.strings.box;
+    const group = createModalGroup(this.contentEl, { heading: strings.drawTitle });
+    const config = normalizeBoxDraw(this.draft.draw);
+    group.addSetting(setting => { setting.setName(strings.drawTitle).addDropdown(dropdown => {
+      dropdown.addOption("random", strings.drawRandom).addOption("cycle", strings.drawCycle).addOption("daily", strings.drawDaily).setValue(config.mode)
+        .onChange(mode => { this.draft = { ...this.draft, draw: { ...normalizeBoxDraw(this.draft.draw), mode: mode as BoxDrawMode } }; });
+    }); });
+    group.addSetting(setting => { setting.setName(strings.drawCount).setDesc(String(config.count)).addSlider(slider => {
+      slider.setLimits(1, 100, 1).setValue(config.count).onChange(count => {
+        setting.setDesc(String(count));
+        this.draft = { ...this.draft, draw: { ...normalizeBoxDraw(this.draft.draw), count } };
+      });
+    }); });
+    const progress = this.draft.drawProgress;
+    const status = this.options.getDrawStatus?.() ?? { round: progress?.round ?? 1, drawn: progress?.drawnPaths.length ?? 0, total: this.options.drawPoolSize ?? 0 };
+    group.addSetting(setting => { setting.setName(strings.drawProgress(status.round, status.drawn, status.total)).addButton(button => {
+      button.setButtonText(strings.drawReset).onClick(() => {
+        const modal = new CompatConfirmationModal(this.app);
+        modal.setTitle(strings.drawReset); modal.setContent(strings.drawResetConfirm);
+        modal.addButton(confirm => confirm.setButtonText(strings.drawReset).setWarning().onClick(async () => {
+          await this.options.onResetDraw?.();
+          this.draft = { ...this.draft, drawProgress: undefined };
+          if (this.contentEl.isConnected) this.render();
+        }));
+        modal.addCancelButton(strings.cancel); modal.open();
+      });
+    }); });
   }
 
   private renderSortGroup(): void {

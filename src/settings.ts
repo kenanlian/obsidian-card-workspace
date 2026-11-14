@@ -1,3 +1,4 @@
+import { normalizeBoxDraw, normalizeBoxDrawProgress } from "./view/box-draw";
 import { normalizeEmojiSkinTone, normalizeIconDefaults, normalizeIconOverrides, normalizeRecentIcons, type EmojiSkinTone, type IconDefaults, type IconOverrides, type IconSpec } from "./icon-config";
 import { isCardBackgroundColor, normalizeCardBackgroundOverrides, type CardBackgroundColor, type CardBackgroundTint } from "./card-background";
 import { isFileVisibility, type FileVisibility } from "./file-visibility";
@@ -543,6 +544,8 @@ function normalizeBox(value: unknown): CardBoxDefinition | null {
     id,
     name,
     rules: normalizeRules(value.rules),
+    ...(value.draw !== undefined ? { draw: normalizeBoxDraw(value.draw) } : {}),
+    ...(normalizeBoxDrawProgress(value.drawProgress) ? { drawProgress: normalizeBoxDrawProgress(value.drawProgress) } : {}),
     manualPaths,
     excludedPaths,
     pinnedPaths: normalizeStringArray(value.pinnedPaths),

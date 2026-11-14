@@ -22,6 +22,7 @@ import type { CardScope } from "./scope";
  * all folder views.
  */
 export interface SourceCapabilities {
+  readonly supportsCardDraw: boolean;
   readonly arrangementOwner:
     | { readonly kind: "global" }
     | { readonly kind: "box"; readonly boxId: string };
@@ -47,10 +48,11 @@ export const BOX_GROUP_DIMENSIONS: readonly GroupDimension[] = [
   "mtime",
 ];
 
-export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities {
+export function resolveSourceCapabilities(scope: CardScope, drawActive = false): SourceCapabilities {
   switch (scope.kind) {
     case "folder":
       return {
+        supportsCardDraw: false,
         arrangementOwner: { kind: "global" },
         browseTagFilter: true,
         browsePropertyFilter: true,
@@ -60,15 +62,17 @@ export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities 
       };
     case "box":
       return {
+        supportsCardDraw: true,
         arrangementOwner: { kind: "box", boxId: scope.boxId },
-        browseTagFilter: true,
-        browsePropertyFilter: true,
+        browseTagFilter: !drawActive,
+        browsePropertyFilter: !drawActive,
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: BOX_GROUP_DIMENSIONS,
       };
     case "links":
       return {
+        supportsCardDraw: false,
         arrangementOwner: { kind: "global" },
         browseTagFilter: false,
         browsePropertyFilter: false,

@@ -1,6 +1,14 @@
 import type { UiLanguage } from "./types";
 
 export interface BoxStrings {
+  drawToggleCommand: string;
+  drawNextCommand: string;
+  drawRetry: string;
+  drawTitle: string; drawRandom: string; drawCycle: string; drawDaily: string; drawNext: string; drawExit: string;
+  drawCount: string; drawReset: string; drawResetConfirm: string; drawTomorrow: string; drawPaused: string;
+  drawHidden: string;
+  drawEmpty: string; drawLast: string; drawSaveFailed: string;
+  drawProgress: (round: number, drawn: number, total: number) => string;
   createBox: string;
   saveScopeAsBox: string;
   addScopeToBox: string;
@@ -60,6 +68,16 @@ export interface BoxStrings {
 
 export const boxStrings: Record<UiLanguage, BoxStrings> = {
   en: {
+    drawToggleCommand: "Draw cards: enter / exit",
+    drawNextCommand: "Draw cards: next group",
+    drawRetry: "Retry saving",
+    drawTitle: "Draw cards", drawRandom: "Random each time", drawCycle: "Complete a round", drawDaily: "Daily wander",
+    drawNext: "Draw next group", drawExit: "Exit draw", drawCount: "Cards per group", drawReset: "Reset progress",
+    drawResetConfirm: "Reset saved draw progress immediately? Canceling this configuration will not undo the reset.",
+    drawHidden: "No visible cards in the current group",
+    drawTomorrow: "A new group tomorrow", drawPaused: "Draw paused", drawEmpty: "No cards available in this box",
+    drawLast: "Last group of this round", drawSaveFailed: "Could not save draw progress. Retry saving before drawing again.",
+    drawProgress: (round, drawn, total) => `Round ${round} · Drawn ${drawn} / ${total}`,
     createBox: "New card box…",
     saveScopeAsBox: "Save current view as card box…",
     addScopeToBox: "Add current view to card box",
@@ -122,6 +140,16 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     done: "Done",
   },
   zh: {
+    drawToggleCommand: "抽卡：进入 / 退出",
+    drawNextCommand: "抽卡：抽下一组",
+    drawRetry: "重试保存",
+    drawTitle: "抽卡", drawRandom: "每次随机", drawCycle: "轮完一遍再重复", drawDaily: "每日漫游",
+    drawNext: "抽下一组", drawExit: "退出抽卡", drawCount: "每组张数", drawReset: "重置进度",
+    drawResetConfirm: "立即重置已保存的抽卡进度？取消配置弹窗不会撤销此次重置。",
+    drawHidden: "当前组暂无可见卡片",
+    drawTomorrow: "明天会有新的一组", drawPaused: "抽卡已暂停", drawEmpty: "卡片盒中没有可抽的卡片",
+    drawLast: "本轮最后一组", drawSaveFailed: "抽卡进度保存失败，请先重试保存再继续抽取。",
+    drawProgress: (round, drawn, total) => `第 ${round} 轮 · 已抽 ${drawn} / 共 ${total}`,
     createBox: "新建卡片盒…",
     saveScopeAsBox: "将当前视图存为卡片盒…",
     addScopeToBox: "将当前视图加入卡片盒",

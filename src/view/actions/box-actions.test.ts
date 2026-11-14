@@ -673,6 +673,7 @@ describe("card box context menus", () => {
       expect(mockState.menuInstances).toHaveLength(1);
       expect(getMenuTitles()).toEqual([
         "Open card box",
+        "Draw cards",
         "Configure card box…",
         "Add current view to this card box",
         "Add to favorites",

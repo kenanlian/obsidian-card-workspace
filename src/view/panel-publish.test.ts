@@ -551,6 +551,7 @@ describe("FolderCardView grouped panel publishing", () => {
       visibleCards: [],
       modules: {
         search: { getQuery: () => "" },
+        boxDraw: { active: false, snapshot: () => undefined },
         boxActions: { getActiveBox: () => box },
       },
       plugin: {
@@ -593,7 +594,8 @@ describe("FolderCardView grouped panel publishing", () => {
         epochs: createViewEpochs(),
         modules: {
           search: { getQuery: () => "" },
-          boxActions: { getActiveBox: () => box },
+          boxDraw: { active: false, snapshot: () => undefined },
+        boxActions: { getActiveBox: () => box },
         },
         plugin: {
           getUiStrings: () => getUiStrings("en"),

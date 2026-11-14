@@ -86,6 +86,8 @@ export class FolderCardView extends ItemView implements HoverParent {
       workGate: this.workGate,
       resourceBudget: this.plugin.resourceBudget,
       runtimePlatform: this.plugin.runtimePlatform,
+      waitForSettings: () => this.plugin.waitForExternalSettings?.() ?? Promise.resolve(),
+      flushSettings: () => this.plugin.flushSettings(),
       getApp: () => this.app, store: this.store, epochs: this.epochs,
       getSettings: () => this.plugin.getSettings(), saveSettings: (patch, options) => this.saveViewSettings(patch, options),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
@@ -246,6 +248,9 @@ export class FolderCardView extends ItemView implements HoverParent {
   private buildEmptyStateMessage(): string {
     const settings = this.plugin.getSettings();
     const capabilities = resolveSourceCapabilities(this.cardScope);
+    if (this.modules.boxDraw.active && !this.modules.search.getQuery().trim() && this.visibleCards.length === 0) {
+      return this.baseCards.length === 0 ? this.strings.box.drawEmpty : this.strings.box.drawHidden;
+    }
     return resolveEmptyStateMessage({
       strings: this.strings, query: this.modules.search.getQuery().trim(),
       // Dormant filters never narrow a non-filterable scope, so they must not shape its copy.
@@ -481,6 +486,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (reason === "settings-change" && this.suppressSettingsUpdate) return;
     this.modules.hoverPreview.applySize();
     this.modules.images.onSettingsChanged();
+    this.modules.boxDraw.sync();
     const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
     switch (effective) {
       case "reload":
@@ -513,12 +519,15 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
 
   handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    this.modules.boxDraw.reconcile(event);
     this.modules.images.handleVaultMutation(event);
     if (event.eventType === "rename" && event.isFolder && event.oldPath) {
       this.modules.navLayout.rewriteFolderIdentity((path) =>
         rewritePathAfterRename(path, event.oldPath ?? "", event.path));
     }
-    return this.modules.scopeController.handleVaultMutation(event);
+    const result = this.modules.scopeController.handleVaultMutation(event);
+    this.modules.boxDraw.reconcile();
+    return result;
   }
 
   /**
@@ -570,6 +579,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.viewEventUnsubscribe = null;
     this.metadataEventUnsubscribe?.();
     this.metadataEventUnsubscribe = null;
+    this.modules.boxDraw.dispose();
     const scopeReport = this.modules.scopeController.dispose();
     const navLayoutReport = this.modules.navLayout.dispose();
     this.modules.bulk.dispose();
@@ -686,8 +696,9 @@ export class FolderCardView extends ItemView implements HoverParent {
   private buildScopeGroup(): PanelModelState["scope"] {
     const settings = this.plugin.getSettings();
     const box = this.modules.boxActions.getActiveBox();
-    const capabilities = resolveSourceCapabilities(this.cardScope);
+    const capabilities = resolveSourceCapabilities(this.cardScope, this.modules.boxDraw.active);
     return {
+      draw: this.modules.boxDraw.snapshot(),
       displayPath: this.getDisplayFolderPath(),
       includeSubfolders: settings.includeSubfolders,
       activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
@@ -695,9 +706,9 @@ export class FolderCardView extends ItemView implements HoverParent {
       boxExcludedCount: box?.excludedPaths.length ?? 0,
       emptyStateMessage: this.buildEmptyStateMessage(),
       sourceIdentity: scopeIdentity(this.cardScope),
-      browseTagFilterEnabled: capabilities.browseTagFilter,
-      browsePropertyFilterEnabled: capabilities.browsePropertyFilter,
-      browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter),
+      browseTagFilterEnabled: capabilities.browseTagFilter && !this.modules.boxDraw.active,
+      browsePropertyFilterEnabled: capabilities.browsePropertyFilter && !this.modules.boxDraw.active,
+      browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter) || this.modules.boxDraw.active && (settings.filter.tags.length > 0 || settings.filter.properties.length > 0),
       browseFilterState: {
         items: buildBrowseFilterChips(settings.filter, capabilities,
           capabilities.browsePropertyFilter && settings.filter.properties.length > 0
@@ -767,6 +778,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.plugin.navigationMetadataCatalog?.seedScope(projectionGroup.availableTags, propertyFacets);
     return buildNavigationPanelState({
       metadataCatalog: this.plugin.navigationMetadataCatalog?.getSnapshot(),
+      drawActive: this.modules.boxDraw.active,
       settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
       folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
       propertyFacets,

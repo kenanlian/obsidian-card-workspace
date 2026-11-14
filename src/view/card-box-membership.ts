@@ -1,4 +1,6 @@
-import type { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import { mapBoxDrawProgress } from "./box-draw";
+import type { App } from "obsidian";
 import { isMarkdownCardKind, resolveCardFileKind } from "./file-kind";
 import { matchesTagFilterFromCache } from "./metadata-utils";
 import { matchesPropertyClauses } from "./property-metadata";
@@ -89,4 +91,18 @@ export function isBoxMember(app: App, path: string, box: CardBoxDefinition): boo
   }
 
   return box.rules.some((rule) => matchesRule(app, path, rule));
+}
+
+/** Prune only authoritative departures; hidden files retain their history. */
+export function reconcileBoxDrawMembership(app: App, box: CardBoxDefinition, changedPath?: string): CardBoxDefinition {
+  const drawProgress = mapBoxDrawProgress(box.drawProgress, path => {
+    if (changedPath !== undefined && path !== changedPath) return path;
+    const file = app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return null;
+    if (!box.manualPaths.includes(path) && box.excludedPaths.includes(path)) return null;
+    if (!box.manualPaths.includes(path) && !app.metadataCache.getFileCache(file)
+      && box.rules.some(rule => inFolderScope(path, rule.folder, rule.includeSubfolders) && (rule.tags.length > 0 || rule.properties.length > 0))) return path;
+    return isBoxMember(app, path, box) ? path : null;
+  });
+  return drawProgress === box.drawProgress ? box : { ...box, drawProgress };
 }
