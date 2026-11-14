@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   asMock,
-  requireGroup,
+  elementsIn,
+  groupsIn,
   type MockEl,
   type Setting,
+  type SettingGroup,
 } from "../../__mocks__/obsidian-modal-mock";
 import { getUiStrings } from "../../i18n";
 import { describeBoxRule } from "../box-rule-identity";
@@ -65,8 +67,33 @@ function openModal(box: CardBoxDefinition = createBox(), locale: "en" | "zh" = "
   return { box, modal, onConfirm };
 }
 
+function sectionEl(heading: string): MockEl {
+  const found = elementsIn(contentOf(), (el) => el.hasClass("fce-box-config-section")
+    && elementsIn(el, (child) => child.hasClass("fce-box-config-section__title") && child.text === heading).length > 0)[0];
+  if (!found) throw new Error(`section not rendered: ${heading}`);
+  return found;
+}
+
+function sectionPart(heading: string, cls: string): MockEl {
+  const found = elementsIn(sectionEl(heading), (el) => el.hasClass(cls))[0];
+  if (!found) throw new Error(`${cls} not rendered in ${heading}`);
+  return found;
+}
+
+function toggleSection(heading: string): void {
+  sectionPart(heading, "fce-box-config-section__toggle").dispatch("click", {});
+}
+
+/** Expands the section when needed and returns its settings group. */
+function section(heading: string): SettingGroup {
+  if (sectionEl(heading).hasClass("is-collapsed")) toggleSection(heading);
+  const group = groupsIn(sectionEl(heading))[0];
+  if (!group) throw new Error(`section group not rendered: ${heading}`);
+  return group;
+}
+
 function ruleSettings(): Setting[] {
-  return requireGroup(contentOf(), strings.box.rulesHeading).settings.filter((setting) => setting.texts.length > 0);
+  return section(strings.box.rulesHeading).settings.filter((setting) => setting.texts.length > 0);
 }
 
 async function clickButton(text: string): Promise<void> {
@@ -100,9 +127,9 @@ describe("BoxConfigModal rule names", () => {
   it("does not re-render while a name input is edited", () => {
     openModal();
 
-    const before = requireGroup(contentOf(), strings.box.rulesHeading);
+    const before = section(strings.box.rulesHeading);
     ruleSettings()[1]?.texts[0]?.type("Inbox");
-    expect(requireGroup(contentOf(), strings.box.rulesHeading)).toBe(before);
+    expect(section(strings.box.rulesHeading)).toBe(before);
   });
 
   it("confirms only the edited rule's name and preserves both rule ids", async () => {
@@ -216,7 +243,7 @@ describe("BoxConfigModal grouping", () => {
   it.each(["en", "zh"] as const)("saves time granularity and shows it only for time grouping in %s", async (locale) => {
     const { onConfirm } = openModal(createBox(), locale);
     const ui = getUiStrings(locale);
-    const [dimension, , grain] = requireGroup(contentOf(), ui.box.groupHeading).settings;
+    const [dimension, , grain] = section(ui.box.groupHeading).settings;
     expect(grain?.settingEl.style.display).toBe("none");
     dimension?.dropdowns[0]?.select("ctime");
     expect(grain?.settingEl.style.display).toBe("");
@@ -230,7 +257,7 @@ describe("BoxConfigModal grouping", () => {
   it.each(["en", "zh"] as const)("edits box grouping in %s without mutating the source or rebuilding the body", async (locale) => {
     const { box, onConfirm } = openModal(createBox(), locale, ["status", "priority"]);
     const ui = getUiStrings(locale);
-    const group = requireGroup(contentOf(), ui.box.groupHeading);
+    const group = section(ui.box.groupHeading);
     const [dimension, property, , orderBy, orderDirection] = group.settings;
 
     expect(dimension?.name).toBe(ui.sortGroup.groupHeading);
@@ -252,7 +279,7 @@ describe("BoxConfigModal grouping", () => {
     dimension?.dropdowns[0]?.select("tag");
     dimension?.dropdowns[0]?.select("property");
     expect(property?.dropdowns[0]?.value).toBe("priority");
-    expect(requireGroup(contentOf(), ui.box.groupHeading)).toBe(group);
+    expect(section(ui.box.groupHeading)).toBe(group);
     expect(box.group).toEqual({ dimension: "box-rule", orderBy: "name", orderDirection: "desc" });
     expect(onConfirm).not.toHaveBeenCalled();
 
@@ -267,7 +294,7 @@ describe("BoxConfigModal grouping", () => {
     const box = createBox();
     box.group = { dimension: "property", propertyKey: "priority", orderBy: "count", orderDirection: "desc" };
     const { onConfirm } = openModal(box, "en", ["status", "priority"]);
-    const [dimension, property, , orderBy, orderDirection] = requireGroup(contentOf(), strings.box.groupHeading).settings;
+    const [dimension, property, , orderBy, orderDirection] = section(strings.box.groupHeading).settings;
 
     expect(property?.dropdowns[0]?.value).toBe("priority");
     dimension?.dropdowns[0]?.select("none");
@@ -285,14 +312,14 @@ describe("BoxConfigModal grouping", () => {
 
   it("omits property grouping when no properties are enabled and explains how to enable it", () => {
     openModal();
-    const row = requireGroup(contentOf(), strings.box.groupHeading).settings[0];
+    const row = section(strings.box.groupHeading).settings[0];
     expect(row?.dropdowns[0]?.options.map((option) => option.value)).toEqual(["none", "folder", "tag", "task", "box-rule", "ctime", "mtime"]);
     expect(row?.desc).toBe(strings.sortGroup.enablePropertyHint);
   });
 
   it("discards grouping edits on cancel", async () => {
     const { box, onConfirm } = openModal();
-    const [dimension] = requireGroup(contentOf(), strings.box.groupHeading).settings;
+    const [dimension] = section(strings.box.groupHeading).settings;
     dimension?.dropdowns[0]?.select("task");
     await clickButton(strings.box.cancel);
     await flush();
@@ -323,8 +350,7 @@ describe("BoxConfigModal layout", () => {
     openModal(createBox(), locale);
     const ui = getUiStrings(locale);
 
-    const content = contentOf();
-    const headings = content.nodes.map((node) => (node as { heading?: string }).heading);
+    const headings = elementsIn(contentOf(), (el) => el.hasClass("fce-box-config-section__title")).map((el) => el.text);
     expect(headings).toEqual([
       ui.box.rulesHeading,
       ui.box.manualHeading,
@@ -335,10 +361,59 @@ describe("BoxConfigModal layout", () => {
     ]);
   });
 
+  it.each(["en", "zh"] as const)("opens with only rules expanded and summarizes collapsed sections in %s", (locale) => {
+    const box = { ...createPopulatedBox(), draw: { mode: "daily" as const, count: 3 } };
+    openModal(box, locale);
+    const ui = getUiStrings(locale);
+
+    expect(groupsIn(contentOf())).toHaveLength(1);
+    expect(sectionPart(ui.box.rulesHeading, "fce-box-config-section__toggle").attrs["aria-expanded"]).toBe("true");
+    for (const heading of [ui.box.manualHeading, ui.box.excludedHeading, ui.box.sortHeading, ui.box.groupHeading, ui.box.drawTitle]) {
+      expect(sectionEl(heading).hasClass("is-collapsed")).toBe(true);
+      expect(sectionPart(heading, "fce-box-config-section__toggle").attrs["aria-expanded"]).toBe("false");
+    }
+    expect(sectionPart(ui.box.rulesHeading, "fce-box-config-section__count").text).toBe("2");
+    expect(sectionPart(ui.box.manualHeading, "fce-box-config-section__count").text).toBe("2");
+    expect(sectionPart(ui.box.sortHeading, "fce-box-config-section__summary").text).toBe(ui.toolbar.sortOptions.mtimeDesc);
+    expect(sectionPart(ui.box.groupHeading, "fce-box-config-section__summary").text).toBe(ui.sortGroup.dimensionBoxRule);
+    expect(sectionPart(ui.box.drawTitle, "fce-box-config-section__summary").text)
+      .toBe(`${ui.box.drawDaily} · ${ui.box.drawCountSummary(3)}`);
+  });
+
+  it("keeps draft edits and focus when a section is collapsed and reopened", async () => {
+    const { onConfirm } = openModal();
+
+    section(strings.box.sortHeading).settings[0]?.dropdowns[0]?.select("name:asc");
+    toggleSection(strings.box.sortHeading);
+    expect(sectionEl(strings.box.sortHeading).hasClass("is-collapsed")).toBe(true);
+    expect(sectionPart(strings.box.sortHeading, "fce-box-config-section__toggle").focused).toBe(true);
+    expect(sectionPart(strings.box.sortHeading, "fce-box-config-section__summary").text).toBe(strings.toolbar.sortOptions.nameAsc);
+    expect(section(strings.box.sortHeading).settings[0]?.dropdowns[0]?.value).toBe("name:asc");
+
+    await clickButton(strings.box.done);
+    await flush();
+    expect(onConfirm.mock.calls[0]?.[0].sort).toEqual({ field: "name", direction: "asc" });
+  });
+
+  it("previews five members of a long list until show all is pressed", () => {
+    const manualPaths = Array.from({ length: 8 }, (_, index) => `Inbox/${index}.md`);
+    openModal({ ...createBox(), manualPaths });
+
+    const preview = section(strings.box.manualHeading).settings;
+    expect(preview.slice(0, 5).map((setting) => setting.name)).toEqual(manualPaths.slice(0, 5));
+    const more = preview[5];
+    expect(preview).toHaveLength(6);
+    expect(more?.classes).toContain("fce-box-config__show-all");
+    expect(more?.buttons[0]?.text).toBe(strings.box.showAllItems(8));
+
+    more?.buttons[0]?.click();
+    expect(section(strings.box.manualHeading).settings.map((setting) => setting.name)).toEqual(manualPaths);
+  });
+
   it("seeds the sort dropdown from the box and confirms a changed sort", async () => {
     const { onConfirm } = openModal();
 
-    const sortRow = requireGroup(contentOf(), strings.box.sortHeading).settings[0];
+    const sortRow = section(strings.box.sortHeading).settings[0];
     expect(sortRow?.name).toBe(strings.box.sortHeading);
     expect(sortRow?.dropdowns[0]?.value).toBe("mtime:desc");
     expect(sortRow?.dropdowns[0]?.options.map((option) => option.label)).toEqual([
@@ -368,11 +443,11 @@ describe("BoxConfigModal layout", () => {
       [strings.box.manualHeading, strings.box.noManualMembers],
       [strings.box.excludedHeading, strings.box.noExcludedMembers],
     ] as const) {
-      const group = requireGroup(contentOf(), heading);
+      const group = section(heading);
       expect(group.settings.map((setting) => setting.name)).toEqual([message]);
       expect(group.settings[0]?.classes).toContain("mod-empty-state");
     }
-    expect(requireGroup(contentOf(), strings.box.excludedHeading).extraButtons).toHaveLength(0);
+    expect(sectionPart(strings.box.excludedHeading, "fce-box-config-section__header").buttons).toHaveLength(0);
   });
 
   it("flags a rule whose folder is gone without changing its row structure", () => {
@@ -397,7 +472,7 @@ describe("BoxConfigModal layout", () => {
   it("removes a manual member from the draft with a close icon", async () => {
     const { onConfirm } = openModal(createPopulatedBox());
 
-    const manual = requireGroup(contentOf(), strings.box.manualHeading);
+    const manual = section(strings.box.manualHeading);
     expect(manual.settings.map((setting) => [setting.name, setting.desc])).toEqual([
       ["Inbox/a.md", "Inbox/a.md"],
       ["Inbox/b.md", "Inbox/b.md"],
@@ -409,7 +484,7 @@ describe("BoxConfigModal layout", () => {
 
     manual.settings[0]?.extraButtons[0]?.click();
     expect(
-      requireGroup(contentOf(), strings.box.manualHeading).settings.map((setting) => setting.name),
+      section(strings.box.manualHeading).settings.map((setting) => setting.name),
     ).toEqual(["Inbox/b.md"]);
 
     await clickButton(strings.box.done);
@@ -421,7 +496,7 @@ describe("BoxConfigModal layout", () => {
   it("restores one removed note from its row", async () => {
     const { onConfirm } = openModal(createPopulatedBox());
 
-    const excluded = requireGroup(contentOf(), strings.box.excludedHeading);
+    const excluded = section(strings.box.excludedHeading);
     expect(excluded.settings[0]?.extraButtons[0]).toMatchObject({
       icon: "undo-2",
       tooltip: strings.box.restoreExcluded,
@@ -429,7 +504,7 @@ describe("BoxConfigModal layout", () => {
     excluded.settings[0]?.extraButtons[0]?.click();
 
     expect(
-      requireGroup(contentOf(), strings.box.excludedHeading).settings.map((setting) => setting.name),
+      section(strings.box.excludedHeading).settings.map((setting) => setting.name),
     ).toEqual(["Old/d.md"]);
 
     await clickButton(strings.box.done);
@@ -441,13 +516,13 @@ describe("BoxConfigModal layout", () => {
   it("restores every removed note from the group header", async () => {
     const { onConfirm } = openModal(createPopulatedBox());
 
-    const header = requireGroup(contentOf(), strings.box.excludedHeading).extraButtons[0];
+    const header = sectionPart(strings.box.excludedHeading, "fce-box-config-section__header").buttons[0];
     expect(header).toMatchObject({ icon: "rotate-ccw", tooltip: strings.box.restoreAllExcluded });
     header?.click();
 
-    const refreshed = requireGroup(contentOf(), strings.box.excludedHeading);
+    const refreshed = section(strings.box.excludedHeading);
     expect(refreshed.settings.map((setting) => setting.name)).toEqual([strings.box.noExcludedMembers]);
-    expect(refreshed.extraButtons).toHaveLength(0);
+    expect(sectionPart(strings.box.excludedHeading, "fce-box-config-section__header").buttons).toHaveLength(0);
 
     await clickButton(strings.box.done);
     await flush();
@@ -489,7 +564,7 @@ describe("BoxConfigModal draw configuration", () => {
     const source = createBox();
     const { onConfirm } = openModal(source, locale);
     const ui = getUiStrings(locale);
-    const group = requireGroup(contentOf(), ui.box.drawTitle);
+    const group = section(ui.box.drawTitle);
     expect(group.settings[0]?.dropdowns[0]?.value).toBe("random");
     expect(group.settings[1]?.sliders[0]?.value).toBe(5);
     group.settings[0]?.dropdowns[0]?.select("daily");
@@ -500,7 +575,7 @@ describe("BoxConfigModal draw configuration", () => {
   });
   it("does not persist draw draft edits on cancel", async () => {
     const { onConfirm } = openModal();
-    requireGroup(contentOf(), strings.box.drawTitle).settings[0]?.dropdowns[0]?.select("cycle");
+    section(strings.box.drawTitle).settings[0]?.dropdowns[0]?.select("cycle");
     await clickButton(strings.box.cancel);
     expect(onConfirm).not.toHaveBeenCalled();
   });

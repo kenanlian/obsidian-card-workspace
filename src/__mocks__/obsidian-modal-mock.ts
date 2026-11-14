@@ -167,6 +167,13 @@ export class ButtonComponent extends MockButton {
   }
 }
 
+export class ExtraButtonComponent extends MockButton {
+  constructor(containerEl: MockEl) {
+    super();
+    containerEl.buttons.push(this);
+  }
+}
+
 export class MockText {
   value = "";
   placeholder = "";

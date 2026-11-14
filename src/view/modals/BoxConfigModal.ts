@@ -1,6 +1,6 @@
 import { normalizeBoxDraw, type BoxDrawMode } from "../box-draw";
 import { CompatConfirmationModal } from "./compat-modal";
-import type { App, Setting } from "obsidian";
+import { ExtraButtonComponent, setIcon, type App, type Setting, type SettingGroup } from "obsidian";
 import { TIME_GROUP_GRANULARITIES, isTimeGroupDimension, isTimeGroupGranularity, normalizeGroupSpec, type GroupDimension, type GroupOrderBy } from "../../card-grouping-settings";
 import type { UiStrings } from "../../i18n";
 import { normalizePropertyFilterClauses } from "../../property-filter-settings";
@@ -38,6 +38,19 @@ const SORT_CHOICES: ReadonlyArray<{
   { value: "name:desc", field: "name", direction: "desc", labelKey: "nameDesc" },
 ];
 
+type BoxConfigSectionId = "rules" | "manual" | "excluded" | "sort" | "group" | "draw";
+
+interface BoxConfigSectionOptions {
+  heading: string;
+  count?: number;
+  /** Shown beside the heading only while the section is collapsed. */
+  summary?: string;
+  compact?: boolean;
+  action?: (headerEl: HTMLElement) => void;
+}
+
+const LIST_PREVIEW_LIMIT = 5;
+
 /**
  * Draft-state configuration modal for a card box.
  *
@@ -47,6 +60,9 @@ const SORT_CHOICES: ReadonlyArray<{
 export class BoxConfigModal extends FormModal {
   private readonly options: BoxConfigModalOptions;
   private draft: CardBoxDefinition;
+  private readonly expandedSections = new Set<BoxConfigSectionId>(["rules"]);
+  private readonly fullLists = new Set<BoxConfigSectionId>();
+  private focusSectionAfterRender: BoxConfigSectionId | null = null;
 
   constructor(app: App, options: BoxConfigModalOptions) {
     super(app, {
@@ -76,6 +92,55 @@ export class BoxConfigModal extends FormModal {
     return `${sort.field}:${sort.direction}`;
   }
 
+  /** Returns the section's settings group, or null while the section is collapsed. */
+  private renderSection(id: BoxConfigSectionId, options: BoxConfigSectionOptions): SettingGroup | null {
+    const expanded = this.expandedSections.has(id);
+    const sectionEl = this.contentEl.createDiv({ cls: "fce-box-config-section" });
+    sectionEl.toggleClass("is-collapsed", !expanded);
+    const headerEl = sectionEl.createDiv({ cls: "fce-box-config-section__header" });
+    const toggleEl = headerEl.createEl("button", { cls: "fce-box-config-section__toggle" });
+    toggleEl.setAttribute("type", "button");
+    toggleEl.setAttribute("aria-expanded", String(expanded));
+    setIcon(toggleEl.createSpan({ cls: "fce-box-config-section__chevron" }), "chevron-right");
+    toggleEl.createSpan({ cls: "fce-box-config-section__title", text: options.heading });
+    if (options.count !== undefined) {
+      toggleEl.createSpan({ cls: "fce-box-config-section__count", text: String(options.count) });
+    }
+    if (!expanded && options.summary) {
+      toggleEl.createSpan({ cls: "fce-box-config-section__summary", text: options.summary });
+    }
+    toggleEl.addEventListener("click", () => {
+      if (expanded) this.expandedSections.delete(id);
+      else this.expandedSections.add(id);
+      this.focusSectionAfterRender = id;
+      this.render();
+    });
+    if (this.focusSectionAfterRender === id) {
+      this.focusSectionAfterRender = null;
+      toggleEl.focus();
+    }
+    options.action?.(headerEl);
+    return expanded ? createModalGroup(sectionEl, { compact: options.compact }) : null;
+  }
+
+  /** Long member lists show a preview until the user asks for the rest. */
+  private visibleListItems<T>(id: BoxConfigSectionId, items: readonly T[]): readonly T[] {
+    if (items.length <= LIST_PREVIEW_LIMIT || this.fullLists.has(id)) return items;
+    return items.slice(0, LIST_PREVIEW_LIMIT);
+  }
+
+  private addShowAllRow(id: BoxConfigSectionId, group: SettingGroup, total: number): void {
+    if (total <= LIST_PREVIEW_LIMIT || this.fullLists.has(id)) return;
+    group.addSetting((setting) => {
+      setting.setClass("fce-box-config__show-all").addButton((button) => {
+        button.setButtonText(this.options.strings.box.showAllItems(total)).onClick(() => {
+          this.fullLists.add(id);
+          this.render();
+        });
+      });
+    });
+  }
+
   protected override render(): void {
     const scrollTop = this.contentEl.scrollTop;
     super.render();
@@ -96,8 +161,13 @@ export class BoxConfigModal extends FormModal {
 
   private renderDrawGroup(): void {
     const strings = this.options.strings.box;
-    const group = createModalGroup(this.contentEl, { heading: strings.drawTitle });
     const config = normalizeBoxDraw(this.draft.draw);
+    const modeLabels: Record<BoxDrawMode, string> = { random: strings.drawRandom, cycle: strings.drawCycle, daily: strings.drawDaily };
+    const group = this.renderSection("draw", {
+      heading: strings.drawTitle,
+      summary: `${modeLabels[config.mode]} · ${strings.drawCountSummary(config.count)}`,
+    });
+    if (group === null) return;
     group.addSetting(setting => { setting.setName(strings.drawTitle).addDropdown(dropdown => {
       dropdown.addOption("random", strings.drawRandom).addOption("cycle", strings.drawCycle).addOption("daily", strings.drawDaily).setValue(config.mode)
         .onChange(mode => { this.draft = { ...this.draft, draw: { ...normalizeBoxDraw(this.draft.draw), mode: mode as BoxDrawMode } }; });
@@ -126,7 +196,12 @@ export class BoxConfigModal extends FormModal {
 
   private renderSortGroup(): void {
     const strings = this.options.strings;
-    createModalGroup(this.contentEl, { heading: strings.box.sortHeading }).addSetting((setting) => {
+    const current = SORT_CHOICES.find((choice) => choice.value === this.sortValue(this.draft.sort));
+    const group = this.renderSection("sort", {
+      heading: strings.box.sortHeading,
+      summary: current ? strings.toolbar.sortOptions[current.labelKey] : undefined,
+    });
+    group?.addSetting((setting) => {
       setting.setName(strings.box.sortHeading).addDropdown((dropdown) => {
         for (const choice of SORT_CHOICES) {
           dropdown.addOption(choice.value, strings.toolbar.sortOptions[choice.labelKey]);
@@ -149,7 +224,6 @@ export class BoxConfigModal extends FormModal {
     const labels = strings.sortGroup;
     const propertyKeys = this.options.visiblePropertyKeys;
     let selectedPropertyKey = this.draft.group.propertyKey ?? propertyKeys[0];
-    const group = createModalGroup(this.contentEl, { heading: strings.box.groupHeading });
     const dimensionLabels: Record<GroupDimension, string> = {
       ctime: labels.dimensionCtime,
       mtime: labels.dimensionMtime,
@@ -160,6 +234,15 @@ export class BoxConfigModal extends FormModal {
       property: labels.dimensionProperty,
       "box-rule": labels.dimensionBoxRule,
     };
+    const spec = this.draft.group;
+    const detail = spec.dimension === "property" ? spec.propertyKey
+      : isTimeGroupDimension(spec.dimension) ? labels.timeGranularities[spec.timeGranularity ?? "day"]
+      : undefined;
+    const group = this.renderSection("group", {
+      heading: strings.box.groupHeading,
+      summary: detail ? `${dimensionLabels[spec.dimension]} · ${detail}` : dimensionLabels[spec.dimension],
+    });
+    if (group === null) return;
     const dimensions = BOX_GROUP_DIMENSIONS.filter((dimension) =>
       dimension !== "property" || propertyKeys.length > 0,
     );
@@ -253,13 +336,14 @@ export class BoxConfigModal extends FormModal {
 
   private renderRulesGroup(): void {
     const strings = this.options.strings.box;
-    const group = createModalGroup(this.contentEl, { heading: strings.rulesHeading, compact: true });
+    const group = this.renderSection("rules", { heading: strings.rulesHeading, count: this.draft.rules.length, compact: true });
+    if (group === null) return;
     if (this.draft.rules.length === 0) {
       addEmptyGroupRow(group, strings.noRules);
       return;
     }
 
-    this.draft.rules.forEach((rule, index) => {
+    this.visibleListItems("rules", this.draft.rules).forEach((rule, index) => {
       group.addSetting((setting) => {
         setting.setName(this.options.describeRule(rule));
         if (this.options.isRuleFolderMissing(rule)) {
@@ -291,17 +375,19 @@ export class BoxConfigModal extends FormModal {
         });
       });
     });
+    this.addShowAllRow("rules", group, this.draft.rules.length);
   }
 
   private renderManualGroup(): void {
     const strings = this.options.strings.box;
-    const group = createModalGroup(this.contentEl, { heading: strings.manualHeading, compact: true });
+    const group = this.renderSection("manual", { heading: strings.manualHeading, count: this.draft.manualPaths.length, compact: true });
+    if (group === null) return;
     if (this.draft.manualPaths.length === 0) {
       addEmptyGroupRow(group, strings.noManualMembers);
       return;
     }
 
-    for (const path of this.draft.manualPaths) {
+    for (const path of this.visibleListItems("manual", this.draft.manualPaths)) {
       group.addSetting((setting) => {
         setting
           .setName(this.options.describeMemberPath(path))
@@ -320,26 +406,32 @@ export class BoxConfigModal extends FormModal {
           });
       });
     }
+    this.addShowAllRow("manual", group, this.draft.manualPaths.length);
   }
 
   private renderExcludedGroup(): void {
     const strings = this.options.strings.box;
-    const group = createModalGroup(this.contentEl, { heading: strings.excludedHeading, compact: true });
+    const group = this.renderSection("excluded", {
+      heading: strings.excludedHeading,
+      count: this.draft.excludedPaths.length,
+      compact: true,
+      action: this.draft.excludedPaths.length === 0 ? undefined : (headerEl) => {
+        new ExtraButtonComponent(headerEl)
+          .setIcon("rotate-ccw")
+          .setTooltip(strings.restoreAllExcluded)
+          .onClick(() => {
+            this.draft = restoreExcludedPaths(this.draft);
+            this.render();
+          });
+      },
+    });
+    if (group === null) return;
     if (this.draft.excludedPaths.length === 0) {
       addEmptyGroupRow(group, strings.noExcludedMembers);
       return;
     }
 
-    group.addExtraButton((button) => {
-      button
-        .setIcon("rotate-ccw")
-        .setTooltip(strings.restoreAllExcluded)
-        .onClick(() => {
-          this.draft = restoreExcludedPaths(this.draft);
-          this.render();
-        });
-    });
-    for (const path of this.draft.excludedPaths) {
+    for (const path of this.visibleListItems("excluded", this.draft.excludedPaths)) {
       group.addSetting((setting) => {
         setting
           .setName(this.options.describeMemberPath(path))
@@ -355,6 +447,7 @@ export class BoxConfigModal extends FormModal {
           });
       });
     }
+    this.addShowAllRow("excluded", group, this.draft.excludedPaths.length);
   }
 
   protected async handleSubmit(): Promise<boolean> {

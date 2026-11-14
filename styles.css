@@ -988,6 +988,70 @@ body .popover.hover-popover.fce-card-hover-preview {
   flex-wrap: wrap;
 }
 
+/* One row at every sidebar width: the round drops first, then the status badge; the tooltip keeps the full text. */
+.folder-card-view .fce-toolbar-draw-strip {
+  flex-wrap: nowrap;
+  container-type: inline-size;
+}
+
+.folder-card-view .fce-toolbar-draw-strip .fce-toolbar-bulk-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.folder-card-view .fce-toolbar-draw-strip .fce-toolbar-bulk-summary {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.folder-card-view .fce-draw-status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.folder-card-view .fce-draw-status-mode {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.folder-card-view .fce-draw-status-mode svg {
+  width: 14px;
+  height: 14px;
+}
+
+.folder-card-view :is(.fce-draw-status-round, .fce-draw-status-progress) {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-card-view .fce-draw-status-badge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 6px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+}
+
+.folder-card-view .fce-draw-status-badge.is-error {
+  color: var(--text-error, #c0392b);
+  background: color-mix(in srgb, var(--text-error, #c0392b) 12%, transparent);
+}
+
+@container (max-width: 280px) {
+  .folder-card-view .fce-draw-status-round { display: none; }
+}
+
+@container (max-width: 200px) {
+  .folder-card-view .fce-draw-status-badge:not(.is-error) { display: none; }
+}
+
 .folder-card-view .fce-toolbar-bulk-separator {
   width: 1px;
   height: 16px;
@@ -2210,6 +2274,124 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 
 .fce-box-config__rule-missing .setting-item-description {
   color: var(--text-error);
+}
+
+/* Each section is one card: the header row sits on top and the expanded settings grow inside it. */
+.fce-box-config-section {
+  overflow: hidden;
+  border: var(--setting-items-border-width, 0) solid var(--setting-items-border-color, var(--background-modifier-border));
+  border-radius: var(--setting-items-radius, var(--radius-l));
+  background: var(--setting-items-background, var(--background-primary-alt));
+}
+
+.fce-box-config-section + .fce-box-config-section {
+  margin-top: var(--size-4-3);
+}
+
+.fce-box-config-section__header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding-inline-end: var(--size-4-3);
+}
+
+.fce-box-config-section__header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.fce-box-config .fce-box-config-section__toggle {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--size-4-2);
+  min-width: 0;
+  height: auto;
+  padding: var(--size-4-3) var(--size-4-4);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--setting-group-heading-color, var(--text-normal));
+  font-size: var(--setting-group-heading-size, var(--font-ui-medium));
+  font-weight: var(--setting-group-heading-weight, var(--font-semibold));
+  text-align: start;
+  cursor: pointer;
+}
+
+.fce-box-config .fce-box-config-section__toggle:hover {
+  background: transparent;
+}
+
+.fce-box-config .fce-box-config-section__toggle:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
+
+.fce-box-config-section .setting-group {
+  max-width: none;
+}
+
+.fce-box-config-section .setting-group .setting-items {
+  border: none;
+  border-top: var(--setting-items-divider-width, 1px) solid var(--setting-items-divider-color, var(--background-modifier-border));
+  border-radius: 0;
+  background: transparent;
+}
+
+.fce-box-config-section__chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: transform 120ms ease;
+}
+
+.fce-box-config-section__chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fce-box-config-section:not(.is-collapsed) .fce-box-config-section__chevron {
+  transform: rotate(90deg);
+}
+
+.fce-box-config-section__title {
+  flex: 0 0 auto;
+}
+
+.fce-box-config-section__count {
+  flex: 0 0 auto;
+  padding: 0 var(--size-4-2);
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.fce-box-config-section__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fce-box-config__show-all {
+  justify-content: center;
+}
+
+.fce-box-config__show-all .setting-item-info {
+  display: none;
+}
+
+.fce-box-config__show-all .setting-item-control {
+  justify-content: center;
 }
 
 .fce-modal-preview {

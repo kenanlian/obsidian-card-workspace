@@ -9,6 +9,11 @@ export interface BoxStrings {
   drawHidden: string;
   drawEmpty: string; drawLast: string; drawSaveFailed: string;
   drawProgress: (round: number, drawn: number, total: number) => string;
+  drawCountSummary: (count: number) => string;
+  drawRoundShort: (round: number) => string;
+  drawPoolShort: (total: number) => string;
+  drawStatusShort: { saveFailed: string; empty: string; paused: string; last: string; tomorrow: string };
+  showAllItems: (count: number) => string;
   createBox: string;
   saveScopeAsBox: string;
   addScopeToBox: string;
@@ -78,6 +83,11 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     drawTomorrow: "A new group tomorrow", drawPaused: "Draw paused", drawEmpty: "No cards available in this box",
     drawLast: "Last group of this round", drawSaveFailed: "Could not save draw progress. Retry saving before drawing again.",
     drawProgress: (round, drawn, total) => `Round ${round} · Drawn ${drawn} / ${total}`,
+    drawCountSummary: count => count === 1 ? "1 card per group" : `${count} cards per group`,
+    drawRoundShort: round => `Round ${round}`,
+    drawPoolShort: total => total === 1 ? "1 card" : `${total} cards`,
+    drawStatusShort: { saveFailed: "Not saved", empty: "Empty", paused: "Paused", last: "Last group", tomorrow: "New tomorrow" },
+    showAllItems: count => `Show all (${count})`,
     createBox: "New card box…",
     saveScopeAsBox: "Save current view as card box…",
     addScopeToBox: "Add current view to card box",
@@ -150,6 +160,11 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     drawTomorrow: "明天会有新的一组", drawPaused: "抽卡已暂停", drawEmpty: "卡片盒中没有可抽的卡片",
     drawLast: "本轮最后一组", drawSaveFailed: "抽卡进度保存失败，请先重试保存再继续抽取。",
     drawProgress: (round, drawn, total) => `第 ${round} 轮 · 已抽 ${drawn} / 共 ${total}`,
+    drawCountSummary: count => `每组 ${count} 张`,
+    drawRoundShort: round => `第 ${round} 轮`,
+    drawPoolShort: total => `共 ${total} 张`,
+    drawStatusShort: { saveFailed: "未保存", empty: "无卡片", paused: "已暂停", last: "最后一组", tomorrow: "明日更新" },
+    showAllItems: count => `显示全部（${count}）`,
     createBox: "新建卡片盒…",
     saveScopeAsBox: "将当前视图存为卡片盒…",
     addScopeToBox: "将当前视图加入卡片盒",

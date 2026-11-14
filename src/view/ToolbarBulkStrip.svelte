@@ -1,5 +1,6 @@
 <script lang="ts">
   import { setIcon, setTooltip } from "obsidian";
+  import type { Snippet } from "svelte";
 
   interface ToolbarActionPayload {
     action: string;
@@ -24,6 +25,7 @@
     className?: string;
     bulkActions?: BulkToolbarOption[];
     bulkSelectionSummary?: string;
+    summary?: Snippet;
     ariaLabel?: string;
     tooltipSide?: "top" | "right" | "bottom" | "left";
     onToolbarAction?: (payload: ToolbarActionPayload) => void;
@@ -33,6 +35,7 @@
     className = "",
     bulkActions = [],
     bulkSelectionSummary = "",
+    summary,
     ariaLabel = "",
     tooltipSide = "right",
     onToolbarAction,
@@ -84,6 +87,6 @@
   </div>
 
   <div class="fce-toolbar-bulk-summary">
-    <span>{bulkSelectionSummary}</span>
+    {#if summary}{@render summary()}{:else}<span>{bulkSelectionSummary}</span>{/if}
   </div>
 </div>

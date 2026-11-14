@@ -312,17 +312,34 @@
     actions.push({ id: "draw-exit", label: boxStrings.drawExit, icon: "x", disabled: false });
     return actions;
   });
-  const drawSummary = $derived.by(() => {
+  const drawStatus = $derived.by(() => {
     const draw = scope.draw;
-    if (!draw?.active) return "";
-    const mode = draw.mode === "random" ? boxStrings.drawRandom : draw.mode === "cycle" ? boxStrings.drawCycle : boxStrings.drawDaily;
-    const parts = [mode, `${draw.count} / ${draw.total}`];
-    if (draw.mode !== "random") parts.push(boxStrings.drawProgress(draw.round, draw.drawn, draw.total));
-    if (draw.paused) parts.push(boxStrings.drawPaused);
-    if (draw.total === 0) parts.push(boxStrings.drawEmpty);
-    if (draw.total > 0 && draw.drawn === draw.total && draw.mode !== "random") parts.push(boxStrings.drawLast);
-    if (draw.mode === "daily") parts.push(draw.date ?? "", boxStrings.drawTomorrow);
-    return parts.filter(Boolean).join(" · ");
+    if (!draw?.active) return null;
+    const random = draw.mode === "random";
+    const mode = random ? boxStrings.drawRandom : draw.mode === "cycle" ? boxStrings.drawCycle : boxStrings.drawDaily;
+    const empty = draw.total === 0;
+    const last = !random && !empty && draw.drawn === draw.total;
+    const details = [mode, boxStrings.drawCountSummary(draw.count)];
+    details.push(random ? boxStrings.drawPoolShort(draw.total) : boxStrings.drawProgress(draw.round, draw.drawn, draw.total));
+    if (draw.paused) details.push(boxStrings.drawPaused);
+    if (empty) details.push(boxStrings.drawEmpty);
+    if (last) details.push(boxStrings.drawLast);
+    if (draw.mode === "daily") details.push(draw.date ?? "", boxStrings.drawTomorrow);
+    if (draw.saveFailed) details.push(boxStrings.drawSaveFailed);
+    const short = boxStrings.drawStatusShort;
+    const badge = draw.saveFailed ? { text: short.saveFailed, error: true }
+      : empty ? { text: short.empty, error: false }
+      : draw.paused ? { text: short.paused, error: false }
+      : last ? { text: short.last, error: false }
+      : draw.mode === "daily" ? { text: short.tomorrow, error: false }
+      : null;
+    return {
+      icon: random ? "shuffle" : draw.mode === "cycle" ? "repeat" : "calendar-days",
+      round: !random && draw.round > 1 ? boxStrings.drawRoundShort(draw.round) : "",
+      progress: random ? boxStrings.drawPoolShort(draw.total) : `${draw.drawn}/${draw.total}`,
+      badge,
+      details: details.filter(Boolean).join(" · "),
+    };
   });
 
   const bulkSelectionSummary = $derived(toolbarStrings.bulkSummary(selectedCount));
@@ -824,15 +841,26 @@
     </div>
   {/if}
 
-  {#if drawActive}
+  {#if drawActive && drawStatus}
     <ToolbarBulkStrip
       className="fce-toolbar-draw-strip"
       bulkActions={drawActions}
-      bulkSelectionSummary={drawSummary}
       ariaLabel={boxStrings.drawTitle}
       {tooltipSide}
       onToolbarAction={({ action }) => emitBoxCommand(action)}
-    />
+    >
+      {#snippet summary()}
+        <div class="fce-draw-status" use:applyTooltip={drawStatus.details}>
+          <span class="fce-draw-status-mode" aria-hidden="true" use:applyIcon={drawStatus.icon}></span>
+          {#if drawStatus.round}<span class="fce-draw-status-round" aria-hidden="true">{drawStatus.round}</span>{/if}
+          <span class="fce-draw-status-progress" aria-hidden="true">{drawStatus.progress}</span>
+          {#if drawStatus.badge}
+            <span class="fce-draw-status-badge" class:is-error={drawStatus.badge.error} aria-hidden="true">{drawStatus.badge.text}</span>
+          {/if}
+          <span class="fce-sr-only">{drawStatus.details}</span>
+        </div>
+      {/snippet}
+    </ToolbarBulkStrip>
   {/if}
 
   {#if bulkMode}

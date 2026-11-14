@@ -1303,6 +1303,32 @@ describe("draw action strip", () => {
     expect(captured.boxCommandEvents).toEqual([{ command: "draw-next" }, { command: "draw-exit" }]);
   });
 
+  it.each(["en", "zh"] as const)("shows a compact status with the full description in its tooltip (%s)", async locale => {
+    const strings = getUiStrings(locale);
+    const { target } = mountToolbar({ strings, activeBoxId: "box-1", draw: { ...draw, round: 2, drawn: 10, paused: true } });
+    await tick();
+    const status = target.querySelector<HTMLElement>(".fce-toolbar-draw-strip .fce-draw-status")!;
+    const visible = Array.from(status.querySelectorAll('[aria-hidden="true"]'));
+    expect(visible.map(el => el.getAttribute("data-icon") ?? el.textContent)).toEqual([
+      "repeat", strings.box.drawRoundShort(2), "10/10", strings.box.drawStatusShort.paused,
+    ]);
+    const details = [strings.box.drawCycle, strings.box.drawCountSummary(2), strings.box.drawProgress(2, 10, 10),
+      strings.box.drawPaused, strings.box.drawLast].join(" · ");
+    expect(status.getAttribute("data-tooltip")).toBe(details);
+    expect(status.querySelector(".fce-sr-only")?.textContent).toBe(details);
+  });
+
+  it("omits the round on the first round and shows the pool size when drawing at random", async () => {
+    const strings = getUiStrings("en");
+    const { target } = mountToolbar({ activeBoxId: "box-1", draw: { ...draw, mode: "random" } });
+    await tick();
+    const status = target.querySelector(".fce-draw-status")!;
+    expect(status.querySelector(".fce-draw-status-mode")?.getAttribute("data-icon")).toBe("shuffle");
+    expect(status.querySelector(".fce-draw-status-round")).toBeNull();
+    expect(status.querySelector(".fce-draw-status-progress")?.textContent).toBe(strings.box.drawPoolShort(10));
+    expect(status.querySelector(".fce-draw-status-badge")).toBeNull();
+  });
+
   it("keeps exit available while next is paused by search", async () => {
     const captured = createCapturedCallbacks();
     const { target } = mountToolbar({ activeBoxId: "box-1", draw: { ...draw, paused: true, canNext: false } }, captured.callbacks);
@@ -1322,8 +1348,13 @@ describe("draw action strip", () => {
     await tick();
     const strip = target.querySelector(".fce-toolbar-draw-strip")!;
     expect(strip.querySelector('[aria-label="Draw next group"]')).toBeNull();
-    expect(strip.textContent).toContain("2026-11-14");
-    expect(strip.textContent).toContain(getUiStrings("en").box.drawTomorrow);
+    const details = strip.querySelector(".fce-draw-status .fce-sr-only")?.textContent ?? "";
+    expect(details).toContain("2026-11-14");
+    expect(details).toContain(getUiStrings("en").box.drawTomorrow);
+    expect(details).toContain(getUiStrings("en").box.drawSaveFailed);
+    const badge = strip.querySelector(".fce-draw-status-badge");
+    expect(badge?.textContent).toBe(getUiStrings("en").box.drawStatusShort.saveFailed);
+    expect(badge?.classList.contains("is-error")).toBe(true);
     const retry = strip.querySelector<HTMLButtonElement>('[aria-label="Retry saving"]')!;
     expect(retry.getAttribute("data-icon")).toBe("refresh-cw");
     retry.click();

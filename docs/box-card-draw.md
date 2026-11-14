@@ -3,6 +3,8 @@
 Open a card box and select the dice button (or **More → Draw cards** on phones).
 Each box has its own method and group size in **Configure card box → Draw cards**.
 The default is 5 cards; supported group sizes are 1–100.
+The draw strip stays on one line: a method icon, progress, and the most important
+status. Hover it for the full description.
 
 - **Random each time**: independent random groups. Groups are local to the view and are discarded on exit.
 - **Complete a round**: each visible member is drawn once per round. The last group may be smaller. The next draw starts a new round. Progress and the current group are saved.
@@ -30,7 +32,7 @@ the group visible and offers Retry saving without drawing another group.
 
 ## 中文
 
-在卡片盒工具栏点击骰子进入抽卡；手机可从「更多」进入。「配置卡片盒 → 抽卡」可设置方式和每组张数。
+在卡片盒工具栏点击骰子进入抽卡；手机可从「更多」进入。「配置卡片盒 → 抽卡」可设置方式和每组张数。抽卡栏保持单行，只显示方式图标、进度和最重要的一个状态；悬停可查看完整说明。
 
 - **每次随机**：每组独立随机，组内不重复，退出即丢弃当前组。
 - **轮完一遍再重复**：每轮不重复，最后一组可能不足 N 张；下次抽取才开始新轮。当前组和进度持久保存。
