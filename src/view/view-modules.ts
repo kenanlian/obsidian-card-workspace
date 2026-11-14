@@ -8,6 +8,8 @@ import { normalizeGroupSpec, type GroupSpec } from "../card-grouping-settings";
 import type { SearchService, SearchServiceSnapshot } from "../search";
 import type { OpenDestination, SortDirection, LinksSortField } from "../settings";
 import { ArrangementActions } from "./actions/arrangement-actions";
+import { TaskActions, type TaskWriter } from "./actions/task-actions";
+import type { CardOpenLocation } from "./link-card-location";
 import { BoxActions } from "./actions/box-actions";
 import { createFavoriteActions, type FavoriteActions } from "./actions/favorite-actions";
 import { FileActions } from "./actions/file-actions";
@@ -19,7 +21,10 @@ import { BulkPropertyActions } from "./actions/bulk-property-actions";
 import { TagActions } from "./actions/tag-actions";
 import { TagManagementActions } from "./actions/tag-manage-actions";
 import { BulkController } from "./controllers/BulkController";
-import { GroupCollapseController } from "./controllers/GroupCollapseController";
+import { GroupCollapseController, taskGroupCollapseSpec } from "./controllers/GroupCollapseController";
+import { TaskViewController } from "./controllers/TaskViewController";
+import { normalizeTaskGroupSpec, type TaskGroupSpec } from "../task-view-settings";
+import type { TaskIndexReader } from "../tasks";
 import { CardImageController } from "./controllers/CardImageController";
 import { CardHoverPreviewController } from "./controllers/CardHoverPreviewController";
 import type { ThumbnailService } from "../images/ThumbnailService";
@@ -72,6 +77,12 @@ export interface ViewModuleHost {
   getSearchService: () => SearchService | null;
   getSearchSnapshot: () => SearchServiceSnapshot | null;
   subscribeSearchSnapshots: (listener: (snapshot: SearchServiceSnapshot) => void) => () => void;
+  /** Plugin-level task index; absent hosts project an empty task stream. */
+  getTaskIndex?: () => TaskIndexReader | null;
+  /** Plugin-level task writer; absent hosts ignore task write intents. */
+  getTaskWriteService?: () => TaskWriter | null;
+  /** Opens a task's note, optionally at a validated line location. */
+  openTaskNote?: (path: string, destination?: OpenDestination, location?: CardOpenLocation) => Promise<void>;
 }
 
 export interface ViewModules {
@@ -80,6 +91,7 @@ export interface ViewModules {
   iconActions: IconActions;
   projection: ProjectionController;
   groupCollapse: GroupCollapseController;
+  taskView: TaskViewController;
   hydration: HydrationController;
   images: CardImageController;
   hoverPreview: CardHoverPreviewController;
@@ -104,6 +116,7 @@ export interface ViewModules {
   mergeActions: MergeActions;
   cardMenu: CardContextMenu;
   arrangementActions: ArrangementActions;
+  taskActions: TaskActions;
 }
 
 /**
@@ -141,6 +154,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   const gate = createModuleConstructionGate();
   const resolveGroupSpec = (): GroupSpec =>
     normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
+  const isTaskMode = (): boolean =>
+    resolveViewConfig(context.store.getScope(), context.getSettings()).viewMode === "tasks";
+  const resolveTaskGroupSpec = (): TaskGroupSpec =>
+    normalizeTaskGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).taskGroup);
   const groupCollapse: GroupCollapseController = new GroupCollapseController();
   const hoverPreview = new CardHoverPreviewController(() => context.getSettings());
   const property: PropertyController = new PropertyController({
@@ -155,6 +172,12 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getGroupConfig: resolveGroupSpec,
     getCollapsedGroupKeys: () =>
       groupCollapse.getCollapsedKeys(context.store.getScope(), resolveGroupSpec()),
+    syncTaskView: gate.guard("taskView.sync", () => taskView.sync()),
+    getTaskStatus: gate.guard("taskView.getStatus", () => taskView.getStatus()),
+    getTaskEntry: gate.guard("taskView.getEntry", (path) => taskView.getEntry(path)),
+    getTaskQuery: gate.guard("search.getCommittedQuery", () => search.getCommittedQuery()),
+    getTaskCollapsedGroupKeys: () =>
+      groupCollapse.getCollapsedKeys(context.store.getScope(), taskGroupCollapseSpec(resolveTaskGroupSpec())),
   });
   const hydration: HydrationController = new HydrationController({
     context,
@@ -181,9 +204,11 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
         { query, revision, matchFieldsByPath: result.matchFieldsByPath ?? {}, isCurrent, getCards });
     },
     isScopeSettled: gate.guard("scopeController.isScopeSettled", () => scopeController.isScopeSettled()),
+    isTaskMode,
   });
   const bulk: BulkController = new BulkController({
     context,
+    isBulkAvailable: () => !isTaskMode(),
     getOrderedVisiblePaths: () => projection.getOrderedVisiblePaths(),
     resolveLiveMarkdownFile: gate.guard(
       "fileActions.resolveLiveMarkdownFile",
@@ -195,6 +220,20 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     openNote: (path) => {
       void host.openNoteFromCard(path);
     },
+  });
+  const taskView: TaskViewController = new TaskViewController({
+    context,
+    getTaskIndex: () => host.getTaskIndex?.() ?? null,
+    isScopeSettled: gate.guard("scopeController.isScopeSettled", () => scopeController.isScopeSettled()),
+    onStreamModeChanged: (mode) => {
+      search.syncViewMode();
+      if (mode === "tasks") bulk.exitBulkMode();
+    },
+    reproject: () => {
+      projection.reprojectCards();
+      bulk.reconcileToVisibleCards();
+    },
+    publish: () => host.publishGroups("cards", "projection", "scope"),
   });
   const navLayout: NavLayoutController = new NavLayoutController({
     context,
@@ -486,6 +525,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     isScopeSettled: () => scopeController.isScopeSettled(),
     groupCollapse,
     getGroupSegmentKeys: () => projection.getGroupSegments().map((segment) => segment.key),
+    exitBulkMode: () => { bulk.exitBulkMode(); },
   });
 
   const cardDropActions = new CardDropActions({ context,
@@ -497,6 +537,16 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
 
   const timeGroup = new TimeGroupController(context, {
     getGroup: resolveGroupSpec,
+    isDayRelative: () => {
+      if (isTaskMode()) {
+        const group = resolveTaskGroupSpec();
+        return group.dimension === "due"
+          || ((group.dimension === "created" || group.dimension === "done") && group.timeGranularity === "relative");
+      }
+      const group = resolveGroupSpec();
+      return (group.dimension === "ctime" || group.dimension === "mtime") && group.timeGranularity === "relative"
+        && search.getQuery().trim().length === 0;
+    },
     isSearchActive: () => search.getQuery().trim().length > 0,
     isSettled: () => scopeController.isScopeSettled(),
     refresh: () => {
@@ -504,6 +554,14 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       bulk.reconcileToVisibleCards();
       host.publishGroups("cards", "projection", "bulk");
     },
+  });
+  const taskActions = new TaskActions({
+    context,
+    getWriter: () => host.getTaskWriteService?.() ?? null,
+    getVisibleTasks: () => context.store.getVisibleTaskCards(),
+    openNote: (path, destination, location) => host.openTaskNote
+      ? host.openTaskNote(path, destination, location)
+      : host.openNoteFromCard(path, destination),
   });
   gate.markAssembled();
 
@@ -513,6 +571,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     iconActions,
     projection,
     groupCollapse,
+    taskView,
     hydration,
     images,
     hoverPreview,
@@ -537,5 +596,6 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     mergeActions,
     cardMenu,
     arrangementActions,
+    taskActions,
   };
 }

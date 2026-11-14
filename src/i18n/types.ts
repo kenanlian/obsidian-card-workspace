@@ -38,6 +38,7 @@ export interface UiStrings {
   desktopShell: DesktopShellStrings;
   box: BoxStrings;
   links: LinksStrings;
+  tasks: import("./tasks").TaskStrings;
   view: ViewStrings;
   app: AppStrings;
 }

@@ -6,8 +6,9 @@ import type { PropertyFilterClause } from "../../property-filter-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../../settings";
 import * as metadataUtils from "../metadata-utils";
 import * as pipeline from "../pipeline";
-import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
-import type { CardBoxDefinition, NoteCardRecord, PipelineSearchInput, Rule } from "../types";
+import { parseTaskLine, type TaskNode } from "../../tasks";
+import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "../scope";
+import type { CardBoxDefinition, NoteCardRecord, PipelineSearchInput, Rule, TaskViewStatus } from "../types";
 import type { ViewContext } from "../view-context";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
@@ -728,5 +729,118 @@ describe("ProjectionController group arrangement", () => {
       expect(controller.deriveAvailableTags()).toEqual([]);
       expect(getFileCache).toHaveBeenCalled();
     });
+  });
+});
+
+describe("ProjectionController task stream", () => {
+  function taskNode(line: number, text: string): TaskNode {
+    return { line, lineText: text, parsed: parseTaskLine(text)!, children: [] };
+  }
+
+  function createTaskHarness(options: { status?: TaskViewStatus; viewMode?: "cards" | "tasks"; scope?: CardScope; query?: string } = {}) {
+    const store = createViewStateStore(options.scope ?? createFolderScope("notes", true));
+    store.replaceBaseCards([createCard("notes/a.md"), createCard("notes/b.md")]);
+    const state = {
+      status: options.status ?? "ready" as TaskViewStatus,
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        defaultView: options.viewMode ?? "tasks",
+        taskGroup: { dimension: "status" },
+      }),
+      collapsed: new Set<string>(),
+    };
+    const entries: Record<string, TaskNode[]> = {
+      "notes/a.md": [taskNode(0, "- [x] write"), taskNode(1, "- [ ] read")],
+      "notes/b.md": [taskNode(0, "- [ ] plan")],
+    };
+    const syncTaskView = vi.fn();
+    const getCollapsedGroupKeys = vi.fn(() => new Set<string>());
+    const controller = new ProjectionController({
+      context: {
+        getApp: () => ({ metadataCache: { getFileCache: () => null } }),
+        store,
+        epochs: createViewEpochs(),
+        getSettings: () => state.settings,
+        saveSettings: vi.fn(),
+        getUiStrings: () => getUiStrings("en"),
+        publishGroups: vi.fn(),
+        requestUpdate: vi.fn(),
+        notify: vi.fn(),
+        getViewWindow: () => globalThis,
+      } as unknown as ViewContext,
+      getSearchInput: () => ({ query: "", execution: "indexed-unavailable" }),
+      getEffectivePinnedPaths: () => ["notes/b.md"],
+      getLoadKey: () => "notes::recursive",
+      getGroupConfig: () => state.settings.group,
+      getCollapsedGroupKeys,
+      syncTaskView,
+      getTaskStatus: () => state.status,
+      getTaskEntry: (path) => (entries[path] ? { path, mtime: 1, roots: entries[path] } : null),
+      getTaskQuery: () => options.query ?? "",
+      getTaskCollapsedGroupKeys: () => state.collapsed,
+      now: () => new Date(2026, 10, 14),
+      getFirstDayOfWeek: () => 1,
+    });
+    return { controller, store, state, syncTaskView, getCollapsedGroupKeys };
+  }
+
+  it("syncs task runtime before projecting in either mode", () => {
+    const h = createTaskHarness({ viewMode: "cards" });
+    h.controller.reprojectCards();
+    expect(h.syncTaskView).toHaveBeenCalledTimes(1);
+    expect(h.controller.getStreamMode()).toBe("cards");
+    expect(h.store.getVisibleTaskCards()).toEqual([]);
+    expect(h.store.getVisibleCards().map((card) => card.path)).toEqual(["notes/b.md", "notes/a.md"]);
+  });
+
+  it("publishes no task rows while building and never runs the card pipeline", () => {
+    const runPipeline = vi.spyOn(pipeline, "runPipeline");
+    const runTaskPipeline = vi.spyOn(pipeline, "runTaskPipeline");
+    const h = createTaskHarness({ status: "building" });
+    h.controller.reprojectCards();
+    expect(h.controller.getStreamMode()).toBe("tasks");
+    expect(h.store.getVisibleCards()).toEqual([]);
+    expect(h.store.getVisibleTaskCards()).toEqual([]);
+    expect(h.controller.getGroupSegments()).toEqual([]);
+    expect(runPipeline).not.toHaveBeenCalled();
+    expect(runTaskPipeline).not.toHaveBeenCalled();
+    runPipeline.mockRestore();
+    runTaskPipeline.mockRestore();
+  });
+
+  it("projects the complete task list once ready, without pins, using the task collapse keys", () => {
+    const h = createTaskHarness();
+    h.controller.reprojectCards();
+    expect(h.store.getVisibleCards()).toEqual([]);
+    expect(h.store.getVisibleTaskCards().map((task) => task.path)).toEqual(["notes/a.md::L1", "notes/b.md::L0", "notes/a.md::L0"]);
+    expect(h.controller.getGroupSegments().map((segment) => segment.key)).toEqual(["task-status:open", "task-status:done"]);
+
+    h.state.collapsed = new Set(["task-status:open"]);
+    h.controller.reprojectCards();
+    expect(h.store.getVisibleTaskCards().map((task) => task.path)).toEqual(["notes/a.md::L0"]);
+    expect(h.getCollapsedGroupKeys).not.toHaveBeenCalled();
+  });
+
+  it("filters by the committed local task query", () => {
+    const h = createTaskHarness({ query: "PLAN" });
+    h.controller.reprojectCards();
+    expect(h.store.getVisibleTaskCards().map((task) => task.text)).toEqual(["plan"]);
+  });
+
+  it("returns to the card stream and clears task rows when the mode switches back", () => {
+    const h = createTaskHarness();
+    h.controller.reprojectCards();
+    h.state.settings = normalizeSettings({ ...h.state.settings, defaultView: "cards" });
+    h.controller.reprojectCards();
+    expect(h.controller.getStreamMode()).toBe("cards");
+    expect(h.store.getVisibleTaskCards()).toEqual([]);
+    expect(h.store.getVisibleCards()).toHaveLength(2);
+  });
+
+  it("keeps links scopes in the card stream", () => {
+    const h = createTaskHarness({ scope: createLinksScope("notes/a.md", "backlinks") });
+    h.controller.reprojectCards();
+    expect(h.controller.getStreamMode()).toBe("cards");
+    expect(h.store.getVisibleTaskCards()).toEqual([]);
   });
 });

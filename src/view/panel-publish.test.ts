@@ -496,7 +496,8 @@ describe("FolderCardView grouped panel publishing", () => {
       modules: {
         search: { getMatchCountsByPath: () => ({}) },
         scopeController: { isLoading: () => false },
-        projection: { getGroupSegments: () => [], getGroupRevision: () => 0 },
+        projection: { getGroupSegments: () => [], getGroupRevision: () => 0, getStreamMode: () => "cards" },
+        taskView: { getStatus: () => "idle" },
       },
     });
 
@@ -521,7 +522,8 @@ describe("FolderCardView grouped panel publishing", () => {
       modules: {
         search: { getMatchCountsByPath: () => ({}) },
         scopeController: { isLoading: () => false },
-        projection: { getGroupSegments: () => [], getGroupRevision: () => 0 },
+        projection: { getGroupSegments: () => [], getGroupRevision: () => 0, getStreamMode: () => "cards" },
+        taskView: { getStatus: () => "idle" },
       },
     });
 
@@ -552,6 +554,7 @@ describe("FolderCardView grouped panel publishing", () => {
       modules: {
         search: { getQuery: () => "" },
         boxActions: { getActiveBox: () => box },
+        projection: { getStreamMode: () => "cards" },
       },
       plugin: {
         getUiStrings: () => getUiStrings("en"),
@@ -594,6 +597,7 @@ describe("FolderCardView grouped panel publishing", () => {
         modules: {
           search: { getQuery: () => "" },
           boxActions: { getActiveBox: () => box },
+          projection: { getStreamMode: () => "cards" },
         },
         plugin: {
           getUiStrings: () => getUiStrings("en"),

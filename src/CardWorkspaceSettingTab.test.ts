@@ -80,6 +80,7 @@ function createPlugin(
       showNavItemCounts: false,
       cardImageMode: "off",
       cardImageFit: "contain",
+      enhancedTaskEditing: true, autoCreatedDate: true, autoDoneDate: true, taskDateButtons: "compact", taskDateHideSource: false,
       ...settings,
     })),
     saveSettings: vi.fn(async () => undefined),
@@ -114,15 +115,15 @@ function renderedRow(tab: CardWorkspaceSettingTab, name: string): Setting {
 describe("settings pages", () => {
   beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
 
-  it.each(["en", "zh"])("keeps all 63 settings in seven searchable declarative pages (%s)", language => {
+  it.each(["en", "zh"])("keeps all 68 settings in seven searchable declarative pages (%s)", language => {
     const plugin = createPlugin({}, language);
     const tab = createTab(plugin);
     const strings = getSettingTabStrings(language as "en" | "zh");
     const pages = pagesOf(tab);
     expect(pages.map(page => page.name)).toEqual(Object.values(strings.pages).map(page => page.name));
-    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 15, 17]);
+    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 8, 15, 17]);
     const rows = pages.flatMap(page => rowsOfPage(tab, page.name));
-    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(63);
+    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(68);
     expect(pages.every(page => page.type === "page" && page.desc && page.items && !page.page)).toBe(true);
     expect(rows.every(row => row.name && row.searchable !== false)).toBe(true);
     expect(attachFolderInputSuggest).not.toHaveBeenCalled();
@@ -130,7 +131,8 @@ describe("settings pages", () => {
     expect(rowFor(tab, "fileVisibility").control).toMatchObject({ type: "dropdown", options: strings.fileVisibilityOptions });
     expect(rowsOfPage(tab, strings.pages.appearance.name).map(row => row.control?.key)).toEqual(["uiFontSize", "uiDensity", "cardStyle", "cardCornerRadius", "cardBackgroundColor"]);
     expect(rowsOfPage(tab, strings.pages.navigation.name).map(row => row.control?.key).slice(0, 8)).toEqual(["favorites", "folders", "tags", "properties", "boxes", "links", "templates"].map(id => `navSection:${id}`).concat("showNavItemCounts"));
-    expect(rowsOfPage(tab, strings.pages["notes-templates"].name).map(row => row.name)).toEqual([strings.newNoteTemplateName, strings.boxNewNoteFolderName, getUiStrings(language as "en" | "zh").noteInput.templateStorageFolder]);
+    expect(rowsOfPage(tab, strings.pages["notes-templates"].name).map(row => row.name)).toEqual([strings.newNoteTemplateName, strings.boxNewNoteFolderName, getUiStrings(language as "en" | "zh").noteInput.templateStorageFolder,
+      strings.enhancedTaskEditingName, strings.autoCreatedDateName, strings.autoDoneDateName, strings.taskDateButtonsName, strings.taskDateHideSourceName]);
   });
 
   it.each(["phone", "tablet"])("preserves device filtering on %s", device => {
@@ -139,7 +141,7 @@ describe("settings pages", () => {
     const tab = createTab(plugin);
     expect(pagesOf(tab)).toHaveLength(7);
     const rows = pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name));
-    expect(rows).toHaveLength(58);
+    expect(rows).toHaveLength(63);
     for (const key of ["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]) expect(rowFor(tab, key)).toBeUndefined();
     expect(rowFor(tab, "quickInputCornerRadius")).toBeDefined();
     expect(rowFor(tab, "defaultCardOpenBehavior").control).not.toHaveProperty("options.new-window");
@@ -296,6 +298,44 @@ describe("settings pages", () => {
     expect(row.texts[0]!.value).toBe("New/Templates");
     await row.buttons[0]!.click();
     expect(plugin.changeTemplateStorageFolder).toHaveBeenCalledTimes(2); tab.hide();
+  });
+
+  it("shares task editing rows and hides dependent rows in place while enhanced editing is off", async () => {
+    const plugin = createPlugin(); const settings = plugin.getSettings(); plugin.getSettings.mockReturnValue(settings);
+    plugin.saveSettings.mockImplementation(async patch => Object.assign(settings, patch));
+    const tab = createTab(plugin);
+    for (const key of ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateHideSource"]) expect(rowFor(tab, key).control).toMatchObject({ type: "toggle" });
+    expect(rowFor(tab, "taskDateButtons").control).toMatchObject({ type: "dropdown", options: { compact: "Compact", full: "Full" } });
+    expect(rowFor(tab, "taskDateButtons").visible).toBeTypeOf("function");
+    mockState.requireApiVersion.mockReturnValue(false);
+    legacyOpen(tab, "New notes and templates");
+    const strings = getSettingTabStrings("en");
+    const dependent = [strings.taskDateButtonsName, strings.taskDateHideSourceName].map(name => renderedRow(tab, name));
+    expect(dependent.map(row => row.settingEl.style.display)).toEqual(["", ""]);
+    await tab.setControlValue("enhancedTaskEditing", false);
+    expect(plugin.saveSettings).toHaveBeenLastCalledWith({ enhancedTaskEditing: false });
+    expect(dependent.map(row => row.settingEl.style.display)).toEqual(["none", "none"]);
+    expect(renderedRow(tab, strings.autoCreatedDateName).settingEl.style.display).toBe("");
+    expect(renderedRow(tab, strings.autoDoneDateName).settingEl.style.display).toBe("");
+    await tab.setControlValue("enhancedTaskEditing", true);
+    expect(dependent.map(row => row.settingEl.style.display)).toEqual(["", ""]);
+    expect(renderedRow(tab, strings.taskDateButtonsName)).toBe(dependent[0]);
+    tab.hide();
+  });
+
+  it("saves only valid task editing values", async () => {
+    const plugin = createPlugin(); const tab = createTab(plugin);
+    expect(tab.getControlValue("taskDateButtons")).toBe("compact");
+    expect(tab.getControlValue("taskDateHideSource")).toBe(false);
+    await tab.setControlValue("autoCreatedDate", false);
+    await tab.setControlValue("autoDoneDate", "no");
+    await tab.setControlValue("autoDoneDate", false);
+    await tab.setControlValue("taskDateButtons", "full");
+    await tab.setControlValue("taskDateButtons", "large");
+    await tab.setControlValue("taskDateHideSource", true);
+    expect(plugin.saveSettings.mock.calls).toEqual([
+      [{ autoCreatedDate: false }], [{ autoDoneDate: false }], [{ taskDateButtons: "full" }], [{ taskDateHideSource: true }],
+    ]);
   });
 
   it("shares the leading-tag toggle across native and legacy settings", async () => {

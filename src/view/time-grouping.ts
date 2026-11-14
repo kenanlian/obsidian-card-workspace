@@ -19,6 +19,13 @@ function modulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
 }
 
+export interface TimeBucketIdentity {
+  readonly identity: string;
+  readonly label: string;
+  readonly sortKey: string;
+  readonly isMissing: boolean;
+}
+
 export function resolveTimeBucket(
   timestamp: number,
   field: "ctime" | "mtime",
@@ -26,6 +33,18 @@ export function resolveTimeBucket(
   strings: SortGroupStrings,
   now: number,
 ): GroupBucket {
+  const { identity, label, sortKey, isMissing } = resolveTimeBucketIdentity(timestamp, granularity, strings, now);
+  return { key: `${field}:${granularity}:${identity}`, label, detail: "",
+    header: { kind: "time", field, text: label }, sortKey, isMissing };
+}
+
+/** Field-independent half of {@link resolveTimeBucket}; a non-finite timestamp is the missing bucket. */
+export function resolveTimeBucketIdentity(
+  timestamp: number,
+  granularity: TimeGroupGranularity,
+  strings: SortGroupStrings,
+  now: number,
+): TimeBucketIdentity {
   const day = localDayOrdinal(timestamp);
   let identity: string;
   let label: string;
@@ -52,6 +71,5 @@ export function resolveTimeBucket(
       ? `${identity} – ${dayLabel(start + (granularity === "week" ? 6 : 13))}` : identity;
     sortKey = identity;
   }
-  return { key: `${field}:${granularity}:${identity}`, label, detail: "",
-    header: { kind: "time", field, text: label }, sortKey, isMissing };
+  return { identity, label, sortKey, isMissing };
 }

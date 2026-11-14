@@ -28,6 +28,9 @@ describe("mobile identity and policy", () => {
     const phone = resolveRuntimeResourceBudget("phone"), tablet = resolveRuntimeResourceBudget("tablet");
     expect(phone.preview).toEqual({ concurrency: 2, startupCards: 3, startupWaitMs: 120, entries: 128, diagramBytes: 4 * 1024 * 1024 });
     expect(tablet.search).toEqual({ readers: 4, batchSize: 150, ingestTerms: 15000 });
+    expect(DESKTOP_RESOURCE_BUDGET.tasks).toEqual({ readers: 4 });
+    expect(tablet.tasks).toEqual({ readers: 3 });
+    expect(phone.tasks).toEqual({ readers: 2 });
     expect(phone.image).toEqual({ maxBytes: 20000000, maxPixels: 16000000, maxEdge: 768, coldTasks: 1 });
     expect(tablet.thumbnails).toEqual({ memoryEntries: 32, memoryBytes: 8 * 1024 * 1024, diskEntries: 1000, diskBytes: 128 * 1024 * 1024 });
     expect(Object.values(phone).every(Object.isFrozen)).toBe(true);

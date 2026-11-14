@@ -767,3 +767,111 @@ describe("search preparation invalidation boundaries", () => {
     controller.dispose();
   });
 });
+
+describe("SearchController task mode", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function createTaskHarness(initialTaskMode = true) {
+    const context = createContext();
+    const state = { taskMode: initialTaskMode };
+    const query = vi.fn(async (request: { query: string }) => ({
+      mode: "indexed" as const,
+      status: "ready" as const,
+      execution: "indexed-ready" as const,
+      orderedPaths: [`notes/${request.query}.md`],
+    }));
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+      isTaskMode: () => state.taskMode,
+    });
+    controller.initializeSnapshotState();
+    controller.syncViewMode();
+    return { context, controller, publishSearchProjection, query, state };
+  }
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) await Promise.resolve();
+  };
+
+  it("commits a local query after the same 120ms debounce without querying the index", async () => {
+    vi.useFakeTimers();
+    const h = createTaskHarness();
+    h.controller.onQueryChange({ query: " Plan " });
+    expect(h.context.publishGroups).toHaveBeenCalledWith("cards", "search");
+    expect(h.publishSearchProjection).not.toHaveBeenCalled();
+    expect(h.controller.getCommittedQuery()).toBe("");
+
+    vi.advanceTimersByTime(119);
+    await settle();
+    expect(h.controller.getCommittedQuery()).toBe("");
+    vi.advanceTimersByTime(1);
+    await settle();
+    expect(h.controller.getCommittedQuery()).toBe("Plan");
+    expect(h.controller.getStatus()).toBe("ready");
+    expect(h.publishSearchProjection).toHaveBeenCalledTimes(1);
+    expect(h.query).not.toHaveBeenCalled();
+  });
+
+  it("clears the local query immediately", async () => {
+    vi.useFakeTimers();
+    const h = createTaskHarness();
+    h.controller.onQueryChange({ query: "plan" });
+    vi.advanceTimersByTime(120);
+    await settle();
+    h.controller.onQueryChange({ query: "" });
+    expect(h.controller.getCommittedQuery()).toBe("");
+    expect(h.controller.getStatus()).toBe("idle");
+    expect(h.publishSearchProjection).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(200);
+    await settle();
+    expect(h.publishSearchProjection).toHaveBeenCalledTimes(2);
+    expect(h.query).not.toHaveBeenCalled();
+  });
+
+  it("ignores index snapshots for the projection while in task mode", () => {
+    const h = createTaskHarness();
+    h.controller.onQueryChange({ query: "plan" });
+    h.controller.onSearchSnapshot(createSnapshot({ contentRevision: 3 }));
+    expect(h.query).not.toHaveBeenCalled();
+    expect(h.controller.buildPipelineSearchInput().orderedPaths).toBeUndefined();
+  });
+
+  it("commits the draft locally on entering task mode and drops an in-flight indexed request", async () => {
+    vi.useFakeTimers();
+    const h = createTaskHarness(false);
+    h.controller.onQueryChange({ query: "alpha" });
+    vi.advanceTimersByTime(120);
+    expect(h.query).toHaveBeenCalledTimes(1);
+
+    h.state.taskMode = true;
+    h.controller.syncViewMode();
+    await settle();
+    expect(h.controller.getCommittedQuery()).toBe("alpha");
+    expect(h.controller.buildPipelineSearchInput().orderedPaths).toBeUndefined();
+    expect(h.publishSearchProjection).not.toHaveBeenCalled();
+  });
+
+  it("re-runs the indexed query on returning to cards with a ready index", async () => {
+    vi.useFakeTimers();
+    const h = createTaskHarness();
+    h.controller.onQueryChange({ query: "alpha" });
+    vi.advanceTimersByTime(120);
+    await settle();
+    expect(h.query).not.toHaveBeenCalled();
+
+    h.state.taskMode = false;
+    h.controller.syncViewMode();
+    expect(h.controller.getCommittedQuery()).toBe("");
+    await settle();
+    expect(h.query).toHaveBeenCalledWith(expect.objectContaining({ query: "alpha" }));
+    expect(h.controller.getCommittedQuery()).toBe("alpha");
+    expect(h.controller.buildPipelineSearchInput().orderedPaths).toEqual(["notes/alpha.md"]);
+  });
+});

@@ -1062,3 +1062,45 @@ describe("runtime platform admission boundary", () => {
     expect(violations).toEqual([]);
   });
 });
+
+describe("src/tasks is a pure leaf module", () => {
+  /**
+   * `src/tasks/ui/` and `src/tasks/editor/` are host adapters and may import
+   * `obsidian` or CodeMirror later. The pure core must not.
+   */
+  function isFutureTaskHost(file: string): boolean {
+    return isUnder(file, "src/tasks/ui") || isUnder(file, "src/tasks/editor");
+  }
+
+  it("keeps non-test task files free of bare imports and imports outside src/tasks", () => {
+    const coreFiles = [...dependencyGraph.keys()].filter((file) => isUnder(file, "src/tasks") && !isFutureTaskHost(file));
+    expect(coreFiles).toEqual(expect.arrayContaining([
+      "src/tasks/index.ts",
+      "src/tasks/task-dates.ts",
+      "src/tasks/task-line.ts",
+      "src/tasks/task-edit.ts",
+      "src/tasks/task-tree.ts",
+    ]));
+
+    const violations: string[] = [];
+    for (const file of coreFiles) {
+      const deps = dependencyGraph.get(file);
+      if (deps === undefined) {
+        violations.push(`${file} -> missing from dependency graph`);
+        continue;
+      }
+      for (const bare of deps.bare) {
+        violations.push(`${file} -> ${bare}`);
+      }
+      for (const dependency of deps.local) {
+        if (!isUnder(dependency, "src/tasks")) {
+          violations.push(`${file} -> ${dependency}`);
+        }
+      }
+      for (const unresolved of deps.unresolved) {
+        violations.push(`${file} -> unresolved ${unresolved}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});

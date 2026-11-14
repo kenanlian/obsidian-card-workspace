@@ -179,6 +179,14 @@ vi.mock("@codemirror/view", () => ({
   dropCursor: () => ({ kind: "drop-cursor" }),
 }));
 
+const taskEditingMock = vi.hoisted(() => ({ refresh: vi.fn(), hosts: [] as unknown[] }));
+vi.mock("./tasks/editor/register", () => ({
+  registerTaskEditing: (host: unknown) => {
+    taskEditingMock.hosts.push(host);
+    return { refresh: taskEditingMock.refresh };
+  },
+}));
+
 vi.mock("./search", async () => {
   const preview = await import("./search/search-preview");
   class MockIndexStore {
@@ -3021,6 +3029,21 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     ]);
   });
 
+  it("registers task editing on load and refreshes it after settings load and save", async () => {
+    const { plugin } = createPluginHarness();
+    taskEditingMock.refresh.mockClear();
+    const hostsBefore = taskEditingMock.hosts.length;
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    expect(taskEditingMock.hosts.length).toBe(hostsBefore + 1);
+    expect(taskEditingMock.refresh).toHaveBeenCalledTimes(1);
+
+    await plugin.saveSettings({ autoDoneDate: false });
+    expect(taskEditingMock.refresh).toHaveBeenCalledTimes(2);
+  });
+
   it("routes recover, rebuild, and clear/reset commands through plugin-owned lifecycle", async () => {
     const { plugin } = createPluginHarness();
 
@@ -3705,6 +3728,25 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     }).metadataEventBus.publish({ kind: "changed", path: "notes/a.md" });
 
     expect(received).toEqual([]);
+  });
+
+  it("exposes an on-demand task index that stays empty through load and inert after unload", async () => {
+    const { plugin, app } = createPluginHarness();
+    const index = plugin.getTaskIndex();
+    const listener = vi.fn();
+    index.subscribe(listener);
+    expect(index.get("notes/a.md")).toBeNull();
+
+    plugin.onload();
+    await waitForPluginLoad(plugin);
+
+    expect(index.get("notes/a.md")).toBeNull();
+    expect(listener).not.toHaveBeenCalled();
+    expect(app.vault.cachedRead).not.toHaveBeenCalled();
+    plugin.onunload();
+    await expect(index.ensure(["notes/a.md"])).resolves.toBeUndefined();
+    expect(index.get("notes/a.md")).toBeNull();
+    expect(app.vault.cachedRead).not.toHaveBeenCalled();
   });
 });
 

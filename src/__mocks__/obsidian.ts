@@ -1,4 +1,12 @@
+import { StateField } from "@codemirror/state";
+
 export { AbstractInputSuggest, Scope } from "./obsidian-input-suggest";
+
+/** Tests opt into Live Preview with `editorLivePreviewField.init(() => true)`. */
+export const editorLivePreviewField = StateField.define<boolean>({ create: () => false, update: (value) => value });
+
+/** Not callable, so date-format callers keep their "moment unavailable" path. */
+export const moment = { localeData: () => ({ firstDayOfWeek: () => 0 }) };
 
 export function requireApiVersion(_version: string): boolean {
   return true;

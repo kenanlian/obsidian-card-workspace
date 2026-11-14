@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_GROUP_SPEC, type GroupDimension, type GroupSpec } from "../card-grouping-settings";
-import { DEFAULT_SETTINGS, type DefaultViewMode, type PluginSettings } from "../settings";
+import { DEFAULT_SETTINGS, type PluginSettings } from "../settings";
+import { DEFAULT_TASK_GROUP, DEFAULT_TASK_SORT } from "../task-view-settings";
 import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
 import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
@@ -38,6 +39,8 @@ function createSettings(): PluginSettings {
     ...DEFAULT_SETTINGS,
     sort: { ...DEFAULT_SETTINGS.sort },
     group: { ...DEFAULT_SETTINGS.group },
+    taskSort: { ...DEFAULT_SETTINGS.taskSort },
+    taskGroup: { ...DEFAULT_SETTINGS.taskGroup },
     filter: { tags: [...DEFAULT_SETTINGS.filter.tags], properties: [] },
     pinnedPaths: [...DEFAULT_SETTINGS.pinnedPaths],
     boxes: [createBox()],
@@ -63,11 +66,18 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   linksSort: "reproject",
   backlinkSnippetCount: "rehydrate",
   group: "reproject",
+  taskSort: "reproject",
+  taskGroup: "reproject",
   filter: "reproject",
   pinnedPaths: "reproject",
   searchHistory: "patch",
   includeSubfolders: "reload",
-  defaultView: "patch",
+  defaultView: "reproject",
+  enhancedTaskEditing: "patch",
+  autoCreatedDate: "patch",
+  autoDoneDate: "patch",
+  taskDateButtons: "patch",
+  taskDateHideSource: "patch",
   defaultCardOpenBehavior: "patch",
   locateLinkCardOnOpen: "patch",
   dragInsertAction: "patch",
@@ -122,18 +132,23 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "linksSort": settings.linksSort = { ...settings.linksSort, backlinks: { field: "name", direction: "asc" } }; break;
     case "backlinkSnippetCount": settings.backlinkSnippetCount = "all"; break;
     case "sort": settings.sort = { field: "ctime", direction: "asc" }; break;
+    case "taskSort": settings.taskSort = { field: "text", direction: "desc" }; break;
     case "group": settings.group = { dimension: "folder", orderBy: "name", orderDirection: "desc" }; break;
+    case "taskGroup": settings.taskGroup = { dimension: "status" }; break;
     case "filter": settings.filter = { tags: ["changed"], properties: [{ key: "status", values: [{ kind: "text", value: "open" }] }] }; break;
     case "searchHistory": settings.searchHistory = ["changed"]; break;
     case "pinnedPaths": settings.pinnedPaths = ["notes/pinned.md"]; break;
     case "includeSubfolders": settings.includeSubfolders = !settings.includeSubfolders; break;
-    // The current union has one member. An out-of-domain value still exercises
-    // the resolver comparison and keeps this key in the exhaustive contract.
     case "iconDefaults": settings.iconDefaults = { folder: { kind: "emoji", value: "📂" } }; break;
     case "iconOverrides": settings.iconOverrides = { '["folder",""]': { kind: "emoji", value: "📂" } }; break;
     case "recentIcons": settings.recentIcons = [{ kind: "emoji", value: "📂" }]; break;
     case "emojiSkinTone": settings.emojiSkinTone = "🏽"; break;
-    case "defaultView": settings.defaultView = "changed" as DefaultViewMode; break;
+    case "defaultView": settings.defaultView = "tasks"; break;
+    case "enhancedTaskEditing": settings.enhancedTaskEditing = !settings.enhancedTaskEditing; break;
+    case "autoCreatedDate": settings.autoCreatedDate = !settings.autoCreatedDate; break;
+    case "autoDoneDate": settings.autoDoneDate = !settings.autoDoneDate; break;
+    case "taskDateButtons": settings.taskDateButtons = "full"; break;
+    case "taskDateHideSource": settings.taskDateHideSource = !settings.taskDateHideSource; break;
     case "defaultCardOpenBehavior": settings.defaultCardOpenBehavior = "new-tab"; break;
     case "locateLinkCardOnOpen": settings.locateLinkCardOnOpen = !settings.locateLinkCardOnOpen; break;
     case "dragInsertAction": settings.dragInsertAction = "wiki"; break;
@@ -327,6 +342,47 @@ describe("resolveBoxesUpdateIntent", () => {
   it("returns patch for other box-list changes", () => {
     const renamed = createBox({ name: "Renamed" });
     expect(resolveBoxesUpdateIntent([createBox()], [renamed], "box-1")).toBe("patch");
+  });
+
+  it("reprojects when the active box's task view mode, sort, or group changes", () => {
+    const previous = [createBox()];
+    expect(resolveBoxesUpdateIntent(previous, [createBox({ viewMode: "tasks" })], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent(previous, [createBox({ taskSort: { field: "text", direction: "desc" } })], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent(previous, [createBox({ taskGroup: { dimension: "status" } })], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent(
+      [createBox({ taskGroup: { dimension: "created", timeGranularity: "day" } })],
+      [createBox({ taskGroup: { dimension: "created", timeGranularity: "week" } })],
+      "box-1",
+    )).toBe("reproject");
+    expect(resolveBoxesUpdateIntent(previous, [createBox({ viewMode: "tasks" })], "other-box")).toBe("patch");
+    expect(resolveSettingsUpdateIntent(
+      { ...createSettings(), boxes: previous },
+      { ...createSettings(), boxes: [createBox({ viewMode: "tasks" })] },
+      createFolderScope("notes", true),
+    )).toBe("patch");
+    expect(resolveSettingsUpdateIntent(
+      { ...createSettings(), boxes: previous },
+      { ...createSettings(), boxes: [createBox({ taskSort: { field: "file", direction: "desc" } })] },
+      createLinksScope("notes/a.md", "outgoing"),
+    )).toBe("patch");
+  });
+
+  it("treats an absent box task view config as the resolved default", () => {
+    const explicit = createBox({
+      viewMode: "cards",
+      taskSort: { ...DEFAULT_TASK_SORT },
+      taskGroup: { ...DEFAULT_TASK_GROUP },
+    });
+    expect(resolveBoxesUpdateIntent([createBox()], [explicit], "box-1")).toBe("patch");
+  });
+
+  it("reprojects a global task-group granularity change", () => {
+    const previous = createSettings();
+    previous.taskGroup = { dimension: "created", timeGranularity: "day" };
+    const next = createSettings();
+    next.taskGroup = { dimension: "created", timeGranularity: "month" };
+    expect(resolveSettingsUpdateIntent(previous, next, createFolderScope("notes", true))).toBe("reproject");
+    expect(resolveSettingsUpdateIntent(previous, next, createBoxScope("box-1"))).toBe("reproject");
   });
 
   it("returns reproject when the active box's group changes", () => {

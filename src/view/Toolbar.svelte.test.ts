@@ -61,6 +61,9 @@ interface ToolbarCallbacks {
   onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
   onToolbarAction?: (payload: ToolbarActionPayload) => void;
   onBoxCommand?: (payload: BoxCommandPayload) => void;
+  onViewModeChange?: (payload: { mode: string }) => void;
+  onTaskSortChange?: (payload: Record<string, unknown>) => void;
+  onTaskGroupChange?: (payload: Record<string, unknown>) => void;
 }
 
 interface CapturedCallbacks {
@@ -174,6 +177,10 @@ function mountToolbar(
         availableGroupDimensions: values.availableGroupDimensions ?? AVAILABLE_FOLDER_DIMENSIONS,
         groupSegmentCount: values.groupSegmentCount ?? 0,
         metadataStatus: "ready",
+        viewMode: values.viewMode,
+        taskViewAvailable: values.taskViewAvailable,
+        taskSort: values.taskSort,
+        taskGroup: values.taskGroup,
       },
       visibleGroupProperties: values.visibleGroupProperties ?? [],
       bulk: {
@@ -1261,5 +1268,149 @@ describe("Toolbar.svelte links controls", () => {
     expect(document.querySelector(`button[aria-label="${getUiStrings("en").links.saveSnapshot}"]`)).toBeNull();
 
     await disposeMountedComponent(component);
+  });
+});
+
+describe("Toolbar.svelte task view", () => {
+  const strings = getUiStrings("en");
+  const taskStrings = strings.tasks.view;
+  const sortGroup = strings.sortGroup;
+
+  beforeEach(() => {
+    mountedComponents = [];
+    document.body.innerHTML = "";
+    resetObsidianMenuInstances();
+  });
+
+  afterEach(async () => {
+    await Promise.all(mountedComponents.map((component) => unmount(component)));
+    mountedComponents = [];
+    document.body.innerHTML = "";
+    resetObsidianMenuInstances();
+  });
+
+  function getToggle(): HTMLButtonElement | null {
+    return document.querySelector<HTMLButtonElement>(".fce-view-mode-toggle");
+  }
+
+  function getBulkButton(): HTMLButtonElement | null {
+    return document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.actions.bulkTitle}"]`);
+  }
+
+  function taskCallbacks(): { callbacks: ToolbarCallbacks; modes: string[]; sorts: unknown[]; groups: unknown[] } {
+    const modes: string[] = [];
+    const sorts: unknown[] = [];
+    const groups: unknown[] = [];
+    return {
+      modes, sorts, groups,
+      callbacks: {
+        onViewModeChange: ({ mode }) => modes.push(mode),
+        onTaskSortChange: (payload) => sorts.push(payload),
+        onTaskGroupChange: (payload) => groups.push(payload),
+      },
+    };
+  }
+
+  it("omits the toggle when the task view is unavailable", async () => {
+    mountToolbar({ viewMode: "tasks" });
+    await tick();
+    expect(getToggle()).toBeNull();
+    expect(getBulkButton()).not.toBeNull();
+  });
+
+  it("places a pressed-state toggle beside sort in card mode", async () => {
+    const captured = taskCallbacks();
+    mountToolbar({ taskViewAvailable: true, viewMode: "cards" }, captured.callbacks);
+    await tick();
+    const toggle = getToggle()!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.getAttribute("aria-label")).toBe(taskStrings.toggle);
+    expect(toggle.getAttribute("data-tooltip")).toBe(taskStrings.toggle);
+    expect(toggle.getAttribute("data-icon")).toBe("list-checks");
+    expect(toggle.nextElementSibling).toBe(getSortButton());
+    expect(getBulkButton()).not.toBeNull();
+    toggle.click();
+    expect(captured.modes).toEqual(["tasks"]);
+  });
+
+  it("hides bulk, keeps new note and search, and relabels search in task mode", async () => {
+    const captured = taskCallbacks();
+    mountToolbar({ taskViewAvailable: true, viewMode: "tasks", searchStatus: "building" }, captured.callbacks);
+    await tick();
+    const toggle = getToggle()!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.classList.contains("is-selected")).toBe(true);
+    expect(getBulkButton()).toBeNull();
+    expect(document.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).not.toBeNull();
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.actions.toggleSearch}"]`)?.click();
+    await tick();
+    expect(document.querySelector<HTMLInputElement>(".fce-search-input")?.placeholder).toBe(taskStrings.searchPlaceholder);
+    expect(document.querySelector(".fce-search-status")).toBeNull();
+    toggle.click();
+    expect(captured.modes).toEqual(["cards"]);
+  });
+
+  it("offers task sort fields and task group dimensions in task mode", async () => {
+    const captured = taskCallbacks();
+    const sortCaptured = createCapturedCallbacks();
+    mountToolbar({
+      taskViewAvailable: true,
+      viewMode: "tasks",
+      taskSort: { field: "due", direction: "asc" },
+      taskGroup: { dimension: "none" },
+    }, { ...sortCaptured.callbacks, ...captured.callbacks });
+    let menu = await openSortMenu();
+    const titles = menu.items.map(itemTitle);
+    for (const field of ["due", "created", "done", "file", "text"] as const) {
+      expect(titles).toContain(taskStrings.sortFields[field]);
+    }
+    expect(titles).toContain(sortGroup.taskGroup.dimensions.status);
+    expect(titles).not.toContain(sortGroup.groupOrderHeading);
+    expect(findMenuItem(menu, taskStrings.sortFields.due)?.checked).toBe(true);
+    expect(findMenuItem(menu, sortGroup.dimensionNone)?.checked).toBe(true);
+    expectMenuItemDisabled(menu, sortGroup.collapseAll);
+
+    clickMenuItem(menu, taskStrings.sortFields.created);
+    menu = await openSortMenu();
+    clickMenuItem(menu, sortGroup.directionDesc);
+    menu = await openSortMenu();
+    // Sort and group both have a "file" option; the group one comes last.
+    menu.items.filter((item) => itemTitle(item) === sortGroup.taskGroup.dimensions.file).at(-1)?.onClick?.(new MouseEvent("click"));
+    menu = await openSortMenu();
+    // The mock Menu has no submenus, so granularities fall back to flat items.
+    clickMenuItem(menu, `${sortGroup.taskGroup.dimensions.done} · ${sortGroup.timeGranularities.month}`);
+
+    expect(captured.sorts).toEqual([{ field: "created", direction: "asc" }, { field: "due", direction: "desc" }]);
+    expect(captured.groups).toEqual([{ dimension: "file" }, { dimension: "done", timeGranularity: "month" }]);
+    expect(sortCaptured.sortEvents).toEqual([]);
+    expect(sortCaptured.groupChangeEvents).toEqual([]);
+  });
+
+  it("marks the sort trigger when tasks are grouped", async () => {
+    mountToolbar({ taskViewAvailable: true, viewMode: "tasks", taskGroup: { dimension: "status" }, groupSegmentCount: 2 });
+    await tick();
+    expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
+  });
+
+  it("moves the toggle into the phone More menu and drops bulk there in task mode", async () => {
+    const captured = taskCallbacks();
+    mountToolbar({ runtimeDevice: "phone", taskViewAvailable: true, viewMode: "tasks" }, captured.callbacks);
+    await tick();
+    expect(getToggle()).toBeNull();
+    document.querySelector<HTMLButtonElement>(".fce-toolbar-more")?.click();
+    await tick();
+    const menu = getObsidianMenuInstances().at(-1)!;
+    expect(findMenuItem(menu, taskStrings.toggle)?.checked).toBe(true);
+    expect(findMenuItem(menu, strings.toolbar.actions.bulkTitle)).toBeUndefined();
+    clickMenuItem(menu, taskStrings.toggle);
+    expect(captured.modes).toEqual(["cards"]);
+  });
+
+  it("shows the toggle for card boxes", async () => {
+    mountToolbar({ taskViewAvailable: true, viewMode: "tasks", activeBoxId: "box-1", activeBoxName: "Reading",
+      availableGroupDimensions: AVAILABLE_BOX_DIMENSIONS });
+    await tick();
+    expect(getToggle()?.getAttribute("aria-pressed")).toBe("true");
+    expect(getBulkButton()).toBeNull();
   });
 });

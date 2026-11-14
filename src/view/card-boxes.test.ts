@@ -22,7 +22,7 @@ import { deriveRuleId } from "./box-rule-identity";
 import type { CardBoxDefinition, Rule } from "./types";
 
 function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
-  return {
+  const box: CardBoxDefinition = {
     id: partial.id ?? "box-1",
     name: partial.name ?? "Box",
     rules: partial.rules ?? [],
@@ -32,6 +32,10 @@ function makeBox(partial: Partial<CardBoxDefinition> = {}): CardBoxDefinition {
     sort: partial.sort ?? { field: "mtime", direction: "desc" },
     group: partial.group ?? { ...DEFAULT_GROUP_SPEC },
   };
+  if (partial.viewMode !== undefined) box.viewMode = partial.viewMode;
+  if (partial.taskSort !== undefined) box.taskSort = partial.taskSort;
+  if (partial.taskGroup !== undefined) box.taskGroup = partial.taskGroup;
+  return box;
 }
 
 function makeRule(partial: Partial<Rule> = {}): Rule {
@@ -178,6 +182,60 @@ describe("rule + membership helpers", () => {
     expect(copy.rules[0]).not.toBe(rule);
     expect(copy.group).toEqual(group);
     expect(copy.group).not.toBe(source.group);
+  });
+
+  it("leaves task view fields absent unless creation supplies them", () => {
+    const created = createCardBox("Box", []);
+    expect(created).not.toHaveProperty("viewMode");
+    expect(created).not.toHaveProperty("taskSort");
+    expect(created).not.toHaveProperty("taskGroup");
+
+    const taskSort = { field: "text" as const, direction: "desc" as const };
+    const taskGroup = { dimension: "created" as const, timeGranularity: "week" as const };
+    const supplied = createCardBox("Box", [], { viewMode: "tasks", taskSort, taskGroup });
+    expect(supplied.viewMode).toBe("tasks");
+    expect(supplied.taskSort).toEqual(taskSort);
+    expect(supplied.taskSort).not.toBe(taskSort);
+    expect(supplied.taskGroup).toEqual(taskGroup);
+    expect(supplied.taskGroup).not.toBe(taskGroup);
+  });
+
+  it("normalizes invalid task view fields supplied at creation", () => {
+    const created = createCardBox("Box", [], {
+      viewMode: "board",
+      taskSort: null,
+      taskGroup: { dimension: "folder" },
+    } as never);
+    expect(created.viewMode).toBe("cards");
+    expect(created.taskSort).toEqual({ field: "due", direction: "asc" });
+    expect(created.taskGroup).toEqual({ dimension: "none" });
+  });
+
+  it("copies task view fields through duplicate and omits them when absent", () => {
+    const source = makeBox({
+      id: "a",
+      viewMode: "tasks",
+      taskSort: { field: "file", direction: "asc" },
+      taskGroup: { dimension: "done", timeGranularity: "month" },
+    });
+    const [, copy] = duplicateCardBox([source], "a");
+    expect(copy.viewMode).toBe("tasks");
+    expect(copy.taskSort).toEqual(source.taskSort);
+    expect(copy.taskSort).not.toBe(source.taskSort);
+    expect(copy.taskGroup).toEqual(source.taskGroup);
+    expect(copy.taskGroup).not.toBe(source.taskGroup);
+
+    const [, bare] = duplicateCardBox([makeBox({ id: "a" })], "a");
+    expect(bare).not.toHaveProperty("viewMode");
+    expect(bare).not.toHaveProperty("taskSort");
+    expect(bare).not.toHaveProperty("taskGroup");
+  });
+
+  it("keeps task view fields when a rule is added", () => {
+    const box = makeBox({ viewMode: "tasks", taskSort: { field: "due", direction: "asc" } });
+    const next = addRuleToBox(box, makeRule({ folder: "P" }));
+    expect(next.viewMode).toBe("tasks");
+    expect(next.taskSort).toEqual({ field: "due", direction: "asc" });
   });
 
   it("defaults a created box to ungrouped and clones an explicit group", () => {

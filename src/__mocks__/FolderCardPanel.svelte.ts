@@ -17,6 +17,13 @@ interface PanelProps {
   onSortChange?: (payload: unknown) => void;
   onGroupChange?: (payload: unknown) => void;
   onGroupCollapseCommand?: (payload: unknown) => void;
+  onViewModeChange?: (payload: unknown) => void;
+  onTaskSortChange?: (payload: unknown) => void;
+  onTaskGroupChange?: (payload: unknown) => void;
+  onTaskToggle?: (payload: unknown) => void;
+  onTaskDate?: (payload: unknown) => void;
+  onTaskOpen?: (payload: unknown) => void;
+  onTaskContextMenu?: (payload: unknown) => void;
   onFilterChange?: (payload: unknown) => void;
   onIncludeSubfoldersChange?: (payload: unknown) => void;
   onSearchQueryChange?: (payload: unknown) => void;
@@ -47,6 +54,13 @@ const CALLBACK_PROP_TO_EVENT: Record<string, string> = {
   onSortChange: "sort-change",
   onGroupChange: "group-change",
   onGroupCollapseCommand: "group-collapse",
+  onViewModeChange: "view-mode-change",
+  onTaskSortChange: "task-sort-change",
+  onTaskGroupChange: "task-group-change",
+  onTaskToggle: "task-toggle",
+  onTaskDate: "task-date",
+  onTaskOpen: "task-open",
+  onTaskContextMenu: "task-context-menu",
   onFilterChange: "filter-change",
   onIncludeSubfoldersChange: "include-subfolders-change",
   onSearchQueryChange: "search-query-change",

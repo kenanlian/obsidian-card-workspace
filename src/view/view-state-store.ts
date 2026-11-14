@@ -1,5 +1,5 @@
 import type { CardScope } from "./scope";
-import type { NoteCardRecord } from "./types";
+import type { NoteCardRecord, TaskCardRecord } from "./types";
 
 /** Covers hydration- and metadata-derived fields, not previews alone. */
 export type CardPreviewFields = Pick<
@@ -21,6 +21,12 @@ export interface ViewStateStore {
   replaceBaseCards(cards: NoteCardRecord[]): void;
   getVisibleCards(): readonly NoteCardRecord[];
   replaceVisibleCards(cards: NoteCardRecord[]): void;
+  /**
+   * Task-stream rows, kept apart from note cards so hydration, bulk selection,
+   * search counts and images never see synthetic task ids.
+   */
+  getVisibleTaskCards(): readonly TaskCardRecord[];
+  replaceVisibleTaskCards(cards: TaskCardRecord[]): void;
   patchCardPreviews(updates: readonly CardPreviewUpdate[]): void;
   getVisibleSequenceRevision(): number;
   getHydrationRevision(): number;
@@ -35,6 +41,7 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
   let scope = initialScope;
   let baseCards: NoteCardRecord[] = [];
   let visibleCards: NoteCardRecord[] = [];
+  let visibleTaskCards: TaskCardRecord[] = [];
   let baseIndexByPath = new Map<string, number>();
   let visibleIndexByPath = new Map<string, number>();
   let visibleSequenceRevision = 0;
@@ -66,6 +73,19 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
       );
       visibleCards = cards;
       visibleIndexByPath = buildIndex(cards);
+      if (pathsChanged) {
+        visibleSequenceRevision += 1;
+      }
+    },
+    getVisibleTaskCards: () => visibleTaskCards,
+    replaceVisibleTaskCards(cards) {
+      if (cards.length === 0 && visibleTaskCards.length === 0) {
+        return;
+      }
+      const pathsChanged = cards.length !== visibleTaskCards.length || cards.some(
+        (card, index) => card.path !== visibleTaskCards[index]?.path,
+      );
+      visibleTaskCards = cards;
       if (pathsChanged) {
         visibleSequenceRevision += 1;
       }

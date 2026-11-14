@@ -110,7 +110,7 @@ function reprojectNavigation(
 
 export function publishLoadStart(host: LoadBoundaryHost, scopeChanged: boolean): void {
   host.panelModel.batch((state) => {
-    const hasPreviousCards = state.cards.records.length > 0;
+    const hasPreviousCards = state.cards.records.length > 0 || (state.cards.taskRecords?.length ?? 0) > 0;
     const groups: PanelGroup[] = [];
     if (!scopeChanged || !hasPreviousCards) groups.push("scope");
     groups.push("cards");

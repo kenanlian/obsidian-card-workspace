@@ -172,6 +172,16 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "boolean" ? { locateLinkCardOnOpen: value } : null;
     case "enableHeadingDragInsert":
       return typeof value === "boolean" ? { enableHeadingDragInsert: value } : null;
+    case "enhancedTaskEditing":
+      return typeof value === "boolean" ? { enhancedTaskEditing: value } : null;
+    case "autoCreatedDate":
+      return typeof value === "boolean" ? { autoCreatedDate: value } : null;
+    case "autoDoneDate":
+      return typeof value === "boolean" ? { autoDoneDate: value } : null;
+    case "taskDateButtons":
+      return value === "compact" || value === "full" ? { taskDateButtons: value } : null;
+    case "taskDateHideSource":
+      return typeof value === "boolean" ? { taskDateHideSource: value } : null;
     default:
       return null;
   }
@@ -293,6 +303,16 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.showNavItemCounts;
       case "locateLinkCardOnOpen":
         return settings.locateLinkCardOnOpen;
+      case "enhancedTaskEditing":
+        return settings.enhancedTaskEditing;
+      case "autoCreatedDate":
+        return settings.autoCreatedDate;
+      case "autoDoneDate":
+        return settings.autoDoneDate;
+      case "taskDateButtons":
+        return settings.taskDateButtons;
+      case "taskDateHideSource":
+        return settings.taskDateHideSource;
       default:
         return undefined;
     }
@@ -300,7 +320,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     await this.saveDeclarativeSetting(key, value);
-    if (key === "cardImageMode" || key === "cardStyle" || key === "quickInputDuplicateTitle") {
+    if (key === "cardImageMode" || key === "cardStyle" || key === "quickInputDuplicateTitle" || key === "enhancedTaskEditing") {
       if (requireApiVersion("1.13.0")) {
         if (typeof this.refreshDomState === "function") {
           this.refreshDomState();
@@ -583,6 +603,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const inputStrings = getUiStrings(language).noteInput;
     const templateOptions = this.getQuickInputTemplateOptions();
     this.templateOptionsSignature = JSON.stringify(templateOptions);
+    const taskEditingEnabled = () => this.plugin.getSettings().enhancedTaskEditing;
     const groups: WorkspaceSettingGroup[] = [
       {
         type: "group",
@@ -804,6 +825,24 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         ],
       },
       {
+        type: "group",
+        heading: strings.groups.tasks,
+        items: [
+          { name: strings.enhancedTaskEditingName, desc: strings.enhancedTaskEditingDesc,
+            control: { type: "toggle", key: "enhancedTaskEditing" } },
+          { name: strings.autoCreatedDateName, desc: strings.autoCreatedDateDesc,
+            control: { type: "toggle", key: "autoCreatedDate" } },
+          { name: strings.autoDoneDateName, desc: strings.autoDoneDateDesc,
+            control: { type: "toggle", key: "autoDoneDate" } },
+          { name: strings.taskDateButtonsName, desc: strings.taskDateButtonsDesc,
+            visible: taskEditingEnabled,
+            control: { type: "dropdown", key: "taskDateButtons", options: strings.taskDateButtonsOptions } },
+          { name: strings.taskDateHideSourceName, desc: strings.taskDateHideSourceDesc,
+            visible: taskEditingEnabled,
+            control: { type: "toggle", key: "taskDateHideSource" } },
+        ],
+      },
+      {
         type: "group", heading: inputStrings.templates,
         items: [{ id: "templateStorageFolder", name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
           render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
@@ -824,7 +863,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         group(headings.images, ["cardImageMode", "cardImageFit"]), group(headings.hover, ["hoverPreviewWidth", "hoverPreviewHeight"])]),
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
-      page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"])]),
+      page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"]),
+        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateHideSource"])]),
       page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
         group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
         group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),

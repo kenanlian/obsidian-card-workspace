@@ -16,6 +16,8 @@ export interface BulkControllerDeps {
   resolveLiveMarkdownFile: (path: string) => TFile | null;
   publishSelection: () => void;
   openNote: (path: string) => void;
+  /** Bulk mode cannot be entered while false (task mode). Defaults to available. */
+  isBulkAvailable?: () => boolean;
 }
 
 /** Owns per-view bulk mode and selection state. */
@@ -52,11 +54,24 @@ export class BulkController {
   }
 
   toggleBulkMode(): void {
+    if (!this.bulkMode && this.deps.isBulkAvailable?.() === false) {
+      return;
+    }
     this.bulkMode = !this.bulkMode;
     if (!this.bulkMode) {
       this.clearSelectionState();
     }
     this.deps.publishSelection();
+  }
+
+  /** Leaves bulk mode without publishing; the caller's own publish carries the bulk group. */
+  exitBulkMode(): boolean {
+    if (!this.bulkMode) {
+      return false;
+    }
+    this.bulkMode = false;
+    this.clearSelectionState();
+    return true;
   }
 
   bulkSelectAll(): void {

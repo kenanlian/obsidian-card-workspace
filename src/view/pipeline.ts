@@ -1,5 +1,9 @@
 import type { App } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
+import type { SortGroupStrings } from "../i18n";
+import type { SortDirection } from "../settings";
+import type { TaskGroupSpec, TaskSortSpec } from "../task-view-settings";
+import { compareIsoDates, type TaskFileEntry } from "../tasks";
 import {
   normalizePropertyFilterClauses,
   type PropertyFilterClause,
@@ -8,7 +12,8 @@ import { arrangeCardsByGroup, type CardGroupSegment, type GroupBucket } from "./
 import { getFileFrontmatter, matchesTagFilter } from "./metadata-utils";
 import { matchesPropertyFilters } from "./property-metadata";
 import type { CardScope } from "./scope";
-import type { NoteCardRecord, PipelineSearchInput } from "./types";
+import { buildTaskCardRecords, buildTaskGroupBuckets } from "./task-grouping";
+import type { NoteCardRecord, PipelineSearchInput, TaskCardItem, TaskCardRecord } from "./types";
 
 export interface PipelineContext {
   app: App;
@@ -37,6 +42,11 @@ export type PipelineStep = (
   cards: NoteCardRecord[],
   context: PipelineContext,
 ) => NoteCardRecord[];
+
+/** The inputs the file-level browse filters read; shared by the card and task streams. */
+export type BrowseFilterContext = Pick<PipelineContext, "app" | "filterTags" | "propertyFilters">;
+
+type BrowseFilterStep = (cards: NoteCardRecord[], context: BrowseFilterContext) => NoteCardRecord[];
 
 export function runPipeline(
   cards: NoteCardRecord[],
@@ -79,7 +89,7 @@ function applyGroupArrangement(
 }
 
 /** Tag filter step — filter cards by metadata tags using AND logic. */
-export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+export function applyTagFilter(cards: NoteCardRecord[], context: BrowseFilterContext): NoteCardRecord[] {
   const filterTags = context.filterTags;
 
   // Pass-through when no tags are selected (empty filter always matches)
@@ -99,7 +109,7 @@ export function applyTagFilter(cards: NoteCardRecord[], context: PipelineContext
  * Frontmatter comes from the metadata cache only — no body reads. Passes the
  * original array through (same reference) when no normalized clauses remain.
  */
-export function applyPropertyFilter(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+export function applyPropertyFilter(cards: NoteCardRecord[], context: BrowseFilterContext): NoteCardRecord[] {
   const clauses = normalizePropertyFilterClauses(context.propertyFilters);
   if (clauses.length === 0) {
     return cards;
@@ -184,6 +194,165 @@ export function stepsForScope(scope: CardScope): PipelineStep[] {
       return [applyTagFilter, applyPropertyFilter, applySearchFilter, applyPinReorder];
     case "links":
       return [applySearchFilter, applyPinReorder];
+    default: {
+      const exhaustive: never = scope;
+      throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+export interface TaskPipelineContext {
+  app: App;
+  /** Selects the file-level browse filters, exactly as `stepsForScope` does for cards. */
+  scope: CardScope;
+  filterTags: string[];
+  propertyFilters: readonly PropertyFilterClause[];
+  /** Local task-text query; the task stream never issues indexed full-text queries. */
+  query: string;
+  sort: TaskSortSpec;
+  group: TaskGroupSpec;
+  getTaskEntry: (path: string) => TaskFileEntry | null;
+  /** Local "now" for relative due/created/done buckets. */
+  today: Date;
+  /** 0 = Sunday … 6 = Saturday; bounds the "this week" due bucket. */
+  firstDayOfWeek: number;
+  strings: SortGroupStrings;
+  // Runtime-only per-view collapse state, namespaced apart from card-stream keys.
+  collapsedGroupKeys: ReadonlySet<string>;
+}
+
+export interface TaskPipelineResult {
+  readonly cards: TaskCardRecord[];
+  readonly segments: CardGroupSegment[];
+}
+
+/**
+ * Task-stream projection: file-level browse filters -> root-task expansion ->
+ * task text filter -> task sort -> task grouping.
+ *
+ * Search and pin steps never run here: the query is a local text match and
+ * pins order files, not tasks. Grouping stays active with a non-empty query
+ * because the task order is the chosen sort, not search relevance.
+ */
+export function runTaskPipeline(baseCards: NoteCardRecord[], context: TaskPipelineContext): TaskPipelineResult {
+  let cards = baseCards;
+  for (const step of taskBrowseStepsForScope(context.scope)) {
+    cards = step(cards, context);
+  }
+  const fileOrderByPath = new Map(baseCards.map((card, index) => [card.path, index]));
+  const tasks = expandTaskCards(cards, fileOrderByPath, context.getTaskEntry);
+  const sorted = applyTaskSort(applyTaskTextFilter(tasks, context.query), context.sort);
+  return applyTaskGroupArrangement(sorted, context);
+}
+
+/** Markdown cards only; a card whose entry is not loaded contributes no tasks yet. */
+export function expandTaskCards(
+  cards: readonly NoteCardRecord[],
+  fileOrderByPath: ReadonlyMap<string, number>,
+  getTaskEntry: (path: string) => TaskFileEntry | null,
+): TaskCardRecord[] {
+  const tasks: TaskCardRecord[] = [];
+  for (const card of cards) {
+    if (card.fileKind !== "markdown") {
+      continue;
+    }
+    const entry = getTaskEntry(card.path);
+    if (entry === null || entry.roots.length === 0) {
+      continue;
+    }
+    for (const task of buildTaskCardRecords(card, fileOrderByPath.get(card.path) ?? 0, entry)) {
+      tasks.push(task);
+    }
+  }
+  return tasks;
+}
+
+function taskItemMatches(item: TaskCardItem, needle: string): boolean {
+  return item.text.toLocaleLowerCase().includes(needle)
+    || item.children.some((child) => taskItemMatches(child, needle));
+}
+
+/** Case-insensitive substring match on root text, any subtask text, or the file title. */
+export function applyTaskTextFilter(tasks: TaskCardRecord[], query: string): TaskCardRecord[] {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle.length === 0) {
+    return tasks;
+  }
+  return tasks.filter((task) => task.fileTitle.toLocaleLowerCase().includes(needle) || taskItemMatches(task, needle));
+}
+
+function compareDocumentOrder(left: TaskCardRecord, right: TaskCardRecord): number {
+  return left.fileOrder - right.fileOrder || left.line - right.line;
+}
+
+/**
+ * Stable task sort. Date fields put undated tasks last in both directions;
+ * every field breaks ties by file order, then line.
+ */
+export function applyTaskSort(tasks: TaskCardRecord[], sort: TaskSortSpec): TaskCardRecord[] {
+  const sign = sort.direction === "desc" ? -1 : 1;
+  const sorted = [...tasks];
+  switch (sort.field) {
+    case "due":
+    case "created":
+    case "done": {
+      const field = sort.field;
+      sorted.sort((left, right) => {
+        const leftDate = left.dates[field];
+        const rightDate = right.dates[field];
+        if (leftDate === null || rightDate === null) {
+          if (leftDate !== rightDate) return leftDate === null ? 1 : -1;
+          return compareDocumentOrder(left, right);
+        }
+        return sign * compareIsoDates(leftDate, rightDate) || compareDocumentOrder(left, right);
+      });
+      return sorted;
+    }
+    case "file":
+      sorted.sort((left, right) => sign * (left.fileOrder - right.fileOrder) || left.line - right.line);
+      return sorted;
+    case "text":
+      sorted.sort((left, right) => sign * left.text.localeCompare(right.text) || compareDocumentOrder(left, right));
+      return sorted;
+    default: {
+      const exhaustive: never = sort.field;
+      throw new Error(`Unhandled task sort field: ${String(exhaustive)}`);
+    }
+  }
+}
+
+/** Date buckets follow the sort direction when sorting by the grouped date; others stay ascending. */
+function resolveTaskGroupDirection(group: TaskGroupSpec, sort: TaskSortSpec): SortDirection {
+  return (group.dimension === "created" || group.dimension === "done") && sort.field === group.dimension
+    ? sort.direction
+    : "asc";
+}
+
+function applyTaskGroupArrangement(tasks: TaskCardRecord[], context: TaskPipelineContext): TaskPipelineResult {
+  const group = context.group;
+  if (group.dimension === "none") {
+    return { cards: tasks, segments: [] };
+  }
+  const buckets = buildTaskGroupBuckets(tasks, group, context.strings, {
+    today: context.today,
+    firstDayOfWeek: context.firstDayOfWeek,
+  });
+  return arrangeCardsByGroup(
+    tasks,
+    buckets,
+    { dimension: group.dimension, orderBy: "default", orderDirection: resolveTaskGroupDirection(group, context.sort) },
+    context.collapsedGroupKeys,
+  );
+}
+
+/** File-level browse filters for the task stream; Links never reaches task mode. */
+function taskBrowseStepsForScope(scope: CardScope): BrowseFilterStep[] {
+  switch (scope.kind) {
+    case "folder":
+    case "box":
+      return [applyTagFilter, applyPropertyFilter];
+    case "links":
+      return [];
     default: {
       const exhaustive: never = scope;
       throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);

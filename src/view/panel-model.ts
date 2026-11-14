@@ -4,7 +4,8 @@ import type { CardBackgroundColor, CardBackgroundTint } from "../card-background
 import type { CardImageState } from "../images/types";
 import type { CardImageFit, CardImageMode, CardStyle, UiDensity, UiFontSize } from "../settings";
 import type { GroupDimension, GroupSpec } from "../card-grouping-settings";
-import type { CardCornerRadius, SortDirection, LinksSortField } from "../settings";
+import type { CardCornerRadius, DefaultViewMode, SortDirection, LinksSortField } from "../settings";
+import type { TaskGroupSpec, TaskSortSpec } from "../task-view-settings";
 import type { UiStrings } from "../i18n";
 import { isLinksScope, type CardScope } from "./scope";
 import { resolveSourceCapabilities } from "./source-capabilities";
@@ -26,6 +27,8 @@ import type {
   SearchIndexReadinessState,
   SearchIndexRebuildReason,
   SearchStatus,
+  TaskCardRecord,
+  TaskViewStatus,
 } from "./types";
 
 export interface OpenNotePayload {
@@ -164,6 +167,18 @@ export interface PanelCardsState {
   groupRevision: number;
   /** Compatibility field; virtualization renders only the materialized records. */
   extentCount: number;
+  /**
+   * Stream the published rows belong to. In `"tasks"` mode `records` is empty
+   * and `groupSegments` index into `taskRecords`. Optional so existing panel
+   * defaults stay valid; absent means `"cards"`.
+   */
+  streamMode?: DefaultViewMode;
+  /** Root tasks in display order (post filter/sort/group/collapse); absent or empty in card mode. */
+  taskRecords?: TaskCardRecord[];
+  /** `"building"` while the scope's tasks are read; no task rows are published then. Absent means `"idle"`. */
+  taskStatus?: TaskViewStatus;
+  /** Task item ids (`${filePath}::L${line}`, any depth) with a write in flight or awaiting refresh. */
+  pendingTaskIds?: string[];
 }
 
 export interface PanelSearchState {
@@ -196,6 +211,16 @@ export interface PanelProjectionState {
   groupSegmentCount: number;
   /** Compatibility field; metadata facets publish with the complete scope commit. */
   metadataStatus: "pending" | "ready";
+  /**
+   * Resolved stream mode and task arrangement for the current scope's owner
+   * (global settings for folders, the Box definition for boxes). Optional so
+   * existing panel defaults stay valid.
+   */
+  viewMode?: DefaultViewMode;
+  taskSort?: TaskSortSpec;
+  taskGroup?: TaskGroupSpec;
+  /** Capability: whether this source offers the cards/tasks toggle (false for Links). */
+  taskViewAvailable?: boolean;
 }
 
 export interface PanelNavState {

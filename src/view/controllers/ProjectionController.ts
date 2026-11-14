@@ -1,4 +1,7 @@
+import { moment } from "obsidian";
 import type { GroupDimension, GroupSpec } from "../../card-grouping-settings";
+import { normalizeTaskGroupSpec, normalizeTaskSortSpec } from "../../task-view-settings";
+import type { TaskFileEntry } from "../../tasks";
 import { findCardBox } from "../card-boxes";
 import {
   buildGroupBuckets,
@@ -9,9 +12,10 @@ import {
 } from "../card-grouping";
 import type { UiStrings } from "../../i18n";
 import { collectScopeTagIndex, collectVaultTagIndex } from "../metadata-utils";
-import { runPipeline, stepsForScope, type PipelineContext } from "../pipeline";
+import { runPipeline, runTaskPipeline, stepsForScope, type PipelineContext, type TaskPipelineResult } from "../pipeline";
 import { resolveSourceCapabilities } from "../source-capabilities";
-import type { NoteCardRecord, PipelineSearchInput, Rule } from "../types";
+import type { CardStreamMode, NoteCardRecord, PipelineSearchInput, Rule, TaskViewStatus } from "../types";
+import { resolveViewConfig } from "../view-config";
 import type { ViewContext } from "../view-context";
 import {
   FacetSnapshotCache, facetSourceKey, scopeTagDataEqual, type ScopeTagData,
@@ -24,6 +28,28 @@ export interface ProjectionControllerDeps {
   getLoadKey: () => string | null;
   getGroupConfig: () => GroupSpec;
   getCollapsedGroupKeys: () => ReadonlySet<string>;
+  /** Reconciles task-mode runtime (status, task reads) before every reprojection. */
+  syncTaskView?: () => void;
+  getTaskStatus?: () => TaskViewStatus;
+  getTaskEntry?: (path: string) => TaskFileEntry | null;
+  /** Committed local task-text query. */
+  getTaskQuery?: () => string;
+  getTaskCollapsedGroupKeys?: () => ReadonlySet<string>;
+  now?: () => Date;
+  getFirstDayOfWeek?: () => number;
+}
+
+const EMPTY_TASK_RESULT: TaskPipelineResult = { cards: [], segments: [] };
+
+/** Locale week start from the host moment instance; Monday when unavailable. */
+export function resolveHostFirstDayOfWeek(): number {
+  try {
+    const day = (moment as unknown as { localeData?: () => { firstDayOfWeek?: () => unknown } })
+      .localeData?.().firstDayOfWeek?.();
+    return typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6 ? day : 1;
+  } catch {
+    return 1;
+  }
 }
 
 const EMPTY_BUCKETS: ReadonlyMap<string, GroupBucket> = new Map<string, GroupBucket>();
@@ -95,6 +121,8 @@ export class ProjectionController {
    * carry the segments, so they land here instead.
    */
   private arrangedSegments: CardGroupSegment[] = [];
+  /** Stream represented by the store's current visible rows. */
+  private streamMode: CardStreamMode = "cards";
 
   constructor(private readonly deps: ProjectionControllerDeps) {}
 
@@ -151,11 +179,62 @@ export class ProjectionController {
     return result;
   }
 
-  /** Publishes a fresh visible-card array while preserving shared record objects. */
+  /**
+   * Publishes a fresh visible-card array while preserving shared record objects.
+   *
+   * Task mode replaces the note-card stream with root tasks: visible note cards
+   * become empty so hydration, images and bulk selection stay idle, and the
+   * group segments describe the task rows instead.
+   */
   reprojectCards(): void {
+    this.deps.syncTaskView?.();
+    if (this.resolveViewMode() === "tasks") {
+      const result = this.deriveTaskArrangement();
+      this.streamMode = "tasks";
+      this.context.store.replaceVisibleCards([]);
+      this.context.store.replaceVisibleTaskCards(result.cards);
+      this.storeGroupSegments(result.segments);
+      return;
+    }
     const arrangement = this.deriveArrangement();
+    this.streamMode = "cards";
     this.context.store.replaceVisibleCards(arrangement.cards);
+    this.context.store.replaceVisibleTaskCards([]);
     this.storeGroupSegments(arrangement.segments);
+  }
+
+  getStreamMode(): CardStreamMode {
+    return this.streamMode;
+  }
+
+  private resolveViewMode(): CardStreamMode {
+    return resolveViewConfig(this.context.store.getScope(), this.context.getSettings()).viewMode === "tasks"
+      ? "tasks"
+      : "cards";
+  }
+
+  /** No task list is derived until the scope's task entries are complete. */
+  deriveTaskArrangement(): TaskPipelineResult {
+    if ((this.deps.getTaskStatus?.() ?? "idle") !== "ready") {
+      return EMPTY_TASK_RESULT;
+    }
+    const scope = this.context.store.getScope();
+    const settings = this.context.getSettings();
+    const config = resolveViewConfig(scope, settings);
+    return runTaskPipeline([...this.context.store.getBaseCards()], {
+      app: this.context.getApp(),
+      scope,
+      filterTags: settings.filter.tags,
+      propertyFilters: resolveSourceCapabilities(scope).browsePropertyFilter ? settings.filter.properties : [],
+      query: this.deps.getTaskQuery?.() ?? "",
+      sort: normalizeTaskSortSpec(config.taskSort),
+      group: normalizeTaskGroupSpec(config.taskGroup),
+      getTaskEntry: (path) => this.deps.getTaskEntry?.(path) ?? null,
+      today: this.deps.now?.() ?? new Date(),
+      firstDayOfWeek: this.deps.getFirstDayOfWeek?.() ?? resolveHostFirstDayOfWeek(),
+      strings: this.context.getUiStrings().sortGroup,
+      collapsedGroupKeys: this.deps.getTaskCollapsedGroupKeys?.() ?? new Set<string>(),
+    });
   }
 
   getGroupSegments(): readonly CardGroupSegment[] {
@@ -222,6 +301,11 @@ export class ProjectionController {
   refreshMetadataGroupBuckets(): boolean {
     const spec = this.resolveGroupSpec();
     if (!readsVaultMetadata(spec.dimension)) {
+      return false;
+    }
+    if (this.streamMode === "tasks") {
+      // No card header is rendered; drop the cache so returning to cards rebuilds it.
+      this.groupBucketCache = null;
       return false;
     }
 

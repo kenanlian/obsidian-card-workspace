@@ -10,6 +10,8 @@
   import type { AttachSearchHistorySuggest } from "./search-history-suggest";
   import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
+  import TaskCardItem from "./TaskCardItem.svelte";
+  import { formatIsoDate } from "../tasks";
   import GroupHeaderRow from "./GroupHeaderRow.svelte";
   import type {
     OpenNotePayload,
@@ -36,7 +38,7 @@
     type PanelRow,
   } from "./row-projection";
   import { pinnedHeaderAnchorOffset, resolveStickyGroupHeader } from "./sticky-group-header";
-  import { estimateRowHeight, resolveAppearanceLayoutIdentity } from "./appearance-layout";
+  import { estimateRowHeight, estimateTaskRowHeight, resolveAppearanceLayoutIdentity } from "./appearance-layout";
   import { buildRowPositions, createViewportRequest, getSpacerStyle, isBrowseFilterSwitch,
     readFiniteNumber, resolveBrowseFilterMode, resolvePanelScopeIdentity, type BrowseFilterMode } from "./virtual-layout";
   import type {
@@ -47,6 +49,11 @@
     NavContextMenuPayload,
     NavSectionId,
     NoteCardRecord,
+    TaskCardRecord,
+    TaskContextMenuPayload,
+    TaskDatePayload,
+    TaskOpenPayload,
+    TaskTogglePayload,
     ToolbarActionPayload,
   } from "./types";
   interface BulkSelectCardPayload {
@@ -128,6 +135,13 @@
     onSortChange?: (payload: SortChangePayload) => void;
     onGroupChange?: (payload: GroupChangePayload) => void;
     onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
+    onViewModeChange?: (payload: { mode: import("../settings").DefaultViewMode }) => void;
+    onTaskSortChange?: (payload: Partial<import("../task-view-settings").TaskSortSpec>) => void;
+    onTaskGroupChange?: (payload: Partial<import("../task-view-settings").TaskGroupSpec>) => void;
+    onTaskToggle?: (payload: TaskTogglePayload) => void;
+    onTaskDate?: (payload: TaskDatePayload) => void;
+    onTaskOpen?: (payload: TaskOpenPayload) => void;
+    onTaskContextMenu?: (payload: TaskContextMenuPayload) => void;
     onFilterChange?: (payload: FilterChangePayload) => void;
     onPropertyCommand?: (payload: PropertyCommandPayload) => void;
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
@@ -236,6 +250,13 @@
     onSortChange,
     onGroupChange,
     onGroupCollapseCommand,
+    onViewModeChange,
+    onTaskSortChange,
+    onTaskGroupChange,
+    onTaskToggle,
+    onTaskDate,
+    onTaskOpen,
+    onTaskContextMenu,
     onFilterChange,
     onPropertyCommand,
     onIncludeSubfoldersChange,
@@ -283,6 +304,18 @@
   const images = $derived(panelState.images);
   const cardRecords = $derived(cards.records);
   const groupSegments = $derived(cards.groupSegments);
+  // Task mode publishes `records: []`; row indices and group segments address `taskRecords`.
+  const taskMode = $derived(cards.streamMode === "tasks");
+  const taskRecords = $derived(cards.taskRecords ?? []);
+  const rowSource = $derived<readonly (NoteCardRecord | TaskCardRecord)[]>(taskMode ? taskRecords : cardRecords);
+  const taskBuilding = $derived(taskMode && (cards.taskStatus === "building" || (cards.loading && taskRecords.length === 0)));
+  const taskFiltered = $derived(search.committedQuery.trim().length > 0 || (scope.browseFilterState?.items.length ?? 0) > 0);
+  const pendingTaskIds = $derived<ReadonlySet<string>>(new Set(cards.pendingTaskIds ?? []));
+  // Recomputed on every cards publish; the day-rollover refresh republishes cards.
+  const todayIso = $derived.by(() => {
+    void cards;
+    return formatIsoDate(new Date());
+  });
 
   function isBlockedSearchState(state: PanelSearchState): boolean {
     return (
@@ -407,12 +440,12 @@
     onToggleNavSection?.(section);
   }
 
-  const estimatedRowHeight = $derived(estimateRowHeight(appearance));
+  const estimatedRowHeight = $derived(taskMode ? estimateTaskRowHeight(appearance) : estimateRowHeight(appearance));
   const OVERSCAN = 5;
   const USER_SCROLL_LOCK_MS = 180;
   const panelInstanceId = $props.id();
 
-  type ProjectedRow = PanelRow<NoteCardRecord>;
+  type ProjectedRow = PanelRow<NoteCardRecord | TaskCardRecord>;
   type ProjectedCardRow = Extract<ProjectedRow, { kind: "cards" }>;
 
   let viewportEl = $state<HTMLDivElement | null>(null);
@@ -478,7 +511,7 @@
     findIndexAtOffset(Math.max(0, scrollTop - listPaddingTop), rowPositions),
     findIndexAtOffset(Math.max(0, scrollTop + viewportHeight - listPaddingTop - 1), rowPositions), 0));
   const actualVisibleBounds = $derived(getHydrateRangeForPanelRows(projectedRows, actualVisibleWindow.start, actualVisibleWindow.end));
-  const hydratePaths = $derived(cardRecords
+  const hydratePaths = $derived(taskMode ? [] : cardRecords
     .slice(viewportBounds.start, viewportBounds.end)
     .map((card) => card.path));
 
@@ -487,6 +520,8 @@
   const imageBounds = $derived(getHydrateRangeForPanelRows(projectedRows, imageWindow.start, imageWindow.end));
   const imagePaths = $derived(cardRecords.slice(imageBounds.start, imageBounds.end).map((card) => card.path));
   $effect(() => {
+    // Task rows have no preview images; card requests resume on the way back.
+    if (taskMode) { lastImageRequestIdentity = null; return; }
     const mode = appearance.cardImageMode ?? "off";
     if (!viewportActive) {
       const identity = `hidden:${cards.generation}:${cards.sequenceRevision}:${images.requestVersion}`;
@@ -700,7 +735,9 @@
     const nextScopeIdentity = scopeIdentity;
     const revision = cards.sequenceRevision;
     const groupRevision = cards.groupRevision;
-    const nextArrangementIdentity = [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000");
+    const nextArrangementIdentity = taskMode
+      ? ["tasks", projection.taskSort?.field ?? "", projection.taskSort?.direction ?? "", projection.taskGroup?.dimension ?? "", projection.taskGroup?.timeGranularity ?? ""].join("\u0000")
+      : [projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000");
     const nextBrowseFilterMode = resolveBrowseFilterMode(scope, projection.activeFilterTags.length, nav.propertyFilterCount), columns = columnCount;
     untrack(() => {
       const scopeChanged = nextScopeIdentity !== lastProjectedScopeIdentity;
@@ -728,21 +765,21 @@
           preferCardIndex: isFlatLayout(projectedRows),
         });
       }
-      projectedRows = projectPanelRows(cards.records, groupSegments, columns);
+      projectedRows = projectPanelRows<NoteCardRecord | TaskCardRecord>(taskMode ? taskRecords : cards.records, groupSegments, columns);
       rebuildPositionsFrom(0);
     });
     void nextScopeIdentity; void revision; void groupRevision; void nextArrangementIdentity; void nextBrowseFilterMode;
   });
 
   $effect(() => {
-    if (!cards.loading && cardRecords.length > 0 && projectedRows.length === 0) {
-      projectedRows = projectPanelRows(cardRecords, groupSegments, columnCount);
+    if (!cards.loading && rowSource.length > 0 && projectedRows.length === 0) {
+      projectedRows = projectPanelRows(rowSource, groupSegments, columnCount);
       rebuildPositionsFrom(0);
     }
   });
 
   $effect(() => {
-    if (cards.loading) {
+    if (cards.loading || taskMode) {
       lastRequestIdentity = null;
       return;
     }
@@ -773,7 +810,7 @@
   });
 
   $effect(() => {
-    if (cardRecords.length === 0 && groupSegments.length === 0 && pendingLayoutAnchor) {
+    if (rowSource.length === 0 && groupSegments.length === 0 && pendingLayoutAnchor) {
       pendingLayoutAnchor = null;
     }
   });
@@ -784,8 +821,24 @@
     }
   });
 
+  // Task cards use a wider minimum column width, read only on viewport sync.
+  let lastSyncedTaskMode: boolean | null = null;
+  $effect(() => {
+    const mode = taskMode;
+    untrack(() => {
+      const previous = lastSyncedTaskMode;
+      lastSyncedTaskMode = mode;
+      if (previous !== null && previous !== mode && viewportEl) syncViewportMetrics(viewportEl);
+    });
+  });
+
   function getRowCards(row: ProjectedCardRow): NoteCardRecord[] {
     return cardRecords.slice(row.startIndex, row.endIndex);
+  }
+
+  /** Same-id task refreshes keep the projected rows; read current content by index. */
+  function getRowTasks(row: ProjectedCardRow): TaskCardRecord[] {
+    return taskRecords.slice(row.startIndex, row.endIndex);
   }
 
   function getCardImage(path: string): CardImageState | undefined {
@@ -795,7 +848,7 @@
   }
 
   function rowNeedsMeasuredHeight(row: ProjectedRow): boolean {
-    return row.kind === "group-header" || getRowCards(row).every((card) => card.hydrated || card.searchPreview?.status === "pending");
+    return taskMode || row.kind === "group-header" || getRowCards(row).every((card) => card.hydrated || card.searchPreview?.status === "pending");
   }
 
   function getGroupHeaderId(segmentIndex: number): string {
@@ -854,6 +907,8 @@
   }
   $effect(() => {
     void cardRecords;
+    void taskRecords;
+    void pendingTaskIds;
     // A hydrated single-line/empty preview may have the same height as its
     // loading text. Recheck it even when ResizeObserver has no new size event.
     forceRowMeasurement = true;
@@ -1014,6 +1069,9 @@
     onSortChange={handleSortChange}
     onGroupChange={handleGroupChange}
     onGroupCollapseCommand={handleGroupCollapseCommand}
+    {onViewModeChange}
+    {onTaskSortChange}
+    {onTaskGroupChange}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
     {onSearchHistoryCommand}
@@ -1022,15 +1080,36 @@
   <div class="fce-list-frame">
   <div
     class="fce-list {bulk.bulkMode ? 'is-bulk-mode' : ''}"
+    class:is-task-stream={taskMode}
     bind:this={viewportEl}
     use:bindViewport
     onscroll={handleScroll}
     onwheel={markUserScrolling}
-    aria-busy={cards.loading}
+    aria-busy={cards.loading || taskBuilding}
   >
-    {#if cards.loading && cardRecords.length === 0}
+    {#if taskBuilding}
+      <div class="fce-empty fce-task-building" role="status">
+        <div class="fce-task-skeleton" aria-hidden="true">
+          <span class="fce-task-skeleton-line"></span>
+          <span class="fce-task-skeleton-line"></span>
+          <span class="fce-task-skeleton-line"></span>
+        </div>
+        <div>{strings.tasks.view.building}</div>
+      </div>
+    {:else if taskMode && taskRecords.length === 0 && groupSegments.length === 0}
+      <div class="fce-empty fce-task-empty" data-empty-reason={taskFiltered ? "filtered" : "scope"}>
+        {#if taskFiltered}
+          <div>{strings.tasks.view.emptyFiltered}</div>
+          {#if scope.browseFilterState?.canClearEmptyResult}
+            <button type="button" onclick={() => handleToolbarAction({ action: "clear-browse-filters" })}>{strings.toolbar.clearBrowseFilters}</button>
+          {/if}
+        {:else}
+          <div>{strings.tasks.view.emptyScope}</div>
+        {/if}
+      </div>
+    {:else if !taskMode && cards.loading && cardRecords.length === 0}
       <div class="fce-empty">{strings.panel.loadingCards}</div>
-   {:else if cardRecords.length === 0 && groupSegments.length === 0}
+   {:else if !taskMode && cardRecords.length === 0 && groupSegments.length === 0}
     {#if isBlockedSearchState(search)}
       <div class="fce-empty fce-search-blocked">
         <div class="fce-search-blocked-title">{strings.panel.searchBlockedTitle}</div>
@@ -1078,6 +1157,23 @@
         >
           {#if row.segmentIndex !== -1}<span class="fce-sr-only" id={`${panelInstanceId}-row-${row.index}-label`}>{getGroupAriaLabel(row.segmentIndex)}</span>{/if}
           <div class="fce-wall-row-grid" style={`--fce-column-count: ${columnCount};`}>
+            {#if taskMode}
+              {#each getRowTasks(row) as task (task.path)}
+                <TaskCardItem
+                  {task}
+                  today={todayIso}
+                  {strings}
+                  {appearance}
+                  pendingIds={pendingTaskIds}
+                  touch={runtimeDevice !== "desktop"}
+                  searchQuery={search.committedQuery}
+                  {onTaskToggle}
+                  {onTaskDate}
+                  {onTaskOpen}
+                  {onTaskContextMenu}
+                />
+              {/each}
+            {:else}
             {#each getRowCards(row) as card (card.path)}
               <CardItem
                 {card}
@@ -1105,6 +1201,7 @@
                 {onCardDragStart}
               />
             {/each}
+            {/if}
           </div>
         </div>
         {/if}

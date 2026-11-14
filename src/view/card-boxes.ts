@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { normalizeOptionalBoxTaskView } from "../task-view-settings";
 import {
   normalizePropertyFilterClauses, propertyFilterClausesEqual, type PropertyFilterClause,
 } from "../property-filter-settings";
@@ -86,6 +87,7 @@ export function createCardBox(
     pinnedPaths: init.pinnedPaths ? [...init.pinnedPaths] : [],
     sort: init.sort ? { ...init.sort } : { ...DEFAULT_BOX_SORT },
     group: init.group ? { ...init.group } : { ...DEFAULT_GROUP_SPEC },
+    ...normalizeOptionalBoxTaskView(init),
   };
 }
 
@@ -134,6 +136,7 @@ export function duplicateCardBox(
     pinnedPaths: [...source.pinnedPaths],
     sort: { ...source.sort },
     group: { ...source.group },
+    ...normalizeOptionalBoxTaskView(source),
   };
 
   const index = boxes.findIndex((box) => box.id === id);

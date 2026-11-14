@@ -16,6 +16,9 @@ describe("internal resource budgets", () => {
     expect(resolveRuntimeResourceBudget("desktop").preview.concurrency).toBe(5);
     expect(resolveRuntimeResourceBudget("tablet").preview.concurrency).toBe(3);
     expect(resolveRuntimeResourceBudget("phone").preview.concurrency).toBe(2);
+    expect(resolveRuntimeResourceBudget("desktop").tasks).toEqual({ readers: 4 });
+    expect(resolveRuntimeResourceBudget("tablet").tasks).toEqual({ readers: 3 });
+    expect(resolveRuntimeResourceBudget("phone").tasks).toEqual({ readers: 2 });
   });
 
   it("copies, validates and freezes every group", () => {

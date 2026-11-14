@@ -2,7 +2,8 @@ import type { TFile } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
 import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 import type { SearchQueryExecutionState } from "../search";
-import type { LinksSortSpec, SortDirection, SortField } from "../settings";
+import type { DefaultViewMode, LinksSortSpec, SortDirection, SortField } from "../settings";
+import type { TaskGroupSpec, TaskSortSpec } from "../task-view-settings";
 import type { CardFileKind } from "./file-kind";
 import type { CardScope } from "./scope";
 import type { CardTaskSummary } from "./task-summary";
@@ -106,6 +107,13 @@ export interface CardBoxDefinition {
   pinnedPaths: string[];
   sort: CardBoxSortSpec;
   group: GroupSpec;
+  /**
+   * Optional task-view arrangement. Absent fields stay absent in persistence
+   * and resolve to cards, due/ascending, and no grouping.
+   */
+  viewMode?: DefaultViewMode;
+  taskSort?: TaskSortSpec;
+  taskGroup?: TaskGroupSpec;
 }
 
 export type FavoriteKind = "folder" | "file" | "tag" | "box";
@@ -139,6 +147,82 @@ export interface NoteCardRecord {
   referenceCount?: number;
   linkPreview?: import("./link-reference-preview").LinkReferencePreview;
 }
+
+/** Valid first-token ISO dates (`YYYY-MM-DD`) of one task line. */
+export interface TaskCardDates {
+  readonly created: string | null;
+  readonly done: string | null;
+  readonly due: string | null;
+}
+
+/** One checkbox task with its nested checkbox subtasks; non-task list items are dropped. */
+export interface TaskCardItem {
+  /** Zero-based line in the source file. */
+  readonly line: number;
+  readonly lineText: string;
+  /** Description without date tokens or a trailing block id. */
+  readonly text: string;
+  /** Any status other than a single space. */
+  readonly completed: boolean;
+  readonly statusChar: string;
+  readonly dates: TaskCardDates;
+  readonly children: readonly TaskCardItem[];
+}
+
+/** A root task projected as one row of the task stream. */
+export interface TaskCardRecord extends TaskCardItem {
+  readonly kind: "task";
+  /** Synthetic stable id `${filePath}::L${line}`; a row key, never a vault path. */
+  readonly path: string;
+  readonly filePath: string;
+  readonly file: TFile;
+  /** File basename. */
+  readonly fileTitle: string;
+  /** Index of the file in the current base card order. */
+  readonly fileOrder: number;
+}
+
+/** Checkbox intent for any task item; `completed` is the state the user saw before clicking. */
+export interface TaskTogglePayload {
+  id: string;
+  filePath: string;
+  line: number;
+  lineText: string;
+  completed: boolean;
+}
+
+/** Date chip intent; `value` is the current date of that kind and `anchor` positions the picker. */
+export interface TaskDatePayload {
+  id: string;
+  filePath: string;
+  line: number;
+  lineText: string;
+  kind: "created" | "done" | "due";
+  value: string | null;
+  anchor: HTMLElement;
+}
+
+/** Opens the note, at the task line when `line` and `lineText` are present. */
+export interface TaskOpenPayload {
+  filePath: string;
+  line?: number;
+  lineText?: string;
+  destination?: "new-tab";
+}
+
+export interface TaskContextMenuPayload {
+  filePath: string;
+  line: number;
+  lineText: string;
+  text: string;
+  mouseEvent?: MouseEvent;
+  position?: { x: number; y: number };
+}
+
+/** `building` only covers the initial task read for a scope or a task-mode entry. */
+export type TaskViewStatus = "idle" | "building" | "ready";
+
+export type CardStreamMode = DefaultViewMode;
 
 export interface CardHoverLinkPayload {
   path: string;

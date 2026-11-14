@@ -153,6 +153,12 @@ export class FolderCardView extends ItemView implements HoverParent {
       getSearchService: () => this.plugin.getSearchService(),
       getSearchSnapshot: () => this.plugin.getSearchSnapshot(),
       subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
+      getTaskIndex: () => this.plugin.getTaskIndex?.() ?? null,
+      getTaskWriteService: () => this.plugin.getTaskWriteService?.() ?? null,
+      openTaskNote: async (path, destination, location) => {
+        if (location) await this.plugin.openNoteFromCard(path, destination, location);
+        else await this.plugin.openNoteFromCard(path, destination);
+      },
     });
     this.panelModel = createPanelModel({
       capabilities: this.plugin.runtimePlatform?.capabilities,
@@ -251,7 +257,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       // Dormant filters never narrow a non-filterable scope, so they must not shape its copy.
       activeTagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
       baseCardCount: this.baseCards.length,
-      visibleCardCount: this.visibleCards.length,
+      visibleCardCount: this.visibleRowCount(),
       propertyClauseCount: capabilities.browsePropertyFilter ? settings.filter.properties.length : 0,
       emptySearchMessage: isBoxScope(this.cardScope) ? this.strings.toolbar.emptySearchScope : undefined,
       emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks
@@ -358,8 +364,23 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.hostEl = null;
   }
 
+  /** Rows of the stream the last projection produced: note cards or root tasks. */
+  private visibleRowCount(): number {
+    return this.modules.projection.getStreamMode() === "tasks"
+      ? this.store.getVisibleTaskCards().length
+      : this.visibleCards.length;
+  }
+
   handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
     const action = detail.action;
+
+    if (action === "view-mode") {
+      void this.modules.arrangementActions.toggleViewMode();
+      return;
+    }
+
+    // Bulk operations are unavailable in the task stream.
+    if (typeof action === "string" && action.startsWith("bulk") && this.modules.taskView.isTaskMode()) return;
 
     if (action === "remove-browse-filter") {
       if (!detail.filter) return;
@@ -582,6 +603,8 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.modules.images.dispose();
     this.modules.hoverPreview.dispose();
     this.modules.groupCollapse.dispose();
+    const taskViewReport = this.modules.taskView.dispose();
+    this.modules.taskActions.dispose();
     this.modules.timeGroup.dispose();
     this.modules.property.dispose();
 
@@ -590,7 +613,8 @@ export class FolderCardView extends ItemView implements HoverParent {
         (searchReport.cancelledDebounce ?? false)
         || (navLayoutReport.cancelledDebounce ?? false)
         || (scopeReport.cancelledDebounce ?? false)
-        || (hydrationReport.cancelledDebounce ?? false),
+        || (hydrationReport.cancelledDebounce ?? false)
+        || (taskViewReport.cancelledDebounce ?? false),
       clearedQueuedRequest: scopeReport.clearedQueuedRequest ?? false,
       clearedPendingHydration: hydrationReport.clearedPendingHydration ?? false,
     };
@@ -705,7 +729,7 @@ export class FolderCardView extends ItemView implements HoverParent {
         tagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
         propertyValueCount: capabilities.browsePropertyFilter
           ? settings.filter.properties.reduce((count, clause) => count + clause.values.length, 0) : 0,
-        canClearEmptyResult: this.baseCards.length > 0 && this.visibleCards.length === 0
+        canClearEmptyResult: this.baseCards.length > 0 && this.visibleRowCount() === 0
           && ((capabilities.browseTagFilter && settings.filter.tags.length > 0)
             || (capabilities.browsePropertyFilter && settings.filter.properties.length > 0)),
       },
@@ -717,11 +741,14 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   private buildCardsGroup(): PanelModelState["cards"] {
     const scope = this.modules.scopeController;
+    const streamMode = this.modules.projection.getStreamMode();
     return buildCardsPanelGroup({
       records: this.visibleCards, searchMatchCountsByPath: this.modules.search.getMatchCountsByPath(),
       selectedPath: this.selectedPath, loading: scope.isLoading(), generation: this.epochs.load.value,
       sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
       groupSegments: this.modules.projection.getGroupSegments(), groupRevision: this.modules.projection.getGroupRevision(),
+      streamMode, taskRecords: this.store.getVisibleTaskCards(), taskStatus: this.modules.taskView.getStatus(),
+      pendingTaskIds: streamMode === "tasks" ? this.modules.taskActions.getPendingIds() : [],
     });
   }
 
@@ -739,14 +766,16 @@ export class FolderCardView extends ItemView implements HoverParent {
 
   private buildProjectionGroup(): PanelModelState["projection"] {
     const settings = this.plugin.getSettings(); const scope = this.store.getScope();
-    const { sort, pinnedPaths, group } = resolveViewConfig(scope, settings);
+    const { sort, pinnedPaths, group, viewMode, taskSort, taskGroup } = resolveViewConfig(scope, settings);
     const projection = this.modules.projection;
+    const capabilities = resolveSourceCapabilities(scope);
     return buildProjectionPanelGroup({
       sortField: sort.field, sortDirection: sort.direction,
       deriveAvailableTags: () => projection.deriveAvailableTags(), deriveTagCounts: () => projection.deriveTagCounts(),
       activeFilterTags: settings.filter.tags, pinnedPaths, group,
-      availableGroupDimensions: [...resolveSourceCapabilities(scope).groupDimensions],
+      availableGroupDimensions: [...capabilities.groupDimensions],
       groupSegmentCount: projection.getGroupSegments().length,
+      viewMode, taskSort, taskGroup, taskViewAvailable: capabilities.taskView,
     });
   }
 

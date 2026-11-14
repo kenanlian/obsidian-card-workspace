@@ -8,7 +8,7 @@ import {
 } from "./source-capabilities";
 
 describe("resolveSourceCapabilities", () => {
-  it("returns the exact six-field capability table for folder scope", () => {
+  it("returns the exact capability table for folder scope", () => {
     expect(resolveSourceCapabilities(createFolderScope("notes/ideas", true))).toEqual({
       arrangementOwner: { kind: "global" },
       browseTagFilter: true,
@@ -16,10 +16,11 @@ describe("resolveSourceCapabilities", () => {
       supportsIncludeSubfolders: true,
       supportsBoxRuleSeeding: true,
       groupDimensions: ["none", "folder", "tag", "task", "property", "ctime", "mtime"],
+      taskView: true,
     });
   });
 
-  it("returns the exact six-field capability table for vault-root folder scope", () => {
+  it("returns the exact capability table for vault-root folder scope", () => {
     expect(resolveSourceCapabilities(createFolderScope("/", false))).toEqual({
       arrangementOwner: { kind: "global" },
       browseTagFilter: true,
@@ -27,10 +28,11 @@ describe("resolveSourceCapabilities", () => {
       supportsIncludeSubfolders: true,
       supportsBoxRuleSeeding: true,
       groupDimensions: ["none", "folder", "tag", "task", "property", "ctime", "mtime"],
+      taskView: true,
     });
   });
 
-  it("returns the exact six-field capability table for box scope", () => {
+  it("returns the exact capability table for box scope", () => {
     expect(resolveSourceCapabilities(createBoxScope("box-42"))).toEqual({
       arrangementOwner: { kind: "box", boxId: "box-42" },
       browseTagFilter: true,
@@ -38,10 +40,18 @@ describe("resolveSourceCapabilities", () => {
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
       groupDimensions: ["none", "folder", "tag", "task", "property", "box-rule", "ctime", "mtime"],
+      taskView: true,
     });
   });
 
-  it("returns the exact six-field capability table for links scope", () => {
+  it("enables task view for folders and boxes and disables it for links", () => {
+    expect(resolveSourceCapabilities(createFolderScope("", true)).taskView).toBe(true);
+    expect(resolveSourceCapabilities(createBoxScope("box-1")).taskView).toBe(true);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks")).taskView).toBe(false);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "outgoing")).taskView).toBe(false);
+  });
+
+  it("returns the exact capability table for links scope", () => {
     const expected = {
       arrangementOwner: { kind: "global" as const },
       browseTagFilter: false,
@@ -49,6 +59,7 @@ describe("resolveSourceCapabilities", () => {
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
       groupDimensions: FOLDER_GROUP_DIMENSIONS,
+      taskView: false,
     };
 
     expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks"))).toEqual(expected);

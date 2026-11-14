@@ -1,8 +1,18 @@
 import { isTimeGroupDimension, isTimeGroupGranularity, normalizeGroupSpec, type GroupSpec } from "../../card-grouping-settings";
 import { normalizePropertyKey } from "../../property-filter-settings";
-import type { LinksSortField, SortDirection } from "../../settings";
+import type { DefaultViewMode, LinksSortField, SortDirection } from "../../settings";
+import {
+  normalizeTaskGroupSpec,
+  normalizeTaskSortSpec,
+  type TaskGroupSpec,
+  type TaskSortSpec,
+} from "../../task-view-settings";
 import { compareCards } from "../card-sort";
-import type { GroupCollapseController } from "../controllers/GroupCollapseController";
+import {
+  taskGroupCollapseSpec,
+  type GroupCollapseController,
+  type GroupCollapseSpec,
+} from "../controllers/GroupCollapseController";
 import type { SourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition } from "../types";
 import { groupTransitionRequiresReload } from "../update-intent";
@@ -39,6 +49,16 @@ export interface ArrangementActionsDeps {
   isScopeSettled?: () => boolean;
   groupCollapse: GroupCollapseController;
   getGroupSegmentKeys: () => readonly string[];
+  /** Entering task mode leaves bulk mode; the following settings update publishes it. */
+  exitBulkMode?: () => void;
+}
+
+function taskSortsEqual(left: TaskSortSpec, right: TaskSortSpec): boolean {
+  return left.field === right.field && left.direction === right.direction;
+}
+
+function taskGroupsEqual(left: TaskGroupSpec, right: TaskGroupSpec): boolean {
+  return left.dimension === right.dimension && left.timeGranularity === right.timeGranularity;
 }
 
 /**
@@ -191,9 +211,94 @@ export class ArrangementActions {
     await this.deps.saveSettings({ group });
   }
 
+  private resolveTaskConfig(): { viewMode: DefaultViewMode; taskSort: TaskSortSpec; taskGroup: TaskGroupSpec } {
+    const config = resolveViewConfig(this.deps.context.store.getScope(), this.deps.context.getSettings());
+    return {
+      viewMode: config.viewMode === "tasks" ? "tasks" : "cards",
+      taskSort: normalizeTaskSortSpec(config.taskSort),
+      taskGroup: normalizeTaskGroupSpec(config.taskGroup),
+    };
+  }
+
+  /**
+   * Persists the stream mode to its owner: the active Box definition, or the
+   * global `defaultView` for folders. Sources without task view ignore it.
+   */
+  async setViewMode(mode: DefaultViewMode): Promise<void> {
+    if (!this.deps.resolveCapabilities().taskView) return;
+    if (this.resolveTaskConfig().viewMode === mode) return;
+    if (mode === "tasks") this.deps.exitBulkMode?.();
+    const owner = this.resolveArrangementOwner();
+    if (owner.kind === "box") {
+      await this.deps.updateActiveBox((box) => ({ ...box, viewMode: mode }));
+      return;
+    }
+    await this.deps.saveSettings({ defaultView: mode });
+  }
+
+  toggleViewMode(): Promise<void> {
+    return this.setViewMode(this.resolveTaskConfig().viewMode === "tasks" ? "cards" : "tasks");
+  }
+
+  async setTaskSort(spec: TaskSortSpec): Promise<void> {
+    if (!this.deps.resolveCapabilities().taskView) return;
+    const next = normalizeTaskSortSpec(spec);
+    if (taskSortsEqual(this.resolveTaskConfig().taskSort, next)) return;
+    const owner = this.resolveArrangementOwner();
+    if (owner.kind === "box") {
+      await this.deps.updateActiveBox((box) => ({ ...box, taskSort: next }));
+      return;
+    }
+    await this.deps.saveSettings({ taskSort: next });
+  }
+
+  async setTaskGroup(spec: TaskGroupSpec): Promise<void> {
+    if (!this.deps.resolveCapabilities().taskView) return;
+    const next = normalizeTaskGroupSpec(spec);
+    if (taskGroupsEqual(this.resolveTaskConfig().taskGroup, next)) return;
+    const owner = this.resolveArrangementOwner();
+    if (owner.kind === "box") {
+      await this.deps.updateActiveBox((box) => ({ ...box, taskGroup: next }));
+      return;
+    }
+    await this.deps.saveSettings({ taskGroup: next });
+  }
+
+  /** Panel intent: `{ mode: "cards" | "tasks" }`; anything else is ignored. */
+  onViewModeChange(detail: { mode?: unknown }): Promise<void> {
+    return detail.mode === "cards" || detail.mode === "tasks" ? this.setViewMode(detail.mode) : Promise.resolve();
+  }
+
+  /** Panel intent; an omitted or unrecognized field keeps its current value. */
+  onTaskSortChange(detail: { field?: unknown; direction?: unknown }): Promise<void> {
+    const current = this.resolveTaskConfig().taskSort;
+    const candidate = normalizeTaskSortSpec({ field: detail.field, direction: detail.direction });
+    return this.setTaskSort({
+      field: candidate.field === detail.field ? candidate.field : current.field,
+      direction: candidate.direction === detail.direction ? candidate.direction : current.direction,
+    });
+  }
+
+  /** Panel intent; granularity applies to `created` / `done` and falls back to the current one. */
+  onTaskGroupChange(detail: { dimension?: unknown; timeGranularity?: unknown }): Promise<void> {
+    const current = this.resolveTaskConfig().taskGroup;
+    const dimension = normalizeTaskGroupSpec({ dimension: detail.dimension }).dimension === detail.dimension
+      ? detail.dimension as TaskGroupSpec["dimension"]
+      : current.dimension;
+    return this.setTaskGroup(normalizeTaskGroupSpec({
+      dimension,
+      timeGranularity: isTimeGroupGranularity(detail.timeGranularity) ? detail.timeGranularity : current.timeGranularity,
+    }));
+  }
+
+  private resolveCollapseSpec(): GroupCollapseSpec {
+    const tasks = this.resolveTaskConfig();
+    return tasks.viewMode === "tasks" ? taskGroupCollapseSpec(tasks.taskGroup) : this.resolveGroupSpec();
+  }
+
   /** Collapse state is runtime-only: never persisted, never a settings write. */
   onGroupCollapseCommand(detail: { command?: unknown; key?: unknown }): void {
-    const spec = this.resolveGroupSpec();
+    const spec = this.resolveCollapseSpec();
     const collapse = this.deps.groupCollapse;
     const scope = this.deps.context.store.getScope();
 

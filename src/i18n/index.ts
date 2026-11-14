@@ -18,6 +18,7 @@ import { panelStrings } from "./panel";
 import { propertyStrings } from "./property";
 import { settingTabStrings, type SettingTabStrings } from "./settingTab";
 import { sortGroupStrings } from "./sortGroup";
+import { taskStrings } from "./tasks";
 import { toolbarStrings, type ToolbarStrings } from "./toolbar";
 import type { LocalizedOption, UiLanguage, UiStrings } from "./types";
 import { viewStrings } from "./view";
@@ -37,6 +38,7 @@ export type { PanelStrings } from "./panel";
 export type { PropertyStrings } from "./property";
 export type { SettingTabStrings } from "./settingTab";
 export type { SortGroupStrings } from "./sortGroup";
+export type { TaskDatePickerStrings, TaskStrings } from "./tasks";
 export type { ToolbarStrings } from "./toolbar";
 export type { ViewStrings } from "./view";
 
@@ -71,6 +73,7 @@ const EN: UiStrings = {
   desktopShell: desktopShellStrings.en,
   box: boxStrings.en,
   links: linksStrings.en,
+  tasks: taskStrings.en,
   view: viewStrings.en,
   app: appStrings.en,
 };
@@ -93,6 +96,7 @@ const ZH: UiStrings = {
   desktopShell: desktopShellStrings.zh,
   box: boxStrings.zh,
   links: linksStrings.zh,
+  tasks: taskStrings.zh,
   view: viewStrings.zh,
   app: appStrings.zh,
 };

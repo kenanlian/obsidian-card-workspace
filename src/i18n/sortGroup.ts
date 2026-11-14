@@ -38,6 +38,15 @@ export interface SortGroupStrings {
   bucketNoTask: string;
   bucketManual: string;
   bucketPropertyUnassigned: string;
+  /** Task-stream group dimensions and bucket headers. */
+  taskGroup: {
+    dimensions: Record<"file" | "status" | "due" | "created" | "done", string>;
+    statusIncomplete: string;
+    statusCompleted: string;
+    dueBuckets: Record<"overdue" | "today" | "tomorrow" | "thisWeek" | "later" | "none", string>;
+    noCreatedDate: string;
+    noDoneDate: string;
+  };
 }
 
 export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
@@ -80,6 +89,14 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     bucketNoTask: "No tasks",
     bucketManual: "Manually added",
     bucketPropertyUnassigned: "Unassigned",
+    taskGroup: {
+      dimensions: { file: "File", status: "Status", due: "Due date", created: "Created date", done: "Completed date" },
+      statusIncomplete: "Incomplete",
+      statusCompleted: "Completed",
+      dueBuckets: { overdue: "Overdue", today: "Today", tomorrow: "Tomorrow", thisWeek: "This week", later: "Later", none: "No due date" },
+      noCreatedDate: "No created date",
+      noDoneDate: "No completed date",
+    },
   },
   zh: {
     title: "排序与分组",
@@ -119,5 +136,13 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     bucketNoTask: "无任务",
     bucketManual: "手动添加",
     bucketPropertyUnassigned: "未赋值",
+    taskGroup: {
+      dimensions: { file: "文件", status: "状态", due: "截止日期", created: "创建日期", done: "完成日期" },
+      statusIncomplete: "未完成",
+      statusCompleted: "已完成",
+      dueBuckets: { overdue: "已逾期", today: "今天", tomorrow: "明天", thisWeek: "本周", later: "以后", none: "无截止日期" },
+      noCreatedDate: "无创建日期",
+      noDoneDate: "无完成日期",
+    },
   },
 };

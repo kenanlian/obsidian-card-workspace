@@ -17,6 +17,7 @@ import {
   UnsupportedSettingsSchemaError,
 } from "./settings-schema";
 import { DEFAULT_GROUP_SPEC } from "./card-grouping-settings";
+import { DEFAULT_TASK_GROUP, DEFAULT_TASK_SORT } from "./task-view-settings";
 import { serializeSettings, type PersistedSettingsV2 } from "./services/SettingsStore";
 
 // ---------------------------------------------------------------------------
@@ -1157,8 +1158,15 @@ describe("card grouping settings normalization", () => {
         cardImageMode: "right", cardImageFit: "cover",
         uiFontSize: "default", uiDensity: "default", cardStyle: "default",
         group: DEFAULT_GROUP_SPEC,
+        taskSort: { field: "due", direction: "asc" },
+        taskGroup: { dimension: "none" },
         locateLinkCardOnOpen: false,
         enableHeadingDragInsert: false,
+        enhancedTaskEditing: true,
+        autoCreatedDate: true,
+        autoDoneDate: true,
+        taskDateButtons: "compact",
+        taskDateHideSource: false,
         boxNewNoteFolderPath: "",
         quickInput: DEFAULT_SETTINGS.quickInput,
         quickInputTemplateId: null,
@@ -1438,13 +1446,16 @@ describe("migrateSettings — V47 schema versions", () => {
     ).toEqual({ ...DEFAULT_SETTINGS, previewLines: 7 });
   });
 
-  it("keeps PartialPluginSettings deep-partial for sort and filter", () => {
+  it("keeps PartialPluginSettings deep-partial for sort, task sort, and filter", () => {
+    const current = mergeSettings(DEFAULT_SETTINGS, { taskSort: { field: "due", direction: "desc" } });
     const patch: PartialPluginSettings = {
       sort: { field: "name" },
+      taskSort: { field: "file" },
       filter: { tags: ["work"] },
     };
-    const result = mergeSettings(DEFAULT_SETTINGS, patch);
+    const result = mergeSettings(current, patch);
     expect(result.sort).toEqual({ field: "name", direction: "desc" });
+    expect(result.taskSort).toEqual({ field: "file", direction: "desc" });
     expect(result.filter.tags).toEqual(["work"]);
   });
 
@@ -1637,15 +1648,157 @@ describe("property settings normalization", () => {
   });
 });
 
+describe("task view settings", () => {
+  it("defaults missing task view preferences without bumping the schema", () => {
+    const settings = normalizeSettings({});
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
+    expect(settings.defaultView).toBe("cards");
+    expect(settings.taskSort).toEqual(DEFAULT_TASK_SORT);
+    expect(settings.taskSort).not.toBe(DEFAULT_TASK_SORT);
+    expect(settings.taskGroup).toEqual(DEFAULT_TASK_GROUP);
+    expect(settings.enhancedTaskEditing).toBe(true);
+    expect(settings.autoCreatedDate).toBe(true);
+    expect(settings.autoDoneDate).toBe(true);
+    expect(settings.taskDateButtons).toBe("compact");
+    expect(settings.taskDateHideSource).toBe(false);
+  });
+
+  it("accepts tasks as a default view and rejects anything else", () => {
+    expect(normalizeSettings({ defaultView: "tasks" }).defaultView).toBe("tasks");
+    expect(normalizeSettings({ defaultView: "cards" }).defaultView).toBe("cards");
+    for (const value of [undefined, null, "task", "Tasks", 1, true]) {
+      expect(normalizeSettings({ defaultView: value }).defaultView).toBe("cards");
+    }
+  });
+
+  it("normalizes invalid task view preferences to defaults", () => {
+    const settings = normalizeSettings({
+      taskSort: { field: "nope", direction: "sideways" },
+      taskGroup: "status",
+      enhancedTaskEditing: "yes",
+      autoCreatedDate: 1,
+      autoDoneDate: null,
+      taskDateButtons: "wide",
+      taskDateHideSource: "true",
+    });
+    expect(settings.taskSort).toEqual(DEFAULT_TASK_SORT);
+    expect(settings.taskGroup).toEqual(DEFAULT_TASK_GROUP);
+    expect(settings.enhancedTaskEditing).toBe(true);
+    expect(settings.autoCreatedDate).toBe(true);
+    expect(settings.autoDoneDate).toBe(true);
+    expect(settings.taskDateButtons).toBe("compact");
+    expect(settings.taskDateHideSource).toBe(false);
+  });
+
+  it("fills created and done granularity and drops it for other task group dimensions", () => {
+    expect(mergeSettings(DEFAULT_SETTINGS, { taskGroup: { dimension: "created" } }).taskGroup)
+      .toEqual({ dimension: "created", timeGranularity: "day" });
+    expect(mergeSettings(DEFAULT_SETTINGS, {
+      taskGroup: { dimension: "due", timeGranularity: "week" },
+    }).taskGroup).toEqual({ dimension: "due" });
+  });
+
+  it("round-trips task view preferences through the preferences layer", () => {
+    const settings = mergeSettings(DEFAULT_SETTINGS, {
+      defaultView: "tasks",
+      taskSort: { field: "text", direction: "desc" },
+      taskGroup: { dimension: "done", timeGranularity: "month" },
+      enhancedTaskEditing: false,
+      autoCreatedDate: false,
+      autoDoneDate: false,
+      taskDateButtons: "full",
+      taskDateHideSource: true,
+    });
+    const document = serializeSettings(settings);
+    expect(document.schemaVersion).toBe(2);
+    expect(document.preferences).toMatchObject({
+      defaultView: "tasks",
+      taskSort: { field: "text", direction: "desc" },
+      taskGroup: { dimension: "done", timeGranularity: "month" },
+      enhancedTaskEditing: false,
+      taskDateButtons: "full",
+      taskDateHideSource: true,
+    });
+    expect(document.workspace).not.toHaveProperty("taskSort");
+    expect(document.workspace).not.toHaveProperty("defaultView");
+    expect(document.userData).not.toHaveProperty("taskGroup");
+    expect(document.userData).not.toHaveProperty("enhancedTaskEditing");
+    expect(migrateSettings(document)).toEqual(settings);
+  });
+
+  it("round-trips box task view fields and leaves them absent when omitted", () => {
+    const withFields = mergeSettings(DEFAULT_SETTINGS, {
+      boxes: [{
+        id: "box-1",
+        name: "Inbox",
+        rules: [],
+        manualPaths: [],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "mtime", direction: "desc" },
+        group: DEFAULT_GROUP_SPEC,
+        viewMode: "tasks",
+        taskSort: { field: "file", direction: "desc" },
+        taskGroup: { dimension: "created", timeGranularity: "week" },
+      }],
+    });
+    const restored = migrateSettings(JSON.parse(JSON.stringify(serializeSettings(withFields))));
+    expect(restored.boxes[0]).toMatchObject({
+      viewMode: "tasks",
+      taskSort: { field: "file", direction: "desc" },
+      taskGroup: { dimension: "created", timeGranularity: "week" },
+    });
+
+    const without = mergeSettings(DEFAULT_SETTINGS, {
+      boxes: [{
+        id: "box-1",
+        name: "Inbox",
+        rules: [],
+        manualPaths: [],
+        excludedPaths: [],
+        pinnedPaths: [],
+        sort: { field: "mtime", direction: "desc" },
+        group: DEFAULT_GROUP_SPEC,
+      }],
+    });
+    const restoredWithout = migrateSettings(JSON.parse(JSON.stringify(serializeSettings(without))));
+    expect(restoredWithout.boxes[0]).not.toHaveProperty("viewMode");
+    expect(restoredWithout.boxes[0]).not.toHaveProperty("taskSort");
+    expect(restoredWithout.boxes[0]).not.toHaveProperty("taskGroup");
+  });
+
+  it("normalizes invalid box task view fields without throwing", () => {
+    const settings = normalizeSettings({
+      boxes: [{
+        id: "box-1",
+        name: "Inbox",
+        viewMode: "board",
+        taskSort: null,
+        taskGroup: { dimension: "folder", timeGranularity: "century" },
+      }],
+    });
+    expect(settings.boxes[0]?.viewMode).toBe("cards");
+    expect(settings.boxes[0]?.taskSort).toEqual(DEFAULT_TASK_SORT);
+    expect(settings.boxes[0]?.taskGroup).toEqual(DEFAULT_TASK_GROUP);
+  });
+});
+
 describe("settings layer manifest (C4)", () => {
   const expectedManifest: Record<string, string> = {
     sort: "preferences",
     linksSort: "preferences",
     backlinkSnippetCount: "preferences",
     group: "preferences",
+    taskSort: "preferences",
+    taskGroup: "preferences",
     fileVisibility: "preferences",
     includeSubfolders: "preferences",
     defaultView: "preferences",
+    enhancedTaskEditing: "preferences",
+    autoCreatedDate: "preferences",
+    autoDoneDate: "preferences",
+    taskDateButtons: "preferences",
+    taskDateHideSource: "preferences",
     defaultCardOpenBehavior: "preferences",
     locateLinkCardOnOpen: "preferences",
     dragInsertAction: "preferences",
@@ -1761,6 +1914,9 @@ describe("non-default v2 round trip per layer (C4)", () => {
     pinnedPaths: [],
     sort: { field: "mtime", direction: "desc" },
     group: DEFAULT_GROUP_SPEC,
+    viewMode: "tasks",
+    taskSort: { field: "file", direction: "desc" },
+    taskGroup: { dimension: "created", timeGranularity: "week" },
   };
 
   const nonDefault: PluginSettings = mergeSettings(DEFAULT_SETTINGS, {
@@ -1771,8 +1927,14 @@ describe("non-default v2 round trip per layer (C4)", () => {
     filter: { tags: ["work"], properties: [statusClause] },
     pinnedPaths: ["Projects/a.md"],
     includeSubfolders: false,
-    // "cards" is the only valid value; it still pins the preferences-layer claim.
-    defaultView: "cards",
+    defaultView: "tasks",
+    taskSort: { field: "text", direction: "desc" },
+    taskGroup: { dimension: "done", timeGranularity: "month" },
+    enhancedTaskEditing: false,
+    autoCreatedDate: false,
+    autoDoneDate: false,
+    taskDateButtons: "full",
+    taskDateHideSource: true,
     defaultCardOpenBehavior: "new-tab",
     locateLinkCardOnOpen: true,
     enableHeadingDragInsert: true,
@@ -1837,9 +1999,16 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["backlinkSnippetCount", (d) => d.preferences.backlinkSnippetCount, "all"],
     ["sort", (d) => d.preferences.sort, { field: "name", direction: "asc" }],
     ["group", (d) => d.preferences.group, { dimension: "tag", orderBy: "count", orderDirection: "desc" }],
+    ["taskSort", (d) => d.preferences.taskSort, { field: "text", direction: "desc" }],
+    ["taskGroup", (d) => d.preferences.taskGroup, { dimension: "done", timeGranularity: "month" }],
     ["fileVisibility", (d) => d.preferences.fileVisibility, "all"],
     ["includeSubfolders", (d) => d.preferences.includeSubfolders, false],
-    ["defaultView", (d) => d.preferences.defaultView, "cards"],
+    ["defaultView", (d) => d.preferences.defaultView, "tasks"],
+    ["enhancedTaskEditing", (d) => d.preferences.enhancedTaskEditing, false],
+    ["autoCreatedDate", (d) => d.preferences.autoCreatedDate, false],
+    ["autoDoneDate", (d) => d.preferences.autoDoneDate, false],
+    ["taskDateButtons", (d) => d.preferences.taskDateButtons, "full"],
+    ["taskDateHideSource", (d) => d.preferences.taskDateHideSource, true],
     ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],
     ["locateLinkCardOnOpen", (d) => d.preferences.locateLinkCardOnOpen, true],
     ["dragInsertAction", (d) => d.preferences.dragInsertAction, "wiki"],

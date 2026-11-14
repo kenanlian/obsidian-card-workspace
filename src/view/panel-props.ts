@@ -135,6 +135,27 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     onGroupCollapseCommand: (detail: { command?: unknown; key?: unknown }) => {
       view.modules.arrangementActions.onGroupCollapseCommand(detail);
     },
+    onViewModeChange: (detail: { mode?: unknown }) => {
+      void view.modules.arrangementActions.onViewModeChange(detail);
+    },
+    onTaskSortChange: (detail: { field?: unknown; direction?: unknown }) => {
+      void view.modules.arrangementActions.onTaskSortChange(detail);
+    },
+    onTaskGroupChange: (detail: { dimension?: unknown; timeGranularity?: unknown }) => {
+      void view.modules.arrangementActions.onTaskGroupChange(detail);
+    },
+    onTaskToggle: (detail: { filePath?: unknown; line?: unknown; lineText?: unknown; completed?: unknown }) => {
+      void view.modules.taskActions.toggle(detail);
+    },
+    onTaskDate: (detail: { filePath?: unknown; line?: unknown; lineText?: unknown; kind?: unknown; value?: unknown; anchor?: unknown }) => {
+      view.modules.taskActions.openDatePicker(detail);
+    },
+    onTaskOpen: (detail: { filePath?: unknown; line?: unknown; lineText?: unknown; destination?: unknown }) => {
+      view.modules.taskActions.open(detail);
+    },
+    onTaskContextMenu: (detail: { filePath?: unknown; line?: unknown; lineText?: unknown; text?: unknown; mouseEvent?: unknown; position?: unknown }) => {
+      view.modules.taskActions.openContextMenu(detail);
+    },
     onFilterChange: (detail: { tags?: unknown }) => {
       void view.modules.tagActions.onFilterChange(detail);
     },

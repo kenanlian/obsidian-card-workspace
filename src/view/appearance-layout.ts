@@ -2,6 +2,8 @@ import type { UiDensity, UiFontSize } from "../settings";
 import type { PanelAppearanceState } from "./panel-model";
 
 const BASE_ESTIMATED_ROW_HEIGHT = 232;
+/** A root task with one chip line and the file footer, plus the wall gap. */
+const BASE_ESTIMATED_TASK_ROW_HEIGHT = 104;
 
 /** Mirrors the `--fce-font-scale` presets in styles.css; only feeds the row estimate. */
 const FONT_SCALE: Record<UiFontSize, number> = { small: 0.9, default: 1, large: 1.1, "x-large": 1.2 };
@@ -18,4 +20,10 @@ export function resolveAppearanceLayoutIdentity(appearance: PanelAppearanceState
 export function estimateRowHeight(appearance: PanelAppearanceState): number {
   const scale = FONT_SCALE[appearance.uiFontSize ?? "default"];
   return Math.round(BASE_ESTIMATED_ROW_HEIGHT * scale + DENSITY_ROW_DELTA[appearance.uiDensity ?? "default"]);
+}
+
+/** Unmeasured task-stream row height; task rows are always measured once mounted. */
+export function estimateTaskRowHeight(appearance: PanelAppearanceState): number {
+  const scale = FONT_SCALE[appearance.uiFontSize ?? "default"];
+  return Math.round(BASE_ESTIMATED_TASK_ROW_HEIGHT * scale + DENSITY_ROW_DELTA[appearance.uiDensity ?? "default"] / 2);
 }
