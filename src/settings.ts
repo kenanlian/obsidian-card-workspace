@@ -11,9 +11,11 @@ import {
   DEFAULT_TASK_SORT,
   normalizeDefaultViewMode,
   normalizeOptionalBoxTaskView,
+  normalizeTaskDateButtonStyle,
   normalizeTaskDateButtonsMode,
   normalizeTaskGroupSpec,
   normalizeTaskSortSpec,
+  type TaskDateButtonStyle,
   type TaskDateButtonsMode,
   type TaskGroupSpec,
   type TaskSortSpec,
@@ -211,6 +213,7 @@ export interface PluginSettings {
   autoCreatedDate: boolean;
   autoDoneDate: boolean;
   taskDateButtons: TaskDateButtonsMode;
+  taskDateButtonStyle: TaskDateButtonStyle;
   /** Hides task date text in Live Preview; the date buttons show the dates. */
   taskDateHideSource: boolean;
   /** Task cards show their source note in the footer. */
@@ -296,6 +299,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoCreatedDate: true,
   autoDoneDate: true,
   taskDateButtons: "compact",
+  taskDateButtonStyle: "chips",
   taskDateHideSource: false,
   taskCardShowFile: false,
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
@@ -723,6 +727,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     autoCreatedDate: normalizeBooleanSetting(data.autoCreatedDate, DEFAULT_SETTINGS.autoCreatedDate),
     autoDoneDate: normalizeBooleanSetting(data.autoDoneDate, DEFAULT_SETTINGS.autoDoneDate),
     taskDateButtons: normalizeTaskDateButtonsMode(data.taskDateButtons),
+    taskDateButtonStyle: normalizeTaskDateButtonStyle(data.taskDateButtonStyle),
     taskDateHideSource: normalizeBooleanSetting(data.taskDateHideSource, DEFAULT_SETTINGS.taskDateHideSource),
     taskCardShowFile: normalizeBooleanSetting(data.taskCardShowFile, DEFAULT_SETTINGS.taskCardShowFile),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),

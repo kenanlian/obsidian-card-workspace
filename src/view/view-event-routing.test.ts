@@ -113,6 +113,7 @@ function propertySettings(overrides: {
     autoCreatedDate: true,
     autoDoneDate: true,
     taskDateButtons: "compact",
+    taskDateButtonStyle: "chips",
     taskDateHideSource: false,
     lastFolderPath: null,
     lastViewMode: "folder",

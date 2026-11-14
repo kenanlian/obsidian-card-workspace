@@ -34,6 +34,7 @@ export interface PreferencesSettings {
   autoCreatedDate: boolean;
   autoDoneDate: boolean;
   taskDateButtons: PluginSettings["taskDateButtons"];
+  taskDateButtonStyle: PluginSettings["taskDateButtonStyle"];
   taskDateHideSource: boolean;
   taskCardShowFile: boolean;
   defaultCardOpenBehavior: PluginSettings["defaultCardOpenBehavior"];
@@ -196,6 +197,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.autoCreatedDate !== undefined) preferences.autoCreatedDate = patch.autoCreatedDate;
   if (patch.autoDoneDate !== undefined) preferences.autoDoneDate = patch.autoDoneDate;
   if (patch.taskDateButtons !== undefined) preferences.taskDateButtons = patch.taskDateButtons;
+  if (patch.taskDateButtonStyle !== undefined) preferences.taskDateButtonStyle = patch.taskDateButtonStyle;
   if (patch.taskDateHideSource !== undefined) preferences.taskDateHideSource = patch.taskDateHideSource;
   if (patch.taskCardShowFile !== undefined) preferences.taskCardShowFile = patch.taskCardShowFile;
   if (patch.defaultCardOpenBehavior !== undefined) {
@@ -287,6 +289,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       autoCreatedDate: settings.autoCreatedDate,
       autoDoneDate: settings.autoDoneDate,
       taskDateButtons: settings.taskDateButtons,
+      taskDateButtonStyle: settings.taskDateButtonStyle,
       taskDateHideSource: settings.taskDateHideSource,
       taskCardShowFile: settings.taskCardShowFile,
       defaultCardOpenBehavior: settings.defaultCardOpenBehavior,

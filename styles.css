@@ -3723,6 +3723,16 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 .fce-task-date-picker.is-sheet .fce-task-date-picker-preset { height: 40px; font-size: var(--font-ui-small, 13px); }
 
 /* ==========================================================================
+   Task date colours
+   Shared by the editor date buttons and the task-card chips. The hue names
+   the date kind, or the due urgency; an unset date is faint, a set date filled.
+   ========================================================================== */
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="created"] { --fce-task-date-color: var(--color-blue); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="done"] { --fce-task-date-color: var(--color-green); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--color-orange); }
+:is(.fce-task-date-button, .fce-task-chip).is-overdue { --fce-task-date-color: var(--color-red); }
+
+/* ==========================================================================
    Task date buttons
    Rendered inside Markdown editors at the end of Live Preview task lines,
    outside `.folder-card-view`, so only host theme variables. Negative block
@@ -3741,19 +3751,26 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   -webkit-user-select: none;
 }
 .fce-task-date-button {
-  --fce-task-date-color: var(--text-faint);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+}
+.fce-task-date-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
+  outline-offset: -2px;
+}
+
+/* Dots: an outlined dot per date, filled once the date is set. */
+.fce-task-date-buttons.is-dots .fce-task-date-button {
   box-sizing: content-box;
   width: 10px;
   height: 10px;
   margin: -6px -1px;
   padding: 6px;
-  border-radius: var(--radius-s, 4px);
-  cursor: pointer;
 }
-.fce-task-date-button::before {
+.fce-task-date-buttons.is-dots .fce-task-date-button::before {
   content: "";
   box-sizing: border-box;
   width: 10px;
@@ -3761,20 +3778,40 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   border: 1.5px solid var(--fce-task-date-color);
   border-radius: 50%;
   background: transparent;
-  transition: transform 100ms ease-out;
+  opacity: 0.55;
+  transition: transform 100ms ease-out, opacity 100ms ease-out;
 }
-.fce-task-date-button.is-unset::before { opacity: 0.8; }
-.fce-task-date-button.is-set::before { background: var(--fce-task-date-color); }
-.fce-task-date-button.is-set[data-kind="created"] { --fce-task-date-color: var(--text-muted); }
-.fce-task-date-button.is-set[data-kind="done"] { --fce-task-date-color: var(--color-green); }
-.fce-task-date-button.is-set[data-kind="due"] { --fce-task-date-color: var(--color-orange); }
-.fce-task-date-button.is-set.is-overdue { --fce-task-date-color: var(--color-red); }
-.fce-task-date-button:hover { --fce-task-date-color: var(--text-muted); }
-.fce-task-date-button.is-set:hover::before { transform: scale(1.2); }
-.fce-task-date-button:focus-visible {
-  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
-  outline-offset: -2px;
+.fce-task-date-buttons.is-dots .fce-task-date-button.is-set::before { background: var(--fce-task-date-color); opacity: 1; }
+.fce-task-date-buttons.is-dots .fce-task-date-button:hover::before { opacity: 1; transform: scale(1.2); }
+
+/* Chips: the task-card chip, sized to sit inside the text line. */
+.fce-task-date-buttons.is-chips { gap: 2px; }
+.fce-task-date-buttons.is-chips .fce-task-date-button {
+  gap: 3px;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
 }
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-set {
+  background: color-mix(in srgb, var(--fce-task-date-color) 14%, transparent);
+}
+.fce-task-date-buttons.is-chips .fce-task-date-button.has-date { padding: 0 6px; }
+.fce-task-date-buttons.is-chips .fce-task-date-button:is(.is-due-today, .is-overdue) { color: var(--fce-task-date-color); }
+.fce-task-date-button-icon { display: inline-flex; color: var(--fce-task-date-color); }
+.fce-task-date-button-icon svg { width: 12px; height: 12px; }
+.fce-task-date-button.is-unset .fce-task-date-button-icon { opacity: 0.55; }
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-set:hover { background: color-mix(in srgb, var(--fce-task-date-color) 24%, transparent); }
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-unset:hover { background: var(--background-modifier-hover); }
+.fce-task-date-button.is-unset:hover .fce-task-date-button-icon { opacity: 1; }
+/* The edited line shows the date text itself. */
+.fce-task-line-active .fce-task-date-button-label { display: none; }
+.fce-task-line-active .fce-task-date-buttons.is-chips .fce-task-date-button { padding: 0 4px; }
 
 /* Compact: unset dates appear on the hovered or caret line; space stays reserved. */
 .fce-task-date-buttons.is-compact .fce-task-date-button.is-unset { visibility: hidden; }
@@ -3783,13 +3820,15 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 .fce-task-date-buttons.is-compact .fce-task-date-button.is-unset:focus-visible { visibility: visible; }
 
 /* Touch: at least a 28px target, without relying on hover. */
-body.is-mobile .fce-task-date-button {
+body.is-mobile .fce-task-date-buttons.is-dots .fce-task-date-button {
   width: 28px;
   height: 28px;
   margin: -9px 0;
   padding: 0;
 }
-body.is-mobile .fce-task-date-button::before { width: 12px; height: 12px; }
+body.is-mobile .fce-task-date-buttons.is-dots .fce-task-date-button::before { width: 12px; height: 12px; }
+body.is-mobile .fce-task-date-buttons.is-chips { gap: 4px; }
+body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 24px; min-width: 28px; padding: 0 8px; }
 
 /* === task stream === */
 /* Task cards need room for text plus three date chips before a second column opens. */
@@ -3920,36 +3959,27 @@ body.is-mobile .fce-task-date-button::before { width: 12px; height: 12px; }
   padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--background-modifier-hover);
+  background: color-mix(in srgb, var(--fce-task-date-color) 14%, transparent);
   color: var(--fce-text-muted);
   font-size: var(--fce-font-ui-smaller);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
 }
-.folder-card-view .fce-task-chip-icon { display: inline-flex; color: var(--text-faint); }
+.folder-card-view .fce-task-chip-icon { display: inline-flex; color: var(--fce-task-date-color); }
 .folder-card-view .fce-task-chip-icon svg { width: 12px; height: 12px; }
-.folder-card-view .fce-task-card .fce-task-chip.is-unset {
-  padding: 0 4px;
-  border-style: dashed;
-  border-color: var(--fce-border);
-  background: transparent;
-}
-.folder-card-view .fce-task-chip.is-set[data-kind="done"] .fce-task-chip-icon { color: var(--color-green); }
-.folder-card-view .fce-task-chip.is-set[data-kind="due"] { color: var(--fce-text); }
-.folder-card-view .fce-task-chip.is-set[data-kind="due"] .fce-task-chip-icon { color: var(--text-muted); }
-.folder-card-view .fce-task-card .fce-task-chip.is-due-today {
-  background: color-mix(in srgb, var(--color-orange) 16%, transparent);
-  color: var(--color-orange);
-}
-.folder-card-view .fce-task-card .fce-task-chip.is-overdue {
-  background: color-mix(in srgb, var(--color-red) 16%, transparent);
-  color: var(--text-error, var(--color-red));
-}
-.folder-card-view .fce-task-chip:is(.is-due-today, .is-overdue) .fce-task-chip-icon { color: inherit; }
+.folder-card-view .fce-task-card .fce-task-chip.is-unset { padding: 0 4px; background: transparent; }
+.folder-card-view .fce-task-chip.is-unset .fce-task-chip-icon { opacity: 0.55; }
+.folder-card-view .fce-task-card .fce-task-chip:is(.is-due-today, .is-overdue) { color: var(--fce-task-date-color); }
+/* A completed task keeps its green completion date; its other dates fade. */
+.folder-card-view .fce-task-row.is-completed > .fce-task-main .fce-task-chip:not([data-kind="done"]) { --fce-task-date-color: var(--text-faint); }
 .folder-card-view .fce-task-row.is-completed > .fce-task-main .fce-task-chip.is-set { color: var(--text-faint); }
-.folder-card-view .fce-task-card .fce-task-chip:hover { background: var(--fce-control-hover-bg); color: var(--fce-text); }
-.folder-card-view .fce-task-card .fce-task-chip.is-unset:hover { border-color: var(--text-faint); }
+.folder-card-view .fce-task-card .fce-task-chip.is-set:hover {
+  background: color-mix(in srgb, var(--fce-task-date-color) 24%, transparent);
+  color: var(--fce-text);
+}
+.folder-card-view .fce-task-card .fce-task-chip.is-unset:hover { background: var(--fce-control-hover-bg); }
+.folder-card-view .fce-task-chip.is-unset:hover .fce-task-chip-icon { opacity: 1; }
 
 /* Unset subtask chips appear on hover or focus; touch devices always show them. */
 .folder-card-view .fce-task-card:not(.is-touch) .fce-task-row.is-subtask .fce-task-chip.is-unset { visibility: hidden; }

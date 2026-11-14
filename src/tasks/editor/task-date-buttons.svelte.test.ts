@@ -4,7 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { editorLivePreviewField } from "obsidian";
 import { getUiStrings } from "../../i18n";
 import type { TaskDatePickerOptions } from "../ui/TaskDatePicker";
-import { createTaskDateButtons, TASK_LINE_ACTIVE_CLASS, type TaskDateButtonsMode } from "./task-date-buttons";
+import { createTaskDateButtons, TASK_LINE_ACTIVE_CLASS, type TaskDateButtonsMode, type TaskDateButtonStyle } from "./task-date-buttons";
 
 const picker = vi.hoisted(() => ({
   open: vi.fn(),
@@ -34,7 +34,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = true) {
+function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = true, look: { style?: TaskDateButtonStyle; showDates?: boolean } = {}) {
   const parent = document.createElement("div");
   document.body.append(parent);
   const preview = new Compartment();
@@ -46,7 +46,7 @@ function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = t
       extensions: [
         preview.of(livePreview ? editorLivePreviewField.init(() => true) : []),
         createTaskDateButtons({
-          mode, layout: "popover", getStrings: () => getUiStrings("en").tasks, firstDayOfWeek: () => 1, today: () => "2026-11-14",
+          mode, style: look.style ?? "chips", showDates: look.showDates ?? false, layout: "popover", getStrings: () => getUiStrings("en").tasks, firstDayOfWeek: () => 1, today: () => "2026-11-14",
         }),
         EditorView.updateListener.of((update) => { transactions.push(...update.transactions); }),
       ],
@@ -84,6 +84,32 @@ describe("task date buttons", () => {
     expect(button(1, "done").getAttribute("aria-label")).toBe("Completed date: 2026-11-10");
     expect(button(1, "due").classList.contains("is-overdue")).toBe(false);
     expect(button(2, "due").classList.contains("is-overdue")).toBe(true);
+  });
+
+  it("renders chips with the task-card icons, flags due today, and shows dates only while date text is hidden", () => {
+    const doc = [`- [ ] today ${DUE} 2026-11-14`, `- [x] old ${DONE} 2025-03-02`].join("\n");
+    const plain = mount(doc);
+    expect(plain.groups()[0]!.classList.contains("is-chips")).toBe(true);
+    const icons = Array.from(plain.groups()[0]!.querySelectorAll<HTMLElement>(".fce-task-date-button-icon")).map((icon) => icon.dataset.icon);
+    expect(icons).toEqual(["plus", "check", "calendar"]);
+    expect(plain.button(0, "due").classList.contains("is-due-today")).toBe(true);
+    expect(plain.button(0, "due").classList.contains("is-overdue")).toBe(false);
+    expect(plain.view.dom.querySelector(".fce-task-date-button-label")).toBeNull();
+
+    const hidden = mount(doc, "compact", true, { showDates: true });
+    expect(hidden.button(0, "due").querySelector(".fce-task-date-button-label")?.textContent).toBe("Nov 14");
+    expect(hidden.button(0, "due").classList.contains("has-date")).toBe(true);
+    expect(hidden.button(1, "done").querySelector(".fce-task-date-button-label")?.textContent).toBe("Mar 2, 2025");
+    expect(hidden.button(0, "created").querySelector(".fce-task-date-button-label")).toBeNull();
+    // A completed task has no due urgency.
+    const done = mount(`- [x] shipped ${DUE} 2026-11-01`);
+    expect(done.button(0, "due").className).not.toMatch(/is-overdue|is-due-today/);
+  });
+
+  it("keeps plain dots without icons or dates in dots style", () => {
+    const { groups, view } = mount(DOC, "full", true, { style: "dots", showDates: true });
+    expect(groups()[0]!.classList.contains("is-dots")).toBe(true);
+    expect(view.dom.querySelector(".fce-task-date-button-icon, .fce-task-date-button-label")).toBeNull();
   });
 
   it("only renders in Live Preview and follows mode toggles", () => {

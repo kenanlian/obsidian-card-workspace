@@ -28,6 +28,9 @@ export const DEFAULT_TASK_GROUP: TaskGroupSpec = { dimension: "none" };
 
 export type TaskDateButtonsMode = "compact" | "full";
 
+/** `chips` matches task-card date chips; `dots` keeps one coloured dot per date. */
+export type TaskDateButtonStyle = "chips" | "dots";
+
 const TASK_SORT_FIELDS: ReadonlySet<string> = new Set<TaskSortField>([
   "due",
   "created",
@@ -95,6 +98,10 @@ export function normalizeTaskGroupSpec(value: unknown): TaskGroupSpec {
 
 export function normalizeTaskDateButtonsMode(value: unknown): TaskDateButtonsMode {
   return value === "compact" || value === "full" ? value : "compact";
+}
+
+export function normalizeTaskDateButtonStyle(value: unknown): TaskDateButtonStyle {
+  return value === "chips" || value === "dots" ? value : "chips";
 }
 
 /** Accepts `"cards"` and `"tasks"`. Anything else falls back to `"cards"`. */

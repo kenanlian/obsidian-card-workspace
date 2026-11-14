@@ -40,6 +40,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   autoCreatedDate: "preferences",
   autoDoneDate: "preferences",
   taskDateButtons: "preferences",
+  taskDateButtonStyle: "preferences",
   taskDateHideSource: "preferences",
   taskCardShowFile: "preferences",
   defaultCardOpenBehavior: "preferences",

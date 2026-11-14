@@ -20,7 +20,7 @@ try {
   const facet = { of: value => value };
   const cm = { Prec: { highest: value => value }, dropCursor: () => ({}), WidgetType: class {},
     EditorView: class { static domEventHandlers(value) { return value; } static decorations = facet; static atomicRanges = facet; },
-    EditorState: class { static transactionFilter = facet; },
+    EditorState: class { static transactionFilter = facet; }, StateField: { define: spec => spec },
     ViewPlugin: { fromClass: (value, spec) => ({ value, spec }), define: (value, spec) => ({ value, spec }) },
     Decoration: { none: {}, set: value => value, line: spec => ({ spec, range: from => ({ from }) }), widget: spec => ({ spec }), replace: spec => ({ spec }) },
     Transaction: { remote: {}, addToHistory: {} }, MapMode: { TrackDel: 1 },

@@ -1166,6 +1166,7 @@ describe("card grouping settings normalization", () => {
         autoCreatedDate: true,
         autoDoneDate: true,
         taskDateButtons: "compact",
+        taskDateButtonStyle: "chips",
         taskDateHideSource: false,
         taskCardShowFile: false,
         boxNewNoteFolderPath: "",
@@ -1661,6 +1662,7 @@ describe("task view settings", () => {
     expect(settings.autoCreatedDate).toBe(true);
     expect(settings.autoDoneDate).toBe(true);
     expect(settings.taskDateButtons).toBe("compact");
+    expect(settings.taskDateButtonStyle).toBe("chips");
     expect(settings.taskDateHideSource).toBe(false);
   });
 
@@ -1680,6 +1682,7 @@ describe("task view settings", () => {
       autoCreatedDate: 1,
       autoDoneDate: null,
       taskDateButtons: "wide",
+      taskDateButtonStyle: "pills",
       taskDateHideSource: "true",
     });
     expect(settings.taskSort).toEqual(DEFAULT_TASK_SORT);
@@ -1688,6 +1691,7 @@ describe("task view settings", () => {
     expect(settings.autoCreatedDate).toBe(true);
     expect(settings.autoDoneDate).toBe(true);
     expect(settings.taskDateButtons).toBe("compact");
+    expect(settings.taskDateButtonStyle).toBe("chips");
     expect(settings.taskDateHideSource).toBe(false);
   });
 
@@ -1708,6 +1712,7 @@ describe("task view settings", () => {
       autoCreatedDate: false,
       autoDoneDate: false,
       taskDateButtons: "full",
+      taskDateButtonStyle: "dots",
       taskDateHideSource: true,
     });
     const document = serializeSettings(settings);
@@ -1718,6 +1723,7 @@ describe("task view settings", () => {
       taskGroup: { dimension: "done", timeGranularity: "month" },
       enhancedTaskEditing: false,
       taskDateButtons: "full",
+      taskDateButtonStyle: "dots",
       taskDateHideSource: true,
     });
     expect(document.workspace).not.toHaveProperty("taskSort");
@@ -1799,6 +1805,7 @@ describe("settings layer manifest (C4)", () => {
     autoCreatedDate: "preferences",
     autoDoneDate: "preferences",
     taskDateButtons: "preferences",
+    taskDateButtonStyle: "preferences",
     taskDateHideSource: "preferences",
     taskCardShowFile: "preferences",
     defaultCardOpenBehavior: "preferences",
@@ -1936,6 +1943,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     autoCreatedDate: false,
     autoDoneDate: false,
     taskDateButtons: "full",
+    taskDateButtonStyle: "dots",
     taskDateHideSource: true,
     taskCardShowFile: true,
     defaultCardOpenBehavior: "new-tab",
@@ -2011,6 +2019,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["autoCreatedDate", (d) => d.preferences.autoCreatedDate, false],
     ["autoDoneDate", (d) => d.preferences.autoDoneDate, false],
     ["taskDateButtons", (d) => d.preferences.taskDateButtons, "full"],
+    ["taskDateButtonStyle", (d) => d.preferences.taskDateButtonStyle, "dots"],
     ["taskDateHideSource", (d) => d.preferences.taskDateHideSource, true],
     ["taskCardShowFile", (d) => d.preferences.taskCardShowFile, true],
     ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],

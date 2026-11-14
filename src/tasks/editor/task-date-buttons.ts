@@ -1,4 +1,4 @@
-import { setTooltip } from "obsidian";
+import { setIcon, setTooltip } from "obsidian";
 import { MapMode, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { TaskStrings } from "../../i18n/tasks";
@@ -7,9 +7,13 @@ import { closeTaskDatePickerForAnchor, openTaskDatePicker } from "../ui/TaskDate
 import { isLivePreview, livePreviewToggled, TASK_DATE_USER_EVENT, visibleTaskLines } from "./editor-shared";
 
 export type TaskDateButtonsMode = "compact" | "full";
+export type TaskDateButtonStyle = "chips" | "dots";
 
 export interface TaskDateButtonsOptions {
   readonly mode: TaskDateButtonsMode;
+  readonly style: TaskDateButtonStyle;
+  /** Chips show their short date only while the date text itself is hidden. */
+  readonly showDates: boolean;
   /** Phones use the bottom sheet; other devices anchor a popover. */
   readonly layout: "popover" | "sheet";
   readonly getStrings: () => TaskStrings;
@@ -21,11 +25,20 @@ export interface TaskDateButtonsOptions {
 const KINDS: readonly TaskDateKind[] = ["created", "done", "due"];
 export const TASK_LINE_ACTIVE_CLASS = "fce-task-line-active";
 
+/** Same icons as the task-card chips, mirroring the stored ➕ ✅ 📅 markers. */
+export const TASK_DATE_ICONS: Readonly<Record<TaskDateKind, string>> = {
+  created: "plus",
+  done: "check",
+  due: "calendar",
+};
+
 interface LineDates {
   readonly created: string | null;
   readonly done: string | null;
   readonly due: string | null;
-  readonly overdue: boolean;
+  readonly dueState: "overdue" | "today" | null;
+  /** Local `YYYY`; chip dates outside it show their year. */
+  readonly year: string;
 }
 
 interface PickerSession {
@@ -120,21 +133,25 @@ class TaskDateButtonsWidget extends WidgetType {
       && other.dates.created === this.dates.created
       && other.dates.done === this.dates.done
       && other.dates.due === this.dates.due
-      && other.dates.overdue === this.dates.overdue;
+      && other.dates.dueState === this.dates.dueState
+      && other.dates.year === this.dates.year;
   }
 
   toDOM(view: EditorView): HTMLElement {
+    const { mode, style, showDates } = this.controller.options;
     const strings = this.controller.options.getStrings();
     // A document-local fragment keeps popout windows on their own document.
     const container = view.dom.ownerDocument.defaultView!.createFragment().createSpan({
-      cls: `fce-task-date-buttons is-${this.controller.options.mode}`,
+      cls: `fce-task-date-buttons is-${mode} is-${style}`,
       attr: { role: "group", "aria-label": strings.editor.dateButtons },
     });
     for (const kind of KINDS) {
       const value = this.dates[kind];
       const button = container.createSpan({ cls: `fce-task-date-button ${value === null ? "is-unset" : "is-set"}` });
-      if (kind === "due" && this.dates.overdue) {
+      if (kind === "due" && this.dates.dueState === "overdue") {
         button.classList.add("is-overdue");
+      } else if (kind === "due" && this.dates.dueState === "today") {
+        button.classList.add("is-due-today");
       }
       button.dataset.kind = kind;
       button.setAttribute("role", "button");
@@ -142,6 +159,13 @@ class TaskDateButtonsWidget extends WidgetType {
       const label = strings.editor.dateButtonLabel(strings.datePicker.kinds[kind], value ?? strings.datePicker.notSet);
       button.setAttribute("aria-label", label);
       setTooltip(button, label);
+      if (style === "chips") {
+        setIcon(button.createSpan({ cls: "fce-task-date-button-icon", attr: { "aria-hidden": "true" } }), TASK_DATE_ICONS[kind]);
+        if (showDates && value !== null) {
+          button.classList.add("has-date");
+          button.createSpan({ cls: "fce-task-date-button-label", text: chipDate(value, this.dates.year, strings), attr: { "aria-hidden": "true" } });
+        }
+      }
     }
     const buttonFrom = (target: EventTarget | null): HTMLElement | null => {
       const element = target as Element | null;
@@ -189,12 +213,20 @@ class TaskDateButtonsWidget extends WidgetType {
 
 function lineDates(parsed: ParsedTaskLine, today: string): LineDates {
   const due = parsed.dates.due?.value ?? null;
+  const dueOrder = due === null || parsed.completed ? null : compareIsoDates(due, today);
   return {
     created: parsed.dates.created?.value ?? null,
     done: parsed.dates.done?.value ?? null,
     due,
-    overdue: due !== null && !parsed.completed && compareIsoDates(due, today) < 0,
+    dueState: dueOrder === null ? null : dueOrder < 0 ? "overdue" : dueOrder === 0 ? "today" : null,
+    year: today.slice(0, 4),
   };
+}
+
+/** `value` is a valid `YYYY-MM-DD` date, as parsed task dates always are. */
+function chipDate(value: string, currentYear: string, strings: TaskStrings): string {
+  const year = value.slice(0, 4);
+  return strings.view.chipDate(Number(year), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)), year !== currentYear);
 }
 
 /**

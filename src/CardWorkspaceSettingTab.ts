@@ -180,6 +180,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "boolean" ? { autoDoneDate: value } : null;
     case "taskDateButtons":
       return value === "compact" || value === "full" ? { taskDateButtons: value } : null;
+    case "taskDateButtonStyle":
+      return value === "chips" || value === "dots" ? { taskDateButtonStyle: value } : null;
     case "taskDateHideSource":
       return typeof value === "boolean" ? { taskDateHideSource: value } : null;
     case "taskCardShowFile":
@@ -313,6 +315,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.autoDoneDate;
       case "taskDateButtons":
         return settings.taskDateButtons;
+      case "taskDateButtonStyle":
+        return settings.taskDateButtonStyle;
       case "taskDateHideSource":
         return settings.taskDateHideSource;
       case "taskCardShowFile":
@@ -841,6 +845,9 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           { name: strings.taskDateButtonsName, desc: strings.taskDateButtonsDesc,
             visible: taskEditingEnabled,
             control: { type: "dropdown", key: "taskDateButtons", options: strings.taskDateButtonsOptions } },
+          { name: strings.taskDateButtonStyleName, desc: strings.taskDateButtonStyleDesc,
+            visible: taskEditingEnabled,
+            control: { type: "dropdown", key: "taskDateButtonStyle", options: strings.taskDateButtonStyleOptions } },
           { name: strings.taskDateHideSourceName, desc: strings.taskDateHideSourceDesc,
             visible: taskEditingEnabled,
             control: { type: "toggle", key: "taskDateHideSource" } },
@@ -870,7 +877,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
       page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"]),
-        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateHideSource", "taskCardShowFile"])]),
+        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateButtonStyle", "taskDateHideSource", "taskCardShowFile"])]),
       page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
         group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
         group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),

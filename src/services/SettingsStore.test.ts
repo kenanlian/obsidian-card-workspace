@@ -662,6 +662,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["autoCreatedDate", { autoCreatedDate: false }],
     ["autoDoneDate", { autoDoneDate: false }],
     ["taskDateButtons", { taskDateButtons: "full" }],
+    ["taskDateButtonStyle", { taskDateButtonStyle: "dots" }],
     ["taskDateHideSource", { taskDateHideSource: true }],
     ["taskCardShowFile", { taskCardShowFile: true }],
     ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],

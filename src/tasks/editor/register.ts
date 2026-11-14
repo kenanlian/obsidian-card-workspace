@@ -4,13 +4,14 @@ import type { UiStrings } from "../../i18n";
 import type { PluginSettings } from "../../settings";
 import { formatIsoDate } from "../index";
 import { closeAllTaskDatePickers } from "../ui/TaskDatePicker";
+import { createCreatedDateTracker } from "./created-date-filter";
 import { createDoneDateFilter } from "./done-date-filter";
 import { createHiddenDateSource } from "./hidden-date-source";
 import { insertOrConvertTasks } from "./task-commands";
 import { createTaskDateButtons } from "./task-date-buttons";
 
 export type TaskEditingSettings = Pick<PluginSettings,
-  "enhancedTaskEditing" | "autoCreatedDate" | "autoDoneDate" | "taskDateButtons" | "taskDateHideSource">;
+  "enhancedTaskEditing" | "autoCreatedDate" | "autoDoneDate" | "taskDateButtons" | "taskDateButtonStyle" | "taskDateHideSource">;
 
 export interface TaskEditingHost {
   readonly app: Pick<App, "workspace">;
@@ -57,9 +58,11 @@ export function registerTaskEditing(host: TaskEditingHost): TaskEditingRegistrat
     const settings = host.getSettings();
     const next = [
       settings.enhancedTaskEditing,
+      settings.enhancedTaskEditing && settings.autoCreatedDate,
       settings.enhancedTaskEditing && settings.autoDoneDate,
       settings.enhancedTaskEditing && settings.taskDateHideSource,
       settings.taskDateButtons,
+      settings.taskDateButtonStyle,
     ].join("|");
     if (next === signature) {
       return false;
@@ -72,11 +75,16 @@ export function registerTaskEditing(host: TaskEditingHost): TaskEditingRegistrat
     const getStrings = () => host.getStrings().tasks;
     extensions.push(createTaskDateButtons({
       mode: settings.taskDateButtons === "full" ? "full" : "compact",
+      style: settings.taskDateButtonStyle === "dots" ? "dots" : "chips",
+      showDates: settings.taskDateHideSource,
       layout: host.device === "phone" ? "sheet" : "popover",
       getStrings,
       firstDayOfWeek,
       today: todayIso,
     }));
+    if (settings.autoCreatedDate) {
+      extensions.push(createCreatedDateTracker({ today: todayIso }));
+    }
     if (settings.autoDoneDate) {
       extensions.push(createDoneDateFilter({ today: todayIso }));
     }

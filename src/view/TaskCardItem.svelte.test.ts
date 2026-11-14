@@ -121,7 +121,7 @@ describe("TaskCardItem.svelte", () => {
     expect(created!.classList.contains("is-set")).toBe(true);
     expect(created!.querySelector(".fce-task-chip-label")?.textContent).toBe(view.chipDate(2026, 10, 2, false));
     expect(created!.getAttribute("aria-label")).toBe(view.chipLabel(en.tasks.datePicker.kinds.created, view.fullDate(2026, 10, 2)));
-    expect(created!.querySelector(".fce-task-chip-icon")?.getAttribute("data-icon")).toBe("calendar-plus");
+    expect([created, done, due].map((chip) => chip!.querySelector(".fce-task-chip-icon")?.getAttribute("data-icon"))).toEqual(["plus", "check", "calendar"]);
     expect(done!.classList.contains("is-unset")).toBe(true);
     expect(done!.querySelector(".fce-task-chip-label")).toBeNull();
     expect(done!.getAttribute("aria-label")).toBe(view.chipLabel(en.tasks.datePicker.kinds.done, en.tasks.datePicker.notSet));

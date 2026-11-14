@@ -63,6 +63,9 @@ export interface SettingTabStrings {
   taskDateButtonsName: string;
   taskDateButtonsDesc: string;
   taskDateButtonsOptions: Record<"compact" | "full", string>;
+  taskDateButtonStyleName: string;
+  taskDateButtonStyleDesc: string;
+  taskDateButtonStyleOptions: Record<"chips" | "dots", string>;
   taskDateHideSourceName: string;
   taskDateHideSourceDesc: string;
   taskCardShowFileName: string;
@@ -174,12 +177,15 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     enhancedTaskEditingName: "Enhanced task editing",
     enhancedTaskEditingDesc: "In Live Preview, show created, completed and due date buttons at the end of task lines. The \"Insert task or convert lines to tasks\" command stays available either way.",
     autoCreatedDateName: "Add created date to new tasks",
-    autoCreatedDateDesc: "The \"Insert task or convert lines to tasks\" command adds today's created date (\u2795) when it creates or converts a task.",
+    autoCreatedDateDesc: "The \"Insert task or convert lines to tasks\" command adds today's created date (\u2795) when it creates or converts a task. With enhanced task editing on, a task created in the editor by pressing Enter, typing a checkbox, or a checkbox command also gets it once the caret leaves the line.",
     autoDoneDateName: "Add completion date when checking off tasks",
     autoDoneDateDesc: "Add today's completion date (\u2705) when a task is checked on a task card or in the editor, and remove it when the task is unchecked. The editor applies it only while enhanced task editing is on. An existing completion date, such as one written by the Tasks plugin, is kept.",
     taskDateButtonsName: "Task date buttons",
     taskDateButtonsDesc: "Compact shows unset dates only on the hovered or current line. Full always shows all three buttons.",
     taskDateButtonsOptions: { compact: "Compact", full: "Full" },
+    taskDateButtonStyleName: "Task date button style",
+    taskDateButtonStyleDesc: "Chips look like the date chips on task cards and show the date when task date text is hidden. Dots keep one small dot per date. Both use the same colours: blue for created, green for completed, orange for due, and red when overdue.",
+    taskDateButtonStyleOptions: { chips: "Chips", dots: "Dots" },
     taskDateHideSourceName: "Hide task date text",
     taskDateHideSourceDesc: "In Live Preview, hide task date text and show dates only through the date buttons at the end of the line. The line being edited still shows the text. The note itself is unchanged.",
     taskCardShowFileName: "Show source note on task cards",
@@ -286,12 +292,15 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     enhancedTaskEditingName: "增强任务编辑",
     enhancedTaskEditingDesc: "在实时预览中，于任务行末显示创建、完成与截止日期按钮。“插入任务或将所选行转为任务”命令始终可用。",
     autoCreatedDateName: "新任务添加创建日期",
-    autoCreatedDateDesc: "“插入任务或将所选行转为任务”命令创建或转换任务时，添加今天的创建日期（\u2795）。",
+    autoCreatedDateDesc: "“插入任务或将所选行转为任务”命令创建或转换任务时，添加今天的创建日期（\u2795）。开启增强任务编辑时，在编辑器中通过回车、输入复选框或复选框命令新建的任务，也会在光标离开该行后添加。",
     autoDoneDateName: "勾选任务时添加完成日期",
     autoDoneDateDesc: "在任务卡片或编辑器中勾选任务时添加今天的完成日期（\u2705），取消勾选时移除。编辑器中仅在开启增强任务编辑时生效。已有的完成日期（例如 Tasks 插件写入的）会保留。",
     taskDateButtonsName: "任务日期按钮",
     taskDateButtonsDesc: "紧凑：未设置的日期仅在鼠标悬停行或当前行显示。完整：始终显示全部三个按钮。",
     taskDateButtonsOptions: { compact: "紧凑", full: "完整" },
+    taskDateButtonStyleName: "任务日期按钮样式",
+    taskDateButtonStyleDesc: "标签：与任务卡片上的日期标签一致，隐藏任务日期文本时直接显示日期。圆点：每个日期一个小圆点。两种样式使用相同的颜色：创建为蓝色，完成为绿色，截止为橙色，已逾期为红色。",
+    taskDateButtonStyleOptions: { chips: "标签", dots: "圆点" },
     taskDateHideSourceName: "隐藏任务日期文本",
     taskDateHideSourceDesc: "在实时预览中隐藏任务日期文本，只通过行末的日期按钮显示日期。正在编辑的行仍显示文本，笔记原文不受影响。",
     taskCardShowFileName: "在任务卡片上显示所属笔记",

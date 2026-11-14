@@ -7,6 +7,7 @@ import {
   DEFAULT_TASK_SORT,
   normalizeDefaultViewMode,
   normalizeOptionalBoxTaskView,
+  normalizeTaskDateButtonStyle,
   normalizeTaskDateButtonsMode,
   normalizeTaskGroupSpec,
   normalizeTaskSortSpec,
@@ -119,6 +120,16 @@ describe("normalizeTaskDateButtonsMode", () => {
     expect(normalizeTaskDateButtonsMode("full")).toBe("full");
     for (const value of [undefined, null, "wide", "Full", 1, true]) {
       expect(normalizeTaskDateButtonsMode(value)).toBe("compact");
+    }
+  });
+});
+
+describe("normalizeTaskDateButtonStyle", () => {
+  it("accepts chips and dots and defaults everything else to chips", () => {
+    expect(normalizeTaskDateButtonStyle("chips")).toBe("chips");
+    expect(normalizeTaskDateButtonStyle("dots")).toBe("dots");
+    for (const value of [undefined, null, "pills", "Dots", 1, true]) {
+      expect(normalizeTaskDateButtonStyle(value)).toBe("chips");
     }
   });
 });

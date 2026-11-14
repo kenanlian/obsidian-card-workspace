@@ -23,6 +23,7 @@ describe("device preference keys", () => {
     expect(keys).not.toContain("autoCreatedDate");
     expect(keys).not.toContain("autoDoneDate");
     expect(keys).not.toContain("taskDateButtons");
+    expect(keys).not.toContain("taskDateButtonStyle");
     expect(keys).not.toContain("taskDateHideSource");
   });
 

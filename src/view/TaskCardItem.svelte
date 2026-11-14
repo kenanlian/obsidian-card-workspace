@@ -37,10 +37,11 @@
     onTaskContextMenu?: (payload: TaskContextMenuPayload) => void;
   }
 
+  /** Mirrors the stored ➕ ✅ 📅 markers; the editor date buttons use the same icons. */
   const CHIP_ICONS: Record<TaskChipKind, string> = {
-    created: "calendar-plus",
-    done: "calendar-check",
-    due: "calendar-clock",
+    created: "plus",
+    done: "check",
+    due: "calendar",
   };
   const NO_PENDING: ReadonlySet<string> = new Set();
 
