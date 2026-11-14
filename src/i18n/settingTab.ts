@@ -65,6 +65,8 @@ export interface SettingTabStrings {
   taskDateButtonsOptions: Record<"compact" | "full", string>;
   taskDateHideSourceName: string;
   taskDateHideSourceDesc: string;
+  taskCardShowFileName: string;
+  taskCardShowFileDesc: string;
 }
 
 export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
@@ -178,8 +180,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     taskDateButtonsName: "Task date buttons",
     taskDateButtonsDesc: "Compact shows unset dates only on the hovered or current line. Full always shows all three buttons.",
     taskDateButtonsOptions: { compact: "Compact", full: "Full" },
-    taskDateHideSourceName: "Hide task date text (experimental)",
-    taskDateHideSourceDesc: "In Live Preview, replace task date text with small dots except on the line being edited.",
+    taskDateHideSourceName: "Hide task date text",
+    taskDateHideSourceDesc: "In Live Preview, hide task date text and show dates only through the date buttons at the end of the line. The line being edited still shows the text. The note itself is unchanged.",
+    taskCardShowFileName: "Show source note on task cards",
+    taskCardShowFileDesc: "Show the note each task comes from at the bottom of its task card. Subtask progress is shown either way.",
   },
   zh: {
     pages: {
@@ -288,7 +292,9 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     taskDateButtonsName: "任务日期按钮",
     taskDateButtonsDesc: "紧凑：未设置的日期仅在鼠标悬停行或当前行显示。完整：始终显示全部三个按钮。",
     taskDateButtonsOptions: { compact: "紧凑", full: "完整" },
-    taskDateHideSourceName: "隐藏任务日期文本（实验性）",
-    taskDateHideSourceDesc: "在实时预览中，将任务日期文本替换为小圆点，正在编辑的行除外。",
+    taskDateHideSourceName: "隐藏任务日期文本",
+    taskDateHideSourceDesc: "在实时预览中隐藏任务日期文本，只通过行末的日期按钮显示日期。正在编辑的行仍显示文本，笔记原文不受影响。",
+    taskCardShowFileName: "在任务卡片上显示所属笔记",
+    taskCardShowFileDesc: "在任务卡片底部显示任务所在的笔记。子任务进度始终显示。",
   },
 };

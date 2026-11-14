@@ -663,6 +663,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["autoDoneDate", { autoDoneDate: false }],
     ["taskDateButtons", { taskDateButtons: "full" }],
     ["taskDateHideSource", { taskDateHideSource: true }],
+    ["taskCardShowFile", { taskCardShowFile: true }],
     ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],
     ["locateLinkCardOnOpen", { locateLinkCardOnOpen: true }],
     ["dragInsertAction", { dragInsertAction: "wiki" }],

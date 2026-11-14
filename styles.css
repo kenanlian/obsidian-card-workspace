@@ -3723,17 +3723,20 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 .fce-task-date-picker.is-sheet .fce-task-date-picker-preset { height: 40px; font-size: var(--font-ui-small, 13px); }
 
 /* ==========================================================================
-   Task date buttons and hidden date dots
+   Task date buttons
    Rendered inside Markdown editors at the end of Live Preview task lines,
    outside `.folder-card-view`, so only host theme variables. Negative block
    margins keep the enlarged hit areas from growing the line height.
    ========================================================================== */
+/* One line box tall and top-aligned, so the buttons centre on the text line
+   rather than on `middle`, which sits low against CJK and capital glyphs. */
 .fce-task-date-buttons {
   display: inline-flex;
   align-items: center;
+  height: calc(var(--line-height-normal, 1.5) * 1em);
+  height: 1lh;
   margin-inline-start: 4px;
-  line-height: 1;
-  vertical-align: middle;
+  vertical-align: top;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -3788,19 +3791,6 @@ body.is-mobile .fce-task-date-button {
 }
 body.is-mobile .fce-task-date-button::before { width: 12px; height: 12px; }
 
-/* Experimental placeholder for date text hidden away from the caret line. */
-.fce-task-date-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin: 0 2px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  vertical-align: middle;
-}
-.fce-task-date-dot[data-kind="done"] { background: var(--color-green); }
-.fce-task-date-dot[data-kind="due"] { background: var(--color-orange); }
-
 /* === task stream === */
 /* Task cards need room for text plus three date chips before a second column opens. */
 .folder-card-view .fce-list.is-task-stream { --fce-card-min-width: 320px; }
@@ -3840,6 +3830,7 @@ body.is-mobile .fce-task-date-button::before { width: 12px; height: 12px; }
 }
 
 .folder-card-view .fce-task-card-body { padding: 6px 6px 4px; }
+.folder-card-view .fce-task-card-body:last-child { padding-bottom: 6px; }
 
 .folder-card-view .fce-task-row {
   display: flex;
@@ -3847,11 +3838,12 @@ body.is-mobile .fce-task-date-button::before { width: 12px; height: 12px; }
   gap: 6px;
   padding: 3px 6px;
   border-radius: var(--radius-s, 4px);
+  transition: opacity 120ms ease;
 }
 .folder-card-view .fce-task-row:hover { background: var(--fce-hover); }
 .folder-card-view .fce-task-row.is-subtask { --fce-task-font-size: var(--fce-preview-font-size); }
-.folder-card-view .fce-task-row.is-pending { opacity: 0.6; }
-.folder-card-view .fce-task-row.is-pending :is(.fce-task-check, .fce-task-chip, .fce-task-text) { cursor: progress; }
+/* The checkbox already shows the requested state; only a slow write dims the row. */
+.folder-card-view .fce-task-row.is-pending { opacity: 0.6; transition-delay: 400ms; }
 
 .folder-card-view .fce-task-card .fce-task-check {
   flex: 0 0 auto;

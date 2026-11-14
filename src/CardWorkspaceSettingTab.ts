@@ -182,6 +182,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return value === "compact" || value === "full" ? { taskDateButtons: value } : null;
     case "taskDateHideSource":
       return typeof value === "boolean" ? { taskDateHideSource: value } : null;
+    case "taskCardShowFile":
+      return typeof value === "boolean" ? { taskCardShowFile: value } : null;
     default:
       return null;
   }
@@ -313,6 +315,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.taskDateButtons;
       case "taskDateHideSource":
         return settings.taskDateHideSource;
+      case "taskCardShowFile":
+        return settings.taskCardShowFile;
       default:
         return undefined;
     }
@@ -840,6 +844,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           { name: strings.taskDateHideSourceName, desc: strings.taskDateHideSourceDesc,
             visible: taskEditingEnabled,
             control: { type: "toggle", key: "taskDateHideSource" } },
+          { name: strings.taskCardShowFileName, desc: strings.taskCardShowFileDesc,
+            control: { type: "toggle", key: "taskCardShowFile" } },
         ],
       },
       {
@@ -864,7 +870,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
       page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"]),
-        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateHideSource"])]),
+        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateHideSource", "taskCardShowFile"])]),
       page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
         group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
         group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),

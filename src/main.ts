@@ -177,7 +177,9 @@ export default class CardWorkspacePlugin extends Plugin {
     this.runtimeActivity.background,
     this.resourceBudget.tasks.readers,
   );
-  private readonly taskWriteService = new TaskWriteService(this.app);
+  private readonly taskWriteService = new TaskWriteService(this.app, {
+    onLineWritten: (write) => this.taskIndex.applyLineWrite(write),
+  });
   private debouncedNavStateRefresh = debounce(
     () => {
       this.withFolderViews((view) => {

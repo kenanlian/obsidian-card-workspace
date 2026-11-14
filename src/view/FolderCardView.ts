@@ -824,6 +824,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       cardStyle: settings.cardStyle,
       cardBackgroundColor: settings.cardBackgroundColor,
       cardBackgroundOverrides: settings.cardBackgroundOverrides,
+      taskCardShowFile: settings.taskCardShowFile,
     };
   }
 

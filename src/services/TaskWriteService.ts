@@ -28,6 +28,19 @@ export type TaskWriteResult =
 
 type TaskEdit = (lineText: string) => LinePatch[] | null;
 
+/** One task line as it was before and after a successful write. */
+export interface TaskLineWrite {
+  readonly filePath: string;
+  readonly line: number;
+  readonly previousText: string;
+  readonly nextText: string;
+}
+
+export interface TaskWriteServiceOptions {
+  /** Runs synchronously after a write changed a line. */
+  onLineWritten?: (write: TaskLineWrite) => void;
+}
+
 interface PreservedLine {
   readonly text: string;
   readonly ending: string;
@@ -37,13 +50,14 @@ interface PreservedLine {
  * Applies one task-line edit.
  *
  * The indexed line is located again and must still parse as a task. An open
- * Markdown editor receives every patch in one undoable transaction; otherwise
- * the note is updated through `vault.process`. Writes for one path run in order.
+ * Markdown editor receives every patch in one undoable transaction and is saved
+ * at once rather than on the host's autosave delay; otherwise the note is
+ * updated through `vault.process`. Writes for one path run in order.
  */
 export class TaskWriteService {
   private readonly pathQueues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly app: App) {}
+  constructor(private readonly app: App, private readonly options: TaskWriteServiceOptions = {}) {}
 
   apply(target: TaskWriteTarget, edit: TaskEdit): Promise<TaskWriteResult> {
     return this.enqueue(target.filePath, () => this.applyNow(target, edit));
@@ -75,7 +89,7 @@ export class TaskWriteService {
   private async applyNow(target: TaskWriteTarget, edit: TaskEdit): Promise<TaskWriteResult> {
     try {
       const view = this.findOpenEditor(target.filePath);
-      if (view) return this.applyInEditor(view.editor, target, edit);
+      if (view) return this.applyInEditor(view, target, edit);
       return await this.applyInVault(target, edit);
     } catch (error) {
       return failWrite(error);
@@ -97,13 +111,15 @@ export class TaskWriteService {
     return matches[0] ?? null;
   }
 
-  private applyInEditor(editor: Editor, target: TaskWriteTarget, edit: TaskEdit): TaskWriteResult {
+  private applyInEditor(view: MarkdownView, target: TaskWriteTarget, edit: TaskEdit): TaskWriteResult {
+    const editor: Editor = view.editor;
     const lines: string[] = [];
     const count = editor.lineCount();
     for (let index = 0; index < count; index += 1) lines.push(editor.getLine(index));
     const prepared = prepareLine(lines, target, edit);
     if (prepared.outcome === "error") return prepared;
-    if (prepared.patches === null || applyLinePatches(prepared.text, prepared.patches) === prepared.text) {
+    const next = prepared.patches === null ? prepared.text : applyLinePatches(prepared.text, prepared.patches);
+    if (prepared.patches === null || next === prepared.text) {
       return { outcome: "ok", changed: false, line: prepared.line };
     }
     editor.transaction({
@@ -113,16 +129,30 @@ export class TaskWriteService {
         text: patch.insert,
       })),
     });
+    this.notifyWritten(target.filePath, prepared.line, prepared.text, next);
+    // The metadata cache only re-parses saved content.
+    if (typeof view.save === "function") {
+      view.save().catch((error: unknown) => console.warn("[Card Workspace] Task note save failed.", error));
+    }
     return { outcome: "ok", changed: true, line: prepared.line };
+  }
+
+  private notifyWritten(filePath: string, line: number, previousText: string, nextText: string): void {
+    try {
+      this.options.onLineWritten?.({ filePath, line, previousText, nextText });
+    } catch (error) {
+      console.warn("[Card Workspace] Task write listener failed.", error);
+    }
   }
 
   private async applyInVault(target: TaskWriteTarget, edit: TaskEdit): Promise<TaskWriteResult> {
     const file = this.resolveFile(target.filePath);
     if (!file) return { outcome: "error", reason: "missing-file" };
     let line = 0;
-    let changed = false;
+    let written: { previous: string; next: string } | null = null;
     try {
       await this.app.vault.process(file, (content) => {
+        written = null;
         const preserved = splitPreservedLines(content);
         const prepared = prepareLine(preserved.map((entry) => entry.text), target, edit);
         if (prepared.outcome === "error") throw new TaskWriteAbort(prepared.reason);
@@ -134,7 +164,7 @@ export class TaskWriteService {
         if (current === undefined) throw new TaskWriteAbort("line-not-found");
         const updated = preserved.slice();
         updated[prepared.line] = { text: next, ending: current.ending };
-        changed = true;
+        written = { previous: prepared.text, next };
         return joinPreservedLines(updated);
       });
     } catch (error) {
@@ -142,7 +172,11 @@ export class TaskWriteService {
       if (reason) return { outcome: "error", reason };
       return failWrite(error);
     }
-    return { outcome: "ok", changed, line };
+    // Assigned inside the callback, which control-flow narrowing cannot see.
+    const change = written as { previous: string; next: string } | null;
+    if (change === null) return { outcome: "ok", changed: false, line };
+    this.notifyWritten(target.filePath, line, change.previous, change.next);
+    return { outcome: "ok", changed: true, line };
   }
 
   /** `getFileByPath` is the task-subsystem lookup; older fakes only expose abstract files. */

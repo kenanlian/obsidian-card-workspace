@@ -211,8 +211,10 @@ export interface PluginSettings {
   autoCreatedDate: boolean;
   autoDoneDate: boolean;
   taskDateButtons: TaskDateButtonsMode;
-  /** Experimental. Hides the source date text when task date buttons are shown. */
+  /** Hides task date text in Live Preview; the date buttons show the dates. */
   taskDateHideSource: boolean;
+  /** Task cards show their source note in the footer. */
+  taskCardShowFile: boolean;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   locateLinkCardOnOpen: boolean;
   dragInsertAction: DragInsertAction;
@@ -295,6 +297,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoDoneDate: true,
   taskDateButtons: "compact",
   taskDateHideSource: false,
+  taskCardShowFile: false,
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   locateLinkCardOnOpen: false,
   dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
@@ -721,6 +724,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     autoDoneDate: normalizeBooleanSetting(data.autoDoneDate, DEFAULT_SETTINGS.autoDoneDate),
     taskDateButtons: normalizeTaskDateButtonsMode(data.taskDateButtons),
     taskDateHideSource: normalizeBooleanSetting(data.taskDateHideSource, DEFAULT_SETTINGS.taskDateHideSource),
+    taskCardShowFile: normalizeBooleanSetting(data.taskCardShowFile, DEFAULT_SETTINGS.taskCardShowFile),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     locateLinkCardOnOpen: normalizeBooleanSetting(data.locateLinkCardOnOpen, false),
     dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),

@@ -130,6 +130,38 @@ describe("TaskIndex", () => {
     expect(index.get(file.path)?.roots[0]?.lineText).toBe("- [ ] stay");
   });
 
+  it("applies a written task line at once, only over the text it replaced", async () => {
+    const file = markdown("notes/a.md", 8);
+    const { index } = createHarness({
+      files: [file],
+      cache: new Map([taskCache(file.path, [listItem(0, -1, " "), listItem(1, 0, "x")])]),
+      read: async () => PARENT_AND_CHILD,
+    });
+    await index.ensure([file.path]);
+    await settle();
+    const before = index.get(file.path)!;
+    const listener = vi.fn();
+    index.subscribe(listener);
+
+    index.applyLineWrite({ filePath: file.path, line: 1, previousText: "  - [x] child", nextText: "  - [ ] child" });
+    await settle();
+    const after = index.get(file.path)!;
+    const child = after.roots[0]?.children[0];
+    expect(child).toMatchObject({ line: 1, lineText: "  - [ ] child", parsed: { completed: false } });
+    expect(after.roots[0]?.lineText).toBe("- [ ] parent");
+    expect(after.mtime).toBe(8);
+    expect(before.roots[0]?.children[0]?.lineText).toBe("  - [x] child");
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    listener.mockClear();
+    index.applyLineWrite({ filePath: file.path, line: 1, previousText: "  - [x] child", nextText: "  - [x] other" });
+    index.applyLineWrite({ filePath: file.path, line: 0, previousText: "- [ ] parent", nextText: "plain text" });
+    index.applyLineWrite({ filePath: "notes/untracked.md", line: 0, previousText: "- [ ] a", nextText: "- [x] a" });
+    await settle();
+    expect(index.get(file.path)).toBe(after);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("shares one in-flight read across concurrent ensure calls", async () => {
     const file = markdown("notes/a.md");
     let release!: () => void;

@@ -78,6 +78,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   autoDoneDate: "patch",
   taskDateButtons: "patch",
   taskDateHideSource: "patch",
+  taskCardShowFile: "patch",
   defaultCardOpenBehavior: "patch",
   locateLinkCardOnOpen: "patch",
   dragInsertAction: "patch",
@@ -149,6 +150,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "autoDoneDate": settings.autoDoneDate = !settings.autoDoneDate; break;
     case "taskDateButtons": settings.taskDateButtons = "full"; break;
     case "taskDateHideSource": settings.taskDateHideSource = !settings.taskDateHideSource; break;
+    case "taskCardShowFile": settings.taskCardShowFile = !settings.taskCardShowFile; break;
     case "defaultCardOpenBehavior": settings.defaultCardOpenBehavior = "new-tab"; break;
     case "locateLinkCardOnOpen": settings.locateLinkCardOnOpen = !settings.locateLinkCardOnOpen; break;
     case "dragInsertAction": settings.dragInsertAction = "wiki"; break;

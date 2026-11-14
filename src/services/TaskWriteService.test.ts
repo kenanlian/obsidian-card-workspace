@@ -28,7 +28,7 @@ import {
   toggleTaskStatus,
   type TaskStatusOptions,
 } from "../tasks";
-import { TaskWriteService, type TaskWriteTarget } from "./TaskWriteService";
+import { TaskWriteService, type TaskLineWrite, type TaskWriteTarget } from "./TaskWriteService";
 
 const PATH = "notes/task.md";
 const AUTO: TaskStatusOptions = { today: "2026-11-14", autoDoneDate: true };
@@ -55,7 +55,10 @@ function target(lineText: string, line = 0, filePath = PATH): TaskWriteTarget {
   return { filePath, line, lineText };
 }
 
-function createVault(contents: Record<string, string>, options?: { getFileByPath?: boolean }): VaultHarness {
+function createVault(
+  contents: Record<string, string>,
+  options?: { getFileByPath?: boolean; onLineWritten?: (write: TaskLineWrite) => void },
+): VaultHarness {
   const stored = new Map(Object.entries(contents));
   const files = new Map<string, TFile>();
   for (const path of Object.keys(contents)) {
@@ -83,7 +86,8 @@ function createVault(contents: Record<string, string>, options?: { getFileByPath
     getMostRecentLeaf: vi.fn(() => null),
   };
   const app = { vault, workspace } as unknown as App;
-  return { service: new TaskWriteService(app), stored, process, files, leaves, app: { workspace } };
+  const service = new TaskWriteService(app, { onLineWritten: options?.onLineWritten });
+  return { service, stored, process, files, leaves, app: { workspace } };
 }
 
 function openEditor(lines: string[], path = PATH): { view: MarkdownView; transaction: ReturnType<typeof vi.fn> } {
@@ -427,5 +431,24 @@ describe("TaskWriteService", () => {
     expect(reopened).toEqual({ outcome: "ok", changed: true, line: 0 });
     expect(harness.stored.get(PATH)).toBe(`${reopenedLine}\n`);
     expect(reopenedLine).toBe("- [ ] again");
+  });
+
+  it("reports each changed line to the write listener and nothing for a no-op", async () => {
+    const onLineWritten = vi.fn();
+    const harness = createVault({ [PATH]: "note\n- [ ] task\n" }, { onLineWritten });
+    await harness.service.apply(target("- [ ] task", 0), statusPatch);
+    expect(onLineWritten).toHaveBeenCalledWith({ filePath: PATH, line: 1, previousText: "- [ ] task", nextText: "- [x] task" });
+    onLineWritten.mockClear();
+    await harness.service.apply(target("- [x] task", 1), () => null);
+    expect(onLineWritten).not.toHaveBeenCalled();
+
+    const editor = openEditor(["- [ ] open"]);
+    const save = vi.fn(async () => {});
+    Object.assign(editor.view, { save });
+    harness.leaves.push({ view: editor.view });
+    const result = await harness.service.apply(target("- [ ] open"), statusPatch);
+    expect(result).toEqual({ outcome: "ok", changed: true, line: 0 });
+    expect(onLineWritten).toHaveBeenCalledWith({ filePath: PATH, line: 0, previousText: "- [ ] open", nextText: "- [x] open" });
+    expect(save).toHaveBeenCalledTimes(1);
   });
 });

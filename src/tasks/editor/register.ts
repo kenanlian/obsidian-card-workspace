@@ -81,7 +81,7 @@ export function registerTaskEditing(host: TaskEditingHost): TaskEditingRegistrat
       extensions.push(createDoneDateFilter({ today: todayIso }));
     }
     if (settings.taskDateHideSource) {
-      extensions.push(createHiddenDateSource({ getStrings }));
+      extensions.push(createHiddenDateSource());
     }
     return true;
   };

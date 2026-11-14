@@ -61,6 +61,7 @@
   const viewStrings = $derived(strings.tasks.view);
   const pickerStrings = $derived(strings.tasks.datePicker);
   const progress = $derived(countSubtasks(task));
+  const showFile = $derived(appearance.taskCardShowFile === true);
   const currentYear = $derived(today.slice(0, 4));
   const backgroundColor = $derived(appearance.cardBackgroundOverrides?.[task.filePath] ?? appearance.cardBackgroundColor ?? "theme");
 
@@ -268,28 +269,32 @@
   <div class="fce-task-card-body">
     {@render taskRow(task, 0)}
   </div>
-  <div class="fce-task-card-footer">
-    <button
-      type="button"
-      class="fce-task-file"
-      aria-label={viewStrings.openFile(task.fileTitle)}
-      onclick={openFile}
-      onauxclick={(event) => handleAuxClick(event, () => openFile(event))}
-      onmousedown={(event) => { if (event.button === 1) event.preventDefault(); }}
-    >
-      <span class="fce-task-file-icon" aria-hidden="true" use:applyIcon={"file-text"}></span>
-      <span class="fce-task-file-title">{task.fileTitle}</span>
-    </button>
-    {#if progress.total > 0}
-      <span
-        class="fce-task-progress"
-        class:is-complete={progress.completed === progress.total}
-        role="img"
-        aria-label={viewStrings.subtaskProgress(progress.completed, progress.total)}
-      >
-        <span class="fce-task-progress-icon" aria-hidden="true" use:applyIcon={"list-checks"}></span>
-        <span aria-hidden="true">{progress.completed}/{progress.total}</span>
-      </span>
-    {/if}
-  </div>
+  {#if showFile || progress.total > 0}
+    <div class="fce-task-card-footer">
+      {#if showFile}
+        <button
+          type="button"
+          class="fce-task-file"
+          aria-label={viewStrings.openFile(task.fileTitle)}
+          onclick={openFile}
+          onauxclick={(event) => handleAuxClick(event, () => openFile(event))}
+          onmousedown={(event) => { if (event.button === 1) event.preventDefault(); }}
+        >
+          <span class="fce-task-file-icon" aria-hidden="true" use:applyIcon={"file-text"}></span>
+          <span class="fce-task-file-title">{task.fileTitle}</span>
+        </button>
+      {/if}
+      {#if progress.total > 0}
+        <span
+          class="fce-task-progress"
+          class:is-complete={progress.completed === progress.total}
+          role="img"
+          aria-label={viewStrings.subtaskProgress(progress.completed, progress.total)}
+        >
+          <span class="fce-task-progress-icon" aria-hidden="true" use:applyIcon={"list-checks"}></span>
+          <span aria-hidden="true">{progress.completed}/{progress.total}</span>
+        </span>
+      {/if}
+    </div>
+  {/if}
 </div>

@@ -8,11 +8,11 @@ The first time a folder or box enters task view, the stream shows **Reading task
 
 ## What a task card shows
 
-Each card is one root checkbox task. Nested checkbox tasks appear under it as subtasks, and the footer counts them as completed/total, announced as **1 of 3 subtasks complete**. A list item that is not a checkbox is omitted. A checkbox nested under a plain bullet stays under the nearest checkbox ancestor, or becomes its own card when there is no checkbox above it. Only Markdown files contribute tasks.
+Each card is one root checkbox task. Nested checkbox tasks appear under it as subtasks, and the footer counts them as completed/total, announced as **1 of 3 subtasks complete**. A card without subtasks has no footer unless **Show source note on task cards** is on. A list item that is not a checkbox is omitted. A checkbox nested under a plain bullet stays under the nearest checkbox ancestor, or becomes its own card when there is no checkbox above it. Only Markdown files contribute tasks.
 
 A status character other than a single space counts as done. `- [x]`, `- [-]`, and `- [/]` are all complete; `- [ ]` is not. The marker may be `-`, `*`, `+`, or a number, including inside a blockquote. Checking an open task writes `[x]`. Unchecking writes `[ ]`, including when the line was `[-]` or `[/]`. Checking or unchecking one line does not change its parent or its children. The count is only a tally.
 
-The card text is plain. Inline Markdown markers are removed, and a link shows its visible label. Dates and a trailing block id (`^block-id`) are left in the note and omitted from the text. The file name at the bottom opens the note. Clicking the task text, or pressing Enter or Space on it, opens that line. Ctrl/Cmd-click or middle-click opens a new tab, and so do **Open task** and **Open task in new tab** in the context menu. **Copy task text** copies the plain text and reports **Task text copied.** or **Could not copy the task text.**
+The card text is plain. Inline Markdown markers are removed, and a link shows its visible label. Dates and a trailing block id (`^block-id`) are left in the note and omitted from the text. **Show source note on task cards**, off by default, adds the note's name at the bottom of each card; clicking it opens the note. This setting is stored on each device. Clicking the task text, or pressing Enter or Space on it, opens that line. Ctrl/Cmd-click or middle-click opens a new tab, and so do **Open task** and **Open task in new tab** in the context menu. **Copy task text** copies the plain text and reports **Task text copied.** or **Could not copy the task text.**
 
 The cursor moves to the line only when that line still contains the text from the last read. If it does not, the note still opens and the cursor stays where the editor puts it.
 
@@ -38,7 +38,7 @@ Checking a task card follows **Add completion date when checking off tasks**. Wh
 
 ## Editing tasks in a note
 
-Task editing settings are in **Settings → Card Workspace → New notes and templates**, under **Tasks**. **Add created date to new tasks** and **Add completion date when checking off tasks** stay visible either way. **Task date buttons** and **Hide task date text (experimental)** appear only while **Enhanced task editing** is on.
+Task editing settings are in **Settings → Card Workspace → New notes and templates**, under **Tasks**. **Add created date to new tasks** and **Add completion date when checking off tasks** stay visible either way. **Task date buttons** and **Hide task date text** appear only while **Enhanced task editing** is on. **Show source note on task cards** is in the same group and does not depend on it.
 
 **Insert task or convert lines to tasks** is an editor command. Run it from the command palette, assign a hotkey, or insert it through Obsidian’s core Slash commands plugin. It converts the cursor line, or every line touched by the selection, in one undo step. A selection that ends at the start of a line does not include that line. A blank line becomes `- [ ] `, with the cursor after the checkbox. An existing list marker gains a checkbox. Other text is prefixed with `- [ ] `, after any indent or blockquote. Headings, code fences, table rows, horizontal rules, and lines that are already tasks are left alone.
 
@@ -48,7 +48,7 @@ Task editing settings are in **Settings → Card Workspace → New notes and tem
 
 **Add completion date when checking off tasks** is on by default, and the editor applies it only while enhanced editing is also on. Checking a task in the editor adds today’s completion date (✅) in the same undo step, and unchecking removes the completion dates on that line. A line that already has a completion date, including one written by the Tasks plugin, is left as it is, so the two plugins do not stack a second ✅ date for the same check. The editor does not add or remove a completion date for undo, redo, paste, a drop into the editor, a remote or sync change, a change that is not added to editor history, a change that touches more than 20 lines or inserts or removes a line break, or a click that changes more than the status character. Typing or deleting the status is still recognized. Date buttons do not themselves trigger another completion-date edit.
 
-**Hide task date text (experimental)** is off by default. In Live Preview it replaces valid task dates with small dots, except on the line that holds the caret or a selection. Clicking a dot places the caret and shows the date text again. Invalid dates stay visible. The underlying Markdown is unchanged.
+**Hide task date text** is off by default. In Live Preview it hides valid task dates, together with the space before them, so the date buttons at the end of the line are the only place the dates show; a button's tooltip gives its date. The line that holds the caret or a selection still shows the date text, so it can be edited directly. Invalid dates stay visible. The underlying Markdown is unchanged.
 
 ## How dates are stored
 

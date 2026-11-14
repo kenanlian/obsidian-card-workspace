@@ -41,6 +41,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   autoDoneDate: "preferences",
   taskDateButtons: "preferences",
   taskDateHideSource: "preferences",
+  taskCardShowFile: "preferences",
   defaultCardOpenBehavior: "preferences",
   locateLinkCardOnOpen: "preferences",
   dragInsertAction: "preferences",

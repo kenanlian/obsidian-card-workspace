@@ -256,6 +256,7 @@ export interface PanelAppearanceState extends IconSettings {
   uiFontSize?: UiFontSize;
   uiDensity?: UiDensity;
   cardStyle?: CardStyle;
+  taskCardShowFile?: boolean;
 }
 
 export interface PanelModelState {

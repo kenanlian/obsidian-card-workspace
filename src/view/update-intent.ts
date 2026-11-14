@@ -219,6 +219,7 @@ export function resolveSettingsUpdateIntent(
   if (previous.autoDoneDate !== next.autoDoneDate) intent = mergeIntent(intent, "patch");
   if (previous.taskDateButtons !== next.taskDateButtons) intent = mergeIntent(intent, "patch");
   if (previous.taskDateHideSource !== next.taskDateHideSource) intent = mergeIntent(intent, "patch");
+  if (previous.taskCardShowFile !== next.taskCardShowFile) intent = mergeIntent(intent, "patch");
   if (previous.defaultCardOpenBehavior !== next.defaultCardOpenBehavior) intent = mergeIntent(intent, "patch");
   if (previous.locateLinkCardOnOpen !== next.locateLinkCardOnOpen) intent = mergeIntent(intent, "patch");
   if (previous.dragInsertAction !== next.dragInsertAction) intent = mergeIntent(intent, "patch");

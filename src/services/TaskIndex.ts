@@ -1,8 +1,17 @@
 import type { App, TFile } from "obsidian";
 
 import type { RuntimeWorkGate } from "../runtime/work-gate";
-import { buildTaskTree, type TaskFileEntry, type TaskIndexChange, type TaskIndexReader, type TaskNode } from "../tasks";
+import {
+  buildTaskTree,
+  parseTaskLine,
+  type ParsedTaskLine,
+  type TaskFileEntry,
+  type TaskIndexChange,
+  type TaskIndexReader,
+  type TaskNode,
+} from "../tasks";
 import type { MetadataChangeEvent } from "./MetadataEventBus";
+import type { TaskLineWrite } from "./TaskWriteService";
 import type { VaultMutationEvent } from "./vault-events";
 
 /**
@@ -77,6 +86,24 @@ export class TaskIndex implements TaskIndexReader {
     if (this.disposed) return () => {};
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
+  }
+
+  /**
+   * Applies a task line the plugin just wrote, before the host re-parses the
+   * note. Only a line whose indexed text still equals `previousText` changes,
+   * and it must still parse as a task. The metadata refresh that follows
+   * replaces the entry as usual.
+   */
+  applyLineWrite(write: TaskLineWrite): void {
+    if (this.disposed) return;
+    const entry = this.entries.get(write.filePath);
+    if (!entry) return;
+    const parsed = parseTaskLine(write.nextText);
+    if (parsed === null) return;
+    const roots = replaceTaskLine(entry.roots, write.line, write.previousText, write.nextText, parsed);
+    if (roots === null) return;
+    this.entries.set(write.filePath, { path: entry.path, mtime: entry.mtime, roots });
+    this.markChanged(write.filePath);
   }
 
   async handleMetadataEvent(event: MetadataChangeEvent): Promise<void> {
@@ -402,6 +429,33 @@ interface ReaderWaiter {
 
 function isMarkdownFile(file: TFile | null): file is TFile {
   return file !== null && file.extension.toLowerCase() === "md";
+}
+
+/** Copies only the path down to the replaced node; null when no node matches. */
+function replaceTaskLine(
+  nodes: readonly TaskNode[],
+  line: number,
+  previousText: string,
+  nextText: string,
+  parsed: ParsedTaskLine,
+): TaskNode[] | null {
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (!node) continue;
+    let replacement: TaskNode | null = null;
+    if (node.line === line) {
+      if (node.lineText !== previousText) return null;
+      replacement = { line, lineText: nextText, parsed, children: node.children };
+    } else {
+      const children = replaceTaskLine(node.children, line, previousText, nextText, parsed);
+      if (children !== null) replacement = { ...node, children };
+    }
+    if (replacement === null) continue;
+    const next = nodes.slice();
+    next[index] = replacement;
+    return next;
+  }
+  return null;
 }
 
 function sameRoots(left: readonly TaskNode[], right: readonly TaskNode[]): boolean {

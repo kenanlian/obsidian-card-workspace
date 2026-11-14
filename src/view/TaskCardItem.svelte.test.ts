@@ -197,9 +197,18 @@ describe("TaskCardItem.svelte", () => {
     ]);
   });
 
+  it("omits the source note by default and the whole footer when there are no subtasks", () => {
+    const { target } = render({ task: record() });
+    expect(target.querySelector(".fce-task-card-footer")).toBeNull();
+    const withSubtasks = render({ task: record({ children: [item(4, "Sub")] }) }).target;
+    expect(withSubtasks.querySelector(".fce-task-file")).toBeNull();
+    expect(withSubtasks.querySelector(".fce-task-progress")).not.toBeNull();
+  });
+
   it("opens the file from the footer without a line", () => {
     const onTaskOpen = vi.fn();
-    const { target } = render({ task: record(), onTaskOpen });
+    const appearance = { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2, taskCardShowFile: true };
+    const { target } = render({ task: record(), onTaskOpen, appearance });
     const file = target.querySelector<HTMLButtonElement>(".fce-task-file")!;
     expect(file.textContent).toContain("Plan");
     expect(file.getAttribute("aria-label")).toBe(view.openFile("Plan"));
