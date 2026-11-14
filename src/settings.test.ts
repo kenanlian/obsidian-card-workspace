@@ -1169,6 +1169,7 @@ describe("card grouping settings normalization", () => {
         taskDateButtonStyle: "chips",
         taskDateHideSource: false,
         taskCardShowFile: false,
+        taskDateColors: DEFAULT_SETTINGS.taskDateColors,
         boxNewNoteFolderPath: "",
         quickInput: DEFAULT_SETTINGS.quickInput,
         quickInputTemplateId: null,
@@ -1751,7 +1752,6 @@ describe("task view settings", () => {
     });
     const restored = migrateSettings(JSON.parse(JSON.stringify(serializeSettings(withFields))));
     expect(restored.boxes[0]).toMatchObject({
-      viewMode: "tasks",
       taskSort: { field: "file", direction: "desc" },
       taskGroup: { dimension: "created", timeGranularity: "week" },
     });
@@ -1784,7 +1784,7 @@ describe("task view settings", () => {
         taskGroup: { dimension: "folder", timeGranularity: "century" },
       }],
     });
-    expect(settings.boxes[0]?.viewMode).toBe("cards");
+    expect(settings.boxes[0]?.viewMode).toBeUndefined();
     expect(settings.boxes[0]?.taskSort).toEqual(DEFAULT_TASK_SORT);
     expect(settings.boxes[0]?.taskGroup).toEqual(DEFAULT_TASK_GROUP);
   });
@@ -1808,6 +1808,7 @@ describe("settings layer manifest (C4)", () => {
     taskDateButtonStyle: "preferences",
     taskDateHideSource: "preferences",
     taskCardShowFile: "preferences",
+    taskDateColors: "preferences",
     defaultCardOpenBehavior: "preferences",
     locateLinkCardOnOpen: "preferences",
     dragInsertAction: "preferences",
@@ -1946,6 +1947,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     taskDateButtonStyle: "dots",
     taskDateHideSource: true,
     taskCardShowFile: true,
+    taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" },
     defaultCardOpenBehavior: "new-tab",
     locateLinkCardOnOpen: true,
     enableHeadingDragInsert: true,
@@ -2022,6 +2024,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["taskDateButtonStyle", (d) => d.preferences.taskDateButtonStyle, "dots"],
     ["taskDateHideSource", (d) => d.preferences.taskDateHideSource, true],
     ["taskCardShowFile", (d) => d.preferences.taskCardShowFile, true],
+    ["taskDateColors", (d) => d.preferences.taskDateColors, { created: "pink", done: "cyan", due: "yellow", overdue: "purple" }],
     ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],
     ["locateLinkCardOnOpen", (d) => d.preferences.locateLinkCardOnOpen, true],
     ["dragInsertAction", (d) => d.preferences.dragInsertAction, "wiki"],

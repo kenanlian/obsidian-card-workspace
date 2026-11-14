@@ -116,7 +116,6 @@ export function normalizeDefaultViewMode(value: unknown): DefaultViewMode {
  * present value becomes the task-view default instead of throwing.
  */
 export function normalizeOptionalBoxTaskView(value: unknown): {
-  viewMode?: DefaultViewMode;
   taskSort?: TaskSortSpec;
   taskGroup?: TaskGroupSpec;
 } {
@@ -124,13 +123,9 @@ export function normalizeOptionalBoxTaskView(value: unknown): {
     return {};
   }
   const fields: {
-    viewMode?: DefaultViewMode;
     taskSort?: TaskSortSpec;
     taskGroup?: TaskGroupSpec;
   } = {};
-  if ("viewMode" in value && value.viewMode !== undefined) {
-    fields.viewMode = normalizeDefaultViewMode(value.viewMode);
-  }
   if ("taskSort" in value && value.taskSort !== undefined) {
     fields.taskSort = normalizeTaskSortSpec(value.taskSort);
   }
@@ -138,4 +133,22 @@ export function normalizeOptionalBoxTaskView(value: unknown): {
     fields.taskGroup = normalizeTaskGroupSpec(value.taskGroup);
   }
   return fields;
+}
+
+/** Theme colour identifiers only; arbitrary CSS never enters settings. */
+export const TASK_DATE_COLORS = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"] as const;
+export type TaskDateColor = typeof TASK_DATE_COLORS[number];
+export type TaskDateColors = Record<"created" | "done" | "due" | "overdue", TaskDateColor>;
+export const DEFAULT_TASK_DATE_COLORS: TaskDateColors = { created: "blue", done: "green", due: "orange", overdue: "red" };
+export function isTaskDateColor(value: unknown): value is TaskDateColor {
+  return (TASK_DATE_COLORS as readonly unknown[]).includes(value);
+}
+export function normalizeTaskDateColors(value: unknown): TaskDateColors {
+  const record = isRecord(value) ? value : {};
+  return Object.fromEntries(Object.entries(DEFAULT_TASK_DATE_COLORS).map(([kind, fallback]) =>
+    [kind, isTaskDateColor(record[kind]) ? record[kind] : fallback])) as TaskDateColors;
+}
+export function taskDateColorStyle(value: TaskDateColors | undefined): string {
+  return Object.entries(normalizeTaskDateColors(value)).map(([kind, color]) =>
+    `--fce-task-${kind}-color: var(--color-${color});`).join(" ");
 }

@@ -80,6 +80,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   taskDateButtonStyle: "patch",
   taskDateHideSource: "patch",
   taskCardShowFile: "patch",
+  taskDateColors: "patch",
   defaultCardOpenBehavior: "patch",
   locateLinkCardOnOpen: "patch",
   dragInsertAction: "patch",
@@ -152,6 +153,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "taskDateButtons": settings.taskDateButtons = "full"; break;
     case "taskDateButtonStyle": settings.taskDateButtonStyle = "dots"; break;
     case "taskDateHideSource": settings.taskDateHideSource = !settings.taskDateHideSource; break;
+    case "taskDateColors": settings.taskDateColors = { ...settings.taskDateColors, created: "pink" }; break;
     case "taskCardShowFile": settings.taskCardShowFile = !settings.taskCardShowFile; break;
     case "defaultCardOpenBehavior": settings.defaultCardOpenBehavior = "new-tab"; break;
     case "locateLinkCardOnOpen": settings.locateLinkCardOnOpen = !settings.locateLinkCardOnOpen; break;
@@ -350,7 +352,7 @@ describe("resolveBoxesUpdateIntent", () => {
 
   it("reprojects when the active box's task view mode, sort, or group changes", () => {
     const previous = [createBox()];
-    expect(resolveBoxesUpdateIntent(previous, [createBox({ viewMode: "tasks" })], "box-1")).toBe("reproject");
+    expect(resolveBoxesUpdateIntent(previous, [createBox({ viewMode: "tasks" })], "box-1")).toBe("patch");
     expect(resolveBoxesUpdateIntent(previous, [createBox({ taskSort: { field: "text", direction: "desc" } })], "box-1")).toBe("reproject");
     expect(resolveBoxesUpdateIntent(previous, [createBox({ taskGroup: { dimension: "status" } })], "box-1")).toBe("reproject");
     expect(resolveBoxesUpdateIntent(

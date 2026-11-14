@@ -345,7 +345,7 @@ function applyTaskGroupArrangement(tasks: TaskCardRecord[], context: TaskPipelin
   );
 }
 
-/** File-level browse filters for the task stream; Links never reaches task mode. */
+/** File-level browse filters for tasks; Links keeps browse filters dormant. */
 function taskBrowseStepsForScope(scope: CardScope): BrowseFilterStep[] {
   switch (scope.kind) {
     case "folder":

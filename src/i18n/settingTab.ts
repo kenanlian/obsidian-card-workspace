@@ -1,10 +1,12 @@
 import type { UiLanguage } from "./types";
 
-export type SettingsPageId = "appearance" | "cards-preview" | "navigation" | "opening-dragging" | "notes-templates" | "quick-input" | "default-icons";
+export type SettingsPageId = "appearance" | "cards-preview" | "navigation" | "opening-dragging" | "notes-templates" | "tasks" | "quick-input" | "default-icons";
 
 export interface SettingTabStrings {
   pages: Record<SettingsPageId, { name: string; desc: string }>;
-  groups: Record<"text" | "style" | "content" | "references" | "images" | "hover" | "sections" | "entries" | "opening" | "dragging" | "newNotes" | "templateFiles" | "saving" | "fields" | "window" | "shortcut" | "tasks", string>;
+  groups: Record<"text" | "style" | "content" | "references" | "images" | "hover" | "sections" | "entries" | "opening" | "dragging" | "newNotes" | "templateFiles" | "saving" | "fields" | "window" | "shortcut" | "tasks" | "taskDisplay" | "taskColors", string>;
+  taskColorNames: Record<"created" | "done" | "due" | "overdue", string>;
+  taskColorsDesc: string;
   back: string;
   fileVisibilityName: string;
   fileVisibilityDesc: string;
@@ -93,8 +95,9 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       },
       "notes-templates": {
         "name": "New notes and templates",
-        "desc": "Initial content, destinations, template storage and task editing"
+        "desc": "Initial content, destinations and template storage"
       },
+      "tasks": { name: "Task view", desc: "Task cards, editing and date colors" },
       "quick-input": {
         "name": "Quick input",
         "desc": "Saving rules, input fields, window and shortcut"
@@ -121,8 +124,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "fields": "Input fields",
       "window": "Window appearance",
       "shortcut": "Shortcut",
-      "tasks": "Tasks"
+      "tasks": "Task editing", "taskDisplay": "Task cards", "taskColors": "Date colors"
     },
+    taskColorNames: { created: "Created date color", done: "Completed date color", due: "Due date color", overdue: "Overdue color" },
+    taskColorsDesc: "Choose a theme color. Applies to task cards and editor date buttons.",
     back: "Back",
     fileVisibilityName: "Show file types",
     fileVisibilityDesc: "Apply to folders, boxes and links. Supported formats follow Obsidian and installed plugins; refresh after changing plugins. All formats may open in external apps.",
@@ -184,7 +189,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     taskDateButtonsDesc: "Compact shows unset dates only on the hovered or current line. Full always shows all three buttons.",
     taskDateButtonsOptions: { compact: "Compact", full: "Full" },
     taskDateButtonStyleName: "Task date button style",
-    taskDateButtonStyleDesc: "Chips look like the date chips on task cards and show the date when task date text is hidden. Dots keep one small dot per date. Both use the same colours: blue for created, green for completed, orange for due, and red when overdue.",
+    taskDateButtonStyleDesc: "Chips look like the date chips on task cards and show the date when task date text is hidden. Dots keep one small dot per date. Both use the date colors configured below.",
     taskDateButtonStyleOptions: { chips: "Chips", dots: "Dots" },
     taskDateHideSourceName: "Hide task date text",
     taskDateHideSourceDesc: "In Live Preview, hide task date text and show dates only through the date buttons at the end of the line. The line being edited still shows the text. The note itself is unchanged.",
@@ -211,8 +216,9 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       },
       "notes-templates": {
         "name": "新建与模板",
-        "desc": "新建内容、保存位置、模板文件夹与任务编辑"
+        "desc": "新建内容、保存位置与模板文件夹"
       },
+      "tasks": { name: "任务视图", desc: "任务卡片、任务编辑与日期颜色" },
       "quick-input": {
         "name": "快速输入",
         "desc": "保存规则、输入字段、窗口与快捷键"
@@ -239,8 +245,10 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "fields": "输入字段",
       "window": "窗口外观",
       "shortcut": "快捷键",
-      "tasks": "任务"
+      "tasks": "任务编辑", "taskDisplay": "任务卡片", "taskColors": "日期颜色"
     },
+    taskColorNames: { created: "创建日期颜色", done: "完成日期颜色", due: "截止日期颜色", overdue: "逾期颜色" },
+    taskColorsDesc: "选择主题颜色，同时应用于任务卡片和编辑器日期按钮。",
     back: "返回",
     fileVisibilityName: "显示文件类型",
     fileVisibilityDesc: "适用于文件夹、卡片盒和链接列表。常规格式跟随 Obsidian 和已安装插件，变更插件后请刷新；全部格式可能通过外部应用打开。",
@@ -299,7 +307,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     taskDateButtonsDesc: "紧凑：未设置的日期仅在鼠标悬停行或当前行显示。完整：始终显示全部三个按钮。",
     taskDateButtonsOptions: { compact: "紧凑", full: "完整" },
     taskDateButtonStyleName: "任务日期按钮样式",
-    taskDateButtonStyleDesc: "标签：与任务卡片上的日期标签一致，隐藏任务日期文本时直接显示日期。圆点：每个日期一个小圆点。两种样式使用相同的颜色：创建为蓝色，完成为绿色，截止为橙色，已逾期为红色。",
+    taskDateButtonStyleDesc: "标签：与任务卡片上的日期标签一致，隐藏任务日期文本时直接显示日期。圆点：每个日期一个小圆点。两种样式均使用下方设置的日期颜色。",
     taskDateButtonStyleOptions: { chips: "标签", dots: "圆点" },
     taskDateHideSourceName: "隐藏任务日期文本",
     taskDateHideSourceDesc: "在实时预览中隐藏任务日期文本，只通过行末的日期按钮显示日期。正在编辑的行仍显示文本，笔记原文不受影响。",

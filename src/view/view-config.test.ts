@@ -146,7 +146,7 @@ describe("resolveViewConfig", () => {
     expect(result.taskGroup).toBe(settings.taskGroup);
   });
 
-  it("reads a box's own task view config when the box defines it", () => {
+  it("uses global mode with the box task arrangement", () => {
     const box = makeBox({
       viewMode: "tasks",
       taskSort: { field: "file", direction: "asc" },
@@ -160,12 +160,12 @@ describe("resolveViewConfig", () => {
     });
     const result = resolveViewConfig(createBoxScope("box-1"), settings);
 
-    expect(result.viewMode).toBe("tasks");
+    expect(result.viewMode).toBe(settings.defaultView);
     expect(result.taskSort).toBe(box.taskSort);
     expect(result.taskGroup).toBe(box.taskGroup);
   });
 
-  it("falls back to cards and the task-view defaults when the box omits them", () => {
+  it("uses global mode and default task arrangement when the box omits it", () => {
     const box = makeBox();
     const settings = makeSettings({
       defaultView: "tasks",
@@ -175,7 +175,7 @@ describe("resolveViewConfig", () => {
     });
     const result = resolveViewConfig(createBoxScope("box-1"), settings);
 
-    expect(result.viewMode).toBe("cards");
+    expect(result.viewMode).toBe(settings.defaultView);
     expect(result.taskSort).toBe(DEFAULT_TASK_SORT);
     expect(result.taskGroup).toBe(DEFAULT_TASK_GROUP);
     expect(box).not.toHaveProperty("viewMode");
@@ -197,7 +197,7 @@ describe("resolveViewConfig", () => {
     expect(result.taskGroup).toBe(settings.taskGroup);
   });
 
-  it("forces cards on links even when the global default view is tasks", () => {
+  it("uses global task mode in both links directions", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       defaultView: "tasks" as const,
@@ -206,7 +206,7 @@ describe("resolveViewConfig", () => {
     };
     for (const direction of ["backlinks", "outgoing"] as const) {
       const result = resolveViewConfig(createLinksScope("note.md", direction), settings);
-      expect(result.viewMode).toBe("cards");
+      expect(result.viewMode).toBe(settings.defaultView);
       expect(result.taskSort).toBe(settings.taskSort);
       expect(result.taskGroup).toBe(settings.taskGroup);
       expect(result.sort).toBe(settings.linksSort[direction]);

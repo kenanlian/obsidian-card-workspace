@@ -213,13 +213,13 @@ export interface PanelProjectionState {
   metadataStatus: "pending" | "ready";
   /**
    * Resolved stream mode and task arrangement for the current scope's owner
-   * (global settings for folders, the Box definition for boxes). Optional so
+   * (global mode, with Box-specific task sort/group). Optional so
    * existing panel defaults stay valid.
    */
   viewMode?: DefaultViewMode;
   taskSort?: TaskSortSpec;
   taskGroup?: TaskGroupSpec;
-  /** Capability: whether this source offers the cards/tasks toggle (false for Links). */
+  /** Capability: whether this source offers the cards/tasks toggle (all current sources support it). */
   taskViewAvailable?: boolean;
 }
 
@@ -257,6 +257,7 @@ export interface PanelAppearanceState extends IconSettings {
   uiDensity?: UiDensity;
   cardStyle?: CardStyle;
   taskCardShowFile?: boolean;
+  taskDateColors?: import("../task-view-settings").TaskDateColors;
 }
 
 export interface PanelModelState {

@@ -151,24 +151,24 @@ describe("TaskViewController mode gating", () => {
     expect(h.onStreamModeChanged).not.toHaveBeenCalled();
   });
 
-  it("forces links scopes to card mode even when the global default is tasks", () => {
+  it("supports tasks in links scopes", () => {
     const fake = createFakeIndex();
     const h = createHarness({ index: fake.index, scope: createLinksScope("notes/a.md", "backlinks") });
     h.controller.sync();
-    expect(h.controller.isTaskMode()).toBe(false);
-    expect(fake.index.ensure).not.toHaveBeenCalled();
+    expect(h.controller.isTaskMode()).toBe(true);
+    expect(fake.index.ensure).toHaveBeenCalled();
   });
 
-  it("reads the box view mode for box scopes", () => {
+  it("uses global mode in box scopes", () => {
     const fake = createFakeIndex();
     const h = createHarness({
       index: fake.index,
       scope: createBoxScope("box-1"),
       settings: { defaultView: "cards", boxes: [makeBox({ viewMode: "tasks" })] },
     });
-    expect(h.controller.isTaskMode()).toBe(true);
-    h.setSettings({ defaultView: "tasks", boxes: [makeBox({ viewMode: "cards" })] });
     expect(h.controller.isTaskMode()).toBe(false);
+    h.setSettings({ defaultView: "tasks", boxes: [makeBox({ viewMode: "cards" })] });
+    expect(h.controller.isTaskMode()).toBe(true);
   });
 });
 

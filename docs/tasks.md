@@ -1,8 +1,8 @@
 # Tasks / 任务
 
-Open a folder or a card box and press **Task view** in the toolbar. The button stays pressed while that source shows tasks instead of note cards. On a phone, and on a tablet whose toolbar is narrower than 640 pixels, the same action is a checked item in **More actions**. Outgoing links and backlinks have no task view.
+Press **Task view** at the top of navigation to switch between note cards and tasks. Folders, card boxes, outgoing links and backlinks share one mode, remembered on this device. Switching sources keeps the current mode. In a single-pane layout, pressing the button immediately returns to the list; tasks may initially show their reading state.
 
-Every folder uses one shared task view, sort, and grouping. That choice stays on the device, with the other view preferences. Each card box stores its own. A box you have not switched yet stays on cards, with **Due date** / **Ascending** and **None** for grouping, even when folders are already in task view. Switching a box does not change the folder setting.
+Folders and linked-note sources share task sort and grouping. Each card box keeps its own task sort and grouping, defaulting to **Due date** / **Ascending** and **None**. Linked-note sources show all tasks in their associated Markdown notes, rather than only tasks near a link. Their tag and property browse filters stay paused.
 
 The first time a folder or box enters task view, the stream shows **Reading tasks...** until every Markdown file in that source has been checked. The list then appears all at once. Files with no checkbox tasks are skipped and not read. Later notes that join the same source are picked up without returning to that reading state. **No tasks here yet.** means the source has no tasks. **No tasks match the current search or filters.** means tag filters, property filters, or the task filter removed all of them.
 
@@ -28,7 +28,7 @@ Pins are not applied in task view, and task cards have no pin control. Saved pin
 
 ## Dates on a card
 
-Each task row has three date chips: **Created date** (➕, a plus icon), **Completed date** (✅, a check icon), and **Due date** (📅, a calendar icon). An unset chip is a faint icon only. A set chip is filled and shows a short date, with the year when it is not this year. The colour names the date: blue for created, green for completed, and orange for due, turning red when an open task is overdue. A completed task keeps its green completion date; its other dates fade. The date buttons in the editor use the same icons and colours. On a phone or tablet every chip stays visible. On desktop, an unset date on a subtask appears when that row is hovered or focused.
+Each task row has three date chips: **Created date** (➕, a plus icon), **Completed date** (✅, a check icon), and **Due date** (📅, a calendar icon). An unset chip is a faint icon only. A set chip is filled and shows a short date, with the year when it is not this year. By default, dates use blue for created, green for completed, orange for due, and red for an overdue open task. In **Settings → Card Workspace → Task view → Date colors**, each of these four colors can independently use red, orange, yellow, green, cyan, blue, purple or pink. These theme colors adapt to light and dark themes, and also apply to editor chips and dots. A completed task keeps its green completion date; its other dates fade. The date buttons in the editor use the same icons and colours. On a phone or tablet every chip stays visible. On desktop, an unset date on a subtask appears when that row is hovered or focused.
 
 Click a chip to edit it. The picker is a month calendar with **Previous month**, **Next month**, **Today**, **Tomorrow**, **Next Monday**, and **Clear**. **Next Monday** is the Monday after today, so a Monday itself resolves seven days ahead. **Clear** is unavailable when the date is unset. Click outside or press Escape to close without saving. Clicking the same chip again closes the picker. Phones open it as a bottom sheet; other devices open a popover beside the chip. A failed save keeps the picker open and shows **Could not save the date. Try again.**
 
@@ -38,7 +38,7 @@ Checking a task card follows **Add completion date when checking off tasks**. Wh
 
 ## Editing tasks in a note
 
-Task editing settings are in **Settings → Card Workspace → New notes and templates**, under **Tasks**. **Add created date to new tasks** and **Add completion date when checking off tasks** stay visible either way. **Task date buttons**, **Task date button style**, and **Hide task date text** appear only while **Enhanced task editing** is on. **Show source note on task cards** is in the same group and does not depend on it.
+Task editing settings are in **Settings → Card Workspace → Task view**. **Add created date to new tasks** and **Add completion date when checking off tasks** stay visible either way. **Task date buttons**, **Task date button style**, and **Hide task date text** appear only while **Enhanced task editing** is on. **Show source note on task cards** is in the same group and does not depend on it.
 
 **Insert task or convert lines to tasks** is an editor command. Run it from the command palette, assign a hotkey, or insert it through Obsidian’s core Slash commands plugin. It converts the cursor line, or every line touched by the selection, in one undo step. A selection that ends at the start of a line does not include that line. A blank line becomes `- [ ] `, with the cursor after the checkbox. An existing list marker gains a checkbox. Other text is prefixed with `- [ ] `, after any indent or blockquote. Headings, code fences, table rows, horizontal rules, and lines that are already tasks are left alone.
 
@@ -67,4 +67,4 @@ A created date is ➕, a completion date is ✅, and a due date is written as �
 
 ## Limits
 
-Linked-note sources cannot switch to task view. Checkbox tasks inside frontmatter, fenced code, or display math do not get Live Preview buttons. Parent and child checkboxes stay independent. A physical phone or tablet still needs its own check for **More actions**, the bottom-sheet calendar, touch chips, and Live Preview buttons. A resized desktop window does not stand in for that.
+Checkbox tasks inside frontmatter, fenced code, or display math do not get Live Preview buttons. Parent and child checkboxes stay independent. A physical phone or tablet still needs its own check for navigation mode switching, the bottom-sheet calendar, touch chips, and Live Preview buttons. A resized desktop window does not stand in for that.

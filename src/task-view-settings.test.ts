@@ -1,3 +1,4 @@
+import { DEFAULT_TASK_DATE_COLORS, normalizeTaskDateColors, taskDateColorStyle, TASK_DATE_COLORS } from "./task-view-settings";
 import { describe, expect, it } from "vitest";
 
 import type { TimeGroupGranularity } from "./card-grouping-settings";
@@ -156,7 +157,7 @@ describe("normalizeOptionalBoxTaskView", () => {
     const taskSort = { field: "file" as const, direction: "desc" as const };
     const taskGroup = { dimension: "created" as const, timeGranularity: "week" as const };
     const normalized = normalizeOptionalBoxTaskView({ viewMode: "tasks", taskSort, taskGroup });
-    expect(normalized).toEqual({ viewMode: "tasks", taskSort, taskGroup });
+    expect(normalized).toEqual({ taskSort, taskGroup });
     expect(normalized.taskSort).not.toBe(taskSort);
     expect(normalized.taskGroup).not.toBe(taskGroup);
   });
@@ -167,9 +168,20 @@ describe("normalizeOptionalBoxTaskView", () => {
       taskSort: null,
       taskGroup: { dimension: "folder", timeGranularity: "century" },
     })).toEqual({
-      viewMode: "cards",
       taskSort: DEFAULT_TASK_SORT,
       taskGroup: DEFAULT_TASK_GROUP,
     });
+  });
+});
+
+describe("task date colors", () => {
+  it("defaults each absent or invalid field independently", () => {
+    expect(normalizeTaskDateColors(undefined)).toEqual(DEFAULT_TASK_DATE_COLORS);
+    expect(normalizeTaskDateColors({ created: "pink", done: "bad", due: null })).toEqual({ ...DEFAULT_TASK_DATE_COLORS, created: "pink" });
+  });
+  it.each(TASK_DATE_COLORS)("accepts theme color %s for each date", color => {
+    const colors = { created: color, done: color, due: color, overdue: color };
+    expect(normalizeTaskDateColors(colors)).toEqual(colors);
+    expect(taskDateColorStyle(colors)).toContain(`--fce-task-overdue-color: var(--color-${color});`);
   });
 });

@@ -1318,36 +1318,25 @@ describe("Toolbar.svelte task view", () => {
     expect(getBulkButton()).not.toBeNull();
   });
 
-  it("places a pressed-state toggle beside sort in card mode", async () => {
-    const captured = taskCallbacks();
-    mountToolbar({ taskViewAvailable: true, viewMode: "cards" }, captured.callbacks);
+  it("leaves the mode toggle to the navigation header", async () => {
+    mountToolbar({ taskViewAvailable: true, viewMode: "cards" });
     await tick();
-    const toggle = getToggle()!;
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
-    expect(toggle.getAttribute("aria-label")).toBe(taskStrings.toggle);
-    expect(toggle.getAttribute("data-tooltip")).toBe(taskStrings.toggle);
-    expect(toggle.getAttribute("data-icon")).toBe("list-checks");
-    expect(toggle.nextElementSibling).toBe(getSortButton());
+    expect(getToggle()).toBeNull();
     expect(getBulkButton()).not.toBeNull();
-    toggle.click();
-    expect(captured.modes).toEqual(["tasks"]);
   });
 
   it("hides bulk, keeps new note and search, and relabels search in task mode", async () => {
     const captured = taskCallbacks();
     mountToolbar({ taskViewAvailable: true, viewMode: "tasks", searchStatus: "building" }, captured.callbacks);
     await tick();
-    const toggle = getToggle()!;
-    expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    expect(toggle.classList.contains("is-selected")).toBe(true);
+    expect(getToggle()).toBeNull();
     expect(getBulkButton()).toBeNull();
     expect(document.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).not.toBeNull();
     document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.actions.toggleSearch}"]`)?.click();
     await tick();
     expect(document.querySelector<HTMLInputElement>(".fce-search-input")?.placeholder).toBe(taskStrings.searchPlaceholder);
     expect(document.querySelector(".fce-search-status")).toBeNull();
-    toggle.click();
-    expect(captured.modes).toEqual(["cards"]);
+    expect(captured.modes).toEqual([]);
   });
 
   it("offers task sort fields and task group dimensions in task mode", async () => {
@@ -1392,7 +1381,7 @@ describe("Toolbar.svelte task view", () => {
     expect(getSortButton()?.classList.contains("is-selected")).toBe(true);
   });
 
-  it("moves the toggle into the phone More menu and drops bulk there in task mode", async () => {
+  it("omits mode switching and bulk from the phone More menu in task mode", async () => {
     const captured = taskCallbacks();
     mountToolbar({ runtimeDevice: "phone", taskViewAvailable: true, viewMode: "tasks" }, captured.callbacks);
     await tick();
@@ -1400,17 +1389,17 @@ describe("Toolbar.svelte task view", () => {
     document.querySelector<HTMLButtonElement>(".fce-toolbar-more")?.click();
     await tick();
     const menu = getObsidianMenuInstances().at(-1)!;
-    expect(findMenuItem(menu, taskStrings.toggle)?.checked).toBe(true);
+    expect(findMenuItem(menu, taskStrings.toggle)).toBeUndefined();
     expect(findMenuItem(menu, strings.toolbar.actions.bulkTitle)).toBeUndefined();
-    clickMenuItem(menu, taskStrings.toggle);
-    expect(captured.modes).toEqual(["cards"]);
+
+    expect(captured.modes).toEqual([]);
   });
 
-  it("shows the toggle for card boxes", async () => {
+  it("omits the toggle and bulk for task-mode boxes", async () => {
     mountToolbar({ taskViewAvailable: true, viewMode: "tasks", activeBoxId: "box-1", activeBoxName: "Reading",
       availableGroupDimensions: AVAILABLE_BOX_DIMENSIONS });
     await tick();
-    expect(getToggle()?.getAttribute("aria-pressed")).toBe("true");
+    expect(getToggle()).toBeNull();
     expect(getBulkButton()).toBeNull();
   });
 });

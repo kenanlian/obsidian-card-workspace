@@ -109,8 +109,9 @@ export interface CardBoxDefinition {
   group: GroupSpec;
   /**
    * Optional task-view arrangement. Absent fields stay absent in persistence
-   * and resolve to cards, due/ascending, and no grouping.
+   * and resolve to due/ascending and no grouping. View mode is global.
    */
+  /** @deprecated Legacy input only; ignored and removed on normalization. */
   viewMode?: DefaultViewMode;
   taskSort?: TaskSortSpec;
   taskGroup?: TaskGroupSpec;

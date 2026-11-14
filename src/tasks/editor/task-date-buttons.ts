@@ -1,3 +1,4 @@
+import { taskDateColorStyle, type TaskDateColors } from "../../task-view-settings";
 import { setIcon, setTooltip } from "obsidian";
 import { MapMode, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
@@ -10,6 +11,7 @@ export type TaskDateButtonsMode = "compact" | "full";
 export type TaskDateButtonStyle = "chips" | "dots";
 
 export interface TaskDateButtonsOptions {
+  readonly colors?: TaskDateColors;
   readonly mode: TaskDateButtonsMode;
   readonly style: TaskDateButtonStyle;
   /** Chips show their short date only while the date text itself is hidden. */
@@ -145,6 +147,7 @@ class TaskDateButtonsWidget extends WidgetType {
       cls: `fce-task-date-buttons is-${mode} is-${style}`,
       attr: { role: "group", "aria-label": strings.editor.dateButtons },
     });
+    container.setAttribute("style", taskDateColorStyle(this.controller.options.colors));
     for (const kind of KINDS) {
       const value = this.dates[kind];
       const button = container.createSpan({ cls: `fce-task-date-button ${value === null ? "is-unset" : "is-set"}` });

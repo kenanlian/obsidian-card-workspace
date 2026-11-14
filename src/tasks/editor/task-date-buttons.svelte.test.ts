@@ -1,3 +1,4 @@
+import type { TaskDateColors } from "../../task-view-settings";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -34,7 +35,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = true, look: { style?: TaskDateButtonStyle; showDates?: boolean } = {}) {
+function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = true, look: { style?: TaskDateButtonStyle; showDates?: boolean; colors?: TaskDateColors } = {}) {
   const parent = document.createElement("div");
   document.body.append(parent);
   const preview = new Compartment();
@@ -46,7 +47,7 @@ function mount(doc = DOC, mode: TaskDateButtonsMode = "compact", livePreview = t
       extensions: [
         preview.of(livePreview ? editorLivePreviewField.init(() => true) : []),
         createTaskDateButtons({
-          mode, style: look.style ?? "chips", showDates: look.showDates ?? false, layout: "popover", getStrings: () => getUiStrings("en").tasks, firstDayOfWeek: () => 1, today: () => "2026-11-14",
+          colors: look.colors, mode, style: look.style ?? "chips", showDates: look.showDates ?? false, layout: "popover", getStrings: () => getUiStrings("en").tasks, firstDayOfWeek: () => 1, today: () => "2026-11-14",
         }),
         EditorView.updateListener.of((update) => { transactions.push(...update.transactions); }),
       ],
@@ -64,6 +65,14 @@ function lastPickerOptions(): TaskDatePickerOptions {
 }
 
 describe("task date buttons", () => {
+  it.each(["chips", "dots"] as const)("applies configured colors in %s style", style => {
+    const { groups } = mount(DOC, "full", true, { style, colors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" } });
+    for (const group of groups()) {
+      expect(group.style.getPropertyValue("--fce-task-created-color")).toBe("var(--color-pink)");
+      expect(group.style.getPropertyValue("--fce-task-overdue-color")).toBe("var(--color-purple)");
+    }
+  });
+
   it("renders three buttons at the end of task lines outside code blocks", () => {
     const { view, groups } = mount();
     expect(groups()).toHaveLength(3);

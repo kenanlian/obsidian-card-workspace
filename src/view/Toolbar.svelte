@@ -73,7 +73,6 @@
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSearchHistoryCommand?: (payload: SearchHistoryCommand) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
-    onViewModeChange?: (payload: { mode: DefaultViewMode }) => void;
     onTaskSortChange?: (payload: Partial<TaskSortSpec>) => void;
     onTaskGroupChange?: (payload: Partial<TaskGroupSpec>) => void;
   }
@@ -167,7 +166,6 @@
     onSearchQueryReset,
     onSearchHistoryCommand,
     onBoxCommand,
-    onViewModeChange,
     onTaskSortChange,
     onTaskGroupChange,
   }: ToolbarProps = $props();
@@ -185,7 +183,6 @@
   const taskMode = $derived(taskViewAvailable && projection.viewMode === "tasks");
   const taskSort = $derived(projection.taskSort ?? DEFAULT_TASK_SORT);
   const taskGroup = $derived(projection.taskGroup ?? DEFAULT_TASK_GROUP);
-  const taskViewLabel = $derived(strings.tasks.view.toggle);
   const searchQuery = $derived(search.query);
   const searchStatus = $derived(search.status);
   const searchFocusToken = $derived(search.focusToken);
@@ -439,7 +436,6 @@
       });
     };
     addAction(sortGroupStrings.title, "arrow-up-narrow-wide", () => openSortGroupMenu(event, anchor), isSortGroupTriggerSelected);
-    if (taskViewAvailable) addAction(taskViewLabel, "list-checks", toggleViewMode, taskMode);
     if (!taskMode) addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
     if (isBoxMode) {
       addAction(boxStrings.configureTitle, "settings-2", () => emitBoxCommand("configure"));
@@ -503,9 +499,6 @@
     onTaskGroupChange?.(next.timeGranularity ? { dimension: next.dimension, timeGranularity: next.timeGranularity } : { dimension: next.dimension });
   }
 
-  function toggleViewMode(): void {
-    onViewModeChange?.({ mode: taskMode ? "cards" : "tasks" });
-  }
 
   function applyGroupSpec(next: GroupSpec): void {
     const { dimension, orderBy, orderDirection, propertyKey, timeGranularity } = next;
@@ -577,19 +570,6 @@
   }
 </script>
 
-{#snippet viewModeToggle()}
-  <button
-    type="button"
-    class="clickable-icon fce-toolbar-button fce-view-mode-toggle {taskMode ? 'is-selected' : ''}"
-    aria-label={taskViewLabel}
-    aria-pressed={taskMode}
-    onclick={toggleViewMode}
-    use:applyIcon={"list-checks"}
-    use:applyTooltip={taskViewLabel}
-  >
-    <span class="fce-sr-only">{taskViewLabel}</span>
-  </button>
-{/snippet}
 
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}" class:is-compact={compact}>
   <div class="fce-toolbar" role="toolbar" aria-label={toolbarStrings.actions.toolbarAriaLabel}>
@@ -643,7 +623,7 @@
             >
               <span class="fce-sr-only">{toolbarStrings.actions.newNote}</span>
             </button>
-            {#if taskViewAvailable}{@render viewModeToggle()}{/if}
+
             <button
               type="button"
               class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
@@ -678,7 +658,7 @@
           {:else}
             {#each TOOLBAR_ACTIONS as action}
               {#if action.id === "sort"}
-                {#if taskViewAvailable}{@render viewModeToggle()}{/if}
+
                 <button
                   type="button"
                   class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"

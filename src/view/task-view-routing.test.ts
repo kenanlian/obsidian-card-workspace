@@ -106,6 +106,18 @@ describe("task view routing", () => {
     ]);
   });
 
+  it("returns from single-pane navigation immediately after a mode toggle", async () => {
+    const h = await openTaskView("cards");
+    Object.assign(h.settings, { navPaneWidth: 240, navPaneCollapsed: false });
+    const layout = (h.view as any).modules.navLayout;
+    layout.onShellResize(200);
+    expect(layout.getLayoutMode()).toBe("single");
+    await layout.onToggleNavPane();
+    expect(layout.getNavVisible()).toBe(true);
+    await (h.view as any).modules.arrangementActions.setViewMode("tasks");
+    expect(layout.getNavVisible()).toBe(false);
+  });
+
   it("exits bulk mode on entering tasks and ignores bulk toolbar actions in task mode", async () => {
     const h = await openTaskView("cards");
     publishAll(h.view);

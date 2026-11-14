@@ -3727,10 +3727,10 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
    Shared by the editor date buttons and the task-card chips. The hue names
    the date kind, or the due urgency; an unset date is faint, a set date filled.
    ========================================================================== */
-:is(.fce-task-date-button, .fce-task-chip)[data-kind="created"] { --fce-task-date-color: var(--color-blue); }
-:is(.fce-task-date-button, .fce-task-chip)[data-kind="done"] { --fce-task-date-color: var(--color-green); }
-:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--color-orange); }
-:is(.fce-task-date-button, .fce-task-chip).is-overdue { --fce-task-date-color: var(--color-red); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="created"] { --fce-task-date-color: var(--fce-task-created-color, var(--color-blue)); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="done"] { --fce-task-date-color: var(--fce-task-done-color, var(--color-green)); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--fce-task-due-color, var(--color-orange)); }
+:is(.fce-task-date-button, .fce-task-chip).is-overdue { --fce-task-date-color: var(--fce-task-overdue-color, var(--color-red)); }
 
 /* ==========================================================================
    Task date buttons

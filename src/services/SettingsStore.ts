@@ -37,6 +37,7 @@ export interface PreferencesSettings {
   taskDateButtonStyle: PluginSettings["taskDateButtonStyle"];
   taskDateHideSource: boolean;
   taskCardShowFile: boolean;
+  taskDateColors: PluginSettings["taskDateColors"];
   defaultCardOpenBehavior: PluginSettings["defaultCardOpenBehavior"];
   locateLinkCardOnOpen: boolean;
   dragInsertAction: PluginSettings["dragInsertAction"];
@@ -199,6 +200,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.taskDateButtons !== undefined) preferences.taskDateButtons = patch.taskDateButtons;
   if (patch.taskDateButtonStyle !== undefined) preferences.taskDateButtonStyle = patch.taskDateButtonStyle;
   if (patch.taskDateHideSource !== undefined) preferences.taskDateHideSource = patch.taskDateHideSource;
+  if (patch.taskDateColors !== undefined) preferences.taskDateColors = patch.taskDateColors;
   if (patch.taskCardShowFile !== undefined) preferences.taskCardShowFile = patch.taskCardShowFile;
   if (patch.defaultCardOpenBehavior !== undefined) {
     preferences.defaultCardOpenBehavior = patch.defaultCardOpenBehavior;
@@ -292,6 +294,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       taskDateButtonStyle: settings.taskDateButtonStyle,
       taskDateHideSource: settings.taskDateHideSource,
       taskCardShowFile: settings.taskCardShowFile,
+      taskDateColors: { ...settings.taskDateColors },
       defaultCardOpenBehavior: settings.defaultCardOpenBehavior,
       locateLinkCardOnOpen: settings.locateLinkCardOnOpen,
       dragInsertAction: settings.dragInsertAction,

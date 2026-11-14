@@ -10,6 +10,7 @@
   import type { AttachSearchHistorySuggest } from "./search-history-suggest";
   import NavigationPane from "./NavigationPane.svelte";
   import CardItem from "./CardItem.svelte";
+  import { taskDateColorStyle } from "../task-view-settings";
   import TaskCardItem from "./TaskCardItem.svelte";
   import { formatIsoDate } from "../tasks";
   import GroupHeaderRow from "./GroupHeaderRow.svelte";
@@ -1028,6 +1029,7 @@
 </script>
 
 <div
+  style={taskDateColorStyle(appearance.taskDateColors)}
   data-fce-device={runtimeDevice}
   class="fce-shell {dragNavigation ? 'is-drag-navigation' : ''} {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {displayedNav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
   data-fce-font-size={appearance.uiFontSize ?? "default"}
@@ -1039,6 +1041,8 @@
     {dragSession} {onDropCards}
     {strings}
     nav={displayedNav}
+    viewMode={projection.viewMode}
+    {onViewModeChange}
     {scope}
     activeFilterTags={projection.activeFilterTags}
     onFolderAction={handleFolderAction}
@@ -1069,7 +1073,6 @@
     onSortChange={handleSortChange}
     onGroupChange={handleGroupChange}
     onGroupCollapseCommand={handleGroupCollapseCommand}
-    {onViewModeChange}
     {onTaskSortChange}
     {onTaskGroupChange}
     onSearchQueryChange={handleSearchQueryChange}

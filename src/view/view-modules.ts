@@ -526,6 +526,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     groupCollapse,
     getGroupSegmentKeys: () => projection.getGroupSegments().map((segment) => segment.key),
     exitBulkMode: () => { bulk.exitBulkMode(); },
+    returnToStreamIfSinglePane: () => navLayout.returnToCardsViewIfSinglePane(),
   });
 
   const cardDropActions = new CardDropActions({ context,

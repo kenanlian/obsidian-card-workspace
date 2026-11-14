@@ -11,7 +11,7 @@ import { insertOrConvertTasks } from "./task-commands";
 import { createTaskDateButtons } from "./task-date-buttons";
 
 export type TaskEditingSettings = Pick<PluginSettings,
-  "enhancedTaskEditing" | "autoCreatedDate" | "autoDoneDate" | "taskDateButtons" | "taskDateButtonStyle" | "taskDateHideSource">;
+  "enhancedTaskEditing" | "autoCreatedDate" | "autoDoneDate" | "taskDateButtons" | "taskDateButtonStyle" | "taskDateHideSource" | "taskDateColors">;
 
 export interface TaskEditingHost {
   readonly app: Pick<App, "workspace">;
@@ -63,6 +63,7 @@ export function registerTaskEditing(host: TaskEditingHost): TaskEditingRegistrat
       settings.enhancedTaskEditing && settings.taskDateHideSource,
       settings.taskDateButtons,
       settings.taskDateButtonStyle,
+      JSON.stringify(settings.taskDateColors),
     ].join("|");
     if (next === signature) {
       return false;
@@ -77,6 +78,7 @@ export function registerTaskEditing(host: TaskEditingHost): TaskEditingRegistrat
       mode: settings.taskDateButtons === "full" ? "full" : "compact",
       style: settings.taskDateButtonStyle === "dots" ? "dots" : "chips",
       showDates: settings.taskDateHideSource,
+      colors: settings.taskDateColors,
       layout: host.device === "phone" ? "sheet" : "popover",
       getStrings,
       firstDayOfWeek,

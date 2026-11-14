@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { DefaultViewMode } from "../settings";
   import { DragSession, type DragSource } from "./drag-session";
   import { resolveCardDropTarget } from "./card-drop-target";
   import type { CardDropTarget } from "./card-drop";
@@ -24,6 +25,8 @@
     type NavigationSortDragState } from "./navigation-sort-dnd";
   import type { FolderActionPayload, NavContextMenuPayload } from "./types";
   interface Props {
+    viewMode?: DefaultViewMode;
+    onViewModeChange?: (payload: { mode: DefaultViewMode }) => void;
     dragSession?: DragSession;
     onDropCards?: (target: CardDropTarget, paths: string[]) => void;
     strings?: UiStrings;
@@ -52,6 +55,7 @@
     supportsIncludeSubfolders: true, supportsBoxRuleSeeding: true,
   };
   let {
+    viewMode = "cards", onViewModeChange,
     dragSession = new DragSession(), onDropCards,
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
     onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
@@ -598,6 +602,10 @@
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
     <div class="fce-nav-pane-header-group">
+      <button type="button" class="clickable-icon fce-nav-header-button fce-view-mode-toggle {viewMode === 'tasks' ? 'is-active is-selected' : ''}"
+        aria-label={strings.tasks.view.toggle} aria-pressed={viewMode === "tasks"}
+        onclick={() => onViewModeChange?.({ mode: viewMode === "tasks" ? "cards" : "tasks" })}
+        use:icon={"list-checks"} use:tooltip={strings.tasks.view.toggle}></button>
       <button type="button" class="clickable-icon fce-nav-header-button fce-nav-toggle-all"
         aria-label={expansionLabel} disabled={nav.projection.sections.length === 0}
         onclick={() => emitIntent({ type: "toggle-all-navigation" })}

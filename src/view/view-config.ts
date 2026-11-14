@@ -6,7 +6,7 @@
  * and never computes arrangement: `group` carries the dimension *names* rather
  * than computed groups. Arrangement ownership and task-view availability come
  * from the exhaustive capability resolver (C6), so a future source must declare
- * both there explicitly. A scope with `taskView === false` (links) is forced
+ * both there explicitly. A scope with `taskView === false` is forced
  * to card mode.
  */
 import { findCardBox } from "./card-boxes";
@@ -51,7 +51,7 @@ export function resolveViewConfig(
     sort: box.sort,
     pinnedPaths: box.pinnedPaths,
     group: box.group,
-    viewMode: capabilities.taskView ? (box.viewMode ?? "cards") : "cards",
+    viewMode: global.viewMode,
     taskSort: box.taskSort ?? DEFAULT_TASK_SORT,
     taskGroup: box.taskGroup ?? DEFAULT_TASK_GROUP,
   };

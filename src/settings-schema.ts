@@ -43,6 +43,7 @@ export const SETTINGS_LAYER_BY_KEY = {
   taskDateButtonStyle: "preferences",
   taskDateHideSource: "preferences",
   taskCardShowFile: "preferences",
+  taskDateColors: "preferences",
   defaultCardOpenBehavior: "preferences",
   locateLinkCardOnOpen: "preferences",
   dragInsertAction: "preferences",

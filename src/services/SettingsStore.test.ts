@@ -665,6 +665,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["taskDateButtonStyle", { taskDateButtonStyle: "dots" }],
     ["taskDateHideSource", { taskDateHideSource: true }],
     ["taskCardShowFile", { taskCardShowFile: true }],
+    ["taskDateColors", { taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" } }],
     ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],
     ["locateLinkCardOnOpen", { locateLinkCardOnOpen: true }],
     ["dragInsertAction", { dragInsertAction: "wiki" }],

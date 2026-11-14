@@ -41,7 +41,7 @@ try {
   const settings = plugin.tabs[0];
   host.setSettingsApiAvailable(true);
   const definitions = settings.getSettingDefinitions();
-  assert.equal(definitions.length, 7);
+  assert.equal(definitions.length, 8);
   assert(definitions.every(page => page.type === "page" && page.items));
   assert(definitions.some(page => page.name === plugin.getUiStrings().noteInput.quickInputHeading));
   const openSetting = definitions.flatMap(page => page.items).flatMap(group => group.items).find(item => item.control?.key === "defaultCardOpenBehavior");
@@ -49,7 +49,7 @@ try {
   host.setSettingsApiAvailable(false);
   assert.equal(settings.getSettingDefinitions().length, 0);
   settings.display();
-  assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 7);
+  assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 8);
   settings.containerEl.querySelector(".fce-settings-page-link").click();
   assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 0);
   settings.hide();

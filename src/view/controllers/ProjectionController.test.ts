@@ -837,10 +837,10 @@ describe("ProjectionController task stream", () => {
     expect(h.store.getVisibleCards()).toHaveLength(2);
   });
 
-  it("keeps links scopes in the card stream", () => {
-    const h = createTaskHarness({ scope: createLinksScope("notes/a.md", "backlinks") });
+  it.each(["backlinks", "outgoing"] as const)("projects %s tasks", direction => {
+    const h = createTaskHarness({ scope: createLinksScope("notes/a.md", direction) });
     h.controller.reprojectCards();
-    expect(h.controller.getStreamMode()).toBe("cards");
-    expect(h.store.getVisibleTaskCards()).toEqual([]);
+    expect(h.controller.getStreamMode()).toBe("tasks");
+    expect(h.store.getVisibleTaskCards().length).toBeGreaterThan(0);
   });
 });

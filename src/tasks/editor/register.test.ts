@@ -23,6 +23,7 @@ vi.mock("../ui/TaskDatePicker", () => ({ closeAllTaskDatePickers: mocks.closeAll
 import { INSERT_TASK_COMMAND_ID, registerTaskEditing } from "./register";
 
 const DEFAULTS: TaskEditingSettings = {
+  taskDateColors: { created: "blue", done: "green", due: "orange", overdue: "red" },
   enhancedTaskEditing: true, autoCreatedDate: true, autoDoneDate: true, taskDateButtons: "compact", taskDateButtonStyle: "chips", taskDateHideSource: false,
 };
 
@@ -102,6 +103,18 @@ describe("registerTaskEditing", () => {
     expect(fixture.kinds()).toEqual([]);
     expect(fixture.registered[0]).toBe(array);
     expect(fixture.updateOptions).toHaveBeenCalledTimes(4);
+  });
+
+  it("refreshes existing editor buttons after a color change", () => {
+    const fixture = createHost();
+    const registration = registerTaskEditing(fixture.host);
+    const colors = { ...DEFAULTS.taskDateColors, created: "pink" as const };
+    fixture.set({ taskDateColors: colors });
+    registration.refresh();
+    expect(fixture.updateOptions).toHaveBeenCalledOnce();
+    expect(mocks.buttons).toHaveBeenLastCalledWith(expect.objectContaining({ colors }));
+    registration.refresh();
+    expect(fixture.updateOptions).toHaveBeenCalledOnce();
   });
 
   it("closes open date pickers on unload", () => {

@@ -114,8 +114,7 @@ export function resolveBoxesUpdateIntent(
 
   const sortChanged = previousBox.sort.field !== nextBox.sort.field
     || previousBox.sort.direction !== nextBox.sort.direction;
-  const taskViewChanged = (previousBox.viewMode ?? "cards") !== (nextBox.viewMode ?? "cards")
-    || !taskSortsEqual(previousBox.taskSort, nextBox.taskSort)
+  const taskViewChanged = !taskSortsEqual(previousBox.taskSort, nextBox.taskSort)
     || !taskGroupsEqual(previousBox.taskGroup, nextBox.taskGroup);
   return sortChanged
     || !stringArraysEqual(previousBox.pinnedPaths, nextBox.pinnedPaths)
@@ -220,6 +219,7 @@ export function resolveSettingsUpdateIntent(
   if (previous.taskDateButtons !== next.taskDateButtons) intent = mergeIntent(intent, "patch");
   if (previous.taskDateButtonStyle !== next.taskDateButtonStyle) intent = mergeIntent(intent, "patch");
   if (previous.taskDateHideSource !== next.taskDateHideSource) intent = mergeIntent(intent, "patch");
+  if (JSON.stringify(previous.taskDateColors) !== JSON.stringify(next.taskDateColors)) intent = mergeIntent(intent, "patch");
   if (previous.taskCardShowFile !== next.taskCardShowFile) intent = mergeIntent(intent, "patch");
   if (previous.defaultCardOpenBehavior !== next.defaultCardOpenBehavior) intent = mergeIntent(intent, "patch");
   if (previous.locateLinkCardOnOpen !== next.locateLinkCardOnOpen) intent = mergeIntent(intent, "patch");

@@ -193,7 +193,7 @@ describe("rule + membership helpers", () => {
     const taskSort = { field: "text" as const, direction: "desc" as const };
     const taskGroup = { dimension: "created" as const, timeGranularity: "week" as const };
     const supplied = createCardBox("Box", [], { viewMode: "tasks", taskSort, taskGroup });
-    expect(supplied.viewMode).toBe("tasks");
+    expect(supplied.viewMode).toBeUndefined();
     expect(supplied.taskSort).toEqual(taskSort);
     expect(supplied.taskSort).not.toBe(taskSort);
     expect(supplied.taskGroup).toEqual(taskGroup);
@@ -206,7 +206,7 @@ describe("rule + membership helpers", () => {
       taskSort: null,
       taskGroup: { dimension: "folder" },
     } as never);
-    expect(created.viewMode).toBe("cards");
+    expect(created.viewMode).toBeUndefined();
     expect(created.taskSort).toEqual({ field: "due", direction: "asc" });
     expect(created.taskGroup).toEqual({ dimension: "none" });
   });
@@ -219,7 +219,7 @@ describe("rule + membership helpers", () => {
       taskGroup: { dimension: "done", timeGranularity: "month" },
     });
     const [, copy] = duplicateCardBox([source], "a");
-    expect(copy.viewMode).toBe("tasks");
+    expect(copy.viewMode).toBeUndefined();
     expect(copy.taskSort).toEqual(source.taskSort);
     expect(copy.taskSort).not.toBe(source.taskSort);
     expect(copy.taskGroup).toEqual(source.taskGroup);

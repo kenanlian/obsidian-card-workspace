@@ -51,6 +51,7 @@ export interface ArrangementActionsDeps {
   getGroupSegmentKeys: () => readonly string[];
   /** Entering task mode leaves bulk mode; the following settings update publishes it. */
   exitBulkMode?: () => void;
+  returnToStreamIfSinglePane?: () => void;
 }
 
 function taskSortsEqual(left: TaskSortSpec, right: TaskSortSpec): boolean {
@@ -221,19 +222,15 @@ export class ArrangementActions {
   }
 
   /**
-   * Persists the stream mode to its owner: the active Box definition, or the
-   * global `defaultView` for folders. Sources without task view ignore it.
+   * Persists one global stream mode for every source and returns single-pane navigation to the stream.
    */
   async setViewMode(mode: DefaultViewMode): Promise<void> {
     if (!this.deps.resolveCapabilities().taskView) return;
     if (this.resolveTaskConfig().viewMode === mode) return;
     if (mode === "tasks") this.deps.exitBulkMode?.();
-    const owner = this.resolveArrangementOwner();
-    if (owner.kind === "box") {
-      await this.deps.updateActiveBox((box) => ({ ...box, viewMode: mode }));
-      return;
-    }
-    await this.deps.saveSettings({ defaultView: mode });
+    const write = this.deps.saveSettings({ defaultView: mode });
+    this.deps.returnToStreamIfSinglePane?.();
+    await write;
   }
 
   toggleViewMode(): Promise<void> {

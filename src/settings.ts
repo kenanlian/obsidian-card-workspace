@@ -7,6 +7,9 @@ import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
 import {
+  DEFAULT_TASK_DATE_COLORS,
+  normalizeTaskDateColors,
+  type TaskDateColors,
   DEFAULT_TASK_GROUP,
   DEFAULT_TASK_SORT,
   normalizeDefaultViewMode,
@@ -218,6 +221,7 @@ export interface PluginSettings {
   taskDateHideSource: boolean;
   /** Task cards show their source note in the footer. */
   taskCardShowFile: boolean;
+  taskDateColors: TaskDateColors;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   locateLinkCardOnOpen: boolean;
   dragInsertAction: DragInsertAction;
@@ -302,6 +306,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   taskDateButtonStyle: "chips",
   taskDateHideSource: false,
   taskCardShowFile: false,
+  taskDateColors: { ...DEFAULT_TASK_DATE_COLORS },
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   locateLinkCardOnOpen: false,
   dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
@@ -714,6 +719,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     group: normalizeVisibleGroupSpec(data.group, visiblePropertyKeySet),
     taskSort: normalizeTaskSortSpec(data.taskSort),
     taskGroup: normalizeTaskGroupSpec(data.taskGroup),
+    taskDateColors: normalizeTaskDateColors(data.taskDateColors),
     filter: {
       tags: normalizeTags(filter.tags),
       properties: normalizePropertyFilterClauses(filter.properties, visiblePropertyKeySet),

@@ -14,8 +14,7 @@ import type { CardScope } from "./scope";
  * the semantic dispatchers; the `never` arm fails compilation otherwise.
  *
  * Links keeps global grouping and pin ownership; view-config resolves its
- * per-direction sort independently. Links does not support task view:
- * view-config forces `viewMode` to `"cards"` wherever `taskView` is false.
+ * per-direction sort independently. All sources support task view with one global mode.
  * Browse tag and property filters
  * are supported by folders and boxes: links scopes keep the workspace filter
  * clauses dormant (never applied to their card streams) and surface that state
@@ -80,7 +79,7 @@ export function resolveSourceCapabilities(scope: CardScope): SourceCapabilities 
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: FOLDER_GROUP_DIMENSIONS,
-        taskView: false,
+        taskView: true,
       };
     default: {
       const exhaustive: never = scope;

@@ -2558,6 +2558,21 @@ describe("FolderCardPanel.svelte task stream", () => {
     return { target, panelModel, component };
   }
 
+  it("updates date colors from appearance without requesting note hydration", async () => {
+    const onHydrateViewport = vi.fn();
+    const { target, panelModel, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]), { onHydrateViewport });
+    await tick();
+    panelModel.mutate(state => {
+      state.appearance = { ...state.appearance, taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" } };
+    });
+    await tick();
+    const shell = target.querySelector<HTMLElement>(".fce-shell")!;
+    expect(shell.style.getPropertyValue("--fce-task-created-color")).toBe("var(--color-pink)");
+    expect(shell.style.getPropertyValue("--fce-task-overdue-color")).toBe("var(--color-purple)");
+    expect(onHydrateViewport).not.toHaveBeenCalled();
+    await unmount(component);
+  });
+
   it("renders task cards in virtual rows without hydration or image demand", async () => {
     const state = createTaskPanelState(Array.from({ length: 40 }, (_, i) => createTask(`notes/${i}.md`, i, `Task ${i}`)));
     state.appearance = { ...state.appearance, cardImageMode: "right" };
@@ -2640,7 +2655,7 @@ describe("FolderCardPanel.svelte task stream", () => {
     await unmount(component);
   });
 
-  it("routes task open intents and the toolbar view toggle", async () => {
+  it("routes task open intents and the navigation view toggle", async () => {
     const onTaskOpen = vi.fn();
     const onViewModeChange = vi.fn();
     const { target, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]), { onTaskOpen, onViewModeChange });

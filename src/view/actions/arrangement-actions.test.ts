@@ -112,6 +112,7 @@ function createHarness(options: {
     calls.push("reload");
   });
   const exitBulkMode = vi.fn(() => true);
+  const returnToStreamIfSinglePane = vi.fn();
 
   const deps: ArrangementActionsDeps = {
     context: {
@@ -137,6 +138,7 @@ function createHarness(options: {
     groupCollapse,
     getGroupSegmentKeys,
     exitBulkMode,
+    returnToStreamIfSinglePane,
   };
 
   return {
@@ -154,6 +156,7 @@ function createHarness(options: {
     requestUpdate,
     getGroupSegmentKeys,
     exitBulkMode,
+    returnToStreamIfSinglePane,
     calls,
   };
 }
@@ -398,20 +401,10 @@ describe("task view arrangement", () => {
     expect(h.exitBulkMode).not.toHaveBeenCalled();
   });
 
-  it("writes the active box view mode without touching the global default", async () => {
-    const h = createHarness({ scope: createBoxScope("box-1") });
+  it.each([createBoxScope("box-1"), createLinksScope("source.md", "backlinks"), createLinksScope("source.md", "outgoing")])("writes global mode from %j", async (scope) => {
+    const h = createHarness({ scope });
     await h.actions.onViewModeChange({ mode: "tasks" });
-    expect(h.getBox()?.viewMode).toBe("tasks");
-    expect(h.getSettings().defaultView).toBe("cards");
-    expect(h.saveSettings).not.toHaveBeenCalled();
-  });
-
-  it("ignores every task arrangement intent in links scopes", async () => {
-    const h = createHarness({ scope: createLinksScope("source.md", "backlinks") });
-    await h.actions.toggleViewMode();
-    await h.actions.onTaskSortChange({ field: "due", direction: "desc" });
-    await h.actions.onTaskGroupChange({ dimension: "status" });
-    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.getSettings().defaultView).toBe("tasks");
     expect(h.updateActiveBox).not.toHaveBeenCalled();
   });
 
@@ -450,4 +443,14 @@ describe("task view arrangement", () => {
     expect([...h.groupCollapse.getCollapsedKeys(scope, taskGroupCollapseSpec({ dimension: "status" }))]).toEqual(["task-status:open"]);
     expect(h.groupCollapse.getCollapsedKeys(scope, h.getSettings().group).size).toBe(0);
   });
+});
+
+it("returns from navigation before persistence finishes", async () => {
+  const h = createHarness();
+  let finish!: () => void;
+  h.saveSettings.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const pending = h.actions.setViewMode("tasks");
+  expect(h.returnToStreamIfSinglePane).toHaveBeenCalledOnce();
+  finish();
+  await pending;
 });

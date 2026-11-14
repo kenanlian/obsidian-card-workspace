@@ -44,11 +44,11 @@ describe("resolveSourceCapabilities", () => {
     });
   });
 
-  it("enables task view for folders and boxes and disables it for links", () => {
+  it("enables task view for every source", () => {
     expect(resolveSourceCapabilities(createFolderScope("", true)).taskView).toBe(true);
     expect(resolveSourceCapabilities(createBoxScope("box-1")).taskView).toBe(true);
-    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks")).taskView).toBe(false);
-    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "outgoing")).taskView).toBe(false);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks")).taskView).toBe(true);
+    expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "outgoing")).taskView).toBe(true);
   });
 
   it("returns the exact capability table for links scope", () => {
@@ -59,7 +59,7 @@ describe("resolveSourceCapabilities", () => {
       supportsIncludeSubfolders: false,
       supportsBoxRuleSeeding: false,
       groupDimensions: FOLDER_GROUP_DIMENSIONS,
-      taskView: false,
+      taskView: true,
     };
 
     expect(resolveSourceCapabilities(createLinksScope("notes/a.md", "backlinks"))).toEqual(expected);
