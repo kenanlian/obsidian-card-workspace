@@ -92,15 +92,15 @@ Acceptance on real devices: check the status menu, date sheet with the keyboard 
 Task group headers have a **More group actions** button to the right of the count. Clicking it, right-clicking anywhere on the group header, or pressing the context-menu key (Shift+F10) on its buttons opens the same group menu. It currently offers the three copy formats for that group, including tasks hidden by group collapse. The menu is also available on sticky group headers.
 
 
-### Inline tag and wiki-link groups / 任务行标签与双链分组
+### Inline tag and wiki-link groups / 任务行标签与链接分组
 
 Task grouping supports the tags and `[[wiki links]]` on each root task's own line.
 A task with multiple values appears once in each matching group; its subtasks stay attached.
 Link aliases and heading/block references share the destination note group. Tasks without a value appear last.
 Copying all groups preserves each group's complete contents, including repeated tasks.
 
-任务可按当前任务行中的标签或双链分组，多值任务会出现在各个所属组，子任务保留在父卡片内。
-双链别名、标题和块引用归入目标笔记所在组；无标签或双链的任务排在最后。复制全部保留各组的完整内容。
+任务可按当前任务行中的标签或链接分组，多值任务会出现在各个所属组，子任务保留在父卡片内。
+链接别名、标题和块引用归入目标笔记所在组；无标签或链接的任务排在最后。复制全部保留各组的完整内容。
 
 New checkboxes receive their created date immediately, even when empty. The caret remains before the date;
 Enter on an automatically dated empty task still exits the list. Existing tasks and pasted tasks are not backfilled.
