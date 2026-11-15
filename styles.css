@@ -4456,10 +4456,14 @@ body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 2
 /* Persistent task-mode affordance, including single-pane layouts. */
 .folder-card-view .fce-view-mode-toggle {
   display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; aspect-ratio: auto;
+  border: var(--fce-nav-divider-size) solid var(--fce-nav-section-divider);
   font-size: var(--font-ui-smaller); background: transparent; box-shadow: none;
   white-space: nowrap; min-height: 28px; color: var(--text-muted);
 }
 .folder-card-view .fce-view-mode-toggle.is-active { color: var(--text-accent); }
+.folder-card-view .fce-view-mode-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; line-height: 0;
+}
 .folder-card-view .fce-mode-switch { width: 28px; height: 16px; border-radius: 12px; background: var(--background-modifier-border); position: relative; flex-shrink: 0; }
 .folder-card-view .fce-mode-switch::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--text-on-accent); inset-block-start: 2px; inset-inline-start: 2px; }
 .folder-card-view .is-active > .fce-mode-switch { background: var(--interactive-accent); }

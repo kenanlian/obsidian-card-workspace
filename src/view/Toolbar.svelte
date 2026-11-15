@@ -491,7 +491,6 @@
     if (!taskMode) addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
     if (isBoxMode) {
       if (scope.draw?.available) addAction(drawToggleLabel, "dices", () => emitBoxCommand("draw"), drawActive);
-      addAction(boxStrings.configureTitle, "settings-2", () => emitBoxCommand("configure"));
     }
     if (scope.supportsBoxRuleSeeding) {
       menu.addSeparator();
@@ -716,16 +715,6 @@
               use:captureSortButton
             >
               <span class="fce-sr-only">{sortGroupStrings.title}</span>
-            </button>
-            <button
-              type="button"
-              class="clickable-icon fce-toolbar-button"
-              aria-label={boxStrings.configureTitle}
-              onclick={() => emitBoxCommand("configure")}
-              use:applyIcon={"settings-2"}
-              use:applyTooltip={boxStrings.configureTitle}
-            >
-              <span class="fce-sr-only">{boxStrings.configure}</span>
             </button>
             {#if !taskMode}
             <button

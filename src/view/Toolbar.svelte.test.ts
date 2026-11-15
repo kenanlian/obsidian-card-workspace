@@ -340,7 +340,7 @@ describe("Toolbar.svelte", () => {
     expect(captured.toolbarActionEvents.at(-1)).toEqual({ action: "bulk" });
   });
 
-  it("provides a visible localized bulk exit and retains box configuration", async () => {
+  it("provides a visible localized bulk exit without box configuration", async () => {
     const captured = createCapturedCallbacks();
     const strings = getUiStrings("zh");
     mountToolbar({ runtimeDevice: "phone", bulkMode: true, selectedCount: 2,
@@ -352,8 +352,7 @@ describe("Toolbar.svelte", () => {
     const menu = await openMoreMenu();
     expect(findMenuItem(menu, strings.toolbar.actions.exitBulk)?.checked).toBe(true);
     expect(findMenuItem(menu, strings.box.saveScopeTitle)).toBeUndefined();
-    clickMenuItem(menu, strings.box.configureTitle);
-    expect(captured.boxCommandEvents).toEqual([{ command: "configure" }]);
+    expect(findMenuItem(menu, strings.box.configureTitle)).toBeUndefined();
     exit?.click();
     expect(captured.toolbarActionEvents).toEqual([{ action: "bulk" }]);
   });
