@@ -202,6 +202,8 @@
 
 .folder-card-view .fce-nav-pane-header-group {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 2px;
   min-width: 0;
@@ -3910,7 +3912,7 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
    ========================================================================== */
 :is(.fce-task-date-button, .fce-task-chip)[data-kind="created"] { --fce-task-date-color: var(--fce-task-created-color, var(--color-blue)); }
 :is(.fce-task-date-button, .fce-task-chip)[data-kind="done"] { --fce-task-date-color: var(--fce-task-done-color, var(--color-green)); }
-:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--fce-task-due-color, var(--color-orange)); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--fce-task-due-color, var(--color-yellow)); }
 :is(.fce-task-date-button, .fce-task-chip).is-overdue { --fce-task-date-color: var(--fce-task-overdue-color, var(--color-red)); }
 
 /* ==========================================================================
@@ -4114,10 +4116,8 @@ body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 2
   border-radius: 2px;
   cursor: pointer;
 }
-.folder-card-view .fce-task-row.is-completed > .fce-task-main > .fce-task-text {
-  color: var(--checklist-done-color, var(--text-muted));
-  text-decoration: var(--checklist-done-decoration, line-through);
-}
+.folder-card-view .fce-task-card[data-completed-style="strikethrough"] .fce-task-row.is-completed > .fce-task-main > .fce-task-text { text-decoration: line-through; }
+.folder-card-view .fce-task-card[data-completed-style="muted"] .fce-task-row.is-completed > .fce-task-main > .fce-task-text { color: var(--text-muted); }
 
 /* Every task's date row starts at its own text edge, including nested tasks. */
 .folder-card-view .fce-task-chips {
@@ -4452,3 +4452,16 @@ body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 2
   visibility: hidden;
   pointer-events: none;
 }
+
+/* Persistent task-mode affordance, including single-pane layouts. */
+.folder-card-view .fce-view-mode-toggle {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; aspect-ratio: auto;
+  font-size: var(--font-ui-smaller); background: transparent; box-shadow: none;
+  white-space: nowrap; min-height: 28px; color: var(--text-muted);
+}
+.folder-card-view .fce-view-mode-toggle.is-active { color: var(--text-accent); }
+.folder-card-view .fce-mode-switch { width: 28px; height: 16px; border-radius: 12px; background: var(--background-modifier-border); position: relative; flex-shrink: 0; }
+.folder-card-view .fce-mode-switch::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--text-on-accent); inset-block-start: 2px; inset-inline-start: 2px; }
+.folder-card-view .is-active > .fce-mode-switch { background: var(--interactive-accent); }
+.folder-card-view .is-active > .fce-mode-switch::after { inset-inline-start: 14px; }
+.folder-card-view .fce-task-mode-badge { flex-shrink: 0; padding: 1px 5px; margin-inline-start: 6px; border-radius: 4px; background: var(--interactive-accent); color: var(--text-on-accent); font-size: var(--font-ui-smaller); }

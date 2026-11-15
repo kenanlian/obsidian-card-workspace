@@ -1173,6 +1173,7 @@
                   {strings}
                   {appearance}
                   pendingIds={pendingTaskIds}
+                  pendingStatuses={cards.pendingTaskStatuses}
                   touch={runtimeDevice !== "desktop"}
                   searchQuery={search.committedQuery}
                   {onTaskToggle}

@@ -181,6 +181,7 @@ export interface PanelCardsState {
   taskStatus?: TaskViewStatus;
   /** Task item ids (`${filePath}::L${line}`, any depth) with a write in flight or awaiting refresh. */
   pendingTaskIds?: string[];
+  pendingTaskStatuses?: Record<string, boolean>;
 }
 
 export interface PanelSearchState {
@@ -261,6 +262,7 @@ export interface PanelAppearanceState extends IconSettings {
   uiFontSize?: UiFontSize;
   uiDensity?: UiDensity;
   cardStyle?: CardStyle;
+  taskCompletedStyle?: "none" | "strikethrough" | "muted";
   taskCardShowFile?: boolean;
   taskDateColors?: import("../task-view-settings").TaskDateColors;
 }

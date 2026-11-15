@@ -1170,6 +1170,7 @@ describe("card grouping settings normalization", () => {
         taskDateHideSource: false,
         taskReportWeekEndDay: 4,
         taskCopyPreserveOriginal: false,
+        taskCompletedStyle: "none",
         taskCardShowFile: false,
         taskDateColors: DEFAULT_SETTINGS.taskDateColors,
         boxNewNoteFolderPath: "",
@@ -1811,6 +1812,7 @@ describe("settings layer manifest (C4)", () => {
     taskDateHideSource: "preferences",
     taskReportWeekEndDay: "preferences",
     taskCopyPreserveOriginal: "preferences",
+    taskCompletedStyle: "preferences",
     taskCardShowFile: "preferences",
     taskDateColors: "preferences",
     defaultCardOpenBehavior: "preferences",
@@ -1952,6 +1954,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     taskDateHideSource: true,
     taskReportWeekEndDay: 2,
     taskCopyPreserveOriginal: true,
+    taskCompletedStyle: "muted",
     taskCardShowFile: true,
     taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" },
     defaultCardOpenBehavior: "new-tab",
@@ -2031,6 +2034,7 @@ describe("non-default v2 round trip per layer (C4)", () => {
     ["taskDateHideSource", (d) => d.preferences.taskDateHideSource, true],
     ["taskReportWeekEndDay", (d) => d.preferences.taskReportWeekEndDay, 2],
     ["taskCopyPreserveOriginal", (d) => d.preferences.taskCopyPreserveOriginal, true],
+    ["taskCompletedStyle", (d) => d.preferences.taskCompletedStyle, "muted"],
     ["taskCardShowFile", (d) => d.preferences.taskCardShowFile, true],
     ["taskDateColors", (d) => d.preferences.taskDateColors, { created: "pink", done: "cyan", due: "yellow", overdue: "purple" }],
     ["defaultCardOpenBehavior", (d) => d.preferences.defaultCardOpenBehavior, "new-tab"],
@@ -2208,4 +2212,14 @@ describe("skipLeadingTags preference", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { skipLeadingTags: true }).skipLeadingTags).toBe(true);
     expect(migrateSettings({ schemaVersion: 2, preferences: { skipLeadingTags: true } }).skipLeadingTags).toBe(true);
   });
+});
+
+
+it("normalizes completed-task styles and preserves saved due colours", () => {
+  expect(mergeSettings(DEFAULT_SETTINGS, {}).taskCompletedStyle).toBe("none");
+  expect(mergeSettings(DEFAULT_SETTINGS, { taskCompletedStyle: "muted" }).taskCompletedStyle).toBe("muted");
+  expect(mergeSettings(DEFAULT_SETTINGS, { taskCompletedStyle: "strikethrough" }).taskCompletedStyle).toBe("strikethrough");
+  expect(mergeSettings(DEFAULT_SETTINGS, { taskCompletedStyle: "invalid" } as never).taskCompletedStyle).toBe("none");
+  expect(DEFAULT_SETTINGS.taskDateColors.due).toBe("yellow");
+  expect(mergeSettings(DEFAULT_SETTINGS, { taskDateColors: { due: "orange" } } as never).taskDateColors.due).toBe("orange");
 });

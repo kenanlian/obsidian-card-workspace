@@ -23,6 +23,7 @@ export type MetadataImpactBatch =
 export interface MetadataImpactControllerDeps {
   context: ViewContext;
   onImageMetadataChange?: (path?: string) => void;
+  taskMetadataGroupsChanged?: (path: string) => boolean;
   refreshLinkMetadata?: (path?: string) => boolean;
   getGroupDimension: () => GroupDimension;
   /** True while the runtime scope supports an active browse Tag filter. */
@@ -126,7 +127,7 @@ export class MetadataImpactController implements DisposableController {
     // manual-only presentation bucket and an entering member is installed
     // before any projection reads the card set.
     const membership = this.deps.reconcileMetadataMembershipForPath(path);
-    const linkImpact = this.deps.refreshLinkMetadata?.(path) ?? false;
+    const linkImpact = (this.deps.refreshLinkMetadata?.(path) ?? false) || (this.deps.taskMetadataGroupsChanged?.(path) ?? false);
     if (membership !== "unchanged") {
       await this.applyMembershipImpact(path, membership);
       return;

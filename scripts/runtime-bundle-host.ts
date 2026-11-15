@@ -107,6 +107,7 @@ export function createApp() {
     loadLocalStorage: (key: string) => local.get(key) ?? null,
     saveLocalStorage: (key: string, data: unknown) => { local.set(key, data); },
     vault: { adapter: {}, on, getRoot: () => root, getFiles: () => [...files.values()], getMarkdownFiles: () => [...files.values()], getName: () => "synthetic-bundle-vault",
+      getFileByPath: (path: string) => files.get(path) ?? null,
       getAbstractFileByPath: (path: string) => path === "" ? root : files.get(path) ?? null,
       offref: (ref: { stop(): void }) => ref.stop(),
       create: async (path: string, content: string) => {

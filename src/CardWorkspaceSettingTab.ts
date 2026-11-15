@@ -187,6 +187,8 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "boolean" ? { taskDateHideSource: value } : null;
     case "taskCopyPreserveOriginal":
       return typeof value === "boolean" ? { taskCopyPreserveOriginal: value } : null;
+    case "taskCompletedStyle":
+      return value === "none" || value === "strikethrough" || value === "muted" ? { taskCompletedStyle: value } : null;
     case "taskCardShowFile":
       return typeof value === "boolean" ? { taskCardShowFile: value } : null;
     default:
@@ -325,6 +327,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.taskDateHideSource;
       case "taskCopyPreserveOriginal":
         return settings.taskCopyPreserveOriginal;
+      case "taskCompletedStyle":
+        return settings.taskCompletedStyle;
       case "taskCardShowFile":
         return settings.taskCardShowFile;
       default:
@@ -859,6 +863,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
             control: { type: "toggle", key: "taskDateHideSource" } },
           { name: getUiStrings(language).tasks.tools.original, desc: getUiStrings(language).tasks.tools.originalDesc,
             control: { type: "toggle", key: "taskCopyPreserveOriginal" } },
+          { name: strings.taskCompletedStyleName, desc: strings.taskCompletedStyleDesc,
+            control: { type: "dropdown", key: "taskCompletedStyle", options: strings.taskCompletedStyles } },
           { name: strings.taskCardShowFileName, desc: strings.taskCardShowFileDesc,
             control: { type: "toggle", key: "taskCardShowFile" } },
         ],
@@ -888,7 +894,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
       page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"])]),
-      page("tasks", [group(headings.taskDisplay, ["taskCardShowFile", "taskCopyPreserveOriginal"]),
+      page("tasks", [group(headings.taskDisplay, ["taskCompletedStyle", "taskCardShowFile", "taskCopyPreserveOriginal"]),
         group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateButtonStyle", "taskDateHideSource"]),
         group(headings.taskColors, ["created", "done", "due", "overdue"].map(kind => `taskDateColors.${kind}`))]),
       page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),

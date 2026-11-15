@@ -225,7 +225,7 @@ describe("row layout anchoring", () => {
       rows: wideRows,
     });
 
-    expect(anchor).toEqual({ ref: { kind: "card", path: "notes/5.md" }, offset: 20 });
+    expect(anchor).toEqual({ ref: { kind: "card", path: "notes/5.md", groupKey: segments[1].key }, offset: 20 });
 
     const narrowRows = projectPanelRows(cards, segments, 2);
     const narrowPositions = [0, 40, 240, 440, 640, 680, 880];
@@ -322,4 +322,16 @@ describe("positional anchoring for ungrouped layouts", () => {
       }),
     ).toEqual({ ref: { kind: "group", key: "h:g:0" }, offset: 0 });
   });
+});
+
+
+it("anchors the second copy of a task to its own group", () => {
+  const rows = projectPanelRows([{ path: "a::L1" }, { path: "a::L1" }], [
+    { key: "one", startIndex: 0, visibleCount: 1, collapsed: false },
+    { key: "two", startIndex: 1, visibleCount: 1, collapsed: false },
+  ], 1);
+  const positions = [0, 40, 140, 180];
+  const anchor = captureLayoutAnchor({ rows, rowPositions: positions, scrollTop: 195 });
+  expect(anchor?.ref).toEqual({ kind: "card", path: "a::L1", groupKey: "two" });
+  expect(resolveAnchoredScrollTop({ anchor: anchor!, rows, rowPositions: positions })).toBe(195);
 });

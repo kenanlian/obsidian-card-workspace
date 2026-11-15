@@ -29,6 +29,7 @@
     strings?: UiStrings;
     appearance?: PanelAppearanceState;
     pendingIds?: ReadonlySet<string>;
+    pendingStatuses?: Record<string, boolean>;
     /** Touch devices use larger date chips and hit areas. */
     touch?: boolean;
     searchQuery?: string;
@@ -52,6 +53,7 @@
     strings = getUiStrings("en"),
     appearance = { cardCornerRadius: "compact", previewLines: 5, searchPreviewSnippetCount: 2 },
     pendingIds = NO_PENDING,
+    pendingStatuses = {},
     touch = false,
     searchQuery = "",
     onTaskToggle,
@@ -87,7 +89,8 @@
   }
 
   function shownCompleted(item: TaskItem): boolean {
-    return isPending(item) && item.line in optimistic ? optimistic[item.line] : item.completed;
+    const shared = pendingStatuses[taskItemId(task.filePath, item.line)];
+    return isPending(item) ? shared ?? optimistic[item.line] ?? item.completed : item.completed;
   }
 
   function formatChipDate(value: string): string {
@@ -281,6 +284,7 @@
   class:is-pending={isPending(task)}
   class:is-completed={shownCompleted(task)}
   data-fce-card-background={backgroundColor === "theme" ? undefined : backgroundColor}
+  data-completed-style={appearance.taskCompletedStyle ?? "none"}
   data-task-id={task.path}
 >
   <div class="fce-task-card-body">

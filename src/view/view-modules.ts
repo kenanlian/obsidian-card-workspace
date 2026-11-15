@@ -485,6 +485,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     context,
     onImageMetadataChange: (path) => images.handleMetadataChange(path),
     refreshLinkMetadata: (path) => hydration.invalidateLinkMetadata(path),
+    taskMetadataGroupsChanged: (path) => projection.taskMetadataGroupsChanged(path),
     getGroupDimension: () => resolveGroupSpec().dimension,
     isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browseTagFilter && context.getSettings().filter.tags.length > 0,
     isSearchActive: () => search.getQuery().trim().length > 0,

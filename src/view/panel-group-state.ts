@@ -27,6 +27,7 @@ export function buildCardsPanelGroup(input: {
   taskGroupCounts?: Record<string, number>;
   taskStatus?: TaskViewStatus;
   pendingTaskIds?: readonly string[];
+  pendingTaskStatuses?: Record<string, boolean>;
 }): PanelModelState["cards"] {
   const streamMode = input.streamMode ?? "cards";
   const records = streamMode === "tasks" ? [] : [...input.records];
@@ -48,6 +49,7 @@ export function buildCardsPanelGroup(input: {
     taskRecords: streamMode === "tasks" ? [...input.taskRecords ?? []] : [],
     taskStatus: streamMode === "tasks" ? input.taskStatus ?? "idle" : "idle",
     pendingTaskIds: streamMode === "tasks" ? [...input.pendingTaskIds ?? []] : [],
+    pendingTaskStatuses: streamMode === "tasks" ? input.pendingTaskStatuses : {},
   };
 }
 

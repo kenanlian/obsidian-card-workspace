@@ -40,12 +40,13 @@ export interface SortGroupStrings {
   bucketPropertyUnassigned: string;
   /** Task-stream group dimensions and bucket headers. */
   taskGroup: {
-    dimensions: Record<"file" | "status" | "due" | "created" | "done", string>;
+    dimensions: Record<"file" | "status" | "due" | "created" | "done" | "tag" | "link", string>;
     statusIncomplete: string;
     statusCompleted: string;
     dueBuckets: Record<"overdue" | "today" | "tomorrow" | "thisWeek" | "later" | "none", string>;
     noCreatedDate: string;
     noDoneDate: string;
+    noLink: string;
   };
 }
 
@@ -90,11 +91,12 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     bucketManual: "Manually added",
     bucketPropertyUnassigned: "Unassigned",
     taskGroup: {
-      dimensions: { file: "File", status: "Status", due: "Due date", created: "Created date", done: "Completed date" },
+      dimensions: { tag: "Tag", link: "Wiki link", file: "File", status: "Status", due: "Due date", created: "Created date", done: "Completed date" },
       statusIncomplete: "Incomplete",
       statusCompleted: "Completed",
       dueBuckets: { overdue: "Overdue", today: "Today", tomorrow: "Tomorrow", thisWeek: "This week", later: "Later", none: "No due date" },
       noCreatedDate: "No created date",
+      noLink: "No wiki link",
       noDoneDate: "No completed date",
     },
   },
@@ -137,11 +139,12 @@ export const sortGroupStrings: Record<UiLanguage, SortGroupStrings> = {
     bucketManual: "手动添加",
     bucketPropertyUnassigned: "未赋值",
     taskGroup: {
-      dimensions: { file: "文件", status: "状态", due: "截止日期", created: "创建日期", done: "完成日期" },
+      dimensions: { tag: "标签", link: "双链", file: "文件", status: "状态", due: "截止日期", created: "创建日期", done: "完成日期" },
       statusIncomplete: "未完成",
       statusCompleted: "已完成",
       dueBuckets: { overdue: "已逾期", today: "今天", tomorrow: "明天", thisWeek: "本周", later: "以后", none: "无截止日期" },
       noCreatedDate: "无创建日期",
+      noLink: "无双链",
       noDoneDate: "无完成日期",
     },
   },

@@ -39,6 +39,7 @@ export type PanelRow<T extends RowProjectionCard = RowProjectionCard> =
       cards: T[];
       key: string;
       segmentIndex: number;
+      groupKey?: string;
     };
 
 export interface VirtualRowWindow {
@@ -144,7 +145,7 @@ export function projectPanelRows<T extends RowProjectionCard>(
 
     const start = clampCardOffset(segment.startIndex, cards.length);
     const end = clampCardOffset(start + clampCardOffset(segment.visibleCount, cards.length), cards.length);
-    appendPanelCardRows(rows, cards, start, end, safeColumnCount, segmentIndex);
+    appendPanelCardRows(rows, cards, start, end, safeColumnCount, segmentIndex, segment.key);
   }
 
   return rows;
@@ -157,6 +158,7 @@ function appendPanelCardRows<T extends RowProjectionCard>(
   end: number,
   columnCount: number,
   segmentIndex: number,
+  groupKey?: string,
 ): void {
   for (let startIndex = start; startIndex < end; startIndex += columnCount) {
     const endIndex = Math.min(end, startIndex + columnCount);
@@ -166,7 +168,8 @@ function appendPanelCardRows<T extends RowProjectionCard>(
       startIndex,
       endIndex,
       cards: cards.slice(startIndex, endIndex),
-      key: buildRowKey(cards, startIndex, endIndex, columnCount),
+      key: groupKey === undefined ? buildRowKey(cards, startIndex, endIndex, columnCount) : JSON.stringify([groupKey, buildRowKey(cards, startIndex, endIndex, columnCount)]),
+      ...(groupKey === undefined ? {} : { groupKey }),
       segmentIndex,
     });
   }

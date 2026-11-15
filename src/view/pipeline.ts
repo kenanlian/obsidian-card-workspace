@@ -13,7 +13,7 @@ import { arrangeCardsByGroup, type CardGroupSegment, type GroupBucket } from "./
 import { getFileFrontmatter, matchesTagFilter } from "./metadata-utils";
 import { matchesPropertyFilters } from "./property-metadata";
 import type { CardScope } from "./scope";
-import { buildTaskCardRecords, buildTaskGroupBuckets } from "./task-grouping";
+import { buildTaskCardRecords, buildTaskMembershipBuckets } from "./task-grouping";
 import type { NoteCardRecord, PipelineSearchInput, TaskCardItem, TaskCardRecord } from "./types";
 
 export interface PipelineContext {
@@ -348,7 +348,7 @@ function applyTaskGroupArrangement(tasks: TaskCardRecord[], context: TaskPipelin
   if (group.dimension === "none") {
     return { cards: tasks, segments: [], copyGroups: [{ key: "", label: "", tasks }] };
   }
-  const buckets = buildTaskGroupBuckets(tasks, group, context.strings, {
+  const buckets = buildTaskMembershipBuckets(context.app, tasks, group, context.strings, {
     today: context.today,
     firstDayOfWeek: context.firstDayOfWeek,
   });

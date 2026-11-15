@@ -318,7 +318,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(filter.querySelector("input")?.classList.contains("fce-search-input")).toBe(true);
     expect(filter.querySelector("input")?.getAttribute("role")).not.toBe("combobox");
     const actions = document.querySelector<HTMLElement>(".fce-nav-pane-header-group")!;
-    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["list-checks", "chevrons-down-up", "search", "send"]);
+    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual([null, "chevrons-down-up", "search", "send"]);
     expect(document.querySelector<HTMLElement>(".fce-nav-search-toggle")?.dataset.icon).toBe("search");
     expect(filter.querySelector(".fce-nav-filter-clear")).toBeNull();
 
@@ -1689,7 +1689,7 @@ it.each(["cards", "tasks"] as const)("navigation mode button reflects %s and emi
   const component = render({ viewMode, onViewModeChange: change });
   await tick();
   const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-nav-pane-header .fce-view-mode-toggle")).at(-1)!;
-  expect(button.getAttribute("aria-pressed")).toBe(String(viewMode === "tasks"));
+  expect(button.getAttribute("aria-checked")).toBe(String(viewMode === "tasks"));
   button.click();
   expect(change).toHaveBeenCalledWith({ mode: viewMode === "tasks" ? "cards" : "tasks" });
   await unmount(component);

@@ -1,3 +1,5 @@
+import type { App } from "obsidian";
+import { normalizeTagPath } from "./tag-tree";
 import type { SortGroupStrings } from "../i18n";
 import type { TaskGroupSpec } from "../task-view-settings";
 import { parseIsoDateLocal, type TaskFileEntry, type TaskNode } from "../tasks";
@@ -87,6 +89,8 @@ function resolveTaskBucket(
 ): GroupBucket | null {
   const labels = strings.taskGroup;
   switch (spec.dimension) {
+    case "tag":
+    case "link":
     case "none":
       return null;
     case "file":
@@ -162,4 +166,55 @@ export function buildTaskGroupBuckets(
     if (bucket !== null) buckets.set(task.path, bucket);
   }
   return buckets;
+}
+
+/** Position-indexed metadata keeps inline code, escaped text and note-level tags out. */
+export function buildTaskMembershipBuckets(
+  app: App, tasks: readonly TaskCardRecord[], spec: TaskGroupSpec,
+  strings: SortGroupStrings, clock: TaskGroupClock,
+): Map<string, GroupBucket | readonly GroupBucket[]> {
+  if (spec.dimension !== "tag" && spec.dimension !== "link") return buildTaskGroupBuckets(tasks, spec, strings, clock);
+  const dimension = spec.dimension;
+  const result = new Map<string, GroupBucket | readonly GroupBucket[]>();
+  const byFile = new Map<string, Map<number, Array<{ value: string; original: string; col: number }>>>();
+  for (const task of tasks) {
+    let lines = byFile.get(task.filePath);
+    if (!lines) {
+      lines = new Map(); byFile.set(task.filePath, lines);
+      const cache = app.metadataCache.getFileCache(task.file);
+      for (const item of dimension === "tag" ? cache?.tags ?? [] : cache?.links ?? []) {
+        const original = "tag" in item ? item.tag : item.original;
+        if (dimension === "link" && !original.startsWith("[[")) continue;
+        const value = "tag" in item ? item.tag : item.link;
+        const { line, col } = item.position.start;
+        const entries = lines.get(line) ?? [];
+        entries.push({ value, original, col }); lines.set(line, entries);
+      }
+    }
+    const memberships = new Map<string, GroupBucket>();
+    for (const item of lines.get(task.line) ?? []) {
+      if (!task.lineText.startsWith(item.original, item.col)) continue;
+      let identity: string, label: string, path: string | undefined;
+      if (dimension === "tag") {
+        identity = normalizeTagPath(item.value); label = `#${item.value.replace(/^#/, "")}`;
+      } else {
+        const target = item.value.split("#", 1)[0].trim();
+        const dest = target ? app.metadataCache.getFirstLinkpathDest(target, task.filePath) : task.file;
+        identity = dest ? `resolved:${dest.path}` : `unresolved:${target}`;
+        label = dest?.basename ?? target; path = dest?.path ?? target;
+      }
+      if (!identity) continue;
+      const key = `task-${dimension}:value:${identity}`;
+      memberships.set(key, { key, label, detail: path ?? "", header: header(dimension, label, path), sortKey: dimension === "tag" ? identity : path ?? label, isMissing: false });
+    }
+    result.set(task.path, memberships.size ? [...memberships.values()] : missingBucket(dimension, dimension === "tag" ? strings.bucketNoTag : strings.taskGroup.noLink));
+  }
+  // Stable tag spelling independent of source/task sort order.
+  const canonical = new Map<string, GroupBucket>();
+  for (const membership of result.values()) for (const bucket of Array.isArray(membership) ? membership : [membership]) {
+    const old = canonical.get(bucket.key);
+    if (!old || bucket.label < old.label) canonical.set(bucket.key, bucket);
+  }
+  for (const [id, membership] of result) result.set(id, (Array.isArray(membership) ? membership : [membership]).map(bucket => canonical.get(bucket.key)!));
+  return result;
 }

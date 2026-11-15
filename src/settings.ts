@@ -223,6 +223,7 @@ export interface PluginSettings {
   /** Task cards show their source note in the footer. */
   taskReportWeekEndDay: number;
   taskCopyPreserveOriginal: boolean;
+  taskCompletedStyle: "none" | "strikethrough" | "muted";
   taskCardShowFile: boolean;
   taskDateColors: TaskDateColors;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
@@ -310,6 +311,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   taskDateHideSource: false,
   taskReportWeekEndDay: 4,
   taskCopyPreserveOriginal: false,
+  taskCompletedStyle: "none",
   taskCardShowFile: false,
   taskDateColors: { ...DEFAULT_TASK_DATE_COLORS },
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
@@ -744,6 +746,7 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     taskDateHideSource: normalizeBooleanSetting(data.taskDateHideSource, DEFAULT_SETTINGS.taskDateHideSource),
     taskReportWeekEndDay: typeof data.taskReportWeekEndDay === "number" && Number.isInteger(data.taskReportWeekEndDay) && data.taskReportWeekEndDay >= 0 && data.taskReportWeekEndDay <= 6 ? data.taskReportWeekEndDay : 4,
     taskCopyPreserveOriginal: normalizeBooleanSetting(data.taskCopyPreserveOriginal, false),
+    taskCompletedStyle: data.taskCompletedStyle === "strikethrough" || data.taskCompletedStyle === "muted" ? data.taskCompletedStyle : "none",
     taskCardShowFile: normalizeBooleanSetting(data.taskCardShowFile, DEFAULT_SETTINGS.taskCardShowFile),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     locateLinkCardOnOpen: normalizeBooleanSetting(data.locateLinkCardOnOpen, false),

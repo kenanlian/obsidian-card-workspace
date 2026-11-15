@@ -18,8 +18,8 @@ try {
   const host = win.module.exports; host.installDom();
   host.Platform.isDesktopApp = device === "desktop"; host.Platform.isTablet = device === "tablet";
   const facet = { of: value => value };
-  const cm = { Prec: { highest: value => value }, dropCursor: () => ({}), WidgetType: class {},
-    EditorView: class { static domEventHandlers(value) { return value; } static decorations = facet; static atomicRanges = facet; },
+  const cm = { keymap: facet, Prec: { highest: value => value }, dropCursor: () => ({}), WidgetType: class {},
+    EditorView: class { static domEventHandlers(value) { return value; } static decorations = facet; static atomicRanges = facet; static inputHandler = facet; },
     EditorState: class { static transactionFilter = facet; }, StateField: { define: spec => spec },
     ViewPlugin: { fromClass: (value, spec) => ({ value, spec }), define: (value, spec) => ({ value, spec }) },
     Decoration: { none: {}, set: value => value, line: spec => ({ spec, range: from => ({ from }) }), widget: spec => ({ spec }), replace: spec => ({ spec }) },
@@ -58,6 +58,16 @@ try {
   assert.equal(view.panelModel.getState().cards.records.length, 1);
   assert.equal(view.panelModel.getState().cards.records[0].path, "note.md");
   assert(win.document.querySelector(".fce-card"), "Production Svelte card should be mounted");
+  const modeSwitch = win.document.querySelector('.fce-view-mode-toggle[role="switch"]');
+  assert(modeSwitch, "Task mode uses an accessible switch");
+  modeSwitch.click();
+  await new Promise(resolve => win.setTimeout(resolve, 0));
+  assert.equal(modeSwitch.getAttribute("aria-checked"), "true");
+  assert(win.document.querySelector(".fce-task-mode-badge"), "Task mode remains visible in the stream header");
+  modeSwitch.click();
+  await new Promise(resolve => win.setTimeout(resolve, 0));
+  assert.equal(win.document.querySelector(".fce-task-mode-badge"), null);
+
   if (device !== "desktop") {
     const navigation = win.document.querySelector(".fce-nav-pane");
     view.modules.navLayout.onShellResize(320);

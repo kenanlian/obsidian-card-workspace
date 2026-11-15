@@ -316,6 +316,8 @@ export function buildTaskSortGroupMenu(
   addHeadingItem(menu, strings.groupHeading, "list-tree");
   const flatOptions: Array<{ dimension: TaskGroupDimension; title: string; icon: string }> = [
     { dimension: "none", title: strings.dimensionNone, icon: "ungroup" },
+    { dimension: "tag", title: strings.taskGroup.dimensions.tag, icon: "tag" },
+    { dimension: "link", title: strings.taskGroup.dimensions.link, icon: "link" },
     { dimension: "file", title: strings.taskGroup.dimensions.file, icon: "file-text" },
     { dimension: "status", title: strings.taskGroup.dimensions.status, icon: "list-checks" },
     { dimension: "due", title: strings.taskGroup.dimensions.due, icon: "calendar-clock" },

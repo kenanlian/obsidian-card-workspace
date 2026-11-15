@@ -38,6 +38,7 @@ export interface PreferencesSettings {
   taskDateHideSource: boolean;
   taskReportWeekEndDay: number;
   taskCopyPreserveOriginal: boolean;
+  taskCompletedStyle: PluginSettings["taskCompletedStyle"];
   taskCardShowFile: boolean;
   taskDateColors: PluginSettings["taskDateColors"];
   defaultCardOpenBehavior: PluginSettings["defaultCardOpenBehavior"];
@@ -205,6 +206,7 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.taskDateColors !== undefined) preferences.taskDateColors = patch.taskDateColors;
   if (patch.taskReportWeekEndDay !== undefined) preferences.taskReportWeekEndDay = patch.taskReportWeekEndDay;
   if (patch.taskCopyPreserveOriginal !== undefined) preferences.taskCopyPreserveOriginal = patch.taskCopyPreserveOriginal;
+  if (patch.taskCompletedStyle !== undefined) preferences.taskCompletedStyle = patch.taskCompletedStyle;
   if (patch.taskCardShowFile !== undefined) preferences.taskCardShowFile = patch.taskCardShowFile;
   if (patch.defaultCardOpenBehavior !== undefined) {
     preferences.defaultCardOpenBehavior = patch.defaultCardOpenBehavior;
@@ -299,6 +301,7 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       taskDateHideSource: settings.taskDateHideSource,
       taskReportWeekEndDay: settings.taskReportWeekEndDay,
       taskCopyPreserveOriginal: settings.taskCopyPreserveOriginal,
+      taskCompletedStyle: settings.taskCompletedStyle,
       taskCardShowFile: settings.taskCardShowFile,
       taskDateColors: { ...settings.taskDateColors },
       defaultCardOpenBehavior: settings.defaultCardOpenBehavior,

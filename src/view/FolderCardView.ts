@@ -775,6 +775,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       taskGroupCounts: Object.fromEntries((this.modules.projection.getTaskSnapshot?.()?.copyGroups ?? []).map(group => [group.key, group.tasks.reduce((sum, task) => sum + taskTreeCount(task), 0)])),
       streamMode, taskRecords: this.store.getVisibleTaskCards(), taskStatus: this.modules.taskView.getStatus(),
       pendingTaskIds: streamMode === "tasks" ? this.modules.taskActions.getPendingIds() : [],
+      pendingTaskStatuses: streamMode === "tasks" ? this.modules.taskActions.getPendingStatuses() : {},
     });
   }
 
@@ -851,6 +852,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       cardStyle: settings.cardStyle,
       cardBackgroundColor: settings.cardBackgroundColor,
       cardBackgroundOverrides: settings.cardBackgroundOverrides,
+      taskCompletedStyle: settings.taskCompletedStyle,
       taskCardShowFile: settings.taskCardShowFile,
       taskDateColors: settings.taskDateColors,
     };

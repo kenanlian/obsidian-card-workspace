@@ -640,6 +640,7 @@
       <div class="fce-toolbar-scope {isLinksMode ? 'is-links' : isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
         <span class="fce-sr-only">{toolbarStrings.scope.ariaLabel}</span>
         <span class="fce-toolbar-scope-text">{scopeText}</span>
+        {#if taskMode}<span class="fce-task-mode-badge">{strings.tasks.view.toggle}</span>{/if}
       </div>
       <div class="fce-toolbar-actions">
         {#if taskMode}

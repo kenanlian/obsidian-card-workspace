@@ -31,9 +31,11 @@ export type GroupHeaderContent =
       readonly path?: string;
     };
 
-export type TaskGroupHeaderDimension = "file" | "status" | "due" | "created" | "done";
+export type TaskGroupHeaderDimension = "file" | "status" | "due" | "created" | "done" | "tag" | "link";
 
 const TASK_GROUP_ICONS: Record<TaskGroupHeaderDimension, string> = {
+  tag: "tag",
+  link: "link",
   file: "file-text",
   status: "list-checks",
   due: "calendar-clock",

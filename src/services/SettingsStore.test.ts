@@ -666,6 +666,7 @@ describe("SettingsStore — layer manifest classification (C4)", () => {
     ["taskDateHideSource", { taskDateHideSource: true }],
     ["taskReportWeekEndDay", { taskReportWeekEndDay: 2 }],
     ["taskCopyPreserveOriginal", { taskCopyPreserveOriginal: true }],
+    ["taskCompletedStyle", { taskCompletedStyle: "muted" }],
     ["taskCardShowFile", { taskCardShowFile: true }],
     ["taskDateColors", { taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" } }],
     ["defaultCardOpenBehavior", { defaultCardOpenBehavior: "new-tab" }],

@@ -185,3 +185,8 @@ describe("task date colors", () => {
     expect(taskDateColorStyle(colors)).toContain(`--fce-task-overdue-color: var(--color-${color});`);
   });
 });
+
+
+it.each(["tag", "link"])("accepts task %s grouping without date granularity", dimension => {
+  expect(normalizeTaskGroupSpec({ dimension, timeGranularity: "month" })).toEqual({ dimension });
+});

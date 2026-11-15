@@ -364,3 +364,36 @@ describe("task copy projection", () => {
     expect(result.cards).toEqual([]);
   });
 });
+
+
+describe("task inline metadata groups", () => {
+  function metadataContext(dimension: "tag" | "link") {
+    const nodes = [task(0, "- [ ] parent #A #B [[Project|alias]] [[Project#Heading]]", [task(1, "  - [ ] child #C")]), task(2, "- [ ] no metadata")];
+    const position = (col: number, line = 0) => ({ start: { line, col, offset: col }, end: { line, col, offset: col } });
+    const source = nodes[0].lineText;
+    return context({ group: { dimension }, getTaskEntry: entries({ "a.md": nodes }), app: {
+      metadataCache: {
+        getFileCache: () => ({
+          tags: ["#A", "#B", "#A"].map(tag => ({ tag, position: position(source.indexOf(tag)) })).concat([{ tag: "#C", position: position(8, 1) }]),
+          links: ["[[Project|alias]]", "[[Project#Heading]]"].map(original => ({ original, link: original.includes("Heading") ? "Project#Heading" : "Project", position: position(source.indexOf(original)) })),
+        }),
+        getFirstLinkpathDest: () => ({ path: "projects/Project.md", basename: "Project" }),
+      },
+    } as unknown as TaskPipelineContext["app"] });
+  }
+  it("repeats a multi-tag task per distinct tag, retains children, and captures complete collapsed copy groups", () => {
+    const ctx = metadataContext("tag");
+    const result = runTaskPipeline([card("a.md")], ctx);
+    expect(result.segments.map(group => group.label)).toEqual(["#A", "#B", "No tag"]);
+    expect(result.cards.map(task => task.line)).toEqual([0, 0, 2]);
+    expect(result.cards[0].children).toHaveLength(1);
+    const collapsed = runTaskPipeline([card("a.md")], { ...ctx, collapsedGroupKeys: new Set([result.segments[0].key]) });
+    expect(collapsed.cards.map(task => task.line)).toEqual([0, 2]);
+    expect(collapsed.copyGroups).toEqual(result.copyGroups);
+  });
+  it("merges aliases and heading references to one destination bucket", () => {
+    const result = runTaskPipeline([card("a.md")], metadataContext("link"));
+    expect(result.segments.map(group => group.label)).toEqual(["Project", "No wiki link"]);
+    expect(result.cards).toHaveLength(2);
+  });
+});

@@ -110,6 +110,10 @@ export class TaskActions {
     return [...this.pending.keys()];
   }
 
+  getPendingStatuses(): Record<string, boolean> {
+    return Object.fromEntries([...this.pending].flatMap(([id, entry]) => entry.expect.kind === "status" ? [[id, entry.expect.completed]] : []));
+  }
+
   isPending(id: string): boolean {
     return this.pending.has(id);
   }

@@ -312,20 +312,22 @@ function compareGroups<T>(left: PendingGroup<T>, right: PendingGroup<T>, orderBy
 
 function partitionIntoGroups<T extends { readonly path: string }>(
   cards: readonly T[],
-  buckets: ReadonlyMap<string, GroupBucket>,
+  buckets: ReadonlyMap<string, GroupBucket | readonly GroupBucket[]>,
 ): PendingGroup<T>[] {
   const groups: PendingGroup<T>[] = [];
   const groupsByKey = new Map<string, PendingGroup<T>>();
 
   for (const card of cards) {
-    const bucket = buckets.get(card.path) ?? FALLBACK_MISSING_BUCKET;
-    let group = groupsByKey.get(bucket.key);
-    if (!group) {
-      group = { bucket, cards: [] };
-      groupsByKey.set(bucket.key, group);
-      groups.push(group);
+    const membership = buckets.get(card.path) ?? FALLBACK_MISSING_BUCKET;
+    for (const bucket of (Array.isArray(membership) ? membership : [membership]) as readonly GroupBucket[]) {
+      let group = groupsByKey.get(bucket.key);
+      if (!group) {
+        group = { bucket, cards: [] };
+        groupsByKey.set(bucket.key, group);
+        groups.push(group);
+      }
+      group.cards.push(card);
     }
-    group.cards.push(card);
   }
 
   return groups;
@@ -369,7 +371,7 @@ function orderGroups<T>(groups: PendingGroup<T>[], spec: GroupOrderSpec): Pendin
  */
 export function arrangeCardsByGroup<T extends { readonly path: string }>(
   cards: readonly T[],
-  buckets: ReadonlyMap<string, GroupBucket>,
+  buckets: ReadonlyMap<string, GroupBucket | readonly GroupBucket[]>,
   spec: GroupOrderSpec,
   collapsedKeys: ReadonlySet<string>,
   captureGroups = false,

@@ -244,3 +244,12 @@ describe("getHydrateRangeForPanelRows", () => {
     expect(getHydrateRangeForPanelRows([], 0, 0)).toEqual({ start: 0, end: 0 });
   });
 });
+
+
+it("namespaces repeated source tasks by group for virtual row identity", () => {
+  const rows = projectPanelRows([{ path: "a.md::L0" }, { path: "a.md::L0" }], [
+    { key: "a", startIndex: 0, visibleCount: 1, collapsed: false },
+    { key: "b", startIndex: 1, visibleCount: 1, collapsed: false },
+  ], 1);
+  expect(new Set(rows.map(row => row.key)).size).toBe(rows.length);
+});

@@ -81,6 +81,7 @@ const EXPECTED_INTENTS: Record<keyof PluginSettings, ViewUpdateIntent> = {
   taskDateHideSource: "patch",
   taskReportWeekEndDay: "patch",
   taskCopyPreserveOriginal: "patch",
+  taskCompletedStyle: "patch",
   taskCardShowFile: "patch",
   taskDateColors: "patch",
   defaultCardOpenBehavior: "patch",
@@ -158,6 +159,7 @@ function changeSetting(settings: PluginSettings, key: keyof PluginSettings): voi
     case "taskDateColors": settings.taskDateColors = { ...settings.taskDateColors, created: "pink" }; break;
     case "taskReportWeekEndDay": settings.taskReportWeekEndDay = 2; break;
     case "taskCopyPreserveOriginal": settings.taskCopyPreserveOriginal = true; break;
+    case "taskCompletedStyle": settings.taskCompletedStyle = "muted"; break;
     case "taskCardShowFile": settings.taskCardShowFile = !settings.taskCardShowFile; break;
     case "defaultCardOpenBehavior": settings.defaultCardOpenBehavior = "new-tab"; break;
     case "locateLinkCardOnOpen": settings.locateLinkCardOnOpen = !settings.locateLinkCardOnOpen; break;

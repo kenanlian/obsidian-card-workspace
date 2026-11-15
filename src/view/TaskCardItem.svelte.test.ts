@@ -244,3 +244,13 @@ describe("TaskCardItem.svelte", () => {
     expect(target.querySelector(".fce-task-card")?.classList.contains("is-touch")).toBe(true);
   });
 });
+
+
+it("shares host completion expectations across every grouped copy", () => {
+  const props = { task: record(), pendingIds: new Set(["notes/Plan.md::L3"]), pendingStatuses: { "notes/Plan.md::L3": true } };
+  const first = render(props), second = render(props);
+  for (const target of [first.target, second.target]) {
+    expect(target.querySelector(".fce-task-check")?.getAttribute("aria-checked")).toBe("true");
+    expect(target.querySelector(".fce-task-row")?.classList.contains("is-pending")).toBe(true);
+  }
+});

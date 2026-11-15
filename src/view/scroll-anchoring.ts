@@ -16,6 +16,7 @@ export interface ScrollAnchorInput {
 export interface AnchorCandidateRow {
   readonly kind: "group-header" | "cards";
   readonly key: string;
+  readonly groupKey?: string;
   readonly cards?: readonly { readonly path: string }[];
   readonly startIndex?: number;
   readonly endIndex?: number;
@@ -30,7 +31,7 @@ export interface AnchorCandidateRow {
  * survives the partial tail row a segment boundary produces.
  */
 export type RowAnchorRef =
-  | { kind: "card"; path: string }
+  | { kind: "card"; path: string; groupKey?: string }
   | { kind: "card-index"; index: number }
   | { kind: "group"; key: string };
 
@@ -156,7 +157,7 @@ function buildRowAnchorRef(row: AnchorCandidateRow, preferCardIndex: boolean): R
   }
   return preferCardIndex && row.startIndex !== undefined
     ? { kind: "card-index", index: row.startIndex }
-    : { kind: "card", path: firstCard.path };
+    : { kind: "card", path: firstCard.path, ...(row.groupKey === undefined ? {} : { groupKey: row.groupKey }) };
 }
 
 /**
@@ -190,12 +191,16 @@ function findAnchorRowIndex(rows: readonly AnchorCandidateRow[], ref: RowAnchorR
     const row = rows[index];
     const matches = ref.kind === "group"
       ? row.key === ref.key
-      : (row.cards?.some((card) => card.path === ref.path) ?? false);
+      : ((ref.groupKey === undefined || row.groupKey === ref.groupKey) && (row.cards?.some((card) => card.path === ref.path) ?? false));
     if (matches) {
       return index;
     }
   }
 
+  // Grouping can be disabled without changing scope; retain the source anchor then.
+  if (ref.kind === "card" && ref.groupKey !== undefined && !rows.some(row => row.groupKey !== undefined || row.kind === "group-header")) {
+    return findAnchorRowIndex(rows, { kind: "card", path: ref.path });
+  }
   return -1;
 }
 

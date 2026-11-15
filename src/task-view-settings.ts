@@ -8,7 +8,7 @@ export interface TaskSortSpec {
   direction: SortDirection;
 }
 
-export type TaskGroupDimension = "none" | "file" | "status" | "due" | "created" | "done";
+export type TaskGroupDimension = "none" | "file" | "status" | "due" | "created" | "done" | "tag" | "link";
 
 /**
  * How tasks are bucketed.
@@ -43,6 +43,8 @@ const TASK_GROUP_DIMENSIONS: ReadonlySet<string> = new Set<TaskGroupDimension>([
   "none",
   "file",
   "status",
+  "tag",
+  "link",
   "due",
   "created",
   "done",
@@ -139,7 +141,7 @@ export function normalizeOptionalBoxTaskView(value: unknown): {
 export const TASK_DATE_COLORS = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"] as const;
 export type TaskDateColor = typeof TASK_DATE_COLORS[number];
 export type TaskDateColors = Record<"created" | "done" | "due" | "overdue", TaskDateColor>;
-export const DEFAULT_TASK_DATE_COLORS: TaskDateColors = { created: "blue", done: "green", due: "orange", overdue: "red" };
+export const DEFAULT_TASK_DATE_COLORS: TaskDateColors = { created: "blue", done: "green", due: "yellow", overdue: "red" };
 export function isTaskDateColor(value: unknown): value is TaskDateColor {
   return (TASK_DATE_COLORS as readonly unknown[]).includes(value);
 }

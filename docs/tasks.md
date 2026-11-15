@@ -1,6 +1,6 @@
 # Tasks / 任务
 
-Press **Task view** at the top of navigation to switch between note cards and tasks. Folders, card boxes, outgoing links and backlinks share one mode, remembered on this device. Switching sources keeps the current mode. In a single-pane layout, pressing the button immediately returns to the list; tasks may initially show their reading state.
+Use the **Task view** switch at the top of navigation to switch between note cards and tasks. Folders, card boxes, outgoing links and backlinks share one mode, remembered on this device. Switching sources keeps the current mode. In a single-pane layout, pressing the button immediately returns to the list; tasks may initially show their reading state.
 
 Folders and linked-note sources share task sort and grouping. Each card box keeps its own task sort and grouping, defaulting to **Due date** / **Ascending** and **None**. Linked-note sources show all tasks in their associated Markdown notes, rather than only tasks near a link. Their tag and property browse filters stay paused.
 
@@ -20,7 +20,7 @@ The cursor moves to the line only when that line still contains the text from th
 
 **Sort & group** in task view uses task fields. **Sort by** offers **Due date**, **Created date**, **Completed date**, **File**, and **Task text**. **Order** is **Ascending** or **Descending**. The default is **Due date**, **Ascending**. Tasks with no date for the chosen field stay last in either order. Equal values keep file order, then line order.
 
-**Group by** offers **None**, **File**, **Status**, **Due date**, **Created date**, and **Completed date**. **Status** splits into **Incomplete** and **Completed**. **Due date** uses **Overdue**, **Today**, **Tomorrow**, **This week**, **Later**, and **No due date**. Tomorrow stays its own group even when it falls in the next week. **This week** follows Obsidian’s first day of the week. **Created date** and **Completed date** use the same **Day**, **Week**, **Two weeks**, **Month**, **Year**, and **Relative periods** choices as card time grouping, including Monday weeks and the two-week periods anchored to 5 January 1970. Tasks without that date land in **No created date** or **No completed date**. Those two date groupings follow **Ascending** or **Descending** only when you are also sorting by the same date; every other grouping keeps its fixed order. **Collapse all** and **Expand all** apply once groups exist.
+**Group by** offers **None**, **File**, **Status**, **Tag**, **Wiki link**, **Due date**, **Created date**, and **Completed date**. **Status** splits into **Incomplete** and **Completed**. **Due date** uses **Overdue**, **Today**, **Tomorrow**, **This week**, **Later**, and **No due date**. Tomorrow stays its own group even when it falls in the next week. **This week** follows Obsidian’s first day of the week. **Created date** and **Completed date** use the same **Day**, **Week**, **Two weeks**, **Month**, **Year**, and **Relative periods** choices as card time grouping, including Monday weeks and the two-week periods anchored to 5 January 1970. Tasks without that date land in **No created date** or **No completed date**. Those two date groupings follow **Ascending** or **Descending** only when you are also sorting by the same date; every other grouping keeps its fixed order. **Collapse all** and **Expand all** apply once groups exist.
 
 Tag and property filters still select files before tasks are listed. The search box placeholder becomes **Filter tasks**. It matches the task text, any nested subtask’s text, or the file title, as a case-insensitive substring, and highlights those spans. It does not query the full-text index, and an index that is still building does not block it or show the index status. Grouping stays in place while a filter is typed. Leaving task view keeps the text in the box and treats it as an ordinary full-text search: a ready index runs that search, and an index that is not ready blocks a non-empty query the same way card search does.
 
@@ -28,7 +28,7 @@ Pins are not applied in task view, and task cards have no pin control. Saved pin
 
 ## Dates on a card
 
-Each task row has three date chips: **Created date** (➕, a plus icon), **Completed date** (✅, a check icon), and **Due date** (📅, a calendar icon). An unset chip is a faint icon only. A set chip is filled and shows a short date, with the year when it is not this year. By default, dates use blue for created, green for completed, orange for due, and red for an overdue open task. In **Settings → Card Workspace → Task view → Date colors**, each of these four colors can independently use red, orange, yellow, green, cyan, blue, purple or pink. These theme colors adapt to light and dark themes, and also apply to editor chips and dots. A completed task keeps its green completion date; its other dates fade. The date buttons in the editor use the same icons and colours. Every chip stays visible on desktop, phone and tablet, including unset subtask dates. Each task has a left-aligned date row below its text, following that task’s indentation; long date rows wrap within the card.
+Each task row has three date chips: **Created date** (➕, a plus icon), **Completed date** (✅, a check icon), and **Due date** (📅, a calendar icon). An unset chip is a faint icon only. A set chip is filled and shows a short date, with the year when it is not this year. By default, dates use blue for created, green for completed, yellow for due, and red for an overdue open task. In **Settings → Card Workspace → Task view → Date colors**, each of these four colors can independently use red, orange, yellow, green, cyan, blue, purple or pink. These theme colors adapt to light and dark themes, and also apply to editor chips and dots. A completed task keeps its green completion date; its other dates fade. The date buttons in the editor use the same icons and colours. Every chip stays visible on desktop, phone and tablet, including unset subtask dates. Each task has a left-aligned date row below its text, following that task’s indentation; long date rows wrap within the card.
 
 Click a chip to edit it. The picker is a month calendar with **Previous month**, **Next month**, **Today**, **Tomorrow**, **Next Monday**, and **Clear**. **Next Monday** is the Monday after today, so a Monday itself resolves seven days ahead. **Clear** is unavailable when the date is unset. Click outside or press Escape to close without saving. Clicking the same chip again closes the picker. Phones open it as a bottom sheet; other devices open a popover beside the chip. A failed save keeps the picker open and shows **Could not save the date. Try again.**
 
@@ -44,7 +44,7 @@ Task editing settings are in **Settings → Card Workspace → Task view**. **Ad
 
 **Add created date to new tasks** makes that command append today’s created date (➕) when it creates or converts a task that does not already have one. The cursor stays before the date. The command remains available when **Enhanced task editing** is off.
 
-While **Enhanced task editing** is also on, tasks created by other editor actions get the same date: pressing Enter in a task list, typing a checkbox such as `- [ ]`, or running a checkbox command. The date is appended once the caret leaves the line or the editor loses focus, in the same undo step as that action. Your typing therefore stays before the date, and Enter on an empty task still ends the list. A task with no text yet gets no date. Only lines that became tasks at the caret count. Tasks that already existed, tasks moved or rejoined from existing lines, and lines in frontmatter, fenced code, or display math are left alone. Undo, redo, paste, a drop into the editor, a remote or sync change, a change that is not added to editor history, and a change touching more than 20 lines do not create a dated task. If the note is switched in the same tab while the caret is still on the new task, that task keeps no date.
+While **Enhanced task editing** is also on, tasks created by other editor actions get the same date: pressing Enter in a task list, typing a checkbox such as `- [ ]`, or running a checkbox command. The date is appended immediately in the same undo step as creating the checkbox, even for an empty task. Your typing stays before the date, and Enter on an automatically dated empty task still ends the list. Only lines that became tasks at the caret count. Tasks that already existed, tasks moved or rejoined from existing lines, and lines in frontmatter, fenced code, or display math are left alone. Undo, redo, paste, a drop into the editor, a remote or sync change, a change that is not added to editor history, and a change touching more than 20 lines do not create a dated task. If the note is switched in the same tab while the caret is still on the new task, that task keeps no date.
 
 **Enhanced task editing** is on by default. In Live Preview it adds **Task dates** buttons at the end of each task line for **Created date**, **Completed date**, and **Due date**. Source mode and reading view keep the Markdown text and do not show the buttons. **Task date buttons** chooses **Compact** or **Full**. **Compact** shows an unset date only on the hovered line, the line with the caret, or a focused button. **Full** always shows all three. **Task date button style** chooses **Chips** (the default) or **Dots**. **Chips** look like the task-card chips. While **Hide task date text** is on they also show the short date, except on the line being edited, which shows the date text itself. **Dots** keep one small dot per date: outlined when unset and filled when set, in the same colours as the chips. A due date before today is marked overdue while the task is open, and a due date of today is marked due today. The buttons use the same calendar, including the phone bottom sheet. They are not drawn inside frontmatter, fenced code, or `$$` display math.
 
@@ -90,3 +90,27 @@ The task menu copies that task with its matching descendants. The copy button be
 Acceptance on real devices: check the status menu, date sheet with the keyboard open, draft cancellation, chip removal and the group More/context menu. With all groups collapsed, verify Copy results equals the expanded output. Paste all formats into email and Word, including non-ASCII text and nested tasks; verify manual copying when clipboard permission is denied. Test two independently filtered views and verify the reporting period advances after crossing midnight or waking on another day.
 
 Task group headers have a **More group actions** button to the right of the count. Clicking it, right-clicking anywhere on the group header, or pressing the context-menu key (Shift+F10) on its buttons opens the same group menu. It currently offers the three copy formats for that group, including tasks hidden by group collapse. The menu is also available on sticky group headers.
+
+
+### Inline tag and wiki-link groups / 任务行标签与双链分组
+
+Task grouping supports the tags and `[[wiki links]]` on each root task's own line.
+A task with multiple values appears once in each matching group; its subtasks stay attached.
+Link aliases and heading/block references share the destination note group. Tasks without a value appear last.
+Copying all groups preserves each group's complete contents, including repeated tasks.
+
+任务可按当前任务行中的标签或双链分组，多值任务会出现在各个所属组，子任务保留在父卡片内。
+双链别名、标题和块引用归入目标笔记所在组；无标签或双链的任务排在最后。复制全部保留各组的完整内容。
+
+New checkboxes receive their created date immediately, even when empty. The caret remains before the date;
+Enter on an automatically dated empty task still exits the list. Existing tasks and pasted tasks are not backfilled.
+
+复选框出现时立即添加创建日期，空任务也适用，无需回车；光标留在日期之前，自动加日期的空任务仍可回车退出列表。
+已有任务和粘贴任务不会补写日期。
+
+The navigation switch and the task-view badge above the stream identify the current mode, including on mobile.
+In Settings → Tasks, completed-task text can use no style (default), strikethrough, or muted colour.
+The default due colour is yellow; saved colour choices are preserved.
+
+导航开关与卡片流顶部标识共同提示任务模式。设置 → 任务中可选择完成效果：无样式（默认）、删除线或字体变淡。
+截止日期默认黄色，已有颜色设置保持不变。

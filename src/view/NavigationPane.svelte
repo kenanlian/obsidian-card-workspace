@@ -602,10 +602,11 @@
         onclick={() => onToggleNavPane?.()} use:icon={"arrow-left"} use:tooltip={labels.backToCards}></button>
     {/if}
     <div class="fce-nav-pane-header-group">
-      <button type="button" class="clickable-icon fce-nav-header-button fce-view-mode-toggle {viewMode === 'tasks' ? 'is-active is-selected' : ''}"
-        aria-label={strings.tasks.view.toggle} aria-pressed={viewMode === "tasks"}
-        onclick={() => onViewModeChange?.({ mode: viewMode === "tasks" ? "cards" : "tasks" })}
-        use:icon={"list-checks"} use:tooltip={strings.tasks.view.toggle}></button>
+      <button type="button" role="switch" class="fce-nav-header-button fce-view-mode-toggle" class:is-active={viewMode === "tasks"}
+        aria-label={strings.tasks.view.toggle} aria-checked={viewMode === "tasks"}
+        onclick={() => onViewModeChange?.({ mode: viewMode === "tasks" ? "cards" : "tasks" })}>
+        <span>{strings.tasks.view.toggle}</span><span class="fce-mode-switch" aria-hidden="true"></span>
+      </button>
       <button type="button" class="clickable-icon fce-nav-header-button fce-nav-toggle-all"
         aria-label={expansionLabel} disabled={nav.projection.sections.length === 0}
         onclick={() => emitIntent({ type: "toggle-all-navigation" })}

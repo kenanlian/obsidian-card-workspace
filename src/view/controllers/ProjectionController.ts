@@ -245,6 +245,16 @@ export class ProjectionController {
     });
   }
 
+  /** Metadata may resolve a previously missing wiki-link target outside this scope. */
+  taskMetadataGroupsChanged(path: string): boolean {
+    const settings = this.context.getSettings();
+    const config = resolveViewConfig(this.context.store.getScope(), settings);
+    if (this.resolveViewMode() !== "tasks" || (config.taskGroup?.dimension !== "link" && config.taskGroup?.dimension !== "tag")) return false;
+    if (config.taskGroup?.dimension === "tag" && !this.context.store.getBaseCard(path)) return false;
+    const fresh = this.deriveTaskArrangement();
+    return segmentSignature(fresh.segments) !== segmentSignature(this.taskSnapshot.segments);
+  }
+
   getGroupSegments(): readonly CardGroupSegment[] {
     return this.groupSegments;
   }
