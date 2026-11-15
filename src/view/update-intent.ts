@@ -1,6 +1,7 @@
 import { navigationSortingEqual } from "../navigation-sorting";
 import { folderSiblingOrdersEqual } from "../folder-sibling-orders";
 import type { GroupSpec } from "../card-grouping-settings";
+import { DEFAULT_TASK_GROUP, DEFAULT_TASK_SORT, type TaskGroupSpec, type TaskSortSpec } from "../task-view-settings";
 import { propertyFilterClausesEqual } from "../property-filter-settings";
 import type { PluginSettings } from "../settings";
 import { getBoxMembershipSignature } from "./card-boxes";
@@ -46,6 +47,18 @@ function favoritesEqual(
   return previous.length === next.length && previous.every(
     (favorite, index) => favorite.kind === next[index]?.kind && favorite.ref === next[index]?.ref,
   );
+}
+
+function taskSortsEqual(previous: TaskSortSpec | undefined, next: TaskSortSpec | undefined): boolean {
+  const left = previous ?? DEFAULT_TASK_SORT;
+  const right = next ?? DEFAULT_TASK_SORT;
+  return left.field === right.field && left.direction === right.direction;
+}
+
+function taskGroupsEqual(previous: TaskGroupSpec | undefined, next: TaskGroupSpec | undefined): boolean {
+  const left = previous ?? DEFAULT_TASK_GROUP;
+  const right = next ?? DEFAULT_TASK_GROUP;
+  return left.dimension === right.dimension && left.timeGranularity === right.timeGranularity;
 }
 
 function groupsEqual(previous: GroupSpec, next: GroupSpec): boolean {
@@ -103,9 +116,12 @@ export function resolveBoxesUpdateIntent(
     || JSON.stringify(previousBox.drawProgress) !== JSON.stringify(nextBox.drawProgress)) return "reproject";
   const sortChanged = previousBox.sort.field !== nextBox.sort.field
     || previousBox.sort.direction !== nextBox.sort.direction;
+  const taskViewChanged = !taskSortsEqual(previousBox.taskSort, nextBox.taskSort)
+    || !taskGroupsEqual(previousBox.taskGroup, nextBox.taskGroup);
   return sortChanged
     || !stringArraysEqual(previousBox.pinnedPaths, nextBox.pinnedPaths)
     || !groupsEqual(previousBox.group, nextBox.group)
+    || taskViewChanged
     || !ruleIdentitiesEqual(previousBox.rules, nextBox.rules)
     ? "reproject"
     : "patch";
@@ -177,11 +193,20 @@ export function resolveSettingsUpdateIntent(
   if (previous.sort.field !== next.sort.field || previous.sort.direction !== next.sort.direction) {
     intent = mergeIntent(intent, "reproject");
   }
+  if (!taskSortsEqual(previous.taskSort, next.taskSort)) {
+    intent = mergeIntent(intent, "reproject");
+  }
   if (!groupsEqual(previous.group, next.group)) {
     intent = mergeIntent(
       intent,
       groupTransitionRequiresReload(previous.group, next.group) ? "reload" : "reproject",
     );
+  }
+  if (!taskGroupsEqual(previous.taskGroup, next.taskGroup)) {
+    intent = mergeIntent(intent, "reproject");
+  }
+  if (previous.defaultView !== next.defaultView) {
+    intent = mergeIntent(intent, "reproject");
   }
 
   if (previous.skipLeadingTags !== next.skipLeadingTags
@@ -190,7 +215,15 @@ export function resolveSettingsUpdateIntent(
     intent = mergeIntent(intent, "rehydrate");
   }
 
-  if (previous.defaultView !== next.defaultView) intent = mergeIntent(intent, "patch");
+  if (previous.enhancedTaskEditing !== next.enhancedTaskEditing) intent = mergeIntent(intent, "patch");
+  if (previous.autoCreatedDate !== next.autoCreatedDate) intent = mergeIntent(intent, "patch");
+  if (previous.autoDoneDate !== next.autoDoneDate) intent = mergeIntent(intent, "patch");
+  if (previous.taskDateButtons !== next.taskDateButtons) intent = mergeIntent(intent, "patch");
+  if (previous.taskDateButtonStyle !== next.taskDateButtonStyle) intent = mergeIntent(intent, "patch");
+  if (previous.taskDateHideSource !== next.taskDateHideSource) intent = mergeIntent(intent, "patch");
+  if (JSON.stringify(previous.taskDateColors) !== JSON.stringify(next.taskDateColors)) intent = mergeIntent(intent, "patch");
+  if (previous.taskReportWeekEndDay !== next.taskReportWeekEndDay || previous.taskCopyPreserveOriginal !== next.taskCopyPreserveOriginal) intent = mergeIntent(intent, "patch");
+  if (previous.taskCardShowFile !== next.taskCardShowFile) intent = mergeIntent(intent, "patch");
   if (previous.defaultCardOpenBehavior !== next.defaultCardOpenBehavior) intent = mergeIntent(intent, "patch");
   if (previous.locateLinkCardOnOpen !== next.locateLinkCardOnOpen) intent = mergeIntent(intent, "patch");
   if (previous.dragInsertAction !== next.dragInsertAction) intent = mergeIntent(intent, "patch");

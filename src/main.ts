@@ -56,6 +56,9 @@ import { NavigationMetadataCatalog } from "./services/NavigationMetadataCatalog"
 import { CardBackgroundReconciler } from "./services/CardBackgroundReconciler";
 import { PinnedPathReconciler } from "./services/PinnedPathReconciler";
 import { SearchCoordinator, type SearchSnapshotListener } from "./services/SearchCoordinator";
+import { TaskIndex } from "./services/TaskIndex";
+import { TaskWriteService } from "./services/TaskWriteService";
+import { registerTaskEditing, type TaskEditingRegistration } from "./tasks/editor/register";
 import { SettingsStore, hasPatchValues } from "./services/SettingsStore";
 import { VaultEventBus, type VaultEventListener } from "./services/VaultEventBus";
 import { MetadataEventBus, type MetadataEventListener } from "./services/MetadataEventBus";
@@ -67,6 +70,7 @@ import type {
   SearchServiceSnapshot,
 } from "./search";
 import type { OpenDestination, PartialPluginSettings, PluginSettings } from "./settings";
+import type { TaskIndexReader } from "./tasks";
 import type { FolderSelectionRequest, FolderSelectionSource, SelectionResult } from "./view/types";
 import { resolveCardFileKind } from "./view/file-kind";
 import { canOpenFileInObsidian } from "./file-visibility";
@@ -167,6 +171,15 @@ export default class CardWorkspacePlugin extends Plugin {
     getApp: () => this.app,
     getUiStrings: () => this.getUiStrings(),
     getPluginVersion: () => (this.manifest as { version?: string } | undefined)?.version ?? "0.0.0",
+  });
+  private taskEditing: TaskEditingRegistration | null = null;
+  private readonly taskIndex = new TaskIndex(
+    this.app,
+    this.runtimeActivity.background,
+    this.resourceBudget.tasks.readers,
+  );
+  private readonly taskWriteService = new TaskWriteService(this.app, {
+    onLineWritten: (write) => this.taskIndex.applyLineWrite(write),
   });
   private debouncedNavStateRefresh = debounce(
     () => {
@@ -305,6 +318,15 @@ export default class CardWorkspacePlugin extends Plugin {
       },
     });
     this.registerSearchCommands();
+    this.taskEditing = registerTaskEditing({
+      app: this.app,
+      device: this.runtimePlatform.device,
+      registerEditorExtension: (extension) => this.registerEditorExtension(extension),
+      addCommand: (command) => this.addCommand(command),
+      register: (cleanup) => this.register(cleanup),
+      getSettings: () => this.settingsStore.getFlat(),
+      getStrings: () => this.getUiStrings(),
+    });
     this.registerEvent(this.app.workspace.on("layout-change", () => this.runtimeActivity.refresh()));
     if (this.runtimePlatform.capabilities.editorDrop && typeof document !== "undefined") {
       this.registerDomEvent(document, "dragstart", (event) => this.editorDropController.handleDragStart(event));
@@ -424,6 +446,7 @@ export default class CardWorkspacePlugin extends Plugin {
     this.cancelLinkCorrection = null;
     this.vaultEventBus.dispose();
     this.metadataEventBus.dispose();
+    this.taskIndex.dispose();
     this.navigationMetadataCatalog.dispose();
     const navStateRefresh = this.debouncedNavStateRefresh as (() => void) & {
       cancel?: () => void;
@@ -907,6 +930,14 @@ export default class CardWorkspacePlugin extends Plugin {
     return this.searchCoordinator.getService();
   }
 
+  getTaskIndex(): TaskIndexReader {
+    return this.taskIndex;
+  }
+
+  getTaskWriteService(): TaskWriteService {
+    return this.taskWriteService;
+  }
+
   getSearchSnapshot(): SearchServiceSnapshot | null {
     return this.searchCoordinator.getSnapshot();
   }
@@ -993,6 +1024,7 @@ export default class CardWorkspacePlugin extends Plugin {
     const next = this.getSettings();
     validateIconPickers();
     if (patch.noteTemplates !== undefined || patch.quickInputTemplateId !== undefined) this.workspaceSettingTab?.refreshTemplateOptions();
+    this.taskEditing?.refresh();
     this.withFolderViews((view) => {
       const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
       if (intent !== null) {
@@ -1182,6 +1214,7 @@ export default class CardWorkspacePlugin extends Plugin {
     // Card boxes always start collapsed to browse mode on launch.
     this.settingsStore.applyLaunchOverride();
     this.workspaceSettingTab?.refreshTemplateOptions();
+    this.taskEditing?.refresh();
   }
 
   /** Degrade to defaults read-only mode without aborting plugin startup. */
@@ -1253,7 +1286,7 @@ export default class CardWorkspacePlugin extends Plugin {
     }
 
     this.vaultEventListenersRegistered = true;
-    // Plugin order: navigation workspace → global pins → icons → card backgrounds → templates → boxes → favorites/tag prune → search. Views subscribe later.
+    // Plugin order: navigation workspace → global pins → icons → card backgrounds → templates → boxes → favorites/tag prune → task index → search. Views subscribe later.
     this.vaultEventUnsubscribers = [
       this.navigationMetadataCatalog.subscribe(() => this.withFolderViews(view => view.refreshNavigationMetadata())),
       this.metadataEventBus.subscribe(event => this.navigationMetadataCatalog.handleMetadataChange(event)),
@@ -1271,6 +1304,8 @@ export default class CardWorkspacePlugin extends Plugin {
       this.subscribeVaultEvents((event) => this.boxReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.favoriteReconciler.handleVaultMutation(event)),
       this.subscribeVaultEvents((event) => this.editorDropController.handleVaultMutation(event)),
+      this.metadataEventBus.subscribe((event) => this.taskIndex.handleMetadataEvent(event)),
+      this.subscribeVaultEvents((event) => this.taskIndex.handleVaultMutation(event)),
     ];
     this.searchCoordinator.subscribeTo(this.vaultEventBus);
   }

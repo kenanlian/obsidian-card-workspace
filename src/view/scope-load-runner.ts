@@ -163,6 +163,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
   const scopeChanged = !scopesEqual(previousScope, loadScope.scope);
   const previousBaseCards = context.store.getBaseCards();
   const previousVisibleCards = context.store.getVisibleCards();
+  const previousVisibleTaskCards = context.store.getVisibleTaskCards();
   const previousLoadKey = runtime.getLoadKey();
   const previousIncludeSubfolders = runtime.getLastLoadedIncludeSubfolders();
   if (runtime.forceRefresh && loadScope.scope.kind === "folder") {
@@ -253,6 +254,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
       context.store.setScope(previousScope);
       context.store.replaceBaseCards([...previousBaseCards]);
       context.store.replaceVisibleCards([...previousVisibleCards]);
+      context.store.replaceVisibleTaskCards([...previousVisibleTaskCards]);
       runtime.setExtentCount(context.store.getVisibleCards().length);
       runtime.setMetadataStatus("ready");
       runtime.setScopeSettled(true);

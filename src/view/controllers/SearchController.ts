@@ -24,6 +24,11 @@ export interface SearchControllerDeps {
   prepareSearchProjection?: (query: string, result: SearchQueryResult, revision: number, isCurrent: () => boolean) => Promise<() => void>;
   /** When omitted, the scope is treated as settled. */
   isScopeSettled?: () => boolean;
+  /**
+   * Task mode filters task text locally: the query still debounces and
+   * commits, but the indexed search service is never queried.
+   */
+  isTaskMode?: () => boolean;
 }
 
 /** Options for {@link SearchController.refreshProjection}. */
@@ -60,6 +65,8 @@ export class SearchController implements DisposableController {
   private debounceTimer: ReturnType<Window["setTimeout"]> | null = null;
   private readonly requestEpoch = new AsyncEpoch();
   private readonly snapshotEpoch = new AsyncEpoch();
+  /** Stream the indexed state was last reconciled for; see {@link syncViewMode}. */
+  private taskMode = false;
 
   constructor(private readonly deps: SearchControllerDeps) {}
 
@@ -69,6 +76,43 @@ export class SearchController implements DisposableController {
 
   private scopeSettled(): boolean {
     return this.deps.isScopeSettled?.() !== false;
+  }
+
+  private isTaskMode(): boolean {
+    return this.deps.isTaskMode?.() === true;
+  }
+
+  /**
+   * Re-evaluates the query after the view switched between card and task streams.
+   *
+   * Entering tasks drops in-flight indexed requests and commits the draft as a
+   * local query. Returning to cards with a ready index keeps the unfiltered
+   * browse list until the indexed result commits atomically; a non-ready index
+   * blocks the query as an ordinary non-ready query does. Never publishes.
+   */
+  syncViewMode(): void {
+    const taskMode = this.isTaskMode();
+    if (taskMode === this.taskMode) return;
+    this.taskMode = taskMode;
+    this.clearDebounce();
+    this.requestEpoch.bump();
+    this.orderedPaths = undefined;
+    this.clearMatchCounts();
+    if (taskMode) {
+      this.execution = this.derivePendingExecution();
+      this.setCommittedQuery(this.query);
+      this.status = this.deriveStatus();
+      return;
+    }
+    if (this.query.trim() && this.isIndexReady()) {
+      this.setCommittedQuery("");
+      this.execution = this.derivePendingExecution();
+      this.status = this.deriveStatus();
+      void this.refreshProjection();
+      return;
+    }
+    this.commitPendingProjection();
+    this.status = this.deriveStatus();
   }
 
   getQuery(): string {
@@ -151,6 +195,12 @@ export class SearchController implements DisposableController {
   private applySnapshot(snapshot: SearchServiceSnapshot | null, publish: boolean): void {
     const previous = this.snapshot;
     this.snapshot = snapshot;
+    if (this.isTaskMode()) {
+      // Index health never changes a local task query; card mode re-evaluates on return.
+      this.status = this.deriveStatus();
+      if (publish) this.context.publishGroups("search");
+      return;
+    }
     const ready = this.isIndexReady();
     const wasReady = previous?.initialized && !previous.disposed && previous.mode === "indexed" && previous.status === "ready";
     const sameIndex = previous?.indexGeneration === snapshot?.indexGeneration;
@@ -195,6 +245,18 @@ export class SearchController implements DisposableController {
     this.status = this.deriveStatus();
     if (!this.scopeSettled()) {
       this.context.publishGroups("cards", "search");
+      return;
+    }
+
+    if (this.isTaskMode()) {
+      if (this.query.trim().length > 0) {
+        this.context.publishGroups("cards", "search");
+        this.scheduleDebouncedProjection();
+        return;
+      }
+      this.clearDebounce();
+      this.commitPendingProjection();
+      this.deps.publishSearchProjection();
       return;
     }
 
@@ -296,6 +358,10 @@ export class SearchController implements DisposableController {
   async refreshProjection(options: SearchRefreshOptions = {}): Promise<void> {
     if (options.allowUnsettled !== true && !this.scopeSettled()) return;
     const publish = options.publish !== false;
+    if (this.isTaskMode()) {
+      this.refreshTaskQuery(publish);
+      return;
+    }
     const query = this.query.trim();
     if (query.length === 0) {
       return;
@@ -351,6 +417,17 @@ export class SearchController implements DisposableController {
     }
   }
 
+  /** Commits the draft as the local task query; a no-op once it is committed. */
+  private refreshTaskQuery(publish: boolean): void {
+    if (this.committedQuery === this.query.trim()) return;
+    this.requestEpoch.bump();
+    this.commitPendingProjection();
+    this.status = this.deriveStatus();
+    if (publish) {
+      this.deps.publishSearchProjection();
+    }
+  }
+
   private fallBackToPendingExecution(publish: boolean = true): void {
     this.commitPendingProjection();
     this.status = this.deriveStatus();
@@ -376,6 +453,9 @@ export class SearchController implements DisposableController {
   }
 
   private deriveStatus(): SearchStatus {
+    if (this.isTaskMode()) {
+      return this.query.trim().length === 0 ? "idle" : "ready";
+    }
     return this.deriveIndexedStatus(this.query.trim().length === 0);
   }
 
@@ -478,6 +558,7 @@ export class SearchController implements DisposableController {
     this.orderedPaths = undefined;
     this.clearMatchCounts();
     this.status = "idle";
+    this.taskMode = false;
     this.requestEpoch.bump();
     this.snapshotEpoch.bump();
     return { cancelledDebounce };

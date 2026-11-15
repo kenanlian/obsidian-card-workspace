@@ -1,6 +1,7 @@
 import { mapBoxDrawProgress } from "./box-draw";
 import type { App } from "obsidian";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
+import { normalizeOptionalBoxTaskView } from "../task-view-settings";
 import {
   normalizePropertyFilterClauses, propertyFilterClausesEqual, type PropertyFilterClause,
 } from "../property-filter-settings";
@@ -88,6 +89,7 @@ export function createCardBox(
     sort: init.sort ? { ...init.sort } : { ...DEFAULT_BOX_SORT },
     draw: init.draw ? { ...init.draw } : undefined,
     group: init.group ? { ...init.group } : { ...DEFAULT_GROUP_SPEC },
+    ...normalizeOptionalBoxTaskView(init),
   };
 }
 
@@ -137,6 +139,7 @@ export function duplicateCardBox(
     sort: { ...source.sort },
     group: { ...source.group },
     draw: source.draw ? { ...source.draw } : undefined,
+    ...normalizeOptionalBoxTaskView(source),
   };
 
   const index = boxes.findIndex((box) => box.id === id);

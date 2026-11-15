@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { SettingsStore, serializeSettings } from "./SettingsStore";
+import { DEVICE_PREFERENCE_KEYS, overlayDeviceSettings, pickDeviceSettings, sharedSettings } from "./device-settings";
 import { DEFAULT_SETTINGS } from "../settings";
 
 afterEach(() => vi.useRealTimers());
@@ -11,6 +12,37 @@ function fixture(raw: unknown = serializeSettings(DEFAULT_SETTINGS), localRaw: u
   const store = new SettingsStore({ load: async () => raw, save, local: { load: () => localRaw, save: saveLocal, onError } });
   return { store, shared, local, save, saveLocal, onError };
 }
+describe("device preference keys", () => {
+  it("stores task sort and group beside sort and group", () => {
+    const keys = [...DEVICE_PREFERENCE_KEYS];
+    const groupIndex = keys.indexOf("group");
+    expect(keys.slice(groupIndex, groupIndex + 3)).toEqual(["group", "taskSort", "taskGroup"]);
+    expect(keys).toContain("sort");
+    expect(keys).toContain("defaultView");
+    expect(keys).not.toContain("enhancedTaskEditing");
+    expect(keys).not.toContain("autoCreatedDate");
+    expect(keys).not.toContain("autoDoneDate");
+    expect(keys).not.toContain("taskDateButtons");
+    expect(keys).not.toContain("taskDateButtonStyle");
+    expect(keys).not.toContain("taskDateHideSource");
+  });
+
+  it("overlays device task sort and group while shared preferences stay on the shared document", () => {
+    const document = serializeSettings(DEFAULT_SETTINGS);
+    const local = pickDeviceSettings(document);
+    local.preferences.taskSort = { field: "text", direction: "desc" };
+    local.preferences.taskGroup = { dimension: "file" };
+    const overlaid = overlayDeviceSettings(document, local);
+    expect(overlaid.preferences.taskSort).toEqual({ field: "text", direction: "desc" });
+    expect(overlaid.preferences.taskGroup).toEqual({ dimension: "file" });
+    expect(overlaid.preferences.enhancedTaskEditing).toBe(true);
+    const shared = sharedSettings(overlaid, document);
+    expect(shared.preferences.taskSort).toEqual(document.preferences.taskSort);
+    expect(shared.preferences.taskGroup).toEqual(document.preferences.taskGroup);
+    expect(shared.preferences.enhancedTaskEditing).toBe(true);
+  });
+});
+
 describe("device overlays", () => {
   it("seeds legacy device fields without startup writes; keeps mixed patches in their own documents", async () => {
     const f = fixture({ ...DEFAULT_SETTINGS, previewLines: 7, lastFolderPath: "old" }); await f.store.init();

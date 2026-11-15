@@ -145,6 +145,8 @@ const boxScopeState: PanelScopeState = {
 };
 
 function render(options: {
+  viewMode?: "cards" | "tasks";
+  onViewModeChange?: (payload: { mode: "cards" | "tasks" }) => void;
   dragSession?: DragSession;
   onDropCards?: (target: CardDropTarget, paths: string[]) => void;
   nav?: PanelNavState;
@@ -160,6 +162,7 @@ function render(options: {
   target.className = "folder-card-view";
   document.body.appendChild(target);
   const component = mount(NavigationPane, { target, props: {
+    viewMode: options.viewMode, onViewModeChange: options.onViewModeChange,
     strings: options.strings ?? getUiStrings("en"), nav: options.nav ?? nav(), scope: options.scope ?? scope,
     activeFilterTags: options.activeFilterTags ?? ["work"], onNavigationIntent: options.onIntent,
     onNavContextMenu: options.onMenu, onPropertyCommand: options.onPropertyCommand,
@@ -315,7 +318,7 @@ describe("NavigationPane projected ARIA tree", () => {
     expect(filter.querySelector("input")?.classList.contains("fce-search-input")).toBe(true);
     expect(filter.querySelector("input")?.getAttribute("role")).not.toBe("combobox");
     const actions = document.querySelector<HTMLElement>(".fce-nav-pane-header-group")!;
-    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["chevrons-down-up", "search", "send"]);
+    expect(Array.from(actions.children).map((button) => button.getAttribute("data-icon"))).toEqual(["list-checks", "chevrons-down-up", "search", "send"]);
     expect(document.querySelector<HTMLElement>(".fce-nav-search-toggle")?.dataset.icon).toBe("search");
     expect(filter.querySelector(".fce-nav-filter-clear")).toBeNull();
 
@@ -1679,4 +1682,15 @@ describe("NavigationPane shared card and touch drops", () => {
     document.dispatchEvent(touch("touchend", 230)); await tick();
     expect(intents).toContainEqual({ type: "reorder-navigation-items", sourceId: "section:folders", targetId: "section:tags", position: "after" });
   });
+});
+
+it.each(["cards", "tasks"] as const)("navigation mode button reflects %s and emits its opposite", async viewMode => {
+  const change = vi.fn();
+  const component = render({ viewMode, onViewModeChange: change });
+  await tick();
+  const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-nav-pane-header .fce-view-mode-toggle")).at(-1)!;
+  expect(button.getAttribute("aria-pressed")).toBe(String(viewMode === "tasks"));
+  button.click();
+  expect(change).toHaveBeenCalledWith({ mode: viewMode === "tasks" ? "cards" : "tasks" });
+  await unmount(component);
 });

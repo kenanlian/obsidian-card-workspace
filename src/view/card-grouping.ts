@@ -49,10 +49,14 @@ export interface CardGroupSegment {
   readonly isMissingBucket: boolean;
 }
 
-export interface GroupArrangement {
-  readonly cards: NoteCardRecord[];
+export interface GroupArrangement<T extends { readonly path: string } = NoteCardRecord> {
+  readonly cards: T[];
+  readonly groups?: readonly { key: string; label: string; cards: T[] }[];
   readonly segments: CardGroupSegment[];
 }
+
+/** The part of a group spec the arrangement reads; `"none"` means a flat stream. */
+export type GroupOrderSpec = Pick<GroupSpec, "orderBy" | "orderDirection"> & { readonly dimension: string };
 
 const TAG_MISSING_BUCKET_KEY = "tag:__none__";
 /** Not a legal tag character, so distinct tag sets can never collide on a key. */
@@ -276,16 +280,16 @@ export function buildGroupBuckets(
   return buckets;
 }
 
-interface PendingGroup {
+interface PendingGroup<T> {
   bucket: GroupBucket;
-  cards: NoteCardRecord[];
+  cards: T[];
 }
 
 /**
  * Total comparator: `orderBy` first, then the dimension's default sort key,
  * then the bucket key, so ordering is stable across reloads.
  */
-function compareGroups(left: PendingGroup, right: PendingGroup, orderBy: GroupOrderBy): number {
+function compareGroups<T>(left: PendingGroup<T>, right: PendingGroup<T>, orderBy: GroupOrderBy): number {
   if (orderBy === "name") {
     const byLabel = left.bucket.label.localeCompare(right.bucket.label);
     if (byLabel !== 0) {
@@ -306,12 +310,12 @@ function compareGroups(left: PendingGroup, right: PendingGroup, orderBy: GroupOr
   return left.bucket.key.localeCompare(right.bucket.key);
 }
 
-function partitionIntoGroups(
-  cards: readonly NoteCardRecord[],
+function partitionIntoGroups<T extends { readonly path: string }>(
+  cards: readonly T[],
   buckets: ReadonlyMap<string, GroupBucket>,
-): PendingGroup[] {
-  const groups: PendingGroup[] = [];
-  const groupsByKey = new Map<string, PendingGroup>();
+): PendingGroup<T>[] {
+  const groups: PendingGroup<T>[] = [];
+  const groupsByKey = new Map<string, PendingGroup<T>>();
 
   for (const card of cards) {
     const bucket = buckets.get(card.path) ?? FALLBACK_MISSING_BUCKET;
@@ -332,10 +336,10 @@ function partitionIntoGroups(
  * the comparator entirely and pinned to the end in both directions — manual
  * first, then missing.
  */
-function orderGroups(groups: PendingGroup[], spec: GroupSpec): PendingGroup[] {
-  const ordered: PendingGroup[] = [];
-  const manual: PendingGroup[] = [];
-  const missing: PendingGroup[] = [];
+function orderGroups<T>(groups: PendingGroup<T>[], spec: GroupOrderSpec): PendingGroup<T>[] {
+  const ordered: PendingGroup<T>[] = [];
+  const manual: PendingGroup<T>[] = [];
+  const missing: PendingGroup<T>[] = [];
 
   for (const group of groups) {
     if (group.bucket.isMissing) {
@@ -363,18 +367,19 @@ function orderGroups(groups: PendingGroup[], spec: GroupSpec): PendingGroup[] {
  * established by the preceding pipeline step survives grouping. Collapsed
  * groups drop their cards but keep their segment and full `count`.
  */
-export function arrangeCardsByGroup(
-  cards: readonly NoteCardRecord[],
+export function arrangeCardsByGroup<T extends { readonly path: string }>(
+  cards: readonly T[],
   buckets: ReadonlyMap<string, GroupBucket>,
-  spec: GroupSpec,
+  spec: GroupOrderSpec,
   collapsedKeys: ReadonlySet<string>,
-): GroupArrangement {
+  captureGroups = false,
+): GroupArrangement<T> {
   if (spec.dimension === "none") {
-    return { cards: cards as NoteCardRecord[], segments: [] };
+    return { cards: cards as T[], segments: [] };
   }
 
   const groups = orderGroups(partitionIntoGroups(cards, buckets), spec);
-  const arrangedCards: NoteCardRecord[] = [];
+  const arrangedCards: T[] = [];
   const segments: CardGroupSegment[] = [];
 
   for (const group of groups) {
@@ -399,5 +404,5 @@ export function arrangeCardsByGroup(
     });
   }
 
-  return { cards: arrangedCards, segments };
+  return { cards: arrangedCards, segments, ...(captureGroups ? { groups: groups.map(group => ({ key: group.bucket.key, label: group.bucket.label, cards: group.cards })) } : {}) };
 }

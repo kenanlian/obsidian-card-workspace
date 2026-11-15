@@ -6,12 +6,13 @@
   interface CardTaskFooterProps {
     summary: CardTaskSummary;
     strings: CardItemStrings;
+    label?: string;
   }
 
-  let { summary, strings }: CardTaskFooterProps = $props();
+  let { summary, strings, label }: CardTaskFooterProps = $props();
 
   const completed = $derived(summary.total - summary.incomplete);
-  const ariaLabel = $derived(strings.taskProgressAria(completed, summary.total));
+  const ariaLabel = $derived(label ?? strings.taskProgressAria(completed, summary.total));
   const iconName = $derived(
     completed === 0 ? "circle" : completed === summary.total ? "circle-check" : "circle-dot",
   );

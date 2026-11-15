@@ -17,7 +17,7 @@ import { projectNavigation } from "./navigation-projection";
 import type { CardGroupSegment } from "./card-grouping";
 import type { CardFileKind } from "./file-kind";
 import type { HydrateViewportRequest } from "./hydration-request";
-import type { NoteCardRecord } from "./types";
+import type { NoteCardRecord, TaskCardRecord } from "./types";
 
 /** Mirrors the panel's own constant; the stub layout never measures a row. */
 const ESTIMATED_ROW_HEIGHT = 232;
@@ -2496,6 +2496,227 @@ describe("FolderCardPanel.svelte", () => {
     const afterExtentChange = target.querySelectorAll<HTMLElement>(".fce-list .fce-virtual-spacer");
     expect(Array.from(afterExtentChange, (spacer) => Number.parseFloat(spacer.style.height || "0")))
       .toEqual(initialSpacerHeights);
+    await unmount(component);
+  });
+});
+
+function createTask(filePath: string, line: number, text: string, completed = false): TaskCardRecord {
+  return {
+    kind: "task",
+    path: `${filePath}::L${line}`,
+    filePath,
+    file: {} as never,
+    fileTitle: filePath.replace(/^.*\//, "").replace(/\.md$/, ""),
+    fileOrder: 0,
+    line,
+    lineText: `- [${completed ? "x" : " "}] ${text}`,
+    text,
+    completed,
+    statusChar: completed ? "x" : " ",
+    dates: { created: null, done: null, due: null },
+    children: [],
+  };
+}
+
+function createTaskPanelState(tasks: TaskCardRecord[], taskStatus: "idle" | "building" | "ready" = "ready"): PanelModelState {
+  const state = createInitialPanelState();
+  state.cards = { ...state.cards, streamMode: "tasks", records: [], taskRecords: tasks, taskStatus, sequenceRevision: 1 };
+  state.projection = {
+    ...state.projection,
+    viewMode: "tasks",
+    taskViewAvailable: true,
+    taskSort: { field: "due", direction: "asc" },
+    taskGroup: { dimension: "none" },
+  };
+  return state;
+}
+
+describe("FolderCardPanel.svelte task stream", () => {
+  const strings = getUiStrings("en");
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    ResizeObserverStub.reset();
+    resetObsidianMenuInstances();
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    (globalThis as unknown as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+      ResizeObserverStub as never;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    resetObsidianMenuInstances();
+  });
+
+  function mountPanel(state: PanelModelState, props: Record<string, unknown> = {}) {
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const panelModel = createPanelModel(state);
+    const component = mount(FolderCardPanel, { target, props: { panelModel, ...props } });
+    return { target, panelModel, component };
+  }
+
+  it("updates date colors from appearance without requesting note hydration", async () => {
+    const onHydrateViewport = vi.fn();
+    const { target, panelModel, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]), { onHydrateViewport });
+    await tick();
+    panelModel.mutate(state => {
+      state.appearance = { ...state.appearance, taskDateColors: { created: "pink", done: "cyan", due: "yellow", overdue: "purple" } };
+    });
+    await tick();
+    const shell = target.querySelector<HTMLElement>(".fce-shell")!;
+    expect(shell.style.getPropertyValue("--fce-task-created-color")).toBe("var(--color-pink)");
+    expect(shell.style.getPropertyValue("--fce-task-overdue-color")).toBe("var(--color-purple)");
+    expect(onHydrateViewport).not.toHaveBeenCalled();
+    await unmount(component);
+  });
+
+  it("renders task cards in virtual rows without hydration or image demand", async () => {
+    const state = createTaskPanelState(Array.from({ length: 40 }, (_, i) => createTask(`notes/${i}.md`, i, `Task ${i}`)));
+    state.appearance = { ...state.appearance, cardImageMode: "right" };
+    const onHydrateViewport = vi.fn();
+    const onImageViewport = vi.fn();
+    const { target, component } = mountPanel(state, { onHydrateViewport, onImageViewport });
+    await tick();
+    const cards = target.querySelectorAll(".fce-task-card");
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.length).toBeLessThan(40);
+    expect(target.querySelector(".fce-list")?.classList.contains("is-task-stream")).toBe(true);
+    expect(target.querySelector(".fce-card:not(.fce-task-card)")).toBeNull();
+    expect(target.querySelector(".fce-task-text")?.textContent).toBe("Task 0");
+    expect(onHydrateViewport).not.toHaveBeenCalled();
+    expect(onImageViewport).not.toHaveBeenCalled();
+    await unmount(component);
+  });
+
+  it("shows a building state while the scope tasks are read", async () => {
+    const { target, component } = mountPanel(createTaskPanelState([], "building"));
+    await tick();
+    const building = target.querySelector(".fce-task-building");
+    expect(building?.textContent).toContain(strings.tasks.view.building);
+    expect(building?.getAttribute("role")).toBe("status");
+    expect(target.querySelector(".fce-list")?.getAttribute("aria-busy")).toBe("true");
+    expect(target.textContent).not.toContain(strings.panel.loadingCards);
+    await unmount(component);
+  });
+
+  it("distinguishes an empty scope from tasks hidden by search or filters", async () => {
+    const { target, panelModel, component } = mountPanel(createTaskPanelState([]));
+    await tick();
+    expect(target.querySelector(".fce-task-empty")?.getAttribute("data-empty-reason")).toBe("scope");
+    expect(target.textContent).toContain(strings.tasks.view.emptyScope);
+    expect(target.textContent).not.toContain("No supported files found in this folder.");
+
+    panelModel.mutate((draft) => { draft.search = { ...draft.search, query: "zzz", committedQuery: "zzz", status: "ready" }; });
+    await tick();
+    expect(target.textContent).toContain(strings.tasks.view.emptyFiltered);
+
+    const onToolbarAction = vi.fn();
+    await unmount(component);
+    const filtered = createTaskPanelState([]);
+    filtered.scope = {
+      ...filtered.scope,
+      browseFilterState: { tagCount: 1, propertyValueCount: 0, items: [{ kind: "tag", tag: "#work", label: "#work" } as never], canClearEmptyResult: true },
+    };
+    const second = mountPanel(filtered, { onToolbarAction });
+    await tick();
+    expect(second.target.querySelector(".fce-task-empty")?.getAttribute("data-empty-reason")).toBe("filtered");
+    second.target.querySelector<HTMLButtonElement>(".fce-task-empty button")?.click();
+    expect(onToolbarAction).toHaveBeenCalledWith({ action: "clear-browse-filters" });
+    await unmount(second.component);
+  });
+
+  it("keeps the requested checkbox state while the host publishes the id as pending", async () => {
+    const task = createTask("notes/a.md", 2, "Ship it");
+    let model: ReturnType<typeof createPanelModel> | null = null;
+    const onTaskToggle = vi.fn(({ id }: { id: string }) => {
+      model?.mutate((draft) => { draft.cards = { ...draft.cards, pendingTaskIds: [id] }; });
+    });
+    const { target, panelModel, component } = mountPanel(createTaskPanelState([task]), { onTaskToggle });
+    model = panelModel;
+    await tick();
+    const check = () => target.querySelector<HTMLButtonElement>(".fce-task-check")!;
+    check().click();
+    await tick();
+    expect(onTaskToggle).toHaveBeenCalledWith(expect.objectContaining({ id: "notes/a.md::L2", completed: false }));
+    expect(check().getAttribute("aria-checked")).toBe("true");
+    expect(target.querySelector(".fce-task-row")?.classList.contains("is-pending")).toBe(true);
+
+    // The index refresh replaces the content under the same id, then the host clears pending.
+    panelModel.mutate((draft) => {
+      draft.cards = { ...draft.cards, taskRecords: [createTask("notes/a.md", 2, "Ship it", true)], pendingTaskIds: [] };
+    });
+    await tick();
+    expect(check().getAttribute("aria-checked")).toBe("true");
+    expect(target.querySelector(".fce-task-row")?.classList.contains("is-pending")).toBe(false);
+    expect(target.querySelector(".fce-task-row")?.classList.contains("is-completed")).toBe(true);
+    await unmount(component);
+  });
+
+  it("routes task open intents and the navigation view toggle", async () => {
+    const onTaskOpen = vi.fn();
+    const onViewModeChange = vi.fn();
+    const { target, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]), { onTaskOpen, onViewModeChange });
+    await tick();
+    target.querySelector<HTMLElement>(".fce-task-text")!.click();
+    expect(onTaskOpen).toHaveBeenCalledWith({ filePath: "notes/a.md", line: 2, lineText: "- [ ] Ship it" });
+    target.querySelector<HTMLButtonElement>(".fce-view-mode-toggle")!.click();
+    expect(onViewModeChange).toHaveBeenCalledWith({ mode: "cards" });
+    await unmount(component);
+  });
+
+  it("routes More, right-click and keyboard actions from normal and sticky task group headers", async () => {
+    const state = createTaskPanelState(Array.from({ length: 8 }, (_, i) => createTask("notes/a.md", i, `Task ${i}`)));
+    state.cards.groupSegments = [createSegment("open", "Incomplete", 0, 8)];
+    state.cards.taskGroupCounts = { open: 10 };
+    const onToolbarAction = vi.fn(), onGroupCollapseCommand = vi.fn();
+    const { target, component } = mountPanel(state, { onToolbarAction, onGroupCollapseCommand });
+    await tick();
+    const header = target.querySelector<HTMLButtonElement>(".fce-card-group-header")!;
+    const more = target.querySelector<HTMLButtonElement>(".fce-group-more")!;
+    more.click();
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: undefined });
+    const rightClick = new MouseEvent("contextmenu", { clientX: 140, clientY: 80, bubbles: true, cancelable: true });
+    header.dispatchEvent(rightClick);
+    expect(rightClick.defaultPrevented).toBe(true);
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: { x: 140, y: 80 } });
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: undefined });
+    expect(onGroupCollapseCommand).not.toHaveBeenCalled();
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 20; list.dispatchEvent(new Event("scroll")); await tick();
+    const pinned = target.querySelector<HTMLButtonElement>(".fce-sticky-group-header .fce-group-more")!;
+    expect(pinned).not.toBeNull(); pinned.click();
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: pinned, position: undefined });
+    expect(target.querySelector(".fce-wall-group-row.is-pinned-source")?.getAttribute("aria-hidden")).toBe("true");
+    await unmount(component);
+  });
+
+  it("uses one column on phones and marks task cards as touch", async () => {
+    const tasks = Array.from({ length: 6 }, (_, i) => createTask(`notes/${i}.md`, i, `Task ${i}`));
+    const { target, component } = mountPanel(createTaskPanelState(tasks), { runtimeDevice: "phone" });
+    await tick();
+    expect(target.querySelector<HTMLElement>(".fce-wall-row-grid")?.getAttribute("style")).toContain("--fce-column-count: 1");
+    expect(target.querySelector(".fce-task-card")?.classList.contains("is-touch")).toBe(true);
+    await unmount(component);
+  });
+
+  it("returns to card rendering when the stream switches back", async () => {
+    const { target, panelModel, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]));
+    await tick();
+    expect(target.querySelector(".fce-task-card")).not.toBeNull();
+    expect(target.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).toBeNull();
+    panelModel.mutate((draft) => {
+      draft.cards = { ...draft.cards, streamMode: "cards", taskRecords: [], records: [createCard("notes/a.md", "A note")], sequenceRevision: 2 };
+      draft.projection = { ...draft.projection, viewMode: "cards" };
+    });
+    await tick();
+    expect(target.querySelector(".fce-task-card")).toBeNull();
+    expect(target.textContent).toContain("A note");
+    expect(target.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).not.toBeNull();
+    expect(target.querySelector(`button[aria-label="${strings.tasks.tools.status}"]`)).toBeNull();
     await unmount(component);
   });
 });

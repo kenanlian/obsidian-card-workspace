@@ -1,10 +1,12 @@
 import type { UiLanguage } from "./types";
 
-export type SettingsPageId = "appearance" | "cards-preview" | "navigation" | "opening-dragging" | "notes-templates" | "quick-input" | "default-icons";
+export type SettingsPageId = "appearance" | "cards-preview" | "navigation" | "opening-dragging" | "notes-templates" | "tasks" | "quick-input" | "default-icons";
 
 export interface SettingTabStrings {
   pages: Record<SettingsPageId, { name: string; desc: string }>;
-  groups: Record<"text" | "style" | "content" | "references" | "images" | "hover" | "sections" | "entries" | "opening" | "dragging" | "newNotes" | "templateFiles" | "saving" | "fields" | "window" | "shortcut", string>;
+  groups: Record<"text" | "style" | "content" | "references" | "images" | "hover" | "sections" | "entries" | "opening" | "dragging" | "newNotes" | "templateFiles" | "saving" | "fields" | "window" | "shortcut" | "tasks" | "taskDisplay" | "taskColors", string>;
+  taskColorNames: Record<"created" | "done" | "due" | "overdue", string>;
+  taskColorsDesc: string;
   back: string;
   fileVisibilityName: string;
   fileVisibilityDesc: string;
@@ -54,6 +56,22 @@ export interface SettingTabStrings {
   hoverPreviewDimensionDesc: (min: number, max: number, defaultValue: number) => string;
   showNavItemCountsName: string;
   showNavItemCountsDesc: string;
+  enhancedTaskEditingName: string;
+  enhancedTaskEditingDesc: string;
+  autoCreatedDateName: string;
+  autoCreatedDateDesc: string;
+  autoDoneDateName: string;
+  autoDoneDateDesc: string;
+  taskDateButtonsName: string;
+  taskDateButtonsDesc: string;
+  taskDateButtonsOptions: Record<"compact" | "full", string>;
+  taskDateButtonStyleName: string;
+  taskDateButtonStyleDesc: string;
+  taskDateButtonStyleOptions: Record<"chips" | "dots", string>;
+  taskDateHideSourceName: string;
+  taskDateHideSourceDesc: string;
+  taskCardShowFileName: string;
+  taskCardShowFileDesc: string;
 }
 
 export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
@@ -79,6 +97,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
         "name": "New notes and templates",
         "desc": "Initial content, destinations and template storage"
       },
+      "tasks": { name: "Task view", desc: "Task cards, editing and date colors" },
       "quick-input": {
         "name": "Quick input",
         "desc": "Saving rules, input fields, window and shortcut"
@@ -104,8 +123,11 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "saving": "Saving and appending",
       "fields": "Input fields",
       "window": "Window appearance",
-      "shortcut": "Shortcut"
+      "shortcut": "Shortcut",
+      "tasks": "Task editing", "taskDisplay": "Task cards", "taskColors": "Date colors"
     },
+    taskColorNames: { created: "Created date color", done: "Completed date color", due: "Due date color", overdue: "Overdue color" },
+    taskColorsDesc: "Choose a theme color. Applies to task cards and editor date buttons.",
     back: "Back",
     fileVisibilityName: "Show file types",
     fileVisibilityDesc: "Apply to folders, boxes and links. Supported formats follow Obsidian and installed plugins; refresh after changing plugins. All formats may open in external apps.",
@@ -157,6 +179,22 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     showNavItemCountsName: "Show item counts in navigation",
     showNavItemCountsDesc:
       "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
+    enhancedTaskEditingName: "Enhanced task editing",
+    enhancedTaskEditingDesc: "In Live Preview, show created, completed and due date buttons at the end of task lines. The \"Insert task or convert lines to tasks\" command stays available either way.",
+    autoCreatedDateName: "Add created date to new tasks",
+    autoCreatedDateDesc: "The \"Insert task or convert lines to tasks\" command adds today's created date (\u2795) when it creates or converts a task. With enhanced task editing on, a task created in the editor by pressing Enter, typing a checkbox, or a checkbox command also gets it once the caret leaves the line.",
+    autoDoneDateName: "Add completion date when checking off tasks",
+    autoDoneDateDesc: "Add today's completion date (\u2705) when a task is checked on a task card or in the editor, and remove it when the task is unchecked. The editor applies it only while enhanced task editing is on. An existing completion date, such as one written by the Tasks plugin, is kept.",
+    taskDateButtonsName: "Task date buttons",
+    taskDateButtonsDesc: "Compact shows unset dates only on the hovered or current line. Full always shows all three buttons.",
+    taskDateButtonsOptions: { compact: "Compact", full: "Full" },
+    taskDateButtonStyleName: "Task date button style",
+    taskDateButtonStyleDesc: "Chips look like the date chips on task cards and show the date when task date text is hidden. Dots keep one small dot per date. Both use the date colors configured below.",
+    taskDateButtonStyleOptions: { chips: "Chips", dots: "Dots" },
+    taskDateHideSourceName: "Hide task date text",
+    taskDateHideSourceDesc: "In Live Preview, hide task date text and show dates only through the date buttons at the end of the line. The line being edited still shows the text. The note itself is unchanged.",
+    taskCardShowFileName: "Show source note on task cards",
+    taskCardShowFileDesc: "Show the note each task comes from at the bottom of its task card. Subtask progress is shown either way.",
   },
   zh: {
     pages: {
@@ -180,6 +218,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
         "name": "新建与模板",
         "desc": "新建内容、保存位置与模板文件夹"
       },
+      "tasks": { name: "任务视图", desc: "任务卡片、任务编辑与日期颜色" },
       "quick-input": {
         "name": "快速输入",
         "desc": "保存规则、输入字段、窗口与快捷键"
@@ -205,8 +244,11 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
       "saving": "保存与追加",
       "fields": "输入字段",
       "window": "窗口外观",
-      "shortcut": "快捷键"
+      "shortcut": "快捷键",
+      "tasks": "任务编辑", "taskDisplay": "任务卡片", "taskColors": "日期颜色"
     },
+    taskColorNames: { created: "创建日期颜色", done: "完成日期颜色", due: "截止日期颜色", overdue: "逾期颜色" },
+    taskColorsDesc: "选择主题颜色，同时应用于任务卡片和编辑器日期按钮。",
     back: "返回",
     fileVisibilityName: "显示文件类型",
     fileVisibilityDesc: "适用于文件夹、卡片盒和链接列表。常规格式跟随 Obsidian 和已安装插件，变更插件后请刷新；全部格式可能通过外部应用打开。",
@@ -255,5 +297,21 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     showNavItemCountsName: "在导航栏显示条目计数",
     showNavItemCountsDesc:
       "在导航栏中显示每个文件夹和标签包含的卡片数量。文件夹计数会跟随“包含子文件夹”开关变化，标签计数包含其子标签。",
+    enhancedTaskEditingName: "增强任务编辑",
+    enhancedTaskEditingDesc: "在实时预览中，于任务行末显示创建、完成与截止日期按钮。“插入任务或将所选行转为任务”命令始终可用。",
+    autoCreatedDateName: "新任务添加创建日期",
+    autoCreatedDateDesc: "“插入任务或将所选行转为任务”命令创建或转换任务时，添加今天的创建日期（\u2795）。开启增强任务编辑时，在编辑器中通过回车、输入复选框或复选框命令新建的任务，也会在光标离开该行后添加。",
+    autoDoneDateName: "勾选任务时添加完成日期",
+    autoDoneDateDesc: "在任务卡片或编辑器中勾选任务时添加今天的完成日期（\u2705），取消勾选时移除。编辑器中仅在开启增强任务编辑时生效。已有的完成日期（例如 Tasks 插件写入的）会保留。",
+    taskDateButtonsName: "任务日期按钮",
+    taskDateButtonsDesc: "紧凑：未设置的日期仅在鼠标悬停行或当前行显示。完整：始终显示全部三个按钮。",
+    taskDateButtonsOptions: { compact: "紧凑", full: "完整" },
+    taskDateButtonStyleName: "任务日期按钮样式",
+    taskDateButtonStyleDesc: "标签：与任务卡片上的日期标签一致，隐藏任务日期文本时直接显示日期。圆点：每个日期一个小圆点。两种样式均使用下方设置的日期颜色。",
+    taskDateButtonStyleOptions: { chips: "标签", dots: "圆点" },
+    taskDateHideSourceName: "隐藏任务日期文本",
+    taskDateHideSourceDesc: "在实时预览中隐藏任务日期文本，只通过行末的日期按钮显示日期。正在编辑的行仍显示文本，笔记原文不受影响。",
+    taskCardShowFileName: "在任务卡片上显示所属笔记",
+    taskCardShowFileDesc: "在任务卡片底部显示任务所在的笔记。子任务进度始终显示。",
   },
 };

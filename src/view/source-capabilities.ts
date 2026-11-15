@@ -6,15 +6,16 @@ import type { CardScope } from "./scope";
  *
  * Every consumer that needs "does this source support X" policy — arrangement
  * ownership, browse filter availability, include-subfolders controls, Box rule
- * seeding, projection-group dimensions — resolves it here instead of inferring
- * Folder behavior from `activeBoxId === null` or a generic `isBoxMode`.
+ * seeding, projection-group dimensions, task view — resolves it here instead of
+ * inferring Folder behavior from `activeBoxId === null` or a generic `isBoxMode`.
  * Scope identity, validation, candidate collection, and pipeline-step dispatch
  * stay their own exhaustive switches because they perform behavior, not
  * capability lookup. A later source kind must extend this switch together with
  * the semantic dispatchers; the `never` arm fails compilation otherwise.
  *
  * Links keeps global grouping and pin ownership; view-config resolves its
- * per-direction sort independently. Browse tag and property filters
+ * per-direction sort independently. All sources support task view with one global mode.
+ * Browse tag and property filters
  * are supported by folders and boxes: links scopes keep the workspace filter
  * clauses dormant (never applied to their card streams) and surface that state
  * through the paused-filters hint instead. Accepted side effect: card-pin
@@ -31,6 +32,7 @@ export interface SourceCapabilities {
   readonly supportsIncludeSubfolders: boolean;
   readonly supportsBoxRuleSeeding: boolean;
   readonly groupDimensions: readonly GroupDimension[];
+  readonly taskView: boolean;
 }
 
 /** Grouping dimensions offered in folder scope; `box-rule` needs a box's rule list. */
@@ -59,6 +61,7 @@ export function resolveSourceCapabilities(scope: CardScope, drawActive = false):
         supportsIncludeSubfolders: true,
         supportsBoxRuleSeeding: true,
         groupDimensions: FOLDER_GROUP_DIMENSIONS,
+        taskView: true,
       };
     case "box":
       return {
@@ -69,6 +72,7 @@ export function resolveSourceCapabilities(scope: CardScope, drawActive = false):
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: BOX_GROUP_DIMENSIONS,
+        taskView: true,
       };
     case "links":
       return {
@@ -79,6 +83,7 @@ export function resolveSourceCapabilities(scope: CardScope, drawActive = false):
         supportsIncludeSubfolders: false,
         supportsBoxRuleSeeding: false,
         groupDimensions: FOLDER_GROUP_DIMENSIONS,
+        taskView: true,
       };
     default: {
       const exhaustive: never = scope;

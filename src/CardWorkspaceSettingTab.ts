@@ -1,3 +1,4 @@
+import { TASK_DATE_COLORS, isTaskDateColor, type TaskDateColors } from "./task-view-settings";
 import { builtinCategoryIcon, pushRecentIcon, type IconCategory, type IconSpec } from "./icon-config";
 import { IconPicker, closeIconPickerForAnchor } from "./icon-picker/IconPicker";
 import { renderContentIcon } from "./icon-render";
@@ -172,6 +173,22 @@ function declarativeSettingPatch(key: string, value: unknown): PartialPluginSett
       return typeof value === "boolean" ? { locateLinkCardOnOpen: value } : null;
     case "enableHeadingDragInsert":
       return typeof value === "boolean" ? { enableHeadingDragInsert: value } : null;
+    case "enhancedTaskEditing":
+      return typeof value === "boolean" ? { enhancedTaskEditing: value } : null;
+    case "autoCreatedDate":
+      return typeof value === "boolean" ? { autoCreatedDate: value } : null;
+    case "autoDoneDate":
+      return typeof value === "boolean" ? { autoDoneDate: value } : null;
+    case "taskDateButtons":
+      return value === "compact" || value === "full" ? { taskDateButtons: value } : null;
+    case "taskDateButtonStyle":
+      return value === "chips" || value === "dots" ? { taskDateButtonStyle: value } : null;
+    case "taskDateHideSource":
+      return typeof value === "boolean" ? { taskDateHideSource: value } : null;
+    case "taskCopyPreserveOriginal":
+      return typeof value === "boolean" ? { taskCopyPreserveOriginal: value } : null;
+    case "taskCardShowFile":
+      return typeof value === "boolean" ? { taskCardShowFile: value } : null;
     default:
       return null;
   }
@@ -231,6 +248,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
    */
   getControlValue(key: string): unknown {
     const settings = this.plugin.getSettings();
+    if (key.startsWith("taskDateColors.")) return settings.taskDateColors[key.slice(15) as keyof TaskDateColors];
     if (key.startsWith("quickInputVisibility.")) return normalizeQuickInputVisibility(settings.quickInputVisibility)[key.slice(21) as keyof QuickInputVisibility];
     const section = this.resolveSectionControl(key);
     if (section) return !settings.hiddenNavSections.includes(section);
@@ -293,6 +311,22 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         return settings.showNavItemCounts;
       case "locateLinkCardOnOpen":
         return settings.locateLinkCardOnOpen;
+      case "enhancedTaskEditing":
+        return settings.enhancedTaskEditing;
+      case "autoCreatedDate":
+        return settings.autoCreatedDate;
+      case "autoDoneDate":
+        return settings.autoDoneDate;
+      case "taskDateButtons":
+        return settings.taskDateButtons;
+      case "taskDateButtonStyle":
+        return settings.taskDateButtonStyle;
+      case "taskDateHideSource":
+        return settings.taskDateHideSource;
+      case "taskCopyPreserveOriginal":
+        return settings.taskCopyPreserveOriginal;
+      case "taskCardShowFile":
+        return settings.taskCardShowFile;
       default:
         return undefined;
     }
@@ -300,7 +334,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     await this.saveDeclarativeSetting(key, value);
-    if (key === "cardImageMode" || key === "cardStyle" || key === "quickInputDuplicateTitle") {
+    if (key === "cardImageMode" || key === "cardStyle" || key === "quickInputDuplicateTitle" || key === "enhancedTaskEditing") {
       if (requireApiVersion("1.13.0")) {
         if (typeof this.refreshDomState === "function") {
           this.refreshDomState();
@@ -583,6 +617,7 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     const inputStrings = getUiStrings(language).noteInput;
     const templateOptions = this.getQuickInputTemplateOptions();
     this.templateOptionsSignature = JSON.stringify(templateOptions);
+    const taskEditingEnabled = () => this.plugin.getSettings().enhancedTaskEditing;
     const groups: WorkspaceSettingGroup[] = [
       {
         type: "group",
@@ -804,6 +839,31 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
         ],
       },
       {
+        type: "group",
+        heading: strings.groups.tasks,
+        items: [
+          { name: strings.enhancedTaskEditingName, desc: strings.enhancedTaskEditingDesc,
+            control: { type: "toggle", key: "enhancedTaskEditing" } },
+          { name: strings.autoCreatedDateName, desc: strings.autoCreatedDateDesc,
+            control: { type: "toggle", key: "autoCreatedDate" } },
+          { name: strings.autoDoneDateName, desc: strings.autoDoneDateDesc,
+            control: { type: "toggle", key: "autoDoneDate" } },
+          { name: strings.taskDateButtonsName, desc: strings.taskDateButtonsDesc,
+            visible: taskEditingEnabled,
+            control: { type: "dropdown", key: "taskDateButtons", options: strings.taskDateButtonsOptions } },
+          { name: strings.taskDateButtonStyleName, desc: strings.taskDateButtonStyleDesc,
+            visible: taskEditingEnabled,
+            control: { type: "dropdown", key: "taskDateButtonStyle", options: strings.taskDateButtonStyleOptions } },
+          { name: strings.taskDateHideSourceName, desc: strings.taskDateHideSourceDesc,
+            visible: taskEditingEnabled,
+            control: { type: "toggle", key: "taskDateHideSource" } },
+          { name: getUiStrings(language).tasks.tools.original, desc: getUiStrings(language).tasks.tools.originalDesc,
+            control: { type: "toggle", key: "taskCopyPreserveOriginal" } },
+          { name: strings.taskCardShowFileName, desc: strings.taskCardShowFileDesc,
+            control: { type: "toggle", key: "taskCardShowFile" } },
+        ],
+      },
+      {
         type: "group", heading: inputStrings.templates,
         items: [{ id: "templateStorageFolder", name: inputStrings.templateStorageFolder, desc: inputStrings.templateStorageFolderDesc,
           render: (setting) => this.renderTemplateFolderSetting(setting, inputStrings) }],
@@ -813,6 +873,9 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           desc: groupIndex === 0 && index === 0 ? getUiStrings(language).icons.description : "",
           render: (setting: Setting) => this.renderIconSetting(setting, category) })) })),
     ];
+    groups.push({ type: "group", heading: strings.groups.taskColors, items:
+      (["created", "done", "due", "overdue"] as const).map(kind => ({ name: strings.taskColorNames[kind], desc: kind === "created" ? strings.taskColorsDesc : "",
+        control: { type: "dropdown" as const, key: `taskDateColors.${kind}`, options: Object.fromEntries(TASK_DATE_COLORS.map(color => [color, inputStrings.colorNames[color]])) } })) });
     const rows = new Map(groups.flatMap(group => group.items).map(row => [row.control?.key ?? row.id!, row]));
     const headings = strings.groups;
     const group = (heading: string, ids: string[]): WorkspaceSettingGroup => ({ type: "group", heading,
@@ -825,10 +888,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
       page("navigation", [group(headings.sections, NAVIGATION_SECTION_ORDER.map(section => `navSection:${section}`)), group(headings.entries, ["showNavItemCounts", "hiddenFolderPaths", "hiddenTagPaths"])]),
       page("opening-dragging", [group(headings.opening, ["defaultCardOpenBehavior", "locateLinkCardOnOpen"]), group(headings.dragging, ["dragInsertAction", "enableHeadingDragInsert"])]),
       page("notes-templates", [group(headings.newNotes, ["newNoteTemplate", "boxNewNoteFolderPath"]), group(headings.templateFiles, ["templateStorageFolder"])]),
+      page("tasks", [group(headings.taskDisplay, ["taskCardShowFile", "taskCopyPreserveOriginal"]),
+        group(headings.tasks, ["enhancedTaskEditing", "autoCreatedDate", "autoDoneDate", "taskDateButtons", "taskDateButtonStyle", "taskDateHideSource"]),
+        group(headings.taskColors, ["created", "done", "due", "overdue"].map(kind => `taskDateColors.${kind}`))]),
       page("quick-input", [group(headings.saving, ["quickInputTemplateId", "quickInputFolderPath", "quickInputDuplicateTitle", "quickInputInsertPosition"]),
         group(headings.fields, Object.keys(DEFAULT_QUICK_INPUT_VISIBILITY).map(key => `quickInputVisibility.${key}`)),
         group(headings.window, ["quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputCornerRadius"]), group(headings.shortcut, ["quickInputGlobalShortcut"])]),
-      page("default-icons", groups.slice(-2)),
+      page("default-icons", groups.filter(group => group.items.some(row => row.id?.startsWith("iconDefaults.")))),
     ];
     const desktop = (this.plugin.runtimePlatform?.device ?? "desktop") === "desktop";
     const desktopOnly = new Set(["quickInputGlobalShortcut", "quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]);
@@ -843,6 +909,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
   }
 
   private async saveDeclarativeSetting(key: string, value: unknown): Promise<void> {
+    if (key.startsWith("taskDateColors.")) {
+      const kind = key.slice(15);
+      if (["created", "done", "due", "overdue"].includes(kind) && isTaskDateColor(value)) {
+        await this.plugin.saveSettings({ taskDateColors: { ...this.plugin.getSettings().taskDateColors, [kind]: value } });
+      }
+      return;
+    }
     if (key.startsWith("quickInputVisibility.") && typeof value === "boolean") {
       const field = key.slice(21);
       if (Object.prototype.hasOwnProperty.call(DEFAULT_QUICK_INPUT_VISIBILITY, field)) await this.plugin.saveSettings({

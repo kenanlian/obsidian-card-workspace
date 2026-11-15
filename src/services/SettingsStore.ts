@@ -26,8 +26,20 @@ export interface PreferencesSettings {
   backlinkSnippetCount: PluginSettings["backlinkSnippetCount"];
   sort: PluginSettings["sort"];
   group: PluginSettings["group"];
+  taskSort: PluginSettings["taskSort"];
+  taskGroup: PluginSettings["taskGroup"];
   includeSubfolders: boolean;
   defaultView: PluginSettings["defaultView"];
+  enhancedTaskEditing: boolean;
+  autoCreatedDate: boolean;
+  autoDoneDate: boolean;
+  taskDateButtons: PluginSettings["taskDateButtons"];
+  taskDateButtonStyle: PluginSettings["taskDateButtonStyle"];
+  taskDateHideSource: boolean;
+  taskReportWeekEndDay: number;
+  taskCopyPreserveOriginal: boolean;
+  taskCardShowFile: boolean;
+  taskDateColors: PluginSettings["taskDateColors"];
   defaultCardOpenBehavior: PluginSettings["defaultCardOpenBehavior"];
   locateLinkCardOnOpen: boolean;
   dragInsertAction: PluginSettings["dragInsertAction"];
@@ -179,9 +191,21 @@ export function splitFlatPatch(patch: PartialPluginSettings): {
   if (patch.backlinkSnippetCount !== undefined) preferences.backlinkSnippetCount = patch.backlinkSnippetCount;
   if (patch.sort !== undefined) preferences.sort = patch.sort as PreferencesSettings["sort"];
   if (patch.group !== undefined) preferences.group = patch.group;
+  if (patch.taskSort !== undefined) preferences.taskSort = patch.taskSort as PreferencesSettings["taskSort"];
+  if (patch.taskGroup !== undefined) preferences.taskGroup = patch.taskGroup;
   if (patch.fileVisibility !== undefined) preferences.fileVisibility = patch.fileVisibility;
   if (patch.includeSubfolders !== undefined) preferences.includeSubfolders = patch.includeSubfolders;
   if (patch.defaultView !== undefined) preferences.defaultView = patch.defaultView;
+  if (patch.enhancedTaskEditing !== undefined) preferences.enhancedTaskEditing = patch.enhancedTaskEditing;
+  if (patch.autoCreatedDate !== undefined) preferences.autoCreatedDate = patch.autoCreatedDate;
+  if (patch.autoDoneDate !== undefined) preferences.autoDoneDate = patch.autoDoneDate;
+  if (patch.taskDateButtons !== undefined) preferences.taskDateButtons = patch.taskDateButtons;
+  if (patch.taskDateButtonStyle !== undefined) preferences.taskDateButtonStyle = patch.taskDateButtonStyle;
+  if (patch.taskDateHideSource !== undefined) preferences.taskDateHideSource = patch.taskDateHideSource;
+  if (patch.taskDateColors !== undefined) preferences.taskDateColors = patch.taskDateColors;
+  if (patch.taskReportWeekEndDay !== undefined) preferences.taskReportWeekEndDay = patch.taskReportWeekEndDay;
+  if (patch.taskCopyPreserveOriginal !== undefined) preferences.taskCopyPreserveOriginal = patch.taskCopyPreserveOriginal;
+  if (patch.taskCardShowFile !== undefined) preferences.taskCardShowFile = patch.taskCardShowFile;
   if (patch.defaultCardOpenBehavior !== undefined) {
     preferences.defaultCardOpenBehavior = patch.defaultCardOpenBehavior;
   }
@@ -263,8 +287,20 @@ export function serializeSettings(settings: PluginSettings): PersistedSettingsV2
       linksSort: { backlinks: { ...settings.linksSort.backlinks }, outgoing: { ...settings.linksSort.outgoing } },
       backlinkSnippetCount: settings.backlinkSnippetCount,
       group: { ...settings.group },
+      taskSort: { ...settings.taskSort },
+      taskGroup: { ...settings.taskGroup },
       includeSubfolders: settings.includeSubfolders,
       defaultView: settings.defaultView,
+      enhancedTaskEditing: settings.enhancedTaskEditing,
+      autoCreatedDate: settings.autoCreatedDate,
+      autoDoneDate: settings.autoDoneDate,
+      taskDateButtons: settings.taskDateButtons,
+      taskDateButtonStyle: settings.taskDateButtonStyle,
+      taskDateHideSource: settings.taskDateHideSource,
+      taskReportWeekEndDay: settings.taskReportWeekEndDay,
+      taskCopyPreserveOriginal: settings.taskCopyPreserveOriginal,
+      taskCardShowFile: settings.taskCardShowFile,
+      taskDateColors: { ...settings.taskDateColors },
       defaultCardOpenBehavior: settings.defaultCardOpenBehavior,
       locateLinkCardOnOpen: settings.locateLinkCardOnOpen,
       dragInsertAction: settings.dragInsertAction,

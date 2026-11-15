@@ -7,6 +7,23 @@ import { DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, normal
 import { normalizeSearchHistory } from "./search-history";
 import { normalizeFolderDescendingNameSorts, normalizeFolderSiblingOrders, type FolderSiblingOrders } from "./folder-sibling-orders";
 import { DEFAULT_GROUP_SPEC, normalizeGroupSpec, normalizeVisibleGroupSpec, type GroupSpec } from "./card-grouping-settings";
+import {
+  DEFAULT_TASK_DATE_COLORS,
+  normalizeTaskDateColors,
+  type TaskDateColors,
+  DEFAULT_TASK_GROUP,
+  DEFAULT_TASK_SORT,
+  normalizeDefaultViewMode,
+  normalizeOptionalBoxTaskView,
+  normalizeTaskDateButtonStyle,
+  normalizeTaskDateButtonsMode,
+  normalizeTaskGroupSpec,
+  normalizeTaskSortSpec,
+  type TaskDateButtonStyle,
+  type TaskDateButtonsMode,
+  type TaskGroupSpec,
+  type TaskSortSpec,
+} from "./task-view-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "./navigation-expansion-settings";
 import { normalizeHiddenFolderPaths, normalizeHiddenTagPaths, normalizeHiddenNavSections } from "./navigation-visibility";
 import { defaultNavSectionOrder, normalizeNavSectionOrder } from "./navigation-section-order";
@@ -29,7 +46,7 @@ export type BacklinkSnippetCount = 1 | 2 | 3 | "all";
 
 export type SortDirection = "desc" | "asc";
 
-export type DefaultViewMode = "cards";
+export type DefaultViewMode = "cards" | "tasks";
 
 export type OpenDestination = "current-area" | "new-tab" | "split-right" | "new-window";
 
@@ -189,11 +206,25 @@ export interface PluginSettings {
     direction: SortDirection;
   };
   group: GroupSpec;
+  taskSort: TaskSortSpec;
+  taskGroup: TaskGroupSpec;
   filter: { tags: string[]; properties: PropertyFilterClause[] };
   pinnedPaths: string[];
   searchHistory: string[];
   includeSubfolders: boolean;
   defaultView: DefaultViewMode;
+  enhancedTaskEditing: boolean;
+  autoCreatedDate: boolean;
+  autoDoneDate: boolean;
+  taskDateButtons: TaskDateButtonsMode;
+  taskDateButtonStyle: TaskDateButtonStyle;
+  /** Hides task date text in Live Preview; the date buttons show the dates. */
+  taskDateHideSource: boolean;
+  /** Task cards show their source note in the footer. */
+  taskReportWeekEndDay: number;
+  taskCopyPreserveOriginal: boolean;
+  taskCardShowFile: boolean;
+  taskDateColors: TaskDateColors;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
   locateLinkCardOnOpen: boolean;
   dragInsertAction: DragInsertAction;
@@ -244,8 +275,9 @@ export interface PluginSettings {
   hiddenNavSections: NavSectionId[];
 }
 
-export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "filter" | "sectionCollapsed"> & {
+export type PartialPluginSettings = Omit<Partial<PluginSettings>, "sort" | "taskSort" | "filter" | "sectionCollapsed"> & {
   sort?: Partial<PluginSettings["sort"]>;
+  taskSort?: Partial<PluginSettings["taskSort"]>;
   filter?: Partial<PluginSettings["filter"]>;
   sectionCollapsed?: Partial<PluginSettings["sectionCollapsed"]>;
 };
@@ -262,12 +294,24 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     direction: "desc",
   },
   group: { ...DEFAULT_GROUP_SPEC },
+  taskSort: { ...DEFAULT_TASK_SORT },
+  taskGroup: { ...DEFAULT_TASK_GROUP },
   filter: { tags: [], properties: [] },
   pinnedPaths: [],
   searchHistory: [],
   fileVisibility: "supported",
   includeSubfolders: true,
   defaultView: "cards",
+  enhancedTaskEditing: true,
+  autoCreatedDate: true,
+  autoDoneDate: true,
+  taskDateButtons: "compact",
+  taskDateButtonStyle: "chips",
+  taskDateHideSource: false,
+  taskReportWeekEndDay: 4,
+  taskCopyPreserveOriginal: false,
+  taskCardShowFile: false,
+  taskDateColors: { ...DEFAULT_TASK_DATE_COLORS },
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
   locateLinkCardOnOpen: false,
   dragInsertAction: DEFAULT_DRAG_INSERT_ACTION,
@@ -345,7 +389,7 @@ function normalizePinnedPaths(value: unknown): string[] {
 }
 
 function normalizeDefaultView(value: unknown): DefaultViewMode {
-  return value === "cards" ? value : DEFAULT_SETTINGS.defaultView;
+  return normalizeDefaultViewMode(value);
 }
 
 export function isDefaultCardOpenBehavior(value: string): value is DefaultCardOpenBehavior {
@@ -551,6 +595,7 @@ function normalizeBox(value: unknown): CardBoxDefinition | null {
     pinnedPaths: normalizeStringArray(value.pinnedPaths),
     sort: normalizeBoxSort(value.sort),
     group: normalizeGroupSpec(value.group),
+    ...normalizeOptionalBoxTaskView(value),
   };
 }
 
@@ -679,6 +724,9 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     linksSort: { backlinks: normalizeLinksSort(linksSort.backlinks), outgoing: normalizeLinksSort(linksSort.outgoing) },
     backlinkSnippetCount: data.backlinkSnippetCount === "all" || data.backlinkSnippetCount === 1 || data.backlinkSnippetCount === 2 ? data.backlinkSnippetCount : 3,
     group: normalizeVisibleGroupSpec(data.group, visiblePropertyKeySet),
+    taskSort: normalizeTaskSortSpec(data.taskSort),
+    taskGroup: normalizeTaskGroupSpec(data.taskGroup),
+    taskDateColors: normalizeTaskDateColors(data.taskDateColors),
     filter: {
       tags: normalizeTags(filter.tags),
       properties: normalizePropertyFilterClauses(filter.properties, visiblePropertyKeySet),
@@ -688,6 +736,15 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     fileVisibility: isFileVisibility(data.fileVisibility) ? data.fileVisibility : DEFAULT_SETTINGS.fileVisibility,
     includeSubfolders: normalizeBooleanSetting(data.includeSubfolders, DEFAULT_SETTINGS.includeSubfolders),
     defaultView: normalizeDefaultView(data.defaultView),
+    enhancedTaskEditing: normalizeBooleanSetting(data.enhancedTaskEditing, DEFAULT_SETTINGS.enhancedTaskEditing),
+    autoCreatedDate: normalizeBooleanSetting(data.autoCreatedDate, DEFAULT_SETTINGS.autoCreatedDate),
+    autoDoneDate: normalizeBooleanSetting(data.autoDoneDate, DEFAULT_SETTINGS.autoDoneDate),
+    taskDateButtons: normalizeTaskDateButtonsMode(data.taskDateButtons),
+    taskDateButtonStyle: normalizeTaskDateButtonStyle(data.taskDateButtonStyle),
+    taskDateHideSource: normalizeBooleanSetting(data.taskDateHideSource, DEFAULT_SETTINGS.taskDateHideSource),
+    taskReportWeekEndDay: typeof data.taskReportWeekEndDay === "number" && Number.isInteger(data.taskReportWeekEndDay) && data.taskReportWeekEndDay >= 0 && data.taskReportWeekEndDay <= 6 ? data.taskReportWeekEndDay : 4,
+    taskCopyPreserveOriginal: normalizeBooleanSetting(data.taskCopyPreserveOriginal, false),
+    taskCardShowFile: normalizeBooleanSetting(data.taskCardShowFile, DEFAULT_SETTINGS.taskCardShowFile),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     locateLinkCardOnOpen: normalizeBooleanSetting(data.locateLinkCardOnOpen, false),
     dragInsertAction: normalizeDragInsertAction(data.dragInsertAction),
@@ -762,6 +819,7 @@ export function mergeSettings(current: PluginSettings, patch: PartialPluginSetti
     ...current,
     ...patch,
     sort: { ...current.sort, ...patch.sort },
+    taskSort: { ...current.taskSort, ...patch.taskSort },
     filter: { ...current.filter, ...patch.filter },
     sectionCollapsed: { ...current.sectionCollapsed, ...patch.sectionCollapsed },
   });

@@ -1282,7 +1282,7 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   padding-top: calc(var(--fce-wall-gap) * 0.5);
 }
 
-.folder-card-view .fce-wall-group-row.is-pinned-source .fce-card-group-header {
+.folder-card-view .fce-wall-group-row.is-pinned-source .fce-group-header-actions {
   visibility: hidden;
 }
 
@@ -1308,7 +1308,6 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   padding: 4px 6px 4px 4px;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--fce-border);
   border-radius: var(--radius-s, 4px) var(--radius-s, 4px) 0 0;
   box-shadow: none;
   color: var(--fce-text);
@@ -1316,10 +1315,9 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
   font-weight: normal;
   text-align: start;
   cursor: pointer;
-  transition: background-color 120ms ease;
 }
 
-.folder-card-view .fce-card-group-header:hover {
+.folder-card-view .fce-group-header-actions:hover {
   background: var(--fce-hover);
 }
 
@@ -2218,7 +2216,8 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 /* === sort & group menu (Obsidian DOM menu) === */
 /* DOM menus attach to the document body, so these rules must rely on core
    Obsidian variables instead of the .folder-card-view-scoped --fce-* tokens. */
-.menu.fce-sort-group-menu {
+.menu.fce-sort-group-menu,
+.menu.fce-task-status-menu {
   min-width: 200px;
 }
 
@@ -3673,4 +3672,783 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
 .fce-settings-page-link:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
+}
+
+/* ==========================================================================
+   Task date picker
+   Document-local nonmodal popover / phone bottom sheet. Mounted on the
+   document body outside `.folder-card-view`, so only host theme variables.
+   ========================================================================== */
+.fce-task-date-picker {
+  position: fixed;
+  z-index: var(--layer-popover, 1100);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l, 10px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: var(--shadow-s);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  font-size: var(--font-ui-small, 13px);
+  animation: fce-task-date-picker-in 120ms ease-out;
+  --fce-task-date-picker-safe-top: env(safe-area-inset-top, 0px);
+  --fce-task-date-picker-safe-right: env(safe-area-inset-right, 0px);
+  --fce-task-date-picker-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --fce-task-date-picker-safe-left: env(safe-area-inset-left, 0px);
+}
+.fce-task-date-picker.is-above-modal { z-index: calc(var(--layer-modal, 50) + 1); }
+@keyframes fce-task-date-picker-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.fce-task-date-picker.is-sheet {
+  gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-width: 1px 0 0;
+  border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
+  box-shadow: var(--shadow-l, var(--shadow-s));
+  font-size: var(--font-ui-medium, 15px);
+  --fce-task-date-picker-safe-bottom: 0px;
+  animation-name: fce-task-date-picker-sheet-in;
+}
+@keyframes fce-task-date-picker-sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fce-task-date-picker { animation: none; }
+}
+:root .fce-task-date-picker [hidden] { display: none; }
+.fce-task-date-picker.is-pending { cursor: progress; }
+.fce-task-date-picker.is-pending .fce-task-date-picker-grid,
+.fce-task-date-picker.is-pending .fce-task-date-picker-presets { opacity: 0.6; }
+
+.fce-task-date-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.fce-task-date-picker-heading { flex: 1; min-width: 0; }
+.fce-task-date-picker-kind {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-smallest, 11px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fce-task-date-picker-value {
+  overflow: hidden;
+  font-size: var(--font-ui-medium, 15px);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-semibold, 600);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fce-task-date-picker-value.is-empty { color: var(--text-faint, var(--text-muted)); font-weight: var(--font-normal, 400); }
+.fce-task-date-picker .fce-task-date-picker-clear {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 13px);
+  cursor: pointer;
+}
+.fce-task-date-picker .fce-task-date-picker-clear:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  color: var(--text-error);
+}
+.fce-task-date-picker .fce-task-date-picker-clear:disabled { opacity: 0.45; cursor: default; }
+.fce-task-date-picker .fce-task-date-picker-close,
+.fce-task-date-picker .fce-task-date-picker-step {
+  display: inline-flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+.fce-task-date-picker-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.fce-task-date-picker-title {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: 4px;
+  font-weight: var(--font-semibold, 600);
+  font-variant-numeric: tabular-nums;
+}
+
+.fce-task-date-picker-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fce-task-date-picker-rowgroup { display: contents; }
+.fce-task-date-picker-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.fce-task-date-picker-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  color: var(--text-faint, var(--text-muted));
+  font-size: var(--font-smallest, 11px);
+  font-weight: var(--font-medium, 500);
+}
+.fce-task-date-picker-cell { display: flex; min-width: 0; }
+.fce-task-date-picker .fce-task-date-picker-day {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-m, 6px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.fce-task-date-picker .fce-task-date-picker-day:hover:not(:disabled) { background: var(--background-modifier-hover); }
+.fce-task-date-picker .fce-task-date-picker-day.is-outside { color: var(--text-faint, var(--text-muted)); }
+.fce-task-date-picker .fce-task-date-picker-day.is-today {
+  color: var(--text-accent, var(--interactive-accent));
+  font-weight: var(--font-semibold, 600);
+}
+.fce-task-date-picker .fce-task-date-picker-day.is-today::after {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translateX(-50%);
+}
+.fce-task-date-picker .fce-task-date-picker-day.is-selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: var(--font-semibold, 600);
+}
+.fce-task-date-picker .fce-task-date-picker-day.is-selected:hover:not(:disabled) {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+}
+.fce-task-date-picker .fce-task-date-picker-day:disabled { cursor: progress; }
+.fce-task-date-picker .fce-task-date-picker-day:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
+  outline-offset: -2px;
+}
+.fce-task-date-picker .fce-task-date-picker-day.is-selected:focus-visible {
+  outline-color: var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.fce-task-date-picker-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.fce-task-date-picker .fce-task-date-picker-preset {
+  height: 28px;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: var(--font-ui-smaller, 12px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fce-task-date-picker-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller, 12px);
+}
+
+/* Phone sheet: every interactive target is at least 36px. */
+.fce-task-date-picker.is-sheet .fce-task-date-picker-clear { height: 36px; padding: 0 12px; font-size: var(--font-ui-medium, 15px); }
+.fce-task-date-picker.is-sheet .fce-task-date-picker-close,
+.fce-task-date-picker.is-sheet .fce-task-date-picker-step { flex-basis: 36px; width: 36px; height: 36px; }
+.fce-task-date-picker.is-sheet .fce-task-date-picker-weekday { height: 28px; font-size: var(--font-ui-smaller, 12px); }
+.fce-task-date-picker.is-sheet .fce-task-date-picker-day { height: 40px; font-size: var(--font-ui-medium, 15px); }
+.fce-task-date-picker.is-sheet .fce-task-date-picker-day.is-today::after { bottom: 5px; }
+.fce-task-date-picker.is-sheet .fce-task-date-picker-preset { height: 40px; font-size: var(--font-ui-small, 13px); }
+
+/* ==========================================================================
+   Task date colours
+   Shared by the editor date buttons and the task-card chips. The hue names
+   the date kind, or the due urgency; an unset date is faint, a set date filled.
+   ========================================================================== */
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="created"] { --fce-task-date-color: var(--fce-task-created-color, var(--color-blue)); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="done"] { --fce-task-date-color: var(--fce-task-done-color, var(--color-green)); }
+:is(.fce-task-date-button, .fce-task-chip)[data-kind="due"] { --fce-task-date-color: var(--fce-task-due-color, var(--color-orange)); }
+:is(.fce-task-date-button, .fce-task-chip).is-overdue { --fce-task-date-color: var(--fce-task-overdue-color, var(--color-red)); }
+
+/* ==========================================================================
+   Task date buttons
+   Rendered inside Markdown editors at the end of Live Preview task lines,
+   outside `.folder-card-view`, so only host theme variables. Negative block
+   margins keep the enlarged hit areas from growing the line height.
+   ========================================================================== */
+/* One line box tall and top-aligned, so the buttons centre on the text line
+   rather than on `middle`, which sits low against CJK and capital glyphs. */
+.fce-task-date-buttons {
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--line-height-normal, 1.5) * 1em);
+  height: 1lh;
+  margin-inline-start: 4px;
+  vertical-align: top;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.fce-task-date-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-s, 4px);
+  cursor: pointer;
+}
+.fce-task-date-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
+  outline-offset: -2px;
+}
+
+/* Dots: an outlined dot per date, filled once the date is set. */
+.fce-task-date-buttons.is-dots .fce-task-date-button {
+  box-sizing: content-box;
+  width: 10px;
+  height: 10px;
+  margin: -6px -1px;
+  padding: 6px;
+}
+.fce-task-date-buttons.is-dots .fce-task-date-button::before {
+  content: "";
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--fce-task-date-color);
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0.55;
+  transition: transform 100ms ease-out, opacity 100ms ease-out;
+}
+.fce-task-date-buttons.is-dots .fce-task-date-button.is-set::before { background: var(--fce-task-date-color); opacity: 1; }
+.fce-task-date-buttons.is-dots .fce-task-date-button:hover::before { opacity: 1; transform: scale(1.2); }
+
+/* Chips: the task-card chip, sized to sit inside the text line. */
+.fce-task-date-buttons.is-chips { gap: 2px; }
+.fce-task-date-buttons.is-chips .fce-task-date-button {
+  gap: 3px;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-set {
+  background: color-mix(in srgb, var(--fce-task-date-color) 14%, transparent);
+}
+.fce-task-date-buttons.is-chips .fce-task-date-button.has-date { padding: 0 6px; }
+.fce-task-date-buttons.is-chips .fce-task-date-button:is(.is-due-today, .is-overdue) { color: var(--fce-task-date-color); }
+.fce-task-date-button-icon { display: inline-flex; color: var(--fce-task-date-color); }
+.fce-task-date-button-icon svg { width: 12px; height: 12px; }
+.fce-task-date-button.is-unset .fce-task-date-button-icon { opacity: 0.55; }
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-set:hover { background: color-mix(in srgb, var(--fce-task-date-color) 24%, transparent); }
+.fce-task-date-buttons.is-chips .fce-task-date-button.is-unset:hover { background: var(--background-modifier-hover); }
+.fce-task-date-button.is-unset:hover .fce-task-date-button-icon { opacity: 1; }
+/* The edited line shows the date text itself. */
+.fce-task-line-active .fce-task-date-button-label { display: none; }
+.fce-task-line-active .fce-task-date-buttons.is-chips .fce-task-date-button { padding: 0 4px; }
+
+/* Compact: unset dates appear on the hovered or caret line; space stays reserved. */
+.fce-task-date-buttons.is-compact .fce-task-date-button.is-unset { visibility: hidden; }
+.cm-line:hover .fce-task-date-buttons.is-compact .fce-task-date-button.is-unset,
+.fce-task-line-active .fce-task-date-buttons.is-compact .fce-task-date-button.is-unset,
+.fce-task-date-buttons.is-compact .fce-task-date-button.is-unset:focus-visible { visibility: visible; }
+
+/* Touch: at least a 28px target, without relying on hover. */
+body.is-mobile .fce-task-date-buttons.is-dots .fce-task-date-button {
+  width: 28px;
+  height: 28px;
+  margin: -9px 0;
+  padding: 0;
+}
+body.is-mobile .fce-task-date-buttons.is-dots .fce-task-date-button::before { width: 12px; height: 12px; }
+body.is-mobile .fce-task-date-buttons.is-chips { gap: 4px; }
+body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 24px; min-width: 28px; padding: 0 8px; }
+
+/* === task stream === */
+/* Task cards need room for text plus three date chips before a second column opens. */
+.folder-card-view .fce-list.is-task-stream { --fce-card-min-width: 320px; }
+.folder-card-view .fce-shell[data-fce-device="tablet"] .fce-list.is-task-stream { --fce-card-min-width: 300px; }
+
+.folder-card-view .fce-task-card {
+  --fce-task-font-size: var(--fce-title-font-size);
+  --fce-task-line-height: 1.45;
+  --fce-task-check-slot: 20px;
+  --fce-task-chip-height: 20px;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+.folder-card-view .fce-task-card:hover {
+  transform: none;
+  border-color: var(--fce-card-border-color);
+  background: var(--fce-card-color-fill, var(--fce-card-bg));
+  box-shadow: var(--fce-card-elevation);
+}
+.folder-card-view .fce-task-card :is(.fce-task-check, .fce-task-chip, .fce-task-file) {
+  appearance: none;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.folder-card-view .fce-task-card :is(.fce-task-check, .fce-task-chip, .fce-task-file, .fce-task-text):focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--fce-accent));
+  outline-offset: 1px;
+}
+
+.folder-card-view .fce-task-card-body { padding: 6px 6px 4px; }
+.folder-card-view .fce-task-card-body:last-child { padding-bottom: 6px; }
+
+.folder-card-view .fce-task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-s, 4px);
+  transition: opacity 120ms ease;
+}
+.folder-card-view .fce-task-row:hover { background: var(--fce-hover); }
+.folder-card-view .fce-task-row.is-subtask { --fce-task-font-size: var(--fce-preview-font-size); }
+/* The checkbox already shows the requested state; only a slow write dims the row. */
+.folder-card-view .fce-task-row.is-pending { opacity: 0.6; transition-delay: 400ms; }
+
+.folder-card-view .fce-task-card .fce-task-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fce-task-check-slot);
+  height: calc(var(--fce-task-font-size) * var(--fce-task-line-height));
+}
+.folder-card-view .fce-task-check-box {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--checkbox-size, 15px);
+  height: var(--checkbox-size, 15px);
+  border: 1px solid var(--checkbox-border-color, var(--text-faint));
+  border-radius: var(--checkbox-radius, 3px);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.folder-card-view .fce-task-check:hover .fce-task-check-box { border-color: var(--checkbox-border-color-hover, var(--text-muted)); }
+.folder-card-view .fce-task-row.is-completed > .fce-task-check .fce-task-check-box {
+  border-color: var(--checkbox-color, var(--interactive-accent));
+  background: var(--checkbox-color, var(--interactive-accent));
+  color: var(--checkbox-marker-color, var(--text-on-accent));
+}
+.folder-card-view .fce-task-check-mark { display: inline-flex; }
+.folder-card-view .fce-task-check-mark svg {
+  width: calc(var(--checkbox-size, 15px) - 4px);
+  height: calc(var(--checkbox-size, 15px) - 4px);
+  stroke-width: 3px;
+}
+
+.folder-card-view .fce-task-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+.folder-card-view .fce-task-text {
+  min-width: 0;
+  color: var(--fce-text);
+  font-size: var(--fce-task-font-size);
+  line-height: var(--fce-task-line-height);
+  overflow-wrap: anywhere;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.folder-card-view .fce-task-row.is-completed > .fce-task-main > .fce-task-text {
+  color: var(--checklist-done-color, var(--text-muted));
+  text-decoration: var(--checklist-done-decoration, line-through);
+}
+
+/* Every task's date row starts at its own text edge, including nested tasks. */
+.folder-card-view .fce-task-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Keep the menu in the date row's flow so revealing it never covers task text. */
+.folder-card-view .fce-task-card .fce-task-row .fce-task-more {
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+}
+.folder-card-view .fce-task-card .fce-task-row:is(:hover, :focus-within) .fce-task-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+.folder-card-view .fce-task-card.is-touch .fce-task-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.folder-card-view .fce-task-card .fce-task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  height: var(--fce-task-chip-height);
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fce-task-date-color) 14%, transparent);
+  color: var(--fce-text-muted);
+  font-size: var(--fce-font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.folder-card-view .fce-task-chip-icon { display: inline-flex; color: var(--fce-task-date-color); }
+.folder-card-view .fce-task-chip-icon svg { width: 12px; height: 12px; }
+.folder-card-view .fce-task-card .fce-task-chip.is-unset { padding: 0 4px; background: transparent; }
+.folder-card-view .fce-task-chip.is-unset .fce-task-chip-icon { opacity: 0.55; }
+.folder-card-view .fce-task-card .fce-task-chip:is(.is-due-today, .is-overdue) { color: var(--fce-task-date-color); }
+/* A completed task keeps its green completion date; its other dates fade. */
+.folder-card-view .fce-task-row.is-completed > .fce-task-main .fce-task-chip:not([data-kind="done"]) { --fce-task-date-color: var(--text-faint); }
+.folder-card-view .fce-task-row.is-completed > .fce-task-main .fce-task-chip.is-set { color: var(--text-faint); }
+.folder-card-view .fce-task-card .fce-task-chip.is-set:hover {
+  background: color-mix(in srgb, var(--fce-task-date-color) 24%, transparent);
+  color: var(--fce-text);
+}
+.folder-card-view .fce-task-card .fce-task-chip.is-unset:hover { background: var(--fce-control-hover-bg); }
+.folder-card-view .fce-task-chip.is-unset:hover .fce-task-chip-icon { opacity: 1; }
+
+/* The guide sits under the parent checkbox centre. */
+.folder-card-view .fce-task-children {
+  margin-left: calc(6px + var(--fce-task-check-slot) / 2);
+  padding-left: 2px;
+  border-left: 1px solid var(--indentation-guide-color, var(--fce-border));
+}
+.folder-card-view .fce-task-children .fce-task-children { --fce-task-font-size: var(--fce-preview-font-size); }
+
+.folder-card-view .fce-task-card-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--fce-card-gap);
+  margin-top: auto;
+  padding: var(--fce-card-padding);
+  padding-top: var(--fce-card-gap);
+  color: var(--fce-text-muted);
+  font-size: var(--fce-font-ui-smaller);
+}
+.folder-card-view .fce-task-card .fce-task-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  color: var(--fce-text-muted);
+}
+.folder-card-view .fce-task-card .fce-task-file:hover { background: var(--fce-control-hover-bg); color: var(--fce-text); }
+.folder-card-view .fce-task-file-icon { display: inline-flex; flex: 0 0 auto; }
+.folder-card-view .fce-task-file-icon svg { width: 12px; height: 12px; }
+.folder-card-view .fce-task-file-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Touch: larger painted controls, each hit area extended to at least 32px. */
+.folder-card-view .fce-task-card.is-touch {
+  --fce-task-check-slot: 28px;
+  --fce-task-chip-height: 26px;
+}
+.folder-card-view .fce-task-card.is-touch .fce-task-row { padding-block: 4px; }
+.folder-card-view .fce-task-card.is-touch .fce-task-chips { gap: 6px; }
+.folder-card-view .fce-task-card.is-touch .fce-task-chip { padding: 0 8px; }
+.folder-card-view .fce-task-card.is-touch :is(.fce-task-check, .fce-task-chip, .fce-task-file) {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.folder-card-view .fce-task-card.is-touch .fce-task-check { min-height: 28px; }
+.folder-card-view .fce-task-card.is-touch .fce-task-file { min-height: 28px; }
+.folder-card-view .fce-task-card.is-touch :is(.fce-task-check, .fce-task-file)::before,
+.folder-card-view .fce-task-card.is-touch .fce-task-chip::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+}
+
+.folder-card-view .fce-task-building {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.folder-card-view .fce-task-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 260px);
+}
+.folder-card-view .fce-task-skeleton-line {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--fce-hover);
+  animation: fce-task-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+.folder-card-view .fce-task-skeleton-line:nth-child(2) { width: 82%; }
+.folder-card-view .fce-task-skeleton-line:nth-child(3) { width: 64%; }
+@keyframes fce-task-skeleton-pulse {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folder-card-view .fce-task-skeleton-line { animation: none; }
+}
+
+/* Task result filters and clipboard actions. */
+/* Inherit the host .menu surface so themes style filters and sorting alike. */
+.menu.fce-task-filter-panel {
+  position: fixed;
+  z-index: var(--layer-popover, 60);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--size-2-3, 6px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+}
+.fce-task-filter-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-weight: var(--font-normal, 400);
+}
+.fce-task-filter-title-icon { display: inline-flex; flex-shrink: 0; }
+.fce-task-filter-title-icon svg { width: 14px; height: 14px; }
+.fce-task-filter-fields { padding-block: 2px; }
+.fce-task-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 3px 8px;
+}
+.fce-task-filter-row > span { line-height: 1.4; }
+.fce-task-filter-panel select,
+.fce-task-filter-panel .fce-task-filter-date {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: inherit;
+}
+.fce-task-filter-panel select { text-overflow: ellipsis; }
+.fce-task-filter-panel :is(select, .fce-task-filter-date):hover:not(:disabled) {
+  background-color: var(--background-modifier-hover);
+}
+.fce-task-filter-panel :is(select, button):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.fce-task-filter-dates {
+  margin-top: 4px;
+  padding-block: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.fce-task-filter-panel [hidden] { display: none; }
+.menu.fce-task-filter-panel.is-sheet {
+  inset: auto 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: 85vh;
+  border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
+  padding: 10px 8px max(12px, env(safe-area-inset-bottom));
+}
+.fce-task-filter-panel.is-sheet .fce-task-filter-row { padding-block: 4px; }
+.fce-task-filter-panel.is-sheet select,
+.fce-task-filter-panel.is-sheet button { height: auto; min-height: 44px; font-size: 16px; }
+.fce-task-filter-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 8px 2px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.fce-task-filter-footer button { height: 28px; font-size: inherit; }
+.fce-task-filter-error {
+  padding: 6px 8px;
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller, 12px);
+}
+.fce-task-filter-error:empty { display: none; }
+.fce-task-filter-hint {
+  padding: 4px 8px 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+}
+.folder-card-view .fce-task-filter-chips { padding: 4px 8px; flex-wrap: wrap; }
+.folder-card-view .fce-task-filter-label {
+  appearance: none;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fce-task-filter-panel .fce-task-filter-date {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.fce-task-filter-date-icon { display: inline-flex; color: var(--text-muted); }
+.fce-task-filter-date-icon svg { width: 16px; height: 16px; }
+
+.folder-card-view .fce-group-header-actions {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  border-bottom: 1px solid var(--fce-border);
+  border-radius: var(--radius-s, 4px) var(--radius-s, 4px) 0 0;
+  transition: background-color 120ms ease;
+}
+.folder-card-view .fce-group-header-actions .fce-card-group-header { grid-area: 1 / 1; min-width: 0; }
+.folder-card-view .fce-group-more {
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+  margin-right: 4px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  margin-block: 4px;
+  margin-left: 0;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  box-shadow: none;
+  background: transparent;
+  color: var(--fce-text-muted);
+}
+.folder-card-view .fce-group-header-actions:is(:hover, :focus-within) .fce-group-more {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+.folder-card-view .fce-group-header-actions.has-menu:is(:hover, :focus-within) .fce-card-group-count {
+  visibility: hidden;
+}
+.folder-card-view .fce-group-more svg { width: 14px; height: 14px; }
+.folder-card-view .fce-group-more:is(:hover, :focus-visible) { background: var(--fce-control-hover-bg); color: var(--fce-text); }
+.folder-card-view .fce-group-more:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--fce-accent));
+  outline-offset: -2px;
+}
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-group-more {
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-group-header-actions {
+  display: flex;
+  gap: 4px;
+}
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-card-group-header {
+  flex: 1;
+}
+.folder-card-view .fce-shell:is([data-fce-device="phone"], [data-fce-device="tablet"]) .fce-group-header-actions.has-menu .fce-card-group-count {
+  visibility: inherit;
+}
+.folder-card-view .fce-wall-group-row.is-pinned-source .fce-group-more {
+  visibility: hidden;
+  pointer-events: none;
 }

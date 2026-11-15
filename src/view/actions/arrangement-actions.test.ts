@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
-import { GroupCollapseController } from "../controllers/GroupCollapseController";
+import { GroupCollapseController, taskGroupCollapseSpec } from "../controllers/GroupCollapseController";
 import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "../scope";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition, NoteCardRecord } from "../types";
@@ -111,6 +111,8 @@ function createHarness(options: {
   const requestUpdate = vi.fn(async () => {
     calls.push("reload");
   });
+  const exitBulkMode = vi.fn(() => true);
+  const returnToStreamIfSinglePane = vi.fn();
 
   const deps: ArrangementActionsDeps = {
     context: {
@@ -135,6 +137,8 @@ function createHarness(options: {
     reconcileToVisibleCards,
     groupCollapse,
     getGroupSegmentKeys,
+    exitBulkMode,
+    returnToStreamIfSinglePane,
   };
 
   return {
@@ -151,6 +155,8 @@ function createHarness(options: {
     publishGroups,
     requestUpdate,
     getGroupSegmentKeys,
+    exitBulkMode,
+    returnToStreamIfSinglePane,
     calls,
   };
 }
@@ -372,4 +378,79 @@ describe("touch pinned ordering", () => {
     expect(scoped.getSettings().boxes[0].pinnedPaths).toEqual(["b.md", "a.md"]);
     expect(scoped.getSettings().pinnedPaths).toEqual(DEFAULT_SETTINGS.pinnedPaths);
   });
+});
+
+describe("task view arrangement", () => {
+  it("writes the global view mode for folders and exits bulk mode when entering tasks", async () => {
+    const h = createHarness();
+    await h.actions.setViewMode("tasks");
+    expect(h.getSettings().defaultView).toBe("tasks");
+    expect(h.exitBulkMode).toHaveBeenCalledTimes(1);
+    expect(h.updateActiveBox).not.toHaveBeenCalled();
+
+    await h.actions.toggleViewMode();
+    expect(h.getSettings().defaultView).toBe("cards");
+    expect(h.exitBulkMode).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a write when the mode is unchanged", async () => {
+    const h = createHarness({ settings: { defaultView: "tasks" } });
+    await h.actions.setViewMode("tasks");
+    await h.actions.onViewModeChange({ mode: "bogus" });
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.exitBulkMode).not.toHaveBeenCalled();
+  });
+
+  it.each([createBoxScope("box-1"), createLinksScope("source.md", "backlinks"), createLinksScope("source.md", "outgoing")])("writes global mode from %j", async (scope) => {
+    const h = createHarness({ scope });
+    await h.actions.onViewModeChange({ mode: "tasks" });
+    expect(h.getSettings().defaultView).toBe("tasks");
+    expect(h.updateActiveBox).not.toHaveBeenCalled();
+  });
+
+  it("writes global task sort and group for folders, keeping unrecognized fields", async () => {
+    const h = createHarness();
+    await h.actions.onTaskSortChange({ field: "due", direction: "sideways" });
+    expect(h.getSettings().taskSort).toEqual({ field: "due", direction: DEFAULT_SETTINGS.taskSort.direction });
+    await h.actions.onTaskSortChange({ direction: "desc" });
+    expect(h.getSettings().taskSort).toEqual({ field: "due", direction: "desc" });
+
+    await h.actions.onTaskGroupChange({ dimension: "done", timeGranularity: "month" });
+    expect(h.getSettings().taskGroup).toEqual({ dimension: "done", timeGranularity: "month" });
+    await h.actions.onTaskGroupChange({ dimension: "nope" });
+    expect(h.getSettings().taskGroup).toEqual({ dimension: "done", timeGranularity: "month" });
+    expect(h.updateActiveBox).not.toHaveBeenCalled();
+  });
+
+  it("writes box task sort and group to the active box only", async () => {
+    const h = createHarness({ scope: createBoxScope("box-1") });
+    const globalSort = h.getSettings().taskSort;
+    await h.actions.setTaskSort({ field: "text", direction: "asc" });
+    await h.actions.setTaskGroup({ dimension: "file" });
+    expect(h.getBox()).toMatchObject({ taskSort: { field: "text", direction: "asc" }, taskGroup: { dimension: "file" } });
+    expect(h.getSettings().taskSort).toEqual(globalSort);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+
+    h.updateActiveBox.mockClear();
+    await h.actions.setTaskGroup({ dimension: "file" });
+    expect(h.updateActiveBox).not.toHaveBeenCalled();
+  });
+
+  it("routes collapse commands to the task namespace in task mode", () => {
+    const h = createHarness({ settings: { defaultView: "tasks", taskGroup: { dimension: "status" } } });
+    h.actions.onGroupCollapseCommand({ command: "toggle", key: "task-status:open" });
+    const scope = h.store.getScope();
+    expect([...h.groupCollapse.getCollapsedKeys(scope, taskGroupCollapseSpec({ dimension: "status" }))]).toEqual(["task-status:open"]);
+    expect(h.groupCollapse.getCollapsedKeys(scope, h.getSettings().group).size).toBe(0);
+  });
+});
+
+it("returns from navigation before persistence finishes", async () => {
+  const h = createHarness();
+  let finish!: () => void;
+  h.saveSettings.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const pending = h.actions.setViewMode("tasks");
+  expect(h.returnToStreamIfSinglePane).toHaveBeenCalledOnce();
+  finish();
+  await pending;
 });

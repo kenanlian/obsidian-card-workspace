@@ -29,6 +29,7 @@ function createHost(): {
       search: { onQueryChange: vi.fn(), resetQuery: vi.fn(), onHistoryCommand: vi.fn() },
       boxActions: { handleBoxCommand: vi.fn() },
       favoriteActions: { handleFavoriteActivate: vi.fn() },
+      taskActions: { toggle: vi.fn(async () => undefined), openDatePicker: vi.fn(), open: vi.fn(), openContextMenu: vi.fn() },
       navLayout: {
         onNavPaneResize: vi.fn(),
         onShellResize: vi.fn(),
@@ -137,5 +138,25 @@ describe("buildPanelProps arrangement routing", () => {
     expect(arrangement.onGroupChange).toHaveBeenCalledWith(group);
     expect(arrangement.onGroupCollapseCommand).toHaveBeenCalledWith(collapse);
     expect(arrangement.onPinToggle).toHaveBeenCalledWith(pin);
+  });
+
+  it("routes task intents to TaskActions with their payloads unchanged", () => {
+    const { host } = createHost();
+    const props = buildPanelProps(host) as unknown as Record<"onTaskToggle" | "onTaskDate" | "onTaskOpen" | "onTaskContextMenu", (detail: unknown) => void>;
+    const target = { filePath: "notes/a.md", line: 2, lineText: "- [ ] Ship" };
+    const toggle = { id: "notes/a.md::L2", ...target, completed: false };
+    const date = { id: "notes/a.md::L2", ...target, kind: "due", value: null, anchor: {} };
+    const open = { ...target, destination: "new-tab" };
+    const menu = { ...target, text: "Ship", position: { x: 1, y: 2 } };
+    props.onTaskToggle(toggle);
+    props.onTaskDate(date);
+    props.onTaskOpen(open);
+    props.onTaskContextMenu(menu);
+    const tasks = host.modules.taskActions;
+    expect(tasks.toggle).toHaveBeenCalledExactlyOnceWith(toggle);
+    expect(tasks.openDatePicker).toHaveBeenCalledExactlyOnceWith(date);
+    expect(tasks.open).toHaveBeenCalledExactlyOnceWith(open);
+    expect(tasks.openContextMenu).toHaveBeenCalledExactlyOnceWith(menu);
+    expect(host.plugin.openNoteFromCard).not.toHaveBeenCalled();
   });
 });

@@ -13,7 +13,9 @@
     PanelScopeState,
     PanelSearchState,
   } from "./panel-model";
-  import { buildSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
+  import { buildSortGroupMenu, buildTaskSortGroupMenu, decorateSortGroupMenu } from "./menus/sort-group-menu";
+  import { DEFAULT_TASK_GROUP, DEFAULT_TASK_SORT, type TaskGroupSpec, type TaskSortSpec } from "../task-view-settings";
+  import type { DefaultViewMode } from "../settings";
   import { buildScopeLabel } from "./scope-label";
   import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource, ToolbarActionPayload } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
@@ -71,6 +73,8 @@
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
     onSearchHistoryCommand?: (payload: SearchHistoryCommand) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
+    onTaskSortChange?: (payload: Partial<TaskSortSpec>) => void;
+    onTaskGroupChange?: (payload: Partial<TaskGroupSpec>) => void;
   }
 
   interface BulkActionOption {
@@ -162,6 +166,8 @@
     onSearchQueryReset,
     onSearchHistoryCommand,
     onBoxCommand,
+    onTaskSortChange,
+    onTaskGroupChange,
   }: ToolbarProps = $props();
   const toolbarStrings = $derived(strings.toolbar);
   const boxStrings = $derived(strings.box);
@@ -173,6 +179,13 @@
   const group = $derived(projection.group);
   const availableGroupDimensions = $derived(projection.availableGroupDimensions);
   const hasSegments = $derived(projection.groupSegmentCount > 0);
+  const taskViewAvailable = $derived(projection.taskViewAvailable ?? false);
+  const taskMode = $derived(taskViewAvailable && projection.viewMode === "tasks");
+  const taskTools = $derived(strings.tasks.tools);
+  const taskFilters: import("./task-filters").TaskFilterSpec = $derived(projection.taskFilters ?? { status: "all" as const, date: null });
+  function taskAction(action: string, event: MouseEvent) { onToolbarAction?.({ action, anchor: event.currentTarget as HTMLElement }); }
+  const taskSort = $derived(projection.taskSort ?? DEFAULT_TASK_SORT);
+  const taskGroup = $derived(projection.taskGroup ?? DEFAULT_TASK_GROUP);
   const searchQuery = $derived(search.query);
   const searchStatus = $derived(search.status);
   const searchFocusToken = $derived(search.focusToken);
@@ -217,13 +230,14 @@
   $effect(() => {
     // Close menus whose anchor or source is being replaced, including on unmount.
     compact; scope.sourceIdentity;
-    return () => { moreMenu?.hide(); moreMenu = null; };
+    const closeTaskPanels = taskMode;
+    return () => { if (closeTaskPanels) onToolbarAction?.({ action: "task-close-panels" }); moreMenu?.hide(); moreMenu = null; };
   });
 
   const isBoxMode = $derived(activeBoxId !== null);
   const isLinksMode = $derived(scope.linksDirection != null);
   const hasBoxes = $derived(boxSummaries.length > 0);
-  const isSortGroupTriggerSelected = $derived(group.dimension !== "none");
+  const isSortGroupTriggerSelected = $derived(taskMode ? taskGroup.dimension !== "none" : group.dimension !== "none");
 
   const scopeText = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "name"));
   const scopeTooltip = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "full"));
@@ -297,7 +311,7 @@
     });
   });
 
-  const drawActive = $derived(scope.draw?.active ?? false);
+  const drawActive = $derived(!taskMode && (scope.draw?.active ?? false));
   const drawToggleLabel = $derived(drawActive ? boxStrings.drawExit : boxStrings.drawTitle);
   const drawActions = $derived.by((): BulkToolbarOption[] => {
     const draw = scope.draw;
@@ -367,14 +381,15 @@
   ]);
 
   const hasSearchQuery = $derived(searchQuery.trim().length > 0);
-  const showSearchStatus = $derived(
+  // The task stream filters locally, so indexed-search health does not apply to it.
+  const showSearchStatus = $derived(!taskMode && (
     searchStatus === "building"
     || searchStatus === "rebuild-required"
     || searchStatus === "storage-unavailable"
     || searchStatus === "unavailable"
     || searchStatus === "error"
     || searchIndexPersistence === "storage-unavailable"
-  );
+  ));
   const searchStatusLabel = $derived(
     getSearchStatusLabel(toolbarStrings.searchStatus, searchStatus, searchIndexReadiness, searchIndexPersistence, searchIndexRebuildReason),
   );
@@ -411,7 +426,19 @@
     closeBoxPickerMenu();
 
     const menu = new Menu().setUseNativeMenu(false);
-    buildSortGroupMenu(
+    if (taskMode) buildTaskSortGroupMenu(
+      menu,
+      { taskSort, taskGroup, hasSegments },
+      {
+        strings: sortGroupStrings,
+        taskStrings: strings.tasks.view,
+        onSelectSort: applyTaskSort,
+        onSelectGroup: applyTaskGroup,
+        onCollapseAll: () => emitGroupCollapseCommand("collapse-all"),
+        onExpandAll: () => emitGroupCollapseCommand("expand-all"),
+      },
+    );
+    else buildSortGroupMenu(
       menu,
       { sortField, sortDirection, group, availableGroupDimensions, visibleGroupProperties, hasSegments, supportsReferenceCount: isLinksMode },
       {
@@ -444,7 +471,8 @@
       return;
     }
     closeBoxPickerMenu();
-    const anchor = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const trigger = event.currentTarget as HTMLElement;
+    const anchor = trigger.getBoundingClientRect();
     const position = { x: anchor.left, y: anchor.bottom, overlap: true };
     const menu = new Menu().setUseNativeMenu(false);
     moreMenu = menu;
@@ -457,8 +485,10 @@
         if (checked !== undefined) item.setChecked(checked);
       });
     };
+    if (taskMode) addAction(taskTools.copy, "copy", () => onToolbarAction?.({ action: "task-copy", anchor: trigger }));
     addAction(sortGroupStrings.title, "arrow-up-narrow-wide", () => openSortGroupMenu(event, anchor), isSortGroupTriggerSelected);
-    addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
+    if (taskMode) { menu.showAtPosition(position); return; }
+    if (!taskMode) addAction(bulkMode ? toolbarStrings.actions.exitBulk : toolbarStrings.actions.bulkTitle, "check-check", () => emitToolbarAction("bulk"), bulkMode);
     if (isBoxMode) {
       if (scope.draw?.available) addAction(drawToggleLabel, "dices", () => emitBoxCommand("draw"), drawActive);
       addAction(boxStrings.configureTitle, "settings-2", () => emitBoxCommand("configure"));
@@ -511,6 +541,17 @@
 
     onSortChange?.({ field, direction });
   }
+
+  function applyTaskSort(next: TaskSortSpec): void {
+    if (next.field === taskSort.field && next.direction === taskSort.direction) return;
+    onTaskSortChange?.({ field: next.field, direction: next.direction });
+  }
+
+  function applyTaskGroup(next: TaskGroupSpec): void {
+    if (next.dimension === taskGroup.dimension && (next.timeGranularity ?? null) === (taskGroup.timeGranularity ?? null)) return;
+    onTaskGroupChange?.(next.timeGranularity ? { dimension: next.dimension, timeGranularity: next.timeGranularity } : { dimension: next.dimension });
+  }
+
 
   function applyGroupSpec(next: GroupSpec): void {
     const { dimension, orderBy, orderDirection, propertyKey, timeGranularity } = next;
@@ -601,7 +642,23 @@
         <span class="fce-toolbar-scope-text">{scopeText}</span>
       </div>
       <div class="fce-toolbar-actions">
-        {#if compact}
+        {#if taskMode}
+          <button type="button" class="clickable-icon fce-toolbar-button" class:is-selected={taskFilters.status !== "all"} aria-label={taskTools.status} onclick={event => taskAction("task-status", event)} use:applyIcon={"list-filter"} use:applyTooltip={taskTools.status}></button>
+          <button type="button" class="clickable-icon fce-toolbar-button" class:is-selected={taskFilters.date !== null} aria-label={taskTools.date} onclick={event => taskAction("task-date-filter", event)} use:applyIcon={"calendar-range"} use:applyTooltip={taskTools.date}></button>
+          {#if !compact}<button type="button" class="clickable-icon fce-toolbar-button" aria-label={taskTools.copy} onclick={event => taskAction("task-copy", event)} use:applyIcon={"copy"} use:applyTooltip={taskTools.copy}></button>{/if}
+          {#if !compact}
+            <button
+              type="button"
+              class="clickable-icon fce-toolbar-button fce-sort-trigger"
+              class:is-selected={isSortGroupTriggerSelected}
+              aria-label={sortGroupStrings.title}
+              onclick={(event) => selectToolbarAction("sort", event)}
+              use:applyIcon={"arrow-up-narrow-wide"}
+              use:captureSortButton
+              use:applyTooltip={sortGroupStrings.title}
+            ></button>
+          {/if}
+        {:else if compact}
           <button
             type="button"
             class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
@@ -648,6 +705,7 @@
             >
               <span class="fce-sr-only">{toolbarStrings.actions.newNote}</span>
             </button>
+
             <button
               type="button"
               class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
@@ -668,6 +726,7 @@
             >
               <span class="fce-sr-only">{boxStrings.configure}</span>
             </button>
+            {#if !taskMode}
             <button
               type="button"
               class="clickable-icon fce-toolbar-button {bulkMode ? 'is-selected' : ''}"
@@ -677,9 +736,11 @@
             >
               <span class="fce-sr-only">{toolbarStrings.actions.bulk}</span>
             </button>
+            {/if}
           {:else}
             {#each TOOLBAR_ACTIONS as action}
               {#if action.id === "sort"}
+
                 <button
                   type="button"
                   class="clickable-icon fce-toolbar-button fce-sort-trigger {isSortGroupTriggerSelected ? 'is-selected' : ''}"
@@ -690,7 +751,7 @@
                 >
                   <span class="fce-sr-only">{sortGroupStrings.title}</span>
                 </button>
-              {:else}
+              {:else if !(action.id === "bulk" && taskMode)}
                 <button
                   type="button"
                   class="clickable-icon fce-toolbar-button {(action.id === 'bulk' ? bulkMode : activeToolbarAction === action.id) ? 'is-selected' : ''}"
@@ -753,7 +814,7 @@
         {#if compact}
           <button
             type="button"
-            class="clickable-icon fce-toolbar-button fce-toolbar-more {(bulkMode || drawActive || isSortGroupTriggerSelected || scope.linksPinned) ? 'is-selected' : ''}"
+            class="clickable-icon fce-toolbar-button fce-toolbar-more {(bulkMode || drawActive || taskMode || isSortGroupTriggerSelected || scope.linksPinned) ? 'is-selected' : ''}"
             aria-label={toolbarStrings.actions.more}
             aria-haspopup="menu"
             aria-expanded={moreMenu !== null}
@@ -786,7 +847,7 @@
           oncompositionstart={() => { composing = true; }}
           oncompositionend={() => { composing = false; }}
           aria-label={toolbarStrings.search.inputLabel}
-          placeholder={toolbarStrings.search.placeholder}
+          placeholder={taskMode ? strings.tasks.view.searchPlaceholder : toolbarStrings.search.placeholder}
           value={searchQuery}
           oninput={handleSearchInput}
         />
@@ -806,6 +867,27 @@
     </div>
   {/if}
 
+  {#if taskMode && (taskFilters.status !== "all" || taskFilters.date)}
+    <div class="fce-active-filters fce-task-filter-chips">
+      {#if taskFilters.status !== "all"}
+        <span class="fce-filter-chip">
+          <span class="fce-filter-chip-content">
+            <button type="button" class="fce-filter-chip-label fce-task-filter-label" onclick={event => taskAction("task-status", event)}>{taskTools.states[taskFilters.status]}</button>
+            <button type="button" class="clickable-icon fce-filter-chip-remove" aria-label={toolbarStrings.removeFilter(taskTools.status)} use:applyTooltip={toolbarStrings.removeFilter(taskTools.status)} onclick={() => emitToolbarAction("task-clear-status")} use:applyIcon={"x"}></button>
+          </span>
+        </span>
+      {/if}
+      {#if taskFilters.date}
+        <span class="fce-filter-chip" title={projection.taskDateTooltip ?? projection.taskDateLabel}>
+          <span class="fce-filter-chip-content">
+            <button type="button" class="fce-filter-chip-label fce-task-filter-label" onclick={event => taskAction("task-date-filter", event)}>{projection.taskDateLabel}</button>
+            <button type="button" class="clickable-icon fce-filter-chip-remove" aria-label={toolbarStrings.removeFilter(taskTools.date)} use:applyTooltip={toolbarStrings.removeFilter(taskTools.date)} onclick={() => emitToolbarAction("task-clear-date")} use:applyIcon={"x"}></button>
+          </span>
+        </span>
+      {/if}
+      <button type="button" class="clickable-icon fce-clear-browse-filters" aria-label={taskTools.clear} use:applyTooltip={taskTools.clear} onclick={() => emitToolbarAction("task-clear-filters")} use:applyIcon={"filter-x"}></button>
+    </div>
+  {/if}
   {#if hasSummary}
     <div class="fce-toolbar-content-row {bulkMode ? 'is-bulk-mode' : ''}" class:is-draw-mode={drawActive}>
       <div class="fce-toolbar-content">
@@ -863,7 +945,7 @@
     </ToolbarBulkStrip>
   {/if}
 
-  {#if bulkMode}
+  {#if bulkMode && !taskMode}
     <ToolbarBulkStrip
       {bulkActions}
       {bulkSelectionSummary}

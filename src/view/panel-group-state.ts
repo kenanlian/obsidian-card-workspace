@@ -1,8 +1,16 @@
 import { normalizeGroupSpec, type GroupDimension, type GroupSpec } from "../card-grouping-settings";
-import type { SortDirection, LinksSortField } from "../settings";
+import type { DefaultViewMode, SortDirection, LinksSortField } from "../settings";
+import {
+  DEFAULT_TASK_GROUP,
+  DEFAULT_TASK_SORT,
+  normalizeTaskGroupSpec,
+  normalizeTaskSortSpec,
+  type TaskGroupSpec,
+  type TaskSortSpec,
+} from "../task-view-settings";
 import type { CardGroupSegment } from "./card-grouping";
 import type { PanelModelState } from "./panel-model";
-import type { NoteCardRecord } from "./types";
+import type { NoteCardRecord, TaskCardRecord, TaskViewStatus } from "./types";
 
 export function buildCardsPanelGroup(input: {
   records: readonly NoteCardRecord[];
@@ -14,9 +22,16 @@ export function buildCardsPanelGroup(input: {
   hydrationRevision: number;
   groupSegments: readonly CardGroupSegment[];
   groupRevision: number;
+  streamMode?: DefaultViewMode;
+  taskRecords?: readonly TaskCardRecord[];
+  taskGroupCounts?: Record<string, number>;
+  taskStatus?: TaskViewStatus;
+  pendingTaskIds?: readonly string[];
 }): PanelModelState["cards"] {
+  const streamMode = input.streamMode ?? "cards";
+  const records = streamMode === "tasks" ? [] : [...input.records];
   return {
-    records: [...input.records],
+    records,
     searchMatchCountsByPath: { ...input.searchMatchCountsByPath },
     selectedPath: input.selectedPath,
     loading: input.loading,
@@ -27,7 +42,12 @@ export function buildCardsPanelGroup(input: {
     groupRevision: input.groupRevision,
     // Kept in the panel contract for compatibility; rendering is based only
     // on materialized, projected records and never infers blank tail rows.
-    extentCount: input.records.length,
+    extentCount: records.length,
+    streamMode,
+    taskGroupCounts: input.taskGroupCounts,
+    taskRecords: streamMode === "tasks" ? [...input.taskRecords ?? []] : [],
+    taskStatus: streamMode === "tasks" ? input.taskStatus ?? "idle" : "idle",
+    pendingTaskIds: streamMode === "tasks" ? [...input.pendingTaskIds ?? []] : [],
   };
 }
 
@@ -41,6 +61,10 @@ export function buildProjectionPanelGroup(input: {
   group: GroupSpec;
   availableGroupDimensions: GroupDimension[];
   groupSegmentCount: number;
+  viewMode?: DefaultViewMode;
+  taskSort?: TaskSortSpec;
+  taskGroup?: TaskGroupSpec;
+  taskViewAvailable?: boolean;
 }): PanelModelState["projection"] {
   return {
     sortField: input.sortField,
@@ -55,5 +79,9 @@ export function buildProjectionPanelGroup(input: {
     // Retained as a compatibility field; facets are only published with the
     // complete scope commit, so the panel has no pending metadata phase.
     metadataStatus: "ready",
+    viewMode: input.viewMode === "tasks" ? "tasks" : "cards",
+    taskSort: input.taskSort ? normalizeTaskSortSpec(input.taskSort) : { ...DEFAULT_TASK_SORT },
+    taskGroup: input.taskGroup ? normalizeTaskGroupSpec(input.taskGroup) : { ...DEFAULT_TASK_GROUP },
+    taskViewAvailable: input.taskViewAvailable ?? false,
   };
 }

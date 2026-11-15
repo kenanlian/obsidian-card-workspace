@@ -2,7 +2,9 @@ import type { Menu } from "obsidian";
 
 import { TIME_GROUP_GRANULARITIES, type TimeGroupGranularity, type GroupDimension, type GroupOrderBy, type GroupSpec } from "../../card-grouping-settings";
 import type { SortGroupStrings } from "../../i18n";
+import type { TaskViewStrings } from "../../i18n/tasks";
 import type { SortDirection, LinksSortField } from "../../settings";
+import type { TaskGroupDimension, TaskGroupSpec, TaskSortField, TaskSortSpec } from "../../task-view-settings";
 import { getMenuDom } from "../menu-dom";
 
 /** Class added to the DOM menu surface so styles.css can scope its rules. */
@@ -228,6 +230,127 @@ export function buildSortGroupMenu(
     disabled: groupOrderDisabled,
     onSelect: () => deps.onSelectOrderDirection("desc"),
   });
+
+  menu.addSeparator();
+
+  addOptionItem(menu, {
+    title: strings.collapseAll,
+    icon: "chevrons-down-up",
+    checked: false,
+    disabled: !state.hasSegments,
+    onSelect: () => deps.onCollapseAll(),
+  });
+  addOptionItem(menu, {
+    title: strings.expandAll,
+    icon: "chevrons-up-down",
+    checked: false,
+    disabled: !state.hasSegments,
+    onSelect: () => deps.onExpandAll(),
+  });
+
+  return menu;
+}
+
+export interface TaskSortGroupMenuState {
+  taskSort: TaskSortSpec;
+  taskGroup: TaskGroupSpec;
+  hasSegments: boolean;
+}
+
+export interface TaskSortGroupMenuDeps {
+  strings: SortGroupStrings;
+  taskStrings: TaskViewStrings;
+  onSelectSort: (spec: TaskSortSpec) => void;
+  onSelectGroup: (spec: TaskGroupSpec) => void;
+  onCollapseAll: () => void;
+  onExpandAll: () => void;
+}
+
+const TASK_SORT_ICONS: Record<TaskSortField, string> = {
+  due: "calendar-clock",
+  created: "calendar-plus",
+  done: "calendar-check",
+  file: "file-text",
+  text: "type",
+};
+
+/**
+ * Task-stream variant: task sort fields and task group dimensions. Task group
+ * specs carry no order fields, so there is no group-order section; created and
+ * completed dates offer the same time granularities as card time groups.
+ */
+export function buildTaskSortGroupMenu(
+  menu: Menu,
+  state: TaskSortGroupMenuState,
+  deps: TaskSortGroupMenuDeps,
+): Menu {
+  const { strings, taskStrings } = deps;
+  const { taskSort, taskGroup } = state;
+
+  addHeadingItem(menu, strings.sortFieldHeading, "arrow-up-narrow-wide");
+  for (const field of ["due", "created", "done", "file", "text"] as const) {
+    addOptionItem(menu, {
+      title: taskStrings.sortFields[field],
+      icon: TASK_SORT_ICONS[field],
+      checked: taskSort.field === field,
+      disabled: false,
+      onSelect: () => deps.onSelectSort({ field, direction: taskSort.direction }),
+    });
+  }
+
+  menu.addSeparator();
+
+  addHeadingItem(menu, strings.sortDirectionHeading, "arrow-up-down");
+  for (const direction of ["asc", "desc"] as const) {
+    addOptionItem(menu, {
+      title: direction === "asc" ? strings.directionAsc : strings.directionDesc,
+      icon: direction === "asc" ? "arrow-up" : "arrow-down",
+      checked: taskSort.direction === direction,
+      disabled: false,
+      onSelect: () => deps.onSelectSort({ field: taskSort.field, direction }),
+    });
+  }
+
+  menu.addSeparator();
+
+  addHeadingItem(menu, strings.groupHeading, "list-tree");
+  const flatOptions: Array<{ dimension: TaskGroupDimension; title: string; icon: string }> = [
+    { dimension: "none", title: strings.dimensionNone, icon: "ungroup" },
+    { dimension: "file", title: strings.taskGroup.dimensions.file, icon: "file-text" },
+    { dimension: "status", title: strings.taskGroup.dimensions.status, icon: "list-checks" },
+    { dimension: "due", title: strings.taskGroup.dimensions.due, icon: "calendar-clock" },
+  ];
+  for (const { dimension, title, icon } of flatOptions) {
+    addOptionItem(menu, {
+      title,
+      icon,
+      checked: taskGroup.dimension === dimension,
+      disabled: false,
+      onSelect: () => deps.onSelectGroup({ dimension }),
+    });
+  }
+  for (const dimension of ["created", "done"] as const) {
+    const title = strings.taskGroup.dimensions[dimension];
+    const icon = TASK_SORT_ICONS[dimension];
+    const isChecked = (granularity: TimeGroupGranularity): boolean =>
+      taskGroup.dimension === dimension && (taskGroup.timeGranularity ?? "day") === granularity;
+    let flatFallback = false;
+    menu.addItem((item) => {
+      item.setTitle(title).setIcon(icon).setChecked(taskGroup.dimension === dimension);
+      const submenu = (item as unknown as { setSubmenu?: () => Menu }).setSubmenu?.();
+      if (submenu && typeof submenu.addItem === "function") {
+        submenu.setUseNativeMenu(false);
+        for (const granularity of TIME_GROUP_GRANULARITIES) {
+          addOptionItem(submenu, { title: strings.timeGranularities[granularity], icon, checked: isChecked(granularity),
+            disabled: false, onSelect: () => deps.onSelectGroup({ dimension, timeGranularity: granularity }) });
+        }
+      } else { item.setDisabled(true); flatFallback = true; }
+    });
+    if (flatFallback) for (const granularity of TIME_GROUP_GRANULARITIES) {
+      addOptionItem(menu, { title: `${title} · ${strings.timeGranularities[granularity]}`, icon, checked: isChecked(granularity),
+        disabled: false, onSelect: () => deps.onSelectGroup({ dimension, timeGranularity: granularity }) });
+    }
+  }
 
   menu.addSeparator();
 

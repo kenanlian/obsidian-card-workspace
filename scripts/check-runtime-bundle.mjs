@@ -17,7 +17,14 @@ try {
   vm.runInContext(hostBundle.outputFiles[0].text, context, { filename: "explicit-host-substitutes.js" });
   const host = win.module.exports; host.installDom();
   host.Platform.isDesktopApp = device === "desktop"; host.Platform.isTablet = device === "tablet";
-  const cm = { Prec: { highest: value => value }, dropCursor: () => ({}), EditorView: class { static domEventHandlers(value) { return value; } }, WidgetType: class {} };
+  const facet = { of: value => value };
+  const cm = { Prec: { highest: value => value }, dropCursor: () => ({}), WidgetType: class {},
+    EditorView: class { static domEventHandlers(value) { return value; } static decorations = facet; static atomicRanges = facet; },
+    EditorState: class { static transactionFilter = facet; }, StateField: { define: spec => spec },
+    ViewPlugin: { fromClass: (value, spec) => ({ value, spec }), define: (value, spec) => ({ value, spec }) },
+    Decoration: { none: {}, set: value => value, line: spec => ({ spec, range: from => ({ from }) }), widget: spec => ({ spec }), replace: spec => ({ spec }) },
+    Transaction: { remote: {}, addToHistory: {} }, MapMode: { TrackDel: 1 },
+    RangeSetBuilder: class { add() {} finish() { return {}; } } };
   win.require = id => {
     if (id === "obsidian") return host;
     if (["@codemirror/state", "@codemirror/view", "@codemirror/language"].includes(id)) return cm;
@@ -34,7 +41,7 @@ try {
   const settings = plugin.tabs[0];
   host.setSettingsApiAvailable(true);
   const definitions = settings.getSettingDefinitions();
-  assert.equal(definitions.length, 7);
+  assert.equal(definitions.length, 8);
   assert(definitions.every(page => page.type === "page" && page.items));
   assert(definitions.some(page => page.name === plugin.getUiStrings().noteInput.quickInputHeading));
   const openSetting = definitions.flatMap(page => page.items).flatMap(group => group.items).find(item => item.control?.key === "defaultCardOpenBehavior");
@@ -42,7 +49,7 @@ try {
   host.setSettingsApiAvailable(false);
   assert.equal(settings.getSettingDefinitions().length, 0);
   settings.display();
-  assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 7);
+  assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 8);
   settings.containerEl.querySelector(".fce-settings-page-link").click();
   assert.equal(settings.containerEl.querySelectorAll(".fce-settings-page-link").length, 0);
   settings.hide();

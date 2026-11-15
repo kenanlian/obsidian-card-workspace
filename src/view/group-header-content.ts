@@ -22,7 +22,24 @@ export type GroupHeaderContent =
       readonly values: readonly GroupHeaderPropertyValue[];
     }
   | { readonly kind: "task"; readonly text: string }
-  | { readonly kind: "box-rule"; readonly text: string };
+  | { readonly kind: "box-rule"; readonly text: string }
+  | {
+      readonly kind: "task-group";
+      readonly dimension: TaskGroupHeaderDimension;
+      readonly text: string;
+      /** Source file path for `file` buckets; the chip tooltip. */
+      readonly path?: string;
+    };
+
+export type TaskGroupHeaderDimension = "file" | "status" | "due" | "created" | "done";
+
+const TASK_GROUP_ICONS: Record<TaskGroupHeaderDimension, string> = {
+  file: "file-text",
+  status: "list-checks",
+  due: "calendar-clock",
+  created: "calendar-plus",
+  done: "calendar-check",
+};
 
 export interface GroupHeaderChip {
   readonly text: string;
@@ -87,6 +104,11 @@ export function resolveGroupHeaderParts(
       return {
         dimension: { icon: "package-check", label: strings.dimensionBoxRule },
         chips: [{ text: header.text }],
+      };
+    case "task-group":
+      return {
+        dimension: { icon: TASK_GROUP_ICONS[header.dimension], label: strings.taskGroup.dimensions[header.dimension] },
+        chips: [header.path === undefined ? { text: header.text } : { text: header.text, title: header.path }],
       };
     case "text":
       return { dimension: null, chips: [{ text: header.text }] };

@@ -83,6 +83,36 @@ describe("BoxDrawController", () => {
     expect(h.save).not.toHaveBeenCalled();
     expect(h.store.getDrawPaths()).toBeNull();
   });
+
+  it("exits temporary drawing in task mode without consuming shared progress", async () => {
+    const h = harness();
+    await h.controller.enter();
+    const progress = h.settings.boxes[0]!.drawProgress;
+    h.settings.defaultView = "tasks";
+    h.controller.sync();
+    expect(h.controller.active).toBe(false);
+    expect(h.controller.available).toBe(false);
+    await h.controller.enter();
+    expect(h.store.getDrawPaths()).toBeNull();
+    expect(h.settings.boxes[0]!.drawProgress).toBe(progress);
+    expect(h.save).toHaveBeenCalledTimes(1);
+    h.settings.defaultView = "cards";
+    await h.controller.enter();
+    expect(h.store.getDrawPaths()).toEqual(progress!.currentGroup!.paths);
+    expect(h.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a pending draw entry after switching to tasks", async () => {
+    const h = harness();
+    let release!: () => void;
+    h.context.waitForSettings = () => new Promise(resolve => { release = resolve; });
+    const enter = h.controller.enter();
+    h.settings.defaultView = "tasks";
+    h.controller.sync();
+    release(); await enter;
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.store.getDrawPaths()).toBeNull();
+  });
 });
 
 it("adopts a newer shared group after its earlier save settles", async () => {

@@ -15,7 +15,7 @@ export class BoxDrawController {
     pool: () => string[]; query: () => string; reproject: () => void;
   }) {}
   get active(): boolean { return this.context.store.getDrawPaths() !== null; }
-  get available(): boolean { return resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw; }
+  get available(): boolean { return this.context.getSettings().defaultView !== "tasks" && resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw; }
   get canNext(): boolean { return this.active && this.mode !== "daily" && !this.pending && !this.deps.query().trim() && this.deps.pool().length > 0; }
   private box() {
     const scope = this.context.store.getScope();
@@ -72,6 +72,7 @@ export class BoxDrawController {
   }
   /** Refreshes presentation from shared state without consuming a new group. */
   sync(): void {
+    if (!this.available) { this.context.store.setDrawPaths(null); this.mode = null; return; }
     if (!this.active || this.disposed || this.pending) return;
     const box = this.box();
     if (!box) { this.context.store.setDrawPaths(null); return; }

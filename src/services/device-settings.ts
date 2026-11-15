@@ -1,8 +1,8 @@
 import type { PersistedSettingsV2, PreferencesSettings } from "./SettingsStore";
 
 export const DEVICE_PREFERENCE_KEYS = [
-  "sort", "linksSort", "group", "includeSubfolders", "defaultView", "backlinkSnippetCount",
-  "cardCornerRadius", "uiFontSize", "uiDensity", "cardStyle", "previewLines", "skipLeadingTags", "searchPreviewSnippetCount",
+  "sort", "linksSort", "group", "taskSort", "taskGroup", "includeSubfolders", "defaultView", "backlinkSnippetCount",
+  "cardCornerRadius", "uiFontSize", "uiDensity", "cardStyle", "previewLines", "skipLeadingTags", "searchPreviewSnippetCount", "taskCardShowFile",
   "cardImageMode", "cardImageFit", "showNavItemCounts", "navSectionOrder", "hiddenNavSections", "visiblePropertyKeys",
   "hoverPreviewWidth", "hoverPreviewHeight", "quickInputWidth", "quickInputHeight", "quickInputColor", "quickInputGlobalShortcut",
 ] as const satisfies readonly (keyof PreferencesSettings)[];

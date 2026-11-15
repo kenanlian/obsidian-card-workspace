@@ -14,6 +14,8 @@ export class TimeGroupController {
     isSearchActive: () => boolean;
     isSettled: () => boolean;
     refresh: () => void;
+    /** Overrides the card-group check, e.g. for day-relative task buckets. */
+    isDayRelative?: () => boolean;
   }) {
     this.unsubscribe = context.workGate?.subscribe((active) => { if (active) this.sync(); else this.clearTimer(); });
   }
@@ -21,9 +23,7 @@ export class TimeGroupController {
   sync(): void {
     this.clearTimer();
     if (this.disposed) return;
-    const group = this.deps.getGroup();
-    if ((group.dimension !== "ctime" && group.dimension !== "mtime") || group.timeGranularity !== "relative"
-      || this.deps.isSearchActive()) { this.day = null; return; }
+    if (!this.isDayRelative()) { this.day = null; return; }
     const now = Date.now();
     const day = localDayOrdinal(now);
     // Remember the first projection even if the view opens while hidden.
@@ -40,6 +40,13 @@ export class TimeGroupController {
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     this.timer = this.context.getViewWindow().setTimeout(() => this.sync(), Math.max(1, midnight.getTime() - now));
+  }
+
+  private isDayRelative(): boolean {
+    if (this.deps.isDayRelative) return this.deps.isDayRelative();
+    const group = this.deps.getGroup();
+    return (group.dimension === "ctime" || group.dimension === "mtime") && group.timeGranularity === "relative"
+      && !this.deps.isSearchActive();
   }
 
   private clearTimer(): void {
