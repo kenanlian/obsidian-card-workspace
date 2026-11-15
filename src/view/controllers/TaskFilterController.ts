@@ -5,6 +5,7 @@ import { DEFAULT_TASK_FILTER, buildTaskCopyText, resolveTaskRange, validTaskRang
 import { resolveHostFirstDayOfWeek } from "./ProjectionController";
 import type { TaskCardItem } from "../types";
 import type { ViewContext } from "../view-context";
+import { getMenuDom } from "../menu-dom";
 
 export class TaskFilterController {
   private closePanel: (() => void) | null = null;
@@ -44,10 +45,12 @@ export class TaskFilterController {
   }
   openStatus(anchor: HTMLElement): void {
     this.close(); const s = this.context.getUiStrings().tasks.tools;
-    const menu = this.menu = new Menu();
+    const menu = this.menu = new Menu().setUseNativeMenu(false);
+    const icons = { all: "list-checks", incomplete: "square", completed: "square-check" };
     for (const value of ["all", "incomplete", "completed"] as const) menu.addItem(item => item.setTitle(s.states[value])
-      .setChecked(this.context.store.getTaskFilters().status === value).onClick(() => this.update(value)));
-    const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom });
+      .setIcon(icons[value]).setChecked(this.context.store.getTaskFilters().status === value).onClick(() => this.update(value)));
+    const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+    getMenuDom(menu)?.classList.add("fce-task-status-menu");
   }
   openDates(anchor: HTMLElement): void {
     this.close();
@@ -57,12 +60,16 @@ export class TaskFilterController {
     const active = this.context.store.getTaskFilters().date;
     const today = formatIsoDate(new Date());
     const draft: TaskDateFilter = active ? { ...active } : { field: this.field, preset: "custom", start: today, end: today, weekEnd: this.context.getSettings().taskReportWeekEndDay ?? 4 };
-    const panel = win.createFragment().createDiv(); panel.className = "fce-task-filter-panel";
+    // Reuse the host menu surface while retaining form/dialog semantics.
+    const panel = win.createFragment().createDiv(); panel.className = "menu fce-task-filter-panel";
     panel.classList.toggle("is-sheet", this.context.runtimePlatform?.device === "phone");
     panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", s.date);
-    const title = panel.createEl("strong", { text: s.date }); title.setAttribute("role", "heading");
+    const title = panel.createDiv({ cls: "fce-task-filter-title" });
+    setIcon(title.createSpan({ cls: "fce-task-filter-title-icon", attr: { "aria-hidden": "true" } }), "calendar-range");
+    title.createSpan({ text: s.date }); title.setAttribute("role", "heading"); title.setAttribute("aria-level", "2");
+    const fields = panel.createDiv({ cls: "fce-task-filter-fields" });
     const select = (label: string, values: Record<string, string>, value: string): HTMLSelectElement => {
-      const row = panel.createEl("label"); row.createSpan({ text: label }); const input = row.createEl("select");
+      const row = fields.createEl("label", { cls: "fce-task-filter-row" }); row.createSpan({ text: label }); const input = row.createEl("select");
       for (const [key, text] of Object.entries(values)) { const option = input.createEl("option", { text }); option.value = key; }
       input.value = value; return input;
     };
@@ -70,14 +77,14 @@ export class TaskFilterController {
     const preset = select(s.range, s.ranges, active?.preset ?? "none");
     const weekdays = Object.fromEntries(strings.datePicker.weekdaysLong.map((label, day) => [day, label]));
     const cutoff = select(s.cutoff, weekdays, String(draft.weekEnd));
-    const dates = panel.createDiv();
+    const dates = panel.createDiv({ cls: "fce-task-filter-dates" });
     let datePicker: TaskDatePickerHandle | null = null;
     let dateAnchor: HTMLButtonElement | null = null;
     const dateButton = (label: string, boundary: "start" | "end"): { button: HTMLButtonElement; value: HTMLElement } => {
-      const row = dates.createEl("label"); row.createSpan({ text: label });
+      const row = dates.createEl("label", { cls: "fce-task-filter-row" }); row.createSpan({ text: label });
       const button = row.createEl("button", { cls: "fce-task-filter-date" }); button.type = "button";
       button.setAttribute("aria-label", label); button.setAttribute("aria-haspopup", "dialog"); button.setAttribute("aria-expanded", "false");
-      const value = button.createSpan(); setIcon(button.createSpan({ cls: "fce-task-filter-date-icon" }), "calendar");
+      const value = button.createSpan(); setIcon(button.createSpan({ cls: "fce-task-filter-date-icon", attr: { "aria-hidden": "true" } }), "calendar");
       button.onclick = () => openCalendar(boundary, button);
       return { button, value };
     };

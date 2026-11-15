@@ -2152,7 +2152,8 @@ body:not(.native-scrollbars) .folder-card-view .fce-list:hover::-webkit-scrollba
 /* === sort & group menu (Obsidian DOM menu) === */
 /* DOM menus attach to the document body, so these rules must rely on core
    Obsidian variables instead of the .folder-card-view-scoped --fce-* tokens. */
-.menu.fce-sort-group-menu {
+.menu.fce-sort-group-menu,
+.menu.fce-task-status-menu {
   min-width: 200px;
 }
 
@@ -4076,15 +4077,103 @@ body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 2
 }
 
 /* Task result filters and clipboard actions. */
-.fce-task-filter-panel { position: fixed; z-index: var(--layer-popover, 60); box-sizing: border-box; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; padding: 16px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); color: var(--text-normal); box-shadow: var(--shadow-s); display: flex; flex-direction: column; gap: 12px; }
-.fce-task-filter-panel label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.fce-task-filter-panel select, .fce-task-filter-panel .fce-task-filter-date { width: 100%; min-height: 32px; }
+/* Inherit the host .menu surface so themes style filters and sorting alike. */
+.menu.fce-task-filter-panel {
+  position: fixed;
+  z-index: var(--layer-popover, 60);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--size-2-3, 6px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+}
+.fce-task-filter-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-weight: var(--font-normal, 400);
+}
+.fce-task-filter-title-icon { display: inline-flex; flex-shrink: 0; }
+.fce-task-filter-title-icon svg { width: 14px; height: 14px; }
+.fce-task-filter-fields { padding-block: 2px; }
+.fce-task-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 3px 8px;
+}
+.fce-task-filter-row > span { line-height: 1.4; }
+.fce-task-filter-panel select,
+.fce-task-filter-panel .fce-task-filter-date {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: inherit;
+}
+.fce-task-filter-panel select { text-overflow: ellipsis; }
+.fce-task-filter-panel :is(select, .fce-task-filter-date):hover:not(:disabled) {
+  background-color: var(--background-modifier-hover);
+}
+.fce-task-filter-panel :is(select, button):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.fce-task-filter-dates {
+  margin-top: 4px;
+  padding-block: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
 .fce-task-filter-panel [hidden] { display: none; }
-.fce-task-filter-panel.is-sheet { inset: auto 0 0; width: 100%; max-width: none; max-height: 85vh; border-radius: var(--radius-l) var(--radius-l) 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-.fce-task-filter-panel.is-sheet select, .fce-task-filter-panel.is-sheet button { min-height: 44px; font-size: 16px; }
-.fce-task-filter-footer { display: flex; justify-content: flex-end; gap: 8px; }
-.fce-task-filter-error { color: var(--text-error); }
-.fce-task-filter-hint { color: var(--text-muted); }
+.menu.fce-task-filter-panel.is-sheet {
+  inset: auto 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: 85vh;
+  border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
+  padding: 10px 8px max(12px, env(safe-area-inset-bottom));
+}
+.fce-task-filter-panel.is-sheet .fce-task-filter-row { padding-block: 4px; }
+.fce-task-filter-panel.is-sheet select,
+.fce-task-filter-panel.is-sheet button { height: auto; min-height: 44px; font-size: 16px; }
+.fce-task-filter-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 8px 2px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.fce-task-filter-footer button { height: 28px; font-size: inherit; }
+.fce-task-filter-error {
+  padding: 6px 8px;
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller, 12px);
+}
+.fce-task-filter-error:empty { display: none; }
+.fce-task-filter-hint {
+  padding: 4px 8px 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+}
 .folder-card-view .fce-task-filter-chips { padding: 4px 8px; flex-wrap: wrap; }
 .folder-card-view .fce-task-filter-label {
   appearance: none;
