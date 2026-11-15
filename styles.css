@@ -4019,7 +4019,7 @@ body.is-mobile .fce-task-date-buttons.is-chips .fce-task-date-button { height: 2
 .folder-card-view .fce-shell[data-fce-device="tablet"] .fce-list.is-task-stream { --fce-card-min-width: 300px; }
 
 .folder-card-view .fce-task-card {
-  --fce-task-font-size: var(--fce-title-font-size);
+  --fce-task-font-size: var(--fce-preview-font-size);
   --fce-task-line-height: 1.45;
   --fce-task-check-slot: 20px;
   --fce-task-chip-height: 20px;
