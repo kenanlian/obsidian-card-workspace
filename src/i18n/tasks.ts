@@ -1,3 +1,13 @@
+export interface TaskToolsStrings {
+  status: string; date: string; copy: string; clear: string; field: string; range: string;
+  groupMore: string;
+  start: string; end: string; cutoff: string; inclusive: string; cancel: string; apply: string;
+  invalid: string; selectText: string; original: string; originalDesc: string;
+  states: Record<"all" | "incomplete" | "completed", string>;
+  ranges: Record<"none" | "week" | "previous-week" | "report" | "previous-report" | "custom", string>;
+  formats: Record<"text" | "unordered" | "tasks", string>;
+  copied: (count: number) => string;
+}
 export interface TaskDatePickerStrings {
   kinds: { created: string; done: string; due: string };
   notSet: string;
@@ -50,6 +60,7 @@ export interface TaskViewStrings {
   errors: { lineNotFound: string; missingFile: string; notATask: string; writeFailed: string };
 }
 export interface TaskStrings {
+  tools: TaskToolsStrings;
   datePicker: TaskDatePickerStrings;
   editor: TaskEditorStrings;
   view: TaskViewStrings;
@@ -62,6 +73,17 @@ const ZH_WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期
 
 export const taskStrings: Record<"en" | "zh", TaskStrings> = {
   en: {
+    tools: {
+      status: "Task status", date: "Task dates", copy: "Copy results", clear: "Clear task filters", field: "Date field", range: "Date range",
+      groupMore: "More group actions",
+      start: "Start date", end: "End date", cutoff: "Weekly reporting deadline", inclusive: "Includes both start and end dates", cancel: "Cancel", apply: "Apply",
+      invalid: "Enter valid dates with the start on or before the end.", selectText: "Select and copy text",
+      original: "Preserve original task information", originalDesc: "Keep inline Markdown and task dates in all copy formats. Block IDs are always removed.",
+      states: { all: "All", incomplete: "Incomplete", completed: "Completed" },
+      ranges: { none: "Any date", week: "This week", "previous-week": "Last week", report: "Current reporting period", "previous-report": "Previous reporting period", custom: "Custom" },
+      formats: { text: "Copy as plain text", unordered: "Copy as unordered list", tasks: "Copy as task list" },
+      copied: count => `Copied ${count} tasks`,
+    },
     datePicker: {
       kinds: { created: "Created date", done: "Completed date", due: "Due date" },
       notSet: "Not set",
@@ -108,6 +130,17 @@ export const taskStrings: Record<"en" | "zh", TaskStrings> = {
     },
   },
   zh: {
+    tools: {
+      status: "任务状态", date: "任务日期", copy: "复制全部结果", clear: "清除任务筛选", field: "日期字段", range: "时间范围",
+      groupMore: "分组更多操作",
+      start: "开始日期", end: "结束日期", cutoff: "每周汇报截止日", inclusive: "包含开始和结束日期", cancel: "取消", apply: "应用",
+      invalid: "请输入有效日期，开始日期不能晚于结束日期。", selectText: "选择并复制文本",
+      original: "保留任务原文信息", originalDesc: "三种复制格式均保留行内 Markdown 和任务日期，始终移除块 ID。",
+      states: { all: "全部", incomplete: "未完成", completed: "已完成" },
+      ranges: { none: "不限", week: "本周", "previous-week": "上周", report: "本汇报周期", "previous-report": "上个汇报周期", custom: "自定义" },
+      formats: { text: "复制为普通文本", unordered: "复制为无序列表", tasks: "复制为任务列表" },
+      copied: count => `已复制 ${count} 项任务`,
+    },
     datePicker: {
       kinds: { created: "创建日期", done: "完成日期", due: "截止日期" },
       notSet: "未设置",

@@ -116,15 +116,15 @@ function renderedRow(tab: CardWorkspaceSettingTab, name: string): Setting {
 describe("settings pages", () => {
   beforeEach(() => { vi.clearAllMocks(); mockState.requireApiVersion.mockReturnValue(true); });
 
-  it.each(["en", "zh"])("keeps all 74 settings in eight searchable declarative pages (%s)", language => {
+  it.each(["en", "zh"])("keeps all 75 settings in eight searchable declarative pages (%s)", language => {
     const plugin = createPlugin({}, language);
     const tab = createTab(plugin);
     const strings = getSettingTabStrings(language as "en" | "zh");
     const pages = pagesOf(tab);
     expect(pages.map(page => page.name)).toEqual(Object.values(strings.pages).map(page => page.name));
-    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 11, 15, 17]);
+    expect(pages.map(page => rowsOfPage(tab, page.name).length)).toEqual([5, 9, 10, 4, 3, 12, 15, 17]);
     const rows = pages.flatMap(page => rowsOfPage(tab, page.name));
-    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(74);
+    expect(new Set(rows.map(row => row.control?.key ?? row.name)).size).toBe(75);
     expect(pages.every(page => page.type === "page" && page.desc && page.items && !page.page)).toBe(true);
     expect(rows.every(row => row.name && row.searchable !== false)).toBe(true);
     expect(attachFolderInputSuggest).not.toHaveBeenCalled();
@@ -146,7 +146,7 @@ describe("settings pages", () => {
     const tab = createTab(plugin);
     expect(pagesOf(tab)).toHaveLength(8);
     const rows = pagesOf(tab).flatMap(page => rowsOfPage(tab, page.name));
-    expect(rows).toHaveLength(69);
+    expect(rows).toHaveLength(70);
     for (const key of ["quickInputWidth", "quickInputHeight", "quickInputColor", "dragInsertAction"]) expect(rowFor(tab, key)).toBeUndefined();
     expect(rowFor(tab, "quickInputCornerRadius")).toBeDefined();
     expect(rowFor(tab, "defaultCardOpenBehavior").control).not.toHaveProperty("options.new-window");

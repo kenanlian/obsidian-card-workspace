@@ -181,6 +181,9 @@ function mountToolbar(
         taskViewAvailable: values.taskViewAvailable,
         taskSort: values.taskSort,
         taskGroup: values.taskGroup,
+        taskFilters: values.taskFilters,
+        taskDateLabel: values.taskDateLabel,
+        taskDateTooltip: values.taskDateTooltip,
       },
       visibleGroupProperties: values.visibleGroupProperties ?? [],
       bulk: {
@@ -1325,13 +1328,15 @@ describe("Toolbar.svelte task view", () => {
     expect(getBulkButton()).not.toBeNull();
   });
 
-  it("hides bulk, keeps new note and search, and relabels search in task mode", async () => {
+  it("shows only task actions and relabels search in task mode", async () => {
     const captured = taskCallbacks();
     mountToolbar({ taskViewAvailable: true, viewMode: "tasks", searchStatus: "building" }, captured.callbacks);
     await tick();
     expect(getToggle()).toBeNull();
     expect(getBulkButton()).toBeNull();
-    expect(document.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).not.toBeNull();
+    expect(Array.from(document.querySelectorAll(".fce-toolbar-actions > button"), button => button.getAttribute("aria-label"))).toEqual([
+      strings.tasks.tools.status, strings.tasks.tools.date, strings.tasks.tools.copy, sortGroup.title, strings.toolbar.actions.toggleSearch,
+    ]);
     document.querySelector<HTMLButtonElement>(`button[aria-label="${strings.toolbar.actions.toggleSearch}"]`)?.click();
     await tick();
     expect(document.querySelector<HTMLInputElement>(".fce-search-input")?.placeholder).toBe(taskStrings.searchPlaceholder);
@@ -1383,7 +1388,8 @@ describe("Toolbar.svelte task view", () => {
 
   it("omits mode switching and bulk from the phone More menu in task mode", async () => {
     const captured = taskCallbacks();
-    mountToolbar({ runtimeDevice: "phone", taskViewAvailable: true, viewMode: "tasks" }, captured.callbacks);
+    const actions = createCapturedCallbacks();
+    mountToolbar({ runtimeDevice: "phone", taskViewAvailable: true, viewMode: "tasks" }, { ...captured.callbacks, ...actions.callbacks });
     await tick();
     expect(getToggle()).toBeNull();
     document.querySelector<HTMLButtonElement>(".fce-toolbar-more")?.click();
@@ -1391,6 +1397,10 @@ describe("Toolbar.svelte task view", () => {
     const menu = getObsidianMenuInstances().at(-1)!;
     expect(findMenuItem(menu, taskStrings.toggle)).toBeUndefined();
     expect(findMenuItem(menu, strings.toolbar.actions.bulkTitle)).toBeUndefined();
+    expect(menu.items.map(itemTitle)).toEqual([strings.tasks.tools.copy, sortGroup.title]);
+    expect(document.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).toBeNull();
+    clickMenuItem(menu, strings.tasks.tools.copy);
+    expect(actions.toolbarActionEvents.at(-1)).toEqual({ action: "task-copy", anchor: document.querySelector(".fce-toolbar-more") });
 
     expect(captured.modes).toEqual([]);
   });
@@ -1401,5 +1411,31 @@ describe("Toolbar.svelte task view", () => {
     await tick();
     expect(getToggle()).toBeNull();
     expect(getBulkButton()).toBeNull();
+    expect(document.querySelector(`button[aria-label="${strings.box.configureTitle}"]`)).toBeNull();
+  });
+
+  it.each(["desktop", "phone"])("omits source management in task-mode links on %s", async (runtimeDevice) => {
+    mountToolbar({ runtimeDevice, taskViewAvailable: true, viewMode: "tasks", linksDirection: "outgoing", supportsLinksSnapshot: true });
+    await tick();
+    expect(document.querySelector(`button[aria-label="${strings.links.pinToNote}"]`)).toBeNull();
+    expect(document.querySelector(`button[aria-label="${strings.links.saveSnapshot}"]`)).toBeNull();
+    if (runtimeDevice === "phone") {
+      document.querySelector<HTMLButtonElement>(".fce-toolbar-more")!.click(); await tick();
+      expect(getObsidianMenuInstances().at(-1)!.items.map(itemTitle)).toEqual([strings.tasks.tools.copy, sortGroup.title]);
+    }
+  });
+
+  it("reopens and independently clears active task filters", async () => {
+    const captured = createCapturedCallbacks();
+    const fullDate = "Completed date: 2026-11-09 – 2026-11-15";
+    mountToolbar({ taskViewAvailable: true, viewMode: "tasks", taskFilters: { status: "incomplete", date: { field: "done", preset: "custom", start: "2026-11-09", end: "2026-11-15", weekEnd: 4 } }, taskDateLabel: "Completed date: 11/09 – 11/15", taskDateTooltip: fullDate }, captured.callbacks);
+    await tick();
+    const labels = document.querySelectorAll<HTMLButtonElement>(".fce-task-filter-label");
+    labels[0]!.click(); labels[1]!.click();
+    expect(captured.toolbarActionEvents.map(event => event.action)).toEqual(["task-status", "task-date-filter"]);
+    const remove = document.querySelectorAll<HTMLButtonElement>(".fce-task-filter-chips .fce-filter-chip-remove");
+    remove[0]!.click(); remove[1]!.click();
+    expect(captured.toolbarActionEvents.slice(2)).toEqual([{ action: "task-clear-status" }, { action: "task-clear-date" }]);
+    expect(labels[1]!.closest(".fce-filter-chip")?.getAttribute("title")).toBe(fullDate);
   });
 });

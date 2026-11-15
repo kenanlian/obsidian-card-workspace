@@ -1,3 +1,4 @@
+import { filterTaskTrees, DEFAULT_TASK_FILTER, type TaskFilterSpec, type TaskCopyGroup } from "./task-filters";
 import type { App } from "obsidian";
 import type { GroupSpec } from "../card-grouping-settings";
 import type { SortGroupStrings } from "../i18n";
@@ -202,6 +203,7 @@ export function stepsForScope(scope: CardScope): PipelineStep[] {
 }
 
 export interface TaskPipelineContext {
+  taskFilters?: TaskFilterSpec;
   app: App;
   /** Selects the file-level browse filters, exactly as `stepsForScope` does for cards. */
   scope: CardScope;
@@ -222,6 +224,7 @@ export interface TaskPipelineContext {
 }
 
 export interface TaskPipelineResult {
+  readonly copyGroups?: readonly TaskCopyGroup[];
   readonly cards: TaskCardRecord[];
   readonly segments: CardGroupSegment[];
 }
@@ -241,7 +244,8 @@ export function runTaskPipeline(baseCards: NoteCardRecord[], context: TaskPipeli
   }
   const fileOrderByPath = new Map(baseCards.map((card, index) => [card.path, index]));
   const tasks = expandTaskCards(cards, fileOrderByPath, context.getTaskEntry);
-  const sorted = applyTaskSort(applyTaskTextFilter(tasks, context.query), context.sort);
+  const filtered = filterTaskTrees(tasks, context.taskFilters ?? DEFAULT_TASK_FILTER, context.today, context.firstDayOfWeek);
+  const sorted = applyTaskSort(applyTaskTextFilter(filtered, context.query), context.sort);
   return applyTaskGroupArrangement(sorted, context);
 }
 
@@ -331,18 +335,17 @@ function resolveTaskGroupDirection(group: TaskGroupSpec, sort: TaskSortSpec): So
 function applyTaskGroupArrangement(tasks: TaskCardRecord[], context: TaskPipelineContext): TaskPipelineResult {
   const group = context.group;
   if (group.dimension === "none") {
-    return { cards: tasks, segments: [] };
+    return { cards: tasks, segments: [], copyGroups: [{ key: "", label: "", tasks }] };
   }
   const buckets = buildTaskGroupBuckets(tasks, group, context.strings, {
     today: context.today,
     firstDayOfWeek: context.firstDayOfWeek,
   });
-  return arrangeCardsByGroup(
-    tasks,
-    buckets,
-    { dimension: group.dimension, orderBy: "default", orderDirection: resolveTaskGroupDirection(group, context.sort) },
-    context.collapsedGroupKeys,
-  );
+  const result = arrangeCardsByGroup(tasks, buckets,
+    { dimension: group.dimension, orderBy: "default", orderDirection: resolveTaskGroupDirection(group, context.sort) }, context.collapsedGroupKeys, true);
+  return { cards: result.cards, segments: result.segments,
+    copyGroups: result.groups?.map(group => ({ key: group.key, label: group.label, tasks: group.cards })) };
+
 }
 
 /** File-level browse filters for tasks; Links keeps browse filters dormant. */

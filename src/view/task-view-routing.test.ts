@@ -118,6 +118,14 @@ describe("task view routing", () => {
     expect(layout.getNavVisible()).toBe(false);
   });
 
+  it("routes the group menu with its cursor position to the host controller", async () => {
+    const h = await openTaskView("tasks");
+    const openGroupMenu = vi.spyOn((h.view as any).modules.taskFilters, "openGroupMenu").mockImplementation(() => {});
+    const anchor = {} as HTMLElement;
+    h.view.handleToolbarAction({ action: "task-group-menu", groupKey: "open", anchor, position: { x: 120, y: 80 } });
+    expect(openGroupMenu).toHaveBeenCalledWith(anchor, "open", { x: 120, y: 80 });
+  });
+
   it("exits bulk mode on entering tasks and ignores bulk toolbar actions in task mode", async () => {
     const h = await openTaskView("cards");
     publishAll(h.view);

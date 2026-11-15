@@ -2667,6 +2667,33 @@ describe("FolderCardPanel.svelte task stream", () => {
     await unmount(component);
   });
 
+  it("routes More, right-click and keyboard actions from normal and sticky task group headers", async () => {
+    const state = createTaskPanelState(Array.from({ length: 8 }, (_, i) => createTask("notes/a.md", i, `Task ${i}`)));
+    state.cards.groupSegments = [createSegment("open", "Incomplete", 0, 8)];
+    state.cards.taskGroupCounts = { open: 10 };
+    const onToolbarAction = vi.fn(), onGroupCollapseCommand = vi.fn();
+    const { target, component } = mountPanel(state, { onToolbarAction, onGroupCollapseCommand });
+    await tick();
+    const header = target.querySelector<HTMLButtonElement>(".fce-card-group-header")!;
+    const more = target.querySelector<HTMLButtonElement>(".fce-group-more")!;
+    more.click();
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: undefined });
+    const rightClick = new MouseEvent("contextmenu", { clientX: 140, clientY: 80, bubbles: true, cancelable: true });
+    header.dispatchEvent(rightClick);
+    expect(rightClick.defaultPrevented).toBe(true);
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: { x: 140, y: 80 } });
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: more, position: undefined });
+    expect(onGroupCollapseCommand).not.toHaveBeenCalled();
+    const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+    list.scrollTop = 20; list.dispatchEvent(new Event("scroll")); await tick();
+    const pinned = target.querySelector<HTMLButtonElement>(".fce-sticky-group-header .fce-group-more")!;
+    expect(pinned).not.toBeNull(); pinned.click();
+    expect(onToolbarAction).toHaveBeenLastCalledWith({ action: "task-group-menu", groupKey: "open", anchor: pinned, position: undefined });
+    expect(target.querySelector(".fce-wall-group-row.is-pinned-source")?.getAttribute("aria-hidden")).toBe("true");
+    await unmount(component);
+  });
+
   it("uses one column on phones and marks task cards as touch", async () => {
     const tasks = Array.from({ length: 6 }, (_, i) => createTask(`notes/${i}.md`, i, `Task ${i}`));
     const { target, component } = mountPanel(createTaskPanelState(tasks), { runtimeDevice: "phone" });
@@ -2680,6 +2707,7 @@ describe("FolderCardPanel.svelte task stream", () => {
     const { target, panelModel, component } = mountPanel(createTaskPanelState([createTask("notes/a.md", 2, "Ship it")]));
     await tick();
     expect(target.querySelector(".fce-task-card")).not.toBeNull();
+    expect(target.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).toBeNull();
     panelModel.mutate((draft) => {
       draft.cards = { ...draft.cards, streamMode: "cards", taskRecords: [], records: [createCard("notes/a.md", "A note")], sequenceRevision: 2 };
       draft.projection = { ...draft.projection, viewMode: "cards" };
@@ -2687,6 +2715,8 @@ describe("FolderCardPanel.svelte task stream", () => {
     await tick();
     expect(target.querySelector(".fce-task-card")).toBeNull();
     expect(target.textContent).toContain("A note");
+    expect(target.querySelector(`button[aria-label="${strings.toolbar.actions.newNoteTitle}"]`)).not.toBeNull();
+    expect(target.querySelector(`button[aria-label="${strings.tasks.tools.status}"]`)).toBeNull();
     await unmount(component);
   });
 });

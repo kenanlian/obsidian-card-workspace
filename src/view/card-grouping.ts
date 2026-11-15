@@ -51,6 +51,7 @@ export interface CardGroupSegment {
 
 export interface GroupArrangement<T extends { readonly path: string } = NoteCardRecord> {
   readonly cards: T[];
+  readonly groups?: readonly { key: string; label: string; cards: T[] }[];
   readonly segments: CardGroupSegment[];
 }
 
@@ -371,6 +372,7 @@ export function arrangeCardsByGroup<T extends { readonly path: string }>(
   buckets: ReadonlyMap<string, GroupBucket>,
   spec: GroupOrderSpec,
   collapsedKeys: ReadonlySet<string>,
+  captureGroups = false,
 ): GroupArrangement<T> {
   if (spec.dimension === "none") {
     return { cards: cards as T[], segments: [] };
@@ -402,5 +404,5 @@ export function arrangeCardsByGroup<T extends { readonly path: string }>(
     });
   }
 
-  return { cards: arrangedCards, segments };
+  return { cards: arrangedCards, segments, ...(captureGroups ? { groups: groups.map(group => ({ key: group.bucket.key, label: group.bucket.label, cards: group.cards })) } : {}) };
 }

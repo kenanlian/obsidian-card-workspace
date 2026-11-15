@@ -310,7 +310,7 @@
   const taskRecords = $derived(cards.taskRecords ?? []);
   const rowSource = $derived<readonly (NoteCardRecord | TaskCardRecord)[]>(taskMode ? taskRecords : cardRecords);
   const taskBuilding = $derived(taskMode && (cards.taskStatus === "building" || (cards.loading && taskRecords.length === 0)));
-  const taskFiltered = $derived(search.committedQuery.trim().length > 0 || (scope.browseFilterState?.items.length ?? 0) > 0);
+  const taskFiltered = $derived((projection.taskFilters?.status ?? "all") !== "all" || projection.taskFilters?.date != null || search.committedQuery.trim().length > 0 || (scope.browseFilterState?.items.length ?? 0) > 0);
   const pendingTaskIds = $derived<ReadonlySet<string>>(new Set(cards.pendingTaskIds ?? []));
   // Recomputed on every cards publish; the day-rollover refresh republishes cards.
   const todayIso = $derived.by(() => {
@@ -1103,6 +1103,9 @@
       <div class="fce-empty fce-task-empty" data-empty-reason={taskFiltered ? "filtered" : "scope"}>
         {#if taskFiltered}
           <div>{strings.tasks.view.emptyFiltered}</div>
+          {#if (projection.taskFilters?.status ?? "all") !== "all" || projection.taskFilters?.date}
+            <button type="button" onclick={() => handleToolbarAction({ action: "task-clear-filters" })}>{strings.tasks.tools.clear}</button>
+          {/if}
           {#if scope.browseFilterState?.canClearEmptyResult}
             <button type="button" onclick={() => handleToolbarAction({ action: "clear-browse-filters" })}>{strings.toolbar.clearBrowseFilters}</button>
           {/if}
@@ -1147,6 +1150,8 @@
                 {segment}
                 {strings}
                 headerId={pinnedSource ? "" : getGroupHeaderId(row.segmentIndex)}
+                onMenu={taskMode ? (key, anchor, position) => handleToolbarAction({ action: "task-group-menu", groupKey: key, anchor, position }) : undefined}
+                taskCount={taskMode ? cards.taskGroupCounts?.[segment.key] : undefined}
                 onToggle={handleGroupToggle}
               />
             {/if}
@@ -1225,6 +1230,8 @@
             {segment}
             {strings}
             headerId={getGroupHeaderId(stickyGroupHeader.segmentIndex)}
+            onMenu={taskMode ? (key, anchor, position) => handleToolbarAction({ action: "task-group-menu", groupKey: key, anchor, position }) : undefined}
+            taskCount={taskMode ? cards.taskGroupCounts?.[segment.key] : undefined}
             onToggle={handleGroupToggle}
           />
         </div>

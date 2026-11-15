@@ -180,7 +180,7 @@ describe("TaskCardItem.svelte", () => {
     expect(chips(all[3]!)).toHaveLength(3);
     all[2]!.querySelector<HTMLButtonElement>(".fce-task-check")!.click();
     expect(onTaskToggle).toHaveBeenCalledWith(expect.objectContaining({ line: 5, lineText: "- [ ] Sources", completed: false }));
-    expect(target.querySelector(".fce-task-progress")?.getAttribute("aria-label")).toBe(view.subtaskProgress(1, 3));
+    expect(target.querySelector(".fce-card-task-footer")?.getAttribute("aria-label")).toBe(view.subtaskProgress(1, 3));
   });
 
   it("opens the task line by click, keyboard, modifier click and middle click", () => {
@@ -202,7 +202,7 @@ describe("TaskCardItem.svelte", () => {
     expect(target.querySelector(".fce-task-card-footer")).toBeNull();
     const withSubtasks = render({ task: record({ children: [item(4, "Sub")] }) }).target;
     expect(withSubtasks.querySelector(".fce-task-file")).toBeNull();
-    expect(withSubtasks.querySelector(".fce-task-progress")).not.toBeNull();
+    expect(withSubtasks.querySelector(".fce-card-task-footer")).not.toBeNull();
   });
 
   it("opens the file from the footer without a line", () => {

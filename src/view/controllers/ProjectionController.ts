@@ -35,6 +35,7 @@ export interface ProjectionControllerDeps {
   /** Committed local task-text query. */
   getTaskQuery?: () => string;
   getTaskCollapsedGroupKeys?: () => ReadonlySet<string>;
+  onTaskSnapshotChange?: () => void;
   now?: () => Date;
   getFirstDayOfWeek?: () => number;
 }
@@ -123,6 +124,8 @@ export class ProjectionController {
   private arrangedSegments: CardGroupSegment[] = [];
   /** Stream represented by the store's current visible rows. */
   private streamMode: CardStreamMode = "cards";
+  private taskSnapshot: TaskPipelineResult = EMPTY_TASK_RESULT;
+  getTaskSnapshot(): TaskPipelineResult { return this.taskSnapshot; }
 
   constructor(private readonly deps: ProjectionControllerDeps) {}
 
@@ -190,12 +193,15 @@ export class ProjectionController {
     this.deps.syncTaskView?.();
     if (this.resolveViewMode() === "tasks") {
       const result = this.deriveTaskArrangement();
+      this.taskSnapshot = result;
+      this.deps.onTaskSnapshotChange?.();
       this.streamMode = "tasks";
       this.context.store.replaceVisibleCards([]);
       this.context.store.replaceVisibleTaskCards(result.cards);
       this.storeGroupSegments(result.segments);
       return;
     }
+    this.taskSnapshot = EMPTY_TASK_RESULT;
     const arrangement = this.deriveArrangement();
     this.streamMode = "cards";
     this.context.store.replaceVisibleCards(arrangement.cards);
@@ -227,6 +233,7 @@ export class ProjectionController {
       filterTags: settings.filter.tags,
       propertyFilters: resolveSourceCapabilities(scope).browsePropertyFilter ? settings.filter.properties : [],
       query: this.deps.getTaskQuery?.() ?? "",
+      taskFilters: this.context.store.getTaskFilters(),
       sort: normalizeTaskSortSpec(config.taskSort),
       group: normalizeTaskGroupSpec(config.taskGroup),
       getTaskEntry: (path) => this.deps.getTaskEntry?.(path) ?? null,

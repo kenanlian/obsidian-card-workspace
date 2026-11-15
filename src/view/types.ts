@@ -10,6 +10,8 @@ import type { CardTaskSummary } from "./task-summary";
 import type { BrowseFilterTarget } from "./browse-filters";
 
 export interface ToolbarActionPayload {
+  anchor?: HTMLElement;
+  groupKey?: string;
   action: string;
   position?: { x: number; y: number };
   filter?: BrowseFilterTarget;

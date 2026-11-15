@@ -345,3 +345,22 @@ describe("task grouping", () => {
       .toEqual([["task-status:open", true, 1, 0, 0], ["task-status:done", false, 1, 1, 0]]);
   });
 });
+
+describe("task copy projection", () => {
+  it("keeps a complete ordered copy snapshot when every group is collapsed", () => {
+    const base = [card("a.md")];
+    const getTaskEntry = entries({ "a.md": [task(0, "- [ ] parent", [task(1, "  - [ ] child")]), task(3, "- [x] done")] });
+    const first = runTaskPipeline(base, context({ getTaskEntry, group: { dimension: "status" } }));
+    const collapsed = runTaskPipeline(base, context({ getTaskEntry, group: { dimension: "status" }, collapsedGroupKeys: new Set(first.segments.map(group => group.key)) }));
+    expect(collapsed.cards).toEqual([]);
+    expect(collapsed.copyGroups).toEqual(first.copyGroups);
+    expect(collapsed.copyGroups?.flatMap(group => group.tasks)).toHaveLength(2);
+  });
+  it("filters hidden child text before the task text query", () => {
+    const result = runTaskPipeline([card("a.md")], context({
+      getTaskEntry: entries({ "a.md": [task(0, "- [ ] parent", [task(1, "  - [x] secret")])] }),
+      taskFilters: { status: "incomplete", date: null }, query: "secret",
+    }));
+    expect(result.cards).toEqual([]);
+  });
+});

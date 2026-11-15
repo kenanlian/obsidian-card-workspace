@@ -1,3 +1,4 @@
+import { taskTreeCount } from "./task-filters";
 import { navigationIconTarget } from "./content-icon-target";
 import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
 import { RuntimeWorkGate } from "../runtime/work-gate";
@@ -214,6 +215,8 @@ export class FolderCardView extends ItemView implements HoverParent {
     const anchors = [...this.historyAnchors];
     // Seed the initial scope before loading so relocating the same source cannot clear filters.
     target.store.setScope(scope);
+    const filters = this.store.getTaskFilters();
+    target.store.setTaskFilters({ ...filters, date: filters.date ? { ...filters.date } : null });
     target.store.setLinksPinned(this.store.getLinksPinned());
     target.store.setSelectedPath(this.selectedPath);
     const loading = target.modules.scopeController.handleScopeSelection(
@@ -371,8 +374,18 @@ export class FolderCardView extends ItemView implements HoverParent {
       : this.visibleCards.length;
   }
 
-  handleToolbarAction(detail: { action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
+  handleToolbarAction(detail: { anchor?: HTMLElement; groupKey?: string; action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
     const action = detail.action;
+    if (action === "task-close-panels") { this.modules.taskFilters.close(); return; }
+    if (action === "task-status" && detail.anchor) { this.modules.taskFilters.openStatus(detail.anchor); return; }
+    if (action === "task-date-filter" && detail.anchor) { this.modules.taskFilters.openDates(detail.anchor); return; }
+    if (action === "task-copy" && detail.anchor) { this.modules.taskFilters.openCopy(detail.anchor, detail.groupKey); return; }
+    if (action === "task-group-menu" && detail.anchor && detail.groupKey !== undefined) {
+      this.modules.taskFilters.openGroupMenu(detail.anchor, detail.groupKey, detail.position); return;
+    }
+    if (action === "task-clear-status" || action === "task-clear-date" || action === "task-clear-filters") {
+      this.modules.taskFilters.clear(action === "task-clear-status" ? "status" : action === "task-clear-date" ? "date" : undefined); return;
+    }
 
     if (action === "view-mode") {
       void this.modules.arrangementActions.toggleViewMode();
@@ -605,6 +618,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.modules.groupCollapse.dispose();
     const taskViewReport = this.modules.taskView.dispose();
     this.modules.taskActions.dispose();
+    this.modules.taskFilters.dispose();
     this.modules.timeGroup.dispose();
     this.modules.property.dispose();
 
@@ -747,6 +761,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       selectedPath: this.selectedPath, loading: scope.isLoading(), generation: this.epochs.load.value,
       sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
       groupSegments: this.modules.projection.getGroupSegments(), groupRevision: this.modules.projection.getGroupRevision(),
+      taskGroupCounts: Object.fromEntries((this.modules.projection.getTaskSnapshot?.()?.copyGroups ?? []).map(group => [group.key, group.tasks.reduce((sum, task) => sum + taskTreeCount(task), 0)])),
       streamMode, taskRecords: this.store.getVisibleTaskCards(), taskStatus: this.modules.taskView.getStatus(),
       pendingTaskIds: streamMode === "tasks" ? this.modules.taskActions.getPendingIds() : [],
     });
@@ -769,14 +784,14 @@ export class FolderCardView extends ItemView implements HoverParent {
     const { sort, pinnedPaths, group, viewMode, taskSort, taskGroup } = resolveViewConfig(scope, settings);
     const projection = this.modules.projection;
     const capabilities = resolveSourceCapabilities(scope);
-    return buildProjectionPanelGroup({
+    return { ...buildProjectionPanelGroup({
       sortField: sort.field, sortDirection: sort.direction,
       deriveAvailableTags: () => projection.deriveAvailableTags(), deriveTagCounts: () => projection.deriveTagCounts(),
       activeFilterTags: settings.filter.tags, pinnedPaths, group,
       availableGroupDimensions: [...capabilities.groupDimensions],
       groupSegmentCount: projection.getGroupSegments().length,
       viewMode, taskSort, taskGroup, taskViewAvailable: capabilities.taskView,
-    });
+    }), taskFilters: this.store.getTaskFilters(), taskDateLabel: this.modules.taskFilters.getDateLabel(true), taskDateTooltip: this.modules.taskFilters.getDateLabel() };
   }
 
   private buildBulkGroup(): PanelModelState["bulk"] {

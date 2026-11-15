@@ -220,6 +220,8 @@ export interface PluginSettings {
   /** Hides task date text in Live Preview; the date buttons show the dates. */
   taskDateHideSource: boolean;
   /** Task cards show their source note in the footer. */
+  taskReportWeekEndDay: number;
+  taskCopyPreserveOriginal: boolean;
   taskCardShowFile: boolean;
   taskDateColors: TaskDateColors;
   defaultCardOpenBehavior: DefaultCardOpenBehavior;
@@ -305,6 +307,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   taskDateButtons: "compact",
   taskDateButtonStyle: "chips",
   taskDateHideSource: false,
+  taskReportWeekEndDay: 4,
+  taskCopyPreserveOriginal: false,
   taskCardShowFile: false,
   taskDateColors: { ...DEFAULT_TASK_DATE_COLORS },
   defaultCardOpenBehavior: DEFAULT_CARD_OPEN_BEHAVIOR,
@@ -735,6 +739,8 @@ function normalizeFlatSettings(raw: unknown): PluginSettings {
     taskDateButtons: normalizeTaskDateButtonsMode(data.taskDateButtons),
     taskDateButtonStyle: normalizeTaskDateButtonStyle(data.taskDateButtonStyle),
     taskDateHideSource: normalizeBooleanSetting(data.taskDateHideSource, DEFAULT_SETTINGS.taskDateHideSource),
+    taskReportWeekEndDay: typeof data.taskReportWeekEndDay === "number" && Number.isInteger(data.taskReportWeekEndDay) && data.taskReportWeekEndDay >= 0 && data.taskReportWeekEndDay <= 6 ? data.taskReportWeekEndDay : 4,
+    taskCopyPreserveOriginal: normalizeBooleanSetting(data.taskCopyPreserveOriginal, false),
     taskCardShowFile: normalizeBooleanSetting(data.taskCardShowFile, DEFAULT_SETTINGS.taskCardShowFile),
     defaultCardOpenBehavior: normalizeDefaultCardOpenBehavior(data.defaultCardOpenBehavior),
     locateLinkCardOnOpen: normalizeBooleanSetting(data.locateLinkCardOnOpen, false),

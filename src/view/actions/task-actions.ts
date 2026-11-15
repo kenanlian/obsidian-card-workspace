@@ -29,6 +29,8 @@ interface PendingTaskWrite {
 }
 
 export interface TaskActionsDeps {
+  trackMenu?: (menu: Menu, doc?: Document) => void;
+  appendCopyMenu?: (menu: Menu, target: { filePath: string; line: number; lineText: string }) => void;
   context: ViewContext;
   getWriter: () => TaskWriter | null;
   /** Root tasks currently projected for this view. */
@@ -195,19 +197,22 @@ export class TaskActions {
     const strings = this.strings;
     const text = typeof detail.text === "string" ? detail.text : target.lineText;
     const menu = new Menu();
+    const source = (detail.mouseEvent as MouseEvent | undefined)?.target as Node | null;
+    this.deps.trackMenu?.(menu, source?.ownerDocument ?? undefined);
     menu.addItem((item) => item.setTitle(strings.menu.open).setIcon("square-arrow-out-up-right")
       .onClick(() => this.open(target)));
     menu.addItem((item) => item.setTitle(strings.menu.openInNewTab).setIcon("file-plus")
       .onClick(() => this.open({ ...target, destination: "new-tab" })));
     menu.addSeparator();
-    menu.addItem((item) => item.setTitle(strings.menu.copyText).setIcon("copy")
+    if (this.deps.appendCopyMenu) this.deps.appendCopyMenu(menu, target);
+    else menu.addItem((item) => item.setTitle(strings.menu.copyText).setIcon("copy")
       .onClick(() => { void this.copyText(text); }));
     const mouseEvent = detail.mouseEvent;
     const position = detail.position as { x?: unknown; y?: unknown } | undefined;
-    if (mouseEvent && typeof (mouseEvent as MouseEvent).clientX === "number") {
-      menu.showAtMouseEvent(mouseEvent as MouseEvent);
-    } else if (position && typeof position.x === "number" && typeof position.y === "number") {
+    if (position && typeof position.x === "number" && typeof position.y === "number") {
       menu.showAtPosition({ x: position.x, y: position.y });
+    } else if (mouseEvent && typeof (mouseEvent as MouseEvent).clientX === "number") {
+      menu.showAtMouseEvent(mouseEvent as MouseEvent);
     }
   }
 

@@ -2,6 +2,7 @@
   import { setIcon, setTooltip } from "obsidian";
   import { getUiStrings, type UiStrings } from "../i18n";
   import type { PanelAppearanceState } from "./panel-model";
+  import CardTaskFooter from "./CardTaskFooter.svelte";
   import {
     TASK_CHIP_KINDS,
     buildTaskPlainText,
@@ -28,7 +29,7 @@
     strings?: UiStrings;
     appearance?: PanelAppearanceState;
     pendingIds?: ReadonlySet<string>;
-    /** Touch devices show every date chip without hover. */
+    /** Touch devices use larger date chips and hit areas. */
     touch?: boolean;
     searchQuery?: string;
     onTaskToggle?: (payload: TaskTogglePayload) => void;
@@ -247,6 +248,21 @@
             {#if value !== null}<span class="fce-task-chip-label">{formatChipDate(value)}</span>{/if}
           </button>
         {/each}
+        {#if onTaskContextMenu}
+          <button
+            type="button"
+            class="fce-task-chip is-unset fce-task-more"
+            aria-label={strings.cardItem.moreActions}
+            aria-haspopup="menu"
+            onclick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              emitContextMenu(item, { mouseEvent: event, position: { x: rect.left, y: rect.bottom } });
+            }}
+            use:applyTooltip={strings.cardItem.moreActions}
+          >
+            <span class="fce-task-chip-icon" aria-hidden="true" use:applyIcon={"ellipsis"}></span>
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -286,15 +302,11 @@
         </button>
       {/if}
       {#if progress.total > 0}
-        <span
-          class="fce-task-progress"
-          class:is-complete={progress.completed === progress.total}
-          role="img"
-          aria-label={viewStrings.subtaskProgress(progress.completed, progress.total)}
-        >
-          <span class="fce-task-progress-icon" aria-hidden="true" use:applyIcon={"list-checks"}></span>
-          <span aria-hidden="true">{progress.completed}/{progress.total}</span>
-        </span>
+        <CardTaskFooter
+          summary={{ total: progress.total, incomplete: progress.total - progress.completed }}
+          strings={strings.cardItem}
+          label={viewStrings.subtaskProgress(progress.completed, progress.total)}
+        />
       {/if}
     </div>
   {/if}

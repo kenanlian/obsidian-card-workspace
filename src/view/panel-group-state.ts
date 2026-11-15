@@ -24,6 +24,7 @@ export function buildCardsPanelGroup(input: {
   groupRevision: number;
   streamMode?: DefaultViewMode;
   taskRecords?: readonly TaskCardRecord[];
+  taskGroupCounts?: Record<string, number>;
   taskStatus?: TaskViewStatus;
   pendingTaskIds?: readonly string[];
 }): PanelModelState["cards"] {
@@ -43,6 +44,7 @@ export function buildCardsPanelGroup(input: {
     // on materialized, projected records and never infers blank tail rows.
     extentCount: records.length,
     streamMode,
+    taskGroupCounts: input.taskGroupCounts,
     taskRecords: streamMode === "tasks" ? [...input.taskRecords ?? []] : [],
     taskStatus: streamMode === "tasks" ? input.taskStatus ?? "idle" : "idle",
     pendingTaskIds: streamMode === "tasks" ? [...input.pendingTaskIds ?? []] : [],

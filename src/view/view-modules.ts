@@ -1,3 +1,4 @@
+import { TaskFilterController } from "./controllers/TaskFilterController";
 import { TimeGroupController } from "./controllers/TimeGroupController";
 import { CardDropActions } from "./actions/card-drop-actions";
 import { IconActions } from "./actions/icon-actions";
@@ -92,6 +93,7 @@ export interface ViewModules {
   projection: ProjectionController;
   groupCollapse: GroupCollapseController;
   taskView: TaskViewController;
+  taskFilters: TaskFilterController;
   hydration: HydrationController;
   images: CardImageController;
   hoverPreview: CardHoverPreviewController;
@@ -165,6 +167,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     getLoadKey: gate.guard("scopeController.getLoadKey", () => scopeController.getLoadKey()),
   });
   const projection: ProjectionController = new ProjectionController({
+    onTaskSnapshotChange: () => taskFilters.invalidateMenu(),
     context,
     getSearchInput: gate.guard("search.buildPipelineSearchInput", () => search.buildPipelineSearchInput()),
     getEffectivePinnedPaths: () => host.effectiveSortAndPins().pinnedPaths,
@@ -541,7 +544,8 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     isDayRelative: () => {
       if (isTaskMode()) {
         const group = resolveTaskGroupSpec();
-        return group.dimension === "due"
+        const dateFilter = context.store.getTaskFilters().date;
+        return (dateFilter !== null && dateFilter.preset !== "custom") || group.dimension === "due"
           || ((group.dimension === "created" || group.dimension === "done") && group.timeGranularity === "relative");
       }
       const group = resolveGroupSpec();
@@ -556,10 +560,19 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       host.publishGroups("cards", "projection", "bulk");
     },
   });
+  const taskFilters = new TaskFilterController(context, {
+    flushSettings: () => host.flushSettings?.() ?? Promise.resolve(),
+    refresh: () => { if (scopeController.isScopeSettled()) { projection.reprojectCards(); host.publishGroups("cards", "projection"); } },
+    groups: () => projection.getTaskSnapshot().copyGroups ?? [],
+    canCopy: () => isTaskMode() && scopeController.isScopeSettled() && taskView.getStatus() === "ready",
+    pending: (path, line) => taskActions.isPending(`${path}::L${line}`),
+  });
   const taskActions = new TaskActions({
+    trackMenu: (menu, doc) => taskFilters.trackMenu(menu, doc),
+    appendCopyMenu: (menu, target) => taskFilters.appendCopyMenu(menu, { task: target }),
     context,
     getWriter: () => host.getTaskWriteService?.() ?? null,
-    getVisibleTasks: () => context.store.getVisibleTaskCards(),
+    getVisibleTasks: () => projection.getTaskSnapshot().copyGroups?.flatMap(group => group.tasks) ?? context.store.getVisibleTaskCards(),
     openNote: (path, destination, location) => host.openTaskNote
       ? host.openTaskNote(path, destination, location)
       : host.openNoteFromCard(path, destination),
@@ -573,6 +586,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     projection,
     groupCollapse,
     taskView,
+    taskFilters,
     hydration,
     images,
     hoverPreview,

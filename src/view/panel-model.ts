@@ -175,6 +175,7 @@ export interface PanelCardsState {
   streamMode?: DefaultViewMode;
   /** Root tasks in display order (post filter/sort/group/collapse); absent or empty in card mode. */
   taskRecords?: TaskCardRecord[];
+  taskGroupCounts?: Record<string, number>;
   /** `"building"` while the scope's tasks are read; no task rows are published then. Absent means `"idle"`. */
   taskStatus?: TaskViewStatus;
   /** Task item ids (`${filePath}::L${line}`, any depth) with a write in flight or awaiting refresh. */
@@ -196,6 +197,9 @@ export interface PanelSearchState {
 }
 
 export interface PanelProjectionState {
+  taskFilters?: import("./task-filters").TaskFilterSpec;
+  taskDateLabel?: string;
+  taskDateTooltip?: string;
   sortField: LinksSortField;
   sortDirection: SortDirection;
   availableTags: string[];

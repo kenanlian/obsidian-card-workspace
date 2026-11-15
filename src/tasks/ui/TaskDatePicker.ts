@@ -10,6 +10,8 @@ export interface TaskDatePickerOptions {
   /** Phones use a bottom sheet; other devices anchor a popover. */
   readonly layout: "popover" | "sheet";
   readonly kind: TaskDateKind;
+  /** Optional field label when selecting a filter boundary rather than editing a task. */
+  readonly label?: string;
   /** Current `YYYY-MM-DD`, or null when unset. */
   readonly value: string | null;
   /** 0 = Sunday … 6 = Saturday. */
@@ -91,7 +93,7 @@ class TaskDatePicker implements TaskDatePickerHandle {
     this.selectedIso = selected ? formatIsoDate(selected) : null;
     this.focused = selected ?? today;
     this.viewYear = this.focused.getFullYear(); this.viewMonth = this.focused.getMonth();
-    const kindLabel = s.kinds[options.kind];
+    const kindLabel = options.label ?? s.kinds[options.kind];
 
     this.element = this.create("div", "fce-task-date-picker");
     this.element.classList.toggle("is-sheet", options.layout === "sheet");

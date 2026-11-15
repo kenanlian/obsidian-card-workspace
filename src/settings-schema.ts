@@ -42,6 +42,8 @@ export const SETTINGS_LAYER_BY_KEY = {
   taskDateButtons: "preferences",
   taskDateButtonStyle: "preferences",
   taskDateHideSource: "preferences",
+  taskReportWeekEndDay: "preferences",
+  taskCopyPreserveOriginal: "preferences",
   taskCardShowFile: "preferences",
   taskDateColors: "preferences",
   defaultCardOpenBehavior: "preferences",

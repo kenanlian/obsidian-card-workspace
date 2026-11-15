@@ -1,3 +1,4 @@
+import { DEFAULT_TASK_FILTER, type TaskFilterSpec } from "./task-filters";
 import type { CardScope } from "./scope";
 import type { NoteCardRecord, TaskCardRecord } from "./types";
 
@@ -14,6 +15,8 @@ export interface CardPreviewUpdate {
 
 /** Shared mutable state exposed to controllers without exposing the view. */
 export interface ViewStateStore {
+  getTaskFilters(): TaskFilterSpec;
+  setTaskFilters(filters: TaskFilterSpec): void;
   getScope(): CardScope;
   setScope(scope: CardScope): void;
   getBaseCards(): readonly NoteCardRecord[];
@@ -39,6 +42,7 @@ export interface ViewStateStore {
 
 export function createViewStateStore(initialScope: CardScope): ViewStateStore {
   let scope = initialScope;
+  let taskFilters: TaskFilterSpec = { ...DEFAULT_TASK_FILTER };
   let baseCards: NoteCardRecord[] = [];
   let visibleCards: NoteCardRecord[] = [];
   let visibleTaskCards: TaskCardRecord[] = [];
@@ -53,6 +57,8 @@ export function createViewStateStore(initialScope: CardScope): ViewStateStore {
     new Map(cards.map((card, index) => [card.path, index]));
 
   return {
+    getTaskFilters: () => taskFilters,
+    setTaskFilters: (next) => { taskFilters = next; },
     getScope: () => scope,
     setScope(nextScope) {
       scope = nextScope;
