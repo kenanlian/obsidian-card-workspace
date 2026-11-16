@@ -3964,14 +3964,16 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   box-sizing: border-box;
   width: 10px;
   height: 10px;
-  border: 1.5px solid var(--fce-task-date-color);
+  border: 1.5px solid color-mix(in srgb, var(--fce-task-date-color) 40%, transparent);
   border-radius: 50%;
   background: transparent;
+  background-clip: padding-box;
   opacity: 0.55;
   transition: transform 100ms ease-out, opacity 100ms ease-out;
 }
-.fce-task-date-buttons.is-dots .fce-task-date-button.is-set::before { background: var(--fce-task-date-color); opacity: 1; }
-.fce-task-date-buttons.is-dots .fce-task-date-button:hover::before { opacity: 1; transform: scale(1.2); }
+.fce-task-date-buttons.is-dots .fce-task-date-button.is-set::before { background-color: color-mix(in srgb, var(--fce-task-date-color) 40%, transparent); opacity: 1; }
+.fce-task-date-buttons.is-dots .fce-task-date-button:hover::before { border-color: color-mix(in srgb, var(--fce-task-date-color) 55%, transparent); opacity: 1; transform: scale(1.2); }
+.fce-task-date-buttons.is-dots .fce-task-date-button.is-set:hover::before { background-color: color-mix(in srgb, var(--fce-task-date-color) 55%, transparent); }
 
 /* Chips: the task-card chip, sized to sit inside the text line. */
 .fce-task-date-buttons.is-chips { gap: 2px; }
