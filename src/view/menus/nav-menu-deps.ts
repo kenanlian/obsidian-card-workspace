@@ -1,3 +1,4 @@
+import { getBrowseFilter, getBrowseIncludeSubfolders } from "../stream-browse-state";
 import { resolveNavigationSort } from "../../navigation-sorting";
 import { hideNavigationEntry } from "../actions/navigation-visibility-actions";
 import type { NavMenuDeps } from "../nav-context-menu";
@@ -17,6 +18,8 @@ export interface NavMenuDepsHost {
 /** Binds the nav context menu's action table to the view's controllers and actions. */
 export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
   const settings = deps.context.getSettings();
+  const filter = getBrowseFilter(deps.context);
+  const includeSubfolders = getBrowseIncludeSubfolders(deps.context);
   const capabilities = resolveSourceCapabilities(deps.context.store.getScope());
   return {
     strings: deps.context.getUiStrings(),
@@ -47,11 +50,11 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     browsePropertyFilter: capabilities.browsePropertyFilter,
     supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
     supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
-    includeSubfolders: settings.includeSubfolders,
-    activeFilterTags: settings.filter.tags,
-    propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),
+    includeSubfolders,
+    activeFilterTags: filter.tags,
+    propertyFilterCount: filter.properties.reduce((total, clause) => total + clause.values.length, 0),
     isPropertyValueActive: (key, ref) =>
-      settings.filter.properties.some(
+      filter.properties.some(
         (clause) => clause.key === key && clause.values.some((value) => propertyScalarRefsEqual(value, ref)),
       ),
     canRevealInSystemExplorer: deps.context.runtimePlatform?.capabilities.systemFileManager ?? false,
@@ -61,7 +64,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
     boxes: settings.boxes ?? [],
     activeBoxId: deps.modules.boxActions.getActiveBox()?.id ?? null,
     boxExcludedCount: (boxId) => deps.modules.boxActions.getBoxExcludedCount(boxId),
-    sectionCollapsed: settings.sectionCollapsed,
+    sectionCollapsed: deps.modules.navLayout.getLocalNavigation?.()?.sectionCollapsed ?? settings.sectionCollapsed,
     sectionOrder: settings.navSectionOrder,
     hiddenSections: deps.modules.navLayout.getHiddenSectionsForMove(),
     folderSortMode: (parent) => resolveFolderSortMode(settings.folderSiblingOrders, parent, settings.folderDescendingNameSorts),
@@ -122,7 +125,7 @@ export function buildNavMenuDeps(deps: NavMenuDepsHost): NavMenuDeps {
         void deps.modules.favoriteActions.revealInSystemExplorer(ref);
       },
       toggleIncludeSubfolders: () => {
-        void deps.onIncludeSubfoldersChange({ value: !settings.includeSubfolders });
+        void deps.onIncludeSubfoldersChange({ value: !includeSubfolders });
       },
       toggleSection: (section) => {
         void deps.modules.navLayout.onToggleNavSection(section);

@@ -1,3 +1,4 @@
+import { getBrowseFilter, setBrowseFilter } from "../stream-browse-state";
 import type { TFile } from "obsidian";
 
 import type { UiStrings } from "../../i18n";
@@ -42,12 +43,12 @@ export class TagActions {
   // -- Tag filter --------------------------------------------------------
 
   async applyTagFilter(nextTags: string[], additive = false): Promise<void> {
-    await this.deps.context.saveSettings({ filter: !additive && nextTags.length > 0
-      ? { tags: nextTags, properties: [] } : { tags: nextTags } });
+    await setBrowseFilter(this.deps.context, !additive && nextTags.length > 0
+      ? { tags: nextTags, properties: [] } : { tags: nextTags });
   }
 
   async addTagToFilter(tag: string): Promise<void> {
-    const filter = this.deps.context.getSettings().filter;
+    const filter = getBrowseFilter(this.deps.context);
     const current = filter.tags;
     const alreadySelected = current.some((existing) => normalizeTagPath(existing) === tag);
     if (alreadySelected) return;
@@ -55,7 +56,7 @@ export class TagActions {
   }
 
   async removeTagFromFilter(tag: string): Promise<void> {
-    const current = this.deps.context.getSettings().filter.tags;
+    const current = getBrowseFilter(this.deps.context).tags;
     const nextTags = current.filter((existing) => normalizeTagPath(existing) !== tag);
     if (nextTags.length === current.length) {
       return;
@@ -68,7 +69,7 @@ export class TagActions {
   }
 
   async clearTagFilter(): Promise<void> {
-    if (this.deps.context.getSettings().filter.tags.length === 0) {
+    if (getBrowseFilter(this.deps.context).tags.length === 0) {
       return;
     }
     await this.applyTagFilter([]);
@@ -100,7 +101,7 @@ export class TagActions {
         nextTags.push(normalized);
       }
     }
-    const currentFilter = this.deps.context.getSettings().filter;
+    const currentFilter = getBrowseFilter(this.deps.context);
     const currentTags = currentFilter.tags;
     if (currentTags.length === nextTags.length
       && currentTags.every((tag, index) => tag === nextTags[index])
@@ -157,7 +158,7 @@ export class TagActions {
   }
 
   async clearStaleTagFilterIfNeeded(removedTags: string[]): Promise<void> {
-    const currentFilterTags = this.deps.context.getSettings().filter.tags;
+    const currentFilterTags = getBrowseFilter(this.deps.context).tags;
     const activeFilterTag = normalizeTagForFrontmatter(currentFilterTags[0] ?? "");
     if (activeFilterTag.length === 0) {
       return;
@@ -170,6 +171,6 @@ export class TagActions {
     if (!removedActiveFilter && availableTags.has(activeFilterTag)) {
       return;
     }
-    await this.deps.context.saveSettings({ filter: { tags: [] } });
+    await setBrowseFilter(this.deps.context, { tags: [] });
   }
 }

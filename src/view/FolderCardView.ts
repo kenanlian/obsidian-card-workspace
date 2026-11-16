@@ -1,963 +1,594 @@
-import { taskTreeCount } from "./task-filters";
-import { navigationIconTarget } from "./content-icon-target";
-import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
-import { RuntimeWorkGate } from "../runtime/work-gate";
-import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
-import { ItemView, Notice, TFile, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
+import { ItemView, Menu, Notice, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import { mount, unmount } from "svelte";
-import { CARD_WORKSPACE_ICON } from "../icons";
-import type { UiStrings } from "../i18n";
-import type { OpenDestination, PartialPluginSettings } from "../settings";
-import { resolveLinkCardLocation, type CardOpenLocation } from "./link-card-location";
 import type CardWorkspacePlugin from "../main";
-import {
-  createFolderScope,
-  isBoxScope, isLinksScope,
-  resolveScopeFolderPath,
-  scopeDisplayPath,
-  scopeIdentity,
-  type CardScope,
-} from "./scope";
-import { resolveSourceCapabilities } from "./source-capabilities";
-import { buildBrowseFilterChips, buildBrowseFilterRemovalPatch, type BrowseFilterTarget } from "./browse-filters";
-import type { ViewUpdateIntent } from "./update-intent";
-import { resolveViewConfig } from "./view-config";
-import { createViewEpochs, type ViewEpochs } from "./view-epochs";
-import type { ViewContext } from "./view-context";
-import { createViewModules, type ViewModules } from "./view-modules";
-import type { MetadataImpactBatch } from "./controllers/MetadataImpactController";
-import { resolveEmptyStateMessage } from "./empty-state";
-import { createViewStateStore, type ViewStateStore } from "./view-state-store";
-import { resolveLinksFollowScope } from "./links-sources";
+import { normalizeSettings } from "../settings";
+import { CARD_WORKSPACE_ICON } from "../icons";
+import { CardStreamRuntime } from "./CardStreamRuntime";
+import { LeafStreamController, decodeDesktopLeafState, resolveStreamSizes, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
+import { createStreamBrowseState } from "./stream-browse-state";
+import { createStreamPanelModel, type StreamCommand, type StreamPanelModel } from "./stream-panel-model";
+import { getStreamUiStrings } from "./stream-ui-strings";
+import { LeafPreviewResources } from "./leaf-preview-resources";
+import { DESKTOP_RESOURCE_BUDGET } from "../runtime/resource-budget";
+import { NavLayoutController } from "./controllers/NavLayoutController";
+import { createViewStateStore } from "./view-state-store";
+import { createViewEpochs } from "./view-epochs";
+import { createFolderScope, createLinksScope, scopeIdentity, validateScope, type CardScope } from "./scope";
 import { rewritePathAfterRename } from "./scope-files";
-import type { NavigationIntent } from "./navigation-model";
-import {
-  buildNavigationPanelState,
-  isCurrentNavigationMenuTarget,
-  openNavigationContextMenu,
-  publishLoadStart,
-  publishPreparedCards,
-  publishSettledScope,
-  routeNavigationIntent,
-  type LoadBoundaryHost,
-} from "./navigation-host";
-import { buildCardsPanelGroup, buildProjectionPanelGroup } from "./panel-group-state";
-import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
-import {
-  PANEL_GROUPS, buildLinksScopeGroupFields, resolveBrowseFiltersPaused,
-  createPanelModel,
-  type PanelGroup,
-  type PanelModel,
-  type PanelModelState,
-} from "./panel-model";
+import { DEFAULT_TASK_FILTER } from "./task-filters";
 import { buildPanelProps } from "./panel-props";
-import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSelectionRequest, NavContextMenuPayload,
-  NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
+import { normalizePropertyFilterClauses } from "../property-filter-settings";
+import { StreamNameModal } from "./modals/StreamNameModal";
+import { StreamSourcePicker, type StreamSourceChoice } from "./modals/StreamSourcePicker";
+import type { ViewContext } from "./view-context";
+import type { FolderSelectionRequest, NavContextMenuPayload, RefreshRequest, VaultMutationEvent } from "./types";
+import type { ViewUpdateIntent } from "./update-intent";
+import type { RefreshReason } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
+let streamSequence = 0;
+function nextStreamId(): string { return `stream-${Date.now().toString(36)}-${(++streamSequence).toString(36)}`; }
+type RuntimeEntry = { runtime: CardStreamRuntime; props: ReturnType<CardStreamRuntime["getPanelProps"]>; stop: () => void; stopActivity: (() => void) | null };
 
+/** ItemView owns leaves and navigation; each plain runtime owns one browsing context. */
 export class FolderCardView extends ItemView implements HoverParent {
-  plugin: CardWorkspacePlugin;
-  private readingPosition: ReadingPositionBridge | null = null;
-  private readonly historyAnchors: Map<string, import("./scroll-anchoring").RowAnchor>;
-  private historySequence = 0;
-  private readonly pendingHistoryRecords = new Set<number>();
-  private recordedScope: CardScope | null = null;
+  readonly plugin: CardWorkspacePlugin;
+  readonly streams: LeafStreamController;
+  readonly streamPanelModel: StreamPanelModel;
+  private readonly desktop: boolean;
+  private readonly runtimes = new Map<string, RuntimeEntry>();
+  private readonly pending = new Map<string, Promise<CardStreamRuntime | null>>();
+  private readonly sessions = new Map<string, ReturnType<CardStreamRuntime["captureSelection"]>>();
+  private readonly failures = new Map<string, string>();
+  private readonly transferring = new Set<string>();
+  private readonly resources: LeafPreviewResources;
+  private readonly navLayout: NavLayoutController;
+  private readonly fallback: CardStreamRuntime;
+  private navigationState: LeafNavigationState;
   private component: ReturnType<typeof mount> | null = null;
-  private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
-  private metadataEventUnsubscribe: (() => void) | null = null;
-  private suppressSettingsUpdate = false;
-  readonly panelModel: PanelModel;
-
-  private readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
-  private readonly epochs: ViewEpochs = createViewEpochs();
-  private readonly workGate = new RuntimeWorkGate();
-  private stopActivity: (() => void) | null = null;
-  private readonly context: ViewContext; readonly modules: ViewModules;
-
-  get hoverPopover(): HoverPopover | null { return this.modules.hoverPreview.hoverPopover; }
-  set hoverPopover(value: HoverPopover | null) { this.modules.hoverPreview.hoverPopover = value; }
+  private foreground: Promise<void> = Promise.resolve();
+  private hostEl: HTMLElement | null = null;
+  private stopped = false;
+  private syncing = false;
+  private restoring = false;
+  private opened = false;
+  private restored = false;
+  private readyToLoad = false;
+  private legacySeedPending = true;
+  private navigationTouched = false;
+  private stagedTransfer: StreamSnapshot | null = null;
+  private leafStateEpoch = 0;
+  private unsupported: Record<string, unknown> | null = null;
+  private stopStreams: (() => void) | null = null;
+  private stopVault: (() => void) | null = null;
+  private stopMetadata: (() => void) | null = null;
+  private saveTimer: ReturnType<Window["setTimeout"]> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: CardWorkspacePlugin) {
-    super(leaf);
-    this.plugin = plugin;
-    this.historyAnchors = plugin.getScopeHistoryAnchors?.(leaf) ?? new Map();
-    this.navigation = (plugin.runtimePlatform?.device ?? "desktop") !== "desktop";
-    this.context = {
-      workGate: this.workGate,
-      resourceBudget: this.plugin.resourceBudget,
-      runtimePlatform: this.plugin.runtimePlatform,
-      waitForSettings: () => this.plugin.waitForExternalSettings?.() ?? Promise.resolve(),
-      flushSettings: () => this.plugin.flushSettings(),
-      getApp: () => this.app, store: this.store, epochs: this.epochs,
-      getSettings: () => this.plugin.getSettings(), saveSettings: (patch, options) => this.saveViewSettings(patch, options),
-      getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
-      requestUpdate: (intent, reason) => this.applyUpdateIntent(intent, reason),
-      notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
+    super(leaf); this.plugin = plugin;
+    this.desktop = (plugin.runtimePlatform?.device ?? "desktop") === "desktop";
+    this.navigation = !this.desktop;
+    const settings = normalizeSettings(plugin.getSettings());
+    this.navigationState = { width: settings.navPaneWidth, collapsed: settings.navPaneCollapsed,
+      expandedFolderPaths: [...settings.expandedFolderPaths], expandedTagPaths: [...settings.expandedTagPaths],
+      expandedPropertyKeys: [...settings.expandedPropertyKeys], sectionCollapsed: { ...settings.sectionCollapsed }, query: "", focusId: null };
+    this.resources = new LeafPreviewResources(plugin.resourceBudget ?? DESKTOP_RESOURCE_BUDGET);
+    const navStore = createViewStateStore(createFolderScope("", settings.includeSubfolders));
+    const getNavigationStore = () => this.currentRuntime?.store ?? navStore;
+    const context: ViewContext = {
+      getApp: () => this.app, getSettings: () => plugin.getSettings(), saveSettings: patch => plugin.saveSettings(patch),
+      getUiStrings: () => plugin.getUiStrings(), notify: message => { new Notice(message); },
+      get store() { return getNavigationStore(); }, epochs: createViewEpochs(), runtimePlatform: plugin.runtimePlatform,
+      publishGroups: () => { this.navigationRuntime?.refreshNavigationMetadata(); this.publishStreams(); this.requestSave(); },
+      requestUpdate: async (intent, reason) => this.applyUpdateIntent(intent, reason),
+      getViewWindow: () => this.containerEl.ownerDocument?.defaultView ?? window,
     };
-    this.modules = createViewModules(this.context, {
-      onScopeCommitted: (scope, recordHistory) => {
-        if (!this.navigation) return;
-        if (!recordHistory) { this.recordedScope = scope; return; }
-        const sequence = ++this.historySequence;
-        this.pendingHistoryRecords.add(sequence);
-        void this.leaf.setViewState({ type: FOLDER_CARD_VIEW, state: { scope, session: this.plugin.navigationSessionId, record: sequence } })
-          .catch((error: unknown) => console.warn("[Card Workspace] Scope history failed", error))
-          .finally(() => this.pendingHistoryRecords.delete(sequence));
-      },
-      appendMobileInsertMenu: (menu, path) => this.plugin.appendMobileInsertMenu?.(menu, path),
-      flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
-      openTemplateNote: (path, selectTitle) => this.plugin.openTemplateEditor(path, selectTitle),
-      runTemplateOperation: (work) => this.plugin.runTemplateOperation(work),
-      getThumbnailService: () => this.plugin.getThumbnailService?.() ?? null,
-      effectiveSortAndPins: () => {
-        const { sort, pinnedPaths } = resolveViewConfig(this.store.getScope(), this.plugin.getSettings());
-        return { sortField: sort.field, sortDirection: sort.direction, pinnedPaths };
-      },
-      getDisplayFolderPath: () => this.getDisplayFolderPath(),
-      getTooltipSide: () => this.resolveTooltipSide(),
-      openCardWithDestination: (path, destination) => this.openCardWithDestination(path, destination),
-      selectFolderFromNav: (path) => this.selectFolderFromNav(path),
-      moveScopeToFolder: (path) => this.modules.scopeController.moveScopeToFolder(path),
-      bumpSearchFocusToken: () => this.modules.search.bumpFocusToken(),
-      publishAll: () => this.publishGroups(...PANEL_GROUPS),
-      publishSearch: () => {
-        if (!this.modules.scopeController.isScopeSettled()) return;
-        this.modules.projection.reprojectCards();
-        this.modules.bulk.reconcileToVisibleCards();
-        // "projection" is in the set because pausing or resuming search moves
-        // `groupSegmentCount`, which the toolbar reads to enable collapse-all.
-        this.publishGroups("search", "cards", "bulk", "scope", "projection");
-      },
-      publishSelection: () => this.publishGroups("bulk", "cards"),
-      publishHydration: () => this.publishGroups("cards"),
-      getIconAnchor: () => this.hostEl ?? this.containerEl,
-      publishLoadStart: (scopeChanged) => {
-        if (scopeChanged) this.modules.iconActions.close();
-        if (scopeChanged && this.navigation) {
-          const anchor = this.readingPosition?.capture();
-          if (anchor) { this.historyAnchors.set(scopeIdentity(this.cardScope), anchor); if (this.historyAnchors.size > 32) this.historyAnchors.delete(this.historyAnchors.keys().next().value!); }
+    this.navLayout = new NavLayoutController({ context, getTooltipSide: () => leaf.getRoot() === this.app.workspace.leftSplit ? "right" : "left",
+      onNavCountsInvalidated: () => {
+        for (const runtime of [this.fallback, ...[...this.runtimes.values()].map(entry => entry.runtime)]) {
+          if (!runtime) continue;
+          runtime.modules.boxActions.invalidateCache(); runtime.modules.projection.invalidateVaultCaches();
+          runtime.modules.property.invalidateVault(); runtime.epochs.navCount.bump();
         }
-        publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged);
       },
-      publishPreparedCards: (fileTypesChanged) => this.panelModel.batch(() => {
-        this.recordedScope ??= this.cardScope;
-        if (fileTypesChanged) this.publishGroups("nav");
-        publishPreparedCards(this.buildLoadBoundaryHost());
-      }),
-      publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
-      publishGroups: (...groups) => this.publishGroups(...groups),
-      publishImpactBatch: (batch) => this.publishImpactBatch(batch),
-      openNoteFromCard: async (path, destination) => { await this.plugin.openNoteFromCard(path, destination); },
-      createNoteInFolder: (folderPath, tags, properties, boxId) => boxId !== undefined
-        ? this.plugin.createNoteInFolder(folderPath, tags, properties, boxId)
-        : properties === undefined
-          ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
-      getSearchService: () => this.plugin.getSearchService(),
-      getSearchSnapshot: () => this.plugin.getSearchSnapshot(),
-      subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
-      getTaskIndex: () => this.plugin.getTaskIndex?.() ?? null,
-      getTaskWriteService: () => this.plugin.getTaskWriteService?.() ?? null,
-      openTaskNote: async (path, destination, location) => {
-        if (location) await this.plugin.openNoteFromCard(path, destination, location);
-        else await this.plugin.openNoteFromCard(path, destination);
-      },
+      ...(this.desktop ? { localState: { get: () => this.navigationState, update: (patch: Partial<LeafNavigationState>) => {
+        this.navigationTouched = true;
+        this.navigationState = { ...this.navigationState, ...patch }; this.requestSave();
+      } } } : {}),
     });
-    this.panelModel = createPanelModel({
-      capabilities: this.plugin.runtimePlatform?.capabilities,
-      strings: this.strings,
-      scope: this.buildScopeGroup(),
-      cards: this.buildCardsGroup(),
-      search: this.buildSearchGroup(),
-      projection: this.buildProjectionGroup(),
-      bulk: this.buildBulkGroup(),
-      nav: this.buildNavGroup(),
-      appearance: this.buildAppearanceGroup(),
-      images: this.modules.images.getPanelState(),
-    });
+    const initial = this.makeSnapshot(createFolderScope(settings.lastFolderPath ?? "", settings.includeSubfolders));
+    // Migrating the old leaf preserves its existing browse filter. Explicit new streams start empty.
+    initial.browse.filter = { tags: [...settings.filter.tags], properties: normalizePropertyFilterClauses(settings.filter.properties) };
+    this.streams = new LeafStreamController(this.desktop ? [initial] : []);
+    this.fallback = new CardStreamRuntime(this, plugin, this.desktop ? {
+      snapshot: initial, navLayout: this.navLayout, previewResources: this.resources,
+      onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
+      appendStreamMenu: (menu, payload) => this.appendNewStreamMenu(menu, payload),
+      isCurrent: () => this.currentRuntime === null,
+      getNavigationSnapshot: () => this.currentRuntime?.panelModel.getState().nav,
+    } : {});
+    this.streamPanelModel = createStreamPanelModel({ entries: [], currentStreamId: null, direction: "horizontal",
+      navigationVisible: this.navLayout.getNavVisible(), singlePane: false, navPanelModel: this.fallback.panelModel,
+      navProps: {}, labels: getStreamUiStrings(plugin.getUiLanguage()), recentlyClosedCount: 0, unsupported: false });
+    this.stopStreams = this.desktop ? this.streams.subscribe(() => this.syncStreams()) : null;
   }
-  private get cardScope(): CardScope { return this.store.getScope(); } private set cardScope(scope: CardScope) { this.store.setScope(scope); }
-  private get baseCards(): NoteCardRecord[] { return this.store.getBaseCards() as NoteCardRecord[]; } private set baseCards(cards: NoteCardRecord[]) { this.store.replaceBaseCards(cards); }
-  private get visibleCards(): NoteCardRecord[] { return this.store.getVisibleCards() as NoteCardRecord[]; } private set visibleCards(cards: NoteCardRecord[]) { this.store.replaceVisibleCards(cards); }
-  private get selectedPath(): string | null { return this.store.getSelectedPath(); } private set selectedPath(path: string | null) { this.store.setSelectedPath(path); }
-  registerReadingPosition(bridge: ReadingPositionBridge | null): void { this.readingPosition = bridge; }
-  override getState(): Record<string, unknown> {
-    return this.navigation ? { scope: this.recordedScope ?? this.cardScope, session: this.plugin.navigationSessionId } : {};
+  private get currentRuntime(): CardStreamRuntime | null {
+    const id = this.streams.getState().currentStreamId;
+    return id ? this.runtimes.get(id)?.runtime ?? null : null;
   }
-  override async setState(state: unknown, result: ViewStateResult): Promise<void> {
-    result.history = false;
-    if (!this.navigation || !state || typeof state !== "object") return;
-    const value = state as { scope?: unknown; session?: unknown; record?: unknown };
-    // Host workspace restoration must not restore a persisted box or links source on launch.
-    if (value.session !== this.plugin.navigationSessionId) return;
-    const scope = readHistoryScope(value.scope, this.app, this.plugin.getSettings().boxes ?? []);
-    if (!scope) return;
-    if (typeof value.record === "number" && this.pendingHistoryRecords.delete(value.record)) {
-      if (value.record !== this.historySequence) return;
-      this.recordedScope = scope; result.history = true; return;
-    }
-    const anchor = this.historyAnchors.get(scopeIdentity(scope));
-    await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "history"));
-    await this.modules.scopeController.waitForIdle();
-    this.recordedScope = this.cardScope;
-    if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
-  }
+  private get navigationRuntime(): CardStreamRuntime { return this.currentRuntime ?? this.fallback; }
+  get modules() { return this.desktop ? this.navigationRuntime.modules : this.fallback.modules; }
+  get panelModel() { return this.desktop ? this.navigationRuntime.panelModel : this.fallback.panelModel; }
+  get hoverPopover(): HoverPopover | null { return this.navigationRuntime.hoverPopover; }
+  set hoverPopover(value: HoverPopover | null) { this.navigationRuntime.hoverPopover = value; }
   getViewType(): string { return FOLDER_CARD_VIEW; }
-  getDisplayText(): string { return this.strings.view.displayName; }
-
-  /** A new leaf receives only committed browsing state; gestures and host history stay local. */
-  async transferToSidebar(target: FolderCardView, isCurrent: () => boolean): Promise<boolean> {
-    await this.modules.scopeController.waitForIdle();
-    if (!isCurrent()) return false;
-    if (!this.hasLoadedScope() || target.hasLoadedScope()) return true;
-    const sourceVersion = this.modules.scopeController.getActiveSelectionVersion();
-    const scope = this.getCardScope();
-    const query = this.modules.search.getQuery();
-    const anchor = this.readingPosition?.capture();
-    const anchors = [...this.historyAnchors];
-    // Seed the initial scope before loading so relocating the same source cannot clear filters.
-    target.store.setScope(scope);
-    const filters = this.store.getTaskFilters();
-    target.store.setTaskFilters({ ...filters, date: filters.date ? { ...filters.date } : null });
-    target.store.setLinksPinned(this.store.getLinksPinned());
-    target.store.setSelectedPath(this.selectedPath);
-    const loading = target.modules.scopeController.handleScopeSelection(
-      target.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "restore"));
-    const targetVersion = target.modules.scopeController.getActiveSelectionVersion();
-    const sourceCurrent = (): boolean => isCurrent()
-      && sourceVersion === this.modules.scopeController.getActiveSelectionVersion();
-    const result = await loading;
-    await target.modules.scopeController.waitForIdle();
-    if (!sourceCurrent()) return false;
-    if (targetVersion !== target.modules.scopeController.getActiveSelectionVersion()) return true;
-    if (result.action === "rejected_invalid" || !target.hasLoadedScope()) throw new Error("Sidebar scope transfer failed");
-    target.modules.search.onQueryChange({ query });
-    await target.modules.search.refreshProjection();
-    if (!sourceCurrent()) return false;
-    if (targetVersion !== target.modules.scopeController.getActiveSelectionVersion()) return true;
-    for (const [key, value] of anchors) target.historyAnchors.set(key, value);
-    if (anchor) target.readingPosition?.restore(anchor, scopeIdentity(scope));
-    return true;
-  }
+  getDisplayText(): string { return this.plugin.getUiStrings().view.displayName; }
   getIcon(): string { return CARD_WORKSPACE_ICON; }
-  private get strings(): UiStrings {
-    return this.plugin.getUiStrings();
+  hasCurrentStream(): boolean { return !this.desktop || this.streams.getState().currentStreamId !== null; }
+  getCardScopes(): readonly CardScope[] { return this.desktop ? this.streams.getState().streams.map(stream => stream.scope) : [this.fallback.getCardScope()]; }
+  async waitForForeground(): Promise<void> {
+    if (!this.desktop) { await this.fallback.modules.scopeController.waitForIdle(); return; }
+    await this.foreground;
+    await this.plugin.waitForSettingsReady?.();
+    if (this.stopped) return;
+    this.seedLegacyState(); this.readyToLoad = true; this.syncStreams();
+    const id = this.streams.getState().currentStreamId; if (id) await this.ensureRuntime(id);
   }
-  private saveViewSettings(patch: PartialPluginSettings, options?: { skipViewUpdate: boolean }): Promise<void> {
-    const scopeOnly = Object.keys(patch).every((key) => key === "lastFolderPath" || key === "activeBoxId");
-    if (!scopeOnly && !options?.skipViewUpdate) return this.plugin.saveSettings(patch);
-    const previous = this.suppressSettingsUpdate;
-    this.suppressSettingsUpdate = true; try { return this.plugin.saveSettings(patch); }
-    finally { this.suppressSettingsUpdate = previous; }
+  getCardScope(): CardScope { return this.navigationRuntime.getCardScope(); }
+  getCurrentFolderPath(): string | null { return this.navigationRuntime.getCurrentFolderPath(); }
+  hasLoadedScope(): boolean { return this.desktop ? this.restored || this.currentRuntime?.hasLoadedScope() === true : this.fallback.hasLoadedScope(); }
+  getSourceSummary(): string {
+    const state = this.streams.getState(); const current = state.streams.find(stream => stream.id === state.currentStreamId);
+    return current ? this.streamTitle(current) : getStreamUiStrings(this.plugin.getUiLanguage()).empty;
   }
-  private resolveTooltipSide(): "left" | "right" {
-    const root = this.leaf.getRoot();
-    return root === this.app.workspace.leftSplit ? "right" : "left";
-  }
-  private buildEmptyStateMessage(): string {
+  private seedLegacyState(): void {
+    if (!this.legacySeedPending || this.restored) return;
+    this.legacySeedPending = false;
+    const state = this.streams.getState(), previous = state.streams[0];
+    if (state.streams.length !== 1 || !previous || this.runtimes.size > 0) return;
     const settings = this.plugin.getSettings();
-    const capabilities = resolveSourceCapabilities(this.cardScope);
-    if (this.modules.boxDraw.active && !this.modules.search.getQuery().trim() && this.visibleCards.length === 0) {
-      return this.baseCards.length === 0 ? this.strings.box.drawEmpty : this.strings.box.drawHidden;
-    }
-    return resolveEmptyStateMessage({
-      strings: this.strings, query: this.modules.search.getQuery().trim(),
-      // Dormant filters never narrow a non-filterable scope, so they must not shape its copy.
-      activeTagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
-      baseCardCount: this.baseCards.length,
-      visibleCardCount: this.visibleRowCount(),
-      propertyClauseCount: capabilities.browsePropertyFilter ? settings.filter.properties.length : 0,
-      emptySearchMessage: isBoxScope(this.cardScope) ? this.strings.toolbar.emptySearchScope : undefined,
-      emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks
-        : isBoxScope(this.cardScope) ? this.strings.toolbar.emptyBox : undefined,
+    const snapshot = this.makeSnapshot(createFolderScope(settings.lastFolderPath ?? "", settings.includeSubfolders));
+    snapshot.browse.filter = { tags: [...settings.filter.tags], properties: normalizePropertyFilterClauses(settings.filter.properties) };
+    if (!this.navigationTouched) this.navigationState = { ...this.navigationState,
+      width: settings.navPaneWidth, collapsed: settings.navPaneCollapsed,
+      expandedFolderPaths: [...settings.expandedFolderPaths], expandedTagPaths: [...settings.expandedTagPaths],
+      expandedPropertyKeys: [...settings.expandedPropertyKeys], sectionCollapsed: { ...settings.sectionCollapsed } };
+    this.streams.update(previous.id, { ...snapshot, id: previous.id, title: previous.title });
+  }
+  private makeSnapshot(scope: CardScope): StreamSnapshot {
+    return { id: nextStreamId(), title: null, scope: { ...scope }, browse: createStreamBrowseState(scope, this.plugin.getSettings()),
+      query: "", searchOpen: false, linksPinned: scope.kind === "links", taskFilters: { ...DEFAULT_TASK_FILTER },
+      collapsedGroups: {}, anchor: null, anchorIndex: 0, desiredExpanded: true, lastActive: 0, widthWeight: 1, heightWeight: 1 };
+  }
+  private sourceLabel(scope: CardScope): string {
+    if (scope.kind === "folder") return scope.path || "/";
+    if (scope.kind === "box") return this.plugin.getSettings().boxes.find(box => box.id === scope.boxId)?.name ?? scope.boxId;
+    const direction = scope.direction === "backlinks" ? this.plugin.getUiStrings().links.directionBacklinks : this.plugin.getUiStrings().links.directionOutgoing;
+    return `${scope.notePath} · ${direction}`;
+  }
+  private streamTitle(stream: StreamSnapshot): string {
+    if (stream.title) return stream.title;
+    const peers = this.streams.getState().streams.filter(candidate => scopeIdentity(candidate.scope) === scopeIdentity(stream.scope));
+    const label = this.sourceLabel(stream.scope);
+    return peers.length > 1 ? `${label} (${peers.findIndex(candidate => candidate.id === stream.id) + 1})` : label;
+  }
+  private capture(id: string): void {
+    const entry = this.runtimes.get(id); const base = this.streams.getState().streams.find(stream => stream.id === id);
+    if (entry && base && (entry.runtime.hasLoadedScope() || entry.runtime.missing) && !this.pending.has(id)) this.streams.update(id, entry.runtime.captureSnapshot(base));
+  }
+  private captureAll(): void {
+    const previous = this.syncing; this.syncing = true;
+    try { for (const id of this.runtimes.keys()) this.capture(id); }
+    finally { this.syncing = previous; }
+  }
+  private syncStreams(): void {
+    if (!this.desktop || this.stopped || this.syncing || this.restoring) return;
+    this.syncing = true;
+    try {
+      const state = this.streams.getState();
+      const dimension = state.direction === "horizontal" ? state.width : state.height;
+      const visible = new Set(dimension > 0 ? state.visibleIds : state.currentStreamId ? [state.currentStreamId] : []);
+      for (const [id, entry] of this.runtimes) {
+        if (visible.has(id) || this.transferring.has(id)) continue;
+        this.capture(id);
+        if (state.streams.some(stream => stream.id === id)) this.sessions.set(id, entry.runtime.captureSelection());
+        else this.sessions.delete(id);
+        entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); this.runtimes.delete(id); this.pending.delete(id);
+      }
+      if (this.opened && this.readyToLoad) for (const id of visible) void this.ensureRuntime(id);
+      const current = this.currentRuntime;
+      this.resources.setCurrent(current?.modules.hydration ?? null);
+      current?.refreshNavigationMetadata();
+      this.publishStreams(); this.requestSave();
+    } finally { this.syncing = false; }
+  }
+  private ensureRuntime(id: string): Promise<CardStreamRuntime | null> {
+    const underway = this.pending.get(id); if (underway) return underway;
+    const existing = this.runtimes.get(id); if (existing) return Promise.resolve(existing.runtime);
+    const snapshot = this.streams.getState().streams.find(stream => stream.id === id) ?? (this.stagedTransfer?.id === id ? this.stagedTransfer : null);
+    if (!snapshot || this.stopped) return Promise.resolve(null);
+    const runtime = new CardStreamRuntime(this, this.plugin, { snapshot, navLayout: this.navLayout, previewResources: this.resources,
+      onChange: () => { this.capture(id); this.publishStreams(); this.requestSave(); },
+      onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
+      appendStreamMenu: (menu, payload) => this.appendNewStreamMenu(menu, payload),
+      isCurrent: () => this.streams.getState().currentStreamId === id,
+      getNavigationSnapshot: () => this.navigationRuntime.panelModel.getState().nav,
+    });
+    runtime.connect();
+    const entry: RuntimeEntry = { runtime, props: runtime.getPanelProps(), stop: () => {}, stopActivity: null };
+    this.runtimes.set(id, entry);
+    entry.stop = runtime.panelModel.subscribe(() => {
+      if (this.syncing || this.stopped || this.runtimes.get(id)?.runtime !== runtime) return;
+      this.capture(id); this.publishStreams(); this.requestSave();
+    });
+    const loading = Promise.resolve().then(async () => {
+      await this.plugin.waitForSettingsReady?.();
+      if (this.stopped || this.runtimes.get(id)?.runtime !== runtime) return null;
+      await runtime.restoreSnapshot(snapshot);
+      if (this.stopped || this.runtimes.get(id)?.runtime !== runtime) return null;
+      const selection = this.sessions.get(id); if (selection) runtime.restoreSelection(selection);
+      this.failures.delete(id); return runtime;
+    }).catch((error: unknown) => {
+      if (this.stopped || this.runtimes.get(id)?.runtime !== runtime) return null;
+      this.failures.set(id, String(error)); console.warn("[Card Workspace] Stream restore failed", error); return null;
+    }).finally(() => {
+      if (this.stopped || this.runtimes.get(id)?.runtime !== runtime) return;
+      if (this.pending.get(id) === loading) this.pending.delete(id);
+      this.capture(id); this.publishStreams(); this.requestSave();
+    });
+    this.pending.set(id, loading);
+    this.publishStreams(); return loading;
+  }
+  private publishStreams(): void {
+    if (!this.desktop || !this.streamPanelModel || this.stopped) return;
+    const state = this.streams.getState(), visible = new Set(state.visibleIds), sizes = resolveStreamSizes(state);
+    const nav = this.navigationRuntime;
+    const counts = new Map<string, number>(), ordinals = new Map<string, number>();
+    for (const stream of state.streams) { const key = scopeIdentity(stream.scope); counts.set(key, (counts.get(key) ?? 0) + 1); }
+    const titleFor = (stream: StreamSnapshot): string => {
+      const key = scopeIdentity(stream.scope), ordinal = (ordinals.get(key) ?? 0) + 1; ordinals.set(key, ordinal);
+      return stream.title ?? `${this.sourceLabel(stream.scope)}${(counts.get(key) ?? 0) > 1 ? ` (${ordinal})` : ""}`;
+    };
+    const requireCurrent = (): CardStreamRuntime | null => {
+      const runtime = this.currentRuntime;
+      if (!runtime) new Notice(this.plugin.getUiLanguage() === "zh" ? "请先选择或新建卡片流。" : "Select or create a card stream first.");
+      const id = state.currentStreamId;
+      return id && this.transferring.has(id) ? null : runtime;
+    };
+    const navProps = { ...buildPanelProps(nav),
+      onViewModeChange: (detail: { mode?: unknown }) => { void requireCurrent()?.modules.arrangementActions.onViewModeChange(detail); },
+      onIncludeSubfoldersChange: (detail: { value?: unknown }) => { void requireCurrent()?.onIncludeSubfoldersChange(detail); },
+      onSelectFolder: (detail: { path?: unknown }) => {
+      if (typeof detail.path === "string") void this.selectFolderFromNav(detail.path);
+    }, onNavigationIntent: (intent: import("./navigation-model").NavigationIntent) => this.handleNavigationIntent(intent),
+      onToggleNavPane: () => { void this.navLayout.onToggleNavPane(); }, onShellResize: (width: number) => this.navLayout.onShellResize(width) };
+    this.streamPanelModel.setState({
+      entries: state.streams.map(stream => { const entry = this.runtimes.get(stream.id); return {
+        id: stream.id, title: titleFor(stream), sourceLabel: this.sourceLabel(stream.scope),
+        expanded: visible.has(stream.id), autoCollapsed: stream.desiredExpanded && !visible.has(stream.id),
+        current: stream.id === state.currentStreamId, pending: this.pending.has(stream.id) || this.transferring.has(stream.id),
+        error: this.failures.get(stream.id), panelModel: entry?.runtime.panelModel ?? null, props: entry?.props ?? {},
+        weight: state.direction === "horizontal" ? stream.widthWeight : stream.heightWeight, size: sizes[stream.id],
+      }; }), currentStreamId: state.currentStreamId, direction: state.direction,
+      navigationVisible: this.navLayout.getNavVisible(), singlePane: this.navLayout.getLayoutMode() === "single",
+      navPanelModel: nav.panelModel, navProps, labels: getStreamUiStrings(this.plugin.getUiLanguage()),
+      recentlyClosedCount: state.recentlyClosedCount, unsupported: this.unsupported !== null,
     });
   }
-  private openCardWithDestination(path: string, destination: OpenDestination): void {
-    const location = this.resolveCardLocation(path);
-    if (location) void this.plugin.openNoteFromCard(path, destination, location);
-    else void this.plugin.openNoteFromCard(path, destination);
+  private requestSave(): void {
+    if (!this.opened || this.stopped || this.saveTimer !== null) return;
+    const win = this.containerEl.ownerDocument?.defaultView ?? window;
+    this.saveTimer = win.setTimeout(() => { this.saveTimer = null; if (!this.stopped) this.app.workspace.requestSaveLayout?.(); }, 200);
   }
-
-  resolveCardLocation(path: string): CardOpenLocation | null {
-    const scope = this.store.getScope();
-    if (!this.plugin.getSettings().locateLinkCardOnOpen || scope.kind !== "links"
-      || !this.store.getBaseCard(path)) return null;
-    const query = this.modules.search.getCommittedQuery().trim();
-    if (query) return { query };
-    return resolveLinkCardLocation(this.app, scope, path);
+  override getState(): Record<string, unknown> {
+    if (!this.desktop) return this.fallback.getState();
+    if (this.unsupported) return this.unsupported;
+    this.captureAll();
+    return { ...this.streams.toJSON({ ...this.navigationState, query: this.navLayout.getQuery(), focusId: this.navLayout.getFocusId() }) };
   }
-  changeSearchSnippets(path: string, command: "expand" | "more" | "collapse"): Promise<void> {
-    return this.modules.hydration.changeSearchSnippets(path, command);
+  override async setState(value: unknown, result: ViewStateResult): Promise<void> {
+    if (!this.desktop) return this.fallback.setState(value, result);
+    result.history = false;
+    const parsed = decodeDesktopLeafState(value, this.plugin.getSettings());
+    if (parsed.kind === "legacy") return;
+    this.leafStateEpoch++; this.stagedTransfer = null; this.legacySeedPending = false;
+    if (parsed.kind === "unsupported") {
+      this.restoring = true;
+      for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+      this.runtimes.clear(); this.pending.clear(); this.sessions.clear();
+      this.streams.restore({ version: 1, streams: [], currentStreamId: null, direction: "horizontal", navigation: this.navigationState });
+      this.unsupported = parsed.raw; this.restored = true; this.restoring = false; this.publishStreams(); return;
+    }
+    this.restoring = true;
+    try {
+      for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+      this.runtimes.clear(); this.pending.clear(); this.sessions.clear(); this.failures.clear();
+      this.navigationState = parsed.state.navigation;
+      this.navLayout.restoreLocalPosition(parsed.state.navigation.query, parsed.state.navigation.focusId);
+      this.streams.restore(parsed.state); this.readyToLoad = true; this.restored = true; this.unsupported = null;
+    } finally { this.restoring = false; }
+    this.syncStreams();
+    const current = this.streams.getState().currentStreamId; if (this.opened && current) await this.ensureRuntime(current);
   }
-
-  resolveSearchSnippetLocation(path: string, snippetId: string): CardOpenLocation | null {
-    const card = this.store.getBaseCard(path);
-    const preview = card?.searchPreview;
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!card || !preview || file !== card.file || !this.component
-      || !this.modules.search.isCommittedQueryCurrent()
-      || this.modules.search.getCommittedQuery().trim() !== preview.query
-      || this.modules.search.getContentRevision() !== preview.revision
-      || this.plugin.getSettings().previewLines !== preview.previewLines
-      || this.plugin.getSettings().searchPreviewSnippetCount !== preview.snippetLimit
-      || (card.file.stat?.mtime ?? card.mtime) !== preview.mtime) return null;
-    const snippet = preview.snippets.find((entry) => entry.id === snippetId);
-    if (!snippet) return null;
-    const { query, revision, previewLines, snippetLimit, mtime } = preview;
-    const selectionVersion = this.modules.scopeController.getActiveSelectionVersion();
-    const fileVersion = this.modules.hydration.getFileRevision(card.file);
-    const size = card.file.stat?.size;
-    const pathAtClick = card.file.path;
-    const isCurrent = (): boolean => this.component !== null
-      && this.modules.search.isCommittedQueryCurrent()
-      && this.modules.search.getCommittedQuery().trim() === query
-      && this.modules.search.getContentRevision() === revision
-      && this.modules.hydration.getFileRevision(card.file) === fileVersion
-      && this.modules.scopeController.getActiveSelectionVersion() === selectionVersion
-      && this.plugin.getSettings().previewLines === previewLines
-      && this.plugin.getSettings().searchPreviewSnippetCount === snippetLimit
-      && this.app.vault.getAbstractFileByPath(pathAtClick) === file
-      && card.file.path === pathAtClick
-      && card.file.stat?.size === size
-      && (card.file.stat?.mtime ?? card.mtime) === mtime;
-    return { kind: "search-snippet", snippet: {
-      ...snippet.location, from: { ...snippet.location.from }, to: { ...snippet.location.to },
-    }, isCurrent };
-  }
-
-  async onOpen(): Promise<void> {
-    this.modules.hoverPreview.activate();
-    const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
-    this.modules.search.initializeSnapshotState();
-    this.publishGroups(...PANEL_GROUPS);
-
-    const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
-    target.empty();
-
+  onOpen(): Promise<void> { return this.foreground = this.openView(); }
+  private async openView(): Promise<void> {
+    this.opened = true;
+    if (!this.desktop) { await this.fallback.onOpen(); return; }
+    const Panel = (await import("./StreamWorkspacePanel.svelte")).default;
+    if (this.stopped) return;
+    const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl; target.empty();
     this.hostEl = target.createDiv({ cls: "folder-card-view" });
-    this.component = mount(FolderCardPanel, {
-      target: this.hostEl,
-      props: buildPanelProps(this),
-    });
-
-    this.stopActivity = this.plugin.runtimeActivity?.observeRegion(this.hostEl.querySelector<HTMLElement>(".fce-list") ?? this.hostEl, this.workGate) ?? null;
-    this.modules.navLayout.refreshFolderTreeState();
-    this.modules.hydration.hydrateVisibleCardsOnOpen();
-    this.viewEventUnsubscribe?.();
-    this.viewEventUnsubscribe = this.plugin.subscribeVaultEvents((event) => {
-      const result = this.handleVaultMutation(event);
-      if (result.shouldRefresh) {
-        this.modules.scopeController.scheduleVaultRefresh();
+    this.component = mount(Panel, { target: this.hostEl, props: {
+      model: this.streamPanelModel, onSelect: (id: string) => { if (!this.transferring.has(id)) this.streams.select(id); },
+      onCommand: (id: string, command: StreamCommand, anchor?: HTMLElement) => this.handleStreamCommand(id, command, anchor),
+      onCreate: () => this.openNewStreamPicker(), onReopen: () => { this.streams.reopen(); },
+      onDirection: (direction: "horizontal" | "vertical") => this.streams.setDirection(direction),
+      onResize: (width: number, height: number) => this.streams.setSize(width, height),
+      onResizePair: (a: string, b: string, delta: number) => this.streams.resizePair(a, b, delta),
+      onReorder: (id: string, delta: -1 | 1) => this.streams.reorder(id, delta),
+      onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
+    } });
+    this.navLayout.refreshFolderTreeState();
+    this.stopVault = this.plugin.subscribeVaultEvents(event => {
+      this.handleNavigationVaultMutation(event);
+      this.reconcileSnapshots(event);
+      for (const entry of this.runtimes.values()) {
+        const result = entry.runtime.handleVaultMutation(event);
+        if (result.shouldRefresh) entry.runtime.modules.scopeController.scheduleVaultRefresh();
       }
     });
-    this.metadataEventUnsubscribe?.();
-    this.metadataEventUnsubscribe = this.plugin.subscribeMetadataEvents((event) => {
-      if (event.kind === "resolved") {
-        this.modules.metadataImpact.handleMetadataResolved();
-        if (isLinksScope(this.cardScope)) this.modules.scopeController.scheduleVaultRefresh();
-        return Promise.resolve();
-      }
-      return this.modules.metadataImpact.handleMetadataChange(event.path);
+    this.stopMetadata = this.plugin.subscribeMetadataEvents(async event => {
+      await Promise.all([this.fallback, ...[...this.runtimes.values()].map(entry => entry.runtime)].map(async runtime => {
+        if (event.kind === "resolved") {
+          runtime.modules.metadataImpact.handleMetadataResolved();
+          if (runtime.getCardScope().kind === "links") runtime.modules.scopeController.scheduleVaultRefresh();
+        } else await runtime.modules.metadataImpact.handleMetadataChange(event.path);
+      }));
     });
+    this.syncStreams();
+    const current = this.streams.getState().currentStreamId; if (current && this.readyToLoad) await this.ensureRuntime(current);
   }
-
   async onClose(): Promise<void> {
-    this.cleanupLifecycle();
-
-    if (this.component) {
-      await unmount(this.component);
-    }
-
-    this.component = null;
-    this.hostEl = null;
+    if (!this.desktop) { this.cleanupLifecycle(); await this.fallback.onClose(); return; }
+    this.captureAll(); this.cleanupLifecycle();
+    if (this.component) await unmount(this.component);
+    this.component = null; this.hostEl = null;
   }
-
-  /** Rows of the stream the last projection produced: note cards or root tasks. */
-  private visibleRowCount(): number {
-    return this.modules.projection.getStreamMode() === "tasks"
-      ? this.store.getVisibleTaskCards().length
-      : this.visibleCards.length;
+  cleanupLifecycle() {
+    if (!this.desktop) { this.stopped = true; this.navLayout.dispose(); this.resources.dispose(); return this.fallback.cleanupLifecycle(); }
+    this.stopped = true; this.stopStreams?.(); this.stopVault?.(); this.stopMetadata?.();
+    if (this.saveTimer !== null) (this.containerEl.ownerDocument?.defaultView ?? window).clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+    this.runtimes.clear(); this.pending.clear(); this.sessions.clear(); this.fallback.cleanupLifecycle(); this.navLayout.dispose(); this.resources.dispose();
+    return { cancelledDebounce: true, clearedQueuedRequest: true, clearedPendingHydration: true };
   }
-
-  handleToolbarAction(detail: { anchor?: HTMLElement; groupKey?: string; action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
-    const action = detail.action;
-    if (action === "task-close-panels") { this.modules.taskFilters.close(); return; }
-    if (action === "task-status" && detail.anchor) { this.modules.taskFilters.openStatus(detail.anchor); return; }
-    if (action === "task-date-filter" && detail.anchor) { this.modules.taskFilters.openDates(detail.anchor); return; }
-    if (action === "task-copy" && detail.anchor) { this.modules.taskFilters.openCopy(detail.anchor, detail.groupKey); return; }
-    if (action === "task-group-menu" && detail.anchor && detail.groupKey !== undefined) {
-      this.modules.taskFilters.openGroupMenu(detail.anchor, detail.groupKey, detail.position); return;
-    }
-    if (action === "task-clear-status" || action === "task-clear-date" || action === "task-clear-filters") {
-      this.modules.taskFilters.clear(action === "task-clear-status" ? "status" : action === "task-clear-date" ? "date" : undefined); return;
-    }
-
-    if (action === "view-mode") {
-      void this.modules.arrangementActions.toggleViewMode();
-      return;
-    }
-
-    // Bulk operations are unavailable in the task stream.
-    if (typeof action === "string" && action.startsWith("bulk") && this.modules.taskView.isTaskMode()) return;
-
-    if (action === "remove-browse-filter") {
-      if (!detail.filter) return;
-      const patch = buildBrowseFilterRemovalPatch(this.plugin.getSettings().filter, detail.filter,
-        resolveSourceCapabilities(this.cardScope));
-      if (patch) void this.saveViewSettings(patch);
-      return;
-    }
-
-    if (action === "clear-browse-filters") {
-      const capabilities = resolveSourceCapabilities(this.cardScope);
-      const filter = this.plugin.getSettings().filter;
-      if ((capabilities.browseTagFilter && filter.tags.length > 0)
-        || (capabilities.browsePropertyFilter && filter.properties.length > 0)) {
-        void this.saveViewSettings({ filter: {
-          ...(capabilities.browseTagFilter ? { tags: [] } : {}),
-          ...(capabilities.browsePropertyFilter ? { properties: [] } : {}),
-        } });
-      }
-      return;
-    }
-
-    if (action === "new-note") {
-      void this.modules.scopeNoteActions.createNote().catch((error: unknown) => {
-        new Notice(this.modules.folderActions.getFolderManagementStrings().createFileFailed(String(error)));
+  async handleScopeSelection(request: FolderSelectionRequest) {
+    if (!this.desktop) return this.fallback.handleScopeSelection(request);
+    const currentId = this.streams.getState().currentStreamId;
+    if (this.unsupported || this.stagedTransfer || (currentId && this.transferring.has(currentId))) return { action: "rejected_invalid" as const, scope: request.scope, generationChanged: false, preserveUiState: true };
+    if (request.source === "restore") this.seedLegacyState();
+    this.legacySeedPending = false; this.readyToLoad = true;
+    let id = this.streams.getState().currentStreamId;
+    if (!id) { const stream = this.makeSnapshot(request.scope); this.streams.add(stream); id = stream.id; }
+    if (!this.runtimes.has(id) && !this.pending.has(id)) {
+      const previous = this.streams.getState().streams.find(stream => stream.id === id);
+      if (previous && scopeIdentity(previous.scope) !== scopeIdentity(request.scope)) this.streams.update(id, {
+        scope: request.scope, browse: createStreamBrowseState(request.scope, this.plugin.getSettings()), query: previous.query, anchor: null,
       });
-      return;
     }
-
-    if (action === "bulk") {
-      this.modules.bulk.toggleBulkMode();
-      return;
-    }
-
-    if (action === "bulk-select-all") {
-      this.modules.bulk.bulkSelectAll();
-      return;
-    }
-
-    if (action === "bulk-clear-selection") {
-      this.modules.bulk.bulkClearSelection();
-      return;
-    }
-
-    if (action === "bulk-background-color") {
-      if (this.modules.bulk.isBulkMode() && detail.position) this.modules.cardBackgroundActions.openBulk([...this.modules.bulk.getSelectedPaths()], detail.position);
-      return;
-    }
-
-    if (action === "bulk-move-selected") {
-      this.modules.mergeActions.bulkMoveSelected();
-      return;
-    }
-
-    if (action === "bulk-edit-tags-selected") {
-      this.modules.tagActions.bulkEditTagsSelected();
-      return;
-    }
-
-    if (action === "bulk-edit-properties-selected") {
-      this.modules.bulkPropertyActions.bulkEditPropertiesSelected();
-      return;
-    }
-
-    if (action === "bulk-delete-selected") {
-      void this.modules.mergeActions.bulkDeleteSelected();
-      return;
-    }
-
-    if (action === "bulk-merge-selected") {
-      this.modules.mergeActions.bulkMergeSelected();
-      return;
-    }
-
-    if (action === "bulk-add-to-box") {
-      this.modules.boxActions.bulkAddToBox();
-      return;
-    }
-
-    if (action === "bulk-remove-from-box") {
-      void this.modules.boxActions.bulkRemoveFromBox();
-    }
-
-    if (typeof action === "string" && this.modules.linksActions.handleToolbarCommand(action)) return;
+    const runtime = await this.ensureRuntime(id);
+    if (!runtime) return { action: "rejected_invalid" as const, scope: request.scope, generationChanged: false, preserveUiState: true };
+    return runtime.handleScopeSelection(request);
   }
-
-  handleFolderActionRequest(detail: FolderActionPayload): void {
-    if (typeof detail.path !== "string") {
-      return;
-    }
-
-    if (detail.action === "create-child-folder") {
-      void this.modules.folderActions.createFromFolderTree(detail.path, "folder");
-    }
+  async setFolder(folder: TFolder) {
+    return this.handleScopeSelection({ requestId: Date.now(), scope: createFolderScope(folder.path, this.plugin.getSettings().includeSubfolders), source: "panel-picker", requestedAtMs: Date.now(), forceRefresh: false });
   }
-
-  async setFolder(folder: TFolder): Promise<SelectionResult> {
-    const scope = createFolderScope(folder.path, this.plugin.getSettings().includeSubfolders);
-    return this.modules.scopeController.handleScopeSelection(
-      this.modules.scopeController.createProgrammaticSelectionRequest(scope, false),
-    );
-  }
-
-  async handleScopeSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
-    return this.modules.scopeController.handleScopeSelection(request);
-  }
-
-  async refresh(request: RefreshRequest = { reason: "manual" }): Promise<RefreshResult> {
-    return this.modules.scopeController.refresh(request);
-  }
-
-  getCardScope(): CardScope { return this.cardScope; }
-  hasLoadedScope(): boolean { return this.modules.scopeController.getLoadKey() !== null; }
-  /**
-   * Applies the weakest update that still reflects a change. Only `"reload"`
-   * re-collects files; the weaker tiers keep scroll position and loaded previews.
-   */
-  async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
-    if (reason === "settings-change" && this.suppressSettingsUpdate) return;
-    this.modules.hoverPreview.applySize();
-    this.modules.images.onSettingsChanged();
-    this.modules.boxDraw.sync();
-    const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
-    switch (effective) {
-      case "reload":
-        await this.refresh({ reason, forceRefresh: true });
-        return;
-      case "rehydrate":
-        this.modules.hydration.clearPreviewCache();
-        this.modules.hydration.resetForLoad();
-        this.store.advanceHydrationRevision();
-        this.baseCards = this.baseCards.map((card) => ({
-          ...card, hydrated: false, previewHtml: "", previewMode: "empty", searchPreview: undefined, linkPreview: undefined,
-        }));
-        this.projectVisibleCards();
-        this.publishForIntent(intent);
-        return;
-      case "reproject":
-        this.modules.arrangementActions.sortAndReprojectCards();
-        this.publishForIntent(intent);
-        return;
-      case "patch":
-        this.publishForIntent(intent);
-        return;
-    }
-  }
-
-  /** Reprojects visible cards and reconciles bulk selection; never re-collects files. */
-  private projectVisibleCards(): void {
-    this.modules.projection.reprojectCards();
-    this.modules.bulk.reconcileToVisibleCards();
-  }
-
-  handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
-    this.modules.boxDraw.reconcile(event);
-    this.modules.images.handleVaultMutation(event);
-    if (event.eventType === "rename" && event.isFolder && event.oldPath) {
-      this.modules.navLayout.rewriteFolderIdentity((path) =>
-        rewritePathAfterRename(path, event.oldPath ?? "", event.path));
-    }
-    const result = this.modules.scopeController.handleVaultMutation(event);
-    this.modules.boxDraw.reconcile();
-    return result;
-  }
-
-  /**
-   * The one coherent immediate publication for a metadata event.
-   *
-   * Navigation is derived from the exact fresh projection snapshot built for
-   * this batch — never from the previously published projection — so tag
-   * sources/counts, facets, and the card projection cannot disagree inside a
-   * single notification.
-   */
-  private publishImpactBatch(batch: MetadataImpactBatch): void {
-    const projectionGroup = this.buildProjectionGroup();
-    const boxSummaries = this.modules.boxActions.buildBoxSummaries();
-    const navGroup = this.projectNavGroup(
-      this.modules.navLayout.getFolderTree(),
-      this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries }),
-      boxSummaries,
-      projectionGroup,
-    );
-    this.panelModel.batch((state) => {
-      if (batch.kind === "reprojected") {
-        state.scope = this.buildScopeGroup();
-        state.cards = this.buildCardsGroup();
-        state.bulk = this.buildBulkGroup();
-        if (batch.includeSearch) {
-          state.search = this.buildSearchGroup();
-        }
-      } else if (batch.includeCards) {
-        state.cards = this.buildCardsGroup();
-      }
-      state.projection = projectionGroup;
-      state.nav = navGroup;
-    });
-  }
-
-  /** Publish global metadata identities without invalidating scope count caches. */
-  refreshNavigationMetadata(): void { this.publishGroups("nav"); }
-
-  /** Re-push nav-derived state after plugin box/favorite reconciliation. */
-  refreshNavState(): void {
-    this.modules.navLayout.refreshNavState();
-  }
-
-  getRuntimeDiagnostics() { return { preview: this.modules.hydration.getDiagnostics(), images: this.modules.images.getDiagnostics() }; }
-
-  cleanupLifecycle(): CleanupResult {
-    this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
-    this.viewEventUnsubscribe?.();
-    this.viewEventUnsubscribe = null;
-    this.metadataEventUnsubscribe?.();
-    this.metadataEventUnsubscribe = null;
-    this.modules.boxDraw.dispose();
-    const scopeReport = this.modules.scopeController.dispose();
-    const navLayoutReport = this.modules.navLayout.dispose();
-    this.modules.bulk.dispose();
-    this.modules.cardDropActions.dispose();
-    this.modules.cardBackgroundActions.dispose();
-    this.modules.iconActions.dispose();
-    const searchReport = this.modules.search.dispose();
-    const hydrationReport = this.modules.hydration.dispose();
-    this.modules.metadataImpact.dispose();
-    this.modules.images.dispose();
-    this.modules.hoverPreview.dispose();
-    this.modules.groupCollapse.dispose();
-    const taskViewReport = this.modules.taskView.dispose();
-    this.modules.taskActions.dispose();
-    this.modules.taskFilters.dispose();
-    this.modules.timeGroup.dispose();
-    this.modules.property.dispose();
-
-    return {
-      cancelledDebounce:
-        (searchReport.cancelledDebounce ?? false)
-        || (navLayoutReport.cancelledDebounce ?? false)
-        || (scopeReport.cancelledDebounce ?? false)
-        || (hydrationReport.cancelledDebounce ?? false)
-        || (taskViewReport.cancelledDebounce ?? false),
-      clearedQueuedRequest: scopeReport.clearedQueuedRequest ?? false,
-      clearedPendingHydration: hydrationReport.clearedPendingHydration ?? false,
-    };
-  }
-
-  setSelectedFile(path: string | null, preserveScope = false): void {
-    if (this.selectedPath === path) {
-      return;
-    }
-
-    this.selectedPath = path;
-    const next = preserveScope ? null : resolveLinksFollowScope(this.cardScope, path, this.store.getLinksPinned());
-    if (next) {
-      void this.modules.scopeController.handleScopeSelection(
-        this.modules.scopeController.createProgrammaticSelectionRequest(next, false, "links-follow"),
-      );
-    }
-    this.publishGroups("cards", "bulk", "nav");
-  }
-
-  getCurrentFolderPath(): string | null {
-    return resolveScopeFolderPath(this.cardScope);
-  }
-
-  openNavContextMenu(payload: NavContextMenuPayload): void {
-    const targetCurrent = isCurrentNavigationMenuTarget({
-      payload,
-      settings: this.plugin.getSettings(),
-      navLayout: this.modules.navLayout,
-      resolveFolder: (path) => this.modules.folderActions.resolveFolderFromUiPath(path),
-    });
-    openNavigationContextMenu({
-      payload, disposed: this.modules.navLayout.isDisposed(), targetCurrent,
-      deps: { ...buildNavMenuDepsFor({
-        context: this.context, modules: this.modules,
-        onIncludeSubfoldersChange: (detail) => this.onIncludeSubfoldersChange(detail),
-      }), shouldRestoreFocus: () => !this.modules.iconActions.hasOpenSession(), appendIconMenu: (menu, payload, options) => {
-        const target = navigationIconTarget(payload as import("./navigation-model").NavigationMenuTarget);
-        if (!target) return false;
-        const anchor = Array.from(this.hostEl?.querySelectorAll<HTMLElement>("[data-nav-row-id]") ?? []).find(el => el.dataset.navRowId === payload.originId) ?? this.hostEl ?? this.containerEl;
-        const position = payload.trigger.kind === "position" ? payload.trigger.position : { x: payload.trigger.mouseEvent.clientX, y: payload.trigger.mouseEvent.clientY };
-        return this.modules.iconActions.appendMenu(menu, target, anchor, position, options);
-      } },
-      restoreFocus: (originId) => this.modules.navLayout.restoreFocus(originId),
-    });
-  }
-
-  handleNavigationIntent(intent: NavigationIntent): void {
-    if (intent.type === "change-icon") {
-      const row = this.modules.navLayout.getProjection().rows.find(row => row.id === intent.rowId);
-      const target = row ? navigationIconTarget(row.menuTarget) : null;
-      if (target) this.modules.iconActions.open(target, intent.anchor);
-      return;
-    }
-    routeNavigationIntent({
-      intent, navLayout: this.modules.navLayout, scope: this.cardScope,
-      activeTags: this.plugin.getSettings().filter.tags,
-      createFromTemplate: (id) => { void this.plugin.createNoteFromTemplate(id); },
-      templateCommand: () => this.modules.templateActions.newTemplate(),
-      openQuickInput: (win) => { void this.plugin.openQuickInput(win); },
-      selectFolder: (path) => { void this.selectFolderFromNav(path); },
-      switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
-      applyTagFilter: (tags, additive) => {
-        this.modules.navLayout.returnToCardsViewIfSinglePane();
-        void this.modules.tagActions.applyTagFilter(tags, additive);
-      },
-      activateFavorite: (favorite) => {
-        this.modules.navLayout.returnToCardsViewIfSinglePane();
-        this.modules.favoriteActions.handleFavoriteActivate({ favorite });
-      },
-      selectPropertyValue: (key, ref, additive) => {
-        this.modules.navLayout.returnToCardsViewIfSinglePane();
-        void this.modules.propertyActions.applyValueFilter(key, ref, additive);
-      },
-      selectLinksDirection: (direction) => {
-        this.modules.navLayout.returnToCardsViewIfSinglePane();
-        this.modules.linksActions.enterOrSwitchLinks(direction);
-      },
-      moveFolder: (sourcePath, targetFolderPath) => void this.modules.folderActions.moveFolderTo(sourcePath, targetFolderPath),
-      reorderFavorites: (source, target, position) => void this.modules.favoriteActions.reorderFavoriteEntries(source, target, position),
-    });
-  }
-
-  private getViewWindow(): Pick<Window, "setTimeout" | "clearTimeout"> {
-    return this.hostEl?.ownerDocument?.defaultView
-      ?? (typeof activeWindow !== "undefined" ? activeWindow : window);
-  }
-
-  private getDisplayFolderPath(): string {
-    const path = scopeDisplayPath(this.cardScope);
-    return path === "" ? "/" : path;
-  }
-  private buildScopeGroup(): PanelModelState["scope"] {
-    const settings = this.plugin.getSettings();
-    const box = this.modules.boxActions.getActiveBox();
-    const capabilities = resolveSourceCapabilities(this.cardScope, this.modules.boxDraw.active);
-    return {
-      draw: this.modules.boxDraw.snapshot(),
-      displayPath: this.getDisplayFolderPath(),
-      includeSubfolders: settings.includeSubfolders,
-      activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
-      activeBoxName: box?.name ?? null,
-      boxExcludedCount: box?.excludedPaths.length ?? 0,
-      emptyStateMessage: this.buildEmptyStateMessage(),
-      sourceIdentity: scopeIdentity(this.cardScope),
-      browseTagFilterEnabled: capabilities.browseTagFilter && !this.modules.boxDraw.active,
-      browsePropertyFilterEnabled: capabilities.browsePropertyFilter && !this.modules.boxDraw.active,
-      browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, settings.filter) || this.modules.boxDraw.active && (settings.filter.tags.length > 0 || settings.filter.properties.length > 0),
-      browseFilterState: {
-        items: buildBrowseFilterChips(settings.filter, capabilities,
-          capabilities.browsePropertyFilter && settings.filter.properties.length > 0
-            ? this.modules.property.derivePropertyFacets() : [], this.strings.property),
-        tagCount: capabilities.browseTagFilter ? settings.filter.tags.length : 0,
-        propertyValueCount: capabilities.browsePropertyFilter
-          ? settings.filter.properties.reduce((count, clause) => count + clause.values.length, 0) : 0,
-        canClearEmptyResult: this.baseCards.length > 0 && this.visibleRowCount() === 0
-          && ((capabilities.browseTagFilter && settings.filter.tags.length > 0)
-            || (capabilities.browsePropertyFilter && settings.filter.properties.length > 0)),
-      },
-      supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
-      supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
-      ...buildLinksScopeGroupFields(this.cardScope, this.store, this.strings),
-    };
-  }
-
-  private buildCardsGroup(): PanelModelState["cards"] {
-    const scope = this.modules.scopeController;
-    const streamMode = this.modules.projection.getStreamMode();
-    return buildCardsPanelGroup({
-      records: this.visibleCards, searchMatchCountsByPath: this.modules.search.getMatchCountsByPath(),
-      selectedPath: this.selectedPath, loading: scope.isLoading(), generation: this.epochs.load.value,
-      sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
-      groupSegments: this.modules.projection.getGroupSegments(), groupRevision: this.modules.projection.getGroupRevision(),
-      taskGroupCounts: Object.fromEntries((this.modules.projection.getTaskSnapshot?.()?.copyGroups ?? []).map(group => [group.key, group.tasks.reduce((sum, task) => sum + taskTreeCount(task), 0)])),
-      streamMode, taskRecords: this.store.getVisibleTaskCards(), taskStatus: this.modules.taskView.getStatus(),
-      pendingTaskIds: streamMode === "tasks" ? this.modules.taskActions.getPendingIds() : [],
-      pendingTaskStatuses: streamMode === "tasks" ? this.modules.taskActions.getPendingStatuses() : {},
-    });
-  }
-
-  private buildSearchGroup(): PanelModelState["search"] {
-    return {
-      history: this.plugin.getSettings().searchHistory,
-      query: this.modules.search.getQuery(), committedQuery: this.modules.search.getCommittedQuery(),
-      status: this.modules.search.getStatus(),
-      readiness: this.modules.search.getSnapshot()?.health?.readiness,
-      persistence: this.modules.search.getSnapshot()?.health?.persistence,
-      rebuildReason: this.modules.search.getSnapshot()?.health?.rebuildReason ?? null,
-      focusToken: this.modules.search.getFocusToken(),
-    };
-  }
-
-  private buildProjectionGroup(): PanelModelState["projection"] {
-    const settings = this.plugin.getSettings(); const scope = this.store.getScope();
-    const { sort, pinnedPaths, group, viewMode, taskSort, taskGroup } = resolveViewConfig(scope, settings);
-    const projection = this.modules.projection;
-    const capabilities = resolveSourceCapabilities(scope);
-    return { ...buildProjectionPanelGroup({
-      sortField: sort.field, sortDirection: sort.direction,
-      deriveAvailableTags: () => projection.deriveAvailableTags(), deriveTagCounts: () => projection.deriveTagCounts(),
-      activeFilterTags: settings.filter.tags, pinnedPaths, group,
-      availableGroupDimensions: [...capabilities.groupDimensions],
-      groupSegmentCount: projection.getGroupSegments().length,
-      viewMode, taskSort, taskGroup, taskViewAvailable: capabilities.taskView,
-    }), taskFilters: this.store.getTaskFilters(), taskDateLabel: this.modules.taskFilters.getDateLabel(true), taskDateTooltip: this.modules.taskFilters.getDateLabel() };
-  }
-
-  private buildBulkGroup(): PanelModelState["bulk"] {
-    return this.modules.bulk.buildPanelState();
-  }
-
-  private buildNavGroup(): PanelModelState["nav"] {
-    const boxSummaries = this.modules.boxActions.buildBoxSummaries(); const folderTree = this.modules.navLayout.getFolderTree();
-    const favorites = this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries });
-    // Navigation-only republishes reuse published Tag sources/counts, staying off the card projection path.
-    const projectionGroup = this.panelModel?.getState().projection ?? this.buildProjectionGroup();
-    return this.projectNavGroup(folderTree, favorites, boxSummaries, projectionGroup);
-  }
-  private projectNavGroup(folderTree: PanelModelState["nav"]["folderTree"], favorites: PanelModelState["nav"]["favorites"],
-    boxSummaries: PanelModelState["nav"]["boxSummaries"], projectionGroup: PanelModelState["projection"]): PanelModelState["nav"] {
-    const propertyFacets = this.modules.property.derivePropertyFacets();
-    this.plugin.navigationMetadataCatalog?.seedScope(projectionGroup.availableTags, propertyFacets);
-    return buildNavigationPanelState({
-      metadataCatalog: this.plugin.navigationMetadataCatalog?.getSnapshot(),
-      drawActive: this.modules.boxDraw.active,
-      settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
-      folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
-      propertyFacets,
-      templates: (this.plugin.getSettings().noteTemplates ?? []).map((template) => {
-        const file = this.app.vault.getAbstractFileByPath(template.filePath);
-        const folder = template.targetFolderPath === "" ? this.app.vault.getRoot()
-          : template.targetFolderPath === null ? null : this.app.vault.getAbstractFileByPath(template.targetFolderPath);
-        return { id: template.id, filePath: template.filePath,
-          label: template.name?.trim() || template.filePath.split("/").pop() || template.filePath,
-          unavailable: !(file instanceof TFile) || file.extension.toLowerCase() !== "md" || !(folder instanceof TFolder) };
-      }),
-    });
-  }
-  private buildImagesGroup(): PanelModelState["images"] { return this.modules.images.getPanelState(); }
-  private buildAppearanceGroup(): PanelModelState["appearance"] {
-    const settings = this.plugin.getSettings();
-    return {
-      iconDefaults: settings.iconDefaults, iconOverrides: settings.iconOverrides,
-      cardCornerRadius: settings.cardCornerRadius,
-      previewLines: settings.previewLines,
-      searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
-      cardImageMode: settings.cardImageMode,
-      cardImageFit: settings.cardImageFit,
-      uiFontSize: settings.uiFontSize,
-      uiDensity: settings.uiDensity,
-      cardStyle: settings.cardStyle,
-      cardBackgroundColor: settings.cardBackgroundColor,
-      cardBackgroundOverrides: settings.cardBackgroundOverrides,
-      taskCompletedStyle: settings.taskCompletedStyle,
-      taskCardShowFile: settings.taskCardShowFile,
-      taskDateColors: settings.taskDateColors,
-    };
-  }
-
-  /** Runtime events replace only the requested groups and notify listeners once. */
-  private publishGroups(...groups: PanelGroup[]): void {
-    if (groups.includes("cards") && this.modules?.images.prepareGeneration() && !groups.includes("images")) groups.push("images");
-    if (groups.includes("cards")) this.modules?.images.notifyTextReady();
-    if (groups.includes("cards") || groups.includes("projection") || groups.includes("search")) this.modules?.timeGroup.sync();
-    const uniqueGroups = new Set(groups);
-    this.panelModel.batch((state) => {
-      for (const group of uniqueGroups) {
-        switch (group) {
-          case "capabilities":
-            state.capabilities = this.plugin.runtimePlatform?.capabilities ?? UNSUPPORTED_CAPABILITIES;
-            break;
-          case "strings":
-            state.strings = this.strings;
-            break;
-          case "scope":
-            state.scope = this.buildScopeGroup();
-            break;
-          case "cards":
-            state.cards = this.buildCardsGroup();
-            break;
-          case "search":
-            state.search = this.buildSearchGroup();
-            break;
-          case "projection":
-            state.projection = this.buildProjectionGroup();
-            break;
-          case "bulk":
-            state.bulk = this.buildBulkGroup();
-            break;
-          case "nav":
-            state.nav = this.buildNavGroup();
-            break;
-          case "images":
-            state.images = this.buildImagesGroup();
-            break;
-          case "appearance":
-            state.appearance = this.buildAppearanceGroup();
-            break;
-        }
-      }
-    });
-  }
-  private buildLoadBoundaryHost(): LoadBoundaryHost {
-    return {
-      panelModel: this.panelModel, publishGroups: (...groups) => this.publishGroups(...groups),
-      projectNav: (folderTree, favorites, boxSummaries, cardProjection) =>
-        this.projectNavGroup(folderTree, favorites, boxSummaries, cardProjection),
-      getSettings: () => this.plugin.getSettings(), getScope: () => this.cardScope,
-      getSelectedPath: () => this.selectedPath,
-    };
-  }
-  /** Settings changes translate their four update tiers into explicit groups. */
-  private publishForIntent(intent: ViewUpdateIntent): void {
-    switch (intent) {
-      case "patch":
-        this.publishGroups("nav", "appearance", "strings", "scope", "search");
-        return;
-      case "reproject":
-      case "rehydrate":
-        this.publishGroups("nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk");
-        return;
-      case "reload":
-        this.publishGroups(...PANEL_GROUPS);
-        return;
-    }
-  }
-
   async selectFolderFromNav(path: string): Promise<void> {
-    this.modules.navLayout.returnToCardsViewIfSinglePane();
-
-    // The scope load clears browse filters when the destination commits.
-    await this.plugin.selectFolderByPath(path, "panel-picker");
+    if (!this.desktop) return this.fallback.selectFolderFromNav(path);
+    this.navLayout.returnToCardsViewIfSinglePane();
+    const current = this.getCardScope();
+    await this.handleScopeSelection({ requestId: Date.now(), scope: createFolderScope(path, current.kind === "folder" ? current.includeSubfolders : this.plugin.getSettings().includeSubfolders), source: "panel-picker", requestedAtMs: Date.now(), forceRefresh: false });
   }
-
-  async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
-    if (!resolveSourceCapabilities(this.cardScope).supportsIncludeSubfolders) {
-      return;
+  handleNavigationIntent(intent: import("./navigation-model").NavigationIntent): void {
+    if (!this.desktop) { this.fallback.handleNavigationIntent(intent); return; }
+    const currentId = this.streams.getState().currentStreamId;
+    if (this.unsupported || this.stagedTransfer || (currentId && this.transferring.has(currentId))) return;
+    if (!this.hasCurrentStream() && intent.type === "activate") {
+      const row = this.navLayout.getProjection().rows.find(candidate => candidate.id === intent.rowId);
+      if (row && this.openNavigationSource(row.menuTarget)) return;
     }
-    this.modules.navLayout.returnToCardsViewIfSinglePane();
-    if (typeof detail.value !== "boolean") {
-      return;
-    }
-
-    if (this.plugin.getSettings().includeSubfolders === detail.value) {
-      return;
-    }
-
-    await this.plugin.saveSettings({
-      includeSubfolders: detail.value,
-    });
+    this.navigationRuntime.handleNavigationIntent(intent);
   }
-
-  onCardHoverLink(detail: CardHoverLinkPayload): void {
-    this.app.workspace.trigger("hover-link", {
-      event: detail.mouseEvent,
-      source: "card-workspace",
-      hoverParent: this,
-      targetEl: detail.targetEl,
-      linktext: detail.path,
+  handleVaultMutation(event: VaultMutationEvent) {
+    if (!this.desktop) return this.fallback.handleVaultMutation(event);
+    this.reconcileSnapshots(event);
+    return this.navigationRuntime.handleVaultMutation(event);
+  }
+  async refresh(request: RefreshRequest = { reason: "manual" }) { return this.navigationRuntime.refresh(request); }
+  async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
+    if (!this.desktop) return this.fallback.applyUpdateIntent(intent, reason);
+    const visibleKeys = new Set(this.plugin.getSettings().visiblePropertyKeys);
+    for (const stream of this.streams.getState().streams) {
+      const filter = { ...stream.browse.filter, properties: normalizePropertyFilterClauses(stream.browse.filter.properties, visibleKeys) };
+      const group = stream.browse.group.dimension === "property" && !visibleKeys.has(stream.browse.group.propertyKey ?? "")
+        ? { ...stream.browse.group, dimension: "none" as const } : stream.browse.group;
+      if (!this.runtimes.has(stream.id)) this.streams.update(stream.id, { browse: { ...stream.browse, filter, group } });
+      else this.runtimes.get(stream.id)?.runtime.context.browse?.update({ filter, group });
+    }
+    await Promise.all([...this.runtimes.values()].map(entry => entry.runtime.applyUpdateIntent(intent, reason)));
+    this.fallback.refreshNavigationMetadata(); this.publishStreams();
+  }
+  setSelectedFile(path: string | null, preserveScope = false): void {
+    if (!this.desktop) { this.fallback.setSelectedFile(path, preserveScope); return; }
+    this.fallback.setSelectedFile(path, true);
+    for (const stream of this.streams.getState().streams) {
+      const runtime = this.runtimes.get(stream.id)?.runtime;
+      if (runtime) runtime.setSelectedFile(path, preserveScope);
+      else if (!preserveScope && !stream.linksPinned && stream.scope.kind === "links" && path) {
+        this.streams.update(stream.id, { scope: { ...stream.scope, notePath: path } });
+      }
+    }
+  }
+  refreshNavState(): void { if (!this.desktop) { this.fallback.refreshNavState(); return; } this.navLayout.refreshNavState(); this.publishStreams(); }
+  refreshNavigationMetadata(): void { this.navigationRuntime.refreshNavigationMetadata(); this.publishStreams(); }
+  async transferToSidebar(target: FolderCardView, current: () => boolean): Promise<boolean> { return this.fallback.transferToSidebar(target.fallback, current); }
+  registerReadingPosition(bridge: import("./scope-history").ReadingPositionBridge | null): void { this.navigationRuntime.registerReadingPosition(bridge); }
+  handleToolbarAction(detail: Parameters<CardStreamRuntime["handleToolbarAction"]>[0]): void { this.navigationRuntime.handleToolbarAction(detail); }
+  handleFolderActionRequest(detail: Parameters<CardStreamRuntime["handleFolderActionRequest"]>[0]): void { this.navigationRuntime.handleFolderActionRequest(detail); }
+  openNavContextMenu(payload: NavContextMenuPayload): void { this.navigationRuntime.openNavContextMenu(payload); }
+  onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> { return this.navigationRuntime.onIncludeSubfoldersChange(detail); }
+  onCardHoverLink(detail: Parameters<CardStreamRuntime["onCardHoverLink"]>[0]): void { this.navigationRuntime.onCardHoverLink(detail); }
+  resolveCardLocation(path: string) { return this.navigationRuntime.resolveCardLocation(path); }
+  resolveSearchSnippetLocation(path: string, id: string) { return this.navigationRuntime.resolveSearchSnippetLocation(path, id); }
+  changeSearchSnippets(path: string, command: "expand" | "more" | "collapse") { return this.navigationRuntime.changeSearchSnippets(path, command); }
+  getRuntimeDiagnostics(): ReturnType<CardStreamRuntime["getRuntimeDiagnostics"]> & { streams?: { total: number; active: number; transferring: number } } {
+    if (!this.desktop) return this.fallback.getRuntimeDiagnostics();
+    const diagnostics = this.navigationRuntime.getRuntimeDiagnostics(), resources = this.resources.getDiagnostics();
+    return { ...diagnostics, preview: { ...diagnostics.preview, ...resources },
+      images: { ...diagnostics.images, objectUrls: [...this.runtimes.values()].reduce((count, entry) => count + entry.runtime.getRuntimeDiagnostics().images.objectUrls, 0) },
+      streams: { total: this.streams.getState().streams.length, active: this.runtimes.size, transferring: this.transferring.size } };
+  }
+  async createStream(choice: StreamSourceChoice): Promise<string | null> {
+    if (!this.desktop || this.stopped || this.unsupported || this.stagedTransfer) return null;
+    this.legacySeedPending = false; this.readyToLoad = true;
+    const snapshot = this.makeSnapshot(choice.scope);
+    if (choice.filter) snapshot.browse.filter = choice.filter;
+    this.streams.add(snapshot); this.navLayout.returnToCardsViewIfSinglePane();
+    await this.ensureRuntime(snapshot.id); return snapshot.id;
+  }
+  openNewStreamPicker(): void {
+    if (this.unsupported) {
+      void this.plugin.createCardStreamLeaf(this.leaf).then(async leaf => {
+        await leaf.setViewState({ type: FOLDER_CARD_VIEW, active: true });
+        await this.app.workspace.revealLeaf(leaf); await leaf.loadIfDeferred?.();
+        if (leaf.view instanceof FolderCardView) await leaf.view.waitForForeground();
+      }).catch(error => console.warn("[Card Workspace] Recovery pane failed", error));
+      return;
+    }
+    new StreamSourcePicker(this.app, this.plugin, choice => { void this.createStream(choice); }).open();
+  }
+  handleStreamCommand(id: string, command: StreamCommand, anchor?: HTMLElement): void {
+    if (this.transferring.has(id) || this.stopped) return;
+    this.legacySeedPending = false;
+    this.capture(id);
+    const snapshot = this.streams.getState().streams.find(stream => stream.id === id); if (!snapshot) return;
+    const labels = getStreamUiStrings(this.plugin.getUiLanguage());
+    switch (command) {
+      case "show-only": this.streams.showOnly(id); break;
+      case "tile": this.streams.select(id); break;
+      case "collapse": this.streams.setExpanded(id, false); break;
+      case "close": this.sessions.delete(id); this.streams.remove(id); break;
+      case "duplicate": {
+        const duplicate = { ...snapshot, id: nextStreamId(), title: snapshot.title ? `${snapshot.title} (2)` : null, linksPinned: snapshot.scope.kind === "links" ? true : snapshot.linksPinned };
+        this.streams.add(duplicate); break;
+      }
+      case "rename": new StreamNameModal(this.app, { strings: this.plugin.getUiStrings(), title: labels.rename, name: snapshot.title,
+        sourceLabel: this.sourceLabel(snapshot.scope), language: this.plugin.getUiLanguage(), submit: title => { this.streams.update(id, { title }); } }).open(); break;
+      case "move-to-pane": case "copy-to-pane": void this.transferStream(id, command === "copy-to-pane"); break;
+      case "manage": {
+        const menu = new Menu();
+        for (const [action, title] of [["show-only", labels.showOnly], ["tile", labels.tile], ["collapse", labels.collapse], ["duplicate", labels.duplicate], ["rename", labels.rename], ["move-to-pane", labels.moveToPane], ["copy-to-pane", labels.copyToPane], ["close", labels.close]] as const) {
+          menu.addItem(item => item.setTitle(title).onClick(() => this.handleStreamCommand(id, action)));
+        }
+        if (anchor) { const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument); }
+        break;
+      }
+    }
+  }
+  async transferStream(id: string, copy = false): Promise<boolean> {
+    if (!this.desktop || this.stopped || this.transferring.has(id)) return false;
+    this.capture(id); const original = this.streams.getState().streams.find(stream => stream.id === id); if (!original) return false;
+    this.transferring.add(id); this.publishStreams();
+    let leaf: WorkspaceLeaf | null = null;
+    let createdTarget: FolderCardView | null = null;
+    const sourceEpoch = this.leafStateEpoch;
+    let targetToken: StreamSnapshot | null = null;
+    try {
+      const runtime = this.runtimes.get(id)?.runtime;
+      runtime?.endTransientInteractions();
+      const selection = runtime?.captureSelection() ?? this.sessions.get(id);
+      const snapshot = copy ? { ...original, id: nextStreamId(), linksPinned: original.scope.kind === "links" ? true : original.linksPinned } : original;
+      const targetLeaf = await this.plugin.createCardStreamLeaf(this.leaf);
+      leaf = targetLeaf;
+      await targetLeaf.setViewState({ type: FOLDER_CARD_VIEW, state: { version: 1, streams: [], currentStreamId: null, direction: "horizontal", navigation: this.navigationState } });
+      await targetLeaf.loadIfDeferred?.();
+      const target = targetLeaf.view;
+      if (!(target instanceof FolderCardView) || target.stopped || this.stopped || !this.streams.getState().streams.some(stream => stream.id === id)) throw new Error("Stream transfer cancelled");
+      createdTarget = target;
+      const targetEpoch = target.leafStateEpoch;
+      target.restoring = true;
+      targetToken = { ...snapshot, desiredExpanded: true };
+      target.stagedTransfer = targetToken;
+      const transferred = await target.ensureRuntime(snapshot.id);
+      if (!transferred || target.stopped || this.stopped || !validateScope(this.app, snapshot.scope, this.plugin.getSettings().boxes)) throw new Error("Stream transfer failed");
+      if (!copy && selection) transferred.restoreSelection(selection);
+      await this.app.workspace.revealLeaf(targetLeaf); this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+      if (target.stopped || this.stopped || sourceEpoch !== this.leafStateEpoch || targetEpoch !== target.leafStateEpoch
+        || target.stagedTransfer !== targetToken || target.runtimes.get(snapshot.id)?.runtime !== transferred
+        || (runtime && this.runtimes.get(id)?.runtime !== runtime)) throw new Error("Stream transfer cancelled");
+      this.capture(id);
+      const latest = this.streams.getState().streams.find(stream => stream.id === id);
+      const signature = (value: StreamSnapshot): string => JSON.stringify([value.scope, value.browse, value.query, value.searchOpen, value.linksPinned, value.taskFilters, value.collapsedGroups]);
+      if (!latest || signature(latest) !== signature(original)) throw new Error("Source browsing changed during transfer");
+      // The staged target is excluded from getState until both ownership changes commit.
+      target.streams.add(transferred.captureSnapshot({ ...snapshot, desiredExpanded: true }));
+      if (!copy) { this.sessions.delete(id); this.streams.remove(id, false); }
+      target.stagedTransfer = null; target.restoring = false; target.readyToLoad = true; target.restored = true; target.syncStreams();
+      this.transferring.delete(id); this.syncStreams(); target.requestSave(); this.requestSave();
+      return true;
+    } catch (error) {
+      if (leaf && (createdTarget ? leaf.view === createdTarget && createdTarget.stagedTransfer === targetToken
+        : [FOLDER_CARD_VIEW, "empty"].includes(leaf.view.getViewType?.()))) leaf.detach();
+      new Notice(this.plugin.getUiLanguage() === "zh" ? "移动卡片流失败，原卡片流已保留。" : "Unable to transfer the stream. The original stream is preserved.");
+      console.warn("[Card Workspace] Stream transfer failed", error); return false;
+    } finally { this.transferring.delete(id); this.syncStreams(); }
+  }
+  private appendNewStreamMenu(menu: Menu, payload: NavContextMenuPayload): boolean {
+    const label = this.plugin.getUiLanguage() === "zh" ? "在新卡片流中打开" : "Open in a new card stream";
+    if (payload.scope !== "item" || !["folders", "tags", "properties", "boxes", "links", "favorites"].includes(payload.section)) return false;
+    menu.addItem(item => item.setTitle(label).setIcon("panels-top-left").onClick(() => { this.openNavigationSource(payload as import("./navigation-model").NavigationMenuTarget); })); return true;
+  }
+  private openNavigationSource(payload: import("./navigation-model").NavigationMenuTarget): boolean {
+    if (payload.scope !== "item") return false;
+    const root = createFolderScope("", true); let choice: StreamSourceChoice | null = null;
+    if (payload.section === "folders" && typeof payload.itemId === "string") choice = { scope: createFolderScope(payload.itemId, this.plugin.getSettings().includeSubfolders) };
+    else if (payload.section === "boxes" && typeof payload.itemId === "string") choice = { scope: { kind: "box", boxId: payload.itemId } };
+    else if (payload.section === "tags" && typeof payload.itemId === "string") choice = { scope: root, filter: { tags: [payload.itemId], properties: [] } };
+    else if (payload.section === "links" && (payload.itemId === "backlinks" || payload.itemId === "outgoing")) {
+      const active = this.app.workspace.getActiveFile(); if (active) choice = { scope: createLinksScope(active.path, payload.itemId) };
+    } else if (payload.section === "properties") {
+      if (payload.itemId && payload.value) choice = { scope: root, filter: { tags: [], properties: [{ key: payload.itemId, values: [payload.value] }] } };
+    } else if (payload.section === "favorites" && payload.favorite) {
+      const favorite = payload.favorite;
+      if (favorite.kind === "folder") choice = { scope: createFolderScope(favorite.ref, this.plugin.getSettings().includeSubfolders) };
+      else if (favorite.kind === "box") choice = { scope: { kind: "box", boxId: favorite.ref } };
+      else if (favorite.kind === "tag") choice = { scope: root, filter: { tags: [favorite.ref], properties: [] } };
+    }
+    if (!choice) return false;
+    void this.createStream(choice); return true;
+  }
+  private handleNavigationVaultMutation(event: VaultMutationEvent): void {
+    if (event.eventType === "rename" && event.isFolder && event.oldPath) {
+      const rewrite = (path: string): string => rewritePathAfterRename(path, event.oldPath!, event.path);
+      this.navigationState = { ...this.navigationState, expandedFolderPaths: this.navigationState.expandedFolderPaths.map(rewrite) };
+      this.navLayout.rewriteFolderIdentity(rewrite);
+    }
+    if (event.isFolder) this.navLayout.refreshFolderTreeState();
+    else if (event.eventType !== "modify") this.navLayout.scheduleFolderTreeRefresh();
+    this.navLayout.scheduleNavCountRefresh();
+  }
+  private reconcileSnapshots(event: VaultMutationEvent): void {
+    if (event.eventType !== "rename" || !event.oldPath) return;
+    this.streams.mapSnapshots(stream => {
+      const scope = stream.scope.kind === "box" ? stream.scope : stream.scope.kind === "folder"
+        ? { ...stream.scope, path: rewritePathAfterRename(stream.scope.path, event.oldPath!, event.path) }
+        : { ...stream.scope, notePath: rewritePathAfterRename(stream.scope.notePath, event.oldPath!, event.path) };
+      const anchor = stream.anchor?.ref.kind === "card" ? { ...stream.anchor, ref: { ...stream.anchor.ref,
+        path: rewritePathAfterRename(stream.anchor.ref.path, event.oldPath!, event.path) } } : stream.anchor;
+      return { ...stream, scope, anchor };
     });
+    for (const [id, selection] of this.sessions) this.sessions.set(id, { ...selection,
+      paths: selection.paths.map(path => rewritePathAfterRename(path, event.oldPath!, event.path)) });
   }
 }

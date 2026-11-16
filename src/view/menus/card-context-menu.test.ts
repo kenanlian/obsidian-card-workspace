@@ -14,7 +14,7 @@ import {
   isMenuPosition,
   isMouseEventLike,
 } from "./card-context-menu";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 
 registerFolderCardView(FolderCardView);
 

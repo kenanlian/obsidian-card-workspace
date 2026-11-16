@@ -48,7 +48,8 @@ export class CardDropActions {
   private frozen: FrozenDrag | null = null;
   private pending = false;
   private disposed = false;
-  dispose(): void { this.disposed = true; this.frozen = null; }
+  cancel(): void { this.frozen = null; }
+  dispose(): void { this.disposed = true; this.cancel(); }
   constructor(private readonly deps: Deps) {}
   resolvePaths(origin: string): string[] {
     const selected = this.deps.getSelection();

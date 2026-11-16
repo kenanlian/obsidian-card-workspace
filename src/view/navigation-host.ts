@@ -27,6 +27,9 @@ import { decorateCardContextMenu, isMouseEventLike } from "./menus/card-context-
 export function buildNavigationPanelState(input: {
   drawActive?: boolean;
   settings: PluginSettings;
+  /** Desktop navigation follows the explicitly targeted stream. */
+  browseFilter?: PluginSettings["filter"];
+  includeSubfolders?: boolean;
   strings: UiStrings;
   scope: CardScope;
   selectedPath: string | null;
@@ -42,19 +45,22 @@ export function buildNavigationPanelState(input: {
   templates?: readonly NavigationTemplateSource[];
 }): PanelModelState["nav"] {
   const { settings, strings, scope, navLayout } = input;
-  const sectionCollapsed = settings.sectionCollapsed;
+  const localNavigation = navLayout.getLocalNavigation?.();
+  const sectionCollapsed = localNavigation?.sectionCollapsed ?? settings.sectionCollapsed;
+  const filter = input.browseFilter ?? settings.filter;
+  const includeSubfolders = input.includeSubfolders ?? settings.includeSubfolders;
   const projection = navLayout.project({
     iconDefaults: settings.iconDefaults, iconOverrides: settings.iconOverrides,
     scope,
-    activeTags: settings.filter.tags,
+    activeTags: filter.tags,
     selectedPath: input.selectedPath,
     favorites: input.favorites,
     folders: input.folderTree,
-    tags: buildTagTree([...input.metadataCatalog?.tags ?? [], ...input.cardProjection.availableTags, ...settings.filter.tags]),
+    tags: buildTagTree([...input.metadataCatalog?.tags ?? [], ...input.cardProjection.availableTags, ...filter.tags]),
     boxes: input.boxSummaries,
     templates: input.templates ?? [],
     tagCounts: input.cardProjection.tagCounts,
-    includeSubfolders: settings.includeSubfolders,
+    includeSubfolders,
     tagsDisabled: !resolveSourceCapabilities(scope, input.drawActive).browseTagFilter,
     propertiesDisabled: !resolveSourceCapabilities(scope, input.drawActive).browsePropertyFilter,
     sectionCollapsed,
@@ -72,14 +78,14 @@ export function buildNavigationPanelState(input: {
     rootFolderLabel: strings.toolbar.folderMenu.rootFolder,
     linksLeafLabels: { backlinks: strings.links.directionBacklinks, outgoing: strings.links.directionOutgoing }, linksDisabled: !isLinksScope(scope) && (input.selectedPath === null || resolveCardFileKindFromPath(input.selectedPath) === null),
     properties: mergeNavigationPropertyFacets(input.propertyFacets ?? [], input.metadataCatalog, strings.property),
-    propertyClauses: settings.filter.properties,
+    propertyClauses: filter.properties,
   });
   return {
     folderTree: input.folderTree, favorites: input.favorites, boxSummaries: input.boxSummaries,
-    paneWidth: settings.navPaneWidth, layoutMode: navLayout.getLayoutMode(),
+    paneWidth: localNavigation?.width ?? settings.navPaneWidth, layoutMode: navLayout.getLayoutMode(),
     visible: navLayout.getNavVisible(), sectionCollapsed,
     showItemCounts: settings.showNavItemCounts, tooltipSide: input.tooltipSide,
-    propertyFilterCount: settings.filter.properties.reduce((total, clause) => total + clause.values.length, 0),
+    propertyFilterCount: filter.properties.reduce((total, clause) => total + clause.values.length, 0),
     visibleGroupProperties: (input.propertyFacets ?? []).map(({ key, label }) => ({ key, label })),
     filterVisible: navLayout.getFilterVisible?.() ?? false,
     projection, query: navLayout.getQuery(), focusId: navLayout.getFocusId(),

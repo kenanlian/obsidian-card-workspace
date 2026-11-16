@@ -13,7 +13,7 @@ import type { NavigationSortTarget } from "../navigation-sorting";
 import { getUiStrings } from "../i18n";
 import { defaultNavSectionOrder } from "../navigation-section-order";
 import { createBoxScope } from "./scope";
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import { buildNavContextMenu, resolveNavMenuDangerLabel, type NavMenuActions, type NavMenuDeps } from "./nav-context-menu";
 import type { CardBoxDefinition, FavoriteEntry, NavContextMenuPayload, NavSectionId } from "./types";
 

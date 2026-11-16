@@ -54,6 +54,8 @@
 
   interface ToolbarProps {
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
+    initialSearchOpen?: boolean;
+    onSearchOpenChange?: (open: boolean) => void;
     strings?: UiStrings;
     scope?: PanelScopeState;
     search?: PanelSearchState;
@@ -147,6 +149,7 @@
 
   let {
     attachSearchHistorySuggest,
+    initialSearchOpen = false, onSearchOpenChange,
     strings = getUiStrings("en"),
     scope = DEFAULT_SCOPE,
     search = DEFAULT_SEARCH,
@@ -243,7 +246,11 @@
   const scopeTooltip = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "full"));
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
-  let searchExpanded = $state(false);
+  let searchExpanded = $state(untrack(() => initialSearchOpen));
+  $effect(() => {
+    const open = searchExpanded;
+    untrack(() => onSearchOpenChange?.(open));
+  });
   let searchControlEl = $state<HTMLDivElement | null>(null);
   let searchToggleEl = $state<HTMLButtonElement | null>(null);
   let historySuggest = $state.raw<SearchHistorySuggestHandle | null>(null);

@@ -42,6 +42,16 @@ function runtimeKey(scope: CardScope, spec: GroupCollapseSpec): string {
 export class GroupCollapseController {
   private readonly collapsedByRuntimeKey = new Map<string, Set<string>>();
 
+  snapshot(): Record<string, string[]> {
+    return Object.fromEntries([...this.collapsedByRuntimeKey].map(([key, values]) => [key, [...values]]));
+  }
+  restore(snapshot: Record<string, string[]>): void {
+    this.collapsedByRuntimeKey.clear();
+    for (const [key, values] of Object.entries(snapshot)) {
+      if (Array.isArray(values)) this.collapsedByRuntimeKey.set(key, new Set(values.filter(value => typeof value === "string")));
+    }
+  }
+
   getCollapsedKeys(scope: CardScope, spec: GroupCollapseSpec): ReadonlySet<string> {
     return this.collapsedByRuntimeKey.get(runtimeKey(scope, spec)) ?? EMPTY_KEYS;
   }

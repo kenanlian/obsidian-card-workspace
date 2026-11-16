@@ -7,7 +7,7 @@ export interface NavigationQueryBaseline {
   sectionCollapsed: Readonly<Record<NavSectionId, boolean>>;
 }
 
-export function captureNavigationQueryBaseline(settings: PluginSettings): NavigationQueryBaseline {
+export function captureNavigationQueryBaseline(settings: Pick<PluginSettings, "expandedFolderPaths" | "expandedTagPaths" | "sectionCollapsed">): NavigationQueryBaseline {
   return {
     expandedFolderPaths: [...(settings.expandedFolderPaths ?? [])],
     expandedTagPaths: [...(settings.expandedTagPaths ?? [])],

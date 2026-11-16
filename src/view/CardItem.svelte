@@ -231,6 +231,7 @@
     removeDragGhost();
   }
 
+  $effect(() => dragSession?.subscribe(snapshot => { if (!snapshot) finishCardDrag(); }));
   onDestroy(() => {
     finishCardDrag();
     snippetObserver?.disconnect();
@@ -503,7 +504,7 @@
       return;
     }
 
-    finishCardDrag();
+    finishCardDrag(); dragSession?.cancel();
     finishNativeDrag = nativeFileDrag ? onCardDragStart?.({ path: card.path, event }) ?? null : null;
     // Native initialization may write transfer data. Always retain our editor protocol afterwards.
     if (editorDrop) event.dataTransfer.setData(CARD_WORKSPACE_DRAG_MIME, JSON.stringify({ path: card.path, title: card.title }));

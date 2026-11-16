@@ -1,5 +1,7 @@
 # Card Workspace
 
+桌面端支持独立卡片流、窗格内共享导航、平铺对照，以及移动/复制到新的 Obsidian 窗格。详见[桌面多卡片流](docs/multi-card-stream.md)。
+
 [English](README.md)
 
 Card Workspace 是一款支持**输入、汇集、整理、重构**的 [Obsidian](https://obsidian.md/) 插件。用快速输入或模板记下想法，再把文件夹、标签、属性、出链、反链与卡片盒汇集成可读的卡片流。桌面端运行在编辑器旁的**左侧边栏**，手机和平板同样在左侧边栏打开。

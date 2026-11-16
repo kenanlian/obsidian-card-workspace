@@ -1,3 +1,4 @@
+import { getBrowseFilter, setBrowseFilter } from "../stream-browse-state";
 import { rewriteTagIconOverrides } from "../../icon-config";
 import { closeIconPickersForTarget } from "../../icon-picker/IconPicker";
 import { isPathAtOrBelow } from "../../path-references";
@@ -169,7 +170,7 @@ export class TagManagementActions {
     const settings = this.deps.context.getSettings();
     return {
       favorites: settings.favorites ?? [],
-      filterTags: settings.filter.tags,
+      filterTags: getBrowseFilter(this.deps.context).tags,
       boxes: settings.boxes ?? [],
     };
   }
@@ -189,7 +190,10 @@ export class TagManagementActions {
     const result = rewrite(this.readTagReferences());
     const patch: PartialPluginSettings = { ...extraPatch };
     if (result.favoritesChanged) patch.favorites = result.favorites;
-    if (result.filterChanged) patch.filter = { tags: result.filterTags };
+    if (result.filterChanged) {
+      if (this.deps.context.browse) await setBrowseFilter(this.deps.context, { tags: result.filterTags });
+      else patch.filter = { tags: result.filterTags };
+    }
     if (result.boxesChanged) patch.boxes = result.boxes;
     if (Object.keys(patch).length === 0) {
       return;

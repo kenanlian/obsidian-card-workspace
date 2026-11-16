@@ -1,3 +1,4 @@
+import { getBrowseFilter } from "../stream-browse-state";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import { serializePropertyScalarRef } from "../../property-filter-settings";
 import { buildPropertyFacets } from "../property-facets";
@@ -21,10 +22,10 @@ export class ScopeNoteActions {
     const settings = context.getSettings();
     const folderPath = resolveNewNoteFolderPath(scope, settings.lastFolderPath, settings.boxNewNoteFolderPath);
     const capabilities = resolveSourceCapabilities(scope, context.store.getDrawPaths() !== null);
-    const tags = capabilities.browseTagFilter ? [...settings.filter.tags] : [];
+    const tags = capabilities.browseTagFilter ? [...getBrowseFilter(this.deps.context).tags] : [];
     const properties: Record<string, string | number | boolean> = Object.create(null) as Record<string, string | number | boolean>;
     if (capabilities.browsePropertyFilter) {
-      const clauses = settings.filter.properties;
+      const clauses = getBrowseFilter(this.deps.context).properties;
       const facets = buildPropertyFacets(context.store.getBaseCards(), clauses.map((clause) => clause.key), clauses,
         (file) => getFileFrontmatter(context.getApp(), file), context.getUiStrings().property);
       for (const facet of orderPropertyNavigation(facets, settings.navigationSorting)) {

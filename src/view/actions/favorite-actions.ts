@@ -1,3 +1,4 @@
+import { getBrowseFilter, getBrowseIncludeSubfolders } from "../stream-browse-state";
 import { TFile, type Menu, type TFolder } from "obsidian";
 
 import type { UiStrings } from "../../i18n";
@@ -227,13 +228,13 @@ export class FavoriteActions {
     const hasTagFavorite = favorites.some((entry) => entry.kind === "tag");
     const boxSummaries = precomputed.boxSummaries;
     const scope = this.deps.context.store.getScope();
-    const activeTags = new Set(settings.filter.tags.map((tag) => normalizeTagPath(tag)));
+    const activeTags = new Set(getBrowseFilter(this.deps.context).tags.map((tag) => normalizeTagPath(tag)));
 
     return favorites.map((entry) => this.buildFavoriteRowModel(entry, {
       showCounts,
       // Only pay for the vault-wide tag walk when a row will actually show one.
       vaultTagCounts: showCounts && hasTagFavorite ? this.deps.getVaultTagCounts() : {},
-      includeSubfolders: settings.includeSubfolders,
+      includeSubfolders: getBrowseIncludeSubfolders(this.deps.context),
       boxSummaries,
       scope,
       activeTags,

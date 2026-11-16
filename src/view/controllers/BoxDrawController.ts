@@ -1,3 +1,4 @@
+import { getStreamViewConfig } from "../stream-browse-state";
 import { scopeIdentity } from "../scope";
 import { normalizeBoxDraw, advanceBoxDraw, sampleBoxPaths, type BoxDrawConfig } from "../box-draw";
 import { reconcileBoxDrawMembership } from "../card-box-membership";
@@ -15,7 +16,7 @@ export class BoxDrawController {
     pool: () => string[]; query: () => string; reproject: () => void;
   }) {}
   get active(): boolean { return this.context.store.getDrawPaths() !== null; }
-  get available(): boolean { return this.context.getSettings().defaultView !== "tasks" && resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw; }
+  get available(): boolean { return resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw && getStreamViewConfig(this.context).viewMode !== "tasks"; }
   get canNext(): boolean { return this.active && this.mode !== "daily" && !this.pending && !this.deps.query().trim() && this.deps.pool().length > 0; }
   private box() {
     const scope = this.context.store.getScope();

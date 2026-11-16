@@ -10,6 +10,7 @@ import { collectLinksFiles, isPathRelevantToLinksScope, readLinkReferenceCount }
 import { createFolderScope, scopeDisplayPath, scopesEqual,
   serializeScopeKey, validateScope, type CardScope } from "../scope";
 import { resolveViewConfig } from "../view-config";
+import { getBrowseIncludeSubfolders, getStreamViewConfig, isSameBrowseSource } from "../stream-browse-state";
 import { collectSupportedFiles, isPathInFolderScope, rewritePathAfterRename } from "../scope-files";
 import type {
   CardLoadKey,
@@ -107,7 +108,7 @@ export class ScopeController implements DisposableController {
   getLastLoadedIncludeSubfolders(): boolean | null { return this.lastLoadedIncludeSubfolders; }
 
   buildLoadKey(scope: CardScope): CardLoadKey {
-    return { scope, sort: resolveViewConfig(scope, this.context.getSettings()).sort };
+    return { scope, sort: getStreamViewConfig(this.context, scope).sort };
   }
 
   serializeLoadKey(loadKey: CardLoadKey): string {
@@ -154,13 +155,14 @@ export class ScopeController implements DisposableController {
 
   async moveScopeToFolder(path: string): Promise<SelectionResult> {
     return this.handleScopeSelection(this.createProgrammaticSelectionRequest(
-      createFolderScope(path, this.context.getSettings().includeSubfolders),
+      createFolderScope(path, getBrowseIncludeSubfolders(this.context)),
       false,
     ));
   }
 
   async handleScopeSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
     if (!validateScope(this.context.getApp(), request.scope, this.context.getSettings().boxes ?? [])) {
+      if (this.context.browse) this.markMissingScope(request.scope);
       return {
         action: "rejected_invalid",
         scope: request.scope,
@@ -171,7 +173,10 @@ export class ScopeController implements DisposableController {
 
     if (request.source !== "links-follow") this.activeSelectionVersion += 1;
     const forceRefresh = request.forceRefresh ?? false;
-    const nextLoadScope = this.buildLoadKey(request.scope);
+    const sourceChanged = request.source !== "links-follow" && !isSameBrowseSource(this.context.store.getScope(), request.scope);
+    const nextLoadScope = this.context.browse && sourceChanged
+      ? { scope: request.scope, sort: resolveViewConfig(request.scope, this.context.getSettings()).sort }
+      : this.buildLoadKey(request.scope);
     const nextKey = this.serializeLoadKey(nextLoadScope);
     const clearedBulkSelection = this.reconcileBulkSelectionBeforeLoad(nextLoadScope);
 
@@ -207,7 +212,7 @@ export class ScopeController implements DisposableController {
 
     const hadCommittedScope = this.loadKey !== null;
     const scopeBeforeRequest = this.context.store.getScope();
-    const committed = await this.runLoad(nextLoadScope, nextKey, forceRefresh);
+    const committed = await this.runLoad(nextLoadScope, nextKey, forceRefresh, request.source === "links-follow");
     if (committed && this.queuedRequest === null) {
       const recordHistory = shouldRecordScopeHistory(request.source, hadCommittedScope && !scopesEqual(scopeBeforeRequest, this.context.store.getScope()), committed, false);
       this.deps.onScopeCommitted?.(this.context.store.getScope(), recordHistory);
@@ -233,7 +238,7 @@ export class ScopeController implements DisposableController {
     let scope: CardScope = current;
     switch (current.kind) {
       case "folder":
-        scope = createFolderScope(current.path, this.context.getSettings().includeSubfolders);
+        scope = createFolderScope(current.path, getBrowseIncludeSubfolders(this.context));
         break;
       case "box": case "links":
         break;
@@ -266,8 +271,8 @@ export class ScopeController implements DisposableController {
     return !scopesEqual(current, nextLoadScope.scope);
   }
 
-  private async runLoad(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean): Promise<boolean> {
-    const task = this.loadScope(loadScope, loadKey, forceRefresh);
+  private async runLoad(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean, preserveBrowseConfig = false): Promise<boolean> {
+    const task = this.loadScope(loadScope, loadKey, forceRefresh, preserveBrowseConfig);
     this.inFlight = task;
     this.inFlightKey = loadKey;
     this.inFlightLoadScope = loadScope;
@@ -282,8 +287,9 @@ export class ScopeController implements DisposableController {
     }
   }
 
-  private loadScope(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean): Promise<boolean> {
+  private loadScope(loadScope: CardLoadKey, loadKey: string, forceRefresh: boolean, preserveBrowseConfig = false): Promise<boolean> {
     return runScopeLoad({
+      preserveBrowseConfig,
       context: this.context, loadScope, loadKey, forceRefresh,
       startupCardCount: this.deps.startupCardCount,
       folderCandidateCache: this.folderCandidateCache,
@@ -329,6 +335,7 @@ export class ScopeController implements DisposableController {
   }
 
   private async persistScopeProjection(): Promise<void> {
+    if (this.context.browse) return;
     const scope = this.context.store.getScope();
     const settings = this.context.getSettings();
     switch (scope.kind) {
@@ -350,6 +357,28 @@ export class ScopeController implements DisposableController {
         throw new Error(`Unhandled card source: ${JSON.stringify(exhaustive)}`);
       }
     }
+  }
+
+  /** Keep a deleted desktop source addressable instead of switching another stream's folder. */
+  private markMissingScope(scope: CardScope): void {
+    this.context.epochs.load.bump();
+    this.queuedRequest = null;
+    this.refreshQueued = false;
+    this.loadKey = null;
+    this.scopeSettled = true;
+    this.loading = false;
+    this.extentCount = 0;
+    this.metadataStatus = "ready";
+    this.deps.resetHydrationForLoad();
+    this.deps.resetSearchForLoad();
+    this.context.store.setScope(scope);
+    this.context.store.replaceBaseCards([]);
+    this.context.store.replaceVisibleCards([]);
+    this.context.store.replaceVisibleTaskCards([]);
+    this.deps.clearBulkSelection();
+    this.deps.projectVisibleCards();
+    this.context.onMissingScope?.(scope);
+    this.context.publishGroups("scope", "cards", "projection", "bulk", "search", "nav");
   }
 
   collectScopeFiles(scope: CardScope): TFile[] {
@@ -482,10 +511,17 @@ export class ScopeController implements DisposableController {
         setScope: (scope) => this.context.store.setScope(scope),
         refreshLoadKey: () => this.refreshLoadKeyForCurrentScope(),
         requestScopeReload: () => this.scheduleVaultRefresh(),
-        fallbackToFolder: (path) => { void this.moveScopeToFolder(path); },
+        fallbackToFolder: (path) => {
+          // Desktop validation below retains the deleted links source identity.
+          if (!this.context.browse) void this.moveScopeToFolder(path);
+        },
         lastFolderPath: this.context.getSettings().lastFolderPath,
       });
     const selectedFolderPathAfterRename = this.applyScopeRename(event);
+    if (this.context.browse && !validateScope(this.context.getApp(), this.context.store.getScope(), this.context.getSettings().boxes ?? [])) {
+      this.markMissingScope(this.context.store.getScope());
+      return { shouldRefresh: false, queueAction: "ignored", selectedFolderPathAfterRename, incrementalResult: null };
+    }
     if (linksHandled || !this.shouldRefreshForVaultEvent(event)) {
       return {
         shouldRefresh: false,

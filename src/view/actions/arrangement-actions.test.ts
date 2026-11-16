@@ -3,6 +3,7 @@ import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
 import { GroupCollapseController, taskGroupCollapseSpec } from "../controllers/GroupCollapseController";
 import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "../scope";
+import { createStreamBrowseState } from "../stream-browse-state";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition, NoteCardRecord } from "../types";
 import { createViewEpochs } from "../view-epochs";
@@ -143,6 +144,7 @@ function createHarness(options: {
 
   return {
     actions: new ArrangementActions(deps),
+    context: deps.context,
     store,
     getSettings: () => settings,
     getBox: () => box,
@@ -453,4 +455,48 @@ it("returns from navigation before persistence finishes", async () => {
   expect(h.returnToStreamIfSinglePane).toHaveBeenCalledOnce();
   finish();
   await pending;
+});
+
+
+describe("desktop stream arrangement ownership", () => {
+  it.each([createFolderScope("notes", true), createBoxScope("box-1"), createLinksScope("source.md", "outgoing")])(
+    "keeps sort, group, mode, task sort and task group local for %j while pins remain shared", async (scope) => {
+      const first = createHarness({ scope });
+      const second = createHarness({ scope });
+      for (const harness of [first, second]) {
+        let state = createStreamBrowseState(scope, harness.getSettings());
+        harness.context.browse = {
+          get: () => state,
+          update: (patch) => { state = { ...state, ...patch }; },
+          reset: (next) => { state = { ...createStreamBrowseState(next, harness.getSettings()), filter: state.filter }; },
+        };
+      }
+      const sibling = second.context.browse!.get();
+      await first.actions.onSortChange({ field: "name", direction: "asc" });
+      await first.actions.onGroupChange({ dimension: "tag" });
+      await first.actions.setViewMode("tasks");
+      await first.actions.setTaskSort({ field: "due", direction: "asc" });
+      await first.actions.setTaskGroup({ dimension: "due" });
+      expect(first.context.browse!.get()).toMatchObject({
+        sort: { field: "name", direction: "asc" }, group: { dimension: "tag" },
+        viewMode: "tasks", taskSort: { field: "due", direction: "asc" }, taskGroup: { dimension: "due" },
+      });
+      expect(second.context.browse!.get()).toEqual(sibling);
+      expect(first.saveSettings).not.toHaveBeenCalled();
+      expect(first.updateActiveBox).not.toHaveBeenCalled();
+      expect(first.requestUpdate).toHaveBeenCalledWith("reproject", "settings-change");
+      await first.actions.onPinToggle({ path: "pin.md", pinned: true });
+      if (scope.kind === "box") expect(first.updateActiveBox).toHaveBeenCalledTimes(1);
+      else expect(first.saveSettings).toHaveBeenCalledWith({ pinnedPaths: ["pin.md"] });
+    },
+  );
+
+  it("retains the task-group reload requirement in a local stream", async () => {
+    const h = createHarness();
+    let state = createStreamBrowseState(h.store.getScope(), h.getSettings());
+    h.context.browse = { get: () => state, update: patch => { state = { ...state, ...patch }; }, reset: vi.fn() };
+    await h.actions.onGroupChange({ dimension: "task" });
+    expect(h.requestUpdate).toHaveBeenCalledWith("reload", "settings-change");
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
 });

@@ -9,7 +9,7 @@ import { createBoxScope, createLinksScope, createFolderScope, type CardScope } f
 import { getUiStrings } from "../../i18n";
 import { resolveCardFileKindFromPath } from "../file-kind";
 import { FolderActions } from "./folder-actions";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 
 registerFolderCardView(FolderCardView);
 

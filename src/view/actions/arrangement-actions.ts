@@ -16,7 +16,7 @@ import {
 import type { SourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition } from "../types";
 import { groupTransitionRequiresReload } from "../update-intent";
-import { resolveViewConfig } from "../view-config";
+import { getStreamViewConfig } from "../stream-browse-state";
 import type { ViewContext } from "../view-context";
 
 /**
@@ -97,7 +97,7 @@ export class ArrangementActions {
     if (this.deps.isScopeSettled?.() === false) return;
     const { context, refreshLoadKeyForCurrentScope, reprojectCards, reconcileToVisibleCards } =
       this.deps;
-    const { sort } = resolveViewConfig(context.store.getScope(), context.getSettings());
+    const { sort } = getStreamViewConfig(context);
     context.store.replaceBaseCards(
       [...context.store.getBaseCards()].sort((left, right) =>
         compareCards(left, right, sort.field, sort.direction),
@@ -116,6 +116,14 @@ export class ArrangementActions {
     const nextField: LinksSortField = scope.kind === "links" && detail.field === "reference-count"
       ? "reference-count" : detail.field === "ctime" || detail.field === "name" ? detail.field : "mtime";
     const nextDirection: SortDirection = detail.direction === "asc" ? "asc" : "desc";
+    const context = this.deps.context;
+    if (context.browse) {
+      const current = getStreamViewConfig(context).sort;
+      if (current.field === nextField && current.direction === nextDirection) return;
+      context.browse.update({ sort: { field: nextField, direction: nextDirection } });
+      await context.requestUpdate("reproject", "settings-change");
+      return;
+    }
     if (scope.kind === "links") {
       const settings = this.deps.context.getSettings();
       const current = settings.linksSort[scope.direction];
@@ -162,7 +170,7 @@ export class ArrangementActions {
 
   private resolveGroupSpec(): GroupSpec {
     return normalizeGroupSpec(
-      resolveViewConfig(this.deps.context.store.getScope(), this.deps.context.getSettings()).group,
+      getStreamViewConfig(this.deps.context).group,
     );
   }
 
@@ -197,6 +205,12 @@ export class ArrangementActions {
       return;
     }
 
+    const context = this.deps.context;
+    if (context.browse) {
+      context.browse.update({ group });
+      await context.requestUpdate(groupTransitionRequiresReload(current, group) ? "reload" : "reproject", "settings-change");
+      return;
+    }
     if (this.resolveArrangementOwner().kind === "box") {
       await this.deps.updateActiveBox((box) => ({ ...box, group }));
       // Re-sorting the loaded records is not enough for the task dimension:
@@ -213,7 +227,7 @@ export class ArrangementActions {
   }
 
   private resolveTaskConfig(): { viewMode: DefaultViewMode; taskSort: TaskSortSpec; taskGroup: TaskGroupSpec } {
-    const config = resolveViewConfig(this.deps.context.store.getScope(), this.deps.context.getSettings());
+    const config = getStreamViewConfig(this.deps.context);
     return {
       viewMode: config.viewMode === "tasks" ? "tasks" : "cards",
       taskSort: normalizeTaskSortSpec(config.taskSort),
@@ -228,7 +242,10 @@ export class ArrangementActions {
     if (!this.deps.resolveCapabilities().taskView) return;
     if (this.resolveTaskConfig().viewMode === mode) return;
     if (mode === "tasks") this.deps.exitBulkMode?.();
-    const write = this.deps.saveSettings({ defaultView: mode });
+    const context = this.deps.context;
+    const write = context.browse
+      ? (context.browse.update({ viewMode: mode }), context.requestUpdate("reproject", "settings-change"))
+      : this.deps.saveSettings({ defaultView: mode });
     this.deps.returnToStreamIfSinglePane?.();
     await write;
   }
@@ -241,6 +258,12 @@ export class ArrangementActions {
     if (!this.deps.resolveCapabilities().taskView) return;
     const next = normalizeTaskSortSpec(spec);
     if (taskSortsEqual(this.resolveTaskConfig().taskSort, next)) return;
+    const context = this.deps.context;
+    if (context.browse) {
+      context.browse.update({ taskSort: next });
+      await context.requestUpdate("reproject", "settings-change");
+      return;
+    }
     const owner = this.resolveArrangementOwner();
     if (owner.kind === "box") {
       await this.deps.updateActiveBox((box) => ({ ...box, taskSort: next }));
@@ -253,6 +276,12 @@ export class ArrangementActions {
     if (!this.deps.resolveCapabilities().taskView) return;
     const next = normalizeTaskGroupSpec(spec);
     if (taskGroupsEqual(this.resolveTaskConfig().taskGroup, next)) return;
+    const context = this.deps.context;
+    if (context.browse) {
+      context.browse.update({ taskGroup: next });
+      await context.requestUpdate("reproject", "settings-change");
+      return;
+    }
     const owner = this.resolveArrangementOwner();
     if (owner.kind === "box") {
       await this.deps.updateActiveBox((box) => ({ ...box, taskGroup: next }));

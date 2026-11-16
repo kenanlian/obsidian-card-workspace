@@ -116,9 +116,14 @@
   type SelectFolderPayload = Pick<FolderActionPayload, "path">;
 
   interface FolderCardPanelProps {
+    onRegionReady?: (element: HTMLElement | null) => void;
+    onInteractionCleanup?: (cancel: (() => void) | null) => void;
     onReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
     runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
+    showNavigation?: boolean;
+    initialSearchOpen?: boolean;
+    onSearchOpenChange?: (open: boolean) => void;
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     onOpenNote?: (payload: OpenNotePayload) => void;
     onSearchSnippetsCommand?: (payload: { path: string; command: "expand" | "more" | "collapse" }) => void;
@@ -236,6 +241,7 @@
 
   let {
     panelModel,
+    showNavigation = true, initialSearchOpen = false, onSearchOpenChange,
     attachSearchHistorySuggest,
     onOpenNote,
     onSearchSnippetsCommand,
@@ -246,7 +252,7 @@
     onPinToggle,
     onCardHoverLink,
     onCardDragStart, resolveCardDragPaths, onBeginCardDrag, onDropCards,
-    onReadingPosition, runtimeDevice = "desktop",
+    onRegionReady, onInteractionCleanup, onReadingPosition, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -650,6 +656,7 @@
   }
 
   const dragSession = new DragSession();
+  $effect(() => { untrack(() => onInteractionCleanup?.(() => dragSession.cancel())); return () => { onInteractionCleanup?.(null); }; });
   let frozenDragSource: import("./drag-session").DragSource | null = null;
   let dragNavigation = $state(false);
   const displayedNav = $derived(dragNavigation ? { ...nav, visible: true } : nav);
@@ -683,6 +690,7 @@
 
   function bindViewport(node: HTMLDivElement): { destroy: () => void } {
     viewportEl = node;
+    onRegionReady?.(node);
     syncViewportMetrics(node);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -695,6 +703,7 @@
       destroy() {
         resizeObserver.disconnect();
         if (viewportEl === node) {
+          onRegionReady?.(null);
           viewportEl = null;
         }
       },
@@ -1031,12 +1040,13 @@
 <div
   style={taskDateColorStyle(appearance.taskDateColors)}
   data-fce-device={runtimeDevice}
-  class="fce-shell {dragNavigation ? 'is-drag-navigation' : ''} {bulk.bulkMode ? 'is-bulk-mode' : ''} {nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {displayedNav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
+  class="fce-shell {dragNavigation ? 'is-drag-navigation' : ''} {bulk.bulkMode ? 'is-bulk-mode' : ''} {showNavigation && nav.layoutMode === 'single' ? 'is-single' : 'is-dual'} {showNavigation && displayedNav.visible ? 'is-nav-visible' : 'is-nav-hidden'}"
   data-fce-font-size={appearance.uiFontSize ?? "default"}
   data-fce-density={appearance.uiDensity ?? "default"}
   data-fce-card-style={appearance.cardStyle ?? "default"}
   use:bindShell
 >
+  {#if showNavigation}
   <NavigationPane
     {dragSession} {onDropCards}
     {strings}
@@ -1055,8 +1065,10 @@
     onNavPaneResize={handleNavPaneResize}
     onToggleNavPane={handleToggleNavPane}
   />
+  {/if}
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
+    {initialSearchOpen} {onSearchOpenChange}
     {runtimeDevice}
     {attachSearchHistorySuggest}
     {strings}

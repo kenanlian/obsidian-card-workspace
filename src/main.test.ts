@@ -132,6 +132,7 @@ const obsidianMockState = vi.hoisted(() => {
     vaultTagsByPath: {} as Record<string, string[]>,
     notices: [] as string[],
     leavesByType: {} as Record<string, unknown[]>,
+    targetPickers: [] as Array<{ getItems(): Array<{ leaf: unknown; label: string }>; onChooseItem(item: unknown): void; close(): void }>,
     menus: [] as Array<{
       items: Array<{ title: string; icon: string; onClick: (() => void) | null }>;
       positions: Array<{ x: number; y: number }>;
@@ -164,6 +165,7 @@ vi.mock("./services/EditorDropController", () => ({
     handleTargetChange = vi.fn();
     handleVaultMutation = vi.fn();
     handleDragStart = vi.fn();
+    captureMenuTargetBeforeActivation = vi.fn();
     dispose = vi.fn();
 
     constructor() {
@@ -348,6 +350,11 @@ vi.mock("./view/FolderCardView", () => {
       cardScope: unknown = { kind: "folder", path: "", includeSubfolders: true };
       /** Mirrors `ScopeController.getLoadKey() !== null`: false until a load is accepted. */
       loadedScope = false;
+      currentStream = true;
+      waitForForeground = vi.fn(async () => undefined);
+      hasCurrentStream(): boolean { return this.currentStream; }
+      getSourceSummary(): string { return "Mock source"; }
+      getCardScopes(): unknown[] { return [this.cardScope]; }
       onSearchSnapshot = vi.fn();
       applyUpdateIntent = vi.fn(async () => undefined);
       getCardScope(): unknown {
@@ -509,8 +516,16 @@ vi.mock("obsidian", () => {
   };
 
   const addIcon = vi.fn();
+  class MockFuzzySuggestModal {
+    setTitle = vi.fn();
+    setPlaceholder = vi.fn();
+    open(): void { obsidianMockState.targetPickers.push(this as never); }
+    close(): void { this.onClose(); }
+    onClose(): void {}
+  }
 
   return {
+    FuzzySuggestModal: MockFuzzySuggestModal,
     Platform: { isDesktopApp: true, isMacOS: false },
     Plugin: MockPlugin,
     Component: MockComponent,
@@ -971,7 +986,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     expect(saveData).not.toHaveBeenCalled();
   });
 
-  it("awaits every view sequentially and returns the first accepted selection", async () => {
+  it("retains mobile sequential broadcast and returns the first accepted selection", async () => {
     const { plugin } = createPluginHarness();
     const first = createMockView();
     const second = createMockView();
@@ -1006,7 +1021,7 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
     expect(second.handleScopeSelection).toHaveBeenCalledTimes(1);
   });
 
-  it("restores only a folder CardScope and clears persisted activeBoxId on load", async () => {
+  it("leaves desktop restored source loading to the leaf and clears the legacy activeBoxId projection", async () => {
     const { plugin, app } = createPluginHarness();
     const view = createMockView();
     attachViews(view);
@@ -1019,12 +1034,9 @@ describe("CardWorkspacePlugin scope dispatch and projection ownership", () => {
 
     plugin.onload();
     await waitForPluginLoad(plugin);
-    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalled());
-
     expect(plugin.getSettings().activeBoxId).toBeNull();
-    expect(view.handleScopeSelection).toHaveBeenCalledWith(expect.objectContaining({
-      scope: createFolderScope("notes", plugin.getSettings().includeSubfolders),
-    }));
+    expect(view.handleScopeSelection).not.toHaveBeenCalled();
+    expect((view as any).waitForForeground).toHaveBeenCalledOnce();
   });
 
   it("shares navigation hiding across every open scope synchronously and flushes failed writes on retry", async () => {
@@ -1478,7 +1490,7 @@ describe("CardWorkspacePlugin activateView", () => {
       callback();
       await Promise.resolve();
 
-      expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: false });
+      await vi.waitFor(() => expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(existingLeaf, { focus: false }));
     } finally {
       Reflect.deleteProperty(globals, "activeDocument");
       Reflect.deleteProperty(globals, "document");
@@ -1505,7 +1517,13 @@ describe("CardWorkspacePlugin activateView", () => {
     const second = { view: {}, loadIfDeferred: vi.fn(async () => undefined) };
     obsidianMockState.leavesByType["folder-card-view"] = [first, second];
 
-    await expect((plugin as any).activateView()).resolves.toBe(view);
+    const activation = (plugin as any).activateView();
+    const picker = obsidianMockState.targetPickers.at(-1)!;
+    expect(first.loadIfDeferred).not.toHaveBeenCalled();
+    expect(second.loadIfDeferred).not.toHaveBeenCalled();
+    picker.onChooseItem(picker.getItems()[0]);
+    picker.close();
+    await expect(activation).resolves.toBe(view);
 
     expect(first.loadIfDeferred).toHaveBeenCalledTimes(1);
     expect(second.loadIfDeferred).not.toHaveBeenCalled();
@@ -1564,6 +1582,7 @@ describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load
     obsidianMockState.layoutReadyCallback = null;
     obsidianMockState.autoRunLayoutReady = true;
     obsidianMockState.leavesByType = {};
+    obsidianMockState.targetPickers = [];
     vi.clearAllMocks();
   });
 
@@ -1655,9 +1674,10 @@ describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load
     });
   });
 
-  it("V24 dispatches no further selection when the ribbon reopens a loaded view", async () => {
+  it("V24 dispatches no selection when the ribbon reopens a leaf-owned restored view", async () => {
     const { plugin, app } = createPluginHarness();
     const view = createScopeLoadingView();
+    view.loadedScope = true;
     obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
     app.vault.getAbstractFileByPath.mockReturnValue(createFolder("notes"));
     (plugin as unknown as { loadData: ReturnType<typeof vi.fn> }).loadData.mockResolvedValue({
@@ -1666,17 +1686,17 @@ describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load
 
     plugin.onload();
     await waitForPluginLoad(plugin);
-    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+    expect(view.handleScopeSelection).not.toHaveBeenCalled();
     const handledAfterRestore = latestHandledRequestId(plugin);
 
     getRibbonCallback(plugin)();
-    await vi.waitFor(() => expect(app.workspace.revealLeaf).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(app.workspace.revealLeaf).toHaveBeenCalledTimes(1));
 
-    expect(view.handleScopeSelection).toHaveBeenCalledTimes(1);
+    expect(view.handleScopeSelection).not.toHaveBeenCalled();
     expect(latestHandledRequestId(plugin)).toBe(handledAfterRestore);
   });
 
-  it("V25 still restores the persisted folder scope into a pre-existing leaf", async () => {
+  it("V25 waits the legacy leaf's own migration without dispatching a replacement scope", async () => {
     const { plugin, app } = createPluginHarness();
     const view = createScopeLoadingView();
     obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
@@ -1687,12 +1707,9 @@ describe("CardWorkspacePlugin startup leaf suppression and guaranteed scope load
 
     plugin.onload();
     await waitForPluginLoad(plugin);
-    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
-
+    expect((view as any).waitForForeground).toHaveBeenCalledOnce();
     expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
-    expect(loadedScopes(view)).toEqual([
-      createFolderScope("notes", plugin.getSettings().includeSubfolders),
-    ]);
+    expect(loadedScopes(view)).toEqual([]);
   });
 });
 
@@ -2680,6 +2697,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     obsidianMockState.vaultTagsByPath = {};
     obsidianMockState.notices = [];
     obsidianMockState.leavesByType = {};
+    obsidianMockState.targetPickers = [];
     vi.clearAllMocks();
   });
 
@@ -2803,7 +2821,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     }>();
     const ViewCtor = FolderCardView as unknown as { new (): FolderCardView & { handleScopeSelection: ReturnType<typeof vi.fn> } };
     const view = new ViewCtor();
-    view.handleScopeSelection.mockImplementation(() => scopeLoad.promise);
+    (view as any).waitForForeground.mockImplementation(() => scopeLoad.promise);
     const root = new (TFolder as unknown as { new (path: string): TFolder })("");
     app.vault.getRoot.mockReturnValue(root);
     obsidianMockState.leavesByType["folder-card-view"] = [{ view }];
@@ -2811,7 +2829,7 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     plugin.onload();
     await waitForPluginLoad(plugin);
     obsidianMockState.layoutReadyCallback?.();
-    await vi.waitFor(() => expect(view.handleScopeSelection).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect((view as any).waitForForeground).toHaveBeenCalledTimes(1));
 
     expect(app.vault.on).toHaveBeenCalledTimes(4);
     expect(searchMockState.managers).toHaveLength(0);
@@ -2866,10 +2884,10 @@ describe("CardWorkspacePlugin indexed search lifecycle", () => {
     viewCase.app.vault.getRoot.mockReturnValue(root);
     obsidianMockState.leavesByType["folder-card-view"] = [deferredLeaf];
     viewCase.plugin.onload(); await waitForPluginLoad(viewCase.plugin);
-    obsidianMockState.layoutReadyCallback?.();
+    const activation = (viewCase.plugin as any).activateView();
     await vi.waitFor(() => expect(deferredLeaf.loadIfDeferred).toHaveBeenCalledTimes(1));
     viewCase.plugin.onunload(); viewLoad.resolve();
-    await waitForPluginLoad(viewCase.plugin);
+    await activation;
     expect((deferredLeaf.view as any).handleScopeSelection).not.toHaveBeenCalled();
     expect(viewCase.app.workspace.setActiveLeaf).not.toHaveBeenCalled();
     expect(searchMockState.managers).toHaveLength(0);
@@ -3688,6 +3706,7 @@ describe("CardWorkspacePlugin metadata event bus", () => {
     obsidianMockState.vaultCallbacks = {};
     obsidianMockState.metadataCacheCallbacks = {};
     obsidianMockState.leavesByType = {};
+    obsidianMockState.targetPickers = [];
     vi.clearAllMocks();
   });
 
@@ -4080,4 +4099,258 @@ it("shares concurrent view activation rather than creating duplicate leaves", as
   const first = activate(), second = activate(); opening.resolve();
   expect(await first).toBe(view); expect(await second).toBe(view);
   expect(app.workspace.getLeftLeaf).toHaveBeenCalledOnce();
+});
+
+describe("desktop workspace target selection and independent panes", () => {
+  const ownWindow = {} as Window;
+  const otherWindow = {} as Window;
+
+  beforeEach(() => {
+    obsidianMockState.leavesByType = {};
+    obsidianMockState.targetPickers = [];
+    obsidianMockState.autoRunLayoutReady = true;
+    vi.stubGlobal("activeWindow", ownWindow);
+  });
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  function view() {
+    return new (FolderCardView as unknown as { new (): FolderCardView & {
+      loadedScope: boolean; currentStream: boolean; cardScope: unknown;
+      handleScopeSelection: ReturnType<typeof vi.fn>; waitForForeground: ReturnType<typeof vi.fn>;
+      applyUpdateIntent: ReturnType<typeof vi.fn>;
+    } })();
+  }
+
+  function leafFor(candidate: unknown, win: Window, root: unknown = {}) {
+    return {
+      view: candidate,
+      getContainer: () => ({ win }), getRoot: () => root,
+      getViewState: vi.fn(() => ({ type: "folder-card-view", state: {} })),
+      setViewState: vi.fn(async () => undefined), detach: vi.fn(),
+    };
+  }
+
+  async function choose(index: number): Promise<void> {
+    await vi.waitFor(() => expect(obsidianMockState.targetPickers).toHaveLength(1));
+    const picker = obsidianMockState.targetPickers[0]!;
+    picker.onChooseItem(picker.getItems()[index]);
+    picker.close();
+  }
+
+  it("directly activates the only same-window candidate without loading another window", async () => {
+    const { plugin, app } = createPluginHarness();
+    const selected = view();
+    const local = leafFor(selected, ownWindow);
+    const foreign = { ...leafFor({}, otherWindow), loadIfDeferred: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [foreign, local];
+    await expect((plugin as any).activateView()).resolves.toBe(selected);
+    expect(obsidianMockState.targetPickers).toHaveLength(0);
+    expect(app.workspace.setActiveLeaf).toHaveBeenCalledExactlyOnceWith(local, { focus: false });
+    expect(foreign.loadIfDeferred).not.toHaveBeenCalled();
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+  });
+
+  it("chooses among same-window deferred leaves before loading only the selected target", async () => {
+    const { plugin, app } = createPluginHarness();
+    const selected = view();
+    const first = { ...leafFor({}, ownWindow), loadIfDeferred: vi.fn(async () => undefined) };
+    const second = { ...leafFor({}, ownWindow), loadIfDeferred: vi.fn(async () => { second.view = selected; }) };
+    const foreign = { ...leafFor({}, otherWindow), loadIfDeferred: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [first, foreign, second];
+    const activation = (plugin as any).activateView();
+    expect(first.loadIfDeferred).not.toHaveBeenCalled();
+    expect(second.loadIfDeferred).not.toHaveBeenCalled();
+    await choose(1);
+    expect(obsidianMockState.targetPickers[0]!.getItems().map(item => item.leaf)).toEqual([first, second]);
+    await expect(activation).resolves.toBe(selected);
+    expect(second.loadIfDeferred).toHaveBeenCalledOnce();
+    expect(first.loadIfDeferred).not.toHaveBeenCalled();
+    expect(foreign.loadIfDeferred).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).toHaveBeenCalledExactlyOnceWith(second);
+  });
+
+  it("cancels a global source request without activation, loading, creation or broadcast", async () => {
+    const { plugin, app } = createPluginHarness();
+    const first = view(), second = view();
+    const a = leafFor(first, ownWindow), b = leafFor(second, ownWindow);
+    obsidianMockState.leavesByType["folder-card-view"] = [a, b];
+    app.vault.getAbstractFileByPath.mockReturnValue(new (TFolder as any)("notes"));
+    const selection = plugin.selectFolderByPath("notes", "programmatic");
+    await vi.waitFor(() => expect(obsidianMockState.targetPickers).toHaveLength(1));
+    obsidianMockState.targetPickers[0]!.close();
+    await selection;
+    expect(first.handleScopeSelection).not.toHaveBeenCalled();
+    expect(second.handleScopeSelection).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+  });
+
+  it("sends a desktop global source request only to the chosen workspace", async () => {
+    const { plugin, app } = createPluginHarness();
+    const first = view(), second = view();
+    obsidianMockState.leavesByType["folder-card-view"] = [leafFor(first, ownWindow), leafFor(second, ownWindow)];
+    app.vault.getAbstractFileByPath.mockReturnValue(new (TFolder as any)("notes"));
+    const selection = plugin.selectFolderByPath("notes", "programmatic");
+    await choose(1);
+    await selection;
+    expect(first.handleScopeSelection).not.toHaveBeenCalled();
+    expect(second.handleScopeSelection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ scope: createFolderScope("notes", true) }));
+  });
+
+  it("keeps mobile global source broadcast and left-sidebar targeting", async () => {
+    const { plugin, app } = createPluginHarness();
+    Object.defineProperty(plugin, "runtimePlatform", { value: { ...plugin.runtimePlatform, device: "phone" } });
+    const first = view(), second = view();
+    const a = leafFor(first, ownWindow, app.workspace.leftSplit), b = leafFor(second, otherWindow, app.workspace.leftSplit);
+    obsidianMockState.leavesByType["folder-card-view"] = [a, b];
+    app.vault.getAbstractFileByPath.mockReturnValue(new (TFolder as any)("notes"));
+    await plugin.selectFolderByPath("notes", "programmatic");
+    expect(first.handleScopeSelection).toHaveBeenCalledOnce();
+    expect(second.handleScopeSelection).toHaveBeenCalledOnce();
+    expect(app.workspace.setActiveLeaf).toHaveBeenCalledWith(a, { focus: false });
+    expect(obsidianMockState.targetPickers).toHaveLength(0);
+  });
+
+  it("startup preserves saved empty and nonfolder sources and never loads deferred or hidden leaves", async () => {
+    const { plugin, app } = createPluginHarness();
+    const empty = view(), box = view(), hidden = view();
+    empty.loadedScope = true; empty.currentStream = false;
+    box.loadedScope = true; box.cardScope = createBoxScope("saved-box");
+    Object.assign(hidden, { containerEl: { isShown: () => false } });
+    const emptyLeaf = leafFor(empty, ownWindow);
+    const saved = { version: 1, streams: [], currentStreamId: null };
+    emptyLeaf.getViewState.mockReturnValue({ type: "folder-card-view", state: saved });
+    const deferredLeaf = { ...leafFor({}, ownWindow), loadIfDeferred: vi.fn(async () => undefined) };
+    obsidianMockState.leavesByType["folder-card-view"] = [emptyLeaf, leafFor(box, ownWindow), deferredLeaf, leafFor(hidden, ownWindow)];
+    plugin.onload(); await waitForPluginLoad(plugin);
+    expect(empty.waitForForeground).toHaveBeenCalledOnce();
+    expect(box.waitForForeground).toHaveBeenCalledOnce();
+    expect(hidden.waitForForeground).not.toHaveBeenCalled();
+    expect(deferredLeaf.loadIfDeferred).not.toHaveBeenCalled();
+    expect(empty.handleScopeSelection).not.toHaveBeenCalled();
+    expect(box.handleScopeSelection).not.toHaveBeenCalled();
+    expect(emptyLeaf.setViewState).not.toHaveBeenCalled();
+    expect(emptyLeaf.getViewState().state).toBe(saved);
+    expect(obsidianMockState.targetPickers).toHaveLength(0);
+    expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(searchMockState.managers.at(-1)?.restore).toHaveBeenCalledOnce();
+  });
+
+  it("opening a saved empty desktop workspace preserves its empty stream state", async () => {
+    const { plugin, app } = createPluginHarness();
+    const empty = view(); empty.loadedScope = true; empty.currentStream = false;
+    obsidianMockState.leavesByType["folder-card-view"] = [leafFor(empty, ownWindow)];
+    app.vault.getRoot.mockReturnValue(new (TFolder as any)(""));
+    await (plugin as any).activateAndEnsureScope(true);
+    expect(empty.handleScopeSelection).not.toHaveBeenCalled();
+  });
+
+  it("disables stream-only global commands for an intentionally empty desktop workspace", async () => {
+    const { plugin, app } = createPluginHarness();
+    const empty = view(); empty.loadedScope = true; empty.currentStream = false;
+    const modules = { boxDraw: { available: true, canNext: true }, boxActions: { handleBoxCommand: vi.fn() } };
+    Object.assign(empty, { modules });
+    app.workspace.getActiveViewOfType.mockReturnValue(empty);
+    plugin.onload(); await waitForPluginLoad(plugin);
+    const command = (plugin as any).addCommand.mock.calls.map(([entry]: any[]) => entry).find((entry: any) => entry.id === "toggle-box-draw");
+    expect(command.checkCallback(false)).toBe(false);
+    expect(modules.boxActions.handleBoxCommand).not.toHaveBeenCalled();
+    empty.currentStream = true;
+    expect(command.checkCallback(false)).toBe(true);
+    expect(modules.boxActions.handleBoxCommand).toHaveBeenCalledExactlyOnceWith({ command: "draw" });
+  });
+
+  it("creates a new leaf beside the same-window recent root editor without setting or activating it", async () => {
+    const { plugin, app } = createPluginHarness();
+    const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
+    const editor = leafFor({ getViewType: () => "markdown" }, ownWindow, app.workspace.rootSplit);
+    const created = { setViewState: vi.fn(), openFile: vi.fn() };
+    app.workspace.getMostRecentLeaf.mockReturnValue(editor);
+    app.workspace.createLeafBySplit.mockReturnValue(created);
+    await expect(plugin.createCardStreamLeaf(origin as never)).resolves.toBe(created);
+    expect(app.workspace.getMostRecentLeaf).toHaveBeenCalledWith(app.workspace.rootSplit);
+    expect(app.workspace.createLeafBySplit).toHaveBeenCalledExactlyOnceWith(editor, "vertical");
+    expect(created.setViewState).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.openPopoutLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a same-window root leaf while skipping side docks and another window", async () => {
+    const { plugin, app } = createPluginHarness();
+    const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
+    const foreign = leafFor({ getViewType: () => "markdown" }, otherWindow, app.workspace.rootSplit);
+    const dock = leafFor({ getViewType: () => "markdown" }, ownWindow, app.workspace.rightSplit);
+    const root = leafFor({ getViewType: () => "empty" }, ownWindow, app.workspace.rootSplit);
+    app.workspace.getMostRecentLeaf.mockReturnValue(foreign);
+    Object.assign(app.workspace, { iterateAllLeaves: (cb: (leaf: unknown) => void) => [origin, foreign, dock, root].forEach(cb) });
+    await plugin.createCardStreamLeaf(origin as never);
+    expect(app.workspace.createLeafBySplit).toHaveBeenCalledExactlyOnceWith(root, "vertical");
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("uses getLeaf(true) when the origin window has no existing root leaf", async () => {
+    const { plugin, app } = createPluginHarness();
+    const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
+    app.workspace.getMostRecentLeaf.mockReturnValue(leafFor({}, otherWindow, app.workspace.rootSplit));
+    await plugin.createCardStreamLeaf(origin as never);
+    expect(app.workspace.getLeaf).toHaveBeenCalledExactlyOnceWith(true);
+    expect(app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+    expect(app.workspace.setActiveLeaf).not.toHaveBeenCalled();
+  });
+
+  it("grades a noncurrent stream box membership change for the entire desktop leaf", async () => {
+    const { plugin } = createPluginHarness();
+    const candidate = view();
+    const box = { ...createCardBox("Box", []), id: "saved-box" };
+    mutateStoreMemory(plugin, { boxes: [box] });
+    candidate.getCardScopes = () => [createFolderScope("notes", true), createBoxScope(box.id)];
+    obsidianMockState.leavesByType["folder-card-view"] = [leafFor(candidate, ownWindow)];
+    await plugin.saveSettings({ boxes: [{ ...box, manualPaths: ["new.md"] }] });
+    expect(candidate.applyUpdateIntent).toHaveBeenCalledExactlyOnceWith("reload", "settings-change");
+  });
+
+  it("keeps deleted desktop box sources missing when external settings remove their definition", async () => {
+    const { plugin } = createPluginHarness();
+    const candidate = view();
+    const box = { ...createCardBox("Box", []), id: "saved-box" };
+    mutateStoreMemory(plugin, { boxes: [box] });
+    candidate.cardScope = createBoxScope(box.id);
+    const exitBoxScope = vi.fn(); Object.assign(candidate, { modules: { boxActions: { exitBoxScope } } });
+    obsidianMockState.leavesByType["folder-card-view"] = [leafFor(candidate, ownWindow)];
+    (plugin as any).loadData.mockResolvedValue({ boxes: [] });
+    await plugin.onExternalSettingsChange();
+    expect(candidate.applyUpdateIntent).toHaveBeenCalledExactlyOnceWith("reload", "settings-change");
+    expect(exitBoxScope).not.toHaveBeenCalled();
+    expect(candidate.cardScope).toEqual(createBoxScope(box.id));
+  });
+
+  it("targets desktop stream commands only at an active pane with a current stream", () => {
+    const { plugin, app } = createPluginHarness(); const candidate = view();
+    const state = { streams: [{ id: "a" }, { id: "b" }], currentStreamId: "b" as string | null, recentlyClosedCount: 1 };
+    const select = vi.fn(), reopen = vi.fn(), handleStreamCommand = vi.fn(), openNewStreamPicker = vi.fn();
+    Object.assign(candidate, { streams: { getState: () => state, select, reopen }, handleStreamCommand, openNewStreamPicker });
+    app.workspace.getActiveViewOfType.mockReturnValue(candidate);
+    (plugin as any).registerStreamCommands();
+    const commands = new Map((plugin as any).addCommand.mock.calls.map(([command]: any[]) => [command.id, command]));
+    const close = commands.get("close-card-stream") as { checkCallback: (checking: boolean) => boolean };
+    expect(close.checkCallback(true)).toBe(true); expect(handleStreamCommand).not.toHaveBeenCalled();
+    expect(close.checkCallback(false)).toBe(true); expect(handleStreamCommand).toHaveBeenCalledExactlyOnceWith("b", "close");
+    handleStreamCommand.mockClear(); state.currentStreamId = null;
+    expect(close.checkCallback(false)).toBe(false); expect(handleStreamCommand).not.toHaveBeenCalled();
+    expect((commands.get("next-card-stream") as any).checkCallback(false)).toBe(false); expect(select).not.toHaveBeenCalled();
+    expect((commands.get("new-card-stream") as any).checkCallback(false)).toBe(true); expect(openNewStreamPicker).toHaveBeenCalledOnce();
+    expect((commands.get("reopen-card-stream") as any).checkCallback(false)).toBe(true); expect(reopen).toHaveBeenCalledOnce();
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    expect(close.checkCallback(false)).toBe(false);
+  });
+
+  it("does not register multi-stream commands on mobile", () => {
+    const { plugin } = createPluginHarness(); Object.assign(plugin, { runtimePlatform: { device: "phone" } });
+    (plugin as any).registerStreamCommands();
+    expect((plugin as any).addCommand).not.toHaveBeenCalled();
+  });
 });

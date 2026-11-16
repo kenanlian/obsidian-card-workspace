@@ -1,0 +1,1114 @@
+import { taskTreeCount } from "./task-filters";
+import { navigationIconTarget } from "./content-icon-target";
+import { readHistoryScope, type ReadingPositionBridge } from "./scope-history";
+import { RuntimeWorkGate } from "../runtime/work-gate";
+import { UNSUPPORTED_CAPABILITIES } from "../runtime/capabilities";
+import { Notice, TFile, TFolder, type Menu, type HoverParent, type HoverPopover, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
+import { mount, unmount } from "svelte";
+import { CARD_WORKSPACE_ICON } from "../icons";
+import type { UiStrings } from "../i18n";
+import type { OpenDestination, PartialPluginSettings } from "../settings";
+import { resolveLinkCardLocation, type CardOpenLocation } from "./link-card-location";
+import type CardWorkspacePlugin from "../main";
+import {
+  createFolderScope,
+  isBoxScope, isLinksScope,
+  resolveScopeFolderPath,
+  scopeDisplayPath,
+  scopeIdentity,
+  type CardScope,
+} from "./scope";
+import { resolveSourceCapabilities } from "./source-capabilities";
+import { buildBrowseFilterChips, buildBrowseFilterRemovalPatch, type BrowseFilterTarget } from "./browse-filters";
+import type { ViewUpdateIntent } from "./update-intent";
+import { createStreamBrowseState, getBrowseFilter, getBrowseIncludeSubfolders, getStreamViewConfig, type StreamBrowseState } from "./stream-browse-state";
+import type { StreamSnapshot } from "./stream-state";
+import type { NavLayoutController } from "./controllers/NavLayoutController";
+import type { LeafPreviewResources } from "./leaf-preview-resources";
+import type { App } from "obsidian";
+
+export interface StreamRuntimeHost { app: App; leaf: WorkspaceLeaf; containerEl: HTMLElement }
+export interface StreamRuntimeOptions {
+  snapshot?: StreamSnapshot;
+  navLayout?: NavLayoutController;
+  previewResources?: LeafPreviewResources;
+  onChange?: () => void;
+  onToggleNav?: () => void;
+  appendStreamMenu?: (menu: Menu, payload: NavContextMenuPayload) => boolean;
+  isCurrent?: () => boolean;
+  getNavigationSnapshot?: () => PanelModelState["nav"] | undefined;
+}
+import { createViewEpochs, type ViewEpochs } from "./view-epochs";
+import type { ViewContext } from "./view-context";
+import { createViewModules, type ViewModules } from "./view-modules";
+import type { MetadataImpactBatch } from "./controllers/MetadataImpactController";
+import { resolveEmptyStateMessage } from "./empty-state";
+import { createViewStateStore, type ViewStateStore } from "./view-state-store";
+import { resolveLinksFollowScope } from "./links-sources";
+import { rewritePathAfterRename } from "./scope-files";
+import type { NavigationIntent } from "./navigation-model";
+import {
+  buildNavigationPanelState,
+  isCurrentNavigationMenuTarget,
+  openNavigationContextMenu,
+  publishLoadStart,
+  publishPreparedCards,
+  publishSettledScope,
+  routeNavigationIntent,
+  type LoadBoundaryHost,
+} from "./navigation-host";
+import { buildCardsPanelGroup, buildProjectionPanelGroup } from "./panel-group-state";
+import { buildNavMenuDeps as buildNavMenuDepsFor } from "./menus/nav-menu-deps";
+import {
+  PANEL_GROUPS, buildLinksScopeGroupFields, resolveBrowseFiltersPaused,
+  createPanelModel,
+  type PanelGroup,
+  type PanelModel,
+  type PanelModelState,
+} from "./panel-model";
+import { buildPanelProps } from "./panel-props";
+import type { CardHoverLinkPayload, CleanupResult, FolderActionPayload, FolderSelectionRequest, NavContextMenuPayload,
+  NoteCardRecord, RefreshReason, RefreshRequest, RefreshResult, SelectionResult, VaultMutationEvent, VaultMutationResult } from "./types";
+
+export const FOLDER_CARD_VIEW = "folder-card-view";
+
+export class CardStreamRuntime implements HoverParent {
+  plugin: CardWorkspacePlugin;
+  private readingPosition: ReadingPositionBridge | null = null;
+  private readonly historyAnchors: Map<string, import("./scroll-anchoring").RowAnchor>;
+  private historySequence = 0;
+  private readonly pendingHistoryRecords = new Set<number>();
+  private recordedScope: CardScope | null = null;
+  private component: ReturnType<typeof mount> | null = null;
+  private hostEl: HTMLElement | null = null; private viewEventUnsubscribe: (() => void) | null = null;
+  private metadataEventUnsubscribe: (() => void) | null = null;
+  private suppressSettingsUpdate = false;
+  readonly panelModel: PanelModel;
+
+  readonly store: ViewStateStore = createViewStateStore(createFolderScope("", true));
+  readonly epochs: ViewEpochs = createViewEpochs();
+  private readonly workGate = new RuntimeWorkGate();
+  private stopActivity: (() => void) | null = null;
+  readonly context: ViewContext; readonly modules: ViewModules;
+
+  get hoverPopover(): HoverPopover | null { return this.modules.hoverPreview.hoverPopover; }
+  set hoverPopover(value: HoverPopover | null) { this.modules.hoverPreview.hoverPopover = value; }
+
+  readonly app: App;
+  readonly leaf: WorkspaceLeaf;
+  readonly containerEl: HTMLElement;
+  readonly navigation: boolean;
+  private mounted = false;
+  private browseState: StreamBrowseState | undefined;
+  searchOpen = false;
+  private cancelInteractions: (() => void) | null = null;
+  missing = false;
+  private pendingAnchor: StreamSnapshot["anchor"] = null;
+  private pendingAnchorIndex = 0;
+  private pendingSelection: { bulk: boolean; paths: string[]; query: string; scope: string } | null = null;
+  constructor(host: StreamRuntimeHost, plugin: CardWorkspacePlugin, private readonly options: StreamRuntimeOptions = {}) {
+    this.app = host.app; this.leaf = host.leaf; this.containerEl = host.containerEl;
+    const leaf = host.leaf;
+    this.browseState = options.snapshot?.browse;
+    if (options.snapshot) {
+      this.store.setScope(options.snapshot.scope);
+      this.store.setTaskFilters(options.snapshot.taskFilters);
+      this.store.setLinksPinned(options.snapshot.linksPinned);
+      this.searchOpen = options.snapshot.searchOpen;
+      this.pendingAnchor = options.snapshot.anchor;
+      this.pendingAnchorIndex = options.snapshot.anchorIndex;
+    }
+    this.plugin = plugin;
+    this.historyAnchors = plugin.getScopeHistoryAnchors?.(leaf) ?? new Map();
+    this.navigation = (plugin.runtimePlatform?.device ?? "desktop") !== "desktop";
+    this.context = {
+      workGate: this.workGate,
+      resourceBudget: this.plugin.resourceBudget,
+      runtimePlatform: this.plugin.runtimePlatform,
+      waitForSettings: () => this.plugin.waitForExternalSettings?.() ?? Promise.resolve(),
+      flushSettings: () => this.plugin.flushSettings(),
+      getApp: () => this.app, store: this.store, epochs: this.epochs,
+      ...(options.snapshot ? { browse: {
+        get: () => this.browseState!,
+        update: (patch: Partial<StreamBrowseState>) => { this.browseState = { ...this.browseState!, ...patch }; options.onChange?.(); },
+        reset: (scope: CardScope) => { this.browseState = { ...createStreamBrowseState(scope, this.plugin.getSettings()), filter: this.browseState!.filter }; options.onChange?.(); },
+      } } : {}),
+      onMissingScope: () => { this.missing = true; this.publishGroups("scope", "cards"); options.onChange?.(); },
+      getSettings: () => this.plugin.getSettings(), saveSettings: (patch, options) => this.saveViewSettings(patch, options),
+      getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
+      requestUpdate: (intent, reason) => this.applyUpdateIntent(intent, reason),
+      notify: (message) => { new Notice(message); }, getViewWindow: () => this.getViewWindow(),
+    };
+    this.modules = createViewModules(this.context, {
+      onScopeCommitted: (scope, recordHistory) => {
+        if (!this.navigation) return;
+        if (!recordHistory) { this.recordedScope = scope; return; }
+        const sequence = ++this.historySequence;
+        this.pendingHistoryRecords.add(sequence);
+        void this.leaf.setViewState({ type: FOLDER_CARD_VIEW, state: { scope, session: this.plugin.navigationSessionId, record: sequence } })
+          .catch((error: unknown) => console.warn("[Card Workspace] Scope history failed", error))
+          .finally(() => this.pendingHistoryRecords.delete(sequence));
+      },
+      appendMobileInsertMenu: (menu, path) => this.plugin.appendMobileInsertMenu?.(menu, path),
+      flushSettings: () => this.plugin.flushSettings?.() ?? Promise.resolve(),
+      openTemplateNote: (path, selectTitle) => this.plugin.openTemplateEditor(path, selectTitle),
+      runTemplateOperation: (work) => this.plugin.runTemplateOperation(work),
+      getThumbnailService: () => this.plugin.getThumbnailService?.() ?? null,
+      effectiveSortAndPins: () => {
+        const { sort, pinnedPaths } = getStreamViewConfig(this.context);
+        return { sortField: sort.field, sortDirection: sort.direction, pinnedPaths };
+      },
+      getDisplayFolderPath: () => this.getDisplayFolderPath(),
+      getTooltipSide: () => this.resolveTooltipSide(),
+      openCardWithDestination: (path, destination) => this.openCardWithDestination(path, destination),
+      selectFolderFromNav: (path) => this.selectFolderFromNav(path),
+      moveScopeToFolder: (path) => this.modules.scopeController.moveScopeToFolder(path),
+      bumpSearchFocusToken: () => this.modules.search.bumpFocusToken(),
+      publishAll: () => this.publishGroups(...PANEL_GROUPS),
+      publishSearch: () => {
+        if (!this.modules.scopeController.isScopeSettled()) return;
+        this.modules.projection.reprojectCards();
+        this.modules.bulk.reconcileToVisibleCards();
+        // "projection" is in the set because pausing or resuming search moves
+        // `groupSegmentCount`, which the toolbar reads to enable collapse-all.
+        this.publishGroups("search", "cards", "bulk", "scope", "projection");
+      },
+      publishSelection: () => this.publishGroups("bulk", "cards"),
+      publishHydration: () => this.publishGroups("cards"),
+      getIconAnchor: () => this.hostEl ?? this.containerEl,
+      publishLoadStart: (scopeChanged) => {
+        if (scopeChanged) this.modules.iconActions.close();
+        if (scopeChanged && this.navigation) {
+          const anchor = this.readingPosition?.capture();
+          if (anchor) { this.historyAnchors.set(scopeIdentity(this.cardScope), anchor); if (this.historyAnchors.size > 32) this.historyAnchors.delete(this.historyAnchors.keys().next().value!); }
+        }
+        publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged);
+      },
+      publishPreparedCards: (fileTypesChanged) => this.panelModel.batch(() => {
+        this.missing = false;
+        this.recordedScope ??= this.cardScope;
+        if (fileTypesChanged) this.publishGroups("nav");
+        publishPreparedCards(this.buildLoadBoundaryHost());
+      }),
+      publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
+      publishGroups: (...groups) => this.publishGroups(...groups),
+      publishImpactBatch: (batch) => this.publishImpactBatch(batch),
+      openNoteFromCard: async (path, destination) => { await this.plugin.openNoteFromCard(path, destination); },
+      createNoteInFolder: (folderPath, tags, properties, boxId) => boxId !== undefined
+        ? this.plugin.createNoteInFolder(folderPath, tags, properties, boxId)
+        : properties === undefined
+          ? this.plugin.createNoteInFolder(folderPath, tags) : this.plugin.createNoteInFolder(folderPath, tags, properties),
+      getSearchService: () => this.plugin.getSearchService(),
+      getSearchSnapshot: () => this.plugin.getSearchSnapshot(),
+      subscribeSearchSnapshots: (listener) => this.plugin.subscribeSearchSnapshots(listener),
+      getTaskIndex: () => this.plugin.getTaskIndex?.() ?? null,
+      getTaskWriteService: () => this.plugin.getTaskWriteService?.() ?? null,
+      openTaskNote: async (path, destination, location) => {
+        if (location) await this.plugin.openNoteFromCard(path, destination, location);
+        else await this.plugin.openNoteFromCard(path, destination);
+      },
+    }, { navLayout: options.navLayout, previewResources: options.previewResources });
+    if (options.snapshot) this.modules.groupCollapse.restore(options.snapshot.collapsedGroups);
+    this.panelModel = createPanelModel({
+      capabilities: this.plugin.runtimePlatform?.capabilities,
+      strings: this.strings,
+      scope: this.buildScopeGroup(),
+      cards: this.buildCardsGroup(),
+      search: this.buildSearchGroup(),
+      projection: this.buildProjectionGroup(),
+      bulk: this.buildBulkGroup(),
+      nav: this.buildNavGroup(),
+      appearance: this.buildAppearanceGroup(),
+      images: this.modules.images.getPanelState(),
+    });
+  }
+  private get cardScope(): CardScope { return this.store.getScope(); } private set cardScope(scope: CardScope) { this.store.setScope(scope); }
+  private get baseCards(): NoteCardRecord[] { return this.store.getBaseCards() as NoteCardRecord[]; } private set baseCards(cards: NoteCardRecord[]) { this.store.replaceBaseCards(cards); }
+  private get visibleCards(): NoteCardRecord[] { return this.store.getVisibleCards() as NoteCardRecord[]; } private set visibleCards(cards: NoteCardRecord[]) { this.store.replaceVisibleCards(cards); }
+  private get selectedPath(): string | null { return this.store.getSelectedPath(); } private set selectedPath(path: string | null) { this.store.setSelectedPath(path); }
+  registerReadingPosition(bridge: ReadingPositionBridge | null): void {
+    this.readingPosition = bridge;
+    this.restoreReadingAnchor();
+  }
+  private restoreReadingAnchor(): void {
+    if (!this.pendingAnchor || !this.readingPosition || !this.hasLoadedScope()) return;
+    if (!this.isBrowseQueryReady() || this.modules.taskView.getStatus() === "building") return;
+    const cards = this.modules.projection.getStreamMode() === "tasks" ? this.store.getVisibleTaskCards() : this.store.getVisibleCards();
+    let anchor = this.pendingAnchor;
+    if ((anchor.ref.kind === "card" && !cards.some(card => card.path === (anchor.ref as { path: string }).path))
+      || (anchor.ref.kind === "group" && !this.modules.projection.getGroupSegments().some(group => group.key === (anchor.ref as { key: string }).key))) {
+      anchor = { ...anchor, ref: { kind: "card-index", index: Math.max(0, Math.min(this.pendingAnchorIndex, cards.length - 1)) } };
+    }
+    this.readingPosition.restore(anchor, scopeIdentity(this.cardScope)); this.pendingAnchor = null;
+  }
+  connect(): void {
+    this.mounted = true; this.hostEl = this.containerEl;
+    this.store.setSelectedPath(this.app.workspace.getActiveFile()?.path ?? null);
+    this.modules.hoverPreview.activate();
+    this.modules.search.initializeSnapshotState();
+  }
+  getPanelProps(): ReturnType<typeof buildPanelProps> {
+    return { ...buildPanelProps(this), showNavigation: false, initialSearchOpen: this.searchOpen,
+      onInteractionCleanup: (cancel: (() => void) | null) => { this.cancelInteractions = cancel; },
+      onRegionReady: (element: HTMLElement | null) => {
+        this.stopActivity?.(); this.stopActivity = null;
+        if (element) this.stopActivity = this.plugin.runtimeActivity?.observeRegion(element, this.workGate) ?? null;
+      },
+      onSearchOpenChange: (open: boolean) => { if (this.searchOpen === open) return; this.searchOpen = open; this.options.onChange?.(); },
+      onShellResize: () => {}, onToggleNavPane: this.options.onToggleNav ?? (() => {}),
+    };
+  }
+  async restoreSnapshot(snapshot: StreamSnapshot): Promise<void> {
+    if (this.workGate.isClosed) return;
+    this.store.setScope(snapshot.scope);
+    this.modules.search.onQueryChange({ query: snapshot.query }); this.modules.search.clearDebounce();
+    const result = await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(snapshot.scope, false, "restore"));
+    await this.modules.scopeController.waitForIdle();
+    if (this.workGate.isClosed) return;
+    if (result.action === "rejected_invalid") {
+      this.missing = true; this.modules.search.clearDebounce();
+      await this.modules.search.refreshProjection(); this.publishGroups("scope", "cards", "search"); return;
+    }
+    await this.modules.search.refreshProjection();
+    if (!this.workGate.isClosed) this.restoreReadingAnchor();
+  }
+  captureSnapshot(base: StreamSnapshot): StreamSnapshot {
+    const anchor = this.readingPosition?.capture() ?? this.pendingAnchor;
+    const records = this.modules.projection.getStreamMode() === "tasks" ? this.store.getVisibleTaskCards() : this.store.getVisibleCards();
+    const index = anchor?.ref.kind === "card" ? records.findIndex(record => record.path === (anchor.ref as { path: string }).path) : -1;
+    const anchorIndex = anchor?.ref.kind === "card-index" ? anchor.ref.index : index >= 0 ? index : base.anchorIndex;
+    this.pendingAnchorIndex = anchorIndex;
+    return { ...base, scope: this.cardScope, browse: this.browseState ?? base.browse,
+      query: this.modules.search.getQuery(), searchOpen: this.searchOpen,
+      linksPinned: this.store.getLinksPinned(), taskFilters: this.store.getTaskFilters(),
+      collapsedGroups: this.modules.groupCollapse.snapshot(), anchor, anchorIndex,
+    };
+  }
+  endTransientInteractions(): void {
+    this.cancelInteractions?.(); this.modules.cardDropActions.cancel();
+    this.modules.iconActions.close(); this.modules.taskFilters.close(); this.modules.taskActions.closeTransient();
+    this.modules.hoverPreview.dispose();
+  }
+  captureSelection(): { bulk: boolean; paths: string[] } {
+    if (this.pendingSelection) return { bulk: this.pendingSelection.bulk, paths: [...this.pendingSelection.paths] };
+    return { bulk: this.modules.bulk.isBulkMode(), paths: [...this.modules.bulk.getSelectedPaths()] };
+  }
+  restoreSelection(selection: { bulk: boolean; paths: string[] }): void {
+    this.pendingSelection = { ...selection, paths: [...selection.paths], query: this.modules.search.getQuery(), scope: scopeIdentity(this.cardScope) };
+    this.applyPendingSelection();
+  }
+  private isBrowseQueryReady(): boolean {
+    return !this.modules.search.getQuery().trim() || this.modules.projection.getStreamMode() === "tasks"
+      || this.modules.search.buildPipelineSearchInput().execution === "indexed-ready" && this.modules.search.isCommittedQueryCurrent();
+  }
+  private applyPendingSelection(): void {
+    const selection = this.pendingSelection;
+    if (!selection || this.workGate.isClosed) return;
+    if (selection.query !== this.modules.search.getQuery() || selection.scope !== scopeIdentity(this.cardScope)
+      || this.modules.projection.getStreamMode() === "tasks") { this.pendingSelection = null; return; }
+    if (!this.modules.scopeController.isScopeSettled() || !this.isBrowseQueryReady()) return;
+    this.pendingSelection = null;
+    if (selection.bulk && !this.modules.bulk.isBulkMode()) this.modules.bulk.toggleBulkMode();
+    this.modules.bulk.reconcileSelectionToOrderedPaths(selection.paths.filter(path => this.store.getVisibleCards().some(card => card.path === path)));
+  }
+  getState(): Record<string, unknown> {
+    return this.navigation ? { scope: this.recordedScope ?? this.cardScope, session: this.plugin.navigationSessionId } : {};
+  }
+  async setState(state: unknown, result: ViewStateResult): Promise<void> {
+    result.history = false;
+    if (!this.navigation || !state || typeof state !== "object") return;
+    const value = state as { scope?: unknown; session?: unknown; record?: unknown };
+    // Host workspace restoration must not restore a persisted box or links source on launch.
+    if (value.session !== this.plugin.navigationSessionId) return;
+    const scope = readHistoryScope(value.scope, this.app, this.plugin.getSettings().boxes ?? []);
+    if (!scope) return;
+    if (typeof value.record === "number" && this.pendingHistoryRecords.delete(value.record)) {
+      if (value.record !== this.historySequence) return;
+      this.recordedScope = scope; result.history = true; return;
+    }
+    const anchor = this.historyAnchors.get(scopeIdentity(scope));
+    await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "history"));
+    await this.modules.scopeController.waitForIdle();
+    this.recordedScope = this.cardScope;
+    if (scopeIdentity(this.cardScope) === scopeIdentity(scope) && anchor) this.readingPosition?.restore(anchor, scopeIdentity(scope));
+  }
+  getViewType(): string { return FOLDER_CARD_VIEW; }
+  getDisplayText(): string { return this.strings.view.displayName; }
+
+  /** A new leaf receives only committed browsing state; gestures and host history stay local. */
+  async transferToSidebar(target: CardStreamRuntime, isCurrent: () => boolean): Promise<boolean> {
+    await this.modules.scopeController.waitForIdle();
+    if (!isCurrent()) return false;
+    if (!this.hasLoadedScope() || target.hasLoadedScope()) return true;
+    const sourceVersion = this.modules.scopeController.getActiveSelectionVersion();
+    const scope = this.getCardScope();
+    const query = this.modules.search.getQuery();
+    const anchor = this.readingPosition?.capture();
+    const anchors = [...this.historyAnchors];
+    // Seed the initial scope before loading so relocating the same source cannot clear filters.
+    target.store.setScope(scope);
+    const filters = this.store.getTaskFilters();
+    target.store.setTaskFilters({ ...filters, date: filters.date ? { ...filters.date } : null });
+    target.store.setLinksPinned(this.store.getLinksPinned());
+    target.store.setSelectedPath(this.selectedPath);
+    const loading = target.modules.scopeController.handleScopeSelection(
+      target.modules.scopeController.createProgrammaticSelectionRequest(scope, false, "restore"));
+    const targetVersion = target.modules.scopeController.getActiveSelectionVersion();
+    const sourceCurrent = (): boolean => isCurrent()
+      && sourceVersion === this.modules.scopeController.getActiveSelectionVersion();
+    const result = await loading;
+    await target.modules.scopeController.waitForIdle();
+    if (!sourceCurrent()) return false;
+    if (targetVersion !== target.modules.scopeController.getActiveSelectionVersion()) return true;
+    if (result.action === "rejected_invalid" || !target.hasLoadedScope()) throw new Error("Sidebar scope transfer failed");
+    target.modules.search.onQueryChange({ query });
+    await target.modules.search.refreshProjection();
+    if (!sourceCurrent()) return false;
+    if (targetVersion !== target.modules.scopeController.getActiveSelectionVersion()) return true;
+    for (const [key, value] of anchors) target.historyAnchors.set(key, value);
+    if (anchor) target.readingPosition?.restore(anchor, scopeIdentity(scope));
+    return true;
+  }
+  getIcon(): string { return CARD_WORKSPACE_ICON; }
+  private get strings(): UiStrings {
+    return this.plugin.getUiStrings();
+  }
+  private async saveViewSettings(patch: PartialPluginSettings, options?: { skipViewUpdate: boolean }): Promise<void> {
+    if (this.context.browse && patch.filter) {
+      this.context.browse.update({ filter: { ...this.context.browse.get().filter, ...patch.filter } });
+      const sharedPatch = { ...patch }; delete sharedPatch.filter;
+      if (Object.keys(sharedPatch).length > 0) await this.plugin.saveSettings(sharedPatch);
+      if (!options?.skipViewUpdate) await this.applyUpdateIntent("reproject", "settings-change");
+      return;
+    }
+    const scopeOnly = Object.keys(patch).every((key) => key === "lastFolderPath" || key === "activeBoxId");
+    if (!scopeOnly && !options?.skipViewUpdate) return this.plugin.saveSettings(patch);
+    const previous = this.suppressSettingsUpdate;
+    this.suppressSettingsUpdate = true; try { return this.plugin.saveSettings(patch); }
+    finally { this.suppressSettingsUpdate = previous; }
+  }
+  private resolveTooltipSide(): "left" | "right" {
+    const root = this.leaf.getRoot();
+    return root === this.app.workspace.leftSplit ? "right" : "left";
+  }
+  private buildEmptyStateMessage(): string {
+    if (this.missing) return this.plugin.getUiLanguage() === "zh" ? "来源已不存在，请重新选择来源。" : "This source is unavailable. Choose another source.";
+    const capabilities = resolveSourceCapabilities(this.cardScope);
+    if (this.modules.boxDraw.active && !this.modules.search.getQuery().trim() && this.visibleCards.length === 0) {
+      return this.baseCards.length === 0 ? this.strings.box.drawEmpty : this.strings.box.drawHidden;
+    }
+    return resolveEmptyStateMessage({
+      strings: this.strings, query: this.modules.search.getQuery().trim(),
+      // Dormant filters never narrow a non-filterable scope, so they must not shape its copy.
+      activeTagCount: capabilities.browseTagFilter ? getBrowseFilter(this.context).tags.length : 0,
+      baseCardCount: this.baseCards.length,
+      visibleCardCount: this.visibleRowCount(),
+      propertyClauseCount: capabilities.browsePropertyFilter ? getBrowseFilter(this.context).properties.length : 0,
+      emptySearchMessage: isBoxScope(this.cardScope) ? this.strings.toolbar.emptySearchScope : undefined,
+      emptyBaseMessage: isLinksScope(this.cardScope) ? this.strings.links.emptyLinks
+        : isBoxScope(this.cardScope) ? this.strings.toolbar.emptyBox : undefined,
+    });
+  }
+  private openCardWithDestination(path: string, destination: OpenDestination): void {
+    const location = this.resolveCardLocation(path);
+    if (location) void this.plugin.openNoteFromCard(path, destination, location);
+    else void this.plugin.openNoteFromCard(path, destination);
+  }
+
+  resolveCardLocation(path: string): CardOpenLocation | null {
+    const scope = this.store.getScope();
+    if (!this.plugin.getSettings().locateLinkCardOnOpen || scope.kind !== "links"
+      || !this.store.getBaseCard(path)) return null;
+    const query = this.modules.search.getCommittedQuery().trim();
+    if (query) return { query };
+    return resolveLinkCardLocation(this.app, scope, path);
+  }
+  changeSearchSnippets(path: string, command: "expand" | "more" | "collapse"): Promise<void> {
+    return this.modules.hydration.changeSearchSnippets(path, command);
+  }
+
+  resolveSearchSnippetLocation(path: string, snippetId: string): CardOpenLocation | null {
+    const card = this.store.getBaseCard(path);
+    const preview = card?.searchPreview;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!card || !preview || file !== card.file || !this.mounted
+      || !this.modules.search.isCommittedQueryCurrent()
+      || this.modules.search.getCommittedQuery().trim() !== preview.query
+      || this.modules.search.getContentRevision() !== preview.revision
+      || this.plugin.getSettings().previewLines !== preview.previewLines
+      || this.plugin.getSettings().searchPreviewSnippetCount !== preview.snippetLimit
+      || (card.file.stat?.mtime ?? card.mtime) !== preview.mtime) return null;
+    const snippet = preview.snippets.find((entry) => entry.id === snippetId);
+    if (!snippet) return null;
+    const { query, revision, previewLines, snippetLimit, mtime } = preview;
+    const selectionVersion = this.modules.scopeController.getActiveSelectionVersion();
+    const fileVersion = this.modules.hydration.getFileRevision(card.file);
+    const size = card.file.stat?.size;
+    const pathAtClick = card.file.path;
+    const isCurrent = (): boolean => this.mounted
+      && this.modules.search.isCommittedQueryCurrent()
+      && this.modules.search.getCommittedQuery().trim() === query
+      && this.modules.search.getContentRevision() === revision
+      && this.modules.hydration.getFileRevision(card.file) === fileVersion
+      && this.modules.scopeController.getActiveSelectionVersion() === selectionVersion
+      && this.plugin.getSettings().previewLines === previewLines
+      && this.plugin.getSettings().searchPreviewSnippetCount === snippetLimit
+      && this.app.vault.getAbstractFileByPath(pathAtClick) === file
+      && card.file.path === pathAtClick
+      && card.file.stat?.size === size
+      && (card.file.stat?.mtime ?? card.mtime) === mtime;
+    return { kind: "search-snippet", snippet: {
+      ...snippet.location, from: { ...snippet.location.from }, to: { ...snippet.location.to },
+    }, isCurrent };
+  }
+
+  async onOpen(): Promise<void> {
+    this.modules.hoverPreview.activate();
+    const FolderCardPanel = (await import("./FolderCardPanel.svelte")).default;
+    this.modules.search.initializeSnapshotState();
+    this.publishGroups(...PANEL_GROUPS);
+
+    const target = (this.containerEl.children[1] as HTMLElement) ?? this.containerEl;
+    target.empty();
+
+    this.hostEl = target.createDiv({ cls: "folder-card-view" });
+    this.mounted = true;
+    this.component = mount(FolderCardPanel, {
+      target: this.hostEl,
+      props: buildPanelProps(this),
+    });
+
+    this.stopActivity = this.plugin.runtimeActivity?.observeRegion(this.hostEl.querySelector<HTMLElement>(".fce-list") ?? this.hostEl, this.workGate) ?? null;
+    this.modules.navLayout.refreshFolderTreeState();
+    this.modules.hydration.hydrateVisibleCardsOnOpen();
+    this.viewEventUnsubscribe?.();
+    this.viewEventUnsubscribe = this.plugin.subscribeVaultEvents((event) => {
+      const result = this.handleVaultMutation(event);
+      if (result.shouldRefresh) {
+        this.modules.scopeController.scheduleVaultRefresh();
+      }
+    });
+    this.metadataEventUnsubscribe?.();
+    this.metadataEventUnsubscribe = this.plugin.subscribeMetadataEvents((event) => {
+      if (event.kind === "resolved") {
+        this.modules.metadataImpact.handleMetadataResolved();
+        if (isLinksScope(this.cardScope)) this.modules.scopeController.scheduleVaultRefresh();
+        return Promise.resolve();
+      }
+      return this.modules.metadataImpact.handleMetadataChange(event.path);
+    });
+  }
+
+  async onClose(): Promise<void> {
+    this.cleanupLifecycle();
+
+    if (this.component) {
+      await unmount(this.component);
+    }
+
+    this.component = null;
+    this.mounted = false;
+    this.hostEl = null;
+  }
+
+  /** Rows of the stream the last projection produced: note cards or root tasks. */
+  private visibleRowCount(): number {
+    return this.modules.projection.getStreamMode() === "tasks"
+      ? this.store.getVisibleTaskCards().length
+      : this.visibleCards.length;
+  }
+
+  handleToolbarAction(detail: { anchor?: HTMLElement; groupKey?: string; action?: unknown; position?: { x: number; y: number }; filter?: BrowseFilterTarget }): void {
+    const action = detail.action;
+    if (action === "task-close-panels") { this.modules.taskFilters.close(); return; }
+    if (action === "task-status" && detail.anchor) { this.modules.taskFilters.openStatus(detail.anchor); return; }
+    if (action === "task-date-filter" && detail.anchor) { this.modules.taskFilters.openDates(detail.anchor); return; }
+    if (action === "task-copy" && detail.anchor) { this.modules.taskFilters.openCopy(detail.anchor, detail.groupKey); return; }
+    if (action === "task-group-menu" && detail.anchor && detail.groupKey !== undefined) {
+      this.modules.taskFilters.openGroupMenu(detail.anchor, detail.groupKey, detail.position); return;
+    }
+    if (action === "task-clear-status" || action === "task-clear-date" || action === "task-clear-filters") {
+      this.modules.taskFilters.clear(action === "task-clear-status" ? "status" : action === "task-clear-date" ? "date" : undefined); return;
+    }
+
+    if (action === "view-mode") {
+      void this.modules.arrangementActions.toggleViewMode();
+      return;
+    }
+
+    // Bulk operations are unavailable in the task stream.
+    if (typeof action === "string" && action.startsWith("bulk") && this.modules.taskView.isTaskMode()) return;
+
+    if (action === "remove-browse-filter") {
+      if (!detail.filter) return;
+      const patch = buildBrowseFilterRemovalPatch(getBrowseFilter(this.context), detail.filter,
+        resolveSourceCapabilities(this.cardScope));
+      if (patch) void this.saveViewSettings(patch);
+      return;
+    }
+
+    if (action === "clear-browse-filters") {
+      const capabilities = resolveSourceCapabilities(this.cardScope);
+      const filter = getBrowseFilter(this.context);
+      if ((capabilities.browseTagFilter && filter.tags.length > 0)
+        || (capabilities.browsePropertyFilter && filter.properties.length > 0)) {
+        void this.saveViewSettings({ filter: {
+          ...(capabilities.browseTagFilter ? { tags: [] } : {}),
+          ...(capabilities.browsePropertyFilter ? { properties: [] } : {}),
+        } });
+      }
+      return;
+    }
+
+    if (action === "new-note") {
+      void this.modules.scopeNoteActions.createNote().catch((error: unknown) => {
+        new Notice(this.modules.folderActions.getFolderManagementStrings().createFileFailed(String(error)));
+      });
+      return;
+    }
+
+    if (action === "bulk") {
+      this.modules.bulk.toggleBulkMode();
+      return;
+    }
+
+    if (action === "bulk-select-all") {
+      this.modules.bulk.bulkSelectAll();
+      return;
+    }
+
+    if (action === "bulk-clear-selection") {
+      this.modules.bulk.bulkClearSelection();
+      return;
+    }
+
+    if (action === "bulk-background-color") {
+      if (this.modules.bulk.isBulkMode() && detail.position) this.modules.cardBackgroundActions.openBulk([...this.modules.bulk.getSelectedPaths()], detail.position);
+      return;
+    }
+
+    if (action === "bulk-move-selected") {
+      this.modules.mergeActions.bulkMoveSelected();
+      return;
+    }
+
+    if (action === "bulk-edit-tags-selected") {
+      this.modules.tagActions.bulkEditTagsSelected();
+      return;
+    }
+
+    if (action === "bulk-edit-properties-selected") {
+      this.modules.bulkPropertyActions.bulkEditPropertiesSelected();
+      return;
+    }
+
+    if (action === "bulk-delete-selected") {
+      void this.modules.mergeActions.bulkDeleteSelected();
+      return;
+    }
+
+    if (action === "bulk-merge-selected") {
+      this.modules.mergeActions.bulkMergeSelected();
+      return;
+    }
+
+    if (action === "bulk-add-to-box") {
+      this.modules.boxActions.bulkAddToBox();
+      return;
+    }
+
+    if (action === "bulk-remove-from-box") {
+      void this.modules.boxActions.bulkRemoveFromBox();
+    }
+
+    if (typeof action === "string" && this.modules.linksActions.handleToolbarCommand(action)) return;
+  }
+
+  handleFolderActionRequest(detail: FolderActionPayload): void {
+    if (typeof detail.path !== "string") {
+      return;
+    }
+
+    if (detail.action === "create-child-folder") {
+      void this.modules.folderActions.createFromFolderTree(detail.path, "folder");
+    }
+  }
+
+  async setFolder(folder: TFolder): Promise<SelectionResult> {
+    const scope = createFolderScope(folder.path, this.plugin.getSettings().includeSubfolders);
+    return this.modules.scopeController.handleScopeSelection(
+      this.modules.scopeController.createProgrammaticSelectionRequest(scope, false),
+    );
+  }
+
+  async handleScopeSelection(request: FolderSelectionRequest): Promise<SelectionResult> {
+    return this.modules.scopeController.handleScopeSelection(request);
+  }
+
+  async refresh(request: RefreshRequest = { reason: "manual" }): Promise<RefreshResult> {
+    return this.modules.scopeController.refresh(request);
+  }
+
+  getCardScope(): CardScope { return this.cardScope; }
+  hasLoadedScope(): boolean { return this.modules.scopeController.getLoadKey() !== null; }
+  /**
+   * Applies the weakest update that still reflects a change. Only `"reload"`
+   * re-collects files; the weaker tiers keep scroll position and loaded previews.
+   */
+  async applyUpdateIntent(intent: ViewUpdateIntent, reason: RefreshReason): Promise<void> {
+    if (this.workGate.isClosed) return;
+    if (reason === "settings-change" && this.suppressSettingsUpdate) return;
+    this.modules.hoverPreview.applySize();
+    this.modules.images.onSettingsChanged();
+    this.modules.boxDraw.sync();
+    const effective = !this.modules.scopeController.isScopeSettled() && (intent === "reproject" || intent === "rehydrate") ? "reload" : intent;
+    switch (effective) {
+      case "reload":
+        await this.refresh({ reason, forceRefresh: true });
+        return;
+      case "rehydrate":
+        this.modules.hydration.clearPreviewCache();
+        this.modules.hydration.resetForLoad();
+        this.store.advanceHydrationRevision();
+        this.baseCards = this.baseCards.map((card) => ({
+          ...card, hydrated: false, previewHtml: "", previewMode: "empty", searchPreview: undefined, linkPreview: undefined,
+        }));
+        this.projectVisibleCards();
+        this.publishForIntent(intent);
+        return;
+      case "reproject":
+        this.modules.arrangementActions.sortAndReprojectCards();
+        this.publishForIntent(intent);
+        return;
+      case "patch":
+        this.publishForIntent(intent);
+        return;
+    }
+  }
+
+  /** Reprojects visible cards and reconciles bulk selection; never re-collects files. */
+  private projectVisibleCards(): void {
+    this.modules.projection.reprojectCards();
+    this.modules.bulk.reconcileToVisibleCards();
+  }
+
+  handleVaultMutation(event: VaultMutationEvent): VaultMutationResult {
+    this.modules.boxDraw.reconcile(event);
+    this.modules.images.handleVaultMutation(event);
+    if (!this.options.navLayout && event.eventType === "rename" && event.isFolder && event.oldPath) {
+      this.modules.navLayout.rewriteFolderIdentity((path) =>
+        rewritePathAfterRename(path, event.oldPath ?? "", event.path));
+    }
+    const result = this.modules.scopeController.handleVaultMutation(event);
+    this.modules.boxDraw.reconcile();
+    return result;
+  }
+
+  /**
+   * The one coherent immediate publication for a metadata event.
+   *
+   * Navigation is derived from the exact fresh projection snapshot built for
+   * this batch — never from the previously published projection — so tag
+   * sources/counts, facets, and the card projection cannot disagree inside a
+   * single notification.
+   */
+  private publishImpactBatch(batch: MetadataImpactBatch): void {
+    const projectionGroup = this.buildProjectionGroup();
+    const boxSummaries = this.modules.boxActions.buildBoxSummaries();
+    const navGroup = this.projectNavGroup(
+      this.modules.navLayout.getFolderTree(),
+      this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries }),
+      boxSummaries,
+      projectionGroup,
+    );
+    this.panelModel.batch((state) => {
+      if (batch.kind === "reprojected") {
+        state.scope = this.buildScopeGroup();
+        state.cards = this.buildCardsGroup();
+        state.bulk = this.buildBulkGroup();
+        if (batch.includeSearch) {
+          state.search = this.buildSearchGroup();
+        }
+      } else if (batch.includeCards) {
+        state.cards = this.buildCardsGroup();
+      }
+      state.projection = projectionGroup;
+      state.nav = navGroup;
+    });
+  }
+
+  /** Publish global metadata identities without invalidating scope count caches. */
+  refreshNavigationMetadata(): void { this.publishGroups("nav"); }
+
+  /** Re-push nav-derived state after plugin box/favorite reconciliation. */
+  refreshNavState(): void {
+    this.modules.navLayout.refreshNavState();
+  }
+
+  getRuntimeDiagnostics() { return { preview: this.modules.hydration.getDiagnostics(), images: this.modules.images.getDiagnostics() }; }
+
+  cleanupLifecycle(): CleanupResult {
+    this.stopActivity?.(); this.stopActivity = null; this.workGate.close();
+    this.viewEventUnsubscribe?.();
+    this.viewEventUnsubscribe = null;
+    this.metadataEventUnsubscribe?.();
+    this.metadataEventUnsubscribe = null;
+    this.modules.boxDraw.dispose();
+    const scopeReport = this.modules.scopeController.dispose();
+    const navLayoutReport = this.options?.navLayout ? {} : this.modules.navLayout.dispose();
+    this.modules.bulk.dispose();
+    this.modules.cardDropActions.dispose();
+    this.modules.cardBackgroundActions.dispose();
+    this.modules.iconActions.dispose();
+    const searchReport = this.modules.search.dispose();
+    const hydrationReport = this.modules.hydration.dispose();
+    this.modules.metadataImpact.dispose();
+    this.modules.images.dispose();
+    this.modules.hoverPreview.dispose();
+    this.modules.groupCollapse.dispose();
+    const taskViewReport = this.modules.taskView.dispose();
+    this.modules.taskActions.dispose();
+    this.modules.taskFilters.dispose();
+    this.modules.timeGroup.dispose();
+    this.modules.property.dispose();
+
+    return {
+      cancelledDebounce:
+        (searchReport.cancelledDebounce ?? false)
+        || (navLayoutReport.cancelledDebounce ?? false)
+        || (scopeReport.cancelledDebounce ?? false)
+        || (hydrationReport.cancelledDebounce ?? false)
+        || (taskViewReport.cancelledDebounce ?? false),
+      clearedQueuedRequest: scopeReport.clearedQueuedRequest ?? false,
+      clearedPendingHydration: hydrationReport.clearedPendingHydration ?? false,
+    };
+  }
+
+  setSelectedFile(path: string | null, preserveScope = false): void {
+    if (this.selectedPath === path) {
+      return;
+    }
+
+    this.selectedPath = path;
+    const next = preserveScope ? null : resolveLinksFollowScope(this.cardScope, path, this.store.getLinksPinned());
+    if (next) {
+      void this.modules.scopeController.handleScopeSelection(
+        this.modules.scopeController.createProgrammaticSelectionRequest(next, false, "links-follow"),
+      );
+    }
+    this.publishGroups("cards", "bulk", "nav");
+  }
+
+  getCurrentFolderPath(): string | null {
+    return resolveScopeFolderPath(this.cardScope);
+  }
+
+  openNavContextMenu(payload: NavContextMenuPayload): void {
+    const targetCurrent = isCurrentNavigationMenuTarget({
+      payload,
+      settings: this.plugin.getSettings(),
+      navLayout: this.modules.navLayout,
+      resolveFolder: (path) => this.modules.folderActions.resolveFolderFromUiPath(path),
+    });
+    const decorated = new WeakSet<Menu>();
+    openNavigationContextMenu({
+      payload, disposed: this.modules.navLayout.isDisposed(), targetCurrent,
+      deps: { ...buildNavMenuDepsFor({
+        context: this.context, modules: this.modules,
+        onIncludeSubfoldersChange: (detail) => this.onIncludeSubfoldersChange(detail),
+      }), shouldRestoreFocus: () => !this.modules.iconActions.hasOpenSession(), appendIconMenu: (menu, payload, options) => {
+        let added = false;
+        if (!decorated.has(menu)) { added = this.options.appendStreamMenu?.(menu, payload) ?? false; decorated.add(menu); }
+        const target = navigationIconTarget(payload as import("./navigation-model").NavigationMenuTarget);
+        if (!target) return added;
+        const anchor = Array.from(this.hostEl?.querySelectorAll<HTMLElement>("[data-nav-row-id]") ?? []).find(el => el.dataset.navRowId === payload.originId) ?? this.hostEl ?? this.containerEl;
+        const position = payload.trigger.kind === "position" ? payload.trigger.position : { x: payload.trigger.mouseEvent.clientX, y: payload.trigger.mouseEvent.clientY };
+        return this.modules.iconActions.appendMenu(menu, target, anchor, position, options) || added;
+      } },
+      restoreFocus: (originId) => this.modules.navLayout.restoreFocus(originId),
+    });
+  }
+
+  handleNavigationIntent(intent: NavigationIntent): void {
+    if (intent.type === "change-icon") {
+      const row = this.modules.navLayout.getProjection().rows.find(row => row.id === intent.rowId);
+      const target = row ? navigationIconTarget(row.menuTarget) : null;
+      if (target) this.modules.iconActions.open(target, intent.anchor);
+      return;
+    }
+    routeNavigationIntent({
+      intent, navLayout: this.modules.navLayout, scope: this.cardScope,
+      activeTags: getBrowseFilter(this.context).tags,
+      createFromTemplate: (id) => { void this.plugin.createNoteFromTemplate(id); },
+      templateCommand: () => this.modules.templateActions.newTemplate(),
+      openQuickInput: (win) => { void this.plugin.openQuickInput(win); },
+      selectFolder: (path) => { void this.selectFolderFromNav(path); },
+      switchBox: (boxId) => this.modules.boxActions.handleBoxCommand({ command: "switch", boxId }),
+      applyTagFilter: (tags, additive) => {
+        this.modules.navLayout.returnToCardsViewIfSinglePane();
+        void this.modules.tagActions.applyTagFilter(tags, additive);
+      },
+      activateFavorite: (favorite) => {
+        this.modules.navLayout.returnToCardsViewIfSinglePane();
+        this.modules.favoriteActions.handleFavoriteActivate({ favorite });
+      },
+      selectPropertyValue: (key, ref, additive) => {
+        this.modules.navLayout.returnToCardsViewIfSinglePane();
+        void this.modules.propertyActions.applyValueFilter(key, ref, additive);
+      },
+      selectLinksDirection: (direction) => {
+        this.modules.navLayout.returnToCardsViewIfSinglePane();
+        this.modules.linksActions.enterOrSwitchLinks(direction);
+      },
+      moveFolder: (sourcePath, targetFolderPath) => void this.modules.folderActions.moveFolderTo(sourcePath, targetFolderPath),
+      reorderFavorites: (source, target, position) => void this.modules.favoriteActions.reorderFavoriteEntries(source, target, position),
+    });
+  }
+
+  private getViewWindow(): Pick<Window, "setTimeout" | "clearTimeout"> {
+    return this.hostEl?.ownerDocument?.defaultView
+      ?? (typeof activeWindow !== "undefined" ? activeWindow : window);
+  }
+
+  private getDisplayFolderPath(): string {
+    const path = scopeDisplayPath(this.cardScope);
+    return path === "" ? "/" : path;
+  }
+  private buildScopeGroup(): PanelModelState["scope"] {
+    const box = this.modules.boxActions.getActiveBox();
+    const capabilities = resolveSourceCapabilities(this.cardScope, this.modules.boxDraw.active);
+    return {
+      draw: this.modules.boxDraw.snapshot(),
+      displayPath: this.getDisplayFolderPath(),
+      includeSubfolders: getBrowseIncludeSubfolders(this.context),
+      activeBoxId: isBoxScope(this.cardScope) ? this.cardScope.boxId : null,
+      activeBoxName: box?.name ?? null,
+      boxExcludedCount: box?.excludedPaths.length ?? 0,
+      emptyStateMessage: this.buildEmptyStateMessage(),
+      sourceIdentity: scopeIdentity(this.cardScope),
+      browseTagFilterEnabled: capabilities.browseTagFilter && !this.modules.boxDraw.active,
+      browsePropertyFilterEnabled: capabilities.browsePropertyFilter && !this.modules.boxDraw.active,
+      browseFiltersPaused: resolveBrowseFiltersPaused(this.cardScope, getBrowseFilter(this.context)) || this.modules.boxDraw.active && (getBrowseFilter(this.context).tags.length > 0 || getBrowseFilter(this.context).properties.length > 0),
+      browseFilterState: {
+        items: buildBrowseFilterChips(getBrowseFilter(this.context), capabilities,
+          capabilities.browsePropertyFilter && getBrowseFilter(this.context).properties.length > 0
+            ? this.modules.property.derivePropertyFacets() : [], this.strings.property),
+        tagCount: capabilities.browseTagFilter ? getBrowseFilter(this.context).tags.length : 0,
+        propertyValueCount: capabilities.browsePropertyFilter
+          ? getBrowseFilter(this.context).properties.reduce((count, clause) => count + clause.values.length, 0) : 0,
+        canClearEmptyResult: this.baseCards.length > 0 && this.visibleRowCount() === 0
+          && ((capabilities.browseTagFilter && getBrowseFilter(this.context).tags.length > 0)
+            || (capabilities.browsePropertyFilter && getBrowseFilter(this.context).properties.length > 0)),
+      },
+      supportsIncludeSubfolders: capabilities.supportsIncludeSubfolders,
+      supportsBoxRuleSeeding: capabilities.supportsBoxRuleSeeding,
+      ...buildLinksScopeGroupFields(this.cardScope, this.store, this.strings),
+    };
+  }
+
+  private buildCardsGroup(): PanelModelState["cards"] {
+    const scope = this.modules.scopeController;
+    const streamMode = this.modules.projection.getStreamMode();
+    return buildCardsPanelGroup({
+      records: this.visibleCards, searchMatchCountsByPath: this.modules.search.getMatchCountsByPath(),
+      selectedPath: this.selectedPath, loading: scope.isLoading(), generation: this.epochs.load.value,
+      sequenceRevision: this.store.getVisibleSequenceRevision(), hydrationRevision: this.store.getHydrationRevision(),
+      groupSegments: this.modules.projection.getGroupSegments(), groupRevision: this.modules.projection.getGroupRevision(),
+      taskGroupCounts: Object.fromEntries((this.modules.projection.getTaskSnapshot?.()?.copyGroups ?? []).map(group => [group.key, group.tasks.reduce((sum, task) => sum + taskTreeCount(task), 0)])),
+      streamMode, taskRecords: this.store.getVisibleTaskCards(), taskStatus: this.modules.taskView.getStatus(),
+      pendingTaskIds: streamMode === "tasks" ? this.modules.taskActions.getPendingIds() : [],
+      pendingTaskStatuses: streamMode === "tasks" ? this.modules.taskActions.getPendingStatuses() : {},
+    });
+  }
+
+  private buildSearchGroup(): PanelModelState["search"] {
+    return {
+      history: this.plugin.getSettings().searchHistory,
+      query: this.modules.search.getQuery(), committedQuery: this.modules.search.getCommittedQuery(),
+      status: this.modules.search.getStatus(),
+      readiness: this.modules.search.getSnapshot()?.health?.readiness,
+      persistence: this.modules.search.getSnapshot()?.health?.persistence,
+      rebuildReason: this.modules.search.getSnapshot()?.health?.rebuildReason ?? null,
+      focusToken: this.modules.search.getFocusToken(),
+    };
+  }
+
+  private buildProjectionGroup(): PanelModelState["projection"] {
+    const scope = this.store.getScope();
+    const { sort, pinnedPaths, group, viewMode, taskSort, taskGroup } = getStreamViewConfig(this.context, scope);
+    const projection = this.modules.projection;
+    const capabilities = resolveSourceCapabilities(scope);
+    return { ...buildProjectionPanelGroup({
+      sortField: sort.field, sortDirection: sort.direction,
+      deriveAvailableTags: () => projection.deriveAvailableTags(), deriveTagCounts: () => projection.deriveTagCounts(),
+      activeFilterTags: getBrowseFilter(this.context).tags, pinnedPaths, group,
+      availableGroupDimensions: [...capabilities.groupDimensions],
+      groupSegmentCount: projection.getGroupSegments().length,
+      viewMode, taskSort, taskGroup, taskViewAvailable: capabilities.taskView,
+    }), taskFilters: this.store.getTaskFilters(), taskDateLabel: this.modules.taskFilters.getDateLabel(true), taskDateTooltip: this.modules.taskFilters.getDateLabel() };
+  }
+
+  private buildBulkGroup(): PanelModelState["bulk"] {
+    return this.modules.bulk.buildPanelState();
+  }
+
+  private buildNavGroup(): PanelModelState["nav"] {
+    const boxSummaries = this.modules.boxActions.buildBoxSummaries(); const folderTree = this.modules.navLayout.getFolderTree();
+    const favorites = this.modules.favoriteActions.buildFavoriteRowModels({ boxSummaries });
+    // Navigation-only republishes reuse published Tag sources/counts, staying off the card projection path.
+    const projectionGroup = this.panelModel?.getState().projection ?? this.buildProjectionGroup();
+    return this.projectNavGroup(folderTree, favorites, boxSummaries, projectionGroup);
+  }
+  private projectNavGroup(folderTree: PanelModelState["nav"]["folderTree"], favorites: PanelModelState["nav"]["favorites"],
+    boxSummaries: PanelModelState["nav"]["boxSummaries"], projectionGroup: PanelModelState["projection"]): PanelModelState["nav"] {
+    const propertyFacets = this.modules.property.derivePropertyFacets();
+    if (this.options.isCurrent?.() === false) {
+      const navigation = this.panelModel?.getState().nav ?? this.options.getNavigationSnapshot?.();
+      if (navigation) return { ...navigation, visibleGroupProperties: propertyFacets.map(({ key, label }) => ({ key, label })) };
+    }
+    this.plugin.navigationMetadataCatalog?.seedScope(projectionGroup.availableTags, propertyFacets);
+    return buildNavigationPanelState({
+      metadataCatalog: this.plugin.navigationMetadataCatalog?.getSnapshot(),
+      drawActive: this.modules.boxDraw.active,
+      browseFilter: getBrowseFilter(this.context), includeSubfolders: getBrowseIncludeSubfolders(this.context),
+      settings: this.plugin.getSettings(), strings: this.strings, scope: this.cardScope, selectedPath: this.selectedPath,
+      folderTree, favorites, boxSummaries, cardProjection: projectionGroup, navLayout: this.modules.navLayout, tooltipSide: this.modules.navLayout.getTooltipSide(),
+      propertyFacets,
+      templates: (this.plugin.getSettings().noteTemplates ?? []).map((template) => {
+        const file = this.app.vault.getAbstractFileByPath(template.filePath);
+        const folder = template.targetFolderPath === "" ? this.app.vault.getRoot()
+          : template.targetFolderPath === null ? null : this.app.vault.getAbstractFileByPath(template.targetFolderPath);
+        return { id: template.id, filePath: template.filePath,
+          label: template.name?.trim() || template.filePath.split("/").pop() || template.filePath,
+          unavailable: !(file instanceof TFile) || file.extension.toLowerCase() !== "md" || !(folder instanceof TFolder) };
+      }),
+    });
+  }
+  private buildImagesGroup(): PanelModelState["images"] { return this.modules.images.getPanelState(); }
+  private buildAppearanceGroup(): PanelModelState["appearance"] {
+    const settings = this.plugin.getSettings();
+    return {
+      iconDefaults: settings.iconDefaults, iconOverrides: settings.iconOverrides,
+      cardCornerRadius: settings.cardCornerRadius,
+      previewLines: settings.previewLines,
+      searchPreviewSnippetCount: settings.searchPreviewSnippetCount,
+      cardImageMode: settings.cardImageMode,
+      cardImageFit: settings.cardImageFit,
+      uiFontSize: settings.uiFontSize,
+      uiDensity: settings.uiDensity,
+      cardStyle: settings.cardStyle,
+      cardBackgroundColor: settings.cardBackgroundColor,
+      cardBackgroundOverrides: settings.cardBackgroundOverrides,
+      taskCompletedStyle: settings.taskCompletedStyle,
+      taskCardShowFile: settings.taskCardShowFile,
+      taskDateColors: settings.taskDateColors,
+    };
+  }
+
+  /** Runtime events replace only the requested groups and notify listeners once. */
+  private publishGroups(...groups: PanelGroup[]): void {
+    if (groups.includes("cards") && this.modules?.images.prepareGeneration() && !groups.includes("images")) groups.push("images");
+    if (groups.includes("cards")) this.modules?.images.notifyTextReady();
+    if (groups.includes("cards") || groups.includes("projection") || groups.includes("search")) this.modules?.timeGroup.sync();
+    const uniqueGroups = new Set(groups);
+    this.panelModel.batch((state) => {
+      for (const group of uniqueGroups) {
+        switch (group) {
+          case "capabilities":
+            state.capabilities = this.plugin.runtimePlatform?.capabilities ?? UNSUPPORTED_CAPABILITIES;
+            break;
+          case "strings":
+            state.strings = this.strings;
+            break;
+          case "scope":
+            state.scope = this.buildScopeGroup();
+            break;
+          case "cards":
+            state.cards = this.buildCardsGroup();
+            break;
+          case "search":
+            state.search = this.buildSearchGroup();
+            break;
+          case "projection":
+            state.projection = this.buildProjectionGroup();
+            break;
+          case "bulk":
+            state.bulk = this.buildBulkGroup();
+            break;
+          case "nav":
+            state.nav = this.buildNavGroup();
+            break;
+          case "images":
+            state.images = this.buildImagesGroup();
+            break;
+          case "appearance":
+            state.appearance = this.buildAppearanceGroup();
+            break;
+        }
+      }
+    });
+    this.applyPendingSelection(); this.restoreReadingAnchor();
+  }
+  private buildLoadBoundaryHost(): LoadBoundaryHost {
+    return {
+      panelModel: this.panelModel, publishGroups: (...groups) => this.publishGroups(...groups),
+      projectNav: (folderTree, favorites, boxSummaries, cardProjection) =>
+        this.projectNavGroup(folderTree, favorites, boxSummaries, cardProjection),
+      getSettings: () => this.plugin.getSettings(), getScope: () => this.cardScope,
+      getSelectedPath: () => this.selectedPath,
+    };
+  }
+  /** Settings changes translate their four update tiers into explicit groups. */
+  private publishForIntent(intent: ViewUpdateIntent): void {
+    switch (intent) {
+      case "patch":
+        this.publishGroups("nav", "appearance", "strings", "scope", "search");
+        return;
+      case "reproject":
+      case "rehydrate":
+        this.publishGroups("nav", "appearance", "strings", "scope", "search", "cards", "projection", "bulk");
+        return;
+      case "reload":
+        this.publishGroups(...PANEL_GROUPS);
+        return;
+    }
+  }
+
+  async selectFolderFromNav(path: string): Promise<void> {
+    this.modules.navLayout.returnToCardsViewIfSinglePane();
+
+    // The scope load clears browse filters when the destination commits.
+    if (this.context.browse) {
+      await this.modules.scopeController.moveScopeToFolder(path);
+    } else await this.plugin.selectFolderByPath(path, "panel-picker");
+  }
+
+  async onIncludeSubfoldersChange(detail: { value?: unknown }): Promise<void> {
+    if (!resolveSourceCapabilities(this.cardScope).supportsIncludeSubfolders) {
+      return;
+    }
+    this.modules.navLayout.returnToCardsViewIfSinglePane();
+    if (typeof detail.value !== "boolean") {
+      return;
+    }
+
+    if ((this.context.browse && this.cardScope.kind === "folder" ? this.cardScope.includeSubfolders : this.plugin.getSettings().includeSubfolders) === detail.value) {
+      return;
+    }
+
+    if (this.context.browse && this.cardScope.kind === "folder") {
+      await this.modules.scopeController.handleScopeSelection(this.modules.scopeController.createProgrammaticSelectionRequest({ ...this.cardScope, includeSubfolders: detail.value }, false));
+    } else await this.plugin.saveSettings({ includeSubfolders: detail.value });
+  }
+
+  onCardHoverLink(detail: CardHoverLinkPayload): void {
+    this.modules.hoverPreview.activate();
+    this.app.workspace.trigger("hover-link", {
+      event: detail.mouseEvent,
+      source: "card-workspace",
+      hoverParent: this,
+      targetEl: detail.targetEl,
+      linktext: detail.path,
+    });
+  }
+}

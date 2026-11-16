@@ -26,6 +26,7 @@ export default defineConfig({
             obsidian: obsidianAlias,
             electron: electronAlias,
             "./FolderCardPanel.svelte": folderCardPanelMockAlias,
+            "./StreamWorkspacePanel.svelte": path.resolve(__dirname, "src/__mocks__/StreamWorkspacePanel.svelte.ts"),
           },
         },
       }),

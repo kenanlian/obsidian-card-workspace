@@ -299,7 +299,7 @@ vi.mock("./note-ops", async () => {
   };
 });
 
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import { buildNavMenuDeps } from "./menus/nav-menu-deps";
 import type { SearchController } from "./controllers/SearchController";
 import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
@@ -484,7 +484,7 @@ function getTagNode(label: string): HTMLButtonElement | undefined {
     .find((button) => button.textContent?.includes(label));
 }
 
-describe("FolderCardView host contract", () => {
+describe("CardStreamRuntime host contract", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     testState.noticeMessages.length = 0;
@@ -1744,6 +1744,7 @@ describe("FolderCardView host contract", () => {
     });
     const host = Object.assign(Object.create(CardWorkspacePlugin.prototype), {
       app, cardOpenSeq: 0, disposed: false, getSettings: plugin.getSettings, runtimePlatform: { device: "desktop" },
+      withFolderViews: (callback: (runtime: FolderCardView) => void) => callback(view),
     });
     const leaf = { view: editing, openFile: vi.fn(async () => {
       for (const fn of listeners.get("file-open") ?? []) fn(b);

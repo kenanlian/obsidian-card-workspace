@@ -18,7 +18,7 @@ vi.mock("../metadata-input-suggest", () => ({
   onPlainEnter: () => {},
 }));
 
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 import { batchRemoveTagsFromFiles, batchRenameTagInFiles } from "../note-tag-ops";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
 

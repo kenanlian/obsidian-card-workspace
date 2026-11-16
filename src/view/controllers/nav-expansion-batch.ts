@@ -44,6 +44,7 @@ export function captureExpandableNavigationBranches(
 }
 
 export async function applyNavigationExpansionBatch(input: {
+  navigation?: Pick<import("../../settings").PluginSettings, "expandedFolderPaths" | "expandedTagPaths" | "expandedPropertyKeys" | "sectionCollapsed">;
   kinds: readonly NavigationBranchKind[];
   collapse: boolean;
   querying: boolean;
@@ -55,7 +56,7 @@ export async function applyNavigationExpansionBatch(input: {
   const { kinds, collapse, querying, state, context } = input;
   if (!input.sectionCollapsed && kinds.every((kind) => state.expandable[kind].length === 0)) return;
   const expanded = !collapse;
-  const settings = context.getSettings();
+  const settings = input.navigation ?? context.getSettings();
   const patch: PartialPluginSettings = {};
   if (input.sectionCollapsed && Object.entries(input.sectionCollapsed).some(
     ([section, value]) => settings.sectionCollapsed[section as NavSectionId] !== value,

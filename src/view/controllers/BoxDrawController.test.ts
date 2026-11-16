@@ -1,3 +1,4 @@
+import { createStreamBrowseState } from "../stream-browse-state";
 import { describe, expect, it, vi } from "vitest";
 import { TFile, type App } from "obsidian";
 import { BoxDrawController } from "./BoxDrawController";
@@ -129,4 +130,28 @@ it("adopts a newer shared group after its earlier save settles", async () => {
   release(); await enter;
   expect(h.store.getDrawPaths()).toEqual(["c.md"]);
   expect(h.controller.snapshot().round).toBe(2);
+});
+
+
+it("uses the captured desktop stream mode while sibling streams and shared defaults stay unchanged", async () => {
+  const h = harness();
+  let browse = createStreamBrowseState(h.store.getScope(), h.settings);
+  h.context.browse = { get: () => browse, update: patch => { browse = { ...browse, ...patch }; }, reset: vi.fn() };
+  const siblingStore = createViewStateStore(createBoxScope("box"));
+  const sibling = new BoxDrawController({ ...h.context, browse: undefined, store: siblingStore }, {
+    pool: () => [...h.files.keys()], query: () => "", reproject: vi.fn(),
+  });
+  await h.controller.enter();
+  const progress = h.settings.boxes[0]!.drawProgress;
+  h.context.browse.update({ viewMode: "tasks" });
+  h.controller.sync();
+  expect(h.controller.available).toBe(false);
+  expect(h.controller.active).toBe(false);
+  expect(sibling.available).toBe(true);
+  expect(h.settings.defaultView).toBe("cards");
+  expect(h.settings.boxes[0]!.drawProgress).toBe(progress);
+  h.settings.defaultView = "tasks";
+  h.context.browse.update({ viewMode: "cards" });
+  expect(h.controller.available).toBe(true);
+  expect(sibling.available).toBe(false);
 });

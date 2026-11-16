@@ -9,6 +9,15 @@ import type { ViewStateStore } from "./view-state-store";
 
 /** The only host capabilities controllers and actions may access. */
 export interface ViewContext {
+  /** Present only for independently owned desktop streams. */
+  browse?: {
+    get(): import("./stream-browse-state").StreamBrowseState;
+    update(patch: Partial<import("./stream-browse-state").StreamBrowseState>): void;
+    /** Reset source defaults while retaining filters until the complete scope commit. */
+    reset(scope: import("./scope").CardScope): void;
+  };
+  /** Desktop streams retain a missing source identity so the host can show a recovery surface. */
+  onMissingScope?: (scope: import("./scope").CardScope) => void;
   workGate?: import("../runtime/work-gate").RuntimeWorkGate;
   resourceBudget?: import("../runtime/resource-budget").RuntimeResourceBudget;
   runtimePlatform?: import("../runtime/platform").RuntimePlatformServices;

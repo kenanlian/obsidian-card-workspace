@@ -108,6 +108,32 @@ try {
   const service = plugin.getSearchService();
   const result = await service.query({ query: "preview", candidatePaths: ["note.md"] });
   assert.notEqual(result.execution, "indexed-ready");
+  if (device === "desktop") {
+    // Exercise the actual leaf/runtime/Svelte assembly, beyond model-only UI fixtures.
+    view.streams.setSize(1200, 800);
+    const first = view.streams.getState().currentStreamId;
+    const second = await view.createStream({ scope: { kind: "folder", path: "", includeSubfolders: true } });
+    const third = await view.createStream({ scope: { kind: "folder", path: "", includeSubfolders: true } });
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 3);
+    assert.equal(win.document.querySelectorAll(".fce-nav-pane").length, 1);
+    view.modules.search.onQueryChange({ query: "only this stream" });
+    view.modules.search.clearDebounce(); await view.modules.search.refreshProjection();
+    assert.equal(view.panelModel.getState().cards.records.length, 0, "Blocked query is local to the targeted stream");
+    assert.equal(view.streamPanelModel.getState().entries.find(entry => entry.id === first).panelModel.getState().cards.records.length, 1);
+    const saved = view.getState();
+    await view.setState(saved, { history: false });
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(view.streams.getState().currentStreamId, third);
+    assert.equal(view.streams.getState().streams.find(stream => stream.id === third).query, "only this stream");
+    view.handleStreamCommand(second, "collapse");
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 2);
+    view.streams.select(second); await view.waitForForeground();
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 3);
+    console.log("[runtime-bundle] desktop: three independent streams, local blocked query, collapse/reopen and leaf restore passed");
+  }
   const oneView = plugin.getRuntimeDiagnostics();
   for (let index = 1; index < 20; index++) fixture.leaves.push(fixture.leaves[0]);
   const multipleViews = plugin.getRuntimeDiagnostics();

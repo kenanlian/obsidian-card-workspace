@@ -29,7 +29,7 @@ import { createBoxScope, isBoxScope, scopeDisplayPath, resolveBrowseIncludeSubfo
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardBoxDefinition, FolderSelectionRequest, Rule, SelectionResult } from "../types";
 import type { ViewContext } from "../view-context";
-import { resolveViewConfig } from "../view-config";
+import { getBrowseFilter, getStreamViewConfig } from "../stream-browse-state";
 import {
   deriveDefaultBoxNameFromBrowseScope,
   describeBoxRule,
@@ -196,8 +196,8 @@ export class BoxActions {
     return {
       folder: scopeDisplayPath(scope),
       includeSubfolders: resolveBrowseIncludeSubfolders(scope, settings.includeSubfolders),
-      tags: [...settings.filter.tags],
-      properties: normalizePropertyFilterClauses(settings.filter.properties),
+      tags: [...getBrowseFilter(this.deps.context).tags],
+      properties: normalizePropertyFilterClauses(getBrowseFilter(this.deps.context).properties),
     };
   }
 
@@ -310,7 +310,7 @@ export class BoxActions {
         .onClick(async () => {
           const current = this.deps.context.getSettings();
           const scope = this.deps.context.store.getScope();
-          if (isBoxScope(scope) && scope.boxId === box.id) {
+          if (!this.deps.context.browse && isBoxScope(scope) && scope.boxId === box.id) {
             const result = await this.deps.moveScopeToFolder(current.lastFolderPath);
             if (result.action === "rejected_invalid") {
               // Truthy keeps the dialog open.
@@ -328,9 +328,7 @@ export class BoxActions {
   openSaveScopeAsBoxModal(): void {
     const strings = this.strings.box;
     const rule = translateBrowseScopeToRule(this.getBrowseScope());
-    const group = normalizeGroupSpec(resolveViewConfig(
-      this.deps.context.store.getScope(), this.deps.context.getSettings(),
-    ).group);
+    const group = normalizeGroupSpec(getStreamViewConfig(this.deps.context).group);
     const hitCount = this.countRuleQualifiedFiles(rule);
     new BoxNameModal(this.deps.context.getApp(), {
       strings: this.strings,

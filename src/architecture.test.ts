@@ -519,7 +519,7 @@ describe("dependency collection", () => {
   });
 
   it("sees dynamic and type-position imports", () => {
-    expect(dependencyGraph.get("src/view/FolderCardView.ts")?.local).toContain(
+    expect(dependencyGraph.get("src/view/CardStreamRuntime.ts")?.local).toContain(
       "src/view/FolderCardPanel.svelte",
     );
     expect(dependencyGraph.get("src/view/Toolbar.svelte")?.local).toContain("src/view/types.ts");
@@ -733,7 +733,7 @@ describe("runtime production graph", () => {
   });
 
   it("keeps dynamic panel loading as a runtime edge and drops Toolbar type-only locals", () => {
-    expect(runtimeDependencyGraph.get("src/view/FolderCardView.ts")?.local).toContain(
+    expect(runtimeDependencyGraph.get("src/view/CardStreamRuntime.ts")?.local).toContain(
       "src/view/FolderCardPanel.svelte",
     );
     expect(runtimeDependencyGraph.get("src/view/Toolbar.svelte")?.local).not.toContain("src/view/types.ts");
@@ -807,6 +807,7 @@ describe("R2 Svelte components stay inside the presentation layer", () => {
   const FORBIDDEN_EXACT = [
     "src/main.ts",
     "src/view/FolderCardView.ts",
+    "src/view/CardStreamRuntime.ts",
     "src/view/note-ops.ts",
     "src/view/card-boxes.ts",
     "src/view/card-box-membership.ts",

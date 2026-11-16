@@ -1,5 +1,7 @@
 # Card Workspace
 
+Desktop supports independent card streams, shared per-pane navigation, tiled comparison, and move/copy to new Obsidian panes. See [Desktop card streams](docs/multi-card-stream.md).
+
 [简体中文](README.zh-CN.md)
 
 Card Workspace is an [Obsidian](https://obsidian.md/) plugin for **capturing, gathering, organizing, and reframing notes**. Capture ideas with quick input or templates, then browse folders, tags, properties, outgoing links, backlinks, and card boxes as a readable card stream. On desktop, it sits in the **left sidebar** beside the editor; on phones and tablets, it also opens in the left sidebar.

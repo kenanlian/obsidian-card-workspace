@@ -16,7 +16,7 @@ import { getUiStrings } from "../../i18n";
 import type { PropertyFilterClause } from "../../property-filter-settings";
 import { createBoxScope, createFolderScope } from "../scope";
 import { BoxActions } from "./box-actions";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 
 registerFolderCardView(FolderCardView);
 

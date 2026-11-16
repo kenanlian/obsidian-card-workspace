@@ -86,6 +86,7 @@ function isExpectationMet(item: TaskCardItem, expect: TaskExpectation): boolean 
  */
 export class TaskActions {
   private readonly pending = new Map<string, PendingTaskWrite>();
+  private pickerAnchor: HTMLElement | null = null;
   private disposed = false;
 
   constructor(private readonly deps: TaskActionsDeps) {}
@@ -145,9 +146,10 @@ export class TaskActions {
     if (!target || !isTaskDateKind(kind) || value === undefined
       || typeof anchor !== "object" || anchor === null || !("ownerDocument" in anchor)) return;
     const element = anchor as HTMLElement;
-    if (closeTaskDatePickerForAnchor(element)) return;
+    if (closeTaskDatePickerForAnchor(element)) { this.pickerAnchor = null; return; }
     const id = taskItemId(target.filePath, target.line);
     if (this.pending.has(id) || !this.deps.getWriter()) return;
+    this.pickerAnchor = element;
     openTaskDatePicker({
       doc: element.ownerDocument,
       anchor: element,
@@ -278,7 +280,12 @@ export class TaskActions {
     }
   }
 
+  closeTransient(): void {
+    if (this.pickerAnchor) closeTaskDatePickerForAnchor(this.pickerAnchor);
+    this.pickerAnchor = null;
+  }
   dispose(): void {
+    this.closeTransient();
     this.disposed = true;
     for (const id of [...this.pending.keys()]) this.drop(id);
   }

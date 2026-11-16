@@ -18,7 +18,7 @@ vi.mock("../note-ops", async (importOriginal) => {
 });
 
 import { FileActions } from "./file-actions";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 import { getUiStrings } from "../../i18n";
 import {
   copyContentToClipboard,

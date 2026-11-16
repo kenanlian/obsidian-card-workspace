@@ -1,3 +1,5 @@
+import { getBrowseFilter, getStreamViewConfig, setBrowseFilter } from "../stream-browse-state";
+import type { ViewContext } from "../view-context";
 import type { App } from "obsidian";
 import type { UiStrings } from "../../i18n";
 import {
@@ -14,6 +16,7 @@ import type { PartialPluginSettings, PluginSettings } from "../../settings";
 import { PropertyPickerModal } from "../modals/PropertyPickerModal";
 
 export interface PropertyActionsDeps {
+  context?: ViewContext;
   getApp: () => App;
   getSettings: () => PluginSettings;
   saveSettings: (patch: PartialPluginSettings) => Promise<void>;
@@ -70,12 +73,34 @@ export function buildPropertyVisibilityPatch(
  * owns view publication after each save. No-op state changes write nothing.
  */
 export function createPropertyActions(deps: PropertyActionsDeps): PropertyActions {
+  const getFilter = (): PluginSettings["filter"] => deps.context ? getBrowseFilter(deps.context) : deps.getSettings().filter;
+  const saveFilter = (filter: Partial<PluginSettings["filter"]>): Promise<void> => deps.context
+    ? setBrowseFilter(deps.context, filter) : deps.saveSettings({ filter });
+  async function saveVisibility(visibleKeys: readonly string[]): Promise<void> {
+    const patch = buildPropertyVisibilityPatch(deps.getSettings(), visibleKeys);
+    const context = deps.context;
+    if (context?.browse) {
+      const visible = new Set(visibleKeys);
+      const config = getStreamViewConfig(context);
+      const group = config.group;
+      context.browse.update({
+        filter: { ...getBrowseFilter(context), properties: normalizePropertyFilterClauses(getBrowseFilter(context).properties, visible) },
+        ...(group.dimension === "property" && !visible.has(group.propertyKey ?? "")
+          ? { group: { dimension: "none", orderBy: group.orderBy, orderDirection: group.orderDirection } } : {}),
+      });
+      // Shared property visibility still cleans shared defaults and legacy filter state.
+      await deps.saveSettings(patch);
+      await context.requestUpdate("reproject", "settings-change");
+      return;
+    }
+    await deps.saveSettings(patch);
+  }
   async function savePropertyClauses(next: PropertyFilterClause[], additive = false): Promise<void> {
-    const current = deps.getSettings().filter;
+    const current = getFilter();
     if (propertyFilterClausesEqual(next, current.properties) && (additive || next.length === 0 || current.tags.length === 0)) {
       return;
     }
-    await deps.saveSettings({ filter: !additive && next.length > 0 ? { tags: [], properties: next } : { properties: next } });
+    await saveFilter(!additive && next.length > 0 ? { tags: [], properties: next } : { properties: next });
   }
 
   return {
@@ -86,16 +111,16 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
         selectedKeys: settings.visiblePropertyKeys,
         collectPropertyInventory: deps.collectPropertyInventory,
         onSubmit: async (visibleKeys) => {
-          await deps.saveSettings(buildPropertyVisibilityPatch(deps.getSettings(), visibleKeys));
+          await saveVisibility(visibleKeys);
         },
       }).open();
     },
 
     async clearPropertyFilters(): Promise<void> {
-      if (!deps.browsePropertyFilterEnabled() || deps.getSettings().filter.properties.length === 0) {
+      if (!deps.browsePropertyFilterEnabled() || getFilter().properties.length === 0) {
         return;
       }
-      await deps.saveSettings({ filter: { properties: [] } });
+      await saveFilter({ properties: [] });
     },
 
     async hideProperty(key: string): Promise<void> {
@@ -108,7 +133,7 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
         return;
       }
       const nextVisible = settings.visiblePropertyKeys.filter((key2) => key2 !== normalizedKey);
-      await deps.saveSettings(buildPropertyVisibilityPatch(settings, nextVisible));
+      await saveVisibility(nextVisible);
     },
 
     async applyValueFilter(key, ref, additive): Promise<void> {
@@ -124,7 +149,7 @@ export function createPropertyActions(deps: PropertyActionsDeps): PropertyAction
         return;
       }
       const next = resolvePropertyValueSelection(
-        settings.filter.properties,
+        getFilter().properties,
         key,
         ref,
         additive,

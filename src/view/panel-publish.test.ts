@@ -34,7 +34,7 @@ import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../settings";
 import type { PropertyFilterClause, PropertyScalarRef } from "../property-filter-settings";
 import { createPanelModel, PANEL_GROUPS, type PanelGroup, type PanelModelState } from "./panel-model";
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import { createBoxScope, createFolderScope, createLinksScope, type CardScope } from "./scope";
 import { createViewEpochs } from "./view-epochs";
 import { createViewStateStore } from "./view-state-store";
@@ -152,6 +152,9 @@ function createPublishHarness(): {
     appearance: { ...initial.appearance, previewLines: 12 },
   };
   const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    Object.defineProperty(view, "context", { configurable: true, get: () => ({
+      getSettings: () => view.plugin.getSettings(), store: (view as any).store,
+    }) });
   const host = view as unknown as Record<string, unknown>;
   host.store = createViewStateStore(createFolderScope("", true));
   host.epochs = createViewEpochs();
@@ -481,6 +484,9 @@ describe("FolderCardView grouped panel publishing", () => {
 
   it("builds a fresh card-record array", () => {
     const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    Object.defineProperty(view, "context", { configurable: true, get: () => ({
+      getSettings: () => view.plugin.getSettings(), store: (view as any).store,
+    }) });
     const records: PanelModelState["cards"]["records"] = [];
     const epochs = createViewEpochs();
     for (let index = 0; index < 4; index += 1) {
@@ -511,6 +517,9 @@ describe("FolderCardView grouped panel publishing", () => {
 
   it("publishes independent visible-sequence and hydration revisions", () => {
     const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    Object.defineProperty(view, "context", { configurable: true, get: () => ({
+      getSettings: () => view.plugin.getSettings(), store: (view as any).store,
+    }) });
     const store = createViewStateStore(createFolderScope("", true));
     const first = createCard("first.md");
     store.replaceBaseCards([first]);
@@ -535,6 +544,9 @@ describe("FolderCardView grouped panel publishing", () => {
 
   it("derives active box identity and name from the runtime scope", () => {
     const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    Object.defineProperty(view, "context", { configurable: true, get: () => ({
+      getSettings: () => view.plugin.getSettings(), store: (view as any).store,
+    }) });
     const box = {
       id: "runtime-box",
       name: "Runtime box",
@@ -592,6 +604,9 @@ describe("FolderCardView grouped panel publishing", () => {
     };
     const baseView = () => {
       const view = Object.create(FolderCardView.prototype) as FolderCardView;
+    Object.defineProperty(view, "context", { configurable: true, get: () => ({
+      getSettings: () => view.plugin.getSettings(), store: (view as any).store,
+    }) });
       Object.assign(view as object, {
         store: createViewStateStore(createFolderScope("notes", true)),
         epochs: createViewEpochs(),

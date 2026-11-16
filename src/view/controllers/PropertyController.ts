@@ -1,3 +1,4 @@
+import { getBrowseFilter } from "../stream-browse-state";
 import {
   serializePropertyScalarRef,
   type PropertyFilterClause,
@@ -67,7 +68,7 @@ export class PropertyController implements DisposableController {
     const strings = this.context.getUiStrings().property;
     const key = this.facetCacheKey(
       settings.visiblePropertyKeys,
-      settings.filter.properties,
+      getBrowseFilter(this.context).properties,
       strings,
     );
     const cached = this.facetCache.get(key);
@@ -79,7 +80,7 @@ export class PropertyController implements DisposableController {
     const facets = buildPropertyFacets(
       this.context.store.getBaseCards(),
       settings.visiblePropertyKeys,
-      settings.filter.properties,
+      getBrowseFilter(this.context).properties,
       (file) => getFileFrontmatter(app, file),
       strings,
     );
@@ -135,7 +136,7 @@ export class PropertyController implements DisposableController {
     const settings = this.context.getSettings();
     const key = this.facetCacheKey(
       settings.visiblePropertyKeys,
-      settings.filter.properties,
+      getBrowseFilter(this.context).properties,
       this.context.getUiStrings().property,
     );
     this.facetCache.retain(key);

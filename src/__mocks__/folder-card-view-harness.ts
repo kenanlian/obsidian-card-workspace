@@ -552,6 +552,8 @@ const mockState = vi.hoisted(() => {
     }
   }
   class MockSuggestModal {
+    placeholder = "";
+    setPlaceholder(value: string): this { this.placeholder = value; return this; }
     app: unknown;
     title = "";
 
@@ -1077,10 +1079,10 @@ vi.mock("../FolderPickerModal", () => {
   };
 });
 
-import type { FolderCardView } from "../view/FolderCardView";
+import type { CardStreamRuntime as FolderCardView } from "../view/CardStreamRuntime";
 import type { SearchServiceSnapshot } from "../search";
 
-type FolderCardViewCtor = new (leaf: any, plugin: any) => FolderCardView;
+type FolderCardViewCtor = new (leaf: any, plugin: any) => any;
 let folderCardViewCtor: FolderCardViewCtor | null = null;
 
 export function registerFolderCardView(ctor: FolderCardViewCtor): void {

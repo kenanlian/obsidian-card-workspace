@@ -1,8 +1,8 @@
+import { getStreamViewConfig } from "../stream-browse-state";
 import type { TaskFileEntry, TaskIndexChange, TaskIndexReader } from "../../tasks";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { scopeIdentity } from "../scope";
 import type { CardStreamMode, TaskViewStatus } from "../types";
-import { resolveViewConfig } from "../view-config";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 
 /** Coalesces bursts of task-index change notifications into one reprojection. */
@@ -50,7 +50,7 @@ export class TaskViewController implements DisposableController {
   }
 
   isTaskMode(): boolean {
-    return resolveViewConfig(this.context.store.getScope(), this.context.getSettings()).viewMode === "tasks";
+    return getStreamViewConfig(this.context).viewMode === "tasks";
   }
 
   /** `idle` outside task mode. */

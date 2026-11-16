@@ -15,7 +15,7 @@ vi.mock("../modals/BulkPropertiesModal", () => ({ BulkPropertiesModal: class {
 } }));
 vi.mock("../note-tag-ops", () => ({ ...buildNoteTagOpsMock(), editTagsInFile: vi.fn() }));
 import { editTagsInFile } from "../note-tag-ops";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 registerFolderCardView(FolderCardView);
 
 function setup() {

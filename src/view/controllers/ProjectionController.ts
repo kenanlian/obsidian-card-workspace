@@ -1,3 +1,4 @@
+import { getStreamViewConfig, getBrowseFilter } from "../stream-browse-state";
 import { moment } from "obsidian";
 import type { GroupDimension, GroupSpec } from "../../card-grouping-settings";
 import { normalizeTaskGroupSpec, normalizeTaskSortSpec } from "../../task-view-settings";
@@ -15,7 +16,6 @@ import { collectScopeTagIndex, collectVaultTagIndex } from "../metadata-utils";
 import { runPipeline, runTaskPipeline, stepsForScope, type PipelineContext, type TaskPipelineResult } from "../pipeline";
 import { resolveSourceCapabilities } from "../source-capabilities";
 import type { CardStreamMode, NoteCardRecord, PipelineSearchInput, Rule, TaskViewStatus } from "../types";
-import { resolveViewConfig } from "../view-config";
 import type { ViewContext } from "../view-context";
 import {
   FacetSnapshotCache, facetSourceKey, scopeTagDataEqual, type ScopeTagData,
@@ -161,13 +161,12 @@ export class ProjectionController {
 
   private computeArrangement(cards: readonly NoteCardRecord[], search: PipelineSearchInput): GroupArrangement {
     const spec = this.resolveGroupSpec();
-    const settings = this.context.getSettings();
     const pipelineContext: PipelineContext = {
       drawPaths: resolveSourceCapabilities(this.context.store.getScope()).supportsCardDraw ? this.context.store.getDrawPaths() : null,
       app: this.context.getApp(),
-      filterTags: settings.filter.tags,
+      filterTags: getBrowseFilter(this.context).tags,
       propertyFilters: resolveSourceCapabilities(this.context.store.getScope()).browsePropertyFilter
-        ? settings.filter.properties
+        ? getBrowseFilter(this.context).properties
         : [],
       search,
       pinnedPaths: this.deps.getEffectivePinnedPaths(),
@@ -215,7 +214,7 @@ export class ProjectionController {
   }
 
   private resolveViewMode(): CardStreamMode {
-    return resolveViewConfig(this.context.store.getScope(), this.context.getSettings()).viewMode === "tasks"
+    return getStreamViewConfig(this.context).viewMode === "tasks"
       ? "tasks"
       : "cards";
   }
@@ -226,13 +225,12 @@ export class ProjectionController {
       return EMPTY_TASK_RESULT;
     }
     const scope = this.context.store.getScope();
-    const settings = this.context.getSettings();
-    const config = resolveViewConfig(scope, settings);
+    const config = getStreamViewConfig(this.context, scope);
     return runTaskPipeline([...this.context.store.getBaseCards()], {
       app: this.context.getApp(),
       scope,
-      filterTags: settings.filter.tags,
-      propertyFilters: resolveSourceCapabilities(scope).browsePropertyFilter ? settings.filter.properties : [],
+      filterTags: getBrowseFilter(this.context).tags,
+      propertyFilters: resolveSourceCapabilities(scope).browsePropertyFilter ? getBrowseFilter(this.context).properties : [],
       query: this.deps.getTaskQuery?.() ?? "",
       taskFilters: this.context.store.getTaskFilters(),
       sort: normalizeTaskSortSpec(config.taskSort),
@@ -247,8 +245,7 @@ export class ProjectionController {
 
   /** Metadata may resolve a previously missing wiki-link target outside this scope. */
   taskMetadataGroupsChanged(path: string): boolean {
-    const settings = this.context.getSettings();
-    const config = resolveViewConfig(this.context.store.getScope(), settings);
+    const config = getStreamViewConfig(this.context);
     if (this.resolveViewMode() !== "tasks" || (config.taskGroup?.dimension !== "link" && config.taskGroup?.dimension !== "tag")) return false;
     if (config.taskGroup?.dimension === "tag" && !this.context.store.getBaseCard(path)) return false;
     const fresh = this.deriveTaskArrangement();

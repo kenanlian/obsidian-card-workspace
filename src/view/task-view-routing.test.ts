@@ -13,7 +13,7 @@ import {
   flushAsyncWork,
   registerFolderCardView,
 } from "../__mocks__/folder-card-view-harness";
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import { createBoxScope, createFolderScope } from "./scope";
 import { createCardBox } from "./card-boxes";
 import { parseTaskLine, type TaskFileEntry, type TaskIndexReader } from "../tasks";

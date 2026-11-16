@@ -14,7 +14,7 @@ vi.mock("../note-ops", async (importOriginal) => {
 vi.mock("../note-tag-ops", () => buildNoteTagOpsMock());
 
 import { TagActions } from "./tag-actions";
-import { FolderCardView } from "../FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../../__mocks__/card-stream-runtime-harness";
 import { createLinksScope } from "../scope";
 import { DEFAULT_SETTINGS, mergeSettings, type PartialPluginSettings, type PluginSettings } from "../../settings";
 

@@ -1,3 +1,5 @@
+import type { LeafPreviewResources } from "./leaf-preview-resources";
+import { getStreamViewConfig, getBrowseFilter } from "./stream-browse-state";
 import { BoxDrawController } from "./controllers/BoxDrawController";
 import { TaskFilterController } from "./controllers/TaskFilterController";
 import { TimeGroupController } from "./controllers/TimeGroupController";
@@ -42,7 +44,6 @@ import { resolveSourceCapabilities } from "./source-capabilities";
 import { collectSupportedFiles, rewritePathAfterRename } from "./scope-files";
 import type { SelectionResult } from "./types";
 import type { ViewContext } from "./view-context";
-import { resolveViewConfig } from "./view-config";
 
 /**
  * The view-level capabilities the modules call back into. Everything here is a
@@ -148,7 +149,13 @@ export function createModuleConstructionGate(): {
 }
 
 /** Builds and cross-wires every controller and action module for one view. */
-export function createViewModules(context: ViewContext, host: ViewModuleHost): ViewModules {
+export interface ViewModuleDependencies {
+  /** One navigation controller may be shared by every desktop stream in a leaf. */
+  navLayout?: NavLayoutController;
+  previewResources?: LeafPreviewResources;
+}
+
+export function createViewModules(context: ViewContext, host: ViewModuleHost, deps: ViewModuleDependencies = {}): ViewModules {
   const iconActions = new IconActions(context, host.flushSettings ?? (() => Promise.resolve()), () => host.getIconAnchor?.() ?? document.body);
   // Controllers are constructed before actions because actions reach into them
   // for scope loads and selection; every dependency is a function, so the
@@ -157,11 +164,11 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
   // persisted data (or by a partial test double) may carry no group spec.
   const gate = createModuleConstructionGate();
   const resolveGroupSpec = (): GroupSpec =>
-    normalizeGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).group);
+    normalizeGroupSpec(getStreamViewConfig(context).group);
   const isTaskMode = (): boolean =>
-    resolveViewConfig(context.store.getScope(), context.getSettings()).viewMode === "tasks";
+    getStreamViewConfig(context).viewMode === "tasks";
   const resolveTaskGroupSpec = (): TaskGroupSpec =>
-    normalizeTaskGroupSpec(resolveViewConfig(context.store.getScope(), context.getSettings()).taskGroup);
+    normalizeTaskGroupSpec(getStreamViewConfig(context).taskGroup);
   const groupCollapse: GroupCollapseController = new GroupCollapseController();
   const hoverPreview = new CardHoverPreviewController(() => context.getSettings());
   const property: PropertyController = new PropertyController({
@@ -185,6 +192,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       groupCollapse.getCollapsedKeys(context.store.getScope(), taskGroupCollapseSpec(resolveTaskGroupSpec())),
   });
   const hydration: HydrationController = new HydrationController({
+    resources: deps.previewResources,
     context,
     isLoading: gate.guard("scopeController.isLoading", () => scopeController.isLoading()),
     getActiveSelectionVersion: gate.guard("scopeController.getActiveSelectionVersion", () => scopeController.getActiveSelectionVersion()),
@@ -240,7 +248,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     },
     publish: () => host.publishGroups("cards", "projection", "scope"),
   });
-  const navLayout: NavLayoutController = new NavLayoutController({
+  const navLayout: NavLayoutController = deps.navLayout ?? new NavLayoutController({
     context,
     onNavCountsInvalidated: gate.guard("boxActions.invalidateCache", () => {
       boxActions.invalidateCache();
@@ -388,6 +396,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     ),
   });
   const propertyActions: PropertyActions = createPropertyActions({
+    context,
     getApp: () => context.getApp(),
     getSettings: () => context.getSettings(),
     saveSettings: (patch) => context.saveSettings(patch),
@@ -433,7 +442,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       menu.addItem(item => item.setTitle(context.getUiStrings().mobile.bulkSelect).setIcon("list-checks").onClick(() => {
         if (!bulk.isBulkMode()) bulk.toggleBulkMode(); bulk.onBulkSelectCard({ path });
       }));
-      const pins = resolveViewConfig(context.store.getScope(), context.getSettings()).pinnedPaths;
+      const pins = getStreamViewConfig(context).pinnedPaths;
       const pinned = pins.includes(path);
       if (pinned) for (const delta of [-1, 1] as const) {
         const index = pins.indexOf(path) + delta;
@@ -487,7 +496,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     refreshLinkMetadata: (path) => hydration.invalidateLinkMetadata(path),
     taskMetadataGroupsChanged: (path) => projection.taskMetadataGroupsChanged(path),
     getGroupDimension: () => resolveGroupSpec().dimension,
-    isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browseTagFilter && context.getSettings().filter.tags.length > 0,
+    isBrowseTagFilterActive: () => resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browseTagFilter && getBrowseFilter(context).tags.length > 0,
     isSearchActive: () => search.getQuery().trim().length > 0,
     reconcileMetadataMembershipForPath: (path) => { const result = scopeController.reconcileMetadataMembershipForPath(path); boxDraw.reconcile(); return result; },
     refreshMetadataGroupBuckets: () => projection.refreshMetadataGroupBuckets(),
@@ -498,7 +507,7 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
       }
       const settings = context.getSettings();
       if (resolveSourceCapabilities(context.store.getScope(), context.store.getDrawPaths() !== null).browsePropertyFilter
-        && settings.filter.properties.length > 0) {
+        && getBrowseFilter(context).properties.length > 0) {
         return "reproject";
       }
       return settings.visiblePropertyKeys.length > 0 ? "nav" : "none";

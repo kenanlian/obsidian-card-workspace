@@ -1,3 +1,4 @@
+import type { LeafPreviewResources } from "../leaf-preview-resources";
 import { RuntimePhaseTimings } from "../../runtime/diagnostics";
 import { DESKTOP_RESOURCE_BUDGET } from "../../runtime/resource-budget";
 import { TFile } from "obsidian";
@@ -59,6 +60,7 @@ interface PendingPatch {
   readonly resolve: () => void;
 }
 export interface HydrationControllerDeps {
+  resources?: LeafPreviewResources;
   context: ViewContext;
   isLoading: () => boolean;
   getCommittedQuery?: () => string;
@@ -114,8 +116,8 @@ export class HydrationController implements DisposableController {
       if (this.latestViewportRequest) void this.hydrateViewport(this.latestViewportRequest);
       this.pump();
     }) ?? (() => {});
-    this.cache = new PreviewCache(this.budget.preview.entries, this.budget.preview.diagramBytes);
-    this.searchSources = new SearchPreviewSourceCache(this.budget.searchPreview.bytes, this.budget.searchPreview.entries);
+    this.cache = this.deps.resources?.cache ?? new PreviewCache(this.budget.preview.entries, this.budget.preview.diagramBytes);
+    this.searchSources = this.deps.resources?.searchSources ?? new SearchPreviewSourceCache(this.budget.searchPreview.bytes, this.budget.searchPreview.entries);
   }
   private get context(): ViewContext {
     return this.deps.context;
@@ -741,7 +743,9 @@ export class HydrationController implements DisposableController {
       job.state = "active";
       this.activeReads += 1;
       const finishTiming = this.timings.start("preview");
-      void this.runJob(job).finally(() => {
+      void (this.deps.resources
+        ? this.deps.resources.run(this, () => !this.disposed && (job.explicit || this.context.workGate?.isActive !== false) && !!this.currentFingerprint(job), () => this.runJob(job))
+        : this.runJob(job)).finally(() => {
         finishTiming();
         this.activeReads -= 1;
         this.finishJob(job);
@@ -1016,8 +1020,8 @@ export class HydrationController implements DisposableController {
     this.expandedReferences.clear();
     this.searchSnippetTargets.clear();
     this.prefetchedPaths.clear();
-    this.cache.clear();
-    this.searchSources.clear();
+    this.deps.resources?.cancel(this);
+    if (!this.deps.resources) { this.cache.clear(); this.searchSources.clear(); }
     this.appliedFingerprints.clear();
     this.latestViewport.clear();
     for (const job of this.jobs.values()) job.resolve();

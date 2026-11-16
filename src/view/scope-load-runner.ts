@@ -13,10 +13,11 @@ import type { CardScope } from "./scope";
 import { scopesEqual } from "./scope";
 import { iterateSupportedFiles } from "./scope-files";
 import type { CardLoadKey, NoteCardRecord } from "./types";
-import { resolveViewConfig } from "./view-config";
+import { getBrowseFilter, getStreamViewConfig, isSameBrowseSource, setBrowseFilter } from "./stream-browse-state";
 import type { ViewContext } from "./view-context";
 
 export interface ScopeLoadRuntime {
+  preserveBrowseConfig?: boolean;
   context: ViewContext;
   loadScope: CardLoadKey;
   loadKey: string;
@@ -130,9 +131,9 @@ function shouldClearBrowseFilters(previous: CardScope, next: CardScope): boolean
 }
 
 function saveBrowseFilters(context: ViewContext, filter: PluginSettings["filter"]): void {
-  // Memory changes synchronously. This load publishes the initiating view;
-  // other views still receive the ordinary shared-settings update.
-  void context.saveSettings({ filter }, { skipViewUpdate: true }).catch((error: unknown) => {
+  // Memory changes synchronously, and the load publishes the complete snapshot.
+  // Legacy contexts also persist the shared browse preference.
+  void setBrowseFilter(context, filter, { skipViewUpdate: true }).catch((error: unknown) => {
     console.warn("Failed to persist browse filters after a scope change.", error);
   });
 }
@@ -160,6 +161,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
   const { context, loadScope } = runtime;
   const policy = createFileVisibilityPolicy(context.getApp(), context.getSettings().fileVisibility);
   const previousScope = context.store.getScope();
+  const previousBrowse = context.browse?.get();
   const scopeChanged = !scopesEqual(previousScope, loadScope.scope);
   const previousBaseCards = context.store.getBaseCards();
   const previousVisibleCards = context.store.getVisibleCards();
@@ -207,8 +209,10 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     const orderedFiles = cachedFiles ?? orderScopeFiles(files, loadScope.sort, [], referenceCounts);
     if (!isCurrent(runtime, loadToken)) return false;
 
-    const settings = context.getSettings();
-    const viewConfig = resolveViewConfig(loadScope.scope, settings);
+    // Retain the previous committed browse config throughout collection; reset
+    // source defaults only when the complete replacement can be prepared.
+    if (!runtime.preserveBrowseConfig && !isSameBrowseSource(previousScope, loadScope.scope)) context.browse?.reset(loadScope.scope);
+    const viewConfig = getStreamViewConfig(context, loadScope.scope);
     const dimension = normalizeGroupSpec(viewConfig.group).dimension;
     const records = materializeFiles(runtime, orderedFiles, dimension === "task", policy);
     if (!isCurrent(runtime, loadToken)) return false;
@@ -223,7 +227,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     // if projection is interrupted before the prepared publish.
     rememberLoad(runtime);
     try {
-      const filter = context.getSettings().filter;
+      const filter = getBrowseFilter(context);
       if (shouldClearBrowseFilters(previousScope, loadScope.scope)
         && (filter.tags.length > 0 || filter.properties.length > 0)) {
         clearedFilter = filter;
@@ -248,6 +252,7 @@ export async function runScopeLoad(runtime: ScopeLoadRuntime): Promise<boolean> 
     return committed;
   } finally {
     if (!published && isCurrent(runtime, loadToken)) {
+      if (previousBrowse && context.browse) context.browse.update(previousBrowse);
       if (clearedFilter !== null) saveBrowseFilters(context, clearedFilter);
       runtime.setLoadKey(previousLoadKey);
       runtime.setLastLoadedIncludeSubfolders(previousIncludeSubfolders);

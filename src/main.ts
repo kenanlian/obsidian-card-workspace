@@ -1,3 +1,5 @@
+import { getStreamUiStrings } from "./view/stream-ui-strings";
+import type { StreamCommand } from "./view/stream-panel-model";
 import { reconcileBoxDrawMembership } from "./view/card-box-membership";
 import { closeAllIconPickers, validateIconPickers } from "./icon-picker/IconPicker";
 import { IconReconciler } from "./services/IconReconciler";
@@ -79,6 +81,8 @@ import { locationExistsInText, type CardOpenLocation, type LinkCardLocation, typ
 import { resolveSearchSnippetLocation } from "./search";
 import { findSearchContextLocation } from "./view/context-preview";
 import { resolveSettingsUpdateIntent } from "./view/update-intent";
+import { CardWorkspaceTargetPicker } from "./view/modals/CardWorkspaceTargetPicker";
+import { maxIntent, type ViewUpdateIntent } from "./view/update-intent";
 import { activateDeferredView } from "./view/deferred-view-activation";
 import { CARD_BACKGROUND_ICONS, BULK_ADD_TO_BOX_ICON, BULK_ADD_TO_BOX_ICON_SVG, BULK_REMOVE_FROM_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON_SVG, CARD_WORKSPACE_ICON, CARD_WORKSPACE_ICON_SVG, PLAIN_FOLDER_ICON, PLAIN_FOLDER_ICON_SVG } from "./icons";
 
@@ -145,7 +149,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private templateNoteFocusAbort: AbortController | null = null;
   private cancelLinkCorrection: (() => void) | null = null;
   private latestHandledRequestId = 0;
-  private pendingViewActivation: Promise<FolderCardView | null> | null = null;
+  private readonly pendingViewActivations = new Map<Window, Promise<FolderCardView | null>>();
+  private readonly targetPickers = new Set<CardWorkspaceTargetPicker>();
   private vaultObserversRegistered = false;
   private metadataObserversRegistered = false;
   private vaultEventListenersRegistered = false;
@@ -311,13 +316,14 @@ export default class CardWorkspacePlugin extends Plugin {
       name: command === "draw" ? this.getUiStrings().box.drawToggleCommand : this.getUiStrings().box.drawNextCommand,
       checkCallback: checking => {
         const view = this.app.workspace.getActiveViewOfType(FolderCardView);
-        const available = view && (command === "draw" ? view.modules.boxDraw.available : view.modules.boxDraw.canNext);
+        const available = view && (this.runtimePlatform.device !== "desktop" || view.hasCurrentStream()) && (command === "draw" ? view.modules.boxDraw.available : view.modules.boxDraw.canNext);
         if (!available) return false;
         if (!checking) view.modules.boxActions.handleBoxCommand({ command });
         return true;
       },
     });
     this.registerSearchCommands();
+    this.registerStreamCommands();
     this.taskEditing = registerTaskEditing({
       app: this.app,
       device: this.runtimePlatform.device,
@@ -428,6 +434,8 @@ export default class CardWorkspacePlugin extends Plugin {
   private disposeRuntime(): void {
     if (this.disposed) return;
     this.disposed = true;
+    for (const picker of this.targetPickers) picker.close();
+    this.targetPickers.clear();
     this.runtimeActivity.dispose(); this.activityWindows.clear();
     this.popoutEvents.forEach((events) => events.unload()); this.popoutEvents.clear();
     this.quickInputShortcut.dispose();
@@ -888,6 +896,7 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   async selectFolderByPath(path: string, source: FolderSelectionSource): Promise<void> {
+    const originWindow = this.activeWorkspaceWindow();
     await this.settingsReadyPromise;
     if (this.disposed) return;
     const normalizedPath = normalizeFolderScopePath(path);
@@ -897,22 +906,27 @@ export default class CardWorkspacePlugin extends Plugin {
     if (!(folder instanceof TFolder)) {
       return;
     }
-    await this.selectFolder(folder, source);
+    await this.selectFolder(folder, source, originWindow);
   }
 
 
   private async selectFolder(
     folder: TFolder,
     source: FolderSelectionSource,
+    originWindow: Window,
   ): Promise<void> {
     const request = this.createSelectionRequest(createFolderScope(folder.path, this.getSettings().includeSubfolders), source);
-    const primaryView = await this.activateView();
+    const primaryView = await this.activateView(true, originWindow);
     if (!primaryView || this.disposed) return;
     if (request.requestId !== this.latestHandledRequestId) {
       return;
     }
-    await this.dispatchSelectionRequest(request);
+    if (this.runtimePlatform.device === "desktop") await this.handleSelectionResult(primaryView, request);
+    else await this.dispatchSelectionRequest(request);
   }
+
+  /** Views may be restored synchronously while onload is still installing settings. */
+  waitForSettingsReady(): Promise<void> { return this.settingsReadyPromise; }
 
   getSettings(): PluginSettings {
     return this.settingsStore.getFlat();
@@ -974,11 +988,11 @@ export default class CardWorkspacePlugin extends Plugin {
       this.workspaceSettingTab?.refreshTemplateOptions();
       this.withFolderViews(view => {
         const scope = view.getCardScope();
-        if (scope.kind === "box" && !next.boxes.some(box => box.id === scope.boxId)) {
+        if (this.runtimePlatform.device !== "desktop" && scope.kind === "box" && !next.boxes.some(box => box.id === scope.boxId)) {
           this.runDetached(view.modules.boxActions.exitBoxScope(), "Deleted external box fallback failed.");
           return;
         }
-        const intent = resolveSettingsUpdateIntent(previous, next, scope);
+        const intent = this.resolveLeafSettingsUpdateIntent(view, previous, next);
         if (intent) this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "External settings update failed.");
       });
     };
@@ -1026,7 +1040,7 @@ export default class CardWorkspacePlugin extends Plugin {
     if (patch.noteTemplates !== undefined || patch.quickInputTemplateId !== undefined) this.workspaceSettingTab?.refreshTemplateOptions();
     this.taskEditing?.refresh();
     this.withFolderViews((view) => {
-      const intent = resolveSettingsUpdateIntent(previous, next, view.getCardScope());
+      const intent = this.resolveLeafSettingsUpdateIntent(view, previous, next);
       if (intent !== null) {
         this.runDetached(view.applyUpdateIntent(intent, "settings-change"), "Settings view update failed.");
       }
@@ -1061,31 +1075,126 @@ export default class CardWorkspacePlugin extends Plugin {
     return rootMarkdownLeaf ?? null;
   }
 
-  private async activateView(allowCreate = true): Promise<FolderCardView | null> {
-    while (this.pendingViewActivation) {
-      const view = await this.pendingViewActivation;
-      if (view || !allowCreate || this.disposed) return view;
-    }
-    const task = this.activateViewOnce(allowCreate);
-    this.pendingViewActivation = task;
-    try { return await task; }
-    finally { if (this.pendingViewActivation === task) this.pendingViewActivation = null; }
+  private leafWindow(leaf: WorkspaceLeaf): Window {
+    return leaf.view.containerEl?.ownerDocument?.defaultView ?? leaf.getContainer?.()?.win ?? window;
   }
 
-  private async activateViewOnce(allowCreate: boolean): Promise<FolderCardView | null> {
+  private activeWorkspaceWindow(): Window {
+    return typeof activeWindow !== "undefined" ? activeWindow : window;
+  }
+
+  private async chooseDesktopTarget(win: Window): Promise<WorkspaceLeaf | null> {
+    const candidates = this.app.workspace.getLeavesOfType(FOLDER_CARD_VIEW)
+      .filter(leaf => this.leafWindow(leaf) === win);
+    if (candidates.length < 2) return candidates[0] ?? null;
+    return new Promise(resolve => {
+      const targets = candidates.map((leaf, index) => ({ leaf, label: `${index + 1}. ${leaf.view instanceof FolderCardView
+        ? leaf.view.getSourceSummary() : this.getUiStrings().view.displayName}` }));
+      const title = this.uiLanguage === "zh" ? "选择卡片工作区" : "Choose Card Workspace";
+      const picker = new CardWorkspaceTargetPicker(this.app, targets, title, leaf => {
+        this.targetPickers.delete(picker);
+        resolve(leaf);
+      });
+      this.targetPickers.add(picker);
+      picker.open();
+    });
+  }
+
+  private async activateView(allowCreate = true, win = this.activeWorkspaceWindow()): Promise<FolderCardView | null> {
+    if (this.runtimePlatform.device === "desktop" && this.pendingViewActivations.has(win)) return this.pendingViewActivations.get(win)!;
+    while (this.pendingViewActivations.has(win)) {
+      const view = await this.pendingViewActivations.get(win)!;
+      if (view || !allowCreate || this.disposed) return view;
+    }
+    const task = this.activateViewOnce(allowCreate, win);
+    this.pendingViewActivations.set(win, task);
+    try { return await task; }
+    finally { if (this.pendingViewActivations.get(win) === task) this.pendingViewActivations.delete(win); }
+  }
+
+  private async activateViewOnce(allowCreate: boolean, win: Window): Promise<FolderCardView | null> {
     try {
       if (this.disposed) return null;
-      if (this.runtimePlatform.device !== "desktop") this.editorDropController.captureMenuTargetBeforeActivation();
-      return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
-        (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, this.runtimePlatform.device !== "desktop",
-        async (source, target) => {
-          const requestId = this.latestHandledRequestId;
-          return await source.transferToSidebar(target, () => !this.disposed && requestId === this.latestHandledRequestId);
-        });
+      if (this.runtimePlatform.device !== "desktop") {
+        this.editorDropController.captureMenuTargetBeforeActivation();
+        return await activateDeferredView(this.app.workspace, FOLDER_CARD_VIEW,
+          (value): value is FolderCardView => value instanceof FolderCardView, () => !this.disposed, allowCreate, true,
+          async (source, target) => {
+            const requestId = this.latestHandledRequestId;
+            return await source.transferToSidebar(target, () => !this.disposed && requestId === this.latestHandledRequestId);
+          });
+      }
+      const hadCandidates = this.app.workspace.getLeavesOfType(FOLDER_CARD_VIEW).some(leaf => this.leafWindow(leaf) === win);
+      const chosen = await this.chooseDesktopTarget(win);
+      if (this.disposed || (!chosen && (hadCandidates || !allowCreate))) return null;
+      if (chosen && !this.app.workspace.getLeavesOfType(FOLDER_CARD_VIEW).includes(chosen)) return null;
+      const leaf = chosen ?? this.app.workspace.getLeftLeaf(false);
+      if (!leaf) return null;
+      const created = chosen === null;
+      let committed = false;
+      try {
+        if (created) await leaf.setViewState({ type: FOLDER_CARD_VIEW, active: true });
+        if (this.disposed) return null;
+        await this.app.workspace.revealLeaf(leaf);
+        if (this.disposed) return null;
+        await leaf.loadIfDeferred?.();
+        if (this.disposed || !(leaf.view instanceof FolderCardView)) return null;
+        this.app.workspace.setActiveLeaf(leaf, { focus: false });
+        committed = true;
+        return leaf.view;
+      } finally {
+        if (created && !committed) leaf.detach();
+      }
     } catch (error) {
       if (!this.disposed) console.warn("[Card Workspace] View activation failed.", error);
       return null;
     }
+  }
+
+  /** Creates an independent pane beside a same-window root leaf without opening or focusing it. */
+  async createCardStreamLeaf(origin: WorkspaceLeaf): Promise<WorkspaceLeaf> {
+    const workspace = this.app.workspace;
+    const win = this.leafWindow(origin);
+    const rootLeaves: WorkspaceLeaf[] = [];
+    const add = (leaf: WorkspaceLeaf | null): void => {
+      if (!leaf || rootLeaves.includes(leaf) || this.leafWindow(leaf) !== win) return;
+      const root = leaf.getRoot();
+      if (root !== workspace.leftSplit && root !== workspace.rightSplit) rootLeaves.push(leaf);
+    };
+    const originRoot = origin.getRoot();
+    const recent = workspace.getMostRecentLeaf(originRoot === workspace.leftSplit || originRoot === workspace.rightSplit
+      ? workspace.rootSplit : originRoot);
+    add(recent);
+    workspace.iterateAllLeaves?.(add);
+    for (const leaf of workspace.getLeavesOfType("markdown")) add(leaf);
+    add(origin);
+    const editor = rootLeaves.find(leaf => leaf.view instanceof MarkdownView || leaf.view.getViewType?.() === "markdown");
+    const target = editor ?? rootLeaves[0];
+    return target ? workspace.createLeafBySplit(target, "vertical") : workspace.getLeaf(true);
+  }
+
+  private resolveLeafSettingsUpdateIntent(view: FolderCardView, previous: PluginSettings, next: PluginSettings): ViewUpdateIntent | null {
+    if (this.runtimePlatform.device !== "desktop") return resolveSettingsUpdateIntent(previous, next, view.getCardScope());
+    let intent: ViewUpdateIntent | null = null;
+    const scopes = view.getCardScopes();
+    for (const scope of scopes.length ? scopes : [view.getCardScope()]) {
+      let current = resolveSettingsUpdateIntent(previous, next, scope);
+      if (scope.kind === "box" && previous.boxes.some(box => box.id === scope.boxId)
+        && !next.boxes.some(box => box.id === scope.boxId)) current = "reload";
+      if (current !== null) intent = intent === null ? current : maxIntent(intent, current);
+    }
+    return intent;
+  }
+
+  /** Wait only for foreground work the host already started; hidden deferred leaves stay deferred. */
+  private async waitForDesktopForeground(): Promise<void> {
+    const pending: Promise<void>[] = [];
+    this.withFolderViews(view => {
+      const el = view.containerEl;
+      if (el && typeof el.isShown === "function" && !el.isShown()) return;
+      pending.push(view.waitForForeground());
+    });
+    await Promise.all(pending);
   }
 
   /**
@@ -1094,10 +1203,15 @@ export default class CardWorkspacePlugin extends Plugin {
    * paths, which no longer piggyback on a startup restore.
    */
   private async activateAndEnsureScope(allowCreate: boolean): Promise<FolderCardView | null> {
+    const originWindow = this.activeWorkspaceWindow();
     await this.settingsReadyPromise;
     if (this.disposed) return null;
+    if (this.runtimePlatform.device === "desktop" && !allowCreate) {
+      await this.waitForDesktopForeground();
+      return null;
+    }
     const handledBeforeActivation = this.latestHandledRequestId;
-    const view = await this.activateView(allowCreate);
+    const view = await this.activateView(allowCreate, originWindow);
     if (!view || this.disposed) return null;
     // A selection created while we were activating is newer, so it owns the scope.
     if (view.hasLoadedScope() || this.latestHandledRequestId !== handledBeforeActivation) return view;
@@ -1105,8 +1219,9 @@ export default class CardWorkspacePlugin extends Plugin {
     const lastPath = normalizeFolderScopePath(settings.lastFolderPath);
     const folder = lastPath === "" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(lastPath);
     if (!(folder instanceof TFolder)) return view;
-    await this.dispatchSelectionRequest(this.createSelectionRequest(
-      createFolderScope(folder.path, settings.includeSubfolders), "restore"));
+    const request = this.createSelectionRequest(createFolderScope(folder.path, settings.includeSubfolders), "restore");
+    if (this.runtimePlatform.device === "desktop") await this.handleSelectionResult(view, request);
+    else await this.dispatchSelectionRequest(request);
     return view;
   }
 
@@ -1123,6 +1238,42 @@ export default class CardWorkspacePlugin extends Plugin {
       if (this.templateOpenDepth > 0) view.setSelectedFile(path, true);
       else view.setSelectedFile(path);
     });
+  }
+
+  private registerStreamCommands(): void {
+    if (this.runtimePlatform.device !== "desktop") return;
+    const labels = getStreamUiStrings(this.getUiLanguage());
+    const zh = this.getUiLanguage() === "zh";
+    const entries: Array<{ id: string; label: string; command?: StreamCommand; action?: "create" | "reopen" | "next" | "previous" }> = [
+      { id: "new-card-stream", label: labels.create, action: "create" },
+      { id: "duplicate-card-stream", label: labels.duplicate, command: "duplicate" },
+      { id: "show-only-card-stream", label: labels.showOnly, command: "show-only" },
+      { id: "collapse-card-stream", label: labels.collapse, command: "collapse" },
+      { id: "close-card-stream", label: labels.close, command: "close" },
+      { id: "reopen-card-stream", label: labels.reopen, action: "reopen" },
+      { id: "move-card-stream-to-pane", label: labels.moveToPane, command: "move-to-pane" },
+      { id: "copy-card-stream-to-pane", label: labels.copyToPane, command: "copy-to-pane" },
+      { id: "next-card-stream", label: zh ? "选择下一个卡片流" : "Select next stream", action: "next" },
+      { id: "previous-card-stream", label: zh ? "选择上一个卡片流" : "Select previous stream", action: "previous" },
+    ];
+    for (const entry of entries) this.addCommand({ id: entry.id, name: entry.label, checkCallback: checking => {
+      const view = this.app.workspace.getActiveViewOfType(FolderCardView);
+      const state = view?.streams?.getState();
+      if (!view || !state || (entry.command && state.currentStreamId === null)
+        || (entry.action === "reopen" && state.recentlyClosedCount === 0)
+        || ((entry.action === "next" || entry.action === "previous") && (state.streams.length === 0 || state.currentStreamId === null))) return false;
+      if (checking) return true;
+      if (entry.command && state.currentStreamId) view.handleStreamCommand(state.currentStreamId, entry.command);
+      else if (entry.action === "create") view.openNewStreamPicker();
+      else if (entry.action === "reopen") view.streams.reopen();
+      else {
+        const index = state.streams.findIndex(stream => stream.id === state.currentStreamId);
+        const offset = entry.action === "previous" ? -1 : 1;
+        const target = state.streams[index < 0 ? 0 : (index + offset + state.streams.length) % state.streams.length];
+        if (target) view.streams.select(target.id);
+      }
+      return true;
+    } });
   }
 
   private registerSearchCommands(): void {

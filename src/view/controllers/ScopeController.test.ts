@@ -19,6 +19,7 @@ import { createBoxScope, createFolderScope, createLinksScope } from "../scope";
 import type { NoteCardRecord } from "../types";
 import { resolveBoxesUpdateIntent, resolveSettingsUpdateIntent } from "../update-intent";
 import type { ViewContext } from "../view-context";
+import { createStreamBrowseState, getBrowseFilter, type StreamBrowseState } from "../stream-browse-state";
 import { createViewEpochs } from "../view-epochs";
 import { createViewStateStore } from "../view-state-store";
 import * as cardRecord from "../card-record";
@@ -1958,5 +1959,114 @@ describe("complete scope snapshot", () => {
     expect(context.store.getBaseCards()).toEqual([]);
     expect(controller.getLoadKey()).toBeNull();
     expect(publishPreparedCards).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("desktop source ownership", () => {
+  function desktop(h: ReturnType<typeof createHarness>) {
+    let state: StreamBrowseState = createStreamBrowseState(h.context.store.getScope(), h.context.getSettings());
+    const reset = vi.fn((scope: Parameters<typeof createStreamBrowseState>[0]) => {
+      state = { ...createStreamBrowseState(scope, h.context.getSettings()), filter: state.filter };
+    });
+    h.context.browse = { get: () => state, update: patch => { state = { ...state, ...patch }; }, reset };
+    const missing = vi.fn();
+    h.context.onMissingScope = missing;
+    return { read: () => state, reset, missing };
+  }
+
+  it("resets source defaults before loading and clears only its local filters at complete commit", async () => {
+    const h = createHarness();
+    const d = desktop(h);
+    h.context.browse!.update({
+      sort: { field: "name", direction: "asc" }, group: { dimension: "task", orderBy: "default", orderDirection: "asc" },
+      filter: { tags: ["local"], properties: [] },
+    });
+    h.context.getSettings().filter = { tags: ["shared"], properties: [] };
+    vi.mocked(h.context.getApp().vault.getAbstractFileByPath).mockImplementation(path =>
+      Object.assign(new TFolder(), { path, children: [] }));
+    h.publishLoadStart.mockImplementation(() => {
+      expect(d.read().sort).toEqual({ field: "name", direction: "asc" });
+      expect(getBrowseFilter(h.context).tags).toEqual(["local"]);
+      expect(h.context.store.getScope()).toEqual(createFolderScope("old/nested", true));
+    });
+    h.projectVisibleCards.mockImplementation(() => {
+      expect(d.read().sort).toEqual(h.context.getSettings().sort);
+      expect(getBrowseFilter(h.context)).toEqual({ tags: [], properties: [] });
+      expect(h.context.store.getScope()).toEqual(createFolderScope("next", false));
+      h.context.store.replaceVisibleCards([]);
+    });
+    await h.controller.handleScopeSelection(h.controller.createProgrammaticSelectionRequest(createFolderScope("next", false), false));
+    expect(d.reset).toHaveBeenCalledTimes(1);
+    expect(d.reset).toHaveBeenCalledWith(createFolderScope("next", false));
+    expect(h.context.getSettings().filter.tags).toEqual(["shared"]);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(h.publishPreparedCards).toHaveBeenCalledTimes(1);
+  });
+
+  it("refresh and recursion changes retain stream config and ignore shared include-subfolders", async () => {
+    const h = createHarness();
+    h.context.store.setScope(createFolderScope("notes", false));
+    const d = desktop(h);
+    h.context.getSettings().includeSubfolders = true;
+    h.context.browse!.update({ sort: { field: "name", direction: "asc" }, filter: { tags: ["local"], properties: [] } });
+    vi.mocked(h.context.getApp().vault.getAbstractFileByPath).mockImplementation(path =>
+      Object.assign(new TFolder(), { path, children: [] }));
+    await h.controller.refresh();
+    expect(h.context.store.getScope()).toEqual(createFolderScope("notes", false));
+    expect(d.read().sort.field).toBe("name");
+    expect(getBrowseFilter(h.context).tags).toEqual(["local"]);
+    await h.controller.handleScopeSelection(h.controller.createProgrammaticSelectionRequest(createFolderScope("notes", true), false));
+    expect(d.reset).not.toHaveBeenCalled();
+    expect(d.read().sort.field).toBe("name");
+    expect(getBrowseFilter(h.context).tags).toEqual(["local"]);
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("restoring a preseeded scope retains its saved stream choices", async () => {
+    const h = createHarness();
+    h.context.store.setScope(createFolderScope("notes", false));
+    const d = desktop(h);
+    h.context.browse!.update({ sort: { field: "ctime", direction: "asc" }, viewMode: "tasks" });
+    vi.mocked(h.context.getApp().vault.getAbstractFileByPath).mockImplementation(path =>
+      Object.assign(new TFolder(), { path, children: [] }));
+    await h.controller.handleScopeSelection(h.controller.createProgrammaticSelectionRequest(h.context.store.getScope(), false, "restore"));
+    expect(d.reset).not.toHaveBeenCalled();
+    expect(d.read()).toMatchObject({ sort: { field: "ctime", direction: "asc" }, viewMode: "tasks" });
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("restores committed browse config and filters before publishing a failed replacement rollback", async () => {
+    const h = createHarness();
+    const d = desktop(h);
+    h.context.browse!.update({ sort: { field: "name", direction: "asc" }, filter: { tags: ["local"], properties: [] } });
+    const previous = d.read();
+    vi.mocked(h.context.getApp().vault.getAbstractFileByPath).mockImplementation(path =>
+      Object.assign(new TFolder(), { path, children: [] }));
+    h.projectVisibleCards.mockImplementation(() => { throw new Error("projection failed"); });
+    h.publishLoadStart.mockImplementation(scopeChanged => {
+      if (!scopeChanged) expect(d.read()).toEqual(previous);
+    });
+    await expect(h.controller.handleScopeSelection(h.controller.createProgrammaticSelectionRequest(createFolderScope("next", true), false)))
+      .rejects.toThrow("projection failed");
+    expect(d.read()).toEqual(previous);
+    expect(h.context.store.getScope()).toEqual(createFolderScope("old/nested", true));
+    expect(h.publishPreparedCards).not.toHaveBeenCalled();
+    expect(h.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("keeps an invalid desktop source identity and signals the missing surface", async () => {
+    const h = createHarness();
+    const d = desktop(h);
+    h.context.store.replaceBaseCards([membershipRecord("old/nested/a.md")]);
+    h.context.store.replaceVisibleCards([...h.context.store.getBaseCards()]);
+    vi.mocked(h.context.getApp().vault.getAbstractFileByPath).mockReturnValue(null);
+    const missing = createBoxScope("deleted-box");
+    const result = await h.controller.handleScopeSelection(h.controller.createProgrammaticSelectionRequest(missing, false, "restore"));
+    expect(result.action).toBe("rejected_invalid");
+    expect(h.context.store.getScope()).toEqual(missing);
+    expect(h.context.store.getVisibleCards()).toEqual([]);
+    expect(d.missing).toHaveBeenCalledWith(missing);
+    expect(h.saveSettings).not.toHaveBeenCalled();
   });
 });

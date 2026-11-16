@@ -63,7 +63,7 @@ import * as markdownUtils from "./markdown-utils";
 import * as cardRecordModule from "./card-record";
 import * as metadataUtils from "./metadata-utils";
 import { createBoxScope, createFolderScope, createLinksScope } from "./scope";
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import type { SearchServiceSnapshot } from "../search";
 import {
   batchDeleteFilesUsingObsidianPreference,

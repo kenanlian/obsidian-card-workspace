@@ -517,3 +517,30 @@ describe("scope load panel publication", () => {
     expect(notifications[0]?.cards.loading).toBe(true);
   });
 });
+
+describe("desktop navigation stream binding", () => {
+  it("uses the targeted stream filter and recursion plus leaf-local navigation preferences", () => {
+    const project = vi.fn(() => ({ normalizedQuery: "", querying: false, sections: [], rows: [], noResults: false }));
+    const localSections = { ...DEFAULT_SETTINGS.sectionCollapsed, tags: !DEFAULT_SETTINGS.sectionCollapsed.tags };
+    const localFilter = { tags: ["stream"], properties: [{ key: "status", values: [{ kind: "text" as const, value: "open" }] }] };
+    const nav = buildNavigationPanelState({
+      settings: { ...DEFAULT_SETTINGS, includeSubfolders: true, filter: { tags: ["shared"], properties: [] } },
+      browseFilter: localFilter, includeSubfolders: false,
+      strings: getUiStrings("en"), scope: createFolderScope("notes", false), selectedPath: null,
+      folderTree: [], favorites: [], boxSummaries: [],
+      cardProjection: { sortField: "mtime", sortDirection: "desc", availableTags: [], tagCounts: {},
+        activeFilterTags: [], pinnedPaths: [], group: DEFAULT_SETTINGS.group,
+        availableGroupDimensions: ["none"], groupSegmentCount: 0, metadataStatus: "ready" },
+      navLayout: { project, getLayoutMode: () => "dual", getNavVisible: () => true, getQuery: () => "",
+        getFocusId: () => null, getFocusRequest: () => null, getRevealRequest: () => null,
+        getLocalNavigation: () => ({ width: 281, sectionCollapsed: localSections }) } as never,
+      tooltipSide: "right",
+    });
+    expect(project).toHaveBeenCalledWith(expect.objectContaining({
+      activeTags: ["stream"], propertyClauses: localFilter.properties, includeSubfolders: false, sectionCollapsed: localSections,
+    }));
+    expect(nav.paneWidth).toBe(281);
+    expect(nav.sectionCollapsed).toBe(localSections);
+    expect(nav.propertyFilterCount).toBe(1);
+  });
+});

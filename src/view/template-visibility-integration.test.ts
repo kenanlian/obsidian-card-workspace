@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createViewWithFile, mockState, registerFolderCardView, resetFolderCardViewHarness } from "../__mocks__/folder-card-view-harness";
 import { DEFAULT_SETTINGS } from "../settings";
-import { FolderCardView } from "./FolderCardView";
+import { TestCardStreamRuntime as FolderCardView } from "../__mocks__/card-stream-runtime-harness";
 import { createFolderScope, createLinksScope } from "./scope";
 registerFolderCardView(FolderCardView);
 
