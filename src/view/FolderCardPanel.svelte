@@ -523,7 +523,7 @@
   $effect(() => {
     // Task rows have no preview images; card requests resume on the way back.
     if (taskMode) { lastImageRequestIdentity = null; return; }
-    const mode = appearance.cardImageMode ?? "off";
+    const mode = appearance.previewLines > 0 ? appearance.cardImageMode ?? "off" : "off";
     if (!viewportActive) {
       const identity = `hidden:${cards.generation}:${cards.sequenceRevision}:${images.requestVersion}`;
       if (identity !== lastImageRequestIdentity) {
@@ -560,7 +560,7 @@
   // Capture the reading position before a layout switch changes mounted card sizes.
   let previousImageMode: string | null = null;
   $effect.pre(() => {
-    const mode = appearance.cardImageMode ?? "off";
+    const mode = appearance.previewLines > 0 ? appearance.cardImageMode ?? "off" : "off";
     untrack(() => {
       if (previousImageMode !== null && mode !== previousImageMode && projectedRows.length) {
         pendingLayoutAnchor = captureLayoutAnchor({ scrollTop, listPaddingTop, rowPositions, rows: projectedRows, preferCardIndex: false });

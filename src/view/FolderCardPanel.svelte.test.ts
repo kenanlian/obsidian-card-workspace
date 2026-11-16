@@ -628,6 +628,13 @@ describe("FolderCardPanel.svelte", () => {
     const requests = onImageViewport.mock.calls.length;
     panelModel.mutate((draft) => { draft.appearance = { ...draft.appearance, cardImageFit: "contain" }; });
     await tick(); expect(onImageViewport).toHaveBeenCalledTimes(requests);
+    panelModel.mutate((draft) => { draft.appearance = { ...draft.appearance, previewLines: 0 }; });
+    await tick(); expect(target.querySelector(".fce-card-image")).toBeNull();
+    const hiddenRequests = onImageViewport.mock.calls.length;
+    expect(hiddenRequests).toBeGreaterThan(requests);
+    panelModel.mutate((draft) => { draft.appearance = { ...draft.appearance, previewLines: 5 }; });
+    await tick(); expect(onImageViewport.mock.calls.length).toBeGreaterThan(hiddenRequests);
+    expect(target.querySelector(".fce-card-image")).not.toBeNull();
     await unmount(component);
   });
 

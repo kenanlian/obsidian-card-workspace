@@ -52,8 +52,10 @@ describe("per-view images", () => {
     h.controller.dispose(); gate.close();
   });
 
-  it("off mode performs zero metadata/attachment work", () => {
-    const h = harness("off"); h.demand(); h.controller.handleMetadataChange(h.card.path);
+  it.each(["off", "zero-lines"] as const)("performs zero metadata/attachment work with %s", (disabled) => {
+    const h = harness(disabled === "off" ? "off" : "right");
+    if (disabled === "zero-lines") h.settings.previewLines = 0;
+    h.demand(); h.controller.handleMetadataChange(h.card.path);
     expect(h.controller.resolvePlaceholder(h.card.path, h.epochs.load.value)).toBeUndefined();
     h.controller.handleVaultMutation({ eventType: "create", path: "x.png", oldPath: null, isFolder: false, fileKind: null });
     expect(h.getFileCache).not.toHaveBeenCalled(); expect(h.read).not.toHaveBeenCalled(); h.controller.dispose();
@@ -95,14 +97,23 @@ describe("per-view images", () => {
     expect(h.controller.resolvePlaceholder(h.card.path, h.epochs.load.value)).toEqual({ status: "loading" });
     expect(h.read).not.toHaveBeenCalled(); h.controller.dispose();
   });
-  it("publishes images alone, reuses mode/fit changes and revokes viewport URLs", async () => {
+  it.each(["off", "zero-lines"] as const)("publishes images alone, reuses mode/fit changes and revokes URLs with %s", async (disabled) => {
     vi.useFakeTimers(); const h = harness(); h.demand(); await settle();
     expect(h.controller.getPanelState().byPath[h.card.path]).toEqual({ status: "ready", url: "blob:thumbnail" });
     expect(h.publish).toHaveBeenCalledWith("images"); expect(h.publish.mock.calls.every(([group]) => group === "images")).toBe(true);
     h.settings.cardImageMode = "inline"; h.settings.cardImageFit = "cover"; h.controller.onSettingsChanged(); h.demand(); await settle();
     expect(h.generate).toHaveBeenCalledOnce(); h.demand([]); expect(h.urls.revokeObjectURL).toHaveBeenCalledOnce();
     h.demand(); await settle(); expect(h.read).toHaveBeenCalledOnce();
-    h.settings.cardImageMode = "off"; h.controller.onSettingsChanged(); expect(h.urls.revokeObjectURL).toHaveBeenCalledTimes(2); h.controller.dispose();
+    if (disabled === "off") h.settings.cardImageMode = "off";
+    else h.settings.previewLines = 0;
+    h.controller.onSettingsChanged(); expect(h.urls.revokeObjectURL).toHaveBeenCalledTimes(2);
+    expect(h.controller.getPanelState().byPath[h.card.path]).toBeUndefined();
+    h.demand(); await settle();
+    expect(h.controller.getPanelState().byPath[h.card.path]).toBeUndefined();
+    h.settings.cardImageMode = "inline"; h.settings.previewLines = 5;
+    h.controller.onSettingsChanged(); h.demand(); await settle();
+    expect(h.controller.getPanelState().byPath[h.card.path]?.status).toBe("ready");
+    expect(h.read).toHaveBeenCalledOnce(); h.controller.dispose();
   });
   it("animates a revealed fingerprint once across URL recreation and scope generations", async () => {
     vi.useFakeTimers(); const h = harness();

@@ -178,7 +178,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     hoverPreviewDimensionDesc: (min, max, defaultValue) =>
       `Size in pixels (${min}–${max}; default ${defaultValue}). Applies to page previews opened from cards; shrinks to fit the window. Requires the Page preview core plugin.`,
     previewLinesDesc: (min: number, max: number) =>
-      `Choose how many normalized summary lines each card preview can show (${min}-${max}).`,
+      `Choose how many normalized summary lines each card preview can show (${min}-${max}). Set to 0 to also hide card images.`,
     showNavItemCountsName: "Show item counts in navigation",
     showNavItemCountsDesc:
       "Show how many cards each folder and tag contributes in the navigation pane. Folder counts follow the include-subfolders toggle, and tag counts include child tags.",
@@ -299,7 +299,7 @@ export const settingTabStrings: Record<UiLanguage, SettingTabStrings> = {
     hoverPreviewHeightName: "卡片悬浮预览高度",
     hoverPreviewDimensionDesc: (min, max, defaultValue) =>
       `尺寸单位为像素（${min}–${max}，默认 ${defaultValue}）。适用于从卡片打开的页面预览，会随窗口大小收缩。需启用核心插件“页面预览”。`,
-    previewLinesDesc: (min: number, max: number) => `选择每张卡片预览可显示的规范化摘要行数（${min}-${max}）。`,
+    previewLinesDesc: (min: number, max: number) => `选择每张卡片预览可显示的规范化摘要行数（${min}-${max}）。设为 0 时也会隐藏卡片图片。`,
     showNavItemCountsName: "在导航栏显示条目计数",
     showNavItemCountsDesc:
       "在导航栏中显示每个文件夹和标签包含的卡片数量。文件夹计数会跟随“包含子文件夹”开关变化，标签计数包含其子标签。",

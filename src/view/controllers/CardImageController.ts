@@ -46,6 +46,10 @@ export class CardImageController implements DisposableController {
   }
   private get budget() { return this.context.resourceBudget ?? DESKTOP_RESOURCE_BUDGET; }
   private get context(): ViewContext { return this.deps.context; }
+  private get thumbnailsEnabled(): boolean {
+    const settings = this.context.getSettings();
+    return settings.previewLines > 0 && settings.cardImageMode !== "off";
+  }
   getPanelState(): { byPath: Record<string, CardImageState>; requestVersion: number; generation: number } {
     const byPath: Record<string, CardImageState> = Object.create(null) as Record<string, CardImageState>;
     for (const [path, hint] of this.layoutHints) byPath[path] = hint.state;
@@ -59,7 +63,7 @@ export class CardImageController implements DisposableController {
       || generation !== this.context.epochs.load.value) return undefined;
     const card = this.context.store.getBaseCard(path);
     if (card && this.isDiagram(card.fileKind)) return LOADING_IMAGE_STATE;
-    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || this.context.getSettings().cardImageMode === "off") return undefined;
+    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || !this.thumbnailsEnabled) return undefined;
     let source: ImageSource;
     try { source = this.resolveSource(card); } catch { return undefined; }
     if (source.status !== "found" || source.file.stat.size <= 0 || source.file.stat.size > maxImageBytes(source.file.path, this.budget.image)) return undefined;
@@ -110,7 +114,7 @@ export class CardImageController implements DisposableController {
   private start(path: string): void {
     const card = this.context.store.getBaseCard(path);
     if (card && this.isDiagram(card.fileKind)) { this.startDiagram(path); return; }
-    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || this.context.getSettings().cardImageMode === "off") return;
+    if (!card || (card.fileKind !== "markdown" && card.fileKind !== "image") || !this.thumbnailsEnabled) return;
     let source: ImageSource;
     try { source = this.resolveSource(card); } catch { return; }
     const item: Demand = { source, abort: new AbortController() };
@@ -131,7 +135,7 @@ export class CardImageController implements DisposableController {
     const generation = this.generation;
     const current = (): boolean => !this.disposed && !item.abort.signal.aborted && this.demand.get(path) === item
       && this.generation === generation && this.context.epochs.load.value === generation
-      && this.context.getSettings().cardImageMode !== "off";
+      && this.thumbnailsEnabled;
     void runtime.service.request(fingerprint, {
       signal: item.abort.signal,
       canGenerate: () => current() && !this.deps.isLoading() && this.paths.every((notePath) => this.context.store.getBaseCard(notePath)?.hydrated !== false),
@@ -192,7 +196,7 @@ export class CardImageController implements DisposableController {
   /** Called after DOM decoding succeeds; only a version's first reveal animates. */
   handleImageReveal({ path, url }: CardImageRevealRequest): boolean {
     const item = this.demand.get(path);
-    if (this.disposed || (this.context.getSettings().cardImageMode === "off" && item?.diagramFingerprint === undefined)
+    if (this.disposed || (!this.thumbnailsEnabled && item?.diagramFingerprint === undefined)
       || item?.state?.status !== "ready" || item.state.url !== url || !item.fingerprint
       || item.abort.signal.aborted || this.generation !== this.context.epochs.load.value) return false;
     const key = imageKey(item.fingerprint);
@@ -201,7 +205,7 @@ export class CardImageController implements DisposableController {
     return true;
   }
   onSettingsChanged(): void {
-    if (this.context.getSettings().cardImageMode === "off") {
+    if (!this.thumbnailsEnabled) {
       this.invalidate((_path, item) => item.diagramFingerprint === undefined);
       if (this.layoutHints.size) { this.layoutHints.clear(); this.publish(); }
       this.releaseService?.(); this.releaseService = null;
@@ -240,7 +244,7 @@ export class CardImageController implements DisposableController {
     if (changed) { this.requestVersion++; this.publish(); }
   }
   handleMetadataChange(path?: string): void {
-    if (this.disposed || this.context.getSettings().cardImageMode === "off") return;
+    if (this.disposed || !this.thumbnailsEnabled) return;
     if (path !== undefined) this.layoutHints.delete(path);
     // Mounted overscan cards may have only a metadata placeholder, no demand.
     if (path === undefined || this.context.store.getBaseCard(path)) this.publish();

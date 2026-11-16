@@ -201,10 +201,17 @@ describe("CardItem.svelte", () => {
   });
 
   it.each([false, true])("hides ordinary previews at zero lines (hydrated: %s)", async (hydrated) => {
-    const { target } = mountCardItem({ previewLines: 0, card: { ...createCard(), hydrated } });
-    await tick();
-    expect(target.querySelector(".fce-excerpt")).toBeNull();
-    expect(target.querySelector("h4")).not.toBeNull();
+    for (const fileKind of ["markdown", "image"] as const) {
+      for (const cardImageMode of ["right", "inline"] as const) {
+        for (const image of [{ status: "loading" }, { status: "ready", url: "blob:thumbnail" }, { status: "failed" }] as const) {
+          const { target } = mountCardItem({ previewLines: 0, card: { ...createCard(), fileKind, hydrated }, cardImageMode, image });
+          await tick();
+          expect(target.querySelector(".fce-excerpt")).toBeNull();
+          expect(target.querySelector(".fce-card-image, .has-right-image")).toBeNull();
+          expect(target.querySelector("h4")).not.toBeNull();
+        }
+      }
+    }
   });
 
   function referenceCard(direction: "backlinks" | "outgoing" = "backlinks", expanded = false): NoteCardRecord {

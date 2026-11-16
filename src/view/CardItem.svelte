@@ -103,7 +103,7 @@
   const previewLines = $derived(appearance.previewLines);
   const searchPreviewSnippetCount = $derived(appearance.searchPreviewSnippetCount);
   const diagram = $derived((card.fileKind === "canvas" || card.fileKind === "excalidraw") && !card.linkPreview);
-  const imageMode = $derived(diagram ? "inline" : appearance.cardImageMode ?? "off");
+  const imageMode = $derived(diagram ? "inline" : previewLines > 0 ? appearance.cardImageMode ?? "off" : "off");
   const showImage = $derived(diagram || (imageMode !== "off" && image !== undefined));
   const missingExport = $derived(diagram && card.fileKind === "excalidraw"
     && image?.status === "diagram" && image.reason === "missing");
