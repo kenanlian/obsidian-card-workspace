@@ -337,7 +337,7 @@ export function resolveStreamSizes(state: LeafStreamState): Readonly<Record<stri
   const streams = state.streams.filter(stream => visible.has(stream.id));
   // The final remaining stream uses the available compact pane rather than
   // clipping its toolbar at the normal tiling minimum.
-  if (streams.length === 1 && dimension > 0 && dimension < minimum) return { [streams[0]!.id]: dimension };
+  if (streams.length === 1 && dimension > 0 && dimension < minimum) return { [streams[0].id]: dimension };
   const extra = Math.max(0, dimension - Math.max(0, streams.length - 1) * STREAM_SEPARATOR_SIZE - streams.length * minimum);
   const total = streams.reduce((sum, stream) => sum + stream[key], 0);
   return Object.fromEntries(streams.map(stream => [stream.id, minimum + extra * stream[key] / total]));
