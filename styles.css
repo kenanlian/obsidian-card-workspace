@@ -3805,7 +3805,11 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   flex-direction: column;
   gap: 2px;
 }
-.fce-task-date-picker-rowgroup { display: contents; }
+.fce-task-date-picker-rowgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .fce-task-date-picker-week {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -3927,11 +3931,13 @@ body.is-mobile :is(.fce-card, .fce-tree-row) { -webkit-touch-callout: none; }
   display: inline-flex;
   align-items: center;
   height: calc(var(--line-height-normal, 1.5) * 1em);
-  height: 1lh;
   margin-inline-start: 4px;
   vertical-align: top;
   user-select: none;
   -webkit-user-select: none;
+}
+@supports (height: 1lh) {
+  .fce-task-date-buttons { height: 1lh; }
 }
 .fce-task-date-button {
   display: inline-flex;
