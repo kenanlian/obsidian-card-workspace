@@ -65,7 +65,7 @@ function probeMarkdownFiles(app: App): Array<TFile | null> {
   for (const file of listed) {
     if (!file || typeof file.path !== "string") continue;
     fallback ??= file;
-    const mindmap = app.metadataCache?.getFileCache(file)?.frontmatter?.mindmap;
+    const mindmap: unknown = app.metadataCache?.getFileCache(file)?.frontmatter?.mindmap;
     if (isRecordedMindMap(mindmap)) continue;
     plain.push(file);
     if (plain.length >= MAX_EDITOR_PROBES) break;

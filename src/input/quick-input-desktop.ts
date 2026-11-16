@@ -98,6 +98,8 @@ export function createQuickInputDesktop(mainWindow: Window): QuickInputDesktop {
       if (signal.aborted) throw new QuickInputDesktopError("unavailable");
       // 1.15.1 requires its per-process token as the first window feature. Older
       // hosts require "popup" first and have no popup-token IPC handler.
+      // This fixed IPC request has no payload and is required for independent drafts;
+      // see docs/plugin-scanning.md for the directory scanner's IPC warning.
       let popupFeature = "popup";
       if (requireApiVersion("1.15.1")) {
         let token: unknown;

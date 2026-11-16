@@ -44,3 +44,28 @@ different tool version and performs additional checks, including CSS browser
 compatibility, manifest validation, and release-artifact checks. A clean local
 source report does not replace those checks. Existing build and release checks
 remain part of the repository's validation workflow.
+
+## Electron IPC warning for independent quick input
+
+The directory scanner may report **Electron IPC** for
+`src/input/quick-input-desktop.ts`. This is an expected capability warning for
+the desktop quick-input window, retained to preserve independent drafts.
+
+On Obsidian 1.15.1 and later, the host requires a process token as the first
+`window.open` feature and rejects requests without it. The adapter obtains that
+token through one fixed request, `electron.ipcRenderer.sendSync("popup-token")`,
+matching the host's own popup protocol. This request has no payload; the plugin
+does not register an IPC handler or accept channel names from user input.
+
+The adapter calls this channel only after its desktop/frame capability checks
+and `requireApiVersion("1.15.1")`. Earlier versions use the legacy `popup`
+prefix without this request. Missing, throwing or malformed token responses
+stop creation before a window is opened. Valid tokens must be nonempty
+hexadecimal strings. The adapter also checks the created window's native ID
+and hidden, transparent, undecorated constructor options before returning it.
+Regression coverage lives in `src/input/quick-input-desktop.test.ts`.
+
+The public workspace popout APIs create workspace leaves and do not expose the
+constructor options needed by independent quick input. They are not a replacement
+for this protocol. Keeping independent windows therefore retains this IPC
+warning; a clean local ESLint report does not mean the warning has been removed.
