@@ -4114,6 +4114,17 @@ describe("desktop workspace target selection and independent panes", () => {
 
   afterEach(() => { vi.unstubAllGlobals(); });
 
+  function targetHarness() {
+    const harness = createPluginHarness();
+    Object.assign(harness.app.workspace, {
+      containerEl: { ownerDocument: { defaultView: ownWindow } },
+      iterateAllLeaves: (callback: (leaf: unknown) => void) => {
+        for (const leaves of Object.values(obsidianMockState.leavesByType)) leaves.forEach(callback);
+      },
+    });
+    return harness;
+  }
+
   function view() {
     return new (FolderCardView as unknown as { new (): FolderCardView & {
       loadedScope: boolean; currentStream: boolean; cardScope: unknown;
@@ -4123,6 +4134,9 @@ describe("desktop workspace target selection and independent panes", () => {
   }
 
   function leafFor(candidate: unknown, win: Window, root: unknown = {}) {
+    if (candidate && typeof candidate === "object" && !("getViewType" in candidate)) {
+      Object.assign(candidate, { getViewType: () => "folder-card-view" });
+    }
     return {
       view: candidate,
       getContainer: () => ({ win }), getRoot: () => root,
@@ -4139,7 +4153,7 @@ describe("desktop workspace target selection and independent panes", () => {
   }
 
   it("directly activates the only same-window candidate without loading another window", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const selected = view();
     const local = leafFor(selected, ownWindow);
     const foreign = { ...leafFor({}, otherWindow), loadIfDeferred: vi.fn(async () => undefined) };
@@ -4152,7 +4166,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("chooses among same-window deferred leaves before loading only the selected target", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const selected = view();
     const first = { ...leafFor({}, ownWindow), loadIfDeferred: vi.fn(async () => undefined) };
     const second = { ...leafFor({}, ownWindow), loadIfDeferred: vi.fn(async () => { second.view = selected; }) };
@@ -4171,7 +4185,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("cancels a global source request without activation, loading, creation or broadcast", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const first = view(), second = view();
     const a = leafFor(first, ownWindow), b = leafFor(second, ownWindow);
     obsidianMockState.leavesByType["folder-card-view"] = [a, b];
@@ -4188,7 +4202,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("sends a desktop global source request only to the chosen workspace", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const first = view(), second = view();
     obsidianMockState.leavesByType["folder-card-view"] = [leafFor(first, ownWindow), leafFor(second, ownWindow)];
     app.vault.getAbstractFileByPath.mockReturnValue(new (TFolder as any)("notes"));
@@ -4199,8 +4213,68 @@ describe("desktop workspace target selection and independent panes", () => {
     expect(second.handleScopeSelection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ scope: createFolderScope("notes", true) }));
   });
 
+  it("asks before a global folder entry while a native modal popout owns activeWindow", async () => {
+    const { plugin, app } = targetHarness();
+    const first = view(), second = view(), third = view();
+    const leaves = [first, second, third].map(candidate => {
+      Object.assign(candidate, { containerEl: { ownerDocument: { defaultView: ownWindow } } });
+      return leafFor(candidate, ownWindow);
+    });
+    Object.assign(app.workspace, {
+      containerEl: { ownerDocument: { defaultView: ownWindow } },
+      iterateAllLeaves: (cb: (leaf: unknown) => void) => leaves.forEach(cb),
+    });
+    app.workspace.getActiveViewOfType.mockReturnValue({ containerEl: { ownerDocument: { defaultView: ownWindow } } });
+    vi.stubGlobal("activeWindow", otherWindow); // Settings popup, not a workspace container.
+    obsidianMockState.leavesByType["folder-card-view"] = leaves;
+    app.vault.getAbstractFileByPath.mockReturnValue(new (TFolder as any)("B"));
+    const selection = plugin.selectFolderByPath("B", "panel-picker");
+    await vi.waitFor(() => expect(obsidianMockState.targetPickers).toHaveLength(1));
+    expect(obsidianMockState.targetPickers[0]!.getItems().map(item => item.leaf)).toEqual(leaves);
+    obsidianMockState.targetPickers[0]!.close(); await selection;
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+    for (const candidate of [first, second, third]) expect(candidate.handleScopeSelection).not.toHaveBeenCalled();
+  });
+
+  it("keeps an actual floating workspace window distinct from the main window", async () => {
+    const { plugin, app } = targetHarness();
+    const main = leafFor(view(), ownWindow);
+    const floating = [leafFor(view(), otherWindow), leafFor(view(), otherWindow)];
+    Object.assign(app.workspace, {
+      containerEl: { ownerDocument: { defaultView: ownWindow } },
+      iterateAllLeaves: (cb: (leaf: unknown) => void) => [main, ...floating].forEach(cb),
+    });
+    vi.stubGlobal("activeWindow", otherWindow);
+    obsidianMockState.leavesByType["folder-card-view"] = [main, ...floating];
+    const activation = (plugin as any).activateView();
+    await vi.waitFor(() => expect(obsidianMockState.targetPickers).toHaveLength(1));
+    expect(obsidianMockState.targetPickers[0]!.getItems().map(item => item.leaf)).toEqual(floating);
+    obsidianMockState.targetPickers[0]!.close(); await activation;
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+    expect(app.workspace.revealLeaf).not.toHaveBeenCalled();
+  });
+
+  it("resolves a modal popout to a floating active view rather than the main window", async () => {
+    const { plugin, app } = targetHarness();
+    const main = leafFor(view(), ownWindow);
+    const floating = [leafFor(view(), otherWindow), leafFor(view(), otherWindow)];
+    Object.assign(app.workspace, {
+      containerEl: { ownerDocument: { defaultView: ownWindow } },
+      iterateAllLeaves: (cb: (leaf: unknown) => void) => [main, ...floating].forEach(cb),
+    });
+    app.workspace.getActiveViewOfType.mockReturnValue({ containerEl: { ownerDocument: { defaultView: otherWindow } } });
+    vi.stubGlobal("activeWindow", {});
+    obsidianMockState.leavesByType["folder-card-view"] = [main, ...floating];
+    const activation = (plugin as any).activateView();
+    await vi.waitFor(() => expect(obsidianMockState.targetPickers).toHaveLength(1));
+    expect(obsidianMockState.targetPickers[0]!.getItems().map(item => item.leaf)).toEqual(floating);
+    obsidianMockState.targetPickers[0]!.close(); await activation;
+    expect(app.workspace.getLeftLeaf).not.toHaveBeenCalled();
+  });
+
   it("keeps mobile global source broadcast and left-sidebar targeting", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     Object.defineProperty(plugin, "runtimePlatform", { value: { ...plugin.runtimePlatform, device: "phone" } });
     const first = view(), second = view();
     const a = leafFor(first, ownWindow, app.workspace.leftSplit), b = leafFor(second, otherWindow, app.workspace.leftSplit);
@@ -4214,7 +4288,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("startup preserves saved empty and nonfolder sources and never loads deferred or hidden leaves", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const empty = view(), box = view(), hidden = view();
     empty.loadedScope = true; empty.currentStream = false;
     box.loadedScope = true; box.cardScope = createBoxScope("saved-box");
@@ -4240,7 +4314,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("opening a saved empty desktop workspace preserves its empty stream state", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const empty = view(); empty.loadedScope = true; empty.currentStream = false;
     obsidianMockState.leavesByType["folder-card-view"] = [leafFor(empty, ownWindow)];
     app.vault.getRoot.mockReturnValue(new (TFolder as any)(""));
@@ -4249,7 +4323,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("disables stream-only global commands for an intentionally empty desktop workspace", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const empty = view(); empty.loadedScope = true; empty.currentStream = false;
     const modules = { boxDraw: { available: true, canNext: true }, boxActions: { handleBoxCommand: vi.fn() } };
     Object.assign(empty, { modules });
@@ -4264,7 +4338,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("creates a new leaf beside the same-window recent root editor without setting or activating it", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
     const editor = leafFor({ getViewType: () => "markdown" }, ownWindow, app.workspace.rootSplit);
     const created = { setViewState: vi.fn(), openFile: vi.fn() };
@@ -4280,7 +4354,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("falls back to a same-window root leaf while skipping side docks and another window", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
     const foreign = leafFor({ getViewType: () => "markdown" }, otherWindow, app.workspace.rootSplit);
     const dock = leafFor({ getViewType: () => "markdown" }, ownWindow, app.workspace.rightSplit);
@@ -4293,7 +4367,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("uses getLeaf(true) when the origin window has no existing root leaf", async () => {
-    const { plugin, app } = createPluginHarness();
+    const { plugin, app } = targetHarness();
     const origin = leafFor(view(), ownWindow, app.workspace.leftSplit);
     app.workspace.getMostRecentLeaf.mockReturnValue(leafFor({}, otherWindow, app.workspace.rootSplit));
     await plugin.createCardStreamLeaf(origin as never);
@@ -4303,7 +4377,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("grades a noncurrent stream box membership change for the entire desktop leaf", async () => {
-    const { plugin } = createPluginHarness();
+    const { plugin } = targetHarness();
     const candidate = view();
     const box = { ...createCardBox("Box", []), id: "saved-box" };
     mutateStoreMemory(plugin, { boxes: [box] });
@@ -4314,7 +4388,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("keeps deleted desktop box sources missing when external settings remove their definition", async () => {
-    const { plugin } = createPluginHarness();
+    const { plugin } = targetHarness();
     const candidate = view();
     const box = { ...createCardBox("Box", []), id: "saved-box" };
     mutateStoreMemory(plugin, { boxes: [box] });
@@ -4329,7 +4403,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("targets desktop stream commands only at an active pane with a current stream", () => {
-    const { plugin, app } = createPluginHarness(); const candidate = view();
+    const { plugin, app } = targetHarness(); const candidate = view();
     const state = { streams: [{ id: "a" }, { id: "b" }], currentStreamId: "b" as string | null, recentlyClosedCount: 1 };
     const select = vi.fn(), reopen = vi.fn(), handleStreamCommand = vi.fn(), openNewStreamPicker = vi.fn();
     Object.assign(candidate, { streams: { getState: () => state, select, reopen }, handleStreamCommand, openNewStreamPicker });
@@ -4349,7 +4423,7 @@ describe("desktop workspace target selection and independent panes", () => {
   });
 
   it("does not register multi-stream commands on mobile", () => {
-    const { plugin } = createPluginHarness(); Object.assign(plugin, { runtimePlatform: { device: "phone" } });
+    const { plugin } = targetHarness(); Object.assign(plugin, { runtimePlatform: { device: "phone" } });
     (plugin as any).registerStreamCommands();
     expect((plugin as any).addCommand).not.toHaveBeenCalled();
   });

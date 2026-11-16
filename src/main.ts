@@ -1084,7 +1084,17 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   private activeWorkspaceWindow(): Window {
-    return typeof activeWindow !== "undefined" ? activeWindow : window;
+    const focused = typeof activeWindow !== "undefined" ? activeWindow : window;
+    if (this.runtimePlatform.device !== "desktop") return focused;
+    const workspace = this.app.workspace;
+    const main = workspace.containerEl?.ownerDocument?.defaultView ?? window;
+    if (focused === main) return focused;
+    let ownsLeaf = false;
+    workspace.iterateAllLeaves?.(leaf => { if (this.leafWindow(leaf) === focused) ownsLeaf = true; });
+    if (ownsLeaf) return focused;
+    // Native settings/modal popouts also become activeWindow, but own no
+    // workspace leaves. Keep the source operation in the active view's window.
+    return workspace.getActiveViewOfType(View)?.containerEl?.ownerDocument?.defaultView ?? main;
   }
 
   private async chooseDesktopTarget(win: Window): Promise<WorkspaceLeaf | null> {
