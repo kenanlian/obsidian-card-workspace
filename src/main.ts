@@ -926,7 +926,11 @@ export default class CardWorkspacePlugin extends Plugin {
   }
 
   /** Views may be restored synchronously while onload is still installing settings. */
-  waitForSettingsReady(): Promise<void> { return this.settingsReadyPromise; }
+  async waitForSettingsReady(): Promise<void> {
+    // A host may construct a registered view before onload assigns the promise.
+    await Promise.resolve();
+    await this.settingsReadyPromise;
+  }
 
   getSettings(): PluginSettings {
     return this.settingsStore.getFlat();

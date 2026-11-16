@@ -276,7 +276,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     });
   }
   private requestSave(): void {
-    if (!this.opened || this.stopped || this.saveTimer !== null) return;
+    if (!this.opened || this.stopped || this.saveTimer !== null || this.desktop && this.legacySeedPending) return;
     const win = this.containerEl.ownerDocument?.defaultView ?? window;
     this.saveTimer = win.setTimeout(() => { this.saveTimer = null; if (!this.stopped) this.app.workspace.requestSaveLayout?.(); }, 200);
   }
@@ -290,7 +290,18 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (!this.desktop) return this.fallback.setState(value, result);
     result.history = false;
     const parsed = decodeDesktopLeafState(value, this.plugin.getSettings());
-    if (parsed.kind === "legacy") return;
+    if (parsed.kind === "legacy") {
+      const epoch = this.leafStateEpoch;
+      await this.plugin.waitForSettingsReady?.();
+      if (this.stopped || epoch !== this.leafStateEpoch || !this.legacySeedPending) return;
+      // Deferred legacy leaves can open after layout-ready startup has finished.
+      // Native state restoration must therefore initialize them without relying
+      // on the startup pass over already visible leaves.
+      this.seedLegacyState(); this.readyToLoad = true; this.syncStreams();
+      const current = this.streams.getState().currentStreamId;
+      if (this.opened && current) await this.ensureRuntime(current);
+      return;
+    }
     this.leafStateEpoch++; this.stagedTransfer = null; this.legacySeedPending = false;
     if (parsed.kind === "unsupported") {
       this.restoring = true;

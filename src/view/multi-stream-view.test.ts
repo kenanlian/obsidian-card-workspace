@@ -44,13 +44,13 @@ function targetLeaf(source: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("desktop leaf stream integration", () => {
-  it("seeds an old leaf from loaded settings rather than construction-time defaults", async () => {
+  it("loads a deferred legacy leaf from settings when the host restores it after startup", async () => {
     const source = await setup(); const { target } = targetLeaf(source);
     let release!: () => void;
     const ready = new Promise<void>(resolve => { release = resolve; });
     source.plugin.waitForSettingsReady = vi.fn(() => ready);
     await target.onOpen();
-    const waiting = target.waitForForeground();
+    const waiting = target.setState({}, { history: false });
     source.settings.lastFolderPath = "notes";
     source.settings.includeSubfolders = false;
     source.settings.filter.tags = ["research"];
