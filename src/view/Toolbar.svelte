@@ -779,22 +779,14 @@
               {/if}
             {/each}
             {#if scope.supportsBoxRuleSeeding}
-              <button
-                type="button"
-                class="clickable-icon fce-toolbar-button"
-                aria-label={boxStrings.saveScopeTitle}
-                onclick={() => emitBoxCommand("save-scope-as-box")}
-                use:applyIcon={"package-plus"}
-                use:applyTooltip={boxStrings.saveScopeTitle}
-              >
-                <span class="fce-sr-only">{boxStrings.saveScopeTitle}</span>
-              </button>
-            {/if}
-            {#if scope.supportsBoxRuleSeeding && hasBoxes}
               <ToolbarBoxPicker
                 {boxSummaries}
+                menuLabel={boxStrings.toolbarTitle}
+                saveScopeLabel={boxStrings.saveScopeTitle}
                 addScopeLabel={boxStrings.addScopeToBox}
+                {tooltipSide}
                 closeNonce={boxPickerCloseNonce}
+                onSaveScope={() => emitBoxCommand("save-scope-as-box")}
                 onAddToBox={(boxId) => emitBoxCommand("add-scope-to-box", boxId)}
               />
             {/if}

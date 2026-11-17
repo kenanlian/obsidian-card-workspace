@@ -3,6 +3,7 @@ import { mount, unmount } from "svelte";
 import type CardWorkspacePlugin from "../main";
 import { normalizeSettings } from "../settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
+import { builtinCategoryIcon } from "../icon-config";
 import { CardStreamRuntime } from "./CardStreamRuntime";
 import { LeafStreamController, decodeDesktopLeafState, resolveRequiredStripWidth, resolveStreamLayout, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
 import { createStreamBrowseState } from "./stream-browse-state";
@@ -163,7 +164,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       collapsedGroups: {}, anchor: null, anchorIndex: 0, desiredExpanded: true, lastActive: 0, width: null };
   }
   private sourceLabel(scope: CardScope): string {
-    if (scope.kind === "folder") return scope.path || "/";
+    if (scope.kind === "folder") return scope.path || this.plugin.getUiStrings().toolbar.folderMenu.rootFolder;
     if (scope.kind === "box") return this.plugin.getSettings().boxes.find(box => box.id === scope.boxId)?.name ?? scope.boxId;
     const direction = scope.direction === "backlinks" ? this.plugin.getUiStrings().links.directionBacklinks : this.plugin.getUiStrings().links.directionOutgoing;
     return `${scope.notePath} · ${direction}`;
@@ -536,6 +537,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     for (const stream of state.streams) {
       const title = descriptions.get(stream.id)!.title;
       menu.addItem(item => item.setTitle(stream.desiredExpanded ? title : `${title} · ${labels.collapsed}`)
+        .setIcon(builtinCategoryIcon(stream.scope.kind === "links" ? stream.scope.direction : stream.scope.kind))
         .setChecked(stream.id === state.currentStreamId)
         .onClick(() => { if (!this.transferring.has(stream.id)) this.streams.select(stream.id); }));
     }

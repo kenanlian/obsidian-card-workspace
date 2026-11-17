@@ -5,7 +5,7 @@ import Toolbar from "./Toolbar.svelte";
 import {
   getObsidianMenuInstances,
   resetObsidianMenuInstances,
-  type ObsidianMockMenu,
+  ObsidianMockMenu,
   type ObsidianMockMenuItem,
 } from "../__mocks__/obsidian";
 import { BULK_ADD_TO_BOX_ICON, BULK_REMOVE_FROM_BOX_ICON } from "../icons";
@@ -268,14 +268,17 @@ function expectMenuItemEnabled(menu: ObsidianMockMenu, title: string): void {
 }
 
 function getBoxPickerButton(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>('button[aria-label="Add current view to card box"]');
+  return document.querySelector<HTMLButtonElement>('button[aria-label="Card box"]');
 }
 
-async function clickBoxPickerButton(): Promise<void> {
+async function clickBoxPickerButton(): Promise<ObsidianMockMenu> {
   const button = getBoxPickerButton();
   expect(button).not.toBeNull();
   button?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 60, clientY: 12 }));
   await tick();
+  const menu = getObsidianMenuInstances().at(-1);
+  expect(menu).toBeDefined();
+  return menu!;
 }
 
 describe("Toolbar.svelte", () => {
@@ -422,7 +425,7 @@ describe("Toolbar.svelte", () => {
       "Create note",
       "Sort & group",
       "Bulk actions",
-      "Save current view as card box",
+      "Card box",
       "Toggle search",
     ];
 
@@ -431,10 +434,13 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("offers add-current-view-to-box only once a card box exists", async () => {
+  it("combines saving and adding to existing boxes under one card-box button", async () => {
     let { component } = mountToolbar();
 
-    expect(getBoxPickerButton()).toBeNull();
+    expect(getBoxPickerButton()).not.toBeNull();
+    const menu = await clickBoxPickerButton();
+    expect(menu.items.map(itemTitle)).toEqual(["Save current view as card box"]);
+    expect(menu.separators).toBe(0);
 
     await disposeMountedComponent(component);
 
@@ -446,8 +452,7 @@ describe("Toolbar.svelte", () => {
       "Create note",
       "Sort & group",
       "Bulk actions",
-      "Save current view as card box",
-      "Add current view to card box",
+      "Card box",
       "Toggle search",
     ]);
 
@@ -466,16 +471,21 @@ describe("Toolbar.svelte", () => {
     await disposeMountedComponent(component);
   });
 
-  it("toggles the box picker popup from its own button", async () => {
+  it("toggles an Obsidian DOM menu anchored below the card-box button", async () => {
     const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
+    vi.spyOn(getBoxPickerButton()!, "getBoundingClientRect").mockReturnValue({ left: 40, bottom: 32 } as DOMRect);
 
-    await clickBoxPickerButton();
-    expect(document.querySelector(".fce-box-picker-menu")).not.toBeNull();
+    const menu = await clickBoxPickerButton();
+    const hide = vi.spyOn(menu, "hide");
+    expect(menu.useNativeMenu).toBe(false);
+    expect(menu.positions).toEqual([{ x: 40, y: 32, overlap: true }]);
     expect(getBoxPickerButton()?.classList.contains("is-selected")).toBe(true);
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("true");
 
     await clickBoxPickerButton();
-    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+    expect(hide).toHaveBeenCalledOnce();
     expect(getBoxPickerButton()?.classList.contains("is-selected")).toBe(false);
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("false");
 
     await disposeMountedComponent(component);
   });
@@ -484,35 +494,45 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES }, captured.callbacks);
 
-    await clickBoxPickerButton();
-
-    const options = Array.from(document.querySelectorAll<HTMLButtonElement>(".fce-box-picker-item"));
-    expect(options.map((option) => option.textContent?.trim())).toEqual(["Reading", "Plans"]);
-
-    options[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const menu = await clickBoxPickerButton();
+    const hide = vi.spyOn(menu, "hide");
+    expect(menu.items.map(itemTitle)).toEqual([
+      "Save current view as card box", "Add current view to card box", "Reading", "Plans",
+    ]);
+    expect(menu.separators).toBe(1);
+    expectMenuItemDisabled(menu, "Add current view to card box");
+    clickMenuItem(menu, "Plans");
     await tick();
 
     expect(captured.boxCommandEvents).toEqual([{ command: "add-scope-to-box", boxId: "box-2" }]);
-    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+    expect(hide).toHaveBeenCalledOnce();
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("false");
 
     await disposeMountedComponent(component);
   });
 
-  it("closes the box picker popup on an outside click and when the DOM sort menu opens", async () => {
+  it("resets after host dismissal and closes on sort or unmount", async () => {
     const { component } = mountToolbar({ boxSummaries: BOX_SUMMARIES });
+    const onHide = vi.spyOn(ObsidianMockMenu.prototype, "onHide");
 
     await clickBoxPickerButton();
-    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Obsidian dismisses the menu on outside click or Escape.
+    onHide.mock.calls.at(-1)?.[0]();
     await tick();
-    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("false");
 
-    await clickBoxPickerButton();
+    const menu = await clickBoxPickerButton();
+    const hide = vi.spyOn(menu, "hide");
     await openSortMenu();
 
-    expect(document.querySelector(".fce-box-picker-menu")).toBeNull();
-    expect(getObsidianMenuInstances()).toHaveLength(1);
+    expect(hide).toHaveBeenCalledOnce();
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("false");
+    expect(getObsidianMenuInstances()).toHaveLength(3);
 
+    const reopened = await clickBoxPickerButton();
+    const hideOnUnmount = vi.spyOn(reopened, "hide");
     await disposeMountedComponent(component);
+    expect(hideOnUnmount).toHaveBeenCalledOnce();
   });
 
   it("toggles the navigation pane through a dedicated callback", async () => {
@@ -937,13 +957,14 @@ describe("Toolbar.svelte", () => {
     const captured = createCapturedCallbacks();
     let { component } = mountToolbar({}, captured.callbacks);
 
-    const saveScopeButton = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Save current view as card box"]',
-    );
-    expect(saveScopeButton).not.toBeNull();
-    saveScopeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const menu = await clickBoxPickerButton();
+    const hide = vi.spyOn(menu, "hide");
+    clickMenuItem(menu, "Save current view as card box");
+    await tick();
 
     expect(captured.boxCommandEvents).toContainEqual({ command: "save-scope-as-box" });
+    expect(hide).toHaveBeenCalledOnce();
+    expect(getBoxPickerButton()?.getAttribute("aria-expanded")).toBe("false");
 
     await disposeMountedComponent(component);
 
@@ -951,7 +972,7 @@ describe("Toolbar.svelte", () => {
     await tick();
 
     expect(
-      document.querySelector('button[aria-label="Save current view as card box"]'),
+      getBoxPickerButton(),
     ).toBeNull();
 
     await disposeMountedComponent(component);

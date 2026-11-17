@@ -1,6 +1,7 @@
 import type { UiLanguage } from "./types";
 
 export interface BoxStrings {
+  toolbarTitle: string;
   drawToggleCommand: string;
   drawNextCommand: string;
   drawRetry: string;
@@ -73,6 +74,7 @@ export interface BoxStrings {
 
 export const boxStrings: Record<UiLanguage, BoxStrings> = {
   en: {
+    toolbarTitle: "Card box",
     drawToggleCommand: "Draw cards: enter / exit",
     drawNextCommand: "Draw cards: next group",
     drawRetry: "Retry saving",
@@ -150,6 +152,7 @@ export const boxStrings: Record<UiLanguage, BoxStrings> = {
     done: "Done",
   },
   zh: {
+    toolbarTitle: "卡片盒",
     drawToggleCommand: "抽卡：进入 / 退出",
     drawNextCommand: "抽卡：抽下一组",
     drawRetry: "重试保存",

@@ -8,6 +8,7 @@ import { CardStreamRuntime } from "./CardStreamRuntime";
 import { createCardBox } from "./card-boxes";
 import { StreamSourcePicker } from "./modals/StreamSourcePicker";
 import { getStreamUiStrings } from "./stream-ui-strings";
+import { getUiStrings } from "../i18n";
 
 vi.mock("./StreamWorkspacePanel.svelte", () => ({ default: () => ({ teardown() {} }) }));
 registerFolderCardView(FolderCardView);
@@ -359,17 +360,21 @@ describe("desktop leaf stream integration", () => {
     expect(view.getCardScope()).toEqual(createFolderScope("", true));
   });
 
-  it("switches streams and runs stream commands from one menu", async () => {
-    const { view } = await setup(); const first = view.streams.getState().currentStreamId!;
+  it.each(["en", "zh"] as const)("switches streams and labels the root in %s from one menu", async language => {
+    const { view, plugin } = await setup(); const first = view.streams.getState().currentStreamId!;
+    plugin.getUiLanguage.mockReturnValue(language);
+    plugin.getUiStrings.mockReturnValue(getUiStrings(language));
     const second = (await view.createStream({ scope: createFolderScope("", true) }))!;
     view.streams.setExpanded(first, false);
-    const labels = getStreamUiStrings("en");
+    const labels = getStreamUiStrings(language);
     mockState.menuInstances.length = 0;
     view.handleStreamCommand(second, "menu", { getBoundingClientRect: () => ({ left: 4, bottom: 8 }), ownerDocument: {} } as unknown as HTMLElement);
     const menu = mockState.menuInstances.at(-1)!;
     const items = menu.items.filter(item => item.kind === "item");
     const find = (title: string) => items.find(item => item.title === title)!;
-    expect(items.slice(0, 2).map(item => [item.title, item.checked])).toEqual([[`notes · ${labels.collapsed}`, false], ["/", true]]);
+    const rootLabel = getUiStrings(language).toolbar.folderMenu.rootFolder;
+    expect(view.streamPanelModel.getState().entries.find(entry => entry.id === second)?.title).toBe(rootLabel);
+    expect(items.slice(0, 2).map(item => [item.title, item.checked])).toEqual([[`notes · ${labels.collapsed}`, false], [rootLabel, true]]);
     expect(items.slice(2).map(item => item.title)).toEqual([labels.create, labels.duplicate, labels.reopen, labels.maximize, labels.collapse,
       labels.moveLeft, labels.moveRight, labels.rename, labels.moveToPane, labels.copyToPane, labels.close]);
     expect([find(labels.reopen).disabled, find(labels.moveLeft).disabled, find(labels.moveRight).disabled]).toEqual([true, false, true]);

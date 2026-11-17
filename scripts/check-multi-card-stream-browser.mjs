@@ -79,6 +79,11 @@ try {
   assert(await panel.locator('.fce-card').count() > 0);
   assert.equal(await panel.locator('.fce-stream-switcher').count(), 1);
   assert.equal(await panel.locator('.fce-stream-close').count(), 1);
+  await panel.locator('.fce-stream-switcher').hover();
+  const titleRect = await panel.locator('.fce-stream-switcher').boundingBox();
+  const closeRect = await panel.locator('.fce-stream-close').boundingBox();
+  assert(Math.abs(titleRect.height - closeRect.height) <= 1, `${id} title hover target matches the toolbar icons`);
+  assert(Math.abs(titleRect.y - closeRect.y) <= 1, `${id} title and icons align vertically`);
  }
  assert.equal(await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').count(), 1);
  assert.equal(await page.locator('[data-stream-id="two"] .fce-toolbar-buttons > button[aria-pressed]').count(), 0);

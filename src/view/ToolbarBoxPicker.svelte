@@ -1,40 +1,36 @@
 <script lang="ts">
-  import { setIcon } from "obsidian";
+  import { Menu, setIcon, setTooltip } from "obsidian";
   import type { BoxSummary } from "./panel-model";
-
-  interface PopupLifecycleOptions {
-    getButton: () => HTMLElement | null;
-    setMenu: (node: HTMLElement | null) => void;
-    close: () => void;
-    closeOnEscape?: boolean;
-  }
+  import { getMenuDom } from "./menu-dom";
 
   interface Props {
     boxSummaries?: BoxSummary[];
+    menuLabel?: string;
+    saveScopeLabel?: string;
     addScopeLabel?: string;
+    tooltipSide?: "top" | "right" | "bottom" | "left";
     closeNonce?: number;
+    onSaveScope?: () => void;
     onAddToBox?: (boxId: string) => void;
   }
 
   let {
     boxSummaries = [],
+    menuLabel = "",
+    saveScopeLabel = "",
     addScopeLabel = "",
+    tooltipSide = "right",
     closeNonce = 0,
+    onSaveScope,
     onAddToBox,
   }: Props = $props();
 
-  const boxPickerButtonId = "fce-box-picker-button";
-
-  let showBoxPickerMenu = $state(false);
-  let boxPickerMenuX = $state(0);
-  let boxPickerMenuY = $state(0);
-  let boxPickerButtonEl: HTMLElement | null = null;
+  let menu = $state.raw<Menu | null>(null);
 
   $effect(() => {
-    if (closeNonce === 0) {
-      return;
-    }
-    showBoxPickerMenu = false;
+    // Close when another toolbar menu opens, and when the button is unmounted.
+    closeNonce;
+    return closeBoxPickerMenu;
   });
 
   function applyIcon(node: HTMLElement, iconName: string): { update: (nextIconName: string) => void } {
@@ -46,126 +42,62 @@
     };
   }
 
-  function createElementCapture(assign: (node: HTMLElement | null) => void): (node: HTMLElement) => { destroy: () => void } {
-    return (node: HTMLElement) => {
-      assign(node);
-      return {
-        destroy() {
-          assign(null);
-        },
-      };
-    };
+  function applyTooltip(node: HTMLElement, text: string): { update: (text: string) => void } {
+    const update = (text: string): void => setTooltip(node, text, { placement: tooltipSide, gap: 8 });
+    update(text);
+    return { update };
   }
-
-  function createPopupPortalAction(options: PopupLifecycleOptions): (node: HTMLElement) => { destroy: () => void } {
-    return (node: HTMLElement) => {
-      const onClickOutside = (event: MouseEvent): void => {
-        const target = event.target;
-        if (target instanceof Node) {
-          const button = options.getButton();
-          if (button && button.contains(target)) {
-            return;
-          }
-          if (node.contains(target)) {
-            return;
-          }
-        }
-        options.close();
-      };
-
-      const onKeydown = (event: KeyboardEvent): void => {
-        if (event.key === "Escape") {
-          options.close();
-        }
-      };
-
-      options.setMenu(node);
-      document.body.appendChild(node);
-      document.addEventListener("click", onClickOutside, true);
-      if (options.closeOnEscape) {
-        document.addEventListener("keydown", onKeydown, true);
-      }
-
-      return {
-        destroy() {
-          document.removeEventListener("click", onClickOutside, true);
-          if (options.closeOnEscape) {
-            document.removeEventListener("keydown", onKeydown, true);
-          }
-          options.setMenu(null);
-          if (node.parentNode) {
-            node.parentNode.removeChild(node);
-          }
-        },
-      };
-    };
-  }
-
-  const captureBoxPickerButton = createElementCapture((node) => {
-    boxPickerButtonEl = node;
-  });
 
   function closeBoxPickerMenu(): void {
-    showBoxPickerMenu = false;
+    menu?.hide();
+    menu = null;
   }
 
   function toggleBoxPickerMenu(event: MouseEvent): void {
-    if (showBoxPickerMenu) {
+    if (menu) {
       closeBoxPickerMenu();
       return;
     }
 
-    boxPickerMenuX = event.clientX;
-    boxPickerMenuY = event.clientY;
-    showBoxPickerMenu = true;
-  }
+    const nextMenu = new Menu().setUseNativeMenu(false);
+    menu = nextMenu;
+    nextMenu.onHide(() => { if (menu === nextMenu) menu = null; });
+    nextMenu.addItem(item => item.setTitle(saveScopeLabel).setIcon("package-plus").onClick(() => {
+      closeBoxPickerMenu();
+      onSaveScope?.();
+    }));
+    if (boxSummaries.length > 0) {
+      nextMenu.addSeparator();
+      nextMenu.addItem(item => item.setTitle(addScopeLabel).setIcon("package-check").setDisabled(true));
+      for (const box of boxSummaries) {
+        nextMenu.addItem(item => item.setTitle(box.name).setIcon("box").onClick(() => {
+          closeBoxPickerMenu();
+          onAddToBox?.(box.id);
+        }));
+      }
+    }
 
-  function addScopeToBox(boxId: string): void {
-    closeBoxPickerMenu();
-    onAddToBox?.(boxId);
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    nextMenu.showAtPosition({ x: rect.left, y: rect.bottom, overlap: true });
+    const menuDom = getMenuDom(nextMenu);
+    menuDom?.classList.add("fce-box-picker-menu");
+    if (boxSummaries.length > 0) {
+      // The save action precedes the heading; separators are not menu items.
+      const heading = Array.from(menuDom?.querySelectorAll?.(".menu-item") ?? [])[1];
+      heading?.classList.add("fce-menu-section-title");
+    }
   }
-
-  const boxPickerMenuAction = createPopupPortalAction({
-    getButton: () => boxPickerButtonEl,
-    setMenu: () => {},
-    close: closeBoxPickerMenu,
-    closeOnEscape: true,
-  });
 </script>
 
 <button
   type="button"
-  class="clickable-icon fce-toolbar-button {showBoxPickerMenu ? 'is-selected' : ''}"
-  id={boxPickerButtonId}
-  aria-label={addScopeLabel}
-  aria-expanded={showBoxPickerMenu}
+  class="clickable-icon fce-toolbar-button {menu ? 'is-selected' : ''}"
+  aria-label={menuLabel}
+  aria-haspopup="menu"
+  aria-expanded={menu !== null}
   onclick={toggleBoxPickerMenu}
-  use:applyIcon={"package-check"}
-  use:captureBoxPickerButton
+  use:applyIcon={"box"}
+  use:applyTooltip={menuLabel}
 >
-  <span class="fce-sr-only">{addScopeLabel}</span>
+  <span class="fce-sr-only">{menuLabel}</span>
 </button>
-
-{#if showBoxPickerMenu}
-  <div
-    class="fce-popup-menu fce-box-picker-menu"
-    role="menu"
-    aria-labelledby={boxPickerButtonId}
-    style="left: {boxPickerMenuX}px; top: {boxPickerMenuY}px;"
-    use:boxPickerMenuAction
-  >
-    {#each boxSummaries as box (box.id)}
-      <button
-        type="button"
-        class="fce-popup-row fce-box-picker-item"
-        role="menuitem"
-        onclick={() => addScopeToBox(box.id)}
-      >
-        <span class="fce-popup-row-leading" aria-hidden="true" use:applyIcon={"box"}></span>
-        <span class="fce-popup-row-content">
-          <span class="fce-box-picker-item-label">{box.name}</span>
-        </span>
-      </button>
-    {/each}
-  </div>
-{/if}
